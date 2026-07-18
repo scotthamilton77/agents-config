@@ -247,6 +247,38 @@ def test_status_skips_malformed_line_when_a_valid_marker_exists() -> None:
     assert result["breached"] is False
 
 
+def test_status_detects_empty_marker_value_as_malformed() -> None:
+    # REGRESSION PIN (Codex finding, round 5): the note-line pattern used to
+    # require \S+ (at least one non-whitespace char) after the prefix, so a
+    # raw append like "backlog_last_groomed: " (trailing space, empty value)
+    # matched NOTHING and was silently invisible -- if it were the only
+    # marker, --status would wrongly report never-groomed instead of
+    # surfacing the corruption. The pattern now captures the full value
+    # (including empty), which strptime then rejects as malformed.
+    backend = _backend(notes="backlog_last_groomed: ")
+    with pytest.raises(WorkError) as exc_info:
+        groom(backend, _args(status=True))
+    assert exc_info.value.code is ErrorCode.NOT_CONFIGURED
+    assert exc_info.value.detail["reason"] == "invalid"
+
+
+def test_done_recovers_from_a_stale_future_skewed_marker() -> None:
+    # REGRESSION PIN (Codex finding, round 5): a garbage far-future marker
+    # (clock misconfiguration or a bad raw write) always sorts numerically
+    # "latest" by timestamp value alone -- if the future-skew check were
+    # applied only to the already-selected marker (as it was before this
+    # fix), the garbage entry would keep winning selection forever and
+    # `--done` could never actually recover the state it claims to reset.
+    # Folding the skew check into candidate selection means a fresh --done
+    # append is now correctly preferred over the untrustworthy future entry.
+    now = datetime(2026, 7, 18, 12, 0, 0, tzinfo=UTC)
+    backend = _backend(notes="backlog_last_groomed: 2099-01-01T00:00:00Z")
+    groom(backend, _args(done=True, now=now))
+    result = groom(backend, _args(status=True, now=now))
+    assert result["backlog_last_groomed"] == "2026-07-18T12:00:00Z"
+    assert result["breached"] is False
+
+
 # -- round-3 Codex finding: clock skew across dolt-synced machines --
 # backlog_last_groomed is synced via dolt (spec §6); a marker written from a
 # fast-clocked machine can land slightly in the future. <=24h is ordinary

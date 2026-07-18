@@ -26,7 +26,7 @@ from workcli.backend import Backend
 from workcli.config import TrackLayerConfig
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 
-_NOTE_LINE_PATTERN = re.compile(r"^backlog_last_groomed: (\S+)$", re.MULTILINE)
+_NOTE_LINE_PATTERN = re.compile(r"^backlog_last_groomed: (.*)$", re.MULTILINE)
 _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 # backlog_last_groomed is dolt-synced across machines (spec §6): ordinary
 # NTP drift on a fast clock can leave a freshly-written marker slightly in
@@ -49,8 +49,10 @@ def _require_groom_state_bead(config: TrackLayerConfig) -> str:
     return config.groom_state_bead
 
 
-def _latest_marker(backend: Backend, groom_state_bead: str) -> tuple[str, datetime] | None:
-    """The `backlog_last_groomed: <ts>` marker with the LATEST parsed
+def _latest_marker(
+    backend: Backend, groom_state_bead: str, now: datetime
+) -> tuple[str, datetime] | None:
+    """The `backlog_last_groomed: <ts>` marker with the LATEST TRUSTWORTHY
     timestamp, or None when no matching line exists yet (bootstrap: never
     groomed). Selected by parsed value, not append/physical-last position:
     concurrent `--done` calls can append out of chronological order (one
@@ -59,30 +61,40 @@ def _latest_marker(backend: Backend, groom_state_bead: str) -> tuple[str, dateti
     order in that case would regress the persisted reset time and could fire
     the nag prematurely (Codex finding, round 4).
 
-    Unparsable lines are SKIPPED, not fatal, as long as at least one valid
-    marker exists elsewhere in history: notes are append-only, so a corrupted
-    line can never be deleted, and hard-failing on the first bad candidate
-    would brick `--status` forever even after a hundred valid `--done`
-    appends. Fail-loud (round 1) governs the case where no trustworthy
-    answer exists at all -- it doesn't demand refusing a trustworthy answer
-    because a corpse is also in the room (round 4 refinement)."""
+    A candidate is untrustworthy when it fails to parse OR sits further in
+    the future than `_FUTURE_SKEW_TOLERANCE` explains (round 3's skew check,
+    folded in HERE rather than applied only to the selected marker after the
+    fact -- a garbage far-future timestamp would otherwise always sort as
+    "latest" and permanently mask a real, valid `--done` reset underneath it,
+    defeating the reset `--done` is meant to guarantee (Codex finding, round
+    5)). Untrustworthy candidates are SKIPPED, not fatal, as long as at least
+    one trustworthy marker exists elsewhere in history: notes are
+    append-only, so a corrupted line can never be deleted, and hard-failing
+    on the first bad candidate would brick `--status` forever even after a
+    hundred valid `--done` appends. Fail-loud (round 1) governs the case
+    where no trustworthy answer exists at all -- it doesn't demand refusing
+    a trustworthy answer because a corpse is also in the room (round 4
+    refinement)."""
     matches = _NOTE_LINE_PATTERN.findall(backend.get(groom_state_bead).notes)
     if not matches:
         return None
-    parsed_markers: list[tuple[str, datetime]] = []
-    invalid: list[tuple[str, str]] = []
+    trustworthy: list[tuple[str, datetime]] = []
+    problems: list[tuple[str, str]] = []
     for raw in matches:
         try:
-            parsed_markers.append(
-                (raw, datetime.strptime(raw, _TIMESTAMP_FORMAT).replace(tzinfo=UTC))
-            )
+            parsed = datetime.strptime(raw, _TIMESTAMP_FORMAT).replace(tzinfo=UTC)
         except ValueError as parse_error:
-            invalid.append((raw, str(parse_error)))
-    if parsed_markers:
-        return max(parsed_markers, key=lambda marker: marker[1])
-    # Every candidate failed to parse: unlike a single corrupted line among
+            problems.append((raw, str(parse_error)))
+            continue
+        if now - parsed < -_FUTURE_SKEW_TOLERANCE:
+            problems.append((raw, f"timestamp is {parsed - now} in the future"))
+            continue
+        trustworthy.append((raw, parsed))
+    if trustworthy:
+        return max(trustworthy, key=lambda marker: marker[1])
+    # Every candidate is untrustworthy: unlike a single corrupted line among
     # valid ones, there is no trustworthy answer anywhere in history.
-    raw, problem = invalid[0]
+    raw, problem = problems[0]
     raise _invalid_marker(groom_state_bead, raw, problem)
 
 
@@ -108,7 +120,8 @@ def _done(backend: Backend, args: Namespace, groom_state_bead: str) -> JsonValue
 def _status(
     backend: Backend, args: Namespace, config: TrackLayerConfig, groom_state_bead: str
 ) -> JsonValue:
-    latest = _latest_marker(backend, groom_state_bead)
+    now = args.now()
+    latest = _latest_marker(backend, groom_state_bead, now)
     nag_days = config.backlog_groom_nag_days
     if latest is None:
         # Never groomed = maximally overdue -- a deliberate design decision:
@@ -121,17 +134,10 @@ def _status(
             "breached": True,
         }
     last_groomed, parsed = latest
-    now = args.now()
-    elapsed = now - parsed
-    if elapsed < -_FUTURE_SKEW_TOLERANCE:
-        # Further in the future than ordinary clock drift explains -- not a
-        # slightly-fast machine, invalid state (round 3 Codex finding).
-        raise _invalid_marker(
-            groom_state_bead, last_groomed, f"timestamp is {-elapsed} in the future"
-        )
-    # A small future skew (<= tolerance) is ordinary NTP drift on a fast
-    # clock across dolt-synced machines: clamp to 0 rather than raising, so
-    # an honest cross-machine groom never falsely reports breached=True.
+    # A small future skew (<= tolerance, already accepted by _latest_marker)
+    # is ordinary NTP drift on a fast clock across dolt-synced machines:
+    # clamp to 0 rather than reporting a negative days_since, so an honest
+    # cross-machine groom never falsely reports breached=True.
     days_since = max((now - parsed).days, 0)
     breached = nag_days is not None and days_since > nag_days  # strict > (criterion 14)
     return {

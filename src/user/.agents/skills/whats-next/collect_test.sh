@@ -1083,4 +1083,24 @@ assert 'backlog_grooming_nag' not in out, f'nag must be absent when breached is 
 " || fail "T16g: backlog_grooming_nag must be absent when breached is a truthy non-boolean value"
 pass "T16g: backlog_grooming_nag absent when breached is a truthy string instead of a JSON boolean"
 
+# (h) a PATH-shadowed or unrelated "work" binary emits an ok:true envelope
+# shape with a missing/incompatible protocol major -> self-silence, since
+# only a matching major actually attests this came from a compatible workcli.
+cat > "$TMP_T16/work" <<'SHIM'
+#!/usr/bin/env bash
+echo '{"ok":true,"data":{"backlog_last_groomed":"2026-07-01T00:00:00Z","days_since":30,"nag_days":7,"breached":true},"error":null}'
+exit 0
+SHIM
+chmod +x "$TMP_T16/work"
+OUT_T16H="$TMP_T16/h.json"
+PATH="$TMP_T16:$PATH" python3 "$COLLECT_PY" --mode human >"$OUT_T16H" 2>"$TMP_T16/err.h"
+ec=$?
+[ "$ec" -eq 0 ] || fail "T16h: collect.py exited $ec with a missing protocol field (stderr: $(cat "$TMP_T16/err.h"))"
+python3 -c "
+import json
+out = json.load(open('$OUT_T16H'))
+assert 'backlog_grooming_nag' not in out, f'nag must be absent when protocol is missing; got: {out}'
+" || fail "T16h: backlog_grooming_nag must be absent when the envelope has no protocol field"
+pass "T16h: backlog_grooming_nag absent when work groom --status omits the protocol field"
+
 echo "All collect.py red-phase tests reached — script exits 0 only when every assertion above passes."

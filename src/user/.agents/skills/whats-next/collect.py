@@ -40,16 +40,26 @@ def bd_json(*args):
         return []
 
 
+# The workcli envelope's protocol MAJOR version this integration understands
+# (README.md's "Consumer handshake": pin MAJOR, refuse a mismatch rather than
+# risk mis-parsing). A PATH-shadowed or unrelated "work" binary can still
+# exit 0 with a superficially valid {"ok": true, "data": {...}} shape, so the
+# protocol field is the one thing that actually attests this came from a
+# compatible workcli (Codex finding, round 5).
+_COMPATIBLE_PROTOCOL_MAJOR = "1"
+
+
 def work_groom_status():
     """Best-effort `work groom --status` call for the backlog-grooming nag line.
 
     Self-silences on ANY failure -- `work` not on PATH, a non-zero exit, an
-    unparseable envelope, or an `ok: false` envelope (e.g. E_NOT_CONFIGURED --
-    the real case in THIS repo today, since its own groom-state-bead is still
-    blank pending the backfill migration) -- returns None rather than raising
-    or printing, mirroring bd_json's discipline above. Distinct from that
-    ceremony's own state: this is workcli's Backlog Grooming nag, never to be
-    confused with CONTEXT.md's separate Holding-Place Grooming Nag.
+    unparseable envelope, an incompatible/missing protocol version, or an
+    `ok: false` envelope (e.g. E_NOT_CONFIGURED -- the real case in THIS repo
+    today, since its own groom-state-bead is still blank pending the backfill
+    migration) -- returns None rather than raising or printing, mirroring
+    bd_json's discipline above. Distinct from that ceremony's own state: this
+    is workcli's Backlog Grooming nag, never to be confused with CONTEXT.md's
+    separate Holding-Place Grooming Nag.
     """
     try:
         result = subprocess.run(
@@ -75,6 +85,12 @@ def work_groom_status():
         # AttributeError (Codex finding). `is not True` (not a truthiness
         # check) so an envelope carrying "ok": "true" (a string) or any
         # other truthy-but-wrong value doesn't slip past self-silencing.
+        return None
+    protocol = envelope.get("protocol")
+    if not isinstance(protocol, str) or protocol.split(".")[0] != _COMPATIBLE_PROTOCOL_MAJOR:
+        # A PATH-shadowed or incompatible "work" can still emit an
+        # {"ok": true, ...} shape; only a matching protocol MAJOR actually
+        # attests this came from a compatible workcli (Codex finding).
         return None
     data = envelope.get("data")
     return data if isinstance(data, dict) else None
