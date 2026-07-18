@@ -32,6 +32,12 @@ class TrackLayerConfig:
         int | None
     )  # None: [operating-model] absent/key omitted -> lint skips WIP check
     wip_exempt_milestones: tuple[str, ...]
+    backlog_groom_nag_days: (
+        int | None
+    )  # None: [operating-model] absent/key omitted -> nag check never fires
+    groom_state_bead: (
+        str | None
+    )  # None: omitted OR "" (not yet minted by the §7 backfill) -> groom gates E_NOT_CONFIGURED
     extraction_max_track_backlog: (
         int | None
     )  # None: [extraction.pressure] absent/key omitted -> backlog pressure never fires
@@ -154,6 +160,23 @@ def _validate(raw: dict[str, object], path: Path) -> TrackLayerConfig:
         "[operating-model].wip-exempt-milestones",
         path,
     )
+    backlog_groom_nag_days = operating_table.get("backlog-groom-nag-days")
+    if backlog_groom_nag_days is not None and (
+        isinstance(backlog_groom_nag_days, bool) or not isinstance(backlog_groom_nag_days, int)
+    ):
+        raise _not_configured(
+            f"[operating-model].backlog-groom-nag-days must be an integer in {path}", "invalid"
+        )
+    groom_state_bead_raw = operating_table.get("groom-state-bead")
+    if groom_state_bead_raw is not None and not isinstance(groom_state_bead_raw, str):
+        raise _not_configured(
+            f"[operating-model].groom-state-bead must be a string in {path}", "invalid"
+        )
+    # Empty string ("" -- this repo's own project-config.toml ships it as a
+    # placeholder until the §7 backfill migration mints the bead) means
+    # "not yet configured", same as an omitted key -- not an error.
+    groom_state_bead = groom_state_bead_raw if groom_state_bead_raw else None
+
     extraction = raw.get("extraction")
     if extraction is not None and not isinstance(extraction, dict):
         raise _not_configured(f"[extraction] must be a table in {path}", "invalid")
@@ -214,6 +237,8 @@ def _validate(raw: dict[str, object], path: Path) -> TrackLayerConfig:
         enforcement=str(enforcement),
         milestone_wip_cap=cap,
         wip_exempt_milestones=exempt,
+        backlog_groom_nag_days=backlog_groom_nag_days,
+        groom_state_bead=groom_state_bead,
         extraction_max_track_backlog=max_track_backlog,
         extraction_external_consumer_tracks=external_consumer_tracks,
         extraction_independent_release_tracks=independent_release_tracks,
