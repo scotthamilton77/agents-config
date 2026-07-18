@@ -37,29 +37,35 @@ TIMEOUT_SECONDS=1800   # 30 minutes
 # GraphQL-only connection and is rejected here — verify any field you add
 # against a real `gh` before shipping, not against a stub.
 fetch_pr() {
-  gh pr view "$PR" --repo "$REPO" --json reviews,comments 2>/dev/null
+  gh pr view "$PR" --repo "$REPO" --json reviews,comments,reactionGroups 2>/dev/null
 }
 
 read_counts() {
-  # stdin: PR JSON. stdout: "<reviews> <comments>"
+  # stdin: PR JSON. stdout: "<reviews> <comments> <reactions>"
   # Each array element is fully parenthesized: in jq `|` binds across `,`, so
   # bare `A | length, B | length` chains the second expression onto the first.
+  # Reactions are counted because a reviewer can approve with nothing but a
+  # thumbs-up on the PR body: no review object, no comment, and a watcher
+  # blind to reactions sleeps through it to timeout. `reactionGroups` is one
+  # entry per emoji, so sum the per-group user totals rather than taking
+  # `length` — a second thumbs-up on an existing group must still register.
   jq -r '
     [ ((.reviews // []) | length),
-      ((.comments // []) | length)
+      ((.comments // []) | length),
+      ([ (.reactionGroups // [])[] | (.users.totalCount // 0) ] | add // 0)
     ] | @tsv' 2>/dev/null | tr '\t' ' '
 }
 
-read -r BASE_REVIEWS BASE_COMMENTS <<<"$(fetch_pr | read_counts)"
+read -r BASE_REVIEWS BASE_COMMENTS BASE_REACTIONS <<<"$(fetch_pr | read_counts)"
 
 # An unreadable baseline would make every later comparison meaningless, so
 # fail loud rather than arming a watcher that can only produce noise.
-if [ -z "$BASE_REVIEWS" ] || [ -z "$BASE_COMMENTS" ]; then
+if [ -z "$BASE_REVIEWS" ] || [ -z "$BASE_COMMENTS" ] || [ -z "$BASE_REACTIONS" ]; then
   echo "WATCH-ERROR pr=$PR could not sample baselines (gh unavailable or PR unreadable)"
   exit 2
 fi
 
-echo "WATCH-ARMED pr=$PR reviews=$BASE_REVIEWS comments=$BASE_COMMENTS"
+echo "WATCH-ARMED pr=$PR reviews=$BASE_REVIEWS comments=$BASE_COMMENTS reactions=$BASE_REACTIONS"
 
 # --- Poll loop --------------------------------------------------------------
 elapsed=0
@@ -67,23 +73,24 @@ while [ "$elapsed" -lt "$TIMEOUT_SECONDS" ]; do
   sleep "$INTERVAL_SECONDS"
   elapsed=$((elapsed + INTERVAL_SECONDS))
 
-  read -r reviews comments <<<"$(fetch_pr | read_counts)"
+  read -r reviews comments reactions <<<"$(fetch_pr | read_counts)"
 
   # An empty read is a flake, not a signal. Skip the round; do not treat a
   # missing value as zero — that would read as a count DECREASE and mask a
   # real increase on the following poll.
-  if [ -z "$reviews" ] || [ -z "$comments" ]; then
+  if [ -z "$reviews" ] || [ -z "$comments" ] || [ -z "$reactions" ]; then
     echo "WATCH-FLAKE pr=$PR t=${elapsed}s (empty read, skipping round)"
     continue
   fi
 
-  if [ "$reviews" -gt "$BASE_REVIEWS" ] || [ "$comments" -gt "$BASE_COMMENTS" ]; then
-    echo "WATCH-RING pr=$PR t=${elapsed}s reviews=$reviews/$BASE_REVIEWS comments=$comments/$BASE_COMMENTS"
+  if [ "$reviews" -gt "$BASE_REVIEWS" ] || [ "$comments" -gt "$BASE_COMMENTS" ] \
+     || [ "$reactions" -gt "$BASE_REACTIONS" ]; then
+    echo "WATCH-RING pr=$PR t=${elapsed}s reviews=$reviews/$BASE_REVIEWS comments=$comments/$BASE_COMMENTS reactions=$reactions/$BASE_REACTIONS"
     echo "DOORBELL ONLY — no verdict implied. Re-engage the owning lane; the lane reads the verdict via the PR-review skill."
     exit 0
   fi
 
-  echo "WATCH-QUIET pr=$PR t=${elapsed}s reviews=$reviews comments=$comments"
+  echo "WATCH-QUIET pr=$PR t=${elapsed}s reviews=$reviews comments=$comments reactions=$reactions"
 done
 
 # Timeout means NO ACTIVITY, not "no verdict" — a reviewer can signal in ways a
