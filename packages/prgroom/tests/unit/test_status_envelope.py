@@ -75,6 +75,7 @@ def test_envelope_top_level_keys() -> None:
         "reviewers",
         "ci_state",
         "items_summary",
+        "items",
         "last_activity_at",
         "quiesced_at",
         "merge_gates",
@@ -215,3 +216,128 @@ def test_human_review_block_is_embedded() -> None:
         "satisfied_by": None,
         "candidates_seen": [],
     }
+
+
+def test_items_projection_carries_identity_fields_per_kind() -> None:
+    # Disposition-contract §3.1/§9.1 behavior 1: one item per kind, mixed
+    # disposition states — each row carries kind/gh_id/thread_id/author/
+    # replied/resolved exactly as persisted.
+    items = [
+        ReviewItem(
+            kind=ItemKind.REVIEW_THREAD,
+            identity=Identity(gh_id="3141592653", thread_id="PRRT_kwDOabc"),
+            author="copilot-pull-request-reviewer[bot]",
+            body_excerpt="inline nit",
+            seen_at=_NOW,
+            disposition=Disposition(
+                kind=DispositionKind.FIXED, decided_at=_NOW, decided_by="claude sonnet"
+            ),
+            replied=True,
+            resolved=True,
+        ),
+        ReviewItem(
+            kind=ItemKind.REVIEW_SUMMARY,
+            identity=Identity(gh_id="4728390343"),
+            author="chatgpt-codex-connector[bot]",
+            body_excerpt="overall LGTM",
+            seen_at=_NOW,
+            disposition=Disposition(
+                kind=DispositionKind.SKIPPED, decided_at=_NOW, decided_by="claude sonnet"
+            ),
+            replied=True,
+        ),
+        ReviewItem(
+            kind=ItemKind.ISSUE_COMMENT,
+            identity=Identity(gh_id="2718281828"),
+            author="reviewer-human",
+            body_excerpt="question",
+            seen_at=_NOW,
+        ),
+    ]
+    env = build_status(_state(items=items), _SATISFIED)
+    rows = env["items"]
+    assert [
+        (r["kind"], r["gh_id"], r["thread_id"], r["author"], r["replied"], r["resolved"])
+        for r in rows
+    ] == [
+        (
+            "review_thread",
+            "3141592653",
+            "PRRT_kwDOabc",
+            "copilot-pull-request-reviewer[bot]",
+            True,
+            True,
+        ),
+        ("review_summary", "4728390343", "", "chatgpt-codex-connector[bot]", True, False),
+        ("issue_comment", "2718281828", "", "reviewer-human", False, False),
+    ]
+
+
+def test_undispositioned_item_projects_disposition_null() -> None:
+    # §9.1 behavior 2: not yet processed == disposition: null, never a sentinel object.
+    bare = ReviewItem(
+        kind=ItemKind.ISSUE_COMMENT,
+        identity=Identity(gh_id="2718281828"),
+        author="reviewer-human",
+        body_excerpt="question",
+        seen_at=_NOW,
+    )
+    env = build_status(_state(items=[bare]), _SATISFIED)
+    assert env["items"][0]["disposition"] is None
+
+
+def test_dispositioned_item_projects_only_the_contract_triple() -> None:
+    # §9.1 behavior 3: disposition carries exactly {kind, decided_at, decided_by};
+    # rationale/commits/body_excerpt (and the other private Disposition fields)
+    # never leave the store.
+    item = ReviewItem(
+        kind=ItemKind.REVIEW_THREAD,
+        identity=Identity(gh_id="3141592653", thread_id="PRRT_kwDOabc"),
+        author="alice",
+        body_excerpt="private excerpt",
+        seen_at=_NOW,
+        disposition=Disposition(
+            kind=DispositionKind.SKIPPED,
+            decided_at=_NOW,
+            decided_by="claude sonnet",
+            rationale="private rationale",
+            commits=["abc123"],
+        ),
+    )
+    env = build_status(_state(items=[item]), _SATISFIED)
+    row = env["items"][0]
+    assert row["disposition"] == {
+        "kind": "skipped",
+        "decided_at": _NOW.isoformat(),
+        "decided_by": "claude sonnet",
+    }
+    flat = str(row)
+    assert "private rationale" not in flat
+    assert "private excerpt" not in flat
+    assert "abc123" not in flat
+
+
+def test_posted_reply_ids_project_from_the_reply_ledger() -> None:
+    # §9.1 behavior 4: recorded reply ids surface as strings (the reply-ledger
+    # own_reply_id, string-coerced per the contract); an item with no recorded
+    # reply — including any pre-ledger persisted state, where own_reply_id
+    # loads as 0 — emits [] (fail-closed: fewer exclusions).
+    with_reply = ReviewItem(
+        kind=ItemKind.REVIEW_SUMMARY,
+        identity=Identity(gh_id="4728390343"),
+        author="copilot",
+        body_excerpt="x",
+        seen_at=_NOW,
+        replied=True,
+        own_reply_id=4875007359,
+    )
+    without = ReviewItem(
+        kind=ItemKind.ISSUE_COMMENT,
+        identity=Identity(gh_id="2718281828"),
+        author="alice",
+        body_excerpt="x",
+        seen_at=_NOW,
+    )
+    env = build_status(_state(items=[with_reply, without]), _SATISFIED)
+    assert env["items"][0]["posted_reply_ids"] == ["4875007359"]
+    assert env["items"][1]["posted_reply_ids"] == []
