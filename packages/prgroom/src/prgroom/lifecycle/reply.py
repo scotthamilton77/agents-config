@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from prgroom.agent.prompt_loader import PromptTemplate
 from prgroom.gh.client import GhNotFoundError
 from prgroom.lifecycle.gh_errors import vanished_pr_terminal
+from prgroom.lifecycle.idempotency import memory_marker, reply_marker, scan_markers, with_marker
 from prgroom.lifecycle.snapshot import (
     DECISIONS_END,
     DECISIONS_START,
@@ -18,6 +19,8 @@ from prgroom.prsession.enums import DispositionKind, ItemKind
 from prgroom.prsession.state import RoutedMemory
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from prgroom.gh.client import GhClient
     from prgroom.prsession.pr_ref import PRRef
     from prgroom.prsession.state import Disposition, PRGroomingState, ReviewItem
@@ -157,11 +160,68 @@ def merge_decisions_block(body: str, entries: list[RoutedMemory]) -> str:
     return _splice_block(body, block)
 
 
-def _route_memory(state: PRGroomingState, *, gh: GhClient, ref: PRRef) -> None:
+def _needs_post(item: ReviewItem) -> bool:
+    """True iff this invocation may POST a reply for ``item`` (the §5 surface gate).
+
+    Mirrors the item-loop gates minus the render: an unreplied item with a
+    replyable disposition off the bookkeeping-only no-post path. An item whose
+    body will render empty still counts — one tolerated over-fetch beats a
+    pre-render pass (assumption ledger).
+    """
+    return (
+        not item.replied
+        and item.disposition is not None
+        and item.disposition.kind in _REPLYABLE
+        and not (
+            item.kind is not ItemKind.REVIEW_THREAD and item.disposition.kind in _BOOKKEEPING_ONLY
+        )
+    )
+
+
+def _reply_surfaces(state: PRGroomingState) -> tuple[bool, bool]:
+    """``(need_issue_comments, need_review_comments)`` for this invocation.
+
+    ``REVIEW_THREAD`` items and target-hinted ``pending_memory`` entries post to
+    the review-comment surface (thread replies land in ``pulls/{n}/comments``);
+    every other replyable item posts to the issue-comment surface. Thread-less
+    memory routes via the PR-body PATCH, which needs no scan (content-addressed).
+    """
+    need_issue = any(_needs_post(i) and i.kind is not ItemKind.REVIEW_THREAD for i in state.items)
+    need_review = any(_needs_post(i) and i.kind is ItemKind.REVIEW_THREAD for i in state.items)
+    need_review = need_review or any(rm.target_hint is not None for rm in state.pending_memory)
+    return need_issue, need_review
+
+
+def _existing_markers(gh: GhClient, ref: PRRef, *, issue: bool, review: bool) -> dict[str, int]:
+    """Pre-flight scan (§5): map already-posted effect markers to their comment ids.
+
+    At most two paginated reads; zero gh calls when neither surface is needed —
+    the no-op-when-all-replied contract survives at zero cost.
+    """
+    listings: list[list[dict[str, object]]] = []
+    base = f"repos/{ref.owner}/{ref.repo}"
+    if issue:
+        listings.append(gh.rest("GET", f"{base}/issues/{ref.number}/comments", paginate=True))
+    if review:
+        listings.append(gh.rest("GET", f"{base}/pulls/{ref.number}/comments", paginate=True))
+    return scan_markers(*listings) if listings else {}
+
+
+def _route_memory(
+    state: PRGroomingState, *, gh: GhClient, ref: PRRef, markers: Mapping[str, int]
+) -> None:
     thread_less: list[RoutedMemory] = []
+    posted: set[str] = set()  # the pre-flight snapshot can't see this pass's own POSTs
     for rm in state.pending_memory:
         if rm.target_hint is not None:
-            gh.graphql(_ADD_THREAD_REPLY, {"threadId": rm.target_hint, "body": rm.content})
+            marker = memory_marker(rm)
+            if marker in markers or marker in posted:
+                continue  # already posted (prior partial pass, or earlier this pass)
+            gh.graphql(
+                _ADD_THREAD_REPLY,
+                {"threadId": rm.target_hint, "body": with_marker(rm.content, marker)},
+            )
+            posted.add(marker)
         else:
             thread_less.append(rm)
     if thread_less:
@@ -194,6 +254,8 @@ def reply_pr(
     """
     state = copy.deepcopy(state)
     try:
+        need_issue, need_review = _reply_surfaces(state)
+        markers = _existing_markers(gh, ref, issue=need_issue, review=need_review)
         for item in state.items:
             if item.replied or item.disposition is None:
                 continue
@@ -208,6 +270,16 @@ def reply_pr(
                 # item is never revisited.
                 item.replied = True
                 continue
+            marker = reply_marker(item)
+            adopted = markers.get(marker)
+            if adopted is not None:
+                # A prior partial pass already posted this reply; the persist that
+                # would have recorded it was discarded. GitHub is the source of
+                # truth — adopt the effect. This also recovers the real comment id
+                # when the original POST response was malformed (id degraded to 0).
+                item.own_reply_id = adopted
+                item.replied = True
+                continue
             body = _render_body(item.disposition)
             if not body.strip():
                 # A rationale-rendered disposition (SKIPPED/DEFERRED/WONT_FIX) with an empty
@@ -215,9 +287,9 @@ def reply_pr(
                 # --rationale). Posting "" fails the GitHub API; skip it and leave `replied`
                 # False so a later rationale can still reply.
                 continue
-            item.own_reply_id = _post_reply(gh, ref, item, body)
+            item.own_reply_id = _post_reply(gh, ref, item, with_marker(body, marker))
             item.replied = True
-        _route_memory(state, gh=gh, ref=ref)
+        _route_memory(state, gh=gh, ref=ref, markers=markers)
     except GhNotFoundError as exc:
         raise vanished_pr_terminal(ref) from exc
     return state

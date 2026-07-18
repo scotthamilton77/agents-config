@@ -368,6 +368,42 @@ def test_own_posted_reply_is_not_ingested_as_new_item() -> None:
     assert "12" in ingested_ids  # a different comment still ingested (no over-filter)
 
 
+def test_ingest_skips_marker_bearing_comment_without_ledger_entry() -> None:
+    # Verb-atomicity §6 / behavior 9 — the PR #211 recursive-echo regression guard
+    # (the ledger-lost window): a crash after a POST but before persist loses
+    # own_reply_id, so the ledger set cannot exclude the posted comment. The
+    # idempotency marker in its body is the state-independent backstop: never
+    # ingest prgroom's own posted effect, ledger or no ledger.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    marked = {
+        "id": 500,
+        "user": {"login": "some-bot"},
+        "body": "Fixed in abc1234.\n\n<!-- prgroom:reply:issue_comment:12 -->",
+        "created_at": "2026-06-09T11:00:00Z",
+    }
+    gh = _gh(head_oid="same", issue_comments=[marked, _issue_comment(12)])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    ingested_ids = {i.identity.gh_id for i in state.items}
+    assert "500" not in ingested_ids  # marker-bearing == our own effect, dropped
+    assert "12" in ingested_ids
+
+
+def test_ingest_keeps_marker_free_comments_from_any_author() -> None:
+    # Verb-atomicity §6 / behavior 10: strict full-grammar matching — a comment
+    # merely MENTIONING "prgroom:reply" in prose (any author) still ingests.
+    # Exclusion stays content-keyed, never author-keyed.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    prose = {
+        "id": 600,
+        "user": {"login": "copilot"},
+        "body": "the prgroom:reply:issue_comment:12 marker convention looks fine to me",
+        "created_at": "2026-06-09T11:00:00Z",
+    }
+    gh = _gh(head_oid="same", issue_comments=[prose])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert {i.identity.gh_id for i in state.items} == {"600"}
+
+
 def test_top_level_review_comment_has_no_parent() -> None:
     # A top-level inline comment carries no in_reply_to_id → reply_to_comment_id 0.
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")

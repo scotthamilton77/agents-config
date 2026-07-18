@@ -14,6 +14,9 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
+import pytest
+
+from prgroom.errors import PrgroomError
 from prgroom.gh import GhCli
 from prgroom.lifecycle.resolve import resolve_pr
 from prgroom.proc import CommandResult
@@ -104,6 +107,36 @@ def test_resolve_skips_an_already_resolved_thread() -> None:
     )
     assert runner.calls == []
     assert out.items[0].resolved is True
+
+
+def test_resolve_rerun_reissues_idempotent_mutation_after_midloop_failure() -> None:
+    # Verb-atomicity §3 audit / behavior 11: resolveReviewThread is idempotent
+    # server-side, so resolve needs no markers — a mid-loop failure discards the
+    # deepcopy, and the rerun harmlessly re-issues BOTH mutations. This pins the
+    # reasoning resolve.py documents, which had zero retry-path coverage.
+
+    def fresh_state() -> PRGroomingState:
+        return _state(
+            _item(gh_id="1", thread_id="PRRT_a", disposition=_disp(DispositionKind.FIXED)),
+            _item(gh_id="2", thread_id="PRRT_b", disposition=_disp(DispositionKind.FIXED)),
+        )
+
+    failing = CommandResult(
+        returncode=1,
+        stdout=json.dumps({"message": "boom", "status": "500"}),
+        stderr="gh: boom (HTTP 500)",
+    )
+    state = fresh_state()
+    run1 = RecordedRunner([_resolved_ok(), failing])
+    with pytest.raises(PrgroomError):
+        resolve_pr(state, gh=GhCli(run1))
+    assert len(run1.calls) == 2  # first resolved, second raised
+    assert [i.resolved for i in state.items] == [False, False]  # deepcopy discarded
+
+    run2 = RecordedRunner([_resolved_ok(), _resolved_ok()])
+    out = resolve_pr(state, gh=GhCli(run2))
+    assert len(run2.calls) == 2  # both re-issued — server-side idempotency absorbs it
+    assert [i.resolved for i in out.items] == [True, True]
 
 
 def test_resolve_ignores_non_resolvable_dispositions() -> None:

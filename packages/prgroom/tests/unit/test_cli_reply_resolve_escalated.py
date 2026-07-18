@@ -26,7 +26,7 @@ from prgroom.prsession.state import (
     QuiescenceState,
     ReviewItem,
 )
-from tests.fakes import RecordedRunner
+from tests.fakes import RecordedRunner, RecordingGh
 
 runner = CliRunner()
 
@@ -39,22 +39,6 @@ class _FakeGit:
 
     def config_user(self) -> str:
         return "tester"
-
-
-class _RecordingGh:
-    """Minimal ``GhClient`` stand-in recording the reply POST; reply_pr ignores returns."""
-
-    def __init__(self) -> None:
-        self.rest_calls: list[tuple[str, str, dict]] = []
-        self.graphql_calls: list[tuple[str, dict]] = []
-
-    def rest(self, method: str, path: str, *, fields: dict | None = None) -> dict:
-        self.rest_calls.append((method, path, dict(fields or {})))
-        return {}
-
-    def graphql(self, query: str, variables: dict) -> dict:
-        self.graphql_calls.append((query, dict(variables)))
-        return {}
 
 
 def _fixed_item() -> ReviewItem:
@@ -120,7 +104,7 @@ def test_reply_posts_and_persists_replied(
 ) -> None:
     # Happy path: the lock wrapper reads state, runs the real reply_pr (which POSTs),
     # and writes the replied flag back. Proves the CLI wiring, not just the no-state gate.
-    gh = _RecordingGh()
+    gh = RecordingGh()
     monkeypatch.setattr(cli, "_build_gh", lambda: gh)
     state = PRGroomingState(
         pr=_REF,
@@ -135,7 +119,13 @@ def test_reply_posts_and_persists_replied(
     result = runner.invoke(cli.app, ["reply", "octo/demo#7"])
     assert result.exit_code == 0, result.output
     assert gh.rest_calls == [
-        ("POST", "repos/octo/demo/pulls/7/comments/555/replies", {"body": "Fixed in abc1234."})
+        # The pre-flight idempotency scan reads the review-comments surface first.
+        ("GET", "repos/octo/demo/pulls/7/comments", {}),
+        (
+            "POST",
+            "repos/octo/demo/pulls/7/comments/555/replies",
+            {"body": "Fixed in abc1234.\n\n<!-- prgroom:reply:review_thread:555 -->"},
+        ),
     ]
     assert patched.read(_REF).items[0].replied is True
 

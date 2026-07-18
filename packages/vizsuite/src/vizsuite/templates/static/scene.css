@@ -27,6 +27,13 @@
   --viz-heat-cold: #0ca30c;
   --viz-heat-mid: #fab219;
   --viz-heat-hot: #d03b3b;
+  /* Intermediate stops (cosmetic parity fidelity): extend the same ramp with
+     two in-between anchors — a refinement of cold/mid/hot, never a competing
+     palette — so the constellation view's 5-stop piecewise LAB heat scale
+     (views/constellation.js) has a higher-resolution ramp than the treemap/
+     ledger's 3-stop scale without diverging from it at the shared anchors. */
+  --viz-heat-cold-mid: #83aa12;
+  --viz-heat-mid-hot: #e5762a;
   --viz-label-on-dark-fill: #ffffff;
   --viz-label-on-light-fill: #0b0b0b;
 
@@ -69,6 +76,8 @@
     --viz-heat-cold: #0ca30c;
     --viz-heat-mid: #fab219;
     --viz-heat-hot: #e66767;
+    --viz-heat-cold-mid: #83aa12;
+    --viz-heat-mid-hot: #f08c40;
 
     --viz-hue-blue: #3987e5;
     --viz-hue-aqua: #199e70;
@@ -90,6 +99,8 @@
   --viz-heat-cold: #0ca30c;
   --viz-heat-mid: #fab219;
   --viz-heat-hot: #e66767;
+  --viz-heat-cold-mid: #83aa12;
+  --viz-heat-mid-hot: #f08c40;
 
   --viz-hue-blue: #3987e5;
   --viz-hue-aqua: #199e70;
@@ -578,7 +589,11 @@ body {
   word-break: break-all;
   margin-bottom: 0.25rem;
 }
-.viz-tooltip-churn {
+/* Also the dir hover tooltip's files/changed counts line
+   (views/constellation.js's buildDirTooltip) — same secondary-line
+   treatment as this file score card's churn line. */
+.viz-tooltip-churn,
+.viz-constellation-dir-counts {
   margin-top: 0.3rem;
   color: var(--viz-secondary);
   font-size: 11px;
@@ -776,15 +791,36 @@ body {
 
 /* ---- Dependency constellation (spec §6.1, evaluation-gated §11): PR files
    + context graph over scene.edges, a pre-settled force layout — no re-sim
-   on slider drag. The stage self-sizes from the node count, like the sonar
-   stage, so no max-width constraint applies to this JS-sized stage inside
-   the scrolling panel (see .viz-sonar-stage precedent). */
+   on slider drag or on zoom/pan/drag interaction. The layout stage
+   self-sizes from the node count (like the sonar stage), independent of the
+   viewport's own on-screen size — `.viz-constellation-viewport` is the fixed,
+   clipped window a d3.zoom transform pans/scales the stage within, so a
+   large graph never overflows into the surrounding page. */
 .viz-constellation-inner {
   margin: 0 0 1rem;
 }
-.viz-constellation-stage {
+.viz-constellation-viewport {
   position: relative;
-  margin: 0 auto;
+  overflow: hidden;
+  height: min(70vh, 640px);
+  border: 1px solid var(--viz-border);
+  border-radius: 6px;
+  cursor: grab;
+  /* Let d3.zoom own every wheel/pointer gesture in here — the browser's own
+     touch-scroll/pinch handling would otherwise fight it. */
+  touch-action: none;
+}
+.viz-constellation-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+.viz-constellation-reset {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 2;
 }
 .viz-constellation-edges {
   position: absolute;
@@ -794,16 +830,21 @@ body {
 }
 .viz-constellation-edge {
   stroke: var(--viz-border-strong);
-  stroke-width: 1.25;
+  opacity: 0.65;
 }
+.viz-constellation-edge--tether {
+  stroke-dasharray: 3, 3;
+  opacity: 0.75;
+}
+/* Node width/height/left/top are per-node (a dir's radius scales with its
+   load-bearing score; a satellite is always small) — set inline by
+   views/constellation.js, never by this fixed rule. */
 .viz-constellation-node {
   position: absolute;
   transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.7rem;
-  height: 1.7rem;
   border-radius: 50%;
   border: 1px solid var(--viz-border-strong);
   background: var(--viz-surface);
@@ -814,14 +855,23 @@ body {
 .viz-constellation-node[data-in-pr="true"] {
   border: 3px solid var(--viz-fg);
 }
+/* The label is a separate stage sibling positioned ABOVE its node mark
+   (left/top set inline by views/constellation.js), never a child clipped
+   inside the round .viz-constellation-node (which sets overflow: hidden and
+   leaves a satellite only a ~4px content box). translate(-50%, -100%)
+   centers it horizontally on the node and anchors its bottom edge at the
+   inline top. pointer-events: none so it never steals the node's hover/drag;
+   a fixed muted color since it sits over the stage background, not the fill. */
 .viz-constellation-node-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
   padding: 0 2px;
   font-size: 8px;
   line-height: 1.1;
   text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  pointer-events: none;
+  color: var(--viz-secondary);
 }
 /* Keyboard focus affordance (a11y), same treatment as the sonar ring mark:
    the base rule is already `position: absolute`, so z-index alone suffices
@@ -850,13 +900,6 @@ body {
   align-items: center;
   gap: 0.35rem;
 }
-.viz-constellation-legend-swatch {
-  display: inline-block;
-  width: 0.85rem;
-  height: 0.85rem;
-  border-radius: 50%;
-  border: 1px solid var(--viz-border-strong);
-}
 .viz-constellation-legend-ring {
   display: inline-block;
   width: 0.85rem;
@@ -865,11 +908,37 @@ body {
   border: 3px solid var(--viz-fg);
   background: transparent;
 }
-.viz-constellation-legend-line {
+/* Color swatch (spec: "Color = composite heat") — the same ramp anchors
+   heatScale itself resolves, so the legend never drifts from what is
+   actually rendered. */
+.viz-constellation-legend-color {
   display: inline-block;
-  width: 1rem;
-  height: 0;
-  border-top: 1.25px solid var(--viz-border-strong);
+  width: 1.25rem;
+  height: 0.6rem;
+  border-radius: 3px;
+  /* Same five stops as the JS ramp's own anchors (HEAT_RAMP_STOPS in
+     views/constellation.js) — the legend swatch must never drift from what
+     heatScale() actually renders. */
+  background: linear-gradient(
+    90deg,
+    var(--viz-heat-cold),
+    var(--viz-heat-cold-mid),
+    var(--viz-heat-mid),
+    var(--viz-heat-mid-hot),
+    var(--viz-heat-hot)
+  );
+}
+
+/* ---- Pruning affordance (spec: unconnected dir nodes hidden) — bottom-left
+   caption, present only when the connectivity prune actually dropped a
+   dir. ---- */
+.viz-constellation-hidden-caption {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 0.5rem;
+  z-index: 2;
+  font-size: 11px;
+  color: var(--viz-muted);
 }
 
 #viz-footer {

@@ -1,18 +1,21 @@
-"""Test fakes for the subprocess boundary (§7.6).
+"""Test fakes for the subprocess and gh-protocol boundaries (§7.6).
 
 The gh/git adapters reach the outside world through a single seam — the
 :class:`~prgroom.proc.CommandRunner` Protocol. These fakes structurally satisfy
 that Protocol so adapter tests inject recorded responses instead of mocking code
 we own. This is the spec's "mock only at the system boundary" discipline: the
 boundary is the subprocess call, and a runner is the smallest honest stand-in
-for it.
+for it. :class:`RecordingGh` is the protocol-seam sibling for lifecycle verbs
+that take a :class:`~prgroom.gh.client.GhClient` directly.
 """
 
 from __future__ import annotations
 
 import subprocess
 from collections.abc import Sequence
+from typing import Any
 
+from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.proc import CommandResult
 
 
@@ -46,6 +49,67 @@ class RecordedRunner:
             msg = f"RecordedRunner exhausted: unexpected call {list(argv)!r}"
             raise AssertionError(msg)
         return self._results.pop(0)
+
+
+class RecordingGh:
+    """A :class:`~prgroom.gh.client.GhClient`-protocol fake for reply/verb tests.
+
+    Records ``rest_calls`` / ``graphql_calls``. Constructor knobs:
+
+    - ``post_reply_id`` — the ``id`` every POST response carries (``None`` → ``{}``,
+      the malformed-response shape).
+    - ``pr_body`` — the ``GET pulls/{n}`` body (the Decisions-block read).
+    - ``listed`` — GET path → canned comment listing; unlisted list-paths (any
+      path ending ``/comments``) return ``[]``.
+    - ``fail_at`` — ``(surface, n)``: raise a transient gh error on the n-th call
+      of the named surface (``"post"`` | ``"graphql"``), modelling a mid-loop
+      partial failure.
+    """
+
+    def __init__(
+        self,
+        post_reply_id: int | None = None,
+        pr_body: str = "",
+        listed: dict[str, list[dict[str, Any]]] | None = None,
+        fail_at: tuple[str, int] | None = None,
+    ) -> None:
+        self.rest_calls: list[tuple[str, str, dict[str, Any]]] = []
+        self.graphql_calls: list[tuple[str, dict[str, Any]]] = []
+        self._post_reply_id = post_reply_id
+        self._pr_body = pr_body
+        self._listed = dict(listed or {})
+        self._fail_at = fail_at
+        self._surface_counts = {"post": 0, "graphql": 0}
+
+    def _maybe_fail(self, surface: str) -> None:
+        self._surface_counts[surface] += 1
+        if self._fail_at is not None and (surface, self._surface_counts[surface]) == self._fail_at:
+            raise PrgroomError(tier=Tier.RUNTIME_TRANSIENT, code=ErrorCode.RUNTIME_GH_TRANSIENT)
+
+    def rest(
+        self,
+        method: str,
+        path: str,
+        *,
+        fields: dict[str, Any] | None = None,
+        paginate: bool = False,  # noqa: ARG002  # part of the Protocol signature; recorded calls suffice
+    ) -> Any:
+        self.rest_calls.append((method, path, dict(fields or {})))
+        if method == "POST":
+            self._maybe_fail("post")
+            return {"id": self._post_reply_id} if self._post_reply_id is not None else {}
+        if method == "GET":
+            if path in self._listed:
+                return self._listed[path]
+            if path.endswith("/comments"):
+                return []
+            return {"body": self._pr_body}
+        return {}
+
+    def graphql(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        self.graphql_calls.append((query, dict(variables)))
+        self._maybe_fail("graphql")
+        return {}
 
 
 class TimeoutRunner:
