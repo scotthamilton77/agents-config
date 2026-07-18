@@ -4,6 +4,7 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$here/../.." && pwd)"
 out_dir="$here/output"
 mkdir -p "$out_dir"
 
@@ -13,7 +14,11 @@ graph_json="$out_dir/backlog-graph.json"
 landscape_html="$out_dir/backlog-landscape.html"
 
 echo "[1/4] bd export -> $export_jsonl"
-bd export -o "$export_jsonl"
+# bd resolves its DB from the current working directory upward, and doesn't
+# take a --repo-style flag -- run from this repo's root explicitly so a
+# caller invoking this script from elsewhere (or via PATH) doesn't silently
+# export whichever other Beads repo happens to be their cwd.
+(cd "$repo_root" && bd export -o "$export_jsonl")
 
 echo "[2/4] classify.py -> $classification_json"
 python3 "$here/classify.py" --export "$export_jsonl" --out "$classification_json"
