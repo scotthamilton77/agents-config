@@ -273,21 +273,33 @@ class BdBackend:
         applied: list[str] = []
         for index, one_label in enumerate(labels):
             argv = ["label", op, item_id, one_label]
-            result = run_with_retry(self._runner, argv, sleep=self._sleep)
+
+            def progress(
+                err: WorkError, *, one_label: str = one_label, index: int = index
+            ) -> WorkError:
+                if not applied:
+                    return err
+                return with_progress(
+                    err,
+                    StepProgress(
+                        operation="label_mutate",
+                        steps_total=len(labels),
+                        completed=tuple(applied),
+                        failed=one_label,
+                        remaining=tuple(labels[index + 1 :]),
+                    ),
+                )
+
+            # `run_with_retry` itself raises `WorkError` on retry exhaustion
+            # (E_TIMEOUT/E_LOCK_CONTENTION) rather than returning a result --
+            # that path needs the same partial-progress wrap as a mapped
+            # non-zero exit, or labels already applied before it go unreported.
+            try:
+                result = run_with_retry(self._runner, argv, sleep=self._sleep)
+            except WorkError as exc:
+                raise progress(exc) from exc
             if result.returncode != 0 and idempotent_marker not in result.stderr:
-                err = map_bd_failure(argv, result)
-                if applied:
-                    err = with_progress(
-                        err,
-                        StepProgress(
-                            operation="label_mutate",
-                            steps_total=len(labels),
-                            completed=tuple(applied),
-                            failed=one_label,
-                            remaining=tuple(labels[index + 1 :]),
-                        ),
-                    )
-                raise err
+                raise progress(map_bd_failure(argv, result))
             applied.append(one_label)
 
     def labels(self, item_id: str) -> list[str]:
@@ -320,11 +332,9 @@ class BdBackend:
         ):
             raise map_bd_failure(commit_argv, commit_result)
 
-        push_argv = ["dolt", "push"]
-        push_result = run_with_retry(self._runner, push_argv, sleep=self._sleep)
-        if push_result.returncode != 0:
-            err = with_progress(
-                map_bd_failure(push_argv, push_result),
+        def push_progress(err: WorkError) -> WorkError:
+            return with_progress(
+                err,
                 StepProgress(
                     operation="sync",
                     steps_total=2,
@@ -333,5 +343,16 @@ class BdBackend:
                     remaining=(),
                 ),
             )
+
+        push_argv = ["dolt", "push"]
+        # As above: `run_with_retry` raising WorkError on retry exhaustion
+        # needs the same partial-progress wrap -- the commit already
+        # succeeded by the time push is attempted.
+        try:
+            push_result = run_with_retry(self._runner, push_argv, sleep=self._sleep)
+        except WorkError as exc:
+            raise push_progress(exc) from exc
+        if push_result.returncode != 0:
+            err = push_progress(map_bd_failure(push_argv, push_result))
             raise err
         return SyncResult(synced=True, mode="push")

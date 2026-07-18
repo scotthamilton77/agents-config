@@ -842,6 +842,36 @@ def test_label_mutate_wraps_a_mid_sequence_failure_with_partial_progress():
         }
 
 
+def test_label_mutate_wraps_retry_exhaustion_with_partial_progress():
+    # Codex review finding on PR #319: run_with_retry itself raises WorkError
+    # on retry exhaustion (E_LOCK_CONTENTION/E_TIMEOUT) rather than returning
+    # a BdResult -- that path bypassed the `returncode != 0` branch entirely,
+    # so a label already applied before it went unreported.
+    locked = BdResult(returncode=1, stdout="", stderr="database is locked")
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(("label", "add"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("label", "add"), locked),
+            ScriptedStep(("label", "add"), locked),
+            ScriptedStep(("label", "add"), locked),
+        ]
+    )
+    backend = BdBackend(runner, sleep=lambda _seconds: None)
+
+    try:
+        backend.label_mutate("add", "x.1", ["a", "b", "c"])
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.LOCK_CONTENTION
+        assert error.detail["partial_progress"] == {
+            "operation": "label_mutate",
+            "steps_total": 3,
+            "completed": ["a"],
+            "failed": "b",
+            "remaining": ["c"],
+        }
+
+
 def test_label_mutate_failing_on_the_first_label_carries_no_partial_progress():
     # AC 9: "absence means atomic" applies even to the first sub-step of a
     # multi-step op when nothing preceded it.
@@ -1041,6 +1071,36 @@ def test_sync_push_failure_wraps_with_partial_progress_commit_completed():
         backend.sync(pull=False)
         raise AssertionError("expected WorkError")
     except WorkError as error:
+        assert error.detail["partial_progress"] == {
+            "operation": "sync",
+            "steps_total": 2,
+            "completed": ["commit"],
+            "failed": "push",
+            "remaining": [],
+        }
+
+
+def test_sync_wraps_push_retry_exhaustion_with_partial_progress():
+    # Codex review finding on PR #319: run_with_retry itself raises WorkError
+    # on retry exhaustion rather than returning a BdResult -- that path
+    # bypassed the `returncode != 0` branch, leaving out `completed:["commit"]`
+    # even though the commit had already succeeded.
+    locked = BdResult(returncode=1, stdout="", stderr="database is locked")
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(("dolt", "commit"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("dolt", "push"), locked),
+            ScriptedStep(("dolt", "push"), locked),
+            ScriptedStep(("dolt", "push"), locked),
+        ]
+    )
+    backend = BdBackend(runner, sleep=lambda _seconds: None)
+
+    try:
+        backend.sync(pull=False)
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.LOCK_CONTENTION
         assert error.detail["partial_progress"] == {
             "operation": "sync",
             "steps_total": 2,
