@@ -211,6 +211,28 @@ The output of `prgroom status <pr> --json`. Computed per-query from `PRGroomingS
   ],
   "ci_state": "success",
   "items_summary": {"fixed": 3, "already_addressed": 1, "wont_fix": 0, "escalated": 0, "failed": 0, "skipped": 0, "deferred": 0},
+  "items": [
+    {
+      "kind": "review_summary",
+      "gh_id": "3141592653",
+      "thread_id": "",
+      "author": "github-copilot[bot]",
+      "disposition": {"kind": "skipped", "decided_at": "2026-05-25T14:40:02Z", "decided_by": "claude sonnet"},
+      "replied": true,
+      "resolved": false,
+      "posted_reply_ids": ["4875007359"]
+    },
+    {
+      "kind": "issue_comment",
+      "gh_id": "2718281828",
+      "thread_id": "",
+      "author": "alice",
+      "disposition": null,
+      "replied": false,
+      "resolved": false,
+      "posted_reply_ids": []
+    }
+  ],
   "last_activity_at": "2026-05-25T14:32:11Z",
   "quiesced_at": "2026-05-25T14:42:11Z",
   "merge_gates": {
@@ -243,6 +265,7 @@ The output of `prgroom status <pr> --json`. Computed per-query from `PRGroomingS
 | `reviewers[]` | `state.reviewers` dict | Sorted by login for deterministic output |
 | `ci_state` | `state.quiescence.ci_state` | `success` / `pending` / `failure` / `absent` |
 | `items_summary` | aggregation over `state.items` | Counts per `disposition.kind` |
+| `items[]` | projection over `state.items` | Per-item disposition surface (disposition-contract spec §3). One row per persisted `ReviewItem`: `kind`, `gh_id` (string — consumers must `tostring`-coerce live GitHub numeric ids before matching), `thread_id`, `author` (informational — never an exclusion key), `disposition` (`null` = untriaged, else exactly `{kind, decided_at, decided_by}`), `replied`, `resolved`, `posted_reply_ids` (strings; `[]` until the reply-ledger records). `body_excerpt`, `rationale`, `commits`, `response_path`, `gate`, and cluster bookkeeping stay private to the store. |
 | `last_activity_at` | `state.last_activity_at` | RFC3339 UTC |
 | `quiesced_at` | `state.quiescence.quiesced_at` | Empty string if not quiesced |
 | `merge_gates.phase_is_quiesced` | `state.phase == PRPhase.QUIESCED` | Derived per-query |

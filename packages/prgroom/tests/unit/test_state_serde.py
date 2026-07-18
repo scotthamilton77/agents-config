@@ -331,6 +331,48 @@ def test_own_reply_id_defaults_to_zero_when_absent_on_read() -> None:
     assert ReviewItem.from_dict(d).own_reply_id == 0
 
 
+def test_posted_reply_ids_round_trip_when_set() -> None:
+    # The disposition-contract ledger field (spec §3.2/§5): the GitHub comment ids
+    # of replies prgroom itself posted, persisted as strings on the item.
+    item = ReviewItem(
+        kind=ItemKind.REVIEW_SUMMARY,
+        identity=Identity(gh_id="RS_1"),
+        author="copilot",
+        body_excerpt="overall LGTM",
+        seen_at=_T,
+        replied=True,
+        posted_reply_ids=["4875007359", "4875007360"],
+    )
+    d = item.to_dict()
+    assert d["posted_reply_ids"] == ["4875007359", "4875007360"]
+    assert ReviewItem.from_dict(d) == item
+
+
+def test_posted_reply_ids_omitted_when_empty() -> None:
+    # §2 omit-if-falsy: an item with no recorded replies carries no key on the wire.
+    item = ReviewItem(
+        kind=ItemKind.ISSUE_COMMENT,
+        identity=Identity(gh_id="IC_1"),
+        author="alice",
+        body_excerpt="nit",
+        seen_at=_T,
+    )
+    assert "posted_reply_ids" not in item.to_dict()
+
+
+def test_posted_reply_ids_defaults_to_empty_when_absent_on_read() -> None:
+    # A pre-ledger state file has no posted_reply_ids key; it must load as [],
+    # never raise — the spec's migration-safety clause (fewer exclusions = fail-closed).
+    d = {
+        "kind": "issue_comment",
+        "identity": {"gh_id": "IC_1"},
+        "author": "alice",
+        "body_excerpt": "nit",
+        "seen_at": _T.isoformat(),
+    }
+    assert ReviewItem.from_dict(d).posted_reply_ids == []
+
+
 def test_disposition_round_trips_through_item() -> None:
     item = ReviewItem(
         kind=ItemKind.REVIEW_THREAD,

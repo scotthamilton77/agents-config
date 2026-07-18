@@ -178,6 +178,7 @@ class ReviewItem:
     own_reply_id: int = 0
     resolved: bool = False
     duplicate_of_gh_id: str = ""
+    posted_reply_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> JsonObj:
         d: JsonObj = {
@@ -199,6 +200,8 @@ class ReviewItem:
             d["resolved"] = self.resolved
         if self.duplicate_of_gh_id:
             d["duplicate_of_gh_id"] = self.duplicate_of_gh_id
+        if self.posted_reply_ids:
+            d["posted_reply_ids"] = list(self.posted_reply_ids)
         return d
 
     @classmethod
@@ -218,6 +221,7 @@ class ReviewItem:
             own_reply_id=d.get("own_reply_id", 0),
             resolved=d.get("resolved", False),
             duplicate_of_gh_id=d.get("duplicate_of_gh_id", ""),
+            posted_reply_ids=list(d.get("posted_reply_ids", [])),
         )
 
 
