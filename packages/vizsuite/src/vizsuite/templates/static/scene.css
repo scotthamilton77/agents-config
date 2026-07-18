@@ -776,15 +776,36 @@ body {
 
 /* ---- Dependency constellation (spec §6.1, evaluation-gated §11): PR files
    + context graph over scene.edges, a pre-settled force layout — no re-sim
-   on slider drag. The stage self-sizes from the node count, like the sonar
-   stage, so no max-width constraint applies to this JS-sized stage inside
-   the scrolling panel (see .viz-sonar-stage precedent). */
+   on slider drag or on zoom/pan/drag interaction. The layout stage
+   self-sizes from the node count (like the sonar stage), independent of the
+   viewport's own on-screen size — `.viz-constellation-viewport` is the fixed,
+   clipped window a d3.zoom transform pans/scales the stage within, so a
+   large graph never overflows into the surrounding page. */
 .viz-constellation-inner {
   margin: 0 0 1rem;
 }
-.viz-constellation-stage {
+.viz-constellation-viewport {
   position: relative;
-  margin: 0 auto;
+  overflow: hidden;
+  height: min(70vh, 640px);
+  border: 1px solid var(--viz-border);
+  border-radius: 6px;
+  cursor: grab;
+  /* Let d3.zoom own every wheel/pointer gesture in here — the browser's own
+     touch-scroll/pinch handling would otherwise fight it. */
+  touch-action: none;
+}
+.viz-constellation-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+.viz-constellation-reset {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 2;
 }
 .viz-constellation-edges {
   position: absolute;

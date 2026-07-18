@@ -236,6 +236,24 @@ def test_render_inlines_constellation_view_bundle_and_playwright_hooks():
     assert "Show dependency constellation (experimental)" in html
 
 
+def test_render_inlines_constellation_interaction_hooks():
+    # Interaction parity (fidelity, prototype anatomy variant_B.js): the
+    # zoom/pan viewport clip, the reset-view control (same playwright-hook
+    # convention as the treemap's viz-treemap-reset), and the hover
+    # score-card wiring (reusing views/_shared.js's showTooltip/
+    # buildScoreCard, the same call the treemap tile makes) are all JS/CSS
+    # source — inlined regardless of scene content.
+    html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+
+    assert "viz-constellation-viewport" in html
+    assert "viz-constellation-reset" in html
+    assert "Reset view" in html
+    # The treemap tile, the ledger row, and now the constellation node all
+    # call the shared hover score-card builder — one call site each, inlined
+    # into the same bundle (item 6: bundle markers).
+    assert html.count("window.vizShared.buildScoreCard(") == 3
+
+
 def test_render_inlines_f3_drawer_meter_tooltip_and_axis_bar_hooks():
     # Fidelity F3 (drawer + content fidelity, spec §4.5): the drill drawer's
     # stage-shrink class, the shared per-axis meter row/mini-bar building
