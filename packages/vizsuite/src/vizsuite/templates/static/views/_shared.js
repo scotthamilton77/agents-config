@@ -434,13 +434,26 @@
     var isExempt = options.isExempt;
     // Opt-in double-click suppression (default off, so every other caller —
     // treemap tile, ledger row, sonar — keeps activating synchronously). When
-    // set (ms), a pointer click's activation is DEFERRED by this window and
+    // provided, a pointer click's activation is DEFERRED by a window (ms) and
     // cancelled if a `dblclick` lands inside it, so a double-click gesture
-    // (constellation's un-pin) does not also fire the primary activation. Only
-    // the pointer path defers — keyboard activation (Enter/Space) has no
-    // double-press gesture and must stay instant.
+    // (constellation's un-pin) does not also fire the primary activation. The
+    // option is either a fixed number of ms, or a function evaluated at
+    // pointerup that returns the window for THIS gesture (0/false = activate
+    // instantly) — letting a caller defer only when the double-click gesture is
+    // actually meaningful for the target. Only the pointer path defers —
+    // keyboard activation (Enter/Space) has no double-press gesture and must
+    // stay instant.
     var dblclickWindowMs = options.dblclickWindowMs;
     var pendingTimers = [];
+    // Cancel every deferred activation still waiting on its window. Called when
+    // a `dblclick` lands (the gesture is a double-click, so the primary action
+    // must NOT fire) and on each new pointerdown (a second press — a drag or a
+    // second click — must not let the prior press's stale activation fire
+    // mid-gesture).
+    function clearPendingActivations() {
+      pendingTimers.forEach(clearTimeout);
+      pendingTimers.length = 0;
+    }
     var startX = 0;
     var startY = 0;
     var moved = false;
@@ -450,6 +463,10 @@
     var armed = false;
 
     el.addEventListener("pointerdown", function (evt) {
+      // A new press starts here; drop any activation still deferred from the
+      // previous click so a drag-after-click (or a slow second click) never
+      // fires the stale primary action mid-gesture.
+      clearPendingActivations();
       startX = evt.clientX;
       startY = evt.clientY;
       moved = false;
@@ -484,7 +501,11 @@
       if (isExempt && isExempt(evt)) {
         return;
       }
-      if (!dblclickWindowMs) {
+      // Resolve the window for THIS gesture: a function is evaluated now (at
+      // pointerup) so the caller can decide per-gesture; a number is fixed.
+      var windowMs =
+        typeof dblclickWindowMs === "function" ? dblclickWindowMs(evt) : dblclickWindowMs;
+      if (!windowMs) {
         onActivate();
         return;
       }
@@ -497,14 +518,11 @@
           pendingTimers.splice(idx, 1);
         }
         onActivate();
-      }, dblclickWindowMs);
+      }, windowMs);
       pendingTimers.push(timer);
     });
     if (dblclickWindowMs) {
-      el.addEventListener("dblclick", function () {
-        pendingTimers.forEach(clearTimeout);
-        pendingTimers.length = 0;
-      });
+      el.addEventListener("dblclick", clearPendingActivations);
     }
     // A cancelled gesture (browser-initiated, e.g. scroll takeover) must not
     // leave the helper armed for a later stray pointerup.

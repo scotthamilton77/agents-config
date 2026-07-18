@@ -94,10 +94,15 @@
   // Double-click un-pin window (ms): a node click's activation (dir focus /
   // file drill) is deferred by this window and cancelled when the un-pin
   // dblclick lands, so the un-pin gesture never also opens the drill (whose
-  // viewport resize would otherwise shift the baseline mid-gesture). Scoped to
-  // constellation nodes only — every node here carries the dblclick un-pin
-  // gesture. Keyboard activation is unaffected (stays instant).
-  var DBLCLICK_ACTIVATION_WINDOW_MS = 275;
+  // viewport resize would otherwise shift the baseline mid-gesture). The OS/
+  // browser double-click interval is not readable from the web platform, so we
+  // use 500ms — the common OS default — as the best available proxy; a window
+  // shorter than the user's real interval lets the first click's deferred
+  // activation fire before the cancelling dblclick arrives. The deferral is
+  // applied per-gesture (see the dblclickWindowMs function below), only to a
+  // node currently displaced from its settled position, so an un-displaced
+  // node still activates instantly. Keyboard activation is unaffected.
+  var DBLCLICK_ACTIVATION_WINDOW_MS = 500;
 
   // ---- Node sizing (prototype anatomy `variant_B.js`): a dir's radius grows
   // with its rolled-up load-bearing score; a satellite is always the same
@@ -664,8 +669,16 @@
           handlers.onActivate(node);
         },
         // Defer + cancel-on-dblclick so the un-pin gesture (see wireDrag's
-        // dblclick handler) does not also fire dir focus / file drill.
-        dblclickWindowMs: DBLCLICK_ACTIVATION_WINDOW_MS
+        // dblclick handler) does not also fire dir focus / file drill. Scoped
+        // per-gesture: only a node displaced from its settled position carries
+        // a meaningful un-pin dblclick, so only that node's activation defers —
+        // an un-displaced node (whose dblclick un-pin is a no-op) activates
+        // instantly, sparing every normal click the double-click latency.
+        dblclickWindowMs: function () {
+          return node.x !== node.origX || node.y !== node.origY
+            ? DBLCLICK_ACTIVATION_WINDOW_MS
+            : 0;
+        }
       });
       el.addEventListener("pointerenter", function (evt) {
         handlers.onHoverShow(evt, node);
