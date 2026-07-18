@@ -35,6 +35,7 @@ from prgroom.agent.subprocess_runner import (
     AgentRunResult,
     AgentSpec,
     AgentTimeoutError,
+    UsageFigures,
 )
 from prgroom.agent.usage import UsageRecord
 from prgroom.errors import ErrorCode, PrgroomError, Tier, exit_code_for_tier
@@ -48,16 +49,20 @@ class _Outcome:
 
 
 class Succeeds(_Outcome):
-    def __init__(self, stdout: str) -> None:
+    def __init__(self, stdout: str, usage: UsageFigures | None = None) -> None:
         self.stdout = stdout
+        self.usage = usage
 
 
 class ExitsWith(_Outcome):
     """A non-zero process exit (quota/auth/network) — a fallback trigger."""
 
-    def __init__(self, returncode: int, stderr: str = "") -> None:
+    def __init__(
+        self, returncode: int, stderr: str = "", usage: UsageFigures | None = None
+    ) -> None:
         self.returncode = returncode
         self.stderr = stderr
+        self.usage = usage
 
 
 class TimesOut(_Outcome):
@@ -114,10 +119,20 @@ class FakeAgentRunner:
         )
         outcome = self._outcomes.pop(0)
         if isinstance(outcome, Succeeds):
-            return AgentRunResult(returncode=0, stdout=outcome.stdout, stderr="", duration_ms=1)
+            return AgentRunResult(
+                returncode=0,
+                stdout=outcome.stdout,
+                stderr="",
+                duration_ms=1,
+                usage=outcome.usage,
+            )
         if isinstance(outcome, ExitsWith):
             return AgentRunResult(
-                returncode=outcome.returncode, stdout="", stderr=outcome.stderr, duration_ms=1
+                returncode=outcome.returncode,
+                stdout="",
+                stderr=outcome.stderr,
+                duration_ms=1,
+                usage=outcome.usage,
             )
         if isinstance(outcome, TimesOut):
             raise AgentTimeoutError(
@@ -626,6 +641,52 @@ def test_usage_hook_tags_unavailable_error_and_malformed_attempts() -> None:
     )
     dispatcher.cluster(_cluster_input())
     assert [r.outcome for r in records] == ["unavailable", "error", "malformed", "success"]
+
+
+def test_success_record_carries_runner_reported_token_and_cost_figures() -> None:
+    # The runner attaches parsed usage (claude envelope / codex trailer) to its
+    # result; the success UsageRecord must thread those figures through — not
+    # hard-code the token/cost fields to None and lose the captured data.
+    records: list[UsageRecord] = []
+    figs = UsageFigures(tokens_in=100, tokens_out=5, tokens_total=105, reported_cost_usd=0.01)
+    runner = FakeAgentRunner([Succeeds(CLUSTER_OK, usage=figs)])
+    dispatcher = ClusterDispatcher(
+        runner=runner,
+        chain=_chain(AgentSpec("ollama", "gemma4")),
+        usage_hook=records.append,
+    )
+    dispatcher.cluster(_cluster_input())
+    (rec,) = records
+    assert rec.outcome == "success"
+    assert rec.input_tokens == 100
+    assert rec.output_tokens == 5
+    assert rec.tokens_total == 105
+    assert rec.reported_cost_usd == 0.01
+
+
+def test_error_record_carries_usage_while_timeout_stays_all_none() -> None:
+    # A non-zero-exit link can still have reported usage (the CLI ran, then failed)
+    # — its "error" record must carry those figures. A timeout attempt produced no
+    # result, so its record stays all-None.
+    records: list[UsageRecord] = []
+    figs = UsageFigures(tokens_in=50, tokens_out=2, reported_cost_usd=0.02)
+    runner = FakeAgentRunner([ExitsWith(1, "quota", usage=figs), TimesOut(), Succeeds(CLUSTER_OK)])
+    dispatcher = ClusterDispatcher(
+        runner=runner,
+        chain=_chain(AgentSpec("ollama", "g"), AgentSpec("claude", "h"), AgentSpec("codex", "m")),
+        usage_hook=records.append,
+    )
+    dispatcher.cluster(_cluster_input())
+    error_rec, timeout_rec = records[0], records[1]
+    assert error_rec.outcome == "error"
+    assert error_rec.input_tokens == 50
+    assert error_rec.output_tokens == 2
+    assert error_rec.reported_cost_usd == 0.02
+    assert timeout_rec.outcome == "timeout"
+    assert timeout_rec.input_tokens is None
+    assert timeout_rec.output_tokens is None
+    assert timeout_rec.tokens_total is None
+    assert timeout_rec.reported_cost_usd is None
 
 
 def test_usage_hook_records_a_cancelled_attempt_before_the_abort() -> None:

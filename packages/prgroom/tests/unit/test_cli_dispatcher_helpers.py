@@ -20,7 +20,7 @@ import pytest
 
 import prgroom.cli as cli
 from prgroom.agent.prompt_loader import PromptTemplate
-from prgroom.agent.subprocess_runner import AgentRunResult, AgentSpec
+from prgroom.agent.subprocess_runner import AgentRunResult, AgentSpec, UsageFigures
 from prgroom.lifecycle.warn import default_warn
 
 
@@ -48,6 +48,7 @@ class _ScriptedRunner:
                 stdout='{"contract_version": 1, "items": []}',
                 stderr="",
                 duration_ms=1,
+                usage=UsageFigures(tokens_in=100, tokens_out=5, reported_cost_usd=0.01),
             ),
         ]
 
@@ -94,6 +95,15 @@ def test_production_fix_builder_appends_usage_rows(
     rows = [json.loads(line) for line in lines]
     assert [r["outcome"] for r in rows] == ["error", "success"]
     assert all(r["contract"] == "fix" for r in rows)
+    # The success row threads the runner result's parsed usage figures through
+    # (the reviewer-flagged regression: they were hard-coded to null before).
+    error_row, success_row = rows[0], rows[1]
+    assert success_row["input_tokens"] == 100
+    assert success_row["output_tokens"] == 5
+    assert success_row["reported_cost_usd"] == 0.01
+    # The error link produced no usage in this script -> its tokens stay null.
+    assert error_row["input_tokens"] is None
+    assert error_row["output_tokens"] is None
 
 
 def test_resolve_log_level_default_and_named_levels() -> None:

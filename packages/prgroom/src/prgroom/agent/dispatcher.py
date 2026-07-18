@@ -48,8 +48,10 @@ from prgroom.agent.prompt_loader import PromptTemplate, load_prompt
 from prgroom.agent.subprocess_runner import (
     AgentCancelledError,
     AgentRunner,
+    AgentRunResult,
     AgentSpec,
     AgentTimeoutError,
+    UsageFigures,
 )
 from prgroom.agent.usage import UsageRecord
 from prgroom.config import read_toml, subtable
@@ -248,11 +250,17 @@ class LinkFailure:
     summary — so collapse all whitespace once, centrally, here. ``kind`` is the
     usage-telemetry outcome tag for the failed attempt (``timeout`` /
     ``unavailable`` / ``error`` / ``malformed``).
+
+    ``usage`` carries any token/cost figures the runner parsed from the failed
+    attempt — a non-zero-exit CLI still ran and can report usage — so the failed
+    attempt's :class:`UsageRecord` does not lose that data. ``None`` for the
+    result-less triggers (timeout, binary-absent, spawn error).
     """
 
     spec: AgentSpec
     reason: str
     kind: str
+    usage: UsageFigures | None = None
 
     def __post_init__(self) -> None:
         # Collapse all whitespace (one-line guarantee), then cap so a huge agent
@@ -353,27 +361,34 @@ class _Dispatcher:
                 outcome = self._try_one(spec, payload)
             except AgentCancelledError:
                 # The abort-everything path still leaves a telemetry trace of the
-                # attempt before propagating past the ladder.
+                # attempt before propagating past the ladder. No result reached us,
+                # so the record is usage-less.
                 self._emit_usage(spec, payload, started=started, outcome="cancelled")
                 raise
             if isinstance(outcome, LinkFailure):
-                self._emit_usage(spec, payload, started=started, outcome=outcome.kind)
+                self._emit_usage(
+                    spec, payload, started=started, outcome=outcome.kind, usage=outcome.usage
+                )
                 self._warn_link_failure(outcome)
                 failures.append(outcome)
                 continue
+            stdout = outcome.stdout
             try:
-                parsed = parse(outcome)
+                parsed = parse(stdout)
             except (KeyError, TypeError, ValueError) as exc:
                 # ValueError subsumes json.JSONDecodeError AND an out-of-enum
                 # DispositionKind (StrEnum raises ValueError): a model emitting bogus
                 # JSON or a bogus disposition is THIS provider's malformed output —
-                # fall through to the next link, never crash the whole dispatch.
-                self._emit_usage(spec, payload, started=started, outcome="malformed")
+                # fall through to the next link, never crash the whole dispatch. The
+                # CLI still ran, so carry its parsed usage onto the failed record.
+                self._emit_usage(
+                    spec, payload, started=started, outcome="malformed", usage=outcome.usage
+                )
                 failure = LinkFailure(spec, f"malformed output: {exc}", kind="malformed")
                 self._warn_link_failure(failure)
                 failures.append(failure)
                 continue
-            self._emit_usage(spec, payload, started=started, outcome="success")
+            self._emit_usage(spec, payload, started=started, outcome="success", usage=outcome.usage)
             if failures:
                 # The greppable partial-fallback signal: a dispatcher-layer fact
                 # ("this dispatch resolved at rung N"), deliberately not "decided
@@ -403,9 +418,20 @@ class _Dispatcher:
         )
 
     def _emit_usage(
-        self, spec: AgentSpec, payload: dict[str, Any], *, started: float, outcome: str
+        self,
+        spec: AgentSpec,
+        payload: dict[str, Any],
+        *,
+        started: float,
+        outcome: str,
+        usage: UsageFigures | None = None,
     ) -> None:
         """Push one per-attempt :class:`UsageRecord` through the hook, if wired.
+
+        ``usage`` is the runner's parsed token/cost figures for the attempt (claude
+        envelope / codex trailer), threaded onto the record so the §5 usage log
+        keeps the captured data; ``None`` (result-less triggers) leaves the token
+        and cost fields null.
 
         A hook failure (unwritable XDG dir, full disk) is an expected
         environmental failure, not a contract breach: the modeled handling is a
@@ -419,18 +445,25 @@ class _Dispatcher:
             contract=self._contract,
             provider=spec.cli,
             model=spec.model,
-            input_tokens=None,
-            output_tokens=None,
+            input_tokens=usage.tokens_in if usage else None,
+            output_tokens=usage.tokens_out if usage else None,
             duration_ms=int((self._clock() - started) * 1000),
             outcome=outcome,
+            tokens_total=usage.tokens_total if usage else None,
+            reported_cost_usd=usage.reported_cost_usd if usage else None,
         )
         try:
             self._usage_hook(record)
         except Exception as exc:  # telemetry must never fail a dispatch
             _logger.warning("usage hook failed (%s attempt record dropped): %s", outcome, exc)
 
-    def _try_one(self, spec: AgentSpec, payload: dict[str, Any]) -> str | LinkFailure:
-        """Run one provider; return its stdout on a 0-exit, else a :class:`LinkFailure`."""
+    def _try_one(self, spec: AgentSpec, payload: dict[str, Any]) -> AgentRunResult | LinkFailure:
+        """Run one provider; return its full result on a 0-exit, else a
+        :class:`LinkFailure`.
+
+        Returning the whole :class:`AgentRunResult` (not just its stdout) keeps the
+        runner's parsed ``usage`` figures reachable so the caller can thread them
+        onto the attempt's :class:`UsageRecord`."""
         try:
             result = self._runner.run(
                 spec,
@@ -456,9 +489,15 @@ class _Dispatcher:
             # the same provider-unavailable trigger as a missing one — fall through.
             return LinkFailure(spec, f"spawn failed: {exc}", kind="unavailable")
         if result.returncode != 0:
-            # LinkFailure normalizes whitespace + caps length centrally.
-            return LinkFailure(spec, f"exit {result.returncode}: {result.stderr}", kind="error")
-        return result.stdout
+            # LinkFailure normalizes whitespace + caps length centrally. A failed
+            # CLI can still have reported usage, so carry it onto the failure.
+            return LinkFailure(
+                spec,
+                f"exit {result.returncode}: {result.stderr}",
+                kind="error",
+                usage=result.usage,
+            )
+        return result
 
 
 def _loads_lenient(stdout: str) -> Any:
