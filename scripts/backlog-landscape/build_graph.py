@@ -99,7 +99,7 @@ def inherited_track(bid):
     return counts.most_common(1)[0][0]
 
 bead_records = []
-for bid in include_ids:
+for bid in sorted(include_ids):
     b = beads[bid]
     if bid in classification:
         track = classification[bid]
@@ -127,9 +127,9 @@ for bid in include_ids:
 
 edges = []
 seen = set()
-for bid in include_ids:
+for bid in sorted(include_ids):
     b = beads[bid]
-    for d in b.get('dependencies') or []:
+    for d in sorted(b.get('dependencies') or [], key=lambda d: (d['issue_id'], d['depends_on_id'], d['type'])):
         frm, to, typ = d['issue_id'], d['depends_on_id'], d['type']
         if frm not in include_ids or to not in include_ids:
             continue

@@ -75,12 +75,29 @@ def main():
     mile_ids = {m["id"] for m in milestones}
     mile_by_id = {m["id"]: m for m in milestones}
 
-    # direct non-epic children per epic
+    def nearest_epic(bid):
+        # Walk the parent chain past non-epic intermediates (feature/task)
+        # to the nearest ancestor epic, so a grandchild like
+        # agents-config-y9mm.6.1 (under feature agents-config-y9mm.6, under
+        # epic agents-config-y9mm) still lands inside its epic container
+        # instead of the detached loose-floater box.
+        seen = set()
+        cur = by_id.get(bid, {}).get("parent")
+        while cur and cur not in seen:
+            if cur in epic_ids:
+                return cur
+            seen.add(cur)
+            cur = by_id.get(cur, {}).get("parent")
+        return None
+
+    # non-epic descendants (direct or through non-epic intermediates) per epic
     epic_children = defaultdict(list)
     for b in beads:
-        p = b.get("parent")
-        if b["type"] != "epic" and p in epic_ids:
-            epic_children[p].append(b)
+        if b["type"] == "epic":
+            continue
+        ep = nearest_epic(b["id"])
+        if ep:
+            epic_children[ep].append(b)
 
     # ---- assign each renderable bead to a lane key --------------------------
     LANE_ORDER = [m["id"] for m in milestones] + ["UNANCHORED"]
@@ -96,9 +113,8 @@ def main():
         if b["type"] == "epic":
             lane_epics[lk].append(b)
         else:
-            p = b.get("parent")
-            if p in epic_ids:
-                continue  # lives inside its epic container
+            if nearest_epic(b["id"]):
+                continue  # lives inside its ancestor epic container
             lane_floaters[lk].append(b)
 
     # ---- build layout item boxes -------------------------------------------
@@ -183,7 +199,7 @@ def main():
                     c = i % cols
                     cx = ix + PAD + c * CELL + CELL / 2
                     cy = iy + HEADER + r * CELL + CELL / 2
-                    nodes_out.append(mk_node(k, cx, cy))
+                    nodes_out.append(mk_node(k, cx, cy, epic_id=e["id"]))
                     center[k["id"]] = (cx, cy)
             else:  # float box
                 fx = {
@@ -308,14 +324,14 @@ def track_of(by_id, i):
     return (b.get("track") if b else None) or "unknown"
 
 
-def mk_node(b, cx, cy):
+def mk_node(b, cx, cy, epic_id=None):
     return {
         "id": b["id"], "x": round(cx, 1), "y": round(cy, 1),
         "r": prio_r(b.get("priority", 2)),
         "track": b.get("track") or "unknown",
         "status": b["status"], "priority": b.get("priority", 2),
         "type": b["type"], "title": b["title"],
-        "epic": b.get("parent"),
+        "epic": epic_id,
         "milestone": b.get("milestone"),
         "labels": b.get("labels") or [],
         "desc": b.get("desc") or "",
@@ -571,6 +587,9 @@ D.edges.forEach(e=>{
 });
 
 // epic + float containers
+const epicEls=[];  // {id} epic rect/label pairs only -- floatboxes are a
+                    // grouping affordance, not a filterable bead, and stay
+                    // visible regardless of track/status/priority state
 D.epics.forEach(E=>{
   if(E.type==='floatbox'){
     gEpics.appendChild(el('rect',{x:E.x,y:E.y,width:E.w,height:E.h,rx:8,class:'floatRect'}));
@@ -589,6 +608,7 @@ D.epics.forEach(E=>{
   if(lab.length>maxc)lab=lab.slice(0,maxc-1)+'…';
   t.textContent=lab; t.__id=E.id; t.classList.add('hit');
   gEpics.appendChild(t);
+  epicEls.push({e:E,els:[r,t]});
 });
 
 // nodes
@@ -732,6 +752,12 @@ function nodeVisible(n){
   if(n.priority>state.prio)return false;
   return true;
 }
+function epicVisible(E){
+  if(!state.tracks.has(E.track))return false;
+  if(!state.status.has(E.status))return false;
+  if(E.priority>state.prio)return false;
+  return true;
+}
 function applyFilters(){
   // nodes
   nodeEls.forEach(c=>{
@@ -743,13 +769,19 @@ function applyFilters(){
       c.classList.toggle('fade',!hit);
     } else c.classList.remove('fade');
   });
+  // epic containers (floatboxes are exempt -- see epicEls comment)
+  epicEls.forEach(({e,els})=>{
+    const vis=epicVisible(e);
+    els.forEach(el=>el.classList.toggle('hide',!vis));
+  });
   // edges
   edgeEls.forEach(p=>{
     const e=p.__e;
     let show=!state.hideEdges;
     if(show && state.crossOnly && !e.cross)show=false;
     if(show){ const a=bead(e.from),b=bead(e.to);
-      const av=a&&(a.type==='epic'||nodeVisible(a)), bv=b&&(b.type==='epic'||nodeVisible(b));
+      const aVisible=n=>n.type==='epic'?epicVisible(n):nodeVisible(n);
+      const av=a&&aVisible(a), bv=b&&aVisible(b);
       if(!av||!bv)show=false; }
     p.classList.toggle('hide',!show);
   });
@@ -838,7 +870,8 @@ st.innerHTML=`<thead><tr><th>track</th><th>op</th><th>wip</th><th>bl</th><th>def
 // ---- what-if / Dreaming Process demo (client token overlap) ----------------
 const STOP=new Set("the a an of to and or for in on with by is are be as at from into via that this it its use using not no do".split(" "));
 function tok(s){return (s||"").toLowerCase().split(/[^a-z0-9]+/).filter(w=>w.length>2&&!STOP.has(w));}
-const CORPUS=D.nodes.map(n=>({n,toks:new Set(tok(n.title+' '+n.desc+' '+(n.labels||[]).join(' ')))}));
+const CORPUS=D.nodes.concat(D.epics.filter(e=>e.type==='epic'))
+  .map(n=>({n,toks:new Set(tok(n.title+' '+(n.desc||'')+' '+(n.labels||[]).join(' ')))}));
 const whatifOut=document.getElementById('whatifOut');
 const whatifParents=document.getElementById('whatifParents');
 let lastHi=[];
@@ -854,9 +887,13 @@ document.getElementById('whatif').oninput=e=>{
     return {n:c.n,ov,sc};
   }).filter(x=>x.ov>0).sort((a,b)=>b.sc-a.sc||b.ov-a.ov).slice(0,8);
   if(!scored.length){whatifOut.innerHTML='<div class="h-sub">no token overlap yet…</div>';whatifParents.innerHTML='';return;}
-  // likely parent epics: epics containing the most matches
+  // likely parent epics: epics containing the most matches, plus any epic
+  // that is itself a direct token match (its own strongest candidate)
   const epicScore={};
-  scored.forEach(x=>{const ep=x.n.epic; if(ep&&epicById[ep]){epicScore[ep]=(epicScore[ep]||0)+x.sc;}});
+  scored.forEach(x=>{
+    const ep=x.n.type==='epic'?x.n.id:x.n.epic;
+    if(ep&&epicById[ep]){epicScore[ep]=(epicScore[ep]||0)+x.sc;}
+  });
   const topEp=Object.entries(epicScore).sort((a,b)=>b[1]-a[1]).slice(0,3);
   whatifParents.innerHTML= topEp.length?('<b>Likely parent epics:</b><br>'+topEp.map(([id,s])=>{
     const ep=epicById[id];const ml=(D.lanes.find(l=>l.key===ep.milestone)||{}).code||'—';
@@ -864,7 +901,7 @@ document.getElementById('whatif').oninput=e=>{
   }).join('<br>')):'<span class="h-sub">no epic pattern</span>';
   whatifOut.innerHTML=scored.map(x=>{
     const n=x.n;const ml=(D.lanes.find(l=>l.key===n.milestone)||{}).code||'—';
-    const ep=n.epic&&epicById[n.epic]?epicById[n.epic].title.slice(0,26):'(loose)';
+    const ep=n.type==='epic'?'(itself an epic)':(n.epic&&epicById[n.epic]?epicById[n.epic].title.slice(0,26):'(loose)');
     return `<div class="match" data-pan="${n.id}">
       <div class="mt">${esc(n.title.slice(0,54))}</div>
       <div class="mm">${n.track} · epic ${esc(ep)} · ${ml} · overlap ${x.ov}</div></div>`;
