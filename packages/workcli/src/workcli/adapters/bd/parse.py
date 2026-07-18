@@ -88,7 +88,7 @@ def _dep_edge_from_raw(entry: dict[str, JsonValue], self_id: str) -> DepEdge:
             )
         return DepEdge(
             id=str(entry["id"]),
-            type=str(entry["dependency_type"]),
+            type=_dep_type(entry, self_id),
             status=str(entry.get("status", "")),
         )
     # list-shape: raw edge row {issue_id, depends_on_id, type}; no status
@@ -106,7 +106,7 @@ def _dep_edge_from_raw(entry: dict[str, JsonValue], self_id: str) -> DepEdge:
             },
         )
     other_id = entry["depends_on_id"] if entry.get("issue_id") == self_id else entry["issue_id"]
-    return DepEdge(id=str(other_id), type=str(entry["type"]), status="")
+    return DepEdge(id=str(other_id), type=_dep_type(entry, self_id), status="")
 
 
 def _dep_type(entry: dict[str, JsonValue], item_id: str) -> str:

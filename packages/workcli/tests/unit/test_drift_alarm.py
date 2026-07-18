@@ -351,6 +351,23 @@ def test_dep_list_element_missing_dependency_type_raises_backend_drift():
     assert error.detail["reason"] == "missing_required_keys"
 
 
+def test_dep_list_explicit_null_dependency_type_raises_backend_drift():
+    # `parse_dep_edges` (the `work dep list` path) builds its `DepEdge.type`
+    # straight from `_dep_edge_from_raw` without going through `parse_item`'s
+    # filtering `_dep_type` call -- an explicit null here must still alarm,
+    # not silently coerce to the literal string "None" via an unguarded
+    # `str(entry["dependency_type"])`.
+    raw_entry = {"id": "x.2", "status": "open", "dependency_type": None}
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_dep_edges(json.dumps([raw_entry]), self_id="x.1")
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "null_field"
+    assert error.detail["field"] == "dependency_type"
+
+
 def test_show_shape_dependency_edge_missing_id_raises_backend_drift():
     # A `dependencies[]` entry carrying `dependency_type` (show-shape) but no
     # `id` for the other end would raise a raw KeyError -> E_INTERNAL from
