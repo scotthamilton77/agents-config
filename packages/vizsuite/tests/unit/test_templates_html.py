@@ -236,6 +236,82 @@ def test_render_inlines_constellation_view_bundle_and_playwright_hooks():
     assert "Show dependency constellation (experimental)" in html
 
 
+def test_render_inlines_constellation_interaction_hooks():
+    # Interaction parity (fidelity, prototype anatomy variant_B.js): the
+    # zoom/pan viewport clip, the reset-view control (same playwright-hook
+    # convention as the treemap's viz-treemap-reset), and the hover
+    # score-card wiring (reusing views/_shared.js's showTooltip/
+    # buildScoreCard, the same call the treemap tile makes) are all JS/CSS
+    # source — inlined regardless of scene content.
+    html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+
+    assert "viz-constellation-viewport" in html
+    assert "viz-constellation-reset" in html
+    assert "Reset view" in html
+    # Recenter-on-resize wiring: the drill drawer narrows the viewport after
+    # mount, so the centered baseline is recomputed via a feature-guarded
+    # ResizeObserver and Reset view retargets the fresh baseline.
+    assert "ResizeObserver" in html
+    # The treemap tile, the ledger row, and the constellation's file node
+    # and dir tooltip all call the shared hover score-card builder — four
+    # call sites, inlined into the same bundle (item 6: bundle markers).
+    assert html.count("window.vizShared.buildScoreCard(") == 4
+    # Un-pin does not double as a file open: constellation opts its nodes into
+    # the shared activation helper's double-click suppression window, so the
+    # dblclick un-pin gesture cancels the deferred dir-focus/file-drill instead
+    # of firing it (which would resize the viewport mid-gesture).
+    assert "dblclickWindowMs" in html
+    # Deferred activations are cancelled view-scoped, not element-scoped: every
+    # node registers its pending-timer clear into one createActivationGroup()
+    # registry that the zoom handler and destroy() flush, so a competing
+    # gesture (pan/zoom, another node's press, keyboard) or an unmount can never
+    # let a stale focus/drill fire.
+    assert "createActivationGroup" in html
+    # A drag begun on the view's own Reset-view chrome must not pan the canvas
+    # (the release-click would then reset it, undoing the pan) — the zoom filter
+    # excludes the reset button alongside the node exclusion.
+    assert ".viz-constellation-node, .viz-constellation-reset" in html
+
+
+def test_render_inlines_constellation_structural_hooks():
+    # Structural parity (prototype anatomy variant_B.js): dir super-nodes,
+    # satellites, dir-dir coupling edges, the pruning-affordance caption
+    # text, and the prototype's five legend entries — all JS/CSS source, so
+    # inlined regardless of scene content, same convention as every other
+    # stable hook.
+    html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+
+    # Node-kind hooks (dir super-node vs. satellite/file).
+    assert 'data-kind", node.kind' in html
+    assert "viz-constellation-edge--tether" in html
+    # Pruning affordance (spec: "N unconnected directories hidden").
+    assert "unconnected directories hidden" in html
+    # The prototype's five legend entries.
+    assert "Size = load-bearing (in-degree)" in html
+    assert "Color = composite heat" in html
+    assert "Edge width = coupling strength" in html
+    assert "Ringed dot = changed in PR" in html
+    assert "Satellites = the PR's changed files" in html
+    # The dir hover tooltip (hover-only, never a drill — a dir has no
+    # story/diff to show).
+    assert "viz-constellation-dir-counts" in html
+
+
+def test_render_inlines_constellation_cosmetic_hooks():
+    # Cosmetic parity (prototype anatomy variant_B.js's `rebuildRamp`): the
+    # 5-stop piecewise LAB heat ramp (extending the shared cold/mid/hot
+    # anchors with two intermediate stops) and the label-culling constant —
+    # all JS/CSS source, so inlined regardless of scene content.
+    html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+
+    assert "d3.piecewise(d3.interpolateLab, stops)" in html
+    assert "--viz-heat-cold-mid" in html
+    assert "--viz-heat-mid-hot" in html
+    # Label culling: only the top-20 dir nodes (by load-bearing + a changed
+    # bonus) plus every satellite are labeled.
+    assert "LABEL_TOP_DIR_COUNT = 20" in html
+
+
 def test_render_inlines_f3_drawer_meter_tooltip_and_axis_bar_hooks():
     # Fidelity F3 (drawer + content fidelity, spec §4.5): the drill drawer's
     # stage-shrink class, the shared per-axis meter row/mini-bar building

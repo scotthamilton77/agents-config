@@ -20,12 +20,24 @@
 // `options.isExempt(evt)`, if given, opts an event out of activation (the
 // ledger row's diff-link guard) — omitted, every candidate event activates.
 //
-// Activation is always synchronous — there is deliberately NO deferred
-// (debounced double-click) path in this helper. An earlier revision deferred
-// `onActivate()` behind a timer to make room for a double-click gesture, and
-// the pending timer leaked activations through every gesture edge
-// (keyboard, nested controls, drag-after-click, pointercancel). Fill-screen
-// focus is an explicit per-tile control in the treemap instead (spec §6.1).
+// `options.dblclickWindowMs` (default off — omitted by the treemap tile,
+// ledger row, and sonar mark, which all activate synchronously) opts a
+// pointer click into a DEFERRED activation: `onActivate()` is held for a
+// window (a fixed ms, or a per-gesture function evaluated at pointerup) and
+// cancelled if a `dblclick` lands inside it, so a double-click gesture
+// (constellation's un-pin) never also fires the primary action. Keyboard
+// activation (Enter/Space) never defers.
+//
+// `options.activationGroup` (a `createActivationGroup()` handle, default off)
+// makes deferred-activation cancellation VIEW-scoped instead of element-
+// scoped: every wired node registers its pending-timer clear into the one
+// group, and any competing gesture — another node's pointerdown, a keyboard
+// activation, the view's own zoom/pan handler, or view teardown — calls
+// `group.cancelAll()` to drop every node's still-pending activation, so a
+// stale `onActivate()` can never fire mid-gesture or after unmount. Without a
+// group a node cancels only its own pending timers (enough for the single-
+// deferred-target callers). `wireClickVsDragActivation` returns a
+// `{ cancelPending }` handle for a caller that wants a per-element disposer.
 //
 // isDependencyGraphUnavailable: the shared "is the dependency graph
 // unavailable?" predicate for the graph-shaped views (constellation, file
@@ -429,9 +441,71 @@
 
   window.vizShared.buildScoreCard = buildScoreCard;
 
+  // A view-scoped registry of deferred-activation cancellers. Each node wired
+  // with `activationGroup` set registers its own pending-timer clear here;
+  // `cancelAll()` flushes every node's pending activation at once — the single
+  // surface a view's competing gestures (zoom/pan, another node's press) and
+  // its destroy() call to guarantee no stale deferred activation survives.
+  function createActivationGroup() {
+    var disposers = [];
+    return {
+      register: function (fn) {
+        disposers.push(fn);
+      },
+      cancelAll: function () {
+        disposers.forEach(function (fn) {
+          fn();
+        });
+      }
+    };
+  }
+
+  window.vizShared.createActivationGroup = createActivationGroup;
+
   function wireClickVsDragActivation(el, options) {
     var onActivate = options.onActivate;
     var isExempt = options.isExempt;
+    // Opt-in double-click suppression (default off, so every other caller —
+    // treemap tile, ledger row, sonar — keeps activating synchronously). When
+    // provided, a pointer click's activation is DEFERRED by a window (ms) and
+    // cancelled if a `dblclick` lands inside it, so a double-click gesture
+    // (constellation's un-pin) does not also fire the primary activation. The
+    // option is either a fixed number of ms, or a function evaluated at
+    // pointerup that returns the window for THIS gesture (0/false = activate
+    // instantly) — letting a caller defer only when the double-click gesture is
+    // actually meaningful for the target. Only the pointer path defers —
+    // keyboard activation (Enter/Space) has no double-press gesture and must
+    // stay instant.
+    var dblclickWindowMs = options.dblclickWindowMs;
+    // Optional view-scoped cancellation registry (createActivationGroup). When
+    // present, every preempting gesture flushes ALL nodes' pending activations,
+    // not just this element's — see preemptPending below.
+    var activationGroup = options.activationGroup;
+    var pendingTimers = [];
+    // Cancel every deferred activation still waiting on its window. Called when
+    // a `dblclick` lands (the gesture is a double-click, so the primary action
+    // must NOT fire) and on each new pointerdown (a second press — a drag or a
+    // second click — must not let the prior press's stale activation fire
+    // mid-gesture).
+    function clearPendingActivations() {
+      pendingTimers.forEach(clearTimeout);
+      pendingTimers.length = 0;
+    }
+    // Register this element's clear into the shared group (if any) so the
+    // view's teardown and competing gestures can flush it alongside its peers.
+    if (activationGroup) {
+      activationGroup.register(clearPendingActivations);
+    }
+    // Preempt pending activations at the start of any gesture that must not
+    // let a stale deferred activation fire: view-scoped when a group is shared
+    // (every node's pending clears), else just this element's.
+    function preemptPending() {
+      if (activationGroup) {
+        activationGroup.cancelAll();
+      } else {
+        clearPendingActivations();
+      }
+    }
     var startX = 0;
     var startY = 0;
     var moved = false;
@@ -441,6 +515,12 @@
     var armed = false;
 
     el.addEventListener("pointerdown", function (evt) {
+      // A new press starts here; drop any activation still deferred from the
+      // previous click so a drag-after-click (or a slow second click) never
+      // fires the stale primary action mid-gesture. With a shared group this
+      // also preempts a DIFFERENT node's still-pending activation, so a press
+      // elsewhere in the view never lets a stale focus/drill fire.
+      preemptPending();
       startX = evt.clientX;
       startY = evt.clientY;
       moved = false;
@@ -475,8 +555,29 @@
       if (isExempt && isExempt(evt)) {
         return;
       }
-      onActivate();
+      // Resolve the window for THIS gesture: a function is evaluated now (at
+      // pointerup) so the caller can decide per-gesture; a number is fixed.
+      var windowMs =
+        typeof dblclickWindowMs === "function" ? dblclickWindowMs(evt) : dblclickWindowMs;
+      if (!windowMs) {
+        onActivate();
+        return;
+      }
+      // Defer: hold activation open for the double-click window; a `dblclick`
+      // (fired after the second pointerup) clears every pending timer, so a
+      // double-click gesture activates zero times instead of twice.
+      var timer = setTimeout(function () {
+        var idx = pendingTimers.indexOf(timer);
+        if (idx !== -1) {
+          pendingTimers.splice(idx, 1);
+        }
+        onActivate();
+      }, windowMs);
+      pendingTimers.push(timer);
     });
+    if (dblclickWindowMs) {
+      el.addEventListener("dblclick", preemptPending);
+    }
     // A cancelled gesture (browser-initiated, e.g. scroll takeover) must not
     // leave the helper armed for a later stray pointerup.
     el.addEventListener("pointercancel", function () {
@@ -492,8 +593,16 @@
         return;
       }
       evt.preventDefault();
+      // Keyboard activation is instant, but it must still preempt any pointer-
+      // deferred activation (this node's, or — with a shared group — any node's)
+      // so a click-then-Enter within the double-click window fires only once.
+      preemptPending();
       onActivate();
     });
+
+    return {
+      cancelPending: clearPendingActivations
+    };
   }
 
   window.vizShared.wireClickVsDragActivation = wireClickVsDragActivation;
