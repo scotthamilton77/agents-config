@@ -1,0 +1,22 @@
+[
+  {"query": "can you spin up a subagent on openrouter to knock out this task while we keep talking?", "should_trigger": true},
+  {"query": "route this refactor to kimi-k2.7-code instead of burning your own context on it", "should_trigger": true},
+  {"query": "I want to delegate this to a cheap model via openrouter, what should I pick and how do I invoke it", "should_trigger": true},
+  {"query": "use claude code but point it at glm-5.2 through my openrouter key for this one", "should_trigger": true},
+  {"query": "can we get gemini flash to do this grunt work instead of you, still using claude as the driver", "should_trigger": true},
+  {"query": "whats the cheapest openrouter model i could route a claude subagent to for extracting TODOs from this repo", "should_trigger": true},
+  {"query": "launch a nested claude process against openrouter for this, non-interactive, and don't let it touch the network without asking me first", "should_trigger": true},
+  {"query": "I have OPENROUTER_API_KEY set, can you use it to run a claude subagent on kimi-k3 for the architecture review", "should_trigger": true},
+  {"query": "spin up a openrouter-backed claude subagent to summarize these logs, use your judgment on the model", "should_trigger": true},
+  {"query": "how much would it cost to run this whole review through gpt-5.6-sol on openrouter using claude as the harness", "should_trigger": true},
+  {"query": "delegate this bug investigation to codex instead of doing it yourself", "should_trigger": false},
+  {"query": "switch my session to use fable for the rest of this spec-writing window", "should_trigger": false},
+  {"query": "fork yourself and go research the pricing on these five models", "should_trigger": false},
+  {"query": "can you launch the gemini CLI to double-check this output", "should_trigger": false},
+  {"query": "what's the cheapest gpt-5.6 tier for a standard code review, no need to actually invoke anything, just tell me the price", "should_trigger": false},
+  {"query": "set my ANTHROPIC_MODEL env var to sonnet for this session", "should_trigger": false},
+  {"query": "review this PR using the quality-reviewer agent", "should_trigger": false},
+  {"query": "I want to add a new model to the routing table you keep for anthropic model selection in claude-api docs", "should_trigger": false},
+  {"query": "can you dispatch three parallel subagents to review different files", "should_trigger": false},
+  {"query": "just answer this quick question about kimi's context window, no need to run anything", "should_trigger": false}
+]
