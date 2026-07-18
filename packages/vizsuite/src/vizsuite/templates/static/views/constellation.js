@@ -264,21 +264,24 @@
   // ~235-239): roll the deduped file-level edges up to distinct dir pairs,
   // excluding same-dir pairs (an edge wholly inside one directory says
   // nothing about coupling *between* directories), weighted by how many
-  // file edges rolled into each pair. Only pairs where BOTH dirs survived
-  // the noise threshold are considered — the connectivity prune (in
-  // buildGraph) runs as a second pass over this result. ----
+  // file edges rolled into each pair. Each endpoint resolves through the
+  // same nearest-surviving-ancestor walk satellites use (findContainingDir),
+  // so an edge rooted in a noise-pruned leaf dir rolls up to that leaf's
+  // surviving ancestor instead of silently vanishing; the same-dir check
+  // runs on the *resolved* dirs, so an edge between two pruned subdirs of
+  // one surviving ancestor correctly reads as intra-dir. The connectivity
+  // prune (in buildGraph) runs as a second pass over this result. ----
   function rollUpDirEdges(fileEdges, dirNodeByPath) {
     var counts = Object.create(null);
     var order = [];
     fileEdges.forEach(function (edge) {
-      var a = dirOf(edge.source);
-      var b = dirOf(edge.target);
-      if (a === b) {
+      var srcDir = findContainingDir(edge.source, dirNodeByPath);
+      var tgtDir = findContainingDir(edge.target, dirNodeByPath);
+      if (!srcDir || !tgtDir || srcDir === tgtDir) {
         return;
       }
-      if (!dirNodeByPath[a] || !dirNodeByPath[b]) {
-        return;
-      }
+      var a = srcDir.path;
+      var b = tgtDir.path;
       var lo = a < b ? a : b;
       var hi = a < b ? b : a;
       var key = lo + "\0" + hi;
@@ -685,6 +688,13 @@
       startY = evt.clientY;
       dragging = false;
       active = true;
+      // Capture the pointer so pointermove/pointerup keep targeting `el` even
+      // after the cursor leaves it mid-gesture (small nodes + fast drags
+      // otherwise silently freeze tracking). Mirrors wireClickVsDragActivation
+      // in _shared.js; capture releases implicitly on pointerup/pointercancel.
+      if (el.setPointerCapture) {
+        el.setPointerCapture(evt.pointerId);
+      }
     });
     el.addEventListener("pointermove", function (evt) {
       if (!active) {
@@ -753,20 +763,13 @@
   // file score card uses (views/_shared.js), so a dir's bars mirror a file's
   // exactly. ----
   function buildDirTooltip(container, node, heatValue) {
-    var pathEl = document.createElement("div");
-    pathEl.setAttribute("class", "viz-tooltip-path");
-    pathEl.textContent = dirDisplayPath(node.path);
-    container.appendChild(pathEl);
+    window.vizShared.buildScoreCard(container, dirDisplayPath(node.path), node.attributes, heatValue);
 
     var countsEl = document.createElement("div");
     countsEl.setAttribute("class", "viz-constellation-dir-counts");
     countsEl.textContent = node.stats.files + " files · " + node.stats.changed + " changed";
-    container.appendChild(countsEl);
-
-    window.vizShared.HEAT_AXES.forEach(function (axis) {
-      container.appendChild(window.vizShared.buildMeterRow(axis, axis, node.attributes[axis] || 0));
-    });
-    container.appendChild(window.vizShared.buildMeterRow("heat", "heat", heatValue));
+    var pathEl = container.querySelector(".viz-tooltip-path");
+    container.insertBefore(countsEl, pathEl.nextSibling);
   }
 
   function svgEl(tag, attrs) {

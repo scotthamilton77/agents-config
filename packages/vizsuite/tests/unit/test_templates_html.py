@@ -248,10 +248,10 @@ def test_render_inlines_constellation_interaction_hooks():
     assert "viz-constellation-viewport" in html
     assert "viz-constellation-reset" in html
     assert "Reset view" in html
-    # The treemap tile, the ledger row, and now the constellation node all
-    # call the shared hover score-card builder — one call site each, inlined
-    # into the same bundle (item 6: bundle markers).
-    assert html.count("window.vizShared.buildScoreCard(") == 3
+    # The treemap tile, the ledger row, and the constellation's file node
+    # and dir tooltip all call the shared hover score-card builder — four
+    # call sites, inlined into the same bundle (item 6: bundle markers).
+    assert html.count("window.vizShared.buildScoreCard(") == 4
 
 
 def test_render_inlines_constellation_structural_hooks():
