@@ -47,6 +47,10 @@ def bd_json(*args):
 # protocol field is the one thing that actually attests this came from a
 # compatible workcli (Codex finding, round 5).
 _COMPATIBLE_PROTOCOL_MAJOR = "1"
+# The envelope contract requires semver MAJOR.MINOR exactly -- both numeric,
+# no trailing/leading junk -- so a permissive split(".")[0] check would wrongly
+# accept "1", "1.", or "1-shadowed" (Codex finding, round 6).
+_PROTOCOL_PATTERN = re.compile(r"^(\d+)\.(\d+)$")
 
 
 def work_groom_status():
@@ -73,11 +77,15 @@ def work_groom_status():
             # non-zero (Codex finding).
             return None
         envelope = json.loads(result.stdout)
-    except (json.JSONDecodeError, subprocess.TimeoutExpired, OSError):
+    except (json.JSONDecodeError, subprocess.TimeoutExpired, OSError, UnicodeDecodeError):
         # OSError (a superclass of FileNotFoundError) also covers a `work`
         # that resolves on PATH but can't be executed -- lost +x bit, a
         # noexec mount -- which subprocess.run raises as PermissionError,
         # a plain FileNotFoundError catch would miss (Codex finding).
+        # UnicodeDecodeError (not an OSError subclass) covers a corrupted or
+        # PATH-shadowed binary writing non-UTF-8 bytes: subprocess.run's
+        # text=True decoding raises it before json.loads ever runs (Codex
+        # finding, round 6).
         return None
     if not isinstance(envelope, dict) or envelope.get("ok") is not True:
         # Valid JSON that isn't an envelope object (e.g. a PATH-shadowed
@@ -87,10 +95,15 @@ def work_groom_status():
         # other truthy-but-wrong value doesn't slip past self-silencing.
         return None
     protocol = envelope.get("protocol")
-    if not isinstance(protocol, str) or protocol.split(".")[0] != _COMPATIBLE_PROTOCOL_MAJOR:
+    protocol_match = isinstance(protocol, str) and _PROTOCOL_PATTERN.match(protocol)
+    if not protocol_match or protocol_match.group(1) != _COMPATIBLE_PROTOCOL_MAJOR:
         # A PATH-shadowed or incompatible "work" can still emit an
         # {"ok": true, ...} shape; only a matching protocol MAJOR actually
-        # attests this came from a compatible workcli (Codex finding).
+        # attests this came from a compatible workcli (Codex finding). The
+        # envelope contract requires semver MAJOR.MINOR exactly -- a bare
+        # split(".")[0] would wrongly accept "1", "1.", or "1-shadowed" as
+        # long as the first segment happened to read "1" (Codex finding,
+        # round 6), so the full string is matched against a strict pattern.
         return None
     data = envelope.get("data")
     return data if isinstance(data, dict) else None

@@ -1103,4 +1103,40 @@ assert 'backlog_grooming_nag' not in out, f'nag must be absent when protocol is 
 " || fail "T16h: backlog_grooming_nag must be absent when the envelope has no protocol field"
 pass "T16h: backlog_grooming_nag absent when work groom --status omits the protocol field"
 
+# (i) a PATH-shadowed "work" emits a malformed-but-major-1-prefixed protocol
+# string (e.g. "1-shadowed") -> a permissive split(".")[0] check would wrongly
+# accept it; only a strict MAJOR.MINOR numeric match may.
+cat > "$TMP_T16/work" <<'SHIM'
+#!/usr/bin/env bash
+echo '{"protocol":"1-shadowed","ok":true,"data":{"backlog_last_groomed":"2026-07-01T00:00:00Z","days_since":30,"nag_days":7,"breached":true},"error":null}'
+exit 0
+SHIM
+chmod +x "$TMP_T16/work"
+OUT_T16I="$TMP_T16/i.json"
+PATH="$TMP_T16:$PATH" python3 "$COLLECT_PY" --mode human >"$OUT_T16I" 2>"$TMP_T16/err.i"
+ec=$?
+[ "$ec" -eq 0 ] || fail "T16i: collect.py exited $ec with a malformed protocol string (stderr: $(cat "$TMP_T16/err.i"))"
+python3 -c "
+import json
+out = json.load(open('$OUT_T16I'))
+assert 'backlog_grooming_nag' not in out, f'nag must be absent when protocol is malformed; got: {out}'
+" || fail "T16i: backlog_grooming_nag must be absent when protocol is malformed (not strict MAJOR.MINOR)"
+pass "T16i: backlog_grooming_nag absent when work groom --status emits a malformed protocol string"
+
+# (j) a corrupted/PATH-shadowed "work" writes non-UTF-8 bytes to stdout ->
+# subprocess.run's text=True decoding raises UnicodeDecodeError before
+# json.loads ever runs; self-silence, don't crash collect.py.
+printf '#!/usr/bin/env bash\nprintf "\\xff\\xfe{not json}"\nexit 0\n' > "$TMP_T16/work"
+chmod +x "$TMP_T16/work"
+OUT_T16J="$TMP_T16/j.json"
+PATH="$TMP_T16:$PATH" python3 "$COLLECT_PY" --mode human >"$OUT_T16J" 2>"$TMP_T16/err.j"
+ec=$?
+[ "$ec" -eq 0 ] || fail "T16j: collect.py exited $ec with non-UTF-8 work output (stderr: $(cat "$TMP_T16/err.j"))"
+python3 -c "
+import json
+out = json.load(open('$OUT_T16J'))
+assert 'backlog_grooming_nag' not in out, f'nag must be absent when work output is non-UTF-8; got: {out}'
+" || fail "T16j: backlog_grooming_nag must be absent when work groom --status emits non-UTF-8 bytes"
+pass "T16j: backlog_grooming_nag absent when work groom --status emits non-UTF-8 bytes"
+
 echo "All collect.py red-phase tests reached — script exits 0 only when every assertion above passes."
