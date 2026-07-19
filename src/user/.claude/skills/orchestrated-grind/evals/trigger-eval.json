@@ -1,0 +1,23 @@
+[
+  {"id": "Q1",  "should_trigger": true,  "query": "I've got the plan split into three lanes that barely touch each other's files. Let's run an orchestrated grind on it tonight while I sleep."},
+  {"id": "Q2",  "should_trigger": true,  "query": "spin up lieutenants for each of these four work streams, have them open their own PRs, and give me a dashboard i can check from my phone"},
+  {"id": "Q3",  "should_trigger": true,  "query": "overnight grind — work the backlog queue in parallel lanes and merge anything that gets a clean codex review. I'll be back around 7am."},
+  {"id": "Q4",  "should_trigger": true,  "query": "We have ~12 PRs worth of work across the installer, the CLI, and the seam layer. How would you drive all three in parallel without them stomping on each other?"},
+  {"id": "Q5",  "should_trigger": true,  "query": "lane-installer has been idle for 20 minutes and lane-seam keeps reporting things I already told it to stop doing. is the grind stuck?"},
+  {"id": "Q6",  "should_trigger": true,  "query": "codex has now re-raised the exact same three findings on PR #320 for the fourth round and the code hasn't changed since round 2. what do i do"},
+  {"id": "Q7",  "should_trigger": true,  "query": "run a multi-lane grind against the phase-2 roadmap, one agent per lane plus something keeping score"},
+  {"id": "Q8",  "should_trigger": true,  "query": "I want to kick off a long parallel run where each work lane ships its own pull requests and handles the bot review loop itself, escalating to me only for merge decisions."},
+  {"id": "Q9",  "should_trigger": true,  "query": "the session's about to compact and I've got four teammates mid-flight — how do I not lose the whole orchestration state?"},
+  {"id": "Q10", "should_trigger": true,  "query": "grind plan with lanes, please. conflict-partitioned already, spec is in docs/plans/."},
+
+  {"id": "Q11", "should_trigger": false, "query": "I dispatched one subagent to refactor the auth module and it spawned its own reviewer, now both are hung. What's going on?"},
+  {"id": "Q12", "should_trigger": false, "query": "PR #412 has a bunch of Copilot comments on it. Can you go through them, fix what's real, and resolve the threads?"},
+  {"id": "Q13", "should_trigger": false, "query": "is this PR ok to merge? CI's green and the reviewer approved."},
+  {"id": "Q14", "should_trigger": false, "query": "can you build me an HTML dashboard showing our test coverage trend over the last six months"},
+  {"id": "Q15", "should_trigger": false, "query": "set up a worktree for this feature branch before we start implementing"},
+  {"id": "Q16", "should_trigger": false, "query": "we've got frontier model capacity for about three more days — spec out as much of the backlog as we can before it goes away"},
+  {"id": "Q17", "should_trigger": false, "query": "the coffee grinder script in tools/ is throwing a KeyError on startup, can you take a look"},
+  {"id": "Q18", "should_trigger": false, "query": "how did this session go? anything we should change about how I'm prompting you or what's in AGENTS.md?"},
+  {"id": "Q19", "should_trigger": false, "query": "run the three test suites in parallel and tell me which ones fail"},
+  {"id": "Q20", "should_trigger": false, "query": "What's the difference between a named agent and an unnamed one in Claude Code?"}
+]

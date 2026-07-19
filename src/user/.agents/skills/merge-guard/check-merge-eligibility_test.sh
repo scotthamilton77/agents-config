@@ -59,6 +59,11 @@ if [ "$1" = "api" ]; then
     case "$1" in --jq) filter="$2"; shift 2 ;; *) shift ;; esac
   done
   case "$path" in
+    user)
+        if [ "${FIXTURE_AUTH_LOGIN_FAIL:-0}" = 1 ]; then
+          echo "gh: 401 Unauthorized" >&2; exit 1
+        fi
+        body="${FIXTURE_AUTH_LOGIN_JSON:-'{\"login\":\"session-user\"}'}" ;;
     */requested_reviewers)  body="${FIXTURE_REQUESTED_REVIEWERS:-'{\"users\":[],\"teams\":[]}'}" ;;
     */issues/*/events*)
         if [ "${FIXTURE_EVENTS_FAIL:-0}" = 1 ]; then
@@ -66,6 +71,22 @@ if [ "$1" = "api" ]; then
         fi
         body="${FIXTURE_EVENTS:-[]}" ;;
     */issues/*/comments*)   body="${FIXTURE_ISSUE_COMMENTS:-[]}" ;;
+    */issues/*/reactions*)
+        if [ "${FIXTURE_REACTIONS_FAIL:-0}" = 1 ]; then
+          echo "gh: 502 Bad Gateway" >&2; exit 1
+        fi
+        if [ -n "${FIXTURE_REACTIONS_PAGE2:-}" ]; then
+          # emulate `gh api --paginate` on an array-returning endpoint: each
+          # page's JSON array is later merged via `jq -s 'add // []'` — mirrors
+          # the ALL_REVIEWS / ISSUE_COMMENTS pagination idiom already in use.
+          printf '%s\n%s\n' "${FIXTURE_REACTIONS:-[]}" "$FIXTURE_REACTIONS_PAGE2"; exit 0
+        fi
+        body="${FIXTURE_REACTIONS:-[]}" ;;
+    */issues/*/timeline*)
+        if [ -n "${FIXTURE_TIMELINE_PAGE2:-}" ]; then
+          printf '%s\n%s\n' "${FIXTURE_TIMELINE:-[]}" "$FIXTURE_TIMELINE_PAGE2"; exit 0
+        fi
+        body="${FIXTURE_TIMELINE:-[]}" ;;
     */pulls/*/reviews*)     body="${FIXTURE_REVIEWS:-[]}" ;;
     */protection/required_status_checks*)
         if [ -n "${FIXTURE_BASE_REF_ENCODED:-}" ] && [[ "$path" != *"branches/${FIXTURE_BASE_REF_ENCODED}/protection"* ]]; then
@@ -97,6 +118,11 @@ if [ "$1" = "api" ]; then
           printf '%s\n%s\n' "$s1" "$s2"; exit 0
         fi
         body="${FIXTURE_COMMIT_STATUS:-'{\"statuses\":[]}'}" ;;
+    */commits/*)
+        # plain single-commit fetch (committer date for the reaction-path
+        # freshness check) — must be listed AFTER the more specific
+        # */commits/*/status* case above, since this pattern also matches it.
+        body="${FIXTURE_COMMIT:-'{\"commit\":{\"committer\":{\"date\":null}}}'}" ;;
     */rules/branches/*)
         if [ "${FIXTURE_RULES_FAIL:-0}" = 1 ]; then
           echo "gh: 500 Internal Server Error" >&2; exit 1
@@ -118,7 +144,16 @@ if [ "$1" = "api" ]; then
           */rulesets/222)  body="${FIXTURE_RULESET_222:-'{\"current_user_can_bypass\":\"none\"}'}" ;;
           *)               body="${FIXTURE_RULESET_BYPASS:-'{\"current_user_can_bypass\":\"none\"}'}" ;;
         esac ;;
-    */pulls/*)              body="${FIXTURE_PR:-'{\"state\":\"open\",\"head\":{\"sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"base\":{\"ref\":\"main\",\"sha\":\"cccccccccccccccccccccccccccccccccccccccc\"},\"created_at\":\"2026-01-01T00:00:00Z\"}'}" ;;
+    */pulls/*)
+        # The Component 2 reaction path re-reads the head SHA (via --jq
+        # .head.sha) AFTER the reactions/timeline fetch, to reject a head that
+        # moved mid-check. FIXTURE_PR_REREAD lets a test simulate that move;
+        # unset, the re-read sees the same FIXTURE_PR as the initial fetch.
+        if [ "$filter" = ".head.sha" ] && [ -n "${FIXTURE_PR_REREAD:-}" ]; then
+          body="$FIXTURE_PR_REREAD"
+        else
+          body="${FIXTURE_PR:-'{\"state\":\"open\",\"head\":{\"sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"base\":{\"ref\":\"main\",\"sha\":\"cccccccccccccccccccccccccccccccccccccccc\"},\"created_at\":\"2026-01-01T00:00:00Z\"}'}"
+        fi ;;
     *)                      body='{}' ;;
   esac
   body="${body#\'}"; body="${body%\'}"
@@ -394,6 +429,47 @@ out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS
 assert "required legacy context on a later status page is seen → eligible, green" \
   "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
 
+# ── ruleset-sourced required status checks (rules/branches/{base}, a
+#    required_status_checks-type rule) — a repo enforcing CI via a GitHub
+#    Ruleset instead of classic branch protection 404s the classic endpoint;
+#    that 404 must NOT collapse the required set to empty when the modern
+#    endpoint lists a real requirement. ────────────────────────────────────
+RULES_CI_ONE='[{"type":"required_status_checks","ruleset_id":333,"parameters":{"required_status_checks":[{"context":"ci","integration_id":15368}]}}]'
+run_ci_ok()        { jq -n '{check_runs:[{name:"ci",status:"completed",conclusion:"success",app:{id:15368}}]}'; }
+run_ci_wrong_app() { jq -n '{check_runs:[{name:"ci",status:"completed",conclusion:"success",app:{id:99999}}]}'; }
+
+# classic endpoint 404s (no classic protection), ruleset alone requires "ci",
+# satisfied by a pinned-app success → green, eligible
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_CI_ONE" FIXTURE_CHECK_RUNS="$(run_ci_ok)"); rc=$?
+assert "ruleset-only required check satisfied → ci_state green, eligible" \
+  "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
+
+# ruleset-only required check never started → blocked, never vacuously green
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_CI_ONE" FIXTURE_CHECK_RUNS='{"check_runs":[]}'); rc=$?
+assert "ruleset-only required check absent → blocked (rc 1)" "[ \$rc -eq 1 ]"
+assert "blocker code ci_not_green (ruleset-sourced)" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q ci_not_green"
+
+# a same-named success from a DIFFERENT app than the ruleset's integration_id
+# pin is not satisfied — the ruleset source pins trust exactly like the
+# classic-endpoint app_id pin does
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_CI_ONE" FIXTURE_CHECK_RUNS="$(run_ci_wrong_app)"); rc=$?
+assert "ruleset-pinned wrong-app success → blocked" "[ \$rc -eq 1 ]"
+
+# union: classic protection requires ci/build, ruleset separately requires
+# ci — BOTH sources' requirements must be evaluated, not just whichever
+# endpoint answered. Only ci/build's check run exists → still blocked on the
+# ruleset-sourced "ci" requirement.
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" \
+      FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_CI_ONE" FIXTURE_CHECK_RUNS="$(run_ok)"); rc=$?
+assert "union of classic+ruleset required checks, ruleset one unmet → blocked" "[ \$rc -eq 1 ]"
+
+# union satisfied from both sources → green
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" \
+      FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_CI_ONE" \
+      FIXTURE_CHECK_RUNS='{"check_runs":[{"name":"ci/build","status":"completed","conclusion":"success","app":{"id":15368}},{"name":"ci","status":"completed","conclusion":"success","app":{"id":15368}}]}'); rc=$?
+assert "union of classic+ruleset required checks, both met → green, eligible" \
+  "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
+
 # ── admin-bypass fact: authenticated identity's standing bypass grant on a
 #    GitHub ruleset's required-approving-review rule (separate from Axis 1) ──
 # no rules apply to this branch (default 404) → inert, not required
@@ -446,12 +522,20 @@ out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES
 assert "null ruleset_id with active count → eligible, current_actor_can_bypass false (fail closed for --admin)" \
     "[ \$rc -eq 0 ] && [ \"\$(jq '.facts.admin_bypass.current_actor_can_bypass' <<<\"\$out\")\" = false ]"
 
-# rules/branches fetch fails for a reason other than 404 → admin_bypass degrades
-# to the inert "no rulesets" state (never aborts eligibility over an
-# informational fact)
+# rules/branches now also sources the CI-green blocker's required-checks
+# union (not just the informational admin_bypass fact), so a hard failure on
+# it must fail closed exactly like the classic protection endpoint's own
+# hard-failure branch — never silently degrade to "no rulesets" and risk a
+# ruleset-only required check reading vacuously green.
 out=$(run_script "$BASE_POLICY" FIXTURE_RULES_FAIL=1); rc=$?
-assert "branch-rules fetch hard failure → eligible, admin_bypass inert (review_rule_active false, current_actor_can_bypass null)" \
-    "[ \$rc -eq 0 ] && [ \"\$(jq '.facts.admin_bypass.review_rule_active' <<<\"\$out\")\" = false ] && [ \"\$(jq '.facts.admin_bypass.current_actor_can_bypass' <<<\"\$out\")\" = null ]"
+assert "branch-rules fetch hard failure → fails closed (exit 3)" "[ \$rc -eq 3 ]"
+assert "branch-rules fetch hard failure → prints no verdict" "[ -z \"\$out\" ]"
+
+# classic protection legitimately absent (404, ruleset-only repo) AND the
+# rules/branches fetch hard-fails → must NOT read as vacuous green (the
+# original bug relocated to this endpoint's failure path)
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=1 FIXTURE_RULES_FAIL=1); rc=$?
+assert "classic 404 + rules hard failure → fails closed, not vacuous green (exit 3)" "[ \$rc -eq 3 ]"
 
 # a ruleset's own detail fetch fails after being listed → degrade to
 # non-bypassable (fail closed for --admin) and continue rather than abort
@@ -483,6 +567,46 @@ assert "timeout does NOT satisfy the positive fact" "[ \"\$(jq '.facts.bot_clean
 revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' COMMENTED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
 out=$(run_script "$BOT_POLICY" FIXTURE_REVIEWS="$revs" FIXTURE_PR="$old_pr"); rc=$?
 assert "arrived bot review → satisfied, eligible" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = satisfied ]"
+
+# ── review_wait.bot recognizes Codex's reaction-based signals (2026-07-18
+# codex-rereview-path-design), not just Copilot's review-object/event
+# vocabulary. "arrived" must also fire off the already-computed
+# reaction_clean fact (Component 2b) — Codex's clean auto/push-triggered pass
+# leaves a +1 reaction, never a review object — and latest_ref's freshness
+# clock must also advance on a trusted `eyes` reaction, the Codex analogue of
+# Copilot's copilot_work_started event.
+
+# Codex-only PR: no review object, no review_requested/copilot_work_started
+# events, just a qualifying clean +1 reaction at head → satisfied via the
+# reaction path (arrived must OR in reaction_clean).
+commit_recent=$(jq -n '{commit:{committer:{date:"2026-01-01T00:00:00Z"}}}')
+reacts_plus1=$(jq -n --arg t "2026-01-01T01:00:00Z" \
+  '[{id:1, content:"+1", user:{login:"trusted-bot[bot]", type:"Bot"}, created_at:$t}]')
+out=$(run_script "$BOT_POLICY" FIXTURE_REACTIONS="$reacts_plus1" FIXTURE_COMMIT="$commit_recent"); rc=$?
+assert "codex-only clean +1 reaction → review_wait.bot satisfied (reaction path)" \
+    "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = satisfied ]"
+
+# Load-bearing regression: an `eyes` reaction from a trusted identity resets
+# the freshness clock. PR age alone (old_pr, 2h old) would exceed
+# BOT_TIMEOUT, but a recent `eyes` must push latest_ref forward so the wait
+# reads "waiting", not "timed_out" — Codex is comment-triggered and never
+# emits review_requested/copilot_work_started, so without this the wait
+# always reads stale mid-review.
+reacts_eyes_only=$(jq -n --arg t "$TS_RECENT" \
+  '[{id:2, content:"eyes", user:{login:"trusted-bot[bot]", type:"Bot"}, created_at:$t}]')
+out=$(run_script "$BOT_POLICY" FIXTURE_REACTIONS="$reacts_eyes_only" FIXTURE_PR="$old_pr"); rc=$?
+assert "trusted eyes reaction resets freshness clock → waiting, not timed_out" \
+    "[ \$rc -eq 1 ] && [ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = waiting ]"
+
+# Non-allowlisted identity's eyes/+1 must not feed into arrived or
+# latest_ref — same allowlist-exact-match discipline as the rest of the
+# reaction path. Old PR, only untrusted reactions → still timed_out.
+reacts_untrusted=$(jq -n --arg t "$TS_RECENT" \
+  '[{id:3, content:"eyes", user:{login:"evil-bot[bot]", type:"Bot"}, created_at:$t},
+    {id:4, content:"+1", user:{login:"evil-bot[bot]", type:"Bot"}, created_at:$t}]')
+out=$(run_script "$BOT_POLICY" FIXTURE_REACTIONS="$reacts_untrusted" FIXTURE_PR="$old_pr"); rc=$?
+assert "non-allowlisted eyes/+1 reactions ignored → still timed_out" \
+    "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = timed_out ]"
 
 # humans required, none yet, no timeout → blocks indefinitely
 H_POLICY=$(jq -c '.human_approvers_required = 1' <<<"$BASE_POLICY")
@@ -539,6 +663,73 @@ assert "recorded posted_reply_id excluded → eligible" "[ \$rc -eq 0 ]"
 IC2='[{"id": 900, "user": {"login": "operator"}, "body": "agent reply"}, {"id": 901, "user": {"login": "operator"}, "body": "actually, one more thing"}]'
 out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC2"); rc=$?
 assert "same-account manual comment (unrecorded id) blocks" "[ \$rc -eq 1 ]"
+
+# ── Component 2b (2026-07-18 spec): loop-generated comments are not feedback ──
+# Both the clean-pass announcement and the "@codex review" trigger comment are
+# artifacts of the re-review loop itself, not human/bot feedback needing
+# triage — excluded from live_issue entirely (same effect as terminal triage).
+clean_invs
+
+# (1) Clean-pass marker from an allowlisted bot → excluded, eligible
+IC_CLEAN='[{"id": 950, "user": {"login": "trusted-bot[bot]"}, "body": "Codex Review: Didn'\''t find any major issues here, LGTM"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_CLEAN"); rc=$?
+assert "clean-pass marker from allowlisted bot excluded → eligible" "[ \$rc -eq 0 ]"
+
+# (2) Same marker text from a NON-allowlisted author still blocks — the
+# exemption is a bot-identity + marker conjunction, not a marker-alone match
+IC_CLEAN_UNTRUSTED='[{"id": 951, "user": {"login": "random-user"}, "body": "Codex Review: Didn'\''t find any major issues here"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_CLEAN_UNTRUSTED"); rc=$?
+assert "clean-pass marker text from non-allowlisted author still blocks" "[ \$rc -eq 1 ]"
+
+# (3) A bot comment that merely CONTAINS the marker, not starting with it,
+# still blocks — prefix match only, never substring
+IC_CLEAN_NOTPREFIX='[{"id": 952, "user": {"login": "trusted-bot[bot]"}, "body": "FYI: Codex Review: Didn'\''t find any major issues here"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_CLEAN_NOTPREFIX"); rc=$?
+assert "marker not at body start still blocks (prefix match only)" "[ \$rc -eq 1 ]"
+
+# (4) An unrelated bot comment still blocks — bot identity alone is never
+# the exemption, only bot identity + marker together
+IC_BOT_OTHER='[{"id": 953, "user": {"login": "trusted-bot[bot]"}, "body": "please rename this variable"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_BOT_OTHER"); rc=$?
+assert "unrelated bot comment still blocks" "[ \$rc -eq 1 ]"
+
+# (5) Trigger comment authored by the PR author → excluded, eligible
+PR_AUTHOR_JSON='{"state":"open","head":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"base":{"ref":"main","sha":"cccccccccccccccccccccccccccccccccccccccc"},"created_at":"2026-01-01T00:00:00Z","user":{"login":"pr-author"}}'
+IC_TRIGGER_AUTHOR='[{"id": 960, "user": {"login": "pr-author"}, "body": "@codex review"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_PR="$PR_AUTHOR_JSON" FIXTURE_ISSUE_COMMENTS="$IC_TRIGGER_AUTHOR"); rc=$?
+assert "trigger comment from PR author excluded → eligible" "[ \$rc -eq 0 ]"
+
+# (6) Trigger comment authored by the authenticated session identity (the
+# CLI's own re-ask) → excluded, eligible. Default FIXTURE_PR carries no
+# `user`, so $pr_author is empty here — isolates the auth-login match.
+IC_TRIGGER_SESSION='[{"id": 961, "user": {"login": "session-user"}, "body": "@codex review"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_TRIGGER_SESSION"); rc=$?
+assert "trigger comment from authenticated session identity excluded → eligible" "[ \$rc -eq 0 ]"
+
+# (7) Trigger comment from neither identity still blocks
+IC_TRIGGER_OTHER='[{"id": 962, "user": {"login": "operator"}, "body": "@codex review"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_TRIGGER_OTHER"); rc=$?
+assert "trigger comment from unrelated identity still blocks" "[ \$rc -eq 1 ]"
+
+# (8) The trigger phrase must be at the body start too — not a substring
+IC_TRIGGER_NOTPREFIX='[{"id": 963, "user": {"login": "pr-author"}, "body": "please do @codex review this again"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_PR="$PR_AUTHOR_JSON" FIXTURE_ISSUE_COMMENTS="$IC_TRIGGER_NOTPREFIX"); rc=$?
+assert "trigger phrase not at body start still blocks (not a substring match)" "[ \$rc -eq 1 ]"
+
+# (8b) The body must be EXACTLY the trigger phrase, not merely start with it —
+# a prefix match would let real feedback appended after "@codex review" ride
+# through unexamined (Codex review finding on PR #335, round 1).
+IC_TRIGGER_PLUS_FEEDBACK='[{"id": 964, "user": {"login": "pr-author"}, "body": "@codex review — please also fix the race described below"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_PR="$PR_AUTHOR_JSON" FIXTURE_ISSUE_COMMENTS="$IC_TRIGGER_PLUS_FEEDBACK"); rc=$?
+assert "trigger phrase plus appended feedback still blocks (exact match only)" "[ \$rc -eq 1 ]"
+
+# (9) A failed `gh api user` lookup never aborts the run (it does not gate
+# eligibility) — it degrades AUTH_LOGIN to an unmatchable empty string, so
+# the session-identity exemption just doesn't fire and the comment blocks
+# like any other untriaged item (fail closed).
+out=$(run_script "$BASE_POLICY" FIXTURE_AUTH_LOGIN_FAIL=1 FIXTURE_ISSUE_COMMENTS="$IC_TRIGGER_SESSION"); rc=$?
+assert "authenticated-identity lookup failure does not abort the script" "[ \$rc -ne 3 ]"
+assert "authenticated-identity lookup failure degrades the exemption (blocks)" "[ \$rc -eq 1 ]"
 
 # an APPROVED bot review with a non-empty body needs triage too
 clean_invs
@@ -1023,6 +1214,265 @@ assert "PR#256 counts: 3 live = 1 skip + 2 escalations + 0 blocking" \
 # …and after a human resolves both escalated threads on GitHub → eligible
 out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false T2:true T3:true)"); rc=$?
 assert "PR#256 after human resolves escalated threads → eligible" "[ \$rc -eq 0 ]"
+clean_invs
+
+# ── Component 2: reaction clean-pass path (2026-07-18 spec) ─────────────────
+# docs/specs/2026-07-18-codex-rereview-path-design.md — bot_clean_review_at_head
+# extends to a disjunction: (a) the existing review path, OR (b) a reaction
+# path that is the only artifact Codex leaves on an auto/push-triggered clean
+# pass. bot_clean_signal_source records which path (if either) fired.
+mk_reaction() {  # mk_reaction <login> <content> <created_at> [type] [id]
+  jq -n --arg l "$1" --arg c "$2" --arg t "$3" --arg ty "${4:-Bot}" --argjson id "${5:-42}" \
+    '{id: $id, content: $c, user: {login: $l, type: $ty}, created_at: $t}'
+}
+mk_commit() {  # mk_commit <committer-date-or-"null">
+  if [ "$1" = "null" ]; then
+    jq -n '{commit:{committer:{date:null}}}'
+  else
+    jq -n --arg d "$1" '{commit:{committer:{date:$d}}}'
+  fi
+}
+mk_fp_event() {  # mk_fp_event <created_at>
+  jq -n --arg t "$1" '{event:"head_ref_force_pushed", created_at:$t}'
+}
+pr_with_head() {  # pr_with_head <sha>
+  jq -n --arg sha "$1" --arg base "$BASE_SHA" \
+    '{state:"open", head:{sha:$sha}, base:{ref:"main", sha:$base}, created_at:"2026-01-01T00:00:00Z"}'
+}
+
+COMMIT_TS="2026-01-01T00:00:00Z"           # head commit's committer date
+PLUS1_TS_OK="2026-01-01T01:00:00Z"         # post-dates COMMIT_TS
+PLUS1_TS_STALE="2025-12-31T23:00:00Z"      # pre-dates COMMIT_TS
+FORCEPUSH_TS="2026-01-01T02:00:00Z"        # post-dates PLUS1_TS_OK
+COMMIT_FIXTURE="$(mk_commit "$COMMIT_TS")"
+
+# reaction path alone → true, source "reaction"
+reacts=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "$PLUS1_TS_OK" Bot 99)" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "reaction path alone → bot_clean_review_at_head true" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = true ]"
+assert "reaction path alone → signal source reaction" \
+  "[ \"\$(jq -r '.facts.bot_clean_signal_source' <<<\"\$out\")\" = reaction ]"
+assert "reaction path alone → bot_reviewed_by is the reactor" \
+  "[ \"\$(jq -r '.facts.bot_reviewed_by' <<<\"\$out\")\" = 'trusted-bot[bot]' ]"
+assert "reaction path alone → bot_clean_reaction carries id and created_at (audit trail)" \
+  "[ \"\$(jq -c '.facts.bot_clean_reaction' <<<\"\$out\")\" = '{\"id\":99,\"created_at\":\"$PLUS1_TS_OK\"}' ]"
+
+# review path alone → true, source "review" (companion fact regression pin)
+revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "review path alone → signal source review" \
+  "[ \"\$(jq -r '.facts.bot_clean_signal_source' <<<\"\$out\")\" = review ]"
+assert "review path alone → bot_clean_reaction is null (no audit trail to fabricate)" \
+  "[ \"\$(jq '.facts.bot_clean_reaction' <<<\"\$out\")\" = null ]"
+
+# both present → source reads "review" (review wins over reaction), and the
+# reaction audit trail stays null — the announcement has no reaction to cite
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs" FIXTURE_REACTIONS="$reacts" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "both paths present → fact true" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = true ]"
+assert "both paths present → source review wins" \
+  "[ \"\$(jq -r '.facts.bot_clean_signal_source' <<<\"\$out\")\" = review ]"
+assert "both paths present → bot_reviewed_by is the reviewer, not the reactor" \
+  "[ \"\$(jq -r '.facts.bot_reviewed_by' <<<\"\$out\")\" = 'trusted-bot[bot]' ]"
+assert "both paths present → bot_clean_reaction null (review wins, no reaction cited)" \
+  "[ \"\$(jq '.facts.bot_clean_reaction' <<<\"\$out\")\" = null ]"
+
+# neither → false, source "none"
+out=$(run_script "$BASE_POLICY" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "neither path → fact false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+assert "neither path → signal source none" \
+  "[ \"\$(jq -r '.facts.bot_clean_signal_source' <<<\"\$out\")\" = none ]"
+
+# +1 predating the head commit's committer date → false
+reacts_stale=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "$PLUS1_TS_STALE")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts_stale" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "+1 predating committer date → false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# +1 predating a LATER head_ref_force_pushed timeline event → false
+tl=$(jq -n --argjson a "$(mk_fp_event "$FORCEPUSH_TS")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts" FIXTURE_COMMIT="$COMMIT_FIXTURE" FIXTURE_TIMELINE="$tl")
+assert "+1 predating a later force-push event → false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# head_ref_force_pushed event on a LATER timeline page → pagination must
+# still surface it (page 1 alone would wrongly read true)
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts" FIXTURE_COMMIT="$COMMIT_FIXTURE" \
+      FIXTURE_TIMELINE='[]' FIXTURE_TIMELINE_PAGE2="$tl")
+assert "force-push event on timeline page 2 still surfaces (pagination) → false" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# +1 from an identity outside the allowlist → false
+reacts_untrusted=$(jq -n --argjson a "$(mk_reaction 'evil-bot[bot]' '+1' "$PLUS1_TS_OK")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts_untrusted" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "+1 from untrusted identity → false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# +1 from an allowlisted login whose user.type is "User" → still true. GitHub
+# reports "User" for the live chatgpt-codex-connector[bot] on this endpoint
+# (verified 2026-07-19); the login allowlist is the trust boundary, not type.
+reacts_nonbot=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "$PLUS1_TS_OK" User)" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts_nonbot" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "+1 from allowlisted login with user.type=User still recognized (field-verified Codex behavior)" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = true ]"
+
+# eyes present from a DIFFERENT allowlisted identity than the +1's → still blocks
+BOT_POLICY_2=$(jq -c '.bot_reviewers = ["trusted-bot[bot]", "second-bot[bot]"]' <<<"$BASE_POLICY")
+reacts_eyes_other=$(jq -n \
+  --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "$PLUS1_TS_OK")" \
+  --argjson b "$(mk_reaction 'second-bot[bot]' eyes "$PLUS1_TS_OK")" '[$a,$b]')
+out=$(run_script "$BOT_POLICY_2" FIXTURE_REACTIONS="$reacts_eyes_other" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "eyes from a different allowlisted identity still blocks" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# eyes arriving on the SECOND PAGE of the reactions fetch → pagination must
+# still surface it (page 1 alone, with just the +1, would wrongly read true)
+eyes_page2=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' eyes "$PLUS1_TS_OK")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts" FIXTURE_REACTIONS_PAGE2="$eyes_page2" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "eyes on reactions page 2 still surfaces (pagination) → false" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# head OID moved between the reactions fetch and the re-read → reject
+moved_pr=$(pr_with_head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts" FIXTURE_COMMIT="$COMMIT_FIXTURE" FIXTURE_PR_REREAD="$moved_pr")
+assert "head moved between reactions fetch and re-read → false (fail closed)" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# missing committer date → false (no FIXTURE_COMMIT set; stub default is null)
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts")
+assert "missing committer date → false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# unparseable reaction timestamp → false
+reacts_bad_ts=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' 'not-a-date')" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts_bad_ts" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "unparseable +1 timestamp → false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# a +1 whose created_at EQUALS last_head_change to the exact second must be
+# rejected — the predicate requires strict >, pinning that a future refactor
+# can't accidentally loosen it to >=
+reacts_exact_ts=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "$COMMIT_TS")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts_exact_ts" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "+1 created_at equal to last_head_change → false (strict >, not >=)" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# a failing reactions fetch is infrastructure error, not a false fact — the
+# whole script exits 3 (fail-closed `gh_api ... || { ...; exit 3; }` idiom),
+# same as every other required fetch in this file
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS_FAIL=1 FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "reactions fetch failure exits 3 (fail-closed, infrastructure error)" "[ \$rc -eq 3 ]"
+
+# empty allowlist → reaction path false
+EMPTY_ALLOWLIST_POLICY=$(jq -c '.bot_reviewers = []' <<<"$BASE_POLICY")
+out=$(run_script "$EMPTY_ALLOWLIST_POLICY" FIXTURE_REACTIONS="$reacts" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "empty bot_reviewers allowlist → reaction path false" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+assert "empty bot_reviewers allowlist → signal source none" \
+  "[ \"\$(jq -r '.facts.bot_clean_signal_source' <<<\"\$out\")\" = none ]"
+
+# ── review_summary ratchet (2026-07-18 spec, Component 2b continuation) ──────
+# Each Codex re-review round mints a brand-new review_id, so a triaged round's
+# disposition never covers the next round's review object. A fresh
+# reaction_clean signal (never bot_clean_review_at_head, which would also
+# admit the review path) retroactively clears any review_summary item whose
+# submitted_at strictly predates the reaction's created_at — no per-round
+# bookkeeping. clean_invs/clean_sidecars first: no leftover disposition from
+# earlier Task 17 cases should leak into this section.
+clean_invs; clean_sidecars
+mk_review_summary() {  # mk_review_summary <id> <submitted_at> [login] [body]
+  jq -n --argjson id "$1" --arg t "$2" --arg l "${3:-trusted-bot[bot]}" \
+    --arg b "${4:-please address this finding}" --arg head "$HEAD_SHA" \
+    '{id: $id, user: {login: $l, type: "Bot"}, state: "COMMENTED",
+      commit_id: $head, submitted_at: $t, body: $b}'
+}
+
+# (1) stale review_summary (no disposition) + a LATER genuinely-clean reaction
+# at head → auto-cleared, eligible.
+r1=$(mk_review_summary 401 "2026-01-01T01:00:00Z")
+revs1=$(jq -n --argjson a "$r1" '[$a]')
+reacts1=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs1" FIXTURE_REACTIONS="$reacts1" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "stale review_summary superseded by a later clean reaction → eligible" "[ \$rc -eq 0 ]"
+
+# (2) TRAP CASE — review_summary submitted_at is AFTER the reaction's
+# created_at (a later round found something after an earlier clean
+# attestation) → stays untriaged, still blocks. Must never regress.
+r2=$(mk_review_summary 402 "2026-01-01T03:00:00Z")
+revs2=$(jq -n --argjson a "$r2" '[$a]')
+reacts2=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs2" FIXTURE_REACTIONS="$reacts2" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "review_summary AFTER the clean reaction is never masked → still blocks" "[ \$rc -eq 1 ]"
+assert "review_summary AFTER the clean reaction → blocker code untriaged_feedback" \
+  "jq -r '.blockers[].code' <<<\"\$out\" | grep -q untriaged_feedback"
+
+# (3) Regression: an EXISTING terminal disposition (FIX/committed or SKIP)
+# stays cleared regardless of reaction timing — no reaction fixture at all.
+clean_invs
+r3=$(mk_review_summary 403 "2026-01-01T01:00:00Z")
+revs3=$(jq -n --argjson a "$r3" '[$a]')
+write_inv "o-r-1-ratchet0001.json" '[{"kind":"review_summary","review_id":403,"classification":"SKIP","rationale":"cosmetic","fix_outcome":null}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs3"); rc=$?
+assert "existing terminal disposition clears regardless of reaction timing (unchanged)" "[ \$rc -eq 0 ]"
+clean_invs
+
+# (4) Multiple stale review_summary items from different earlier rounds, all
+# predating ONE fresh clean reaction → ALL cleared by that single reaction.
+r4a=$(mk_review_summary 404 "2026-01-01T01:00:00Z")
+r4b=$(mk_review_summary 405 "2026-01-01T01:30:00Z")
+revs4=$(jq -n --argjson a "$r4a" --argjson b "$r4b" '[$a,$b]')
+reacts4=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs4" FIXTURE_REACTIONS="$reacts4" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "one fresh clean reaction clears multiple earlier-round review_summary items" "[ \$rc -eq 0 ]"
+
+# (5) No reaction_clean at all — review path won instead (bot_clean_review_at_head
+# true via review, not reaction) — the new clearing condition must never fire
+# off the review path; a findings-bearing review_summary still blocks.
+r5=$(mk_review_summary 406 "2026-01-01T01:00:00Z")
+r5_clean=$(mk_review 'trusted-bot[bot]' APPROVED "$HEAD_SHA" "2026-01-01T03:00:00Z")
+revs5=$(jq -n --argjson a "$r5" --argjson b "$r5_clean" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs5"); rc=$?
+assert "clean signal via the review path (not reaction) never clears a review_summary" "[ \$rc -eq 1 ]"
+
+# (6) Reaction-mutability regression: a +1 is present but does NOT satisfy
+# reaction_clean (an `eyes` reaction from the same allowlisted identity makes
+# the fact false) — a stale review_summary that would have been cleared stays
+# untriaged/live. Proves the check is evaluated fresh from live GitHub state.
+r6=$(mk_review_summary 407 "2026-01-01T01:00:00Z")
+revs6=$(jq -n --argjson a "$r6" '[$a]')
+reacts6=$(jq -n \
+  --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" \
+  --argjson b "$(mk_reaction 'trusted-bot[bot]' eyes "2026-01-01T02:00:00Z")" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs6" FIXTURE_REACTIONS="$reacts6" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "a +1 that fails reaction_clean (eyes present) never clears a stale review_summary" "[ \$rc -eq 1 ]"
+
+# (7) Boundary: reaction created_at EXACTLY EQUAL to the review's submitted_at
+# (same second) → must NOT clear (strict </>, matching the tie-breaking
+# convention used throughout the reaction-path fact above).
+r7=$(mk_review_summary 408 "2026-01-01T02:00:00Z")
+revs7=$(jq -n --argjson a "$r7" '[$a]')
+reacts7=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs7" FIXTURE_REACTIONS="$reacts7" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "reaction created_at exactly equal to review submitted_at → does not clear (strict <)" "[ \$rc -eq 1 ]"
+
+# (8) Codex review finding on PR #339: a human (non-allowlisted) reviewer's
+# untriaged review_summary must NEVER clear off a Codex clean reaction —
+# reaction_clean is Codex's own attestation about Codex's own findings, not
+# a blanket "the PR is fine" signal. A human review with no disposition,
+# submitted BEFORE a later Codex clean reaction, must still block.
+r8=$(mk_review_summary 409 "2026-01-01T01:00:00Z" "human-reviewer")
+revs8=$(jq -n --argjson a "$r8" '[$a]')
+reacts8=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs8" FIXTURE_REACTIONS="$reacts8" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "a human reviewer's untriaged review_summary is never cleared by Codex's reaction (author-scoped)" "[ \$rc -eq 1 ]"
+
+# (9) Cross-identity trap: a policy trusting TWO bots (Codex + a second
+# allowlisted identity). A findings-bearing review_summary from the SECOND
+# bot must NOT be cleared by the FIRST bot's clean reaction — reaction_clean
+# is scoped to the reacting identity specifically, not "any allowlisted
+# bot". Without this, a Codex +1 could wrongly clear a stale Copilot
+# findings review.
+r9=$(mk_review_summary 410 "2026-01-01T01:00:00Z" "second-bot[bot]")
+revs9=$(jq -n --argjson a "$r9" '[$a]')
+reacts9=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
+out=$(run_script "$BOT_POLICY_2" FIXTURE_REVIEWS="$revs9" FIXTURE_REACTIONS="$reacts9" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "a different allowlisted bot's untriaged review_summary is never cleared by another bot's reaction (identity-scoped, not allowlist-scoped)" "[ \$rc -eq 1 ]"
+
 clean_invs
 
 exit $FAIL

@@ -159,6 +159,8 @@ Skip any empty queue section (`in_flight` is exempt — it always renders its su
 
 ## Step 3: Present
 
+If the collected JSON carries a top-level `backlog_grooming_nag` string, prepend it as one dismissible line before any section, labeled unmistakably **Backlog Grooming** so it is never confused with CONTEXT.md's separate Holding-Place Grooming Nag (a different ceremony, a different timestamp) — the two can coexist on this surface once the Holding Place ships. Absent key → render nothing; never fabricate the line.
+
 IDs are already prefix-stripped. Render each list as a 7-column table:
 
 | P | Milestone | Feature | Parent Epic | Bead ID | Type | Title |

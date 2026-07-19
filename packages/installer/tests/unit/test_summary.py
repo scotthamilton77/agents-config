@@ -363,3 +363,69 @@ def test_entries_carry_a_transcript_record() -> None:
     )
     assert io.transcript
     assert all(isinstance(e, TranscriptEntry) for e in io.transcript)
+
+
+def test_cli_targets_render_as_blocks() -> None:
+    """
+    Given counters keyed cli:workcli with activity
+    When render_summary runs with clis=("cli:workcli",)
+    Then verbose renders a '-- cli:workcli --' block and quiet renders its
+    change line (previously cli:* keys were silently dropped).
+
+    Pins spec §6 summary-rendering change.
+    """
+    counters = {"cli:workcli": Counters(created=1)}
+    io = ScriptedIO()
+    render_summary(
+        counters,
+        tools=[],
+        plugins=[],
+        all_tools=[],
+        all_plugins=[],
+        clis=["cli:workcli"],
+        verbose=True,
+        io=io,
+    )
+    assert any(e.message == "-- cli:workcli --" for e in io.transcript)
+    io2 = ScriptedIO()
+    render_summary(
+        counters,
+        tools=[],
+        plugins=[],
+        all_tools=[],
+        all_plugins=[],
+        clis=["cli:workcli"],
+        verbose=False,
+        io=io2,
+    )
+    assert any("cli:workcli: 1 installed" in e.message for e in io2.transcript)
+
+
+def test_quiet_cli_failure_with_no_counters_does_not_claim_up_to_date() -> None:
+    """
+    Given a CLI-deploy failure that recorded no per-target counters (e.g. the
+    uv-version guard rejects before any CLI is processed, or a hard install/
+    smoke failure whose branch never touches skipped/created/updated)
+    When render_summary runs under quiet with any_failed=True
+    Then it does NOT print the misleading 'All files up to date' line — codex
+    review finding on PR #328: deploy_clis's record-and-continue failures
+    reach render_summary with empty cli: counters, right before cli.py
+    returns exit 1, so the quiet summary must not claim success.
+
+    Pins spec §6 summary-rendering change (Task 12) + failure surfacing
+    (Task 8/9).
+    """
+    io = ScriptedIO()
+    render_summary(
+        {},
+        tools=[],
+        plugins=[],
+        all_tools=[],
+        all_plugins=[],
+        clis=[],
+        any_failed=True,
+        verbose=False,
+        io=io,
+    )
+    msgs = _messages(io)
+    assert not any(m == "All files up to date — no changes made." for m in msgs), msgs

@@ -15,6 +15,7 @@
 .ralf/
 .crit.json
 .superpowers/
+.grind
 
 # Local settings
 settings.local.json
@@ -51,3 +52,6 @@ htmlcov/
 
 # vizsuite artifact output (`viz pr` writes .viz/out/*.html at cwd)
 .viz/
+
+# backlog-landscape regenerated artifacts (scripts/backlog-landscape/regenerate.sh)
+scripts/backlog-landscape/output/

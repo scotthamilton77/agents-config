@@ -40,6 +40,94 @@ def bd_json(*args):
         return []
 
 
+# The workcli envelope's protocol MAJOR version this integration understands
+# (README.md's "Consumer handshake": pin MAJOR, refuse a mismatch rather than
+# risk mis-parsing). A PATH-shadowed or unrelated "work" binary can still
+# exit 0 with a superficially valid {"ok": true, "data": {...}} shape, so the
+# protocol field is the one thing that actually attests this came from a
+# compatible workcli (Codex finding, round 5).
+_COMPATIBLE_PROTOCOL_MAJOR = "1"
+# The envelope contract requires semver MAJOR.MINOR exactly -- both numeric,
+# no trailing/leading junk -- so a permissive split(".")[0] check would wrongly
+# accept "1", "1.", or "1-shadowed" (Codex finding, round 6).
+_PROTOCOL_PATTERN = re.compile(r"^(\d+)\.(\d+)$")
+
+
+def work_groom_status():
+    """Best-effort `work groom --status` call for the backlog-grooming nag line.
+
+    Self-silences on ANY failure -- `work` not on PATH, a non-zero exit, an
+    unparseable envelope, an incompatible/missing protocol version, or an
+    `ok: false` envelope (e.g. E_NOT_CONFIGURED -- the real case in THIS repo
+    today, since its own groom-state-bead is still blank pending the backfill
+    migration) -- returns None rather than raising or printing, mirroring
+    bd_json's discipline above. Distinct from that ceremony's own state: this
+    is workcli's Backlog Grooming nag, never to be confused with CONTEXT.md's
+    separate Holding-Place Grooming Nag.
+    """
+    try:
+        result = subprocess.run(
+            ["work", "groom", "--status"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            # A non-zero exit is a documented self-silencing failure; parsing
+            # stdout anyway risks accepting a stale/partial envelope a
+            # wrapper or half-failed `work` binary wrote before exiting
+            # non-zero (Codex finding).
+            return None
+        envelope = json.loads(result.stdout)
+    except (json.JSONDecodeError, subprocess.TimeoutExpired, OSError, UnicodeDecodeError):
+        # OSError (a superclass of FileNotFoundError) also covers a `work`
+        # that resolves on PATH but can't be executed -- lost +x bit, a
+        # noexec mount -- which subprocess.run raises as PermissionError,
+        # a plain FileNotFoundError catch would miss (Codex finding).
+        # UnicodeDecodeError (not an OSError subclass) covers a corrupted or
+        # PATH-shadowed binary writing non-UTF-8 bytes: subprocess.run's
+        # text=True decoding raises it before json.loads ever runs (Codex
+        # finding, round 6).
+        return None
+    if not isinstance(envelope, dict) or envelope.get("ok") is not True:
+        # Valid JSON that isn't an envelope object (e.g. a PATH-shadowed
+        # `work` emitting `[]`) must self-silence too, not crash .get() with
+        # AttributeError (Codex finding). `is not True` (not a truthiness
+        # check) so an envelope carrying "ok": "true" (a string) or any
+        # other truthy-but-wrong value doesn't slip past self-silencing.
+        return None
+    protocol = envelope.get("protocol")
+    protocol_match = isinstance(protocol, str) and _PROTOCOL_PATTERN.match(protocol)
+    if not protocol_match or protocol_match.group(1) != _COMPATIBLE_PROTOCOL_MAJOR:
+        # A PATH-shadowed or incompatible "work" can still emit an
+        # {"ok": true, ...} shape; only a matching protocol MAJOR actually
+        # attests this came from a compatible workcli (Codex finding). The
+        # envelope contract requires semver MAJOR.MINOR exactly -- a bare
+        # split(".")[0] would wrongly accept "1", "1.", or "1-shadowed" as
+        # long as the first segment happened to read "1" (Codex finding,
+        # round 6), so the full string is matched against a strict pattern.
+        return None
+    data = envelope.get("data")
+    return data if isinstance(data, dict) else None
+
+
+def backlog_grooming_nag_line(status):
+    """Render the one-line nag from a `work groom --status` data dict, or
+    None when not breached (or status is None -- the call failed/unavailable).
+    """
+    if not status or status.get("breached") is not True:
+        # `is not True`, not a truthiness check: a stale/wrong `work` build
+        # emitting {"breached": "false"} (a truthy string) must self-silence,
+        # not add a nag because the value happened to be non-empty (Codex
+        # finding).
+        return None
+    days_since = status.get("days_since")
+    if days_since is not None:
+        return (
+            f"Backlog Grooming overdue ({days_since} days since last groomed) — "
+            "run 'work groom --done' after triage."
+        )
+    return "Backlog Grooming overdue — run 'work groom --done' after triage."
+
+
 # ---------------------------------------------------------------------------
 # Project prefix detection
 # ---------------------------------------------------------------------------
@@ -635,6 +723,13 @@ def main():
 
     # Mode-independent, like `totals` (see the in-flight section comment).
     output["in_flight"] = in_flight_beads
+
+    # Best-effort, self-silencing (see work_groom_status docstring): key is
+    # present only when breached, absent otherwise -- same absent-not-empty
+    # convention as the mode-gated sections above.
+    nag_line = backlog_grooming_nag_line(work_groom_status())
+    if nag_line is not None:
+        output["backlog_grooming_nag"] = nag_line
 
     print(json.dumps(output, indent=2))
 

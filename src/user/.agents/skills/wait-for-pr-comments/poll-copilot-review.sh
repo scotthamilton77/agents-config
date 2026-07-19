@@ -17,20 +17,46 @@
 # any bot the merge policy trusts. Callers should pass the resolved review
 # policy's bot_reviewers list (see merge-guard/resolve_policy.py); the same
 # exact-identity allowlist the merge gate enforces. Omit it to keep the
-# standalone Copilot-substring default.
+# standalone Copilot-substring default. If it contains a comment-triggered
+# identity (currently chatgpt-codex-connector[bot]/Codex — never a requested
+# reviewer, mirrors request-rereview.sh's identity dispatch table), Sub-phase
+# A's requested-reviewer probe auto-skips (as if --skip-request-check were
+# passed) instead of risking a spurious copilot_not_requested exit; no effect
+# when the list has only request-based identities (e.g. Copilot).
+#
+# Poll completion contract: this script's JSON output also completes without
+# a review object when a bot's pass is clean. When --bot-reviewers is
+# supplied, a `+1` reaction on the PR body, or an issue comment starting with
+# the clean-pass marker "Codex Review: Didn't find any major issues" — each
+# from an allowlisted identity — also counts as completion (the standalone
+# Copilot-substring default never checks either signal). A clean signal is
+# accepted only when it is fresh: it must post-date --since-timestamp when
+# given, else (the initial poll) the point the current head became HEAD —
+# max( PR head commit's committer date, latest head_ref_force_pushed timeline
+# event ), since a force-push can re-point HEAD at an older commit. If that
+# freshness bound cannot be established, clean signals are rejected that round
+# (fail closed). `completion_kind` distinguishes "review" / "clean_reaction" /
+# "timeout"; only "timeout" should count against a caller's silent-ask budget.
+# If a clean-signal endpoint (reactions / issue comments) is FAILING at the
+# deadline, a clean pass and bot silence are indistinguishable — so the script
+# exits 3 (infrastructure error), NOT 1/timeout, and a transport failure is
+# never miscounted as a silent bot ask.
 #
 # Exit codes:
 #   0 — Review found (JSON on stdout)
 #   1 — Timeout (no review within --timeout-seconds, default ~10 minutes)
 #   2 — Copilot not requested (not added as reviewer within ~1 minute)
-#   3 — Error (auth failure, invalid args, network issue)
+#   3 — Error (auth failure, invalid args, network issue, or a clean-signal
+#       endpoint failing at the deadline)
 #
 # Stdout (exit 0):
-#   { "status": "copilot_review_found", "reviews": [...], "inline_comments": [...], "human_comments": [...] }
+#   { "status": "copilot_review_found", "completion_kind": "review"|"clean_reaction", "reviews": [...], "inline_comments": [...], "human_comments": [...] }
 # Stdout (exit 1):
-#   { "status": "copilot_review_timeout" }
+#   { "status": "copilot_review_timeout", "completion_kind": "timeout" }
 # Stdout (exit 2):
 #   { "status": "copilot_not_requested" }
+# Stdout (exit 3, clean-signal endpoint failed at the deadline):
+#   { "status": "copilot_review_error", "completion_kind": "error", "message": "clean-signal endpoint failure: <endpoints>" }
 # Stderr: diagnostic messages
 
 set -euo pipefail
@@ -131,6 +157,28 @@ else
 fi
 COPILOT_REVIEW_FILTER="(.user.type == \"Bot\") and (.user.login | ${COPILOT_LOGIN_FILTER})"
 
+# Clean-pass marker prefix (Component 3) — an issue comment body starting
+# with this, from an allowlisted identity, is a clean-pass completion signal
+# (checked only when --bot-reviewers is supplied; see header).
+CLEAN_PASS_MARKER="Codex Review: Didn't find any major issues"
+
+# Comment-triggered bot identities (mirrors request-rereview.sh's identity
+# dispatch table) — these bots are never added as a requested reviewer; they
+# are triggered by an '@codex review' issue comment instead. When
+# --bot-reviewers includes one of these, Sub-phase A's requested-reviewer
+# probe is not a valid precondition for the whole policy (see Sub-phase A
+# below).
+COMMENT_TRIGGERED_BOTS='["chatgpt-codex-connector[bot]"]'
+
+HAS_COMMENT_TRIGGERED_BOT=false
+if [[ -n "$BOT_REVIEWERS" ]]; then
+    if jq -e --argjson known "$COMMENT_TRIGGERED_BOTS" \
+        '(map(ascii_downcase)) as $mine | ($known | map(ascii_downcase)) as $known_lc | any($mine[]; . as $m | $known_lc | index($m) != null)' \
+        <<<"$BOT_REVIEWERS" >/dev/null 2>&1; then
+        HAS_COMMENT_TRIGGERED_BOT=true
+    fi
+fi
+
 # ── Helper functions ──────────────────────────────────────────────────────────
 
 pr_is_open() {
@@ -139,13 +187,79 @@ pr_is_open() {
     [[ "$state" == "open" ]]
 }
 
+# emit_clean_reaction_found — shared stdout payload for both clean-pass
+# completion signals (a `+1` reaction and a marker comment carry no review
+# content, so both report the same empty-arrays shape).
+emit_clean_reaction_found() {
+    jq -n '{
+        status: "copilot_review_found",
+        completion_kind: "clean_reaction",
+        reviews: [],
+        inline_comments: [],
+        human_comments: []
+    }'
+}
+
+# head_committer_epoch — the PR head commit's committer date as epoch seconds,
+# or empty on any failure (unfetchable head SHA, missing/unparseable date).
+# Committer dates are GitHub-API timestamps normalized to UTC `Z`, parsed the
+# same fromdateiso8601 way as the reaction/comment created_at values.
+head_committer_epoch() {
+    local head_sha date_iso
+    head_sha=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}" --jq '.head.sha') || return 0
+    [[ -n "$head_sha" && "$head_sha" != "null" ]] || return 0
+    date_iso=$(gh_api "repos/${OWNER}/${REPO}/commits/${head_sha}" --jq '.commit.committer.date') || return 0
+    [[ -n "$date_iso" && "$date_iso" != "null" ]] || return 0
+    printf '%s' "$date_iso" | jq -Rr 'fromdateiso8601? // empty' 2>/dev/null
+}
+
+# latest_force_push_epoch — created_at (epoch seconds) of the latest
+# head_ref_force_pushed timeline event, or empty stdout when no such event
+# exists (committer date alone then bounds freshness). Returns non-zero to
+# signal a fail-closed condition: a timeline fetch failure, or force-push
+# events present but none carrying a parseable created_at. The timeline is a
+# top-level array paginated the same `--paginate | jq -s 'add // []'` way as the
+# merge-guard reads (real `gh --paginate` streams one array per page).
+latest_force_push_epoch() {
+    local timeline count max_epoch
+    timeline=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/timeline?per_page=100" --paginate | jq -s 'add // []') || return 1
+    count=$(printf '%s' "$timeline" | jq '[.[] | select(.event == "head_ref_force_pushed")] | length') || return 1
+    [[ "$count" =~ ^[0-9]+$ ]] || return 1
+    [[ "$count" -gt 0 ]] || return 0
+    max_epoch=$(printf '%s' "$timeline" | jq -r \
+        '[.[] | select(.event == "head_ref_force_pushed") | .created_at | fromdateiso8601?] | max // empty') || return 1
+    [[ -n "$max_epoch" ]] || return 1
+    printf '%s' "$max_epoch"
+}
+
+# head_clean_bound_epoch — the clean-signal freshness bound on the initial poll
+# (no --since-timestamp): max( head commit committer date, latest
+# head_ref_force_pushed timeline event created_at ) in epoch seconds. Mirrors the
+# merge-guard clean-pass predicate's last_head_change (codex-rereview spec,
+# Component 2): a force-push can re-point HEAD at an older commit, so the committer
+# date alone under-bounds freshness and would accept a stale reaction. Empty on
+# any fail-closed condition — an unfetchable/unparseable committer date, or a
+# timeline fetch failure — so the caller rejects clean signals that round. No
+# force-push event → committer date alone (prior behavior).
+head_clean_bound_epoch() {
+    local committer_epoch force_push_epoch
+    committer_epoch=$(head_committer_epoch)
+    [[ -n "$committer_epoch" ]] || return 0
+    force_push_epoch=$(latest_force_push_epoch) || return 1
+    if [[ -n "$force_push_epoch" && "$force_push_epoch" -gt "$committer_epoch" ]]; then
+        printf '%s' "$force_push_epoch"
+    else
+        printf '%s' "$committer_epoch"
+    fi
+}
+
 # ── Pre-flight checks ────────────────────────────────────────────────────────
 
 preflight_checks
 
 # ── Sub-phase A: Request detection (20s × 3, max ~1 minute) ──────────────────
 
-if [[ "$SKIP_REQUEST" == false ]]; then
+if [[ "$SKIP_REQUEST" == false && "$HAS_COMMENT_TRIGGERED_BOT" == false ]]; then
     echo "Sub-phase A: Checking if Copilot was requested as reviewer..." >&2
     copilot_requested=false
 
@@ -173,7 +287,11 @@ if [[ "$SKIP_REQUEST" == false ]]; then
         exit 2
     fi
 else
-    echo "Sub-phase A: Skipped (--skip-request-check)" >&2
+    if [[ "$SKIP_REQUEST" == true ]]; then
+        echo "Sub-phase A: Skipped (--skip-request-check)" >&2
+    else
+        echo "Sub-phase A: Skipped (--bot-reviewers includes a comment-triggered identity; requested-reviewer probe is not a precondition)" >&2
+    fi
 fi
 
 # ── Sub-phase B: Start detection (20s × 3, max ~1 minute) ────────────────────
@@ -211,12 +329,21 @@ if [[ -n "$SINCE" ]]; then
     echo "  Filtering for reviews submitted after ${SINCE} (stale-cache guard)" >&2
 fi
 
+# Names the clean-signal endpoint(s) that failed on the CURRENT attempt (reset
+# each iteration). If it is still set when the loop exhausts, clean signals were
+# unobservable at the deadline: a clean pass and bot silence are
+# indistinguishable, so the poll exits 3 (infra error) rather than reporting a
+# timeout the caller would miscount as a silent ask.
+clean_signal_failed_endpoint=""
+
 for i in $(seq 1 "$MAX_ITERATIONS"); do
+    clean_signal_failed_endpoint=""
+
     # Check PR state periodically (every 5th iteration)
     if [[ $((i % 5)) -eq 0 ]]; then
         if ! pr_is_open; then
             echo "PR #${PR} is no longer open — aborting poll" >&2
-            jq -n '{"status": "copilot_review_timeout"}'
+            jq -n '{"status": "copilot_review_timeout", "completion_kind": "timeout"}'
             exit 1
         fi
     fi
@@ -256,6 +383,7 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
             --argjson human "$human" \
             '{
                 status: "copilot_review_found",
+                completion_kind: "review",
                 reviews: $reviews,
                 inline_comments: $inline,
                 human_comments: $human
@@ -263,10 +391,95 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
         exit 0
     fi
 
+    # Clean-pass completion (poll completion contract): a bot can complete
+    # with no findings and thus no review object — a `+1` reaction on the PR
+    # body, or a clean-pass marker issue comment. Only checked in policy mode
+    # (--bot-reviewers set); the standalone Copilot-substring default never
+    # sees either signal.
+    #
+    # Clean signals need a freshness bound so a `+1`/marker earned by an EARLIER
+    # head cannot terminate monitoring for a head that received no review (Codex
+    # tears the reaction down when it re-reviews a new head, but not if it is
+    # down or rate-limited). With --since-timestamp, SINCE is the (stricter,
+    # later) bound. Without it — the initial poll — bound by when the current head
+    # became HEAD: max( head commit committer date, latest head_ref_force_pushed
+    # timeline event ), since a force-push can re-point HEAD at an older commit
+    # whose committer date predates a stale reaction. Fail closed: no usable bound
+    # rejects clean signals this round; review objects above are unaffected.
+    # Comparison is epoch seconds (fromdateiso8601); an unparseable created_at is
+    # rejected per item. The bound/created_at comparison is uniformly STRICT >
+    # for both bound sources. Both bounds and created_at are only second-precision,
+    # so an equal-second collision is realistic: capturing SINCE before dispatch
+    # does not establish causality for a signal already present in the same second
+    # (a stale `+1`/marker from the prior clean pass, when a fix is pushed
+    # immediately after, can have created_at == SINCE). Accepting the tie would end
+    # monitoring on a prior-head signal without reviewing the pushed fix — an
+    # unsound false-accept; rejecting it costs at most one poll timeout that hands
+    # off safely. Soundness over liveness on second-precision ties (spec Component 2
+    # pins strictly-greater for the head-date bound; the ask bound follows suit).
+    if [[ -n "$BOT_REVIEWERS" ]]; then
+        if [[ -n "$SINCE" ]]; then
+            clean_bound_epoch=$(printf '%s' "$SINCE" | jq -Rr 'fromdateiso8601? // empty' 2>/dev/null) || clean_bound_epoch=""
+        else
+            clean_bound_epoch=$(head_clean_bound_epoch) || clean_bound_epoch=""
+        fi
+
+        if [[ -z "$clean_bound_epoch" ]]; then
+            echo "  Attempt ${i}/${MAX_ITERATIONS}: no freshness bound for clean signals, rejecting (fail closed)" >&2
+        else
+            reactions=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/reactions?per_page=100" --paginate \
+                | jq -s 'add // []' \
+                | jq "[.[] | select(.content == \"+1\" and (.user.login | ${COPILOT_LOGIN_FILTER}))]") || {
+                echo "Warning: reactions API failed (attempt ${i})" >&2
+                reactions='[]'
+                clean_signal_failed_endpoint="reactions"
+            }
+            reactions=$(printf '%s' "$reactions" | jq --argjson bound "$clean_bound_epoch" \
+                '[.[] | select((.created_at | fromdateiso8601? // -1) > $bound)]')
+
+            if [[ "$(printf '%s' "$reactions" | jq 'length')" -gt 0 ]]; then
+                echo "  Clean-pass reaction found (attempt ${i})" >&2
+                emit_clean_reaction_found
+                exit 0
+            fi
+
+            clean_comments=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/comments?per_page=100" --paginate \
+                | jq -s 'add // []' \
+                | jq "[.[] | select((.user.login | ${COPILOT_LOGIN_FILTER}) and ((.body // \"\") | startswith(\"${CLEAN_PASS_MARKER}\")))]") || {
+                echo "Warning: issue comments API failed (attempt ${i})" >&2
+                clean_comments='[]'
+                clean_signal_failed_endpoint="${clean_signal_failed_endpoint:+$clean_signal_failed_endpoint, }issue comments"
+            }
+            clean_comments=$(printf '%s' "$clean_comments" | jq --argjson bound "$clean_bound_epoch" \
+                '[.[] | select((.created_at | fromdateiso8601? // -1) > $bound)]')
+
+            if [[ "$(printf '%s' "$clean_comments" | jq 'length')" -gt 0 ]]; then
+                echo "  Clean-pass marker comment found (attempt ${i})" >&2
+                emit_clean_reaction_found
+                exit 0
+            fi
+        fi
+    fi
+
     echo "  Attempt ${i}/${MAX_ITERATIONS}: no review yet" >&2
     [[ $i -lt $MAX_ITERATIONS ]] && sleep "$POLL_INTERVAL_SECONDS"
 done
 
 echo "Copilot review not received after ${TIMEOUT_SECONDS}s" >&2
-jq -n '{"status": "copilot_review_timeout"}'
+
+# A clean-signal endpoint failing on the final attempt makes a clean pass
+# indistinguishable from bot silence — report the documented infrastructure
+# error (exit 3) rather than a timeout the caller would burn its silent-ask
+# budget on.
+if [[ -n "$clean_signal_failed_endpoint" ]]; then
+    echo "Error: clean-signal endpoint(s) failed at the deadline (${clean_signal_failed_endpoint}); cannot distinguish a clean pass from bot silence" >&2
+    jq -n --arg ep "$clean_signal_failed_endpoint" '{
+        status: "copilot_review_error",
+        completion_kind: "error",
+        message: ("clean-signal endpoint failure: " + $ep)
+    }'
+    exit 3
+fi
+
+jq -n '{"status": "copilot_review_timeout", "completion_kind": "timeout"}'
 exit 1

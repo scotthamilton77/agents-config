@@ -124,6 +124,10 @@ pr_state=$(jq -r '.state' <<<"$PR_JSON")
 # SHA the merge must be issued against (pt. 3).
 HEAD_OID=$(jq -r '.head.sha' <<<"$PR_JSON")
 [[ -n "$HEAD_OID" && "$HEAD_OID" != "null" ]] || { echo "Error: no head SHA on PR" >&2; exit 3; }
+# PR author login — one of the two identities the trigger-comment exemption
+# (Component 2b, part b) matches against; a missing/null author never
+# matches anything, so the exemption just doesn't fire (fail closed).
+PR_AUTHOR=$(jq -r '.user.login // ""' <<<"$PR_JSON")
 # The base SHA the head is judged against and the merge must re-confirm
 # (Step 5). Fetched here so the whole floor binds to one live PR read.
 BASE_OID=$(jq -r '.base.sha' <<<"$PR_JSON")
@@ -144,8 +148,12 @@ set_fact pending_reviewers "$(jq '[(.users[].login), (.teams[].slug)]' <<<"$pend
 
 # ── Gates (appended by later tasks) ──────────────────────────────────────────
 # ── Fact: trusted-bot clean review at current head (bot-quiescence input) ────
-# Exact-identity allowlist — never substring. Missing commit_id fails closed.
-bot_fact=$(jq --argjson trusted "$BOT_REVIEWERS" --arg head "$HEAD_OID" '
+# Disjunction — see docs/specs/2026-07-18-codex-rereview-path-design.md,
+# Component 2: (a) the review path (exact-identity allowlist, never substring;
+# missing commit_id fails closed) OR (b) the reaction path, which is the only
+# artifact Codex leaves on an auto/push-triggered clean pass (no review object
+# is ever submitted for a clean result on those triggers).
+review_fact=$(jq --argjson trusted "$BOT_REVIEWERS" --arg head "$HEAD_OID" '
     [ .[]
       | select(.user.login as $l | ($trusted | index($l)) != null)
       | select(.state != "DISMISSED")
@@ -155,8 +163,81 @@ bot_fact=$(jq --argjson trusted "$BOT_REVIEWERS" --arg head "$HEAD_OID" '
       elif (.state == "APPROVED" or .state == "COMMENTED") then {clean: true, by: .user.login}
       else {clean: false, by: .user.login}
       end' <<<"$ALL_REVIEWS")
-set_fact bot_clean_review_at_head "$(jq '.clean' <<<"$bot_fact")"
-set_fact bot_reviewed_by "$(jq '.by' <<<"$bot_fact")"
+review_clean=$(jq -r '.clean' <<<"$review_fact")
+review_by=$(jq '.by' <<<"$review_fact")
+
+# ── Fact: reaction path (Component 2, part (b)) ──────────────────────────────
+# All four conjuncts are required: a trusted-bot +1 on the PR body; no `eyes`
+# from any allowlisted identity (review still in flight); the +1 post-dates
+# last_head_change (head commit's committer date, or a later force-push
+# timeline event); and the head, re-read AFTER these fetches, hasn't moved.
+# Identity is the exact-login allowlist match alone — same trust boundary as
+# the review path above, which never consults .user.type either. GitHub's
+# reported user.type for connector-style bot accounts is unreliable: the live
+# chatgpt-codex-connector[bot] reports "User" on issues/{n}/reactions, not
+# "Bot" (observed 2026-07-19), so gating on it would reject every real
+# clean-pass this fact exists to recognize.
+REACTIONS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/reactions?per_page=100" --paginate | jq -s 'add // []') || {
+    echo "Error: failed to fetch issue reactions" >&2; exit 3; }
+TIMELINE=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/timeline?per_page=100" --paginate | jq -s 'add // []') || {
+    echo "Error: failed to fetch issue timeline" >&2; exit 3; }
+COMMIT_JSON=$(gh_api "repos/${OWNER}/${REPO}/commits/${HEAD_OID}") || {
+    echo "Error: failed to fetch head commit" >&2; exit 3; }
+COMMITTER_DATE=$(jq -r '.commit.committer.date // empty' <<<"$COMMIT_JSON")
+# Re-read the head AFTER the fetches above — a head that moved mid-check must
+# reject the reaction path (fail closed, not stale-true).
+HEAD_REREAD=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}" --jq '.head.sha') || {
+    echo "Error: failed to re-read PR head for reaction-path staleness check" >&2; exit 3; }
+
+reaction_fact=$(jq -n \
+    --argjson reactions "$REACTIONS" \
+    --argjson timeline "$TIMELINE" \
+    --argjson trusted "$BOT_REVIEWERS" \
+    --arg committer_date "$COMMITTER_DATE" \
+    --arg head "$HEAD_OID" \
+    --arg head_reread "$HEAD_REREAD" '
+    def epoch: (try fromdateiso8601 catch null);
+    ($committer_date | epoch) as $committer_epoch
+    | ([ $timeline[] | select(.event == "head_ref_force_pushed") | (.created_at | epoch) | select(. != null) ]) as $fp_epochs
+    | (if $committer_epoch == null then null
+       elif ($fp_epochs | length) == 0 then $committer_epoch
+       else ([$committer_epoch] + $fp_epochs | max) end) as $last_head_change
+    | ([ $reactions[] | select(.content == "+1")
+         | select(.user.login as $l | ($trusted | index($l)) != null) ]
+       | sort_by(.created_at) | last) as $plus1
+    | ([ $reactions[] | select(.content == "eyes")
+         | select(.user.login as $l | ($trusted | index($l)) != null) ] | length > 0) as $eyes_present
+    | ($plus1 != null
+       and ($eyes_present | not)
+       and ($last_head_change != null)
+       and (($plus1.created_at | epoch) as $pe | $pe != null and $pe > $last_head_change)
+       and ($head_reread == $head)) as $clean
+    | {clean: $clean,
+       id: (if $clean then $plus1.id else null end),
+       created_at: (if $clean then $plus1.created_at else null end),
+       by: (if $clean then $plus1.user.login else null end)}')
+reaction_clean=$(jq -r '.clean' <<<"$reaction_fact")
+
+if [[ "$review_clean" == "true" ]]; then
+    signal_source='"review"'
+elif [[ "$reaction_clean" == "true" ]]; then
+    signal_source='"reaction"'
+else
+    signal_source='"none"'
+fi
+set_fact bot_clean_review_at_head "$(jq -n --argjson a "$review_clean" --argjson b "$reaction_clean" '$a or $b')"
+set_fact bot_clean_signal_source "$signal_source"
+# review wins the tie (Component 2): bot_reviewed_by and the reaction audit
+# trail follow the same precedence as the fact itself. The reaction's id and
+# created_at are recorded here — not just the boolean — because reactions
+# leave no timeline history to audit after the fact once torn down.
+if [[ "$signal_source" == '"reaction"' ]]; then
+    set_fact bot_reviewed_by "$(jq '.by' <<<"$reaction_fact")"
+    set_fact bot_clean_reaction "$(jq '{id, created_at}' <<<"$reaction_fact")"
+else
+    set_fact bot_reviewed_by "$review_by"
+    set_fact bot_clean_reaction null
+fi
 # ── Blocker: active requested-changes verdict (sticky; never head-scoped) ────
 # GitHub does not clear CHANGES_REQUESTED on push; only dismissal (state
 # becomes DISMISSED) or a later APPROVED from the same reviewer clears it.
@@ -292,12 +373,48 @@ if [[ "$(jq '.escalations | length' <<<"$thread_partition")" -gt 0 ]]; then
              | (.id // "unknown-thread") + " (" + $why + ")" ]
            | join("; "))' <<<"$thread_partition")"
 fi
+# ── Fetch: branch rules (rules/branches/{base}) ──────────────────────────────
+# Shared across two consumers below: the CI-green blocker's required-checks
+# union (a required_status_checks-type rule) and the admin_bypass fact (a
+# pull_request-type rule). Fetched once, up front, so a ruleset-enforced repo
+# with no classic branch protection isn't read as having no CI requirement.
+# Because this fetch now feeds the CI blocker (not just the informational
+# admin_bypass fact), a hard failure fails the whole script closed — exactly
+# like the classic protection endpoint's own hard-failure branch below — never
+# silently degrade to "no rulesets", which would risk a ruleset-only required
+# check reading vacuously green.
+rules_stderr=$(mktemp)
+if rules_json=$(gh api "repos/${OWNER}/${REPO}/rules/branches/${BASE_REF_ENC}" 2>"$rules_stderr"); then
+    :
+else
+    if grep -qiE 'HTTP 404|Not Found' "$rules_stderr"; then
+        rules_json='[]'   # no rulesets target this branch
+    else
+        # Named explicitly (endpoint + framing) so a human or agent hitting
+        # this during a GitHub API incident diagnoses it in one read instead
+        # of hunting a phantom permissions problem — this repo has a
+        # documented history of transient 5xx/degraded-auth gh responses that
+        # read like authNZ failures but aren't. Still a real condition to
+        # fail closed on (exit 3, hand off per SKILL.md — never blind retry);
+        # it just isn't this identity's fault, so don't chase token scopes first.
+        echo "Error: failed to fetch required-status-check rules from repos/${OWNER}/${REPO}/rules/branches/${BASE_REF_ENC} — likely a transient GitHub API failure, not a permissions problem: $(cat "$rules_stderr")" >&2
+        rm -f "$rules_stderr"; exit 3
+    fi
+fi
+rm -f "$rules_stderr"
+
 # ── Blocker: required CI checks not green ────────────────────────────────────
-# Required set from branch protection — NEVER derived from the rollup (the
-# rollup lists only contexts that already reported; filtering it would hide a
-# required check that never started). 404 / no protection = empty set =
-# vacuously green. A source-pinned (app_id) requirement is only satisfied by
-# a run from that app — name alone is not a trust boundary.
+# Required set is the UNION of classic branch protection and a GitHub
+# Ruleset's required_status_checks-type rule — NEVER derived from the rollup
+# (the rollup lists only contexts that already reported; filtering it would
+# hide a required check that never started). A repo enforcing CI via a
+# Ruleset instead of classic protection 404s the classic endpoint; that 404
+# must empty only the classic side, not the ruleset side (both sides' hard
+# failures already fail the whole script closed above/below — a 404 is the
+# only way either side legitimately empties). Both 404 = no requirement
+# anywhere = vacuously green. A source-pinned (app_id / integration_id)
+# requirement is only satisfied by a run from that app — name alone is not a
+# trust boundary.
 prot=""
 prot_stderr=$(mktemp)
 if prot=$(gh api "repos/${OWNER}/${REPO}/branches/${BASE_REF_ENC}/protection/required_status_checks" 2>"$prot_stderr"); then
@@ -319,8 +436,13 @@ else
     fi
 fi
 rm -f "$prot_stderr"
-required_checks=$(jq -c '[.checks[]? | {context, app_id}]' <<<"${prot:-null}" 2>/dev/null || echo '[]')
-[[ "$required_checks" == "null" ]] && required_checks='[]'
+classic_checks=$(jq -c '[.checks[]? | {context, app_id}]' <<<"${prot:-null}" 2>/dev/null || echo '[]')
+[[ "$classic_checks" == "null" ]] && classic_checks='[]'
+ruleset_checks=$(jq -c '[ .[]? | select(.type == "required_status_checks")
+    | .parameters.required_status_checks[]? | {context, app_id: (.integration_id // null)} ]' \
+    <<<"$rules_json")
+required_checks=$(jq -c -n --argjson a "$classic_checks" --argjson b "$ruleset_checks" \
+    '($a + $b) | unique_by([.context, .app_id])')
 
 # No required checks → vacuously green; skip the check-run/status fetches
 # whose results ci_eval would never consult.
@@ -377,22 +499,7 @@ fi
 # rejection with --admin for a merge this policy has already authorized —
 # never to invent a new override. Never a blocker: it does not gate
 # eligibility, only how Step 5 in merge-guard SKILL.md issues the merge.
-rules_stderr=$(mktemp)
-if rules_json=$(gh api "repos/${OWNER}/${REPO}/rules/branches/${BASE_REF_ENC}" 2>"$rules_stderr"); then
-    :
-else
-    if grep -qiE 'HTTP 404|Not Found' "$rules_stderr"; then
-        rules_json='[]'   # no rulesets target this branch
-    else
-        # admin_bypass never gates a blocker, so a transient fetch failure on
-        # it must not deny a merge that may not even need --admin. Degrade to
-        # the inert "no rulesets" state and warn rather than abort eligibility.
-        echo "Warning: failed to fetch branch rules (admin_bypass degraded to inert): $(cat "$rules_stderr")" >&2
-        rules_json='[]'
-    fi
-fi
-rm -f "$rules_stderr"
-
+# (rules_json was already fetched above, shared with the CI-green blocker.)
 review_rulesets=$(jq -c '[ .[]? | select(.type == "pull_request") ]' <<<"$rules_json")
 required_approving_review_count=$(jq '[ .[].parameters.required_approving_review_count? // 0 ] | (max // 0)' <<<"$review_rulesets")
 review_rule_active=false
@@ -423,13 +530,22 @@ set_fact admin_bypass "$(jq -n \
 # that concluded clean — both read "no blocker" on every other row. Block
 # until the expected review arrives at the current head or its wait window
 # closes. Timing out ends the wait; it never satisfies the positive fact.
+# Copilot and Codex leave different vocabularies for the same two signals, so
+# both "arrived" and "latest_ref" below OR in the Codex-shaped equivalent:
+# reaction_clean (Component 2b, computed above) is the reaction-path analogue
+# of a matching review object, and a trusted `eyes` reaction is the Codex
+# analogue of Copilot's copilot_work_started event — Codex is comment-
+# triggered and posts neither a review_requested target nor a "started work"
+# event, so without these a Codex-only PR either never reads satisfied (no
+# review object ever lands on a clean pass) or goes stale mid-review (the
+# clock never advances past PR creation while Codex is actively working).
 review_wait_bot="not_expected"
 if [[ "$BOT_EXPECTED" == "true" ]]; then
     arrived=$(jq --argjson trusted "$BOT_REVIEWERS" --arg head "$HEAD_OID" '
         [ .[] | select((.user.login as $l | ($trusted | index($l)) != null)
                        and ((.commit_id // "") == $head)
                        and .state != "DISMISSED") ] | length' <<<"$ALL_REVIEWS")
-    if [[ "$arrived" -gt 0 ]]; then
+    if [[ "$arrived" -gt 0 || "$reaction_clean" == "true" ]]; then
         review_wait_bot="satisfied"
     else
         # Events feed only this wait computation — fetched here (not up top)
@@ -440,11 +556,15 @@ if [[ "$BOT_EXPECTED" == "true" ]]; then
         EVENTS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events?per_page=100" --paginate | jq -s 'add // []') || {
             echo "Error: failed to fetch issue events" >&2; exit 3; }
         latest_ref=$(jq -rn --argjson ev "$EVENTS" --argjson rv "$ALL_REVIEWS" \
+            --argjson reactions "$REACTIONS" \
             --argjson trusted "$BOT_REVIEWERS" --arg pr_created "$PR_CREATED" '
             ( [ $ev[] | select(.event == "review_requested"
                                and (((.requested_reviewer.login // "") as $l | ($trusted | index($l)) != null)))
                       | .created_at ]
             + [ $ev[] | select(.event == "copilot_work_started") | .created_at ]
+            + [ $reactions[] | select(.content == "eyes")
+                              | select(.user.login as $l | ($trusted | index($l)) != null)
+                              | .created_at ]
             + [ $rv[] | select((.user.login as $l | ($trusted | index($l)) != null)) | .submitted_at ]
             + [ $pr_created ] ) | max')
         bot_age=$(jq -rn --arg ts "$latest_ref" '(now - ($ts | fromdateiso8601)) | floor')
@@ -516,6 +636,16 @@ set_fact bot_review_cap_exhausted "$bot_cap_exhausted"
 ISSUE_COMMENTS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/comments?per_page=100" --paginate | jq -s 'add // []') || {
     echo "Error: failed to fetch issue comments" >&2; exit 3; }
 
+# Current authenticated session identity — the second of the two identities
+# the trigger-comment exemption (Component 2b, part b) matches against,
+# alongside $PR_AUTHOR (covers both a human re-asking for review and an
+# agent re-asking as the CLI's own authenticated user). Never gates
+# eligibility on its own, so a lookup failure degrades to an unmatchable
+# empty string rather than exit 3: the exemption just doesn't fire, and the
+# trigger comment falls back to blocking like any other untriaged item
+# (fail closed, same direction as every other exemption in this block).
+AUTH_LOGIN=$(gh_api user --jq '.login') || AUTH_LOGIN=""
+
 # inventory_items / completed_inventory_items were collected once, above the
 # thread partition — both unions are shared with it.
 
@@ -537,11 +667,42 @@ done < <(find "${HOME}/.claude/state/pr-inventory" -maxdepth 1 \
          -name "${OWNER}-${REPO}-${PR}-*.json.replyids" -print0 2>/dev/null)
 
 untriaged=$(jq -n \
-    --argjson live_issue "$(jq '[.[] | {id, author: .user.login}]' <<<"$ISSUE_COMMENTS")" \
-    --argjson live_summaries "$(jq '[.[] | select((.body // "") != "") | {review_id: .id, author: .user.login}]' <<<"$ALL_REVIEWS")" \
+    --arg reaction_by "$(jq -r '.by // ""' <<<"$reaction_fact")" \
+    --argjson live_issue "$(jq \
+        --argjson trusted "$BOT_REVIEWERS" --arg pr_author "$PR_AUTHOR" --arg auth_login "$AUTH_LOGIN" '
+        # Component 2b: the re-review loop mints its own issue comments, and
+        # both shapes below are loop machinery, not feedback needing triage —
+        # excluded from live_issue entirely (same effect as terminal triage).
+        # Everything else, bot-authored or not, still blocks as today.
+        #
+        # (1) Clean-pass announcement: an allowlisted bot identity (exact
+        # login match, same allowlist convention as every other bot check in
+        # this file) whose body begins with the pinned marker. The prefix is
+        # pinned exactly as observed 2026-07-18 — a vendor reword resumes
+        # blocking (false negative, hands off to a human; accepted).
+        def is_clean_pass_marker:
+            (.user.login as $l | ($trusted | index($l)) != null)
+            and ((.body // "") | startswith("Codex Review: Didn'\''t find any major issues"));
+        # (2) Trigger comment: the exact "@codex review" ask
+        # request-rereview.sh posts via `gh pr comment --body "@codex
+        # review"` (verbatim, no trailing text) to request a re-review —
+        # authored by either the PR author (a human re-asking) or the
+        # currently authenticated session identity (an agent re-asking as
+        # the CLI user). EXACT match only, whitespace-trimmed — a prefix
+        # match would exempt "@codex review, also fix the race below" and
+        # silently drop the appended feedback from triage.
+        def is_trigger_comment:
+            ((.user.login == $pr_author) or (.user.login == $auth_login))
+            and (((.body // "") | gsub("^\\s+|\\s+$"; "")) == "@codex review");
+        [.[] | select((is_clean_pass_marker or is_trigger_comment) | not)
+             | {id, author: .user.login}]
+        ' <<<"$ISSUE_COMMENTS")" \
+    --argjson live_summaries "$(jq '[.[] | select((.body // "") != "") | {review_id: .id, author: .user.login, submitted_at: .submitted_at}]' <<<"$ALL_REVIEWS")" \
     --argjson recorded "$inventory_items" \
     --argjson recorded_complete "$completed_inventory_items" \
-    --argjson sidecar_replies "$sidecar_reply_ids" '
+    --argjson sidecar_replies "$sidecar_reply_ids" \
+    --argjson reaction_clean "$reaction_clean" \
+    --arg reaction_created_at "$(jq -r '.created_at // ""' <<<"$reaction_fact")" '
     # Clears an item iff it holds a terminal, non-blocking disposition. The
     # durable inventory (validate-inventory.sh) admits only classification
     # FIX / SKIP / ESCALATE; the clean-terminal shapes are SKIP and FIX with
@@ -554,7 +715,29 @@ untriaged=$(jq -n \
         (.classification == "SKIP")
         or (.classification == "FIX"
             and (.fix_outcome == "committed" or .fix_outcome == "already_addressed"));
-    (([ $recorded[] | .posted_reply_id // empty ] + $sidecar_replies) | unique) as $agent_replies
+    # review_summary ratchet (design.md, Component 2b continuation): every
+    # Codex re-review round mints a brand-new review_id, so the terminal
+    # disposition recorded against one round never covers the next round or
+    # its review object. A fresh reaction_clean signal — never
+    # bot_clean_review_at_head, which would also admit the review path and
+    # risk masking a findings-bearing review — retroactively supersedes, and
+    # so clears, any review_summary item whose submitted_at strictly predates
+    # the reaction created_at. Strict inequality only, matching the
+    # fail-closed same-second tie-break already used by the reaction-path
+    # fact above (no round counter needed: one fresh reaction can clear
+    # every earlier stale item in a single pass). Scoped to the REACTING
+    # identity specifically ($reaction_by, .by from the reaction-path fact
+    # above) — never merely "any allowlisted bot". reaction_clean is one
+    # bot'\''s own attestation about that SAME bot'\''s own findings: with a
+    # policy trusting both Copilot and Codex, a Codex +1 says nothing about
+    # a Copilot review'\''s unaddressed findings, and neither says anything
+    # about a human'\''s. Matching only the allowlist (not the specific
+    # reactor) would let Codex'\''s clean pass wrongly clear a stale Copilot
+    # review_summary, or a human'\''s.
+    def epoch: (try fromdateiso8601 catch null);
+    ($reaction_created_at | if . == "" then null else epoch end) as $reaction_epoch
+    | (($reaction_clean == true) and ($reaction_epoch != null)) as $reaction_supersedes
+    | (([ $recorded[] | .posted_reply_id // empty ] + $sidecar_replies) | unique) as $agent_replies
     | ([ $recorded_complete[] | select(.kind == "issue_comment" and terminal_ok) | .issue_comment_id ] | unique) as $done_issue
     | ([ $recorded_complete[] | select(.kind == "review_summary" and terminal_ok) | .review_id // empty ] | unique) as $done_review
     | ([ $live_issue[]
@@ -563,6 +746,9 @@ untriaged=$(jq -n \
          | "issue_comment #\(.id) by \(.author)" ])
     + ([ $live_summaries[]
          | select((.review_id as $i | $done_review | index($i)) == null)
+         | select(($reaction_supersedes
+                   and ($reaction_by != "") and (.author == $reaction_by)
+                   and (((.submitted_at // "") | epoch) as $se | $se != null and $se < $reaction_epoch)) | not)
          | "review_summary #\(.review_id) by \(.author)" ])')
 untriaged_count=$(jq 'length' <<<"$untriaged")
 set_fact untriaged_feedback_count "$untriaged_count"

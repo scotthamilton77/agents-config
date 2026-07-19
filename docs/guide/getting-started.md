@@ -13,10 +13,8 @@
   work tracker. The workflow treats durable work as beads that survive across
   sessions and context compaction.
 - **`uv`** — the installer is a uv-managed Python package; `uv` auto-installs a
-  suitable Python (≥3.11) on first run.
-
-Optional: the **`prgroom` CLI** for deterministic PR grooming (see
-[Configuration](./configuration.md#optional-the-prgroom-cli)).
+  suitable Python (≥3.11) on first run. `uv` ≥ 0.10.4 is required for the
+  installer's CLI-deploy stage (see [Configuration](./configuration.md#optional-the-prgroom-cli)).
 
 ## Install
 
@@ -53,7 +51,9 @@ into its own tool.
 
 `*.md.template` files install with the `.template` suffix stripped (e.g.
 `AGENTS.md.template` → `AGENTS.md`). Existing files get a diff preview and a
-timestamped backup before any overwrite.
+timestamped backup before any overwrite. The installer also deploys the
+`work` and `prgroom` CLIs onto your PATH via `uv tool install` (uv ≥ 0.10.4
+required for this stage).
 
 ## Verify the install
 

@@ -54,3 +54,10 @@ def test_entry_exits_zero_and_writes_handshake_to_real_stdout(monkeypatch, capsy
     assert exc_info.value.code == 0
     envelope = json.loads(capsys.readouterr().out)
     assert envelope["data"] == {"protocol": PROTOCOL_VERSION}
+
+
+def test_protocol_wire_value_is_pinned() -> None:
+    # The serialization boundary pins the literal wire value; every other
+    # test references PROTOCOL_VERSION. Bumping the protocol means updating
+    # this one assertion deliberately.
+    assert PROTOCOL_VERSION == "1.3"

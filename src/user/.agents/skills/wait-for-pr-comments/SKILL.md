@@ -141,7 +141,12 @@ Background bash — zero Anthropic tokens during the wait.
 1. **Quick check** whether Copilot is already a requested reviewer (a
     Copilot-specific convenience glance to decide `--skip-request-check`; the
     launched script in step 3 does the authoritative policy-allowlist matching,
-    so this substring probe need not generalize to non-Copilot bots):
+    so this substring probe need not generalize to non-Copilot bots). This
+    glance is only relevant for request-based bots (Copilot) — comment-triggered
+    bots (e.g. Codex) are never added as a requested reviewer, so the script
+    itself auto-skips its requested-reviewer precondition when the resolved
+    policy's `bot_reviewers` includes a comment-triggered identity; the caller
+    need not special-case that here:
     ```
     gh api repos/<owner>/<repo>/issues/<n>/events \
       --jq '[.[] | select(
@@ -432,31 +437,135 @@ is the "before" value for each hook's false → true `PushNotification` check.
 Neither hook passes `--silent-cap` — the silent re-request cap is locked at
 the helper's default (1) per spec decision, not a per-repo config knob.
 
-1. **Trigger a fresh review cycle** (idempotency guard):
+1. **Capture** `<rereview_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`
+   **before** issuing the re-review request in step 2. The downstream `--after`
+   (step 3) and `--since-timestamp` (step 4) filters require the bot signal to be
+   strictly later than this value, so capturing it first bounds the prior round
+   without excluding a fast Codex response that lands while `request-rereview.sh`
+   is still returning (or in the same API-timestamp second). Capturing it after
+   the dispatch would discard that valid `+1` or marker comment as stale and
+   count the ask as a timeout.
+
+2. **Trigger a fresh review cycle** (idempotency guard). Assemble the
+   do-not-relitigate context from `$ITEMS_FILE` — the current round's
+   already-classified in-memory items — before dispatching. Read from
+   `$ITEMS_FILE`, not the on-disk inventory at
+   `<head_sha_after_push>.json`: Phase 6 runs before Phase 7 writes that
+   file, so on a normal first pass it does not exist yet. Every FIX item
+   contributes its `fix_commit_sha` as `detail`; every SKIP item contributes
+   its `rationale` as `detail`, classified `REBUT` when the rationale is a
+   substantive disagreement with the finding (the "agent disagrees with
+   rationale, defensible counterargument" case from the classification table
+   above) and `SKIP` otherwise (out of scope, FYI/praise) — this REBUT/SKIP
+   split is a judgment call made when writing each item's `rationale`, not a
+   separate inventory field:
    ```bash
-   ${CLAUDE_SKILL_DIR}/request-rereview.sh \
-     --owner "$OWNER" --repo "$REPO" --pr "$PR"
-   # exit 0 on success; exit 1 on gh failure
+   disposition_table=$(jq -c '[.[] | select(.classification == "FIX" or .classification == "SKIP") |
+     if .classification == "FIX"
+     then {finding: .body_excerpt, classification: "FIX", detail: .fix_commit_sha}
+     else {finding: .body_excerpt, classification: "SKIP", detail: .rationale}
+     end]' "$ITEMS_FILE")
+   # Re-tag any SKIP entries that are substantive rebuttals to "REBUT" by hand
+   # (or via a review of each item's rationale) before dispatching, per the
+   # split above.
+
+   # An empty table (e.g. an autonomous run where every finding escalated,
+   # leaving no FIX/SKIP items) is not valid input to --disposition-table-file
+   # — omit the flag rather than write/pass "[]", or the whole re-review
+   # request (Codex AND Copilot) aborts before either ask is dispatched.
+   DISPOSITION_ARGS=()
+   DISPOSITION_FILE=""
+   if [ "$(jq 'length' <<<"$disposition_table")" -gt 0 ]; then
+     # mktemp, not a PR-number-keyed fixed path: two concurrent Phase 6 runs
+     # for the SAME PR number in DIFFERENT repos would otherwise share one
+     # global path and race — overwriting, reading, or deleting each other's
+     # table between this write and request-rereview.sh's read, leaking one
+     # PR's findings/rationales into another's Codex ask.
+     DISPOSITION_FILE="$(mktemp)"
+     printf '%s' "$disposition_table" > "$DISPOSITION_FILE"
+     DISPOSITION_ARGS=(--disposition-table-file "$DISPOSITION_FILE")
+   fi
+
+   RR_OUT=$(${CLAUDE_SKILL_DIR}/request-rereview.sh \
+     --owner "$OWNER" --repo "$REPO" --pr "$PR" \
+     --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")" \
+     "${DISPOSITION_ARGS[@]}" \
+     --since-sha "<phase4_baseline_sha>")
+   RR_EXIT=$?
+   # exit 0 = every dispatched mechanism succeeded; 1 = none did; 3 = partial
+   # (>=1 succeeded, >=1 failed). $RR_OUT is NDJSON, one line per dispatched
+   # mechanism: {identity, mechanism, status}. Filter to the identities that
+   # actually succeeded — DO NOT reuse the full policy list in steps 3/4, or a
+   # never-asked identity (RR_EXIT == 3's failed half) polls as if it had
+   # been asked and reads "timed out silent" instead of "never dispatched".
+   DISPATCHED_OK_REVIEWERS=$(jq -cs '[.[] | select(.status == "success") | .identity]' <<<"$RR_OUT")
+   [ -n "$DISPOSITION_FILE" ] && rm -f "$DISPOSITION_FILE"
    ```
-   The helper performs the `remove-reviewer` + `add-reviewer` pair which
-   reliably triggers a new `review_requested` event even when Copilot is
-   already on the list. (`--add-reviewer` alone is idempotent and silently
-   does nothing.)
+   `--bot-reviewers` dispatches on each policy-trusted identity's own
+   mechanism (the `remove-reviewer` + `add-reviewer` pair for Copilot, an
+   `@codex review` issue comment for Codex) instead of always performing the
+   Copilot-only dance — omitting it would leave a Codex-reviewed repo's
+   re-review ask reaching nobody. (`--add-reviewer` alone is idempotent and
+   silently does nothing, which is why the helper still pairs it with
+   `--remove-reviewer` for Copilot.) `--disposition-table-file` and
+   `--since-sha` are Codex-only do-not-relitigate context — they render into
+   the `@codex review` comment as a structured markdown table plus a "focus
+   on commits since `<sha>`" line, and are silently ignored by the Copilot
+   mechanism. The table is passed as a **file**, not inline JSON: a round
+   with enough items can exceed the OS's per-argument exec limit (Linux caps
+   a single argv/environ string at 128 KiB) — passing it inline fails the
+   `exec` itself, before `request-rereview.sh`'s own size handling ever gets
+   a chance to run. Confirmed across PR #317 and PR #331: a bare re-ask
+   makes Codex re-cite settled findings every round, while a structured
+   disposition table (including an explicit REBUT) produced zero re-raises.
 
-2. **Capture** `<rereview_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
+   **If `RR_EXIT == 1`** (`DISPATCHED_OK_REVIEWERS == []`): no bot was
+   actually asked. Skip steps 3-4 (no re-review start, and nothing, to poll
+   for) and go straight to the "no new review" merge-and-write-back below —
+   but do NOT feed this through the `silent` event, since a dispatch failure
+   is an infrastructure error, not a bot that was asked and stayed quiet;
+   report the dispatch failure instead and leave `rereview_round_count`
+   untouched, mirroring merge-guard's `RR_EXIT == 1` handling.
 
-3. **Launch** `poll-copilot-rereview-start.sh --owner "$OWNER" --repo "$REPO" --pr "$PR" --after <rereview_since_timestamp>` (80s max window:
-   20s pre-sleep + 6 × 10s polls). This detects the `copilot_work_started`
-   event that follows the fresh `review_requested`.
+3. **Launch** (80s max window: 20s pre-sleep + 6 × 10s polls). Only reached
+   when `DISPATCHED_OK_REVIEWERS` is non-empty:
+   ```bash
+   ${CLAUDE_SKILL_DIR}/poll-copilot-rereview-start.sh \
+     --owner "$OWNER" --repo "$REPO" --pr "$PR" \
+     --after <rereview_since_timestamp> \
+     --bot-reviewers "$DISPATCHED_OK_REVIEWERS"
+   ```
+   This detects either signal that a trusted bot has started a re-review:
+   the `copilot_work_started` event that follows the fresh
+   `review_requested` (Copilot), or an `eyes` reaction on the PR body from
+   an allowlisted identity post-dating `<rereview_since_timestamp>`
+   (Codex's in-flight marker — Codex never emits `copilot_work_started`,
+   since it responds to the `@codex review` comment in step 2, not a
+   reviewer-request event). Passing `--bot-reviewers` is what enables the
+   eyes-reaction check; omitting it preserves the script's original
+   Copilot-events-only behavior. `--bot-reviewers` is
+   `$DISPATCHED_OK_REVIEWERS`, not the full policy list — a `RR_EXIT == 3`
+   partial dispatch (e.g. Copilot's reviewer-add succeeds, Codex's issue
+   comment fails) must not have this step wait on the identity that was
+   never actually asked. Exit 3 (a reactions-endpoint failure that leaves
+   whether Codex started unknown) is an infrastructure error, not "no
+   re-review started" — do not treat it as a silent ask.
 
-4. **If** `copilot_work_started` detected, launch `poll-copilot-review.sh
+4. **If** step 3 detected a re-review start (either signal), launch
+   `poll-copilot-review.sh
    --owner "$OWNER" --repo "$REPO" --pr "$PR"
    --skip-request-check --since-timestamp <rereview_since_timestamp>
-   --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"`
+   --bot-reviewers "$DISPATCHED_OK_REVIEWERS"`
    to await the actual review. The `--since-timestamp` guard prevents the
    stale-cache bug where the script returns the prior round's review instead
-   of the new one; `--bot-reviewers` keeps re-review detection aligned to the
-   same policy allowlist used in Phase 2.
+   of the new one; `--bot-reviewers` keeps re-review detection restricted to
+   the identities `request-rereview.sh` actually dispatched successfully,
+   same rationale as step 3. Before this bead, step 4 was gated
+   on the Copilot-only `copilot_work_started` event alone, so a Codex-only
+   re-review always fell through to "no re-review started" (recording a
+   silent ask against the one-ask cap) even when Codex was actively
+   reviewing and later posted a review or clean-pass — step 3's added
+   eyes-reaction detection is what fixes that.
 
 5. **If** a new review arrives, return to **Phase 3 (round +1)**.
 
@@ -493,7 +602,11 @@ PR/head — do not fire again on later invocations once it is already `true`.
 
 If Phase 6 detects no new review (`no_rereview_started` exit), compute the
 updated silent-ask counter and merge it into `POLLING_FILE` before exiting
-Phase 6 normally and proceeding to Phase 7:
+Phase 6 normally and proceeding to Phase 7. This `silent` event does NOT
+apply to step 2's `RR_EXIT == 1` case (no bot was ever dispatched) — that
+path skips straight to Phase 7 with the dispatch failure reported, leaving
+`rereview_round_count`/`bot_review_cap_exhausted` untouched, since no ask
+was made for a bot to have stayed silent on:
 ```bash
 result=$(${CLAUDE_SKILL_DIR}/compute-rereview-polling.sh \
   --prior-count "$(jq -r '.c' <<<"$prior")" \
@@ -933,12 +1046,20 @@ ${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
   > /tmp/pr-inventory-build-<n>.json
 ```
 
-**Request Copilot re-review** (Phase 6 — replaces the legacy remove+add
-reviewer pair):
+**Request a bot re-review** (per-bot dispatch on the policy's
+`bot_reviewers` allowlist, not just the legacy Copilot remove+add pair).
+This is the bare form; **Phase 6 step 2 is the authoritative invocation** —
+it additionally assembles `--disposition-table-file`/`--since-sha` from the
+current round's classified items so the Codex ask carries do-not-relitigate
+context. Do not call the bare form below for Phase 6 — it omits that
+context and reopens the settled-finding relitigation this mechanism exists
+to prevent. It remains valid for a caller with no round context to draw
+from (e.g. merge-guard's one-ask retry):
 
 ```bash
 ${CLAUDE_SKILL_DIR}/request-rereview.sh \
-  --owner "$OWNER" --repo "$REPO" --pr "$PR"
+  --owner "$OWNER" --repo "$REPO" --pr "$PR" \
+  --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"
 ```
 
 **Count unresolved threads** (Phase 9 — replaces the inline GraphQL block):

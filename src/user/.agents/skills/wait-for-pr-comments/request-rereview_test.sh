@@ -18,6 +18,17 @@ assert() {
   fi
 }
 
+# dtfile — write a disposition-table JSON payload to a fresh file under $TMP
+# and echo its path, for --disposition-table-file (the table is transported
+# as a file, never inline JSON — see request-rereview.sh's header).
+DT_COUNTER=0
+dtfile() {
+  DT_COUNTER=$((DT_COUNTER + 1))
+  local f="$TMP/disposition-$DT_COUNTER.json"
+  printf '%s' "$1" > "$f"
+  printf '%s' "$f"
+}
+
 echo "[request-rereview_test]"
 
 assert "script file exists" "[ -f '$SCRIPT' ]"
@@ -59,5 +70,337 @@ if "$SCRIPT" --bogus --owner o --repo r --pr 1 2>/dev/null; then
 else
   echo "  ok: rejects unknown flag"
 fi
+
+# ── --bot-reviewers (Component 1: per-bot re-review dispatch) ───────────────
+
+assert "accepts --bot-reviewers flag" "grep -q -- '--bot-reviewers' '$SCRIPT'"
+
+# Malformed values must be rejected up front (exit 2 — this script's usage-
+# error code), not silently ignored.
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers 'not-json' 2>/dev/null
+rc_bad_bots=$?
+assert "exits 2 for non-array --bot-reviewers" "[ \$rc_bad_bots -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '[]' 2>/dev/null
+rc_empty_bots=$?
+assert "exits 2 for empty --bot-reviewers array" "[ \$rc_empty_bots -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["ok", 3]' 2>/dev/null
+rc_mixed_bots=$?
+assert "exits 2 for --bot-reviewers array with a non-string" "[ \$rc_mixed_bots -eq 2 ]"
+
+# --- Fake-gh shim (argv capture): logs every invocation; --add-reviewer / `gh
+# pr comment` can be made to fail via FAKE_GH_FAIL_EDIT / FAKE_GH_FAIL_COMMENT
+# so per-identity dispatch failure and the exit-code matrix can be exercised.
+FAKEBIN2="$TMP/bin2"
+mkdir -p "$FAKEBIN2"
+export FAKE_GH_LOG="$TMP/fake-gh.log"
+cat > "$FAKEBIN2/gh" <<'FAKE'
+#!/usr/bin/env bash
+# Fake gh — logs every invocation; --add-reviewer / pr comment can be made to
+# fail via FAKE_GH_FAIL_EDIT / FAKE_GH_FAIL_COMMENT env vars.
+LOG="${FAKE_GH_LOG:-/tmp/fake-gh.log}"
+echo "$@" >> "$LOG"
+for arg in "$@"; do
+  if [ "$arg" = "--add-reviewer" ] && [ "${FAKE_GH_FAIL_EDIT:-0}" = "1" ]; then
+    echo "fake-gh: simulated add-reviewer failure" >&2
+    exit 1
+  fi
+done
+if [ "$1" = "pr" ] && [ "$2" = "comment" ] && [ "${FAKE_GH_FAIL_COMMENT:-0}" = "1" ]; then
+  echo "fake-gh: simulated comment failure" >&2
+  exit 1
+fi
+exit 0
+FAKE
+chmod +x "$FAKEBIN2/gh"
+
+# Per-identity dispatch: Copilot -> remove+re-add reviewer dance.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["Copilot"]' >/dev/null 2>&1
+rc_copilot=$?
+assert "Copilot identity exits 0" "[ \$rc_copilot -eq 0 ]"
+assert "Copilot identity dispatches --remove-reviewer @copilot" "grep -qF -- '--remove-reviewer @copilot' '$FAKE_GH_LOG'"
+assert "Copilot identity dispatches --add-reviewer @copilot" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
+assert "Copilot identity does NOT post a codex review comment" "! grep -qF 'pr comment' '$FAKE_GH_LOG'"
+
+# Per-identity dispatch: copilot-pull-request-reviewer[bot] (exact GH login)
+# dispatches the same mechanism as 'Copilot', case-insensitively matched.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["copilot-pull-request-reviewer[bot]"]' >/dev/null 2>&1
+rc_copilot_bot=$?
+assert "copilot-pull-request-reviewer[bot] identity exits 0" "[ \$rc_copilot_bot -eq 0 ]"
+assert "copilot-pull-request-reviewer[bot] identity dispatches the reviewer dance" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
+
+# Per-identity dispatch: chatgpt-codex-connector[bot] -> '@codex review' issue comment.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' >/dev/null 2>&1
+rc_codex=$?
+assert "Codex identity exits 0" "[ \$rc_codex -eq 0 ]"
+assert "Codex identity posts an '@codex review' issue comment" "grep -qF -- 'pr comment 1 --repo o/r --body @codex review' '$FAKE_GH_LOG'"
+assert "Codex identity does NOT touch reviewers" "! grep -qF -- '--add-reviewer' '$FAKE_GH_LOG'"
+
+# Case-insensitive identity match (spec: mirrors poll-copilot-review.sh's convention).
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["CHATGPT-CODEX-CONNECTOR[bot]"]' >/dev/null 2>&1
+rc_codex_upper=$?
+assert "uppercase Codex identity still dispatches (case-insensitive match)" "[ \$rc_codex_upper -eq 0 ] && grep -qF 'pr comment' '$FAKE_GH_LOG'"
+
+# Multi-identity dispatch: both known bots asked in one call.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "chatgpt-codex-connector[bot]"]' >/dev/null 2>&1
+rc_multi=$?
+assert "multi-identity dispatch exits 0" "[ \$rc_multi -eq 0 ]"
+assert "multi-identity dispatch asks Copilot" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
+assert "multi-identity dispatch asks Codex" "grep -qF 'pr comment' '$FAKE_GH_LOG'"
+
+# Alias dedup: both Copilot aliases share one mechanism, so a call listing both
+# must run the remove+re-add dance exactly ONCE — not once per alias.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "copilot-pull-request-reviewer[bot]"]' >/dev/null 2>&1
+rc_alias_dedup=$?
+assert "both Copilot aliases exit 0" "[ \$rc_alias_dedup -eq 0 ]"
+assert "both Copilot aliases remove @copilot exactly once" "[ \$(grep -cF -- '--remove-reviewer @copilot' '$FAKE_GH_LOG') -eq 1 ]"
+assert "both Copilot aliases add @copilot exactly once" "[ \$(grep -cF -- '--add-reviewer @copilot' '$FAKE_GH_LOG') -eq 1 ]"
+
+# Unknown identity: warns to stderr and is skipped WITHOUT aborting siblings.
+: > "$FAKE_GH_LOG"
+err_out=$(PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["some-other-bot[bot]", "Copilot"]' 2>&1 >/dev/null)
+rc_unknown_mixed=$?
+assert "unknown identity mixed with a known one still exits 0" "[ \$rc_unknown_mixed -eq 0 ]"
+assert "unknown identity warns on stderr" "printf '%s' \"\$err_out\" | grep -qiF 'some-other-bot[bot]'"
+assert "unknown identity does not abort dispatch to Copilot" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
+
+# All-unknown: exit 1 (no ask succeeded), still no abort/crash.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["totally-unknown-bot"]' >/dev/null 2>&1
+rc_all_unknown=$?
+assert "all-unknown identities exit 1 (none succeeded)" "[ \$rc_all_unknown -eq 1 ]"
+
+# Exit-code matrix: a known identity whose gh call fails still counts as a
+# failed ask; when it is the ONLY identity, exit 1 (none succeeded).
+: > "$FAKE_GH_LOG"
+FAKE_GH_FAIL_EDIT=1 PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["Copilot"]' >/dev/null 2>&1
+rc_all_fail=$?
+assert "single failing identity exits 1 (none succeeded)" "[ \$rc_all_fail -eq 1 ]"
+
+# Exit-code matrix: one identity fails, the other succeeds -> partial success,
+# exit 3 (distinct from 0 = full success and 1 = none succeeded) so callers
+# can tell a partial dispatch from either extreme instead of reading a
+# never-asked identity as merely "timed out silent".
+: > "$FAKE_GH_LOG"
+FAKE_GH_FAIL_EDIT=1 PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "chatgpt-codex-connector[bot]"]' >/dev/null 2>&1
+rc_partial=$?
+assert "one failing + one succeeding identity exits 3 (partial success)" "[ \$rc_partial -eq 3 ]"
+
+# ── Per-identity dispatch outcome (structured stdout) ────────────────────────
+# stdout carries one NDJSON line per dispatched mechanism -- {identity,
+# mechanism, status} -- so callers can distinguish "never asked" (status !=
+# success for that mechanism) from "asked but silent", instead of inferring
+# outcome from a single aggregate exit code.
+
+: > "$FAKE_GH_LOG"
+out_full=$(PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "chatgpt-codex-connector[bot]"]' 2>/dev/null)
+assert "full-success stdout reports 2 NDJSON lines" "[ \$(printf '%s\n' \"\$out_full\" | grep -c .) -eq 2 ]"
+assert "full-success stdout reports copilot success" \
+  "printf '%s\n' \"\$out_full\" | jq -e 'select(.mechanism==\"copilot\" and .status==\"success\")' >/dev/null"
+assert "full-success stdout reports codex success" \
+  "printf '%s\n' \"\$out_full\" | jq -e 'select(.mechanism==\"codex\" and .status==\"success\")' >/dev/null"
+
+: > "$FAKE_GH_LOG"
+out_partial=$(FAKE_GH_FAIL_EDIT=1 PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "chatgpt-codex-connector[bot]"]' 2>/dev/null)
+assert "partial stdout reports copilot failure" \
+  "printf '%s\n' \"\$out_partial\" | jq -e 'select(.mechanism==\"copilot\" and .status==\"failure\")' >/dev/null"
+assert "partial stdout reports codex success" \
+  "printf '%s\n' \"\$out_partial\" | jq -e 'select(.mechanism==\"codex\" and .status==\"success\")' >/dev/null"
+
+: > "$FAKE_GH_LOG"
+out_allfail=$(FAKE_GH_FAIL_EDIT=1 PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["Copilot"]' 2>/dev/null)
+assert "all-fail stdout reports copilot failure" \
+  "printf '%s\n' \"\$out_allfail\" | jq -e 'select(.mechanism==\"copilot\" and .status==\"failure\")' >/dev/null"
+
+# Alias dedup + NDJSON: both Copilot aliases in one call must still emit
+# exactly ONE copilot NDJSON line, mirroring the single dispatch already
+# asserted above via the fake-gh log.
+: > "$FAKE_GH_LOG"
+out_dedup=$(PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "copilot-pull-request-reviewer[bot]"]' 2>/dev/null)
+assert "aliased dedup emits exactly one copilot NDJSON line" \
+  "[ \$(printf '%s\n' \"\$out_dedup\" | jq -c 'select(.mechanism==\"copilot\")' | grep -c .) -eq 1 ]"
+
+# Unknown identity: no NDJSON line for it (it was never dispatched), only a
+# stderr warning -- a mixed call's stdout must contain exactly the one known
+# identity's outcome line, not a second line for the unknown one.
+: > "$FAKE_GH_LOG"
+out_unknown=$(PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["some-other-bot[bot]", "Copilot"]' 2>/dev/null)
+assert "unknown identity produces no NDJSON line, only the known one's" \
+  "[ \$(printf '%s\n' \"\$out_unknown\" | grep -c .) -eq 1 ] && printf '%s\n' \"\$out_unknown\" | jq -e 'select(.mechanism==\"copilot\")' >/dev/null"
+
+# Flag-omitted default: still performs the Copilot-only dance, unchanged.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 >/dev/null 2>&1
+rc_default=$?
+assert "omitting --bot-reviewers exits 0 (Copilot default)" "[ \$rc_default -eq 0 ]"
+assert "omitting --bot-reviewers still dispatches the Copilot dance" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
+assert "omitting --bot-reviewers never posts a codex review comment" "! grep -qF 'pr comment' '$FAKE_GH_LOG'"
+
+# ── --disposition-table-file / --since-sha (do-not-relitigate context) ──────
+# The table is transported as a FILE, never inline JSON: enough items (or a
+# few verbose rationales) can exceed the OS's per-argument exec limit (Linux
+# caps a single argv/environ string at 128 KiB), which would fail the exec
+# itself before request-rereview.sh ever ran — see the header for the field
+# evidence (a 400-entry table reproduced this on the reviewer's platform).
+
+assert "accepts --disposition-table-file flag" "grep -q -- '--disposition-table-file' '$SCRIPT'"
+assert "accepts --since-sha flag" "grep -q -- '--since-sha' '$SCRIPT'"
+
+# A missing/unreadable --disposition-table-file path is a usage error (exit 2).
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table-file "$TMP/does-not-exist.json" 2>/dev/null
+rc_missing_file=$?
+assert "exits 2 for a --disposition-table-file path that does not exist" "[ \$rc_missing_file -eq 2 ]"
+
+# A SUPPLIED file that reads back empty (e.g. zero bytes) must still fail
+# validation, not be silently treated as if the flag were omitted — the flag
+# was given, so its content is required to be a non-empty JSON array
+# regardless of what the file happens to contain.
+: > "$TMP/empty-disposition.json"
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table-file "$TMP/empty-disposition.json" 2>/dev/null
+rc_empty_file=$?
+assert "exits 2 for a --disposition-table-file that reads back empty" "[ \$rc_empty_file -eq 2 ]"
+
+# Malformed file CONTENT must be rejected up front (exit 2), same convention
+# as --bot-reviewers.
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table-file "$(dtfile 'not-json')" 2>/dev/null
+rc_bad_table=$?
+assert "exits 2 for non-array disposition-table-file content" "[ \$rc_bad_table -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table-file "$(dtfile '[]')" 2>/dev/null
+rc_empty_table=$?
+assert "exits 2 for empty disposition-table-file array" "[ \$rc_empty_table -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table-file "$(dtfile '["not-an-object"]')" 2>/dev/null
+rc_nonobj_table=$?
+assert "exits 2 for disposition-table-file array with a non-object member" "[ \$rc_nonobj_table -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table-file "$(dtfile '[{"finding":"x","classification":"WRONG","detail":"y"}]')" 2>/dev/null
+rc_badclass_table=$?
+assert "exits 2 for disposition-table-file entry with bad classification" "[ \$rc_badclass_table -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table-file "$(dtfile '[{"classification":"FIX","detail":"abc123"}]')" 2>/dev/null
+rc_missingfield_table=$?
+assert "exits 2 for disposition-table-file entry missing a required field" "[ \$rc_missingfield_table -eq 2 ]"
+
+err_out=$("$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table-file "$(dtfile 'not-json')" 2>&1 >/dev/null)
+assert "malformed disposition-table-file content gives a clear stderr message" "printf '%s' \"\$err_out\" | grep -qiF 'disposition-table-file'"
+
+# --disposition-table-file / --since-sha as the final argument with no value
+# must be a usage error (exit 2), matching the script's documented contract —
+# not a silent exit 1 from `shift 2` running out of positional args.
+"$SCRIPT" --owner o --repo r --pr 1 --disposition-table-file 2>/dev/null
+rc_missing_dt_val=$?
+assert "exits 2 when --disposition-table-file has no value" "[ \$rc_missing_dt_val -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --since-sha 2>/dev/null
+rc_missing_ss_val=$?
+assert "exits 2 when --since-sha has no value" "[ \$rc_missing_ss_val -eq 2 ]"
+
+# (a) both flags supplied: the posted Codex comment carries the structured
+# table and the since-sha line, not the bare '@codex review' string.
+: > "$FAKE_GH_LOG"
+export FAKE_GH_STDIN_LOG="$TMP/fake-gh-stdin.log"
+DISPOSITION='[{"finding":"missing null check","classification":"FIX","detail":"abc1234"},{"finding":"style nit","classification":"SKIP","detail":"cosmetic, out of scope"},{"finding":"race condition claim","classification":"REBUT","detail":"lock is held across the whole critical section, see line 42"}]'
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table-file "$(dtfile "$DISPOSITION")" \
+  --since-sha deadbeef >/dev/null 2>&1
+rc_table=$?
+assert "disposition-table-file dispatch exits 0" "[ \$rc_table -eq 0 ]"
+assert "codex comment body contains the FIX finding" "grep -qF -- 'missing null check' '$FAKE_GH_LOG'"
+assert "codex comment body contains the SKIP rationale" "grep -qF -- 'cosmetic, out of scope' '$FAKE_GH_LOG'"
+assert "codex comment body contains the REBUT rationale" "grep -qF -- 'lock is held across the whole critical section' '$FAKE_GH_LOG'"
+assert "codex comment body contains the since-sha line" "grep -qiF -- 'since deadbeef' '$FAKE_GH_LOG'"
+assert "codex comment body is NOT the bare '@codex review' string" "[ \$(wc -l < '$FAKE_GH_LOG') -gt 1 ]"
+
+# (c) neither flag supplied: comment body is still the bare string (regression guard).
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' >/dev/null 2>&1
+rc_bare=$?
+assert "no disposition-table-file/since-sha exits 0" "[ \$rc_bare -eq 0 ]"
+assert "no disposition-table-file/since-sha posts the bare '@codex review' string" "grep -qF -- 'pr comment 1 --repo o/r --body @codex review' '$FAKE_GH_LOG'"
+
+# (d) the flags have no effect on the Copilot mechanism: both bots dispatched,
+# disposition-table-file supplied -> Copilot still gets the plain remove+re-add dance.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "chatgpt-codex-connector[bot]"]' \
+  --disposition-table-file "$(dtfile "$DISPOSITION")" \
+  --since-sha deadbeef >/dev/null 2>&1
+rc_both=$?
+assert "disposition-table-file with both bots exits 0" "[ \$rc_both -eq 0 ]"
+assert "Copilot mechanism unaffected by --disposition-table-file" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
+assert "Codex mechanism still carries the disposition table when both bots dispatched" "grep -qF -- 'missing null check' '$FAKE_GH_LOG'"
+
+# (e) a finding/detail containing "|" and an embedded newline must not
+# terminate or shift the markdown table row — both are routine in review
+# excerpts and rationales, and a shifted row breaks the finding-to-
+# classification association the table exists to preserve.
+: > "$FAKE_GH_LOG"
+DISPOSITION_ESC='[{"finding":"a | b\nc","classification":"SKIP","detail":"line1\nline2 | pipe"}]'
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table-file "$(dtfile "$DISPOSITION_ESC")" >/dev/null 2>&1
+rc_esc=$?
+assert "disposition-table-file with pipe/newline in cells exits 0" "[ \$rc_esc -eq 0 ]"
+assert "embedded newlines collapse and literal pipes are escaped, keeping the row intact on one line" \
+  "grep -qF -- 'a \\| b c | SKIP | line1 line2 \\| pipe |' '$FAKE_GH_LOG'"
+
+# (f) a cell containing a PRE-EXISTING literal backslash-pipe (e.g. a regex
+# excerpt) must have its backslash escaped BEFORE the pipe is escaped, or the
+# cell's own backslash consumes the added escape and the pipe still splits
+# the row.
+: > "$FAKE_GH_LOG"
+DISPOSITION_BS='[{"finding":"regex \\| here","classification":"SKIP","detail":"n/a"}]'
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table-file "$(dtfile "$DISPOSITION_BS")" >/dev/null 2>&1
+rc_bs=$?
+assert "disposition-table-file with a pre-existing backslash-pipe exits 0" "[ \$rc_bs -eq 0 ]"
+assert "the pre-existing backslash is escaped before the pipe, so the pipe stays escaped" \
+  "grep -qF -- 'regex \\\\\\| here' '$FAKE_GH_LOG'"
+
+# (g) a disposition table large enough to push the rendered comment past
+# GitHub's issue-comment size limit falls back to a short, valid
+# '@codex review' body instead of failing the gh call outright. Also proves
+# the file-based transport: a 400-entry table (>128 KiB, well past Linux's
+# single-argv-string limit) is passed as a short file PATH, not inline JSON,
+# so this never risks the exec-time argv failure the header documents.
+: > "$FAKE_GH_LOG"
+BIG_DISPOSITION=$(python3 -c "
+import json
+items = [{'finding': 'x' * 200, 'classification': 'SKIP', 'detail': 'y' * 200} for _ in range(400)]
+print(json.dumps(items))
+")
+BIG_DISPOSITION_FILE="$(dtfile "$BIG_DISPOSITION")"
+assert "the oversized disposition-table fixture itself exceeds Linux's 128 KiB single-argv-string limit" \
+  "[ \$(wc -c < '$BIG_DISPOSITION_FILE') -gt 131072 ]"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table-file "$BIG_DISPOSITION_FILE" >/dev/null 2>&1
+rc_big=$?
+assert "oversized disposition-table-file still exits 0" "[ \$rc_big -eq 0 ]"
+assert "oversized disposition-table-file posts the '@codex review' ask (not aborted)" \
+  "grep -qF -- '@codex review' '$FAKE_GH_LOG'"
+assert "oversized disposition-table-file falls back to a short body, not the full table" \
+  "[ \$(wc -c < '$FAKE_GH_LOG') -lt 1000 ]"
 
 exit $FAIL
