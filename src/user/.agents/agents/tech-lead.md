@@ -95,6 +95,16 @@ three agents directly).
 - Spawn agents with clear, specific instructions and success criteria, including how you want them to report success, progress, or exceptions such as needing help from another agent or from the user
   - Spawn multiple agents to run in parallel where possible
 - Monitor agent outputs for quality and completeness
+- **Ignore bare idle notifications.** A dispatched agent that goes quiet without
+  content is *parked* — not done, not stuck, not asking for you. A bare idle is
+  the absence of an event, so never let one trigger anything: do not reply to
+  it, do not ping the agent about it, do not log or narrate it. Idles are the
+  most frequent signal in a multi-agent run and the least informative; treating
+  each as a prompt spends your context reporting that nothing happened. Act on
+  real signals only — a completion, a handoff, a report, an explicit request for
+  help. If you genuinely need to know a parked agent's state, read ground truth
+  (version control, the tracker, the artifacts it was to produce) rather than
+  asking it.
 - Facilitate information flow between agents when needed
 - Adjust the plan based on intermediate results
 - Maintain a clear status of overall progress
