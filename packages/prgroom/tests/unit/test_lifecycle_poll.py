@@ -1576,6 +1576,105 @@ def test_withdrawn_reviewer_reactivates_to_in_progress_on_fresh_comment() -> Non
     assert reviewers_gate_satisfied(state) is False
 
 
+def test_post_withdrawal_drive_by_across_polls_does_not_satisfy_a_later_re_request() -> None:
+    # The multi-poll drive-by: a withdrawn reviewer submits a drive-by review that the
+    # reconciler observes on an intermediate poll (still withdrawn, before any
+    # re-request), then the operator re-requests on a later poll. Because the review
+    # PREDATES the re-request, it must NOT promote the reviewer to REVIEW_FOUND — the
+    # re-request wants a fresh review the drive-by cannot stand in for. The gate must end
+    # UNSATISFIED (REQUESTED). requested_reviewers carries no request timestamp, so the
+    # ordering is established structurally: the drive-by's timestamp is recorded on
+    # last_review_at when first observed while withdrawn, and the later reactivation then
+    # sees terminal_at NOT strictly after that boundary.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("request-withdrawn"),  # declined_at = _T0 - 1h = 11:00Z
+    )
+    drive_by = {
+        "id": 34,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T11:30:00Z",  # AFTER the 11:00Z withdrawal
+    }
+    # Intermediate poll: drive-by observed while STILL withdrawn (login not re-requested).
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[drive_by]),
+        deps=_deps(_T0 - timedelta(minutes=29)),  # 11:31Z
+        config=_config(),
+    )
+    copilot_mid = mid.reviewers["copilot"]
+    # A drive-by against a pulled request does not resurrect the reviewer, but its
+    # timestamp is recorded so the later re-request can be ordered against it.
+    assert copilot_mid.status is ReviewerStatus.DECLINED
+    assert copilot_mid.declined_reason == "request-withdrawn"
+    assert copilot_mid.last_review_at == datetime(2026, 6, 9, 11, 30, tzinfo=UTC)
+
+    # Later poll: operator re-requests. The stale drive-by must not satisfy it.
+    final = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[drive_by]),
+        deps=_deps(_T0 - timedelta(minutes=28)),  # 11:32Z
+        config=_config(),
+    )
+    copilot = final.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REQUESTED
+    assert copilot.declined_at is None
+    assert copilot.declined_reason is None
+    assert reviewers_gate_satisfied(final) is False
+
+
+def test_re_requested_reviewer_after_drive_by_still_times_out() -> None:
+    # Recovery guard for the fix above: a reviewer reactivated to REQUESTED after a stale
+    # drive-by must not be permanently stuck. Clearing last_review_at on reactivation
+    # keeps the review-start timeout (which only fires on last_review_at is None) alive,
+    # so a re-requested reviewer who never delivers the wanted fresh review still auto-
+    # declines and the PR can quiesce — the drive-by does not disable the stall clock.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("request-withdrawn"),  # declined_at = _T0 - 1h = 11:00Z
+    )
+    drive_by = {
+        "id": 34,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T11:30:00Z",
+    }
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[drive_by]),
+        deps=_deps(_T0 - timedelta(minutes=29)),  # 11:31Z
+        config=_config(),
+    )
+    reactivated = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[drive_by]),
+        deps=_deps(_T0 - timedelta(minutes=28)),  # 11:32Z — REQUESTED, last_review_at cleared
+        config=_config(),
+    )
+    assert reactivated.reviewers["copilot"].last_review_at is None
+    # No fresh review lands; > review_start_timeout (3m) after the 11:32Z re-request.
+    final = poll_pr(
+        reactivated,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[drive_by]),
+        deps=_deps(_T0 - timedelta(minutes=24)),  # 11:36Z
+        config=_config(),
+    )
+    copilot = final.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.DECLINED
+    assert copilot.declined_reason == "timeout-no-start"
+    assert reviewers_gate_satisfied(final) is True
+
+
 @pytest.mark.parametrize("reason", ["timeout-no-start", "timeout-stalled"])
 def test_timeout_declined_reviewer_does_not_reactivate(reason: str) -> None:
     # Behavior 14 — the GLM critical regression guard. A timeout decline is a purely

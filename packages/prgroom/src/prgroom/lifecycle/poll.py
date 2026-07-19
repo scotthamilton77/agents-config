@@ -472,6 +472,13 @@ def _reconcile_reviewers(
                 else:
                     existing.status = ReviewerStatus.REQUESTED
                     existing.last_request_at = now
+                    # Fresh re-request awaiting its first engagement: drop any drive-by
+                    # last_review_at recorded while withdrawn. The review-start timeout
+                    # only fires while last_review_at is None, so leaving a stale stamp
+                    # here would wedge a re-requested reviewer at REQUESTED forever when
+                    # the wanted fresh review never lands. Clearing it keeps the
+                    # stuck-REQUESTED → timeout → decline recovery alive.
+                    existing.last_review_at = None
                 existing.declined_at = None
                 existing.declined_reason = None
                 changed = True
@@ -654,9 +661,24 @@ def _observe_engagement(
             if item.author == reviewer.identity and item.seen_at > reviewer.last_request_at
         ]
         verdict_at = terminal_reviews.get(reviewer.identity)
+        withdrawn = (
+            reviewer.status is ReviewerStatus.DECLINED
+            and reviewer.declined_reason == WITHDRAWN_REASON
+        )
         if verdict_at is not None and verdict_at > reviewer.last_request_at:
             activity_times.append(verdict_at)  # post-request terminal verdict
-            target_status: ReviewerStatus | None = ReviewerStatus.REVIEW_FOUND
+            # A withdrawn reviewer's terminal review is a drive-by against a request that
+            # was PULLED. Record it (last_review_at advances below) so a later re-request
+            # can order this verdict against the withdrawal, but do NOT promote to
+            # review_found: only a review established as post-re-request satisfies a
+            # withdrawn request (the reactivation branch handles that). Promoting a
+            # pre-re-request drive-by here would swallow the operator's re-request and
+            # quiesce the PR on a stale verdict. A timeout decline is different — its
+            # verdict genuinely supersedes the fallback decline (§4.1) — so this
+            # suppression is withdrawal-only.
+            target_status: ReviewerStatus | None = (
+                None if withdrawn else ReviewerStatus.REVIEW_FOUND
+            )
         elif reviewer.status in {ReviewerStatus.NOT_REQUESTED, ReviewerStatus.REQUESTED}:
             target_status = ReviewerStatus.IN_PROGRESS
         else:
