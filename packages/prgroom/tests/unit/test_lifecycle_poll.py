@@ -2038,6 +2038,134 @@ def test_terminal_reviewer_is_not_withdrawn() -> None:
     assert state.reviewers["copilot"].status is ReviewerStatus.REVIEW_FOUND
 
 
+def _ingested_review_item(gh_id: str, *, login: str, at: datetime) -> ReviewItem:
+    # A REVIEW_SUMMARY already on file from an EARLIER poll, so this poll's ingest keys it
+    # under (kind, gh_id) as `seen` and does NOT re-surface it in `new_items`. Lets a test
+    # place a historical review in the reviews response without also making its author a
+    # `new_items` author (which would suppress the withdrawal via the other channel).
+    return ReviewItem(
+        kind=ItemKind.REVIEW_SUMMARY,
+        identity=Identity(gh_id=gh_id),
+        author=login,
+        body_excerpt="prior-ask note",
+        seen_at=at,
+    )
+
+
+def test_stale_review_from_a_prior_window_does_not_block_withdrawal() -> None:
+    # Codex P1 (PR #348 comment 3610923471). `reviewed` is derived from the FULL reviews
+    # response, so a COMMENTED review that answered a PRIOR ask must not keep a reviewer
+    # permanently `active`. Here the reviewer engaged the earlier ask (10:00Z) and was
+    # then re-requested (window reopened to 11:00Z); GitHub now drops the pending request
+    # with no in-window response — a genuine withdrawal. Guarding on bare `login in
+    # reviewed` would wedge them IN_PROGRESS → timeout-stalled → refreshable, re-requesting
+    # an ask the operator pulled. The stale 10:00Z review predates last_request_at, so it
+    # no longer suppresses the withdrawal.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.IN_PROGRESS,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=1),  # window reopened 11:00Z
+            last_review_at=_T0 - timedelta(hours=2),  # engaged the PRIOR ask at 10:00Z
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    start.items.append(_ingested_review_item("42", login="copilot", at=_T0 - timedelta(hours=2)))
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=[],
+        reviews=[
+            {
+                "id": 42,
+                "state": "COMMENTED",
+                "submitted_at": "2026-06-09T10:00:00Z",  # BEFORE the 11:00Z window
+                "user": {"login": "copilot"},
+                "body": "note on the earlier ask",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.DECLINED
+    assert copilot.declined_reason == "request-withdrawn"
+    assert copilot.declined_at == _T0
+
+
+def test_in_window_review_still_suppresses_withdrawal() -> None:
+    # Negative control: a review whose timestamp is strictly AFTER last_request_at is
+    # in-window engagement — the reviewer is legitimately mid-review, not withdrawn. The
+    # 11:30Z review post-dates the 11:00Z window; even though it is not new THIS poll
+    # (already ingested), the window check keeps the withdrawal suppressed.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.IN_PROGRESS,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=1),  # window opened 11:00Z
+            last_review_at=datetime(2026, 6, 9, 11, 30, tzinfo=UTC),
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    start.items.append(
+        _ingested_review_item("43", login="copilot", at=datetime(2026, 6, 9, 11, 30, tzinfo=UTC))
+    )
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=[],
+        reviews=[
+            {
+                "id": 43,
+                "state": "COMMENTED",
+                "submitted_at": "2026-06-09T11:30:00Z",  # AFTER the 11:00Z window
+                "user": {"login": "copilot"},
+                "body": "still reviewing",
+            }
+        ],
+    )
+    # Poll within the finish timeout of the 11:30Z review so no stall decline masks intent.
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(_JUST_AFTER_VERDICT), config=_config())
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.IN_PROGRESS
+    assert copilot.declined_reason is None
+
+
+def test_new_item_author_suppresses_withdrawal_regardless_of_window() -> None:
+    # Negative control: a login among THIS poll's new_items authors is genuinely fresh
+    # feedback (it is itself what cleared the pending request), so it suppresses the
+    # withdrawal independent of the window check. The new COMMENTED review here predates
+    # last_request_at (window check FALSE), proving the new-item channel is load-bearing.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.IN_PROGRESS,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=1),  # window opened 11:00Z
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=[],
+        reviews=[
+            {
+                "id": 44,
+                "state": "COMMENTED",
+                "submitted_at": "2026-06-09T10:30:00Z",  # BEFORE the 11:00Z window
+                "user": {"login": "copilot"},
+                "body": "late-arriving note ingested this poll",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(_JUST_AFTER_ACTIVITY), config=_config())
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.IN_PROGRESS
+    assert copilot.declined_reason is None
+
+
 def test_external_push_with_stale_reviewer_advances_to_fixes_pending() -> None:
     # Behavior 12 — Codex P1 regression guard. flip_stale_required_reviews moves the
     # reviewer to NOT_REQUESTED, but `rereview` is a FIXES_PENDING pipeline step and

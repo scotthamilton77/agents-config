@@ -553,13 +553,24 @@ def _reconcile_reviewers(
         )
         changed = True
 
-    # Decline pass — narrowly. A login qualifies only when GitHub is no longer asking,
-    # it produced NOTHING this poll, and it is mid-flight. Any this-poll activity means
-    # "they responded" (which is itself what cleared the pending request), not
-    # "the ask was pulled".
-    active = set(reviewed) | {item.author for item in new_items if item.author}
+    # Decline pass — narrowly. A login qualifies only when GitHub is no longer asking
+    # and it produced no CURRENT-window activity this poll. Suppression must be scoped to
+    # the reviewer's live request window: ``reviewed`` is derived from the FULL reviews
+    # response, so a bare ``login in reviewed`` lets ANY historical review keep a reviewer
+    # permanently active. A COMMENTED review answering a PRIOR ask would then wedge a
+    # since-withdrawn reviewer IN_PROGRESS → timeout-stalled → refreshable, so a later
+    # push re-requests an ask the operator already pulled. Only activity belonging to the
+    # current window suppresses the withdrawal: an item newly ingested this poll (fresh
+    # feedback that is itself what cleared the pending request), or a review whose
+    # timestamp is strictly after ``last_request_at`` (in-window engagement, matching
+    # ``_observe_engagement``'s strictly-after gate). A review at or before
+    # ``last_request_at`` answered a superseded ask and must not block withdrawal.
+    new_item_authors = {item.author for item in new_items if item.author}
     for login, reviewer in state.reviewers.items():
-        if login in requested or login in active:
+        if login in requested or login in new_item_authors:
+            continue
+        review_activity = reviewed.get(login)
+        if review_activity is not None and review_activity[0] > reviewer.last_request_at:
             continue
         if reviewer.status in _WITHDRAWABLE_STATUSES:
             reviewer.status = ReviewerStatus.DECLINED
