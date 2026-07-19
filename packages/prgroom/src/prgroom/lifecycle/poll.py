@@ -523,16 +523,22 @@ def _reconcile_reviewers(
 def _timeout_decline_now_withdrawn(reviewer: ReviewerState) -> bool:
     """True iff a never-engaged timeout decline's absence is a genuine withdrawal (§2.1.2).
 
-    Gates the decline-pass restamp: a DECLINED reviewer carrying a non-withdrawn reason
-    (a ``timeout-no-start``) that never produced any review (``last_review_at is None``).
+    Gates the decline-pass restamp: a DECLINED reviewer whose reason is exactly
+    ``timeout-no-start`` — the one decline that both implies never-engaged and is
+    produced by the in-memory timeout path whose continuous-presence semantics this
+    conversion exists for — that never produced any review (``last_review_at is None``).
     Such a reviewer was continuously listed in ``requested_reviewers`` until now, so its
-    absence this poll can only be an operator pulling the request. Excludes an
-    already-withdrawn reviewer (idempotent across polls) and a stalled decline
-    (``last_review_at`` set), whose absence is the ordinary post-review shape.
+    absence this poll can only be an operator pulling the request. Matching on the exact
+    reason (rather than "any non-withdrawn reason") is deliberate: an explicit
+    ``user-declined`` — whose contract in ``reviewer_needs_refresh`` keeps it refreshable —
+    must NOT be restamped to ``request-withdrawn``, or a later push silently stops issuing
+    its intended re-review request. Excludes an already-withdrawn reviewer (idempotent
+    across polls) and a stalled decline (``last_review_at`` set), whose absence is the
+    ordinary post-review shape.
     """
     return (
         reviewer.status is ReviewerStatus.DECLINED
-        and reviewer.declined_reason != WITHDRAWN_REASON
+        and reviewer.declined_reason == "timeout-no-start"
         and reviewer.last_review_at is None
     )
 

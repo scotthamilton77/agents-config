@@ -1777,6 +1777,29 @@ def test_timeout_stalled_decline_is_not_converted_on_absence() -> None:
     assert copilot.declined_reason == "timeout-stalled"
 
 
+def test_user_declined_never_engaged_is_not_converted_on_absence() -> None:
+    # Negative control: an explicit `user-declined` (never engaged, so last_review_at is
+    # None) must NOT be restamped to request-withdrawn on observed absence. Its contract in
+    # reviewer_needs_refresh keeps `user-declined` refreshable; converting it would flip
+    # that to false and silently strip the push-driven re-ask. Only `timeout-no-start`
+    # qualifies for the withdrawal restamp.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("user-declined"),
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.DECLINED
+    assert copilot.declined_reason == "user-declined"
+
+
 def test_terminal_reviewer_is_not_withdrawn() -> None:
     # A reviewer who already delivered a verdict is not re-declared withdrawn just
     # because GitHub stopped listing their now-resolved request.
