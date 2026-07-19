@@ -125,7 +125,7 @@ things now *are*.
 
 | Type | Payload | Effect |
 |------|---------|--------|
-| `grind_created` | `title`, `repo` (owner/name), `mission` (goal + explicit out-of-scope), `protocols` (structured block: review protocol choice, merge-policy resolution, watcher conventions, session grants), `config` (thresholds, below), `lanes[]` (id, name, agent, queue of items with bead ids, titles, blocker edges) | Seeds the entire board. The mission/protocols block is what makes `status --handoff` self-contained (§7 replacement). |
+| `grind_created` | `title`, `repo` (owner/name), `mission` (goal + explicit out-of-scope), `protocols` (structured block: review protocol choice, merge-policy resolution, watcher conventions, session grants), `config` (thresholds, below), `lanes[]` (id, name, agent, model+effort the lieutenant runs at, queue of items with bead ids, titles, blocker edges) | Seeds the entire board. The mission/protocols block is what makes `status --handoff` self-contained (§7 replacement). |
 | `grind_paused` | `reason`, `resume_checklist[]` | Board banner; handoff carries pause state |
 | `grind_resumed` | — | Clears pause |
 | `grind_finished` | `summary` | Terminal. Fold rejects (anomaly) further mutating events. |
@@ -139,7 +139,7 @@ edges recorded later by `item_blocked`.
 | Type | Payload | Effect |
 |------|---------|--------|
 | `lane_standing_down` | `lane` | Lane status `standing-down` (queue empty, wrapping up) |
-| `lane_handover` | `lane`, `from_agent`, `to_agent`, `reason` | Records lieutenant rotation; lane keeps its queue |
+| `lane_handover` | `lane`, `from_agent`, `to_agent`, `to_model?`, `to_effort?`, `reason` | Records lieutenant rotation; lane keeps its queue. `to_model?`/`to_effort?` recorded when the replacement runs at a different tier; absent means unchanged |
 
 Lane status is otherwise fully derived from item statuses (all done → `done`;
 any in flight → the most advanced active state), so there is no generic
