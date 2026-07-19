@@ -131,3 +131,17 @@ def test_full_state_json_is_json_serializable():
     state = fold(events)
 
     json.dumps(full_state_json(state))  # raises if any value isn't JSON-safe
+
+
+def test_full_state_serializes_attention_ts():
+    events = [
+        seed_event(),
+        event("attention_raised", text="look here"),
+    ]
+    state = fold(events)
+
+    payload = full_state_json(state)
+
+    attention = payload["attention"]
+    assert isinstance(attention, list)
+    assert attention[0]["ts"] == "2026-07-19T00:05:00Z"

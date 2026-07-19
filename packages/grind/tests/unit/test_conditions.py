@@ -481,3 +481,35 @@ def test_duration_threshold_overflow_falls_back_to_default() -> None:
     # default stale_item_after is 45m; at +51m past the last event the item is
     # stale under the fallback, proving the overflowing value was ignored
     assert "stale_item" in _names(result)
+
+
+def test_review_stalemate_risk_not_fired_for_completed_item() -> None:
+    # round_history survives merge/done, but a finished item has no live
+    # review cycle to be stalled -- the risk must not follow it around.
+    events = [
+        *_to_pr_open(),
+        event("review_round", item="wgclw.1", kind="codex", round=1, head_sha="a1"),
+        event("review_round", item="wgclw.1", kind="codex", round=2, head_sha="a1"),
+        event("review_round", item="wgclw.1", kind="codex", round=3, head_sha="a1"),
+        event("item_merged", item="wgclw.1", sha="m1"),
+        event("item_done", item="wgclw.1"),
+    ]
+    state = fold(events)
+
+    result = conditions(state, datetime(2026, 7, 19, 0, 5, 0, tzinfo=UTC))
+
+    assert "review_stalemate_risk" not in _names(result)
+
+
+def test_boolean_stalemate_threshold_falls_back_to_default() -> None:
+    # bool is an int subtype; `true` must not read as a threshold of 1
+    events = [
+        *_to_pr_open(),
+        event("review_round", item="wgclw.1", kind="codex", round=1, head_sha="a1"),
+    ]
+    state = fold(events)
+    state.config = {"stalemate_risk_round": True}
+
+    result = conditions(state, datetime(2026, 7, 19, 0, 5, 0, tzinfo=UTC))
+
+    assert "review_stalemate_risk" not in _names(result)

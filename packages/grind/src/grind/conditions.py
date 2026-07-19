@@ -33,6 +33,11 @@ _TERMINAL_ITEM_STATUSES = {"merged", "done"}
 # what makes a chain of blocked items worth flagging as `blocked_chain`.
 _CHAIN_BLOCKING_STATUSES = {"blocked", "waiting-human"}
 
+# Statuses with a live PR/review cycle -- the only place a review stalemate
+# can exist. round_history is fold history and survives the cycle, so
+# `review_stalemate_risk` must not read it once the item moves on.
+_ACTIVE_REVIEW_STATUSES = {"pr-open", "in-review", "waiting-human", "blocked"}
+
 _DURATION_RE = re.compile(r"^(\d+)([smhd])$")
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
@@ -76,7 +81,10 @@ def _duration(value: JsonValue, default_seconds: int) -> timedelta:
 
 
 def _round_threshold(value: JsonValue, default: int) -> int:
-    return value if isinstance(value, int) and value > 0 else default
+    # bool is an int subtype: `true` would otherwise read as threshold 1
+    return (
+        value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else default
+    )
 
 
 def _parse_ts(value: str | None) -> datetime | None:
@@ -203,6 +211,11 @@ def _review_stalemate_risk(state: State) -> list[Condition]:
     n = _round_threshold(state.config.get("stalemate_risk_round"), 3)
     out: list[Condition] = []
     for item in state.items.values():
+        # round_history survives the review cycle (it is fold history, never
+        # cleared), so gate on a live review state: a done/merged item, or one
+        # whose PR closed and re-queued, is not a stalemate however it got there
+        if item.status not in _ACTIVE_REVIEW_STATUSES:
+            continue
         history = item.round_history
         if len(history) < n:
             continue

@@ -94,6 +94,7 @@ def _attention_json(entry: AttentionEntry) -> JsonValue:
         "lane": entry.lane,
         "auto": entry.auto,
         "kind": entry.kind,
+        "ts": entry.ts,
     }
 
 
