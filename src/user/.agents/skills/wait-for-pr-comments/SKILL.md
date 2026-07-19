@@ -474,9 +474,16 @@ the helper's default (1) per spec decision, not a per-repo config knob.
    # — omit the flag rather than write/pass "[]", or the whole re-review
    # request (Codex AND Copilot) aborts before either ask is dispatched.
    DISPOSITION_ARGS=()
+   DISPOSITION_FILE=""
    if [ "$(jq 'length' <<<"$disposition_table")" -gt 0 ]; then
-     printf '%s' "$disposition_table" > /tmp/pr-rereview-disposition-<n>.json
-     DISPOSITION_ARGS=(--disposition-table-file /tmp/pr-rereview-disposition-<n>.json)
+     # mktemp, not a PR-number-keyed fixed path: two concurrent Phase 6 runs
+     # for the SAME PR number in DIFFERENT repos would otherwise share one
+     # global path and race — overwriting, reading, or deleting each other's
+     # table between this write and request-rereview.sh's read, leaking one
+     # PR's findings/rationales into another's Codex ask.
+     DISPOSITION_FILE="$(mktemp)"
+     printf '%s' "$disposition_table" > "$DISPOSITION_FILE"
+     DISPOSITION_ARGS=(--disposition-table-file "$DISPOSITION_FILE")
    fi
 
    ${CLAUDE_SKILL_DIR}/request-rereview.sh \
@@ -485,7 +492,7 @@ the helper's default (1) per spec decision, not a per-repo config knob.
      "${DISPOSITION_ARGS[@]}" \
      --since-sha "<phase4_baseline_sha>"
    # exit 0 when at least one ask succeeded; exit 1 when none did
-   rm -f /tmp/pr-rereview-disposition-<n>.json
+   [ -n "$DISPOSITION_FILE" ] && rm -f "$DISPOSITION_FILE"
    ```
    `--bot-reviewers` dispatches on each policy-trusted identity's own
    mechanism (the `remove-reviewer` + `add-reviewer` pair for Copilot, an

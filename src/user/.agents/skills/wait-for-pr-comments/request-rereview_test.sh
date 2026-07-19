@@ -218,6 +218,15 @@ assert "accepts --since-sha flag" "grep -q -- '--since-sha' '$SCRIPT'"
 rc_missing_file=$?
 assert "exits 2 for a --disposition-table-file path that does not exist" "[ \$rc_missing_file -eq 2 ]"
 
+# A SUPPLIED file that reads back empty (e.g. zero bytes) must still fail
+# validation, not be silently treated as if the flag were omitted — the flag
+# was given, so its content is required to be a non-empty JSON array
+# regardless of what the file happens to contain.
+: > "$TMP/empty-disposition.json"
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table-file "$TMP/empty-disposition.json" 2>/dev/null
+rc_empty_file=$?
+assert "exits 2 for a --disposition-table-file that reads back empty" "[ \$rc_empty_file -eq 2 ]"
+
 # Malformed file CONTENT must be rejected up front (exit 2), same convention
 # as --bot-reviewers.
 "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table-file "$(dtfile 'not-json')" 2>/dev/null

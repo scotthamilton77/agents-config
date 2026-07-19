@@ -85,6 +85,7 @@ REPO=""
 PR=""
 BOT_REVIEWERS=""
 DISPOSITION_TABLE=""
+DISPOSITION_TABLE_FILE_GIVEN=false
 SINCE_SHA=""
 
 [ $# -gt 0 ] || usage
@@ -99,6 +100,7 @@ while [ $# -gt 0 ]; do
       [ -n "${2:-}" ] || { echo "error: --disposition-table-file requires a value" >&2; usage; }
       [ -r "$2" ] || { echo "error: --disposition-table-file '$2' is not a readable file" >&2; exit 2; }
       DISPOSITION_TABLE="$(cat "$2")"
+      DISPOSITION_TABLE_FILE_GIVEN=true
       shift 2
       ;;
     --since-sha)
@@ -126,12 +128,17 @@ if [ -n "$BOT_REVIEWERS" ]; then
   }
 fi
 
-# Validate --disposition-table-file's content (when provided) as a non-empty
-# JSON array of objects, each with a "finding" string, a "classification" of
-# FIX/SKIP/REBUT, and a "detail" string (commit SHA for FIX, rationale for
-# SKIP/REBUT) — same fail-closed convention as --bot-reviewers, then
-# canonicalize via jq.
-if [ -n "$DISPOSITION_TABLE" ]; then
+# Validate --disposition-table-file's content (when the flag was given) as a
+# non-empty JSON array of objects, each with a "finding" string, a
+# "classification" of FIX/SKIP/REBUT, and a "detail" string (commit SHA for
+# FIX, rationale for SKIP/REBUT) — same fail-closed convention as
+# --bot-reviewers, then canonicalize via jq. Gated on
+# DISPOSITION_TABLE_FILE_GIVEN, not on "$DISPOSITION_TABLE" being non-empty:
+# a supplied file that reads back EMPTY (e.g. a zero-byte file) must still
+# fail this check — checking non-emptiness of the variable would instead
+# treat it exactly like the flag being omitted, silently dropping the
+# do-not-relitigate context the caller explicitly asked to attach.
+if [ "$DISPOSITION_TABLE_FILE_GIVEN" = true ]; then
   DISPOSITION_TABLE=$(jq -ce '
     if (type == "array" and length > 0 and
         ([.[] | select(
