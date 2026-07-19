@@ -19,6 +19,9 @@
 # An identity with no known mechanism warns to stderr and is skipped without
 # aborting dispatch to its siblings.
 #
+# GraphQL projection: none directly; uses `gh pr edit` / `gh pr comment` REST
+# under the hood.
+#
 # Inputs:
 #   --owner <o>              repository owner
 #   --repo  <r>              repository name
@@ -49,14 +52,19 @@
 #                            commits since <sha>" line to the comment body.
 #
 # Outputs:
-#   stdout: (none on success)
+#   stdout: one NDJSON line per dispatched mechanism, never per raw alias
+#     (aliases deduping to one mechanism produce exactly one line):
+#       {"identity": <alias matched>, "mechanism": "copilot"|"codex", "status": "success"|"failure"}
+#     An unknown identity gets a stderr warning only, no stdout line -- it was
+#     never dispatched. Lets callers tell "never asked" (mechanism absent or
+#     "failure") apart from "asked but silent" ("success"). In the legacy
+#     --bot-reviewers-omitted path there is no input alias to echo, so
+#     "identity" is the fixed literal "Copilot", not a value read from input.
 #   exit codes:
-#     0 = at least one ask succeeded
-#     1 = no ask succeeded (gh failure on every dispatched identity)
-#     2 = bad flag usage
-#
-# GraphQL projection: none directly; uses `gh pr edit` / `gh pr comment` REST
-# under the hood.
+#     0 = every dispatched mechanism succeeded; 1 = none succeeded (including
+#     all-unknown-identities); 2 = bad flag usage; 3 = partial (>=1 succeeded
+#     AND >=1 failed) -- so callers don't read a failed identity as an
+#     asked-but-silent bot.
 #
 # Argv-size note: --disposition-table-file takes a PATH, not inline JSON. A
 # round with enough items (or a few verbose rationales) can exceed the OS's
@@ -250,15 +258,27 @@ request_codex() {
   fi
 }
 
+# report_outcome — emit one NDJSON stdout line for a dispatched mechanism.
+report_outcome() {
+  local identity="$1" mechanism="$2" status="$3"
+  jq -nc --arg identity "$identity" --arg mechanism "$mechanism" --arg status "$status" \
+    '{identity: $identity, mechanism: $mechanism, status: $status}'
+}
+
 if [ -z "$BOT_REVIEWERS" ]; then
-  # Backward-compatible default: the legacy Copilot-only dance.
+  # Backward-compatible default: the legacy Copilot-only dance. There is no
+  # input alias to echo here (no --bot-reviewers was given), so "identity"
+  # is the fixed literal "Copilot" -- see the Outputs note above.
   if request_copilot; then
+    report_outcome Copilot copilot success
     exit 0
   fi
+  report_outcome Copilot copilot failure
   exit 1
 fi
 
 SUCCEEDED=0
+DISPATCHED_COUNT=0
 # Track mechanisms already dispatched this invocation. Multiple aliases can map
 # to the same mechanism (e.g. both `Copilot` and
 # `copilot-pull-request-reviewer[bot]` -> the reviewer dance); dispatching each
@@ -280,12 +300,31 @@ while IFS= read -r identity; do
     *" $mechanism "*) continue ;;
   esac
   DISPATCHED="$DISPATCHED $mechanism"
+  DISPATCHED_COUNT=$((DISPATCHED_COUNT + 1))
 
   case "$mechanism" in
-    copilot) if request_copilot; then SUCCEEDED=$((SUCCEEDED + 1)); fi ;;
-    codex)   if request_codex;   then SUCCEEDED=$((SUCCEEDED + 1)); fi ;;
+    copilot)
+      if request_copilot; then
+        SUCCEEDED=$((SUCCEEDED + 1))
+        report_outcome "$identity" copilot success
+      else
+        report_outcome "$identity" copilot failure
+      fi
+      ;;
+    codex)
+      if request_codex; then
+        SUCCEEDED=$((SUCCEEDED + 1))
+        report_outcome "$identity" codex success
+      else
+        report_outcome "$identity" codex failure
+      fi
+      ;;
   esac
 done < <(jq -r '.[]' <<<"$BOT_REVIEWERS")
 
-[ "$SUCCEEDED" -gt 0 ] && exit 0
-exit 1
+if [ "$SUCCEEDED" -eq 0 ]; then
+  exit 1
+elif [ "$SUCCEEDED" -lt "$DISPATCHED_COUNT" ]; then
+  exit 3
+fi
+exit 0

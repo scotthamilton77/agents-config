@@ -486,12 +486,19 @@ the helper's default (1) per spec decision, not a per-repo config knob.
      DISPOSITION_ARGS=(--disposition-table-file "$DISPOSITION_FILE")
    fi
 
-   ${CLAUDE_SKILL_DIR}/request-rereview.sh \
+   RR_OUT=$(${CLAUDE_SKILL_DIR}/request-rereview.sh \
      --owner "$OWNER" --repo "$REPO" --pr "$PR" \
      --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")" \
      "${DISPOSITION_ARGS[@]}" \
-     --since-sha "<phase4_baseline_sha>"
-   # exit 0 when at least one ask succeeded; exit 1 when none did
+     --since-sha "<phase4_baseline_sha>")
+   RR_EXIT=$?
+   # exit 0 = every dispatched mechanism succeeded; 1 = none did; 3 = partial
+   # (>=1 succeeded, >=1 failed). $RR_OUT is NDJSON, one line per dispatched
+   # mechanism: {identity, mechanism, status}. Filter to the identities that
+   # actually succeeded — DO NOT reuse the full policy list in steps 3/4, or a
+   # never-asked identity (RR_EXIT == 3's failed half) polls as if it had
+   # been asked and reads "timed out silent" instead of "never dispatched".
+   DISPATCHED_OK_REVIEWERS=$(jq -cs '[.[] | select(.status == "success") | .identity]' <<<"$RR_OUT")
    [ -n "$DISPOSITION_FILE" ] && rm -f "$DISPOSITION_FILE"
    ```
    `--bot-reviewers` dispatches on each policy-trusted identity's own
@@ -512,12 +519,21 @@ the helper's default (1) per spec decision, not a per-repo config knob.
    makes Codex re-cite settled findings every round, while a structured
    disposition table (including an explicit REBUT) produced zero re-raises.
 
-3. **Launch** (80s max window: 20s pre-sleep + 6 × 10s polls):
+   **If `RR_EXIT == 1`** (`DISPATCHED_OK_REVIEWERS == []`): no bot was
+   actually asked. Skip steps 3-4 (no re-review start, and nothing, to poll
+   for) and go straight to the "no new review" merge-and-write-back below —
+   but do NOT feed this through the `silent` event, since a dispatch failure
+   is an infrastructure error, not a bot that was asked and stayed quiet;
+   report the dispatch failure instead and leave `rereview_round_count`
+   untouched, mirroring merge-guard's `RR_EXIT == 1` handling.
+
+3. **Launch** (80s max window: 20s pre-sleep + 6 × 10s polls). Only reached
+   when `DISPATCHED_OK_REVIEWERS` is non-empty:
    ```bash
    ${CLAUDE_SKILL_DIR}/poll-copilot-rereview-start.sh \
      --owner "$OWNER" --repo "$REPO" --pr "$PR" \
      --after <rereview_since_timestamp> \
-     --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"
+     --bot-reviewers "$DISPATCHED_OK_REVIEWERS"
    ```
    This detects either signal that a trusted bot has started a re-review:
    the `copilot_work_started` event that follows the fresh
@@ -527,19 +543,24 @@ the helper's default (1) per spec decision, not a per-repo config knob.
    since it responds to the `@codex review` comment in step 2, not a
    reviewer-request event). Passing `--bot-reviewers` is what enables the
    eyes-reaction check; omitting it preserves the script's original
-   Copilot-events-only behavior. Exit 3 (a reactions-endpoint failure that
-   leaves whether Codex started unknown) is an infrastructure error, not
-   "no re-review started" — do not treat it as a silent ask.
+   Copilot-events-only behavior. `--bot-reviewers` is
+   `$DISPATCHED_OK_REVIEWERS`, not the full policy list — a `RR_EXIT == 3`
+   partial dispatch (e.g. Copilot's reviewer-add succeeds, Codex's issue
+   comment fails) must not have this step wait on the identity that was
+   never actually asked. Exit 3 (a reactions-endpoint failure that leaves
+   whether Codex started unknown) is an infrastructure error, not "no
+   re-review started" — do not treat it as a silent ask.
 
 4. **If** step 3 detected a re-review start (either signal), launch
    `poll-copilot-review.sh
    --owner "$OWNER" --repo "$REPO" --pr "$PR"
    --skip-request-check --since-timestamp <rereview_since_timestamp>
-   --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"`
+   --bot-reviewers "$DISPATCHED_OK_REVIEWERS"`
    to await the actual review. The `--since-timestamp` guard prevents the
    stale-cache bug where the script returns the prior round's review instead
-   of the new one; `--bot-reviewers` keeps re-review detection aligned to the
-   same policy allowlist used in Phase 2. Before this bead, step 4 was gated
+   of the new one; `--bot-reviewers` keeps re-review detection restricted to
+   the identities `request-rereview.sh` actually dispatched successfully,
+   same rationale as step 3. Before this bead, step 4 was gated
    on the Copilot-only `copilot_work_started` event alone, so a Codex-only
    re-review always fell through to "no re-review started" (recording a
    silent ask against the one-ask cap) even when Codex was actively
@@ -581,7 +602,11 @@ PR/head — do not fire again on later invocations once it is already `true`.
 
 If Phase 6 detects no new review (`no_rereview_started` exit), compute the
 updated silent-ask counter and merge it into `POLLING_FILE` before exiting
-Phase 6 normally and proceeding to Phase 7:
+Phase 6 normally and proceeding to Phase 7. This `silent` event does NOT
+apply to step 2's `RR_EXIT == 1` case (no bot was ever dispatched) — that
+path skips straight to Phase 7 with the dispatch failure reported, leaving
+`rereview_round_count`/`bot_review_cap_exhausted` untouched, since no ask
+was made for a bot to have stayed silent on:
 ```bash
 result=$(${CLAUDE_SKILL_DIR}/compute-rereview-polling.sh \
   --prior-count "$(jq -r '.c' <<<"$prior")" \
