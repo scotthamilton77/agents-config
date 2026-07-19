@@ -266,9 +266,42 @@ So, per PR: the lane reports reviewed-clean → ROOT invokes `merge-guard` →
 ROOT runs the command it hands back, or routes the PR to the human's docket
 when the guard says to.
 
-**Verify the lane's claim before invoking the guard.** "Reviewed-clean" is a
-report, and §8's standing rule applies to it like any other: confirm it
-directly. The guard checks eligibility, not whether your lieutenant was right.
+**The guard's eligibility run IS the verification — do not hand-roll one.**
+"Reviewed-clean" is a claim, and §8 says confirm claims before anything
+irreversible. Confirm it *with the guard*, not with a hand-assembled sweep of
+`gh` calls. `merge-guard` resolves the policy (`resolve_policy.py`) and then
+computes the live floor (`check-merge-eligibility.sh`) — CI at the head,
+approvals at *that same* head, unresolved threads, sticky requested-changes
+verdicts, in-flight and reaction-based review signals, untriaged feedback —
+returning `blockers[]`, the `facts` the policy branch reads, and a
+**head-pinned merge command**. One gated call subsumes every check ROOT would
+otherwise assemble by hand, and unlike a hand-rolled sweep it stays correct as
+the blocker set grows.
+
+So verification is **one call, not eight**. ROOT reads the verdict and routes:
+
+| Guard says | ROOT does |
+|---|---|
+| Eligible, no blockers | Eligibility is established — now take §4's **authorization** branch for the resolved policy. A clean floor is not permission to merge |
+| Blockers the lane can clear | The lane's claim was wrong or stale — relay those `blockers[]` to the lane and re-engage it. Do not investigate them yourself |
+| Blockers only a human can clear | Straight to the human's docket, with the blocker's `details` quoted. Relaying these to a lane strands the PR — the lane has no way to clear them |
+| Error / unknown state | Do not merge. Human's docket |
+
+**Sort the blockers before you route them.** The distinction is whose action
+clears the blocker, and it is written into the blocker's own `details` string —
+read it rather than guessing from the code. `escalations_pending` ("escalated
+thread(s) awaiting a human ruling") and `requested_changes_active` (cleared
+only by dismissal or a superseding approval *from the same reviewer*) are
+human-clearing by construction; a lane re-engaged on either will spin against a
+door it does not hold the key to. Blockers like `unresolved_threads`,
+`untriaged_feedback`, or `ci_not_green` are the lane's to clear. A mixed set
+splits: the lane's share goes back to the lane, the human's share goes on the
+docket, and the PR waits on both.
+
+A hand-rolled pre-check *before* the guard is not extra safety. It is ROOT
+spending its scarcest resource to recompute a subset of what the very next
+command returns anyway — and recomputing it against a blocker set that is
+already out of date.
 
 **When the guard itself is broken, the floor does not move.** A grind sometimes
 runs with `merge-guard` structurally unavailable — misconfigured, mid-refactor,
@@ -296,6 +329,30 @@ reviewer has an active requested-changes verdict (sticky and not head-scoped: a
 push does not clear it, and another reviewer's approval does not override it).
 Report those as **facts you checked, not as clearance**, and name the guard as
 inoperable so the human knows the usual gate did not run.
+
+**When a check is a heavy grovel, spend a subagent's context, not ROOT's.**
+Reconstructing docket facts with the guard down is exactly the kind of
+unavoidable digging that kills a ROOT doing it inline — and so are its
+siblings: reading a long CI log, reconciling the ledger against the tracker,
+establishing what a reviewer actually saw at some commit. Dispatch an **ad-hoc
+ephemeral subagent** — sized to the task rather than to ROOT's tier, briefed to
+run the checks and return **only a short verdict block**: each fact with the
+command that established it, no transcripts, no diffs, no PR bodies. ROOT pays
+a dozen lines of context for work that would otherwise cost it thousands. The
+subagent gathers evidence; ROOT still rules on it. This is not delegation of
+judgment, it is delegation of *reading*.
+
+**Dispatch it unnamed — this is a deliberate exception to the roster rule, not
+an oversight.** §1 and `orchestrating-subagents` have ROOT spawn *named*
+teammates, because a teammate is something you address again: relayed to,
+re-engaged, rotated, and reconstructed in the compaction handoff (§7). A grovel
+subagent is none of those. It answers one question, returns its verdict block,
+and terminates — ROOT never sends it a second message, so a name would buy
+nothing and cost a roster slot plus a line in every handoff. The roster rule
+governs **addressable teammates**; a one-shot that dies on delivery is not one.
+Two constraints hold anyway: its completion wakes ROOT (correct — ROOT
+dispatched it), and it must spawn nothing itself, since it could not await a
+child.
 
 The human then rules on that PR. Their ruling supersedes the floor — merging
 with the guard down is a call they are allowed to make and ROOT is not. If the
@@ -444,6 +501,9 @@ owns its gate. Spend verification where being wrong is expensive:
 - **When a claim is load-bearing for a decision you are about to make.**
 
 The checks are cheap and shallow: `gh pr view`, `git log`, a work-item show.
+Anything deeper than that goes to an ad-hoc ephemeral subagent (§4), and
+anything touching merge eligibility goes to the guard's own gated check (§4) —
+never to a sweep ROOT assembles itself.
 Trust-but-verify at these points caught, in one run: a work item claimed closed
 that was still open, a "missing" doc amendment actually inherited from a prior
 merge, and a phantom "dropped order" that was mid-execution. Routine progress
@@ -506,7 +566,9 @@ punished; a worker that hides a compromise costs far more than one that admits i
 | Excuse | Reality |
 |--------|---------|
 | "The lieutenant is idle, so it's stuck — I'll nudge it." | Bare idle means parked. Verify with `gh`/`git` before nudging. |
-| "The lane reported reviewed-clean, so I can merge." | A lane report is a claim, not eligibility. Verify it, then let `merge-guard` resolve authority. |
+| "The lane reported reviewed-clean, so I can merge." | A lane report is a claim, not eligibility. Invoke `merge-guard`: its eligibility run verifies the claim, and its policy resolution — a separate axis — decides whether merging is authorized at all. Clean is not permission. |
+| "I'll sanity-check CI and threads myself before invoking the guard." | The guard computes that and more, on the next command. A pre-check is ROOT's context spent recomputing a stale subset. One gated call, not eight. |
+| "This grovel is unavoidable, so I'll just read it all inline." | Unavoidable for *someone*, not for ROOT. Ad-hoc ephemeral subagent, verdict block only. |
 | "The watcher fired, so the reviewer approved." | The watcher is a doorbell. Its filters flake. Re-verify directly. |
 | "The findings are clearly unfounded, I'll just merge." | An honest verdict cannot be manufactured. Human docket. |
 | "This report contradicts my order — the lane ignored me." | It almost certainly crossed in flight. Check timestamps first. |
@@ -549,6 +611,10 @@ punished; a worker that hides a compromise costs far more than one that admits i
 - Your last three actions were implementation work. You are ROOT — you manage,
   decide, and unblock. Hand it to a lane.
 - You are reading a diff, or re-running a gate a lane already ran.
+- You are assembling `gh` calls to verify a PR's mergeability by hand instead
+  of letting the guard's eligibility check do it (§4).
+- You are reading a long log, ledger, or history inline rather than handing it
+  to an ad-hoc ephemeral subagent for a verdict block (§4).
 - A lane has been circling the same obstacle for two rounds and you have not
   intervened.
 - You are dispatching the review skill from a named lieutenant without having
