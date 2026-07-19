@@ -384,6 +384,39 @@ def _seed_reviewer(
     )
 
 
+def _reactivation_engagement(
+    existing: ReviewerState,
+    *,
+    terminal_at: datetime | None,
+    reviewed_at: datetime | None,
+) -> tuple[ReviewerStatus, datetime] | None:
+    """Fresh same-poll engagement for a withdrawn reviewer being re-requested (§2.1).
+
+    A withdrawn reviewer re-requested this poll may have submitted a review in the
+    window between the PR-resource GET and the later reviews GET. That review is genuine
+    fresh engagement iff its timestamp post-dates the reviewer's known history — the
+    recorded withdrawal (``declined_at``) or any prior ``last_review_at``, whichever is
+    later. A review at or before that boundary is a pre-withdrawal historical verdict
+    that must NOT satisfy the fresh request (mirrors ``_seed_reviewer``'s requested-wins
+    rule for a first-seen re-request).
+
+    Returns the ``(status, stamp)`` to reactivate directly into — REVIEW_FOUND for a
+    fresh terminal verdict, IN_PROGRESS for fresh non-terminal engagement — with the
+    stamp being the review's own timestamp so the caller can backdate
+    ``last_request_at`` / ``last_review_at`` and keep ``_observe_engagement``'s
+    strictly-after gate from re-rejecting the very review that reopened the reviewer.
+    Returns ``None`` when no fresh engagement arrived, so the caller reactivates to
+    REQUESTED at ``now`` as before.
+    """
+    history = [t for t in (existing.declined_at, existing.last_review_at) if t is not None]
+    boundary = max(history) if history else None
+    if terminal_at is not None and (boundary is None or terminal_at > boundary):
+        return ReviewerStatus.REVIEW_FOUND, terminal_at
+    if reviewed_at is not None and (boundary is None or reviewed_at > boundary):
+        return ReviewerStatus.IN_PROGRESS, reviewed_at
+    return None
+
+
 def _reconcile_reviewers(
     state: PRGroomingState,
     *,
@@ -424,8 +457,21 @@ def _reconcile_reviewers(
                 and existing.status is ReviewerStatus.DECLINED
                 and existing.declined_reason == WITHDRAWN_REASON
             ):
-                existing.status = ReviewerStatus.REQUESTED
-                existing.last_request_at = now
+                reactivation = _reactivation_engagement(
+                    existing,
+                    terminal_at=terminal_reviews.get(login),
+                    reviewed_at=reviewed.get(login, (None, None))[0],
+                )
+                if reactivation is not None:
+                    # Fresh same-poll engagement arrived with the re-request: reactivate
+                    # straight into its verdict-appropriate state, backdating both stamps
+                    # to the review so _observe_engagement's strictly-after gate keeps it.
+                    existing.status, stamp = reactivation
+                    existing.last_request_at = stamp
+                    existing.last_review_at = stamp
+                else:
+                    existing.status = ReviewerStatus.REQUESTED
+                    existing.last_request_at = now
                 existing.declined_at = None
                 existing.declined_reason = None
                 changed = True

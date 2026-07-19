@@ -1474,6 +1474,108 @@ def test_withdrawn_reviewer_reactivates_when_re_requested() -> None:
     assert copilot.declined_reason is None
 
 
+def test_withdrawn_reviewer_reactivates_to_review_found_on_fresh_verdict() -> None:
+    # A withdrawn reviewer re-requested this poll who ALSO submitted a terminal review in
+    # the window between the PR-resource GET and the later reviews GET is genuine fresh
+    # engagement (its timestamp post-dates the recorded withdrawal at declined_at).
+    # Reactivate straight into REVIEW_FOUND with request/review stamps backdated to the
+    # verdict, so _observe_engagement's strictly-after gate does not then permanently
+    # reject the now-historical review poll after poll. Invariant (1): fresh
+    # post-withdrawal engagement is never permanently rejected.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("request-withdrawn"),  # declined_at = _T0 - 1h = 11:00Z
+    )
+    fresh_verdict = {
+        "id": 31,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T11:30:00Z",  # AFTER the 11:00Z withdrawal
+    }
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[fresh_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REVIEW_FOUND
+    assert copilot.last_review_at == datetime(2026, 6, 9, 11, 30, tzinfo=UTC)
+    assert copilot.last_request_at == datetime(2026, 6, 9, 11, 30, tzinfo=UTC)
+    assert copilot.declined_at is None
+    assert copilot.declined_reason is None
+    assert reviewers_gate_satisfied(state) is True
+
+
+def test_withdrawn_reviewer_reactivates_to_requested_on_historical_verdict() -> None:
+    # Invariant (2): a review whose timestamp PREDATES the recorded withdrawal is a
+    # pre-withdrawal historical verdict, not the fresh re-review the new request wants.
+    # It must NOT satisfy the fresh request — reactivate to REQUESTED at `now`, leaving
+    # the gate unsatisfied until the wanted review actually lands (mirrors the
+    # requested-wins rule _seed_reviewer applies to a first-seen re-request).
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("request-withdrawn"),  # declined_at = _T0 - 1h = 11:00Z
+    )
+    historical_verdict = {
+        "id": 32,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T10:30:00Z",  # BEFORE the 11:00Z withdrawal
+    }
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[historical_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REQUESTED
+    assert copilot.last_request_at == _T0
+    assert copilot.declined_at is None
+    assert copilot.declined_reason is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_withdrawn_reviewer_reactivates_to_in_progress_on_fresh_comment() -> None:
+    # Fresh NON-terminal engagement (a COMMENTED review after the withdrawal) reopens the
+    # reviewer as IN_PROGRESS rather than REQUESTED — they are actively engaged again —
+    # while still leaving the gate unsatisfied (no terminal verdict yet).
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("request-withdrawn"),  # declined_at = _T0 - 1h = 11:00Z
+    )
+    fresh_comment = {
+        "id": 33,
+        "user": {"login": "copilot"},
+        "state": "COMMENTED",
+        "body": "still looking",
+        # AFTER the 11:00Z withdrawal and within the 15m finish timeout of `now` (12:00Z),
+        # so the same-poll timeout pass does not immediately re-stall the reopened reviewer.
+        "submitted_at": "2026-06-09T11:50:00Z",
+    }
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[fresh_comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.IN_PROGRESS
+    assert copilot.last_review_at == datetime(2026, 6, 9, 11, 50, tzinfo=UTC)
+    assert copilot.declined_at is None
+    assert copilot.declined_reason is None
+    assert reviewers_gate_satisfied(state) is False
+
+
 @pytest.mark.parametrize("reason", ["timeout-no-start", "timeout-stalled"])
 def test_timeout_declined_reviewer_does_not_reactivate(reason: str) -> None:
     # Behavior 14 — the GLM critical regression guard. A timeout decline is a purely
