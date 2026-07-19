@@ -111,14 +111,20 @@ for ((i = 1; i <= POLL_COUNT; i++)); do
     events_endpoint_failed=false
     reactions_endpoint_failed=false
 
-    events=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events" \
-        --jq "[.[] | select(.event == \"copilot_work_started\" and .created_at > \"${AFTER}\")]") || {
+    # Fetch raw, filter locally (matching the reactions check below) rather
+    # than filtering server-side via --jq: keeps both signals' filtering
+    # logic in one place, in the same style, exercised the same way by tests.
+    events=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events") || {
         echo "Warning: events API failed (attempt ${i}), continuing" >&2
         events='[]'
         events_endpoint_failed=true
     }
 
-    event_ts=$(printf '%s' "$events" | jq -r '.[0].created_at // empty')
+    # Boundary comparison is >=, not >: see the note on the eyes-reaction
+    # check below — same $AFTER, same Phase 6 step 1 contract.
+    event_ts=$(printf '%s' "$events" | jq -r \
+        --arg after "$AFTER" \
+        '[.[] | select(.event == "copilot_work_started" and .created_at >= $after)] | .[0].created_at // empty')
     if [[ -n "$event_ts" ]]; then
         echo "  Poll ${i}/${POLL_COUNT}: copilot_work_started detected after ${AFTER}" >&2
         echo "  Copilot re-review started at ${event_ts}" >&2
@@ -139,9 +145,15 @@ for ((i = 1; i <= POLL_COUNT; i++)); do
             reactions='[]'
             reactions_endpoint_failed=true
         }
+        # Boundary comparison is >=, not >: $AFTER is captured immediately
+        # BEFORE the re-review ask is dispatched (Phase 6 step 1), precisely
+        # so a fast bot response landing in the same API-timestamp second is
+        # not excluded — see that step's own stated contract. A strict >
+        # here would silently drop a same-second eyes reaction and count a
+        # started Codex review as a silent ask.
         eyes_ts=$(printf '%s' "$reactions" | jq -r \
             --arg after "$AFTER" \
-            "[.[] | select(.content == \"eyes\" and (.user.login | ${BOT_LOGIN_FILTER}) and .created_at > \$after)] | .[0].created_at // empty")
+            "[.[] | select(.content == \"eyes\" and (.user.login | ${BOT_LOGIN_FILTER}) and .created_at >= \$after)] | .[0].created_at // empty")
         if [[ -n "$eyes_ts" ]]; then
             echo "  Poll ${i}/${POLL_COUNT}: eyes reaction detected after ${AFTER}" >&2
             echo "  Re-review started (eyes reaction) at ${eyes_ts}" >&2

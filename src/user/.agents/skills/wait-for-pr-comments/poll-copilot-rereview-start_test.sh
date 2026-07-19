@@ -135,6 +135,29 @@ rc_event=$?
 assert "copilot_work_started event exits 0" "[ \$rc_event -eq 0 ]"
 assert "copilot_work_started event reports signal event" "printf '%s' '$out' | jq -e '.signal == \"event\"' >/dev/null"
 
+# A copilot_work_started event PREDATING --after is stale and ignored — the
+# events filter is applied locally (matching the reactions check), so this
+# also proves the filter actually runs, not just the extraction downstream.
+EVENTS_STALE="$TMP/events-stale.json"
+cat > "$EVENTS_STALE" <<'JSON'
+[{"event":"copilot_work_started","created_at":"2025-12-31T23:00:00Z"}]
+JSON
+FAKE_EVENTS_FILE="$EVENTS_STALE" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z >/dev/null 2>&1
+rc_event_stale=$?
+assert "a copilot_work_started event predating --after is ignored (exit 1)" "[ \$rc_event_stale -eq 1 ]"
+
+# An event of a DIFFERENT type (not copilot_work_started) is not a start
+# signal, even if it post-dates --after.
+EVENTS_OTHER="$TMP/events-other.json"
+cat > "$EVENTS_OTHER" <<'JSON'
+[{"event":"review_requested","created_at":"2026-01-01T00:05:00Z"}]
+JSON
+FAKE_EVENTS_FILE="$EVENTS_OTHER" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z >/dev/null 2>&1
+rc_event_other=$?
+assert "a non-copilot_work_started event is not a start signal (exit 1)" "[ \$rc_event_other -eq 1 ]"
+
 # Without --bot-reviewers, an eyes reaction is NOT checked — old behavior
 # (Copilot-events-only) is preserved even if one happens to be present.
 REACTIONS_EYES="$TMP/reactions-eyes.json"
@@ -239,5 +262,32 @@ rc_events_endpoint_fail=$?
 assert "a persistent events-endpoint failure exits 3 (infra error, not timeout)" "[ \$rc_events_endpoint_fail -eq 3 ]"
 assert "a persistent events-endpoint failure reports rereview_start_check_error" \
   "printf '%s' '$out' | jq -e '.status == \"rereview_start_check_error\"' >/dev/null"
+
+# ── Same-second boundary (Phase 6 step 1's stated contract) ─────────────────
+# <rereview_since_timestamp> is captured immediately BEFORE the re-review ask
+# is dispatched, specifically so a fast bot response landing in the same
+# API-timestamp second is not excluded. The comparison must therefore be
+# >=, not >, against --after for BOTH signals.
+
+EVENTS_SAME_SECOND="$TMP/events-same-second.json"
+cat > "$EVENTS_SAME_SECOND" <<'JSON'
+[{"event":"copilot_work_started","created_at":"2026-01-01T00:00:00Z"}]
+JSON
+out=$(FAKE_EVENTS_FILE="$EVENTS_SAME_SECOND" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z 2>/dev/null)
+rc_event_same_second=$?
+assert "a copilot_work_started event in the SAME second as --after is accepted (exit 0)" "[ \$rc_event_same_second -eq 0 ]"
+assert "same-second event still reports signal event" "printf '%s' '$out' | jq -e '.signal == \"event\"' >/dev/null"
+
+REACTIONS_EYES_SAME_SECOND="$TMP/reactions-eyes-same-second.json"
+cat > "$REACTIONS_EYES_SAME_SECOND" <<'JSON'
+[{"content":"eyes","user":{"login":"chatgpt-codex-connector[bot]"},"created_at":"2026-01-01T00:00:00Z"}]
+JSON
+out=$(FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$REACTIONS_EYES_SAME_SECOND" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' 2>/dev/null)
+rc_eyes_same_second=$?
+assert "an eyes reaction in the SAME second as --after is accepted (exit 0)" "[ \$rc_eyes_same_second -eq 0 ]"
+assert "same-second eyes reaction still reports signal eyes_reaction" "printf '%s' '$out' | jq -e '.signal == \"eyes_reaction\"' >/dev/null"
 
 exit $FAIL
