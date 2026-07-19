@@ -1,0 +1,304 @@
+{
+  "title": "Discipline-Layer Grind — wgclw",
+  "repo": "scotthamilton77/agents-config",
+  "mission": "Re-architect the discipline layer around an event-sourced grind runtime; retire the bookkeeper agent and the hand-written ORCHESTRATION-STATE.md. Out of scope: PDLC-orchestrator design, PORT-track machine setup.",
+  "protocols": {
+    "review_protocol": "codex adversarial review, gpt-5.6-sol, --wait",
+    "merge_policy": "explicit — human instruction required",
+    "watcher_conventions": "dumb background pollers; ROOT interprets",
+    "session_grants": "one worktree per lane; no cross-lane writes"
+  },
+  "last_generated": "2026-07-19T04:12:08Z",
+  "pause": {
+    "paused": true,
+    "reason": "Human is picking a dashboard design from the wgclw.30.3 prototypes; implementation lanes hold until the renderer spec's UX section is amended with the choice.",
+    "resume_checklist": [
+      "Open prototypes/grind-dashboard/index.html and pick a winner (or a merge)",
+      "Amend the renderer spec's UX section with the chosen design",
+      "grind log grind_resumed"
+    ]
+  },
+  "attention": [
+    {
+      "text": "PR #346 reviewer stalemate — codex round 4 on unchanged head 9f31c2e with zero open threads. Merge ruling needed.",
+      "item": "wgclw.31.2"
+    },
+    {
+      "text": "Fold anomaly on wgclw.30.1 round 2: review_round head_sha 4b1a9d0 disagrees with review_verdict head_sha 4b1a9d1 — recorded applied:false, counts use the latest event. Auto-raised by ERROR observation.",
+      "item": "wgclw.30.1"
+    },
+    {
+      "text": "Dashboard prototype pick outstanding — variation A, B, or C (or a merge). The pause holds until the UX section is amended."
+    }
+  ],
+  "lanes": [
+    {
+      "id": "lane-installer",
+      "name": "Lane 1 — installer",
+      "agent": "lt-installer",
+      "model": "sonnet",
+      "effort": "medium",
+      "status": "done",
+      "queue": [
+        {
+          "id": "wgclw.28.4",
+          "title": "Open the dashboard exactly once via the platform opener",
+          "status": "done",
+          "pr": { "number": 338, "url": null }
+        },
+        {
+          "id": "wgclw.29.2",
+          "title": "Receipt-tracked uv tool installs with prune-on-retire",
+          "status": "done",
+          "pr": { "number": 339, "url": null }
+        }
+      ]
+    },
+    {
+      "id": "lane-runtime",
+      "name": "Lane 2 — event runtime",
+      "agent": "lt-runtime",
+      "model": "opus",
+      "effort": "high",
+      "status": "in-review",
+      "queue": [
+        {
+          "id": "wgclw.30.1",
+          "title": "Event schema + pure fold with transition table and anomaly policy",
+          "status": "in-review",
+          "pr": { "number": 344, "url": null },
+          "review": {
+            "kind": "codex",
+            "round": 2,
+            "open_threads": 3,
+            "wont_fix_count": 1,
+            "stalemate": false,
+            "detail": "codex round 2 on 4b1a9d1: 3 open threads — torn-tail repair must fsync the quarantine sidecar; derived-unblock path lacks a cross-lane edge test; applied:false events vanish from the status envelope on replay. 1 wont-fix: unknown payload keys are tolerated by design.",
+            "findings": [
+              { "severity": "high", "summary": "Torn-tail repair moves the fragment to quarantine but never fsyncs the sidecar", "disposition": "fixed", "thread_url": null },
+              { "severity": "medium", "summary": "Derived unblocking is untested for edges that cross lane boundaries", "disposition": "deferred", "thread_url": null },
+              { "severity": "low", "summary": "Envelope validator silently tolerates unknown payload keys", "disposition": "wont-fix", "thread_url": null },
+              { "severity": "medium", "summary": "applied:false events vanish from the status envelope on replay", "disposition": "escalated", "thread_url": null }
+            ]
+          },
+          "note": "round 2 verdict: findings — triage in flight"
+        },
+        {
+          "id": "wgclw.30.2",
+          "title": "CLI verbs over the fold: create, log, status, render, check, finish",
+          "status": "queued"
+        },
+        {
+          "id": "wgclw.30.5",
+          "title": "Emit-back envelope + condition vocabulary",
+          "status": "blocked",
+          "blocked_on": ["wgclw.30.1"],
+          "note": "needs the fold contract to settle first"
+        }
+      ]
+    },
+    {
+      "id": "lane-dashboard",
+      "name": "Lane 3 — dashboard renderer",
+      "agent": "lt-dashboard",
+      "model": "sonnet",
+      "effort": "high",
+      "status": "in-progress",
+      "queue": [
+        {
+          "id": "wgclw.30.3",
+          "title": "grind render: deterministic projection from folded state to self-contained HTML",
+          "status": "in-progress",
+          "note": "prototyping session — this board is rendering its own fixture"
+        },
+        {
+          "id": "wgclw.30.4",
+          "title": "Observation routing: ERROR → attention, LESSON → lessons panel",
+          "status": "pr-open",
+          "pr": { "number": 345, "url": null }
+        },
+        {
+          "id": "wgclw.30.6",
+          "title": "Staleness watchdog: grind check + watchdog arming guidance",
+          "status": "merged",
+          "pr": { "number": 342, "url": null },
+          "note": "post-merge teardown leg outstanding"
+        }
+      ]
+    },
+    {
+      "id": "lane-watchers",
+      "name": "Lane 4 — watchers & probes",
+      "agent": "lt-watchers-2",
+      "model": "sonnet",
+      "effort": "low",
+      "status": "waiting-human",
+      "queue": [
+        {
+          "id": "wgclw.31.2",
+          "title": "Verdict-aware PR watcher with a written precedence contract",
+          "status": "waiting-human",
+          "pr": { "number": 346, "url": null },
+          "review": {
+            "kind": "codex",
+            "round": 4,
+            "open_threads": 0,
+            "wont_fix_count": 2,
+            "stalemate": true,
+            "detail": "codex round 4 re-raised 2 wont-fix items as new threads on unchanged head 9f31c2e — stalemate declared per the review skill's §3 rule. Awaiting the human's merge ruling."
+          },
+          "why": "Stalemate ruling needed: accept the reviewer's re-raise and rework, or merge over it with a recorded rationale."
+        },
+        {
+          "id": "wgclw.31.7",
+          "title": "Reconcile the shutdown ledger against the tracker directly when the grind's own projection disagrees with bead state at teardown time",
+          "status": "queued"
+        }
+      ]
+    },
+    {
+      "id": "lane-handoff",
+      "name": "Lane 5 — handoff & skill integration",
+      "agent": "lt-handoff",
+      "model": "sonnet",
+      "effort": "medium",
+      "status": "blocked",
+      "queue": [
+        {
+          "id": "disc-2",
+          "title": "Amend the renderer spec's UX section with the chosen prototype design",
+          "status": "queued",
+          "note": "surfaced by the .30.3 prototyping session"
+        },
+        {
+          "id": "wgclw.30.7",
+          "title": "SKILL.md integration: retire the bookkeeper and ORCHESTRATION-STATE.md",
+          "status": "blocked",
+          "blocked_on": ["wgclw.31.2"],
+          "note": "chain: wgclw.30.7 → wgclw.31.2 (waiting-human) — blocked_chain evidence"
+        }
+      ]
+    },
+    {
+      "id": "lane-port",
+      "name": "Lane 6 — portable layer",
+      "agent": "lt-port",
+      "model": "sonnet",
+      "effort": "medium",
+      "status": "standing-down",
+      "queue": []
+    },
+    {
+      "id": "lane-docs",
+      "name": "Lane 7 — docs & hardening",
+      "agent": "lt-docs",
+      "model": "haiku",
+      "effort": "low",
+      "status": "in-review",
+      "queue": [
+        {
+          "id": "disc-3",
+          "title": "Serializer hardening: a work-item title containing \\\"</script>\\\" must render as inert text, never execute",
+          "status": "queued",
+          "note": "this very title is the serialization-contract probe"
+        },
+        {
+          "id": "wgclw.32.1",
+          "title": "User guide: run the opinionated agentic SDLC on the grind runtime — configuration, watchers, and overnight operations",
+          "status": "in-review",
+          "pr": { "number": 51, "url": "https://git.internal.example/scott/agents-config/pull/51" },
+          "review": {
+            "kind": "human",
+            "round": 1,
+            "open_threads": 1,
+            "wont_fix_count": 0,
+            "stalemate": false,
+            "detail": "human round 1: 1 open thread — tighten the watchdog arming prose; the dumb-poller rationale is buried in a footnote."
+          },
+          "note": "explicit PR url override — non-GitHub remote"
+        }
+      ]
+    }
+  ],
+  "parking_lot": [
+    {
+      "id": "disc-1",
+      "title": "Unify the prgroom and workcli envelope validators behind one shared module",
+      "kind": "discovered-work",
+      "note": "surfaced by PR #341 review; parked pending triage"
+    },
+    {
+      "id": "wgclw.33.1",
+      "title": "Supervised installer backfill sweep across both work machines",
+      "kind": "human-gated",
+      "note": "needs the human in the room"
+    },
+    {
+      "id": "uxns2.4",
+      "title": "PORT-track skill parity audit for Gemini and OpenCode",
+      "kind": "later-wave",
+      "note": "wave-2 scope, parked at partition"
+    },
+    {
+      "id": "vaac.9",
+      "title": "Merge-guard judge prompt v3 tuning against the last twenty rulings",
+      "kind": "deferred",
+      "note": "current judge passing; revisit post-M3"
+    }
+  ],
+  "observations": [
+    {
+      "ts": "2026-07-19T01:14:30Z",
+      "level": "LESSON",
+      "message": "Six codex rounds on PR #341 each found real defects — a high round count is reviewer health, not loop smell; stalemate is the only bad signal.",
+      "item": "wgclw.30.6",
+      "lane": "lane-dashboard"
+    },
+    {
+      "ts": "2026-07-19T02:31:19Z",
+      "level": "LESSON",
+      "message": "Hand-merged state drifted twice when lieutenants reported deltas out of order; refold-from-zero makes report order irrelevant.",
+      "lane": "lane-runtime"
+    },
+    {
+      "ts": "2026-07-19T02:58:11Z",
+      "level": "INFO",
+      "message": "lane_handover recorded on lane-watchers: lt-watchers → lt-watchers-2 (haiku·low → sonnet·low), reason: context exhaustion.",
+      "lane": "lane-watchers"
+    },
+    {
+      "ts": "2026-07-19T03:40:02Z",
+      "level": "WARN",
+      "message": "stale_item condition fired for disc-2 — no events referencing it for 47m (threshold 45m).",
+      "item": "disc-2",
+      "lane": "lane-handoff"
+    },
+    {
+      "ts": "2026-07-19T03:52:44Z",
+      "level": "ERROR",
+      "message": "Anomaly: review_round head_sha 4b1a9d0 disagrees with review_verdict head_sha 4b1a9d1 for wgclw.30.1 round 2 — recorded applied:false; counts use the latest event.",
+      "item": "wgclw.30.1",
+      "lane": "lane-runtime"
+    }
+  ],
+  "lessons": [
+    {
+      "ts": "2026-07-19T01:14:30Z",
+      "message": "Six codex rounds on PR #341 each found real defects — a high round count is reviewer health, not loop smell; stalemate is the only bad signal.",
+      "item": "wgclw.30.6"
+    },
+    {
+      "ts": "2026-07-19T02:31:19Z",
+      "message": "Hand-merged state drifted twice when lieutenants reported deltas out of order; refold-from-zero makes report order irrelevant.",
+      "lane": "lane-runtime"
+    }
+  ],
+  "merged_ledger": [
+    { "pr": 338, "title": "Open the dashboard exactly once via the platform opener", "sha": "8c21de4", "lane": "lane-installer" },
+    { "pr": 339, "title": "Receipt-tracked uv tool installs with prune-on-retire", "sha": "b07a1c9", "lane": "lane-installer" },
+    { "pr": 342, "title": "Staleness watchdog: grind check + watchdog arming guidance", "sha": "9f31c2e", "lane": "lane-dashboard" }
+  ],
+  "closed_ledger": [
+    { "id": "wgclw.29.9", "title": "Spike: incremental fold mode", "pr": 337, "reason": "superseded — refold-from-zero won on simplicity" }
+  ]
+}

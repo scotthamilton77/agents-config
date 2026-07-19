@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<!--
+  VARIATION B — "OPS REVIEW"
+  Row-per-lane horizontal swimlanes. Text-forward, calm and spacious:
+  serif headings, generous whitespace, prose-like review summaries.
+  Same fixture state as variations A and C, inlined below with every
+  less-than sign in the JSON escaped as the JSON escape backslash-u003c
+  (the grind serialization contract). Light theme only.
+  Self-contained: no fetches, no CDNs; works from file://.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grind — Ops Review</title>
+<style>
+  :root {
+    --paper: #faf9f6;
+    --card: #ffffff;
+    --ink: #23272e;
+    --muted: #5b6470;
+    --faint: #8a93a0;
+    --line: #e3e1db;
+    --accent: #2f5fd6;
+    --red: #b3322c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 15px; line-height: 1.6;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 32px 64px; }
+  a { color: var(--accent); }
+  a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+  /* status palette — one --c per status; unknown degrades to neutral gray */
+  .st-queued        { --c: #6e7681; --cbg: rgba(110,118,129,0.10); }
+  .st-in-progress   { --c: #2f5fd6; --cbg: rgba(47,95,214,0.09); }
+  .st-pr-open       { --c: #7c3aed; --cbg: rgba(124,58,237,0.09); }
+  .st-in-review     { --c: #96700a; --cbg: rgba(150,112,10,0.10); }
+  .st-merged        { --c: #1e8e3e; --cbg: rgba(30,142,62,0.09); }
+  .st-done          { --c: #0f7b3f; --cbg: rgba(15,123,63,0.13); }
+  .st-blocked       { --c: #b3322c; --cbg: rgba(179,50,44,0.09); }
+  .st-waiting-human { --c: #a34d0e; --cbg: rgba(163,77,14,0.10); }
+  .st-standing-down { --c: #64748b; --cbg: rgba(100,116,139,0.12); }
+  .st-unknown       { --c: #8a93a0; --cbg: rgba(138,147,160,0.12); }
+
+  .icon { vertical-align: -2px; }
+
+  /* ---- masthead ---- */
+  .kicker {
+    font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--faint); margin: 0 0 6px;
+  }
+  h1 {
+    font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    font-size: 34px; font-weight: 600; margin: 0 0 10px; letter-spacing: 0.2px;
+  }
+  .masthead .sub { color: var(--muted); margin: 0 0 6px; }
+  .masthead .sub .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+  .masthead { border-bottom: 1px solid var(--line); padding-bottom: 22px; margin-bottom: 22px; }
+  .refresh-line { display: flex; align-items: center; gap: 10px; margin-top: 12px; color: var(--muted); font-size: 13.5px; }
+  .refresh-line label { display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
+  #refresh-status { font-variant-numeric: tabular-nums; color: var(--faint); }
+
+  /* ---- notices ---- */
+  .notice { border-radius: 10px; padding: 16px 20px; margin-bottom: 18px; background: var(--card); border: 1px solid var(--line); }
+  .notice h2 { font-family: Georgia, serif; font-size: 18px; margin: 0 0 6px; }
+  #attention-banner { display: none; border: 1px solid rgba(179,50,44,0.55); border-left: 5px solid var(--red); background: #fdf3f2; }
+  #attention-banner.show { display: block; }
+  #attention-banner h2 { color: var(--red); }
+  #attention-banner ul { margin: 6px 0 0; padding-left: 20px; }
+  #attention-banner li { margin-bottom: 6px; }
+  .attn-item-chip {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;
+    background: #fff; border: 1px solid rgba(179,50,44,0.4); border-radius: 4px; padding: 0 6px; margin-left: 6px;
+  }
+  #pause-banner { display: none; border: 1px solid rgba(150,112,10,0.5); border-left: 5px solid #96700a; background: #fdf9ec; }
+  #pause-banner.show { display: block; }
+  #pause-banner h2 { color: #7a5d08; }
+  #pause-banner .reason { margin: 0 0 8px; color: #5b4a10; }
+  #pause-banner ol { margin: 0; padding-left: 20px; color: #5b4a10; font-size: 13.5px; }
+
+  /* ---- swimlanes ---- */
+  .swim { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 16px; overflow: hidden; }
+  .swim-head {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    padding: 18px 22px 12px; border-bottom: 1px solid var(--line);
+  }
+  .swim-head h2 { font-family: Georgia, serif; font-size: 20px; font-weight: 600; margin: 0; }
+  .swim-head .owner { color: var(--muted); font-size: 13px; }
+  .swim-head .lane-state { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--c); }
+  .status-word {
+    font-size: 12px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--c); background: var(--cbg); border-radius: 999px; padding: 3px 11px;
+  }
+  .lane-toggle {
+    border: 1px solid var(--line); background: var(--paper); color: var(--muted);
+    border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 12.5px;
+  }
+  .lane-toggle:hover { color: var(--ink); border-color: var(--faint); }
+
+  /* item strip: horizontal flow, scrolls sideways rather than squeezing */
+  .swim-items { display: flex; gap: 14px; padding: 18px 22px 20px; overflow-x: auto; }
+  .card {
+    flex: 0 0 320px; min-width: 320px; border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; background: #fff; border-top: 3px solid var(--c);
+  }
+  .card .pos { font-family: Georgia, serif; font-style: italic; color: var(--faint); font-size: 12.5px; }
+  .card h3 { font-size: 15px; font-weight: 650; margin: 2px 0 8px; line-height: 1.4; overflow-wrap: break-word; }
+  .card .idline { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--faint); margin-bottom: 8px; }
+  .card .stateline { display: flex; align-items: center; gap: 7px; color: var(--c); margin-bottom: 8px; flex-wrap: wrap; }
+  .card .stateline .status-word { font-size: 11px; }
+  .pr-link { font-size: 13px; text-decoration: none; }
+  .pr-link:hover { text-decoration: underline; }
+  .pr-plain { color: var(--faint); font-size: 13px; }
+  .reviewline { font-size: 13.5px; color: var(--muted); margin: 6px 0 0; }
+  .reviewline .kind { font-weight: 650; color: var(--ink); }
+  .pill-threads {
+    display: inline-block; font-size: 12px; font-weight: 600; color: #7a5d08;
+    background: rgba(150,112,10,0.10); border-bottom: 1px dotted #96700a;
+    border-radius: 4px; padding: 1px 7px; cursor: help;
+  }
+  .pill-wontfix { display: inline-block; font-size: 12px; color: var(--muted); background: rgba(110,118,129,0.12); border-radius: 4px; padding: 1px 7px; }
+  .pill-stalemate {
+    display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
+    color: #fff; background: var(--red); border-radius: 4px; padding: 2px 8px;
+  }
+  .roundbadge { font-variant-numeric: tabular-nums; }
+  .roundbadge.is-stalemate { color: var(--red); }
+  .findings { margin: 10px 0 0; padding: 10px 0 0; border-top: 1px dashed var(--line); list-style: none; }
+  .findings li { font-size: 12.5px; color: var(--muted); padding: 3px 0 3px 14px; position: relative; }
+  .findings li::before { content: ""; position: absolute; left: 0; top: 10px; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+  .findings li.sev-high::before { background: var(--red); }
+  .findings li.sev-medium::before { background: #96700a; }
+  .findings li.sev-low::before { background: var(--faint); }
+  .findings .disp { font-style: italic; color: var(--faint); }
+  .note { font-size: 13px; color: var(--muted); font-style: italic; margin: 8px 0 0; }
+  .why {
+    font-size: 13px; color: #7a4a08; background: rgba(163,77,14,0.08);
+    border: 1px solid rgba(163,77,14,0.35); border-radius: 8px; padding: 7px 10px; margin-top: 10px;
+  }
+  .blockers { font-size: 12.5px; color: var(--red); margin-top: 8px; }
+  .blockers .chip {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px;
+    border: 1px solid rgba(179,50,44,0.45); border-radius: 4px; padding: 0 6px; background: rgba(179,50,44,0.06);
+  }
+  .queue-empty { color: var(--faint); font-style: italic; padding: 18px 22px 20px; }
+
+  /* collapsed swimlane: one calm line, ~half the height, slim chips only */
+  .swim.collapsed .swim-head { border-bottom: none; padding: 12px 22px; }
+  .swim.collapsed .swim-items { padding: 0 22px 12px; gap: 8px; overflow-x: auto; }
+  .slim {
+    flex: none; display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+    font-size: 12.5px; color: var(--muted); max-width: 340px; background: #fff;
+  }
+  .slim .icon { color: var(--c); }
+  .slim .sid { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--faint); }
+  .slim .st2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .swim.collapsed .owner { display: none; } /* collapsed drops the agent/activity line */
+
+  /* ---- below the lanes ---- */
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
+  @media (max-width: 860px) { .twocol { grid-template-columns: 1fr; } }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; }
+  .panel h2 { font-family: Georgia, serif; font-size: 20px; margin: 0 0 4px; }
+  .panel .subtitle { color: var(--faint); font-size: 13px; margin: 0 0 14px; }
+  .kind { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; border-radius: 4px; padding: 2px 8px; }
+  .kind-discovered-work { background: rgba(15,118,110,0.12); color: #0f766e; }
+  .kind-human-gated     { background: rgba(190,18,60,0.10); color: #a11240; }
+  .kind-later-wave      { background: rgba(67,56,202,0.10); color: #4338ca; }
+  .kind-deferred        { background: rgba(82,82,82,0.12);  color: #4c4c4c; }
+  .kind-unknown         { background: rgba(138,147,160,0.14); color: #6e7681; }
+  .parking-list { list-style: none; margin: 0; padding: 0; }
+  .parking-list li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .parking-list li:last-child { border-bottom: none; }
+  .parking-list .pid { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--faint); margin-right: 8px; }
+  .parking-list .pn { display: block; color: var(--muted); font-size: 13px; margin-top: 3px; }
+  .lesson-list { list-style: none; margin: 0; padding: 0; }
+  .lesson-list li {
+    font-family: Georgia, serif; font-size: 15px; line-height: 1.55;
+    padding: 10px 0 10px 18px; border-left: 3px solid #0f766e; margin-bottom: 10px; color: #333a44;
+  }
+  .lesson-list .lmeta { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--faint); margin-top: 5px; }
+  details.logbook { margin-top: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 22px; }
+  details.logbook summary { cursor: pointer; font-family: Georgia, serif; font-size: 17px; color: var(--muted); }
+  .obs-list { list-style: none; margin: 12px 0 4px; padding: 0; }
+  .obs-list li { display: flex; gap: 10px; align-items: baseline; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 13.5px; }
+  .obs-list li:last-child { border-bottom: none; }
+  .obs-list .ts { flex: none; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; color: var(--faint); }
+  .lvl { flex: none; font-size: 10px; font-weight: 800; letter-spacing: 0.8px; border-radius: 4px; padding: 2px 7px; }
+  .lvl-INFO { background: rgba(47,95,214,0.10); color: var(--accent); }
+  .lvl-WARN { background: rgba(150,112,10,0.12); color: #7a5d08; }
+  .lvl-ERROR { background: rgba(179,50,44,0.12); color: var(--red); }
+  .lvl-LESSON { background: rgba(15,118,110,0.12); color: #0f766e; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="kicker">Grind operations review</p>
+    <h1 id="title">Grind</h1>
+    <p class="sub">
+      <span class="mono" id="repo"></span> ·
+      generated from the event log at <span class="mono" id="last-generated" title="Timestamp of the last folded event — the board is as fresh as its log, never fresher."></span>
+    </p>
+    <div class="refresh-line">
+      <label><input type="checkbox" id="refresh-toggle"> auto-refresh every 15s</label>
+      <span id="refresh-status">off</span>
+    </div>
+  </header>
+
+  <section id="pause-banner" class="notice" role="status">
+    <h2>This grind is paused</h2>
+    <p class="reason" id="pause-reason"></p>
+    <ol id="pause-checklist"></ol>
+  </section>
+
+  <section id="attention-banner" class="notice" role="alert">
+    <h2>Needs the human</h2>
+    <ul id="attention-list"></ul>
+  </section>
+
+  <main id="lanes" aria-label="Lanes"></main>
+
+  <div class="twocol">
+    <section class="panel" aria-label="Parking lot">
+      <h2>Parking lot</h2>
+      <p class="subtitle">Waiting, not blocked — deliberately excluded from this run.</p>
+      <ul class="parking-list" id="parking-list"></ul>
+    </section>
+    <section class="panel" aria-label="Lessons learned">
+      <h2>Lessons learned</h2>
+      <p class="subtitle">LESSON-level observations, captured as the grind runs.</p>
+      <ul class="lesson-list" id="lesson-list"></ul>
+    </section>
+  </div>
+
+  <details class="logbook">
+    <summary>Observation log (<span id="obs-count">0</span>)</summary>
+    <ul class="obs-list" id="obs-list"></ul>
+  </details>
+
+</div>
+
+<script id="grind-state">
+// Inlined fold State. SERIALIZATION CONTRACT: every less-than sign in the JSON
+// below is escaped as backslash-u003c before splicing, exactly as `grind render`
+// emits it. The disc-3 probe title proves the round-trip: it renders as inert
+// text below, it does not execute.
+const STATE = {
+  "title": "Discipline-Layer Grind — wgclw",
+  "repo": "scotthamilton77/agents-config",
+  "mission": "Re-architect the discipline layer around an event-sourced grind runtime; retire the bookkeeper agent and the hand-written ORCHESTRATION-STATE.md. Out of scope: PDLC-orchestrator design, PORT-track machine setup.",
+  "protocols": {
+    "review_protocol": "codex adversarial review, gpt-5.6-sol, --wait",
+    "merge_policy": "explicit — human instruction required",
+    "watcher_conventions": "dumb background pollers; ROOT interprets",
+    "session_grants": "one worktree per lane; no cross-lane writes"
+  },
+  "last_generated": "2026-07-19T04:12:08Z",
+  "pause": {
+    "paused": true,
+    "reason": "Human is picking a dashboard design from the wgclw.30.3 prototypes; implementation lanes hold until the renderer spec's UX section is amended with the choice.",
+    "resume_checklist": [
+      "Open prototypes/grind-dashboard/index.html and pick a winner (or a merge)",
+      "Amend the renderer spec's UX section with the chosen design",
+      "grind log grind_resumed"
+    ]
+  },
+  "attention": [
+    {
+      "text": "PR #346 reviewer stalemate — codex round 4 on unchanged head 9f31c2e with zero open threads. Merge ruling needed.",
+      "item": "wgclw.31.2"
+    },
+    {
+      "text": "Fold anomaly on wgclw.30.1 round 2: review_round head_sha 4b1a9d0 disagrees with review_verdict head_sha 4b1a9d1 — recorded applied:false, counts use the latest event. Auto-raised by ERROR observation.",
+      "item": "wgclw.30.1"
+    },
+    {
+      "text": "Dashboard prototype pick outstanding — variation A, B, or C (or a merge). The pause holds until the UX section is amended."
+    }
+  ],
+  "lanes": [
+    {
+      "id": "lane-installer",
+      "name": "Lane 1 — installer",
+      "agent": "lt-installer",
+      "model": "sonnet",
+      "effort": "medium",
+      "status": "done",
+      "queue": [
+        {
+          "id": "wgclw.28.4",
+          "title": "Open the dashboard exactly once via the platform opener",
+          "status": "done",
+          "pr": { "number": 338, "url": null }
+        },
+        {
+          "id": "wgclw.29.2",
+          "title": "Receipt-tracked uv tool installs with prune-on-retire",
+          "status": "done",
+          "pr": { "number": 339, "url": null }
+        }
+      ]
+    },
+    {
+      "id": "lane-runtime",
+      "name": "Lane 2 — event runtime",
+      "agent": "lt-runtime",
+      "model": "opus",
+      "effort": "high",
+      "status": "in-review",
+      "queue": [
+        {
+          "id": "wgclw.30.1",
+          "title": "Event schema + pure fold with transition table and anomaly policy",
+          "status": "in-review",
+          "pr": { "number": 344, "url": null },
+          "review": {
+            "kind": "codex",
+            "round": 2,
+            "open_threads": 3,
+            "wont_fix_count": 1,
+            "stalemate": false,
+            "detail": "codex round 2 on 4b1a9d1: 3 open threads — torn-tail repair must fsync the quarantine sidecar; derived-unblock path lacks a cross-lane edge test; applied:false events vanish from the status envelope on replay. 1 wont-fix: unknown payload keys are tolerated by design.",
+            "findings": [
+              { "severity": "high", "summary": "Torn-tail repair moves the fragment to quarantine but never fsyncs the sidecar", "disposition": "fixed", "thread_url": null },
+              { "severity": "medium", "summary": "Derived unblocking is untested for edges that cross lane boundaries", "disposition": "deferred", "thread_url": null },
+              { "severity": "low", "summary": "Envelope validator silently tolerates unknown payload keys", "disposition": "wont-fix", "thread_url": null },
+              { "severity": "medium", "summary": "applied:false events vanish from the status envelope on replay", "disposition": "escalated", "thread_url": null }
+            ]
+          },
+          "note": "round 2 verdict: findings — triage in flight"
+        },
+        {
+          "id": "wgclw.30.2",
+          "title": "CLI verbs over the fold: create, log, status, render, check, finish",
+          "status": "queued"
+        },
+        {
+          "id": "wgclw.30.5",
+          "title": "Emit-back envelope + condition vocabulary",
+          "status": "blocked",
+          "blocked_on": ["wgclw.30.1"],
+          "note": "needs the fold contract to settle first"
+        }
+      ]
+    },
+    {
+      "id": "lane-dashboard",
+      "name": "Lane 3 — dashboard renderer",
+      "agent": "lt-dashboard",
+      "model": "sonnet",
+      "effort": "high",
+      "status": "in-progress",
+      "queue": [
+        {
+          "id": "wgclw.30.3",
+          "title": "grind render: deterministic projection from folded state to self-contained HTML",
+          "status": "in-progress",
+          "note": "prototyping session — this board is rendering its own fixture"
+        },
+        {
+          "id": "wgclw.30.4",
+          "title": "Observation routing: ERROR → attention, LESSON → lessons panel",
+          "status": "pr-open",
+          "pr": { "number": 345, "url": null }
+        },
+        {
+          "id": "wgclw.30.6",
+          "title": "Staleness watchdog: grind check + watchdog arming guidance",
+          "status": "merged",
+          "pr": { "number": 342, "url": null },
+          "note": "post-merge teardown leg outstanding"
+        }
+      ]
+    },
+    {
+      "id": "lane-watchers",
+      "name": "Lane 4 — watchers & probes",
+      "agent": "lt-watchers-2",
+      "model": "sonnet",
+      "effort": "low",
+      "status": "waiting-human",
+      "queue": [
+        {
+          "id": "wgclw.31.2",
+          "title": "Verdict-aware PR watcher with a written precedence contract",
+          "status": "waiting-human",
+          "pr": { "number": 346, "url": null },
+          "review": {
+            "kind": "codex",
+            "round": 4,
+            "open_threads": 0,
+            "wont_fix_count": 2,
+            "stalemate": true,
+            "detail": "codex round 4 re-raised 2 wont-fix items as new threads on unchanged head 9f31c2e — stalemate declared per the review skill's §3 rule. Awaiting the human's merge ruling."
+          },
+          "why": "Stalemate ruling needed: accept the reviewer's re-raise and rework, or merge over it with a recorded rationale."
+        },
+        {
+          "id": "wgclw.31.7",
+          "title": "Reconcile the shutdown ledger against the tracker directly when the grind's own projection disagrees with bead state at teardown time",
+          "status": "queued"
+        }
+      ]
+    },
+    {
+      "id": "lane-handoff",
+      "name": "Lane 5 — handoff & skill integration",
+      "agent": "lt-handoff",
+      "model": "sonnet",
+      "effort": "medium",
+      "status": "blocked",
+      "queue": [
+        {
+          "id": "disc-2",
+          "title": "Amend the renderer spec's UX section with the chosen prototype design",
+          "status": "queued",
+          "note": "surfaced by the .30.3 prototyping session"
+        },
+        {
+          "id": "wgclw.30.7",
+          "title": "SKILL.md integration: retire the bookkeeper and ORCHESTRATION-STATE.md",
+          "status": "blocked",
+          "blocked_on": ["wgclw.31.2"],
+          "note": "chain: wgclw.30.7 → wgclw.31.2 (waiting-human) — blocked_chain evidence"
+        }
+      ]
+    },
+    {
+      "id": "lane-port",
+      "name": "Lane 6 — portable layer",
+      "agent": "lt-port",
+      "model": "sonnet",
+      "effort": "medium",
+      "status": "standing-down",
+      "queue": []
+    },
+    {
+      "id": "lane-docs",
+      "name": "Lane 7 — docs & hardening",
+      "agent": "lt-docs",
+      "model": "haiku",
+      "effort": "low",
+      "status": "in-review",
+      "queue": [
+        {
+          "id": "disc-3",
+          "title": "Serializer hardening: a work-item title containing \\\"\\u003c/script\\u003e\\\" must render as inert text, never execute",
+          "status": "queued",
+          "note": "this very title is the serialization-contract probe"
+        },
+        {
+          "id": "wgclw.32.1",
+          "title": "User guide: run the opinionated agentic SDLC on the grind runtime — configuration, watchers, and overnight operations",
+          "status": "in-review",
+          "pr": { "number": 51, "url": "https://git.internal.example/scott/agents-config/pull/51" },
+          "review": {
+            "kind": "human",
+            "round": 1,
+            "open_threads": 1,
+            "wont_fix_count": 0,
+            "stalemate": false,
+            "detail": "human round 1: 1 open thread — tighten the watchdog arming prose; the dumb-poller rationale is buried in a footnote."
+          },
+          "note": "explicit PR url override — non-GitHub remote"
+        }
+      ]
+    }
+  ],
+  "parking_lot": [
+    {
+      "id": "disc-1",
+      "title": "Unify the prgroom and workcli envelope validators behind one shared module",
+      "kind": "discovered-work",
+      "note": "surfaced by PR #341 review; parked pending triage"
+    },
+    {
+      "id": "wgclw.33.1",
+      "title": "Supervised installer backfill sweep across both work machines",
+      "kind": "human-gated",
+      "note": "needs the human in the room"
+    },
+    {
+      "id": "uxns2.4",
+      "title": "PORT-track skill parity audit for Gemini and OpenCode",
+      "kind": "later-wave",
+      "note": "wave-2 scope, parked at partition"
+    },
+    {
+      "id": "vaac.9",
+      "title": "Merge-guard judge prompt v3 tuning against the last twenty rulings",
+      "kind": "deferred",
+      "note": "current judge passing; revisit post-M3"
+    }
+  ],
+  "observations": [
+    {
+      "ts": "2026-07-19T01:14:30Z",
+      "level": "LESSON",
+      "message": "Six codex rounds on PR #341 each found real defects — a high round count is reviewer health, not loop smell; stalemate is the only bad signal.",
+      "item": "wgclw.30.6",
+      "lane": "lane-dashboard"
+    },
+    {
+      "ts": "2026-07-19T02:31:19Z",
+      "level": "LESSON",
+      "message": "Hand-merged state drifted twice when lieutenants reported deltas out of order; refold-from-zero makes report order irrelevant.",
+      "lane": "lane-runtime"
+    },
+    {
+      "ts": "2026-07-19T02:58:11Z",
+      "level": "INFO",
+      "message": "lane_handover recorded on lane-watchers: lt-watchers → lt-watchers-2 (haiku·low → sonnet·low), reason: context exhaustion.",
+      "lane": "lane-watchers"
+    },
+    {
+      "ts": "2026-07-19T03:40:02Z",
+      "level": "WARN",
+      "message": "stale_item condition fired for disc-2 — no events referencing it for 47m (threshold 45m).",
+      "item": "disc-2",
+      "lane": "lane-handoff"
+    },
+    {
+      "ts": "2026-07-19T03:52:44Z",
+      "level": "ERROR",
+      "message": "Anomaly: review_round head_sha 4b1a9d0 disagrees with review_verdict head_sha 4b1a9d1 for wgclw.30.1 round 2 — recorded applied:false; counts use the latest event.",
+      "item": "wgclw.30.1",
+      "lane": "lane-runtime"
+    }
+  ],
+  "lessons": [
+    {
+      "ts": "2026-07-19T01:14:30Z",
+      "message": "Six codex rounds on PR #341 each found real defects — a high round count is reviewer health, not loop smell; stalemate is the only bad signal.",
+      "item": "wgclw.30.6"
+    },
+    {
+      "ts": "2026-07-19T02:31:19Z",
+      "message": "Hand-merged state drifted twice when lieutenants reported deltas out of order; refold-from-zero makes report order irrelevant.",
+      "lane": "lane-runtime"
+    }
+  ],
+  "merged_ledger": [
+    { "pr": 338, "title": "Open the dashboard exactly once via the platform opener", "sha": "8c21de4", "lane": "lane-installer" },
+    { "pr": 339, "title": "Receipt-tracked uv tool installs with prune-on-retire", "sha": "b07a1c9", "lane": "lane-installer" },
+    { "pr": 342, "title": "Staleness watchdog: grind check + watchdog arming guidance", "sha": "9f31c2e", "lane": "lane-dashboard" }
+  ],
+  "closed_ledger": [
+    { "id": "wgclw.29.9", "title": "Spike: incremental fold mode", "pr": 337, "reason": "superseded — refold-from-zero won on simplicity" }
+  ]
+};
+</script>
+
+<script id="grind-renderer">
+"use strict";
+// ---------- status vocabulary + icons (all nine statuses, neutral fallback) ----------
+const KNOWN_STATUSES = ["queued","in-progress","pr-open","in-review","merged","done","blocked","waiting-human","standing-down"];
+function statusCls(status) {
+  const k = String(status || "").toLowerCase();
+  return KNOWN_STATUSES.indexOf(k) >= 0 ? "st-" + k : "st-unknown";
+}
+const ICONS = {
+  "queued": '<circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/>',
+  "in-progress": '<circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 2.5A5.5 5.5 0 0 1 8 13.5Z" fill="currentColor"/>',
+  "pr-open": '<circle cx="5" cy="4.5" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="5" cy="11.5" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="8" r="2" fill="currentColor"/><path d="M5 6.5v3M6.8 8h2.2" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  "in-review": '<path d="M1.8 8C4 4.8 12 4.8 14.2 8 12 11.2 4 11.2 1.8 8Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="8" cy="8" r="1.9" fill="currentColor"/>',
+  "merged": '<circle cx="5" cy="4" r="1.9" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="5" cy="12" r="1.9" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="11.5" cy="12" r="1.9" fill="currentColor"/><path d="M5 6v4M5 9.5c0 1.6 2 1 4 1.4" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  "done": '<circle cx="8" cy="8" r="6.4" fill="currentColor"/><path d="M5.1 8.3l2 2 3.8-4.2" fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
+  "blocked": '<circle cx="8" cy="8" r="5.8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4.2 11.8 11.8 4.2" stroke="currentColor" stroke-width="2"/>',
+  "waiting-human": '<circle cx="8" cy="5" r="2.5" fill="currentColor"/><path d="M3.2 13.4c.4-2.8 2.4-4.2 4.8-4.2s4.4 1.4 4.8 4.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  "standing-down": '<path d="M4.5 14V2.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4.5 3.2h7.6l-2.2 2.9 2.2 2.9H4.5Z" fill="currentColor"/>',
+  "unknown": '<circle cx="8" cy="8" r="5.8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6.4 6.3c.3-1.1 1-1.7 1.7-1.7 1 0 1.7.6 1.7 1.5 0 1.3-1.7 1.5-1.7 2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="8.1" cy="11.5" r="1" fill="currentColor"/>'
+};
+function iconName(status) {
+  const k = String(status || "").toLowerCase();
+  return KNOWN_STATUSES.indexOf(k) >= 0 ? k : "unknown";
+}
+function iconSvg(status, size) {
+  const s = size || 15;
+  return '<svg class="icon" width="' + s + '" height="' + s + '" viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
+    (ICONS[iconName(status)] || ICONS.unknown) + '</svg>';
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// Explicit url wins (scheme-checked); otherwise derive from the repo slug; else plain text.
+function safeHref(url) {
+  try {
+    const scheme = new URL(url, "https://github.com").protocol;
+    return (scheme === "https:" || scheme === "http:") ? url : null;
+  } catch (e) { return null; }
+}
+function prUrl(pr, repo) {
+  if (!pr) return null;
+  if (typeof pr.url === "string" && pr.url.trim() !== "") {
+    const safe = safeHref(pr.url.trim());
+    if (safe) return safe;
+  }
+  if (repo) return "https://github.com/" + repo + "/pull/" + pr.number;
+  return null;
+}
+function prLink(pr, repo) {
+  if (!pr) return "";
+  const url = prUrl(pr, repo);
+  const label = "PR #" + escapeHtml(pr.number);
+  return url
+    ? '<a class="pr-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener">' + label + '</a>'
+    : '<span class="pr-plain">' + label + '</span>';
+}
+
+// Review summary: kind · round badge (hidden at done), stalemate flag,
+// full-label open-thread pill with the review detail as tooltip, wont-fix count.
+function reviewLine(review, itemStatus) {
+  if (!review) return "";
+  const parts = [];
+  const stale = !!review.stalemate;
+  if (String(itemStatus).toLowerCase() !== "done") {
+    parts.push('<span class="kind">' + escapeHtml(review.kind || "review") + '</span> review · <span class="roundbadge' +
+      (stale ? " is-stalemate" : "") + '">round ' + (Number(review.round) || 0) + "</span>");
+  }
+  const n = Number(review.open_threads) || 0;
+  if (n > 0) {
+    const label = n === 1 ? "1 open thread" : n + " open threads";
+    const tip = review.detail ? ' title="' + escapeHtml(review.detail) + '"' : "";
+    parts.push('<span class="pill-threads"' + tip + ">" + label + "</span>");
+  }
+  const wf = Number(review.wont_fix_count) || 0;
+  if (wf > 0) parts.push('<span class="pill-wontfix">' + wf + " wont-fix</span>");
+  if (stale) parts.push('<span class="pill-stalemate">stalemate</span>');
+  return parts.length ? '<p class="reviewline">' + parts.join(" · ") + "</p>" : "";
+}
+
+const KNOWN_KINDS = ["discovered-work","human-gated","later-wave","deferred"];
+function kindChip(kind) {
+  const k = String(kind || "").toLowerCase();
+  const cls = KNOWN_KINDS.indexOf(k) >= 0 ? "kind-" + k : "kind-unknown";
+  return '<span class="kind ' + cls + '">' + escapeHtml(kind || "unknown") + "</span>";
+}
+
+// ---------- per-lane collapse, persisted (done lanes auto-collapse by default) ----------
+const LS_COLLAPSE = "grindproto.b.collapsed.v1";
+let collapsePrefs = {};
+try { collapsePrefs = JSON.parse(localStorage.getItem(LS_COLLAPSE) || "{}") || {}; } catch (e) { collapsePrefs = {}; }
+function laneById(id) { return (STATE.lanes || []).find(l => l.id === id); }
+function isCollapsed(lane) {
+  if (Object.prototype.hasOwnProperty.call(collapsePrefs, lane.id)) return !!collapsePrefs[lane.id];
+  return String(lane.status).toLowerCase() === "done";
+}
+function toggleLane(id) {
+  const lane = laneById(id);
+  if (!lane) return;
+  collapsePrefs[id] = !isCollapsed(lane);
+  try { localStorage.setItem(LS_COLLAPSE, JSON.stringify(collapsePrefs)); } catch (e) {}
+  renderLanes();
+}
+
+// ---------- renderers ----------
+function renderCard(q, pos) {
+  const cls = statusCls(q.status);
+  let html = '<article class="card ' + cls + '">' +
+    '<span class="pos">queue position ' + pos + "</span>" +
+    "<h3>" + escapeHtml(q.title) + "</h3>" +
+    '<div class="idline">' + escapeHtml(q.id) + (q.pr ? " · " : "") + prLink(q.pr, STATE.repo) + "</div>" +
+    '<div class="stateline">' + iconSvg(q.status) + '<span class="status-word">' + escapeHtml(q.status) + "</span></div>" +
+    reviewLine(q.review, q.status);
+  if (q.why) html += '<div class="why"><strong>Awaiting human:</strong> ' + escapeHtml(q.why) + "</div>";
+  if (q.note) html += '<p class="note">' + escapeHtml(q.note) + "</p>";
+  if (q.blocked_on && q.blocked_on.length) {
+    html += '<div class="blockers">blocked on ' + q.blocked_on.map(b => '<span class="chip">' + escapeHtml(b) + "</span>").join(" ") + "</div>";
+  }
+  if (q.review && q.review.findings && q.review.findings.length) {
+    html += '<ul class="findings">' + q.review.findings.map(f => {
+      const sev = String(f.severity || "").toLowerCase();
+      const sevCls = ["high","medium","low"].indexOf(sev) >= 0 ? "sev-" + sev : "";
+      return '<li class="' + sevCls + '">' + escapeHtml(f.summary) +
+        ' <span class="disp">— ' + escapeHtml(f.disposition || "") + "</span></li>";
+    }).join("") + "</ul>";
+  }
+  return html + "</article>";
+}
+
+// Collapsed anatomy: status icon + work-item id + title + PR# — notes and the
+// agent/activity line dropped; the band compresses to roughly half height.
+function renderSlim(q) {
+  return '<span class="slim ' + statusCls(q.status) + '">' + iconSvg(q.status, 13) +
+    '<span class="sid">' + escapeHtml(q.id) + "</span>" +
+    '<span class="st2" title="' + escapeHtml(q.title) + '">' + escapeHtml(q.title) + "</span>" +
+    prLink(q.pr, STATE.repo) + "</span>";
+}
+
+function renderLanes() {
+  const host = document.getElementById("lanes");
+  host.innerHTML = "";
+  (STATE.lanes || []).forEach(lane => {
+    const collapsed = isCollapsed(lane);
+    const cls = statusCls(lane.status);
+    const sec = document.createElement("section");
+    sec.className = "swim " + cls + (collapsed ? " collapsed" : "");
+    sec.setAttribute("aria-label", lane.name);
+    const items = lane.queue || [];
+    const bodyId = "swim-items-" + lane.id;
+    let itemsHtml;
+    if (!items.length) {
+      itemsHtml = collapsed ? "" : '<div class="queue-empty">Queue empty — this lane is wrapping up.</div>';
+    } else if (collapsed) {
+      itemsHtml = items.map(renderSlim).join("");
+    } else {
+      itemsHtml = items.map((q, i) => renderCard(q, i + 1)).join("");
+    }
+    sec.innerHTML =
+      '<header class="swim-head">' +
+        "<h2>" + escapeHtml(lane.name) + "</h2>" +
+        '<span class="owner">owned by ' + escapeHtml(lane.agent) + " — " + escapeHtml(lane.model || "") + " · " + escapeHtml(lane.effort || "") + " effort</span>" +
+        '<span class="lane-state">' + iconSvg(lane.status, 16) + '<span class="status-word">' + escapeHtml(lane.status) + "</span></span>" +
+        '<button type="button" class="lane-toggle" aria-expanded="' + (collapsed ? "false" : "true") + '" aria-controls="' + bodyId + '" data-lane="' + escapeHtml(lane.id) + '">' +
+          (collapsed ? "Expand" : "Collapse") + "</button>" +
+      "</header>" +
+      '<div class="swim-items" id="' + bodyId + '">' + itemsHtml + "</div>";
+    host.appendChild(sec);
+  });
+  host.querySelectorAll(".lane-toggle").forEach(btn =>
+    btn.addEventListener("click", () => toggleLane(btn.getAttribute("data-lane"))));
+}
+
+function renderPanels() {
+  const parked = STATE.parking_lot || [];
+  document.getElementById("parking-list").innerHTML = parked.map(p =>
+    "<li>" + kindChip(p.kind) + ' <span class="pid">' + escapeHtml(p.id) + "</span>" + escapeHtml(p.title) +
+    (p.note ? '<span class="pn">' + escapeHtml(p.note) + "</span>" : "") + "</li>"
+  ).join("");
+
+  const lessons = STATE.lessons || [];
+  document.getElementById("lesson-list").innerHTML = lessons.map(l =>
+    "<li>" + escapeHtml(l.message) +
+    '<span class="lmeta">' + escapeHtml(l.ts || "") + (l.item ? " · " + escapeHtml(l.item) : "") + (l.lane ? " · " + escapeHtml(l.lane) : "") + "</span></li>"
+  ).join("");
+
+  const obs = (STATE.observations || []).slice().reverse();
+  document.getElementById("obs-count").textContent = obs.length;
+  document.getElementById("obs-list").innerHTML = obs.map(o =>
+    '<li><span class="ts">' + escapeHtml(o.ts || "") + "</span>" +
+    '<span class="lvl lvl-' + escapeHtml(o.level || "INFO") + '">' + escapeHtml(o.level || "INFO") + "</span>" +
+    "<span>" + escapeHtml(o.message) + (o.item ? " · " + escapeHtml(o.item) : "") + "</span></li>"
+  ).join("");
+}
+
+function render() {
+  document.title = (STATE.title || "Grind") + " — Ops Review";
+  document.getElementById("title").textContent = STATE.title || "Grind";
+  document.getElementById("repo").textContent = STATE.repo || "no repo slug";
+  // From state, never a wall clock: the board is as fresh as its log.
+  document.getElementById("last-generated").textContent = STATE.last_generated || "—";
+
+  const pause = STATE.pause;
+  const pb = document.getElementById("pause-banner");
+  if (pause && pause.paused) {
+    pb.classList.add("show");
+    document.getElementById("pause-reason").textContent = pause.reason || "";
+    document.getElementById("pause-checklist").innerHTML =
+      (pause.resume_checklist || []).map(c => "<li>" + escapeHtml(c) + "</li>").join("");
+  } else { pb.classList.remove("show"); }
+
+  const attn = STATE.attention || [];
+  const ab = document.getElementById("attention-banner");
+  const al = document.getElementById("attention-list");
+  if (attn.length) {
+    ab.classList.add("show");
+    al.innerHTML = attn.map(a =>
+      "<li>" + escapeHtml(a.text) + (a.item ? '<span class="attn-item-chip">' + escapeHtml(a.item) + "</span>" : "") + "</li>"
+    ).join("");
+  } else { ab.classList.remove("show"); al.innerHTML = ""; }
+
+  renderLanes();
+  renderPanels();
+}
+
+render();
+
+// ---------- auto-refresh (15s, visible toggle, persisted; reload is a no-op in this static prototype) ----------
+const REFRESH_SECONDS = 15;
+const LS_REFRESH = "grindproto.b.autorefresh.v1";
+const toggle = document.getElementById("refresh-toggle");
+const statusEl = document.getElementById("refresh-status");
+let countdown = REFRESH_SECONDS, tickTimer = null;
+function updateStatusText() { statusEl.textContent = toggle.checked ? ("on — reloading in " + countdown + "s") : "off"; }
+function startTicking() {
+  if (tickTimer) clearInterval(tickTimer);
+  countdown = REFRESH_SECONDS; updateStatusText();
+  tickTimer = setInterval(() => {
+    countdown -= 1;
+    if (countdown <= 0) { location.reload(); return; }
+    updateStatusText();
+  }, 1000);
+}
+function stopTicking() { if (tickTimer) clearInterval(tickTimer); tickTimer = null; updateStatusText(); }
+let savedRefresh = null;
+try { savedRefresh = localStorage.getItem(LS_REFRESH); } catch (e) { savedRefresh = null; }
+toggle.checked = savedRefresh === null ? true : savedRefresh === "true";
+toggle.addEventListener("change", () => {
+  try { localStorage.setItem(LS_REFRESH, toggle.checked ? "true" : "false"); } catch (e) {}
+  if (toggle.checked) startTicking(); else stopTicking();
+});
+if (toggle.checked) startTicking(); else stopTicking();
+</script>
+
+</body>
+</html>
