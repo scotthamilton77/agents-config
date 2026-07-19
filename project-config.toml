@@ -126,7 +126,7 @@ enforcement = "advisory"   # flip to "required" is agents-config-63nm3
 milestone-wip-cap = 2
 wip-exempt-milestones = ["agents-config-uxns2"]  # PORT — bead id, never display name
 backlog-groom-nag-days = 7
-groom-state-bead = ""   # minted by the backfill migration (spec §7)
+groom-state-bead = "agents-config-zohw0"   # minted by the track backfill migration
 
 [extraction.pressure]
 max-track-backlog = 100

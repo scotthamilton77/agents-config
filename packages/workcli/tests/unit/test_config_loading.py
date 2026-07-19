@@ -195,9 +195,9 @@ def test_groom_fields_omitted_are_none(tmp_path: Path) -> None:
 
 
 def test_groom_state_bead_empty_string_is_none(tmp_path: Path) -> None:
-    # This repo's own project-config.toml ships groom-state-bead = "" until
-    # the backfill migration mints the bead (spec §7) -- empty string means
-    # "not yet configured", not an error.
+    # A repo may ship groom-state-bead = "" as a placeholder until its
+    # groom-state bead is minted -- empty string means "not yet configured",
+    # not an error.
     root = _repo(
         tmp_path,
         config_text='[tracks]\nnames = ["alpha"]\n[operating-model]\ngroom-state-bead = ""\n',
