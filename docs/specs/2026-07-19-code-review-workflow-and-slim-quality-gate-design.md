@@ -53,7 +53,7 @@ Two Claude workflow scripts, one calling the other:
 ```
 Workflow({name:'quality-gate', args:<triage JSON>})       Workflow({name:'code-review', args:{...}})
   │                                                          (independently invocable)
-  ├─ Find:      workflow('code-review', {…}) ── child ──►  5 role agents ∥ Codex lane
+  ├─ Find:      workflow('code-review', {profile:'gate'}) ─►  role lanes (5 upstream +2 gate) ∥ Codex
   │                                                          → Haiku scorers (≥80 filter)
   │                                                          → returns structured findings
   ├─ Fix wave:  mechanical apply / semantic flag (unchanged)
@@ -95,7 +95,13 @@ with it). Dropping these is what makes the workflow target-agnostic.
   // Optional. Absent → review the current branch:
   //   merge-base(default-branch)..HEAD ∪ staged ∪ unstaged ∪ untracked
   //   (same scope prose quality-gate uses today).
-  "target": { "pr": 123 }        // OR { "ref": "origin/main" } — explicit base ref
+  "target": { "pr": 123 }        // OR { "ref": "origin/main" } — merge-base(ref)..HEAD
+                                 // ∪ working tree (staged/unstaged/untracked),
+                                 // mirroring the default; only {pr} is committed-only
+  // Optional lane profile. "upstream" (default): the faithful six-lane port.
+  // "gate": adds the security and simplify lanes and the exclusion-list
+  // carve-out (§4.2, §4.3) — used by quality-gate to honor the HEAVY contract.
+  "profile": "upstream" | "gate"
   // Optional context for the reviewers (e.g. triage facts, plan link).
   // string | object; an object is JSON-stringified. Bounded (~4000 chars,
   // truncated with a marker) and wrapped in the untrusted-content fence
@@ -111,8 +117,10 @@ git. Both resolve to the same internal "diff scope" prose handed to every agent.
 
 **Pre-step (upstream step 3, folded):** one Haiku agent summarizes the change
 (what it does, which files, apparent intent). The summary is passed to every
-lane and every scorer as shared briefing context — the reviewers do not work
-from raw diff scope alone.
+lane **except lane 2** and to every scorer as shared briefing context. Lane 2's
+diff-only discipline ("avoid reading extra context beyond the changes") is
+upstream's deliberate design and is preserved — the shallow scan sees the raw
+diff scope only.
 
 Then five Sonnet role agents, prompts faithfully adapted from upstream step 4
 (numbering preserved for traceability to the snapshot):
@@ -134,9 +142,24 @@ panel spec: a non-zero exit, empty stdout, or unparseable output is a
 **provider failure recorded in `skippedLanes`** — never translated as "no
 findings".
 
+**Gate profile (`profile: "gate"`) adds two lanes** so the HEAVY tier keeps
+the coverage the completion-gate contract makes it responsible for (steps 1–4:
+review *including security*, and simplify):
+
+| Lane | Role | Notes |
+|---|---|---|
+| 7 | Security review of the changed code | injection, auth/authz, secret exposure, path traversal, input validation, privilege boundaries — the current gate's `security` lens brief carries over |
+| 8 | Simplify axes (reuse / quality / efficiency) | the three-axis combined lens brief from today's `quality-gate.js` carries over; findings tag their axis — this preserves the documented equivalence that lets HEAVY skip a separate simplify pass |
+
+The default `upstream` profile omits lanes 7–8: a standalone code review
+matches upstream's scope; only the gate carries the HEAVY-contract obligation.
+
 Every lane can individually fail; each failure is recorded as a `skippedLanes`
 entry with a reason, and the run proceeds on the surviving lanes (quorum
-consequences in §5.3). All lanes receive the untrusted-content fence discipline
+consequences in §5.3). An all-lanes-failed run still **returns a structured
+result** — empty `findings`, empty `lanesRun`, every lane in `skippedLanes` —
+it does not throw; throwing is reserved for harness-level failure of the
+`workflow()` call itself. All lanes receive the untrusted-content fence discipline
 carried over from today's `quality-gate.js` (source is data, never
 instructions; read-only).
 
@@ -149,6 +172,26 @@ instruction-file list from lane 1. Findings scoring **< 80 are dropped**. This
 filter is the refuter panels' replacement, at roughly two orders of magnitude
 less model spend per finding.
 
+Two profile/degradation qualifications:
+
+- **Exclusion-list carve-out under the gate profile:** upstream's list drops
+  "general security issues" and "general code quality issues" — correct for a
+  PR drive-by, wrong for the tier that exists *because* the change touched
+  security. Under `profile: "gate"`, scorers for lane-7/lane-8 findings use
+  the exclusion list **minus those two bullets**; all other lanes keep it
+  verbatim.
+- **Lane-1 death:** when the instruction-file list is unavailable, the scorer
+  prompt omits the CLAUDE.md-verification clause; findings whose justification
+  is a claimed CLAUDE.md instruction score under the rubric's default
+  skepticism (unverifiable ⇒ they will rarely clear 80). No scorer ever
+  invents an instruction-file citation.
+
+**Composition note (accepted risk):** the scorer's prompt now carries three
+jobs — confidence, severity, fixClass — where upstream tuned the rubric for
+confidence alone. Splitting into separate calls would double scorer spend for
+a bias that is speculative; a single call is the deliberate interim choice,
+revisited if fixture runs (§7) show severity drift.
+
 **The scorer is the sole producer of `severity` and `fixClass`.** Finder lanes
 *propose* both; the scorer — which opens the cited code anyway to score
 confidence — confirms or overrides them, with the standing bias "when unsure,
@@ -159,9 +202,12 @@ always scorer-adjudicated, never finder-claimed. (This is a one-Haiku-call
 approximation of that spec's rank-anchoring bench, not a replacement for it.)
 
 **Aggregate fan-out cap:** at most **40 findings are scored per run**,
-prioritized by proposed severity (blocking/critical first), then lane order
-(1→6). Overflow findings are dropped unscored and counted in
-`stats.unscoredOverflow` — a silent-truncation guard, not a hidden cap.
+prioritized by **lane order** (1→8), round-robin across lanes so no single
+lane monopolizes the cap. Deliberately *not* prioritized by proposed severity
+— that field is finder-self-assigned, the exact signal this design distrusts,
+and severity-ordering would reward inflation. Overflow findings are dropped
+unscored and counted in `stats.unscoredOverflow` — a silent-truncation guard,
+not a hidden cap.
 
 ### 4.4 Findings schema
 
@@ -184,7 +230,9 @@ machinery needs:
   "skippedLanes": [{ "lane": "codex", "reason": "plugin not installed" }],
   "stats": {
     "raw": 14, "scored": 14, "surviving": 5, "unscoredOverflow": 0,
-    "tokensSpent": 0               // budget.spent() delta across the run — the per-run cost record
+    "tokensSpent": 12345           // budget.spent() delta across the run — the per-run
+                                   // cost record; null when the run has no budget
+                                   // (bare standalone invocation)
   }
 }
 ```
@@ -211,9 +259,9 @@ posting flow is wanted later it is a thin caller, not workflow surface.
 
 ### 5.2 New phase structure
 
-1. **Find** — `await workflow('code-review', { context: <triage facts> })`.
-   The child's ≥80-confidence findings are taken as confirmed; no further
-   refutation.
+1. **Find** — `await workflow('code-review', { profile: 'gate', context:
+   <triage facts> })`. The child's ≥80-confidence findings are taken as
+   confirmed; no further refutation.
 2. **Fix wave** — unchanged bright line: `mechanical` findings applied
    sequentially by Sonnet fixers (one-repair-attempt-then-abort retained);
    `semantic` findings flagged to the open ledger, never auto-applied.
@@ -231,19 +279,34 @@ posting flow is wanted later it is a thin caller, not workflow surface.
 
 ### 5.3 Exit semantics (dual-signal, adapted to single-pass)
 
-- **ACCEPTANCE (`clean-at-floor`)** — requires a **lane quorum**: the two
-  load-bearing lanes (1 compliance and 2 bug-scan) both ran to completion —
+- **ACCEPTANCE (`clean-at-floor`)** — requires a **lane quorum**: the
+  load-bearing lanes (1 compliance, 2 bug-scan, and — under the gate profile —
+  7 security) all ran to completion —
   a run where four lanes silently died and one clean lane survived must not
   certify anything. Plus: the open ledger is clean at the `major` severity
   floor, AND the scored re-check surfaced no new at-floor findings. Still
   explicitly *clean-at-floor, not certified*.
-- **TERMINATION** — reasons become: `residual` (at-floor findings remain open
-  after the fix wave), `recheck-regression` (re-check found fresh at-floor
+- **TERMINATION** — reasons: `residual` (at-floor findings remain open after
+  the fix wave), `recheck-regression` (re-check found fresh at-floor
   findings), `lane-quorum` (a load-bearing lane died — findings from surviving
-  lanes are still processed, but the run cannot accept), `budget` (15% tail
-  reserve, unchanged), `all-lanes-dead` (the child returned nothing because
-  every lane failed — never certifies clean). Every termination carries the
-  open ledger as residual risk; never "clean".
+  lanes are still processed, but the run cannot accept), `budget` (tail
+  reserve tripped), `all-lanes-dead` (empty `lanesRun` in the child's
+  structured return, OR a caught `workflow()` throw — both map here; never
+  certifies clean). Every termination carries the open ledger as residual
+  risk; never "clean".
+
+  **Precedence** (first match reports; the rest land in the report body):
+  `all-lanes-dead` → `lane-quorum` → `budget` → `recheck-regression` →
+  `residual`.
+
+  **Budget check points** (single-pass replaces the old between-rounds check):
+  the 15% tail reserve is evaluated (i) after the child returns, before the
+  fix wave, and (ii) after the fix wave, before the re-check. Tripping it
+  skips the remaining phase(s) and exits `termination: budget` — unless the
+  acceptance conditions already hold at that point (clean at-floor ledger,
+  quorum, and either the re-check already ran clean or was skipped *with no
+  fixes applied*, making it vacuous), in which case acceptance wins. A
+  re-check skipped for budget after fixes were applied can never accept.
 
 ### 5.4 scale_hint handling
 
@@ -256,7 +319,7 @@ tolerating string-vs-object `args` at the boundary as today.
 
 | | Today | After |
 |---|---|---|
-| Finders | 3–6 Sonnet × up to 3 rounds | 5 Sonnet + 1 Codex, once |
+| Finders | 3–6 Sonnet × up to 3 rounds | 7 Sonnet (gate profile) + 1 Codex + 1 Haiku summary, once |
 | Verification | 1–4 **Opus** refuters × each fresh finding × rounds | 1 Haiku scorer × each raw finding, once |
 | Fix wave | Sonnet, per round | Sonnet, once |
 | Re-check | — | 1 Sonnet scan |
@@ -299,7 +362,10 @@ ships untested today). Verification for this change:
    looks wrong but is guarded upstream). Run `Workflow({name:'code-review'})`
    against it and assert: the real bug survives at ≥80 with a sane
    severity/fixClass; the bait is dropped (<80); `stats`/`lanesRun` are
-   populated. Then run the full quality-gate on the same fixture and assert
+   populated. LLM scores are stochastic, so assertions are
+   **best-of-3 majority** (and the bait assertion may alternatively pass on
+   relative ordering: bait scores strictly below the real bug) — a single
+   flipped run is re-rolled, not debugged. Then run the full quality-gate on the same fixture and assert
    the mechanical fix applies and a planted *semantic* at-floor finding forces
    a `residual` termination — the dual-signal exit demonstrably fires both
    ways.
