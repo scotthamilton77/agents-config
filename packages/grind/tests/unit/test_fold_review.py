@@ -74,6 +74,76 @@ def test_review_verdict_stalemate_sets_stalemate_flag() -> None:
     assert state.items["wgclw.1"].review.stalemate is True
 
 
+def test_review_verdict_conflicting_head_sha_flags_anomaly_and_keeps_latest() -> None:
+    events = [
+        *_TO_PR_OPEN,
+        event("review_round", item="wgclw.1", kind="codex", round=1, head_sha="a1"),
+        event(
+            "review_verdict",
+            item="wgclw.1",
+            kind="codex",
+            round=1,
+            head_sha="b2",
+            verdict="clean",
+            findings=[],
+        ),
+    ]
+
+    state = fold(events)
+
+    review = state.items["wgclw.1"].review
+    # Latest event's value is retained (accept-and-flag).
+    assert review.head_sha == "b2"
+    # The disagreement surfaces as an anomaly + ERROR observation + attention.
+    assert any(a.type == "review_verdict" and "head_sha" in a.reason for a in state.anomalies)
+    assert any(o.level == "ERROR" and "head_sha" in o.message for o in state.observations)
+    assert any("head_sha" in a.text for a in state.attention)
+
+
+def test_review_verdict_matching_head_sha_raises_no_anomaly() -> None:
+    events = [
+        *_TO_PR_OPEN,
+        event("review_round", item="wgclw.1", kind="codex", round=1, head_sha="a1"),
+        event(
+            "review_verdict",
+            item="wgclw.1",
+            kind="codex",
+            round=1,
+            head_sha="a1",
+            verdict="clean",
+            findings=[],
+        ),
+    ]
+
+    state = fold(events)
+
+    assert state.items["wgclw.1"].review.head_sha == "a1"
+    assert state.anomalies == []
+
+
+def test_review_verdict_new_round_head_sha_is_not_a_conflict() -> None:
+    # A changed head_sha in a *different* round is a new review run, not a
+    # within-round disagreement -- it must not flag.
+    events = [
+        *_TO_PR_OPEN,
+        event("review_round", item="wgclw.1", kind="codex", round=1, head_sha="a1"),
+        event(
+            "review_verdict",
+            item="wgclw.1",
+            kind="codex",
+            round=2,
+            head_sha="b2",
+            verdict="clean",
+            findings=[],
+        ),
+    ]
+
+    state = fold(events)
+
+    assert state.items["wgclw.1"].review.head_sha == "b2"
+    assert state.anomalies == []
+
+
 def test_review_round_illegal_before_pr_opened() -> None:
     events = [
         seed_event(),

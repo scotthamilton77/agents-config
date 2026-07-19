@@ -319,9 +319,27 @@ def _h_review_verdict(state: State, evt: RawEvent) -> None:
     wont_fix_count = sum(
         1 for f in findings_list if isinstance(f, dict) and f.get("disposition") == "wont-fix"
     )
-    item.review.round = round_ if isinstance(round_, int) else item.review.round
+    new_round = round_ if isinstance(round_, int) else item.review.round
+    new_head_sha = _str(evt, "head_sha")
+    # Same round, both SHAs present and disagreeing: the verdict was rendered
+    # against different code than review_round recorded. Accept-and-flag (spec
+    # "review_round/review_verdict disagree on head_sha") -- surface the
+    # mismatch but still count using the latest event's value.
+    if (
+        new_round == item.review.round
+        and item.review.head_sha is not None
+        and new_head_sha is not None
+        and item.review.head_sha != new_head_sha
+    ):
+        _anomaly(
+            state,
+            evt,
+            f"review_verdict head_sha {new_head_sha!r} disagrees with review_round "
+            f"head_sha {item.review.head_sha!r} for round {new_round}",
+        )
+    item.review.round = new_round
     item.review.kind = _str(evt, "kind")
-    item.review.head_sha = _str(evt, "head_sha")
+    item.review.head_sha = new_head_sha
     item.review.verdict = _str(evt, "verdict")
     item.review.open_threads = open_threads
     item.review.wont_fix_count = wont_fix_count
