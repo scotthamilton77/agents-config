@@ -429,6 +429,47 @@ out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS
 assert "required legacy context on a later status page is seen → eligible, green" \
   "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
 
+# ── ruleset-sourced required status checks (rules/branches/{base}, a
+#    required_status_checks-type rule) — a repo enforcing CI via a GitHub
+#    Ruleset instead of classic branch protection 404s the classic endpoint;
+#    that 404 must NOT collapse the required set to empty when the modern
+#    endpoint lists a real requirement. ────────────────────────────────────
+RULES_CI_ONE='[{"type":"required_status_checks","ruleset_id":333,"parameters":{"required_status_checks":[{"context":"ci","integration_id":15368}]}}]'
+run_ci_ok()        { jq -n '{check_runs:[{name:"ci",status:"completed",conclusion:"success",app:{id:15368}}]}'; }
+run_ci_wrong_app() { jq -n '{check_runs:[{name:"ci",status:"completed",conclusion:"success",app:{id:99999}}]}'; }
+
+# classic endpoint 404s (no classic protection), ruleset alone requires "ci",
+# satisfied by a pinned-app success → green, eligible
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_CI_ONE" FIXTURE_CHECK_RUNS="$(run_ci_ok)"); rc=$?
+assert "ruleset-only required check satisfied → ci_state green, eligible" \
+  "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
+
+# ruleset-only required check never started → blocked, never vacuously green
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_CI_ONE" FIXTURE_CHECK_RUNS='{"check_runs":[]}'); rc=$?
+assert "ruleset-only required check absent → blocked (rc 1)" "[ \$rc -eq 1 ]"
+assert "blocker code ci_not_green (ruleset-sourced)" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q ci_not_green"
+
+# a same-named success from a DIFFERENT app than the ruleset's integration_id
+# pin is not satisfied — the ruleset source pins trust exactly like the
+# classic-endpoint app_id pin does
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_CI_ONE" FIXTURE_CHECK_RUNS="$(run_ci_wrong_app)"); rc=$?
+assert "ruleset-pinned wrong-app success → blocked" "[ \$rc -eq 1 ]"
+
+# union: classic protection requires ci/build, ruleset separately requires
+# ci — BOTH sources' requirements must be evaluated, not just whichever
+# endpoint answered. Only ci/build's check run exists → still blocked on the
+# ruleset-sourced "ci" requirement.
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" \
+      FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_CI_ONE" FIXTURE_CHECK_RUNS="$(run_ok)"); rc=$?
+assert "union of classic+ruleset required checks, ruleset one unmet → blocked" "[ \$rc -eq 1 ]"
+
+# union satisfied from both sources → green
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" \
+      FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_CI_ONE" \
+      FIXTURE_CHECK_RUNS='{"check_runs":[{"name":"ci/build","status":"completed","conclusion":"success","app":{"id":15368}},{"name":"ci","status":"completed","conclusion":"success","app":{"id":15368}}]}'); rc=$?
+assert "union of classic+ruleset required checks, both met → green, eligible" \
+  "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
+
 # ── admin-bypass fact: authenticated identity's standing bypass grant on a
 #    GitHub ruleset's required-approving-review rule (separate from Axis 1) ──
 # no rules apply to this branch (default 404) → inert, not required
@@ -481,12 +522,20 @@ out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES
 assert "null ruleset_id with active count → eligible, current_actor_can_bypass false (fail closed for --admin)" \
     "[ \$rc -eq 0 ] && [ \"\$(jq '.facts.admin_bypass.current_actor_can_bypass' <<<\"\$out\")\" = false ]"
 
-# rules/branches fetch fails for a reason other than 404 → admin_bypass degrades
-# to the inert "no rulesets" state (never aborts eligibility over an
-# informational fact)
+# rules/branches now also sources the CI-green blocker's required-checks
+# union (not just the informational admin_bypass fact), so a hard failure on
+# it must fail closed exactly like the classic protection endpoint's own
+# hard-failure branch — never silently degrade to "no rulesets" and risk a
+# ruleset-only required check reading vacuously green.
 out=$(run_script "$BASE_POLICY" FIXTURE_RULES_FAIL=1); rc=$?
-assert "branch-rules fetch hard failure → eligible, admin_bypass inert (review_rule_active false, current_actor_can_bypass null)" \
-    "[ \$rc -eq 0 ] && [ \"\$(jq '.facts.admin_bypass.review_rule_active' <<<\"\$out\")\" = false ] && [ \"\$(jq '.facts.admin_bypass.current_actor_can_bypass' <<<\"\$out\")\" = null ]"
+assert "branch-rules fetch hard failure → fails closed (exit 3)" "[ \$rc -eq 3 ]"
+assert "branch-rules fetch hard failure → prints no verdict" "[ -z \"\$out\" ]"
+
+# classic protection legitimately absent (404, ruleset-only repo) AND the
+# rules/branches fetch hard-fails → must NOT read as vacuous green (the
+# original bug relocated to this endpoint's failure path)
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=1 FIXTURE_RULES_FAIL=1); rc=$?
+assert "classic 404 + rules hard failure → fails closed, not vacuous green (exit 3)" "[ \$rc -eq 3 ]"
 
 # a ruleset's own detail fetch fails after being listed → degrade to
 # non-bypassable (fail closed for --admin) and continue rather than abort

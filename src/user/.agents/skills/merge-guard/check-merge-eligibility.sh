@@ -373,12 +373,48 @@ if [[ "$(jq '.escalations | length' <<<"$thread_partition")" -gt 0 ]]; then
              | (.id // "unknown-thread") + " (" + $why + ")" ]
            | join("; "))' <<<"$thread_partition")"
 fi
+# ── Fetch: branch rules (rules/branches/{base}) ──────────────────────────────
+# Shared across two consumers below: the CI-green blocker's required-checks
+# union (a required_status_checks-type rule) and the admin_bypass fact (a
+# pull_request-type rule). Fetched once, up front, so a ruleset-enforced repo
+# with no classic branch protection isn't read as having no CI requirement.
+# Because this fetch now feeds the CI blocker (not just the informational
+# admin_bypass fact), a hard failure fails the whole script closed — exactly
+# like the classic protection endpoint's own hard-failure branch below — never
+# silently degrade to "no rulesets", which would risk a ruleset-only required
+# check reading vacuously green.
+rules_stderr=$(mktemp)
+if rules_json=$(gh api "repos/${OWNER}/${REPO}/rules/branches/${BASE_REF_ENC}" 2>"$rules_stderr"); then
+    :
+else
+    if grep -qiE 'HTTP 404|Not Found' "$rules_stderr"; then
+        rules_json='[]'   # no rulesets target this branch
+    else
+        # Named explicitly (endpoint + framing) so a human or agent hitting
+        # this during a GitHub API incident diagnoses it in one read instead
+        # of hunting a phantom permissions problem — this repo has a
+        # documented history of transient 5xx/degraded-auth gh responses that
+        # read like authNZ failures but aren't. Still a real condition to
+        # fail closed on (exit 3, hand off per SKILL.md — never blind retry);
+        # it just isn't this identity's fault, so don't chase token scopes first.
+        echo "Error: failed to fetch required-status-check rules from repos/${OWNER}/${REPO}/rules/branches/${BASE_REF_ENC} — likely a transient GitHub API failure, not a permissions problem: $(cat "$rules_stderr")" >&2
+        rm -f "$rules_stderr"; exit 3
+    fi
+fi
+rm -f "$rules_stderr"
+
 # ── Blocker: required CI checks not green ────────────────────────────────────
-# Required set from branch protection — NEVER derived from the rollup (the
-# rollup lists only contexts that already reported; filtering it would hide a
-# required check that never started). 404 / no protection = empty set =
-# vacuously green. A source-pinned (app_id) requirement is only satisfied by
-# a run from that app — name alone is not a trust boundary.
+# Required set is the UNION of classic branch protection and a GitHub
+# Ruleset's required_status_checks-type rule — NEVER derived from the rollup
+# (the rollup lists only contexts that already reported; filtering it would
+# hide a required check that never started). A repo enforcing CI via a
+# Ruleset instead of classic protection 404s the classic endpoint; that 404
+# must empty only the classic side, not the ruleset side (both sides' hard
+# failures already fail the whole script closed above/below — a 404 is the
+# only way either side legitimately empties). Both 404 = no requirement
+# anywhere = vacuously green. A source-pinned (app_id / integration_id)
+# requirement is only satisfied by a run from that app — name alone is not a
+# trust boundary.
 prot=""
 prot_stderr=$(mktemp)
 if prot=$(gh api "repos/${OWNER}/${REPO}/branches/${BASE_REF_ENC}/protection/required_status_checks" 2>"$prot_stderr"); then
@@ -400,8 +436,13 @@ else
     fi
 fi
 rm -f "$prot_stderr"
-required_checks=$(jq -c '[.checks[]? | {context, app_id}]' <<<"${prot:-null}" 2>/dev/null || echo '[]')
-[[ "$required_checks" == "null" ]] && required_checks='[]'
+classic_checks=$(jq -c '[.checks[]? | {context, app_id}]' <<<"${prot:-null}" 2>/dev/null || echo '[]')
+[[ "$classic_checks" == "null" ]] && classic_checks='[]'
+ruleset_checks=$(jq -c '[ .[]? | select(.type == "required_status_checks")
+    | .parameters.required_status_checks[]? | {context, app_id: (.integration_id // null)} ]' \
+    <<<"$rules_json")
+required_checks=$(jq -c -n --argjson a "$classic_checks" --argjson b "$ruleset_checks" \
+    '($a + $b) | unique_by([.context, .app_id])')
 
 # No required checks → vacuously green; skip the check-run/status fetches
 # whose results ci_eval would never consult.
@@ -458,22 +499,7 @@ fi
 # rejection with --admin for a merge this policy has already authorized —
 # never to invent a new override. Never a blocker: it does not gate
 # eligibility, only how Step 5 in merge-guard SKILL.md issues the merge.
-rules_stderr=$(mktemp)
-if rules_json=$(gh api "repos/${OWNER}/${REPO}/rules/branches/${BASE_REF_ENC}" 2>"$rules_stderr"); then
-    :
-else
-    if grep -qiE 'HTTP 404|Not Found' "$rules_stderr"; then
-        rules_json='[]'   # no rulesets target this branch
-    else
-        # admin_bypass never gates a blocker, so a transient fetch failure on
-        # it must not deny a merge that may not even need --admin. Degrade to
-        # the inert "no rulesets" state and warn rather than abort eligibility.
-        echo "Warning: failed to fetch branch rules (admin_bypass degraded to inert): $(cat "$rules_stderr")" >&2
-        rules_json='[]'
-    fi
-fi
-rm -f "$rules_stderr"
-
+# (rules_json was already fetched above, shared with the CI-green blocker.)
 review_rulesets=$(jq -c '[ .[]? | select(.type == "pull_request") ]' <<<"$rules_json")
 required_approving_review_count=$(jq '[ .[].parameters.required_approving_review_count? // 0 ] | (max // 0)' <<<"$review_rulesets")
 review_rule_active=false
