@@ -466,6 +466,7 @@ def test_condition_names_are_never_imperative() -> None:
         first_word = re.split(r"[_\s]", name)[0]
         assert first_word not in IMPERATIVE_VERBS, f"{name!r} reads as an imperative"
 
+
 def test_duration_threshold_overflow_falls_back_to_default() -> None:
     # A regex-valid but astronomically large threshold overflows timedelta;
     # advisory config falls back to the default instead of erroring the verb.
