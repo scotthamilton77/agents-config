@@ -59,6 +59,11 @@ if [ "$1" = "api" ]; then
     case "$1" in --jq) filter="$2"; shift 2 ;; *) shift ;; esac
   done
   case "$path" in
+    user)
+        if [ "${FIXTURE_AUTH_LOGIN_FAIL:-0}" = 1 ]; then
+          echo "gh: 401 Unauthorized" >&2; exit 1
+        fi
+        body="${FIXTURE_AUTH_LOGIN_JSON:-'{\"login\":\"session-user\"}'}" ;;
     */requested_reviewers)  body="${FIXTURE_REQUESTED_REVIEWERS:-'{\"users\":[],\"teams\":[]}'}" ;;
     */issues/*/events*)
         if [ "${FIXTURE_EVENTS_FAIL:-0}" = 1 ]; then
@@ -67,6 +72,9 @@ if [ "$1" = "api" ]; then
         body="${FIXTURE_EVENTS:-[]}" ;;
     */issues/*/comments*)   body="${FIXTURE_ISSUE_COMMENTS:-[]}" ;;
     */issues/*/reactions*)
+        if [ "${FIXTURE_REACTIONS_FAIL:-0}" = 1 ]; then
+          echo "gh: 502 Bad Gateway" >&2; exit 1
+        fi
         if [ -n "${FIXTURE_REACTIONS_PAGE2:-}" ]; then
           # emulate `gh api --paginate` on an array-returning endpoint: each
           # page's JSON array is later merged via `jq -s 'add // []'` — mirrors
@@ -566,6 +574,66 @@ assert "recorded posted_reply_id excluded → eligible" "[ \$rc -eq 0 ]"
 IC2='[{"id": 900, "user": {"login": "operator"}, "body": "agent reply"}, {"id": 901, "user": {"login": "operator"}, "body": "actually, one more thing"}]'
 out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC2"); rc=$?
 assert "same-account manual comment (unrecorded id) blocks" "[ \$rc -eq 1 ]"
+
+# ── Component 2b (2026-07-18 spec): loop-generated comments are not feedback ──
+# Both the clean-pass announcement and the "@codex review" trigger comment are
+# artifacts of the re-review loop itself, not human/bot feedback needing
+# triage — excluded from live_issue entirely (same effect as terminal triage).
+clean_invs
+
+# (1) Clean-pass marker from an allowlisted bot → excluded, eligible
+IC_CLEAN='[{"id": 950, "user": {"login": "trusted-bot[bot]"}, "body": "Codex Review: Didn'\''t find any major issues here, LGTM"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_CLEAN"); rc=$?
+assert "clean-pass marker from allowlisted bot excluded → eligible" "[ \$rc -eq 0 ]"
+
+# (2) Same marker text from a NON-allowlisted author still blocks — the
+# exemption is a bot-identity + marker conjunction, not a marker-alone match
+IC_CLEAN_UNTRUSTED='[{"id": 951, "user": {"login": "random-user"}, "body": "Codex Review: Didn'\''t find any major issues here"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_CLEAN_UNTRUSTED"); rc=$?
+assert "clean-pass marker text from non-allowlisted author still blocks" "[ \$rc -eq 1 ]"
+
+# (3) A bot comment that merely CONTAINS the marker, not starting with it,
+# still blocks — prefix match only, never substring
+IC_CLEAN_NOTPREFIX='[{"id": 952, "user": {"login": "trusted-bot[bot]"}, "body": "FYI: Codex Review: Didn'\''t find any major issues here"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_CLEAN_NOTPREFIX"); rc=$?
+assert "marker not at body start still blocks (prefix match only)" "[ \$rc -eq 1 ]"
+
+# (4) An unrelated bot comment still blocks — bot identity alone is never
+# the exemption, only bot identity + marker together
+IC_BOT_OTHER='[{"id": 953, "user": {"login": "trusted-bot[bot]"}, "body": "please rename this variable"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_BOT_OTHER"); rc=$?
+assert "unrelated bot comment still blocks" "[ \$rc -eq 1 ]"
+
+# (5) Trigger comment authored by the PR author → excluded, eligible
+PR_AUTHOR_JSON='{"state":"open","head":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"base":{"ref":"main","sha":"cccccccccccccccccccccccccccccccccccccccc"},"created_at":"2026-01-01T00:00:00Z","user":{"login":"pr-author"}}'
+IC_TRIGGER_AUTHOR='[{"id": 960, "user": {"login": "pr-author"}, "body": "@codex review"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_PR="$PR_AUTHOR_JSON" FIXTURE_ISSUE_COMMENTS="$IC_TRIGGER_AUTHOR"); rc=$?
+assert "trigger comment from PR author excluded → eligible" "[ \$rc -eq 0 ]"
+
+# (6) Trigger comment authored by the authenticated session identity (the
+# CLI's own re-ask) → excluded, eligible. Default FIXTURE_PR carries no
+# `user`, so $pr_author is empty here — isolates the auth-login match.
+IC_TRIGGER_SESSION='[{"id": 961, "user": {"login": "session-user"}, "body": "@codex review"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_TRIGGER_SESSION"); rc=$?
+assert "trigger comment from authenticated session identity excluded → eligible" "[ \$rc -eq 0 ]"
+
+# (7) Trigger comment from neither identity still blocks
+IC_TRIGGER_OTHER='[{"id": 962, "user": {"login": "operator"}, "body": "@codex review"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_TRIGGER_OTHER"); rc=$?
+assert "trigger comment from unrelated identity still blocks" "[ \$rc -eq 1 ]"
+
+# (8) The trigger phrase must be at the body start too — prefix match only
+IC_TRIGGER_NOTPREFIX='[{"id": 963, "user": {"login": "pr-author"}, "body": "please do @codex review this again"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_PR="$PR_AUTHOR_JSON" FIXTURE_ISSUE_COMMENTS="$IC_TRIGGER_NOTPREFIX"); rc=$?
+assert "trigger phrase not at body start still blocks (prefix match only)" "[ \$rc -eq 1 ]"
+
+# (9) A failed `gh api user` lookup never aborts the run (it does not gate
+# eligibility) — it degrades AUTH_LOGIN to an unmatchable empty string, so
+# the session-identity exemption just doesn't fire and the comment blocks
+# like any other untriaged item (fail closed).
+out=$(run_script "$BASE_POLICY" FIXTURE_AUTH_LOGIN_FAIL=1 FIXTURE_ISSUE_COMMENTS="$IC_TRIGGER_SESSION"); rc=$?
+assert "authenticated-identity lookup failure does not abort the script" "[ \$rc -ne 3 ]"
+assert "authenticated-identity lookup failure degrades the exemption (blocks)" "[ \$rc -eq 1 ]"
 
 # an APPROVED bot review with a non-empty body needs triage too
 clean_invs
@@ -1179,6 +1247,20 @@ assert "missing committer date → false" "[ \"\$(jq '.facts.bot_clean_review_at
 reacts_bad_ts=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' 'not-a-date')" '[$a]')
 out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts_bad_ts" FIXTURE_COMMIT="$COMMIT_FIXTURE")
 assert "unparseable +1 timestamp → false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# a +1 whose created_at EQUALS last_head_change to the exact second must be
+# rejected — the predicate requires strict >, pinning that a future refactor
+# can't accidentally loosen it to >=
+reacts_exact_ts=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "$COMMIT_TS")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts_exact_ts" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "+1 created_at equal to last_head_change → false (strict >, not >=)" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# a failing reactions fetch is infrastructure error, not a false fact — the
+# whole script exits 3 (fail-closed `gh_api ... || { ...; exit 3; }` idiom),
+# same as every other required fetch in this file
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS_FAIL=1 FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "reactions fetch failure exits 3 (fail-closed, infrastructure error)" "[ \$rc -eq 3 ]"
 
 # empty allowlist → reaction path false
 EMPTY_ALLOWLIST_POLICY=$(jq -c '.bot_reviewers = []' <<<"$BASE_POLICY")

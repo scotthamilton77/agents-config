@@ -124,6 +124,10 @@ pr_state=$(jq -r '.state' <<<"$PR_JSON")
 # SHA the merge must be issued against (pt. 3).
 HEAD_OID=$(jq -r '.head.sha' <<<"$PR_JSON")
 [[ -n "$HEAD_OID" && "$HEAD_OID" != "null" ]] || { echo "Error: no head SHA on PR" >&2; exit 3; }
+# PR author login — one of the two identities the trigger-comment exemption
+# (Component 2b, part b) matches against; a missing/null author never
+# matches anything, so the exemption just doesn't fire (fail closed).
+PR_AUTHOR=$(jq -r '.user.login // ""' <<<"$PR_JSON")
 # The base SHA the head is judged against and the merge must re-confirm
 # (Step 5). Fetched here so the whole floor binds to one live PR read.
 BASE_OID=$(jq -r '.base.sha' <<<"$PR_JSON")
@@ -593,6 +597,16 @@ set_fact bot_review_cap_exhausted "$bot_cap_exhausted"
 ISSUE_COMMENTS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/comments?per_page=100" --paginate | jq -s 'add // []') || {
     echo "Error: failed to fetch issue comments" >&2; exit 3; }
 
+# Current authenticated session identity — the second of the two identities
+# the trigger-comment exemption (Component 2b, part b) matches against,
+# alongside $PR_AUTHOR (covers both a human re-asking for review and an
+# agent re-asking as the CLI's own authenticated user). Never gates
+# eligibility on its own, so a lookup failure degrades to an unmatchable
+# empty string rather than exit 3: the exemption just doesn't fire, and the
+# trigger comment falls back to blocking like any other untriaged item
+# (fail closed, same direction as every other exemption in this block).
+AUTH_LOGIN=$(gh_api user --jq '.login') || AUTH_LOGIN=""
+
 # inventory_items / completed_inventory_items were collected once, above the
 # thread partition — both unions are shared with it.
 
@@ -614,7 +628,33 @@ done < <(find "${HOME}/.claude/state/pr-inventory" -maxdepth 1 \
          -name "${OWNER}-${REPO}-${PR}-*.json.replyids" -print0 2>/dev/null)
 
 untriaged=$(jq -n \
-    --argjson live_issue "$(jq '[.[] | {id, author: .user.login}]' <<<"$ISSUE_COMMENTS")" \
+    --argjson live_issue "$(jq \
+        --argjson trusted "$BOT_REVIEWERS" --arg pr_author "$PR_AUTHOR" --arg auth_login "$AUTH_LOGIN" '
+        # Component 2b: the re-review loop mints its own issue comments, and
+        # both shapes below are loop machinery, not feedback needing triage —
+        # excluded from live_issue entirely (same effect as terminal triage).
+        # Everything else, bot-authored or not, still blocks as today.
+        #
+        # (1) Clean-pass announcement: an allowlisted bot identity (exact
+        # login match, same allowlist convention as every other bot check in
+        # this file) whose body begins with the pinned marker. The prefix is
+        # pinned exactly as observed 2026-07-18 — a vendor reword resumes
+        # blocking (false negative, hands off to a human; accepted).
+        def is_clean_pass_marker:
+            (.user.login as $l | ($trusted | index($l)) != null)
+            and ((.body // "") | startswith("Codex Review: Didn'\''t find any major issues"));
+        # (2) Trigger comment: the literal "@codex review" ask this repo'\''s
+        # own lieutenant workflow posts via `gh pr comment` to request a
+        # re-review — authored by either the PR author (a human re-asking)
+        # or the currently authenticated session identity (an agent
+        # re-asking as the CLI user). Matched on the same prefix
+        # request-rereview.sh posts verbatim.
+        def is_trigger_comment:
+            ((.user.login == $pr_author) or (.user.login == $auth_login))
+            and ((.body // "") | startswith("@codex review"));
+        [.[] | select((is_clean_pass_marker or is_trigger_comment) | not)
+             | {id, author: .user.login}]
+        ' <<<"$ISSUE_COMMENTS")" \
     --argjson live_summaries "$(jq '[.[] | select((.body // "") != "") | {review_id: .id, author: .user.login}]' <<<"$ALL_REVIEWS")" \
     --argjson recorded "$inventory_items" \
     --argjson recorded_complete "$completed_inventory_items" \
