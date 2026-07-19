@@ -43,5 +43,10 @@ def lane_status(state: State, lane: Lane) -> LaneStatus:
 
     # `done` items don't count toward "most advanced ACTIVE state" once the
     # lane still has work left -- otherwise one finished item would flash a
-    # `done` lane while its siblings haven't even started.
-    return max(in_flight, key=lambda item: _RANK[item.status]).status
+    # `done` lane while its siblings haven't even started. `_RANK.get(...,
+    # 0)` degrades an item status outside the closed vocabulary to "no
+    # forward progress" rather than raising: the dashboard renderer spec
+    # requires unknown status values to degrade gracefully, never break the
+    # board, and `ItemStatus` closes the vocabulary only at the type level
+    # -- it is not re-checked at this runtime boundary.
+    return max(in_flight, key=lambda item: _RANK.get(item.status, 0)).status

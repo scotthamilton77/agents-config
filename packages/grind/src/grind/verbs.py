@@ -19,13 +19,16 @@ from grind.envelope import GrindError
 from grind.fold import fold
 from grind.model import DEFAULT_CONFIG, AnomalyRecord, JsonValue, RawEvent, State
 from grind.payloads import validate_payload
+from grind.render import render_dashboard
 from grind.serialize import anomaly_json, full_state_json, summarize
 from grind.store import (
     TornTailRepair,
     append_event,
+    dashboard_path,
     fold_dir,
     is_log_nonempty,
     load_events,
+    write_dashboard,
     write_state,
 )
 
@@ -159,6 +162,7 @@ def _append_and_persist(dir_: Path, event: RawEvent) -> tuple[State, TornTailRep
     repair = append_event(dir_, event)
     state = fold_dir(dir_)
     write_state(dir_, full_state_json(state))
+    write_dashboard(dir_, render_dashboard(state))
     return state, repair
 
 
@@ -252,6 +256,14 @@ def cmd_check(dir_: Path, max_age: str | None, *, now: Clock) -> dict[str, JsonV
         "paused": state.paused,
         "finished": state.finished,
     }
+
+
+def cmd_render(dir_: Path) -> dict[str, JsonValue]:
+    """`grind render` (spec CLI contract table): refolds and re-renders
+    `dashboard.html` only -- no event is appended, `state.json` is untouched."""
+    state = fold_dir(dir_)
+    write_dashboard(dir_, render_dashboard(state))
+    return {"ok": True, "path": str(dashboard_path(dir_))}
 
 
 def cmd_finish(dir_: Path, summary: str, *, now: Clock) -> dict[str, JsonValue]:

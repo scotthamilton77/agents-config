@@ -21,6 +21,7 @@ from grind.model import JsonValue, RawEvent, State
 EVENTS_FILENAME = "events.jsonl"
 QUARANTINE_FILENAME = "events.quarantine"
 STATE_FILENAME = "state.json"
+DASHBOARD_FILENAME = "dashboard.html"
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,10 @@ def quarantine_path(dir_: Path) -> Path:
 
 def state_path(dir_: Path) -> Path:
     return dir_ / STATE_FILENAME
+
+
+def dashboard_path(dir_: Path) -> Path:
+    return dir_ / DASHBOARD_FILENAME
 
 
 def read_raw_log(dir_: Path) -> str:
@@ -131,3 +136,8 @@ def write_state(dir_: Path, payload: dict[str, JsonValue]) -> None:
     with state_path(dir_).open("w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=2, sort_keys=True, allow_nan=False)
         fh.write("\n")
+
+
+def write_dashboard(dir_: Path, html: str) -> None:
+    dir_.mkdir(parents=True, exist_ok=True)
+    dashboard_path(dir_).write_text(html, encoding="utf-8")

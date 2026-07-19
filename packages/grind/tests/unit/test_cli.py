@@ -220,6 +220,21 @@ def test_check_verb_empty_log_yields_error_envelope_and_nonzero_exit(tmp_path: P
     assert envelope["ok"] is False
 
 
+def test_render_verb(tmp_path: Path):
+    grind_dir = tmp_path / "run"
+    _run(
+        ["create", "--file", "seed.json", "--dir", str(grind_dir)],
+        read_file={"seed.json": json.dumps(_SEED)},
+    )
+
+    exit_code, envelope, _err = _run(["render", "--dir", str(grind_dir)])
+
+    assert exit_code == 0
+    assert envelope["ok"] is True
+    assert envelope["path"] == str(grind_dir / "dashboard.html")
+    assert (grind_dir / "dashboard.html").exists()
+
+
 def test_finish_verb(tmp_path: Path):
     grind_dir = tmp_path / "run"
     _run(

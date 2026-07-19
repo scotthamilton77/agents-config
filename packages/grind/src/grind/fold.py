@@ -623,6 +623,12 @@ def fold(events: Sequence[Mapping[str, JsonValue]]) -> State:
     state = State()
     for index, raw in enumerate(events):
         evt: RawEvent = dict(raw)
+        # Recorded for every event this loop walks, applied or anomalous --
+        # the renderer's `last_generated` timestamp (dashboard renderer spec)
+        # tracks the log, not any one event's fate.
+        ts = _str(evt, "ts")
+        if ts is not None:
+            state.last_event_ts = ts
         etype = _str(evt, "type")
         if etype == "grind_created" and index != 0:
             # Legal only as the log's first event -- a later creation (even after
