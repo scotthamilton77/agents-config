@@ -8,45 +8,17 @@ from __future__ import annotations
 
 import collections
 import json
-import pathlib
-import subprocess
 import tomllib
 
-HERE = pathlib.Path(__file__).parent
-
-# Task 7 reparents `9v0y` (review-and-merge) under `7bk` (an epic on
-# pipeline-discipline), which necessarily creates one new cross-track edge. The
-# other two reparents land under milestones, and _track_mismatches skips
-# milestone parents, so they add nothing. Accepted per design doc §5.4.
-DELIBERATE_MISMATCH_ADDITIONS = {"agents-config-9v0y"}
-
-
-def work(*argv: str, require_ok: bool = True) -> dict:
-    """Run a `work` verb and return its envelope.
-
-    Fails loud by default: a verifier that mistakes a failed backend call for a
-    successful one reports assurance it never established. C6 opts out with
-    require_ok=False, because there a failing envelope IS the finding.
-    """
-    proc = subprocess.run(["work", *argv], capture_output=True, text=True)
-    try:
-        payload = json.loads(proc.stdout)
-    except ValueError:
-        raise SystemExit(
-            f"`work {' '.join(argv)}` returned non-JSON (exit {proc.returncode}): "
-            f"{proc.stdout[:200]!r} {proc.stderr[:200]!r}"
-        )
-    if require_ok and not payload.get("ok"):
-        raise SystemExit(f"`work {' '.join(argv)}` failed: {payload.get('error')}")
-    return payload
+from context import HERE, resolve_root, work
 
 
 def main() -> int:
-    root = pathlib.Path(
-        subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True
-        ).stdout.strip()
-    )
+    # Bind to the script's own repo, not the caller's cwd. Without this, running
+    # verify.py by absolute path from another clone reads the artifact from here
+    # while every `work` call reports on a different backlog — passing C1-C6 for
+    # a database the migration never touched.
+    root = resolve_root(require_artifact=HERE / "assignment.json")
     config = tomllib.load(open(root / "project-config.toml", "rb"))
     organizing_only = set(config["tracks"]["organizing-only"])
     cap = config["extraction"]["pressure"]["max-track-backlog"]
@@ -56,16 +28,16 @@ def main() -> int:
         i: e["track"]
         for i, e in json.loads((HERE / "assignment.json").read_text())["items"].items()
     }
-    expected_mismatch = set(json.loads((HERE / "expected_mismatches.json").read_text()))
+    expected_mismatch = json.loads((HERE / "expected_mismatches.json").read_text())["edges"]
 
-    lint = work("lint")["data"]
+    lint = work(root, "lint")["data"]
     violations = {v["id"] for v in lint["track_violations"]}
-    items = work("list", "--limit", "0")["data"]["items"]
+    items = work(root, "list", "--limit", "0")["data"]["items"]
 
     # Closed items are excluded from `work list` by default, which would make a
     # stray write to a closed item invisible to C1 — and `work track set` has no
     # status guard, so such a write is possible. Enumerate them explicitly.
-    closed = work("list", "--limit", "0", "--status", "closed")["data"]["items"]
+    closed = work(root, "list", "--limit", "0", "--status", "closed")["data"]["items"]
 
     failures: list[str] = []
 
@@ -79,16 +51,26 @@ def main() -> int:
         return [x for x in item["labels"] if x.startswith("track:")]
 
     # C1 — outcome matches the artifact; nothing outside it was written to.
-    # The groom-state bead is minted by this migration and is deliberately
-    # not in the artifact, so it is carved out of the stray check.
-    mismatched, stray, doubled = [], [], []
+    # The groom-state bead is minted by this migration and is deliberately not in
+    # the artifact, so it is carved out of the stray check.
+    #
+    # The target-track comparison applies to LIVE items only. `reconcile()`
+    # deliberately skips an artifact item that closed before apply — no write is
+    # made — so comparing that item's (still empty) track against its artifact
+    # target would report a failure for the documented normal drift case, after
+    # an entirely correct run. Closed items are still swept for stray and
+    # doubled labels, which are real defects whatever the item's status.
+    mismatched, stray, doubled, skipped_closed = [], [], [], []
     for item in items + closed:
         labels = track_labels(item)
+        is_closed = item["status"] == "closed"
         if len(labels) > 1:
             doubled.append((item["id"], labels))
         want = assigned.get(item["id"])
         if want is not None:
-            if item["track"] != want:
+            if is_closed:
+                skipped_closed.append(item["id"])
+            elif item["track"] != want:
                 mismatched.append((item["id"], want, item["track"], item["status"]))
         elif labels and item["id"] != groom_bead:
             stray.append((item["id"], item["type"], item["status"], labels))
@@ -98,6 +80,10 @@ def main() -> int:
         failures.append(f"C1 track written outside the artifact: {stray[:5]} ({len(stray)} total)")
     if doubled:
         failures.append(f"C1 item carries multiple track labels: {doubled[:5]} ({len(doubled)} total)")
+    print(
+        f"C1: {len(assigned) - len(skipped_closed)} live assigned item(s) compared; "
+        f"{len(skipped_closed)} closed since the artifact was generated (not compared)"
+    )
 
     # C2 — zero violations among covered ids; residue reported, not asserted away.
     leak = violations & set(assigned)
@@ -120,35 +106,43 @@ def main() -> int:
 
     # C5 — the cross-track parent set is EXACTLY what the migration implies.
     #
+    # Compared as whole (child, parent, track) EDGES, not bare child ids. A child
+    # reparented to a different non-milestone parent on a different track still
+    # reports the same child id, so an id-only comparison would pass while the
+    # reviewed edge silently changed.
+    #
     # `work lint` keys these on "child", not "id" (report.py _track_mismatches).
     # The wrong key was invisible for as long as the list was empty: nothing is
-    # labelled before the migration, so the loop body never ran. It only raises
-    # once the migration materializes the mismatches — i.e. exactly when this
+    # labelled before the migration, so the loop body never ran. It only raised
+    # once the migration materialized the mismatches — i.e. exactly when this
     # criterion is supposed to do its job.
     #
     # Checked both ways. A one-sided `actual - expected` passes when an expected
     # edge DISAPPEARS, which would mean the graph changed under us unnoticed.
-    actual_mismatch = {m["child"] for m in lint["track_mismatches"]}
-    expected_final = expected_mismatch | DELIBERATE_MISMATCH_ADDITIONS
-    unexpected = actual_mismatch - expected_final
-    missing = expected_final - actual_mismatch
+    def edge(m: dict) -> tuple:
+        return (m["child"], m["child_track"], m["parent"], m["parent_track"])
+
+    actual_edges = {edge(m) for m in lint["track_mismatches"]}
+    expected_edges = {edge(m) for m in expected_mismatch}
+    unexpected = actual_edges - expected_edges
+    missing = expected_edges - actual_edges
     if unexpected:
         failures.append(
-            f"C5 unexpected cross-track parents: {sorted(unexpected)[:5]} "
-            f"({len(unexpected)} beyond the expected {len(expected_final)})"
+            f"C5 unexpected cross-track edges: {sorted(unexpected)[:3]} "
+            f"({len(unexpected)} beyond the expected {len(expected_edges)})"
         )
     if missing:
         failures.append(
-            f"C5 expected cross-track parents absent: {sorted(missing)[:5]} "
+            f"C5 expected cross-track edges absent: {sorted(missing)[:3]} "
             f"({len(missing)} missing) — the graph changed unexpectedly"
         )
-    print(f"track_mismatches: {len(actual_mismatch)} (expected {len(expected_final)})")
+    print(f"track_mismatches: {len(actual_edges)} edges (expected {len(expected_edges)})")
 
     # C6 — groom-state bead exists, tracked ops-meta, exempt.
     if not groom_bead:
         failures.append("C6 groom-state-bead empty")
     else:
-        got = work("show", groom_bead, require_ok=False)
+        got = work(root, "show", groom_bead, require_ok=False)
         if not got.get("ok"):
             failures.append(f"C6 groom-state-bead {groom_bead} does not exist")
         else:

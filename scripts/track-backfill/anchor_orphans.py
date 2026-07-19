@@ -19,9 +19,9 @@ rather than forcing the edge.
 from __future__ import annotations
 
 import argparse
-import json
-import subprocess
 import sys
+
+from context import HERE, data, resolve_root
 
 # child -> intended parent. Each item's own description names this milestone.
 ANCHORS = {
@@ -43,23 +43,9 @@ EXEMPT = [
 LABEL = "lint-exempt:no-milestone"
 
 
-def work(*argv: str) -> dict:
-    proc = subprocess.run(["work", *argv], capture_output=True, text=True)
-    try:
-        payload = json.loads(proc.stdout)
-    except ValueError:
-        raise SystemExit(
-            f"`work {' '.join(argv)}` returned non-JSON (exit {proc.returncode}): "
-            f"{proc.stdout[:200]!r} {proc.stderr[:200]!r}"
-        )
-    if not payload.get("ok"):
-        raise SystemExit(f"`work {' '.join(argv)}` failed: {payload.get('error')}")
-    return payload["data"]
-
-
-def anchor(apply: bool) -> None:
+def anchor(root, apply: bool) -> None:
     for child, parent in ANCHORS.items():
-        item = work("show", child)
+        item = data(root, "show", child)
         if item["status"] == "closed":
             raise SystemExit(
                 f"ABORT {child}: closed since the artifact was generated — "
@@ -76,13 +62,13 @@ def anchor(apply: bool) -> None:
         if not apply:
             print(f"  WOULD ANCHOR {child} -> {parent}")
             continue
-        work("dep", "add", child, parent, "--type", "parent-child")
+        data(root, "dep", "add", child, parent, "--type", "parent-child")
         print(f"  ANCHORED {child} -> {parent}")
 
 
-def exempt(apply: bool) -> None:
+def exempt(root, apply: bool) -> None:
     for item_id in EXEMPT:
-        item = work("show", item_id)
+        item = data(root, "show", item_id)
         if item["status"] == "closed":
             print(f"  SKIP {item_id}: closed since generation, no exemption needed")
             continue
@@ -92,19 +78,19 @@ def exempt(apply: bool) -> None:
         if not apply:
             print(f"  WOULD EXEMPT {item_id}")
             continue
-        work("label", "add", item_id, LABEL)
+        data(root, "label", "add", item_id, LABEL)
         print(f"  EXEMPTED {item_id}")
 
 
-def verify() -> None:
+def verify(root) -> None:
     """Assert the exact intended mapping — printing parents is not verifying."""
     failures: list[str] = []
     for child, parent in ANCHORS.items():
-        got = work("show", child)["parent"]
+        got = data(root, "show", child)["parent"]
         if got != parent:
             failures.append(f"{child} parent is {got}, expected {parent}")
     for item_id in EXEMPT:
-        item = work("show", item_id)
+        item = data(root, "show", item_id)
         if item["status"] != "closed" and LABEL not in item["labels"]:
             failures.append(f"{item_id} is live but not exempt")
     if failures:
@@ -121,10 +107,14 @@ def main() -> int:
     mode.add_argument("--apply", action="store_true", help="write the edges and labels")
     args = parser.parse_args()
 
-    anchor(args.apply)
-    exempt(args.apply)
+    # Same binding as apply.py: these are graph and label WRITES, so they must
+    # land in the script's own checkout, never whatever repo the caller happens
+    # to be sitting in.
+    root = resolve_root(require_artifact=HERE / "assignment.json")
+    anchor(root, args.apply)
+    exempt(root, args.apply)
     if args.apply:
-        verify()
+        verify(root)
     return 0
 
 

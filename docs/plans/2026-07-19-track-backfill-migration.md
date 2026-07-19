@@ -29,7 +29,7 @@ Task 5 gates on the merge having happened. Do not start it otherwise.
 
 ## Execution constraints
 
-1. **Run Phase 2 from the main checkout**, never a worktree. `apply.py` detects this by comparing `--absolute-git-dir` against `--git-common-dir`, which catches every linked-worktree layout rather than only the `.claude/worktrees/` naming convention, and separately requires the caller's repo to be the script's own repo.
+1. **Run Phase 2 from the main checkout**, never a worktree. **All three scripts** enforce this through the shared `context.resolve_root()`: it compares `--absolute-git-dir` against `--git-common-dir` (catching every linked-worktree layout, not just the `.claude/worktrees/` naming convention), requires the caller's repo to be the script's own repo, and runs every `work` subprocess with that root as its CWD. Otherwise a script invoked by absolute path from another clone would read the artifact from beside itself and write to a different tracker.
 2. **The vocabulary must be live before applying.** `work track set` calls `require_known_track` first; applying against the old vocabulary fails **147** writes (`pipeline-discipline` 92 + `review-and-merge` 47 + `grind-runtime` 8). `apply.py` pre-flights this.
 3. **The migration needs a quiescent window.** `work track set` has no status guard and the tracker offers no compare-and-set, so a concurrent agent's track write would be silently overwritten. `apply.py` refuses to run while any covered item is leased. Do not dispatch agents during the run — the applicator closes the wide window, operational discipline closes the last seconds of it.
 4. **Snapshot before mutating.** `bd backup sync` is the recovery point; the `bd export` dump is a forensic record beside it, **not** a second restore path. `bd dolt` has no `reset` and no `log` subcommand, and `bd import` upserts rather than replaces — so re-importing the export would not remove labels this migration added. Rollback is `bd backup restore`, full stop.
@@ -43,7 +43,8 @@ Task 5 gates on the merge having happened. Do not start it otherwise.
 |---|---|
 | `project-config.toml` (modify) | Track vocabulary; `[operating-model].groom-state-bead` |
 | `scripts/track-backfill/assignment.json` (exists) | The decided assignment. Input only. |
-| `scripts/track-backfill/expected_mismatches.json` (exists) | The 54 cross-track parent edges the assignment implies. Baseline for criterion 5. |
+| `scripts/track-backfill/expected_mismatches.json` (exists) | The 55 whole `(child, parent, track)` cross-track edges expected after the migration. Baseline for criterion 5. |
+| `scripts/track-backfill/context.py` | Shared root binding + `work` invocation. One copy of the safety check. |
 | `scripts/track-backfill/reconcile.py` | Pure reconciliation against the live item set. No I/O. |
 | `scripts/track-backfill/test_reconcile.py` | Tests for the above. |
 | `scripts/track-backfill/test_payload_keys.py` | Pins the `work lint` payload keys, with non-empty fixtures. |
@@ -122,12 +123,13 @@ below is exercised by a test or a demonstrated run.
 
 | Module | Responsibility | Key guarantee |
 |---|---|---|
+| `context.py` | Root binding and `work` invocation, shared by all three executables. | One copy of the main-checkout guard. Three copies would be three chances to fix two of them. |
 | `reconcile.py` | Pure partition of the artifact against the live backlog. No I/O. | Liveness comes from the live item set, never from lint. An item carrying a *wrong* track is corrected, not silently skipped. |
 | `test_reconcile.py` | Tests for the above. | Covers wrong-track correction, already-correct no-op, partial-run resume, and residue. |
 | `test_payload_keys.py` | Pins the `work lint` payload keys the scripts read. | Fixtures are non-empty on purpose — an empty list cannot distinguish a right key from a wrong one. |
 | `apply.py` | Pre-flight guards, dry-run, apply, run log. | Refuses a linked worktree (by git-dir, not path naming), a caller repo that is not the script's repo, a vocabulary that misses the artifact's tracks, an artifact failing its own integrity metadata, and any lease on a covered item. |
 | `anchor_orphans.py` | The three anchors and six exemptions. | Every write is guarded on current state and followed by an assertion of the exact intended mapping. |
-| `verify.py` | Acceptance criteria C1-C6. | Enumerates closed items too, counts raw `track:*` labels rather than the derived track, and checks the cross-track parent set in both directions. |
+| `verify.py` | Acceptance criteria C1-C6. | Enumerates closed items and counts raw `track:*` labels (not the derived track), compares whole cross-track edges in both directions, and compares target tracks for **live** items only — an artifact item that closed before apply is correctly skipped by `reconcile()`, so comparing it would fail the documented drift case after an entirely correct run. |
 
 Criterion 7 (idempotency) is deliberately **not** in `verify.py` — it is a
 sequenced check, run in Task 9. `verify.py` says so in its own pass message
@@ -293,25 +295,27 @@ Expected: `milestone_orphans: 0` and `INVARIANT_2_OK`
 ```bash
 python3 -c "
 import json, subprocess, pathlib
-base = set(json.loads(pathlib.Path('scripts/track-backfill/expected_mismatches.json').read_text()))
-expected = base | {'agents-config-9v0y'}   # the deliberate Step 1 reparent
+base = json.loads(pathlib.Path('scripts/track-backfill/expected_mismatches.json').read_text())['edges']
+key = lambda m: (m['child'], m['child_track'], m['parent'], m['parent_track'])
+expected = {key(m) for m in base}
 d = json.loads(subprocess.run(['work','lint'],capture_output=True,text=True).stdout)
 assert d['ok'], f\"work lint failed: {d.get('error')}\"
-actual = {m['child'] for m in d['data']['track_mismatches']}   # keyed on 'child', NOT 'id'
-print(f'track_mismatches: {len(actual)}  expected: {len(expected)}')
-print('beyond expected:', sorted(actual - expected))
-print('expected but missing:', sorted(expected - actual))
-assert actual == expected, 'the cross-track parent set is not what the migration implies'
+actual = {key(m) for m in d['data']['track_mismatches']}   # keyed on 'child', NOT 'id'
+print(f'track_mismatches: {len(actual)} edges  expected: {len(expected)}')
+print('beyond expected:', sorted(actual - expected)[:3])
+print('expected but missing:', sorted(expected - actual)[:3])
+assert actual == expected, 'the cross-track edge set is not what the migration implies'
 print('MISMATCH_SET_OK')
 "
 ```
-Expected: `track_mismatches: 55  expected: 55`, both difference lists empty, `MISMATCH_SET_OK`.
+Expected: `track_mismatches: 55 edges  expected: 55`, both difference lists empty, `MISMATCH_SET_OK`.
 
-Three things this step gets right that the obvious version does not:
+Four things this step gets right that the obvious version does not:
 
 1. **The key is `child`, not `id`** (`report.py` `_track_mismatches`). The wrong key raises `KeyError` — but only once the list is non-empty, which is to say only after the migration, which is exactly when this check matters.
-2. **The count is 55, not 1.** `track_mismatches` reads 0 before the migration solely because nothing is labelled; labelling materializes every pre-existing cross-track parent edge at once.
+2. **The count is 55, not 1.** `track_mismatches` reads 0 before the migration solely because nothing is labelled; labelling materializes every pre-existing cross-track parent edge at once. The 55th is the deliberate `9v0y` reparent, already baked into the baseline.
 3. **The comparison is two-sided.** Checking only `actual - expected` passes when an expected edge *disappears*, which would mean the graph moved under the migration unnoticed.
+4. **Whole edges, not bare child ids.** A child reparented to a *different* non-milestone parent on a different track reports the same child id, so an id-only comparison would pass while the reviewed edge silently changed.
 
 ---
 

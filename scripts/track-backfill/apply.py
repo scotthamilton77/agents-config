@@ -24,57 +24,14 @@ import subprocess
 import sys
 import tomllib
 
+from context import HERE, data, resolve_root, work
 from reconcile import reconcile
 
-HERE = pathlib.Path(__file__).resolve().parent
 ARTIFACT = HERE / "assignment.json"
 RUNLOG = HERE / "applied.log"
 
 EXPECTED_SCHEMA = "track-backfill-assignment-v1"
 
-
-def _git(root: pathlib.Path | None, *argv: str) -> str:
-    proc = subprocess.run(
-        ["git", *argv],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=str(root) if root else None,
-    )
-    return proc.stdout.strip()
-
-
-def resolve_root() -> pathlib.Path:
-    """The repo this script lives in — and it must not be a linked worktree.
-
-    Binding to the script's own location rather than the caller's cwd closes the
-    case where apply.py is invoked by absolute path from a different clone: the
-    artifact would come from here while every `work` subprocess resolved config
-    and database from there.
-    """
-    if not ARTIFACT.exists():
-        raise SystemExit(f"artifact missing: {ARTIFACT} — run from the merged main checkout")
-
-    root = pathlib.Path(_git(HERE, "rev-parse", "--show-toplevel")).resolve()
-
-    # A linked worktree has .git as a file and a git-dir under the primary
-    # repo's worktrees/ directory. This catches every worktree layout, not just
-    # the `.claude/worktrees/` naming convention.
-    git_dir = pathlib.Path(_git(HERE, "rev-parse", "--absolute-git-dir")).resolve()
-    common_dir = pathlib.Path(_git(HERE, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
-    if git_dir != common_dir:
-        raise SystemExit(
-            f"refusing to run from a linked worktree ({root}); "
-            "the bd database lives in the main checkout"
-        )
-
-    caller_root = pathlib.Path(_git(None, "rev-parse", "--show-toplevel")).resolve()
-    if caller_root != root:
-        raise SystemExit(
-            f"script repo ({root}) is not the caller's repo ({caller_root}); "
-            "cd into the target checkout before running"
-        )
-    return root
 
 
 def load_assignment(root: pathlib.Path) -> dict[str, str]:
@@ -110,25 +67,6 @@ def load_assignment(root: pathlib.Path) -> dict[str, str]:
     return assignment
 
 
-def work(root: pathlib.Path, *argv: str) -> dict:
-    """Run a `work` verb in the target repo and return its envelope."""
-    proc = subprocess.run(
-        ["work", *argv], capture_output=True, text=True, cwd=str(root)
-    )
-    try:
-        payload = json.loads(proc.stdout)
-    except ValueError:
-        raise SystemExit(
-            f"`work {' '.join(argv)}` returned non-JSON (exit {proc.returncode}): "
-            f"{proc.stdout[:200]!r} {proc.stderr[:200]!r}"
-        )
-    return payload
-
-
-def require_ok(payload: dict, what: str) -> dict:
-    if not payload.get("ok"):
-        raise SystemExit(f"{what} failed: {payload.get('error')}")
-    return payload["data"]
 
 
 def require_quiescent(root: pathlib.Path, lint: dict, assignment: dict[str, str]) -> None:
@@ -167,14 +105,14 @@ def main() -> int:
     mode.add_argument("--apply", action="store_true", help="write the labels")
     args = parser.parse_args()
 
-    root = resolve_root()
+    root = resolve_root(require_artifact=ARTIFACT)
     assignment = load_assignment(root)
 
-    lint = require_ok(work(root, "lint"), "work lint")
+    lint = data(root, "lint")
     require_quiescent(root, lint, assignment)
     violations = {v["id"] for v in lint["track_violations"]}
 
-    items = require_ok(work(root, "list", "--limit", "0"), "work list")["items"]
+    items = data(root, "list", "--limit", "0")["items"]
     live_tracks = {item["id"]: item["track"] for item in items}
 
     plan = reconcile(assignment, live_tracks, violations)
@@ -192,6 +130,7 @@ def main() -> int:
         return 0
 
     applied = 0
+    vanished: list[str] = []
     with RUNLOG.open("a") as log:
         for n, (i, t) in enumerate(sorted(plan.to_apply.items()), 1):
             ok, code = set_track(root, i, t)
@@ -200,15 +139,29 @@ def main() -> int:
                 log.flush()
                 applied += 1
                 continue
-            # Fail loud and stop. Every remaining failure mode — contention,
-            # a vanished item, an unknown track — means the world no longer
-            # matches the plan we computed, and continuing to write into that
-            # is worse than stopping. Re-running is safe (design doc §5.5).
+            if code == "E_NOT_FOUND":
+                # The item is genuinely gone from the tracker between the sweep
+                # and this write. That is the expected-drift case the design is
+                # built to tolerate (§5.1), so record and continue.
+                #
+                # Note this is NOT the mid-run *closure* case: `work track set`
+                # has no status guard, so a closed-but-present item is labelled
+                # successfully and never reaches this branch.
+                print(f"  VANISHED {i} (no longer in the tracker)")
+                vanished.append(i)
+                continue
+            # Anything else — contention, an unknown track, a backend fault —
+            # means the world no longer matches the plan we computed, and
+            # continuing to write into that is worse than stopping. Re-running
+            # is safe (design doc §5.5).
             print(f"  ABORT at {n}/{len(plan.to_apply)}: {i} -> {code}", file=sys.stderr)
             print(f"FAILED after {applied} writes; see {RUNLOG}. Fix the cause and re-run.")
             return 1
 
-    print(f"OK — {applied} applied, {len(plan.residue)} residue, log at {RUNLOG}")
+    print(
+        f"OK — {applied} applied, {len(vanished)} vanished, "
+        f"{len(plan.residue)} residue, log at {RUNLOG}"
+    )
     return 0
 
 

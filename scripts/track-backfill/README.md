@@ -6,9 +6,17 @@ Design: `docs/specs/2026-07-19-track-backfill-migration-design.md`.
 ## Constraints
 
 1. Run from the **main checkout**, never a worktree — the bd/Dolt DB lives there.
-   `apply.py` refuses otherwise, detecting a linked worktree by comparing
-   `--absolute-git-dir` against `--git-common-dir` rather than by path naming,
-   and separately requiring the caller's repo to be the script's own repo.
+   **All three scripts** (`apply.py`, `anchor_orphans.py`, `verify.py`) enforce
+   this via the shared `context.resolve_root()`: it detects a linked worktree by
+   comparing `--absolute-git-dir` against `--git-common-dir` rather than by path
+   naming, and separately requires the caller's repo to be the script's own repo.
+   Every `work` subprocess then runs with that root as its CWD.
+
+   The check lives in one module on purpose. Each script reads an artifact that
+   sits *beside the script* but talks to a tracker resolved from the *working
+   directory*; when those differ, the script operates on a split brain — the
+   decided assignment from one checkout, the database from another. Three copies
+   of that guard would be three chances to fix two of them.
 2. The track vocabulary in `project-config.toml` must be live before applying, or
    147 writes fail `E_UNKNOWN_TRACK`. `apply.py` pre-flights this.
 3. **The migration needs a quiescent window.** `work track set` has no status
@@ -78,15 +86,22 @@ guessing. Residue converges to zero only once `[tracks].enforcement` flips to
 
 ## expected_mismatches.json
 
-The 54 cross-track parent edges the assignment implies. `track_mismatches` reads
-0 today only because nothing is labelled; labelling materializes every
-pre-existing cross-track parent at once. The expected post-migration set is those
-54 plus `agents-config-9v0y`, which the Task 7 reparent deliberately adds — 55 in
-total. Criterion 5 checks that set in **both** directions: an id beyond it means
-an unintended cross-track parenting, an id missing from it means the graph moved
-under the migration unnoticed.
+The **55 whole edges** — `(child, child_track, parent, parent_track)` — expected
+after the migration: the 54 the assignment implies, plus the one the Task 7
+`9v0y` reparent deliberately adds.
 
-Note the entries are keyed on `child`, not `id`.
+`track_mismatches` reads 0 today only because nothing is labelled; labelling
+materializes every pre-existing cross-track parent at once. Reading that 0 as a
+stable baseline is the mistake this file exists to prevent.
+
+Criterion 5 compares whole edges in **both** directions. Bare child ids are not
+enough: a child reparented to a *different* non-milestone parent on a different
+track still reports the same child id, so an id-only check would pass while the
+reviewed edge silently changed. An edge beyond the set means an unintended
+cross-track parenting; an edge missing from it means the graph moved under the
+migration unnoticed.
+
+Note `work lint` keys these entries on `child`, not `id`.
 
 ## Retirement
 
