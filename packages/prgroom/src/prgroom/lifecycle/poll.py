@@ -232,11 +232,11 @@ _NEW_ASK_RESTART_STATUSES: frozenset[ReviewerStatus] = frozenset(
 
 def _ingest_items(
     gh: GhClient, ref: PRRef, state: PRGroomingState, *, now: datetime
-) -> tuple[list[ReviewItem], dict[str, datetime], list[Any]]:
+) -> tuple[list[ReviewItem], dict[str, tuple[datetime, int | None]], list[Any]]:
     """Fetch the three item sources; return new items, terminal verdicts, raw reviews.
 
-    The second element maps a reviewer login to the timestamp of its latest
-    APPROVED/CHANGES_REQUESTED review (§4.1) so ``_observe_engagement`` can promote
+    The second element maps a reviewer login to the ``(timestamp, review id)`` of its
+    latest APPROVED/CHANGES_REQUESTED review (§4.1) so ``_observe_engagement`` can promote
     that reviewer to ``review_found``. Only items new to ``state`` (natural key
     ``(kind, gh_id)``) are returned; the terminal-verdict map is derived from the
     full reviews response (a verdict can repeat across polls without a new item).
@@ -324,14 +324,19 @@ def _requested_by_login(requested_reviewers: list[Any]) -> dict[str, Any]:
 
 def _review_activity_by_login(
     raw_reviews: Any, *, now: datetime
-) -> dict[str, tuple[datetime, Any]]:
-    """Map each reviewer login to its latest review time + gh user object (§2.1).
+) -> dict[str, tuple[datetime, Any, int | None]]:
+    """Map each reviewer login to its latest review time + gh user object + review id (§2.1).
 
     Unlike ``_terminal_review_verdicts`` this counts EVERY review state, ``COMMENTED``
     included: a login that responded at all is a login prgroom must know about, even
     though only an APPROVED/CHANGES_REQUESTED verdict is terminal.
+
+    The third tuple element is the review's own GitHub id (unique + monotonic per
+    submission); it lets the reactivation logic disambiguate a genuinely fresh review
+    from a re-observed historical one when they collide on GitHub's second-precision
+    timestamp.
     """
-    out: dict[str, tuple[datetime, Any]] = {}
+    out: dict[str, tuple[datetime, Any, int | None]] = {}
     for entry in raw_reviews:
         user = entry.get("user") or {}
         login = str(user.get("login", ""))
@@ -339,8 +344,31 @@ def _review_activity_by_login(
             continue
         submitted = _parse_ts(entry.get("submitted_at"), now=now)
         if login not in out or submitted > out[login][0]:
-            out[login] = (submitted, user)
+            out[login] = (submitted, user, _review_id(entry))
     return out
+
+
+def _review_id(entry: Any) -> int | None:
+    """The review's numeric GitHub id, or ``None`` when the payload omits/malforms it.
+
+    Review ids are unique and monotonically increasing per submission, so a larger id
+    at an equal timestamp marks a genuinely newer review. A missing/non-integer id
+    degrades to ``None`` — the freshness test then falls back to timestamp-only order.
+    """
+    raw = entry.get("id")
+    if isinstance(raw, int):
+        return raw
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _split_verdict(
+    verdict: tuple[datetime, int | None] | None,
+) -> tuple[datetime | None, int | None]:
+    """Split a ``(timestamp, review_id)`` verdict into its parts; ``(None, None)`` when absent."""
+    return verdict if verdict is not None else (None, None)
 
 
 def _seed_reviewer(
@@ -349,7 +377,9 @@ def _seed_reviewer(
     user: Any,
     required: bool,
     terminal_at: datetime | None,
+    terminal_id: int | None,
     reviewed_at: datetime | None,
+    reviewed_id: int | None,
     now: datetime,
 ) -> ReviewerState:
     """Build the entry for a login seen for the first time this poll (§2.1.1).
@@ -373,9 +403,9 @@ def _seed_reviewer(
     that comparison honest.
     """
     if not required and terminal_at is not None:
-        status, stamp = ReviewerStatus.REVIEW_FOUND, terminal_at
+        status, stamp, review_id = ReviewerStatus.REVIEW_FOUND, terminal_at, terminal_id
     elif not required and reviewed_at is not None:
-        status, stamp = ReviewerStatus.IN_PROGRESS, reviewed_at
+        status, stamp, review_id = ReviewerStatus.IN_PROGRESS, reviewed_at, reviewed_id
     else:
         # Requested this poll (a fresh request outranks any historical verdict — see the
         # docstring), or a bare request with no review yet: seed REQUESTED at ``now``.
@@ -393,6 +423,7 @@ def _seed_reviewer(
         required=required,
         last_request_at=stamp,
         last_review_at=stamp,
+        last_review_id=review_id,
     )
 
 
@@ -400,34 +431,64 @@ def _reactivation_engagement(
     existing: ReviewerState,
     *,
     terminal_at: datetime | None,
+    terminal_id: int | None,
     reviewed_at: datetime | None,
-) -> tuple[ReviewerStatus, datetime] | None:
+    reviewed_id: int | None,
+) -> tuple[ReviewerStatus, datetime, int | None] | None:
     """Fresh same-poll engagement for a settled reviewer being (re-)requested (§2.1).
 
     Shared by both re-request paths: a withdrawn-decline reactivation and the
     REVIEW_FOUND / NOT_REQUESTED window-restart in ``_reconcile_existing_request``. A
     reviewer (re-)requested this poll may have submitted a review in the window between
     the PR-resource GET and the later reviews GET. That review is genuine fresh engagement
-    iff its timestamp post-dates the reviewer's known history — the recorded withdrawal
+    iff it post-dates the reviewer's known history — the recorded withdrawal
     (``declined_at``, ``None`` on the non-declined restart path) or any prior
     ``last_review_at``, whichever is later. A review at or before that boundary is a
     historical verdict that must NOT satisfy the fresh request (mirrors ``_seed_reviewer``'s
     requested-wins rule for a first-seen re-request).
 
-    Returns the ``(status, stamp)`` to reactivate directly into — REVIEW_FOUND for a
-    fresh terminal verdict, IN_PROGRESS for fresh non-terminal engagement — with the
+    **Same-second disambiguation.** GitHub review timestamps have second precision, so a
+    genuinely fresh re-review submitted in the same wall-clock second as the prior verdict
+    lands with ``terminal_at == boundary`` — a strict ``>`` would misfile it as historical,
+    reset the reviewer to REQUESTED, and let the next poll read the normal post-review
+    absence as a withdrawal, excluding the reviewer from future refreshes. A blind ``>=``
+    is equally wrong: at steady state every poll re-observes the SAME verdict at the SAME
+    timestamp (``terminal_at == last_review_at``), so equality-as-fresh would re-promote a
+    stale verdict on every re-request (the bug commit bb92bde fixed). Review **identity**
+    is the only sound tiebreaker: ids are unique and monotonic per submission, so at an
+    equal timestamp a review whose id strictly exceeds the stored ``last_review_id`` is a
+    new submission (fresh), while an equal id is the same review re-observed (historical).
+    A collision with an unknown id on either side (legacy state, malformed payload) falls
+    back to the strict-``>`` verdict — historical — preserving the bb92bde invariant.
+
+    Returns the ``(status, stamp, review_id)`` to reactivate directly into — REVIEW_FOUND
+    for a fresh terminal verdict, IN_PROGRESS for fresh non-terminal engagement — with the
     stamp being the review's own timestamp so the caller can backdate
-    ``last_request_at`` / ``last_review_at`` and keep ``_observe_engagement``'s
-    strictly-after gate from re-rejecting the very review that reopened the reviewer.
-    Returns ``None`` when no fresh engagement arrived, so the caller reactivates to
-    REQUESTED at ``now`` as before.
+    ``last_request_at`` / ``last_review_at`` (and record ``last_review_id``) and keep
+    ``_observe_engagement``'s strictly-after gate from re-rejecting the very review that
+    reopened the reviewer. Returns ``None`` when no fresh engagement arrived, so the caller
+    reactivates to REQUESTED at ``now`` as before.
     """
     history = [t for t in (existing.declined_at, existing.last_review_at) if t is not None]
     boundary = max(history) if history else None
-    if terminal_at is not None and (boundary is None or terminal_at > boundary):
-        return ReviewerStatus.REVIEW_FOUND, terminal_at
-    if reviewed_at is not None and (boundary is None or reviewed_at > boundary):
-        return ReviewerStatus.IN_PROGRESS, reviewed_at
+
+    def _is_fresh(at: datetime, review_id: int | None) -> bool:
+        if boundary is None or at > boundary:
+            return True
+        # Equal-second collision: only a strictly-newer review id disambiguates a fresh
+        # submission from a re-observed historical verdict. A missing id on either side
+        # cannot disambiguate, so it stays historical (bb92bde invariant).
+        return (
+            at == boundary
+            and review_id is not None
+            and existing.last_review_id is not None
+            and review_id > existing.last_review_id
+        )
+
+    if terminal_at is not None and _is_fresh(terminal_at, terminal_id):
+        return ReviewerStatus.REVIEW_FOUND, terminal_at, terminal_id
+    if reviewed_at is not None and _is_fresh(reviewed_at, reviewed_id):
+        return ReviewerStatus.IN_PROGRESS, reviewed_at, reviewed_id
     return None
 
 
@@ -435,7 +496,9 @@ def _reconcile_existing_request(
     existing: ReviewerState,
     *,
     terminal_at: datetime | None,
+    terminal_id: int | None,
     reviewed_at: datetime | None,
+    reviewed_id: int | None,
     now: datetime,
 ) -> bool:
     """Reconcile a non-declined EXISTING reviewer that GitHub is requesting NOW (§2.1).
@@ -483,16 +546,22 @@ def _reconcile_existing_request(
         changed = True
     if existing.status in _NEW_ASK_RESTART_STATUSES:
         reactivation = _reactivation_engagement(
-            existing, terminal_at=terminal_at, reviewed_at=reviewed_at
+            existing,
+            terminal_at=terminal_at,
+            terminal_id=terminal_id,
+            reviewed_at=reviewed_at,
+            reviewed_id=reviewed_id,
         )
         if reactivation is not None:
-            existing.status, stamp = reactivation
+            existing.status, stamp, review_id = reactivation
             existing.last_request_at = stamp
             existing.last_review_at = stamp
+            existing.last_review_id = review_id
         else:
             existing.status = ReviewerStatus.REQUESTED
             existing.last_request_at = now
             existing.last_review_at = None
+            existing.last_review_id = None
         changed = True
     return changed
 
@@ -502,7 +571,7 @@ def _reconcile_reviewers(
     *,
     requested_reviewers: list[Any],
     raw_reviews: Any,
-    terminal_reviews: dict[str, datetime],
+    terminal_reviews: dict[str, tuple[datetime, int | None]],
     new_items: list[ReviewItem],
     now: datetime,
 ) -> bool:
@@ -523,6 +592,8 @@ def _reconcile_reviewers(
     reviewed = _review_activity_by_login(raw_reviews, now=now)
     changed = False
     for login in (*requested, *(ln for ln in reviewed if ln not in requested)):
+        terminal_at, terminal_id = _split_verdict(terminal_reviews.get(login))
+        reviewed_at, reviewed_user, reviewed_id = reviewed.get(login, (None, None, None))
         existing = state.reviewers.get(login)
         if existing is not None:
             # Reactivate ONLY a genuine withdrawal. Deliberately not "any
@@ -539,16 +610,19 @@ def _reconcile_reviewers(
             ):
                 reactivation = _reactivation_engagement(
                     existing,
-                    terminal_at=terminal_reviews.get(login),
-                    reviewed_at=reviewed.get(login, (None, None))[0],
+                    terminal_at=terminal_at,
+                    terminal_id=terminal_id,
+                    reviewed_at=reviewed_at,
+                    reviewed_id=reviewed_id,
                 )
                 if reactivation is not None:
                     # Fresh same-poll engagement arrived with the re-request: reactivate
                     # straight into its verdict-appropriate state, backdating both stamps
                     # to the review so _observe_engagement's strictly-after gate keeps it.
-                    existing.status, stamp = reactivation
+                    existing.status, stamp, review_id = reactivation
                     existing.last_request_at = stamp
                     existing.last_review_at = stamp
+                    existing.last_review_id = review_id
                 else:
                     existing.status = ReviewerStatus.REQUESTED
                     existing.last_request_at = now
@@ -556,9 +630,10 @@ def _reconcile_reviewers(
                     # last_review_at recorded while withdrawn. The review-start timeout
                     # only fires while last_review_at is None, so leaving a stale stamp
                     # here would wedge a re-requested reviewer at REQUESTED forever when
-                    # the wanted fresh review never lands. Clearing it keeps the
-                    # stuck-REQUESTED → timeout → decline recovery alive.
+                    # the wanted fresh review never lands. Clearing it (and its review id)
+                    # keeps the stuck-REQUESTED → timeout → decline recovery alive.
                     existing.last_review_at = None
+                    existing.last_review_id = None
                 existing.declined_at = None
                 existing.declined_reason = None
                 changed = True
@@ -570,21 +645,24 @@ def _reconcile_reviewers(
                 # bare presence must never restart the window.
                 if _reconcile_existing_request(
                     existing,
-                    terminal_at=terminal_reviews.get(login),
-                    reviewed_at=reviewed.get(login, (None, None))[0],
+                    terminal_at=terminal_at,
+                    terminal_id=terminal_id,
+                    reviewed_at=reviewed_at,
+                    reviewed_id=reviewed_id,
                     now=now,
                 ):
                     changed = True
             continue
-        reviewed_at, reviewed_user = reviewed.get(login, (None, None))
         state.reviewers[login] = _seed_reviewer(
             login,
             user=requested.get(login) or reviewed_user,
             # `required` tracks GitHub actually asking — a drive-by reviewer who was
             # never requested must not gain the power to block quiescence (§3).
             required=login in requested,
-            terminal_at=terminal_reviews.get(login),
+            terminal_at=terminal_at,
+            terminal_id=terminal_id,
             reviewed_at=reviewed_at,
+            reviewed_id=reviewed_id,
             now=now,
         )
         changed = True
@@ -654,9 +732,16 @@ def _timeout_decline_now_withdrawn(reviewer: ReviewerState) -> bool:
     )
 
 
-def _terminal_review_verdicts(raw_reviews: Any, *, now: datetime) -> dict[str, datetime]:
-    """Map each reviewer login to its latest APPROVED/CHANGES_REQUESTED time (§4.1)."""
-    verdicts: dict[str, datetime] = {}
+def _terminal_review_verdicts(
+    raw_reviews: Any, *, now: datetime
+) -> dict[str, tuple[datetime, int | None]]:
+    """Map each login to its latest APPROVED/CHANGES_REQUESTED time + review id (§4.1).
+
+    The review id rides alongside the timestamp so the reactivation freshness test can
+    tell a genuinely fresh verdict from a re-observed historical one that shares the
+    same second-precision GitHub timestamp.
+    """
+    verdicts: dict[str, tuple[datetime, int | None]] = {}
     for entry in raw_reviews:
         if str(entry.get("state", "")) not in _TERMINAL_REVIEW_STATES:
             continue
@@ -664,8 +749,8 @@ def _terminal_review_verdicts(raw_reviews: Any, *, now: datetime) -> dict[str, d
         if not login:
             continue
         submitted = _parse_ts(entry.get("submitted_at"), now=now)
-        if login not in verdicts or submitted > verdicts[login]:
-            verdicts[login] = submitted
+        if login not in verdicts or submitted > verdicts[login][0]:
+            verdicts[login] = (submitted, _review_id(entry))
     return verdicts
 
 
@@ -723,7 +808,7 @@ def _parse_ts(raw: object, *, now: datetime) -> datetime:
 def _observe_engagement(
     state: PRGroomingState,
     new_items: list[ReviewItem],
-    terminal_reviews: dict[str, datetime],
+    terminal_reviews: dict[str, tuple[datetime, int | None]],
 ) -> bool:
     """Update reviewer engagement + terminal verdict from this poll's activity (§4.1).
 
@@ -764,7 +849,7 @@ def _observe_engagement(
             for item in new_items
             if item.author == reviewer.identity and item.seen_at > reviewer.last_request_at
         ]
-        verdict_at = terminal_reviews.get(reviewer.identity)
+        verdict_at, verdict_id = _split_verdict(terminal_reviews.get(reviewer.identity))
         withdrawn = (
             reviewer.status is ReviewerStatus.DECLINED
             and reviewer.declined_reason == WITHDRAWN_REASON
@@ -795,6 +880,13 @@ def _observe_engagement(
         advanced = reviewer.last_review_at is None or candidate > reviewer.last_review_at
         if advanced:
             reviewer.last_review_at = candidate
+            # Record the review id only when the advancing activity is the terminal
+            # verdict itself — a plain comment carries no review id and must not stamp
+            # one. This keeps last_review_id == "the id of the latest observed review"
+            # so the reactivation freshness test can disambiguate an equal-second
+            # re-review from a re-observed historical verdict.
+            if verdict_id is not None and candidate == verdict_at:
+                reviewer.last_review_id = verdict_id
         if target_status is not None and reviewer.status is not target_status:
             reviewer.status = target_status
             changed = True

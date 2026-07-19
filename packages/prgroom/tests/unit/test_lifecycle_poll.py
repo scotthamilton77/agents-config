@@ -1883,6 +1883,86 @@ def test_review_found_reviewer_rewindow_rejects_a_historical_verdict() -> None:
     assert reviewers_gate_satisfied(state) is False
 
 
+def test_review_found_reviewer_rewindow_keeps_a_same_second_fresh_verdict_by_review_id() -> None:
+    # Same-second collision: a genuinely fresh re-review submitted in the SAME GitHub
+    # timestamp second as the prior verdict lands with `terminal_at == boundary`, so a
+    # strict `>` would misfile it as historical, reset to REQUESTED, and let the next poll
+    # read the post-review absence as a withdrawal — excluding the reviewer. Review id is
+    # the tiebreaker: the fresh review's id (41) strictly exceeds the stored last_review_id
+    # (40), so it is accepted as fresh → REVIEW_FOUND, gate satisfied.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=_T0,  # same second as the fresh verdict below
+            last_review_id=40,
+        )
+    }
+    fresh_verdict = {
+        "id": 41,  # monotonic: a NEW submission, strictly greater than the stored 40
+        "user": {"login": "copilot"},
+        "state": "CHANGES_REQUESTED",
+        "body": "needs work",
+        "submitted_at": "2026-06-09T12:00:00Z",  # == prior last_review_at, distinct id
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[fresh_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REVIEW_FOUND
+    assert rv.last_review_at == _T0
+    assert rv.last_request_at == _T0
+    assert rv.last_review_id == 41
+    assert reviewers_gate_satisfied(state) is True
+
+
+def test_review_found_reviewer_rewindow_rejects_same_second_reobserved_verdict_by_id() -> None:
+    # The bb92bde regression guard under second-precision: the SAME review (id 42)
+    # re-observed at the SAME timestamp as the prior last_review_at is steady-state
+    # noise, not a fresh re-review. Its id equals the stored last_review_id, so it does
+    # NOT exceed the boundary → historical → reset to REQUESTED, gate unsatisfied.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=_T0,
+            last_review_id=42,
+        )
+    }
+    reobserved_verdict = {
+        "id": 42,  # identical id — the same review seen again this poll
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T12:00:00Z",  # == prior last_review_at, same id
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[reobserved_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.last_request_at == _T0
+    assert rv.last_review_at is None
+    assert rv.last_review_id is None
+    assert reviewers_gate_satisfied(state) is False
+
+
 def test_not_requested_reviewer_rewindow_keeps_a_same_poll_fresh_verdict() -> None:
     # The NOT_REQUESTED post-push-flip flavor carries the same race. A reviewer flipped to
     # NOT_REQUESTED (last_review_at retained from the invalidated verdict) that GitHub

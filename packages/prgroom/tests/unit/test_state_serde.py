@@ -143,8 +143,8 @@ def test_fixed_disposition_omits_empty_rationale_from_json() -> None:
 
 
 def test_reviewer_before_first_engagement_omits_review_and_decline_fields() -> None:
-    # §2: last_review_at / declined_* are omitted until set. A freshly-requested
-    # reviewer has none of them.
+    # §2: last_review_at / last_review_id / declined_* are omitted until set. A freshly-
+    # requested reviewer has none of them.
     d = ReviewerState(
         identity="copilot",
         kind=ReviewerKind.BOT,
@@ -152,8 +152,25 @@ def test_reviewer_before_first_engagement_omits_review_and_decline_fields() -> N
         required=True,
         last_request_at=_T,
     ).to_dict()
-    for omitted in ("last_review_at", "declined_at", "declined_reason"):
+    for omitted in ("last_review_at", "last_review_id", "declined_at", "declined_reason"):
         assert omitted not in d
+
+
+def test_reviewer_from_legacy_state_without_review_id_loads_none() -> None:
+    # A state persisted before last_review_id existed omits the key entirely; from_dict
+    # must tolerate its absence and load None (the optional-with-default contract),
+    # mirroring how last_review_at / declined_* legacy-absent fields are handled.
+    legacy = {
+        "identity": "copilot",
+        "kind": ReviewerKind.BOT.value,
+        "status": ReviewerStatus.REVIEW_FOUND.value,
+        "required": True,
+        "last_request_at": _T.isoformat(),
+        "last_review_at": _T.isoformat(),
+    }
+    reviewer = ReviewerState.from_dict(legacy)
+    assert reviewer.last_review_id is None
+    assert reviewer.last_review_at == _T
 
 
 def test_item_without_disposition_omits_the_key() -> None:
@@ -203,6 +220,7 @@ def test_every_optional_field_round_trips_when_populated() -> None:
         required=True,
         last_request_at=_T,
         last_review_at=_T,
+        last_review_id=1234,
         declined_at=_T,
         declined_reason="timeout-stalled",
     )
