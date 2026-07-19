@@ -19,7 +19,14 @@ from grind.fold import fold
 from grind.model import AnomalyRecord, JsonValue, RawEvent, State
 from grind.payloads import validate_payload
 from grind.serialize import anomaly_json, full_state_json, summarize
-from grind.store import append_event, fold_dir, is_log_nonempty, load_events, write_state
+from grind.store import (
+    TornTailRepair,
+    append_event,
+    fold_dir,
+    is_log_nonempty,
+    load_events,
+    write_state,
+)
 
 Clock = Callable[[], datetime]
 
@@ -89,14 +96,35 @@ def _new_anomaly(before: State, after: State) -> AnomalyRecord | None:
     return new_anomalies[0] if new_anomalies else None
 
 
-def _append_and_persist(dir_: Path, event: RawEvent) -> State:
+def _torn_tail_json(repair: TornTailRepair | None) -> JsonValue:
+    """The write-path torn-tail repair (if any) as an emit-back field (spec
+    "Torn tail": "records a torn_tail anomaly in the command's envelope").
+    `None` when the log was intact. Deliberately distinct from the envelope's
+    `anomaly` field, which is the fold-derived event-level anomaly: a torn-tail
+    repair and an event anomaly can co-occur on one append, and neither may mask
+    the other."""
+    if repair is None:
+        return None
+    return {"quarantined": repair.quarantined, "reason": repair.reason}
+
+
+def _append_and_persist(dir_: Path, event: RawEvent) -> tuple[State, TornTailRepair | None]:
     """The one write-then-refold sequence every appending verb shares: append,
     refold from the persisted log (never from memory -- state.json must
-    reflect what disk actually holds), rewrite state.json."""
-    append_event(dir_, event)
+    reflect what disk actually holds), rewrite state.json.
+
+    `append_event` may repair a torn tail left by a crashed prior writer; once
+    repaired the tail is gone from disk, so the subsequent `fold_dir` cannot see
+    it and the returned `State.anomalies` never carries it. The repair is
+    returned separately for the verb to surface in its envelope -- the only place
+    a caller learns prior log data was quarantined or a newline restored. It is
+    deliberately NOT folded into `state.anomalies`: after repair a
+    delete-and-refold yields a clean log, so persisting a non-reproducible
+    anomaly would break the spec's byte-identical replay invariant."""
+    repair = append_event(dir_, event)
     state = fold_dir(dir_)
     write_state(dir_, full_state_json(state))
-    return state
+    return state, repair
 
 
 def cmd_create(dir_: Path, seed: RawEvent, *, now: Clock) -> dict[str, JsonValue]:
@@ -109,7 +137,9 @@ def cmd_create(dir_: Path, seed: RawEvent, *, now: Clock) -> dict[str, JsonValue
     _validate_or_raise("grind_created", seed)
 
     event: RawEvent = {"ts": _iso(now()), "type": "grind_created", **seed}
-    state = _append_and_persist(dir_, event)
+    # `create` refuses a non-empty log (above), so a torn tail is unreachable
+    # here -- the repair is always None; no `torn_tail` field to surface.
+    state, _ = _append_and_persist(dir_, event)
     return {"ok": True, "state_summary": summarize(state)}
 
 
@@ -131,13 +161,14 @@ def cmd_log(dir_: Path, event_type: str, payload: RawEvent, *, now: Clock) -> di
 
     before_state = fold(load_events(dir_))
     event: RawEvent = {"ts": _iso(now()), "type": event_type, **payload}
-    after_state = _append_and_persist(dir_, event)
+    after_state, repair = _append_and_persist(dir_, event)
 
     anomaly = _new_anomaly(before_state, after_state)
     return {
         "ok": True,
         "applied": anomaly is None,
         "anomaly": anomaly_json(anomaly),
+        "torn_tail": _torn_tail_json(repair),
         "delta": _entity_delta(before_state, after_state, event),
         # The conditions engine is a sibling bead (spec §"Emit-back"); this
         # verb never computes orchestration facts itself.
@@ -158,5 +189,5 @@ def cmd_finish(dir_: Path, summary: str, *, now: Clock) -> dict[str, JsonValue]:
     _validate_or_raise("grind_finished", {"summary": summary})
 
     event: RawEvent = {"ts": _iso(now()), "type": "grind_finished", "summary": summary}
-    state = _append_and_persist(dir_, event)
-    return {"ok": True, "state_summary": summarize(state)}
+    state, repair = _append_and_persist(dir_, event)
+    return {"ok": True, "state_summary": summarize(state), "torn_tail": _torn_tail_json(repair)}

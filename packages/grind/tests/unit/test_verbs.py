@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from grind.envelope import GrindError
-from grind.store import load_events
+from grind.store import events_path, load_events
 from grind.verbs import cmd_create, cmd_finish, cmd_log, cmd_status
 
 _NOW = lambda: datetime(2026, 7, 19, 12, 0, 0, tzinfo=UTC)  # noqa: E731
@@ -32,6 +32,19 @@ _SEED = {
 def _seeded(tmp_path: Path) -> Path:
     cmd_create(tmp_path, dict(_SEED), now=_NOW)
     return tmp_path
+
+
+def _strip_trailing_newline(dir_: Path) -> None:
+    """Simulate a crash mid-append: the durable final line lost its newline."""
+    path = events_path(dir_)
+    path.write_text(path.read_text(encoding="utf-8").rstrip("\n"), encoding="utf-8")
+
+
+def _append_unparsable_fragment(dir_: Path) -> None:
+    """Simulate a crash mid-append: a truncated final line that won't parse."""
+    path = events_path(dir_)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write('{"ts":"tX","type":"pr_ope')  # truncated mid-write, no newline
 
 
 # -- create -------------------------------------------------------------------
@@ -97,6 +110,46 @@ def test_log_appends_folds_and_returns_emit_back_envelope(tmp_path: Path):
     assert delta["old_status"] == "queued"
     assert delta["new_status"] == "in-progress"
     assert len(load_events(tmp_path)) == 2
+    assert result["torn_tail"] is None  # intact log -> no repair to surface
+
+
+def test_log_surfaces_torn_tail_repair_when_first_writer_after_crash(tmp_path: Path):
+    # A crash left the seed line without its trailing newline; `log` is the
+    # first writer after the crash. append_event repairs the tail, then folds
+    # a clean log -- so state.anomalies can't carry the torn_tail. The repair
+    # rides the envelope's dedicated `torn_tail` field instead (spec "Torn
+    # tail": "records a torn_tail anomaly in the command's envelope").
+    _seeded(tmp_path)
+    _strip_trailing_newline(tmp_path)
+
+    result = cmd_log(tmp_path, "item_started", {"item": "wgclw.1"}, now=_NOW)
+
+    torn = result["torn_tail"]
+    assert isinstance(torn, dict)
+    assert torn["quarantined"] is False  # complete line, only the newline was lost
+    assert "torn_tail" in torn["reason"]
+    # The new event still applied normally alongside the repair.
+    assert result["applied"] is True
+    assert result["anomaly"] is None
+    assert len(load_events(tmp_path)) == 2
+
+
+def test_log_torn_tail_and_event_anomaly_do_not_mask_each_other(tmp_path: Path):
+    # Co-occurrence: a quarantined torn-tail fragment AND a well-formed but
+    # illegal new event. The event-level anomaly rides `anomaly`; the repair
+    # rides `torn_tail`. Neither field masks the other.
+    _seeded(tmp_path)
+    _append_unparsable_fragment(tmp_path)
+
+    result = cmd_log(tmp_path, "item_merged", {"item": "wgclw.1", "pr": 1, "sha": "abc"}, now=_NOW)
+
+    anomaly = result["anomaly"]
+    assert isinstance(anomaly, dict)
+    assert anomaly["type"] == "item_merged"  # illegal from queued
+    torn = result["torn_tail"]
+    assert isinstance(torn, dict)
+    assert torn["quarantined"] is True  # the fragment didn't parse
+    assert "torn_tail" in torn["reason"]
 
 
 def test_log_rejects_a_malformed_payload_and_appends_nothing(tmp_path: Path):
@@ -222,6 +275,21 @@ def test_finish_appends_grind_finished_and_returns_summary(tmp_path: Path):
     summary = result["state_summary"]
     assert isinstance(summary, dict)
     assert summary["finished"] is True
+    assert result["torn_tail"] is None  # intact log -> no repair to surface
+
+
+def test_finish_surfaces_torn_tail_repair_when_first_writer_after_crash(tmp_path: Path):
+    # `finish` is the first writer after a crash: it must surface the repair
+    # too, not just `log` (spec "Torn tail" applies to the write path uniformly).
+    _seeded(tmp_path)
+    _strip_trailing_newline(tmp_path)
+
+    result = cmd_finish(tmp_path, "shipped it", now=_NOW)
+
+    torn = result["torn_tail"]
+    assert isinstance(torn, dict)
+    assert torn["quarantined"] is False
+    assert "torn_tail" in torn["reason"]
 
 
 def test_finish_rejects_missing_summary(tmp_path: Path):
