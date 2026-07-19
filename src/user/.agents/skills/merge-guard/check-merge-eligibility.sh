@@ -144,8 +144,12 @@ set_fact pending_reviewers "$(jq '[(.users[].login), (.teams[].slug)]' <<<"$pend
 
 # ── Gates (appended by later tasks) ──────────────────────────────────────────
 # ── Fact: trusted-bot clean review at current head (bot-quiescence input) ────
-# Exact-identity allowlist — never substring. Missing commit_id fails closed.
-bot_fact=$(jq --argjson trusted "$BOT_REVIEWERS" --arg head "$HEAD_OID" '
+# Disjunction — see docs/specs/2026-07-18-codex-rereview-path-design.md,
+# Component 2: (a) the review path (exact-identity allowlist, never substring;
+# missing commit_id fails closed) OR (b) the reaction path, which is the only
+# artifact Codex leaves on an auto/push-triggered clean pass (no review object
+# is ever submitted for a clean result on those triggers).
+review_fact=$(jq --argjson trusted "$BOT_REVIEWERS" --arg head "$HEAD_OID" '
     [ .[]
       | select(.user.login as $l | ($trusted | index($l)) != null)
       | select(.state != "DISMISSED")
@@ -155,8 +159,81 @@ bot_fact=$(jq --argjson trusted "$BOT_REVIEWERS" --arg head "$HEAD_OID" '
       elif (.state == "APPROVED" or .state == "COMMENTED") then {clean: true, by: .user.login}
       else {clean: false, by: .user.login}
       end' <<<"$ALL_REVIEWS")
-set_fact bot_clean_review_at_head "$(jq '.clean' <<<"$bot_fact")"
-set_fact bot_reviewed_by "$(jq '.by' <<<"$bot_fact")"
+review_clean=$(jq -r '.clean' <<<"$review_fact")
+review_by=$(jq '.by' <<<"$review_fact")
+
+# ── Fact: reaction path (Component 2, part (b)) ──────────────────────────────
+# All four conjuncts are required: a trusted-bot +1 on the PR body; no `eyes`
+# from any allowlisted identity (review still in flight); the +1 post-dates
+# last_head_change (head commit's committer date, or a later force-push
+# timeline event); and the head, re-read AFTER these fetches, hasn't moved.
+# Identity is the exact-login allowlist match alone — same trust boundary as
+# the review path above, which never consults .user.type either. GitHub's
+# reported user.type for connector-style bot accounts is unreliable: the live
+# chatgpt-codex-connector[bot] reports "User" on issues/{n}/reactions, not
+# "Bot" (observed 2026-07-19), so gating on it would reject every real
+# clean-pass this fact exists to recognize.
+REACTIONS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/reactions?per_page=100" --paginate | jq -s 'add // []') || {
+    echo "Error: failed to fetch issue reactions" >&2; exit 3; }
+TIMELINE=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/timeline?per_page=100" --paginate | jq -s 'add // []') || {
+    echo "Error: failed to fetch issue timeline" >&2; exit 3; }
+COMMIT_JSON=$(gh_api "repos/${OWNER}/${REPO}/commits/${HEAD_OID}") || {
+    echo "Error: failed to fetch head commit" >&2; exit 3; }
+COMMITTER_DATE=$(jq -r '.commit.committer.date // empty' <<<"$COMMIT_JSON")
+# Re-read the head AFTER the fetches above — a head that moved mid-check must
+# reject the reaction path (fail closed, not stale-true).
+HEAD_REREAD=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}" --jq '.head.sha') || {
+    echo "Error: failed to re-read PR head for reaction-path staleness check" >&2; exit 3; }
+
+reaction_fact=$(jq -n \
+    --argjson reactions "$REACTIONS" \
+    --argjson timeline "$TIMELINE" \
+    --argjson trusted "$BOT_REVIEWERS" \
+    --arg committer_date "$COMMITTER_DATE" \
+    --arg head "$HEAD_OID" \
+    --arg head_reread "$HEAD_REREAD" '
+    def epoch: (try fromdateiso8601 catch null);
+    ($committer_date | epoch) as $committer_epoch
+    | ([ $timeline[] | select(.event == "head_ref_force_pushed") | (.created_at | epoch) | select(. != null) ]) as $fp_epochs
+    | (if $committer_epoch == null then null
+       elif ($fp_epochs | length) == 0 then $committer_epoch
+       else ([$committer_epoch] + $fp_epochs | max) end) as $last_head_change
+    | ([ $reactions[] | select(.content == "+1")
+         | select(.user.login as $l | ($trusted | index($l)) != null) ]
+       | sort_by(.created_at) | last) as $plus1
+    | ([ $reactions[] | select(.content == "eyes")
+         | select(.user.login as $l | ($trusted | index($l)) != null) ] | length > 0) as $eyes_present
+    | ($plus1 != null
+       and ($eyes_present | not)
+       and ($last_head_change != null)
+       and (($plus1.created_at | epoch) as $pe | $pe != null and $pe > $last_head_change)
+       and ($head_reread == $head)) as $clean
+    | {clean: $clean,
+       id: (if $clean then $plus1.id else null end),
+       created_at: (if $clean then $plus1.created_at else null end),
+       by: (if $clean then $plus1.user.login else null end)}')
+reaction_clean=$(jq -r '.clean' <<<"$reaction_fact")
+
+if [[ "$review_clean" == "true" ]]; then
+    signal_source='"review"'
+elif [[ "$reaction_clean" == "true" ]]; then
+    signal_source='"reaction"'
+else
+    signal_source='"none"'
+fi
+set_fact bot_clean_review_at_head "$(jq -n --argjson a "$review_clean" --argjson b "$reaction_clean" '$a or $b')"
+set_fact bot_clean_signal_source "$signal_source"
+# review wins the tie (Component 2): bot_reviewed_by and the reaction audit
+# trail follow the same precedence as the fact itself. The reaction's id and
+# created_at are recorded here — not just the boolean — because reactions
+# leave no timeline history to audit after the fact once torn down.
+if [[ "$signal_source" == '"reaction"' ]]; then
+    set_fact bot_reviewed_by "$(jq '.by' <<<"$reaction_fact")"
+    set_fact bot_clean_reaction "$(jq '{id, created_at}' <<<"$reaction_fact")"
+else
+    set_fact bot_reviewed_by "$review_by"
+    set_fact bot_clean_reaction null
+fi
 # ── Blocker: active requested-changes verdict (sticky; never head-scoped) ────
 # GitHub does not clear CHANGES_REQUESTED on push; only dismissal (state
 # becomes DISMISSED) or a later APPROVED from the same reviewer clears it.

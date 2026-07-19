@@ -73,6 +73,12 @@ solely on explicit asks, so a design that treated it as the primary signal would
 have to post a redundant `@codex review` on every PR whose free auto-review
 already came back clean.
 
+The reacting identity's `user.login` is `chatgpt-codex-connector[bot]`, matching
+the review path's identity; its `user.type` on `issues/{n}/reactions`, however,
+reports `"User"`, not `"Bot"` — GitHub's type field is unreliable for
+connector-style bot accounts. The exact-login allowlist match is therefore the
+sole identity check on both paths; `user.type` is not consulted.
+
 ### Reaction lifecycle
 
 The reaction is torn down and re-earned per head. On a push:
@@ -148,7 +154,8 @@ It is true when **either**:
     1. a reaction with `content == "+1"` exists on the pull-request body —
        endpoint `repos/{owner}/{repo}/issues/{n}/reactions`, fetched with
        `--paginate` — whose `user.login` is in the `bot_reviewers` allowlist
-       (exact match) and whose `user.type` is `"Bot"`; **and**
+       (exact match; `user.type` is not consulted — see Observed Codex
+       behaviour above); **and**
     2. no reaction with `content == "eyes"` from **any** allowlisted identity is
        present in that same fetch (a review is in flight; wait); **and**
     3. that `+1`'s `created_at`, parsed to epoch seconds, is strictly greater
@@ -273,8 +280,9 @@ payloads, asserting both `bot_clean_review_at_head` and
 - a `+1` predating a later `head_ref_force_pushed` timeline event;
 - a `head_ref_force_pushed` event on a later timeline page (pagination must
   still surface it);
-- a `+1` from an identity outside the allowlist; a `+1` whose `user.type` is
-  not `"Bot"`;
+- a `+1` from an identity outside the allowlist; a `+1` from an allowlisted
+  login whose `user.type` is `"User"` (must still count — see Observed Codex
+  behaviour above);
 - an `eyes` present from a different allowlisted identity than the `+1`'s;
 - an `eyes` arriving on the second page of the reactions fetch;
 - head OID moved between the reactions fetch and the re-read;
