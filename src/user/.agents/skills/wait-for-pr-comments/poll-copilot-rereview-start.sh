@@ -11,9 +11,13 @@
 #   convention); enables the eyes-reaction check. Omit to keep the original
 #   Copilot-events-only behavior.
 #
-# Exit codes: 0 started (JSON), 1 not started, 3 error.
+# Exit codes: 0 started (JSON), 1 not started, 3 error (bad args, auth, OR the
+# reactions endpoint still failing at the deadline with --bot-reviewers set —
+# distinct from "not started", since whether Codex started is then unknown,
+# not false; see the poll-loop comment on reactions_endpoint_failed).
 # Stdout (0): {"status":"copilot_rereview_started","signal":"event"|"eyes_reaction","event_timestamp":"..."}
 # Stdout (1): {"status":"no_rereview_started"}
+# Stdout (3, reactions endpoint failed at the deadline): {"status":"rereview_start_check_error","message":"..."}
 # Stderr: diagnostics
 #
 # Configurable polling (set as env vars; defaults give the historical 80s window):
@@ -89,8 +93,18 @@ echo "Polling for Copilot re-review start (${INITIAL_SLEEP}s pre-sleep + ${POLL_
 
 sleep "$INITIAL_SLEEP"
 
+# Names the reactions endpoint as failed on the CURRENT attempt (reset each
+# iteration). If it is still set when the loop exhausts, whether Codex
+# started is unobservable at the deadline: exit 1 (no_rereview_started)
+# would make Phase 6 count this as a silent ask and spend the one-ask cap on
+# an infrastructure failure it never actually established, not on Codex's
+# silence — mirrors poll-copilot-review.sh's clean-signal-endpoint-failure
+# handling (exit 3, not the timeout exit).
+reactions_endpoint_failed=false
+
 for ((i = 1; i <= POLL_COUNT; i++)); do
     sleep "$POLL_INTERVAL"
+    reactions_endpoint_failed=false
 
     events=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events" \
         --jq "[.[] | select(.event == \"copilot_work_started\" and .created_at > \"${AFTER}\")]") || {
@@ -116,6 +130,7 @@ for ((i = 1; i <= POLL_COUNT; i++)); do
             | jq -s 'add // []') || {
             echo "Warning: reactions API failed (attempt ${i}), continuing" >&2
             reactions='[]'
+            reactions_endpoint_failed=true
         }
         eyes_ts=$(printf '%s' "$reactions" | jq -r \
             --arg after "$AFTER" \
@@ -131,6 +146,16 @@ for ((i = 1; i <= POLL_COUNT; i++)); do
 
     echo "  Poll ${i}/${POLL_COUNT}: no re-review start signal after ${AFTER}" >&2
 done
+
+# A reactions-endpoint failure still in effect on the FINAL attempt makes
+# "Codex never started" indistinguishable from "we couldn't check" — report
+# the documented infrastructure error (exit 3) rather than a false
+# no_rereview_started the caller would spend its silent-ask budget on.
+if [[ "$reactions_endpoint_failed" == true ]]; then
+    echo "Error: reactions endpoint failed at the deadline; cannot determine whether Codex started" >&2
+    jq -n '{"status": "rereview_start_check_error", "message": "reactions endpoint failure: cannot determine whether Codex started"}'
+    exit 3
+fi
 
 echo "No Copilot re-review started within polling window" >&2
 jq -n '{"status": "no_rereview_started"}'

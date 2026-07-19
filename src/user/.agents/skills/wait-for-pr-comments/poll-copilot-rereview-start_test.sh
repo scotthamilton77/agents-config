@@ -99,6 +99,10 @@ if [ "$1" = "api" ]; then
       cat "${FAKE_EVENTS_FILE:-/dev/null}" 2>/dev/null || echo '[]'
       ;;
     */issues/*/reactions*)
+      if [ "${FAKE_REACTIONS_FAIL:-0}" = "1" ]; then
+        echo "fake-gh: simulated reactions endpoint failure" >&2
+        exit 1
+      fi
       cat "${FAKE_REACTIONS_FILE:-/dev/null}" 2>/dev/null || echo '[]'
       ;;
     *) echo '[]' ;;
@@ -194,5 +198,19 @@ out=$(FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$EMPTY_REACTIONS" PA
 rc_none=$?
 assert "neither signal present exits 1" "[ \$rc_none -eq 1 ]"
 assert "neither signal present reports no_rereview_started" "printf '%s' '$out' | jq -e '.status == \"no_rereview_started\"' >/dev/null"
+
+# A reactions-endpoint failure still in effect at the deadline is an
+# infrastructure error (exit 3), not "no re-review started" (exit 1) — the
+# two are NOT equivalent: exit 1 tells Phase 6 to spend its one-ask silent
+# counter, but a failed endpoint never established whether Codex started.
+out=$(FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FAIL=1 PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' 2>/dev/null)
+rc_endpoint_fail=$?
+assert "a persistent reactions-endpoint failure exits 3 (infra error, not timeout)" "[ \$rc_endpoint_fail -eq 3 ]"
+assert "a persistent reactions-endpoint failure does NOT report no_rereview_started" \
+  "printf '%s' '$out' | jq -e '.status != \"no_rereview_started\"' >/dev/null"
+assert "a persistent reactions-endpoint failure reports rereview_start_check_error" \
+  "printf '%s' '$out' | jq -e '.status == \"rereview_start_check_error\"' >/dev/null"
 
 exit $FAIL

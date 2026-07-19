@@ -512,17 +512,24 @@ the helper's default (1) per spec decision, not a per-repo config knob.
    makes Codex re-cite settled findings every round, while a structured
    disposition table (including an explicit REBUT) produced zero re-raises.
 
-3. **Launch** `poll-copilot-rereview-start.sh --owner "$OWNER" --repo "$REPO" --pr "$PR" --after <rereview_since_timestamp>
-   --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"` (80s max
-   window: 20s pre-sleep + 6 × 10s polls). This detects either signal that a
-   trusted bot has started a re-review: the `copilot_work_started` event
-   that follows the fresh `review_requested` (Copilot), or an `eyes`
-   reaction on the PR body from an allowlisted identity post-dating
-   `<rereview_since_timestamp>` (Codex's in-flight marker — Codex never
-   emits `copilot_work_started`, since it responds to the `@codex review`
-   comment in step 2, not a reviewer-request event). Passing
-   `--bot-reviewers` is what enables the eyes-reaction check; omitting it
-   preserves the script's original Copilot-events-only behavior.
+3. **Launch** (80s max window: 20s pre-sleep + 6 × 10s polls):
+   ```bash
+   ${CLAUDE_SKILL_DIR}/poll-copilot-rereview-start.sh \
+     --owner "$OWNER" --repo "$REPO" --pr "$PR" \
+     --after <rereview_since_timestamp> \
+     --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"
+   ```
+   This detects either signal that a trusted bot has started a re-review:
+   the `copilot_work_started` event that follows the fresh
+   `review_requested` (Copilot), or an `eyes` reaction on the PR body from
+   an allowlisted identity post-dating `<rereview_since_timestamp>`
+   (Codex's in-flight marker — Codex never emits `copilot_work_started`,
+   since it responds to the `@codex review` comment in step 2, not a
+   reviewer-request event). Passing `--bot-reviewers` is what enables the
+   eyes-reaction check; omitting it preserves the script's original
+   Copilot-events-only behavior. Exit 3 (a reactions-endpoint failure that
+   leaves whether Codex started unknown) is an infrastructure error, not
+   "no re-review started" — do not treat it as a silent ask.
 
 4. **If** step 3 detected a re-review start (either signal), launch
    `poll-copilot-review.sh
