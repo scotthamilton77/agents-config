@@ -567,7 +567,7 @@ the helper's default (1) per spec decision, not a per-repo config knob.
    reviewing and later posted a review or clean-pass — step 3's added
    eyes-reaction detection is what fixes that.
 
-   **Same-second boundary reconciliation (agents-config-m5tkg):** steps 3 and
+   **Same-second boundary reconciliation:** steps 3 and
    4 compare the SAME `<rereview_since_timestamp>` value with opposite
    operators — step 3's start-detection is `>=`, step 4's staleness bound
    (`--since-timestamp`'s `submitted_at > SINCE` filter) is strict `>`. This

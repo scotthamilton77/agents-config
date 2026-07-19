@@ -397,8 +397,8 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
     # If --since-timestamp was provided, reject reviews that predate it (stale cache guard).
     #
     # RECONCILED against poll-copilot-rereview-start.sh's start-detection
-    # bound (agents-config-m5tkg): that script compares this SAME $SINCE
-    # value (passed there as --after, captured once in Phase 6 step 1 before
+    # bound: that script compares this SAME $SINCE value (passed there as
+    # --after, captured once in Phase 6 step 1 before
     # the re-review ask is dispatched) against a START signal using >=, the
     # opposite operator. This is not disagreement between the two files —
     # they answer different questions on the same timestamp. This check asks

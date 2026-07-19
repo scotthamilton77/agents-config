@@ -333,20 +333,15 @@ rc_eyes_same_second=$?
 assert "an eyes reaction in the SAME second as --after is accepted (exit 0)" "[ \$rc_eyes_same_second -eq 0 ]"
 assert "same-second eyes reaction still reports signal eyes_reaction" "printf '%s' '$out' | jq -e '.signal == \"eyes_reaction\"' >/dev/null"
 
-# ── agents-config-m5tkg: cross-file reconciliation of this script's >= bound
-# against poll-copilot-review.sh's strict > staleness bound. Both compare
-# against the SAME $AFTER/$SINCE timestamp captured once, before the ask is
-# dispatched -- but this script's >= answers "has ANYTHING happened since the
-# ask" (a detection question, where missing a genuine same-second response is
-# the failure to avoid), while poll-copilot-review.sh's > answers "is THIS
-# completion signal trustworthy as a response to the CURRENT ask, not a stale
-# leftover from before it" (a soundness question, where false-accepting an old
-# signal is the failure to avoid). Different questions on the same value, not
-# a shared boundary that must agree -- the divergence is deliberate, not an
-# oversight, and this assertion locks that the rationale is actually written
-# down where a reader of either file would find it, not just decided once and
-# forgotten.
-assert "documents the reconciled >= vs > divergence with poll-copilot-review.sh (agents-config-m5tkg)" \
-  "grep -qi 'poll-copilot-review.sh' '$SCRIPT' && grep -qi 'm5tkg' '$SCRIPT'"
+# Cross-file reconciliation: this script's >= start-detection bound and
+# poll-copilot-review.sh's strict > staleness bound compare the SAME
+# $AFTER/$SINCE timestamp with opposite operators, deliberately (different
+# questions on the same value, not a shared boundary that must agree — see
+# the rationale above). Assert on the STABLE token (the sibling filename),
+# not comment prose, so a future rewording of the rationale doesn't red this
+# suite for no functional reason — it fails only if the cross-reference is
+# stripped outright.
+assert "cross-references poll-copilot-review.sh's staleness bound" \
+  "grep -qi 'poll-copilot-review.sh' '$SCRIPT'"
 
 exit $FAIL

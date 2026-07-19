@@ -203,9 +203,9 @@ for ((i = 1; i <= POLL_COUNT; i++)); do
         # here would silently drop a same-second eyes reaction and count a
         # started Codex review as a silent ask.
         #
-        # RECONCILED against poll-copilot-review.sh's staleness bound
-        # (agents-config-m5tkg): that script compares the SAME $AFTER/$SINCE
-        # value against a COMPLETION signal using strict >, the opposite
+        # RECONCILED against poll-copilot-review.sh's staleness bound: that
+        # script compares the SAME $AFTER/$SINCE value against a COMPLETION
+        # signal using strict >, the opposite
         # operator. This is not disagreement between the two files — they
         # answer different questions on the same timestamp. This check asks
         # "has ANYTHING happened since the ask" (a detection question: a
