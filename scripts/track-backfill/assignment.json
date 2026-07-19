@@ -1,0 +1,1475 @@
+{
+ "cascade_used": false,
+ "design": "docs/specs/2026-07-19-track-backfill-migration-design.md",
+ "explicit_count": 366,
+ "generated_for": "agents-config-jpn0s",
+ "inherit_via_cascade": [],
+ "items": {
+  "agents-config-0qwmz": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-19n9": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-1fhaw": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-1k35t": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-1sso": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-1x98": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-24eo5": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-2gzy": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-2vr": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-2w7vz": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-2yyb": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-2yyb.1": {
+   "provenance": "inherited-from-container:agents-config-2yyb",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-30fpy": {
+   "provenance": "two-pass-agree",
+   "track": "review-and-merge"
+  },
+  "agents-config-33rn": {
+   "provenance": "human-decided",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-38o1v": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-38o1v.3": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-38o1v.5": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-3f52": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-3o00y": {
+   "provenance": "two-pass-agree",
+   "track": "prgroom"
+  },
+  "agents-config-4hhw": {
+   "provenance": "human-decided",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-4htl": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-4vn5": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-4vn5.1": {
+   "provenance": "two-pass-agree",
+   "track": "ops-meta"
+  },
+  "agents-config-528x8": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-55bh": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-5ch8": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-5e3": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-5n21z": {
+   "provenance": "human-decided",
+   "track": "installer"
+  },
+  "agents-config-5s7ab": {
+   "provenance": "two-pass-agree",
+   "track": "ops-meta"
+  },
+  "agents-config-5vxfw": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-5yfy": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-63nm3": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-640vd": {
+   "provenance": "ops-meta-reaudit",
+   "track": "prgroom"
+  },
+  "agents-config-64ecc": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-6ms7": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-6wun7": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-717": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk.11": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk.12": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk.16": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-7bk.17": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-7bk.18": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk.19.7.1": {
+   "provenance": "explicit-closed-parent",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk.19.9.1": {
+   "provenance": "explicit-closed-parent",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk.21": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk.22": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk.23": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk.25": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk.25.1": {
+   "provenance": "inherited-from-container:agents-config-7bk.25",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk.4": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk.5": {
+   "provenance": "human-resolved-disagreement",
+   "track": "ops-meta"
+  },
+  "agents-config-7d5h8": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-7qfs": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-7r77": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-811pq": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-89v77": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-96iof": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-9obqv": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "installer"
+  },
+  "agents-config-9v0y": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "review-and-merge"
+  },
+  "agents-config-9x3g": {
+   "provenance": "two-pass-agree",
+   "track": "ops-meta"
+  },
+  "agents-config-9xj1f": {
+   "provenance": "two-pass-agree",
+   "track": "prgroom"
+  },
+  "agents-config-abasv": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.10.1": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-abn9.12": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-abn9.13": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.13.1": {
+   "provenance": "inherited-from-container:agents-config-abn9.13",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.14": {
+   "provenance": "two-pass-agree",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.14.1": {
+   "provenance": "inherited-from-container:agents-config-abn9.14",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.15": {
+   "provenance": "human-decided",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-abn9.17": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-abn9.18": {
+   "provenance": "ops-meta-reaudit",
+   "track": "workcli"
+  },
+  "agents-config-abn9.19": {
+   "provenance": "ops-meta-reaudit",
+   "track": "workcli"
+  },
+  "agents-config-abn9.20": {
+   "provenance": "ops-meta-reaudit",
+   "track": "installer"
+  },
+  "agents-config-abn9.21": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-abn9.22": {
+   "provenance": "ops-meta-reaudit",
+   "track": "workcli"
+  },
+  "agents-config-abn9.23": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "ops-meta"
+  },
+  "agents-config-abn9.23.2": {
+   "provenance": "ops-meta-reaudit",
+   "track": "installer"
+  },
+  "agents-config-abn9.23.3": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "ops-meta"
+  },
+  "agents-config-abn9.23.4": {
+   "provenance": "human-resolved-disagreement",
+   "track": "ops-meta"
+  },
+  "agents-config-abn9.24": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-abn9.25": {
+   "provenance": "human-decided",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-abn9.26": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "ops-meta"
+  },
+  "agents-config-abn9.27": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.28": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-abn9.29": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-abn9.30": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-abn9.31": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.32": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-abn9.33": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-abn9.35": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-abn9.36": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-abn9.37": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-abn9.37.1": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-abn9.37.1.3": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-abn9.37.2": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-abn9.37.3": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-abn9.37.4": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-abn9.39": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-abn9.40": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-abn9.40.1": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-abn9.40.2": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-abn9.40.2.1": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-abn9.40.3": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "installer"
+  },
+  "agents-config-abn9.40.4": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.40.5": {
+   "provenance": "two-pass-agree",
+   "track": "ops-meta"
+  },
+  "agents-config-abn9.43": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-abn9.44": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.44.2": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.44.2.9": {
+   "provenance": "two-pass-agree",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.44.3": {
+   "provenance": "human-decided-reconcile",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.44.4": {
+   "provenance": "human-decided-reconcile",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.8": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.14": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.17": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.18": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.19": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.20": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.22": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.23": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.23.2": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.23.3": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.24": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.29": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.30": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.31": {
+   "provenance": "inherited-from-container:agents-config-abn9.8",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.33": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.36": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.37": {
+   "provenance": "two-pass-agree",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.38": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.39": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.41": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.42": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.43": {
+   "provenance": "ops-meta-reaudit",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.45": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.46": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.47": {
+   "provenance": "two-pass-agree",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.8.48": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.49": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.8.50": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.51": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.52": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.53": {
+   "provenance": "inherited-from-container:agents-config-abn9.8",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.54": {
+   "provenance": "human-decided-reconcile",
+   "track": "prgroom"
+  },
+  "agents-config-acmh": {
+   "provenance": "two-pass-agree",
+   "track": "ops-meta"
+  },
+  "agents-config-acmh.10": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-acmh.11": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "installer"
+  },
+  "agents-config-acmh.12": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-acmh.13.1": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-acmh.2": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-acmh.4": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-acmh.6": {
+   "provenance": "two-pass-agree",
+   "track": "ops-meta"
+  },
+  "agents-config-acmh.7": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-acmh.8": {
+   "provenance": "two-pass-agree",
+   "track": "prgroom"
+  },
+  "agents-config-acmh.9": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-ak007": {
+   "provenance": "two-pass-agree",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-awdv8": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-b1eqk": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-bgzyv": {
+   "provenance": "single-pass-confident",
+   "track": "vizsuite"
+  },
+  "agents-config-biy4": {
+   "provenance": "human-decided",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-bkvgz": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "vizsuite"
+  },
+  "agents-config-bt9e": {
+   "provenance": "two-pass-agree",
+   "track": "ops-meta"
+  },
+  "agents-config-c2nwf": {
+   "provenance": "human-decided",
+   "track": "installer"
+  },
+  "agents-config-c66bx": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-clz": {
+   "provenance": "ops-meta-reaudit",
+   "track": "prgroom"
+  },
+  "agents-config-cp6iv": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-ctq5": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-cx6": {
+   "provenance": "human-decided-retired-track",
+   "track": "ops-meta"
+  },
+  "agents-config-cx6.7": {
+   "provenance": "human-decided-retired-track",
+   "track": "ops-meta"
+  },
+  "agents-config-cx6.7.15": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-cx6.7.16": {
+   "provenance": "human-decided-retired-track",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-dawr": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-dtnq": {
+   "provenance": "two-pass-agree",
+   "track": "review-and-merge"
+  },
+  "agents-config-e2l": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-ep74t": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-evi": {
+   "provenance": "human-decided-retired-track",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-f298": {
+   "provenance": "human-decided",
+   "track": "workcli"
+  },
+  "agents-config-fa3n1": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-ffxh": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-fl80": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-fn0y": {
+   "provenance": "ops-meta-reaudit",
+   "track": "installer"
+  },
+  "agents-config-g17x": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-g3jv": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-g42cj": {
+   "provenance": "two-pass-agree",
+   "track": "ops-meta"
+  },
+  "agents-config-g6ix3": {
+   "provenance": "single-pass-confident",
+   "track": "holding-place"
+  },
+  "agents-config-gcg": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-gefc9": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "prgroom"
+  },
+  "agents-config-gmxo": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-go1w": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-gvt64": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-h8u6v": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-hft": {
+   "provenance": "human-decided",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-hhou": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-hn4z4": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-hrvzu": {
+   "provenance": "ops-meta-reaudit",
+   "track": "review-and-merge"
+  },
+  "agents-config-ic0s": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-iohrs": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-j8pdq": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-jp9w": {
+   "provenance": "two-pass-agree",
+   "track": "review-and-merge"
+  },
+  "agents-config-jp9w.1": {
+   "provenance": "inherited-from-container:agents-config-jp9w",
+   "track": "review-and-merge"
+  },
+  "agents-config-jpn0s": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-jqacs": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-jsx6": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-kdh1h": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-kswrp": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-kz1vn": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-lgz": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-lpeg": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-ltuv": {
+   "provenance": "human-decided",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-m027": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-m5tkg": {
+   "provenance": "human-decided",
+   "track": "review-and-merge"
+  },
+  "agents-config-n0y9": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-n7q0p": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-nbrd": {
+   "provenance": "human-decided-retired-track",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-nr2e": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-nwtz": {
+   "provenance": "human-decided-retired-track",
+   "track": "ops-meta"
+  },
+  "agents-config-o2oub": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-oav16": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-obz09": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-oh7a7": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-opnn2": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-owqa": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-p2dq8": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-p3": {
+   "provenance": "human-decided",
+   "track": "workcli"
+  },
+  "agents-config-p53nm": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-pdmkh": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-phzj": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "ops-meta"
+  },
+  "agents-config-phzj.1": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-phzj.2": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-phzj.4": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-phzj.4.1": {
+   "provenance": "inherited-from-container:agents-config-yf2ov.1",
+   "track": "installer"
+  },
+  "agents-config-pqvc": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-pqvc.1": {
+   "provenance": "inherited-from-container:agents-config-abn9.25",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-psyw2": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-q1elf": {
+   "provenance": "two-pass-agree",
+   "track": "review-and-merge"
+  },
+  "agents-config-qn0g.1": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-qn0g.1.1": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-qptb4": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-qv7o5": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-r3pvo": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-r8wsz": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-rdkh8": {
+   "provenance": "human-decided-retired-track",
+   "track": "installer"
+  },
+  "agents-config-s0u9c": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-ssiad": {
+   "provenance": "ops-meta-reaudit",
+   "track": "installer"
+  },
+  "agents-config-syod": {
+   "provenance": "ops-meta-reaudit",
+   "track": "workcli"
+  },
+  "agents-config-t142.1": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-t142.2": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "review-and-merge"
+  },
+  "agents-config-t142.2.1": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-t142.2.2": {
+   "provenance": "ops-meta-reaudit",
+   "track": "review-and-merge"
+  },
+  "agents-config-t142.2.3": {
+   "provenance": "ops-meta-reaudit",
+   "track": "review-and-merge"
+  },
+  "agents-config-td39": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-thlyy": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-tjgu7": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-tlqn4": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-ukzs": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-ulv3": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-us8da": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-uxns2.1": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-uxns2.1.2": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-uxns2.1.4": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-uxns2.2": {
+   "provenance": "human-decided-retired-track",
+   "track": "installer"
+  },
+  "agents-config-uxns2.2.1": {
+   "provenance": "human-decided-retired-track",
+   "track": "installer"
+  },
+  "agents-config-uxns2.3": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-uxns2.4": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-uxns2.5": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-uxns2.6": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-uxns2.6.1": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-uxns2.6.2": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-uxns2.6.3": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-uy5wx": {
+   "provenance": "two-pass-agree",
+   "track": "ops-meta"
+  },
+  "agents-config-vaac.1": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "prgroom"
+  },
+  "agents-config-vaac.10": {
+   "provenance": "ops-meta-reaudit",
+   "track": "prgroom"
+  },
+  "agents-config-vaac.11": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-vaac.12": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-vaac.14": {
+   "provenance": "human-decided-retired-track",
+   "track": "ops-meta"
+  },
+  "agents-config-vaac.2": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-vaac.2.1": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-vaac.2.2": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-vaac.2.3": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-vaac.2.4": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-vaac.2.5": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-vaac.2.6": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-vaac.2.7": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-vaac.2.8": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "prgroom"
+  },
+  "agents-config-vaac.2.9": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-vaac.3": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-vaac.4": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-vaac.5": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-vinbn": {
+   "provenance": "two-pass-agree",
+   "track": "review-and-merge"
+  },
+  "agents-config-vo7": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-vximp": {
+   "provenance": "single-pass-confident",
+   "track": "vizsuite"
+  },
+  "agents-config-vxiq": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-wgclw.10": {
+   "provenance": "single-pass-confident",
+   "track": "holding-place"
+  },
+  "agents-config-wgclw.10.1": {
+   "provenance": "two-pass-agree",
+   "track": "holding-place"
+  },
+  "agents-config-wgclw.11": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-wgclw.12": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-wgclw.16": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-wgclw.2": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-wgclw.2.2.2": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-wgclw.2.2.3": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-wgclw.2.2.4": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-wgclw.2.2.5": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-wgclw.2.2.6": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-wgclw.2.2.7": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-wgclw.2.3": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-wgclw.2.4": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-wgclw.22": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-wgclw.23": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-wgclw.24": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-wgclw.25": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-wgclw.27": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-wgclw.3": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-wgclw.30": {
+   "provenance": "new-track-cluster",
+   "track": "grind-runtime"
+  },
+  "agents-config-wgclw.30.1": {
+   "provenance": "new-track-cluster",
+   "track": "grind-runtime"
+  },
+  "agents-config-wgclw.30.2": {
+   "provenance": "new-track-cluster",
+   "track": "grind-runtime"
+  },
+  "agents-config-wgclw.30.3": {
+   "provenance": "new-track-cluster",
+   "track": "grind-runtime"
+  },
+  "agents-config-wgclw.30.4": {
+   "provenance": "new-track-cluster",
+   "track": "grind-runtime"
+  },
+  "agents-config-wgclw.30.5": {
+   "provenance": "new-track-cluster",
+   "track": "grind-runtime"
+  },
+  "agents-config-wgclw.30.6": {
+   "provenance": "new-track-cluster",
+   "track": "grind-runtime"
+  },
+  "agents-config-wgclw.30.7": {
+   "provenance": "new-track-cluster",
+   "track": "grind-runtime"
+  },
+  "agents-config-wgclw.4": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-wgclw.5": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-wgclw.6": {
+   "provenance": "single-pass-confident",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-wgclw.7": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "workcli"
+  },
+  "agents-config-wgclw.8": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-wgclw.9": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-wgclw.9.10": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-wgclw.9.11": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-wgclw.9.3": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-wgclw.9.4": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-wgclw.9.4.1": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-wgclw.9.4.2": {
+   "provenance": "two-pass-agree",
+   "track": "review-and-merge"
+  },
+  "agents-config-wgclw.9.4.3": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-wgclw.9.4.4": {
+   "provenance": "ops-meta-reaudit",
+   "track": "workcli"
+  },
+  "agents-config-wgclw.9.4.5": {
+   "provenance": "ops-meta-reaudit",
+   "track": "workcli"
+  },
+  "agents-config-wgclw.9.4.6": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-wgclw.9.6": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-wgclw.9.6.1": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-wgclw.9.6.2": {
+   "provenance": "two-pass-agree",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-wgclw.9.6.3": {
+   "provenance": "single-pass-confident",
+   "track": "workcli"
+  },
+  "agents-config-x12t5": {
+   "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-xshc": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-xsvj8": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-y2g": {
+   "provenance": "single-pass-confident",
+   "track": "ops-meta"
+  },
+  "agents-config-y9mm": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-y9mm.5": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-y9mm.7": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-yf2ov.1": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-yf2ov.1.1": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-yf2ov.2": {
+   "provenance": "single-pass-confident",
+   "track": "vizsuite"
+  },
+  "agents-config-yf2ov.2.12": {
+   "provenance": "single-pass-confident",
+   "track": "vizsuite"
+  },
+  "agents-config-yf2ov.2.13": {
+   "provenance": "single-pass-confident",
+   "track": "vizsuite"
+  },
+  "agents-config-yf2ov.2.14": {
+   "provenance": "single-pass-confident",
+   "track": "vizsuite"
+  },
+  "agents-config-yf2ov.2.15": {
+   "provenance": "single-pass-confident",
+   "track": "vizsuite"
+  },
+  "agents-config-yf2ov.2.4": {
+   "provenance": "single-pass-confident",
+   "track": "vizsuite"
+  },
+  "agents-config-yf2ov.2.5": {
+   "provenance": "single-pass-confident",
+   "track": "vizsuite"
+  },
+  "agents-config-yf2ov.2.6": {
+   "provenance": "single-pass-confident",
+   "track": "vizsuite"
+  },
+  "agents-config-yf2ov.2.7": {
+   "provenance": "single-pass-confident",
+   "track": "vizsuite"
+  },
+  "agents-config-yf2ov.2.8": {
+   "provenance": "single-pass-confident",
+   "track": "vizsuite"
+  },
+  "agents-config-ysfvl": {
+   "provenance": "two-pass-agree",
+   "track": "pdlc-orchestrator"
+  },
+  "agents-config-yvi8": {
+   "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-z5pg9": {
+   "provenance": "single-pass-confident",
+   "track": "installer"
+  },
+  "agents-config-z7a": {
+   "provenance": "single-pass-confident",
+   "track": "review-and-merge"
+  },
+  "agents-config-zi9c7": {
+   "provenance": "ops-meta-reaudit",
+   "track": "prgroom"
+  },
+  "agents-config-zz20g": {
+   "provenance": "two-pass-near-agree(pass2)",
+   "track": "vizsuite"
+  },
+  "agents-config-zzsv8": {
+   "provenance": "ops-meta-reaudit",
+   "track": "pdlc-orchestrator"
+  }
+ },
+ "reconciled_against_lint": 366,
+ "schema": "track-backfill-assignment-v1"
+}
