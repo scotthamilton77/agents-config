@@ -1,0 +1,398 @@
+{
+  "title": "Codex Awareness Fixes \u2014 Lane Status",
+  "repo": "scotthamilton77/agents-config",
+  "last_generated": "2026-07-19T18:54:42Z",
+  "attention": [],
+  "lanes": [
+    {
+      "id": "lane-eligibility",
+      "name": "Lane 1 \u2014 merge-guard eligibility",
+      "agent": "eligibility-agent",
+      "status": "standing-down",
+      "activity": "processing queue",
+      "queue": [
+        {
+          "item": "abn9.44.3",
+          "status": "merged",
+          "pr": {
+            "number": 353,
+            "url": "https://github.com/scotthamilton77/agents-config/pull/353"
+          },
+          "review": null,
+          "note": "Post-merge leg running. Codex P2 design doc fix committed."
+        },
+        {
+          "item": "abn9.44.12",
+          "status": "blocked",
+          "pr": null,
+          "review": null,
+          "note": "P2 SKILL.md: retire 'Known residual' block, add clean_marker branch (abn9.44.11 criterion 4). Hard-blocked by abn9.44.11 + abn9.44.9. Lane runs after both PRs merge."
+        },
+        {
+          "item": "abn9.44.4",
+          "status": "blocked",
+          "pr": null,
+          "review": null,
+          "note": "DESIGN HALT. Attempt 4 (00fd5c4) REJECTED MAJOR: mid-body injection above sentinel defeats exemption. Four attempts, same mechanism. Lane must decide: fixed offset / content digest / comment-immutability. Awaiting design report. No PR."
+        },
+        {
+          "item": "abn9.44.6",
+          "status": "queued",
+          "pr": null,
+          "review": null,
+          "note": "P2 \u2014 ratchet clears staleness fact but not superseded review's unresolved threads"
+        },
+        {
+          "item": "abn9.44.8",
+          "status": "queued",
+          "pr": null,
+          "review": null,
+          "note": "P3 \u2014 Codex transient 'Something went wrong' comment should auto-SKIP"
+        }
+      ],
+      "events": [
+        {
+          "ts": "2026-07-19T15:58:35Z",
+          "text": "Lane initialized \u2014 4 items queued."
+        },
+        {
+          "ts": "2026-07-19T16:07:55Z",
+          "text": "abn9.44.3 moved to in-progress \u2014 TDD phase complete, ruleset CI-check union tested. HEAVY quality-gate running."
+        },
+        {
+          "ts": "2026-07-19T16:10:49Z",
+          "text": "abn9.44.3 quality-reviewer returned BLOCKING: fetch-failure asymmetry exposed. Lane implementing fix + test."
+        },
+        {
+          "ts": "2026-07-19T16:19:25Z",
+          "text": "abn9.44.3 HEAVY gate CLEAN verified genuine (3 finders read +96/-28). All tests pass. Heading to PR."
+        },
+        {
+          "ts": "2026-07-19T16:22:36Z",
+          "text": "PR #353 opened, Codex review round 1 triggered. Watcher armed."
+        },
+        {
+          "ts": "2026-07-19T16:27:08Z",
+          "text": "Watcher fired at t=240s with findings. Codex round 1 complete, lane addressing findings."
+        },
+        {
+          "ts": "2026-07-19T16:32:54Z",
+          "text": "abn9.44.9 queued as deferred escalation from abn9.44.2.9. Lane queue: 5 items (44.3, 44.9, 44.4, 44.6, 44.8)."
+        },
+        {
+          "ts": "2026-07-19T16:37:36Z",
+          "text": "Codex round 1 resolved. Design doc fixed, all threads resolved. ATTENTION: blocked at approver step \u2014 needs Scott."
+        },
+        {
+          "ts": "2026-07-19T16:47:43Z",
+          "text": "PR #353 merged. Post-merge leg running. Lane starting abn9.44.9 (merge-guard retry caller)."
+        },
+        {
+          "ts": "2026-07-19T16:56:59Z",
+          "text": "abn9.44.9 quality-reviewer returned 1 MAJOR (deduped aliases) + 2 MINOR. HEAVY gate running. Lane addressing all findings."
+        },
+        {
+          "ts": "2026-07-19T17:02:06Z",
+          "text": "abn9.44.9 findings fixed. Awaiting final gate verdict. abn9.44.12 queued (blocked, runs after both PRs)."
+        },
+        {
+          "ts": "2026-07-19T17:03:12Z",
+          "text": "PR #356 opened, Codex review round 1 triggered. Watcher armed."
+        },
+        {
+          "ts": "2026-07-19T17:09:48Z",
+          "text": "Codex review returned genuine P1 (not flake). PR ships as-is; finding deferred to abn9.44.13. Lane replying, then floor check."
+        },
+        {
+          "ts": "2026-07-19T17:13:58Z",
+          "text": "PR #356 merged (ci_state='green' proof). abn9.44.9 closes CLEAN. Lane starting abn9.44.4 (trigger-comment exact-match)."
+        },
+        {
+          "ts": "2026-07-19T17:14:58Z",
+          "text": "abn9.44.9 moved to ITEMS-CLOSED (closed clean). Post-merge leg complete."
+        },
+        {
+          "ts": "2026-07-19T17:29:29Z",
+          "text": "abn9.44.4 quality-reviewer found BLOCKING test-shadowing bug. Fix committed and verified. Lane addressing."
+        },
+        {
+          "ts": "2026-07-19T17:35:48Z",
+          "text": "abn9.44.4 HEAVY gate returned but under audit (3 agents empty, wgclw.31 signature). Verdict NOT accepted. Audit in progress."
+        },
+        {
+          "ts": "2026-07-19T17:39:31Z",
+          "text": "abn9.44.4 HEAVY gate verdict REJECTED (unauditable). Directed opus reviewer in flight. Rebase decision pending."
+        },
+        {
+          "ts": "2026-07-19T17:41:25Z",
+          "text": "abn9.44.4 rebase decision settled: NO REBASE. Directed reviewer still in flight."
+        },
+        {
+          "ts": "2026-07-19T17:46:23Z",
+          "text": "abn9.44.4 directed review found MAJOR (feedback drop). Rework in progress. Fix will restructure control flow."
+        },
+        {
+          "ts": "2026-07-19T18:13:22Z",
+          "text": "abn9.44.4 third attempt (positional anchoring). All tests pass. Directed review in flight. Attempts 1-2 were security defects."
+        },
+        {
+          "ts": "2026-07-19T18:27:36Z",
+          "text": "abn9.44.4 attempt 4: MAJOR (lines 3+ unconstrained). Remedy sentinel fence. Rework in progress."
+        },
+        {
+          "ts": "2026-07-19T18:53:11Z",
+          "text": "abn9.44.4 DESIGN HALT. Attempt 4 REJECTED (mid-body injection). Lane deciding on architecture before continuing."
+        }
+      ]
+    },
+    {
+      "id": "lane-polling",
+      "name": "Lane 2 \u2014 wait-for-pr-comments polling",
+      "agent": "polling-agent",
+      "status": "standing-down",
+      "activity": "processing queue",
+      "queue": [
+        {
+          "item": "abn9.44.7",
+          "status": "in-progress",
+          "pr": null,
+          "review": null,
+          "note": "Directed review (c63c72f). Scope approved by ROOT. Premise half-wrong: 80s tuning can't fix missing reactions. Changed Phase 6 caller\u2014step-3 miss no longer authoritative silence. HEAVY tier, prose-only (SKILL.md, 65 loc), 5 suites green. Open questions: double-poll risk, always-launch cost. No PR yet."
+        }
+      ],
+      "events": [
+        {
+          "ts": "2026-07-19T15:58:35Z",
+          "text": "Lane initialized \u2014 3 items queued."
+        },
+        {
+          "ts": "2026-07-19T16:07:55Z",
+          "text": "abn9.44.2.9 moved to in-progress \u2014 request-rereview dispatch outcome reporting."
+        },
+        {
+          "ts": "2026-07-19T16:13:18Z",
+          "text": "abn9.44.2.9 quality-reviewer returned 3 MINOR + 1 NIT, no BLOCKING findings. Addressing findings."
+        },
+        {
+          "ts": "2026-07-19T16:19:25Z",
+          "text": "abn9.44.2.9 all review fixes complete (79/79 tests pass). HEAVY gate running against worktree."
+        },
+        {
+          "ts": "2026-07-19T16:21:49Z",
+          "text": "abn9.44.2.9 gate audited: refuter fabricated evidence, one true finding resurrected. Addressing, then PR."
+        },
+        {
+          "ts": "2026-07-19T16:25:28Z",
+          "text": "PR #354 opened, Codex review round 1 triggered. Watcher armed. jq -nc disposition accepted."
+        },
+        {
+          "ts": "2026-07-19T16:30:52Z",
+          "text": "Watcher fired at t=300s with findings. Codex round 1 complete, lane addressing findings."
+        },
+        {
+          "ts": "2026-07-19T16:32:54Z",
+          "text": "abn9.44.2.9 Codex round 1 triaged: 1 escalation deferred to abn9.44.9, 2 SKIPs. Replying + resolving."
+        },
+        {
+          "ts": "2026-07-19T16:38:57Z",
+          "text": "abn9.44.2.9 blocked at merge floor by unresolved thread. Lane re-engaged to diagnose post-replies.sh SKIP posting issue."
+        },
+        {
+          "ts": "2026-07-19T16:40:24Z",
+          "text": "abn9.44.2.9 eligible, blocked at approver step. Both lanes parked."
+        },
+        {
+          "ts": "2026-07-19T16:47:43Z",
+          "text": "PR #354 merged. Post-merge leg running. Lane starting m5tkg (timestamp reconciliation)."
+        },
+        {
+          "ts": "2026-07-19T16:52:06Z",
+          "text": "abn9.44.2.9 closed (post-merge leg complete). Two endorsed descopes filed: abn9.44.9 + abn9.44.11. Lane starting abn9.44.11."
+        },
+        {
+          "ts": "2026-07-19T17:02:06Z",
+          "text": "abn9.44.11 implemented (72/72). completion_kind updated. Parked for HEAVY gate. Criterion 4 (abn9.44.12) deferred."
+        },
+        {
+          "ts": "2026-07-19T17:03:12Z",
+          "text": "abn9.44.11 in gate (HEAVY + quality-reviewer). Worktree rebase correctly handled. PR held pending verdicts."
+        },
+        {
+          "ts": "2026-07-19T17:09:48Z",
+          "text": "abn9.44.11 HEAVY gate audited and genuinely clean (first real pass). Quality-reviewer clear. PR opening now."
+        },
+        {
+          "ts": "2026-07-19T17:10:27Z",
+          "text": "PR #359 opened, Codex review round 1 triggered. Watcher armed. Both lanes in review."
+        },
+        {
+          "ts": "2026-07-19T17:14:58Z",
+          "text": "Watcher fired at t=240s with findings. Codex round 1 complete, lane addressing findings."
+        },
+        {
+          "ts": "2026-07-19T17:18:02Z",
+          "text": "abn9.44.11 Codex defect pre-existing, out of scope. PR ships. abn9.44.14 filed (initial poll freshness). Lane requeued: 44.14 -> m5tkg -> 44.7."
+        },
+        {
+          "ts": "2026-07-19T17:21:32Z",
+          "text": "PR #359 merged. abn9.44.11 closed (endorsed descope to abn9.44.12). Lane starting abn9.44.14 (initial-poll freshness)."
+        },
+        {
+          "ts": "2026-07-19T17:39:31Z",
+          "text": "abn9.44.14 unparked, moving to PR. Implementation complete, gate obligation satisfied."
+        },
+        {
+          "ts": "2026-07-19T17:41:25Z",
+          "text": "abn9.44.14 re-parked. Applied review findings (REFACTOR, loc+55). Pre-refactor cleared, artifact partly unreviewed. Targeted delta review in flight."
+        },
+        {
+          "ts": "2026-07-19T17:42:28Z",
+          "text": "PR #360 opened. TWO gates pending (bot loop + delta review). Watcher armed. Not merge-eligible yet."
+        },
+        {
+          "ts": "2026-07-19T17:46:23Z",
+          "text": "PR #360 watcher fired with FINDINGS. Lane re-engaged. Watcher DOWN pending re-arm."
+        },
+        {
+          "ts": "2026-07-19T17:48:02Z",
+          "text": "PR #360 Codex finding dispositioned (SKIP, abn9.44.15). Lane replying, resolving thread, re-running merge floor. Still TWO gates pending."
+        },
+        {
+          "ts": "2026-07-19T17:51:16Z",
+          "text": "PR #360 delta review CLEAR (2 NITs). 1 of 2 gates clear. Awaiting bot-loop. Lane resolving thread, re-running merge floor."
+        },
+        {
+          "ts": "2026-07-19T18:00:49Z",
+          "text": "PR #360 merged (5th of run). abn9.44.14 closed. Lane starting m5tkg (timestamp reconciliation)."
+        },
+        {
+          "ts": "2026-07-19T18:15:26Z",
+          "text": "m5tkg review CLEAN. DESCOPE endorsed. TWO CHANGES required (bead ID removal, rationale consolidation). Ready for rework."
+        },
+        {
+          "ts": "2026-07-19T18:24:06Z",
+          "text": "m5tkg rework complete. SKILL.md canonical, duplication eliminated, descope recorded. PR opening now."
+        },
+        {
+          "ts": "2026-07-19T18:24:58Z",
+          "text": "PR #363 open. Floor: review_in_flight (expected). Watcher armed. Lane driving bot loop."
+        },
+        {
+          "ts": "2026-07-19T18:27:36Z",
+          "text": "PR #363 watcher rang CLEAN. Lane verifying. Awaiting floor exit code."
+        },
+        {
+          "ts": "2026-07-19T18:44:34Z",
+          "text": "PR #363 merged (6th of run). m5tkg closed (ENDORSED DESCOPE). Lane starting abn9.44.7 (80s eyes-reaction window)."
+        },
+        {
+          "ts": "2026-07-19T18:53:48Z",
+          "text": "abn9.44.7 scope approved by ROOT. Premise reworked (80s tuning insufficient). Directed review in flight."
+        }
+      ]
+    }
+  ],
+  "merged": [
+    {
+      "pr": 353,
+      "title": "abn9.44.3 \u2014 ruleset CI-check union",
+      "sha": "8f8ff298",
+      "lane": "lane-eligibility"
+    },
+    {
+      "pr": 354,
+      "title": "abn9.44.2.9 \u2014 per-identity dispatch outcome reporting",
+      "sha": "91a2d64c",
+      "lane": "lane-polling"
+    },
+    {
+      "pr": 356,
+      "title": "abn9.44.9 \u2014 merge-guard retry caller NDJSON",
+      "sha": "aa7462d7",
+      "lane": "lane-eligibility"
+    },
+    {
+      "pr": 359,
+      "title": "abn9.44.11 \u2014 poll-copilot-review completion detection",
+      "sha": "cbe3e6c2",
+      "lane": "lane-polling"
+    },
+    {
+      "pr": 360,
+      "title": "abn9.44.14 \u2014 poll-copilot-review completion detection",
+      "sha": "1d6379c6",
+      "lane": "lane-polling"
+    },
+    {
+      "pr": 363,
+      "title": "m5tkg \u2014 timestamp inequality reconciliation",
+      "sha": "860be409",
+      "lane": "lane-polling"
+    }
+  ],
+  "closed": [
+    {
+      "id": "abn9.44.2.9",
+      "title": "per-identity dispatch outcome reporting (endorsed descope to abn9.44.9 + abn9.44.11)",
+      "pr": 354
+    },
+    {
+      "id": "abn9.44.9",
+      "title": "merge-guard retry caller NDJSON",
+      "pr": 356
+    },
+    {
+      "id": "abn9.44.11",
+      "title": "poll-copilot-review completion detection (endorsed descope to abn9.44.12)",
+      "pr": 359
+    },
+    {
+      "id": "abn9.44.14",
+      "title": "poll-copilot-review completion detection (endorsed descope to abn9.44.15)",
+      "pr": 360
+    },
+    {
+      "id": "m5tkg",
+      "title": "timestamp inequality (endorsed descope \u2014 >= vs > intentional, reconciled in docs)",
+      "pr": 363
+    }
+  ],
+  "parking_lot": [
+    {
+      "item": "agents-config-wgclw.31 \u2014 P0 quality-gate repo_root bug",
+      "note": "P0 gate repo_root bug (DISTINCT from wgclw.32). FIX VALIDATED: prompt-level 'git -C <repo_root>' + empty-diff tripwire."
+    },
+    {
+      "item": "agents-config-wgclw.32 \u2014 P0 refuter panel false evidence",
+      "note": "Refuter panel fabricated evidence TWICE (2-of-2 false-refutation rate). Both occasions destroyed a true finding. ROOT audits every gate run; every audit recovered a finding."
+    },
+    {
+      "item": "agents-config-abn9.44.10 \u2014 P1 Phase 9 vs merge floor disagreement",
+      "note": "Lanes report reviewed-clean (Phase 9 pass) while blocked at merge floor on identical thread. Root cause of #354 blocker. Covers thread_id trap + 'unposted-SKIP' wording issue."
+    },
+    {
+      "item": "agents-config-abn9.44.13 \u2014 P1 *** DEADLINE 2026-08-01 *** LIVE IN MERGED CODE",
+      "note": "reviewer-login identity mismatch in merged Phase 6 (~L558 PR #354). request-rereview reports 'Copilot', real objects are 'copilot-pull-request-reviewer[bot]'. Pollers never match, read success as timeout. Dormant until Copilot budget unfreezes 2026-08-01."
+    },
+    {
+      "item": "agents-config-abn9.44.14 \u2014 P2 initial poll freshness",
+      "note": "No --since-timestamp check on initial poll. Stale review completes poll. Silent-ask counter leak. Pre-existing. Assigned to lane-polling."
+    },
+    {
+      "item": "agents-config-wgclw.33 \u2014 P1 gate-triage measurement",
+      "note": "Uncommitted src/** silently routes HEAVY->SERIAL. Router sizes on committed only; workflow finders examine committed+working-tree. Downgrades exactly where HEAVY protects."
+    },
+    {
+      "item": "agents-config-abn9.44.15 \u2014 P2 TOCTOU window",
+      "note": "poll-copilot-review.sh completion paths lack final head re-read. Between head fetch/filter and poll exit. Pattern across all three paths (review, reaction, marker). Discovered from abn9.44.14. Deferred \u2014 check-merge-eligibility.sh has commit_id backstop."
+    },
+    {
+      "item": "agents-config-abn9.44.16 \u2014 P2 grind event-log channel",
+      "note": "Grind event log lacks channel for human questions/ROOT answers. Exchanges in ROOT session never reach dashboard, lost across compaction. Scott's request. Add permanent Q&A channel to grind infra."
+    }
+  ],
+  "caveat": "\u2713 CI BLINDNESS VERIFIED RESOLVED: Scott ran installer. check-merge-eligibility.sh now carries abn9.44.3 fix. Verified live: ci_state='green' on PR #363 post-install (was 'none' before). Merge floor sees real CI status. Manual per-merge verification retired.",
+  "grind_note": "4 ATTEMPTS ON 44.4: 3 REAL SECURITY DEFECTS caught pre-merge by directed reviewers (mutation probes). HEAVY gate certified attempt 1 'clean' with zero findings. Directed review track record: 3-for-4 defects found.",
+  "grind_final": true,
+  "final_timestamp": "2026-07-19T18:54:42Z"
+}
