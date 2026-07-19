@@ -15,7 +15,7 @@ import json
 from dataclasses import dataclass, field
 
 from grind.fold import fold
-from grind.model import AttentionEntry, JsonValue, Observation, RawEvent, State
+from grind.model import AnomalyRecord, AttentionEntry, JsonValue, Observation, RawEvent, State
 
 
 class LogCorruptionError(ValueError):
@@ -65,6 +65,14 @@ def fold_log(text: str) -> State:
     state = fold(parsed.events)
     if parsed.torn_tail:
         message = "torn_tail: log's final line did not parse and was dropped"
+        # A torn tail is a non-event anomaly (no ts/item/lane -- the dropped
+        # fragment never parsed into an event), so consumers of the fold's
+        # anomaly projection see it alongside event anomalies, distinct from a
+        # plain ERROR observation (spec: the reader "reports the torn_tail
+        # anomaly").
+        state.anomalies.append(
+            AnomalyRecord(ts=None, type="torn_tail", item=None, lane=None, reason=message)
+        )
         state.observations.append(Observation(level="ERROR", message=message))
         state.attention.append(AttentionEntry(text=message, auto=True))
     return state

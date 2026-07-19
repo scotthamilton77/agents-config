@@ -60,3 +60,15 @@ def test_fold_log_records_a_torn_tail_as_an_attention_raising_observation() -> N
     assert state.seeded is True
     assert any("torn_tail" in o.message for o in state.observations)
     assert any(a.auto for a in state.attention)
+
+
+def test_fold_log_records_a_torn_tail_in_the_anomaly_projection() -> None:
+    good = _line(seed_event())
+    torn = '{"ts": "t", "type": "item_start'
+    text = good + "\n" + torn
+
+    state = fold_log(text)
+
+    torn_anomalies = [a for a in state.anomalies if a.type == "torn_tail"]
+    assert len(torn_anomalies) == 1
+    assert torn_anomalies[0].reason
