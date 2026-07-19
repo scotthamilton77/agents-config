@@ -6,8 +6,9 @@ the dashboard works from a `file://` URL with no server.
 
 **The bookkeeper's update cycle:** receive a delta from ROOT → merge it into
 `state.json` → re-render `dashboard.html` with the new state inlined → stop.
-Never open a browser except on first creation — and open it with the OS handler
-(`open` on macOS, `xdg-open` elsewhere), never a browser-automation MCP.
+Never open a browser except on first creation — and open it with the platform's
+own opener (`open` on macOS, `start` on Windows, `xdg-open` elsewhere), never a
+browser-automation MCP.
 
 **Serialization contract.** State strings carry text from outside the grind —
 PR titles, review-comment excerpts, branch names. Serialize with a real JSON

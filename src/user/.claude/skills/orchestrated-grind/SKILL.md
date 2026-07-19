@@ -126,8 +126,8 @@ Rules that are not negotiable:
    unconfirmed partition is expensive to unwind once four agents are live.
 3. **Spawn the bookkeeper first**, with the dashboard template and the state
    schema. It writes the initial `state.json` and `dashboard.html`, and opens
-   the page in the browser **exactly once**, via the OS handler named in §5
-   (`open` / `xdg-open` — never browser automation).
+   the page in the browser **exactly once**, via the platform opener named in
+   §5 (`open` / `start` / `xdg-open` — never browser automation).
 4. **Spawn the lieutenants**, one message each, carrying: the lane's queue, the
    worktree naming convention, the review protocol (§3), the post-merge leg
    (§8), the instruction to report **reviewed-clean** rather than merging, and
@@ -424,10 +424,15 @@ browser the human already uses:
 open "<abs-path>/dashboard.html"
 # Linux / BSD
 xdg-open "<abs-path>/dashboard.html"
+# Windows — the "" is the window-title arg, so the path must follow it
+start "" "<abs-path>\dashboard.html"
 ```
 
-Branch on `uname` (`Darwin` → `open`, otherwise `xdg-open`) rather than
-guessing, and pass an absolute path — the bookkeeper's cwd is not the human's.
+Pick the opener from the actual platform rather than guessing — `Darwin` →
+`open`, Windows → `start`, otherwise `xdg-open`. Note that `uname` alone does
+not identify native Windows (it is absent outside a POSIX shim), so a bare
+`uname` branch would fall through to `xdg-open` and fail there. Always pass an
+absolute path, quoted — the bookkeeper's cwd is not the human's.
 
 **Browser-automation MCP servers — Playwright, claude-in-chrome, or any
 successor — are prohibited for this.** They are the wrong tool in a way that
