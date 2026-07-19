@@ -58,4 +58,279 @@ assert "exits 3 for unknown flag" "[ \$rc_bogus -eq 3 ]"
 rc_dangling=$?
 assert "exits 3 for flag with no value (not silent exit 1)" "[ \$rc_dangling -eq 3 ]"
 
+# ── --bot-reviewers (eyes-reaction start signal) ─────────────────────────────
+
+assert "accepts --bot-reviewers flag" "grep -q -- '--bot-reviewers' '$SCRIPT'"
+
+"$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z --bot-reviewers 'not-json' 2>/dev/null
+rc_bad_bots=$?
+assert "exits 3 for non-array --bot-reviewers" "[ \$rc_bad_bots -eq 3 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z --bot-reviewers '[]' 2>/dev/null
+rc_empty_bots=$?
+assert "exits 3 for empty --bot-reviewers array" "[ \$rc_empty_bots -eq 3 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z --bot-reviewers '["ok", 3]' 2>/dev/null
+rc_mixed_bots=$?
+assert "exits 3 for --bot-reviewers array with a non-string" "[ \$rc_mixed_bots -eq 3 ]"
+
+# --- Fake-gh shim (argv-routed fixtures): dispatches on the endpoint path so
+# a single fixture per test controls the events/reactions API response. Poll
+# window collapsed to one fast attempt (INITIAL_SLEEP/POLL_INTERVAL=0,
+# POLL_COUNT=1) so these tests don't pay the real 80s window.
+FAKEBIN="$TMP/bin"
+mkdir -p "$FAKEBIN"
+cat > "$FAKEBIN/gh" <<'FAKE'
+#!/usr/bin/env bash
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  exit 0
+fi
+if [ "$1" = "api" ]; then
+  shift
+  endpoint=""
+  for arg in "$@"; do
+    case "$arg" in
+      --*) ;;
+      *) endpoint="$arg"; break ;;
+    esac
+  done
+  case "$endpoint" in
+    */issues/*/events*)
+      if [ "${FAKE_EVENTS_FAIL:-0}" = "1" ]; then
+        echo "fake-gh: simulated events endpoint failure" >&2
+        exit 1
+      fi
+      cat "${FAKE_EVENTS_FILE:-/dev/null}" 2>/dev/null || echo '[]'
+      ;;
+    */issues/*/reactions*)
+      if [ "${FAKE_REACTIONS_FAIL:-0}" = "1" ]; then
+        echo "fake-gh: simulated reactions endpoint failure" >&2
+        exit 1
+      fi
+      cat "${FAKE_REACTIONS_FILE:-/dev/null}" 2>/dev/null || echo '[]'
+      ;;
+    *) echo '[]' ;;
+  esac
+  exit 0
+fi
+exit 0
+FAKE
+chmod +x "$FAKEBIN/gh"
+
+export INITIAL_SLEEP=0 POLL_INTERVAL=0 POLL_COUNT=1
+EMPTY_EVENTS="$TMP/empty-events.json"
+echo '[]' > "$EMPTY_EVENTS"
+EMPTY_REACTIONS="$TMP/empty-reactions.json"
+echo '[]' > "$EMPTY_REACTIONS"
+
+# Regression: the original copilot_work_started event path still works
+# standalone (no --bot-reviewers) — the pre-existing behavior this bead must
+# not disturb.
+EVENTS_FILE="$TMP/events-copilot.json"
+cat > "$EVENTS_FILE" <<'JSON'
+[{"event":"copilot_work_started","created_at":"2026-01-01T00:05:00Z"}]
+JSON
+out=$(FAKE_EVENTS_FILE="$EVENTS_FILE" PATH="$FAKEBIN:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z 2>/dev/null)
+rc_event=$?
+assert "copilot_work_started event exits 0" "[ \$rc_event -eq 0 ]"
+assert "copilot_work_started event reports signal event" "printf '%s' '$out' | jq -e '.signal == \"event\"' >/dev/null"
+
+# A copilot_work_started event PREDATING --after is stale and ignored — the
+# events filter is applied locally (matching the reactions check), so this
+# also proves the filter actually runs, not just the extraction downstream.
+EVENTS_STALE="$TMP/events-stale.json"
+cat > "$EVENTS_STALE" <<'JSON'
+[{"event":"copilot_work_started","created_at":"2025-12-31T23:00:00Z"}]
+JSON
+FAKE_EVENTS_FILE="$EVENTS_STALE" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z >/dev/null 2>&1
+rc_event_stale=$?
+assert "a copilot_work_started event predating --after is ignored (exit 1)" "[ \$rc_event_stale -eq 1 ]"
+
+# An event of a DIFFERENT type (not copilot_work_started) is not a start
+# signal, even if it post-dates --after.
+EVENTS_OTHER="$TMP/events-other.json"
+cat > "$EVENTS_OTHER" <<'JSON'
+[{"event":"review_requested","created_at":"2026-01-01T00:05:00Z"}]
+JSON
+FAKE_EVENTS_FILE="$EVENTS_OTHER" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z >/dev/null 2>&1
+rc_event_other=$?
+assert "a non-copilot_work_started event is not a start signal (exit 1)" "[ \$rc_event_other -eq 1 ]"
+
+# Without --bot-reviewers, an eyes reaction is NOT checked — old behavior
+# (Copilot-events-only) is preserved even if one happens to be present.
+REACTIONS_EYES="$TMP/reactions-eyes.json"
+cat > "$REACTIONS_EYES" <<'JSON'
+[{"content":"eyes","user":{"login":"chatgpt-codex-connector[bot]"},"created_at":"2026-01-01T00:05:00Z"}]
+JSON
+FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$REACTIONS_EYES" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z >/dev/null 2>&1
+rc_no_flag=$?
+assert "eyes reaction ignored when --bot-reviewers omitted (exit 1, old behavior)" "[ \$rc_no_flag -eq 1 ]"
+
+# A Copilot-only --bot-reviewers list has no eyes-capable identity — the
+# eyes check must be skipped, not just gated on --bot-reviewers being
+# non-empty, or a Copilot-only policy starts polling an endpoint it has no
+# use for.
+FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$REACTIONS_EYES" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["Copilot"]' >/dev/null 2>&1
+rc_copilot_only=$?
+assert "eyes reaction ignored for a Copilot-only --bot-reviewers list (exit 1)" "[ \$rc_copilot_only -eq 1 ]"
+
+# A Copilot-only policy must not be exposed to reactions-endpoint failures
+# at all — a hiccup on an endpoint it never needed must not turn an
+# ordinary "Copilot didn't start" into a false infrastructure error.
+out=$(FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FAIL=1 PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["Copilot"]' 2>/dev/null)
+rc_copilot_only_reactions_fail=$?
+assert "a reactions-endpoint failure is irrelevant for a Copilot-only policy (exit 1, not 3)" "[ \$rc_copilot_only_reactions_fail -eq 1 ]"
+assert "Copilot-only policy with a reactions failure still reports no_rereview_started" \
+  "printf '%s' '$out' | jq -e '.status == \"no_rereview_started\"' >/dev/null"
+
+# A mixed allowlist (Copilot + Codex) still enables the eyes check.
+out=$(FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$REACTIONS_EYES" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["Copilot", "chatgpt-codex-connector[bot]"]' 2>/dev/null)
+rc_mixed=$?
+assert "a mixed Copilot+Codex allowlist still detects the eyes reaction (exit 0)" "[ \$rc_mixed -eq 0 ]"
+assert "mixed allowlist reports signal eyes_reaction" "printf '%s' '$out' | jq -e '.signal == \"eyes_reaction\"' >/dev/null"
+
+# With --bot-reviewers, an eyes reaction from an allowlisted identity
+# post-dating --after is a start signal.
+out=$(FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$REACTIONS_EYES" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' 2>/dev/null)
+rc_eyes=$?
+assert "eyes reaction from an allowlisted identity exits 0" "[ \$rc_eyes -eq 0 ]"
+assert "eyes reaction reports signal eyes_reaction" "printf '%s' '$out' | jq -e '.signal == \"eyes_reaction\"' >/dev/null"
+
+# Case-insensitive identity match, mirroring poll-copilot-review.sh's convention.
+FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$REACTIONS_EYES" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["CHATGPT-CODEX-CONNECTOR[bot]"]' >/dev/null 2>&1
+rc_ci=$?
+assert "uppercase allowlist entry still matches (case-insensitive)" "[ \$rc_ci -eq 0 ]"
+
+# An eyes reaction from an identity NOT on the allowlist is ignored.
+REACTIONS_OTHER="$TMP/reactions-other.json"
+cat > "$REACTIONS_OTHER" <<'JSON'
+[{"content":"eyes","user":{"login":"some-other-bot[bot]"},"created_at":"2026-01-01T00:05:00Z"}]
+JSON
+FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$REACTIONS_OTHER" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' >/dev/null 2>&1
+rc_other=$?
+assert "eyes reaction from a non-allowlisted identity is ignored (exit 1)" "[ \$rc_other -eq 1 ]"
+
+# A non-eyes reaction (e.g. a clean-pass +1) is not a start signal.
+REACTIONS_PLUS1="$TMP/reactions-plus1.json"
+cat > "$REACTIONS_PLUS1" <<'JSON'
+[{"content":"+1","user":{"login":"chatgpt-codex-connector[bot]"},"created_at":"2026-01-01T00:05:00Z"}]
+JSON
+FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$REACTIONS_PLUS1" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' >/dev/null 2>&1
+rc_plus1=$?
+assert "a +1 reaction (not eyes) is not a start signal (exit 1)" "[ \$rc_plus1 -eq 1 ]"
+
+# An eyes reaction that PREDATES --after is stale and ignored.
+REACTIONS_STALE="$TMP/reactions-stale.json"
+cat > "$REACTIONS_STALE" <<'JSON'
+[{"content":"eyes","user":{"login":"chatgpt-codex-connector[bot]"},"created_at":"2025-12-31T23:00:00Z"}]
+JSON
+FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$REACTIONS_STALE" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' >/dev/null 2>&1
+rc_stale=$?
+assert "an eyes reaction predating --after is ignored (exit 1)" "[ \$rc_stale -eq 1 ]"
+
+# Neither an event nor an eyes reaction present: exits 1, no_rereview_started.
+out=$(FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$EMPTY_REACTIONS" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' 2>/dev/null)
+rc_none=$?
+assert "neither signal present exits 1" "[ \$rc_none -eq 1 ]"
+assert "neither signal present reports no_rereview_started" "printf '%s' '$out' | jq -e '.status == \"no_rereview_started\"' >/dev/null"
+
+# A reactions-endpoint failure still in effect at the deadline is an
+# infrastructure error (exit 3), not "no re-review started" (exit 1) — the
+# two are NOT equivalent: exit 1 tells Phase 6 to spend its one-ask silent
+# counter, but a failed endpoint never established whether Codex started.
+out=$(FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FAIL=1 PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' 2>/dev/null)
+rc_endpoint_fail=$?
+assert "a persistent reactions-endpoint failure exits 3 (infra error, not timeout)" "[ \$rc_endpoint_fail -eq 3 ]"
+assert "a persistent reactions-endpoint failure does NOT report no_rereview_started" \
+  "printf '%s' '$out' | jq -e '.status != \"no_rereview_started\"' >/dev/null"
+assert "a persistent reactions-endpoint failure reports rereview_start_check_error" \
+  "printf '%s' '$out' | jq -e '.status == \"rereview_start_check_error\"' >/dev/null"
+
+# The events check and the eyes-reaction check are independent API calls —
+# an events-endpoint failure must NOT skip the eyes check when
+# --bot-reviewers is supplied: an active Codex review must still be
+# detected even while Copilot's endpoint is having a bad day.
+out=$(FAKE_EVENTS_FAIL=1 FAKE_REACTIONS_FILE="$REACTIONS_EYES" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' 2>/dev/null)
+rc_events_fail_eyes_ok=$?
+assert "an events-endpoint failure does not block detecting a live eyes reaction (exit 0)" "[ \$rc_events_fail_eyes_ok -eq 0 ]"
+assert "eyes reaction still reports signal eyes_reaction despite the events failure" \
+  "printf '%s' '$out' | jq -e '.signal == \"eyes_reaction\"' >/dev/null"
+
+# Symmetric to the reactions case: a persistent EVENTS-endpoint failure at
+# the deadline is also an infrastructure error (exit 3), not a false
+# no_rereview_started -- for a policy where Copilot is actually relevant
+# (here, --bot-reviewers omitted entirely, this script's legacy Copilot-only
+# default). A Codex-only policy is covered separately below and must NOT
+# exit 3 on an events failure, since events was never relevant to it.
+out=$(FAKE_EVENTS_FAIL=1 FAKE_REACTIONS_FILE="$EMPTY_REACTIONS" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z 2>/dev/null)
+rc_events_endpoint_fail=$?
+assert "a persistent events-endpoint failure exits 3 (infra error, not timeout)" "[ \$rc_events_endpoint_fail -eq 3 ]"
+assert "a persistent events-endpoint failure reports rereview_start_check_error" \
+  "printf '%s' '$out' | jq -e '.status == \"rereview_start_check_error\"' >/dev/null"
+
+# A Codex-only allowlist has no Copilot-capable identity: the events check
+# (and its failure) must be irrelevant, symmetric to the Copilot-only
+# reactions-irrelevance case above. An events-endpoint failure here must
+# fall through to a correct no_rereview_started, not a false exit 3.
+out=$(FAKE_EVENTS_FAIL=1 FAKE_REACTIONS_FILE="$EMPTY_REACTIONS" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' 2>/dev/null)
+rc_events_fail_codex_only=$?
+assert "an events-endpoint failure is irrelevant for a Codex-only policy (exit 1, not 3)" "[ \$rc_events_fail_codex_only -eq 1 ]"
+assert "Codex-only policy with an events failure still reports no_rereview_started" \
+  "printf '%s' '$out' | jq -e '.status == \"no_rereview_started\"' >/dev/null"
+
+# ── Same-second boundary (Phase 6 step 1's stated contract) ─────────────────
+# <rereview_since_timestamp> is captured immediately BEFORE the re-review ask
+# is dispatched, specifically so a fast bot response landing in the same
+# API-timestamp second is not excluded. The comparison must therefore be
+# >=, not >, against --after for BOTH signals.
+
+EVENTS_SAME_SECOND="$TMP/events-same-second.json"
+cat > "$EVENTS_SAME_SECOND" <<'JSON'
+[{"event":"copilot_work_started","created_at":"2026-01-01T00:00:00Z"}]
+JSON
+out=$(FAKE_EVENTS_FILE="$EVENTS_SAME_SECOND" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z 2>/dev/null)
+rc_event_same_second=$?
+assert "a copilot_work_started event in the SAME second as --after is accepted (exit 0)" "[ \$rc_event_same_second -eq 0 ]"
+assert "same-second event still reports signal event" "printf '%s' '$out' | jq -e '.signal == \"event\"' >/dev/null"
+
+REACTIONS_EYES_SAME_SECOND="$TMP/reactions-eyes-same-second.json"
+cat > "$REACTIONS_EYES_SAME_SECOND" <<'JSON'
+[{"content":"eyes","user":{"login":"chatgpt-codex-connector[bot]"},"created_at":"2026-01-01T00:00:00Z"}]
+JSON
+out=$(FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$REACTIONS_EYES_SAME_SECOND" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' 2>/dev/null)
+rc_eyes_same_second=$?
+assert "an eyes reaction in the SAME second as --after is accepted (exit 0)" "[ \$rc_eyes_same_second -eq 0 ]"
+assert "same-second eyes reaction still reports signal eyes_reaction" "printf '%s' '$out' | jq -e '.signal == \"eyes_reaction\"' >/dev/null"
+
 exit $FAIL
