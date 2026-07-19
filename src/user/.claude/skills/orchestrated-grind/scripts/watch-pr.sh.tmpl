@@ -214,33 +214,67 @@ fetch_max_id() {
 # ACTIVITY — never upgrade one — so the failure direction stays safe.
 REACTION_QUERY='query($owner:String!,$name:String!,$pr:Int!){
   repository(owner:$owner,name:$name){ pullRequest(number:$pr){
-    reactions(first:100){nodes{content user{login}}}
-    comments(first:100){nodes{reactions(first:50){nodes{content user{login}}}}}
-    reviews(first:100){nodes{reactions(first:50){nodes{content user{login}}}}}
-    reviewThreads(first:100){nodes{comments(first:10){nodes{reactions(first:20){nodes{content user{login}}}}}}}
+    reactions(first:100){pageInfo{hasNextPage} nodes{content user{login}}}
+    comments(first:100){pageInfo{hasNextPage} nodes{id reactions(first:50){pageInfo{hasNextPage} nodes{content user{login}}}}}
+    reviews(first:100){pageInfo{hasNextPage} nodes{id reactions(first:50){pageInfo{hasNextPage} nodes{content user{login}}}}}
+    reviewThreads(first:100){pageInfo{hasNextPage} nodes{comments(first:10){pageInfo{hasNextPage} nodes{id reactions(first:20){pageInfo{hasNextPage} nodes{content user{login}}}}}}}
   } } }'
 
-# Emits a comma-joined, sorted, de-duplicated set of "<login>:<CONTENT>" pairs,
-# or NOTHING with a non-zero return when unreadable. An empty set is a
-# legitimate result (nobody reacted), hence the return-code signalling.
+# Emits a comma-joined, sorted set of "<objectId>:<login>:<CONTENT>" keys, or
+# NOTHING with a non-zero return when unreadable OR truncated. An empty set is
+# a legitimate result (nobody reacted), hence the return-code signalling.
+#
+# ── THE KEY CARRIES THE REACTED OBJECT'S IDENTITY ──────────────────────────
+# A bare "<login>:<CONTENT>" key collapses distinct events. If a reviewer has
+# already THUMBS_UP'd the PR body at arm time and then THUMBS_UP's an inline
+# comment, both render identically, the pair is already in the baseline, and
+# the new approval is silently discarded as "already present". Prefixing the
+# reactable's node id keeps them distinct. The PR body uses the literal "pr";
+# GraphQL node ids and GitHub logins contain no ":", so the three-field split
+# in classify_ring is unambiguous.
+#
+# ── TRUNCATION IS TREATED AS UNREADABLE ────────────────────────────────────
+# These connections are paged. If a reactable holds more reactions than its
+# page, a REMOVAL from the sampled page promotes a previously-unsampled older
+# reaction into the next sample, where it reads as new — a spurious CLEAN in
+# the one direction this classifier must never guess. Rather than page
+# exhaustively (unbounded work on the doorbell path), any `hasNextPage` marks
+# the whole sample untrustworthy and returns non-zero, which the existing
+# failure plumbing already turns into ACTIVITY.
 fetch_reaction_set() {
-  local json
+  local json out
   json=$(gh api graphql -F owner="${REPO%%/*}" -F name="${REPO##*/}" -F pr="$PR" \
            -f query="$REACTION_QUERY" 2>/dev/null) || return 1
   [ -n "$json" ] || return 1
   # `as $p` rather than a bare pipe into a `,`-separated list: in jq `|` binds
   # across `,`, so the array form would chain each source onto the previous one.
-  jq -r '
+  out=$(jq -r '
     .data.repository.pullRequest as $p
-    | [ ($p.reactions.nodes // []),
-        (($p.comments.nodes // []) | map(.reactions.nodes // []) | add // []),
-        (($p.reviews.nodes  // []) | map(.reactions.nodes // []) | add // []),
-        (($p.reviewThreads.nodes // []) | map(.comments.nodes // []) | add // []
-           | map(.reactions.nodes // []) | add // [])
-      ]
-    | flatten
-    | map(select(.user != null) | "\(.user.login):\(.content)")
-    | sort | unique | join(",")' <<<"$json" 2>/dev/null
+    | ( [ ($p.reactions.pageInfo.hasNextPage // false),
+          ($p.comments.pageInfo.hasNextPage // false),
+          ($p.reviews.pageInfo.hasNextPage // false),
+          ($p.reviewThreads.pageInfo.hasNextPage // false),
+          (($p.comments.nodes // []) | map(.reactions.pageInfo.hasNextPage // false)),
+          (($p.reviews.nodes  // []) | map(.reactions.pageInfo.hasNextPage // false)),
+          (($p.reviewThreads.nodes // []) | map(.comments.pageInfo.hasNextPage // false)),
+          (($p.reviewThreads.nodes // []) | map(.comments.nodes // []) | add // []
+             | map(.reactions.pageInfo.hasNextPage // false))
+        ] | flatten | any ) as $truncated
+    | if $truncated then "TRUNCATED"
+      else
+        [ (($p.reactions.nodes // []) | map(select(.user != null)
+             | "pr:\(.user.login):\(.content)")),
+          (($p.comments.nodes // []) | map(.id as $i | (.reactions.nodes // [])
+             | map(select(.user != null) | "\($i):\(.user.login):\(.content)")) | add // []),
+          (($p.reviews.nodes // []) | map(.id as $i | (.reactions.nodes // [])
+             | map(select(.user != null) | "\($i):\(.user.login):\(.content)")) | add // []),
+          (($p.reviewThreads.nodes // []) | map(.comments.nodes // []) | add // []
+             | map(.id as $i | (.reactions.nodes // [])
+             | map(select(.user != null) | "\($i):\(.user.login):\(.content)")) | add // [])
+        ] | flatten | sort | unique | join(",")
+      end' <<<"$json" 2>/dev/null) || return 1
+  [ "$out" = "TRUNCATED" ] && return 1
+  printf '%s' "$out"
 }
 
 BASE_MAX_REVIEW_ID=$(fetch_max_id "pulls/$PR/reviews")   || CLASSIFY_OK=0
@@ -347,7 +381,11 @@ classify_ring() {
     while IFS= read -r pair; do
       [ -n "$pair" ] || continue
       case ",${BASE_REACTION_SET}," in (*",$pair,"*) continue ;; esac   # already present at arm
-      local login="${pair%%:*}" content="${pair##*:}"
+      # Key is "<objectId>:<login>:<CONTENT>". Peel from the right: content is
+      # the last field, login the one before it, and the object id (which never
+      # contains ":") is whatever remains.
+      local content="${pair##*:}" rest="${pair%:*}"
+      local login="${rest#*:}"
       is_trusted "$login" || continue
       # GraphQL enum names, not REST's `+1`/`eyes` strings.
       case "$content" in
