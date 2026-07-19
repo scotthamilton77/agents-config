@@ -69,6 +69,19 @@ class ParkingEntry:
 
 
 @dataclass
+class DiscoveredWork:
+    """Triage provenance for an item created by a `discovered_work` event.
+
+    State is the renderer's only input, so `source` (the lane/PR that surfaced
+    the work) and `rationale` (why it was admitted) live here -- without them a
+    folded item cannot explain where it came from or why it entered the queue.
+    """
+
+    source: str | None = None
+    rationale: str | None = None
+
+
+@dataclass
 class Item:
     id: str
     lane: str | None
@@ -80,6 +93,7 @@ class Item:
     pr: PrRef | None = None
     review: ItemReview = field(default_factory=ItemReview)
     parked: ParkingEntry | None = None
+    discovered: DiscoveredWork | None = None
 
 
 @dataclass

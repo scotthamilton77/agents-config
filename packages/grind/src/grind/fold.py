@@ -17,6 +17,7 @@ from grind.model import (
     AnomalyRecord,
     AttentionEntry,
     ClosedEntry,
+    DiscoveredWork,
     Item,
     ItemReview,
     ItemStatus,
@@ -534,15 +535,22 @@ def _h_discovered_work(state: State, evt: RawEvent) -> None:
     bead = _str(evt, "bead")
     if bead == item_id:
         bead = None
+    # The item "carries its triage rationale" (spec) plus its source -- state is
+    # the renderer's only input, so both dispositions must preserve this
+    # provenance or a later projection can't explain the work's origin.
+    rationale = _str(evt, "rationale")
+    provenance = DiscoveredWork(source=_str(evt, "source"), rationale=rationale)
     if disposition == "parked":
         item = Item(id=item_id, lane=None, title=description, status="queued", bead=bead)
-        item.parked = ParkingEntry(kind=_park_kind(evt), note=_str(evt, "rationale"))
+        item.parked = ParkingEntry(kind=_park_kind(evt), note=rationale)
+        item.discovered = provenance
         state.items[item_id] = item
     elif disposition == "enqueued":
         lane = _resolve_lane(state, evt)
         if lane is None:
             return
         item = Item(id=item_id, lane=lane.id, title=description, status="queued", bead=bead)
+        item.discovered = provenance
         state.items[item_id] = item
         lane.item_ids.append(item_id)
     else:

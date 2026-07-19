@@ -117,6 +117,30 @@ def test_discovered_work_enqueued_creates_a_new_queued_item() -> None:
     assert "disc-1" in state.lanes["lane-a"].item_ids
 
 
+def test_discovered_work_enqueued_preserves_source_and_rationale() -> None:
+    # spec: the created item "carries its triage rationale" and its source; state
+    # is the renderer's only input, so dropping either loses the provenance.
+    events = [
+        seed_event(),
+        event(
+            "discovered_work",
+            item="disc-1",
+            description="found a gap",
+            source="lane-a PR review",
+            disposition="enqueued",
+            lane="lane-a",
+            rationale="blocks the milestone",
+        ),
+    ]
+
+    state = fold(events)
+
+    item = state.items["disc-1"]
+    assert item.discovered is not None
+    assert item.discovered.source == "lane-a PR review"
+    assert item.discovered.rationale == "blocks the milestone"
+
+
 def test_discovered_work_bead_is_normalized_away_when_equal_to_item_id() -> None:
     # spec: bead? is "optional metadata, carried only when it differs from item".
     events = [
@@ -178,6 +202,29 @@ def test_discovered_work_parked_creates_a_new_parked_item() -> None:
     assert item.parked is not None
     assert item.parked.kind == "human-gated"
     assert "disc-2" not in state.lanes["lane-a"].item_ids
+
+
+def test_discovered_work_parked_preserves_source_and_rationale() -> None:
+    # Blast radius of the enqueued path: the parked path also carries provenance.
+    events = [
+        seed_event(),
+        event(
+            "discovered_work",
+            item="disc-2",
+            description="human call needed",
+            source="lane-a",
+            disposition="parked",
+            kind="human-gated",
+            rationale="needs a decision",
+        ),
+    ]
+
+    state = fold(events)
+
+    item = state.items["disc-2"]
+    assert item.discovered is not None
+    assert item.discovered.source == "lane-a"
+    assert item.discovered.rationale == "needs a decision"
 
 
 def test_discovered_work_with_duplicate_item_id_is_an_anomaly() -> None:
