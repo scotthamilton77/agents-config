@@ -512,18 +512,32 @@ the helper's default (1) per spec decision, not a per-repo config knob.
    makes Codex re-cite settled findings every round, while a structured
    disposition table (including an explicit REBUT) produced zero re-raises.
 
-3. **Launch** `poll-copilot-rereview-start.sh --owner "$OWNER" --repo "$REPO" --pr "$PR" --after <rereview_since_timestamp>` (80s max window:
-   20s pre-sleep + 6 × 10s polls). This detects the `copilot_work_started`
-   event that follows the fresh `review_requested`.
+3. **Launch** `poll-copilot-rereview-start.sh --owner "$OWNER" --repo "$REPO" --pr "$PR" --after <rereview_since_timestamp>
+   --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"` (80s max
+   window: 20s pre-sleep + 6 × 10s polls). This detects either signal that a
+   trusted bot has started a re-review: the `copilot_work_started` event
+   that follows the fresh `review_requested` (Copilot), or an `eyes`
+   reaction on the PR body from an allowlisted identity post-dating
+   `<rereview_since_timestamp>` (Codex's in-flight marker — Codex never
+   emits `copilot_work_started`, since it responds to the `@codex review`
+   comment in step 2, not a reviewer-request event). Passing
+   `--bot-reviewers` is what enables the eyes-reaction check; omitting it
+   preserves the script's original Copilot-events-only behavior.
 
-4. **If** `copilot_work_started` detected, launch `poll-copilot-review.sh
+4. **If** step 3 detected a re-review start (either signal), launch
+   `poll-copilot-review.sh
    --owner "$OWNER" --repo "$REPO" --pr "$PR"
    --skip-request-check --since-timestamp <rereview_since_timestamp>
    --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"`
    to await the actual review. The `--since-timestamp` guard prevents the
    stale-cache bug where the script returns the prior round's review instead
    of the new one; `--bot-reviewers` keeps re-review detection aligned to the
-   same policy allowlist used in Phase 2.
+   same policy allowlist used in Phase 2. Before this bead, step 4 was gated
+   on the Copilot-only `copilot_work_started` event alone, so a Codex-only
+   re-review always fell through to "no re-review started" (recording a
+   silent ask against the one-ask cap) even when Codex was actively
+   reviewing and later posted a review or clean-pass — step 3's added
+   eyes-reaction detection is what fixes that.
 
 5. **If** a new review arrives, return to **Phase 3 (round +1)**.
 
