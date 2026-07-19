@@ -125,7 +125,7 @@ things now *are*.
 
 | Type | Payload | Effect |
 |------|---------|--------|
-| `grind_created` | `title`, `repo` (owner/name), `mission` (goal + explicit out-of-scope), `protocols` (structured block: review protocol choice, merge-policy resolution, watcher conventions, session grants), `config` (thresholds, below), `lanes[]` (id, name, agent, model+effort the lieutenant runs at, queue of items with bead ids, titles, blocker edges) | Seeds the entire board. The mission/protocols block is what makes `status --handoff` self-contained (§7 replacement). |
+| `grind_created` | `title`, `repo` (owner/name), `mission` (goal + explicit out-of-scope), `protocols` (structured block: review protocol choice, merge-policy resolution, watcher conventions, session grants), `config` (thresholds, below), `lanes[]` (id, name, agent, model+effort the lieutenant runs at, queue of items with bead ids, titles, blocker edges) | Seeds the entire board. Legal only as the log's **first** event; any subsequent `grind_created` folds as an anomaly (accept-and-flag), leaving the board unchanged. The mission/protocols block is what makes `status --handoff` self-contained (§7 replacement). |
 | `grind_paused` | `reason`, `resume_checklist[]` | Board banner; handoff carries pause state |
 | `grind_resumed` | — | Clears pause |
 | `grind_finished` | `summary` | Terminal. Fold rejects (anomaly) further mutating events. |
@@ -237,7 +237,7 @@ anomalies are data, not errors).
 
 | Verb | Does | Returns |
 |------|------|---------|
-| `grind create --file seed.json` | Validates the seed (a `grind_created` payload), writes `events.jsonl` with the first event, folds, writes `state.json`, renders the dashboard | `{ok, state_summary}` |
+| `grind create --file seed.json` | Validates the seed (a `grind_created` payload), writes `events.jsonl` with the first event, folds, writes `state.json`, renders the dashboard. Refuses to run against a directory whose `events.jsonl` already exists and is non-empty (command error, nothing written) — creation goes through `create`, never through `grind log grind_created` mid-run | `{ok, state_summary}` |
 | `grind log <type> [payload flags or --json '<payload>']` | Validates payload shape at the boundary, appends, refolds, rewrites `state.json`, re-renders | The **emit-back envelope** (below) |
 | `grind status [--handoff] [--full]` | Reads the log, folds, reports | Default: summary + conditions. `--full`: entire state. `--handoff`: the compaction handoff (below). |
 | `grind render` | Refolds and re-renders `dashboard.html` only | `{ok, path}` |
