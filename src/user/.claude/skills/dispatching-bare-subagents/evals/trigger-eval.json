@@ -1,0 +1,22 @@
+[
+  {"query": "I need a completely unbiased second opinion on this — spin up a subagent that doesn't have our persona or rules loaded", "should_trigger": true},
+  {"query": "can you launch claude in bare mode to check what the raw system prompt actually looks like without our AGENTS.md", "should_trigger": true},
+  {"query": "I want a control condition here — what would a stock claude session say about this bug without our house-style opinions baked in", "should_trigger": true},
+  {"query": "run a blind semantic check: do these two log lines mean the same thing, without any of our project context biasing the answer", "should_trigger": true},
+  {"query": "I'm testing my new skill's trigger-eval queries — I need a clean session so the description text isn't already sitting in context", "should_trigger": true},
+  {"query": "spin up a claude session with no CLAUDE.md, no rules, nothing loaded — just the bare harness", "should_trigger": true},
+  {"query": "I want to verify what persona actually gets injected by default, without our own persona overriding it", "should_trigger": true},
+  {"query": "get me an independent read on this design doc that isn't colored by our SOLID/DRY house rules", "should_trigger": true},
+  {"query": "launch a virgin-context agent to judge whether this docstring actually matches what the code does", "should_trigger": true},
+  {"query": "how do I strip out hooks and auto-memory for a one-off claude invocation, just this once", "should_trigger": true},
+  {"query": "spin up a subagent to review this PR for me", "should_trigger": false},
+  {"query": "delegate this task to a cheaper OpenRouter model, maybe Kimi or GLM", "should_trigger": false},
+  {"query": "I briefed a worker and it needs to spawn its own agent for a sub-step, then it went silent", "should_trigger": false},
+  {"query": "run this refactor through Kimi K2.7 using our openrouter setup", "should_trigger": false},
+  {"query": "launch a general-purpose subagent to grep the codebase for TODO comments", "should_trigger": false},
+  {"query": "why did my subagent go idle right after it launched a child agent it was waiting on", "should_trigger": false},
+  {"query": "use --model haiku for a cheap triage pass over these files", "should_trigger": false},
+  {"query": "set up a background agent to poll CI status every few minutes", "should_trigger": false},
+  {"query": "what does --dangerously-skip-permissions actually do", "should_trigger": false},
+  {"query": "help me tune my sidekick persona's quotes and voice", "should_trigger": false}
+]
