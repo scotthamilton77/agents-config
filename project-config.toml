@@ -117,10 +117,10 @@ trivial_max_loc      = 3   # SKIP ceiling; hard-capped at 20 on load
 # ---------------------------------------------------------------------------
 [tracks]
 names = ["installer", "prgroom", "workcli", "pdlc-orchestrator",
-         "holding-place", "vizsuite", "skills-discipline",
-         "portability", "ops-meta"]
-organizing-only = ["skills-discipline", "portability", "ops-meta"]
-enforcement = "advisory"   # flip to "required" is agents-config-63nm3, gated on backfill
+         "holding-place", "vizsuite", "review-and-merge",
+         "pipeline-discipline", "grind-runtime", "ops-meta"]
+organizing-only = ["pipeline-discipline", "grind-runtime", "ops-meta"]
+enforcement = "advisory"   # flip to "required" is agents-config-63nm3
 
 [operating-model]
 milestone-wip-cap = 2
