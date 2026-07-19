@@ -116,10 +116,12 @@ def poll_pr(
         # bootstrap.
         return state
 
-    merged = _pr_is_merged(gh, ref)
+    pr = _pr_resource(gh, ref)
+    merged = bool(pr.get("merged_at"))
+    requested_reviewers = pr.get("requested_reviewers") or []
     activity = False
 
-    new_items, terminal_reviews = _ingest_items(gh, ref, state, now=now)
+    new_items, terminal_reviews, raw_reviews = _ingest_items(gh, ref, state, now=now)
     if new_items:
         state.items.extend(new_items)
         activity = True
@@ -177,10 +179,14 @@ def _gh_get(gh: GhClient, ref: PRRef, path: str, *, paginate: bool = False) -> A
         raise vanished_pr_terminal(ref) from exc
 
 
-def _pr_is_merged(gh: GhClient, ref: PRRef) -> bool:
-    """True iff the PR resource shows a merged close (§3.2 poll-row merge edge)."""
-    pr = _gh_get(gh, ref, f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}")
-    return bool(pr.get("merged_at"))
+def _pr_resource(gh: GhClient, ref: PRRef) -> Any:
+    """Read the PR resource; a 404 is a vanished PR/repo mid-run (terminal, §3.6).
+
+    Returns the whole payload rather than a derived bool: ``merged_at`` drives the
+    §3.2 merge edge AND ``requested_reviewers`` drives reviewer reconciliation
+    (§2.1), so one read serves both — no second GET.
+    """
+    return _gh_get(gh, ref, f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}")
 
 
 # GitHub review states that count as a terminal verdict written by _poll (§4.1).
@@ -191,14 +197,17 @@ _TERMINAL_REVIEW_STATES: frozenset[str] = frozenset({"APPROVED", "CHANGES_REQUES
 
 def _ingest_items(
     gh: GhClient, ref: PRRef, state: PRGroomingState, *, now: datetime
-) -> tuple[list[ReviewItem], dict[str, datetime]]:
-    """Fetch the three item sources; return new items + per-reviewer terminal verdicts.
+) -> tuple[list[ReviewItem], dict[str, datetime], list[Any]]:
+    """Fetch the three item sources; return new items, terminal verdicts, raw reviews.
 
     The second element maps a reviewer login to the timestamp of its latest
     APPROVED/CHANGES_REQUESTED review (§4.1) so ``_observe_engagement`` can promote
     that reviewer to ``review_found``. Only items new to ``state`` (natural key
     ``(kind, gh_id)``) are returned; the terminal-verdict map is derived from the
     full reviews response (a verdict can repeat across polls without a new item).
+
+    The third element is the unreduced reviews response — reviewer reconciliation
+    (§2.1) needs full authorship, not just the terminal-verdict map.
     """
     seen = {(item.kind, item.identity.gh_id) for item in state.items}
     # prgroom replies by POSTing a NEW comment whose fresh gh_id is unknown to `seen`;
@@ -245,7 +254,7 @@ def _ingest_items(
             if (item.kind, item.identity.gh_id) not in seen:
                 seen.add((item.kind, item.identity.gh_id))
                 new.append(item)
-    return new, _terminal_review_verdicts(raw_reviews, now=now)
+    return new, _terminal_review_verdicts(raw_reviews, now=now), raw_reviews
 
 
 def _terminal_review_verdicts(raw_reviews: Any, *, now: datetime) -> dict[str, datetime]:

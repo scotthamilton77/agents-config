@@ -72,6 +72,7 @@ def _gh(
     *,
     head_oid: str = "headsha1",
     pr_merged: bool = False,
+    requested_reviewers: list[str | dict[str, object]] | None = None,
     issue_comments: list[dict[str, object]] | None = None,
     reviews: list[dict[str, object]] | None = None,
     review_comments: list[dict[str, object]] | None = None,
@@ -84,12 +85,21 @@ def _gh(
     ``reviewThreads`` read (the thread-id map) between the review-comments REST read
     and the CI read; ``thread_nodes`` supplies that envelope's nodes (default empty
     → every review-thread item degrades to ``thread_id == ""``).
+
+    ``requested_reviewers`` seeds the PR resource's pending-review-request array
+    (bare logins, or full gh user dicts when ``type``/bot-suffix matters).
     """
     pr = (
         {"state": "closed", "merged_at": "2026-06-09T10:00:00Z"}
         if pr_merged
         else {"state": "open", "merged_at": None}
     )
+    # GitHub's pulls/{n} carries the pending review requests on the PR resource.
+    # Accepts bare logins for brevity; a dict passes a full gh user object through
+    # (used by the bot-classification tests).
+    pr["requested_reviewers"] = [
+        {"login": r} if isinstance(r, str) else r for r in (requested_reviewers or [])
+    ]
     results = [
         _ok({"headRefOid": head_oid}),
         _ok(pr),
