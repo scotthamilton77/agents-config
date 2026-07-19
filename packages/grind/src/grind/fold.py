@@ -78,10 +78,13 @@ def _anomaly(state: State, evt: RawEvent, reason: str) -> None:
         AnomalyRecord(ts=_str(evt, "ts"), type=etype, item=item_id, lane=lane_id, reason=reason)
     )
     message = f"anomaly: {etype} on {item_id or lane_id or 'grind'}: {reason}"
+    ts = _str(evt, "ts")
     state.observations.append(
-        Observation(level="ERROR", message=message, item=item_id, lane=lane_id, ts=_str(evt, "ts"))
+        Observation(level="ERROR", message=message, item=item_id, lane=lane_id, ts=ts)
     )
-    state.attention.append(AttentionEntry(text=message, item=item_id, lane=lane_id, auto=True))
+    state.attention.append(
+        AttentionEntry(text=message, item=item_id, lane=lane_id, auto=True, ts=ts)
+    )
 
 
 @_handler("grind_created")
@@ -282,6 +285,29 @@ def _h_pr_opened(state: State, evt: RawEvent) -> None:
 _REVIEWABLE = {"pr-open", "in-review", "waiting-human"}
 
 
+def _record_round(item: Item, round_: int | None, head_sha: str | None, ts: str | None) -> None:
+    """Append/replace this round's authoritative head_sha, last-event-wins
+    within a round (spec `review_stalemate_risk`: "the LATEST event logged for
+    that round"). A round history is thus always distinct rounds in order --
+    exactly what the condition's "last N distinct round values" window needs.
+
+    Last-event-wins applies to any distinct round, not just the final entry: a
+    late event for an earlier round updates that round's record in place
+    (preserving its position in the ordering) rather than appending a duplicate
+    that would inflate the distinct-round count `_review_stalemate_risk` reads."""
+    if round_ is None:
+        return
+    for i, (existing_round, _, _) in enumerate(item.round_history):
+        if existing_round == round_:
+            item.round_history = (
+                *item.round_history[:i],
+                (round_, head_sha, ts),
+                *item.round_history[i + 1 :],
+            )
+            return
+    item.round_history = (*item.round_history, (round_, head_sha, ts))
+
+
 @_handler("review_round")
 def _h_review_round(state: State, evt: RawEvent) -> None:
     item = _active_item(state, evt)
@@ -291,11 +317,13 @@ def _h_review_round(state: State, evt: RawEvent) -> None:
         _anomaly(state, evt, f"review_round illegal from status {item.status!r}")
         return
     round_ = evt.get("round")
-    item.review.round = round_ if isinstance(round_, int) else item.review.round
+    new_round = round_ if isinstance(round_, int) else item.review.round
+    item.review.round = new_round
     item.review.kind = _str(evt, "kind")
     item.review.head_sha = _str(evt, "head_sha")
     item.review.detail = _str(evt, "detail")
     item.status = "in-review"
+    _record_round(item, new_round, item.review.head_sha, _str(evt, "ts"))
 
 
 _OPEN_DISPOSITIONS = {"deferred", "escalated"}
@@ -346,6 +374,7 @@ def _h_review_verdict(state: State, evt: RawEvent) -> None:
     item.review.wont_fix_count = wont_fix_count
     item.review.stalemate = item.review.verdict == "stalemate"
     item.status = "in-review"
+    _record_round(item, new_round, item.review.head_sha, _str(evt, "ts"))
 
 
 _PR_CLOSED_NEXT: set[ItemStatus] = {"in-progress", "queued"}
@@ -370,6 +399,9 @@ def _h_pr_closed(state: State, evt: RawEvent) -> None:
             item=item.id, pr=pr if isinstance(pr, int) else None, reason=reason, ts=_str(evt, "ts")
         )
     )
+    # the review cycle ends with its PR: a later pr_opened starts a fresh
+    # cycle that must not inherit the closed PR's stalemate history
+    item.round_history = ()
     if next_status == "parked":
         _park_item(state, item, kind=None, note=reason)
     else:
@@ -417,6 +449,7 @@ def _h_item_waiting_human(state: State, evt: RawEvent) -> None:
             item=item.id,
             auto=True,
             kind="waiting-human",
+            ts=_str(evt, "ts"),
         )
     )
 
@@ -588,7 +621,9 @@ def _h_observation(state: State, evt: RawEvent) -> None:
     )
     state.observations.append(obs)
     if level == "ERROR":
-        state.attention.append(AttentionEntry(text=message, item=item_id, lane=lane_id, auto=True))
+        state.attention.append(
+            AttentionEntry(text=message, item=item_id, lane=lane_id, auto=True, ts=_str(evt, "ts"))
+        )
     elif level == "LESSON":
         state.lessons.append(obs)
 
@@ -599,7 +634,7 @@ def _h_attention_raised(state: State, evt: RawEvent) -> None:
     if text is None:
         _anomaly(state, evt, "attention_raised has no text")
         return
-    state.attention.append(AttentionEntry(text=text, item=_str(evt, "item")))
+    state.attention.append(AttentionEntry(text=text, item=_str(evt, "item"), ts=_str(evt, "ts")))
 
 
 @_handler("attention_cleared")
@@ -649,4 +684,27 @@ def fold(events: Sequence[Mapping[str, JsonValue]]) -> State:
             _anomaly(state, evt, f"unknown event type {etype!r}")
             continue
         handler(state, evt)
+        _record_last_referenced(state, etype, evt)
     return state
+
+
+def _record_last_referenced(state: State, etype: str, evt: RawEvent) -> None:
+    """Stamp `last_item_ts`/`last_lane_ts` for whatever this event just touched --
+    raw facts copied from the event, not a computation, so this stays inside
+    `fold`'s purity contract (spec: `conditions(State, now)` is the only place
+    a clock enters). `grind_created` seeds every lane and item it creates."""
+    ts = _str(evt, "ts")
+    if ts is None:
+        return
+    if etype == "grind_created":
+        for created_item_id in state.items:
+            state.last_item_ts[created_item_id] = ts
+        for created_lane_id in state.lanes:
+            state.last_lane_ts[created_lane_id] = ts
+        return
+    referenced_item_id = _str(evt, "item")
+    if referenced_item_id is not None and referenced_item_id in state.items:
+        state.last_item_ts[referenced_item_id] = ts
+    referenced_lane_id = _str(evt, "lane")
+    if referenced_lane_id is not None and referenced_lane_id in state.lanes:
+        state.last_lane_ts[referenced_lane_id] = ts

@@ -71,6 +71,9 @@ def _item_json(item: Item) -> JsonValue:
         "review": _item_review_json(item.review),
         "parked": _parking_entry_json(item.parked),
         "discovered": _discovered_work_json(item.discovered),
+        "round_history": [
+            {"round": r, "head_sha": sha, "ts": ts} for r, sha, ts in item.round_history
+        ],
     }
 
 
@@ -94,6 +97,7 @@ def _attention_json(entry: AttentionEntry) -> JsonValue:
         "lane": entry.lane,
         "auto": entry.auto,
         "kind": entry.kind,
+        "ts": entry.ts,
     }
 
 
@@ -150,6 +154,8 @@ def full_state_json(state: State) -> dict[str, JsonValue]:
         "closed_ledger": [_closed_entry_json(c) for c in state.closed_ledger],
         "lessons": [_observation_json(o) for o in state.lessons],
         "anomalies": [anomaly_json(a) for a in state.anomalies],
+        "last_item_ts": cast("JsonValue", dict(state.last_item_ts)),
+        "last_lane_ts": cast("JsonValue", dict(state.last_lane_ts)),
     }
 
 
