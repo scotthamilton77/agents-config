@@ -2372,11 +2372,14 @@ def test_not_requested_reviewer_rewindow_keeps_a_same_poll_fresh_verdict() -> No
     assert reviewers_gate_satisfied(state) is True
 
 
-def test_drive_by_in_progress_promoted_without_window_restart_when_requested() -> None:
-    # A drive-by mid-review (IN_PROGRESS, required=False) that GitHub formally requests
-    # is promoted to required so it blocks the gate — but its in-flight review continues
-    # and now counts, so the window is NOT restarted (last_review_at/last_request_at
-    # preserved). Only REVIEW_FOUND / NOT_REQUESTED presence is a fresh-ask restart.
+def test_drive_by_in_progress_promotion_starts_a_fresh_window() -> None:
+    # A drive-by mid-review (IN_PROGRESS, required=False) that GitHub formally requests is
+    # promoted to required so it blocks the gate — AND its request window restarts. The
+    # drive-by's engagement stamps predate the formal ask, so leaving them would let the
+    # finish-timeout auto-decline the newly-required reviewer off an unsolicited review's
+    # expired window (Codex high). Promotion is a one-time required False->True edge, so the
+    # restart there cannot churn the steady-state no-churn property. With no fresh review in
+    # this poll's response, the window resets to REQUESTED at now, clearing last_review_at.
     review_at = datetime(2026, 6, 9, 11, 5, 0, tzinfo=UTC)
     reviewers = {
         "randomdev": ReviewerState(
@@ -2393,15 +2396,73 @@ def test_drive_by_in_progress_promoted_without_window_restart_when_requested() -
         start,
         ref=_REF,
         gh=_gh(head_oid="same", requested_reviewers=["randomdev"]),
-        deps=_deps(_JUST_AFTER_ACTIVITY),  # 11:10Z — within the 15m finish timeout
+        deps=_deps(_JUST_AFTER_ACTIVITY),  # 11:10Z
         config=_config(),
     )
     rv = state.reviewers["randomdev"]
     assert rv.required is True
-    assert rv.status is ReviewerStatus.IN_PROGRESS
-    assert rv.last_review_at == review_at
-    assert rv.last_request_at == review_at
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.last_review_at is None
+    assert rv.last_request_at == _JUST_AFTER_ACTIVITY
     assert reviewers_gate_satisfied(state) is False
+
+
+def test_promoted_drive_by_near_finish_boundary_is_not_stalled_declined() -> None:
+    # Codex high, multi-poll regression: an optional IN_PROGRESS drive-by whose review is
+    # ~14.9m old (just inside the 15m finish timeout) is formally requested while its own
+    # COMMENTED review is still the only review in the response. The promotion must start a
+    # fresh window, NOT inherit the stale stamp — otherwise the next poll's stalled arm
+    # (now - last_review_at > 15m) auto-declines the requested reviewer and the gate
+    # quiesces without the review the operator asked for.
+    review_at = datetime(2026, 6, 9, 11, 45, 6, tzinfo=UTC)  # 14m54s before _T0
+    drive_by = {
+        "id": 77,
+        "user": {"login": "randomdev"},
+        "state": "COMMENTED",
+        "body": "drive-by nit",
+        "submitted_at": "2026-06-09T11:45:06Z",
+    }
+    reviewers = {
+        "randomdev": ReviewerState(
+            identity="randomdev",
+            kind=ReviewerKind.HUMAN,
+            status=ReviewerStatus.IN_PROGRESS,
+            required=False,
+            last_request_at=review_at,
+            last_review_at=review_at,
+            last_review_id=77,
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    promoted = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["randomdev"], reviews=[drive_by]),
+        deps=_deps(_T0),  # 12:00Z — 14m54s after the drive-by, still inside finish timeout
+        config=_config(),
+    )
+    rv = promoted.reviewers["randomdev"]
+    assert rv.required is True  # promoted → blocks the gate
+    assert rv.status is ReviewerStatus.REQUESTED  # fresh window, not a stale IN_PROGRESS
+    assert rv.last_review_at is None  # stale engagement stamp cleared
+    assert rv.last_request_at == _T0  # window restarted at the formal request
+    assert reviewers_gate_satisfied(promoted) is False
+
+    # Next poll, 30s later (< 3m start timeout) with still no fresh review: the reviewer
+    # must NOT auto-decline off the pre-promotion drive-by age, and the promotion edge does
+    # not re-fire (already required) so the window does not churn.
+    later = poll_pr(
+        promoted,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["randomdev"], reviews=[drive_by]),
+        deps=_deps(_T0 + timedelta(seconds=30)),  # 12:00:30Z
+        config=_config(),
+    )
+    settled = later.reviewers["randomdev"]
+    assert settled.status is ReviewerStatus.REQUESTED
+    assert settled.declined_reason is None
+    assert settled.last_request_at == _T0  # no churn — window stable across the quiet poll
+    assert reviewers_gate_satisfied(later) is False
 
 
 def test_withdrawn_request_declines_an_in_flight_reviewer() -> None:

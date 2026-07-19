@@ -222,9 +222,11 @@ _WITHDRAWABLE_STATUSES: frozenset[ReviewerStatus] = frozenset(
 # ``requested_reviewers`` the instant it submits any review, so a REVIEW_FOUND entry
 # re-listed there can only be a re-request; NOT_REQUESTED is a post-push flip whose
 # re-listing likewise means someone re-asked. REQUESTED / IN_PROGRESS are an ongoing
-# pending pass — leave their window alone (no churn). DECLINED is excluded entirely: a
-# withdrawn decline is handled by the reactivation branch, and a timeout decline stays
-# CONTINUOUSLY listed, so its bare presence is not a new ask.
+# pending pass — leave their window alone (no churn); the ONE exception, handled in
+# ``_reconcile_existing_request`` rather than by this set, is an IN_PROGRESS entry on the
+# required False->True promotion edge, a one-time transition that cannot churn. DECLINED is
+# excluded entirely: a withdrawn decline is handled by the reactivation branch, and a
+# timeout decline stays CONTINUOUSLY listed, so its bare presence is not a new ask.
 _NEW_ASK_RESTART_STATUSES: frozenset[ReviewerStatus] = frozenset(
     {ReviewerStatus.REVIEW_FOUND, ReviewerStatus.NOT_REQUESTED}
 )
@@ -597,9 +599,17 @@ def _reconcile_existing_request(
       timeout can still fire if the wanted fresh review never lands. A historical verdict
       (timestamp <= prior ``last_review_at`` — the one that made the reviewer
       REVIEW_FOUND) is at or before the boundary, so it correctly does NOT satisfy the
-      new window (the bb92bde invariant). A REQUESTED / IN_PROGRESS reviewer is a normal
-      in-flight pass — its window is left untouched to avoid churning ``last_request_at``
-      every poll.
+      new window (the bb92bde invariant). The same restart runs for an IN_PROGRESS entry,
+      but ONLY on the required False->True promotion edge: a formerly-optional drive-by,
+      now formally requested, must not inherit the unsolicited review's engagement stamps —
+      a stale ``last_review_at`` near the finish-timeout boundary would let the next poll
+      auto-decline the newly-required reviewer off activity that predates the formal ask,
+      satisfying the gate without the wanted review. Promotion is a one-time edge, so the
+      restart there cannot churn; a steady-state IN_PROGRESS (already required, or
+      comment-derived and continuously co-present) is left untouched. A REQUESTED reviewer
+      is likewise left alone: required=False + REQUESTED is not a producible state (a
+      drive-by is seeded from its review activity, never REQUESTED), so REQUESTED only
+      arrives already required, an ongoing pass with a live start-window to preserve.
 
     Callers gate this on ``existing.status is not DECLINED``: a withdrawn decline is the
     reactivation branch's job, and a timeout decline is continuously present in
@@ -607,10 +617,27 @@ def _reconcile_existing_request(
     undo every timeout decline on the next poll. Returns whether anything changed.
     """
     changed = False
-    if not existing.required:
+    promoted = not existing.required
+    if promoted:
         existing.required = True
         changed = True
-    if existing.status in _NEW_ASK_RESTART_STATUSES:
+    # Restart the request window when this presence is provably a NEW ask. Two disjoint
+    # triggers:
+    #   - REVIEW_FOUND / NOT_REQUESTED (``_NEW_ASK_RESTART_STATUSES``): GitHub drops a
+    #     login from ``requested_reviewers`` the instant it reviews, so re-listing such an
+    #     entry is itself proof of a fresh ask — restart on every such presence.
+    #   - IN_PROGRESS, but ONLY on the promotion edge. A review-derived IN_PROGRESS
+    #     drive-by (a COMMENTED review, which GitHub DID drop from the pending array)
+    #     re-listed here is a genuine re-ask; a comment-derived IN_PROGRESS (issue / inline
+    #     comments never clear the pending request) is CONTINUOUSLY co-present, so
+    #     restarting it on bare presence would churn ``last_request_at`` every poll. The
+    #     one-time required False->True promotion is the sound discriminator: a
+    #     comment-derived reviewer GitHub is asking for is already ``required=True`` (it
+    #     was formally requested), so it never reaches this edge; only the promoted
+    #     drive-by does, and the edge fires at most once, so it cannot churn.
+    if existing.status in _NEW_ASK_RESTART_STATUSES or (
+        promoted and existing.status is ReviewerStatus.IN_PROGRESS
+    ):
         reactivation = _reactivation_engagement(
             existing,
             terminal_at=terminal_at,
