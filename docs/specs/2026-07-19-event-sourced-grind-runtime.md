@@ -80,9 +80,19 @@ report to ROOT (unchanged runtime fact — worker completions notify ROOT
 anyway), and ROOT logs. No locking in v1; the append is a single
 `O_APPEND` write of one line.
 
-**Torn tail:** a crash mid-append can leave a truncated final line. The fold
-detects a non-parsing last line, drops it, and reports it in the envelope as
-an anomaly (`torn_tail`). Accept-and-flag, not refuse-to-load.
+**Torn tail:** a crash mid-append can leave a truncated final line, and merely
+dropping it at fold time does not make the log appendable again — the next
+`O_APPEND` write concatenates onto the fragment, so every later event stays
+trapped behind one invalid line. The write path repairs before it appends:
+prior to each append the CLI checks the log's final byte and last line, and if
+that byte is not a newline (or the final line does not parse) it moves the
+partial fragment into an append-only `events.quarantine` sidecar (never
+deleted), truncates the log back to the last complete line, records the repair
+as a `torn_tail` anomaly in the command's envelope, and only then appends the
+new event — leaving the log appendable after any crash. As defense in depth,
+the fold still tolerates a non-parsing last line (drops it, reports the
+`torn_tail` anomaly) for logs read before any repair ran, e.g. `status` on a
+freshly-crashed grind. Accept-and-flag, not refuse-to-load.
 
 ### Event envelope
 
