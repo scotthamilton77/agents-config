@@ -572,10 +572,11 @@ the helper's default (1) per spec decision, not a per-repo config knob.
    operators — step 3's start-detection is `>=`, step 4's staleness bound
    (`--since-timestamp`'s `submitted_at > SINCE` filter) is strict `>`. This
    is deliberate, not a bug: step 3 asks "has anything happened since the
-   ask" (missing a same-second start is the failure to avoid, so `>=`), step
-   4 asks "is this completion trustworthy as a response to the current ask,
-   not a stale leftover from before it" (false-accepting a stale signal is
-   the failure to avoid, so strict `>`). Narrow, fail-closed consequence: a
+   ask" (missing a same-second start is the failure to avoid, so `>=`,
+   liveness-favoring), step 4 asks "is this completion trustworthy as a
+   response to the current ask, not a stale leftover from before it"
+   (false-accepting a stale signal is the failure to avoid, so strict `>`,
+   soundness-favoring). Narrow, fail-closed consequence: a
    start signal AND a completion signal both landing in the exact same
    second as the captured timestamp reads "started" (step 3) then "stale,
    reject" (step 4) — one extra silent-ask round, never an unsafe merge. Do
