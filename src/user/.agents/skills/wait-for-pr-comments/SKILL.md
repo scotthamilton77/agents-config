@@ -446,11 +446,31 @@ the helper's default (1) per spec decision, not a per-repo config knob.
    the dispatch would discard that valid `+1` or marker comment as stale and
    count the ask as a timeout.
 
-2. **Trigger a fresh review cycle** (idempotency guard):
+2. **Trigger a fresh review cycle** (idempotency guard). Assemble the
+   do-not-relitigate context from the current round's already-classified
+   inventory items before dispatching — every FIX item contributes its
+   `fix_commit_sha` as `detail`; every SKIP item contributes its `rationale`
+   as `detail`, classified `REBUT` when the rationale is a substantive
+   disagreement with the finding (the "agent disagrees with rationale,
+   defensible counterargument" case from the classification table above) and
+   `SKIP` otherwise (out of scope, FYI/praise) — this REBUT/SKIP split is a
+   judgment call made when writing each item's `rationale`, not a separate
+   inventory field:
    ```bash
+   disposition_table=$(jq -c '[.items[] | select(.classification == "FIX" or .classification == "SKIP") |
+     if .classification == "FIX"
+     then {finding: .body_excerpt, classification: "FIX", detail: .fix_commit_sha}
+     else {finding: .body_excerpt, classification: "SKIP", detail: .rationale}
+     end]' "$HOME/.claude/state/pr-inventory/<owner>-<repo>-<n>-<head_sha_after_push>.json")
+   # Re-tag any SKIP entries that are substantive rebuttals to "REBUT" by hand
+   # (or via a review of each item's rationale) before dispatching, per the
+   # split above.
+
    ${CLAUDE_SKILL_DIR}/request-rereview.sh \
      --owner "$OWNER" --repo "$REPO" --pr "$PR" \
-     --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"
+     --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")" \
+     --disposition-table "$disposition_table" \
+     --since-sha "<phase4_baseline_sha>"
    # exit 0 when at least one ask succeeded; exit 1 when none did
    ```
    `--bot-reviewers` dispatches on each policy-trusted identity's own
@@ -459,7 +479,13 @@ the helper's default (1) per spec decision, not a per-repo config knob.
    Copilot-only dance — omitting it would leave a Codex-reviewed repo's
    re-review ask reaching nobody. (`--add-reviewer` alone is idempotent and
    silently does nothing, which is why the helper still pairs it with
-   `--remove-reviewer` for Copilot.)
+   `--remove-reviewer` for Copilot.) `--disposition-table` and `--since-sha`
+   are Codex-only do-not-relitigate context — they render into the `@codex
+   review` comment as a structured markdown table plus a "focus on commits
+   since `<sha>`" line, and are silently ignored by the Copilot mechanism.
+   Confirmed across PR #317 and PR #331: a bare re-ask makes Codex re-cite
+   settled findings every round, while a structured disposition table
+   (including an explicit REBUT) produced zero re-raises.
 
 3. **Launch** `poll-copilot-rereview-start.sh --owner "$OWNER" --repo "$REPO" --pr "$PR" --after <rereview_since_timestamp>` (80s max window:
    20s pre-sleep + 6 × 10s polls). This detects the `copilot_work_started`

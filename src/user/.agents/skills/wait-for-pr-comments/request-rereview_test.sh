@@ -192,4 +192,73 @@ assert "omitting --bot-reviewers exits 0 (Copilot default)" "[ \$rc_default -eq 
 assert "omitting --bot-reviewers still dispatches the Copilot dance" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
 assert "omitting --bot-reviewers never posts a codex review comment" "! grep -qF 'pr comment' '$FAKE_GH_LOG'"
 
+# ── --disposition-table / --since-sha (do-not-relitigate context) ───────────
+
+assert "accepts --disposition-table flag" "grep -q -- '--disposition-table' '$SCRIPT'"
+assert "accepts --since-sha flag" "grep -q -- '--since-sha' '$SCRIPT'"
+
+# Malformed --disposition-table must be rejected up front (exit 2), same
+# convention as --bot-reviewers.
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table 'not-json' 2>/dev/null
+rc_bad_table=$?
+assert "exits 2 for non-array --disposition-table" "[ \$rc_bad_table -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table '[]' 2>/dev/null
+rc_empty_table=$?
+assert "exits 2 for empty --disposition-table array" "[ \$rc_empty_table -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table '["not-an-object"]' 2>/dev/null
+rc_nonobj_table=$?
+assert "exits 2 for --disposition-table array with a non-object member" "[ \$rc_nonobj_table -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table '[{"finding":"x","classification":"WRONG","detail":"y"}]' 2>/dev/null
+rc_badclass_table=$?
+assert "exits 2 for --disposition-table entry with bad classification" "[ \$rc_badclass_table -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table '[{"classification":"FIX","detail":"abc123"}]' 2>/dev/null
+rc_missingfield_table=$?
+assert "exits 2 for --disposition-table entry missing a required field" "[ \$rc_missingfield_table -eq 2 ]"
+
+err_out=$("$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table 'not-json' 2>&1 >/dev/null)
+assert "malformed --disposition-table gives a clear stderr message" "printf '%s' \"\$err_out\" | grep -qiF 'disposition-table'"
+
+# (a) both flags supplied: the posted Codex comment carries the structured
+# table and the since-sha line, not the bare '@codex review' string.
+: > "$FAKE_GH_LOG"
+export FAKE_GH_STDIN_LOG="$TMP/fake-gh-stdin.log"
+DISPOSITION='[{"finding":"missing null check","classification":"FIX","detail":"abc1234"},{"finding":"style nit","classification":"SKIP","detail":"cosmetic, out of scope"},{"finding":"race condition claim","classification":"REBUT","detail":"lock is held across the whole critical section, see line 42"}]'
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table "$DISPOSITION" \
+  --since-sha deadbeef >/dev/null 2>&1
+rc_table=$?
+assert "disposition-table dispatch exits 0" "[ \$rc_table -eq 0 ]"
+assert "codex comment body contains the FIX finding" "grep -qF -- 'missing null check' '$FAKE_GH_LOG'"
+assert "codex comment body contains the SKIP rationale" "grep -qF -- 'cosmetic, out of scope' '$FAKE_GH_LOG'"
+assert "codex comment body contains the REBUT rationale" "grep -qF -- 'lock is held across the whole critical section' '$FAKE_GH_LOG'"
+assert "codex comment body contains the since-sha line" "grep -qiF -- 'since deadbeef' '$FAKE_GH_LOG'"
+assert "codex comment body is NOT the bare '@codex review' string" "[ \$(wc -l < '$FAKE_GH_LOG') -gt 1 ]"
+
+# (c) neither flag supplied: comment body is still the bare string (regression guard).
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' >/dev/null 2>&1
+rc_bare=$?
+assert "no disposition-table/since-sha exits 0" "[ \$rc_bare -eq 0 ]"
+assert "no disposition-table/since-sha posts the bare '@codex review' string" "grep -qF -- 'pr comment 1 --repo o/r --body @codex review' '$FAKE_GH_LOG'"
+
+# (d) the flags have no effect on the Copilot mechanism: both bots dispatched,
+# disposition-table supplied -> Copilot still gets the plain remove+re-add dance.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "chatgpt-codex-connector[bot]"]' \
+  --disposition-table "$DISPOSITION" \
+  --since-sha deadbeef >/dev/null 2>&1
+rc_both=$?
+assert "disposition-table with both bots exits 0" "[ \$rc_both -eq 0 ]"
+assert "Copilot mechanism unaffected by --disposition-table" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
+assert "Codex mechanism still carries the disposition table when both bots dispatched" "grep -qF -- 'missing null check' '$FAKE_GH_LOG'"
+
 exit $FAIL
