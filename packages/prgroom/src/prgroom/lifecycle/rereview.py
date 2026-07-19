@@ -68,6 +68,15 @@ def rereview_pr(
             gh.rest("POST", path, fields=fields)
             reviewer.status = ReviewerStatus.REQUESTED
             reviewer.last_request_at = now
+            # This fresh re-request is awaiting its first engagement: drop the stamp of
+            # the review a push invalidated (or a prior decline's engagement). The
+            # review-start timeout only fires while last_review_at is None, so leaving a
+            # stale stamp here would wedge the re-requested reviewer at REQUESTED forever
+            # when the wanted fresh review never lands. Clear both (as the reconcile-side
+            # re-request resets do) — with last_review_at None the reactivation freshness
+            # test has no boundary to disambiguate, so the id is dead here too.
+            reviewer.last_review_at = None
+            reviewer.last_review_id = None
         # Reviewers will now see the invalidated HEAD; stamp it so
         # ``push_awaiting_rereview`` flips false. After the loop (a mid-loop POST
         # failure raises and discards the deepcopy, leaving the stamp un-advanced).
