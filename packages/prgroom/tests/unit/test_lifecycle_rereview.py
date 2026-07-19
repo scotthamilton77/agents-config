@@ -142,3 +142,29 @@ def test_rereview_is_a_noop_when_no_required_reviewer_is_stale() -> None:
     assert runner.calls == []
     assert out.reviewers["copilot"].status is ReviewerStatus.REQUESTED
     assert out.reviewers["codeowner"].status is ReviewerStatus.REVIEW_FOUND
+
+
+def test_withdrawn_reviewer_is_never_re_requested() -> None:
+    # A reviewer declined as request-withdrawn had their pending request removed on
+    # GitHub's side. Re-requesting would DELETE+POST them back onto the PR, silently
+    # overriding that. No gh call at all should be issued for them (spec behavior 16).
+    from prgroom.lifecycle.predicates import WITHDRAWN_REASON
+
+    reviewers = {"copilot": _reviewer(ReviewerStatus.DECLINED)}
+    reviewers["copilot"].declined_reason = WITHDRAWN_REASON
+    runner = RecordedRunner([])  # any gh call would raise StopIteration / IndexError
+    state = rereview_pr(_state(reviewers), ref=_REF, gh=GhCli(runner), deps=_deps())
+    assert state.reviewers["copilot"].status is ReviewerStatus.DECLINED
+    assert state.reviewers["copilot"].declined_reason == WITHDRAWN_REASON
+
+
+def test_timeout_declined_reviewer_is_still_re_requested() -> None:
+    # The narrowing is specific to the withdrawal reason — a timeout decline is
+    # still a missing verdict a fresh push deserves another shot at.
+    reviewers = {"copilot": _reviewer(ReviewerStatus.DECLINED)}
+    reviewers["copilot"].declined_reason = "timeout-no-start"
+    state = rereview_pr(
+        _state(reviewers), ref=_REF, gh=GhCli(RecordedRunner([_ok(), _ok()])), deps=_deps()
+    )
+    assert state.reviewers["copilot"].status is ReviewerStatus.REQUESTED
+    assert state.reviewers["copilot"].last_request_at == _LATER
