@@ -22,6 +22,7 @@ from prgroom.deps import Deps
 from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.gh import GhCli
 from prgroom.lifecycle import poll_pr
+from prgroom.lifecycle.quiescence import reviewers_gate_satisfied
 from prgroom.proc import CommandResult
 from prgroom.prsession.enums import (
     ItemKind,
@@ -1305,3 +1306,124 @@ def test_quiet_reviewer_poll_does_not_advance_last_activity() -> None:
         config=_config(),
     )
     assert state.last_activity_at == _T0
+
+
+def test_first_poll_after_response_seeds_a_terminal_reviewer() -> None:
+    # Behavior 2 — the critical regression guard. GitHub drops a reviewer from
+    # requested_reviewers the moment they submit, so on a first poll AFTER a fast
+    # reviewer responded, the pending-request array is the wrong (empty) signal and
+    # the reviews collection is the only one carrying them.
+    review_at = "2026-06-09T11:00:00Z"
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=[],  # already cleared by GitHub
+        reviews=[
+            {
+                "id": 900,
+                "state": "APPROVED",
+                "submitted_at": review_at,
+                "user": {"login": "alice"},
+                "body": "lgtm",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    alice = state.reviewers["alice"]
+    assert alice.status is ReviewerStatus.REVIEW_FOUND
+    assert alice.last_review_at == datetime(2026, 6, 9, 11, 0, 0, tzinfo=UTC)
+    # last_request_at is backdated to the review, NOT poll time: _observe_engagement
+    # only counts activity STRICTLY newer than last_request_at, so stamping `now`
+    # would make this very review permanently fail that comparison.
+    assert alice.last_request_at == datetime(2026, 6, 9, 11, 0, 0, tzinfo=UTC)
+
+
+def test_first_poll_after_commented_response_seeds_in_progress() -> None:
+    # Behavior 3: COMMENTED is not terminal in this codebase's MVP model
+    # (_TERMINAL_REVIEW_STATES), so it seeds engagement — never REVIEW_FOUND, and
+    # never a decline.
+    #
+    # Uses _JUST_AFTER_ACTIVITY (not the default _deps() clock, 50+ minutes later)
+    # so evaluate_reviewer_timeouts's stalled-decline check — which fires on any
+    # IN_PROGRESS reviewer whose last_review_at is older than review_finish_timeout
+    # (15 min default) — does not immediately re-decline the reviewer this same
+    # poll seeds; see test_commented_review_does_not_flip_to_review_found_in_mvp for
+    # the identical convention on the pre-existing-reviewer path.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(
+        head_oid="same",
+        reviews=[
+            {
+                "id": 901,
+                "state": "COMMENTED",
+                "submitted_at": "2026-06-09T11:00:00Z",
+                "user": {"login": "alice"},
+                "body": "one thought",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(_JUST_AFTER_ACTIVITY), config=_config())
+    assert state.reviewers["alice"].status is ReviewerStatus.IN_PROGRESS
+
+
+def test_review_object_seeds_bot_kind() -> None:
+    # Behavior 4 (review half): same classification path from a review's user object.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(
+        head_oid="same",
+        reviews=[
+            {
+                "id": 902,
+                "state": "APPROVED",
+                "submitted_at": "2026-06-09T11:00:00Z",
+                "user": {"login": "copilot", "type": "Bot"},
+                "body": "lgtm",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert state.reviewers["copilot"].kind is ReviewerKind.BOT
+
+
+def test_drive_by_reviewer_is_not_required() -> None:
+    # Behavior 15: `required` tracks GitHub actually ASKING. A login that reviewed
+    # uninvited must not gain the power to block quiescence just by having an opinion.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=[],
+        reviews=[
+            {
+                "id": 903,
+                "state": "COMMENTED",
+                "submitted_at": "2026-06-09T11:00:00Z",
+                "user": {"login": "randomdev"},
+                "body": "drive-by",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert state.reviewers["randomdev"].required is False
+    assert reviewers_gate_satisfied(state) is True  # an optional reviewer never gates
+
+
+def test_requested_reviewer_who_also_reviewed_is_required() -> None:
+    # The other half of behavior 15: presence in requested_reviewers is what confers
+    # `required`, and a formally-requested reviewer keeps it after responding.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=["alice"],
+        reviews=[
+            {
+                "id": 904,
+                "state": "APPROVED",
+                "submitted_at": "2026-06-09T11:00:00Z",
+                "user": {"login": "alice"},
+                "body": "lgtm",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert state.reviewers["alice"].required is True
+    assert state.reviewers["alice"].status is ReviewerStatus.REVIEW_FOUND

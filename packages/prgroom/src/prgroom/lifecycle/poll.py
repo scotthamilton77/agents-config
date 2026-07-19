@@ -125,7 +125,13 @@ def poll_pr(
     if new_items:
         state.items.extend(new_items)
         activity = True
-    if _reconcile_reviewers(state, requested_reviewers=requested_reviewers, now=now):
+    if _reconcile_reviewers(
+        state,
+        requested_reviewers=requested_reviewers,
+        raw_reviews=raw_reviews,
+        terminal_reviews=terminal_reviews,
+        now=now,
+    ):
         activity = True
     if _observe_engagement(state, new_items, terminal_reviews):
         activity = True
@@ -289,14 +295,63 @@ def _requested_by_login(requested_reviewers: list[Any]) -> dict[str, Any]:
     return out
 
 
-def _seed_reviewer(login: str, *, user: Any, required: bool, now: datetime) -> ReviewerState:
-    """Build the entry for a login seen for the first time this poll (§2.1.1)."""
+def _review_activity_by_login(
+    raw_reviews: Any, *, now: datetime
+) -> dict[str, tuple[datetime, Any]]:
+    """Map each reviewer login to its latest review time + gh user object (§2.1).
+
+    Unlike ``_terminal_review_verdicts`` this counts EVERY review state, ``COMMENTED``
+    included: a login that responded at all is a login prgroom must know about, even
+    though only an APPROVED/CHANGES_REQUESTED verdict is terminal.
+    """
+    out: dict[str, tuple[datetime, Any]] = {}
+    for entry in raw_reviews:
+        user = entry.get("user") or {}
+        login = str(user.get("login", ""))
+        if not login:
+            continue
+        submitted = _parse_ts(entry.get("submitted_at"), now=now)
+        if login not in out or submitted > out[login][0]:
+            out[login] = (submitted, user)
+    return out
+
+
+def _seed_reviewer(
+    login: str,
+    *,
+    user: Any,
+    required: bool,
+    terminal_at: datetime | None,
+    reviewed_at: datetime | None,
+    now: datetime,
+) -> ReviewerState:
+    """Build the entry for a login seen for the first time this poll (§2.1.1).
+
+    A login discovered through an already-submitted review is seeded at that
+    review's own verdict and timestamp — NOT left to ``_observe_engagement``, whose
+    "activity strictly after ``last_request_at``" gate would permanently reject the
+    very review that revealed the reviewer if ``last_request_at`` were stamped
+    ``now``. Backdating both stamps to the review keeps that comparison honest.
+    """
+    if terminal_at is not None:
+        status, stamp = ReviewerStatus.REVIEW_FOUND, terminal_at
+    elif reviewed_at is not None:
+        status, stamp = ReviewerStatus.IN_PROGRESS, reviewed_at
+    else:
+        return ReviewerState(
+            identity=login,
+            kind=_reviewer_kind(user),
+            status=ReviewerStatus.REQUESTED,
+            required=required,
+            last_request_at=now,
+        )
     return ReviewerState(
         identity=login,
         kind=_reviewer_kind(user),
-        status=ReviewerStatus.REQUESTED,
+        status=status,
         required=required,
-        last_request_at=now,
+        last_request_at=stamp,
+        last_review_at=stamp,
     )
 
 
@@ -304,9 +359,17 @@ def _reconcile_reviewers(
     state: PRGroomingState,
     *,
     requested_reviewers: list[Any],
+    raw_reviews: Any,
+    terminal_reviews: dict[str, datetime],
     now: datetime,
 ) -> bool:
-    """Reconcile ``state.reviewers`` against GitHub's pending requests (§2.1).
+    """Reconcile ``state.reviewers`` against BOTH GitHub reviewer signals (§2.1).
+
+    Neither signal alone is sufficient. GitHub removes a reviewer from
+    ``requested_reviewers`` the instant they submit any review — including
+    ``COMMENTED`` — so absence from that array is the ORDINARY shape of "they just
+    reviewed", and a reviewer who responded before prgroom's first poll appears
+    only in the reviews collection.
 
     Returns whether anything changed, so the caller folds it into ``activity`` the
     same way ``_ingest_items`` / ``_ci_state`` / ``_apply_sha_attribution`` do. An
@@ -314,11 +377,23 @@ def _reconcile_reviewers(
     trip and the PR could never quiesce.
     """
     requested = _requested_by_login(requested_reviewers)
+    reviewed = _review_activity_by_login(raw_reviews, now=now)
     changed = False
-    for login, user in requested.items():
-        if login not in state.reviewers:
-            state.reviewers[login] = _seed_reviewer(login, user=user, required=True, now=now)
-            changed = True
+    for login in (*requested, *(ln for ln in reviewed if ln not in requested)):
+        if login in state.reviewers:
+            continue
+        reviewed_at, reviewed_user = reviewed.get(login, (None, None))
+        state.reviewers[login] = _seed_reviewer(
+            login,
+            user=requested.get(login) or reviewed_user,
+            # `required` tracks GitHub actually asking — a drive-by reviewer who was
+            # never requested must not gain the power to block quiescence (§3).
+            required=login in requested,
+            terminal_at=terminal_reviews.get(login),
+            reviewed_at=reviewed_at,
+            now=now,
+        )
+        changed = True
     return changed
 
 
