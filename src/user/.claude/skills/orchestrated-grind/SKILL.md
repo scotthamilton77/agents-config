@@ -683,7 +683,7 @@ punished; a worker that hides a compromise costs far more than one that admits i
 | "I'll wrap the watcher in a helper script with `&`, it's tidier." | The wrapper exits, the notification fires for it, the watcher is orphaned. Launch directly. |
 | "I'll write the compaction handoff when compaction is close." | By then you are composing from degraded context. Write it early. |
 | "The dashboard looks stale, I'll re-open it in the browser." | Open exactly once. Check `state.json`'s timestamp instead. |
-| "Playwright is already loaded, I'll open the dashboard with it." | It renders into an automation browser the human never sees — opened, yet unseen. `open`/`xdg-open`, or print the path. |
+| "Playwright is already loaded, I'll open the dashboard with it." | It renders into an automation browser the human never sees — opened, yet unseen. The platform opener (§5), or print the path. |
 | "Both lanes need the version bump, they'll sort it out." | They will collide. ROOT sequences version bumps explicitly. |
 
 ## Red flags — stop and re-verify
