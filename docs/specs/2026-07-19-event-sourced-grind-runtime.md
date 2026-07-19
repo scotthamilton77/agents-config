@@ -154,6 +154,7 @@ below)
 | `pr_closed` | `item`, `pr`, `reason`, `next` (in-progress \| queued \| parked) | Unmerged closure (abandoned, superseded). Item returns to `next`; without this an abandoned PR is unrepresentable except by lying. |
 | `item_blocked` | `item`, `on[]` (blocking item ids), `note?` | Records blocker edges (and `note`). `blocked` status is **derived** from unresolved edges — whichever way they arrived (seed or event), never asserted by the event. Unblocking is **derived**: when every edge's target reaches `merged`/`done`/closed, the fold returns the item to `queued` and fires the `item_unblocked` condition — there is no unblock event. |
 | `item_waiting_human` | `item`, `why` | `→ waiting-human`; auto-raises an attention entry |
+| `item_resumed` | `item`, `ruling` (the human's decision, terse) | `waiting-human → in-progress`; clears the item's auto-raised attention entry |
 | `item_merged` | `item`, `pr`, `sha` | `→ merged`; appends to the merged ledger projection |
 | `item_done` | `item` | `merged → done` (post-merge leg complete); clears any attention/round badge for the item |
 | `item_parked` | `item`, `kind` (discovered-work \| human-gated \| later-wave \| deferred), `note` | Removes from active queue into the parking lot |
@@ -191,6 +192,9 @@ absent is an anomaly):
 | `merged` | — | — | — | — | — | — | — | — | done | — |
 | `done` | terminal | | | | | | | | | |
 | (parked) | re-enters via `item_enqueued → queued` only | | | | | | | | | |
+
+`item_resumed`: legal only from `waiting-human`, folds to `in-progress`; any
+other source status treats it as an anomaly.
 
 `standing-down` remains lane-only vocabulary, set by `lane_standing_down`.
 
