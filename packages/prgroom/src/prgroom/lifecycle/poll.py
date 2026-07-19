@@ -927,10 +927,12 @@ def _observe_engagement(
         if not candidates:
             continue
         # Advance last_review_at only on a strictly-newer activity time (never regress to
-        # a re-observed older verdict); flip status only on a real change. On an
-        # equal-second tie prefer a review-derived candidate (id present) so its id — not
-        # a coincident comment's None — is the one carried forward.
-        candidate_at, candidate_id = max(candidates, key=lambda c: (c[0], c[1] is not None))
+        # a re-observed older verdict); flip status only on a real change. Rank ties with
+        # the same _review_rank key the reducers use: on an equal-second tie the greatest
+        # review id wins (a review-derived candidate outranks a coincident comment's None,
+        # and among reviews the numerically larger — genuinely newer — id is carried
+        # forward), so last_review_id records the newest review at the selected timestamp.
+        candidate_at, candidate_id = max(candidates, key=lambda c: _review_rank(c[0], c[1]))
         advanced = reviewer.last_review_at is None or candidate_at > reviewer.last_review_at
         if advanced:
             reviewer.last_review_at = candidate_at

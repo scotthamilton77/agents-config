@@ -2121,6 +2121,31 @@ def test_commented_review_advance_stamps_its_own_review_id() -> None:
     assert rv.last_review_id == 50  # stamped to the COMMENTED review, not left at 40
 
 
+def test_equal_second_reviews_stamp_greatest_review_id() -> None:
+    # Two post-request reviews from one login share a GitHub-second timestamp: an older
+    # COMMENTED review (id 40, ingested as a REVIEW_SUMMARY item) and a terminal
+    # CHANGES_REQUESTED verdict (id 41). Both land in the same poll's candidates at the
+    # same second. last_review_id must record the GREATER id (41), not whichever candidate
+    # was seen first (40) — otherwise a later re-request reads the already-observed id 41 as
+    # fresh (41 > stored 40) and lets the stale terminal verdict satisfy the new request.
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))  # before the 11:05Z reviews
+    commented = _review(40, login="copilot")
+    commented["state"] = "COMMENTED"
+    commented["submitted_at"] = "2026-06-09T11:05:00Z"
+    terminal = _review(41, login="copilot")  # CHANGES_REQUESTED, same 11:05:00Z second
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", reviews=[commented, terminal]),
+        deps=_deps(_JUST_AFTER_VERDICT),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.last_review_at == datetime(2026, 6, 9, 11, 5, tzinfo=UTC)
+    assert rv.last_review_id == 41  # greatest id at the tied second, not the first-seen 40
+
+
 def test_issue_comment_advance_preserves_stored_review_id() -> None:
     # Negative control: a plain issue comment is not a review. It advances last_review_at
     # (activity), but must leave last_review_id untouched — neither restamped to the
