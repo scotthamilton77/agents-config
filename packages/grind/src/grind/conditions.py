@@ -66,7 +66,12 @@ def _duration(value: JsonValue, default_seconds: int) -> timedelta:
         match = _DURATION_RE.match(value)
         if match is not None:
             amount, unit = match.groups()
-            return timedelta(seconds=int(amount) * _UNIT_SECONDS[unit])
+            try:
+                return timedelta(seconds=int(amount) * _UNIT_SECONDS[unit])
+            except OverflowError:
+                # an absurdly large threshold is unparsable config too, not
+                # an internal error to surface on every log/status call
+                return timedelta(seconds=default_seconds)
     return timedelta(seconds=default_seconds)
 
 
