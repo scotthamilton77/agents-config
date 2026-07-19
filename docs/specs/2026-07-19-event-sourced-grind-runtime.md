@@ -307,10 +307,13 @@ it — a fully-quiet grind emits nothing, so the last mile needs an **external**
 probe. `grind check --max-age 30m` folds the log first: if the grind is paused
 (a `grind_paused` with no later `grind_resumed`), it reports `{paused: true,
 stale: false}` and exits 0 regardless of last-event age — a pause is a
-deliberate quiet state, not a crash. If the log ends with `grind_finished`, it
+deliberate quiet state, not a crash. If the fold shows the grind is terminal (a
+`grind_finished` was applied — derived from folded state, not the log tail, so
+any trailing anomalous event the append-only policy retained can't hide it), it
 reports `{finished: true, stale: false}` and exits 0 regardless of age — a
 completed run is neither paused nor expected to emit more events; the age check
-applies only to unfinished, unpaused grinds. Otherwise it compares the log's
+applies only to unfinished, unpaused grinds. Both `paused` and `finished` are
+fold-derived, never read off the raw final line. Otherwise it compares the log's
 last event timestamp to now and exits 1 when exceeded; staleness detection
 resumes after `grind_resumed`. Absence of `grind_finished` + stale log + not
 paused = stalled or crashed grind.
