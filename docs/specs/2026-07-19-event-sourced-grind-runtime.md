@@ -151,7 +151,7 @@ below)
 | Type | Payload | Fold effect |
 |------|---------|-------------|
 | `item_started` | `item` | `queued → in-progress` |
-| `pr_opened` | `item`, `pr` | `in-progress → pr-open` |
+| `pr_opened` | `item`, `pr`, `url?` (explicit PR URL override for repos where the `repo`-slug derivation is wrong — e.g. non-GitHub remotes) | `in-progress → pr-open`; the fold carries `url` into the item's PR reference in State, which is what the renderer's explicit-URL override honors. `pr_closed`/`item_merged` reference the same PR by number and carry no URL of their own. |
 | `review_round` | `item`, `kind` (codex\|copilot\|ralf\|human), `round`, `head_sha` (PR head commit this round reviewed), `detail?` | `pr-open → in-review` (or stays `in-review`); sets the round badge |
 | `review_verdict` | `item`, `kind`, `round`, `head_sha` (PR head commit this round reviewed), `verdict` (clean \| findings \| stalemate), `findings[]` — each `{severity, summary, disposition (fixed \| wont-fix \| deferred \| escalated), thread_url?}` | Records the round's outcome. `open_threads` and `wont_fix_count` are **derived** from dispositions, not asserted. `stalemate` sets the item's stalemate flag (declared per the review skill's §3 rule — the fold records, it does not diagnose). |
 | `pr_closed` | `item`, `pr`, `reason`, `next` (in-progress \| queued \| parked) | Unmerged closure (abandoned, superseded); appends to the closed ledger projection (`pr`, `reason`). Item returns to `next`; without this an abandoned PR is unrepresentable except by lying. |
