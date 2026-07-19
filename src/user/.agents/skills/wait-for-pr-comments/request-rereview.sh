@@ -30,6 +30,23 @@
 #                            preserve the legacy Copilot-only dance
 #                            (backward-compatible default, not how the
 #                            wait-for-pr-comments/merge-guard loops run).
+#   --disposition-table-file <path>
+#                            Do-not-relitigate context for the Codex ask ONLY
+#                            (Copilot is unaffected, gets neither this nor
+#                            --since-sha). Path to a file containing a
+#                            non-empty JSON array of objects: {finding,
+#                            classification: FIX|SKIP|REBUT, detail} — detail
+#                            is the fixing commit SHA for FIX, a rationale
+#                            for SKIP/REBUT. A FILE, not inline JSON — see
+#                            "Argv-size note" below. Renders as a markdown
+#                            table in the '@codex review' comment instead of
+#                            the bare string, so Codex does not re-raise
+#                            settled findings next round (confirmed PR #317,
+#                            #331 — bare re-ask re-cites SKIP/fixed items; a
+#                            disposition table does not, and can carry a
+#                            REBUT Codex accepts instead of re-flagging).
+#   --since-sha <sha>        Optional. Codex-only: appends a "focus on
+#                            commits since <sha>" line to the comment body.
 #
 # Outputs:
 #   stdout: (none on success)
@@ -40,16 +57,25 @@
 #
 # GraphQL projection: none directly; uses `gh pr edit` / `gh pr comment` REST
 # under the hood.
+#
+# Argv-size note: --disposition-table-file takes a PATH, not inline JSON. A
+# round with enough items (or a few verbose rationales) can exceed the OS's
+# per-argument exec limit (Linux caps a single argv/environ string at 128
+# KiB) well before it exceeds anything this script controls — passing the
+# JSON inline would fail the `exec` itself, before this script's own
+# comment-size fallback (below) ever got a chance to run.
 set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") --owner <o> --repo <r> --pr <n> [--bot-reviewers <json-array>]
+Usage: $(basename "$0") --owner <o> --repo <r> --pr <n> [--bot-reviewers <json-array>] [--disposition-table-file <path>] [--since-sha <sha>]
 
 Requests a re-review from one or more trusted bot reviewers, dispatching on
 identity: Copilot / copilot-pull-request-reviewer[bot] get the remove+re-add
 reviewer dance; chatgpt-codex-connector[bot] gets an '@codex review' issue
 comment. Omit --bot-reviewers to request only Copilot (legacy default).
+--disposition-table-file and --since-sha add do-not-relitigate context to
+the Codex ask only; they have no effect on the Copilot mechanism.
 EOF
   exit 2
 }
@@ -58,15 +84,30 @@ OWNER=""
 REPO=""
 PR=""
 BOT_REVIEWERS=""
+DISPOSITION_TABLE=""
+DISPOSITION_TABLE_FILE_GIVEN=false
+SINCE_SHA=""
 
 [ $# -gt 0 ] || usage
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --owner)         OWNER="${2:-}";         shift 2 ;;
-    --repo)          REPO="${2:-}";          shift 2 ;;
-    --pr)            PR="${2:-}";            shift 2 ;;
-    --bot-reviewers) BOT_REVIEWERS="${2:-}"; shift 2 ;;
+    --owner)              OWNER="${2:-}";              shift 2 ;;
+    --repo)               REPO="${2:-}";                shift 2 ;;
+    --pr)                 PR="${2:-}";                  shift 2 ;;
+    --bot-reviewers)      BOT_REVIEWERS="${2:-}";       shift 2 ;;
+    --disposition-table-file)
+      [ -n "${2:-}" ] || { echo "error: --disposition-table-file requires a value" >&2; usage; }
+      [ -r "$2" ] || { echo "error: --disposition-table-file '$2' is not a readable file" >&2; exit 2; }
+      DISPOSITION_TABLE="$(cat "$2")"
+      DISPOSITION_TABLE_FILE_GIVEN=true
+      shift 2
+      ;;
+    --since-sha)
+      [ -n "${2:-}" ] || { echo "error: --since-sha requires a value" >&2; usage; }
+      SINCE_SHA="$2"
+      shift 2
+      ;;
     -h|--help) usage ;;
     *) echo "error: unknown flag: $1" >&2; usage ;;
   esac
@@ -83,6 +124,33 @@ done
 if [ -n "$BOT_REVIEWERS" ]; then
   BOT_REVIEWERS=$(jq -ce 'if (type == "array" and length > 0 and ([.[] | select(type != "string")] | length) == 0) then . else error("bad") end' <<<"$BOT_REVIEWERS" 2>/dev/null) || {
     echo "error: --bot-reviewers must be a non-empty JSON array of strings" >&2
+    exit 2
+  }
+fi
+
+# Validate --disposition-table-file's content (when the flag was given) as a
+# non-empty JSON array of objects, each with a "finding" string, a
+# "classification" of FIX/SKIP/REBUT, and a "detail" string (commit SHA for
+# FIX, rationale for SKIP/REBUT) — same fail-closed convention as
+# --bot-reviewers, then canonicalize via jq. Gated on
+# DISPOSITION_TABLE_FILE_GIVEN, not on "$DISPOSITION_TABLE" being non-empty:
+# a supplied file that reads back EMPTY (e.g. a zero-byte file) must still
+# fail this check — checking non-emptiness of the variable would instead
+# treat it exactly like the flag being omitted, silently dropping the
+# do-not-relitigate context the caller explicitly asked to attach.
+if [ "$DISPOSITION_TABLE_FILE_GIVEN" = true ]; then
+  DISPOSITION_TABLE=$(jq -ce '
+    if (type == "array" and length > 0 and
+        ([.[] | select(
+          (type == "object") and
+          (has("finding") and (.finding | type) == "string") and
+          (has("classification") and (.classification as $c | ["FIX","SKIP","REBUT"] | index($c) != null)) and
+          (has("detail") and (.detail | type) == "string")
+          | not
+        )] | length) == 0)
+    then . else error("bad") end
+  ' <<<"$DISPOSITION_TABLE" 2>/dev/null) || {
+    echo "error: --disposition-table-file's content must be a non-empty JSON array of objects, each with a string 'finding', a 'classification' of FIX/SKIP/REBUT, and a string 'detail' (commit SHA for FIX, rationale for SKIP/REBUT)" >&2
     exit 2
   }
 fi
@@ -108,11 +176,75 @@ request_copilot() {
   fi
 }
 
+# GitHub issue-comment bodies are capped at 65536 characters. A disposition
+# table has no per-item length bound (a verbose SKIP rationale, or enough
+# FIX/SKIP items in one round, can exceed it), and gh's comment call would
+# then fail outright, leaving a Codex-only policy with no successful
+# re-review ask at all — worse than a plain, un-contextualized one. This
+# threshold leaves comfortable margin for the surrounding prose.
+MAX_CODEX_COMMENT_CHARS=60000
+
+# build_codex_comment_body — bare '@codex review' by default; when
+# --disposition-table-file and/or --since-sha are supplied, renders them as a
+# structured markdown table + focus line instead. Falls back to the bare
+# string (dropping the do-not-relitigate context, not the ask itself) when
+# the rendered body would exceed MAX_CODEX_COMMENT_CHARS. This do-not-
+# relitigate context is Codex-only — request_copilot never sees it.
+build_codex_comment_body() {
+  local full
+  full="$(_render_codex_comment_body)"
+  if [ "${#full}" -gt "$MAX_CODEX_COMMENT_CHARS" ]; then
+    echo "@codex review"
+    echo
+    echo "(do-not-relitigate context omitted: exceeded ${MAX_CODEX_COMMENT_CHARS} characters)"
+    return
+  fi
+  printf '%s' "$full"
+}
+
+_render_codex_comment_body() {
+  if [ -z "$DISPOSITION_TABLE" ] && [ -z "$SINCE_SHA" ]; then
+    echo "@codex review"
+    return
+  fi
+
+  echo "@codex review"
+  echo
+
+  if [ -n "$DISPOSITION_TABLE" ]; then
+    echo "Prior-round findings — do not re-raise FIX/SKIP/REBUT items below:"
+    echo
+    echo "| Finding | Classification | Commit / Rationale |"
+    echo "| --- | --- | --- |"
+    # Sanitize each cell before interpolation: collapse embedded newlines to
+    # spaces and escape literal "|" so a finding/rationale containing either
+    # cannot terminate or shift a row — free-text review excerpts and
+    # rationales routinely contain both, and a shifted row breaks the
+    # finding-to-classification association this table exists to preserve.
+    # Backslashes are escaped FIRST, before pipes: a cell containing a
+    # pre-existing '\|' (e.g. a regex excerpt) would otherwise have its own
+    # backslash consume the escape this function adds for the pipe,
+    # un-escaping it in the rendered Markdown and re-opening the same
+    # row-splitting hazard.
+    jq -r '
+      def cell: gsub("\r\n|\r|\n"; " ") | gsub("\\\\"; "\\\\") | gsub("\\|"; "\\|");
+      .[] | "| " + (.finding | cell) + " | " + .classification + " | " + (.detail | cell) + " |"
+    ' <<<"$DISPOSITION_TABLE"
+    echo
+  fi
+
+  if [ -n "$SINCE_SHA" ]; then
+    echo "Focus on commits since $SINCE_SHA."
+  fi
+}
+
 # request_codex — post an '@codex review' issue comment. Codex reviews on
 # push, mark-draft-ready, and this comment, but not on a reviewer-request
 # event, so this is its only ask mechanism.
 request_codex() {
-  if ! gh pr comment "$PR" --repo "$OWNER/$REPO" --body "@codex review" >/dev/null 2>"$GH_ERR"; then
+  local body
+  body="$(build_codex_comment_body)"
+  if ! gh pr comment "$PR" --repo "$OWNER/$REPO" --body "$body" >/dev/null 2>"$GH_ERR"; then
     echo "error: gh pr comment '@codex review' failed for $PR_REF: $(cat "$GH_ERR")" >&2
     return 1
   fi

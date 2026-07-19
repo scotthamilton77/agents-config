@@ -18,6 +18,17 @@ assert() {
   fi
 }
 
+# dtfile — write a disposition-table JSON payload to a fresh file under $TMP
+# and echo its path, for --disposition-table-file (the table is transported
+# as a file, never inline JSON — see request-rereview.sh's header).
+DT_COUNTER=0
+dtfile() {
+  DT_COUNTER=$((DT_COUNTER + 1))
+  local f="$TMP/disposition-$DT_COUNTER.json"
+  printf '%s' "$1" > "$f"
+  printf '%s' "$f"
+}
+
 echo "[request-rereview_test]"
 
 assert "script file exists" "[ -f '$SCRIPT' ]"
@@ -191,5 +202,157 @@ rc_default=$?
 assert "omitting --bot-reviewers exits 0 (Copilot default)" "[ \$rc_default -eq 0 ]"
 assert "omitting --bot-reviewers still dispatches the Copilot dance" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
 assert "omitting --bot-reviewers never posts a codex review comment" "! grep -qF 'pr comment' '$FAKE_GH_LOG'"
+
+# ── --disposition-table-file / --since-sha (do-not-relitigate context) ──────
+# The table is transported as a FILE, never inline JSON: enough items (or a
+# few verbose rationales) can exceed the OS's per-argument exec limit (Linux
+# caps a single argv/environ string at 128 KiB), which would fail the exec
+# itself before request-rereview.sh ever ran — see the header for the field
+# evidence (a 400-entry table reproduced this on the reviewer's platform).
+
+assert "accepts --disposition-table-file flag" "grep -q -- '--disposition-table-file' '$SCRIPT'"
+assert "accepts --since-sha flag" "grep -q -- '--since-sha' '$SCRIPT'"
+
+# A missing/unreadable --disposition-table-file path is a usage error (exit 2).
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table-file "$TMP/does-not-exist.json" 2>/dev/null
+rc_missing_file=$?
+assert "exits 2 for a --disposition-table-file path that does not exist" "[ \$rc_missing_file -eq 2 ]"
+
+# A SUPPLIED file that reads back empty (e.g. zero bytes) must still fail
+# validation, not be silently treated as if the flag were omitted — the flag
+# was given, so its content is required to be a non-empty JSON array
+# regardless of what the file happens to contain.
+: > "$TMP/empty-disposition.json"
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table-file "$TMP/empty-disposition.json" 2>/dev/null
+rc_empty_file=$?
+assert "exits 2 for a --disposition-table-file that reads back empty" "[ \$rc_empty_file -eq 2 ]"
+
+# Malformed file CONTENT must be rejected up front (exit 2), same convention
+# as --bot-reviewers.
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table-file "$(dtfile 'not-json')" 2>/dev/null
+rc_bad_table=$?
+assert "exits 2 for non-array disposition-table-file content" "[ \$rc_bad_table -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table-file "$(dtfile '[]')" 2>/dev/null
+rc_empty_table=$?
+assert "exits 2 for empty disposition-table-file array" "[ \$rc_empty_table -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table-file "$(dtfile '["not-an-object"]')" 2>/dev/null
+rc_nonobj_table=$?
+assert "exits 2 for disposition-table-file array with a non-object member" "[ \$rc_nonobj_table -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table-file "$(dtfile '[{"finding":"x","classification":"WRONG","detail":"y"}]')" 2>/dev/null
+rc_badclass_table=$?
+assert "exits 2 for disposition-table-file entry with bad classification" "[ \$rc_badclass_table -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table-file "$(dtfile '[{"classification":"FIX","detail":"abc123"}]')" 2>/dev/null
+rc_missingfield_table=$?
+assert "exits 2 for disposition-table-file entry missing a required field" "[ \$rc_missingfield_table -eq 2 ]"
+
+err_out=$("$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table-file "$(dtfile 'not-json')" 2>&1 >/dev/null)
+assert "malformed disposition-table-file content gives a clear stderr message" "printf '%s' \"\$err_out\" | grep -qiF 'disposition-table-file'"
+
+# --disposition-table-file / --since-sha as the final argument with no value
+# must be a usage error (exit 2), matching the script's documented contract —
+# not a silent exit 1 from `shift 2` running out of positional args.
+"$SCRIPT" --owner o --repo r --pr 1 --disposition-table-file 2>/dev/null
+rc_missing_dt_val=$?
+assert "exits 2 when --disposition-table-file has no value" "[ \$rc_missing_dt_val -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --since-sha 2>/dev/null
+rc_missing_ss_val=$?
+assert "exits 2 when --since-sha has no value" "[ \$rc_missing_ss_val -eq 2 ]"
+
+# (a) both flags supplied: the posted Codex comment carries the structured
+# table and the since-sha line, not the bare '@codex review' string.
+: > "$FAKE_GH_LOG"
+export FAKE_GH_STDIN_LOG="$TMP/fake-gh-stdin.log"
+DISPOSITION='[{"finding":"missing null check","classification":"FIX","detail":"abc1234"},{"finding":"style nit","classification":"SKIP","detail":"cosmetic, out of scope"},{"finding":"race condition claim","classification":"REBUT","detail":"lock is held across the whole critical section, see line 42"}]'
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table-file "$(dtfile "$DISPOSITION")" \
+  --since-sha deadbeef >/dev/null 2>&1
+rc_table=$?
+assert "disposition-table-file dispatch exits 0" "[ \$rc_table -eq 0 ]"
+assert "codex comment body contains the FIX finding" "grep -qF -- 'missing null check' '$FAKE_GH_LOG'"
+assert "codex comment body contains the SKIP rationale" "grep -qF -- 'cosmetic, out of scope' '$FAKE_GH_LOG'"
+assert "codex comment body contains the REBUT rationale" "grep -qF -- 'lock is held across the whole critical section' '$FAKE_GH_LOG'"
+assert "codex comment body contains the since-sha line" "grep -qiF -- 'since deadbeef' '$FAKE_GH_LOG'"
+assert "codex comment body is NOT the bare '@codex review' string" "[ \$(wc -l < '$FAKE_GH_LOG') -gt 1 ]"
+
+# (c) neither flag supplied: comment body is still the bare string (regression guard).
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' >/dev/null 2>&1
+rc_bare=$?
+assert "no disposition-table-file/since-sha exits 0" "[ \$rc_bare -eq 0 ]"
+assert "no disposition-table-file/since-sha posts the bare '@codex review' string" "grep -qF -- 'pr comment 1 --repo o/r --body @codex review' '$FAKE_GH_LOG'"
+
+# (d) the flags have no effect on the Copilot mechanism: both bots dispatched,
+# disposition-table-file supplied -> Copilot still gets the plain remove+re-add dance.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "chatgpt-codex-connector[bot]"]' \
+  --disposition-table-file "$(dtfile "$DISPOSITION")" \
+  --since-sha deadbeef >/dev/null 2>&1
+rc_both=$?
+assert "disposition-table-file with both bots exits 0" "[ \$rc_both -eq 0 ]"
+assert "Copilot mechanism unaffected by --disposition-table-file" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
+assert "Codex mechanism still carries the disposition table when both bots dispatched" "grep -qF -- 'missing null check' '$FAKE_GH_LOG'"
+
+# (e) a finding/detail containing "|" and an embedded newline must not
+# terminate or shift the markdown table row — both are routine in review
+# excerpts and rationales, and a shifted row breaks the finding-to-
+# classification association the table exists to preserve.
+: > "$FAKE_GH_LOG"
+DISPOSITION_ESC='[{"finding":"a | b\nc","classification":"SKIP","detail":"line1\nline2 | pipe"}]'
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table-file "$(dtfile "$DISPOSITION_ESC")" >/dev/null 2>&1
+rc_esc=$?
+assert "disposition-table-file with pipe/newline in cells exits 0" "[ \$rc_esc -eq 0 ]"
+assert "embedded newlines collapse and literal pipes are escaped, keeping the row intact on one line" \
+  "grep -qF -- 'a \\| b c | SKIP | line1 line2 \\| pipe |' '$FAKE_GH_LOG'"
+
+# (f) a cell containing a PRE-EXISTING literal backslash-pipe (e.g. a regex
+# excerpt) must have its backslash escaped BEFORE the pipe is escaped, or the
+# cell's own backslash consumes the added escape and the pipe still splits
+# the row.
+: > "$FAKE_GH_LOG"
+DISPOSITION_BS='[{"finding":"regex \\| here","classification":"SKIP","detail":"n/a"}]'
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table-file "$(dtfile "$DISPOSITION_BS")" >/dev/null 2>&1
+rc_bs=$?
+assert "disposition-table-file with a pre-existing backslash-pipe exits 0" "[ \$rc_bs -eq 0 ]"
+assert "the pre-existing backslash is escaped before the pipe, so the pipe stays escaped" \
+  "grep -qF -- 'regex \\\\\\| here' '$FAKE_GH_LOG'"
+
+# (g) a disposition table large enough to push the rendered comment past
+# GitHub's issue-comment size limit falls back to a short, valid
+# '@codex review' body instead of failing the gh call outright. Also proves
+# the file-based transport: a 400-entry table (>128 KiB, well past Linux's
+# single-argv-string limit) is passed as a short file PATH, not inline JSON,
+# so this never risks the exec-time argv failure the header documents.
+: > "$FAKE_GH_LOG"
+BIG_DISPOSITION=$(python3 -c "
+import json
+items = [{'finding': 'x' * 200, 'classification': 'SKIP', 'detail': 'y' * 200} for _ in range(400)]
+print(json.dumps(items))
+")
+BIG_DISPOSITION_FILE="$(dtfile "$BIG_DISPOSITION")"
+assert "the oversized disposition-table fixture itself exceeds Linux's 128 KiB single-argv-string limit" \
+  "[ \$(wc -c < '$BIG_DISPOSITION_FILE') -gt 131072 ]"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table-file "$BIG_DISPOSITION_FILE" >/dev/null 2>&1
+rc_big=$?
+assert "oversized disposition-table-file still exits 0" "[ \$rc_big -eq 0 ]"
+assert "oversized disposition-table-file posts the '@codex review' ask (not aborted)" \
+  "grep -qF -- '@codex review' '$FAKE_GH_LOG'"
+assert "oversized disposition-table-file falls back to a short body, not the full table" \
+  "[ \$(wc -c < '$FAKE_GH_LOG') -lt 1000 ]"
 
 exit $FAIL
