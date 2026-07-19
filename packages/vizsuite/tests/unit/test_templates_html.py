@@ -488,7 +488,9 @@ def test_render_inlines_blast_radius_overlay_and_empty_state_hooks():
     assert "drillState.closeBlastOverlay" in html
     assert "function renderEmptyNeighborhood" in html
     assert "No known dependents or dependencies in the graph" in html
-    # #viz-root is the overlay's positioning context (round-2 fix).
+    # The blast overlay is a viewport-anchored modal (position: fixed), so it
+    # tracks the visible canvas instead of stretching with #viz-root's flow
+    # height in the ledger view.
     assert ".viz-blast-overlay {" in html
 
 
