@@ -144,7 +144,7 @@ below)
 | `item_done` | `item` | `merged → done` (post-merge leg complete); clears any attention/round badge for the item |
 | `item_parked` | `item`, `kind` (discovered-work \| human-gated \| later-wave \| deferred), `note` | Removes from active queue into the parking lot |
 | `item_enqueued` | `item`, `lane`, `position?` | Parking lot's one exit: `parked → queued` in the named lane. Also legalizes mid-grind queue additions. |
-| `discovered_work` | `description`, `source` (lane/PR that surfaced it), `bead?`, `disposition` (parked \| enqueued), `kind?` (when parked), `lane?` (when enqueued), `rationale` | Creates a new item carrying its triage rationale. `enqueued` is sugar for discover + `item_enqueued` in one event. |
+| `discovered_work` | `item` (durable id), `description`, `source` (lane/PR that surfaced it), `bead?`, `disposition` (parked \| enqueued), `kind?` (when parked), `lane?` (when enqueued), `rationale` | Creates a new item carrying its triage rationale, keyed by the required `item` id: the bead id when one exists, else a ROOT-assigned run-unique slug (`disc-<n>`, next free ordinal). `bead?` is optional metadata, carried only when it differs from `item`. `enqueued` is sugar for discover + `item_enqueued` in one event. |
 
 **Cross-cutting**
 
