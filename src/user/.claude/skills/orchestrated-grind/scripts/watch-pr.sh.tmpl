@@ -190,12 +190,57 @@ fetch_max_id() {
 # mutable, so the classifier compares SETS rather than high-water marks. An
 # empty set is a legitimate result (nobody has reacted), so failure is again
 # signalled by the return code, never by an empty string.
+# A reaction can land on the PR body, on any issue comment, on any review, or
+# on any inline review-thread comment — and a nested one moves none of the
+# other counts. The count baseline above already flattens all four sources for
+# exactly this reason; the identity set MUST cover the same four, or a `+1` on
+# a review comment rings the doorbell and then classifies as a bare ACTIVITY.
+# That is the body-only blind spot in a narrower form, and it is the one this
+# classifier exists to close.
+#
+# REST has no single endpoint for that, and an N+1 sweep over every comment is
+# both slow and fragile, so this is one GraphQL call. Note the content values
+# are GraphQL ENUMS (THUMBS_UP, EYES, ...), not REST's `+1`/`eyes` strings.
+#
+# BASELINE AND RING-TIME MUST USE THIS SAME FUNCTION. If the two sampled
+# different sources, every reaction from the unsampled source would read as new
+# on the very first ring.
+# Page sizes are deliberately bounded, not arbitrary. GitHub rejects a query
+# whose worst-case node count exceeds 500,000, and the naive
+# 100-threads x 100-comments x 100-reactions nesting alone requests 1,000,000.
+# The shape below budgets ~30,000: breadth on threads (a PR has many threads,
+# each with few comments) rather than depth. A PR that overruns these caps
+# loses part of the identity set, which can only downgrade a class toward
+# ACTIVITY — never upgrade one — so the failure direction stays safe.
+REACTION_QUERY='query($owner:String!,$name:String!,$pr:Int!){
+  repository(owner:$owner,name:$name){ pullRequest(number:$pr){
+    reactions(first:100){nodes{content user{login}}}
+    comments(first:100){nodes{reactions(first:50){nodes{content user{login}}}}}
+    reviews(first:100){nodes{reactions(first:50){nodes{content user{login}}}}}
+    reviewThreads(first:100){nodes{comments(first:10){nodes{reactions(first:20){nodes{content user{login}}}}}}}
+  } } }'
+
+# Emits a comma-joined, sorted, de-duplicated set of "<login>:<CONTENT>" pairs,
+# or NOTHING with a non-zero return when unreadable. An empty set is a
+# legitimate result (nobody reacted), hence the return-code signalling.
 fetch_reaction_set() {
   local json
-  json=$(gh api --paginate "repos/$REPO/issues/$PR/reactions" 2>/dev/null) || return 1
+  json=$(gh api graphql -F owner="${REPO%%/*}" -F name="${REPO##*/}" -F pr="$PR" \
+           -f query="$REACTION_QUERY" 2>/dev/null) || return 1
   [ -n "$json" ] || return 1
-  jq -s -r 'add // [] | [ .[] | "\(.user.login):\(.content)" ] | sort | unique | join(",")' \
-    <<<"$json" 2>/dev/null
+  # `as $p` rather than a bare pipe into a `,`-separated list: in jq `|` binds
+  # across `,`, so the array form would chain each source onto the previous one.
+  jq -r '
+    .data.repository.pullRequest as $p
+    | [ ($p.reactions.nodes // []),
+        (($p.comments.nodes // []) | map(.reactions.nodes // []) | add // []),
+        (($p.reviews.nodes  // []) | map(.reactions.nodes // []) | add // []),
+        (($p.reviewThreads.nodes // []) | map(.comments.nodes // []) | add // []
+           | map(.reactions.nodes // []) | add // [])
+      ]
+    | flatten
+    | map(select(.user != null) | "\(.user.login):\(.content)")
+    | sort | unique | join(",")' <<<"$json" 2>/dev/null
 }
 
 BASE_MAX_REVIEW_ID=$(fetch_max_id "pulls/$PR/reviews")   || CLASSIFY_OK=0
@@ -229,17 +274,36 @@ is_trusted() {
   return 1
 }
 
+# Fetch a ring-time source, or fail. `$1` is the REST path under repos/$REPO,
+# `$2` the jq filter applied to the slurped pages. Same capture-check-parse
+# discipline as the baselines, for the same reason.
+fetch_ring_json() {
+  local json
+  json=$(gh api --paginate "repos/$REPO/$1" 2>/dev/null) || return 1
+  [ -n "$json" ] || return 1
+  jq -s "$2" <<<"$json" 2>/dev/null
+}
+
 classify_ring() {
   [ "$CLASSIFY_OK" -eq 1 ] || { echo "ACTIVITY"; return 0; }
 
-  local findings=0 clean=0 inflight=0
+  local findings=0 clean=0 inflight=0 ring_failed=0
+
+  # ── WHY A PARTIAL FAILURE MUST ABANDON CLASSIFICATION ─────────────────────
+  # It is tempting to reason that a failed ring-time fetch is harmless because
+  # it contributes "nothing new". That holds only for a TOTAL failure. Consider
+  # a PARTIAL one: the inline-comments fetch (the FINDINGS source) fails while
+  # the reaction fetch succeeds and returns a `+1`. The cascade would then emit
+  # CLEAN on a PR that actually has unread findings — a failure silently
+  # DOWNGRADING severity, which inverts the precedence contract's whole safety
+  # asymmetry. So any unreadable source forfeits the class entirely and falls
+  # back to ACTIVITY. A bare doorbell is always honest; a wrong class is not.
 
   # New reviews since arm: state decides severity. A COMMENTED review is not
   # itself a finding — its inline comments are, and those are counted below.
   local reviews
-  reviews=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" 2>/dev/null \
-    | jq -s --argjson base "${BASE_MAX_REVIEW_ID:-0}" \
-        'add // [] | [ .[] | select((.id // 0) > $base) ]' 2>/dev/null)
+  reviews=$(fetch_ring_json "pulls/$PR/reviews" \
+    "add // [] | [ .[] | select((.id // 0) > ${BASE_MAX_REVIEW_ID:-0}) ]") || ring_failed=1
   review_state_count() {
     jq -r --arg s "$1" '[ .[] | select(.state == $s) ] | length' <<<"$reviews" 2>/dev/null || echo 0
   }
@@ -251,9 +315,8 @@ classify_ring() {
   # Any new inline review comment is a finding. This is the single highest-
   # value signal: it is how both Copilot and Codex actually raise defects.
   local inline_new
-  inline_new=$(gh api --paginate "repos/$REPO/pulls/$PR/comments" 2>/dev/null \
-    | jq -s --argjson base "${BASE_MAX_INLINE_ID:-0}" \
-        'add // [] | [ .[] | select((.id // 0) > $base) ] | length' 2>/dev/null)
+  inline_new=$(fetch_ring_json "pulls/$PR/comments" \
+    "add // [] | [ .[] | select((.id // 0) > ${BASE_MAX_INLINE_ID:-0}) ] | length") || ring_failed=1
   [ -n "$inline_new" ] && [ "$inline_new" -gt 0 ] && findings=1
 
   # New issue comments, matched against the OPTIONAL markers. Marker matching
@@ -261,9 +324,8 @@ classify_ring() {
   # caller-supplied and default to disabled — a phrase hardcoded here would rot
   # the first time a reviewer reworded its summary.
   local issue_new
-  issue_new=$(gh api --paginate "repos/$REPO/issues/$PR/comments" 2>/dev/null \
-    | jq -s --argjson base "${BASE_MAX_ISSUE_ID:-0}" \
-        'add // [] | [ .[] | select((.id // 0) > $base) | .body // "" ] | join("\n")' 2>/dev/null)
+  issue_new=$(fetch_ring_json "issues/$PR/comments" \
+    "add // [] | [ .[] | select((.id // 0) > ${BASE_MAX_ISSUE_ID:-0}) | .body // \"\" ] | join(\"\n\")") || ring_failed=1
   if [ -n "$issue_new" ]; then
     if [ -n "$FINDINGS_MARKER" ] && grep -qE "$FINDINGS_MARKER" <<<"$issue_new" 2>/dev/null; then
       findings=1
@@ -273,27 +335,31 @@ classify_ring() {
     fi
   fi
 
-  # Reaction identities added since arm, from trusted reviewers only. A lone
-  # thumbs-up IS an approval in the reference run, and a watcher blind to it
-  # slept through to timeout — hence reactions are first-class here, not a
-  # footnote. Removals are ignored by the classifier (they still RANG, via the
-  # `-ne` count test in the poll loop); a withdrawn reaction is activity
-  # without being a verdict.
+  # Reaction identities added since arm, from trusted reviewers only, across ALL
+  # four reaction sources (see fetch_reaction_set). A lone thumbs-up IS an
+  # approval in the reference run, and a watcher blind to it slept through to
+  # timeout — hence reactions are first-class here, not a footnote. Removals are
+  # ignored by the classifier (they still RANG, via the `-ne` count test in the
+  # poll loop); a withdrawn reaction is activity without being a verdict.
   local now_set
-  now_set=$(gh api --paginate "repos/$REPO/issues/$PR/reactions" 2>/dev/null \
-    | jq -s -r 'add // [] | [ .[] | "\(.user.login):\(.content)" ] | sort | unique | .[]' 2>/dev/null)
+  now_set=$(fetch_reaction_set) || ring_failed=1
   if [ -n "$now_set" ]; then
     while IFS= read -r pair; do
       [ -n "$pair" ] || continue
       case ",${BASE_REACTION_SET}," in (*",$pair,"*) continue ;; esac   # already present at arm
       local login="${pair%%:*}" content="${pair##*:}"
       is_trusted "$login" || continue
+      # GraphQL enum names, not REST's `+1`/`eyes` strings.
       case "$content" in
-        +1|rocket|hooray) clean=1 ;;
-        eyes)             inflight=1 ;;
+        THUMBS_UP|ROCKET|HOORAY) clean=1 ;;
+        EYES)                    inflight=1 ;;
       esac
-    done <<<"$now_set"
+    done <<<"$(tr ',' '\n' <<<"$now_set")"
   fi
+
+  # Any unreadable source forfeits the class — checked BEFORE the cascade, so a
+  # partial failure can never downgrade FINDINGS to CLEAN.
+  [ "$ring_failed" -eq 0 ] || { echo "ACTIVITY"; return 0; }
 
   # Fixed severity order. See the precedence contract in the header — this
   # cascade IS that contract, and the two must be changed together.
