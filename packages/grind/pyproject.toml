@@ -5,6 +5,9 @@ description = "grind — event schema + FSM fold for the event-sourced grind run
 requires-python = ">=3.11"
 dependencies = []
 
+[project.scripts]
+grind = "grind.cli:entry"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -50,6 +53,11 @@ select = [
 # "call a message-builder" TRY003 wants.
 "src/grind/fold.py" = ["TRY003"]
 "src/grind/log.py" = ["TRY003"]
+# GrindError's message IS the self-contained command-error reason surfaced
+# verbatim in the CLI's error envelope -- same rationale as fold.py/log.py.
+"src/grind/verbs.py" = ["TRY003"]
+"src/grind/store.py" = ["TRY003"]
+"src/grind/cli.py" = ["TRY003"]
 
 [tool.ruff.format]
 docstring-code-format = true
