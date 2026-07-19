@@ -187,13 +187,61 @@ FAKE_GH_FAIL_EDIT=1 PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 -
 rc_all_fail=$?
 assert "single failing identity exits 1 (none succeeded)" "[ \$rc_all_fail -eq 1 ]"
 
-# Exit-code matrix: one identity fails, the other succeeds -> still exit 0
-# (at least one ask succeeded).
+# Exit-code matrix: one identity fails, the other succeeds -> partial success,
+# exit 3 (distinct from 0 = full success and 1 = none succeeded) so callers
+# can tell a partial dispatch from either extreme instead of reading a
+# never-asked identity as merely "timed out silent".
 : > "$FAKE_GH_LOG"
 FAKE_GH_FAIL_EDIT=1 PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
   --bot-reviewers '["Copilot", "chatgpt-codex-connector[bot]"]' >/dev/null 2>&1
 rc_partial=$?
-assert "one failing + one succeeding identity exits 0 (at least one succeeded)" "[ \$rc_partial -eq 0 ]"
+assert "one failing + one succeeding identity exits 3 (partial success)" "[ \$rc_partial -eq 3 ]"
+
+# ── Per-identity dispatch outcome (structured stdout) ────────────────────────
+# stdout carries one NDJSON line per dispatched mechanism -- {identity,
+# mechanism, status} -- so callers can distinguish "never asked" (status !=
+# success for that mechanism) from "asked but silent", instead of inferring
+# outcome from a single aggregate exit code.
+
+: > "$FAKE_GH_LOG"
+out_full=$(PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "chatgpt-codex-connector[bot]"]' 2>/dev/null)
+assert "full-success stdout reports 2 NDJSON lines" "[ \$(printf '%s\n' \"\$out_full\" | grep -c .) -eq 2 ]"
+assert "full-success stdout reports copilot success" \
+  "printf '%s\n' \"\$out_full\" | jq -e 'select(.mechanism==\"copilot\" and .status==\"success\")' >/dev/null"
+assert "full-success stdout reports codex success" \
+  "printf '%s\n' \"\$out_full\" | jq -e 'select(.mechanism==\"codex\" and .status==\"success\")' >/dev/null"
+
+: > "$FAKE_GH_LOG"
+out_partial=$(FAKE_GH_FAIL_EDIT=1 PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "chatgpt-codex-connector[bot]"]' 2>/dev/null)
+assert "partial stdout reports copilot failure" \
+  "printf '%s\n' \"\$out_partial\" | jq -e 'select(.mechanism==\"copilot\" and .status==\"failure\")' >/dev/null"
+assert "partial stdout reports codex success" \
+  "printf '%s\n' \"\$out_partial\" | jq -e 'select(.mechanism==\"codex\" and .status==\"success\")' >/dev/null"
+
+: > "$FAKE_GH_LOG"
+out_allfail=$(FAKE_GH_FAIL_EDIT=1 PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["Copilot"]' 2>/dev/null)
+assert "all-fail stdout reports copilot failure" \
+  "printf '%s\n' \"\$out_allfail\" | jq -e 'select(.mechanism==\"copilot\" and .status==\"failure\")' >/dev/null"
+
+# Alias dedup + NDJSON: both Copilot aliases in one call must still emit
+# exactly ONE copilot NDJSON line, mirroring the single dispatch already
+# asserted above via the fake-gh log.
+: > "$FAKE_GH_LOG"
+out_dedup=$(PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "copilot-pull-request-reviewer[bot]"]' 2>/dev/null)
+assert "aliased dedup emits exactly one copilot NDJSON line" \
+  "[ \$(printf '%s\n' \"\$out_dedup\" | jq -c 'select(.mechanism==\"copilot\")' | grep -c .) -eq 1 ]"
+
+# Unknown identity: no NDJSON line for it (it was never dispatched), only a
+# stderr warning -- a mixed call's stdout must contain exactly the one known
+# identity's outcome line, not a second line for the unknown one.
+: > "$FAKE_GH_LOG"
+out_unknown=$(PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["some-other-bot[bot]", "Copilot"]' 2>/dev/null)
+assert "unknown identity produces no NDJSON line, only the known one's" \
+  "[ \$(printf '%s\n' \"\$out_unknown\" | grep -c .) -eq 1 ] && printf '%s\n' \"\$out_unknown\" | jq -e 'select(.mechanism==\"copilot\")' >/dev/null"
 
 # Flag-omitted default: still performs the Copilot-only dance, unchanged.
 : > "$FAKE_GH_LOG"

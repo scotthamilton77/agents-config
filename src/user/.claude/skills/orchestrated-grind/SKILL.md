@@ -89,6 +89,16 @@ Rules that are not negotiable:
   context — on the fact that nothing happened. Act on *real* signals instead: a
   worker's completion notification, a watcher ring, a lane report, a handoff.
   The one thing a bare idle may trigger is silence.
+- **Silence that outlasts the work is a different thing, and it IS a trigger.**
+  Ignoring idles is not ignoring lanes. A lane quiet for materially longer than
+  its task should take is the "status that has not moved in a suspiciously long
+  time" that §8 sends you to verify — key on the overdue-ness, never on the idle
+  count. An idle is a turn boundary a *healthy* lieutenant emits; a dead one may
+  emit nothing at all, so idles are the one channel a crashed teammate has
+  stopped using. Verify with `gh`/`git`/the tracker and the agent's status, not
+  by messaging the lane to ask whether it is alive — a message to a terminated
+  agent can silently no-op, and §8's "suspect the tooling before the teammate"
+  applies before you conclude the agent died at all.
 - **Sizing every dispatch is ROOT's judgment, not a lookup.** ROOT decides the
   model and effort each lane and each worker runs at, from what that task
   actually demands: mechanical work (extraction, file surveys, format
@@ -659,6 +669,8 @@ punished; a worker that hides a compromise costs far more than one that admits i
 | "I won't nudge, but I'll log the idle so the dashboard is complete." | An idle is the absence of an event. Logging it buries real signals and spends context proving nothing happened. Record state changes, not silence. |
 | "I'll just acknowledge the idle so the lane knows I'm here." | The lane is parked and cannot use the reassurance. The reply costs two turns of context and changes nothing. |
 | "Five idles in a row means something is wrong." | Five idles is one fact repeated: the lane is parked. Only `gh`/`git`/`bd` can tell you whether that is correct. |
+| "I ignore idles, so a crashed lieutenant is invisible to me." | Backwards — a crashed lane emits no idle at all. Silence past the work's expected duration is the signal; check status and artifacts, not the idle stream. |
+| "The lane's been quiet far too long — I'll message it and see if it answers." | A terminated agent can no-op the message and look fine. Ask the world (`gh`/`git`/tracker/agent status), not the agent. |
 | "The lane reported reviewed-clean, so I can merge." | A lane report is a claim, not eligibility. Invoke `merge-guard`: its eligibility run verifies the claim, and its policy resolution — a separate axis — decides whether merging is authorized at all. Clean is not permission. |
 | "I'll sanity-check CI and threads myself before invoking the guard." | The guard computes that and more, on the next command. A pre-check is ROOT's context spent recomputing a stale subset. One gated call, not eight. |
 | "This grovel is unavoidable, so I'll just read it all inline." | Unavoidable for *someone*, not for ROOT. Ad-hoc ephemeral subagent, verdict block only. |

@@ -194,13 +194,37 @@ assert "default Copilot filter does NOT match the non-Copilot bot (timeout, exit
 # A findings review reports completion_kind "review".
 assert "matched review reports completion_kind review" "printf '%s' \"\$out_bot\" | jq -e '.completion_kind == \"review\"' >/dev/null"
 
+# ── Defect 1 (agents-config-abn9.44.11): an APPROVED review must also count
+# as a completion, not just COMMENTED. check-merge-eligibility.sh's own
+# review path already accepts APPROVED as a legitimate clean pass (Component
+# 2 part (a)); before this fix, a bot that approved cleanly on its first pass
+# was never detected as having responded, and the poll ran to a spurious
+# timeout that wrongly spent the retry budget.
+FIXTURE_REVIEWS_APPROVED='[{"user":{"login":"My-Bot[bot]","type":"Bot"},"state":"APPROVED","submitted_at":"2026-01-01T00:00:00Z"}]'
+
+out_approved=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS="$FIXTURE_REVIEWS_APPROVED" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 5 --bot-reviewers '["my-bot[bot]"]' 2>/dev/null)
+rc_approved=$?
+assert "an APPROVED review completes (exit 0), does NOT time out" "[ \$rc_approved -eq 0 ]"
+assert "an APPROVED review reports completion_kind review" "printf '%s' \"\$out_approved\" | jq -e '.completion_kind == \"review\"' >/dev/null"
+
 # ── Poll completion contract (Component 3): clean-pass completion ───────────
 # A clean bot pass submits no review object at all — only a `+1` reaction on
 # the PR body, or a clean-pass marker issue comment, post-dating the ask
-# (--since-timestamp). Both must be recognised as completion (exit 0,
-# completion_kind "clean_reaction"), and ONLY a true timeout may report
-# completion_kind "timeout" — that is the only outcome a caller may count as
-# a silent ask against its retry cap.
+# (--since-timestamp). Both must be recognised as completion (exit 0), and
+# ONLY a true timeout may report completion_kind "timeout" — that is the only
+# outcome a caller may count as a silent ask against its retry cap.
+#
+# Defect 2 (agents-config-abn9.44.11): the two clean signals are NOT
+# interchangeable. completion_kind "clean_reaction" is reserved for the real
+# qualifying `+1` reaction that check-merge-eligibility.sh's reaction-path
+# fact requires. A marker comment alone (comment landed, reaction not yet
+# earned -- a real race, since Codex posts the marker and earns the reaction
+# as two separate API calls) is a genuine "the bot responded" signal but is
+# NOT what the eligibility floor's reaction fact accepts, so it gets its own
+# distinct completion_kind "clean_marker" instead of masquerading as
+# "clean_reaction" -- callers that must match the floor's stricter criteria
+# can branch on the two kinds separately.
 
 CODEX_ID='chatgpt-codex-connector[bot]'
 SINCE_TS='2026-01-01T00:00:00Z'
@@ -226,7 +250,8 @@ out_comment=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED
   --since-timestamp "$SINCE_TS" --bot-reviewers "[\"$CODEX_ID\"]" 2>/dev/null)
 rc_comment=$?
 assert "a post-dating marker comment completes (exit 0)" "[ \$rc_comment -eq 0 ]"
-assert "a post-dating marker comment reports completion_kind clean_reaction" "printf '%s' \"\$out_comment\" | jq -e '.completion_kind == \"clean_reaction\"' >/dev/null"
+assert "a post-dating marker comment reports completion_kind clean_marker" "printf '%s' \"\$out_comment\" | jq -e '.completion_kind == \"clean_marker\"' >/dev/null"
+assert "a post-dating marker comment does NOT report completion_kind clean_reaction (no real +1 present)" "printf '%s' \"\$out_comment\" | jq -e '.completion_kind != \"clean_reaction\"' >/dev/null"
 
 # A `+1` reaction that PREDATES the ask must NOT complete (stale-cache guard,
 # same discipline as the existing review submitted_at filter) — falls through
@@ -500,7 +525,7 @@ out_cc_p2=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" 
   --since-timestamp "$SINCE_TS" --bot-reviewers "[\"$CODEX_ID\"]" 2>/dev/null)
 rc_cc_p2=$?
 assert "a marker comment on page 2 completes (exit 0)" "[ \$rc_cc_p2 -eq 0 ]"
-assert "a page-2 marker comment reports completion_kind clean_reaction" "printf '%s' \"\$out_cc_p2\" | jq -e '.completion_kind == \"clean_reaction\"' >/dev/null"
+assert "a page-2 marker comment reports completion_kind clean_marker" "printf '%s' \"\$out_cc_p2\" | jq -e '.completion_kind == \"clean_marker\"' >/dev/null"
 
 # ── Sub-phase A auto-skip for comment-triggered bot identities (Codex is
 #    never a requested reviewer — it is triggered by an issue comment; see

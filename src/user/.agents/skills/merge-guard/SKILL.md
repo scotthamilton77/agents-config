@@ -198,22 +198,34 @@ The rule holds iff the emitted `verdict == "go"`.
     "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"`.
     ```bash
     ASK_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    ${CLAUDE_SKILL_DIR}/request-rereview.sh \
+    RR_OUT=$(${CLAUDE_SKILL_DIR}/request-rereview.sh \
       --owner <owner> --repo <repo> --pr <n> \
-      --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"
+      --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")")
     RR_EXIT=$?
+    # exit 0 = every dispatched mechanism succeeded; 1 = none did; 3 = partial
+    # (>=1 succeeded, >=1 failed). $RR_OUT is NDJSON, one line per dispatched
+    # mechanism: {identity, mechanism, status}. Filter to the identities that
+    # actually succeeded — DO NOT reuse the full policy list below, or a
+    # never-asked identity (RR_EXIT == 3's failed half) polls as if it had
+    # been asked and reads "timed out silent" instead of "never dispatched".
+    # Same NDJSON contract, same filter, as wait-for-pr-comments Phase 6 (its
+    # other caller) — see that skill's SKILL.md for the shared rationale.
+    DISPATCHED_OK_REVIEWERS=$(jq -cs '[.[] | select(.status == "success") | .identity]' <<<"$RR_OUT")
     ```
-    - `RR_EXIT == 1` (`request-rereview.sh`'s own contract: no identity was
+    - `DISPATCHED_OK_REVIEWERS == []` (`RR_EXIT == 1`: no identity was
       successfully dispatched — every `gh pr edit`/`gh pr comment` call
       failed) — **do not poll.** No bot was actually asked, so a subsequent
       timeout would misclassify infrastructure failure as bot silence and
       wrongly spend the budget. Hand off directly: report the dispatch
       failure, do not touch the silent counter.
-    - `RR_EXIT == 0` — at least one dispatch succeeded — proceed to poll:
+    - `DISPATCHED_OK_REVIEWERS != []` (`RR_EXIT == 0` full success, or
+      `RR_EXIT == 3` partial dispatch) — at least one identity was
+      successfully asked — proceed to poll, restricted to the identities
+      actually dispatched:
       ```bash
       ${CLAUDE_SKILL_DIR}/poll-copilot-review.sh \
         --owner <owner> --repo <repo> --pr <n> \
-        --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")" \
+        --bot-reviewers "$DISPATCHED_OK_REVIEWERS" \
         --since-timestamp "$ASK_TS" \
         --timeout-seconds "$(jq -r '.bot_inactivity_timeout_seconds' <<<"$POLICY_JSON")"
       ```
@@ -226,17 +238,40 @@ The rule holds iff the emitted `verdict == "go"`.
       instead of the policy's configured `bot_inactivity_timeout_seconds`
       (1200s by default) — a bot that responds between 10 and 20 minutes
       would otherwise read as silent and wrongly spend the budget.
-      `request-rereview.sh`'s own contract exits 0 once AT LEAST ONE
-      dispatch succeeded (never per-identity), so a partial failure (e.g.
-      Copilot's reviewer-add succeeds, Codex's issue-comment fails) is
-      indistinguishable at this call site from full dispatch; the identity
-      that was never actually asked then reads as a timed-out silent bot
-      rather than an undelivered ask. Accepted here — closing it requires
-      `request-rereview.sh` itself to expose per-identity outcome, which is
-      outside this caller-edit's scope and affects its other caller (Phase 6
-      in `wait-for-pr-comments`) too (bead `agents-config-abn9.44.2.9`,
-      filed and parked). Branch on the poll's `completion_kind`, not on
-      whether a review object arrived:
+      `--bot-reviewers` is `$DISPATCHED_OK_REVIEWERS`, not the full policy
+      list, for the same reason given above `DISPATCHED_OK_REVIEWERS` is
+      computed.
+      **On `RR_EXIT == 3`, additionally report the dispatch-failure half**
+      into the same hand-off report the `RR_EXIT == 1` branch above already
+      writes to:
+      ```bash
+      DISPATCH_FAILURES=$(jq -cs '[.[] | select(.status == "failure")]' <<<"$RR_OUT")
+      ```
+      `$RR_OUT` carries one line **per mechanism actually attempted**, not
+      per policy alias (`request-rereview.sh` dedupes: when
+      `bot_reviewers` lists two aliases for the same mechanism — e.g. the
+      resolver's own default `["Copilot",
+      "copilot-pull-request-reviewer[bot]"]`, both Copilot aliases — only
+      the first-seen alias emits a line; the mechanism is not re-dispatched
+      or re-reported per alias). Report `$DISPATCH_FAILURES` as-is — do
+      **not** additionally treat a policy `bot_reviewers` entry that is
+      merely absent from `$RR_OUT` as a failure. An absence is either a
+      deduped alias whose mechanism a sibling alias already covered (not a
+      failure — its mechanism succeeded) or an unrecognized identity with no
+      known mechanism (`request-rereview.sh` already warns that to stderr
+      itself; it was never dispatchable, which is a policy-configuration
+      fact, not a per-attempt dispatch failure). Treating "absent" as
+      "failed" would misreport, e.g., `copilot-pull-request-reviewer[bot]`
+      as a dispatch failure whenever the sibling `Copilot` alias's single
+      dispatch succeeded. This addition is specific to merge-guard's
+      single terminal hand-off — the sibling `wait-for-pr-comments` Phase 6
+      loop has no equivalent step, since it reports per re-review round
+      rather than at a one-shot retry's end; that is an intentional
+      structural difference between the two callers, not an omission here.
+      Report `DISPATCH_FAILURES` alongside the poll result below so the
+      failure is never silently dropped even when the successfully-asked
+      identity's poll ultimately succeeds. Branch on the poll's
+      `completion_kind`, not on whether a review object arrived:
       - `"review"` or `"clean_reaction"` — the ask reached a reviewer and it
         responded, whichever way. This is NOT silence; do not touch the
         silent counter. Re-run Step 3 against the unchanged head exactly

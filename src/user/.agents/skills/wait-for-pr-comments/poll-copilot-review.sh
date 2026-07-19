@@ -25,18 +25,30 @@
 # when the list has only request-based identities (e.g. Copilot).
 #
 # Poll completion contract: this script's JSON output also completes without
-# a review object when a bot's pass is clean. When --bot-reviewers is
-# supplied, a `+1` reaction on the PR body, or an issue comment starting with
-# the clean-pass marker "Codex Review: Didn't find any major issues" — each
-# from an allowlisted identity — also counts as completion (the standalone
-# Copilot-substring default never checks either signal). A clean signal is
+# a review object when a bot's pass is clean. A submitted review (state
+# APPROVED or COMMENTED — mirroring check-merge-eligibility.sh's own review
+# path, which accepts both as a legitimate clean pass) always counts as
+# completion. When --bot-reviewers is supplied, two additional clean-pass
+# signals count too: a `+1` reaction on the PR body, or an issue comment
+# starting with the clean-pass marker "Codex Review: Didn't find any major
+# issues" — each from an allowlisted identity (the standalone
+# Copilot-substring default never checks either signal). These two are NOT
+# interchangeable: the `+1` reaction is the real qualifying signal
+# check-merge-eligibility.sh's reaction-path fact requires, so it alone
+# reports completion_kind "clean_reaction"; the marker comment is a genuine
+# "bot responded" signal but not what that fact accepts (comment landed,
+# reaction not yet earned is a real race — Codex posts the marker and earns
+# the reaction via two separate API calls), so it reports the distinct
+# completion_kind "clean_marker" instead, letting callers that must match the
+# floor's stricter criteria branch on the two separately. A clean signal is
 # accepted only when it is fresh: it must post-date --since-timestamp when
 # given, else (the initial poll) the point the current head became HEAD —
 # max( PR head commit's committer date, latest head_ref_force_pushed timeline
 # event ), since a force-push can re-point HEAD at an older commit. If that
 # freshness bound cannot be established, clean signals are rejected that round
 # (fail closed). `completion_kind` distinguishes "review" / "clean_reaction" /
-# "timeout"; only "timeout" should count against a caller's silent-ask budget.
+# "clean_marker" / "timeout"; only "timeout" should count against a caller's
+# silent-ask budget.
 # If a clean-signal endpoint (reactions / issue comments) is FAILING at the
 # deadline, a clean pass and bot silence are indistinguishable — so the script
 # exits 3 (infrastructure error), NOT 1/timeout, and a transport failure is
@@ -50,7 +62,7 @@
 #       endpoint failing at the deadline)
 #
 # Stdout (exit 0):
-#   { "status": "copilot_review_found", "completion_kind": "review"|"clean_reaction", "reviews": [...], "inline_comments": [...], "human_comments": [...] }
+#   { "status": "copilot_review_found", "completion_kind": "review"|"clean_reaction"|"clean_marker", "reviews": [...], "inline_comments": [...], "human_comments": [...] }
 # Stdout (exit 1):
 #   { "status": "copilot_review_timeout", "completion_kind": "timeout" }
 # Stdout (exit 2):
@@ -187,13 +199,19 @@ pr_is_open() {
     [[ "$state" == "open" ]]
 }
 
-# emit_clean_reaction_found — shared stdout payload for both clean-pass
-# completion signals (a `+1` reaction and a marker comment carry no review
-# content, so both report the same empty-arrays shape).
-emit_clean_reaction_found() {
-    jq -n '{
+# emit_clean_signal_found <completion_kind> — shared stdout payload for both
+# clean-pass completion signals (a `+1` reaction and a marker comment carry
+# no review content, so both report the same empty-arrays shape). The kind
+# itself is NOT shared: a `+1` reaction reports "clean_reaction" (the real
+# qualifying signal check-merge-eligibility.sh's reaction-path fact
+# requires); a marker comment alone reports the distinct "clean_marker" —
+# see the header's Poll completion contract for why they must not collapse
+# into one kind.
+emit_clean_signal_found() {
+    local kind="$1"
+    jq -n --arg kind "$kind" '{
         status: "copilot_review_found",
-        completion_kind: "clean_reaction",
+        completion_kind: $kind,
         reviews: [],
         inline_comments: [],
         human_comments: []
@@ -364,7 +382,11 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
         reviews="$fresh_reviews"
     fi
 
-    count=$(printf '%s' "$reviews" | jq '[.[] | select(.state == "COMMENTED")] | length')
+    # APPROVED or COMMENTED are both a completed review — mirrors
+    # check-merge-eligibility.sh's own review path (Component 2 part (a)),
+    # which accepts either as a legitimate clean pass. Missing APPROVED here
+    # made a bot's clean first-pass approval indistinguishable from silence.
+    count=$(printf '%s' "$reviews" | jq '[.[] | select(.state == "APPROVED" or .state == "COMMENTED")] | length')
 
     if [[ "$count" -gt 0 ]]; then
         echo "  Copilot review found (attempt ${i})" >&2
@@ -439,7 +461,7 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
 
             if [[ "$(printf '%s' "$reactions" | jq 'length')" -gt 0 ]]; then
                 echo "  Clean-pass reaction found (attempt ${i})" >&2
-                emit_clean_reaction_found
+                emit_clean_signal_found clean_reaction
                 exit 0
             fi
 
@@ -455,7 +477,7 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
 
             if [[ "$(printf '%s' "$clean_comments" | jq 'length')" -gt 0 ]]; then
                 echo "  Clean-pass marker comment found (attempt ${i})" >&2
-                emit_clean_reaction_found
+                emit_clean_signal_found clean_marker
                 exit 0
             fi
         fi

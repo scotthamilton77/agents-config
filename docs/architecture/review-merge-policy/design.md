@@ -185,17 +185,28 @@ cannot pick unsafe defaults.
 
 **CI-green** (eligibility floor):
 
-- *Required set* = the branch-protection required status checks for the
-  target branch, fetched independently from branch protection. Each entry
-  carries a context **name** and, where branch protection pins one, an
-  expected **source** (the specific GitHub App the check must come from) —
+- *Required set* = the **union** of two independently-fetched sources: the
+  classic branch-protection required status checks for the target branch,
+  and any `required_status_checks`-type rule returned by the same
+  `rules/branches/{branch}` ruleset listing `admin-bypass availability`
+  below also consumes. A repo enforcing CI via a Ruleset instead of classic
+  branch protection 404s the classic endpoint; that 404 empties only the
+  classic side of the union, never the ruleset side — the two sources are
+  deduplicated by context name + source, not preferred one over the other.
+  Each entry carries a context **name** and, where its source pins one, an
+  expected **source** (the specific GitHub App the check must come from —
+  `app_id` on the classic side, `integration_id` on the ruleset side) —
   GitHub's own trust boundary against a different integration posting a
   same-named status. **Never derived from** `statusCheckRollup` — the rollup
   lists only contexts that have actually reported, so filtering *it* down to
   "the required ones" silently omits any required context that has not
   started yet, which is exactly the race this gate exists to prevent. If
-  branch protection defines **no** required checks, the required set is
-  empty.
+  **neither** source defines a required check (both endpoints 404), the
+  required set is empty.
+- A hard (non-404) fetch failure on *either* source fails the whole
+  eligibility check closed (exit 3, no verdict) — see the `rules/branches`
+  hard-failure note under `admin-bypass availability` below for why that
+  fetch's failure handling is no longer purely informational.
 - *Green* iff every required entry has a matching `statusCheckRollup` entry
   that concluded `SUCCESS`, matched by context name **and**, when that entry
   pins a source, by the same source — a same-named `SUCCESS` from a
@@ -311,14 +322,22 @@ an already-authorized merge, not *whether* one is eligible):
 - *Not applicable* (`review_rule_active = false`) when no `pull_request` rule
   with a positive required-approving-review count targets the branch — the
   fact carries no opinion, since there is nothing for `--admin` to bypass.
-- A fetch failure on this fact never aborts eligibility. Because
-  `admin_bypass` gates no entry in `blockers[]`, denying a merge that may not
-  even need `--admin` over a transient GitHub/API error would be wrong. The
-  branch-rules list fetch (a non-404 failure) degrades to the inert "no
-  rulesets" state (`review_rule_active = false`); an individual ruleset detail
-  fetch failure degrades to non-bypassable (`current_actor_can_bypass = false`,
-  the fail-closed default for the `--admin` decision) and continues. Both warn
-  on stderr; neither silently assumes "bypassable."
+- The `rules/branches/{branch}` list fetch is fetched once and shared with
+  CI-green's required-set union above — it is no longer purely informational
+  to this fact alone. A 404 (no rulesets target the branch) still resolves
+  to the inert "no rulesets" state (`review_rule_active = false`) for this
+  fact and an empty ruleset-side required-check set for CI-green. A hard
+  (non-404) failure on that shared fetch now **aborts eligibility entirely**
+  (exit 3, no verdict) rather than degrading `admin_bypass` alone to inert —
+  because the same failure would otherwise silently empty CI-green's
+  ruleset-side required set on a ruleset-only repo, recreating the exact
+  vacuous-green gap this design closes. This is a deliberate departure from
+  the "fetch failure never aborts eligibility" default that still holds for
+  every fact below this one: an individual ruleset *detail* fetch failure
+  (fetched per-`ruleset_id`, one call per matching rule, never shared with
+  CI-green) still only degrades that ruleset to non-bypassable
+  (`current_actor_can_bypass = false`, the fail-closed default for the
+  `--admin` decision) and continues, warning on stderr rather than aborting.
 - This predicate certifies only that the `pull_request` rule(s) are
   bypassable — `current_user_can_bypass` is reported **per ruleset**, and a
   ruleset commonly bundles unrelated rule types (this repo's own ruleset also

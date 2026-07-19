@@ -105,6 +105,22 @@ three agents directly).
   help. If you genuinely need to know a parked agent's state, read ground truth
   (version control, the tracker, the artifacts it was to produce) rather than
   asking it.
+- **Ignoring idles is not ignoring agents — silence that outlasts the work is a
+  real signal.** When a dispatched agent has been quiet materially longer than
+  its task should take, investigate. Key on the overdue-ness, not on the idle: an
+  idle is a turn boundary a *healthy* agent emits, whereas a crashed one may emit
+  nothing at all, so idles are the one channel a dead agent has stopped using.
+  Detect a dead agent by elapsed time against a missing artifact, never by
+  counting idles.
+- **When an agent is overdue, probe the world rather than the agent.** Do not
+  message it to ask whether it is alive — on many runtimes a message to a
+  terminated agent silently does nothing, or fails in a way that resembles a
+  successful dispatch, so the reply (or its absence) cannot distinguish a dead
+  agent from a quiet one. A live agent's self-report is only a claim in any case.
+  Check the agent's status through the runtime, and look for the artifact it was
+  meant to produce. No artifact and a terminated agent is a crash — re-dispatch
+  the work rather than waiting. No artifact and a live agent means slow, not
+  dead; leave it to work.
 - Facilitate information flow between agents when needed
 - Adjust the plan based on intermediate results
 - Maintain a clear status of overall progress
