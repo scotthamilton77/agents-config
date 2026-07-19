@@ -80,6 +80,15 @@ Rules that are not negotiable:
 - **Lieutenants park after dispatching.** A bare idle notification means
   *parked*. It never means "done" and never means "stuck." Do not nudge on an
   idle notification alone.
+- **A bare idle is not an event — it is the absence of one.** Never let an idle
+  *itself* be the trigger for anything. Do not reply to it, do not `SendMessage`
+  the parked agent about it, do not narrate it to the human, and **do not write
+  it to `state.json` or the dashboard**. Idles are the most frequent
+  notification in a long run and the least informative; a run that logs them
+  buries the real signals in noise and spends ROOT's scarcest resource —
+  context — on the fact that nothing happened. Act on *real* signals instead: a
+  worker's completion notification, a watcher ring, a lane report, a handoff.
+  The one thing a bare idle may trigger is silence.
 - **Sizing every dispatch is ROOT's judgment, not a lookup.** ROOT decides the
   model and effort each lane and each worker runs at, from what that task
   actually demands: mechanical work (extraction, file surveys, format
@@ -117,7 +126,8 @@ Rules that are not negotiable:
    unconfirmed partition is expensive to unwind once four agents are live.
 3. **Spawn the bookkeeper first**, with the dashboard template and the state
    schema. It writes the initial `state.json` and `dashboard.html`, and opens
-   the page in the browser **exactly once**.
+   the page in the browser **exactly once**, via the OS handler named in §5
+   (`open` / `xdg-open` — never browser automation).
 4. **Spawn the lieutenants**, one message each, carrying: the lane's queue, the
    worktree naming convention, the review protocol (§3), the post-merge leg
    (§8), the instruction to report **reviewed-clean** rather than merging, and
@@ -405,6 +415,30 @@ on updates.** If the page looks stale to the human, the suspect is the refresh
 toggle or a stale tab — the files are ground truth. Check `state.json`'s
 timestamp before blaming the bookkeeper.
 
+**Open it with the OS handler, never with browser automation.** The one
+permitted mechanism is the platform's own opener, handing the file to whatever
+browser the human already uses:
+
+```bash
+# macOS
+open "<abs-path>/dashboard.html"
+# Linux / BSD
+xdg-open "<abs-path>/dashboard.html"
+```
+
+Branch on `uname` (`Darwin` → `open`, otherwise `xdg-open`) rather than
+guessing, and pass an absolute path — the bookkeeper's cwd is not the human's.
+
+**Browser-automation MCP servers — Playwright, claude-in-chrome, or any
+successor — are prohibited for this.** They are the wrong tool in a way that
+is not obvious in the moment, which is exactly why an agent reaches for one
+when it happens to be loaded: the page they render lives in an automation-owned
+browser the human is not looking at, so the dashboard is "opened" and yet never
+seen. They also cost a tool round-trip and tokens for what a one-line shell
+command does, hold a session open behind the run, and can block on a dialog. If
+the opener is unavailable or fails, **say so and print the path** — a human who
+can read the path can open the page themselves. Do not fall back to automation.
+
 The rendered dashboard **inlines its state** rather than fetching it, so it
 works from a `file://` URL with no server. Do not introduce one. Because the
 state is spliced into an inline `<script>` block and carries text from outside
@@ -617,6 +651,9 @@ punished; a worker that hides a compromise costs far more than one that admits i
 | Excuse | Reality |
 |--------|---------|
 | "The lieutenant is idle, so it's stuck — I'll nudge it." | Bare idle means parked. Verify with `gh`/`git` before nudging. |
+| "I won't nudge, but I'll log the idle so the dashboard is complete." | An idle is the absence of an event. Logging it buries real signals and spends context proving nothing happened. Record state changes, not silence. |
+| "I'll just acknowledge the idle so the lane knows I'm here." | The lane is parked and cannot use the reassurance. The reply costs two turns of context and changes nothing. |
+| "Five idles in a row means something is wrong." | Five idles is one fact repeated: the lane is parked. Only `gh`/`git`/`bd` can tell you whether that is correct. |
 | "The lane reported reviewed-clean, so I can merge." | A lane report is a claim, not eligibility. Invoke `merge-guard`: its eligibility run verifies the claim, and its policy resolution — a separate axis — decides whether merging is authorized at all. Clean is not permission. |
 | "I'll sanity-check CI and threads myself before invoking the guard." | The guard computes that and more, on the next command. A pre-check is ROOT's context spent recomputing a stale subset. One gated call, not eight. |
 | "This grovel is unavoidable, so I'll just read it all inline." | Unavoidable for *someone*, not for ROOT. Ad-hoc ephemeral subagent, verdict block only. |
@@ -641,6 +678,7 @@ punished; a worker that hides a compromise costs far more than one that admits i
 | "I'll wrap the watcher in a helper script with `&`, it's tidier." | The wrapper exits, the notification fires for it, the watcher is orphaned. Launch directly. |
 | "I'll write the compaction handoff when compaction is close." | By then you are composing from degraded context. Write it early. |
 | "The dashboard looks stale, I'll re-open it in the browser." | Open exactly once. Check `state.json`'s timestamp instead. |
+| "Playwright is already loaded, I'll open the dashboard with it." | It renders into an automation browser the human never sees — opened, yet unseen. `open`/`xdg-open`, or print the path. |
 | "Both lanes need the version bump, they'll sort it out." | They will collide. ROOT sequences version bumps explicitly. |
 
 ## Red flags — stop and re-verify
@@ -661,7 +699,9 @@ punished; a worker that hides a compromise costs far more than one that admits i
 - You are treating a re-flagged fix as a stalemate without having checked the
   commit the reviewer claims it reviewed (§3).
 - A lane is arming its own watcher (§6).
-- You are re-opening the dashboard in a browser.
+- You are re-opening the dashboard in a browser, or reaching for a
+  browser-automation tool to open it at all (§5).
+- You are about to reply to, narrate, or record a bare idle notification (§1).
 - Your last three actions were implementation work. You are ROOT — you manage,
   decide, and unblock. Hand it to a lane.
 - You are reading a diff, or re-running a gate a lane already ran.
