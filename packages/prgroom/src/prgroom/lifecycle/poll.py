@@ -342,17 +342,31 @@ def _seed_reviewer(
 ) -> ReviewerState:
     """Build the entry for a login seen for the first time this poll (§2.1.1).
 
-    A login discovered through an already-submitted review is seeded at that
-    review's own verdict and timestamp — NOT left to ``_observe_engagement``, whose
-    "activity strictly after ``last_request_at``" gate would permanently reject the
-    very review that revealed the reviewer if ``last_request_at`` were stamped
-    ``now``. Backdating both stamps to the review keeps that comparison honest.
+    A **currently-requested** login (``required`` is True — the sole call site passes
+    ``required=login in requested_reviewers``) seeds ``REQUESTED`` at ``now``, ignoring
+    any historical ``terminal_at`` / ``reviewed_at``. GitHub drops a login from
+    ``requested_reviewers`` the instant it submits ANY review, so a login STILL listed
+    there that ALSO carries reviews on record can only mean the request post-dates every
+    one of those reviews — a re-request whose wanted fresh review has not landed yet.
+    Honouring the stale verdict would seed ``REVIEW_FOUND`` and let
+    ``reviewers_gate_satisfied`` pass without the newly-requested review, quiescing the
+    PR behind the reviewer's back.
+
+    A login discovered ONLY through an already-submitted review (``required`` False — a
+    drive-by, or a fast reviewer GitHub already cleared from ``requested_reviewers``) is
+    seeded at that review's own verdict and timestamp — NOT left to
+    ``_observe_engagement``, whose "activity strictly after ``last_request_at``" gate
+    would permanently reject the very review that revealed the reviewer if
+    ``last_request_at`` were stamped ``now``. Backdating both stamps to the review keeps
+    that comparison honest.
     """
-    if terminal_at is not None:
+    if not required and terminal_at is not None:
         status, stamp = ReviewerStatus.REVIEW_FOUND, terminal_at
-    elif reviewed_at is not None:
+    elif not required and reviewed_at is not None:
         status, stamp = ReviewerStatus.IN_PROGRESS, reviewed_at
     else:
+        # Requested this poll (a fresh request outranks any historical verdict — see the
+        # docstring), or a bare request with no review yet: seed REQUESTED at ``now``.
         return ReviewerState(
             identity=login,
             kind=_reviewer_kind(user),

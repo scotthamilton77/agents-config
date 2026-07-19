@@ -86,19 +86,32 @@ this order, over the union of logins in `requested_reviewers` and `raw_reviews`
 authors:
 
 1. **Seed an absent identity.** A login with no existing `state.reviewers` entry gets
-   one. If the login came from a review (present in `raw_reviews`, whether or not it
-   is also present in `requested_reviewers` this poll), seed its status and
-   `last_review_at` directly from that review's own verdict — `REVIEW_FOUND` for an
+   one. **A pending request outranks any historical verdict.** A login present in
+   `requested_reviewers` this poll seeds `status=REQUESTED`, `required=True`,
+   `last_request_at=now`, **regardless of any `APPROVED`/`CHANGES_REQUESTED` review it
+   also carries in `raw_reviews`**. GitHub removes a login from `requested_reviewers`
+   the instant it submits **any** review, so a login *still* listed there that also has
+   reviews on record can only mean the request post-dates every one of those reviews — a
+   re-request whose wanted fresh review has not landed yet. Seeding it `REVIEW_FOUND`
+   from the stale verdict would let `_g_reviewers` pass and the PR quiesce behind the
+   reviewer's back. (The one theoretical race — a review submitted between the PR-resource
+   GET and the reviews GET within a single poll, making both signals true with the review
+   fresher — is out of scope here: presence-in-`requested_reviewers` wins by design, no
+   request/head-freshness timestamp heuristic is built at seed time.)
+
+   Only a login present **exclusively** in `raw_reviews` (absent from
+   `requested_reviewers` this poll — a fast reviewer GitHub already cleared, or a drive-by)
+   is seeded directly from that review's own verdict: `REVIEW_FOUND` for an
    `APPROVED`/`CHANGES_REQUESTED` entry (matching `_TERMINAL_REVIEW_STATES`,
    `poll.py:189`), `IN_PROGRESS` otherwise (a `COMMENTED` response — the only other
    authored-by-this-login signal `raw_reviews` itself carries; a plain issue/review
    comment is a different collection this reconciliation does not consult, so it is
-   never this branch's trigger) — with `last_request_at` also backdated to that same
-   timestamp. Seeding status directly here (rather than leaving it to
-   `_observe_engagement`) is deliberate: `_observe_engagement`'s existing "activity
-   after `last_request_at`" gate (`poll.py:356-363`) only counts activity **strictly
-   newer** than the request time; a first-sight reviewer discovered purely via an
-   already-submitted review has no real request timestamp to compare against, and
+   never this branch's trigger) — with both `last_review_at` and `last_request_at`
+   backdated to that review's own timestamp. Seeding status directly here (rather than
+   leaving it to `_observe_engagement`) is deliberate: `_observe_engagement`'s existing
+   "activity after `last_request_at`" gate (`poll.py:356-363`) only counts activity
+   **strictly newer** than the request time; a first-sight reviewer discovered purely via
+   an already-submitted review has no real request timestamp to compare against, and
    stamping `last_request_at=now` (later than the review) would make that same review
    permanently fail the `>` comparison, silently losing the exact verdict this bead
    exists to capture. **`required` is `True` only if the login is present in
@@ -106,8 +119,7 @@ authors:
    formally requested — a drive-by review) seeds `required=False`.** Per §3, the only
    signal prgroom has for "should this block quiescence" is GitHub actually asking —
    a reviewer nobody requested cannot be allowed to block it just by having an
-   opinion. A login present only in `requested_reviewers` (never yet reviewed) seeds
-   as before: `status=REQUESTED`, `required=True`, `last_request_at=now`.
+   opinion.
 2. **Reactivate a declined entry — only a genuine withdrawal.** An existing entry with
    `status=DECLINED` **and `declined_reason=="request-withdrawn"` specifically**
    whose login reappears in `requested_reviewers` this poll resets to
@@ -311,6 +323,13 @@ New behaviors:
     `reviewer_needs_refresh` excludes them; `rereview_pr` issues no DELETE/POST for
     that login. A `DECLINED/timeout-no-start` reviewer in the same setup **is** still
     refreshed — the narrowing is specific to the withdrawal reason.
+17. **A pending request outranks a historical verdict (Codex P2 regression guard):** a
+    first-seen login present in `requested_reviewers` this poll **and** also carrying an
+    older `APPROVED`/`CHANGES_REQUESTED` review in `raw_reviews` → seeds
+    `status=REQUESTED`, `required=True`, `last_request_at=now` (NOT `REVIEW_FOUND`), and
+    `reviewers_gate_satisfied` is **False** — the re-request's fresh review is still
+    pending. The negative control (behavior 2) is unchanged: the same verdict with the
+    login *absent* from `requested_reviewers` still seeds `REVIEW_FOUND`.
 
 **Existing-test ripple** (mechanical — `_gh()` gains a `requested_reviewers: list[str]
 | None = None` parameter defaulting to an empty GitHub array; every existing call site

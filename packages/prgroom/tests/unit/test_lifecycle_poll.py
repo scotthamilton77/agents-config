@@ -1407,9 +1407,15 @@ def test_drive_by_reviewer_is_not_required() -> None:
     assert reviewers_gate_satisfied(state) is True  # an optional reviewer never gates
 
 
-def test_requested_reviewer_who_also_reviewed_is_required() -> None:
-    # The other half of behavior 15: presence in requested_reviewers is what confers
-    # `required`, and a formally-requested reviewer keeps it after responding.
+def test_pending_request_outranks_historical_verdict_on_seed() -> None:
+    # Behavior 17 (Codex P2 regression guard): GitHub removes a login from
+    # requested_reviewers the instant it submits ANY review, so a first-seen login
+    # STILL present in requested_reviewers that ALSO carries an older APPROVED verdict
+    # can only mean the request post-dates that verdict — a re-request whose fresh
+    # review is still pending. Seed REQUESTED at `now` (NOT REVIEW_FOUND from the stale
+    # verdict), keeping `required` True so the gate stays UNSATISFIED. The review's
+    # 11:00Z timestamp (_T0 - 1h) is older than poll time, so _observe_engagement's
+    # "strictly after last_request_at" gate cannot revive the historical verdict either.
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
     gh = _gh(
         head_oid="same",
@@ -1418,15 +1424,18 @@ def test_requested_reviewer_who_also_reviewed_is_required() -> None:
             {
                 "id": 904,
                 "state": "APPROVED",
-                "submitted_at": "2026-06-09T11:00:00Z",
+                "submitted_at": "2026-06-09T11:00:00Z",  # _T0 - 1h, before `now`
                 "user": {"login": "alice"},
                 "body": "lgtm",
             }
         ],
     )
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
-    assert state.reviewers["alice"].required is True
-    assert state.reviewers["alice"].status is ReviewerStatus.REVIEW_FOUND
+    alice = state.reviewers["alice"]
+    assert alice.required is True
+    assert alice.status is ReviewerStatus.REQUESTED  # fresh request wins over verdict
+    assert alice.last_request_at == _T0  # stamped `now`, not backdated to the review
+    assert reviewers_gate_satisfied(state) is False  # the wanted re-review is pending
 
 
 def _declined(reason: str, *, login: str = "copilot") -> dict[str, ReviewerState]:
