@@ -280,8 +280,12 @@ review; a condition whose name is an imperative is a defect.
 | `stale_lane` | no event referencing the lane itself or any item currently assigned to it for > `config.stale_lane_after` | lane, age |
 | `attention_pending` | unresolved attention entries exist | count, oldest age |
 | `blocked_chain` | an item is blocked on an item that is itself blocked/parked/waiting-human | the chain, as an ordered item list |
-| `review_stalemate_risk` | the last `config.stalemate_risk_round` distinct `round` values for the item (each round's `head_sha` drawn from its `review_round`/`review_verdict` events) all carry the SAME `head_sha`; a changed `head_sha` between rounds resets the run — dumb arithmetic only; stalemate *declaration* stays with the review skill's §3 rule | item, round, head_sha |
+| `review_stalemate_risk` | the last `config.stalemate_risk_round` distinct `round` values for the item (a round's authoritative `head_sha` is the one carried by the LATEST event logged for that `round` — last-event-wins across its `review_round`/`review_verdict` events) all carry the SAME `head_sha`; a changed `head_sha` between rounds resets the run — dumb arithmetic only; stalemate *declaration* stays with the review skill's §3 rule | item, round, head_sha |
 | `item_unblocked` | all blocker edges of a `blocked` item just resolved | item(s) now startable |
+
+When a round's `review_round` and `review_verdict` disagree on `head_sha`, the
+fold records the mismatch as an anomaly (accept-and-flag, ERROR observation →
+attention) but still counts using the latest event's value.
 
 Thresholds live in `grind_created.config` with defaults
 (`stale_item_after: 45m`, `stale_lane_after: 30m`, `stalemate_risk_round: 3`);
