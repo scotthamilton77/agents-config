@@ -114,6 +114,17 @@
   // transition and the rAF node/label/edge tween (createResetTween below) so
   // both animate over the same window — the ONLY place this duration lives. ----
   var RESET_TRANSITION_MS = 400;
+
+  // ---- Label on-screen size cap (round-3): labels live inside the zoomed
+  // stage, so their rendered size is base-font x zoom scale — unbounded
+  // growth turned dense clusters into overlapping mush when zoomed in. The
+  // zoom handler counter-scales the label layer through one CSS custom
+  // property (--viz-constellation-label-fs), so labels keep growing and
+  // shrinking with zoom until the cap, then hold a constant on-screen size.
+  // Base must match .viz-constellation-node-label's fallback in scene.css;
+  // the cap is the legend font size (12px) plus one point. ----
+  var LABEL_BASE_PX = 8;
+  var LABEL_MAX_ONSCREEN_PX = 13;
   // Double-click un-pin window (ms): a node click's activation (dir focus /
   // file drill) is deferred by this window and cancelled when the un-pin
   // dblclick lands, so the un-pin gesture never also opens the drill (whose
@@ -1374,6 +1385,13 @@
           zoomTransform = event.transform;
           visual.style.transform =
             "translate(" + zoomTransform.x + "px," + zoomTransform.y + "px) scale(" + zoomTransform.k + ")";
+          // Round-3 label cap: counter-scale the label font so its on-screen
+          // size is min(LABEL_BASE_PX x k, LABEL_MAX_ONSCREEN_PX) — node
+          // geometry keeps scaling untouched.
+          visual.style.setProperty(
+            "--viz-constellation-label-fs",
+            Math.min(LABEL_BASE_PX, LABEL_MAX_ONSCREEN_PX / zoomTransform.k) + "px"
+          );
           // A wheel-zoom or background pan is a competing gesture: drop any
           // node's still-pending deferred activation so a stale focus/drill
           // never fires mid-gesture.

@@ -642,6 +642,48 @@ body {
   position: absolute;
   top: 0.5rem;
   right: 0.75rem;
+  /* Ride above the full-size sonar zoom viewport (tree-order paints it
+     later); same precedent as .viz-constellation-reset. */
+  z-index: 2;
+}
+/* ---- Round-3: the overlay-hosted sonar owns its own zoom/pan
+   (views/sonar.js wires d3.zoom on .viz-sonar-viewport with a
+   fit-to-content baseline). The mount chain fills the overlay so the
+   viewport has real space to fit into — previously the stage shrink-
+   wrapped at natural size in the overlay's flex center and dense
+   neighborhoods rendered tiny with no zoom affordance. Scoped to the
+   overlay so the drawer-mount [hidden] contract above is untouched. ---- */
+.viz-blast-overlay .viz-drill-sonar-mount {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+.viz-sonar {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.viz-sonar-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+}
+/* Inside the zoomable viewport the stage is transform-positioned by the
+   zoom handler (translate + scale from the top-left origin). The stage is
+   always built inside this viewport, so this rule always applies; if d3 is
+   somehow absent (wireSonarZoom's guard), an oversized stage clips at the
+   viewport edge — accepted, since d3 is vendored inline. */
+.viz-sonar-viewport .viz-sonar-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  margin: 0;
+  transform-origin: 0 0;
 }
 .viz-sonar-unavailable {
   padding: 0.5rem 0.6rem;
@@ -913,7 +955,11 @@ body {
   position: absolute;
   transform: translate(-50%, -100%);
   padding: 0 2px;
-  font-size: 8px;
+  /* Round-3 label cap: the zoom handler (views/constellation.js) sets
+     --viz-constellation-label-fs to min(8px, cap / k) so the rendered size
+     never exceeds the cap however far in the user zooms; the 8px fallback
+     is the base size (must match LABEL_BASE_PX there). */
+  font-size: var(--viz-constellation-label-fs, 8px);
   line-height: 1.1;
   text-align: center;
   white-space: nowrap;

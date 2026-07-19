@@ -494,6 +494,27 @@ def test_render_inlines_blast_radius_overlay_and_empty_state_hooks():
     assert ".viz-blast-overlay {" in html
 
 
+def test_render_inlines_round3_sonar_zoom_and_label_cap_hooks():
+    # Round-3 feedback: (1) the blast-radius sonar owns its own zoom/pan
+    # with a fit-to-content initial transform — the overlay previously
+    # rendered the ring stage tiny with no zoom affordance at all, so its
+    # usability could not even be judged; (2) constellation node labels are
+    # capped in on-screen size — they used to scale with the zoom transform
+    # without bound, so zooming in grew text indefinitely and dense clusters
+    # became unreadable overlapping mush.
+    html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+
+    # Sonar zoom: a dedicated viewport wraps the ring stage and carries the
+    # d3.zoom behavior; the initial transform fits the stage to the viewport.
+    assert "viz-sonar-viewport" in html
+    assert "function computeSonarFitTransform" in html
+    # Label cap: the zoom handler counter-scales the label layer through one
+    # CSS custom property, so on-screen size = min(base, cap / k) while
+    # geometry keeps scaling untouched.
+    assert "--viz-constellation-label-fs" in html
+    assert "LABEL_MAX_ONSCREEN_PX" in html
+
+
 def test_hostile_strings_in_paths_and_fact_notes_render_inert():
     # Item 7 (complete): hostile strings in *paths* (a repeat of the slice-1
     # embedding case, now exercised alongside the new channel) and in a
