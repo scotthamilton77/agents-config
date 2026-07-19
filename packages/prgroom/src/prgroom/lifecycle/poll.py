@@ -364,6 +364,25 @@ def _review_id(entry: Any) -> int | None:
         return None
 
 
+def _item_review_id(item: ReviewItem) -> int | None:
+    """The review id an ingested activity item carries, for ``last_review_id`` stamping.
+
+    Only a ``REVIEW_SUMMARY`` item is review-derived: its ``gh_id`` is the review's own
+    numeric id (unique + monotonic per submission) — the value the reactivation freshness
+    test disambiguates an equal-second collision on. An issue or inline comment is not a
+    review, so it returns ``None``: its advance of ``last_review_at`` must leave
+    ``last_review_id`` untouched. A non-integer ``gh_id`` degrades to ``None`` (fail-closed
+    — the freshness test then treats a same-second collision as historical, the bb92bde
+    invariant).
+    """
+    if item.kind is not ItemKind.REVIEW_SUMMARY:
+        return None
+    try:
+        return int(item.identity.gh_id)
+    except (TypeError, ValueError):
+        return None
+
+
 def _split_verdict(
     verdict: tuple[datetime, int | None] | None,
 ) -> tuple[datetime | None, int | None]:
@@ -823,7 +842,12 @@ def _observe_engagement(
       ``created_at`` / ``submitted_at``, carried on ``item.seen_at``), NOT poll time, so
       the §4.1 stall clock survives crash gaps and resumes correctly. It only ever
       moves **forward** — a later non-review comment that bumped it is never pulled
-      back by a re-observed older terminal verdict.
+      back by a re-observed older terminal verdict. Whenever the advancing activity is
+      itself review-derived (a COMMENTED review-summary or a terminal verdict),
+      ``last_review_id`` advances to that review's own id so it stays "the id of the
+      latest observed review"; a comment-derived advance leaves the stored id intact
+      (a comment is not a review) — never stale, never cleared — so the reactivation
+      freshness test keeps a sound tiebreaker for equal-second collisions.
     - An APPROVED / CHANGES_REQUESTED review (a post-request terminal verdict, in
       ``terminal_reviews``) sets the reviewer to ``review_found`` — a genuine verdict
       **supersedes a prior decline** (§4.1: an auto-decline is a fallback for a missing
@@ -844,8 +868,12 @@ def _observe_engagement(
     """
     changed = False
     for reviewer in state.reviewers.values():
-        activity_times = [
-            item.seen_at
+        # Each candidate is (activity_time, review_id). review_id is the advancing
+        # review's own id when the activity is review-derived — a COMMENTED review-summary
+        # item (`_item_review_id`) or the terminal verdict — and None for an issue/inline
+        # comment, which advances last_review_at but must NOT disturb last_review_id.
+        candidates: list[tuple[datetime, int | None]] = [
+            (item.seen_at, _item_review_id(item))
             for item in new_items
             if item.author == reviewer.identity and item.seen_at > reviewer.last_request_at
         ]
@@ -855,7 +883,7 @@ def _observe_engagement(
             and reviewer.declined_reason == WITHDRAWN_REASON
         )
         if verdict_at is not None and verdict_at > reviewer.last_request_at:
-            activity_times.append(verdict_at)  # post-request terminal verdict
+            candidates.append((verdict_at, verdict_id))  # post-request terminal verdict
             # A withdrawn reviewer's terminal review is a drive-by against a request that
             # was PULLED. Record it (last_review_at advances below) so a later re-request
             # can order this verdict against the withdrawal, but do NOT promote to
@@ -872,21 +900,23 @@ def _observe_engagement(
             target_status = ReviewerStatus.IN_PROGRESS
         else:
             target_status = None  # engaged but already terminal — keep current status
-        if not activity_times:
+        if not candidates:
             continue
-        # Advance last_review_at only on a strictly-newer activity time (never
-        # regress to a re-observed older verdict); flip status only on a real change.
-        candidate = max(activity_times)
-        advanced = reviewer.last_review_at is None or candidate > reviewer.last_review_at
+        # Advance last_review_at only on a strictly-newer activity time (never regress to
+        # a re-observed older verdict); flip status only on a real change. On an
+        # equal-second tie prefer a review-derived candidate (id present) so its id — not
+        # a coincident comment's None — is the one carried forward.
+        candidate_at, candidate_id = max(candidates, key=lambda c: (c[0], c[1] is not None))
+        advanced = reviewer.last_review_at is None or candidate_at > reviewer.last_review_at
         if advanced:
-            reviewer.last_review_at = candidate
-            # Record the review id only when the advancing activity is the terminal
-            # verdict itself — a plain comment carries no review id and must not stamp
-            # one. This keeps last_review_id == "the id of the latest observed review"
-            # so the reactivation freshness test can disambiguate an equal-second
-            # re-review from a re-observed historical verdict.
-            if verdict_id is not None and candidate == verdict_at:
-                reviewer.last_review_id = verdict_id
+            reviewer.last_review_at = candidate_at
+            # Stamp last_review_id for ANY review-derived advance (a COMMENTED review or a
+            # terminal verdict) so it stays "the id of the latest observed review". A
+            # comment-derived advance (candidate_id is None) leaves the stored id intact
+            # rather than clearing it, so the reactivation freshness test still
+            # disambiguates an equal-second re-review from a re-observed historical one.
+            if candidate_id is not None:
+                reviewer.last_review_id = candidate_id
         if target_status is not None and reviewer.status is not target_status:
             reviewer.status = target_status
             changed = True

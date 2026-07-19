@@ -1963,6 +1963,120 @@ def test_review_found_reviewer_rewindow_rejects_same_second_reobserved_verdict_b
     assert reviewers_gate_satisfied(state) is False
 
 
+def test_commented_review_advance_stamps_its_own_review_id() -> None:
+    # A COMMENTED review (non-terminal) with a body is ingested as a REVIEW_SUMMARY item
+    # and advances last_review_at to its own timestamp. last_review_id must advance to
+    # THAT review's own id (50), not stay pinned to an older terminal verdict (40): a
+    # stale id would later let the reactivation freshness test read a re-observed
+    # historical comment as fresh engagement.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.IN_PROGRESS,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=datetime(2026, 6, 9, 10, 0, tzinfo=UTC),  # an older verdict
+            last_review_id=40,
+        )
+    }
+    commented = _review(50, login="copilot")
+    commented["state"] = "COMMENTED"
+    commented["submitted_at"] = "2026-06-09T11:05:00Z"  # newer than the stored verdict
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", reviews=[commented]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.last_review_at == datetime(2026, 6, 9, 11, 5, tzinfo=UTC)
+    assert rv.last_review_id == 50  # stamped to the COMMENTED review, not left at 40
+
+
+def test_issue_comment_advance_preserves_stored_review_id() -> None:
+    # Negative control: a plain issue comment is not a review. It advances last_review_at
+    # (activity), but must leave last_review_id untouched — neither restamped to the
+    # comment id nor cleared — so a prior review's id survives to anchor the reactivation
+    # freshness test.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.IN_PROGRESS,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=datetime(2026, 6, 9, 10, 0, tzinfo=UTC),
+            last_review_id=40,
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", issue_comments=[_issue_comment(11)]),  # 11:00Z, newer
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.last_review_at == datetime(2026, 6, 9, 11, 0, tzinfo=UTC)  # advanced
+    assert rv.last_review_id == 40  # untouched — a comment carries no review id
+
+
+def test_commented_drive_by_id_blocks_false_fresh_reactivation() -> None:
+    # Full harm chain. A withdrawn reviewer's COMMENTED drive-by advances last_review_at
+    # to the comment's timestamp; last_review_id must advance to THAT review's id (200),
+    # not stay pinned to an older terminal verdict (100). When GitHub later re-requests the
+    # reviewer and the SAME comment is re-observed in the same second as the boundary, the
+    # reactivation freshness test must read it as the historical review it is — id 200 does
+    # not exceed the stored 200 — and reset to REQUESTED, not mistake it for fresh
+    # post-request engagement that silently satisfies the new request.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.DECLINED,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=datetime(2026, 6, 9, 10, 0, tzinfo=UTC),
+            last_review_id=100,  # an older terminal verdict
+            declined_at=datetime(2026, 6, 9, 10, 30, tzinfo=UTC),
+            declined_reason="request-withdrawn",
+        )
+    }
+    commented = _review(200, login="copilot")
+    commented["state"] = "COMMENTED"
+    commented["submitted_at"] = "2026-06-09T11:00:00Z"  # drive-by after the withdrawal
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+
+    # Poll 1: the drive-by comment lands while the reviewer is still withdrawn.
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", reviews=[commented]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv_mid = mid.reviewers["copilot"]
+    assert rv_mid.status is ReviewerStatus.DECLINED  # a drive-by does not reactivate
+    assert rv_mid.last_review_at == datetime(2026, 6, 9, 11, 0, tzinfo=UTC)
+    assert rv_mid.last_review_id == 200  # stamped to the comment, not left at 100
+
+    # Poll 2: GitHub re-requests the reviewer and the SAME comment is re-observed.
+    end = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[commented]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv_end = end.reviewers["copilot"]
+    assert rv_end.status is ReviewerStatus.REQUESTED  # historical comment, NOT fresh
+    assert reviewers_gate_satisfied(end) is False
+
+
 def test_not_requested_reviewer_rewindow_keeps_a_same_poll_fresh_verdict() -> None:
     # The NOT_REQUESTED post-push-flip flavor carries the same race. A reviewer flipped to
     # NOT_REQUESTED (last_review_at retained from the invalidated verdict) that GitHub
