@@ -207,11 +207,19 @@ The rule holds iff the emitted `verdict == "go"`.
     resolved policy, the poll falls back to its own 600-second default
     instead of the policy's configured `bot_inactivity_timeout_seconds`
     (1200s by default) — a bot that responds between 10 and 20 minutes then
-    reads as silent and wrongly spends the budget. So the ask reaches every
+    reads as silent and wrongly spends the budget. This dispatches to every
     trusted identity (including comment-triggered ones like Codex, which
     never responds to a bare reviewer-request event), bounded to exactly
-    this ask's window. Branch on the poll's `completion_kind`, not on
-    whether a review object arrived:
+    this ask's window — though `request-rereview.sh`'s own contract exits 0
+    once AT LEAST ONE dispatch succeeds (never per-identity), so a partial
+    failure (e.g. Copilot's reviewer-add succeeds, Codex's issue-comment
+    fails) is indistinguishable at this call site from full dispatch; the
+    identity that was never actually asked then reads as a timed-out silent
+    bot rather than an undelivered ask. Accepted here — closing it requires
+    `request-rereview.sh` itself to expose per-identity outcome, which is
+    outside this caller-edit's scope and affects its other caller (Phase 6
+    in `wait-for-pr-comments`) too. Branch on the poll's `completion_kind`,
+    not on whether a review object arrived:
     - `"review"` or `"clean_reaction"` — the ask reached a reviewer and it
       responded, whichever way. This is NOT silence; do not touch the silent
       counter. Re-run Step 3 against the unchanged head exactly once. A
