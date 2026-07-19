@@ -31,24 +31,11 @@
 # completion, but ONLY when it is fresh. On a re-review round
 # (--since-timestamp supplied), fresh means submitted_at > SINCE — the same
 # guard used everywhere else in this script. On the INITIAL poll (no
-# --since-timestamp), there is no timestamp bound, so freshness is
-# established instead by requiring the review's own `.commit_id` to equal
-# the CURRENT PR head, fetched fresh each attempt — matching
-# check-merge-eligibility.sh's review-path acceptance in effect, not as a
-# literal line-for-line copy: that script guards a missing key with
-# `(.commit_id // "") == $head`, this filter compares `.commit_id` bare —
-# functionally identical in jq (a missing key is `null`, and `null ==
-# "<sha>"` is `false`), so both fail closed on a reviewer payload lacking
-# the field. This differs
-# in KIND from the reaction/marker clean-pass bound below (a time-based
-# max(committer date, force-push event) window): a review object carries the
-# exact commit it was submitted against, so exact equality is available and
-# strictly more precise than a time-based approximation, whereas a reaction
-# or issue comment carries no commit reference at all and has no equality
-# check available to it. A stale review (commit_id != current head) is a
-# response to code no longer at HEAD and must not complete the poll; an
-# unfetchable head fails closed, rejecting all reviews that round rather than
-# risk accepting a stale one. When --bot-reviewers is supplied, two additional clean-pass
+# --since-timestamp), freshness instead requires the review's own
+# `.commit_id` to equal the current PR head — see the initial-poll filter
+# below for the exact semantics and why reviews get equality while the
+# reaction/marker signals below get a time-based bound instead. When
+# --bot-reviewers is supplied, two additional clean-pass
 # signals count too: a `+1` reaction on the PR body, or an issue comment
 # starting with the clean-pass marker "Codex Review: Didn't find any major
 # issues" — each from an allowlisted identity (the standalone
