@@ -519,6 +519,46 @@ revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' COMMENTED "$HEAD_SHA" 2
 out=$(run_script "$BOT_POLICY" FIXTURE_REVIEWS="$revs" FIXTURE_PR="$old_pr"); rc=$?
 assert "arrived bot review → satisfied, eligible" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = satisfied ]"
 
+# ── review_wait.bot recognizes Codex's reaction-based signals (2026-07-18
+# codex-rereview-path-design), not just Copilot's review-object/event
+# vocabulary. "arrived" must also fire off the already-computed
+# reaction_clean fact (Component 2b) — Codex's clean auto/push-triggered pass
+# leaves a +1 reaction, never a review object — and latest_ref's freshness
+# clock must also advance on a trusted `eyes` reaction, the Codex analogue of
+# Copilot's copilot_work_started event.
+
+# Codex-only PR: no review object, no review_requested/copilot_work_started
+# events, just a qualifying clean +1 reaction at head → satisfied via the
+# reaction path (arrived must OR in reaction_clean).
+commit_recent=$(jq -n '{commit:{committer:{date:"2026-01-01T00:00:00Z"}}}')
+reacts_plus1=$(jq -n --arg t "2026-01-01T01:00:00Z" \
+  '[{id:1, content:"+1", user:{login:"trusted-bot[bot]", type:"Bot"}, created_at:$t}]')
+out=$(run_script "$BOT_POLICY" FIXTURE_REACTIONS="$reacts_plus1" FIXTURE_COMMIT="$commit_recent"); rc=$?
+assert "codex-only clean +1 reaction → review_wait.bot satisfied (reaction path)" \
+    "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = satisfied ]"
+
+# Load-bearing regression: an `eyes` reaction from a trusted identity resets
+# the freshness clock. PR age alone (old_pr, 2h old) would exceed
+# BOT_TIMEOUT, but a recent `eyes` must push latest_ref forward so the wait
+# reads "waiting", not "timed_out" — Codex is comment-triggered and never
+# emits review_requested/copilot_work_started, so without this the wait
+# always reads stale mid-review.
+reacts_eyes_only=$(jq -n --arg t "$TS_RECENT" \
+  '[{id:2, content:"eyes", user:{login:"trusted-bot[bot]", type:"Bot"}, created_at:$t}]')
+out=$(run_script "$BOT_POLICY" FIXTURE_REACTIONS="$reacts_eyes_only" FIXTURE_PR="$old_pr"); rc=$?
+assert "trusted eyes reaction resets freshness clock → waiting, not timed_out" \
+    "[ \$rc -eq 1 ] && [ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = waiting ]"
+
+# Non-allowlisted identity's eyes/+1 must not feed into arrived or
+# latest_ref — same allowlist-exact-match discipline as the rest of the
+# reaction path. Old PR, only untrusted reactions → still timed_out.
+reacts_untrusted=$(jq -n --arg t "$TS_RECENT" \
+  '[{id:3, content:"eyes", user:{login:"evil-bot[bot]", type:"Bot"}, created_at:$t},
+    {id:4, content:"+1", user:{login:"evil-bot[bot]", type:"Bot"}, created_at:$t}]')
+out=$(run_script "$BOT_POLICY" FIXTURE_REACTIONS="$reacts_untrusted" FIXTURE_PR="$old_pr"); rc=$?
+assert "non-allowlisted eyes/+1 reactions ignored → still timed_out" \
+    "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = timed_out ]"
+
 # humans required, none yet, no timeout → blocks indefinitely
 H_POLICY=$(jq -c '.human_approvers_required = 1' <<<"$BASE_POLICY")
 out=$(run_script "$H_POLICY" FIXTURE_PR="$old_pr"); rc=$?

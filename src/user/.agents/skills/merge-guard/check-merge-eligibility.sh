@@ -504,13 +504,22 @@ set_fact admin_bypass "$(jq -n \
 # that concluded clean — both read "no blocker" on every other row. Block
 # until the expected review arrives at the current head or its wait window
 # closes. Timing out ends the wait; it never satisfies the positive fact.
+# Copilot and Codex leave different vocabularies for the same two signals, so
+# both "arrived" and "latest_ref" below OR in the Codex-shaped equivalent:
+# reaction_clean (Component 2b, computed above) is the reaction-path analogue
+# of a matching review object, and a trusted `eyes` reaction is the Codex
+# analogue of Copilot's copilot_work_started event — Codex is comment-
+# triggered and posts neither a review_requested target nor a "started work"
+# event, so without these a Codex-only PR either never reads satisfied (no
+# review object ever lands on a clean pass) or goes stale mid-review (the
+# clock never advances past PR creation while Codex is actively working).
 review_wait_bot="not_expected"
 if [[ "$BOT_EXPECTED" == "true" ]]; then
     arrived=$(jq --argjson trusted "$BOT_REVIEWERS" --arg head "$HEAD_OID" '
         [ .[] | select((.user.login as $l | ($trusted | index($l)) != null)
                        and ((.commit_id // "") == $head)
                        and .state != "DISMISSED") ] | length' <<<"$ALL_REVIEWS")
-    if [[ "$arrived" -gt 0 ]]; then
+    if [[ "$arrived" -gt 0 || "$reaction_clean" == "true" ]]; then
         review_wait_bot="satisfied"
     else
         # Events feed only this wait computation — fetched here (not up top)
@@ -521,11 +530,15 @@ if [[ "$BOT_EXPECTED" == "true" ]]; then
         EVENTS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events?per_page=100" --paginate | jq -s 'add // []') || {
             echo "Error: failed to fetch issue events" >&2; exit 3; }
         latest_ref=$(jq -rn --argjson ev "$EVENTS" --argjson rv "$ALL_REVIEWS" \
+            --argjson reactions "$REACTIONS" \
             --argjson trusted "$BOT_REVIEWERS" --arg pr_created "$PR_CREATED" '
             ( [ $ev[] | select(.event == "review_requested"
                                and (((.requested_reviewer.login // "") as $l | ($trusted | index($l)) != null)))
                       | .created_at ]
             + [ $ev[] | select(.event == "copilot_work_started") | .created_at ]
+            + [ $reactions[] | select(.content == "eyes")
+                              | select(.user.login as $l | ($trusted | index($l)) != null)
+                              | .created_at ]
             + [ $rv[] | select((.user.login as $l | ($trusted | index($l)) != null)) | .submitted_at ]
             + [ $pr_created ] ) | max')
         bot_age=$(jq -rn --arg ts "$latest_ref" '(now - ($ts | fromdateiso8601)) | floor')
