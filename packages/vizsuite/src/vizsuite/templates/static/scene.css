@@ -249,6 +249,12 @@ body {
 
 /* ---- Estate treemap (spec §6.1). ---- */
 #viz-root {
+  /* Generic positioning context for any absolutely-positioned scene chrome
+     that resolves against the main scene box. The blast-radius overlay no
+     longer relies on this — it anchors to the viewport (`position: fixed`,
+     see .viz-blast-overlay below) so it tracks the visible canvas rather
+     than stretching with #viz-root's flow height in the ledger view. */
+  position: relative;
   margin: 0 0 1rem;
   transition: margin-right 0.18s ease;
 }
@@ -607,7 +613,48 @@ body {
 .viz-drill-sonar-mount[hidden] {
   display: none;
 }
+/* ---- Blast-radius overlay (app.js's appendSonarAffordance): the toggle
+   opens the sonar rendering as a full-viewport modal above the main scene
+   area rather than squeezed inside the ~370px drawer — real edge density
+   needs the room. Anchored to the viewport (`position: fixed`), NOT to
+   #viz-root: in the flow-based ledger view #viz-root grows to the full
+   document height, so an `inset: 0` absolute overlay would span the whole
+   document and strand the centered sonar thousands of pixels off-screen
+   when opened from a low ledger row. Fixed positioning keeps the modal
+   over the visible canvas regardless of #viz-root's flow height. #viz-root
+   has no transformed/filtered/perspective ancestor (its only ancestors are
+   body/html), so `fixed` resolves against the viewport as intended. The
+   modal's role=dialog, z-index:15, and Close button make covering the page
+   header while open the intended, dismissable behavior. ---- */
+.viz-blast-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  background: var(--viz-overlay-bg);
+  border: 1px solid var(--viz-border-strong);
+  border-radius: 6px;
+}
+.viz-blast-overlay-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+}
 .viz-sonar-unavailable {
+  padding: 0.5rem 0.6rem;
+  border: 1px dashed var(--viz-border-strong);
+  border-radius: 4px;
+  color: var(--viz-secondary);
+  font-size: 12px;
+}
+/* Empty-neighborhood state (round-2 fix): a center file with real
+   dependency-graph data but zero edges of its own — distinct from
+   .viz-sonar-unavailable (the graph itself was never built), same visual
+   treatment since both are "nothing to draw here" states. */
+.viz-sonar-empty {
   padding: 0.5rem 0.6rem;
   border: 1px dashed var(--viz-border-strong);
   border-radius: 4px;

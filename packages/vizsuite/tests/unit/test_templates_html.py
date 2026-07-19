@@ -394,6 +394,106 @@ def test_stale_graph_badge_hook_is_inlined_and_scene_data_is_conditional():
     assert "stale_graph" not in fresh_scene_data["render_config"]
 
 
+def test_render_inlines_constellation_round2_drag_reheat_hooks():
+    # Round-2 fix (bead yf2ov.2.13): dragging a node reheats a localized
+    # sub-simulation over its 1-hop neighborhood (prototype anatomy
+    # variant_B.js's alphaTarget drag hold) — every other node is never
+    # handed to the sub-simulation, so the global deterministic layout is
+    # never disturbed. All JS source, so inlined regardless of scene content.
+    html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+
+    assert "REHEAT_ALPHA_DECAY" in html
+    assert "localReheat.start(node)" in html
+    assert "localReheat.touch(node)" in html
+    # A held drag must keep reheating past the sub-sim's own alphaMin cutoff
+    # instead of freezing the neighborhood — touch() revives a dead sim
+    # rather than merely bumping alpha on one that already stopped.
+    assert "if (!activeSim)" in html
+    # The reheat's charge/link forces are single-sourced with the initial
+    # layout's (round-2 fix: the reheat used to hardcode stale pre-retune
+    # values that had drifted from layoutGraph's own), not each declaring its
+    # own copy.
+    assert "function makeChargeForce" in html
+    assert "function makeLinkForce" in html
+
+
+def test_render_inlines_constellation_round2_reset_view_hooks():
+    # Round-2 fix: Reset view now restores every displaced/pinned node back
+    # to its originally-settled position (not just the zoom transform), over
+    # the same short transition the zoom-transform restore already used —
+    # driven by a real rAF tween (a CSS transition on SVG line x1/y1/x2/y2
+    # never animates those attributes, since they aren't CSS-mapped geometry
+    # properties, so the earlier mechanism let every edge snap instantly
+    # while its nodes glided).
+    html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+
+    assert "function resetView" in html
+    assert "node.origX" in html and "node.origY" in html
+    assert "requestAnimationFrame" in html
+    assert "cancelAnimationFrame" in html
+    assert "RESET_TRANSITION_MS" in html
+    # The dead CSS-transition mechanism must not come back.
+    assert "viz-constellation-resetting" not in html
+
+
+def test_render_inlines_constellation_round2_layout_density_hooks():
+    # Round-2 fix: the pre-settle forces gained a charge distanceMax cap and
+    # a weak x/y centering force (forceCenter alone only recenters the
+    # barycenter, it never pulls an individual outlier back in), and the
+    # zoom baseline now fits the settled layout to the viewport instead of
+    # always showing it at a fixed 1:1 scale.
+    html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+
+    assert "CHARGE_DISTANCE_MAX" in html
+    assert "CENTER_FORCE_STRENGTH" in html
+    assert ".distanceMax(CHARGE_DISTANCE_MAX)" in html
+    assert "forceX" in html and "forceY" in html
+    assert "fitScale" in html
+
+
+def test_render_inlines_constellation_round2_depth_cap_hook():
+    # Round-2 fix: the dir-grouping depth cap raised from 4 to 5 path
+    # segments (interim heuristic — an adaptive per-repo depth is a separate,
+    # not-yet-built design), shared by dirOf and findContainingDir via one
+    # constant so the two can never drift apart.
+    html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+
+    assert "DIR_DEPTH_CAP = 5" in html
+    assert "interim heuristic" in html
+
+
+def test_render_inlines_constellation_round2_label_disambiguation_hook():
+    # Round-2 fix: two labeled nodes whose leaf path segment collides (e.g.
+    # four dirs all named "unit") now extend their label with parent
+    # segments until unique; an unambiguous leaf still renders leaf-only.
+    html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+
+    assert "function computeDisambiguatedLabels" in html
+    assert "labelTextById[node.id] || basename(displayPath)" in html
+
+
+def test_render_inlines_blast_radius_overlay_and_empty_state_hooks():
+    # Round-2 fix: "Show blast radius" now opens sonar's rings as a
+    # full-canvas overlay over #viz-root (the main scene area) rather than
+    # squeezed inside the drawer, with its own close button and Escape
+    # handling; a file with zero dependency edges of its own gets an
+    # explicit empty-neighborhood message instead of a lone center dot.
+    html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+
+    assert "viz-blast-overlay" in html
+    assert "viz-blast-overlay-close" in html
+    # Round-2 fix: one owner (closeBlastOverlay) handles teardown for every
+    # close trigger (toggle, overlay close button, Escape, a fresh openDrill
+    # call, and the drawer's own Close button) — no per-trigger duplicate.
+    assert "drillState.closeBlastOverlay" in html
+    assert "function renderEmptyNeighborhood" in html
+    assert "No known dependents or dependencies in the graph" in html
+    # The blast overlay is a viewport-anchored modal (position: fixed), so it
+    # tracks the visible canvas instead of stretching with #viz-root's flow
+    # height in the ledger view.
+    assert ".viz-blast-overlay {" in html
+
+
 def test_hostile_strings_in_paths_and_fact_notes_render_inert():
     # Item 7 (complete): hostile strings in *paths* (a repeat of the slice-1
     # embedding case, now exercised alongside the new channel) and in a
