@@ -202,11 +202,21 @@ ${UNTRUSTED}`
 }
 
 // ---- One-repair-attempt-then-abort ----------------------------------------
+// agent({schema}) THROWS when a subagent completes without StructuredOutput;
+// treat a throw like a null result (degrade → one repair attempt → abort).
+async function attemptOnce(make, x) {
+  try {
+    return await make(x)
+  } catch (e) {
+    log(`  agent attempt failed (${e && e.message ? e.message : e})`)
+    return null
+  }
+}
 async function withRepair(make) {
-  const first = await make(0)
+  const first = await attemptOnce(make, 0)
   if (first != null) return first
   log('  agent chain returned null — one repair attempt, then abort')
-  return make(1)
+  return attemptOnce(make, 1)
 }
 
 // ---- Budget tail reserve ---------------------------------------------------
@@ -296,7 +306,9 @@ if (!allLanesDead && applied.length > 0 && !budgetStopped && !budgetTripped()) {
           model: 'haiku',
           effort: 'low',
           schema: SCORE_SCHEMA,
-        }).then(v => ({ f, v })),
+        })
+          .then(v => ({ f, v }))
+          .catch(() => ({ f, v: null })), // scorer schema-failure = kept-unscored
       ),
     )
     for (const item of verdicts.filter(Boolean)) {
