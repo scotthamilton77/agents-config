@@ -63,6 +63,26 @@ def _optional_str(errors: list[str], payload: RawEvent, key: str) -> None:
         _require(errors, isinstance(payload[key], str), f"{key} must be a string when present")
 
 
+def _optional_nested_str(errors: list[str], container: RawEvent, key: str, prefix: str) -> None:
+    if container.get(key) is not None:
+        _require(
+            errors,
+            isinstance(container[key], str),
+            f"{prefix}.{key} must be a string when present",
+        )
+
+
+def _optional_nested_list_of_str(
+    errors: list[str], container: RawEvent, key: str, prefix: str
+) -> None:
+    if container.get(key) is not None:
+        _require(
+            errors,
+            _is_list_of_str(container, key),
+            f"{prefix}.{key} must be an array of strings when present",
+        )
+
+
 def _validate_grind_created(payload: RawEvent) -> list[str]:
     errors: list[str] = []
     _require_str(errors, payload, "title")
@@ -80,18 +100,22 @@ def _validate_grind_created(payload: RawEvent) -> list[str]:
         if not isinstance(lane, dict) or not _is_str(lane, "id"):
             errors.append(f"lanes[{lane_index}] must be an object with a non-empty string id")
             continue
+        lane_prefix = f"lanes[{lane_index}]"
+        for field in ("name", "agent", "model", "effort"):
+            _optional_nested_str(errors, lane, field, lane_prefix)
         if "queue" not in lane:
             continue
         queue = lane.get("queue")
         if not isinstance(queue, list):
-            errors.append(f"lanes[{lane_index}].queue must be an array when present")
+            errors.append(f"{lane_prefix}.queue must be an array when present")
             continue
         for item_index, item in enumerate(queue):
+            item_prefix = f"{lane_prefix}.queue[{item_index}]"
             if not isinstance(item, dict) or not _is_str(item, "id"):
-                errors.append(
-                    f"lanes[{lane_index}].queue[{item_index}] must be an object "
-                    "with a non-empty string id"
-                )
+                errors.append(f"{item_prefix} must be an object with a non-empty string id")
+                continue
+            _optional_nested_str(errors, item, "title", item_prefix)
+            _optional_nested_list_of_str(errors, item, "on", item_prefix)
     return errors
 
 

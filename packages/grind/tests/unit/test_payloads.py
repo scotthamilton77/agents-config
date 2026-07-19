@@ -62,6 +62,49 @@ def test_grind_created_validates_lane_and_item_shapes():
     assert any("lanes[1].queue[0]" in e for e in errors)
 
 
+def _seed_with_item(item: dict) -> dict:
+    return {
+        "title": "t",
+        "repo": "r",
+        "mission": {},
+        "protocols": {},
+        "lanes": [{"id": "lane-a", "queue": [{"id": "wgclw.1", **item}]}],
+    }
+
+
+def test_grind_created_validates_seeded_blocker_edges():
+    # A seeded item's optional `on` (blocker edges) must be an array of strings;
+    # the fold silently drops malformed values and folds the item as `queued`
+    # instead of `blocked`, so dependent work could start despite the edge.
+    assert validate_payload("grind_created", _seed_with_item({})) == []
+    assert validate_payload("grind_created", _seed_with_item({"on": []})) == []
+    assert validate_payload("grind_created", _seed_with_item({"on": ["wgclw.2"]})) == []
+    # scalar string instead of an array
+    errors = validate_payload("grind_created", _seed_with_item({"on": "wgclw.2"}))
+    assert any("lanes[0].queue[0].on" in e for e in errors)
+    # array containing non-strings
+    errors = validate_payload("grind_created", _seed_with_item({"on": [42]}))
+    assert any("lanes[0].queue[0].on" in e for e in errors)
+
+
+def test_grind_created_validates_optional_seed_string_fields():
+    # Item title and lane name/agent/model/effort are silently coerced to None
+    # by the fold when malformed -- validate them at the boundary.
+    errors = validate_payload("grind_created", _seed_with_item({"title": 42}))
+    assert any("lanes[0].queue[0].title" in e for e in errors)
+    errors = validate_payload(
+        "grind_created",
+        {
+            "title": "t",
+            "repo": "r",
+            "mission": {},
+            "protocols": {},
+            "lanes": [{"id": "lane-a", "model": 7}],
+        },
+    )
+    assert any("lanes[0].model" in e for e in errors)
+
+
 # -- item lifecycle -----------------------------------------------------------
 
 
