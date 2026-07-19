@@ -181,7 +181,9 @@ review state + PR refs, blocker edges, parking lot, attention list,
 observations, merged ledger (projection of `item_merged`; `item_done`
 marks teardown complete) and closed ledger (projection of `pr_closed` —
 unmerged closures: abandoned, superseded, each with pr number and
-reason), lessons, and the currently-true condition set.
+reason), and lessons. State holds no time-dependent data (conditions are
+computed separately — see the emit-back section), so `fold` is pure and
+time-independent and delete-and-refold produces a byte-identical `state.json`.
 
 Item status legality (rows = current status, event → new status; anything
 absent is an anomaly):
@@ -291,10 +293,12 @@ attention) but still counts using the latest event's value.
 
 Thresholds live in `grind_created.config` with defaults
 (`stale_item_after: 45m`, `stale_lane_after: 30m`, `stalemate_risk_round: 3`);
-staleness conditions are computed against the CLI invocation's wall clock at
-fold time. Conditions are recomputed on every fold; `grind status` returns
-the currently-true set, so a condition is never "missed" by not watching the
-right `log` call.
+staleness conditions are time-dependent. They are **not** part of the fold:
+a separate pure function `conditions(State, now)` computes them, with the CLI
+invocation's wall clock passed as an explicit `now` argument. Conditions are
+returned in command envelopes and by `grind status` (which returns the
+currently-true set, so a condition is never "missed" by not watching the right
+`log` call) but are **never persisted** in `state.json`.
 
 ### Staleness watchdog
 
@@ -383,7 +387,8 @@ only:
 - **Fold unit tests** — the heart. Every legal transition in the table; every
   illegal one folds as an anomaly with status unchanged + ERROR observation;
   derived unblocking; derived lane status; derived counts from verdict
-  dispositions; condition firing (each condition, plus threshold boundaries);
+  dispositions; condition firing via `conditions(State, now)` with an explicit
+  `now` (each condition, threshold boundaries exercised by varying `now`);
   torn-tail drop; unknown-type tolerance; post-`grind_finished` rejection.
 - **CLI golden tests** — envelope shape per verb; payload validation errors
   exit ≠ 0 with nothing appended; anomalous-but-valid events exit 0;
