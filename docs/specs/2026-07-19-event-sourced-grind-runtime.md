@@ -276,6 +276,10 @@ condition never says "nudge the lane" or "escalate"; it says what is true and
 shows its evidence. The seam is documented in the package and enforced by
 review; a condition whose name is an imperative is a defect.
 
+Conditions come in two classes — **level** (recomputed from state) and
+**transition** (fired once from a fold delta); every row below is a level
+condition except `item_unblocked`, with both classes defined after the table.
+
 | Condition | Fires when | Evidence carried |
 |---|---|---|
 | `lane_complete` | last item in a lane's queue reaches `done` | lane |
@@ -285,7 +289,18 @@ review; a condition whose name is an imperative is a defect.
 | `attention_pending` | unresolved attention entries exist | count, oldest age |
 | `blocked_chain` | an item is blocked on an item that is itself blocked/parked/waiting-human | the chain, as an ordered item list |
 | `review_stalemate_risk` | the last `config.stalemate_risk_round` distinct `round` values for the item (a round's authoritative `head_sha` is the one carried by the LATEST event logged for that `round` — last-event-wins across its `review_round`/`review_verdict` events) all carry the SAME `head_sha`; a changed `head_sha` between rounds resets the run — dumb arithmetic only; stalemate *declaration* stays with the review skill's §3 rule | item, round, head_sha |
-| `item_unblocked` | all blocker edges of a `blocked` item just resolved | item(s) now startable |
+| `item_unblocked` (transition condition — see below) | all blocker edges of a `blocked` item just resolved | item(s) now startable |
+
+**Two condition classes.** Every row above except `item_unblocked` is a **level
+condition** — a fact `conditions(State, now)` recomputes from state, idempotent,
+returned in both `grind log` emit-back envelopes and `grind status`.
+`item_unblocked` is a **transition condition** — derived from the fold delta of a
+single append, not from state: emitted exactly once, in the emit-back envelope of
+the `grind log` call whose event resolved the item's final blocker edge, and never
+recomputed from `State` or returned by `grind status`. Immediately after the
+unblock, and on every later fold, the resulting state is indistinguishable from an
+item queued with no edges — so the wake-up must ride the delta, not the state, to
+reach ROOT exactly once.
 
 When a round's `review_round` and `review_verdict` disagree on `head_sha`, the
 fold records the mismatch as an anomaly (accept-and-flag, ERROR observation →
@@ -297,8 +312,8 @@ staleness conditions are time-dependent. They are **not** part of the fold:
 a separate pure function `conditions(State, now)` computes them, with the CLI
 invocation's wall clock passed as an explicit `now` argument. Conditions are
 returned in command envelopes and by `grind status` (which returns the
-currently-true set, so a condition is never "missed" by not watching the right
-`log` call) but are **never persisted** in `state.json`.
+currently-true level conditions, so a level condition is never "missed" by not
+watching the right `log` call) but are **never persisted** in `state.json`.
 
 ### Staleness watchdog
 
