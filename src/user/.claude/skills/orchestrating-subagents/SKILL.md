@@ -96,6 +96,19 @@ three short strings per parked worker: name, child `agentId`, path.
   nothing happened. Act on **real** signals — a child's completion notification, a handoff, a
   report, a watcher ring. The orchestrator *does* re-engage a parked worker, but because a child
   completed, never because the parent went quiet.
+- **The idle is not a trigger — but silence that outlasts the work is.** Ignoring idles is not
+  ignoring workers. When a worker has been quiet materially longer than its task should take, that
+  overdue-ness is a real signal and you act on it. The distinction is what you key on: an idle is a
+  turn boundary a *healthy* worker emits, while a crashed one may emit nothing at all — so the idle
+  is the one channel a dead worker has stopped using. Detect death by elapsed time against a missing
+  artifact, never by counting idles.
+- **Probe the world, not the worker.** On an overdue worker, do NOT `SendMessage` it to ask. A
+  message to an already-terminated agent silently no-ops or raises an error that reads like a
+  successful dispatch, so a ping cannot tell "dead" from "parked and quiet" — and a live worker's
+  answer is a claim anyway. Check its status through the harness, and read the artifact it was to
+  produce (git/gh/bd, the relay file at its handoff path). Missing artifact plus a terminated status
+  is a crash: re-dispatch the work. Missing artifact plus a live agent is slow, not dead — leave it
+  alone.
 - **Verify ground truth before resuming.** A worker's narration is a claim, not a fact — read
   git/gh/bd to learn the true state, then re-engage precisely.
 - **A child's completion arriving to YOU means the parent did not see it** — that is your cue to
