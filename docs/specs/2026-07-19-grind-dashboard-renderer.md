@@ -31,7 +31,8 @@ Carried over from the current dashboard contract, unchanged:
 - **Real PR links** derived from the grind's `repo` slug (explicit `url`
   overrides; no slug → plain-text number).
 - **15-second auto-refresh with a visible on/off toggle** (persisted in
-  `localStorage`) and a **visible last-generated timestamp**.
+  `localStorage`) and a **visible last-generated timestamp** — the `ts` of the
+  last folded event, so the board reads as fresh as its log, never fresher.
 - **Red ATTENTION banner**, hidden when empty.
 - **Horizontal scroll on overflow** — never squeeze lanes into illegibility.
 - **Unknown status values degrade** to neutral styling, never break the board.
@@ -39,8 +40,9 @@ Carried over from the current dashboard contract, unchanged:
 New, from the runtime spec:
 
 - The renderer is a **pure function of folded state** — same state, same
-  bytes. No wall-clock reads except the passed-in `last_generated`; this is
-  what makes the CI smoke test a byte-comparison.
+  bytes. No wall-clock reads at all: `last_generated` is the `ts` of the last
+  folded event, not a render-time clock, so repeated renders of the same log
+  are byte-identical — this is what makes the CI smoke test a byte-comparison.
 - Renders the **pause banner** (`grind_paused`), the **lessons panel**
   (LESSON observations), and **anomaly surfacing** (ERROR observations reach
   the ATTENTION banner via the fold — the renderer just draws the list).
