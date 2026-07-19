@@ -198,6 +198,39 @@ pinned as observed on 2026-07-18; if the vendor rewords it, the comment resumes
 blocking — a false negative, which hands off to a human and is the acceptable
 direction.
 
+### Component 2b — review_summary ratchet
+
+Every Codex re-review round mints a brand-new `review_id` — each round's
+review is a fresh GitHub review object, never a revision of the prior one. If
+round N carried findings, its `review_summary` blocker is triaged against
+round N's `review_id`; round N+1's review (findings-free or not) is a
+different object with its own `review_id`, so a terminal disposition recorded
+for round N never covers round N+1. Absent a fix, a genuinely clean round that
+still posts any review body text blocks forever, because nothing has ever
+triaged its `review_id`.
+
+The clearing fact is `reaction_clean` — the strict Component 2(b) reaction-path
+boolean, never `bot_clean_review_at_head`, which also admits the review path
+(a). Per the Signal matrix above, Codex's own behaviour is mutually exclusive
+per round: a findings round posts a review object and never a `+1` reaction; a
+clean round posts a `+1` reaction and never a review object. `reaction_clean`
+therefore can only be true through a channel that never coexists with
+findings-bearing review content, so using it to auto-clear a `review_summary`
+item never risks masking a genuine finding.
+
+A `review_summary` item — keyed by `review_id`, carrying `submitted_at` — is
+excluded from the untriaged set when it already holds a terminal disposition
+(unchanged), **or** when `reaction_clean` is true and the reaction's
+`created_at`, parsed to epoch seconds, is strictly greater than that item's
+`submitted_at`. No round counter or `review_id` tracking is needed: this is a
+timestamp-supersession check applied independently to every live
+`review_summary` item, so one fresh clean reaction retroactively clears every
+earlier round's unaddressed summary in a single evaluation. Same-second ties
+fail closed (no clear), matching the tie-break convention `last_head_change`
+already uses. This ratchet is orthogonal to the unresolved-review-thread gate
+— a distinct GitHub object handled by a separate mechanism — and never
+resolves or otherwise touches review threads.
+
 ### Component 3 — handshake accounting and clean-pass completion
 
 The `eyes` reaction is exposed to the re-review poll path so the one-ask cap can
