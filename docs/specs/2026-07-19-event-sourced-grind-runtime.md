@@ -84,12 +84,15 @@ anyway), and ROOT logs. No locking in v1; the append is a single
 dropping it at fold time does not make the log appendable again — the next
 `O_APPEND` write concatenates onto the fragment, so every later event stays
 trapped behind one invalid line. The write path repairs before it appends:
-prior to each append the CLI checks the log's final byte and last line, and if
-that byte is not a newline (or the final line does not parse) it moves the
-partial fragment into an append-only `events.quarantine` sidecar (never
-deleted), truncates the log back to the last complete line, records the repair
-as a `torn_tail` anomaly in the command's envelope, and only then appends the
-new event — leaving the log appendable after any crash. As defense in depth,
+prior to each append the CLI checks the log's final byte, and if that byte is
+not a newline it first parses the final line. A line that parses as a complete
+event is a durable transition the crash merely left unterminated (payload
+written, trailing newline lost), so the repair is simply appending the missing
+newline — the event is preserved. Only an unparsable fragment is moved into an
+append-only `events.quarantine` sidecar (never deleted) with the log truncated
+back to the last complete line. Either repair records a `torn_tail` anomaly in
+the command's envelope, and only then does the CLI append the new event —
+leaving the log appendable after any crash. As defense in depth,
 the fold still tolerates a non-parsing last line (drops it, reports the
 `torn_tail` anomaly) for logs read before any repair ran, e.g. `status` on a
 freshly-crashed grind. Accept-and-flag, not refuse-to-load.
