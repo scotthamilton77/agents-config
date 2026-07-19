@@ -114,9 +114,7 @@ def test_has_required_reviewers_to_refresh_false_when_no_reviewers() -> None:
         (ReviewerStatus.REVIEW_FOUND, None, False),
     ],
 )
-def test_reviewer_needs_refresh(
-    status: ReviewerStatus, reason: str | None, expected: bool
-) -> None:
+def test_reviewer_needs_refresh(status: ReviewerStatus, reason: str | None, expected: bool) -> None:
     assert reviewer_needs_refresh(_reviewer(status, declined_reason=reason)) is expected
 
 
@@ -124,9 +122,7 @@ def test_has_required_reviewers_to_refresh_skips_withdrawn_reviewer() -> None:
     # A withdrawn reviewer must not re-arm the rereview step (spec behavior 16):
     # rereview_pr would DELETE+POST them back onto the PR.
     state = _state(
-        reviewers={
-            "copilot": _reviewer(ReviewerStatus.DECLINED, declined_reason=WITHDRAWN_REASON)
-        }
+        reviewers={"copilot": _reviewer(ReviewerStatus.DECLINED, declined_reason=WITHDRAWN_REASON)}
     )
     assert has_required_reviewers_to_refresh(state) is False
 
