@@ -254,6 +254,11 @@ Base-branch drift is likewise accepted, at parity with the existing review path:
 neither a review object nor a reaction is invalidated when the base advances and
 the effective diff changes without a head push.
 
+An ordinary (non-force) push carrying an attacker- or tool-backdated
+`GIT_COMMITTER_DATE` earlier than a surviving stale `+1` is explicitly out of
+scope per "Scope of the guarantee" (a cooperative loop, not adversarial git
+metadata) — accepted explicitly rather than left implicit.
+
 ## Testing
 
 `request-rereview_test.sh` extends the existing fake-`gh`-on-`PATH` shim. New
