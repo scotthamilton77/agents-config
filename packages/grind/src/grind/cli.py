@@ -22,7 +22,7 @@ from typing import NoReturn, TextIO
 from grind.envelope import GrindError
 from grind.jsonio import NonFiniteJsonError, loads
 from grind.model import JsonValue
-from grind.verbs import cmd_create, cmd_finish, cmd_log, cmd_status
+from grind.verbs import cmd_check, cmd_create, cmd_finish, cmd_log, cmd_status
 
 
 class _RaisingArgumentParser(ArgumentParser):
@@ -53,6 +53,10 @@ def _build_parser() -> _RaisingArgumentParser:
     status_parser = subparsers.add_parser("status", help="report the folded state")
     status_parser.add_argument("--full", action="store_true")
     status_parser.add_argument("--dir", default=".", metavar="DIR")
+
+    check_parser = subparsers.add_parser("check", help="staleness probe (exits 1 when stale)")
+    check_parser.add_argument("--max-age", default=None, dest="max_age", metavar="DUR")
+    check_parser.add_argument("--dir", default=".", metavar="DIR")
 
     finish_parser = subparsers.add_parser("finish", help="append grind_finished and final-fold")
     finish_parser.add_argument("--summary", required=True, metavar="TEXT")
@@ -99,10 +103,13 @@ def _dispatch(
     if args.verb == "status":
         return cmd_status(grind_dir, full=args.full)
 
+    if args.verb == "check":
+        return cmd_check(grind_dir, args.max_age, now=now)
+
     if args.verb == "finish":
         return cmd_finish(grind_dir, args.summary, now=now)
 
-    raise GrindError("no verb given; choose one of: create, log, status, finish")
+    raise GrindError("no verb given; choose one of: create, log, status, check, finish")
 
 
 def _default_now() -> datetime:
@@ -144,6 +151,11 @@ def main(
 
     json.dump(data, out, allow_nan=False)
     out.write("\n")
+    # `grind check`'s exit code carries the staleness verdict itself (spec CLI
+    # contract: "exit 1 when stale"), distinct from every other verb where exit
+    # code only ever signals a command error (an `ok: true` envelope is always 0).
+    if args.verb == "check" and isinstance(data, dict) and data.get("stale") is True:
+        return 1
     return 0
 
 
