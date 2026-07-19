@@ -70,3 +70,18 @@ def test_second_grind_finished_is_also_rejected() -> None:
 
     assert state.finish_summary == "done"
     assert len(state.anomalies) == 1
+
+
+def test_ts_less_tail_event_clears_last_event_ts() -> None:
+    # A JSON-valid tail event with no usable ts must clear the freshness
+    # field: the board shows no timestamp rather than the previous event's,
+    # which would misdate a state that includes the newer tail event.
+    events = [
+        seed_event(),
+        event("observation", level="INFO", message="stamped"),
+        {"type": "observation", "level": "INFO", "message": "no ts at all"},
+    ]
+
+    state = fold(events)
+
+    assert state.last_event_ts is None

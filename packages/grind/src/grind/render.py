@@ -516,7 +516,7 @@ function renderBoard() {
     var sec = document.createElement("section");
     sec.className = "lane " + cls + (collapsed ? " collapsed" : "");
     sec.setAttribute("aria-label", text(lane.name) || lane.id);
-    var bodyId = "lane-body-" + lane.id;
+    var bodyId = "lane-body-" + escapeHtml(lane.id);
     var items = lane.queue || [];
     var body = items.length
       ? items.map(function (q) { return collapsed ? renderItemSlim(q) : renderItemExpanded(q); }).join("")
@@ -695,8 +695,8 @@ _PAGE_TEMPLATE = f"""<!DOCTYPE html>
 <script id="grind-dashboard">
 // SERIALIZATION CONTRACT: every less-than sign in the STATE literal below is
 // escaped as \\u003c before splicing, exactly as `grind render` emits it --
-// a raw splice of a work-item title carrying `</script>` would close this
-// block early and execute.
+// a raw splice of a work-item title carrying `\\u003c/script>` would close
+// this block early and execute (the `<` is escaped here for the same reason).
 {_SCRIPT}
 </script>
 

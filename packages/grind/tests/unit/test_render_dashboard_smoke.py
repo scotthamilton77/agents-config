@@ -260,3 +260,41 @@ def test_at_least_six_lanes_present():
     blob = _state_json_blob(html)
 
     assert blob.count('"agent":') >= 6
+
+
+def test_script_elements_survive_html_parsing_intact():
+    # HTML terminates a <script> element at the FIRST literal "</script"
+    # sequence, even inside a JS // comment -- parse the page the way a
+    # browser does and assert the dashboard script still carries both the
+    # state payload and the renderer code past every inline comment.
+    from html.parser import HTMLParser
+
+    html = render_dashboard(fold(_events()))
+
+    class _ScriptCollector(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=True)
+            self._in_script = False
+            self.scripts: list[str] = []
+
+        def handle_starttag(self, tag: str, attrs: object) -> None:  # noqa: ARG002 -- HTMLParser API
+            if tag == "script":
+                self._in_script = True
+                self.scripts.append("")
+
+        def handle_endtag(self, tag: str) -> None:
+            if tag == "script":
+                self._in_script = False
+
+        def handle_data(self, data: str) -> None:
+            if self._in_script:
+                self.scripts[-1] += data
+
+    parser = _ScriptCollector()
+    parser.feed(html)
+
+    dashboard = [s for s in parser.scripts if "grind" in s or "STATE" in s]
+    assert dashboard, "dashboard script parsed as empty -- early </script> termination"
+    content = max(dashboard, key=len)
+    assert "var STATE" in content or "STATE =" in content
+    assert "function renderBoard" in content  # renderer code is INSIDE the script element

@@ -625,10 +625,9 @@ def fold(events: Sequence[Mapping[str, JsonValue]]) -> State:
         evt: RawEvent = dict(raw)
         # Recorded for every event this loop walks, applied or anomalous --
         # the renderer's `last_generated` timestamp (dashboard renderer spec)
-        # tracks the log, not any one event's fate.
-        ts = _str(evt, "ts")
-        if ts is not None:
-            state.last_event_ts = ts
+        # tracks the log, not any one event's fate. A ts-less tail event
+        # clears the field: no timestamp beats a stale one on the board.
+        state.last_event_ts = _str(evt, "ts")
         etype = _str(evt, "type")
         if etype == "grind_created" and index != 0:
             # Legal only as the log's first event -- a later creation (even after
