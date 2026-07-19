@@ -17,7 +17,7 @@ run-loop bead supplies as a bool to the resolver. The pure spine never computes 
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -193,3 +193,30 @@ def test_flip_stale_required_reviews_returns_whether_it_flipped_anything() -> No
     nothing = {"r": _reviewer(ReviewerStatus.DECLINED, required=True)}
     assert flip_stale_required_reviews(flipped) is True
     assert flip_stale_required_reviews(nothing) is False
+
+
+def test_flip_stale_required_reviews_stamps_boundary_when_now_supplied() -> None:
+    # The external-push flip stamps the invalidation boundary on last_request_at so a
+    # pre-push terminal verdict cannot re-qualify; last_review_at is left intact.
+    old_request = _NOW - timedelta(hours=1)
+    old_verdict = _NOW - timedelta(minutes=55)
+    reviewer = _reviewer(ReviewerStatus.REVIEW_FOUND, required=True)
+    reviewer.last_request_at = old_request
+    reviewer.last_review_at = old_verdict
+    reviewer.last_review_id = 500
+    flip_stale_required_reviews({"r": reviewer}, now=_NOW)
+    assert reviewer.status == ReviewerStatus.NOT_REQUESTED
+    assert reviewer.last_request_at == _NOW  # boundary advanced to the push clock
+    assert reviewer.last_review_at == old_verdict  # verdict stamps untouched
+    assert reviewer.last_review_id == 500
+
+
+def test_flip_stale_required_reviews_leaves_boundary_when_now_omitted() -> None:
+    # _push omits `now` — its in-cycle rereview re-stamps last_request_at, so the flip
+    # itself must not move the boundary (preserving the pre-change behavior).
+    old_request = _NOW - timedelta(hours=1)
+    reviewer = _reviewer(ReviewerStatus.REVIEW_FOUND, required=True)
+    reviewer.last_request_at = old_request
+    flip_stale_required_reviews({"r": reviewer})
+    assert reviewer.status == ReviewerStatus.NOT_REQUESTED
+    assert reviewer.last_request_at == old_request  # untouched without `now`

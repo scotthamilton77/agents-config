@@ -154,7 +154,7 @@ def poll_pr(
         review_finish_timeout=config.review_finish_timeout,
     )
 
-    external_push = _apply_sha_attribution(state, new_head)
+    external_push = _apply_sha_attribution(state, new_head, now=now)
     if external_push:
         activity = True
 
@@ -1143,7 +1143,7 @@ def _combined_status_state(gh: GhClient, ref: PRRef, head_sha: str) -> str:
     return "pending"
 
 
-def _apply_sha_attribution(state: PRGroomingState, new_head: str) -> bool:
+def _apply_sha_attribution(state: PRGroomingState, new_head: str, *, now: datetime) -> bool:
     """Apply §3.4 retry counting/attribution for the observed HEAD; return external-push flag.
 
     Bootstrap (``last_poll_sha == ""``): set ``last_poll_sha``, no reviewer flip,
@@ -1151,7 +1151,16 @@ def _apply_sha_attribution(state: PRGroomingState, new_head: str) -> bool:
     is a 0-indexed count of fix-push retries). Unchanged SHA: no-op. CLI's own
     push (``new_head == last_pushed_head_sha``): advance ``last_poll_sha`` only.
     External push: ``pr_review_retries_used += 1``, advance ``last_poll_sha``,
-    flip stale required reviews.
+    flip stale required reviews and stamp the invalidation boundary (``now``) on
+    each flipped reviewer.
+
+    The boundary stamp is what keeps a standalone ``poll`` (or a crash after this poll
+    persists but before ``rereview``) from silently un-inverting the flip: without it the
+    flipped reviewer's pre-push terminal review still satisfies ``terminal_at >
+    last_request_at`` on the next poll, so ``_observe_engagement`` restores REVIEW_FOUND
+    and ``rereview`` then sees nothing to refresh. Advancing ``last_request_at`` to ``now``
+    moves the freshness boundary past that stale verdict (see
+    :func:`~prgroom.lifecycle.predicates.flip_stale_required_reviews`).
     """
     if state.last_poll_sha == "":
         state.last_poll_sha = new_head
@@ -1165,7 +1174,7 @@ def _apply_sha_attribution(state: PRGroomingState, new_head: str) -> bool:
     # External push (operator / third party): count it and invalidate stale reviews.
     state.pr_review_retries_used += 1
     state.last_poll_sha = new_head
-    flip_stale_required_reviews(state.reviewers)
+    flip_stale_required_reviews(state.reviewers, now=now)
     state.last_review_invalidated_sha = new_head
     return True
 

@@ -23,6 +23,7 @@ from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.gh import GhCli
 from prgroom.lifecycle import poll_pr
 from prgroom.lifecycle.poll import _review_activity_by_login, _terminal_review_verdicts
+from prgroom.lifecycle.predicates import has_required_reviewers_to_refresh
 from prgroom.lifecycle.quiescence import reviewers_gate_satisfied
 from prgroom.proc import CommandResult
 from prgroom.prsession.enums import (
@@ -3039,3 +3040,91 @@ def test_quiesced_pr_with_satisfied_reviewers_stays_quiesced() -> None:
         config=_config(),
     )
     assert state.phase is PRPhase.QUIESCED
+
+
+# ── external-push invalidation boundary (§3.4): the stale-restore family ──
+
+
+def _review_found_reviewer(
+    *, last_request_at: datetime, last_review_at: datetime, last_review_id: int
+) -> dict[str, ReviewerState]:
+    """A required REVIEW_FOUND copilot carrying a prior terminal verdict's stamps."""
+    return {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=last_request_at,
+            last_review_at=last_review_at,
+            last_review_id=last_review_id,
+        )
+    }
+
+
+def test_external_push_flip_stamps_invalidation_boundary_on_last_request_at() -> None:
+    # Comment 3611146008 (unit half). The external-push flip must move last_request_at
+    # to the push clock, so the pre-push terminal review no longer post-dates the
+    # request window and cannot silently restore REVIEW_FOUND on a later poll.
+    old_request = _T0 - timedelta(hours=1)  # 11:00
+    old_verdict = _T0 - timedelta(minutes=55)  # 11:05 (the CHANGES_REQUESTED _review)
+    reviewers = _review_found_reviewer(
+        last_request_at=old_request, last_review_at=old_verdict, last_review_id=500
+    )
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",
+        reviewers=reviewers,
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", reviews=[_review(500)]),
+        deps=_deps(_T0),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.NOT_REQUESTED
+    assert copilot.last_request_at == _T0  # boundary stamped to the push clock
+    assert copilot.last_review_at == old_verdict  # verdict stamps left intact
+    assert copilot.last_review_id == 500
+
+
+def test_stale_terminal_review_does_not_restore_review_found_after_external_push() -> None:
+    # Comment 3611146008 (two-poll integration). A standalone `poll` observes the
+    # external push and persists NOT_REQUESTED; the NEXT poll re-reads the SAME pre-push
+    # terminal review. Without the invalidation boundary the second poll's engagement
+    # pass restores REVIEW_FOUND (terminal_at > last_request_at) and the reviewer drops
+    # out of the refreshable set, so `rereview` never re-asks the new head.
+    old_request = _T0 - timedelta(hours=1)
+    old_verdict = _T0 - timedelta(minutes=55)
+    reviewers = _review_found_reviewer(
+        last_request_at=old_request, last_review_at=old_verdict, last_review_id=500
+    )
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",
+        reviewers=reviewers,
+    )
+    after_push = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", reviews=[_review(500)]),
+        deps=_deps(_T0),
+        config=_config(),
+    )
+    assert after_push.reviewers["copilot"].status is ReviewerStatus.NOT_REQUESTED
+
+    # Second poll: same head (no push), same historical verdict re-observed.
+    later = poll_pr(
+        after_push,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", reviews=[_review(500)]),
+        deps=_deps(_T0 + timedelta(minutes=10)),
+        config=_config(),
+    )
+    copilot = later.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.NOT_REQUESTED  # not restored
+    assert has_required_reviewers_to_refresh(later) is True  # rereview still sees it

@@ -16,8 +16,13 @@ spine never computes it.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from prgroom.prsession.enums import ReviewerStatus
 from prgroom.prsession.state import PRGroomingState, ReviewerState
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 # ``declined_reason`` recorded when GitHub itself stopped listing a pending request
 # (_poll's reconciliation, §2.1.3) — as opposed to prgroom's own timeout declines.
@@ -97,7 +102,9 @@ def new_lifecycle_gate_this_cycle(state: PRGroomingState, *, previous_error: str
     return previous_error is None and state.last_error is not None
 
 
-def flip_stale_required_reviews(reviewers: dict[str, ReviewerState]) -> bool:
+def flip_stale_required_reviews(
+    reviewers: dict[str, ReviewerState], *, now: datetime | None = None
+) -> bool:
     """Invalidate prior reviews bound to a superseded SHA (§3.4 shared flip).
 
     A new push (CLI's own in ``_push``, or external in ``_poll``) changes HEAD, so
@@ -105,10 +112,23 @@ def flip_stale_required_reviews(reviewers: dict[str, ReviewerState]) -> bool:
     flip those to ``not_requested`` so the post-push ``_rereview`` re-asks them.
     Reviewers in ``{requested, in_progress, declined}`` and all optional reviewers
     are left untouched. Mutates ``reviewers`` in place; returns whether any flipped.
+
+    ``now`` (when supplied) stamps the **invalidation boundary** on each flipped
+    reviewer: ``last_request_at`` is advanced to ``now`` — the clock any restoring
+    verdict or engagement must beat. Every freshness comparison (``_observe_engagement``'s
+    strictly-after gate) already reads ``last_request_at``, so this one field stops the
+    pre-push terminal review from re-qualifying and restoring ``review_found`` on a later
+    poll (the standalone-``poll`` / crash-before-``rereview`` window). ``_push`` passes no
+    ``now``: its in-cycle ``_rereview`` re-stamps ``last_request_at`` immediately, so the
+    stale-restore window never opens there. ``last_review_at`` / ``last_review_id`` are
+    left untouched — they still cohere with each other, and the boundary move alone closes
+    the restore.
     """
     flipped = False
     for r in reviewers.values():
         if r.required and r.status == ReviewerStatus.REVIEW_FOUND:
             r.status = ReviewerStatus.NOT_REQUESTED
+            if now is not None:
+                r.last_request_at = now
             flipped = True
     return flipped
