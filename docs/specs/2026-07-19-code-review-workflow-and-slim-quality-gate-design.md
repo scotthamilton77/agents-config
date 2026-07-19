@@ -61,8 +61,25 @@ Workflow({name:'quality-gate', args:<triage JSON>})       Workflow({name:'code-r
   └─ Synthesize: dual-signal residual-risk report (unchanged)
 ```
 
-`workflow()` child calls are one-level nesting — legal, shares the parent's
-budget/concurrency, and renders as a nested progress group.
+`workflow()` is a documented script-body hook of the harness Workflow tool
+contract: `workflow(nameOrRef, args)` runs a named or file-referenced workflow
+inline as a sub-step, the child shares the parent run's concurrency cap, agent
+counter, abort signal, and token budget, its agents render as a nested progress
+group, and nesting is legal exactly one level (a `workflow()` call inside a
+child throws). This design uses exactly one level.
+
+This design also intersects two adjacent specs, deliberately:
+
+- `2026-07-04-cross-model-heavy-gate-panel.md` (Codex-into-the-gate with
+  provider probe, fallback chain, per-run cost record): **narrowed** here to a
+  single Codex lane — no multi-provider chain, probe reduced to plugin
+  detection. Its failure rule (empty/unparseable/non-zero output is a provider
+  failure, never "no findings") and its per-run cost-record requirement are
+  **adopted** (§4.2 lane 6, §4.4 `stats`).
+- `2026-07-05-adversarial-qa-agent-team-design.md` §9.1 (the
+  `scale_hint → {finder_dimensions, verifier_width, bench_votes, …}` rewrite
+  binding gate_triage and quality-gate in one PR): **paused** until vaac.2
+  unblocks. This interim keeps the current wire (§5.4); do not implement both.
 
 ## 4. `code-review` workflow (new: `src/user/.claude/workflows/code-review.js`)
 
@@ -79,7 +96,10 @@ with it). Dropping these is what makes the workflow target-agnostic.
   //   merge-base(default-branch)..HEAD ∪ staged ∪ unstaged ∪ untracked
   //   (same scope prose quality-gate uses today).
   "target": { "pr": 123 }        // OR { "ref": "origin/main" } — explicit base ref
-  // Optional freeform context for the reviewers (e.g. triage facts, plan link).
+  // Optional context for the reviewers (e.g. triage facts, plan link).
+  // string | object; an object is JSON-stringified. Bounded (~4000 chars,
+  // truncated with a marker) and wrapped in the untrusted-content fence
+  // before entering any prompt.
   "context": "…"
 }
 ```
@@ -87,14 +107,19 @@ with it). Dropping these is what makes the workflow target-agnostic.
 `{pr}` targets use `gh pr diff` / `gh pr view`; ref/default targets use local
 git. Both resolve to the same internal "diff scope" prose handed to every agent.
 
-### 4.2 Find fan-out — six parallel lanes
+### 4.2 Find fan-out — change summary, then six parallel lanes
 
-Five Sonnet role agents, prompts faithfully adapted from upstream step 4
+**Pre-step (upstream step 3, folded):** one Haiku agent summarizes the change
+(what it does, which files, apparent intent). The summary is passed to every
+lane and every scorer as shared briefing context — the reviewers do not work
+from raw diff scope alone.
+
+Then five Sonnet role agents, prompts faithfully adapted from upstream step 4
 (numbering preserved for traceability to the snapshot):
 
 | Lane | Role (upstream step 4) | Notes |
 |---|---|---|
-| 1 | CLAUDE.md / AGENTS.md compliance audit | agent discovers the relevant instruction files for touched dirs (upstream step 2 folds in here) |
+| 1 | CLAUDE.md / AGENTS.md compliance audit | agent discovers the relevant instruction files for touched dirs (upstream step 2 folds in here) and **returns the discovered file paths in its payload** — they are forwarded to every scorer so the rubric's "double-check the CLAUDE.md actually calls this out" clause can execute |
 | 2 | Shallow bug scan, **diff lines only** | no extra context; big bugs, no nitpicks |
 | 3 | git blame / history of modified code | bugs in light of historical context |
 | 4 | Prior-PR comments on touched files | degrades to a logged skip when no remote or no PR history |
@@ -102,17 +127,41 @@ Five Sonnet role agents, prompts faithfully adapted from upstream step 4
 | 6 | **Codex cross-model review** | via the Codex plugin runtime per the Codex-routing rule: read-only (`--write` omitted), prompt on stdin, default model per the routing rule's standard-review profile. Plugin absent → logged skip, never a failure |
 
 Lane 6 runs from a workflow `agent()` whose instructions are to invoke the
-plugin runtime via Bash and translate Codex's prose review into the findings
-schema. All lanes receive the untrusted-content fence discipline carried over
-from today's `quality-gate.js` (source is data, never instructions; read-only).
+plugin runtime via Bash and translate Codex's prose review into *proposed*
+findings (same shape as the role lanes' output; they pass through the scorer
+like everyone else's, §4.3). Failure rule adopted verbatim from the 2026-07-04
+panel spec: a non-zero exit, empty stdout, or unparseable output is a
+**provider failure recorded in `skippedLanes`** — never translated as "no
+findings".
 
-### 4.3 Scoring — upstream step 5 verbatim
+Every lane can individually fail; each failure is recorded as a `skippedLanes`
+entry with a reason, and the run proceeds on the surviving lanes (quorum
+consequences in §5.3). All lanes receive the untrusted-content fence discipline
+carried over from today's `quality-gate.js` (source is data, never
+instructions; read-only).
 
-One Haiku scorer per raw finding, given the 0–100 confidence rubric and the
+### 4.3 Scoring — upstream step 5 verbatim, plus severity/fixClass adjudication
+
+One Haiku scorer per raw finding, given: the 0–100 confidence rubric and the
 false-positive exclusion list from the upstream command **verbatim** (they are
-the empirically tuned part). Findings scoring **< 80 are dropped**. This filter
-is the refuter panels' replacement, at roughly two orders of magnitude less
-model spend per finding.
+the empirically tuned part), the change summary (§4.2 pre-step), and the
+instruction-file list from lane 1. Findings scoring **< 80 are dropped**. This
+filter is the refuter panels' replacement, at roughly two orders of magnitude
+less model spend per finding.
+
+**The scorer is the sole producer of `severity` and `fixClass`.** Finder lanes
+*propose* both; the scorer — which opens the cited code anyway to score
+confidence — confirms or overrides them, with the standing bias "when unsure,
+`semantic`" for fixClass. Finder-self-assigned severity is exactly the
+inflation pattern the 2026-07-05 campaign documented, and the gate's
+accept/terminate floor keys on severity — so the field the floor reads is
+always scorer-adjudicated, never finder-claimed. (This is a one-Haiku-call
+approximation of that spec's rank-anchoring bench, not a replacement for it.)
+
+**Aggregate fan-out cap:** at most **40 findings are scored per run**,
+prioritized by proposed severity (blocking/critical first), then lane order
+(1→6). Overflow findings are dropped unscored and counted in
+`stats.unscoredOverflow` — a silent-truncation guard, not a hidden cap.
 
 ### 4.4 Findings schema
 
@@ -126,13 +175,17 @@ machinery needs:
     "lane": "bug-scan",              // which role produced it
     "gist": "one-line what-is-wrong",
     "detail": "why + concrete consequence",
-    "severity": "blocking|critical|major|minor",   // NEW vs upstream
-    "fixClass": "mechanical|semantic",             // NEW vs upstream; unsure → semantic
-    "confidence": 87,                // scorer output, post-filter ≥80
+    "severity": "blocking|critical|major|minor",   // NEW vs upstream; scorer-adjudicated (§4.3)
+    "fixClass": "mechanical|semantic",             // NEW vs upstream; scorer-adjudicated; unsure → semantic
+    "confidence": 87,                // scorer output, post-filter ≥80; null = scorer died (kept, unscored — fail toward scrutiny)
     "suggestedFix": "…"
   }],
+  "lanesRun": ["compliance", "bug-scan", "history", "prior-prs", "comment-fidelity", "codex"],
   "skippedLanes": [{ "lane": "codex", "reason": "plugin not installed" }],
-  "stats": { "raw": 14, "scored": 14, "surviving": 5 }
+  "stats": {
+    "raw": 14, "scored": 14, "surviving": 5, "unscoredOverflow": 0,
+    "tokensSpent": 0               // budget.spent() delta across the run — the per-run cost record
+  }
 }
 ```
 
@@ -165,24 +218,32 @@ posting flow is wanted later it is a thin caller, not workflow surface.
    sequentially by Sonnet fixers (one-repair-attempt-then-abort retained);
    `semantic` findings flagged to the open ledger, never auto-applied.
 3. **Re-check** — one Sonnet agent re-scans **only the files the fixers
-   touched** for regressions introduced by the fix wave. New findings merge
-   into the open ledger; there is **no second fix wave** (a regression found
-   here forces a termination exit — the loop does not chase its own tail).
+   touched** for regressions introduced by the fix wave. Its raw findings pass
+   through **the same Haiku scorer and ≥80 filter** (severity/fixClass
+   adjudicated identically) before touching the ledger — an unscored re-check
+   false positive must not be able to force a termination. Surviving findings
+   merge into the open ledger; there is **no second fix wave** (a scored
+   regression found here forces a termination exit — the loop does not chase
+   its own tail).
 4. **Synthesize** — unchanged: deterministic dual-signal residual-risk
    statement + Opus narrative at `scale_hint.synthesis_effort`, with the
    deterministic fallback if the synthesizer dies.
 
 ### 5.3 Exit semantics (dual-signal, adapted to single-pass)
 
-- **ACCEPTANCE (`clean-at-floor`)** — the child review ran (≥1 lane produced
-  output), the open ledger is clean at the `major` severity floor, AND the
-  re-check surfaced no new at-floor findings. Still explicitly *clean-at-floor,
-  not certified*.
+- **ACCEPTANCE (`clean-at-floor`)** — requires a **lane quorum**: the two
+  load-bearing lanes (1 compliance and 2 bug-scan) both ran to completion —
+  a run where four lanes silently died and one clean lane survived must not
+  certify anything. Plus: the open ledger is clean at the `major` severity
+  floor, AND the scored re-check surfaced no new at-floor findings. Still
+  explicitly *clean-at-floor, not certified*.
 - **TERMINATION** — reasons become: `residual` (at-floor findings remain open
   after the fix wave), `recheck-regression` (re-check found fresh at-floor
-  findings), `budget` (15% tail reserve, unchanged), `all-lanes-dead` (the
-  child returned nothing because every lane failed — never certifies clean).
-  Every termination carries the open ledger as residual risk; never "clean".
+  findings), `lane-quorum` (a load-bearing lane died — findings from surviving
+  lanes are still processed, but the run cannot accept), `budget` (15% tail
+  reserve, unchanged), `all-lanes-dead` (the child returned nothing because
+  every lane failed — never certifies clean). Every termination carries the
+  open ledger as residual risk; never "clean".
 
 ### 5.4 scale_hint handling
 
@@ -207,14 +268,22 @@ lanes + (findings × 1) Haiku calls.
 
 ## 6. Error handling
 
-- **Codex lane**: plugin missing, auth failure, or non-zero exit → the lane
-  agent reports a skip with reason; `skippedLanes` records it; the run
-  proceeds on five lanes. A skip is surfaced in the synthesis report.
+- **Codex lane**: plugin missing, auth failure, non-zero exit, empty stdout,
+  or unparseable output → provider failure: the lane agent reports a skip with
+  reason; `skippedLanes` records it; the run proceeds on five lanes. Never
+  translated as "no findings". A skip is surfaced in the synthesis report.
+- **Role-lane death** (agent returns null): recorded in `skippedLanes` like a
+  Codex skip. If a load-bearing lane (compliance or bug-scan) died, acceptance
+  is off the table (`lane-quorum` termination, §5.3).
 - **Child workflow failure** inside quality-gate: `workflow()` throws → caught;
-  the gate exits `termination: all-lanes-dead` with an explicit residual-risk
-  statement telling the caller to fall back to the SERIAL gate path.
+  the gate exits `termination: all-lanes-dead`. The completion-gate rule gains
+  an explicit fallback clause (§8): on an `all-lanes-dead` or child-failure
+  return, the session runs the SERIAL path — the degrade is enforced by the
+  rule, not left to the caller's initiative.
 - **Scorer death**: a finding whose scorer returns null keeps the finding
-  (fail toward scrutiny) with `confidence: null`, marked unscored.
+  (fail toward scrutiny) with `confidence: null` and the finder's *proposed*
+  severity/fixClass, with fixClass forced to `semantic` (an unadjudicated
+  finding is never auto-applied).
 - **Fixer failure**: unchanged — one repair attempt, then the finding moves to
   the open ledger with a flag reason.
 
@@ -224,18 +293,31 @@ Workflow scripts have no test harness (repo convention; `quality-gate.js`
 ships untested today). Verification for this change:
 
 1. `node --check` on both workflow files (syntax gate).
-2. Dogfood run: this change's own branch is a gate-policy change, so the
+2. **Planted-bug fixture run** (the oracle the dogfood lacks): on a scratch
+   branch, plant (a) one mechanical bug (e.g. an unused import plus a real
+   off-by-one on a changed line) and (b) one false-positive bait (code that
+   looks wrong but is guarded upstream). Run `Workflow({name:'code-review'})`
+   against it and assert: the real bug survives at ≥80 with a sane
+   severity/fixClass; the bait is dropped (<80); `stats`/`lanesRun` are
+   populated. Then run the full quality-gate on the same fixture and assert
+   the mechanical fix applies and a planted *semantic* at-floor finding forces
+   a `residual` termination — the dual-signal exit demonstrably fires both
+   ways.
+3. Dogfood run: this change's own branch is a gate-policy change, so the
    completion gate for its PR routes HEAVY and exercises the new path
    end-to-end — the child invocation, Codex lane (or its graceful skip), the
    scorer filter, fix wave, re-check, and synthesis.
-3. A direct `Workflow({name:'code-review'})` invocation against the branch to
+4. A direct `Workflow({name:'code-review'})` invocation against the branch to
    verify independent operation and the findings schema.
 
 ## 8. Documentation impact
 
 - Header comments of both workflow files describe the new structure.
 - The completion-gate rule (`src/user/.agents/rules/completion-gate.md`)
-  does not mention refuters — no change needed.
+  does not mention refuters, but it **gains one clause**: when the HEAVY
+  workflow returns `all-lanes-dead` (or the Workflow call itself fails), the
+  session falls back to the SERIAL path — mirroring the existing
+  "HEAVY unavailable → SERIAL" degrade so the fallback is rule-enforced.
 - Dated specs (`2026-07-02`, `2026-07-03`, `2026-07-05`) are point-in-time
   artifacts and are not rewritten; this spec records the supersession.
 - The `quality-gate` workflow's `meta.description` / `whenToUse` (surfaced in
