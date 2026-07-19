@@ -96,6 +96,10 @@ if [ "$1" = "api" ]; then
   done
   case "$endpoint" in
     */issues/*/events*)
+      if [ "${FAKE_EVENTS_FAIL:-0}" = "1" ]; then
+        echo "fake-gh: simulated events endpoint failure" >&2
+        exit 1
+      fi
       cat "${FAKE_EVENTS_FILE:-/dev/null}" 2>/dev/null || echo '[]'
       ;;
     */issues/*/reactions*)
@@ -211,6 +215,29 @@ assert "a persistent reactions-endpoint failure exits 3 (infra error, not timeou
 assert "a persistent reactions-endpoint failure does NOT report no_rereview_started" \
   "printf '%s' '$out' | jq -e '.status != \"no_rereview_started\"' >/dev/null"
 assert "a persistent reactions-endpoint failure reports rereview_start_check_error" \
+  "printf '%s' '$out' | jq -e '.status == \"rereview_start_check_error\"' >/dev/null"
+
+# The events check and the eyes-reaction check are independent API calls —
+# an events-endpoint failure must NOT skip the eyes check when
+# --bot-reviewers is supplied: an active Codex review must still be
+# detected even while Copilot's endpoint is having a bad day.
+out=$(FAKE_EVENTS_FAIL=1 FAKE_REACTIONS_FILE="$REACTIONS_EYES" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' 2>/dev/null)
+rc_events_fail_eyes_ok=$?
+assert "an events-endpoint failure does not block detecting a live eyes reaction (exit 0)" "[ \$rc_events_fail_eyes_ok -eq 0 ]"
+assert "eyes reaction still reports signal eyes_reaction despite the events failure" \
+  "printf '%s' '$out' | jq -e '.signal == \"eyes_reaction\"' >/dev/null"
+
+# Symmetric to the reactions case: a persistent EVENTS-endpoint failure at
+# the deadline is also an infrastructure error (exit 3), not a false
+# no_rereview_started.
+out=$(FAKE_EVENTS_FAIL=1 FAKE_REACTIONS_FILE="$EMPTY_REACTIONS" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' 2>/dev/null)
+rc_events_endpoint_fail=$?
+assert "a persistent events-endpoint failure exits 3 (infra error, not timeout)" "[ \$rc_events_endpoint_fail -eq 3 ]"
+assert "a persistent events-endpoint failure reports rereview_start_check_error" \
   "printf '%s' '$out' | jq -e '.status == \"rereview_start_check_error\"' >/dev/null"
 
 exit $FAIL

@@ -93,23 +93,29 @@ echo "Polling for Copilot re-review start (${INITIAL_SLEEP}s pre-sleep + ${POLL_
 
 sleep "$INITIAL_SLEEP"
 
-# Names the reactions endpoint as failed on the CURRENT attempt (reset each
-# iteration). If it is still set when the loop exhausts, whether Codex
-# started is unobservable at the deadline: exit 1 (no_rereview_started)
-# would make Phase 6 count this as a silent ask and spend the one-ask cap on
-# an infrastructure failure it never actually established, not on Codex's
-# silence — mirrors poll-copilot-review.sh's clean-signal-endpoint-failure
-# handling (exit 3, not the timeout exit).
+# Names the events/reactions endpoint as failed on the CURRENT attempt
+# (reset each iteration). If either is still set when the loop exhausts,
+# whether a re-review started is unobservable at the deadline: exit 1
+# (no_rereview_started) would make Phase 6 count this as a silent ask and
+# spend the one-ask cap on an infrastructure failure it never actually
+# established — mirrors poll-copilot-review.sh's clean-signal-endpoint-
+# failure handling (exit 3, not the timeout exit). The two checks are
+# independent API calls (events for Copilot, reactions for Codex), so one
+# failing must not skip the other — a hiccup on Copilot's endpoint must not
+# blind the poll to a Codex 'eyes' that has already landed, and vice versa.
+events_endpoint_failed=false
 reactions_endpoint_failed=false
 
 for ((i = 1; i <= POLL_COUNT; i++)); do
     sleep "$POLL_INTERVAL"
+    events_endpoint_failed=false
     reactions_endpoint_failed=false
 
     events=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events" \
         --jq "[.[] | select(.event == \"copilot_work_started\" and .created_at > \"${AFTER}\")]") || {
         echo "Warning: events API failed (attempt ${i}), continuing" >&2
-        continue
+        events='[]'
+        events_endpoint_failed=true
     }
 
     event_ts=$(printf '%s' "$events" | jq -r '.[0].created_at // empty')
@@ -124,7 +130,8 @@ for ((i = 1; i <= POLL_COUNT; i++)); do
     # Eyes-reaction check (only when --bot-reviewers was given): Codex's
     # in-flight marker on the PR body, appearing within ~15s of the
     # '@codex review' ask — the only start signal Codex emits, since it
-    # never fires copilot_work_started.
+    # never fires copilot_work_started. Runs regardless of whether the
+    # events check above succeeded — see the note above the loop.
     if [[ -n "$BOT_REVIEWERS" ]]; then
         reactions=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/reactions?per_page=100" --paginate \
             | jq -s 'add // []') || {
@@ -147,13 +154,13 @@ for ((i = 1; i <= POLL_COUNT; i++)); do
     echo "  Poll ${i}/${POLL_COUNT}: no re-review start signal after ${AFTER}" >&2
 done
 
-# A reactions-endpoint failure still in effect on the FINAL attempt makes
-# "Codex never started" indistinguishable from "we couldn't check" — report
-# the documented infrastructure error (exit 3) rather than a false
-# no_rereview_started the caller would spend its silent-ask budget on.
-if [[ "$reactions_endpoint_failed" == true ]]; then
-    echo "Error: reactions endpoint failed at the deadline; cannot determine whether Codex started" >&2
-    jq -n '{"status": "rereview_start_check_error", "message": "reactions endpoint failure: cannot determine whether Codex started"}'
+# An events- or reactions-endpoint failure still in effect on the FINAL
+# attempt makes "nothing started" indistinguishable from "we couldn't
+# check" — report the documented infrastructure error (exit 3) rather than
+# a false no_rereview_started the caller would spend its silent-ask budget on.
+if [[ "$events_endpoint_failed" == true || "$reactions_endpoint_failed" == true ]]; then
+    echo "Error: an API endpoint failed at the deadline; cannot determine whether a re-review started" >&2
+    jq -n '{"status": "rereview_start_check_error", "message": "endpoint failure: cannot determine whether a re-review started"}'
     exit 3
 fi
 
