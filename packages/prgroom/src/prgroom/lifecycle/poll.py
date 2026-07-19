@@ -968,6 +968,21 @@ def _observe_engagement(
             # disambiguates an equal-second re-review from a re-observed historical one.
             if candidate_id is not None:
                 reviewer.last_review_id = candidate_id
+        elif (
+            candidate_at == reviewer.last_review_at
+            and candidate_id is not None
+            and (reviewer.last_review_id is None or candidate_id > reviewer.last_review_id)
+        ):
+            # Cross-poll equal-second, newer-id update. A review id can surface a poll after
+            # last_review_at was stamped (eventual consistency, or a same-second submission
+            # seen late). candidate_at ties the stored timestamp so `advanced` is False, yet
+            # the candidate ranks newer at that second (_review_rank convention: a known id
+            # outranks None, larger id outranks smaller). Record it so the reactivation
+            # freshness test keeps a sound tiebreaker; do NOT advance last_review_at or flip
+            # status — only the id moves. candidate_id is None is guarded out, so a coincident
+            # comment can never clear a stored review id.
+            reviewer.last_review_id = candidate_id
+            changed = True
         if target_status is not None and reviewer.status is not target_status:
             reviewer.status = target_status
             changed = True

@@ -883,7 +883,11 @@ def test_last_activity_unchanged_on_quiet_poll() -> None:
     assert state.last_activity_at == _T0
 
 
-def _review_found_at(verdict_at: datetime, *, requested_at: datetime) -> dict[str, ReviewerState]:
+def _review_found_at(
+    verdict_at: datetime, *, requested_at: datetime, review_id: int | None = 21
+) -> dict[str, ReviewerState]:
+    # A review-derived advance always co-stamps the review's id, so steady state stores
+    # last_review_id alongside last_review_at (both callers re-observe verdict id 21).
     return {
         "copilot": ReviewerState(
             identity="copilot",
@@ -892,6 +896,7 @@ def _review_found_at(verdict_at: datetime, *, requested_at: datetime) -> dict[st
             required=True,
             last_request_at=requested_at,
             last_review_at=verdict_at,
+            last_review_id=review_id,
         )
     }
 
@@ -2207,6 +2212,46 @@ def test_equal_second_reviews_stamp_greatest_review_id() -> None:
     rv = state.reviewers["copilot"]
     assert rv.last_review_at == datetime(2026, 6, 9, 11, 5, tzinfo=UTC)
     assert rv.last_review_id == 41  # greatest id at the tied second, not the first-seen 40
+
+
+def test_cross_poll_equal_second_newer_id_updates_stored_review_id() -> None:
+    # Cross-poll sibling of the same-poll greatest-id rule. Poll 1 stores (11:05:00Z, id 40).
+    # Poll 2 reveals a second review id 41 at the SAME GitHub-second (eventual consistency, or
+    # a same-second submission surfacing a poll late). advanced is False (candidate_at ==
+    # stored last_review_at), yet the newer id MUST still be recorded: otherwise a later
+    # re-request's freshness test reads the already-observed id 41 as fresh (41 > stored 40)
+    # and lets the stale verdict satisfy the new request. last_review_at and status must NOT
+    # move on this id-only update — only the stored id advances.
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))  # before the 11:05Z reviews
+    id40 = _review(40, login="copilot")  # CHANGES_REQUESTED @ 11:05:00Z
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+
+    # Poll 1: only id 40 is visible.
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", reviews=[id40]),
+        deps=_deps(_JUST_AFTER_VERDICT),
+        config=_config(),
+    )
+    rv_mid = mid.reviewers["copilot"]
+    assert rv_mid.status is ReviewerStatus.REVIEW_FOUND
+    assert rv_mid.last_review_at == datetime(2026, 6, 9, 11, 5, tzinfo=UTC)
+    assert rv_mid.last_review_id == 40
+
+    # Poll 2: id 41 surfaces at the same second as the already-stored id 40.
+    id41 = _review(41, login="copilot")  # CHANGES_REQUESTED @ 11:05:00Z, same second
+    end = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", reviews=[id40, id41]),
+        deps=_deps(_JUST_AFTER_VERDICT),
+        config=_config(),
+    )
+    rv_end = end.reviewers["copilot"]
+    assert rv_end.last_review_at == datetime(2026, 6, 9, 11, 5, tzinfo=UTC)  # unchanged
+    assert rv_end.status is ReviewerStatus.REVIEW_FOUND  # unchanged
+    assert rv_end.last_review_id == 41  # newer id at the tied second is recorded
 
 
 def test_issue_comment_advance_preserves_stored_review_id() -> None:
