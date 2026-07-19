@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<!--
+  VARIATION A — "CONTROL ROOM"
+  Column-per-lane kanban board. Icon-forward, control-room density.
+  Same fixture state as variations B and C, inlined below with every
+  less-than sign in the JSON escaped as the JSON escape backslash-u003c
+  (the grind serialization contract — a raw splice of the probe title
+  would close this block early and execute). Light theme only.
+  Self-contained: no fetches, no CDNs; works from file://.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grind — Control Room</title>
+<style>
+  :root {
+    --bg: #eef0f4;
+    --panel: #ffffff;
+    --panel-2: #f4f6f9;
+    --border: #d3d9e1;
+    --text: #171c24;
+    --text-dim: #4d5766;
+    --accent: #2f5fd6;
+    --red: #c62828;
+    --lane-w: 340px;
+    --lane-w-collapsed: 170px; /* exactly 50% of expanded */
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 12.5px; line-height: 1.45; padding: 14px 18px 24px;
+  }
+  a { color: var(--accent); }
+  a:focus-visible, button:focus-visible, input:focus-visible + span,
+  summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+  /* ---- status palette: one --c per status, everything keys off it ---- */
+  .st-queued        { --c: #6e7681; --cbg: rgba(110,118,129,0.13); }
+  .st-in-progress   { --c: #2f5fd6; --cbg: rgba(47,95,214,0.12); }
+  .st-pr-open       { --c: #7c3aed; --cbg: rgba(124,58,237,0.12); }
+  .st-in-review     { --c: #9a6c00; --cbg: rgba(154,108,0,0.13); }
+  .st-merged        { --c: #1e8e3e; --cbg: rgba(30,142,62,0.12); }
+  .st-done          { --c: #0f7b3f; --cbg: rgba(15,123,63,0.18); }
+  .st-blocked       { --c: #c62828; --cbg: rgba(198,40,40,0.12); }
+  .st-waiting-human { --c: #b45309; --cbg: rgba(180,83,9,0.13); }
+  .st-standing-down { --c: #64748b; --cbg: rgba(100,116,139,0.16); }
+  .st-unknown       { --c: #8a94a3; --cbg: rgba(138,148,163,0.14); }
+
+  .icon { vertical-align: -2px; }
+
+  /* ---- top bar ---- */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .topbar .mission { flex-basis: 100%; margin: 2px 0 0; color: var(--text-dim); font-size: 12px; line-height: 1.45; max-width: 1000px; }
+  .brand .sigil {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 700; font-size: 11px; letter-spacing: 1px;
+    background: #171c24; color: #fff; border-radius: 4px; padding: 3px 7px;
+  }
+  h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: 0.1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topmeta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .repo-chip, .gen-chip {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px; color: var(--text-dim);
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 3px 7px;
+  }
+  .refresh-control {
+    display: flex; align-items: center; gap: 7px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 9px;
+  }
+  .refresh-control label { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; font-size: 12px; }
+  #refresh-status { font-variant-numeric: tabular-nums; min-width: 74px; color: var(--text-dim); font-size: 11.5px; }
+
+  /* ---- banners ---- */
+  #attention-banner {
+    display: none; background: #fdeaea; border: 1px solid var(--red); border-left-width: 5px;
+    color: #7a1a1a; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px;
+  }
+  #attention-banner.show { display: block; }
+  #attention-banner h2 { margin: 0 0 6px; font-size: 12px; letter-spacing: 1px; color: var(--red); text-transform: uppercase; }
+  #attention-banner ul { margin: 0; padding-left: 18px; }
+  #attention-banner li { margin-bottom: 4px; }
+  .attn-item-chip {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px;
+    background: #fff; border: 1px solid rgba(198,40,40,0.4); border-radius: 3px; padding: 0 5px; margin-left: 5px;
+  }
+  #pause-banner {
+    display: none; background: #fff7e6; border: 1px solid #d9a514; border-left-width: 5px;
+    color: #6b4e00; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px;
+  }
+  #pause-banner.show { display: block; }
+  #pause-banner h2 { margin: 0 0 4px; font-size: 12px; letter-spacing: 1px; color: #8a6500; text-transform: uppercase; }
+  #pause-banner .reason { margin: 0 0 6px; }
+  #pause-banner ol { margin: 0; padding-left: 20px; font-size: 12px; color: #6b4e00; }
+
+  /* ---- board: columns scroll horizontally, never squeeze ---- */
+  .board { display: flex; gap: 10px; overflow-x: auto; align-items: stretch; padding-bottom: 10px; margin-bottom: 14px; }
+  .lane {
+    flex: 0 0 var(--lane-w); min-width: var(--lane-w);
+    background: var(--panel); border: 1px solid var(--border); border-top: 3px solid var(--c, var(--border));
+    border-radius: 8px; display: flex; flex-direction: column;
+  }
+  .lane.collapsed { flex-basis: var(--lane-w-collapsed); min-width: var(--lane-w-collapsed); background: var(--panel-2); }
+  .lane-head { display: flex; align-items: center; gap: 7px; padding: 9px 10px 7px; }
+  .lane-head .lane-icon { color: var(--c); flex: none; display: inline-flex; }
+  .lane-titles { min-width: 0; flex: 1 1 auto; }
+  .lane-titles h2 { margin: 0; font-size: 13px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lane-sub { color: var(--text-dim); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lane.collapsed .lane-sub { display: none; } /* collapsed drops the agent/activity line */
+  .lane.collapsed .lane-head .pill { display: none; } /* icon carries status at half width */
+  .lane-toggle {
+    flex: none; border: 1px solid var(--border); background: var(--panel); color: var(--text-dim);
+    border-radius: 5px; width: 22px; height: 22px; cursor: pointer; font-size: 13px; line-height: 1; padding: 0;
+  }
+  .lane-toggle:hover { background: var(--panel-2); color: var(--text); }
+  .lane-body { padding: 2px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
+  .queue-empty { color: var(--text-dim); font-size: 11.5px; font-style: italic; padding: 4px 2px; }
+
+  /* ---- pills & chips ---- */
+  .pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600;
+    background: var(--cbg); color: var(--c); white-space: nowrap;
+  }
+  .pill-round { background: rgba(47,95,214,0.10); color: var(--accent); font-variant-numeric: tabular-nums; }
+  .pill-round.is-stalemate { background: rgba(198,40,40,0.12); color: var(--red); }
+  .pill-stalemate { background: var(--red); color: #fff; text-transform: uppercase; letter-spacing: 0.6px; font-size: 9.5px; }
+  .pill-threads { background: rgba(154,108,0,0.12); color: #9a6c00; cursor: help; border-bottom: 1px dotted #9a6c00; }
+  .pill-wontfix { background: rgba(110,118,129,0.14); color: #525c69; }
+  .chip {
+    display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--text-dim);
+  }
+  .chip-blocker { border-color: rgba(198,40,40,0.45); color: var(--red); background: rgba(198,40,40,0.07); }
+  .kind { font-family: inherit; font-size: 10px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; border-radius: 3px; padding: 2px 6px; }
+  .kind-discovered-work { background: rgba(15,118,110,0.13); color: #0f766e; }
+  .kind-human-gated     { background: rgba(190,18,60,0.11); color: #be123c; }
+  .kind-later-wave      { background: rgba(67,56,202,0.11); color: #4338ca; }
+  .kind-deferred        { background: rgba(82,82,82,0.13);  color: #525252; }
+  .kind-unknown         { background: rgba(138,148,163,0.15); color: #6e7681; }
+
+  /* ---- item cards ---- */
+  .item { border: 1px solid var(--border); border-left: 3px solid var(--c); border-radius: 6px; padding: 7px 9px; background: #fff; }
+  .item-top { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+  .item-top .icon { color: var(--c); flex: none; }
+  .item-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; color: var(--text-dim); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pr-link { font-size: 11px; text-decoration: none; font-variant-numeric: tabular-nums; flex: none; }
+  .pr-link:hover { text-decoration: underline; }
+  .pr-plain { color: var(--text-dim); font-size: 11px; }
+  .item-title { font-weight: 600; font-size: 12px; margin-bottom: 5px; overflow-wrap: break-word; }
+  .item-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .item-note { color: var(--text-dim); font-size: 11px; margin-top: 5px; }
+  .item-why {
+    margin-top: 5px; font-size: 11px; color: #8a4a08;
+    background: rgba(180,83,9,0.09); border: 1px solid rgba(180,83,9,0.3); border-radius: 5px; padding: 4px 7px;
+  }
+  .item-blockers { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 10.5px; color: var(--text-dim); }
+  .findings { list-style: none; margin: 6px 0 0; padding: 5px 0 0; border-top: 1px dashed var(--border); }
+  .findings li { display: flex; gap: 6px; align-items: baseline; font-size: 10.5px; padding: 2px 0; color: var(--text); }
+  .sev { flex: none; font-size: 9px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; border-radius: 3px; padding: 1px 4px; }
+  .sev-high { background: rgba(198,40,40,0.13); color: var(--red); }
+  .sev-medium { background: rgba(154,108,0,0.13); color: #9a6c00; }
+  .sev-low { background: rgba(110,118,129,0.14); color: #525c69; }
+  .sev-unknown { background: rgba(138,148,163,0.15); color: #6e7681; }
+  .disp { flex: none; margin-left: auto; font-size: 9.5px; font-weight: 700; color: var(--text-dim); font-style: italic; }
+  .disp-fixed { color: #0f7b3f; } .disp-wont-fix { color: #525c69; }
+  .disp-deferred { color: #4338ca; } .disp-escalated { color: #b45309; }
+
+  /* ---- collapsed item rows: icon + id + title + PR#, nothing else ---- */
+  .item-slim { display: flex; align-items: center; gap: 5px; padding: 4px 2px; border-bottom: 1px dashed var(--border); }
+  .item-slim:last-child { border-bottom: none; }
+  .item-slim .icon { color: var(--c); flex: none; }
+  .item-slim .item-id { flex: none; max-width: 62px; }
+  .item-slim .t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+  .item-slim .pr-link, .item-slim .pr-plain { font-size: 10.5px; }
+
+  /* ---- bottom dock ---- */
+  .dock { display: flex; gap: 10px; flex-wrap: wrap; }
+  .dock-panel { flex: 1 1 300px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .dock-panel h2 { margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); display: flex; align-items: center; gap: 7px; }
+  .count-tag { font-size: 10px; font-weight: 700; background: var(--panel-2); border: 1px solid var(--border); color: var(--text-dim); padding: 0 7px; border-radius: 999px; }
+  .obs-list { list-style: none; margin: 0; padding: 0; max-height: 170px; overflow-y: auto; }
+  .obs-list li { display: flex; gap: 7px; align-items: baseline; padding: 3px 0; border-bottom: 1px dashed rgba(0,0,0,0.06); font-size: 11px; color: var(--text); }
+  .obs-list li:last-child { border-bottom: none; }
+  .obs-list .ts { flex: none; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 9.5px; color: #8a94a3; }
+  .lvl { flex: none; font-size: 9px; font-weight: 800; letter-spacing: 0.5px; border-radius: 3px; padding: 1px 5px; }
+  .lvl-INFO { background: rgba(47,95,214,0.11); color: var(--accent); }
+  .lvl-WARN { background: rgba(154,108,0,0.13); color: #9a6c00; }
+  .lvl-ERROR { background: rgba(198,40,40,0.13); color: var(--red); }
+  .lvl-LESSON { background: rgba(15,118,110,0.13); color: #0f766e; }
+  .parking-list { list-style: none; margin: 0; padding: 0; }
+  .parking-list li { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; background: #fff; }
+  .parking-list .pt { flex: 1 1 auto; min-width: 0; }
+  .parking-list .pt .pid { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; color: var(--text-dim); margin-right: 6px; }
+  .parking-list .pn { display: block; color: var(--text-dim); font-size: 10.5px; margin-top: 2px; }
+  .lesson-list { list-style: none; margin: 0; padding: 0; }
+  .lesson-list li { padding: 6px 8px; border-left: 3px solid #0f766e; background: rgba(15,118,110,0.06); border-radius: 0 6px 6px 0; margin-bottom: 6px; font-size: 11.5px; }
+  .lesson-list .lts { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 9.5px; color: #8a94a3; margin-right: 6px; }
+  .lesson-list .litem { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; color: #0f766e; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="sigil">GRIND</span>
+    <h1 id="title">Grind</h1>
+  </div>
+  <div class="topmeta">
+    <span class="repo-chip" id="repo"></span>
+    <span class="gen-chip" id="last-generated" title="Timestamp of the last folded event — the board is as fresh as its log, never fresher."></span>
+    <div class="refresh-control">
+      <label><input type="checkbox" id="refresh-toggle"><span>auto-refresh</span></label>
+      <span id="refresh-status">off</span>
+    </div>
+  </div>
+  <p class="mission" id="mission"></p>
+</header>
+
+<div id="pause-banner" role="status">
+  <h2>⏸ Grind paused</h2>
+  <p class="reason" id="pause-reason"></p>
+  <ol id="pause-checklist"></ol>
+</div>
+
+<div id="attention-banner" role="alert">
+  <h2>⚠ Attention — needs the human</h2>
+  <ul id="attention-list"></ul>
+</div>
+
+<main class="board" id="board" aria-label="Lanes"></main>
+
+<div class="dock">
+  <section class="dock-panel" aria-label="Observations">
+    <h2>Observations <span class="count-tag" id="obs-count">0</span></h2>
+    <ul class="obs-list" id="obs-list"></ul>
+  </section>
+  <section class="dock-panel" aria-label="Parking lot">
+    <h2>Parking lot <span class="count-tag" id="park-count">0</span></h2>
+    <ul class="parking-list" id="parking-list"></ul>
+  </section>
+  <section class="dock-panel" aria-label="Lessons learned">
+    <h2>Lessons learned <span class="count-tag" id="lesson-count">0</span></h2>
+    <ul class="lesson-list" id="lesson-list"></ul>
+  </section>
+</div>
+
+<script id="grind-state">
+// Inlined fold State. SERIALIZATION CONTRACT: every less-than sign in the JSON
+// below is escaped as backslash-u003c before splicing, exactly as `grind render`
+// emits it. The disc-3 probe title proves the round-trip: it renders as inert
+// text below, it does not execute.
+const STATE = {
+  "title": "Discipline-Layer Grind — wgclw",
+  "repo": "scotthamilton77/agents-config",
+  "mission": "Re-architect the discipline layer around an event-sourced grind runtime; retire the bookkeeper agent and the hand-written ORCHESTRATION-STATE.md. Out of scope: PDLC-orchestrator design, PORT-track machine setup.",
+  "protocols": {
+    "review_protocol": "codex adversarial review, gpt-5.6-sol, --wait",
+    "merge_policy": "explicit — human instruction required",
+    "watcher_conventions": "dumb background pollers; ROOT interprets",
+    "session_grants": "one worktree per lane; no cross-lane writes"
+  },
+  "last_generated": "2026-07-19T04:12:08Z",
+  "pause": {
+    "paused": true,
+    "reason": "Human is picking a dashboard design from the wgclw.30.3 prototypes; implementation lanes hold until the renderer spec's UX section is amended with the choice.",
+    "resume_checklist": [
+      "Open prototypes/grind-dashboard/index.html and pick a winner (or a merge)",
+      "Amend the renderer spec's UX section with the chosen design",
+      "grind log grind_resumed"
+    ]
+  },
+  "attention": [
+    {
+      "text": "PR #346 reviewer stalemate — codex round 4 on unchanged head 9f31c2e with zero open threads. Merge ruling needed.",
+      "item": "wgclw.31.2"
+    },
+    {
+      "text": "Fold anomaly on wgclw.30.1 round 2: review_round head_sha 4b1a9d0 disagrees with review_verdict head_sha 4b1a9d1 — recorded applied:false, counts use the latest event. Auto-raised by ERROR observation.",
+      "item": "wgclw.30.1"
+    },
+    {
+      "text": "Dashboard prototype pick outstanding — variation A, B, or C (or a merge). The pause holds until the UX section is amended."
+    }
+  ],
+  "lanes": [
+    {
+      "id": "lane-installer",
+      "name": "Lane 1 — installer",
+      "agent": "lt-installer",
+      "model": "sonnet",
+      "effort": "medium",
+      "status": "done",
+      "queue": [
+        {
+          "id": "wgclw.28.4",
+          "title": "Open the dashboard exactly once via the platform opener",
+          "status": "done",
+          "pr": { "number": 338, "url": null }
+        },
+        {
+          "id": "wgclw.29.2",
+          "title": "Receipt-tracked uv tool installs with prune-on-retire",
+          "status": "done",
+          "pr": { "number": 339, "url": null }
+        }
+      ]
+    },
+    {
+      "id": "lane-runtime",
+      "name": "Lane 2 — event runtime",
+      "agent": "lt-runtime",
+      "model": "opus",
+      "effort": "high",
+      "status": "in-review",
+      "queue": [
+        {
+          "id": "wgclw.30.1",
+          "title": "Event schema + pure fold with transition table and anomaly policy",
+          "status": "in-review",
+          "pr": { "number": 344, "url": null },
+          "review": {
+            "kind": "codex",
+            "round": 2,
+            "open_threads": 3,
+            "wont_fix_count": 1,
+            "stalemate": false,
+            "detail": "codex round 2 on 4b1a9d1: 3 open threads — torn-tail repair must fsync the quarantine sidecar; derived-unblock path lacks a cross-lane edge test; applied:false events vanish from the status envelope on replay. 1 wont-fix: unknown payload keys are tolerated by design.",
+            "findings": [
+              { "severity": "high", "summary": "Torn-tail repair moves the fragment to quarantine but never fsyncs the sidecar", "disposition": "fixed", "thread_url": null },
+              { "severity": "medium", "summary": "Derived unblocking is untested for edges that cross lane boundaries", "disposition": "deferred", "thread_url": null },
+              { "severity": "low", "summary": "Envelope validator silently tolerates unknown payload keys", "disposition": "wont-fix", "thread_url": null },
+              { "severity": "medium", "summary": "applied:false events vanish from the status envelope on replay", "disposition": "escalated", "thread_url": null }
+            ]
+          },
+          "note": "round 2 verdict: findings — triage in flight"
+        },
+        {
+          "id": "wgclw.30.2",
+          "title": "CLI verbs over the fold: create, log, status, render, check, finish",
+          "status": "queued"
+        },
+        {
+          "id": "wgclw.30.5",
+          "title": "Emit-back envelope + condition vocabulary",
+          "status": "blocked",
+          "blocked_on": ["wgclw.30.1"],
+          "note": "needs the fold contract to settle first"
+        }
+      ]
+    },
+    {
+      "id": "lane-dashboard",
+      "name": "Lane 3 — dashboard renderer",
+      "agent": "lt-dashboard",
+      "model": "sonnet",
+      "effort": "high",
+      "status": "in-progress",
+      "queue": [
+        {
+          "id": "wgclw.30.3",
+          "title": "grind render: deterministic projection from folded state to self-contained HTML",
+          "status": "in-progress",
+          "note": "prototyping session — this board is rendering its own fixture"
+        },
+        {
+          "id": "wgclw.30.4",
+          "title": "Observation routing: ERROR → attention, LESSON → lessons panel",
+          "status": "pr-open",
+          "pr": { "number": 345, "url": null }
+        },
+        {
+          "id": "wgclw.30.6",
+          "title": "Staleness watchdog: grind check + watchdog arming guidance",
+          "status": "merged",
+          "pr": { "number": 342, "url": null },
+          "note": "post-merge teardown leg outstanding"
+        }
+      ]
+    },
+    {
+      "id": "lane-watchers",
+      "name": "Lane 4 — watchers & probes",
+      "agent": "lt-watchers-2",
+      "model": "sonnet",
+      "effort": "low",
+      "status": "waiting-human",
+      "queue": [
+        {
+          "id": "wgclw.31.2",
+          "title": "Verdict-aware PR watcher with a written precedence contract",
+          "status": "waiting-human",
+          "pr": { "number": 346, "url": null },
+          "review": {
+            "kind": "codex",
+            "round": 4,
+            "open_threads": 0,
+            "wont_fix_count": 2,
+            "stalemate": true,
+            "detail": "codex round 4 re-raised 2 wont-fix items as new threads on unchanged head 9f31c2e — stalemate declared per the review skill's §3 rule. Awaiting the human's merge ruling."
+          },
+          "why": "Stalemate ruling needed: accept the reviewer's re-raise and rework, or merge over it with a recorded rationale."
+        },
+        {
+          "id": "wgclw.31.7",
+          "title": "Reconcile the shutdown ledger against the tracker directly when the grind's own projection disagrees with bead state at teardown time",
+          "status": "queued"
+        }
+      ]
+    },
+    {
+      "id": "lane-handoff",
+      "name": "Lane 5 — handoff & skill integration",
+      "agent": "lt-handoff",
+      "model": "sonnet",
+      "effort": "medium",
+      "status": "blocked",
+      "queue": [
+        {
+          "id": "disc-2",
+          "title": "Amend the renderer spec's UX section with the chosen prototype design",
+          "status": "queued",
+          "note": "surfaced by the .30.3 prototyping session"
+        },
+        {
+          "id": "wgclw.30.7",
+          "title": "SKILL.md integration: retire the bookkeeper and ORCHESTRATION-STATE.md",
+          "status": "blocked",
+          "blocked_on": ["wgclw.31.2"],
+          "note": "chain: wgclw.30.7 → wgclw.31.2 (waiting-human) — blocked_chain evidence"
+        }
+      ]
+    },
+    {
+      "id": "lane-port",
+      "name": "Lane 6 — portable layer",
+      "agent": "lt-port",
+      "model": "sonnet",
+      "effort": "medium",
+      "status": "standing-down",
+      "queue": []
+    },
+    {
+      "id": "lane-docs",
+      "name": "Lane 7 — docs & hardening",
+      "agent": "lt-docs",
+      "model": "haiku",
+      "effort": "low",
+      "status": "in-review",
+      "queue": [
+        {
+          "id": "disc-3",
+          "title": "Serializer hardening: a work-item title containing \\\"\u003c/script\u003e\\\" must render as inert text, never execute",
+          "status": "queued",
+          "note": "this very title is the serialization-contract probe"
+        },
+        {
+          "id": "wgclw.32.1",
+          "title": "User guide: run the opinionated agentic SDLC on the grind runtime — configuration, watchers, and overnight operations",
+          "status": "in-review",
+          "pr": { "number": 51, "url": "https://git.internal.example/scott/agents-config/pull/51" },
+          "review": {
+            "kind": "human",
+            "round": 1,
+            "open_threads": 1,
+            "wont_fix_count": 0,
+            "stalemate": false,
+            "detail": "human round 1: 1 open thread — tighten the watchdog arming prose; the dumb-poller rationale is buried in a footnote."
+          },
+          "note": "explicit PR url override — non-GitHub remote"
+        }
+      ]
+    }
+  ],
+  "parking_lot": [
+    {
+      "id": "disc-1",
+      "title": "Unify the prgroom and workcli envelope validators behind one shared module",
+      "kind": "discovered-work",
+      "note": "surfaced by PR #341 review; parked pending triage"
+    },
+    {
+      "id": "wgclw.33.1",
+      "title": "Supervised installer backfill sweep across both work machines",
+      "kind": "human-gated",
+      "note": "needs the human in the room"
+    },
+    {
+      "id": "uxns2.4",
+      "title": "PORT-track skill parity audit for Gemini and OpenCode",
+      "kind": "later-wave",
+      "note": "wave-2 scope, parked at partition"
+    },
+    {
+      "id": "vaac.9",
+      "title": "Merge-guard judge prompt v3 tuning against the last twenty rulings",
+      "kind": "deferred",
+      "note": "current judge passing; revisit post-M3"
+    }
+  ],
+  "observations": [
+    {
+      "ts": "2026-07-19T01:14:30Z",
+      "level": "LESSON",
+      "message": "Six codex rounds on PR #341 each found real defects — a high round count is reviewer health, not loop smell; stalemate is the only bad signal.",
+      "item": "wgclw.30.6",
+      "lane": "lane-dashboard"
+    },
+    {
+      "ts": "2026-07-19T02:31:19Z",
+      "level": "LESSON",
+      "message": "Hand-merged state drifted twice when lieutenants reported deltas out of order; refold-from-zero makes report order irrelevant.",
+      "lane": "lane-runtime"
+    },
+    {
+      "ts": "2026-07-19T02:58:11Z",
+      "level": "INFO",
+      "message": "lane_handover recorded on lane-watchers: lt-watchers → lt-watchers-2 (haiku·low → sonnet·low), reason: context exhaustion.",
+      "lane": "lane-watchers"
+    },
+    {
+      "ts": "2026-07-19T03:40:02Z",
+      "level": "WARN",
+      "message": "stale_item condition fired for disc-2 — no events referencing it for 47m (threshold 45m).",
+      "item": "disc-2",
+      "lane": "lane-handoff"
+    },
+    {
+      "ts": "2026-07-19T03:52:44Z",
+      "level": "ERROR",
+      "message": "Anomaly: review_round head_sha 4b1a9d0 disagrees with review_verdict head_sha 4b1a9d1 for wgclw.30.1 round 2 — recorded applied:false; counts use the latest event.",
+      "item": "wgclw.30.1",
+      "lane": "lane-runtime"
+    }
+  ],
+  "lessons": [
+    {
+      "ts": "2026-07-19T01:14:30Z",
+      "message": "Six codex rounds on PR #341 each found real defects — a high round count is reviewer health, not loop smell; stalemate is the only bad signal.",
+      "item": "wgclw.30.6"
+    },
+    {
+      "ts": "2026-07-19T02:31:19Z",
+      "message": "Hand-merged state drifted twice when lieutenants reported deltas out of order; refold-from-zero makes report order irrelevant.",
+      "lane": "lane-runtime"
+    }
+  ],
+  "merged_ledger": [
+    { "pr": 338, "title": "Open the dashboard exactly once via the platform opener", "sha": "8c21de4", "lane": "lane-installer" },
+    { "pr": 339, "title": "Receipt-tracked uv tool installs with prune-on-retire", "sha": "b07a1c9", "lane": "lane-installer" },
+    { "pr": 342, "title": "Staleness watchdog: grind check + watchdog arming guidance", "sha": "9f31c2e", "lane": "lane-dashboard" }
+  ],
+  "closed_ledger": [
+    { "id": "wgclw.29.9", "title": "Spike: incremental fold mode", "pr": 337, "reason": "superseded — refold-from-zero won on simplicity" }
+  ]
+};
+</script>
+
+<script>
+"use strict";
+
+// ---------- status vocabulary + icons (all nine statuses, neutral fallback) ----------
+const KNOWN_STATUSES = ["queued","in-progress","pr-open","in-review","merged","done","blocked","waiting-human","standing-down"];
+function statusCls(status) {
+  const k = String(status || "").toLowerCase();
+  return KNOWN_STATUSES.indexOf(k) >= 0 ? "st-" + k : "st-unknown";
+}
+const ICONS = {
+  "queued": '<circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/>',
+  "in-progress": '<circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 2.5A5.5 5.5 0 0 1 8 13.5Z" fill="currentColor"/>',
+  "pr-open": '<circle cx="5" cy="4.5" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="5" cy="11.5" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="8" r="2" fill="currentColor"/><path d="M5 6.5v3M6.8 8h2.2" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  "in-review": '<path d="M1.8 8C4 4.8 12 4.8 14.2 8 12 11.2 4 11.2 1.8 8Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="8" cy="8" r="1.9" fill="currentColor"/>',
+  "merged": '<circle cx="5" cy="4" r="1.9" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="5" cy="12" r="1.9" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="11.5" cy="12" r="1.9" fill="currentColor"/><path d="M5 6v4M5 9.5c0 1.6 2 1 4 1.4" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  "done": '<circle cx="8" cy="8" r="6.4" fill="currentColor"/><path d="M5.1 8.3l2 2 3.8-4.2" fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
+  "blocked": '<circle cx="8" cy="8" r="5.8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4.2 11.8 11.8 4.2" stroke="currentColor" stroke-width="2"/>',
+  "waiting-human": '<circle cx="8" cy="5" r="2.5" fill="currentColor"/><path d="M3.2 13.4c.4-2.8 2.4-4.2 4.8-4.2s4.4 1.4 4.8 4.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  "standing-down": '<path d="M4.5 14V2.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4.5 3.2h7.6l-2.2 2.9 2.2 2.9H4.5Z" fill="currentColor"/>',
+  "unknown": '<circle cx="8" cy="8" r="5.8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6.4 6.3c.3-1.1 1-1.7 1.7-1.7 1 0 1.7.6 1.7 1.5 0 1.3-1.7 1.5-1.7 2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="8.1" cy="11.5" r="1" fill="currentColor"/>'
+};
+function iconName(status) {
+  const k = String(status || "").toLowerCase();
+  return KNOWN_STATUSES.indexOf(k) >= 0 ? k : "unknown";
+}
+function iconSvg(status, size) {
+  const s = size || 14;
+  return '<svg class="icon" width="' + s + '" height="' + s + '" viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
+    (ICONS[iconName(status)] || ICONS.unknown) + '</svg>';
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// Explicit url wins (scheme-checked); otherwise derive from the repo slug; else plain text.
+function safeHref(url) {
+  try {
+    const scheme = new URL(url, "https://github.com").protocol;
+    return (scheme === "https:" || scheme === "http:") ? url : null;
+  } catch (e) { return null; }
+}
+function prUrl(pr, repo) {
+  if (!pr) return null;
+  if (typeof pr.url === "string" && pr.url.trim() !== "") {
+    const safe = safeHref(pr.url.trim());
+    if (safe) return safe;
+  }
+  if (repo) return "https://github.com/" + repo + "/pull/" + pr.number;
+  return null;
+}
+function prLink(pr, repo) {
+  if (!pr) return "";
+  const url = prUrl(pr, repo);
+  const label = "#" + escapeHtml(pr.number);
+  return url
+    ? '<a class="pr-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener">' + label + '</a>'
+    : '<span class="pr-plain">' + label + '</span>';
+}
+
+// Review bits: round badge (hidden at done — a high round count survives as a
+// LESSON, not a badge on finished work), stalemate flag, full-label open-thread
+// pill with the review detail as its tooltip, wont-fix count.
+function reviewBits(review, itemStatus) {
+  if (!review) return "";
+  let out = "";
+  const stale = !!review.stalemate;
+  if (String(itemStatus).toLowerCase() !== "done") {
+    out += '<span class="pill pill-round' + (stale ? " is-stalemate" : "") + '">' +
+      escapeHtml(review.kind || "review") + " · round " + (Number(review.round) || 0) + "</span>";
+  }
+  if (stale) out += '<span class="pill pill-stalemate">stalemate</span>';
+  const n = Number(review.open_threads) || 0;
+  if (n > 0) {
+    const label = n === 1 ? "1 open thread" : n + " open threads";
+    const tip = review.detail ? ' title="' + escapeHtml(review.detail) + '"' : "";
+    out += '<span class="pill pill-threads"' + tip + ">" + label + "</span>";
+  }
+  const wf = Number(review.wont_fix_count) || 0;
+  if (wf > 0) out += '<span class="pill pill-wontfix">' + wf + (wf === 1 ? " wont-fix" : " wont-fix items") + "</span>";
+  return out;
+}
+
+const KNOWN_KINDS = ["discovered-work","human-gated","later-wave","deferred"];
+function kindChip(kind) {
+  const k = String(kind || "").toLowerCase();
+  const cls = KNOWN_KINDS.indexOf(k) >= 0 ? "kind-" + k : "kind-unknown";
+  return '<span class="kind ' + cls + '">' + escapeHtml(kind || "unknown") + "</span>";
+}
+function sevChip(sev) {
+  const k = String(sev || "").toLowerCase();
+  const cls = ["high","medium","low"].indexOf(k) >= 0 ? "sev-" + k : "sev-unknown";
+  return '<span class="sev ' + cls + '">' + escapeHtml(sev || "?") + "</span>";
+}
+function dispTag(d) {
+  const k = String(d || "").toLowerCase();
+  return '<span class="disp disp-' + escapeHtml(k) + '">' + escapeHtml(d || "") + "</span>";
+}
+
+// ---------- per-lane collapse, persisted (done lanes auto-collapse by default) ----------
+const LS_COLLAPSE = "grindproto.a.collapsed.v1";
+let collapsePrefs = {};
+try { collapsePrefs = JSON.parse(localStorage.getItem(LS_COLLAPSE) || "{}") || {}; } catch (e) { collapsePrefs = {}; }
+function laneById(id) { return (STATE.lanes || []).find(l => l.id === id); }
+function isCollapsed(lane) {
+  if (Object.prototype.hasOwnProperty.call(collapsePrefs, lane.id)) return !!collapsePrefs[lane.id];
+  return String(lane.status).toLowerCase() === "done";
+}
+function toggleLane(id) {
+  const lane = laneById(id);
+  if (!lane) return;
+  collapsePrefs[id] = !isCollapsed(lane);
+  try { localStorage.setItem(LS_COLLAPSE, JSON.stringify(collapsePrefs)); } catch (e) {}
+  renderBoard();
+}
+
+// ---------- renderers ----------
+function renderItemExpanded(q) {
+  const cls = statusCls(q.status);
+  let html = '<article class="item ' + cls + '">' +
+    '<div class="item-top">' + iconSvg(q.status) +
+      '<span class="item-id">' + escapeHtml(q.id) + "</span>" + prLink(q.pr, STATE.repo) + "</div>" +
+    '<div class="item-title">' + escapeHtml(q.title) + "</div>" +
+    '<div class="item-badges"><span class="pill ' + cls + '">' + escapeHtml(q.status) + "</span>" +
+      reviewBits(q.review, q.status) + "</div>";
+  if (q.why) html += '<div class="item-why"><strong>Awaiting human:</strong> ' + escapeHtml(q.why) + "</div>";
+  if (q.note) html += '<div class="item-note">' + escapeHtml(q.note) + "</div>";
+  if (q.blocked_on && q.blocked_on.length) {
+    html += '<div class="item-blockers">blocked on ' +
+      q.blocked_on.map(b => '<span class="chip chip-blocker">' + escapeHtml(b) + "</span>").join(" ") + "</div>";
+  }
+  if (q.review && q.review.findings && q.review.findings.length) {
+    html += '<ul class="findings">' + q.review.findings.map(f =>
+      "<li>" + sevChip(f.severity) + "<span>" + escapeHtml(f.summary) + "</span>" + dispTag(f.disposition) + "</li>"
+    ).join("") + "</ul>";
+  }
+  return html + "</article>";
+}
+
+// Collapsed anatomy: status icon + work-item id + title + PR# — notes and the
+// agent/activity line dropped, column at exactly half width.
+function renderItemSlim(q) {
+  return '<div class="item-slim ' + statusCls(q.status) + '">' + iconSvg(q.status, 12) +
+    '<span class="item-id">' + escapeHtml(q.id) + "</span>" +
+    '<span class="t" title="' + escapeHtml(q.title) + '">' + escapeHtml(q.title) + "</span>" +
+    prLink(q.pr, STATE.repo) + "</div>";
+}
+
+function renderBoard() {
+  const board = document.getElementById("board");
+  board.innerHTML = "";
+  (STATE.lanes || []).forEach(lane => {
+    const collapsed = isCollapsed(lane);
+    const cls = statusCls(lane.status);
+    const sec = document.createElement("section");
+    sec.className = "lane " + cls + (collapsed ? " collapsed" : "");
+    sec.setAttribute("aria-label", lane.name);
+    const bodyId = "lane-body-" + lane.id;
+    const items = (lane.queue || []);
+    const body = items.length
+      ? items.map(q => collapsed ? renderItemSlim(q) : renderItemExpanded(q)).join("")
+      : '<div class="queue-empty">queue empty — wrapping up</div>';
+    sec.innerHTML =
+      '<header class="lane-head">' +
+        '<span class="lane-icon">' + iconSvg(lane.status, 16) + "</span>" +
+        '<div class="lane-titles"><h2>' + escapeHtml(lane.name) + "</h2>" +
+        '<div class="lane-sub">' + escapeHtml(lane.agent) + " · " + escapeHtml(lane.model || "") + " · " + escapeHtml(lane.effort || "") + " effort</div></div>" +
+        '<span class="pill ' + cls + '">' + escapeHtml(lane.status) + "</span>" +
+        '<button type="button" class="lane-toggle" aria-expanded="' + (collapsed ? "false" : "true") + '" aria-controls="' + bodyId + '" ' +
+          'title="' + (collapsed ? "Expand " : "Collapse ") + escapeHtml(lane.name) + '" data-lane="' + escapeHtml(lane.id) + '">' +
+          (collapsed ? "»" : "«") + "</button>" +
+      "</header>" +
+      '<div class="lane-body" id="' + bodyId + '">' + body + "</div>";
+    board.appendChild(sec);
+  });
+  board.querySelectorAll(".lane-toggle").forEach(btn =>
+    btn.addEventListener("click", () => toggleLane(btn.getAttribute("data-lane"))));
+}
+
+function renderDock() {
+  const obs = (STATE.observations || []).slice().reverse();
+  document.getElementById("obs-count").textContent = obs.length;
+  document.getElementById("obs-list").innerHTML = obs.map(o =>
+    "<li><span class='ts'>" + escapeHtml((o.ts || "").replace("T", " ")) + "</span>" +
+    '<span class="lvl lvl-' + escapeHtml(o.level || "INFO") + '">' + escapeHtml(o.level || "INFO") + "</span>" +
+    "<span>" + escapeHtml(o.message) +
+      (o.item ? ' <span class="chip">' + escapeHtml(o.item) + "</span>" : "") + "</span></li>"
+  ).join("");
+
+  const parked = STATE.parking_lot || [];
+  document.getElementById("park-count").textContent = parked.length;
+  document.getElementById("parking-list").innerHTML = parked.map(p =>
+    "<li>" + kindChip(p.kind) +
+    '<span class="pt"><span class="pid">' + escapeHtml(p.id) + "</span>" + escapeHtml(p.title) +
+    (p.note ? '<span class="pn">' + escapeHtml(p.note) + "</span>" : "") + "</span></li>"
+  ).join("");
+
+  const lessons = STATE.lessons || [];
+  document.getElementById("lesson-count").textContent = lessons.length;
+  document.getElementById("lesson-list").innerHTML = lessons.map(l =>
+    "<li><span class='lts'>" + escapeHtml(l.ts || "") + "</span>" +
+    (l.item ? '<span class="litem">' + escapeHtml(l.item) + "</span> " : "") +
+    escapeHtml(l.message) + "</li>"
+  ).join("");
+}
+
+function render() {
+  document.title = (STATE.title || "Grind") + " — Control Room";
+  document.getElementById("title").textContent = STATE.title || "Grind";
+  document.getElementById("mission").textContent = STATE.mission || "";
+  document.getElementById("repo").textContent = STATE.repo || "no repo slug";
+  // From state, never a wall clock: the board is as fresh as its log.
+  document.getElementById("last-generated").textContent = "log @ " + (STATE.last_generated || "—");
+
+  const pause = STATE.pause;
+  const pb = document.getElementById("pause-banner");
+  if (pause && pause.paused) {
+    pb.classList.add("show");
+    document.getElementById("pause-reason").textContent = pause.reason || "";
+    document.getElementById("pause-checklist").innerHTML =
+      (pause.resume_checklist || []).map(c => "<li>" + escapeHtml(c) + "</li>").join("");
+  } else { pb.classList.remove("show"); }
+
+  const attn = STATE.attention || [];
+  const ab = document.getElementById("attention-banner");
+  const al = document.getElementById("attention-list");
+  if (attn.length) {
+    ab.classList.add("show");
+    al.innerHTML = attn.map(a =>
+      "<li>" + escapeHtml(a.text) + (a.item ? '<span class="attn-item-chip">' + escapeHtml(a.item) + "</span>" : "") + "</li>"
+    ).join("");
+  } else { ab.classList.remove("show"); al.innerHTML = ""; }
+
+  renderBoard();
+  renderDock();
+}
+
+render();
+
+// ---------- auto-refresh (15s, visible toggle, persisted; reload is a no-op in this static prototype) ----------
+const REFRESH_SECONDS = 15;
+const LS_REFRESH = "grindproto.a.autorefresh.v1";
+const toggle = document.getElementById("refresh-toggle");
+const statusEl = document.getElementById("refresh-status");
+let countdown = REFRESH_SECONDS, tickTimer = null;
+function updateStatusText() { statusEl.textContent = toggle.checked ? ("on — " + countdown + "s") : "off"; }
+function startTicking() {
+  if (tickTimer) clearInterval(tickTimer);
+  countdown = REFRESH_SECONDS; updateStatusText();
+  tickTimer = setInterval(() => {
+    countdown -= 1;
+    if (countdown <= 0) { location.reload(); return; }
+    updateStatusText();
+  }, 1000);
+}
+function stopTicking() { if (tickTimer) clearInterval(tickTimer); tickTimer = null; updateStatusText(); }
+let savedRefresh = null;
+try { savedRefresh = localStorage.getItem(LS_REFRESH); } catch (e) { savedRefresh = null; }
+toggle.checked = savedRefresh === null ? true : savedRefresh === "true";
+toggle.addEventListener("change", () => {
+  try { localStorage.setItem(LS_REFRESH, toggle.checked ? "true" : "false"); } catch (e) {}
+  if (toggle.checked) startTicking(); else stopTicking();
+});
+if (toggle.checked) startTicking(); else stopTicking();
+</script>
+
+</body>
+</html>

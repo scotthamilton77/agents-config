@@ -1,12 +1,13 @@
 # Grind dashboard renderer — design
 
 **Bead:** `agents-config-wgclw.30.3`
-**Status:** draft — UI design intentionally open pending a prototyping session
+**Status:** accepted — visual design chosen (UX §9); implementation proceeds under `.30.3`
 
 Companion to the event-sourced grind runtime spec (same date), which defines
 the event log, fold, and `grind` CLI this renderer projects from. This spec is
-split out so the visual design can be explored through UI prototypes before
-implementation; the *contract* below is settled, the *look* is not.
+split out so the visual design could be explored through UI prototypes before
+implementation; the contract below is settled, and the chosen look is
+recorded in UX §9.
 
 ## Problem
 
@@ -70,11 +71,20 @@ New, from the runtime spec:
    "1 open"), with a `title`-attribute tooltip carrying `review.detail`.
 8. **Review round badge hides at `done`** — a high round count survives as a
    LESSON, not a badge on finished work.
+9. **Chosen visual design — "Control Room"**: column-per-lane kanban board,
+   icon-forward status (large glyphs, colored column-top strips, small text
+   pills), control-room density, with the parking lot / lessons / observation
+   log docked as a panel strip beneath the board — and a **mission line in
+   the header**: the topbar carries `state.mission` as a muted full-width
+   line under the title row. Reference prototype:
+   `docs/prototypes/grind-dashboard/variation-a.html` (mission header
+   included); shared fixture: `docs/prototypes/grind-dashboard/fixture-state.json`.
 
 ## Input
 
 The renderer consumes the fold's `State` (runtime spec) — it never reads
-`events.jsonl`. Fields it draws from: grind header (title, repo, pause),
+`events.jsonl`. Fields it draws from: grind header (title, repo, mission,
+pause),
 lanes with derived statuses and queues, per-item review state (kind, round,
 derived `open_threads` / `wont_fix_count`, stalemate flag, `detail`),
 parking lot with kinds, attention list, lessons, `last_generated`.
@@ -83,23 +93,19 @@ Review counts and item statuses arrive **pre-derived** — the renderer
 computes nothing about the domain, it only lays out typed fields. Any place
 the current template parses prose out of a note is a defect to delete.
 
-## Prototyping plan (open — the follow-up session)
+## Prototypes
 
-The visual design will be chosen from prototypes, not specified here. A
-follow-up session uses the `prototype` skill (UI-variations branch) to
-produce **3–4 radically different single-file variations**, all rendering the
-same fixture state, toggleable from one page:
+Three radically different single-file variations live at
+`docs/prototypes/grind-dashboard/` (chooser: `index.html`; per-variation
+design theses: `README.md`), all rendering the shared `fixture-state.json`.
+The chosen design is UX §9's Control Room (variation A, mission header
+included); the other variations are retained for reference.
 
-- Candidate axes to differentiate: column-board vs. row-per-lane layouts;
-  icon-forward vs. text-forward status; density (control-room vs. calm);
-  where the parking lot / lessons / attention live relative to lanes.
-- **Fixture state** (built once, shared by prototypes and later by CI): all
-  nine statuses represented, every parking kind, an active review with
-  findings, a stalemate, a paused banner variant, ≥6 lanes (to exercise
-  overflow), long titles, and a `</script>`-bearing title (to prove the
-  serialization contract).
-- Scott picks a winner (or a merge); the choice is recorded by amending this
-  spec's UX section, and implementation proceeds under `.30.3`.
+The **fixture state** is built once and shared by the prototypes and the CI
+smoke test: all nine statuses represented, every parking kind, an active
+review with findings, a stalemate, a paused banner variant, ≥6 lanes (to
+exercise overflow), long titles, and a `</script>`-bearing title (to prove
+the serialization contract).
 
 ## Testing
 
@@ -113,6 +119,5 @@ same fixture state, toggleable from one page:
 ## Continuations
 
 - none beyond the existing bead — `agents-config-wgclw.30.3` implements this
-  spec once the prototyping session amends the UX section with the chosen
-  design. The prototyping session itself is session-work, not a bead: it
-  starts from this spec and the `prototype` skill.
+  spec; the chosen visual design is recorded in UX §9 and referenced from
+  `docs/prototypes/grind-dashboard/`.
