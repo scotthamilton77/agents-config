@@ -359,12 +359,17 @@
     toggle.textContent = "Show blast radius";
     panelEl.appendChild(toggle);
 
-    // Shared close path for the toggle's own "Hide" click, the overlay's own
-    // close button, and Escape (wireDrillPanelClose below) — every close
-    // fully destroys the sonar render and removes the overlay, rather than
-    // merely hiding it, so the "fresh container per open" contract holds
-    // for every trigger, not just a drawer rebuild.
-    function closeOverlay() {
+    // The one owner of blast-overlay teardown (round-2 fix): every close
+    // trigger — this toggle's own "Hide" click, the overlay's own close
+    // button, Escape (wireDrillPanelClose below), a fresh openDrill call,
+    // and the drawer's own Close button — calls this same function via
+    // `drillState.closeBlastOverlay`, so none of them can strand the
+    // overlay mounted over the canvas with its toggle left showing a stale
+    // "pressed" state. Assigned once, right away, rather than only when the
+    // overlay opens — safe to call at any point while this drill panel is
+    // showing, since the guards below are no-ops when the overlay was never
+    // opened (sonarHandle/sonarOverlayEl already null).
+    function closeBlastOverlay() {
       if (drillState.sonarHandle && typeof drillState.sonarHandle.destroy === "function") {
         drillState.sonarHandle.destroy();
       }
@@ -373,15 +378,15 @@
         drillState.sonarOverlayEl.parentNode.removeChild(drillState.sonarOverlayEl);
       }
       drillState.sonarOverlayEl = null;
-      drillState.closeSonarOverlay = null;
       toggle.setAttribute("aria-pressed", "false");
       toggle.textContent = "Show blast radius";
     }
+    drillState.closeBlastOverlay = closeBlastOverlay;
 
     toggle.addEventListener("click", function () {
       var expanded = toggle.getAttribute("aria-pressed") === "true";
       if (expanded) {
-        closeOverlay();
+        closeBlastOverlay();
         return;
       }
       // Same success-gated-UI-state contract as mountView: a missing sonar
@@ -402,7 +407,7 @@
       closeBtn.type = "button";
       closeBtn.setAttribute("class", "viz-btn viz-blast-overlay-close");
       closeBtn.textContent = "Close blast radius";
-      closeBtn.addEventListener("click", closeOverlay);
+      closeBtn.addEventListener("click", closeBlastOverlay);
       overlay.appendChild(closeBtn);
 
       var mount = document.createElement("div");
@@ -412,7 +417,6 @@
 
       rootEl.appendChild(overlay);
       drillState.sonarOverlayEl = overlay;
-      drillState.closeSonarOverlay = closeOverlay;
       drillState.sonarHandle = window.vizSonar.render(mount, scene, fileNode.path);
 
       toggle.setAttribute("aria-pressed", "true");
@@ -449,21 +453,14 @@
   ) {
     return function (fileNode) {
       // A prior file's (or the same file's, on a weight-change refresh)
-      // sonar render is about to be discarded — destroy it explicitly rather
-      // than relying on the panel DOM removal below (spec §4.2: destroy the
-      // outgoing content, no leaked marks when recentering/reopening). The
-      // blast-radius overlay (round-2 fix) lives under `rootEl`, not
-      // `panelEl`, so wiping the panel's children alone would leave it
-      // behind — remove it explicitly too.
-      if (drillState.sonarHandle && typeof drillState.sonarHandle.destroy === "function") {
-        drillState.sonarHandle.destroy();
+      // sonar render/overlay is about to be discarded — the one owner
+      // (closeBlastOverlay, round-2 fix) tears down the sonar handle and the
+      // overlay element, which lives under `rootEl`, not `panelEl`, so
+      // wiping the panel's children below alone would leave it behind.
+      if (typeof drillState.closeBlastOverlay === "function") {
+        drillState.closeBlastOverlay();
       }
-      drillState.sonarHandle = null;
-      if (drillState.sonarOverlayEl && drillState.sonarOverlayEl.parentNode) {
-        drillState.sonarOverlayEl.parentNode.removeChild(drillState.sonarOverlayEl);
-      }
-      drillState.sonarOverlayEl = null;
-      drillState.closeSonarOverlay = null;
+      drillState.closeBlastOverlay = null;
 
       // Remember the open node so a weight change can recompute the
       // weight-dependent breakdown in place (spec §4.5) — see onWeightChange.
@@ -479,6 +476,13 @@
       closeBtn.setAttribute("class", "viz-btn");
       closeBtn.textContent = "Close";
       closeBtn.addEventListener("click", function () {
+        // Round-2 fix: the drawer's own Close button previously did none of
+        // the blast-overlay teardown the other four triggers did, stranding
+        // the overlay mounted over the canvas with its owning toggle now
+        // invisible and still reporting aria-pressed="true".
+        if (typeof drillState.closeBlastOverlay === "function") {
+          drillState.closeBlastOverlay();
+        }
         drillState.node = null;
         panelEl.hidden = true;
         onOpenChange(false);
@@ -614,8 +618,8 @@
       // (spec: "drawer stays open beside it") — the first Escape closes
       // just the overlay; a second Escape then closes the drawer, same as
       // before the overlay existed.
-      if (drillState.sonarOverlayEl && typeof drillState.closeSonarOverlay === "function") {
-        drillState.closeSonarOverlay();
+      if (drillState.sonarOverlayEl && typeof drillState.closeBlastOverlay === "function") {
+        drillState.closeBlastOverlay();
         return;
       }
       if (!panelEl.hidden) {
@@ -787,14 +791,19 @@
     // null when closed) so a weight change can refresh the open breakdown;
     // `sonarHandle` holds the currently-mounted sonar drill (or null), so it
     // can be torn down before the panel rebuilds (spec §4.2). `sonarOverlayEl`
-    // / `closeSonarOverlay` (round-2 fix) track the full-canvas blast-radius
-    // overlay, which lives outside the drawer under `#viz-root` and so needs
-    // its own explicit teardown (see makeOpenDrill and wireDrillPanelClose).
+    // tracks the full-canvas blast-radius overlay, which lives outside the
+    // drawer under `#viz-root` and so needs its own explicit teardown.
+    // `closeBlastOverlay` (round-2 fix) is the ONE teardown function every
+    // close trigger calls — the toggle's own "Hide" click, the overlay's own
+    // close button, Escape, a fresh openDrill call, and the drawer's own
+    // Close button (see appendSonarAffordance, makeOpenDrill, and
+    // wireDrillPanelClose) — so none of the five can strand the overlay
+    // mounted with its toggle left in a stale pressed state.
     var drillState = {
       node: null,
       sonarHandle: null,
       sonarOverlayEl: null,
-      closeSonarOverlay: null
+      closeBlastOverlay: null
     };
 
     // Drawer conversion (fidelity F3): the drawer never overlays the diagram

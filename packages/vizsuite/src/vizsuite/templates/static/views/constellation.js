@@ -111,8 +111,8 @@
   var REHEAT_ALPHA_DECAY = 0.1;
 
   // ---- Reset view transition (round-2 fix): shared by the zoom-transform
-  // transition and the node-position CSS transition (.viz-constellation-
-  // resetting, scene.css) so both animate over the same window. ----
+  // transition and the rAF node/label/edge tween (createResetTween below) so
+  // both animate over the same window — the ONLY place this duration lives. ----
   var RESET_TRANSITION_MS = 400;
   // Double-click un-pin window (ms): a node click's activation (dir focus /
   // file drill) is deferred by this window and cancelled when the un-pin
@@ -428,6 +428,60 @@
     return { nodes: nodes, edges: edges, droppedDirCount: droppedDirCount };
   }
 
+  // ---- Shared force factories (round-2 fix: single-source the force
+  // config): the initial pre-settled layout (layoutGraph) and the drag-time
+  // localized reheat (createLocalReheat) both need a link/charge/collide
+  // force over the same node/edge shape — before this fix each built its own
+  // copy, and the reheat's copy had drifted onto stale pre-retune charge
+  // strengths (-30/-120 vs. layoutGraph's already-retuned -24/-100) with no
+  // distanceMax cap at all. One factory per force, called from both sites,
+  // so retuning a value can never again leave one call site behind. ----
+  function makeLinkForce(edges) {
+    return d3
+      .forceLink(edges)
+      .distance(function (d) {
+        return d.tether ? 18 : 60;
+      })
+      .strength(function (d) {
+        return d.tether ? 0.8 : 0.25;
+      });
+  }
+
+  function makeChargeForce() {
+    return (
+      d3
+        .forceManyBody()
+        .strength(function (d) {
+          return d.kind === "file" ? -24 : -100;
+        })
+        // Caps how far apart two nodes still push each other (round-2 fix:
+        // layout density) — without it, distant pairs keep accumulating
+        // repulsion and drift the graph's outer nodes toward the box
+        // corners.
+        .distanceMax(CHARGE_DISTANCE_MAX)
+    );
+  }
+
+  function makeCollideForce() {
+    return d3.forceCollide(function (d) {
+      return d.r + 3;
+    });
+  }
+
+  // ---- Node containment (round-2 fix): layoutGraph's own settle clamps
+  // every node into [r, side-r] once, but nothing re-clamped afterward — a
+  // drag (wireDrag) or a drag-reheat tick (createLocalReheat) can push a
+  // node past that box, and the `<svg width=side height=side>` CLIPS edges
+  // at its bounds while the node div itself renders unclipped, so a
+  // dragged/reheated node can float outside the zoom-to-fit baseline with
+  // its own edges guillotined. One shared clamp, called from every path that
+  // can move a node post-layout (drag reposition, reheat tick, reset tween),
+  // and reused here so the logic exists exactly once. ----
+  function clampToBox(node, side) {
+    node.x = Math.min(side - node.r, Math.max(node.r, node.x));
+    node.y = Math.min(side - node.r, Math.max(node.r, node.y));
+  }
+
   // ---- Pre-settled force layout (spec §4.2): runs to completion
   // synchronously, before this module ever paints a node. ----
   function layoutGraph(nodes, edges) {
@@ -446,31 +500,11 @@
       .stop()
       .force(
         "link",
-        d3
-          .forceLink(edges)
-          .id(function (d) {
-            return d.id;
-          })
-          .distance(function (d) {
-            return d.tether ? 18 : 60;
-          })
-          .strength(function (d) {
-            return d.tether ? 0.8 : 0.25;
-          })
+        makeLinkForce(edges).id(function (d) {
+          return d.id;
+        })
       )
-      .force(
-        "charge",
-        d3
-          .forceManyBody()
-          .strength(function (d) {
-            return d.kind === "file" ? -24 : -100;
-          })
-          // Caps how far apart two nodes still push each other (round-2 fix:
-          // layout density) — without it, distant pairs keep accumulating
-          // repulsion and drift the graph's outer nodes toward the box
-          // corners.
-          .distanceMax(CHARGE_DISTANCE_MAX)
-      )
+      .force("charge", makeChargeForce())
       .force("center", d3.forceCenter(side / 2, side / 2))
       // A weak per-node pull toward the box center (round-2 fix: layout
       // density) — forceCenter above only recenters the graph's
@@ -479,12 +513,7 @@
       // nodes out toward the edges.
       .force("x", d3.forceX(side / 2).strength(CENTER_FORCE_STRENGTH))
       .force("y", d3.forceY(side / 2).strength(CENTER_FORCE_STRENGTH))
-      .force(
-        "collide",
-        d3.forceCollide(function (d) {
-          return d.r + 3;
-        })
-      )
+      .force("collide", makeCollideForce())
       .alpha(1)
       .alphaDecay(1 - Math.pow(0.001, 1 / FIXED_TICKS));
 
@@ -496,8 +525,7 @@
     // barycenter toward the stage center but places no hard wall, so a
     // sparse graph can still settle a hair outside the box without this.
     nodes.forEach(function (node) {
-      node.x = Math.min(side - node.r, Math.max(node.r, node.x));
-      node.y = Math.min(side - node.r, Math.max(node.r, node.y));
+      clampToBox(node, side);
     });
 
     return side;
@@ -838,7 +866,7 @@
   // so only its neighbors visibly respond, mirroring the prototype's own
   // drag-time reheat under this module's one-shot (no persistent
   // simulation) layout contract. ----
-  function createLocalReheat(edges, entriesById, incidentByNodeId) {
+  function createLocalReheat(edges, entriesById, incidentByNodeId, side) {
     var adjacency = buildEdgeAdjacency(edges);
     var activeSim = null;
 
@@ -871,31 +899,21 @@
         .forceSimulation(subNodes)
         .alpha(REHEAT_ALPHA)
         .alphaDecay(REHEAT_ALPHA_DECAY)
-        .force(
-          "link",
-          d3
-            .forceLink(subEdges)
-            .distance(function (d) {
-              return d.tether ? 18 : 60;
-            })
-            .strength(function (d) {
-              return d.tether ? 0.8 : 0.25;
-            })
-        )
-        .force(
-          "charge",
-          d3.forceManyBody().strength(function (d) {
-            return d.kind === "file" ? -30 : -120;
-          })
-        )
-        .force(
-          "collide",
-          d3.forceCollide(function (d) {
-            return d.r + 3;
-          })
-        )
+        .force("link", makeLinkForce(subEdges))
+        // Single-sourced with layoutGraph's own charge force (round-2 fix) —
+        // this used to hardcode stale pre-retune -30/-120 strengths with no
+        // distanceMax cap, silently drifting apart from layoutGraph's already-
+        // retuned -24/-100 + CHARGE_DISTANCE_MAX.
+        .force("charge", makeChargeForce())
+        // Deliberately NO "center"/"x"/"y" force here: a local reheat must
+        // only re-orient the dragged node's own 1-hop neighborhood, never
+        // drag it toward the global layout center the way the full settle
+        // does — that would recenter the neighborhood instead of just
+        // settling it around the node that moved.
+        .force("collide", makeCollideForce())
         .on("tick", function () {
           subNodes.forEach(function (n) {
+            clampToBox(n, side);
             var subEntry = entriesById[n.id];
             if (!subEntry) {
               return;
@@ -919,13 +937,21 @@
     // Called on every drag-move so a long-held drag keeps the neighborhood
     // warm instead of cooling to alphaMin mid-gesture (the sub-simulation's
     // own timer ticks independently of pointer events, but only while its
-    // alpha stays above alphaMin).
+    // alpha stays above alphaMin). Round-2 fix: at alphaDecay 0.1 the sub-sim
+    // hits alphaMin — and its "end" handler nulls activeSim — after ~0.9s of
+    // pointer stillness; a drag held longer than that used to freeze the
+    // neighborhood for the rest of the gesture, since bumping `.alpha()`
+    // alone does not restart a d3 timer that has already stopped. Reviving
+    // via `start()` (rather than poking the dead sim) re-stops any stale sim
+    // and re-pins fx/fy from scratch.
     function touch(draggedNode) {
+      if (!activeSim) {
+        start(draggedNode);
+        return;
+      }
       draggedNode.fx = draggedNode.x;
       draggedNode.fy = draggedNode.y;
-      if (activeSim) {
-        activeSim.alpha(Math.max(activeSim.alpha(), REHEAT_ALPHA));
-      }
+      activeSim.alpha(Math.max(activeSim.alpha(), REHEAT_ALPHA)).restart();
     }
 
     return { start: start, touch: touch, stop: stop };
@@ -938,7 +964,7 @@
   // reads the *live* zoom scale so a drag delta (in screen px) converts back
   // to the node's own untransformed coordinate space — otherwise a dragged
   // node would drift away from the cursor at any zoom level but 1. ----
-  function wireDrag(entry, incidentLines, getScale, localReheat) {
+  function wireDrag(entry, incidentLines, getScale, localReheat, resetTween, side) {
     var node = entry.node;
     var el = entry.el;
     var startX = 0;
@@ -993,7 +1019,9 @@
         // Drag start (prototype anatomy: d3.drag's own 'start' event) —
         // reheat the dragged node's 1-hop neighborhood so the drag visibly
         // re-orients its links, without disturbing the rest of the
-        // deterministic layout.
+        // deterministic layout. A drag that starts mid-reset must take over
+        // cleanly, so cancel any in-flight reset tween first (round-2 fix).
+        resetTween.cancel();
         localReheat.start(node);
       }
       if (!dragging) {
@@ -1002,6 +1030,7 @@
       var scale = getScale();
       node.x += dx / scale;
       node.y += dy / scale;
+      clampToBox(node, side);
       startX = evt.clientX;
       startY = evt.clientY;
       localReheat.touch(node);
@@ -1039,6 +1068,86 @@
       node.y = node.origY;
       reposition();
     });
+  }
+
+  // ---- Reset-view tween (round-2 fix): replaces a CSS-transition mechanism
+  // that never actually animated (scene.css declared `transition: x1/y1/x2/
+  // y2` on the SVG `<line>` edges, but those attributes are NOT CSS-mapped
+  // geometry properties — only x/y/width/height/cx/cy/r/rx/ry are — so the
+  // declaration was inert: node/label divs glided on their real `left`/`top`
+  // transition while every edge snapped instantly, visibly detaching from
+  // its nodes). One rAF-driven tween per render, easing every node from its
+  // current (possibly displaced) position to its origX/origY, calling the
+  // same per-frame helpers the drag path uses (applyNodePosition/
+  // applyLabelPosition/updateEdgeEndpoint, plus the shared clampToBox) on
+  // EVERY frame — never just at a CSS transition's start/end — so nodes,
+  // labels, and edges stay glued together throughout. Owned by a handle with
+  // its own `cancel()` so a drag that starts mid-tween (wireDrag) or an
+  // unmount (destroy()) can tear it down cleanly instead of fighting it. ----
+  function createResetTween(entriesById, incidentByNodeId, side) {
+    var rafId = null;
+
+    function cancel() {
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    }
+
+    function easeOutCubic(t) {
+      return 1 - Math.pow(1 - t, 3);
+    }
+
+    function applyFrame(node) {
+      clampToBox(node, side);
+      var entry = entriesById[node.id];
+      if (entry) {
+        applyNodePosition(entry.el, node);
+        if (entry.labelEl) {
+          applyLabelPosition(entry.labelEl, node);
+        }
+      }
+      (incidentByNodeId[node.id] || []).forEach(function (incident) {
+        updateEdgeEndpoint(incident.lineEl, incident.role, node);
+      });
+    }
+
+    function start(nodes) {
+      cancel();
+      var origins = nodes.map(function (node) {
+        return { x: node.x, y: node.y };
+      });
+      var startTime = null;
+
+      function frame(timestamp) {
+        if (startTime === null) {
+          startTime = timestamp;
+        }
+        var t = Math.min(1, (timestamp - startTime) / RESET_TRANSITION_MS);
+        var eased = easeOutCubic(t);
+        var done = t >= 1;
+        nodes.forEach(function (node, i) {
+          if (done) {
+            // Final frame: snap exactly to the settled position and release
+            // any lingering drag-pin, rather than trusting float easing math
+            // to land on the exact value.
+            node.x = node.origX;
+            node.y = node.origY;
+            node.fx = null;
+            node.fy = null;
+          } else {
+            node.x = origins[i].x + (node.origX - origins[i].x) * eased;
+            node.y = origins[i].y + (node.origY - origins[i].y) * eased;
+          }
+          applyFrame(node);
+        });
+        rafId = done ? null : window.requestAnimationFrame(frame);
+      }
+
+      rafId = window.requestAnimationFrame(frame);
+    }
+
+    return { start: start, cancel: cancel };
   }
 
   // ---- Zoom/pan gesture filter: wheel always zooms (regardless of pointer
@@ -1344,34 +1453,18 @@
       // to its originally-settled position (origX/origY, captured right
       // after layoutGraph()) and stops any in-flight localized drag reheat,
       // in addition to the zoom-transform restore this control already did
-      // — after Reset, the view is pixel-identical to first render.
+      // — after Reset, the view is pixel-identical to first render. The
+      // node/label/edge restore runs over the same RESET_TRANSITION_MS
+      // window as the zoom-transform transition via the rAF tween
+      // (createResetTween) rather than snapping instantly.
       // `resetView` is a hoisted function declaration, so this handler can
-      // reference it even though it (and the `entries`/`edgeEntries`/
-      // `localReheat` it closes over) aren't assigned until further down
-      // this render() call — by the time a user can actually click the
-      // button, render() has long since finished executing. ----
+      // reference it even though it (and the `resetTween`/`localReheat` it
+      // closes over) aren't assigned until further down this render() call —
+      // by the time a user can actually click the button, render() has long
+      // since finished executing. ----
       function resetView() {
         localReheat.stop();
-        visual.classList.add("viz-constellation-resetting");
-        graph.nodes.forEach(function (node) {
-          node.fx = null;
-          node.fy = null;
-          node.x = node.origX;
-          node.y = node.origY;
-        });
-        entries.forEach(function (entry) {
-          applyNodePosition(entry.el, entry.node);
-          if (entry.labelEl) {
-            applyLabelPosition(entry.labelEl, entry.node);
-          }
-        });
-        edgeEntries.forEach(function (entry) {
-          updateEdgeEndpoint(entry.lineEl, "source", entry.edge.source);
-          updateEdgeEndpoint(entry.lineEl, "target", entry.edge.target);
-        });
-        window.setTimeout(function () {
-          visual.classList.remove("viz-constellation-resetting");
-        }, RESET_TRANSITION_MS);
+        resetTween.start(graph.nodes);
         d3.select(viewport)
           .transition()
           .duration(RESET_TRANSITION_MS)
@@ -1446,7 +1539,11 @@
       // One view-scoped localized-reheat controller (round-2 fix: drag
       // re-orients neighbors), shared by every node's wireDrag — see
       // createLocalReheat above.
-      var localReheat = createLocalReheat(graph.edges, entriesById, incidentByNodeId);
+      var localReheat = createLocalReheat(graph.edges, entriesById, incidentByNodeId, side);
+      // One view-scoped Reset-view tween controller (round-2 fix), shared by
+      // the Reset button (resetView above) and every node's wireDrag (which
+      // cancels it if a drag starts mid-reset) — see createResetTween above.
+      var resetTween = createResetTween(entriesById, incidentByNodeId, side);
       entries.forEach(function (entry) {
         wireDrag(
           entry,
@@ -1454,7 +1551,9 @@
           function () {
             return zoomTransform.k;
           },
-          localReheat
+          localReheat,
+          resetTween,
+          side
         );
       });
       applyEncoding(entries, heatScale, current.computeHeat);
@@ -1468,6 +1567,9 @@
           // Stop any still-settling localized drag reheat so its timer never
           // fires into a torn-down view.
           localReheat.stop();
+          // Cancel any in-flight Reset-view tween so its rAF callback never
+          // fires into a torn-down view.
+          resetTween.cancel();
           // Flush every node's still-pending deferred activation so no timer
           // fires a focus/drill into a torn-down view.
           activationGroup.cancelAll();

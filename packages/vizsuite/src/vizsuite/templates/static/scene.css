@@ -922,19 +922,6 @@ body {
   z-index: 1;
 }
 
-/* ---- Reset view transition (round-2 fix): applied only for the duration of
-   a Reset click (views/constellation.js toggles this class, then removes it
-   after RESET_TRANSITION_MS) — outside a reset, node/edge positions are set
-   directly with no transition, so drag and the drag-reheat sub-simulation
-   stay perfectly responsive. ---- */
-.viz-constellation-stage.viz-constellation-resetting .viz-constellation-node,
-.viz-constellation-stage.viz-constellation-resetting .viz-constellation-node-label {
-  transition: left 0.4s ease, top 0.4s ease;
-}
-.viz-constellation-stage.viz-constellation-resetting .viz-constellation-edge {
-  transition: x1 0.4s ease, y1 0.4s ease, x2 0.4s ease, y2 0.4s ease;
-}
-
 /* ---- Constellation legend (spec §4.5 legend completeness): rendered
    inside the view's own container (never the shared #viz-legend — see
    views/constellation.js), so every entry here always has a real referent
