@@ -992,9 +992,13 @@ def _observe_engagement(
       **supersedes a prior decline** (§4.1: an auto-decline is a fallback for a missing
       verdict — "requested but never engaged" / "engaged but never produced a terminal
       review" — so the real verdict it stood in for wins; both satisfy G_REVIEWERS, so
-      only the reported status changes). Any other engagement merely advances
-      ``requested`` / ``not_requested`` → ``in_progress`` and leaves an already-terminal
-      ``review_found`` / ``declined`` reviewer's status as-is.
+      only the reported status changes). Any other engagement merely advances a pending
+      ``requested`` reviewer to ``in_progress`` and leaves an already-terminal
+      ``review_found`` / ``declined`` reviewer's status as-is. A ``not_requested``
+      reviewer (invalidated by a push) is NOT promoted by non-terminal engagement — its
+      activity still advances ``last_review_at`` (tracking), but only a re-request or a
+      post-boundary terminal verdict lifts it out of ``not_requested``, keeping it
+      refreshable until the review window is genuinely re-established.
 
     **Idempotent in steady state.** ``terminal_reviews`` is recomputed from the full
     reviews list every poll, so a stable, already-recorded verdict reappears each
@@ -1035,7 +1039,14 @@ def _observe_engagement(
             target_status: ReviewerStatus | None = (
                 None if withdrawn else ReviewerStatus.REVIEW_FOUND
             )
-        elif reviewer.status in {ReviewerStatus.NOT_REQUESTED, ReviewerStatus.REQUESTED}:
+        elif reviewer.status is ReviewerStatus.REQUESTED:
+            # Non-terminal engagement (issue/inline comment, COMMENTED review) advances a
+            # pending REQUESTED reviewer to IN_PROGRESS. NOT_REQUESTED is deliberately
+            # EXCLUDED: an external push invalidated that reviewer, so post-push chatter
+            # must not promote them out of the refreshable set — only a re-request
+            # (rereview → REQUESTED) or a post-boundary terminal verdict (the branch above,
+            # gated by the stamped invalidation boundary) may. The comment still advances
+            # last_review_at below (activity tracking); only the status flip is withheld.
             target_status = ReviewerStatus.IN_PROGRESS
         else:
             target_status = None  # engaged but already terminal — keep current status

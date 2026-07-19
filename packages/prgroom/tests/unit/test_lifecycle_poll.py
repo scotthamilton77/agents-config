@@ -3128,3 +3128,80 @@ def test_stale_terminal_review_does_not_restore_review_found_after_external_push
     copilot = later.reviewers["copilot"]
     assert copilot.status is ReviewerStatus.NOT_REQUESTED  # not restored
     assert has_required_reviewers_to_refresh(later) is True  # rereview still sees it
+
+
+def _invalidated_reviewer(
+    *, boundary: datetime, last_review_at: datetime, last_review_id: int
+) -> dict[str, ReviewerState]:
+    """A required NOT_REQUESTED copilot post external-push flip (boundary already stamped)."""
+    return {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.NOT_REQUESTED,
+            required=True,
+            last_request_at=boundary,
+            last_review_at=last_review_at,
+            last_review_id=last_review_id,
+        )
+    }
+
+
+def test_post_boundary_comment_does_not_promote_invalidated_reviewer() -> None:
+    # Comment 3611228915. A reviewer invalidated by a push who then merely CHATS
+    # (issue/inline comment, non-terminal review) must NOT be promoted out of
+    # NOT_REQUESTED: only a re-request or a post-boundary terminal verdict may. Otherwise
+    # reviewer_needs_refresh goes false and the FIXES_PENDING pipeline skips rereview.
+    boundary = _T0  # 12:00 (the stamped invalidation boundary)
+    old_verdict = _T0 - timedelta(minutes=55)  # 11:05
+    reviewers = _invalidated_reviewer(
+        boundary=boundary, last_review_at=old_verdict, last_review_id=500
+    )
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="theirs", reviewers=reviewers)
+    post_push_comment = {
+        "id": 700,
+        "user": {"login": "copilot"},
+        "body": "just chatting after the push",
+        "created_at": "2026-06-09T12:05:00Z",
+    }
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", issue_comments=[post_push_comment]),
+        deps=_deps(_T0 + timedelta(minutes=10)),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.NOT_REQUESTED  # still invalidated
+    assert copilot.last_review_at == datetime(2026, 6, 9, 12, 5, tzinfo=UTC)  # activity tracked
+    assert has_required_reviewers_to_refresh(state) is True  # still refreshable
+
+
+def test_post_boundary_terminal_verdict_restores_invalidated_reviewer() -> None:
+    # Comment 3611228915 (the other half). A genuine post-boundary terminal verdict DOES
+    # re-establish the review window: the boundary gate admits it (verdict_at > boundary),
+    # so the reviewer returns to REVIEW_FOUND and drops out of the refreshable set.
+    boundary = _T0  # 12:00
+    old_verdict = _T0 - timedelta(minutes=55)  # 11:05
+    reviewers = _invalidated_reviewer(
+        boundary=boundary, last_review_at=old_verdict, last_review_id=500
+    )
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="theirs", reviewers=reviewers)
+    fresh_verdict = {
+        "id": 600,
+        "user": {"login": "copilot"},
+        "state": "CHANGES_REQUESTED",
+        "body": "re-reviewed the new head",
+        "submitted_at": "2026-06-09T12:05:00Z",
+    }
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", reviews=[fresh_verdict]),
+        deps=_deps(_T0 + timedelta(minutes=10)),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REVIEW_FOUND  # restored by the post-boundary verdict
+    assert copilot.last_review_at == datetime(2026, 6, 9, 12, 5, tzinfo=UTC)
+    assert has_required_reviewers_to_refresh(state) is False
