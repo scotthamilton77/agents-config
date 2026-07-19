@@ -333,4 +333,9 @@ rc_eyes_same_second=$?
 assert "an eyes reaction in the SAME second as --after is accepted (exit 0)" "[ \$rc_eyes_same_second -eq 0 ]"
 assert "same-second eyes reaction still reports signal eyes_reaction" "printf '%s' '$out' | jq -e '.signal == \"eyes_reaction\"' >/dev/null"
 
+# Stable-token guard (not prose) that the deliberate reconciliation pointer
+# to poll-copilot-review.sh's staleness bound isn't silently stripped.
+assert "cross-references poll-copilot-review.sh's staleness bound" \
+  "grep -qi 'poll-copilot-review.sh' '$SCRIPT'"
+
 exit $FAIL

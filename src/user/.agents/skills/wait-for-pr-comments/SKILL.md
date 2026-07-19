@@ -439,10 +439,13 @@ the helper's default (1) per spec decision, not a per-repo config knob.
 
 1. **Capture** `<rereview_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`
    **before** issuing the re-review request in step 2. The downstream `--after`
-   (step 3) and `--since-timestamp` (step 4) filters require the bot signal to be
-   strictly later than this value, so capturing it first bounds the prior round
-   without excluding a fast Codex response that lands while `request-rereview.sh`
-   is still returning (or in the same API-timestamp second). Capturing it after
+   (step 3) and `--since-timestamp` (step 4) filters both bound the prior round
+   against this value, but not with the same operator — step 3's start-detection
+   is `>=` (inclusive of a same-second signal), step 4's staleness bound is
+   strict `>` (exclusive); see "Same-second boundary reconciliation" below for
+   why. Capturing the timestamp before dispatch, not after, is what lets step 3
+   recognize a fast Codex response that lands while `request-rereview.sh` is
+   still returning, or in the same API-timestamp second — capturing it after
    the dispatch would discard that valid `+1` or marker comment as stale and
    count the ask as a timeout.
 
@@ -566,6 +569,22 @@ the helper's default (1) per spec decision, not a per-repo config knob.
    silent ask against the one-ask cap) even when Codex was actively
    reviewing and later posted a review or clean-pass — step 3's added
    eyes-reaction detection is what fixes that.
+
+   **Same-second boundary reconciliation:** steps 3 and
+   4 compare the SAME `<rereview_since_timestamp>` value with opposite
+   operators — step 3's start-detection is `>=`, step 4's staleness bound
+   (`--since-timestamp`'s `submitted_at > SINCE` filter) is strict `>`. This
+   is deliberate, not a bug: step 3 asks "has anything happened since the
+   ask" (missing a same-second start is the failure to avoid, so `>=`,
+   liveness-favoring), step 4 asks "is this completion trustworthy as a
+   response to the current ask, not a stale leftover from before it"
+   (false-accepting a stale signal is the failure to avoid, so strict `>`,
+   soundness-favoring). Narrow, fail-closed consequence: a
+   start signal AND a completion signal both landing in the exact same
+   second as the captured timestamp reads "started" (step 3) then "stale,
+   reject" (step 4) — one extra silent-ask round, never an unsafe merge. Do
+   not "fix" this into a single shared operator; both scripts' own headers
+   carry a short pointer back to this section, not a restatement.
 
 5. **If** a new review arrives, return to **Phase 3 (round +1)**.
 

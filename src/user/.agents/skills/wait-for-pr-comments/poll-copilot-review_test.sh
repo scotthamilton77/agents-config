@@ -615,4 +615,10 @@ out_mixed=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" 
 rc_mixed=$?
 assert "mixed Copilot+Codex --bot-reviewers does not exit 2 (comment-triggered identity present)" "[ \$rc_mixed -ne 2 ]"
 
+# Stable-token guard (not prose) that the deliberate reconciliation pointer
+# to poll-copilot-rereview-start.sh's start-detection bound isn't silently
+# stripped.
+assert "cross-references poll-copilot-rereview-start.sh's start-detection bound" \
+  "grep -qi 'poll-copilot-rereview-start.sh' '$SCRIPT'"
+
 exit $FAIL

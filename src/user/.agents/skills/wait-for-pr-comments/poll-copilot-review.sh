@@ -394,7 +394,13 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
         echo "Warning: reviews API failed (attempt ${i})" >&2; sleep 30; continue;
     }
 
-    # If --since-timestamp was provided, reject reviews that predate it (stale cache guard)
+    # If --since-timestamp was provided, reject reviews that predate it (stale cache guard).
+    #
+    # RECONCILED, deliberately, against poll-copilot-rereview-start.sh's >=
+    # start-detection bound on this same $SINCE value (passed there as
+    # --after): this is a trust question (soundness-favoring), that is a
+    # detection question (liveness-favoring) — full reasoning in this
+    # skill's "Same-second boundary reconciliation" block (Phase 6).
     if [[ -n "$SINCE" ]]; then
         fresh_reviews=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at > $since)]')
         stale_count=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at <= $since)] | length')

@@ -202,6 +202,12 @@ for ((i = 1; i <= POLL_COUNT; i++)); do
         # not excluded — see that step's own stated contract. A strict >
         # here would silently drop a same-second eyes reaction and count a
         # started Codex review as a silent ask.
+        #
+        # RECONCILED, deliberately, against poll-copilot-review.sh's strict >
+        # staleness bound on this same $AFTER/$SINCE value: this is a
+        # detection question (liveness-favoring), that is a trust question
+        # (soundness-favoring) — full reasoning in this skill's "Same-second
+        # boundary reconciliation" block (Phase 6).
         eyes_ts=$(printf '%s' "$reactions" | jq -r \
             --arg after "$AFTER" \
             "[.[] | select(.content == \"eyes\" and (.user.login | ${BOT_LOGIN_FILTER}) and .created_at >= \$after)] | .[0].created_at // empty")
