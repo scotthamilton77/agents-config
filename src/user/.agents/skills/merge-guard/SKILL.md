@@ -245,24 +245,39 @@ The rule holds iff the emitted `verdict == "go"`.
         findings-bearing review still leaves the rule unmet → fall through
         to hand-off, silent counter untouched.
 
-        **Known residual, not closed by this bead:** `poll-copilot-review.sh`
-        reports `"clean_reaction"` on EITHER a qualifying `+1` reaction OR a
-        clean-pass marker comment alone (`emit_clean_reaction_found` is
-        shared by both signals) — but `check-merge-eligibility.sh`'s
-        reaction-path fact requires the actual `+1` (Component 2, part
-        (b)(1)), not the marker comment by itself. A marker-only completion
-        (comment landed, reaction not yet earned) therefore reports
-        `"clean_reaction"` here while Step 3's re-check still finds the rule
-        unmet — and per the branch above, that leaves the silent counter
-        untouched, so the NEXT invocation retries with a fresh ask instead
-        of recognizing the retry budget as spent. Bounded by the same
-        window `poll-copilot-review.sh`'s own freshness guard uses (Codex
-        typically earns the reaction within seconds of the marker comment),
-        but not excluded. Filed as `agents-config-abn9.44.2.9`'s sibling
-        concern — flagged there rather than fixed here, since closing it
-        means either tightening `poll-copilot-review.sh`'s `clean_reaction`
-        criteria (Lane B file) or changing what counts as "silent" for the
-        cap (a cap-model semantics decision, not a caller-edit).
+        **Known residual, not closed by this bead:**
+        `poll-copilot-review.sh`'s completion detection is narrower than
+        `check-merge-eligibility.sh`'s acceptance criteria, in two ways:
+        - Its review-completion check matches only `.state == "COMMENTED"`
+          — an `APPROVED` review (a legitimate clean-pass state
+          `check-merge-eligibility.sh`'s own review path already accepts,
+          per Component 2 part (a)) never sets `completion_kind ==
+          "review"` and is never detected as a completion at all. A bot
+          that approves cleanly on the first pass is indistinguishable from
+          one that never responded — the poll runs to `"timeout"`, which
+          (per the branch below) DOES spend the budget and hand off,
+          without ever re-running Step 3 to notice the approval was already
+          there and mergeable.
+        - It reports `"clean_reaction"` on EITHER a qualifying `+1`
+          reaction OR a clean-pass marker comment alone
+          (`emit_clean_reaction_found` is shared by both signals) — but
+          `check-merge-eligibility.sh`'s reaction-path fact requires the
+          actual `+1` (Component 2, part (b)(1)), not the marker comment by
+          itself. A marker-only completion (comment landed, reaction not
+          yet earned) therefore reports `"clean_reaction"` here while Step
+          3's re-check still finds the rule unmet — and per the branch
+          above, that leaves the silent counter untouched, so the NEXT
+          invocation retries with a fresh ask instead of recognizing the
+          retry budget as spent. Bounded by the same window
+          `poll-copilot-review.sh`'s own freshness guard uses (Codex
+          typically earns the reaction within seconds of the marker
+          comment), but not excluded.
+
+        Both are filed as `agents-config-abn9.44.2.9`'s sibling concerns —
+        flagged there rather than fixed here, since closing them means
+        tightening or widening `poll-copilot-review.sh`'s own completion
+        criteria (Lane B file) to match `check-merge-eligibility.sh`'s
+        acceptance criteria exactly, not a caller-edit.
       - `"timeout"` — the ask was genuinely silent. THIS is what increments
         and persists the silent counter (ask-spent), never the other two
         kinds:
