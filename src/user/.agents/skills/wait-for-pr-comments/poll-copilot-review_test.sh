@@ -615,4 +615,20 @@ out_mixed=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" 
 rc_mixed=$?
 assert "mixed Copilot+Codex --bot-reviewers does not exit 2 (comment-triggered identity present)" "[ \$rc_mixed -ne 2 ]"
 
+# ── agents-config-m5tkg: cross-file reconciliation of this script's strict >
+# staleness bound against poll-copilot-rereview-start.sh's >= start-detection
+# bound. Both compare against the SAME $AFTER/$SINCE timestamp captured once,
+# before the ask is dispatched -- but this script's > answers "is THIS
+# completion signal trustworthy as a response to the CURRENT ask, not a stale
+# leftover from before it" (a soundness question, where false-accepting an old
+# signal is the failure to avoid), while poll-copilot-rereview-start.sh's >=
+# answers "has ANYTHING happened since the ask" (a detection question, where
+# missing a genuine same-second response is the failure to avoid). Different
+# questions on the same value, not a shared boundary that must agree -- the
+# divergence is deliberate, not an oversight, and this assertion locks that
+# the rationale is actually written down where a reader of either file would
+# find it, not just decided once and forgotten.
+assert "documents the reconciled > vs >= divergence with poll-copilot-rereview-start.sh (agents-config-m5tkg)" \
+  "grep -qi 'poll-copilot-rereview-start.sh' '$SCRIPT' && grep -qi 'm5tkg' '$SCRIPT'"
+
 exit $FAIL
