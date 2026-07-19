@@ -1427,3 +1427,76 @@ def test_requested_reviewer_who_also_reviewed_is_required() -> None:
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
     assert state.reviewers["alice"].required is True
     assert state.reviewers["alice"].status is ReviewerStatus.REVIEW_FOUND
+
+
+def _declined(reason: str, *, login: str = "copilot") -> dict[str, ReviewerState]:
+    return {
+        login: ReviewerState(
+            identity=login,
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.DECLINED,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),
+            declined_at=_T0 - timedelta(hours=1),
+            declined_reason=reason,
+        )
+    }
+
+
+def test_withdrawn_reviewer_reactivates_when_re_requested() -> None:
+    # Behavior 6: request-withdrawn is the one decline reason DEFINED by an observed
+    # absence, so a later reappearance is a genuine transition worth re-arming.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("request-withdrawn"),
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REQUESTED
+    assert copilot.last_request_at == _T0
+    assert copilot.declined_at is None
+    assert copilot.declined_reason is None
+
+
+@pytest.mark.parametrize("reason", ["timeout-no-start", "timeout-stalled"])
+def test_timeout_declined_reviewer_does_not_reactivate(reason: str) -> None:
+    # Behavior 14 — the GLM critical regression guard. A timeout decline is a purely
+    # LOCAL mutation (quiescence._decline makes no gh call), so the reviewer is still
+    # listed in requested_reviewers every poll, forever. Reactivating on bare presence
+    # would undo the decline within the same cycle it fired, making the timeout gate
+    # impossible to durably satisfy and the PR impossible to quiesce.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=_declined(reason))
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["copilot"].status is ReviewerStatus.DECLINED
+    assert state.reviewers["copilot"].declined_reason == reason
+
+
+def test_timeout_declined_reviewer_still_satisfies_the_gate_across_polls() -> None:
+    # The consequence behavior 14 protects: with the decline intact, G_REVIEWERS
+    # passes and the PR can actually reach quiescence.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("timeout-no-start"),
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert reviewers_gate_satisfied(state) is True

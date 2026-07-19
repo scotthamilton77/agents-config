@@ -48,7 +48,7 @@ from prgroom.gh.client import GhNotFoundError
 from prgroom.gh.review_threads import fetch_thread_id_map
 from prgroom.lifecycle.gh_errors import vanished_pr_terminal
 from prgroom.lifecycle.idempotency import carries_own_marker
-from prgroom.lifecycle.predicates import flip_stale_required_reviews
+from prgroom.lifecycle.predicates import WITHDRAWN_REASON, flip_stale_required_reviews
 from prgroom.lifecycle.quiescence import evaluate_reviewer_timeouts
 from prgroom.prsession.enums import ItemKind, PRPhase, ReviewerKind, ReviewerStatus
 from prgroom.prsession.state import Identity, PRGroomingState, ReviewerState, ReviewItem
@@ -380,7 +380,25 @@ def _reconcile_reviewers(
     reviewed = _review_activity_by_login(raw_reviews, now=now)
     changed = False
     for login in (*requested, *(ln for ln in reviewed if ln not in requested)):
-        if login in state.reviewers:
+        existing = state.reviewers.get(login)
+        if existing is not None:
+            # Reactivate ONLY a genuine withdrawal. Deliberately not "any
+            # declined_reason": a timeout decline never removed the reviewer from
+            # GitHub's requested_reviewers (quiescence._decline is a local mutation
+            # with no gh call), so their login is CONTINUOUSLY present — reactivating
+            # on bare presence would undo every timeout decline in the same cycle it
+            # fired. request-withdrawn is the one reason defined by an observed
+            # ABSENCE, so a reappearance under it is a real transition.
+            if (
+                login in requested
+                and existing.status is ReviewerStatus.DECLINED
+                and existing.declined_reason == WITHDRAWN_REASON
+            ):
+                existing.status = ReviewerStatus.REQUESTED
+                existing.last_request_at = now
+                existing.declined_at = None
+                existing.declined_reason = None
+                changed = True
             continue
         reviewed_at, reviewed_user = reviewed.get(login, (None, None))
         state.reviewers[login] = _seed_reviewer(
