@@ -502,4 +502,49 @@ rc_cc_p2=$?
 assert "a marker comment on page 2 completes (exit 0)" "[ \$rc_cc_p2 -eq 0 ]"
 assert "a page-2 marker comment reports completion_kind clean_reaction" "printf '%s' \"\$out_cc_p2\" | jq -e '.completion_kind == \"clean_reaction\"' >/dev/null"
 
+# ── Sub-phase A auto-skip for comment-triggered bot identities (Codex is
+#    never a requested reviewer — it is triggered by an issue comment; see
+#    request-rereview.sh's identity dispatch table) ──────────────────────────
+# When --bot-reviewers includes a comment-triggered identity, the Sub-phase A
+# requested-reviewer precondition does not apply to it — the poll must
+# proceed straight to Sub-phase B/C as if --skip-request-check were passed,
+# without exiting 2 (copilot_not_requested), even when the events API never
+# returns a review_requested match. FIXTURE_EVENTS_STARTED (defined above) has
+# zero review_requested events but a copilot_work_started event, so
+# Sub-phase B (when reached) resolves on its first attempt without a real
+# sleep.
+
+# (m) --bot-reviewers is Codex-only, no --skip-request-check: must NOT exit 2
+#     and must NOT report copilot_not_requested — Sub-phase A auto-skips.
+out_codex_only=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  "$SCRIPT" --owner o --repo r --pr 1 --timeout-seconds 1 --bot-reviewers "[\"$CODEX_ID\"]" 2>/dev/null)
+rc_codex_only=$?
+assert "Codex-only --bot-reviewers does not exit 2 (auto-skips Sub-phase A)" "[ \$rc_codex_only -ne 2 ]"
+assert "Codex-only --bot-reviewers does not report copilot_not_requested" "! printf '%s' \"\$out_codex_only\" | grep -q copilot_not_requested"
+
+# (n) --bot-reviewers is Copilot-only, no --skip-request-check, events API has
+#     zero review_requested matches: existing behavior is unchanged — exits 2
+#     after the real ~1-minute Sub-phase A probe.
+out_copilot_only=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  "$SCRIPT" --owner o --repo r --pr 1 --timeout-seconds 1 --bot-reviewers '["Copilot"]' 2>/dev/null)
+rc_copilot_only=$?
+assert "Copilot-only --bot-reviewers still exits 2 when not requested (unchanged)" "[ \$rc_copilot_only -eq 2 ]"
+assert "Copilot-only --bot-reviewers reports copilot_not_requested" "printf '%s' \"\$out_copilot_only\" | grep -q copilot_not_requested"
+
+# (o) No --bot-reviewers at all (standalone default), events API zero matches,
+#     no --skip-request-check: legacy default behavior is unchanged — exits 2
+#     after the real ~1-minute Sub-phase A probe.
+out_no_policy_default=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  "$SCRIPT" --owner o --repo r --pr 1 --timeout-seconds 1 2>/dev/null)
+rc_no_policy_default=$?
+assert "standalone default (no --bot-reviewers) still exits 2 when not requested (unchanged)" "[ \$rc_no_policy_default -eq 2 ]"
+
+# (p) Mixed --bot-reviewers (Copilot + Codex), zero review_requested matches:
+#     presence of the comment-triggered identity lifts the precondition for
+#     the whole policy — must NOT exit 2.
+out_mixed=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  "$SCRIPT" --owner o --repo r --pr 1 --timeout-seconds 1 --bot-reviewers "[\"Copilot\", \"$CODEX_ID\"]" 2>/dev/null)
+rc_mixed=$?
+assert "mixed Copilot+Codex --bot-reviewers does not exit 2 (comment-triggered identity present)" "[ \$rc_mixed -ne 2 ]"
+
 exit $FAIL

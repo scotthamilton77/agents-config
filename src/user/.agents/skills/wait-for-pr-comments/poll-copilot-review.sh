@@ -17,7 +17,12 @@
 # any bot the merge policy trusts. Callers should pass the resolved review
 # policy's bot_reviewers list (see merge-guard/resolve_policy.py); the same
 # exact-identity allowlist the merge gate enforces. Omit it to keep the
-# standalone Copilot-substring default.
+# standalone Copilot-substring default. If it contains a comment-triggered
+# identity (currently chatgpt-codex-connector[bot]/Codex — never a requested
+# reviewer, mirrors request-rereview.sh's identity dispatch table), Sub-phase
+# A's requested-reviewer probe auto-skips (as if --skip-request-check were
+# passed) instead of risking a spurious copilot_not_requested exit; no effect
+# when the list has only request-based identities (e.g. Copilot).
 #
 # Poll completion contract: this script's JSON output also completes without
 # a review object when a bot's pass is clean. When --bot-reviewers is
@@ -157,6 +162,23 @@ COPILOT_REVIEW_FILTER="(.user.type == \"Bot\") and (.user.login | ${COPILOT_LOGI
 # (checked only when --bot-reviewers is supplied; see header).
 CLEAN_PASS_MARKER="Codex Review: Didn't find any major issues"
 
+# Comment-triggered bot identities (mirrors request-rereview.sh's identity
+# dispatch table) — these bots are never added as a requested reviewer; they
+# are triggered by an '@codex review' issue comment instead. When
+# --bot-reviewers includes one of these, Sub-phase A's requested-reviewer
+# probe is not a valid precondition for the whole policy (see Sub-phase A
+# below).
+COMMENT_TRIGGERED_BOTS='["chatgpt-codex-connector[bot]"]'
+
+HAS_COMMENT_TRIGGERED_BOT=false
+if [[ -n "$BOT_REVIEWERS" ]]; then
+    if jq -e --argjson known "$COMMENT_TRIGGERED_BOTS" \
+        '(map(ascii_downcase)) as $mine | ($known | map(ascii_downcase)) as $known_lc | any($mine[]; . as $m | $known_lc | index($m) != null)' \
+        <<<"$BOT_REVIEWERS" >/dev/null 2>&1; then
+        HAS_COMMENT_TRIGGERED_BOT=true
+    fi
+fi
+
 # ── Helper functions ──────────────────────────────────────────────────────────
 
 pr_is_open() {
@@ -237,7 +259,7 @@ preflight_checks
 
 # ── Sub-phase A: Request detection (20s × 3, max ~1 minute) ──────────────────
 
-if [[ "$SKIP_REQUEST" == false ]]; then
+if [[ "$SKIP_REQUEST" == false && "$HAS_COMMENT_TRIGGERED_BOT" == false ]]; then
     echo "Sub-phase A: Checking if Copilot was requested as reviewer..." >&2
     copilot_requested=false
 
@@ -265,7 +287,11 @@ if [[ "$SKIP_REQUEST" == false ]]; then
         exit 2
     fi
 else
-    echo "Sub-phase A: Skipped (--skip-request-check)" >&2
+    if [[ "$SKIP_REQUEST" == true ]]; then
+        echo "Sub-phase A: Skipped (--skip-request-check)" >&2
+    else
+        echo "Sub-phase A: Skipped (--bot-reviewers includes a comment-triggered identity; requested-reviewer probe is not a precondition)" >&2
+    fi
 fi
 
 # ── Sub-phase B: Start detection (20s × 3, max ~1 minute) ────────────────────

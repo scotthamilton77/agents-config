@@ -141,7 +141,12 @@ Background bash — zero Anthropic tokens during the wait.
 1. **Quick check** whether Copilot is already a requested reviewer (a
     Copilot-specific convenience glance to decide `--skip-request-check`; the
     launched script in step 3 does the authoritative policy-allowlist matching,
-    so this substring probe need not generalize to non-Copilot bots):
+    so this substring probe need not generalize to non-Copilot bots). This
+    glance is only relevant for request-based bots (Copilot) — comment-triggered
+    bots (e.g. Codex) are never added as a requested reviewer, so the script
+    itself auto-skips its requested-reviewer precondition when the resolved
+    policy's `bot_reviewers` includes a comment-triggered identity; the caller
+    need not special-case that here:
     ```
     gh api repos/<owner>/<repo>/issues/<n>/events \
       --jq '[.[] | select(
