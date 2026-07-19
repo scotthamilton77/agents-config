@@ -23,12 +23,27 @@ from grind.store import append_event, fold_dir, is_log_nonempty, load_events, wr
 
 Clock = Callable[[], datetime]
 
+# `ts` and `type` are stamped by the CLI at append time (spec: "ts ... Never
+# supplied by the caller"; `type` is the CLI-selected taxonomy). A payload/seed
+# carrying either would overwrite the CLI-controlled envelope via the `**`
+# spread below -- e.g. an `observation` smuggling `type=grind_finished` would
+# persist and apply a terminal event while the envelope reports success. A
+# caller supplying one is confused, so reject (command error, nothing appended)
+# rather than silently merge-last.
+_RESERVED_ENVELOPE_KEYS = ("ts", "type")
+
 
 def _iso(when: datetime) -> str:
     return when.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _validate_or_raise(event_type: str, payload: RawEvent) -> None:
+    reserved = [key for key in _RESERVED_ENVELOPE_KEYS if key in payload]
+    if reserved:
+        raise GrindError(
+            f"payload for {event_type!r} may not carry CLI-controlled envelope "
+            f"key(s) {', '.join(reserved)}: the CLI stamps ts and type"
+        )
     errors = validate_payload(event_type, payload)
     if errors:
         raise GrindError(f"invalid payload for {event_type!r}: " + "; ".join(errors))

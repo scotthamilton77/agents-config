@@ -66,6 +66,19 @@ def test_create_rejects_a_malformed_seed_and_writes_nothing(tmp_path: Path):
     assert load_events(tmp_path) == []
 
 
+@pytest.mark.parametrize("reserved_key", ["ts", "type"])
+def test_create_rejects_a_seed_carrying_a_reserved_envelope_key(tmp_path: Path, reserved_key: str):
+    # The CLI stamps `ts` and `type`; a seed supplying either would overwrite
+    # the CLI-controlled envelope via the dict spread. Reject before appending.
+    poisoned = dict(_SEED)
+    poisoned[reserved_key] = "attacker-controlled"
+
+    with pytest.raises(GrindError):
+        cmd_create(tmp_path, poisoned, now=_NOW)
+
+    assert load_events(tmp_path) == []
+
+
 # -- log ------------------------------------------------------------------
 
 
@@ -91,6 +104,21 @@ def test_log_rejects_a_malformed_payload_and_appends_nothing(tmp_path: Path):
 
     with pytest.raises(GrindError):
         cmd_log(tmp_path, "pr_opened", {"item": "wgclw.1", "pr": "not-an-int"}, now=_NOW)
+
+    assert len(load_events(tmp_path)) == 1  # only the seed event
+
+
+@pytest.mark.parametrize("reserved_key", ["ts", "type"])
+def test_log_rejects_a_payload_carrying_a_reserved_envelope_key(tmp_path: Path, reserved_key: str):
+    # The codex-flagged smuggle: a valid `observation` payload carrying
+    # `type=grind_finished` would, via the dict spread, persist and apply a
+    # grind_finished event -- prematurely terminal -- while reporting success.
+    # Reserved envelope keys are rejected before anything is appended.
+    _seeded(tmp_path)
+    poisoned = {"level": "INFO", "message": "x", reserved_key: "grind_finished"}
+
+    with pytest.raises(GrindError):
+        cmd_log(tmp_path, "observation", poisoned, now=_NOW)
 
     assert len(load_events(tmp_path)) == 1  # only the seed event
 
