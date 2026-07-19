@@ -48,8 +48,12 @@ from prgroom.gh.client import GhNotFoundError
 from prgroom.gh.review_threads import fetch_thread_id_map
 from prgroom.lifecycle.gh_errors import vanished_pr_terminal
 from prgroom.lifecycle.idempotency import carries_own_marker
-from prgroom.lifecycle.predicates import WITHDRAWN_REASON, flip_stale_required_reviews
-from prgroom.lifecycle.quiescence import evaluate_reviewer_timeouts
+from prgroom.lifecycle.predicates import (
+    WITHDRAWN_REASON,
+    flip_stale_required_reviews,
+    has_required_reviewers_to_refresh,
+)
+from prgroom.lifecycle.quiescence import evaluate_reviewer_timeouts, reviewers_gate_satisfied
 from prgroom.prsession.enums import ItemKind, PRPhase, ReviewerKind, ReviewerStatus
 from prgroom.prsession.state import Identity, PRGroomingState, ReviewerState, ReviewItem
 
@@ -163,6 +167,8 @@ def poll_pr(
         new_item=bool(new_items),
         external_push=external_push,
         has_items=bool(state.items),
+        reviewers_satisfied=reviewers_gate_satisfied(state),
+        needs_reviewer_refresh=has_required_reviewers_to_refresh(state),
     )
     return state
 
@@ -668,6 +674,8 @@ def _resolve_poll_phase(
     new_item: bool,
     external_push: bool,
     has_items: bool,
+    reviewers_satisfied: bool,
+    needs_reviewer_refresh: bool,
 ) -> PRPhase:
     """Resolve the next phase from the §3.2 poll row (first applicable edge wins).
 
@@ -675,6 +683,11 @@ def _resolve_poll_phase(
     observed this poll (an empty HEAD returns from ``poll_pr`` before phase
     resolution), so the bootstrap anchor has fired — the only question left for an
     ``idle`` PR is whether a reviewer item is already on file.
+
+    ``reviewers_satisfied`` / ``needs_reviewer_refresh`` arrive as scalars (like
+    ``has_items``) rather than as ``state``, keeping this resolver a pure function of
+    booleans. Both are evaluated by the caller AFTER reconciliation and SHA
+    attribution, so they reflect this poll's reviewer changes.
     """
     if phase is PRPhase.MERGED:
         return PRPhase.MERGED
@@ -686,12 +699,24 @@ def _resolve_poll_phase(
         return PRPhase.FIXES_PENDING if has_items else PRPhase.AWAITING_REVIEW
     if new_item:
         return PRPhase.FIXES_PENDING
+    if phase is PRPhase.QUIESCED and not reviewers_satisfied:
+        # A reviewer was newly requested (or reactivated) on a resting PR — no push,
+        # no new item, so neither existing arm below fires. Without this the phase and
+        # the quiescence predicate silently disagree and the request is ignored.
+        return PRPhase.AWAITING_REVIEW
     if external_push:
         # awaiting-review / fixes-pending stay; quiesced re-enters awaiting-review;
         # human-gated re-enters fixes-pending (operator resolved the gate).
         if phase is PRPhase.QUIESCED:
             return PRPhase.AWAITING_REVIEW
         if phase is PRPhase.HUMAN_GATED:
+            return PRPhase.FIXES_PENDING
+        if phase is PRPhase.AWAITING_REVIEW and needs_reviewer_refresh:
+            # The push invalidated a required review, but `rereview` is a
+            # FIXES_PENDING pipeline step and awaiting-review only ever calls `wait`.
+            # Advance so the reviewer actually gets re-asked; the pipeline's rereview
+            # step flips them back to `requested`, after which the end-of-cycle
+            # resolver returns the PR here with nothing left to refresh.
             return PRPhase.FIXES_PENDING
         return phase
     return phase

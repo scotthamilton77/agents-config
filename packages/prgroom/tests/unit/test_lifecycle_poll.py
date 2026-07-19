@@ -1597,3 +1597,68 @@ def test_terminal_reviewer_is_not_withdrawn() -> None:
         config=_config(),
     )
     assert state.reviewers["copilot"].status is ReviewerStatus.REVIEW_FOUND
+
+
+def test_external_push_with_stale_reviewer_advances_to_fixes_pending() -> None:
+    # Behavior 12 — Codex P1 regression guard. flip_stale_required_reviews moves the
+    # reviewer to NOT_REQUESTED, but `rereview` is a FIXES_PENDING pipeline step and
+    # AWAITING_REVIEW only ever calls `wait` — so without this arm the reviewer is
+    # never re-requested and the PR can quiesce with a stale review.
+    reviewers = _required_reviewer(ReviewerStatus.REVIEW_FOUND)
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",
+        reviewers=reviewers,
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["copilot"].status is ReviewerStatus.NOT_REQUESTED
+    assert state.phase is PRPhase.FIXES_PENDING
+
+
+def test_external_push_without_stale_reviewer_stays_awaiting_review() -> None:
+    # The arm is conditional — nothing to refresh means no phase change, so a routine
+    # push does not spuriously drive the pipeline.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",
+    )
+    state = poll_pr(start, ref=_REF, gh=_gh(head_oid="theirs"), deps=_deps(), config=_config())
+    assert state.phase is PRPhase.AWAITING_REVIEW
+
+
+def test_quiesced_pr_reopens_when_a_reviewer_is_newly_requested() -> None:
+    # Behavior 13 — GLM finding. A reviewer can be requested on a PR with no new
+    # commits at all; the pre-existing QUIESCED arms fire only on external_push or
+    # new_item, so neither covers an operator manually requesting review.
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same")
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["alice"].status is ReviewerStatus.REQUESTED
+    assert state.phase is PRPhase.AWAITING_REVIEW
+
+
+def test_quiesced_pr_with_satisfied_reviewers_stays_quiesced() -> None:
+    # The no-noise half: a settled reviewer set does not reopen a resting PR.
+    reviewers = _required_reviewer(ReviewerStatus.REVIEW_FOUND)
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.phase is PRPhase.QUIESCED
