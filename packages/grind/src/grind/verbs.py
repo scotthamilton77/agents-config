@@ -115,6 +115,18 @@ def cmd_create(dir_: Path, seed: RawEvent, *, now: Clock) -> dict[str, JsonValue
 
 def cmd_log(dir_: Path, event_type: str, payload: RawEvent, *, now: Clock) -> dict[str, JsonValue]:
     """`grind log <type> --json '<payload>'` -- returns the emit-back envelope."""
+    if event_type == "grind_created":
+        # Creation goes through `create` only (spec CLI contract), and
+        # `cmd_create`'s refusal message explicitly promises `grind log
+        # grind_created` is never allowed. In a fresh dir the fold would
+        # otherwise treat this as the first, valid creation event; reject it as
+        # a command error regardless of directory state (nothing appended). The
+        # reserved-key guard does not cover this -- the event type is the verb
+        # argument, not a payload key.
+        raise GrindError(
+            "refusing to log 'grind_created': creation goes through create "
+            "only, never grind log grind_created"
+        )
     _validate_or_raise(event_type, payload)
 
     before_state = fold(load_events(dir_))

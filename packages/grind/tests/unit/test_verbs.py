@@ -123,6 +123,29 @@ def test_log_rejects_a_payload_carrying_a_reserved_envelope_key(tmp_path: Path, 
     assert len(load_events(tmp_path)) == 1  # only the seed event
 
 
+def test_log_rejects_grind_created_in_a_fresh_dir_and_appends_nothing(tmp_path: Path):
+    # Codex-flagged: in a fresh --dir, `grind log grind_created --json <seed>`
+    # would fold as the first, valid creation event -- bypassing the CLI
+    # contract that creation goes through `create` only (spec CLI table:
+    # "creation goes through create, never through grind log grind_created").
+    # The reserved-key guard does not catch this: the event *type* is the verb
+    # argument, not a payload key. Reject it as a command error regardless of
+    # directory state.
+    with pytest.raises(GrindError):
+        cmd_log(tmp_path, "grind_created", dict(_SEED), now=_NOW)
+
+    assert load_events(tmp_path) == []  # nothing appended by the refused call
+
+
+def test_log_rejects_grind_created_mid_run_and_appends_nothing(tmp_path: Path):
+    _seeded(tmp_path)
+
+    with pytest.raises(GrindError):
+        cmd_log(tmp_path, "grind_created", dict(_SEED), now=_NOW)
+
+    assert len(load_events(tmp_path)) == 1  # only the seed event
+
+
 def test_log_accepts_a_well_formed_but_illegal_event_as_an_anomaly(tmp_path: Path):
     _seeded(tmp_path)
     # item is still `queued`; item_merged is illegal from `queued` per the
