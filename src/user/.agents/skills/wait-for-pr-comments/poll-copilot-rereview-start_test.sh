@@ -283,14 +283,28 @@ assert "eyes reaction still reports signal eyes_reaction despite the events fail
 
 # Symmetric to the reactions case: a persistent EVENTS-endpoint failure at
 # the deadline is also an infrastructure error (exit 3), not a false
-# no_rereview_started.
+# no_rereview_started -- for a policy where Copilot is actually relevant
+# (here, --bot-reviewers omitted entirely, this script's legacy Copilot-only
+# default). A Codex-only policy is covered separately below and must NOT
+# exit 3 on an events failure, since events was never relevant to it.
 out=$(FAKE_EVENTS_FAIL=1 FAKE_REACTIONS_FILE="$EMPTY_REACTIONS" PATH="$FAKEBIN:$PATH" \
-  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
-  --bot-reviewers '["chatgpt-codex-connector[bot]"]' 2>/dev/null)
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z 2>/dev/null)
 rc_events_endpoint_fail=$?
 assert "a persistent events-endpoint failure exits 3 (infra error, not timeout)" "[ \$rc_events_endpoint_fail -eq 3 ]"
 assert "a persistent events-endpoint failure reports rereview_start_check_error" \
   "printf '%s' '$out' | jq -e '.status == \"rereview_start_check_error\"' >/dev/null"
+
+# A Codex-only allowlist has no Copilot-capable identity: the events check
+# (and its failure) must be irrelevant, symmetric to the Copilot-only
+# reactions-irrelevance case above. An events-endpoint failure here must
+# fall through to a correct no_rereview_started, not a false exit 3.
+out=$(FAKE_EVENTS_FAIL=1 FAKE_REACTIONS_FILE="$EMPTY_REACTIONS" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' 2>/dev/null)
+rc_events_fail_codex_only=$?
+assert "an events-endpoint failure is irrelevant for a Codex-only policy (exit 1, not 3)" "[ \$rc_events_fail_codex_only -eq 1 ]"
+assert "Codex-only policy with an events failure still reports no_rereview_started" \
+  "printf '%s' '$out' | jq -e '.status == \"no_rereview_started\"' >/dev/null"
 
 # ── Same-second boundary (Phase 6 step 1's stated contract) ─────────────────
 # <rereview_since_timestamp> is captured immediately BEFORE the re-review ask

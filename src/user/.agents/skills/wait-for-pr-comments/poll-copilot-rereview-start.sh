@@ -13,13 +13,14 @@
 #
 # Exit codes: 0 started (JSON), 1 not started, 3 error (bad args, auth, OR an
 # endpoint still failing at the deadline for a signal that's actually in
-# play — reactions only checked when --bot-reviewers has an eyes-capable
-# identity — distinct from "not started", since whether a re-review started
-# is then unknown, not false; see the poll-loop comment on
-# events_endpoint_failed/reactions_endpoint_failed).
+# play for the resolved allowlist — events only checked with a Copilot-
+# capable identity present (or --bot-reviewers omitted); reactions only
+# checked with an eyes-capable identity present — distinct from "not
+# started", since whether a re-review started is then unknown, not false;
+# see the poll-loop comment on events_endpoint_failed/reactions_endpoint_failed).
 # Stdout (0): {"status":"copilot_rereview_started","signal":"event"|"eyes_reaction","event_timestamp":"..."}
 # Stdout (1): {"status":"no_rereview_started"}
-# Stdout (3, reactions endpoint failed at the deadline): {"status":"rereview_start_check_error","message":"..."}
+# Stdout (3, an in-play endpoint failed at the deadline): {"status":"rereview_start_check_error","message":"..."}
 # Stderr: diagnostics
 #
 # Configurable polling (set as env vars; defaults give the historical 80s window):
@@ -104,6 +105,26 @@ if [[ -n "$BOT_REVIEWERS" ]]; then
     fi
 fi
 
+# Copilot-capable bot identities (mirrors request-rereview.sh's reviewer-
+# dance dispatch pair). Symmetric to HAS_EYES_CAPABLE_BOT above: a
+# --bot-reviewers list can be Codex-only, in which case the events endpoint
+# (Copilot's copilot_work_started signal) can never provide a start signal
+# either — polling it anyway means an events-endpoint hiccup can spuriously
+# exit 3 on an ordinary Codex-only re-review that the reactions check alone
+# already resolved correctly. Omitting --bot-reviewers entirely is this
+# script's legacy Copilot-only mode, so it defaults to true in that case —
+# only an explicit, Codex-only allowlist turns it false.
+COPILOT_CAPABLE_BOTS='["Copilot", "copilot-pull-request-reviewer[bot]"]'
+HAS_COPILOT_CAPABLE_BOT=true
+if [[ -n "$BOT_REVIEWERS" ]]; then
+    HAS_COPILOT_CAPABLE_BOT=false
+    if jq -e --argjson known "$COPILOT_CAPABLE_BOTS" \
+        '(map(ascii_downcase)) as $mine | ($known | map(ascii_downcase)) as $known_lc | any($mine[]; . as $m | $known_lc | index($m) != null)' \
+        <<<"$BOT_REVIEWERS" >/dev/null 2>&1; then
+        HAS_COPILOT_CAPABLE_BOT=true
+    fi
+fi
+
 # ── Pre-flight checks ────────────────────────────────────────────────────────
 
 preflight_checks
@@ -132,26 +153,34 @@ for ((i = 1; i <= POLL_COUNT; i++)); do
     events_endpoint_failed=false
     reactions_endpoint_failed=false
 
-    # Fetch raw, filter locally (matching the reactions check below) rather
-    # than filtering server-side via --jq: keeps both signals' filtering
-    # logic in one place, in the same style, exercised the same way by tests.
-    events=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events") || {
-        echo "Warning: events API failed (attempt ${i}), continuing" >&2
-        events='[]'
-        events_endpoint_failed=true
-    }
+    # Events check (only when the allowlist contains a Copilot-capable
+    # identity, or --bot-reviewers was omitted entirely — see
+    # HAS_COPILOT_CAPABLE_BOT above): copilot_work_started can never be a
+    # Codex-only policy's start signal, so a Codex-only allowlist must not
+    # poll — or hold this poll's failure against — an endpoint it has no use
+    # for, symmetric to the eyes-reaction check's own gating below. Fetch
+    # raw, filter locally (matching the reactions check) rather than
+    # filtering server-side via --jq: keeps both signals' filtering logic in
+    # one place, in the same style, exercised the same way by tests.
+    if [[ "$HAS_COPILOT_CAPABLE_BOT" == true ]]; then
+        events=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events") || {
+            echo "Warning: events API failed (attempt ${i}), continuing" >&2
+            events='[]'
+            events_endpoint_failed=true
+        }
 
-    # Boundary comparison is >=, not >: see the note on the eyes-reaction
-    # check below — same $AFTER, same Phase 6 step 1 contract.
-    event_ts=$(printf '%s' "$events" | jq -r \
-        --arg after "$AFTER" \
-        '[.[] | select(.event == "copilot_work_started" and .created_at >= $after)] | .[0].created_at // empty')
-    if [[ -n "$event_ts" ]]; then
-        echo "  Poll ${i}/${POLL_COUNT}: copilot_work_started detected after ${AFTER}" >&2
-        echo "  Copilot re-review started at ${event_ts}" >&2
-        jq -n --arg ts "$event_ts" \
-            '{"status": "copilot_rereview_started", "signal": "event", "event_timestamp": $ts}'
-        exit 0
+        # Boundary comparison is >=, not >: see the note on the eyes-reaction
+        # check below — same $AFTER, same Phase 6 step 1 contract.
+        event_ts=$(printf '%s' "$events" | jq -r \
+            --arg after "$AFTER" \
+            '[.[] | select(.event == "copilot_work_started" and .created_at >= $after)] | .[0].created_at // empty')
+        if [[ -n "$event_ts" ]]; then
+            echo "  Poll ${i}/${POLL_COUNT}: copilot_work_started detected after ${AFTER}" >&2
+            echo "  Copilot re-review started at ${event_ts}" >&2
+            jq -n --arg ts "$event_ts" \
+                '{"status": "copilot_rereview_started", "signal": "event", "event_timestamp": $ts}'
+            exit 0
+        fi
     fi
 
     # Eyes-reaction check (only when the allowlist contains an eyes-capable
