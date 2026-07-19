@@ -139,8 +139,8 @@ below)
 |------|---------|-------------|
 | `item_started` | `item` | `queued → in-progress` |
 | `pr_opened` | `item`, `pr` | `in-progress → pr-open` |
-| `review_round` | `item`, `kind` (codex\|copilot\|ralf\|human), `round`, `detail?` | `pr-open → in-review` (or stays `in-review`); sets the round badge |
-| `review_verdict` | `item`, `kind`, `round`, `verdict` (clean \| findings \| stalemate), `findings[]` — each `{severity, summary, disposition (fixed \| wont-fix \| deferred \| escalated), thread_url?}` | Records the round's outcome. `open_threads` and `wont_fix_count` are **derived** from dispositions, not asserted. `stalemate` sets the item's stalemate flag (declared per the review skill's §3 rule — the fold records, it does not diagnose). |
+| `review_round` | `item`, `kind` (codex\|copilot\|ralf\|human), `round`, `head_sha` (PR head commit this round reviewed), `detail?` | `pr-open → in-review` (or stays `in-review`); sets the round badge |
+| `review_verdict` | `item`, `kind`, `round`, `head_sha` (PR head commit this round reviewed), `verdict` (clean \| findings \| stalemate), `findings[]` — each `{severity, summary, disposition (fixed \| wont-fix \| deferred \| escalated), thread_url?}` | Records the round's outcome. `open_threads` and `wont_fix_count` are **derived** from dispositions, not asserted. `stalemate` sets the item's stalemate flag (declared per the review skill's §3 rule — the fold records, it does not diagnose). |
 | `pr_closed` | `item`, `pr`, `reason`, `next` (in-progress \| queued \| parked) | Unmerged closure (abandoned, superseded). Item returns to `next`; without this an abandoned PR is unrepresentable except by lying. |
 | `item_blocked` | `item`, `on[]` (blocking item ids), `note?` | Records blocker edges (and `note`). `blocked` status is **derived** from unresolved edges — whichever way they arrived (seed or event), never asserted by the event. Unblocking is **derived**: when every edge's target reaches `merged`/`done`/closed, the fold returns the item to `queued` and fires the `item_unblocked` condition — there is no unblock event. |
 | `item_waiting_human` | `item`, `why` | `→ waiting-human`; auto-raises an attention entry |
@@ -261,7 +261,7 @@ review; a condition whose name is an imperative is a defect.
 | `stale_lane` | no event referencing a lane for > `config.stale_lane_after` | lane, age |
 | `attention_pending` | unresolved attention entries exist | count, oldest age |
 | `blocked_chain` | an item is blocked on an item that is itself blocked/parked/waiting-human | the chain, as an ordered item list |
-| `review_stalemate_risk` | round ≥ `config.stalemate_risk_round` with no intervening `pr_opened`/commit-bearing event — dumb arithmetic only; stalemate *declaration* stays with the review skill's §3 rule | item, round |
+| `review_stalemate_risk` | the last `config.stalemate_risk_round` consecutive `review_round`/`review_verdict` events for the item carry the SAME `head_sha` (round count ≥ threshold on an unchanged head); a changed `head_sha` between rounds resets the run — dumb arithmetic only; stalemate *declaration* stays with the review skill's §3 rule | item, round, head_sha |
 | `item_unblocked` | all blocker edges of a `blocked` item just resolved | item(s) now startable |
 
 Thresholds live in `grind_created.config` with defaults
