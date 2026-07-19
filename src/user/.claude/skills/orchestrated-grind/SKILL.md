@@ -56,8 +56,8 @@ shapes this whole topology.
 
 **When NOT to use.** A single-lane task (dispatch one worker). Work whose
 lanes collide constantly on the same files (repartition first, or serialize).
-A run short enough to supervise directly — the dashboard and bookkeeper
-overhead only pays off across hours.
+A run short enough to supervise directly — the dashboard and runtime overhead
+only pays off across hours.
 
 ## 1. Topology and the roster
 
@@ -66,13 +66,13 @@ ROOT (you — reasoning model, medium effort)
 ├── lane-<name>   (NAMED lieutenant, one per lane)  ─┐
 ├── lane-<name>   (NAMED lieutenant)                 ├─ each dispatches
 ├── lane-<name>   (NAMED lieutenant)                ─┘  UNNAMED workers
-└── bookkeeper    (NAMED, owns state.json + dashboard.html)
 ```
 
-Rules that are not negotiable:
+ROOT keeps the board in the **event log** (§5), not in a teammate's head:
+there is no bookkeeper role. Rules that are not negotiable:
 
 - **Named agents form a flat roster.** A named agent cannot spawn a named
-  child. Lieutenants and the bookkeeper are named; workers never are.
+  child. Lieutenants are named; workers never are.
 - **Worker completions notify ROOT, not the lieutenant that dispatched them.**
   This is a runtime fact. When a worker finishes, ROOT relays the essentials to
   the owning lieutenant via SendMessage and re-engages it. A lieutenant left
@@ -82,8 +82,8 @@ Rules that are not negotiable:
   idle notification alone.
 - **A bare idle is not an event — it is the absence of one.** Never let an idle
   *itself* be the trigger for anything. Do not reply to it, do not `SendMessage`
-  the parked agent about it, do not narrate it to the human, and **do not write
-  it to `state.json` or the dashboard**. Idles are the most frequent
+  the parked agent about it, do not narrate it to the human, and **do not log
+  it as an event**. Idles are the most frequent
   notification in a long run and the least informative; a run that logs them
   buries the real signals in noise and spends ROOT's scarcest resource —
   context — on the fact that nothing happened. Act on *real* signals instead: a
@@ -131,22 +131,40 @@ Rules that are not negotiable:
    merge conflict, and prefer small PRs all the way through every lane's plan —
    speed comes from many small landings, never from relaxing quality.
 2. **Propose the partition and roster to the human, and wait.** Present the
-   lanes, what each will claim, the model/effort you intend per lane, and the
-   bookkeeper. Get confirmation before spawning anyone. A grind launched on an
-   unconfirmed partition is expensive to unwind once four agents are live.
-3. **Spawn the bookkeeper first**, with the dashboard template and the state
-   schema. It writes the initial `state.json` and `dashboard.html`, and opens
-   the page in the browser **exactly once**, via the platform opener named in
-   §5 (`open` / `start` / `xdg-open` — never browser automation).
+   lanes, what each will claim, and the model/effort you intend per lane. Get
+   confirmation before spawning anyone. A grind launched on an unconfirmed
+   partition is expensive to unwind once four agents are live.
+3. **Seed the runtime with `grind create`.** Compose a seed file — the
+   `grind_created` payload — from the confirmed partition: `title`, `repo`
+   (owner/name), `mission` (goal + explicit out-of-scope), `protocols` (review
+   protocol choice, merge-policy resolution, watcher conventions, session
+   grants), `config` (staleness and stalemate thresholds), and `lanes[]` — each
+   lane's `id`, `name`, `agent`, `model`, `effort`, and its `queue` of items
+   (bead ids, titles, and blocker edges). Run `grind create --file <seed> --dir
+   <grind-dir>`. The CLI writes the log, folds, and renders `dashboard.html`;
+   open that page in the browser **exactly once**, via the platform opener
+   named in §5 (`open` / `start` / `xdg-open` — never browser automation). The
+   seed's mission and protocols are what make compaction recovery
+   self-contained (§7), so compose them for a fresh reader, not for yourself.
 4. **Spawn the lieutenants**, one message each, carrying: the lane's queue, the
    worktree naming convention, the review protocol (§3), the post-merge leg
    (§8), the instruction to report **reviewed-clean** rather than merging, and
    the instruction to **request** a watcher from ROOT rather than arm one (§6).
-5. **Record the roster** — you will need it for the compaction handoff (§7).
+5. **Keep the log authoritative as the run proceeds.** The seed is the roster
+   of record; from here every state change is a `grind log` event (§5) —
+   `item_started`, `pr_opened`, `review_round` / `review_verdict`,
+   `item_merged`, `item_done`, `item_parked`, `lane_handover`, and the rest.
+   There is no separate state file to record or reconcile.
 
 Brief every lieutenant with **worktree-absolute paths**. A bare or relative
 path makes a worker anchor on the main repo root while its shell sits in a
 worktree, and the resulting split-brain is expensive to unwind.
+
+**Resolving the `grind` CLI.** This skill drives the `grind` command. Where
+your installer has placed it on PATH, call `grind` directly. Where it is not
+yet on PATH, run it from its package with `uv --project <grind-package-dir> run
+grind …`, substituting the directory of the grind package. Every `grind …`
+invocation below assumes one of these two forms.
 
 ## 2. Message-crossing discipline
 
@@ -389,41 +407,74 @@ and you judge its findings unfounded, that is the human's call. Merging around
 a reviewer you have decided is wrong is the exact failure this section exists
 to prevent.
 
-## 5. The bookkeeper and the dashboard
+## 5. The event log and the dashboard
 
-A named `bookkeeper` teammate owns `state.json` as the single source of truth
-and regenerates `dashboard.html` from it on every update. ROOT sends terse
-deltas — `UPDATE: …` for progress, `ATTENTION: …` for items that need the
-human — and the bookkeeper merges them into state and re-renders.
+A grind's entire operational state lives in one append-only **event log**,
+managed by the `grind` CLI. ROOT never composes board state in its head and
+never hand-edits a state file. The loop is **log → read → act**:
 
-Ship `dashboard-template.html` and `references/state-schema.md` (both beside
-this file) to the bookkeeper at spawn.
+1. **log** — every state change ROOT learns of becomes one `grind log <type>
+   --json '<payload>'` call. Worker completions, lane reports, watcher rings,
+   PRs opened, review rounds and verdicts, merges, parks, discovered work —
+   each is a typed event ROOT appends.
+2. **read** — the CLI returns an **emit-back envelope** in the same tool
+   result: `applied` (false when the event was illegal from the entity's
+   current status), the fold `delta` (the entity's old/new status), any
+   `anomaly`, and the currently-true **conditions** (facts with evidence). A
+   post-compaction ROOT is re-oriented by its first `log` call.
+3. **act** — ROOT acts on the delta and conditions, then logs the next event.
 
-**Dashboard contract — all of these are requirements, not preferences:**
+`grind` owns `events.jsonl` (the source of truth), `state.json` (a disposable
+cache), and `dashboard.html` (a rendered projection), rewriting the latter two
+on every `log`. ROOT reads state with `grind status` (a summary plus
+conditions) or `grind status --full` (the entire board); it never parses
+`state.json` by hand.
 
-- **Light theme only.** No dark mode, no toggle. This is an accessibility
-  requirement, not a style choice.
-- **Lanes** with per-lane status, work queue, and progress.
-- **Lane-level status.** A lane whose queue is complete renders `done` and
-  **collapses to a narrow column**, yielding width to lanes still working.
-- **Review-round badges.** Any item in review shows the review kind and the
-  round number (`codex · round 4`). Round count is the signal that separates a
-  reviewer earning its keep from a reviewer looping — surface it.
-- **Real PR links.** PR numbers link to the actual pull request. The schema
-  carries a `repo` slug so the renderer can derive the URL when an explicit one
-  is absent.
-- **Merged-PR ledger** and **items-closed ledger**.
-- **A red ATTENTION banner** listing items awaiting the human. Hidden when
-  empty.
-- **A 15-second auto-refresh with a visible on/off toggle**, and a
-  **last-generated timestamp** visible on the page.
-- **Many lanes may overflow the window width.** That is correct behavior —
-  scroll horizontally rather than squeezing lanes into illegibility.
+**Single writer.** ROOT is the only process that appends. Lieutenants report to
+ROOT as they do today, and ROOT logs — they do not run `grind`.
+
+**Anomalies are surfaced, never corrected in place.** An event that is illegal
+from an entity's current status still appends; the fold flags it (`applied:
+false`, an ERROR observation, a red banner) and reports it in the envelope's
+`anomaly` field so ROOT sees it in the same result. ROOT never edits the log,
+`state.json`, or the dashboard to "fix" a mistake — the correction is a
+**follow-up event**. Payload validation is a different seam: a malformed
+payload is a command error (nothing appended), so re-issue it with the shape
+corrected.
+
+**Conditions drive proactive orchestration.** A condition states what is true
+and carries its evidence; it never says what to do — the move is ROOT's
+judgment:
+
+| Condition | What is true | ROOT's usual move |
+|---|---|---|
+| `item_unblocked` | a blocked item's last blocker edge just resolved | re-engage its lane to start it |
+| `stale_item` / `stale_lane` | no event has referenced it past its threshold | verify per §8 (`gh`/`git`/tracker), then unblock, rotate, or let it be |
+| `attention_pending` | unresolved human-docket entries exist | work the docket or surface it to the human |
+| `blocked_chain` | an item is blocked on something itself stuck | re-scope or park to break the chain |
+| `review_stalemate_risk` | the last N review rounds carry the same head SHA | apply §3's stalemate ladder |
+| `lane_complete` / `grind_complete` | a lane's / every lane's queue reached `done` | stand the lane down (§ Shutdown) |
+
+Most conditions are recomputed from state and ride **every** `grind log` and
+`grind status`, so a level condition is never missed by not watching the right
+call. `item_unblocked` is the exception: it fires **once**, in the envelope of
+the `log` whose event resolved the item's final blocker edge, and is never
+returned by `grind status` — read it when it rides that envelope.
+
+### The dashboard
+
+`grind` re-renders `dashboard.html` from the log on every write, so it is
+always current — a self-contained, light-theme page that works from a
+`file://` URL with no server. Its contract (per-lane status and progress,
+review-round badges, real PR links, the merged and closed ledgers, the red
+ATTENTION banner, the auto-refresh and last-generated timestamp, safe
+escaping of outside text) belongs to the renderer, not this skill. ROOT never
+edits it.
 
 **Open the page in the browser EXACTLY ONCE, when it is first created. Never
 on updates.** If the page looks stale to the human, the suspect is the refresh
-toggle or a stale tab — the files are ground truth. Check `state.json`'s
-timestamp before blaming the bookkeeper.
+toggle or a stale tab — the files are ground truth. Check the page's
+last-generated timestamp before assuming the runtime is behind.
 
 **Open it with the OS handler, never with browser automation.** The one
 permitted mechanism is the platform's own opener, handing the file to whatever
@@ -442,7 +493,7 @@ Pick the opener from the actual platform rather than guessing — `Darwin` →
 `open`, Windows → `start`, otherwise `xdg-open`. Note that `uname` alone does
 not identify native Windows (it is absent outside a POSIX shim), so a bare
 `uname` branch would fall through to `xdg-open` and fail there. Always pass an
-absolute path, quoted — the bookkeeper's cwd is not the human's.
+absolute path, quoted — ROOT's cwd is not the human's.
 
 **Browser-automation MCP servers — Playwright, claude-in-chrome, or any
 successor — are prohibited for this.** They are the wrong tool in a way that
@@ -453,14 +504,6 @@ seen. They also cost a tool round-trip and tokens for what a one-line shell
 command does, hold a session open behind the run, and can block on a dialog. If
 the opener is unavailable or fails, **say so and print the path** — a human who
 can read the path can open the page themselves. Do not fall back to automation.
-
-The rendered dashboard **inlines its state** rather than fetching it, so it
-works from a `file://` URL with no server. Do not introduce one. Because the
-state is spliced into an inline `<script>` block and carries text from outside
-the grind (PR titles, review-comment excerpts), the bookkeeper MUST serialize
-it with a JSON serializer and escape every `<` as `\u003c` — the serialization
-contract in `references/state-schema.md`. A raw splice is a script-injection
-hole.
 
 ## 6. Watchers — waking a parked lane
 
@@ -566,27 +609,58 @@ teammate (§8); one cheap direct look costs less than a third wasted arm.
   far more than a dumb one that occasionally makes a lane wait out its timeout.
   The dumbness rule wins here on purpose; the timeout is the backstop.
 
+### The staleness watchdog
+
+A fully-quiet grind emits nothing — the fold can self-report a stale item or
+lane only when something invokes it, so the last mile needs an **external**
+probe. ROOT arms one the same way it arms a PR watcher: a dumb background timer
+loop that runs `grind check` on an interval and rings on staleness.
+
+`grind check --max-age <dur>` folds the log and exits **1** when the grind is
+unfinished, unpaused, and its last event is older than the threshold — a paused
+or finished grind is quiet on purpose and reports `stale: false`, exit 0. So
+the loop is a plain poll on that exit code:
+
+```bash
+while sleep 300; do
+  grind check --dir "<grind-dir>" --max-age 30m || echo "GRIND STALE — check the board"
+done
+```
+
+Keep it dumb for the same reason the PR watcher is dumb: a clever watchdog that
+dies silently is indistinguishable from a healthy quiet grind. Launch it
+**directly** via `run_in_background`, never nested in a wrapper with `&`. The
+ring is a doorbell — ROOT (or the human, for a dead ROOT) reads `grind status`
+and interprets. Absence of `grind_finished` + a stale log + not paused = a
+stalled or crashed grind. ROOT disarms the probe at `grind finish`.
+
 ## 7. Compaction safety
 
-When the session approaches compaction, ROOT writes a **self-contained**
-`ORCHESTRATION-STATE.md` handoff to the grind's working directory, so that a
-post-compaction ROOT can resume from that one file. It must contain:
+The event log **is** the handoff. Mission, protocols, roster, ledgers, the
+human docket, and repo quirks are all written to the log *when context was
+fresh* — at setup, or the moment each was hit — so a post-compaction ROOT
+reconstructs the run by reading folded state, not a file it composed from
+degraded memory. There is nothing to write before you need it.
 
-1. **Mission** — what the grind is for, and what is explicitly out of scope.
-2. **Pause state**, if the human paused: what not to do, and the resume checklist.
-3. **Roster** — every named teammate, its model, and its *exact* position:
-   what is done, what is in flight, what comes next.
-4. **Merged/closed ledger** — counts and identifiers.
-5. **The human's docket** — every decision only they can make, each with your
-   recommendation.
-6. **Operating protocols in force** — enough that behavior reconstructs from
-   the file alone (§2 crossing rules, §4 merge authority, §3 review protocol,
-   §6 watcher caveats, the post-merge leg).
-7. **Repo quirks and traps** — cwd anomalies, other live sessions to avoid
-   colliding with, discovered-work items filed during the run.
+Recovery is one call: **`grind status --full`**. It returns the entire board,
+carrying exactly what a handoff needs:
 
-Write it **before** you need it. A handoff composed after compaction has
-already begun is composed from the wrong context.
+1. **Mission + out-of-scope** — from the seed's `mission`.
+2. **Pause state + resume checklist** — from `grind_paused`, if unresumed.
+3. **Roster + exact positions** — the seed's `lanes`, `lane_handover` events,
+   and every item's derived status.
+4. **Merged + closed ledgers** — the fold's projections of `item_merged` /
+   `item_done` and `pr_closed`.
+5. **The human's docket** — the attention list, with each `waiting-human`
+   item's reason.
+6. **Operating protocols in force** — from the seed's `protocols`.
+7. **Repo quirks and traps** — the `WARN` and `LESSON` observations.
+
+Read it, and resume. This only works if the log is kept complete as you go:
+when a quirk bites, log an `observation` (`WARN`/`LESSON`); when the human must
+decide, log `item_waiting_human` or `attention_raised`; when you rotate a
+lieutenant, log `lane_handover`. State you never logged is state the handoff
+cannot show.
 
 ## 8. Standing rules from the run
 
@@ -595,9 +669,9 @@ every claim without destroying its own context, and it should not: the lane
 owns its gate. Spend verification where being wrong is expensive:
 
 - **Before anything irreversible** — above all, before a merge.
-- **When a report and the world disagree** — a dashboard that says stuck while
-  the PR says otherwise, a claim that contradicts your standing order, a status
-  that has not moved in a suspiciously long time.
+- **When a report and the world disagree** — the board says stuck while the PR
+  says otherwise, a claim that contradicts your standing order, a status that
+  has not moved in a suspiciously long time.
 - **When a claim is load-bearing for a decision you are about to make.**
 
 The checks are cheap and shallow: `gh pr view`, `git log`, a work-item show.
@@ -693,8 +767,10 @@ punished; a worker that hides a compromise costs far more than one that admits i
 | "This lieutenant has been going for hours and is still answering." | Rotate it at a good stopping point before it degrades, not after. Lane handover is maintenance, not failure. |
 | "Sonnet is fine for everything, it saves me deciding." | Sizing each dispatch is your judgment to exercise. A lane running everything at one tier burns budget or botches judgment work. |
 | "I'll wrap the watcher in a helper script with `&`, it's tidier." | The wrapper exits, the notification fires for it, the watcher is orphaned. Launch directly. |
-| "I'll write the compaction handoff when compaction is close." | By then you are composing from degraded context. Write it early. |
-| "The dashboard looks stale, I'll re-open it in the browser." | Open exactly once. Check `state.json`'s timestamp instead. |
+| "I'll write the compaction handoff when compaction is close." | There is nothing to hand-write — the log is the handoff. Recover with `grind status --full`. |
+| "The fold flagged my event as an anomaly — I'll fix the log." | Never hand-edit the log, `state.json`, or the dashboard. The correction is a follow-up event. |
+| "I already know the board state, I'll skip the status call." | You are events behind after any gap. Read the emit-back envelope or `grind status`; don't reconstruct the board from memory. |
+| "The dashboard looks stale, I'll re-open it in the browser." | Open exactly once. `grind` re-renders on every write; check the page's last-generated timestamp instead. |
 | "Playwright is already loaded, I'll open the dashboard with it." | It renders into an automation browser the human never sees — opened, yet unseen. The platform opener (§5), or print the path. |
 | "Both lanes need the version bump, they'll sort it out." | They will collide. ROOT sequences version bumps explicitly. |
 
@@ -718,7 +794,11 @@ punished; a worker that hides a compromise costs far more than one that admits i
 - A lane is arming its own watcher (§6).
 - You are re-opening the dashboard in a browser, or reaching for a
   browser-automation tool to open it at all (§5).
-- You are about to reply to, narrate, or record a bare idle notification (§1).
+- You are about to reply to, narrate, or log a bare idle notification (§1).
+- You are about to hand-edit the event log, `state.json`, or the dashboard to
+  correct a mistake instead of logging a follow-up event (§5).
+- You are composing board state from memory instead of reading the emit-back
+  envelope or `grind status` (§5).
 - Your last three actions were implementation work. You are ROOT — you manage,
   decide, and unblock. Hand it to a lane.
 - You are reading a diff, or re-running a gate a lane already ran.
@@ -735,11 +815,15 @@ punished; a worker that hides a compromise costs far more than one that admits i
 ## Shutdown
 
 1. **Stand down each lane** as its queue empties: confirm the post-merge leg is
-   complete for every merged PR, then release the lieutenant.
-2. **Reconcile the ledger** — merged PRs and closed items — against the tracker
-   directly, not against the dashboard.
-3. **Post a final bookkeeper update** so the dashboard's last state is truthful.
-4. **Write the final `ORCHESTRATION-STATE.md`**, including everything left on
-   the human's docket and every PR still open.
+   complete for every merged PR, log `lane_standing_down`, then release the
+   lieutenant.
+2. **Reconcile the ledger** — the fold's merged and closed projections — against
+   the tracker directly.
+3. **Run `grind finish --summary <text>`.** The final fold and render make the
+   dashboard's last state truthful and mark the grind terminal; disarm the
+   staleness watchdog probe (§6).
+4. **The handoff is the log.** Everything left on the human's docket and every
+   still-open PR is already there — surface it from `grind status --full`, do
+   not re-transcribe it into a file.
 5. **Report to the human**: what merged, what is on their docket and why, and
    what remains parked.
