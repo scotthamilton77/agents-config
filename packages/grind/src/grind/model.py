@@ -13,6 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+# Deliberately duplicated from workcli's envelope types: the packages are
+# isolated uv projects, and a shared dependency for one alias isn't worth it.
 JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 RawEvent = dict[str, JsonValue]
 

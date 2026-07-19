@@ -213,7 +213,8 @@ def _unresolved_edges(state: State, item: Item) -> tuple[str, ...]:
     return tuple(
         target
         for target in item.blocked_on
-        if state.items.get(target) is None or state.items[target].status not in _TERMINAL_RESOLVING
+        if (target_item := state.items.get(target)) is None
+        or target_item.status not in _TERMINAL_RESOLVING
     )
 
 
@@ -378,7 +379,7 @@ def _h_item_blocked(state: State, evt: RawEvent) -> None:
     _recompute_blocked(state, item)
 
 
-_WAITABLE: set[ItemStatus] = {"queued", "in-progress", "pr-open", "in-review", "blocked"}
+_WAITABLE: set[ItemStatus] = _BLOCKABLE
 
 
 @_handler("item_waiting_human")
@@ -476,7 +477,10 @@ def _h_item_enqueued(state: State, evt: RawEvent) -> None:
         return
     item.parked = None
     item.lane = lane.id
+    # Queued is the baseline; blocked is derived, never asserted -- an item
+    # re-entering play with unresolved blocker edges surfaces as blocked.
     item.status = "queued"
+    _recompute_blocked(state, item)
     position = evt.get("position")
     if isinstance(position, int) and 0 <= position <= len(lane.item_ids):
         lane.item_ids.insert(position, item.id)

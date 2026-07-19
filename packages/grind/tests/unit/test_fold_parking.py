@@ -34,6 +34,38 @@ def test_item_enqueued_returns_a_parked_item_to_queued_in_the_named_lane() -> No
     assert "wgclw.2" not in state.parking_lot()
 
 
+def test_item_enqueued_with_unresolved_edges_folds_to_blocked_not_queued() -> None:
+    events = [
+        seed_event(),
+        event("item_blocked", item="wgclw.2", on=["wgclw.1"]),
+        event("item_parked", item="wgclw.2", kind="later-wave", note="hold"),
+        event("item_enqueued", item="wgclw.2", lane="lane-a"),
+    ]
+
+    state = fold(events)
+
+    item = state.items["wgclw.2"]
+    assert item.parked is None
+    assert item.status == "blocked"
+    assert "wgclw.2" in state.lanes["lane-a"].item_ids
+
+
+def test_reenqueued_blocked_item_unblocks_to_queued_when_its_edge_resolves() -> None:
+    events = [
+        seed_event(),
+        event("item_blocked", item="wgclw.2", on=["wgclw.1"]),
+        event("item_parked", item="wgclw.2", kind="later-wave", note="hold"),
+        event("item_enqueued", item="wgclw.2", lane="lane-a"),
+        event("item_started", item="wgclw.1"),
+        event("pr_opened", item="wgclw.1", pr=101),
+        event("item_merged", item="wgclw.1", pr=101),
+    ]
+
+    state = fold(events)
+
+    assert state.items["wgclw.2"].status == "queued"
+
+
 def test_events_other_than_enqueue_are_anomalies_while_item_is_parked() -> None:
     events = [
         seed_event(),
