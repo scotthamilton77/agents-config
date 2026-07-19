@@ -1,4 +1,4 @@
-"""The four command bodies: `create`, `log`, `status`, `finish`.
+"""The five command bodies: `create`, `log`, `status`, `check`, `finish`.
 
 Each takes the grind directory and an injected `now` clock (never a bare
 `datetime.now()` call -- same seam precedent as workcli's `read_file`/`now`),
@@ -9,14 +9,15 @@ wiring; this module owns behavior only, so it's testable without a process.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from grind.derive import lane_status
 from grind.envelope import GrindError
 from grind.fold import fold
-from grind.model import AnomalyRecord, JsonValue, RawEvent, State
+from grind.model import DEFAULT_CONFIG, AnomalyRecord, JsonValue, RawEvent, State
 from grind.payloads import validate_payload
 from grind.serialize import anomaly_json, full_state_json, summarize
 from grind.store import (
@@ -42,6 +43,40 @@ _RESERVED_ENVELOPE_KEYS = ("ts", "type")
 
 def _iso(when: datetime) -> str:
     return when.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_ts(ts: str) -> datetime:
+    return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+
+
+_DURATION_UNITS = {"s": 1, "m": 60, "h": 3600}
+_DURATION_RE = re.compile(r"^(\d+)([smh])$")
+
+
+def _parse_duration(text: str) -> float:
+    """`<int><unit>` where unit is `s`/`m`/`h` (spec examples: "45m", "30m", "1h")."""
+    match = _DURATION_RE.match(text)
+    if match is None:
+        raise GrindError(
+            f"invalid duration {text!r}: expected <int><unit> with unit s, m, or h (e.g. 30m)"
+        )
+    amount, unit = match.groups()
+    return float(amount) * _DURATION_UNITS[unit]
+
+
+def _default_max_age_seconds(config: dict[str, JsonValue]) -> float:
+    """No dedicated grind-level threshold exists in `config` -- `grind check` probes
+    whole-grind liveness, not a single item or lane. Default to the stricter (lower)
+    of the two entity-level thresholds so the watchdog fires promptly; this also
+    matches the spec's own example invocation, `grind check --max-age 30m`, which is
+    `stale_lane_after`'s default."""
+    item_after = config.get("stale_item_after", DEFAULT_CONFIG["stale_item_after"])
+    lane_after = config.get("stale_lane_after", DEFAULT_CONFIG["stale_lane_after"])
+    if not isinstance(item_after, str) or not isinstance(lane_after, str):
+        raise GrindError(
+            "config stale_item_after/stale_lane_after must be duration strings (e.g. 30m)"
+        )
+    return min(_parse_duration(item_after), _parse_duration(lane_after))
 
 
 def _validate_or_raise(event_type: str, payload: RawEvent) -> None:
@@ -182,6 +217,41 @@ def cmd_status(dir_: Path, *, full: bool) -> dict[str, JsonValue]:
     if full:
         return {"ok": True, "state": full_state_json(state), "conditions": []}
     return {"ok": True, "state_summary": summarize(state), "conditions": []}
+
+
+def cmd_check(dir_: Path, max_age: str | None, *, now: Clock) -> dict[str, JsonValue]:
+    """`grind check [--max-age <dur>]` (spec "Staleness watchdog"): the external
+    probe a fully-quiet grind can't self-report. Folds the log first -- `paused`
+    and `finished` are always fold-derived, never read off the raw final line, so
+    a trailing anomalous event can't hide either state. A paused or finished grind
+    reports `stale: false` and exits 0 regardless of the last event's age; an
+    unfinished, unpaused grind is stale once that age exceeds `max_age` (or, absent
+    `--max-age`, the config's own stale thresholds)."""
+    events = load_events(dir_)
+    if not events:
+        raise GrindError(
+            "cannot check staleness: no events in log (grind not yet created via `grind create`)"
+        )
+
+    state = fold(events)
+    last_ts = events[-1].get("ts")
+    if not isinstance(last_ts, str):
+        raise GrindError("cannot check staleness: last logged event has no ts")
+
+    age_s = (now() - _parse_ts(last_ts)).total_seconds()
+    max_age_s = (
+        _parse_duration(max_age) if max_age is not None else _default_max_age_seconds(state.config)
+    )
+    stale = not state.paused and not state.finished and age_s > max_age_s
+
+    return {
+        "ok": True,
+        "last_event_ts": last_ts,
+        "age_s": age_s,
+        "stale": stale,
+        "paused": state.paused,
+        "finished": state.finished,
+    }
 
 
 def cmd_finish(dir_: Path, summary: str, *, now: Clock) -> dict[str, JsonValue]:

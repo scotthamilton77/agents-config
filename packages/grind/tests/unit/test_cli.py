@@ -5,7 +5,8 @@ code 0 unless the command itself failed")."""
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
 
@@ -19,13 +20,20 @@ _SEED = {
     "lanes": [{"id": "lane-a", "queue": [{"id": "wgclw.1", "title": "First item"}]}],
 }
 
+_NOW = lambda: datetime(2026, 7, 19, 12, 0, 0, tzinfo=UTC)  # noqa: E731
 
-def _run(argv: Sequence[str], read_file: dict[str, str] | None = None) -> tuple[int, dict, str]:
+
+def _run(
+    argv: Sequence[str],
+    read_file: dict[str, str] | None = None,
+    now: Callable[[], datetime] | None = None,
+) -> tuple[int, dict, str]:
     out, err = StringIO(), StringIO()
     exit_code = main(
         list(argv),
         out=out,
         err=err,
+        now=now,
         read_file=(lambda p: (read_file or {})[p]) if read_file is not None else None,
     )
     return exit_code, json.loads(out.getvalue()), err.getvalue()
@@ -168,6 +176,48 @@ def test_status_default_and_full(tmp_path: Path):
     exit_code, envelope, _err = _run(["status", "--full", "--dir", str(grind_dir)])
     assert exit_code == 0
     assert "state" in envelope
+
+
+def test_check_verb_exits_zero_when_fresh(tmp_path: Path):
+    grind_dir = tmp_path / "run"
+    _run(
+        ["create", "--file", "seed.json", "--dir", str(grind_dir)],
+        read_file={"seed.json": json.dumps(_SEED)},
+        now=_NOW,
+    )
+
+    exit_code, envelope, _err = _run(["check", "--dir", str(grind_dir)], now=_NOW)
+
+    assert exit_code == 0
+    assert envelope["ok"] is True
+    assert envelope["stale"] is False
+
+
+def test_check_verb_exits_one_when_stale(tmp_path: Path):
+    grind_dir = tmp_path / "run"
+    _run(
+        ["create", "--file", "seed.json", "--dir", str(grind_dir)],
+        read_file={"seed.json": json.dumps(_SEED)},
+        now=_NOW,
+    )
+
+    exit_code, envelope, _err = _run(
+        ["check", "--max-age", "10m", "--dir", str(grind_dir)],
+        now=lambda: datetime(2026, 7, 19, 13, 0, 0, tzinfo=UTC),
+    )
+
+    assert exit_code == 1
+    assert envelope["ok"] is True  # a stale grind is still a successful probe
+    assert envelope["stale"] is True
+
+
+def test_check_verb_empty_log_yields_error_envelope_and_nonzero_exit(tmp_path: Path):
+    grind_dir = tmp_path / "run"
+
+    exit_code, envelope, _err = _run(["check", "--dir", str(grind_dir)])
+
+    assert exit_code != 0
+    assert envelope["ok"] is False
 
 
 def test_finish_verb(tmp_path: Path):

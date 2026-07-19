@@ -3,14 +3,14 @@ independent of argv/stdout wiring (that's `cli.py`, tested separately)."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from grind.envelope import GrindError
 from grind.store import events_path, load_events
-from grind.verbs import cmd_create, cmd_finish, cmd_log, cmd_status
+from grind.verbs import cmd_check, cmd_create, cmd_finish, cmd_log, cmd_status
 
 _NOW = lambda: datetime(2026, 7, 19, 12, 0, 0, tzinfo=UTC)  # noqa: E731
 
@@ -258,6 +258,79 @@ def test_status_full_returns_entire_state(tmp_path: Path):
     state = result["state"]
     assert isinstance(state, dict)
     assert "items" in state
+
+
+# -- check -------------------------------------------------------------------
+
+
+def _at(hours_after_seed: float):
+    when = datetime(2026, 7, 19, 12, 0, 0, tzinfo=UTC) + timedelta(hours=hours_after_seed)
+    return lambda: when
+
+
+def test_check_fresh_log_is_not_stale(tmp_path: Path):
+    _seeded(tmp_path)
+
+    result = cmd_check(tmp_path, None, now=_NOW)
+
+    assert result["ok"] is True
+    assert result["stale"] is False
+    assert result["paused"] is False
+    assert result["finished"] is False
+    assert result["age_s"] == 0.0
+    assert result["last_event_ts"] == "2026-07-19T12:00:00Z"
+
+
+def test_check_old_last_event_is_stale_under_default_max_age(tmp_path: Path):
+    _seeded(tmp_path)
+
+    result = cmd_check(tmp_path, None, now=_at(1))  # 1h later; default is 30m
+
+    assert result["stale"] is True
+
+
+def test_check_respects_explicit_max_age(tmp_path: Path):
+    _seeded(tmp_path)
+
+    stale = cmd_check(tmp_path, "10m", now=_at(1))
+    not_stale = cmd_check(tmp_path, "2h", now=_at(1))
+
+    assert stale["stale"] is True
+    assert not_stale["stale"] is False
+
+
+def test_check_rejects_malformed_max_age(tmp_path: Path):
+    _seeded(tmp_path)
+
+    with pytest.raises(GrindError):
+        cmd_check(tmp_path, "soon", now=_NOW)
+
+
+def test_check_paused_grind_is_never_stale_regardless_of_age(tmp_path: Path):
+    _seeded(tmp_path)
+    cmd_log(tmp_path, "grind_paused", {"reason": "waiting on human"}, now=_NOW)
+
+    result = cmd_check(tmp_path, "10m", now=_at(1))
+
+    assert result["paused"] is True
+    assert result["finished"] is False
+    assert result["stale"] is False
+
+
+def test_check_finished_grind_is_never_stale_regardless_of_age(tmp_path: Path):
+    _seeded(tmp_path)
+    cmd_finish(tmp_path, "shipped it", now=_NOW)
+
+    result = cmd_check(tmp_path, "10m", now=_at(1))
+
+    assert result["finished"] is True
+    assert result["paused"] is False
+    assert result["stale"] is False
+
+
+def test_check_empty_log_raises(tmp_path: Path):
+    with pytest.raises(GrindError):
+        cmd_check(tmp_path, None, now=_NOW)
 
 
 # -- finish -----------------------------------------------------------------
