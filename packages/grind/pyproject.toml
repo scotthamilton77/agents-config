@@ -1,0 +1,74 @@
+[project]
+name = "grind"
+version = "0.1.0"
+description = "grind — event schema + FSM fold for the event-sourced grind runtime."
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/grind"]
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-xdist",
+  "pytest-cov",
+  "ruff",
+  "mypy",
+  "pip-audit",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+  "E", "W", "F",
+  "I",
+  "B",
+  "UP",
+  "SIM",
+  "S",
+  "RET", "ARG", "PTH",
+  "TRY",
+  "RUF",
+  "N",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# S101: pytest's `assert` is the standard assertion mechanism, not a stray
+# debug check.
+"tests/**" = ["S101", "TRY003"]
+# The anomaly path's entire value is a specific, self-contained reason naming
+# what the event violated (spec: "the fold ... records the event as
+# applied: false with a reason") -- that is the opposite of the generic
+# "call a message-builder" TRY003 wants.
+"src/grind/fold.py" = ["TRY003"]
+"src/grind/log.py" = ["TRY003"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+
+[tool.mypy]
+strict = true
+warn_unreachable = true
+disallow_any_decorated = true
+enable_error_code = ["redundant-expr", "truthy-bool", "possibly-undefined"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/grind"]
+
+[tool.coverage.report]
+fail_under = 80
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "@overload"]
+show_missing = true
+skip_covered = true
