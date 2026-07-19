@@ -179,7 +179,7 @@ COMMITTER_DATE=$(jq -r '.commit.committer.date // empty' <<<"$COMMIT_JSON")
 HEAD_REREAD=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}" --jq '.head.sha') || {
     echo "Error: failed to re-read PR head for reaction-path staleness check" >&2; exit 3; }
 
-reaction_clean=$(jq -n \
+reaction_fact=$(jq -n \
     --argjson reactions "$REACTIONS" \
     --argjson timeline "$TIMELINE" \
     --argjson trusted "$BOT_REVIEWERS" \
@@ -202,7 +202,12 @@ reaction_clean=$(jq -n \
        and ($eyes_present | not)
        and ($last_head_change != null)
        and (($plus1.created_at | epoch) as $pe | $pe != null and $pe > $last_head_change)
-       and ($head_reread == $head))')
+       and ($head_reread == $head)) as $clean
+    | {clean: $clean,
+       id: (if $clean then $plus1.id else null end),
+       created_at: (if $clean then $plus1.created_at else null end),
+       by: (if $clean then $plus1.user.login else null end)}')
+reaction_clean=$(jq -r '.clean' <<<"$reaction_fact")
 
 if [[ "$review_clean" == "true" ]]; then
     signal_source='"review"'
@@ -213,7 +218,17 @@ else
 fi
 set_fact bot_clean_review_at_head "$(jq -n --argjson a "$review_clean" --argjson b "$reaction_clean" '$a or $b')"
 set_fact bot_clean_signal_source "$signal_source"
-set_fact bot_reviewed_by "$review_by"
+# review wins the tie (Component 2): bot_reviewed_by and the reaction audit
+# trail follow the same precedence as the fact itself. The reaction's id and
+# created_at are recorded here — not just the boolean — because reactions
+# leave no timeline history to audit after the fact once torn down.
+if [[ "$signal_source" == '"reaction"' ]]; then
+    set_fact bot_reviewed_by "$(jq '.by' <<<"$reaction_fact")"
+    set_fact bot_clean_reaction "$(jq '{id, created_at}' <<<"$reaction_fact")"
+else
+    set_fact bot_reviewed_by "$review_by"
+    set_fact bot_clean_reaction null
+fi
 # ── Blocker: active requested-changes verdict (sticky; never head-scoped) ────
 # GitHub does not clear CHANGES_REQUESTED on push; only dismissal (state
 # becomes DISMISSED) or a later APPROVED from the same reviewer clears it.

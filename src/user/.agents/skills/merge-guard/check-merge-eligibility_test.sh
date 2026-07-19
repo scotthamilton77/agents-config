@@ -1057,9 +1057,9 @@ clean_invs
 # extends to a disjunction: (a) the existing review path, OR (b) a reaction
 # path that is the only artifact Codex leaves on an auto/push-triggered clean
 # pass. bot_clean_signal_source records which path (if either) fired.
-mk_reaction() {  # mk_reaction <login> <content> <created_at> [type]
-  jq -n --arg l "$1" --arg c "$2" --arg t "$3" --arg ty "${4:-Bot}" \
-    '{content: $c, user: {login: $l, type: $ty}, created_at: $t}'
+mk_reaction() {  # mk_reaction <login> <content> <created_at> [type] [id]
+  jq -n --arg l "$1" --arg c "$2" --arg t "$3" --arg ty "${4:-Bot}" --argjson id "${5:-42}" \
+    '{id: $id, content: $c, user: {login: $l, type: $ty}, created_at: $t}'
 }
 mk_commit() {  # mk_commit <committer-date-or-"null">
   if [ "$1" = "null" ]; then
@@ -1083,24 +1083,35 @@ FORCEPUSH_TS="2026-01-01T02:00:00Z"        # post-dates PLUS1_TS_OK
 COMMIT_FIXTURE="$(mk_commit "$COMMIT_TS")"
 
 # reaction path alone → true, source "reaction"
-reacts=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "$PLUS1_TS_OK")" '[$a]')
+reacts=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "$PLUS1_TS_OK" Bot 99)" '[$a]')
 out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts" FIXTURE_COMMIT="$COMMIT_FIXTURE")
 assert "reaction path alone → bot_clean_review_at_head true" \
   "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = true ]"
 assert "reaction path alone → signal source reaction" \
   "[ \"\$(jq -r '.facts.bot_clean_signal_source' <<<\"\$out\")\" = reaction ]"
+assert "reaction path alone → bot_reviewed_by is the reactor" \
+  "[ \"\$(jq -r '.facts.bot_reviewed_by' <<<\"\$out\")\" = 'trusted-bot[bot]' ]"
+assert "reaction path alone → bot_clean_reaction carries id and created_at (audit trail)" \
+  "[ \"\$(jq -c '.facts.bot_clean_reaction' <<<\"\$out\")\" = '{\"id\":99,\"created_at\":\"$PLUS1_TS_OK\"}' ]"
 
 # review path alone → true, source "review" (companion fact regression pin)
 revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
 assert "review path alone → signal source review" \
   "[ \"\$(jq -r '.facts.bot_clean_signal_source' <<<\"\$out\")\" = review ]"
+assert "review path alone → bot_clean_reaction is null (no audit trail to fabricate)" \
+  "[ \"\$(jq '.facts.bot_clean_reaction' <<<\"\$out\")\" = null ]"
 
-# both present → source reads "review" (review wins over reaction)
+# both present → source reads "review" (review wins over reaction), and the
+# reaction audit trail stays null — the announcement has no reaction to cite
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs" FIXTURE_REACTIONS="$reacts" FIXTURE_COMMIT="$COMMIT_FIXTURE")
 assert "both paths present → fact true" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = true ]"
 assert "both paths present → source review wins" \
   "[ \"\$(jq -r '.facts.bot_clean_signal_source' <<<\"\$out\")\" = review ]"
+assert "both paths present → bot_reviewed_by is the reviewer, not the reactor" \
+  "[ \"\$(jq -r '.facts.bot_reviewed_by' <<<\"\$out\")\" = 'trusted-bot[bot]' ]"
+assert "both paths present → bot_clean_reaction null (review wins, no reaction cited)" \
+  "[ \"\$(jq '.facts.bot_clean_reaction' <<<\"\$out\")\" = null ]"
 
 # neither → false, source "none"
 out=$(run_script "$BASE_POLICY" FIXTURE_COMMIT="$COMMIT_FIXTURE")
