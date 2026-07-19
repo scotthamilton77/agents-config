@@ -2356,11 +2356,14 @@ def test_cross_poll_equal_second_newer_id_updates_stored_review_id() -> None:
     assert rv_end.last_review_id == 41  # newer id at the tied second is recorded
 
 
-def test_issue_comment_advance_preserves_stored_review_id() -> None:
-    # Negative control: a plain issue comment is not a review. It advances last_review_at
-    # (activity), but must leave last_review_id untouched — neither restamped to the
-    # comment id nor cleared — so a prior review's id survives to anchor the reactivation
-    # freshness test.
+def test_issue_comment_advance_clears_stored_review_id() -> None:
+    # Coherence invariant: last_review_id is the id of the review observed AT
+    # last_review_at, else None. A plain issue comment is not a review; when it advances
+    # last_review_at forward, the stored id no longer corresponds to the stamped timestamp,
+    # so it is CLEARED. Leaving the stale id would let a later re-request read an old
+    # review at the same second (with a larger id) as fresh and satisfy the request from
+    # historical activity. With the id cleared, the reactivation freshness test fails
+    # closed on an equal-second collision until a strictly-later signal arrives.
     reviewers = {
         "copilot": ReviewerState(
             identity="copilot",
@@ -2382,7 +2385,50 @@ def test_issue_comment_advance_preserves_stored_review_id() -> None:
     )
     rv = state.reviewers["copilot"]
     assert rv.last_review_at == datetime(2026, 6, 9, 11, 0, tzinfo=UTC)  # advanced
-    assert rv.last_review_id == 40  # untouched — a comment carries no review id
+    assert rv.last_review_id is None  # cleared — the stale id no longer matches the stamp
+
+
+def test_declined_boundary_equal_second_larger_id_is_not_fresh() -> None:
+    # Boundary-identity gate on the reactivation tiebreaker. The freshness boundary is
+    # max(declined_at, last_review_at); here declined_at (11:00Z) is later than
+    # last_review_at (10:00Z), so the boundary is declined_at and the stored last_review_id
+    # (40) belongs to the OLDER 10:00Z review, NOT to the boundary. A verdict re-observed
+    # AT the boundary second (11:00Z) carries a larger id (50), but that id cannot be
+    # ordered against a boundary the stored id does not correspond to — so it must fail
+    # closed (equality is never fresh, the bb92bde convention) and reset to REQUESTED,
+    # never let historical activity satisfy the fresh request by moving to REVIEW_FOUND.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.DECLINED,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=datetime(2026, 6, 9, 10, 0, tzinfo=UTC),
+            last_review_id=40,
+            declined_at=datetime(2026, 6, 9, 11, 0, tzinfo=UTC),
+            declined_reason="request-withdrawn",
+        )
+    }
+    boundary_verdict = {
+        "id": 50,  # larger than the stored 40, but the stored id is not the boundary's
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T11:00:00Z",  # == declined_at, the boundary second
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[boundary_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REQUESTED  # fail-closed, NOT REVIEW_FOUND
+    assert copilot.last_request_at == _T0
+    assert reviewers_gate_satisfied(state) is False
 
 
 def test_commented_drive_by_id_blocks_false_fresh_reactivation() -> None:

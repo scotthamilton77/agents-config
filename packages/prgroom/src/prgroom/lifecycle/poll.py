@@ -394,8 +394,9 @@ def _item_review_id(item: ReviewItem) -> int | None:
     Only a ``REVIEW_SUMMARY`` item is review-derived: its ``gh_id`` is the review's own
     numeric id (unique + monotonic per submission) — the value the reactivation freshness
     test disambiguates an equal-second collision on. An issue or inline comment is not a
-    review, so it returns ``None``: its advance of ``last_review_at`` must leave
-    ``last_review_id`` untouched. A non-integer ``gh_id`` degrades to ``None`` (fail-closed
+    review, so it returns ``None``: its advance of ``last_review_at`` clears
+    ``last_review_id``, since no review corresponds to the newly-stamped timestamp. A
+    non-integer ``gh_id`` degrades to ``None`` (fail-closed
     — the freshness test then treats a same-second collision as historical, the bb92bde
     invariant).
     """
@@ -508,11 +509,16 @@ def _reactivation_engagement(
     is equally wrong: at steady state every poll re-observes the SAME verdict at the SAME
     timestamp (``terminal_at == last_review_at``), so equality-as-fresh would re-promote a
     stale verdict on every re-request (the bug commit bb92bde fixed). Review **identity**
-    is the only sound tiebreaker: ids are unique and monotonic per submission, so at an
-    equal timestamp a review whose id strictly exceeds the stored ``last_review_id`` is a
-    new submission (fresh), while an equal id is the same review re-observed (historical).
-    A collision with an unknown id on either side (legacy state, malformed payload) falls
-    back to the strict-``>`` verdict — historical — preserving the bb92bde invariant.
+    is the sound tiebreaker, but ONLY when the stored ``last_review_id`` corresponds to
+    the boundary — i.e. ``last_review_at`` IS the boundary (the max side). Ids are unique
+    and monotonic per submission, so under that condition a review whose id strictly
+    exceeds the stored id at an equal timestamp is a new submission (fresh), while an
+    equal id is the same review re-observed (historical). When ``declined_at`` is the
+    boundary instead, the stored id belongs to the older ``last_review_at`` and cannot
+    order a verdict at the boundary second; likewise an unknown id on either side (legacy
+    state, cleared after a comment advance, malformed payload) cannot disambiguate. In all
+    those cases the equal-timestamp verdict falls back to historical — failing closed on
+    equality, preserving the bb92bde invariant.
 
     Returns the ``(status, stamp, review_id)`` to reactivate directly into — REVIEW_FOUND
     for a fresh terminal verdict, IN_PROGRESS for fresh non-terminal engagement — with the
@@ -525,14 +531,25 @@ def _reactivation_engagement(
     history = [t for t in (existing.declined_at, existing.last_review_at) if t is not None]
     boundary = max(history) if history else None
 
+    # The stored id disambiguates an equal-second collision ONLY when it corresponds to
+    # the boundary — i.e. last_review_at IS the boundary (the max side). When declined_at
+    # is the boundary (declined_at > last_review_at), the stored id belongs to the older
+    # last_review_at, not to the boundary, so it cannot order a verdict at the boundary
+    # second and the tiebreaker is unavailable.
+    id_corresponds_to_boundary = (
+        existing.last_review_at is not None and boundary == existing.last_review_at
+    )
+
     def _is_fresh(at: datetime, review_id: int | None) -> bool:
         if boundary is None or at > boundary:
             return True
-        # Equal-second collision: only a strictly-newer review id disambiguates a fresh
-        # submission from a re-observed historical verdict. A missing id on either side
-        # cannot disambiguate, so it stays historical (bb92bde invariant).
+        # Equal-second collision: a strictly-newer review id disambiguates a fresh
+        # submission from a re-observed historical verdict, but only when the stored id
+        # corresponds to the boundary. Otherwise — or when a missing id on either side
+        # cannot disambiguate — fail closed on equality (bb92bde invariant).
         return (
             at == boundary
+            and id_corresponds_to_boundary
             and review_id is not None
             and existing.last_review_id is not None
             and review_id > existing.last_review_id
@@ -963,12 +980,13 @@ def _observe_engagement(
       ``created_at`` / ``submitted_at``, carried on ``item.seen_at``), NOT poll time, so
       the §4.1 stall clock survives crash gaps and resumes correctly. It only ever
       moves **forward** — a later non-review comment that bumped it is never pulled
-      back by a re-observed older terminal verdict. Whenever the advancing activity is
-      itself review-derived (a COMMENTED review-summary or a terminal verdict),
-      ``last_review_id`` advances to that review's own id so it stays "the id of the
-      latest observed review"; a comment-derived advance leaves the stored id intact
-      (a comment is not a review) — never stale, never cleared — so the reactivation
-      freshness test keeps a sound tiebreaker for equal-second collisions.
+      back by a re-observed older terminal verdict. ``last_review_id`` upholds the
+      coherence invariant "the id of the review observed AT ``last_review_at``, else
+      ``None``": a review-derived advance (a COMMENTED review-summary or a terminal
+      verdict) stamps that review's own id, while a comment-derived advance CLEARS the
+      id — the prior id belonged to the superseded timestamp and no longer corresponds
+      to the newly-stamped one. The reactivation freshness test relies on this
+      correspondence to break equal-second collisions soundly.
     - An APPROVED / CHANGES_REQUESTED review (a post-request terminal verdict, in
       ``terminal_reviews``) sets the reviewer to ``review_found`` — a genuine verdict
       **supersedes a prior decline** (§4.1: an auto-decline is a fallback for a missing
@@ -1033,13 +1051,14 @@ def _observe_engagement(
         advanced = reviewer.last_review_at is None or candidate_at > reviewer.last_review_at
         if advanced:
             reviewer.last_review_at = candidate_at
-            # Stamp last_review_id for ANY review-derived advance (a COMMENTED review or a
-            # terminal verdict) so it stays "the id of the latest observed review". A
-            # comment-derived advance (candidate_id is None) leaves the stored id intact
-            # rather than clearing it, so the reactivation freshness test still
-            # disambiguates an equal-second re-review from a re-observed historical one.
-            if candidate_id is not None:
-                reviewer.last_review_id = candidate_id
+            # Coherence invariant: last_review_id is the id of the review observed AT
+            # last_review_at, else None. A review-derived advance (a COMMENTED review or a
+            # terminal verdict) stamps that review's own id; a comment-derived advance
+            # (candidate_id is None) CLEARS the stored id, because the prior id belonged to
+            # the OLD timestamp and no longer corresponds to the newly-stamped one. Keeping
+            # a stale id would let the reactivation freshness test read an old review at the
+            # same second as fresh; clearing it makes that test fail closed instead.
+            reviewer.last_review_id = candidate_id
         elif (
             candidate_at == reviewer.last_review_at
             and candidate_id is not None
