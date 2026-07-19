@@ -189,6 +189,58 @@
     });
 
     container.appendChild(stage);
+    return { stage: stage, size: size };
+  }
+
+  // ---- Round-3: the overlay-hosted sonar owns its own zoom/pan. The ring
+  // stage previously rendered at its natural pixel size, shrink-wrapped in
+  // the overlay's flex center — a dense neighborhood rendered tiny with no
+  // zoom affordance at all. Mirrors the constellation's transform contract
+  // (scaleExtent [0.3, 6], wheel zoom, background drag pans, double-click
+  // zoom disabled): the zoom drives the stage's CSS transform only, never
+  // ring geometry. ----
+  function computeSonarFitTransform(viewport, stageSize) {
+    var rect = viewport.getBoundingClientRect();
+    var width = rect.width || viewport.clientWidth || stageSize;
+    var height = rect.height || viewport.clientHeight || stageSize;
+    var fitScale = Math.min(width / stageSize, height / stageSize);
+    var scale = Math.max(0.3, Math.min(6, fitScale));
+    return d3.zoomIdentity
+      .translate(width / 2, height / 2)
+      .scale(scale)
+      .translate(-stageSize / 2, -stageSize / 2);
+  }
+
+  function wireSonarZoom(viewport, stage, stageSize) {
+    // Feature guard: the sonar renders (un-zoomable, at natural size) even
+    // if the d3 bundle is somehow absent — same degrade-don't-crash stance
+    // as the pointer-capture guards elsewhere.
+    if (typeof d3 === "undefined" || !d3.zoom) {
+      return;
+    }
+    var zoomBehavior = d3
+      .zoom()
+      .scaleExtent([0.3, 6])
+      .filter(function (event) {
+        if (event.type === "wheel") {
+          return true;
+        }
+        if (event.type === "dblclick") {
+          return false;
+        }
+        // A drag starting on a ring node belongs to the node's own
+        // click-vs-drag activation (recenter), never the background pan.
+        var target = event.target;
+        return !(target && target.closest && target.closest(".viz-sonar-node"));
+      })
+      .on("zoom", function (event) {
+        stage.style.transform =
+          "translate(" + event.transform.x + "px," + event.transform.y + "px) scale(" + event.transform.k + ")";
+      });
+    d3.select(viewport).call(zoomBehavior).on("dblclick.zoom", null);
+    // Fit-to-content baseline: the whole ring set starts visible, however
+    // large the neighborhood — never a manual zoom-out to find it.
+    d3.select(viewport).call(zoomBehavior.transform, computeSonarFitTransform(viewport, stageSize));
   }
 
   window.vizSonar = {
@@ -226,7 +278,13 @@
           renderEmptyNeighborhood(inner, path);
           return;
         }
-        renderRings(inner, groups, path, mount);
+        // Round-3: rings render inside a dedicated zoomable viewport (the
+        // message states above stay in plain flow — nothing to zoom).
+        var viewport = document.createElement("div");
+        viewport.setAttribute("class", "viz-sonar-viewport");
+        inner.appendChild(viewport);
+        var rendered = renderRings(viewport, groups, path, mount);
+        wireSonarZoom(viewport, rendered.stage, rendered.size);
       }
 
       mount(centerPath);
