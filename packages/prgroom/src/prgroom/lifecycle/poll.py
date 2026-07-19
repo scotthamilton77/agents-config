@@ -1222,6 +1222,14 @@ def _resolve_poll_phase(
         return PRPhase.FIXES_PENDING if has_items else PRPhase.AWAITING_REVIEW
     if new_item:
         return PRPhase.FIXES_PENDING
+    if phase is PRPhase.QUIESCED and external_push and needs_reviewer_refresh:
+        # An external push invalidated a required review on a resting PR. This must take
+        # precedence over the `not reviewers_satisfied` arm below: that arm returns
+        # AWAITING_REVIEW, which sends the run loop into `wait` and never runs the
+        # FIXES_PENDING pipeline's `rereview` step — so the newly pushed head would stay
+        # unreviewed indefinitely. Route to FIXES_PENDING so rereview re-asks the
+        # invalidated reviewer (mirrors the AWAITING_REVIEW external-push refresh arm below).
+        return PRPhase.FIXES_PENDING
     if phase is PRPhase.QUIESCED and not reviewers_satisfied:
         # A reviewer was newly requested (or reactivated) on a resting PR — no push,
         # no new item, so neither existing arm below fires. Without this the phase and

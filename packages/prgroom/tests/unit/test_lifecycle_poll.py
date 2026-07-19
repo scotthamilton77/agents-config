@@ -3205,3 +3205,76 @@ def test_post_boundary_terminal_verdict_restores_invalidated_reviewer() -> None:
     assert copilot.status is ReviewerStatus.REVIEW_FOUND  # restored by the post-boundary verdict
     assert copilot.last_review_at == datetime(2026, 6, 9, 12, 5, tzinfo=UTC)
     assert has_required_reviewers_to_refresh(state) is False
+
+
+def test_quiesced_external_push_with_stale_reviewer_advances_to_fixes_pending() -> None:
+    # Comment 3611228917. A QUIESCED PR with a required REVIEW_FOUND reviewer takes an
+    # external push: the flip to NOT_REQUESTED makes reviewers unsatisfied, and the
+    # `QUIESCED and not reviewers_satisfied` early arm would return AWAITING_REVIEW --
+    # sending the run loop into `wait`, never `rereview`, so the new head stays
+    # unreviewed. The external-push refresh path must take precedence and route to
+    # FIXES_PENDING so the pipeline executes rereview.
+    reviewers = _required_reviewer(ReviewerStatus.REVIEW_FOUND)
+    start = _state(
+        phase=PRPhase.QUIESCED,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",
+        reviewers=reviewers,
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["copilot"].status is ReviewerStatus.NOT_REQUESTED
+    assert state.phase is PRPhase.FIXES_PENDING
+
+
+def test_quiesced_external_push_without_refresh_stays_awaiting_review() -> None:
+    # Keep-green: a QUIESCED PR whose push invalidates NO required reviewer (here an
+    # OPTIONAL REVIEW_FOUND reviewer, which the flip leaves untouched) has nothing to
+    # rereview, so the external-push arm keeps returning AWAITING_REVIEW.
+    reviewers = {
+        "human": ReviewerState(
+            identity="human",
+            kind=ReviewerKind.HUMAN,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=False,
+            last_request_at=_T0,
+        )
+    }
+    start = _state(
+        phase=PRPhase.QUIESCED,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",
+        reviewers=reviewers,
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["human"].status is ReviewerStatus.REVIEW_FOUND  # optional untouched
+    assert has_required_reviewers_to_refresh(state) is False
+    assert state.phase is PRPhase.AWAITING_REVIEW
+
+
+def test_quiesced_no_push_newly_requested_reviewer_stays_awaiting_review() -> None:
+    # Keep-green: the no-push QUIESCED arm is unchanged. A reviewer requested on a
+    # resting PR with no push (external_push False, needs_reviewer_refresh False) still
+    # reopens to AWAITING_REVIEW via the `not reviewers_satisfied` arm, not FIXES_PENDING.
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same")
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["alice"].status is ReviewerStatus.REQUESTED
+    assert has_required_reviewers_to_refresh(state) is False
+    assert state.phase is PRPhase.AWAITING_REVIEW
