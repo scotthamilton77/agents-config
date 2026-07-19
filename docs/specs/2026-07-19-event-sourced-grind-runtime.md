@@ -232,7 +232,7 @@ anomalies are data, not errors).
 | `grind log <type> [payload flags or --json '<payload>']` | Validates payload shape at the boundary, appends, refolds, rewrites `state.json`, re-renders | The **emit-back envelope** (below) |
 | `grind status [--handoff] [--full]` | Reads the log, folds, reports | Default: summary + conditions. `--full`: entire state. `--handoff`: the compaction handoff (below). |
 | `grind render` | Refolds and re-renders `dashboard.html` only | `{ok, path}` |
-| `grind check [--max-age <dur>]` | Staleness probe (below) | `{ok, last_event_ts, age_s, stale}` — exit **1** when stale |
+| `grind check [--max-age <dur>]` | Staleness probe (below) | `{ok, last_event_ts, age_s, stale, paused}` — exit **1** when stale |
 | `grind finish --summary <text>` | Appends `grind_finished`, final fold + render | Final state summary |
 
 Event payloads are validated per-type at the CLI boundary (parse once, trust
@@ -289,8 +289,12 @@ right `log` call.
 
 The fold can self-report a stale *item* or *lane* only when something invokes
 it — a fully-quiet grind emits nothing, so the last mile needs an **external**
-probe. `grind check --max-age 30m` compares the log's last event timestamp to
-now and exits 1 when exceeded. Absence of `grind_finished` + stale log =
+probe. `grind check --max-age 30m` folds the log first: if the grind is paused
+(a `grind_paused` with no later `grind_resumed`), it reports `{paused: true,
+stale: false}` and exits 0 regardless of last-event age — a pause is a
+deliberate quiet state, not a crash. Otherwise it compares the log's last event
+timestamp to now and exits 1 when exceeded; staleness detection resumes after
+`grind_resumed`. Absence of `grind_finished` + stale log + not paused =
 stalled or crashed grind.
 
 The probe is armed the same way PR watchers are: ROOT launches a dumb
