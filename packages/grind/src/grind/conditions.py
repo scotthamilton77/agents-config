@@ -91,7 +91,12 @@ def _round_threshold(value: JsonValue, default: int) -> int:
 def _parse_ts(value: str | None) -> datetime | None:
     if value is None:
         return None
-    return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        # the fold accepts structural garbage, so a recorded ts may be non-ISO;
+        # an unreadable timestamp is unavailable evidence, never a crash
+        return None
 
 
 def _age_seconds(ts: str | None, now: datetime) -> float | None:
@@ -213,9 +218,10 @@ def _review_stalemate_risk(state: State) -> list[Condition]:
     out: list[Condition] = []
     for item in state.items.values():
         # round_history survives the review cycle (it is fold history, never
-        # cleared), so gate on a live review state: a done/merged item, or one
-        # whose PR closed and re-queued, is not a stalemate however it got there
-        if item.status not in _ACTIVE_REVIEW_STATUSES:
+        # cleared), so gate on a live review state: a done/merged item, one
+        # whose PR closed and re-queued, or a parked item (parking preserves
+        # status), is not a stalemate however it got there
+        if item.status not in _ACTIVE_REVIEW_STATUSES or item.parked is not None:
             continue
         history = item.round_history
         if len(history) < n:
@@ -244,10 +250,14 @@ def conditions(state: State, now: datetime) -> list[Condition]:
     `item_unblocked`). Returned by both the `grind log` emit-back envelope and
     `grind status`, so a level condition is never missed by not watching the
     right call."""
+    # staleness measures work going quiet unexpectedly; a paused or finished
+    # grind is quiet on purpose (`grind check` applies the same exemption)
+    stale: list[Condition] = []
+    if not state.paused and not state.finished:
+        stale = [*_stale_items(state, now), *_stale_lanes(state, now)]
     return [
         *_lane_and_grind_complete(state),
-        *_stale_items(state, now),
-        *_stale_lanes(state, now),
+        *stale,
         *_attention_pending(state, now),
         *_blocked_chains(state),
         *_review_stalemate_risk(state),

@@ -568,3 +568,52 @@ def test_stalemate_risk_carries_window_start_as_since() -> None:
     )
 
     assert risk[0]["since"] == "2026-07-19T00:05:00Z"
+
+
+def test_stalemate_risk_excluded_for_parked_item() -> None:
+    # parking preserves the item's status (e.g. waiting-human) and its
+    # round_history; a parked item is out of the active queue, not stalled
+    events = [
+        *_to_pr_open(),
+        event("review_round", item="wgclw.1", kind="codex", round=1, head_sha="a1"),
+        event("review_round", item="wgclw.1", kind="codex", round=2, head_sha="a1"),
+        event("review_round", item="wgclw.1", kind="codex", round=3, head_sha="a1"),
+        event("item_waiting_human", item="wgclw.1", why="stalemate"),
+        event("item_parked", item="wgclw.1", kind="deferred"),
+    ]
+    state = fold(events)
+
+    result = conditions(state, datetime(2026, 7, 19, 0, 5, 0, tzinfo=UTC))
+
+    assert "review_stalemate_risk" not in _names(result)
+
+
+def test_staleness_suppressed_while_paused_or_finished() -> None:
+    # a paused or finished grind is quiet on purpose -- same exemption
+    # `grind check` applies; staleness measures unexpected silence only
+    base = [
+        _two_item_lane_seed(),
+        event("item_started", item="wgclw.1"),
+    ]
+    late = datetime(2026, 7, 19, 6, 0, 0, tzinfo=UTC)
+
+    running = fold(base)
+    assert "stale_item" in _names(conditions(running, late))
+
+    paused = fold([*base, event("grind_paused", reason="lunch")])
+    names = _names(conditions(paused, late))
+    assert "stale_item" not in names and "stale_lane" not in names
+
+
+def test_malformed_recorded_ts_is_unavailable_not_a_crash() -> None:
+    # the fold accepts structural garbage: a non-ISO ts can be recorded as an
+    # item's last reference; conditions() must skip it, never raise
+    events = [
+        _two_item_lane_seed(),
+        {"ts": "not-a-timestamp", "type": "item_started", "item": "wgclw.1"},
+    ]
+    state = fold(events)
+
+    result = conditions(state, datetime(2026, 7, 19, 6, 0, 0, tzinfo=UTC))
+
+    assert all(c["item"] != "wgclw.1" for c in _by_name(result, "stale_item"))

@@ -153,6 +153,8 @@ def full_state_json(state: State) -> dict[str, JsonValue]:
         "closed_ledger": [_closed_entry_json(c) for c in state.closed_ledger],
         "lessons": [_observation_json(o) for o in state.lessons],
         "anomalies": [anomaly_json(a) for a in state.anomalies],
+        "last_item_ts": cast("JsonValue", dict(state.last_item_ts)),
+        "last_lane_ts": cast("JsonValue", dict(state.last_lane_ts)),
     }
 
 

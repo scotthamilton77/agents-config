@@ -163,3 +163,27 @@ def test_full_state_serializes_round_history():
     assert items["wgclw.1"]["round_history"] == [
         {"round": 1, "head_sha": "a1", "ts": "2026-07-19T00:05:00Z"}
     ]
+
+
+def test_full_state_serializes_staleness_ts_maps():
+    events = [seed_event(), event("item_started", item="wgclw.1")]
+    state = fold(events)
+
+    payload = full_state_json(state)
+
+    assert payload["last_item_ts"]["wgclw.1"] == "2026-07-19T00:05:00Z"
+    assert "last_lane_ts" in payload
+
+
+def test_full_state_json_is_a_faithful_materialization_of_state():
+    # Reflection lock: every State field must appear in the snapshot (spec:
+    # "entire state serialized"). A new fold fact that skips the serializer
+    # fails here at the moment it is added, not in a later review round.
+    import dataclasses
+
+    from grind.model import State
+
+    payload = full_state_json(fold([seed_event()]))
+
+    missing = [f.name for f in dataclasses.fields(State) if f.name not in payload]
+    assert missing == []
