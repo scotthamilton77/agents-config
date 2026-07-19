@@ -177,9 +177,14 @@ assert "exits 3 for --bot-reviewers array with a non-string" "[ \$rc_mixed_bots 
 
 # A non-Copilot bot review is found ONLY when its identity is in --bot-reviewers,
 # proving the poll matches by policy allowlist, not the hardcoded Copilot substring.
-FIXTURE_REVIEWS_OTHERBOT='[{"user":{"login":"My-Bot[bot]","type":"Bot"},"state":"COMMENTED","submitted_at":"2026-01-01T00:00:00Z"}]'
+# commit_id matches FIXTURE_PR's head.sha (agents-config-abn9.44.14: the initial
+# poll now requires this match — see the freshness-filter section below).
+CURRENT_HEAD_SHA='deadbeef00000000000000000000000000000000'
+FIXTURE_PR_CURRENT_HEAD="{\"state\":\"open\",\"head\":{\"sha\":\"$CURRENT_HEAD_SHA\"}}"
+FIXTURE_REVIEWS_OTHERBOT="[{\"user\":{\"login\":\"My-Bot[bot]\",\"type\":\"Bot\"},\"state\":\"COMMENTED\",\"submitted_at\":\"2026-01-01T00:00:00Z\",\"commit_id\":\"$CURRENT_HEAD_SHA\"}]"
 
 out_bot=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS="$FIXTURE_REVIEWS_OTHERBOT" \
+  FIXTURE_PR="$FIXTURE_PR_CURRENT_HEAD" \
   "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 5 --bot-reviewers '["my-bot[bot]"]' 2>/dev/null)
 rc_bot=$?
 assert "non-Copilot bot in --bot-reviewers yields a found review (exit 0)" "[ \$rc_bot -eq 0 ]"
@@ -187,6 +192,7 @@ assert "matched review reports copilot_review_found" "printf '%s' \"\$out_bot\" 
 
 # Control: the same bot is invisible to the default Copilot filter → timeout.
 env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS="$FIXTURE_REVIEWS_OTHERBOT" \
+  FIXTURE_PR="$FIXTURE_PR_CURRENT_HEAD" \
   "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 >/dev/null 2>&1
 rc_default=$?
 assert "default Copilot filter does NOT match the non-Copilot bot (timeout, exit 1)" "[ \$rc_default -eq 1 ]"
@@ -200,13 +206,50 @@ assert "matched review reports completion_kind review" "printf '%s' \"\$out_bot\
 # 2 part (a)); before this fix, a bot that approved cleanly on its first pass
 # was never detected as having responded, and the poll ran to a spurious
 # timeout that wrongly spent the retry budget.
-FIXTURE_REVIEWS_APPROVED='[{"user":{"login":"My-Bot[bot]","type":"Bot"},"state":"APPROVED","submitted_at":"2026-01-01T00:00:00Z"}]'
+FIXTURE_REVIEWS_APPROVED="[{\"user\":{\"login\":\"My-Bot[bot]\",\"type\":\"Bot\"},\"state\":\"APPROVED\",\"submitted_at\":\"2026-01-01T00:00:00Z\",\"commit_id\":\"$CURRENT_HEAD_SHA\"}]"
 
 out_approved=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS="$FIXTURE_REVIEWS_APPROVED" \
+  FIXTURE_PR="$FIXTURE_PR_CURRENT_HEAD" \
   "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 5 --bot-reviewers '["my-bot[bot]"]' 2>/dev/null)
 rc_approved=$?
 assert "an APPROVED review completes (exit 0), does NOT time out" "[ \$rc_approved -eq 0 ]"
 assert "an APPROVED review reports completion_kind review" "printf '%s' \"\$out_approved\" | jq -e '.completion_kind == \"review\"' >/dev/null"
+
+# ── agents-config-abn9.44.14: the INITIAL poll (no --since-timestamp) must
+# require a review's own `.commit_id` to equal the current PR head, mirroring
+# check-merge-eligibility.sh's review-path acceptance criteria exactly. Before
+# this fix the initial poll applied NO freshness filter at all -- any
+# historical review from a trusted identity, however stale, completed the
+# poll. A stale review is not a response to the code actually at HEAD.
+
+# (m) A review whose commit_id does NOT match the current head must NOT
+#     complete the initial poll -- falls through to a real timeout.
+FIXTURE_REVIEWS_STALE_COMMIT="[{\"user\":{\"login\":\"My-Bot[bot]\",\"type\":\"Bot\"},\"state\":\"APPROVED\",\"submitted_at\":\"2026-01-01T00:00:00Z\",\"commit_id\":\"stalecommit0000000000000000000000000000\"}]"
+
+env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS="$FIXTURE_REVIEWS_STALE_COMMIT" \
+  FIXTURE_PR="$FIXTURE_PR_CURRENT_HEAD" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 --bot-reviewers '["my-bot[bot]"]' >/dev/null 2>&1
+rc_stale_commit=$?
+assert "initial poll: a review against a stale commit does NOT complete (timeout, exit 1)" "[ \$rc_stale_commit -eq 1 ]"
+
+# (n) Regression guard: a legitimate review AT the current head still
+#     completes normally on the first poll -- no regression to first-pass
+#     detection (out_bot/out_approved above already prove this, this is the
+#     bare minimal repro naming the acceptance criterion explicitly).
+out_fresh_commit=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS="$FIXTURE_REVIEWS_OTHERBOT" \
+  FIXTURE_PR="$FIXTURE_PR_CURRENT_HEAD" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 5 --bot-reviewers '["my-bot[bot]"]' 2>/dev/null)
+rc_fresh_commit=$?
+assert "initial poll: a review at the current head still completes (exit 0)" "[ \$rc_fresh_commit -eq 0 ]"
+assert "initial poll: a review at the current head reports completion_kind review" "printf '%s' \"\$out_fresh_commit\" | jq -e '.completion_kind == \"review\"' >/dev/null"
+
+# (o) An unfetchable current head fails closed -- rejects reviews this round
+#     rather than risk accepting a stale one. FIXTURE_PR omitted entirely
+#     (stub defaults to '{"state":"open"}', no .head.sha).
+env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS="$FIXTURE_REVIEWS_OTHERBOT" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 --bot-reviewers '["my-bot[bot]"]' >/dev/null 2>&1
+rc_no_head=$?
+assert "initial poll: unfetchable current head fails closed (timeout, exit 1)" "[ \$rc_no_head -eq 1 ]"
 
 # ── Poll completion contract (Component 3): clean-pass completion ───────────
 # A clean bot pass submits no review object at all — only a `+1` reaction on

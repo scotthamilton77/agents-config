@@ -28,7 +28,27 @@
 # a review object when a bot's pass is clean. A submitted review (state
 # APPROVED or COMMENTED — mirroring check-merge-eligibility.sh's own review
 # path, which accepts both as a legitimate clean pass) always counts as
-# completion. When --bot-reviewers is supplied, two additional clean-pass
+# completion, but ONLY when it is fresh. On a re-review round
+# (--since-timestamp supplied), fresh means submitted_at > SINCE — the same
+# guard used everywhere else in this script. On the INITIAL poll (no
+# --since-timestamp), there is no timestamp bound, so freshness is
+# established instead by requiring the review's own `.commit_id` to equal
+# the CURRENT PR head, fetched fresh each attempt — matching
+# check-merge-eligibility.sh's review-path acceptance in effect, not as a
+# literal line-for-line copy: that script guards a missing key with
+# `(.commit_id // "") == $head`, this filter compares `.commit_id` bare —
+# functionally identical in jq (a missing key is `null`, and `null ==
+# "<sha>"` is `false`), so both fail closed on a reviewer payload lacking
+# the field. This differs
+# in KIND from the reaction/marker clean-pass bound below (a time-based
+# max(committer date, force-push event) window): a review object carries the
+# exact commit it was submitted against, so exact equality is available and
+# strictly more precise than a time-based approximation, whereas a reaction
+# or issue comment carries no commit reference at all and has no equality
+# check available to it. A stale review (commit_id != current head) is a
+# response to code no longer at HEAD and must not complete the poll; an
+# unfetchable head fails closed, rejecting all reviews that round rather than
+# risk accepting a stale one. When --bot-reviewers is supplied, two additional clean-pass
 # signals count too: a `+1` reaction on the PR body, or an issue comment
 # starting with the clean-pass marker "Codex Review: Didn't find any major
 # issues" — each from an allowlisted identity (the standalone
@@ -218,14 +238,29 @@ emit_clean_signal_found() {
     }'
 }
 
+# fetch_head_sha — the PR's current head commit SHA, freshly fetched (never
+# cached — a push landing mid-poll is reflected on the NEXT attempt rather
+# than compared against a stale snapshot), or empty stdout on any failure
+# (API error, missing/null .head.sha). Callers checking freshness — the
+# initial-poll review filter and the committer-date bound below — both need
+# this same fetch and share it here rather than duplicating the `gh_api`
+# call, even though they use the SHA for different purposes (equality vs.
+# looking up a commit date) and must remain free to fail independently.
+fetch_head_sha() {
+    local head_sha
+    head_sha=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}" --jq '.head.sha') || return 0
+    [[ -n "$head_sha" && "$head_sha" != "null" ]] || return 0
+    printf '%s' "$head_sha"
+}
+
 # head_committer_epoch — the PR head commit's committer date as epoch seconds,
 # or empty on any failure (unfetchable head SHA, missing/unparseable date).
 # Committer dates are GitHub-API timestamps normalized to UTC `Z`, parsed the
 # same fromdateiso8601 way as the reaction/comment created_at values.
 head_committer_epoch() {
     local head_sha date_iso
-    head_sha=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}" --jq '.head.sha') || return 0
-    [[ -n "$head_sha" && "$head_sha" != "null" ]] || return 0
+    head_sha=$(fetch_head_sha)
+    [[ -n "$head_sha" ]] || return 0
     date_iso=$(gh_api "repos/${OWNER}/${REPO}/commits/${head_sha}" --jq '.commit.committer.date') || return 0
     [[ -n "$date_iso" && "$date_iso" != "null" ]] || return 0
     printf '%s' "$date_iso" | jq -Rr 'fromdateiso8601? // empty' 2>/dev/null
@@ -380,6 +415,34 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
             echo "  Attempt ${i}/${MAX_ITERATIONS}: found ${stale_count} stale review(s) (submitted_at <= ${SINCE}), discarding" >&2
         fi
         reviews="$fresh_reviews"
+    else
+        # Initial poll (no --since-timestamp): no timestamp bound exists, so
+        # freshness is established by requiring the review's own `.commit_id`
+        # to equal the CURRENT PR head -- mirrors check-merge-eligibility.sh's
+        # review-path acceptance criteria (`.commit_id == head`) exactly.
+        # Unlike the reaction/marker clean-pass signals below, a review
+        # object carries the exact commit it was submitted against, so exact
+        # equality is available and strictly more precise than a time-based
+        # approximation (agents-config-abn9.44.14). A review whose commit_id
+        # predates the current head is a response to code that is no longer
+        # at HEAD, not a response to what is there now -- it must not
+        # complete the poll. A legitimate review AT the current head is
+        # unaffected: its own commit_id equals the freshly-fetched head, so
+        # first-pass detection has no regression. Fail closed: an unfetchable
+        # head rejects ALL reviews this round rather than risk accepting a
+        # stale one.
+        current_head=$(fetch_head_sha)
+        if [[ -z "$current_head" ]]; then
+            echo "  Attempt ${i}/${MAX_ITERATIONS}: could not fetch current head, rejecting reviews this round (fail closed)" >&2
+            reviews='[]'
+        else
+            fresh_reviews=$(printf '%s' "$reviews" | jq --arg head "$current_head" '[.[] | select(.commit_id == $head)]')
+            stale_count=$(printf '%s' "$reviews" | jq --arg head "$current_head" '[.[] | select(.commit_id != $head)] | length')
+            if [[ "$stale_count" -gt 0 ]]; then
+                echo "  Attempt ${i}/${MAX_ITERATIONS}: found ${stale_count} stale review(s) (commit_id != ${current_head}), discarding" >&2
+            fi
+            reviews="$fresh_reviews"
+        fi
     fi
 
     # APPROVED or COMMENTED are both a completed review — mirrors
