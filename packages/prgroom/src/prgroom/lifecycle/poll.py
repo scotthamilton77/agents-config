@@ -701,6 +701,43 @@ def _reconcile_reviewers(
             if (
                 login in requested
                 and existing.status is ReviewerStatus.DECLINED
+                and not existing.required
+            ):
+                # An OPTIONAL drive-by (required=False) that was auto-declined and now
+                # appears in requested_reviewers is a FIRST formal request. A drive-by was
+                # never in the pending array — its DECLINED came from a local timeout/withdraw
+                # mutation on a review prgroom merely observed, not from a decline of a real
+                # GitHub request — so the bb92bde continuous-presence rationale (which only
+                # holds for a REQUIRED timeout decline whose login stayed continuously listed)
+                # does NOT apply here. This presence is provably brand-new: promote to
+                # required and start a fresh window, mirroring the withdrawn-reactivation
+                # reset shape below (route a same-poll response through _reactivation_engagement,
+                # else REQUESTED at now with the review stamps cleared, declined_* cleared so
+                # the state reads as a live request).
+                existing.required = True
+                reactivation = _reactivation_engagement(
+                    existing,
+                    terminal_at=terminal_at,
+                    terminal_id=terminal_id,
+                    reviewed_at=reviewed_at,
+                    reviewed_id=reviewed_id,
+                )
+                if reactivation is not None:
+                    existing.status, stamp, review_id = reactivation
+                    existing.last_request_at = stamp
+                    existing.last_review_at = stamp
+                    existing.last_review_id = review_id
+                else:
+                    existing.status = ReviewerStatus.REQUESTED
+                    existing.last_request_at = now
+                    existing.last_review_at = None
+                    existing.last_review_id = None
+                existing.declined_at = None
+                existing.declined_reason = None
+                changed = True
+            elif (
+                login in requested
+                and existing.status is ReviewerStatus.DECLINED
                 and existing.declined_reason == WITHDRAWN_REASON
             ):
                 reactivation = _reactivation_engagement(
@@ -735,9 +772,10 @@ def _reconcile_reviewers(
             elif login in requested and existing.status is not ReviewerStatus.DECLINED:
                 # GitHub is asking NOW for a reviewer already on file: promote a drive-by
                 # to required, and restart the window when the presence is provably a new
-                # ask (§2.1). DECLINED is excluded here — the reactivation branch owns a
-                # withdrawn decline, and a timeout decline is continuously listed, so its
-                # bare presence must never restart the window.
+                # ask (§2.1). DECLINED is excluded here — an OPTIONAL decline is a first
+                # formal request handled by the promotion branch above; a REQUIRED withdrawn
+                # decline is the reactivation branch's job; and a REQUIRED timeout decline is
+                # continuously listed, so its bare presence must never restart the window.
                 if _reconcile_existing_request(
                     existing,
                     terminal_at=terminal_at,

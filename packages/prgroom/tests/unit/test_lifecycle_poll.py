@@ -2614,6 +2614,92 @@ def test_promoted_drive_by_near_finish_boundary_is_not_stalled_declined() -> Non
     assert reviewers_gate_satisfied(later) is False
 
 
+def test_optional_declined_drive_by_promoted_to_fresh_request_when_formally_requested() -> None:
+    # Codex P1: an OPTIONAL drive-by (required=False), first seen through an old COMMENTED
+    # review and auto-declined (timeout-stalled) before the operator formally requested it,
+    # was NEVER in requested_reviewers — its DECLINED is a purely local mutation on a review
+    # prgroom discovered, not a decline of a real GitHub request. So the bb92bde
+    # continuous-presence rationale (bare presence proves nothing) does NOT apply: when the
+    # operator now adds the login to requested_reviewers, that presence is a provably
+    # brand-new formal request. Promote to required and start a fresh window so the gate
+    # blocks on the pending first review instead of vacuously passing on the stale decline.
+    reviewers = {
+        "randomdev": ReviewerState(
+            identity="randomdev",
+            kind=ReviewerKind.HUMAN,
+            status=ReviewerStatus.DECLINED,
+            required=False,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=_T0 - timedelta(hours=1, minutes=55),
+            last_review_id=50,
+            declined_at=_T0 - timedelta(hours=1),
+            declined_reason="timeout-stalled",
+        )
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["randomdev"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["randomdev"]
+    assert rv.required is True
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.last_request_at == _T0
+    assert rv.last_review_at is None
+    assert rv.last_review_id is None
+    assert rv.declined_at is None
+    assert rv.declined_reason is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_optional_declined_drive_by_reactivates_to_review_found_on_same_poll_verdict() -> None:
+    # The same-poll race for the optional-drive-by promotion: a fresh verdict can land
+    # between the PR-resource GET (still listing the login as newly requested) and the later
+    # reviews GET. Routing the promotion through _reactivation_engagement (as the withdrawn-
+    # reactivation branch does) catches it: a verdict strictly after the reviewer's prior
+    # history boundary reactivates straight into REVIEW_FOUND with both stamps backdated to
+    # the review, so _observe_engagement's strictly-after gate keeps it.
+    fresh_verdict = {
+        "id": 60,
+        "user": {"login": "randomdev"},
+        "state": "APPROVED",
+        "body": "lgtm now",
+        "submitted_at": "2026-06-09T11:59:00Z",  # after the 11:00Z decline boundary
+    }
+    reviewers = {
+        "randomdev": ReviewerState(
+            identity="randomdev",
+            kind=ReviewerKind.HUMAN,
+            status=ReviewerStatus.DECLINED,
+            required=False,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=_T0 - timedelta(hours=1, minutes=55),
+            last_review_id=50,
+            declined_at=_T0 - timedelta(hours=1),
+            declined_reason="timeout-stalled",
+        )
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["randomdev"], reviews=[fresh_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["randomdev"]
+    assert rv.required is True
+    assert rv.status is ReviewerStatus.REVIEW_FOUND
+    assert rv.last_request_at == datetime(2026, 6, 9, 11, 59, tzinfo=UTC)
+    assert rv.last_review_at == datetime(2026, 6, 9, 11, 59, tzinfo=UTC)
+    assert rv.last_review_id == 60
+    assert rv.declined_at is None
+    assert rv.declined_reason is None
+
+
 def test_withdrawn_request_declines_an_in_flight_reviewer() -> None:
     # Behavior 7: GitHub dropped a pending request and the reviewer produced nothing
     # this poll — the one shape that genuinely means "the ask was pulled".
