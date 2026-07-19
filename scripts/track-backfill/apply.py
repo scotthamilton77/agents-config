@@ -90,8 +90,14 @@ def require_quiescent(root: pathlib.Path, lint: dict, assignment: dict[str, str]
 
 
 def set_track(root: pathlib.Path, item_id: str, track: str) -> tuple[bool, str]:
-    """Write one track through the validated gate. Returns (ok, error_code)."""
-    payload = work(root, "track", "set", item_id, track)
+    """Write one track through the validated gate. Returns (ok, error_code).
+
+    require_ok=False is load-bearing, not incidental: this is the one caller that
+    must CLASSIFY a failing envelope rather than die on it. With the default the
+    helper raises SystemExit before returning, making the E_NOT_FOUND recovery
+    below unreachable and skipping the run-log summary on every other failure.
+    """
+    payload = work(root, "track", "set", item_id, track, require_ok=False)
     if payload.get("ok"):
         return True, ""
     error = payload.get("error") or {}

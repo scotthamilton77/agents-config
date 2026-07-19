@@ -48,7 +48,14 @@ successful write is appended to `applied.log`.
 
 ## Tests
 
-    cd scripts/track-backfill && python3 -m unittest test_reconcile test_payload_keys
+    cd scripts/track-backfill && python3 -m unittest test_reconcile test_payload_keys test_apply_contract
+
+`test_apply_contract.py` pins `set_track`'s failure classification by substituting
+the backend. It exists because a regression shipped here: the shared `work()`
+helper defaults to `require_ok=True` and raises before returning, so the
+`E_NOT_FOUND` recovery branch was unreachable dead code in the very commit that
+added it. Reconciliation tests could not catch that — the failure path needs a
+failing backend, not pure logic.
 
 `test_payload_keys.py` pins the `work lint` payload keys these scripts read, with
 deliberately **non-empty** fixtures. That is not incidental: a wrong key was

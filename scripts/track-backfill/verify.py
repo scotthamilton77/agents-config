@@ -122,8 +122,23 @@ def main() -> int:
     def edge(m: dict) -> tuple:
         return (m["child"], m["child_track"], m["parent"], m["parent_track"])
 
+    # The expected set is filtered to edges whose BOTH endpoints are still live.
+    # `work lint` omits closed items, so it cannot emit an edge whose child or
+    # parent has closed since the artifact was generated — and `reconcile()`
+    # correctly skipped that assignment. Retaining such an edge would report it
+    # "missing" and reject an otherwise correct drift-tolerant migration. This is
+    # the same false-failure shape as C1's closed-item comparison, in a second
+    # criterion; both are the drift path, not a defect.
+    live_ids = {item["id"] for item in items}
     actual_edges = {edge(m) for m in lint["track_mismatches"]}
-    expected_edges = {edge(m) for m in expected_mismatch}
+    expected_edges = {
+        edge(m)
+        for m in expected_mismatch
+        if m["child"] in live_ids and m["parent"] in live_ids
+    }
+    dropped = len(expected_mismatch) - len(expected_edges)
+    if dropped:
+        print(f"C5: {dropped} baseline edge(s) dropped — an endpoint closed since generation")
     unexpected = actual_edges - expected_edges
     missing = expected_edges - actual_edges
     if unexpected:

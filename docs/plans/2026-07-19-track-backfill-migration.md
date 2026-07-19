@@ -48,6 +48,7 @@ Task 5 gates on the merge having happened. Do not start it otherwise.
 | `scripts/track-backfill/reconcile.py` | Pure reconciliation against the live item set. No I/O. |
 | `scripts/track-backfill/test_reconcile.py` | Tests for the above. |
 | `scripts/track-backfill/test_payload_keys.py` | Pins the `work lint` payload keys, with non-empty fixtures. |
+| `scripts/track-backfill/test_apply_contract.py` | Pins `set_track`'s failure classification against a substituted backend. |
 | `scripts/track-backfill/apply.py` | Pre-flight guards, quiescence check, dry-run, apply, run-log. |
 | `scripts/track-backfill/anchor_orphans.py` | Guarded anchoring and exemption of the nine milestone orphans. |
 | `scripts/track-backfill/verify.py` | Acceptance criteria C1-C6, all able to fail. |
@@ -138,9 +139,9 @@ rather than claiming a coverage it does not have.
 To re-verify the build at any point:
 
 ```bash
-cd scripts/track-backfill && python3 -m unittest test_reconcile test_payload_keys
+cd scripts/track-backfill && python3 -m unittest test_reconcile test_payload_keys test_apply_contract
 ```
-Expected: `Ran 18 tests` ... `OK`
+Expected: `Ran 25 tests` ... `OK`
 
 ---
 
