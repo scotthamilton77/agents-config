@@ -58,6 +58,9 @@ select = [
 "src/grind/verbs.py" = ["TRY003"]
 "src/grind/store.py" = ["TRY003"]
 "src/grind/cli.py" = ["TRY003"]
+# NonFiniteJsonError's message names the exact rejected constant -- a
+# self-contained boundary-failure reason, same rationale as the modules above.
+"src/grind/jsonio.py" = ["TRY003"]
 
 [tool.ruff.format]
 docstring-code-format = true

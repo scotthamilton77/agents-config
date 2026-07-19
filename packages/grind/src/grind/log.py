@@ -15,6 +15,7 @@ import json
 from dataclasses import dataclass, field
 
 from grind.fold import fold
+from grind.jsonio import NonFiniteJsonError, loads
 from grind.model import AnomalyRecord, AttentionEntry, JsonValue, Observation, RawEvent, State
 
 
@@ -46,8 +47,8 @@ def parse_event_log(text: str) -> ParsedLog:
         if line.strip() == "":
             continue
         try:
-            parsed: JsonValue = json.loads(line)
-        except json.JSONDecodeError as exc:
+            parsed: JsonValue = loads(line)
+        except (json.JSONDecodeError, NonFiniteJsonError) as exc:
             if index == last_index:
                 torn_tail = True
                 continue

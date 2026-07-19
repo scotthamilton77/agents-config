@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import NoReturn, TextIO
 
 from grind.envelope import GrindError
+from grind.jsonio import NonFiniteJsonError, loads
 from grind.model import JsonValue
 from grind.verbs import cmd_create, cmd_finish, cmd_log, cmd_status
 
@@ -66,15 +67,15 @@ def _read_seed_file(path: str, read_file: Callable[[str], str]) -> JsonValue:
     except OSError as read_error:
         raise GrindError(f"cannot read seed file {path}: {read_error}") from read_error
     try:
-        return json.loads(text)  # type: ignore[no-any-return]
-    except json.JSONDecodeError as decode_error:
+        return loads(text)
+    except (json.JSONDecodeError, NonFiniteJsonError) as decode_error:
         raise GrindError(f"seed file {path} is not valid JSON: {decode_error}") from decode_error
 
 
 def _parse_json_payload(raw: str) -> JsonValue:
     try:
-        return json.loads(raw)  # type: ignore[no-any-return]
-    except json.JSONDecodeError as decode_error:
+        return loads(raw)
+    except (json.JSONDecodeError, NonFiniteJsonError) as decode_error:
         raise GrindError(f"--json is not valid JSON: {decode_error}") from decode_error
 
 
@@ -141,7 +142,7 @@ def main(
         out.write("\n")
         return 1
 
-    json.dump(data, out)
+    json.dump(data, out, allow_nan=False)
     out.write("\n")
     return 0
 

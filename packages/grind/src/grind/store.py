@@ -14,6 +14,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from grind.jsonio import NonFiniteJsonError, loads
 from grind.log import fold_log, parse_event_log
 from grind.model import JsonValue, RawEvent, State
 
@@ -81,8 +82,8 @@ def repair_torn_tail(dir_: Path) -> TornTailRepair | None:
     tail = raw[last_newline + 1 :]
 
     try:
-        parsed: JsonValue = json.loads(tail.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+        parsed: JsonValue = loads(tail.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, NonFiniteJsonError):
         parsed = None
 
     if isinstance(parsed, dict):
@@ -106,7 +107,7 @@ def append_event(dir_: Path, event: RawEvent) -> TornTailRepair | None:
     dir_.mkdir(parents=True, exist_ok=True)
     repair = repair_torn_tail(dir_)
     with events_path(dir_).open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(event, sort_keys=True))
+        fh.write(json.dumps(event, sort_keys=True, allow_nan=False))
         fh.write("\n")
     return repair
 
@@ -128,5 +129,5 @@ def fold_dir(dir_: Path) -> State:
 def write_state(dir_: Path, payload: dict[str, JsonValue]) -> None:
     dir_.mkdir(parents=True, exist_ok=True)
     with state_path(dir_).open("w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2, sort_keys=True)
+        json.dump(payload, fh, indent=2, sort_keys=True, allow_nan=False)
         fh.write("\n")

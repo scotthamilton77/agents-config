@@ -116,6 +116,44 @@ def test_log_verb_invalid_json_string_yields_nonzero_exit(tmp_path: Path):
     assert envelope["ok"] is False
 
 
+def test_create_rejects_non_finite_constant_in_seed(tmp_path: Path):
+    grind_dir = tmp_path / "run"
+    # A hand-authored seed with a bare `NaN` -- stdlib json.loads would accept
+    # it, then re-emit it into events.jsonl/state.json as non-standard JSON.
+    seed_text = '{"title":"t","repo":"r","mission":{"goal":NaN},"protocols":{},"lanes":[]}'
+
+    exit_code, envelope, _err = _run(
+        ["create", "--file", "seed.json", "--dir", str(grind_dir)],
+        read_file={"seed.json": seed_text},
+    )
+
+    assert exit_code != 0
+    assert envelope["ok"] is False
+    assert not (grind_dir / "events.jsonl").exists()
+
+
+def test_log_rejects_non_finite_constant_in_json_payload(tmp_path: Path):
+    grind_dir = tmp_path / "run"
+    _run(
+        ["create", "--file", "seed.json", "--dir", str(grind_dir)],
+        read_file={"seed.json": json.dumps(_SEED)},
+    )
+
+    exit_code, envelope, _err = _run(
+        [
+            "log",
+            "item_started",
+            "--json",
+            '{"item": "wgclw.1", "x": Infinity}',
+            "--dir",
+            str(grind_dir),
+        ]
+    )
+
+    assert exit_code != 0
+    assert envelope["ok"] is False
+
+
 def test_status_default_and_full(tmp_path: Path):
     grind_dir = tmp_path / "run"
     _run(

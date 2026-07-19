@@ -6,7 +6,10 @@ tested); this module is what makes the log appendable again after a crash."""
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
+
+import pytest
 
 from grind.store import (
     append_event,
@@ -16,6 +19,7 @@ from grind.store import (
     quarantine_path,
     read_raw_log,
     repair_torn_tail,
+    write_state,
 )
 
 
@@ -117,3 +121,28 @@ def test_append_event_serializes_json_one_line_per_event(tmp_path: Path):
     assert len(lines) == 2
     assert json.loads(lines[0])["type"] == "grind_created"
     assert json.loads(lines[1])["type"] == "item_started"
+
+
+def test_append_event_refuses_to_serialize_a_non_finite_float(tmp_path: Path):
+    # Defense in depth: allow_nan=False makes a non-finite value a loud write
+    # failure rather than a non-standard `NaN` literal silently in events.jsonl.
+    with pytest.raises(ValueError):
+        append_event(tmp_path, {"ts": "t", "type": "x", "n": math.nan})
+
+
+def test_write_state_refuses_to_serialize_a_non_finite_float(tmp_path: Path):
+    with pytest.raises(ValueError):
+        write_state(tmp_path, {"metric": math.inf})
+
+
+def test_repair_torn_tail_quarantines_a_final_line_carrying_a_non_finite_constant(tmp_path: Path):
+    good = '{"ts":"t","type":"grind_created"}'
+    # The tail's `NaN` no longer parses as a value -- it is an unparsable
+    # fragment, so the repair quarantines it exactly like any other torn tail.
+    _write_raw(events_path(tmp_path), good + "\n" + '{"ts":"t2","type":"x","n":NaN}')
+
+    repair = repair_torn_tail(tmp_path)
+
+    assert repair is not None
+    assert repair.quarantined is True
+    assert read_raw_log(tmp_path) == good + "\n"
