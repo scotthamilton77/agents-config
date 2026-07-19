@@ -495,7 +495,12 @@ def _h_discovered_work(state: State, evt: RawEvent) -> None:
         return
     disposition = _str(evt, "disposition")
     description = _str(evt, "description")
+    # `bead?` is "optional metadata, carried only when it differs from `item`"
+    # (spec) -- a caller-supplied bead equal to the item id is redundant, so
+    # it's normalized away rather than stored twice under two names.
     bead = _str(evt, "bead")
+    if bead == item_id:
+        bead = None
     if disposition == "parked":
         item = Item(id=item_id, lane=None, title=description, status="queued", bead=bead)
         item.parked = ParkingEntry(kind=_park_kind(evt), note=_str(evt, "rationale"))

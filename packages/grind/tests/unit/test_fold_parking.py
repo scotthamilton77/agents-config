@@ -85,6 +85,47 @@ def test_discovered_work_enqueued_creates_a_new_queued_item() -> None:
     assert "disc-1" in state.lanes["lane-a"].item_ids
 
 
+def test_discovered_work_bead_is_normalized_away_when_equal_to_item_id() -> None:
+    # spec: bead? is "optional metadata, carried only when it differs from item".
+    events = [
+        seed_event(),
+        event(
+            "discovered_work",
+            item="disc-1",
+            bead="disc-1",
+            description="dup bead id",
+            source="lane-a",
+            disposition="enqueued",
+            lane="lane-a",
+            rationale="r",
+        ),
+    ]
+
+    state = fold(events)
+
+    assert state.items["disc-1"].bead is None
+
+
+def test_discovered_work_keeps_bead_when_it_differs_from_item_id() -> None:
+    events = [
+        seed_event(),
+        event(
+            "discovered_work",
+            item="disc-1",
+            bead="wgclw.99",
+            description="real bead id",
+            source="lane-a",
+            disposition="enqueued",
+            lane="lane-a",
+            rationale="r",
+        ),
+    ]
+
+    state = fold(events)
+
+    assert state.items["disc-1"].bead == "wgclw.99"
+
+
 def test_discovered_work_parked_creates_a_new_parked_item() -> None:
     events = [
         seed_event(),
