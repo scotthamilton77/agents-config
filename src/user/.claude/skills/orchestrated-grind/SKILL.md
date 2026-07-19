@@ -429,11 +429,55 @@ void, and the lane looks stuck when nothing is wrong with it. In the reference
 run one lane did this three times and every "failure" was this and only this.
 Brief lanes to *request* a watcher from ROOT, never to launch one.
 
-**A watcher detects PR *activity*, never a verdict.** It knows nothing about
-approval signals, reviewer identity, or clean-pass phrasing — that is the
-review skill's job (§3), and duplicating any of it here guarantees drift the
-first time a reviewer changes behavior. The watcher answers exactly one
-question: *has anything happened on this PR since I armed?*
+**A watcher detects activity and labels its shape. It never issues a verdict.**
+The doorbell answers *has anything happened since I armed?* — and then, on the
+way out, reports a **provisional class** so ROOT is not re-deriving "was that a
+clean pass or a fresh pile of findings?" by hand on every single ring. That
+manual disambiguation was the highest-frequency cost in the reference run.
+
+The class is a **routing hint**. The authoritative verdict still comes from the
+review skill (§3), and the lane still consults it on every ring.
+
+| Class | Means | ROOT's usual move |
+|---|---|---|
+| `FINDINGS` | Reviewer wants changes — a new `CHANGES_REQUESTED`, any new inline comment, or a findings-marker | Re-engage the lane to work them |
+| `CLEAN` | Reviewer appears done and satisfied — a new `APPROVED`, a `+1`/`rocket`/`hooray` from a trusted reviewer, or a clean-marker | Re-engage the lane to confirm and report up |
+| `IN-FLIGHT` | Review started but has not concluded — an `eyes` reaction from a trusted reviewer | Usually **re-arm**, do not wake the lane |
+| `ACTIVITY` | Something else happened, or classification could not run | Treat as a bare doorbell |
+
+**The precedence contract — written down because ties are the whole problem.**
+Signals arrive out of order, land in the same polling window, and contradict
+each other. So the class is computed from **PR state at ring time**, never from
+the order events arrived in, and resolved by one fixed severity order:
+
+> **`FINDINGS` > `CLEAN` > `IN-FLIGHT` > `ACTIVITY`**
+
+- **`FINDINGS` beats `CLEAN`** on cost asymmetry. A false `CLEAN` can carry an
+  unaddressed finding toward a merge; a false `FINDINGS` costs one wasted lane
+  check. An approving review *alongside* a new inline comment is `FINDINGS`.
+- **`CLEAN` beats `IN-FLIGHT`** because `eyes` is a *start* marker. A review
+  that starts and finishes inside one window is finished — `eyes`→`+1` nets to
+  `CLEAN`, which is exactly what a fast clean pass looks like.
+- **Most severe wins, never most recent.** Several new reviews in one window
+  resolve to the most severe among them. This is what makes out-of-order
+  delivery harmless — no ordering assumption is made anywhere.
+- **Re-arming resets everything.** A fresh watcher samples fresh baselines, so
+  no class carries across arms and there is no sticky state to go stale.
+- **A class is never authorization.** `CLEAN` is not approval and never
+  licenses a merge; only `merge-guard` rules on that (§4).
+
+**Classification can never suppress a ring.** It runs *after* the decision to
+ring, once, on the way out — every failure path degrades to `ACTIVITY` and
+rings anyway. This is the dumbness rule intact: the poll loop itself is still a
+plain count comparison, and a classifier that cannot fail closed cannot ghost
+the way the reference run's filter-based monitors did.
+
+**Spot-check on re-arm.** A watcher that has been re-armed two or three times
+on the same PR without a terminal class is evidence about the *watcher*, not
+the reviewer. Before arming yet again, check the PR directly once — `gh pr
+view` — because repeated `IN-FLIGHT` or `ACTIVITY` rings are exactly what a
+half-broken poller looks like from the outside. Suspect the tooling before the
+teammate (§8); one cheap direct look costs less than a third wasted arm.
 
 - **Keep the watcher dumb.** A plain timer loop comparing counts beats a clever
   filter on commit metadata or author fields: clever watchers fail silently and
@@ -455,9 +499,16 @@ question: *has anything happened on this PR since I armed?*
   none of the other counts, so a body-only reaction check has the same blind
   spot in a narrower form. Reactions are a count like any other, so this costs
   the doorbell nothing and keeps it dumb.
-- **The ring is a DOORBELL.** On a ring, ROOT re-engages the owning lane and
-  the lane consults the review skill for the actual verdict. ROOT does not
-  interpret PR state itself.
+- **The ring is a DOORBELL with a label on it.** On a ring, ROOT routes on the
+  class (table above) and the lane consults the review skill for the actual
+  verdict. ROOT does not interpret PR state itself beyond that routing — the
+  class exists to save ROOT a manual disambiguation, not to license ROOT to
+  start reading reviews.
+- **Tell the watcher whose reactions to trust.** Pass the repo's reviewer
+  identities as `BOT_REVIEWERS`; leave it empty to trust any actor. An empty
+  list is the permissive default on purpose — a watcher that ignores an
+  unlisted reviewer's approval reintroduces the blind spot the reaction
+  counting exists to close.
 - **A timeout means "no activity," not "no verdict."** Re-arm, or have the lane
   check directly. Reviewers can signal in ways a count-based poll will not see —
   including a reaction *replaced* within a single polling window, which nets to
@@ -570,6 +621,9 @@ punished; a worker that hides a compromise costs far more than one that admits i
 | "I'll sanity-check CI and threads myself before invoking the guard." | The guard computes that and more, on the next command. A pre-check is ROOT's context spent recomputing a stale subset. One gated call, not eight. |
 | "This grovel is unavoidable, so I'll just read it all inline." | Unavoidable for *someone*, not for ROOT. Ad-hoc ephemeral subagent, verdict block only. |
 | "The watcher fired, so the reviewer approved." | The watcher is a doorbell. Its filters flake. Re-verify directly. |
+| "The ring said `class=CLEAN`, so the PR is approved and I can merge." | The class is a provisional routing hint, not a verdict and not authorization. The lane confirms via the review skill; `merge-guard` rules on merging. |
+| "Findings and an approval both landed — the approval is newer, so it's clean." | Most severe wins, never most recent. That is `FINDINGS`. |
+| "It rang `IN-FLIGHT` again — I'll just re-arm a third time." | Two or three inconclusive arms is evidence about the watcher. Spot-check the PR directly first. |
 | "The findings are clearly unfounded, I'll just merge." | An honest verdict cannot be manufactured. Human docket. |
 | "This report contradicts my order — the lane ignored me." | It almost certainly crossed in flight. Check timestamps first. |
 | "Six review rounds is obviously a loop, invoke the stalemate rule." | Rounds of *real defects* are the reviewer working. The rule applies only to re-raises on unchanged code. |
