@@ -809,15 +809,39 @@ def _reconcile_reviewers(
     # push re-requests an ask the operator already pulled. Only activity belonging to the
     # current window suppresses the withdrawal: an item newly ingested this poll (fresh
     # feedback that is itself what cleared the pending request), or a review whose
-    # timestamp is strictly after ``last_request_at`` (in-window engagement, matching
-    # ``_observe_engagement``'s strictly-after gate). A review at or before
-    # ``last_request_at`` answered a superseded ask and must not block withdrawal.
+    # timestamp is in-window relative to ``last_request_at``. The in-window test is
+    # strictly-after (matching ``_observe_engagement``) EXCEPT for an already-engaged
+    # reviewer (``last_review_at`` set), for whom equality also suppresses. That equality
+    # is SELF-INDUCED: both the delayed-in-flight promotion (``_delayed_in_flight_response``
+    # below) and the direct reactivation paths (``_reconcile_existing_request`` / the
+    # withdrawn-decline reactivation branches) stamp
+    # ``last_request_at = last_review_at = the review's own second``. On the following
+    # unchanged poll that very review is re-observed with
+    # ``review_activity[0] == last_request_at``; a strict ``>`` would misread the reviewer's
+    # genuine in-window response as a superseded ask and withdraw a reviewer who actually
+    # responded — a request-withdrawn DECLINED can satisfy the reviewer gate, quiescing the
+    # PR with no terminal verdict and no finish-timeout recovery. The ``last_review_at is
+    # not None`` guard is load-bearing: a never-engaged REQUESTED reviewer must KEEP the
+    # strict gate, so a same-second co-present review (``last_request_at`` seeded at
+    # whole-second ``now`` == the review's second) still falls through to the promotion
+    # below instead of being silently suppressed at REQUESTED. In the only non-self-induced
+    # equality — a genuine same-second collision (a real GitHub request landing in the same
+    # second as an OLD review) — the reviewer is REQUESTED / never-engaged, so it takes the
+    # strict branch and errs toward keeping the reviewer engaged, which the finish timeout
+    # recovers, never toward silently satisfying the gate. A review strictly BEFORE
+    # ``last_request_at`` answered a superseded ask and must still block withdrawal.
     new_item_authors = {item.author for item in new_items if item.author}
     for login, reviewer in state.reviewers.items():
         if login in requested or login in new_item_authors:
             continue
         review_activity = reviewed.get(login)
-        if review_activity is not None and review_activity[0] > reviewer.last_request_at:
+        if review_activity is not None and (
+            review_activity[0] > reviewer.last_request_at
+            or (
+                reviewer.last_review_at is not None
+                and review_activity[0] == reviewer.last_request_at
+            )
+        ):
             continue
         # A now-absent REQUESTED reviewer that never engaged, but whose reviews carry a
         # response landing at or after this poll floor of ``last_request_at``, is a DELAYED

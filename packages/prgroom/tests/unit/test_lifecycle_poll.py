@@ -1534,6 +1534,106 @@ def test_same_second_in_flight_comment_seeds_requested_then_promotes_when_absent
     assert reviewers_gate_satisfied(end) is False  # no terminal verdict yet
 
 
+def test_promoted_in_flight_comment_survives_next_unchanged_absence_poll() -> None:
+    # Regression (Codex P1): the self-induced-equality withdrawal. Poll 2's delayed-response
+    # promotion backdates last_request_at = last_review_at = the review's OWN second, so on
+    # poll 3 the same still-absent review carries a timestamp EQUAL to last_request_at. The
+    # decline-pass suppression must accept that equality (`>=`): the review that justified the
+    # promotion is the reviewer's genuine in-window engagement, not a superseded ask, so it
+    # must keep suppressing the withdrawal. A strict `>` here silently declines a reviewer who
+    # actually responded — request-withdrawn is a DECLINED that can satisfy the reviewer gate,
+    # letting the PR quiesce without a terminal verdict or a finish-timeout recovery.
+    comment = {
+        "id": 906,
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-09T12:00:00Z",  # == _T0, backdated onto both stamps on poll 2
+        "user": {"login": "alice"},
+        "body": "one thought",
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    # Poll 1: co-present request + same-second comment → deferred to REQUESTED.
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"], reviews=[comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    # Poll 2: absence promotes to IN_PROGRESS at backdated stamps (last_request_at == _T0).
+    mid2 = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert mid2.reviewers["alice"].status is ReviewerStatus.IN_PROGRESS
+    assert mid2.reviewers["alice"].last_request_at == _T0
+
+    # Poll 3: unchanged — still absent, the comment re-observed (already ingested, so NOT a new
+    # item). The equal-timestamp review must NOT be read as a withdrawal.
+    end = poll_pr(
+        mid2,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    alice = end.reviewers["alice"]
+    assert alice.status is ReviewerStatus.IN_PROGRESS  # NOT declined request-withdrawn
+    assert alice.declined_at is None
+    assert alice.declined_reason is None
+    assert reviewers_gate_satisfied(end) is False
+
+
+def test_reactivated_in_progress_reviewer_survives_next_unchanged_absence_poll() -> None:
+    # Regression (Codex P1), reactivation variant. The withdrawn-decline reactivation path
+    # backdates both stamps to the fresh COMMENTED review's own second, exactly like the
+    # delayed-in-flight promotion, and funnels into the SAME decline-pass suppression check.
+    # A reviewer reactivated to IN_PROGRESS whose login GitHub then drops must survive the
+    # next unchanged absence poll on the equal-timestamp review, not be silently re-withdrawn.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("request-withdrawn"),  # declined_at = _T0 - 1h = 11:00Z
+    )
+    fresh_comment = {
+        "id": 33,
+        "user": {"login": "copilot"},
+        "state": "COMMENTED",
+        "body": "still looking",
+        # AFTER the 11:00Z withdrawal, 10m before `now` (12:00Z) — within the 15m finish
+        # timeout, so no timeout pass masks the decline-pass behaviour under test.
+        "submitted_at": "2026-06-09T11:50:00Z",
+    }
+    # Poll A: re-request + fresh comment reactivates to IN_PROGRESS at backdated stamps.
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[fresh_comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    reactivated = mid.reviewers["copilot"]
+    assert reactivated.status is ReviewerStatus.IN_PROGRESS
+    assert reactivated.last_request_at == datetime(2026, 6, 9, 11, 50, tzinfo=UTC)  # backdated
+
+    # Poll B: GitHub dropped the login, the comment re-observed (already ingested, NOT new).
+    # review_activity[0] == last_request_at == 11:50Z, so the strict `>` would re-withdraw.
+    end = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[fresh_comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = end.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.IN_PROGRESS  # NOT re-declined request-withdrawn
+    assert copilot.declined_at is None
+    assert copilot.declined_reason is None
+    assert reviewers_gate_satisfied(end) is False
+
+
 def test_same_second_re_request_over_historical_verdict_stays_requested() -> None:
     # Behavior 17c (Codex P1 core regression): the false-accept the deferral prevents. A
     # reviewer's terminal verdict lands at second T, and an operator RE-REQUESTS them in the
