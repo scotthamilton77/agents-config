@@ -75,6 +75,18 @@
     "mtime": 1782070933.779198,
     "hash": "12f54919beb44ee8ca10f4bca51fedcc"
   },
+  "/Users/scott/src/projects/agents-config/scripts/backlog-landscape/classify.py": {
+    "mtime": 1784411560.6047313,
+    "hash": "240affd9cbdcf0b11306e82899d8a9d3"
+  },
+  "/Users/scott/src/projects/agents-config/scripts/backlog-landscape/build_graph.py": {
+    "mtime": 1784411560.6044,
+    "hash": "3e68e01f4401fcc4aeeeae4345928d10"
+  },
+  "/Users/scott/src/projects/agents-config/scripts/backlog-landscape/build_landscape.py": {
+    "mtime": 1784411560.6045737,
+    "hash": "93993350b0e3c7ea389528d875e10809"
+  },
   "/Users/scott/src/projects/agents-config/packages/pdlc/tests/__init__.py": {
     "mtime": 1780218133.1616535,
     "hash": "d41d8cd98f00b204e9800998ecf8427e"
@@ -1144,8 +1156,8 @@
     "hash": "709c6d3d769260ff32cdd2ec6ce83843"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/conftest.py": {
-    "mtime": 1782511292.9459705,
-    "hash": "3dfbad77efbdaa6f3819ddd65b750723"
+    "mtime": 1784411042.9035275,
+    "hash": "85dba796a45b06319341b738c3346cb8"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_extensions_pipeline.py": {
     "mtime": 1782041528.8801517,
@@ -1158,6 +1170,10 @@
   "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_templates_flatten_plan.py": {
     "mtime": 1782253749.2870967,
     "hash": "75e3d6b410d9fc7a839f06c4d9d02088"
+  },
+  "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_cli_deploy_wiring.py": {
+    "mtime": 1784411042.9037528,
+    "hash": "83263021d6017d0e11d5459e03426266"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_sync_routes.py": {
     "mtime": 1781953819.4652936,
@@ -1340,8 +1356,8 @@
     "hash": "f7a7338a338f66348f2304e5cdd7d902"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_summary.py": {
-    "mtime": 1781967085.032509,
-    "hash": "68ca186b48f5e5144f9d5dbe51b4467c"
+    "mtime": 1784411042.9045055,
+    "hash": "e3e8f3b3b627236a5ddf1faa6338865f"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_sync_gemini.py": {
     "mtime": 1780774764.5404096,
@@ -1448,8 +1464,8 @@
     "hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/src/installer/cli.py": {
-    "mtime": 1784109982.7483933,
-    "hash": "2fc6c591812ed2fe7e473963175c9c75"
+    "mtime": 1784411042.902536,
+    "hash": "15a72c71a8da6dfcb6f11acd3b6f205e"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/src/installer/__main__.py": {
     "mtime": 1782058344.971657,
@@ -1552,8 +1568,8 @@
     "hash": "589410d4acaa976a0fc9268cf944e010"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/summary.py": {
-    "mtime": 1782072226.735763,
-    "hash": "5113298476f80085cb2cac526611fa30"
+    "mtime": 1784411042.9030435,
+    "hash": "f9855e48a9bd8c3988e2a04aea1da60b"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/md_patch.py": {
     "mtime": 1781346509.5772364,
@@ -2147,6 +2163,22 @@
     "mtime": 1781480814.5116134,
     "hash": "683f9203f0464745f66e146fc550040e"
   },
+  "/Users/scott/src/projects/agents-config/src/user/.claude/skills/openrouter-claude-subagent/scripts/proxy.js": {
+    "mtime": 1784411953.0576663,
+    "hash": "5429ae6295dab403ceb29d9008fa200e"
+  },
+  "/Users/scott/src/projects/agents-config/src/user/.claude/skills/openrouter-claude-subagent/scripts/run.js": {
+    "mtime": 1784411953.057956,
+    "hash": "04f5547f97fd07f89e8d88fbdbbd707b"
+  },
+  "/Users/scott/src/projects/agents-config/src/user/.claude/skills/openrouter-claude-subagent/scripts/proxy_test.js": {
+    "mtime": 1784411953.0578284,
+    "hash": "b5d1fbfbafe82bb0c756110edc669b0c"
+  },
+  "/Users/scott/src/projects/agents-config/src/user/.claude/skills/openrouter-claude-subagent/scripts/run_test.js": {
+    "mtime": 1784411953.0580716,
+    "hash": "107c14795badeeeab9aa04c0e3927980"
+  },
   "/Users/scott/src/projects/agents-config/src/user/.claude/skills/sync-after-remote-merge/sync_after_remote_merge_test.py": {
     "mtime": 1784111820.6030965,
     "hash": "e96b4342cfa97e3766052a9ebd9046bd"
@@ -2172,8 +2204,8 @@
     "hash": "3a75a7034a7cec24dca0400ae77c1beb"
   },
   "/Users/scott/src/projects/agents-config/AGENTS.md": {
-    "mtime": 1783781276.545068,
-    "hash": "953f4cb4e7a6fea644b28e331acdd222"
+    "mtime": 1784411042.8970976,
+    "hash": "3e8c63468678da41ef69374ada409073"
   },
   "/Users/scott/src/projects/agents-config/CLAUDE.md": {
     "mtime": 1777904839.202524,
@@ -3008,8 +3040,8 @@
     "hash": "dbcac9330f9a7af12e6452a54eeed2db"
   },
   "/Users/scott/src/projects/agents-config/docs/guide/getting-started.md": {
-    "mtime": 1783172993.755588,
-    "hash": "312ab6d9f0312e32af4bd9fa4fb11278"
+    "mtime": 1784411042.9014332,
+    "hash": "8fa2d24dc159c11d372bd6d514ff5372"
   },
   "/Users/scott/src/projects/agents-config/docs/guide/sdlc-workflow.md": {
     "mtime": 1783883221.6123552,
@@ -3020,8 +3052,8 @@
     "hash": "e4ce01a2cc91a1459b1a92f5ac605708"
   },
   "/Users/scott/src/projects/agents-config/docs/guide/configuration.md": {
-    "mtime": 1783883221.611687,
-    "hash": "ea8d20b1c6600856eaeaf59222abc0e2"
+    "mtime": 1784411042.9010782,
+    "hash": "f565808087da400c8c714f201a9a26db"
   },
   "/Users/scott/src/projects/agents-config/docs/adr/0001-holding-place-is-a-peer-subsystem.md": {
     "mtime": 1780218133.159099,
@@ -3291,6 +3323,10 @@
     "mtime": 1782654906.2000601,
     "hash": "f3cf4682c1b51eab17d435c944442842"
   },
+  "/Users/scott/src/projects/agents-config/docs/specs/2026-07-19-grind-dashboard-renderer.md": {
+    "mtime": 1784470778.052019,
+    "hash": "27786d80cbfc9d9c400b2c8a54f1fe97"
+  },
   "/Users/scott/src/projects/agents-config/docs/specs/2026-07-16-prgroom-silent-path-observability.md": {
     "mtime": 1784284188.5038517,
     "hash": "b5933a86482ef90d32c58e16aaaa7f73"
@@ -3352,8 +3388,8 @@
     "hash": "24f2fa91fbd65e4357c24077d34daca0"
   },
   "/Users/scott/src/projects/agents-config/docs/specs/2026-07-18-codex-rereview-path-design.md": {
-    "mtime": 1784391900.855115,
-    "hash": "bcb42f29db8699526414617473d68979"
+    "mtime": 1784429500.9408872,
+    "hash": "c1ba5e9c8a9e202749055a343ec858e8"
   },
   "/Users/scott/src/projects/agents-config/docs/specs/2026-06-30-pr-review-merge-policy.md": {
     "mtime": 1783036017.136083,
@@ -3418,6 +3454,10 @@
   "/Users/scott/src/projects/agents-config/docs/specs/2026-07-16-merge-gate-triage-aware-thread-blocker.md": {
     "mtime": 1784284188.5031655,
     "hash": "0baf6a1bedf2442820cb973a23ddb98c"
+  },
+  "/Users/scott/src/projects/agents-config/docs/specs/2026-07-19-event-sourced-grind-runtime.md": {
+    "mtime": 1784470778.051741,
+    "hash": "929bedcf285dbd201d65c891ff47eb40"
   },
   "/Users/scott/src/projects/agents-config/docs/specs/2026-05-17-w1qls.1.2-model-design.md": {
     "mtime": 1781372925.842694,
@@ -3580,8 +3620,8 @@
     "hash": "41abd3555ccdc8f3a8cb38061e1e8e24"
   },
   "/Users/scott/src/projects/agents-config/docs/architecture/prgroom/c4-deployment.md": {
-    "mtime": 1782058515.915567,
-    "hash": "59c9f3da1b426ab50a9c2e291201def8"
+    "mtime": 1784411042.9006965,
+    "hash": "973f17bff2cacf80c80e8284536d9143"
   },
   "/Users/scott/src/projects/agents-config/docs/architecture/prgroom/c4-l2-container.md": {
     "mtime": 1782058515.9164681,
@@ -3592,8 +3632,8 @@
     "hash": "5f90031ae6503a0ef5c6653f434102be"
   },
   "/Users/scott/src/projects/agents-config/docs/architecture/review-merge-policy/design.md": {
-    "mtime": 1784331315.9934742,
-    "hash": "ef03b6e2b176834d2fedcdfc92bbb8ec"
+    "mtime": 1784479667.7148836,
+    "hash": "ffe16d60f2cc0e162def4ca4e36bdc04"
   },
   "/Users/scott/src/projects/agents-config/docs/architecture/pdlc-orchestrator/c4-l1-context.md": {
     "mtime": 1779707171.5321307,
@@ -3640,28 +3680,28 @@
     "hash": "769b7ff31e5314055927d34557ef6ca4"
   },
   "/Users/scott/src/projects/agents-config/docs/architecture/installer/installer-design.md": {
-    "mtime": 1783172993.7533937,
-    "hash": "cc837b9f7440114e217f9abf250fc0d6"
+    "mtime": 1784411042.8982928,
+    "hash": "30341b3c6675fc1290f6e804df7e75b1"
   },
   "/Users/scott/src/projects/agents-config/docs/architecture/installer/data-view.md": {
-    "mtime": 1783172993.7530801,
-    "hash": "ef0bd049e7d723b84442c02ba3ebc890"
+    "mtime": 1784411042.8980017,
+    "hash": "f8c2de8f36359988ff18f466f1a356cf"
   },
   "/Users/scott/src/projects/agents-config/docs/architecture/installer/index.md": {
     "mtime": 1783172993.7532449,
     "hash": "82e261d62fc661d81b706fb0d1d3c67a"
   },
   "/Users/scott/src/projects/agents-config/docs/architecture/installer/sequences.md": {
-    "mtime": 1783172993.7535498,
-    "hash": "3891a0ed34511a45cfbaf0d4693a7dd6"
+    "mtime": 1784411042.8985076,
+    "hash": "66d6d71d0d7f2021af448a40fdc8d996"
   },
   "/Users/scott/src/projects/agents-config/docs/architecture/installer/c4-l2-container.md": {
     "mtime": 1783172993.752818,
     "hash": "6ffe08a03660544a2ebb226feb888fc2"
   },
   "/Users/scott/src/projects/agents-config/docs/architecture/installer/c4-l3-engine.md": {
-    "mtime": 1783172993.7529433,
-    "hash": "791ee556cd442e16ed79c0c88a71619f"
+    "mtime": 1784411042.8976836,
+    "hash": "97520f7642686dc403daa9a759b78a46"
   },
   "/Users/scott/src/projects/agents-config/docs/beads/4vn5.2-mattpocock-skills-audit.md": {
     "mtime": 1778562256.3137586,
@@ -3675,21 +3715,25 @@
     "mtime": 1783172993.7564569,
     "hash": "056e372f791a67a87a7f577b271bfe93"
   },
+  "/Users/scott/src/projects/agents-config/scripts/backlog-landscape/README.md": {
+    "mtime": 1784411560.6041462,
+    "hash": "a814616fec22bc01b8ac381d24732893"
+  },
   "/Users/scott/src/projects/agents-config/packages/pdlc/AGENTS.md": {
     "mtime": 1783172993.756199,
     "hash": "edbe83c89f35fd8054957b7e364d6f4f"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/AGENTS.md": {
-    "mtime": 1784389175.6101985,
-    "hash": "4cb727eadac3ea2484ecece3d193ea88"
+    "mtime": 1784411042.904872,
+    "hash": "995b16414d393ff3733b78962c188dd3"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/README.md": {
-    "mtime": 1784404142.522863,
-    "hash": "01cc891be50fed508a96a27722e9dae4"
+    "mtime": 1784411042.9055996,
+    "hash": "d487294621f2f28fd79c61c619efb83a"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/AGENTS.md": {
-    "mtime": 1784117975.8953178,
-    "hash": "e3af27c7aacec26c6dd60e2e2b95e4d5"
+    "mtime": 1784411042.9051971,
+    "hash": "42e02a896edca56e4dad00d02cb3cba5"
   },
   "/Users/scott/src/projects/agents-config/packages/holding-place/AGENTS.md": {
     "mtime": 1783172993.756082,
@@ -3752,16 +3796,16 @@
     "hash": "add8ba431863c3a5750916fa519a3488"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/agents/tech-lead.md": {
-    "mtime": 1778597683.849003,
-    "hash": "3de6cc94022ff363ecd205b7317ee1c8"
+    "mtime": 1784470858.7434528,
+    "hash": "98e75996d89199d3dcdc1dc4f2a6a227"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/agents/quality-reviewer.md": {
     "mtime": 1779626817.144517,
     "hash": "3f0328dea89d0fe5acf3fd3d03365025"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/rules/worktrees.md": {
-    "mtime": 1781989029.3298132,
-    "hash": "0c84b97e2a6c8e82a85730ddb9f320ce"
+    "mtime": 1784479683.4200242,
+    "hash": "8e3dc2cf51434c97c6fddfd28196acea"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/rules/user-prompts.md": {
     "mtime": 1781988753.641413,
@@ -3868,8 +3912,8 @@
     "hash": "320199cf9a12037445d39369cfa3ad9d"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/skills/merge-guard/SKILL.md": {
-    "mtime": 1783860108.8914273,
-    "hash": "41a63d2772231c25ccaff7462d5c70b6"
+    "mtime": 1784425099.0904255,
+    "hash": "454612f0f882319d8f5c8ae109d4c4b7"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/skills/test-review/SKILL.md": {
     "mtime": 1779626817.1467352,
@@ -4100,8 +4144,8 @@
     "hash": "645fd768fa7686c0b4b3f5e3f25f7388"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/skills/wait-for-pr-comments/SKILL.md": {
-    "mtime": 1784405581.7668684,
-    "hash": "d8380a92e5e2d58f42b267c27cea784b"
+    "mtime": 1784479667.7168639,
+    "hash": "5bf3190f50966565fafdcfff9fb722c2"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/skills/wait-for-pr-comments/references/handling-feedback.md": {
     "mtime": 1779626817.1472526,
@@ -4164,20 +4208,24 @@
     "hash": "00e88d62283af76e1dc9070afcf1dc52"
   },
   "/Users/scott/src/projects/agents-config/src/user/.claude/skills/openrouter-claude-subagent/SKILL.md": {
-    "mtime": 1784381511.4634962,
-    "hash": "07609a10bf7a9cb27d2c2eba56f87411"
+    "mtime": 1784411953.0571835,
+    "hash": "2759528fba90bba9d13942eff3a8266a"
   },
   "/Users/scott/src/projects/agents-config/src/user/.claude/skills/openrouter-claude-subagent/references/model-routing.md": {
-    "mtime": 1784381227.8181682,
-    "hash": "57e54224e76b370f72a5a26902cbe1ef"
+    "mtime": 1784411953.0574813,
+    "hash": "7f8d6442cf6dd4ca0b866c91ce08eb0b"
   },
   "/Users/scott/src/projects/agents-config/src/user/.claude/skills/handoff/SKILL.md": {
     "mtime": 1779626817.148707,
     "hash": "d3625d925ff5465e4746b5199b8def4a"
   },
   "/Users/scott/src/projects/agents-config/src/user/.claude/skills/orchestrating-subagents/SKILL.md": {
-    "mtime": 1781961078.1560845,
-    "hash": "cb1acfd42a9e42c199dfdcc842bb4d4e"
+    "mtime": 1784470848.8186557,
+    "hash": "46be1c160f697f0c46e3343627556626"
+  },
+  "/Users/scott/src/projects/agents-config/src/user/.claude/skills/dispatching-bare-subagents/SKILL.md": {
+    "mtime": 1784460814.7641082,
+    "hash": "b5a068f55b29396878468d9c4002ef9b"
   },
   "/Users/scott/src/projects/agents-config/src/user/.claude/skills/zoom-out/SKILL.md": {
     "mtime": 1779716820.8092947,
@@ -4190,6 +4238,18 @@
   "/Users/scott/src/projects/agents-config/src/user/.claude/skills/sync-after-remote-merge/SKILL.md": {
     "mtime": 1784111820.6027892,
     "hash": "cea62327a931071839a83841af7e108d"
+  },
+  "/Users/scott/src/projects/agents-config/src/user/.claude/skills/orchestrated-grind/SKILL.md": {
+    "mtime": 1784470883.5964057,
+    "hash": "2d07ecbe3b73ffed5949931ebd98031d"
+  },
+  "/Users/scott/src/projects/agents-config/src/user/.claude/skills/orchestrated-grind/dashboard-template.html": {
+    "mtime": 1784413314.3813963,
+    "hash": "2d3ee1aaf8f45b920f177fcb36d95c6b"
+  },
+  "/Users/scott/src/projects/agents-config/src/user/.claude/skills/orchestrated-grind/references/state-schema.md": {
+    "mtime": 1784469375.1920614,
+    "hash": "9477669b410816ebb2ffb1858b6f5158"
   },
   "/Users/scott/src/projects/agents-config/src/user/.claude/rules-readmes/worktree-safety-readme.md": {
     "mtime": 1781988753.6430871,

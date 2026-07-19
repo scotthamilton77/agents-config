@@ -1,16 +1,16 @@
-# Graph Report - agents-config  (2026-07-18)
+# Graph Report - agents-config  (2026-07-19)
 
 ## Corpus Check
-- 539 files · ~1,292,812 words
+- 547 files · ~1,329,254 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 10287 nodes · 24025 edges · 408 communities detected
-- Extraction: 67% EXTRACTED · 33% INFERRED · 0% AMBIGUOUS · INFERRED: 7916 edges (avg confidence: 0.72)
+- 10378 nodes · 24182 edges · 407 communities detected
+- Extraction: 67% EXTRACTED · 33% INFERRED · 0% AMBIGUOUS · INFERRED: 7955 edges (avg confidence: 0.72)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `ba09ee0c`
+- Built from commit: `10545179`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -332,7 +332,7 @@
 - [[_COMMUNITY_Community 314|Community 314]]
 - [[_COMMUNITY_Community 315|Community 315]]
 - [[_COMMUNITY_Community 316|Community 316]]
-- [[_COMMUNITY_Community 317|Community 317]]
+- [[_COMMUNITY_Community 318|Community 318]]
 - [[_COMMUNITY_Community 319|Community 319]]
 - [[_COMMUNITY_Community 320|Community 320]]
 - [[_COMMUNITY_Community 321|Community 321]]
@@ -405,7 +405,7 @@
 - [[_COMMUNITY_Community 389|Community 389]]
 - [[_COMMUNITY_Community 390|Community 390]]
 - [[_COMMUNITY_Community 391|Community 391]]
-- [[_COMMUNITY_Community 392|Community 392]]
+- [[_COMMUNITY_Community 395|Community 395]]
 - [[_COMMUNITY_Community 396|Community 396]]
 - [[_COMMUNITY_Community 397|Community 397]]
 - [[_COMMUNITY_Community 398|Community 398]]
@@ -416,7 +416,6 @@
 - [[_COMMUNITY_Community 403|Community 403]]
 - [[_COMMUNITY_Community 404|Community 404]]
 - [[_COMMUNITY_Community 405|Community 405]]
-- [[_COMMUNITY_Community 406|Community 406]]
 - [[_COMMUNITY_Community 408|Community 408]]
 - [[_COMMUNITY_Community 409|Community 409]]
 - [[_COMMUNITY_Community 410|Community 410]]
@@ -425,7 +424,7 @@
 - [[_COMMUNITY_Community 413|Community 413]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `ScriptedIO` - 324 edges
+1. `ScriptedIO` - 334 edges
 2. `ScriptedStep` - 194 edges
 3. `ScriptedBdRunner` - 186 edges
 4. `PRRef` - 178 edges
@@ -459,147 +458,147 @@
 - **Delivery Pipeline (worktree, finish-branch, wait-for-PR, reply-resolve)** — skill_using_git_worktrees, skill_finishing_a_development_branch, skill_wait_for_pr_comments, skill_reply_and_resolve_pr_threads, rule_delivery [EXTRACTED 1.00]
 - **Cross-Tool AGENTS.md Template Family (Claude/Codex/Gemini)** — claude_agents_md_template, codex_agents_md_template, gemini_agents_md_template, shared_instructions_md [EXTRACTED 1.00]
 
-## Communities (414 total, 59 thin omitted)
+## Communities (414 total, 63 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.01
-Nodes (72): Ai(), an(), ao(), ba(), ca(), ch(), Ci(), co() (+64 more)
+Nodes (97): Ai(), an(), ao(), ar(), ba(), ca(), Ce(), ch() (+89 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.03
-Nodes (105): QuiescenceGate, The named quiescence gates, in evaluation order (§4.1).      The ``.value`` is t, Deps, The injected-dependency bundle handed to the lifecycle.      Construct with :met, DispositionKind, GateStrength, ItemKind, PRPhase (+97 more)
+Nodes (150): FixContract, The fix dispatch surface. A provider decides disposition AND implements., The fix dispatch surface. A provider decides disposition AND implements., The fix dispatch surface. A provider decides disposition AND implements., QuiescenceGate, The named quiescence gates, in evaluation order (§4.1).      The ``.value`` is t, The resolver's verdict — the run-loop applies all three fields to state.      ``, The resolver's verdict — the run-loop applies all three fields to state.      `` (+142 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.07
-Nodes (112): BdBackend, BdResult, Feeds scripted BdResults in order; records every call's full args.      - `.call, ScriptedBdRunner, ScriptedStep, `BdBackend.batch_get` edge cases (plan L5, 38o1v #4).  Empty `ids` -> `[]` with, test_batch_get_duplicate_requested_id_maps_to_the_same_item_at_each_position(), test_batch_get_empty_ids_returns_empty_list_with_zero_bd_calls() (+104 more)
+Cohesion: 0.05
+Nodes (137): ClusterContract, ClusterInput, FixInput, Input to the cluster contract (§5). Written to a file passed to the agent., Input to the cluster contract (§5). Written to a file passed to the agent., The cluster dispatch surface. A provider groups items into fix-bundles., The cluster dispatch surface. A provider groups items into fix-bundles., Input to the fix contract (§5), once per cluster. (+129 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.04
-Nodes (109): In-memory record of one entry destined for a tool's install root.      `content`, The in-memory staging plan.      Built incrementally during the staging phase; c, The in-memory replacement for the bash installer's temp-dir staging.      Built, The in-memory staging plan.      Built incrementally during the staging phase; c, StagingPlan, filter_plan_to_scope(), A new `StagingPlan` holding only the items whose `dest_relpath` is in     `kept_, Walk a ``StagingPlan`` and install every item under the adapter's dest root. (+101 more)
+Cohesion: 0.03
+Nodes (101): _bump_to_current(), _current_state(), Integration tests for FileStore's schema-migration read branch (§2, §3.7).  Real, test_migrator_not_reaching_current_version_is_rejected(), test_migrator_returning_invalid_json_does_not_corrupt_the_file(), test_migrator_returning_non_object_json_does_not_corrupt_the_file(), test_no_migrator_for_unknown_version_trips_schema_unknown(), test_non_int_schema_version_is_rejected_not_loaded_as_current() (+93 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.05
-Nodes (98): carries_own_marker(), memory_marker(), Idempotency markers for remote reply effects (verb-atomicity spec §4).  Pure hel, Stable marker for the one reply this item ever gets.      Keyed on the logical e, Globally-unique marker for one routed-memory thread reply.      A readable batch, Append the hidden marker on its own trailing paragraph., Map each full marker string found in any comment body to that comment's id., True iff ``body`` contains a full-grammar prgroom idempotency marker. (+90 more)
+Nodes (102): carries_own_marker(), memory_marker(), Idempotency markers for remote reply effects (verb-atomicity spec §4).  Pure hel, Stable marker for the one reply this item ever gets.      Keyed on the logical e, Globally-unique marker for one routed-memory thread reply.      A readable batch, Append the hidden marker on its own trailing paragraph., Map each full marker string found in any comment body to that comment's id., True iff ``body`` contains a full-grammar prgroom idempotency marker. (+94 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.05
-Nodes (87): PrMeta, PR author/review-state/timestamps (spec §4.4).      Garnish metadata, not part o, GhRunner, GitRunner, PrScope, The reconciled PR scope handed to the extractors and the scene assembler.      `, SccRunner, FlagKind (+79 more)
+Cohesion: 0.08
+Nodes (103): BdBackend, BdResult, Feeds scripted BdResults in order; records every call's full args.      - `.call, ScriptedBdRunner, ScriptedStep, `BdBackend.batch_get` edge cases (plan L5, 38o1v #4).  Empty `ids` -> `[]` with, test_batch_get_duplicate_requested_id_maps_to_the_same_item_at_each_position(), test_batch_get_empty_ids_returns_empty_list_with_zero_bd_calls() (+95 more)
 
 ### Community 6 - "Community 6"
+Cohesion: 0.04
+Nodes (99): Walk a ``StagingPlan`` and install every item under the adapter's dest root., Walk a ``StagingPlan`` and install every item under the adapter's dest root., Walk a ``StagingPlan`` and install every item under the adapter's dest root., sync_plan(), _dir_item(), _file_item(), _IdentityAdapter, Unit tests for installer.core.sync.sync_plan (W1 — plan-walking install sync). (+91 more)
+
+### Community 7 - "Community 7"
 Cohesion: 0.1
 Nodes (104): poll_pr(), Read-only poll: ingest gh review state, apply §3.4/§3.2/§4.1, return new state., Read-only poll: ingest gh review state, apply §3.4/§3.2/§4.1, return new state., Read-only poll: ingest gh review state, apply §3.4/§3.2/§4.1, return new state., Read-only poll: ingest gh review state, apply §3.4/§3.2/§4.1, return new state., _check_run(), _check_runs_ok(), _ci_check_runs_read() (+96 more)
 
-### Community 7 - "Community 7"
-Cohesion: 0.04
-Nodes (96): IncludeEntry, load_manifest(), project_universe(), Load the shipped manifest, optionally merging an optional user-owned     manifes, Project the union of every given tool plan into the normalized     selector voca, Segment-based glob match: `**` = zero-or-more segments, `*` = exactly     one se, `(is_literal, literal_prefix_len)`. Any literal selector beats any     glob; amo, One `include` entry from a profile: a selector and an optional scope     overrid (+88 more)
-
 ### Community 8 - "Community 8"
-Cohesion: 0.04
-Nodes (80): Build a successful `work` envelope `TrackerResult` carrying `data`., Build a failing `work` envelope `TrackerResult` (`ok: false`)., tracker_error(), tracker_ok(), _as_str(), _backend_error(), BeadRecord, DepEdgeRecord (+72 more)
+Cohesion: 0.05
+Nodes (93): merge_receipt(), Mirrors-disk receipt: ``(prior - pruned - relinquished) | installed``.      Prio, CliReceiptEntry, compute_integrity(), The install receipt — a record of what the installer authored wholesale.  Distin, The ``sha256:<hex>`` digest over the receipt's integrity-free content., One wholesale-authored dest entry. ``path``/``root`` are home-relative., One installer-deployed uv tool (spec §7). ``name`` is the registry /     uv tool (+85 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.05
-Nodes (83): Freshness, Provenance, ProvenanceKind, The source/verdict axis of per-fact provenance (spec §4.4)., The staleness axis of per-fact provenance (spec §4.4).      Independent of `Prov, Per-fact provenance on two independent axes, plus mandatory citations.      `cit, _as_dict(), _as_list() (+75 more)
+Nodes (95): overlay_plugins(), Overlay every plugin in ``plugins`` onto ``plan``, in alphabetical name     orde, Overlay every plugin in ``plugins`` onto ``plan``, in alphabetical name     orde, Overlay every plugin in ``plugins`` onto ``plan``, in alphabetical name     orde, default_registry(), Build the production registry: every concrete strategy bound to the     ``(FileK, _base_item(), _carrier_dir_plan() (+87 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.07
-Nodes (85): _(), A(), ae(), Ag(), aw(), ax(), b(), Be() (+77 more)
+Cohesion: 0.05
+Nodes (82): GhCli, gh adapter. Structurally satisfies :class:`GhClient`., gh adapter. Structurally satisfies :class:`GhClient`., gh adapter. Structurally satisfies :class:`GhClient`., gh adapter. Structurally satisfies :class:`GhClient`., fetch_thread_id_map(), Shared REST→GraphQL review-thread key bridge (§8.1, §8.2).  poll and snapshot bo, Map each REST review-comment ``databaseId`` (str) to its GraphQL thread node id. (+74 more)
 
 ### Community 11 - "Community 11"
+Cohesion: 0.04
+Nodes (80): Build a successful `work` envelope `TrackerResult` carrying `data`., Build a failing `work` envelope `TrackerResult` (`ok: false`)., tracker_error(), tracker_ok(), _as_str(), _backend_error(), BeadRecord, DepEdgeRecord (+72 more)
+
+### Community 12 - "Community 12"
+Cohesion: 0.03
+Nodes (76): _check_cluster_ids_unique(), _check_clusters_well_formed(), _check_coverage(), Pure cluster-output validator (§5 audit guards).  :func:`audit_cluster` checks t, AuditViolation, escalation_for(), failed_disposition(), provider_failure_disposition() (+68 more)
+
+### Community 13 - "Community 13"
+Cohesion: 0.06
+Nodes (64): FakeBackend, Insert an item with an explicit id; returns self for chaining., Sanity checks for `FakeBackend` -- the fidelity properties every recovery test l, test_append_note_is_line_wise_and_missing_item_raises_not_found(), test_create_assigns_id_and_wires_into_parent_children(), test_get_reports_children_but_query_is_lean(), test_label_and_status_mutations_are_observable_through_get(), _assert_instantiation_healed() (+56 more)
+
+### Community 14 - "Community 14"
 Cohesion: 0.05
 Nodes (70): _finish_args(), _git(), _head(), main_repo(), _merged_feature(), The fail-loud message must name all three conventions detect_convention     actu, A `worktrees` path segment NOT anchored under main_root must fail loud,     neve, Same anchoring for the Claude-native check: a `.claude/worktrees` segment     ou (+62 more)
 
-### Community 12 - "Community 12"
-Cohesion: 0.06
-Nodes (85): The `.viz/` sidecar's single entry point. `root` is injected, never `Path.cwd()`, SidecarStore, Build a successful `work show <id>` `TrackerResult`.      Only the four fields `, tracker_show_ok(), _fact(), `.viz/` sidecar store: read/write, locking, atomic writes, and the Tier discipli, test_concurrent_writers_do_not_interleave(), test_crash_before_rename_leaves_canonical_file_untouched() (+77 more)
-
-### Community 13 - "Community 13"
-Cohesion: 0.05
-Nodes (68): _bump_to_current(), _current_state(), Integration tests for FileStore's schema-migration read branch (§2, §3.7).  Real, test_migrator_not_reaching_current_version_is_rejected(), test_migrator_returning_invalid_json_does_not_corrupt_the_file(), test_migrator_returning_non_object_json_does_not_corrupt_the_file(), test_no_migrator_for_unknown_version_trips_schema_unknown(), test_non_int_schema_version_is_rejected_not_loaded_as_current() (+60 more)
-
-### Community 14 - "Community 14"
-Cohesion: 0.07
-Nodes (69): _cap_guard_step(), _entry_probe(), _execute_step(), One step in the run-loop pipeline: a named, optionally-guarded ctx→state call., One step in the run-loop pipeline: a named, optionally-guarded ctx→state call., One step in the run-loop pipeline: a named, optionally-guarded ctx→state call., Build the pre-push retry-budget guard (§3.5): refuse the budget-tripping push., Build the pre-push hard-cap guard (§3.5): refuse the cap-tripping push.      Whe (+61 more)
-
 ### Community 15 - "Community 15"
-Cohesion: 0.04
-Nodes (78): Stage one namespace subdir into StagedItems.      Walks ``source_root/namespace/, Stage one namespace subdir into StagedItems.      Walks ``source_root/namespace/, Stage one namespace subdir into StagedItems.      Port of bash ``stage_content_f, Stage one namespace subdir into StagedItems.      Port of bash ``stage_content_f, Strip .template if it is the final suffix; return path unchanged otherwise., Strip .template if it is the final suffix; return path unchanged otherwise., Strip .template if it is the final suffix; return path unchanged otherwise., Strip .template if it is the final suffix; return path unchanged otherwise. (+70 more)
+Cohesion: 0.03
+Nodes (89): _back_up_and_delete(), _delete_all(), _delete_one_by_one(), _display(), _lstat_identity(), _prompt_and_delete(), PruneAbortedError, Interactive prune flow — confirm and perform orphan deletion.  Takes the orphan (+81 more)
 
 ### Community 16 - "Community 16"
-Cohesion: 0.05
-Nodes (66): ad(), al(), bd(), Bf(), bl(), bs(), cd(), cf() (+58 more)
+Cohesion: 0.06
+Nodes (86): The `.viz/` sidecar's single entry point. `root` is injected, never `Path.cwd()`, SidecarStore, Build a successful `work show <id>` `TrackerResult`.      Only the four fields `, tracker_show_ok(), _fact(), `.viz/` sidecar store: read/write, locking, atomic writes, and the Tier discipli, test_concurrent_writers_do_not_interleave(), test_crash_before_rename_leaves_canonical_file_untouched() (+78 more)
 
 ### Community 17 - "Community 17"
-Cohesion: 0.05
-Nodes (67): The §8.2 ``recurrence`` signal — a per-item derived input to the fix agent.  prg, One item's recurrence signal (§8.2). Frozen + slots: a hashable value type., Serialize for the fix snapshot. ``prior_commits`` omitted when empty (§8.2)., Serialize for the fix snapshot. ``prior_commits`` omitted when empty (§8.2)., Recurrence, assemble_snapshot(), _branch_state(), _build_recurrence() (+59 more)
+Cohesion: 0.07
+Nodes (80): _(), A(), ae(), Ag(), aw(), ax(), b(), bt() (+72 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.05
-Nodes (67): Install one file from the adapter's source tree to its dest tree.      Resolves, Install one file from the adapter's source tree to its dest tree.      Resolves, Install one file from the adapter's source tree to its dest tree.      Resolves, sync(), Behavioural coverage for ClaudeAdapter via the B.2 sync engine.  Drives the *rea, Given a file in the repo's src/user/.claude/ tree     When sync installs it for, test_claude_adapter_installs_file_under_dot_claude(), _IdentityAdapter (+59 more)
+Nodes (76): Freshness, ProvenanceKind, The source/verdict axis of per-fact provenance (spec §4.4)., The staleness axis of per-fact provenance (spec §4.4).      Independent of `Prov, _as_dict(), _as_list(), _as_str(), _ExpectedArrayError (+68 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.11
-Nodes (70): ClusterDispatcher, load_chain(), Resolve the provider chain for ``contract`` (TOML section, else default).      R, Resolve the provider chain for ``contract`` (TOML section, else default).      R, Concrete ``ClusterContract``: dispatch the cluster chain, parse the output., Concrete ``ClusterContract``: dispatch the cluster chain, parse the output., AgentSpec, One provider's config: which CLI, which model, and CLI-specific extras.      ``t (+62 more)
+Cohesion: 0.05
+Nodes (65): build_invocation(), _input_section(), _popen_spawn(), _PopenHandle, The per-invoker payload-delivery section rendered into the prompt template., The per-invoker payload-delivery section rendered into the prompt template., Build the argv/stdin shape for ``spec.cli`` (§5 per-invoker shapes).      ``prom, Build the argv/stdin shape for ``spec.cli`` (§5 per-invoker shapes).      ``prom (+57 more)
 
 ### Community 20 - "Community 20"
+Cohesion: 0.06
+Nodes (68): PrMeta, PR author/review-state/timestamps (spec §4.4).      Garnish metadata, not part o, GitRunner, PrScope, The reconciled PR scope handed to the extractors and the scene assembler.      `, SccRunner, FactRecord, FlagKind (+60 more)
+
+### Community 21 - "Community 21"
+Cohesion: 0.05
+Nodes (83): IncludeEntry, load_manifest(), Load the shipped manifest, optionally merging an optional user-owned     manifes, Segment-based glob match: `**` = zero-or-more segments, `*` = exactly     one se, `(is_literal, literal_prefix_len)`. Any literal selector beats any     glob; amo, One `include` entry from a profile: a selector and an optional scope     overrid, _selector_matches(), _specificity() (+75 more)
+
+### Community 22 - "Community 22"
+Cohesion: 0.04
+Nodes (73): Install one file from the adapter's source tree to its dest tree.      Resolves, Install one file from the adapter's source tree to its dest tree.      Resolves, Install one file from the adapter's source tree to its dest tree.      Resolves, sync(), Behavioural coverage for CodexAdapter via the sync engine.  Drives the real Code, Given a file in the repo's src/user/.codex/ tree     When sync installs it for t, test_codex_adapter_installs_file_under_dot_codex(), Behavioural coverage for GeminiAdapter via the sync engine.  Drives the real Gem (+65 more)
+
+### Community 23 - "Community 23"
+Cohesion: 0.09
+Nodes (79): FixItemResult, FixOutput, One item's disposition produced by the fix contract (§5)., One item's disposition produced by the fix contract (§5)., Output of the fix contract (§5).      Parsing the ``memory_writes`` / ``memory``, Output of the fix contract (§5).      Parsing the ``memory_writes`` / ``memory``, _audit_already_addressed(), audit_fix_items() (+71 more)
+
+### Community 24 - "Community 24"
+Cohesion: 0.04
+Nodes (73): parse_profiles_csv(), Read the persisted profile selection from ``<project_root>/project-config.toml``, Persist ``profiles`` to ``<project_root>/project-config.toml``'s     ``[install], Translate the `--tools=` CLI value into the resolved tool tuple.      - `overrid, Translate the `--tools=` CLI value into the resolved tool tuple.      - `overrid, Translate the `--tools=` CLI value into the resolved tool tuple.      - `overrid, Translate the ``--profiles=`` CLI value into a resolved profile-name tuple., read_project_profiles() (+65 more)
+
+### Community 25 - "Community 25"
 Cohesion: 0.05
 Nodes (60): GeminiAdapter, Apply the Claude→Gemini agent frontmatter transform to every staged         ``ag, Apply the Claude→Gemini agent frontmatter transform to every staged         ``ag, Apply the Claude→Gemini agent frontmatter transform to every staged         ``ag, Translate a shared (Claude-style) agent file's YAML frontmatter into the     for, Translate a shared (Claude-style) agent file's YAML frontmatter into the     for, Adapter for Google's Gemini CLI. Probes ~/.gemini/ as a directory —     mirrors, Adapter for Google's Gemini CLI. Detected when ~/.gemini/ exists. (+52 more)
 
-### Community 21 - "Community 21"
-Cohesion: 0.06
-Nodes (70): merge_clis(), canonical_bytes(), CliReceiptEntry, compute_integrity(), _entry_canonical(), The install receipt — a record of what the installer authored wholesale.  Distin, The ``sha256:<hex>`` digest over the receipt's integrity-free content., One wholesale-authored dest entry. ``path``/``root`` are home-relative. (+62 more)
-
-### Community 22 - "Community 22"
+### Community 26 - "Community 26"
 Cohesion: 0.05
 Nodes (39): Mutable per-item record; `Item` snapshots are rebuilt frozen on read., _Rec, The capability gate (decision 11): dispatch refuses a verb the backend's `Capabi, Just enough of `Backend` to prove the gate never reaches the handler., Just enough of `Backend` to prove the gate never reaches the handler., `dep list` must reach the handler; `dep add`/`dep remove` must not., `sync` disposition SERVER_AUTHORITATIVE: an honest no-op, `backend.sync` never c, _StubDepTypesDenyingBackend (+31 more)
 
-### Community 23 - "Community 23"
+### Community 27 - "Community 27"
 Cohesion: 0.06
 Nodes (69): _assert_object_elements(), _dep_edge_from_raw(), _dep_type(), _drift(), _list_field(), _load_json_array(), parse_created_id(), parse_dep_edges() (+61 more)
 
-### Community 24 - "Community 24"
-Cohesion: 0.06
-Nodes (50): _classify_git_failure(), GitCli, The git adapter — worktree plumbing via the ``git`` subprocess (§3.4, §7.6).  ``, git adapter. Structurally satisfies :class:`GitClient`., Map a failed ``git`` invocation to its registry error (§3.6/§3.7)., git adapter. Structurally satisfies :class:`GitClient`., Map a failed ``git`` invocation to its registry error (§3.6/§3.7)., _transient() (+42 more)
-
-### Community 25 - "Community 25"
-Cohesion: 0.04
-Nodes (69): _merge(), Unit tests for installer.core.merge.strategies.json_union.  Each test pins a cod, Two dicts at the same key deep-merge: shared scalar keeps existing,     disjoint, Two dicts at the same key deep-merge: shared scalar keeps existing,     disjoint, Recursion is unbounded: a scalar conflict three levels deep still     keeps exis, Recursion is unbounded: a scalar conflict three levels deep still     keeps exis, Two dicts at the same key deep-merge: shared scalar keeps existing,     disjoint, Recursion is unbounded: a scalar conflict three levels deep still     keeps exis (+61 more)
-
-### Community 26 - "Community 26"
-Cohesion: 0.04
-Nodes (44): Mode, Whether ``run`` blocks on ``_wait`` (autonomous) or hands the wait back (interac, Whether ``run`` blocks on ``_wait`` (autonomous) or hands the wait back (interac, Whether ``run`` blocks on ``_wait`` (autonomous) or hands the wait back (interac, InMemoryStore, lock(), InMemoryStore — the test-only Store adapter (§2).  **Test-scoped by convention.*, Reference test adapter. Structurally satisfies ``Store``. (+36 more)
-
-### Community 27 - "Community 27"
+### Community 28 - "Community 28"
 Cohesion: 0.05
 Nodes (60): Test fake. Per-method answer queues drive prompt responses; every     output and, Test fake. Per-method answer queues drive prompt responses; every     output and, ScriptedIO, _hermetic_repo(), _hermetic_repo_with_profiles(), _hermetic_repo_with_project_tool_profile(), _hermetic_repo_with_two_kits(), Tests for project-scoped install (the ``--project``/``--profiles`` flow).  Cover (+52 more)
 
-### Community 28 - "Community 28"
-Cohesion: 0.06
-Nodes (66): overlay_plugins(), Overlay every plugin in ``plugins`` onto ``plan``, in alphabetical name     orde, Overlay every plugin in ``plugins`` onto ``plan``, in alphabetical name     orde, Overlay every plugin in ``plugins`` onto ``plan``, in alphabetical name     orde, _base_item(), _empty_plan(), _Plugin, Phase 6 plugin overlay (core/overlay.py).  Behavioural tests for ``overlay_plugi (+58 more)
-
 ### Community 29 - "Community 29"
 Cohesion: 0.04
-Nodes (52): claim(), plan(), promote(), `claim`/`release`/`plan`/`promote` -- guarded lifecycle transitions (plan Task 4, `work claim ID` (plan L1: bd's own atomic `--claim`; invariant 3 staleness detec, `work release ID` -- returns a claimed item to `open` (plan L1)., `work plan ID (--done | --undo) [--force]` -- Planning-queue membership (§5, L16, `work promote ID` -- a `shape-feat` leaf becomes a `shape-spec` container (L16). (+44 more)
+Nodes (67): _merge(), Unit tests for installer.core.merge.strategies.json_union.  Each test pins a cod, Recursion is unbounded: a scalar conflict three levels deep still     keeps exis, Recursion is unbounded: a scalar conflict three levels deep still     keeps exis, Recursion is unbounded: a scalar conflict three levels deep still     keeps exis, Conflicting scalar arrays concatenate, then dedupe by value while     preserving, Conflicting scalar arrays concatenate, then dedupe by value while     preserving, Dedupe collapses duplicates that already exist within one side as well     as ac (+59 more)
 
 ### Community 30 - "Community 30"
-Cohesion: 0.04
-Nodes (49): Read the PR's state, raising ``PRECONDITION_NO_STATE`` if it was never polled., Read the PR's state, raising ``PRECONDITION_NO_STATE`` if it was never polled., _read_or_no_state(), exit_code_for_tier(), lock_held_error(), PreconditionError, PrgroomError, Failure-tier model, structured-error registry, and exit-code mapping.  Implement (+41 more)
+Cohesion: 0.08
+Nodes (65): Provenance, Per-fact provenance on two independent axes, plus mandatory citations.      `cit, MatchingDescriptor, The identity-reconciliation snapshot taken at inference time (spec §5.3).      `, Ambiguous, any_bead_overlap(), _bead_anchor_match(), Candidate (+57 more)
 
 ### Community 31 - "Community 31"
-Cohesion: 0.12
-Nodes (64): Feeds scripted `work` envelope responses; records every argv invocation.      -, ScriptedTrackerRunner, _accept(), _apply_module(), _edge_fact(), _freeze_clock(), _make_fixed_datetime(), _note_text() (+56 more)
+Cohesion: 0.06
+Nodes (48): _assignments(), ClusterRunResult, _degenerate(), ``run_cluster`` orchestration — retry-once, then degenerate fallback (§5).  This, The computed result of one ``run_cluster`` call (8.7 returns; 8.15 applies)., The computed result of one ``run_cluster`` call (8.7 returns; 8.15 applies)., One cluster per input item, id derived from the gh_id. Coverage-complete., One cluster per input item, id derived from the gh_id. Coverage-complete. (+40 more)
 
 ### Community 32 - "Community 32"
 Cohesion: 0.05
-Nodes (34): map_bd_failure(), Translate a nonzero bd exit into a typed error (decision 4).      NOT_FOUND, TYP, Translate a nonzero bd exit into a typed error (decision 4).      NOT_FOUND, TYP, _is_retryable_stderr(), Bounded backoff around a single bd invocation (locked decision 8).  Retryable =, run_with_retry(), Lock-contention retry (spec test-plan item 7, locked decision 8).  Retryable = l, A minimal BdRunner double for the one branch ScriptedBdRunner's pinned     shape (+26 more)
+Nodes (63): flatten_template(), Flatten DYNAMIC-INCLUDE markers in a template's text.      Each file-marker line, Flatten DYNAMIC-INCLUDE markers in a template's text.      Each file-marker line, Flatten DYNAMIC-INCLUDE markers in a template's text.      Each file-marker line, Flatten DYNAMIC-INCLUDE markers in a template's text.      Each file-marker line, Unit tests for installer.core.templates — B.4 (DYNAMIC-INCLUDE file form).  Each, Given a template interleaving prose and two file markers     When flatten_templa, Given a marker whose target file does not exist     When flatten_template runs (+55 more)
 
 ### Community 33 - "Community 33"
-Cohesion: 0.05
-Nodes (63): Confirm and delete orphans; return per-target ``Counters`` of the work done., Confirm and delete orphans; return per-target ``Counters`` of the work done., Confirm and delete orphans; return per-target ``Counters`` of the work done., run_prune(), _dir_orphan(), _file_orphan(), Unit tests for installer.core.prune_flow (G.4 — interactive prune flow).  Each t, Given an orphan and an interactive answer of "cancel"     When run_prune execute (+55 more)
+Cohesion: 0.12
+Nodes (64): Feeds scripted `work` envelope responses; records every argv invocation.      -, ScriptedTrackerRunner, _accept(), _apply_module(), _edge_fact(), _freeze_clock(), _make_fixed_datetime(), _note_text() (+56 more)
 
 ### Community 34 - "Community 34"
-Cohesion: 0.06
-Nodes (51): PerItemResult, Real I/O implementation backed by `rich`. Structurally satisfies     IOPort. Con, Return type of `IOPort.confirm_per_item`.      `decisions` carries only the item, TerminalIO, _capture_console(), Unit tests for installer.core.io_port.  Each test pins a design decision recorde, Pins the self-diagnosing error contract: the failure message     includes the re, Pins: ScriptedIO records every output call (no short-circuit on     verbose=True (+43 more)
+Cohesion: 0.07
+Nodes (45): fix_pr(), Fix every clustered-unprocessed item, applying dispositions to a state copy., Fix every clustered-unprocessed item, applying dispositions to a state copy., deps(), FixedRandomness, FrozenClock, pr_ref(), A deterministic Clock fake. Structurally satisfies the Clock Protocol. (+37 more)
 
 ### Community 35 - "Community 35"
 Cohesion: 0.06
@@ -610,616 +609,616 @@ Cohesion: 0.07
 Nodes (11): Run the resolver CLI; return (exit_code, stdout, stderr)., Resolve THIS repo's real project-config.toml — not a hand-copy — so the     repo, run_resolver(), TestAgentsConfigSettings, TestApproverConfig, TestConfigParsing, TestDefaults, TestLabelOverrides (+3 more)
 
 ### Community 37 - "Community 37"
-Cohesion: 0.05
-Nodes (63): JsonUnionStrategy, Deep union-merge two colliding JSON payloads.      Honours the ``MergeStrategy``, Deep union-merge two colliding JSON payloads.      Honours the ``MergeStrategy``, Deep union-merge two colliding JSON payloads.      Honours the ``MergeStrategy``, Deep union-merge two colliding JSON payloads, jq-parity.      Honours the ``Merg, _item(), Two empty objects merge to an empty object ``{}`` — the semantic     deep-merge, Two empty objects merge to an empty object ``{}`` — the semantic     deep-merge (+55 more)
+Cohesion: 0.06
+Nodes (45): _classify_git_failure(), GitCli, The git adapter — worktree plumbing via the ``git`` subprocess (§3.4, §7.6).  ``, git adapter. Structurally satisfies :class:`GitClient`., Map a failed ``git`` invocation to its registry error (§3.6/§3.7)., git adapter. Structurally satisfies :class:`GitClient`., Map a failed ``git`` invocation to its registry error (§3.6/§3.7)., _transient() (+37 more)
 
 ### Community 38 - "Community 38"
-Cohesion: 0.09
-Nodes (52): build_invocation(), Build the argv/stdin shape for ``spec.cli`` (§5 per-invoker shapes).      ``prom, Build the argv/stdin shape for ``spec.cli`` (§5 per-invoker shapes).      ``prom, Runs one agent invocation under a budget + cancel-token. Owns the temp-file danc, Runs one agent invocation under a budget + cancel-token. Owns the temp-file danc, SubprocessAgentRunner, FakeProcess, Subprocess lifecycle wrapper for agent dispatch (§5 subprocess wrapper).  The wr (+44 more)
+Cohesion: 0.06
+Nodes (49): Real I/O implementation backed by `rich`. Structurally satisfies     IOPort. Con, TerminalIO, _capture_console(), Unit tests for installer.core.io_port.  Each test pins a design decision recorde, Pins the self-diagnosing error contract: the failure message     includes the re, Pins: ScriptedIO records every output call (no short-circuit on     verbose=True, Return (Console, buffer) suitable for asserting on TerminalIO output     without, A literal '[dir]' / '[file]' token (the prune list's type tag) must survive (+41 more)
 
 ### Community 39 - "Community 39"
 Cohesion: 0.05
-Nodes (60): default_registry(), Build the production registry: every concrete strategy bound to the     ``(FileK, Integration tests for ``default_registry()`` — the concrete dispatch table.  The, The factory wires specific namespaces; an un-wired NAMESPACED_MD     namespace i, The factory hands back a populated MergeRegistry instance — callers     wire col, rules/ collisions are additive — they must route to the append     strategy, nev, commands/skills/agents collisions are irreconcilable — each must route     to Fa, Pins the dispatch-by-namespace contract end to end: the SAME kind     with two n (+52 more)
-
-### Community 40 - "Community 40"
-Cohesion: 0.05
 Nodes (47): fn(), applyEncoding(), applyLabelPosition(), applyNodePosition(), basename(), buildColorSwatch(), buildDedupedFileEdges(), buildDirTooltip() (+39 more)
 
-### Community 41 - "Community 41"
-Cohesion: 0.05
-Nodes (58): parse_profiles_csv(), Translate the `--tools=` CLI value into the resolved tool tuple.      - `overrid, Translate the `--tools=` CLI value into the resolved tool tuple.      - `overrid, Translate the `--tools=` CLI value into the resolved tool tuple.      - `overrid, Translate the ``--profiles=`` CLI value into a resolved profile-name tuple., resolve_tools(), _home_with_claude_settings(), Unit tests for installer.config.  Each test pins a design decision from the B.1 (+50 more)
-
-### Community 42 - "Community 42"
-Cohesion: 0.07
-Nodes (42): fix_pr(), Fix every clustered-unprocessed item, applying dispositions to a state copy., Fix every clustered-unprocessed item, applying dispositions to a state copy., deps(), FixedRandomness, FrozenClock, pr_ref(), A deterministic Clock fake. Structurally satisfies the Clock Protocol. (+34 more)
-
-### Community 43 - "Community 43"
-Cohesion: 0.12
-Nodes (51): FixItemResult, FixOutput, One item's disposition produced by the fix contract (§5)., One item's disposition produced by the fix contract (§5)., Output of the fix contract (§5).      Parsing the ``memory_writes`` / ``memory``, Output of the fix contract (§5).      Parsing the ``memory_writes`` / ``memory``, audit_orphans(), Every new commit must be claimed by a REQUESTED item; else one structural orphan (+43 more)
-
-### Community 44 - "Community 44"
-Cohesion: 0.09
-Nodes (57): Ambiguous, any_bead_overlap(), _bead_anchor_match(), content_fact_id(), _find_matches(), majority_bead_overlap(), Matched, Minted (+49 more)
-
-### Community 45 - "Community 45"
-Cohesion: 0.08
-Nodes (52): FixInput, Input to the fix contract (§5), once per cluster., Input to the fix contract (§5), once per cluster., _Dispatcher, FixDispatcher, LinkFailure, ProviderChain, An ordered provider chain plus the shared per-contract time budget.      ``time_ (+44 more)
-
-### Community 46 - "Community 46"
+### Community 40 - "Community 40"
 Cohesion: 0.06
 Nodes (45): build_plan(), Build a StagingPlan for one tool (bash Phases 1-5).      Stages, in bash order:, Build a StagingPlan for one tool (Phases 1-5).      Stages: shared templates (1), Build a StagingPlan for one tool (Phases 1-5).      Stages: shared templates (1), Build a StagingPlan for one tool (bash Phases 1-5).      Stages, in bash order:, ClaudeAdapter, Adapter for Anthropic's Claude Code. Always detected: auto-detect always     sel, Adapter for Anthropic's Claude Code. Always detected: auto-detect always     sel (+37 more)
 
-### Community 47 - "Community 47"
-Cohesion: 0.04
-Nodes (56): _build_pipeline(), _flush_terminal_signals(), _guarded_has_queued(), _poll(), _push(), ``run`` — the aggregate verb that threads the lifecycle under one lock (§3.3)., The mutable per-invocation context threaded through the run-loop.      ``state``, Run the lifecycle under one lock; return the §3.3 exit code (the CLI entry). (+48 more)
+### Community 41 - "Community 41"
+Cohesion: 0.06
+Nodes (57): JsonUnionStrategy, Deep union-merge two colliding JSON payloads.      Honours the ``MergeStrategy``, Deep union-merge two colliding JSON payloads.      Honours the ``MergeStrategy``, Deep union-merge two colliding JSON payloads.      Honours the ``MergeStrategy``, Deep union-merge two colliding JSON payloads, jq-parity.      Honours the ``Merg, _item(), Two empty objects merge to an empty object ``{}`` — the semantic     deep-merge, Two empty objects merge to an empty object ``{}`` — the semantic     deep-merge (+49 more)
 
-### Community 48 - "Community 48"
-Cohesion: 0.1
-Nodes (44): has_queued_fix_commits(), push_pr(), ``push_pr`` — the lock-held ``_push`` lifecycle internal (§3.2/§3.4/§3.5).  ``pu, True iff the local PR-branch HEAD has ≥1 commit not yet on the remote (§3.4)., True iff the local PR-branch HEAD has ≥1 commit not yet on the remote (§3.4)., Upload queued commits to the PR head branch, bumping ``round`` on success., Upload queued commits to the PR head branch, counting the consumed retry.      C, _has_queued() (+36 more)
+### Community 42 - "Community 42"
+Cohesion: 0.06
+Nodes (56): Counters, Run-level totals reported at install completion. Mutable; the run     increments, Run-level totals reported at install completion. Mutable; the run     increments, Run-level totals reported at install completion. Mutable; the run     increments, Run-level totals reported at install completion. Mutable; the run     increments, _is_changed(), Install / prune summary renderer.  ``cli.main`` merges the per-target ``Counters, Render the install / prune summary through ``io``.      ``counters`` is the merg (+48 more)
 
-### Community 49 - "Community 49"
+### Community 43 - "Community 43"
+Cohesion: 0.08
+Nodes (49): Like `run_cli`, but takes a caller-built `ScriptedBdRunner`.      `run_cli` buil, Like `run_cli`, but takes a caller-built `ScriptedBdRunner`.      `run_cli` buil, run_cli_with_runner(), _combined_show_result(), `dep add/remove/list` — type-wall pre-check, positional order, direction mapping, A `bd show a b --json` response covering the type-wall's combined read.      `en, test_dep_add_backend_fallback_maps_a_cycle_stderr_to_dep_cycle(), test_dep_add_blocks_between_epic_and_task_yields_type_wall_and_never_mutates() (+41 more)
+
+### Community 44 - "Community 44"
 Cohesion: 0.06
 Nodes (42): cli_source_digest(), CommandResult, CLI-deploy registry, source digest, and subprocess port (spec: installer-cli-dep, Real CliDeployPort backed by uv subprocesses. The ONLY module code     that shel, Outcome of one port subprocess: ``output`` is merged stdout+stderr,     surfaced, Deterministic ``sha256:<hex>`` over the package's deployable source.      Inputs, UvCliDeploy, _FakeCompleted (+34 more)
 
-### Community 50 - "Community 50"
-Cohesion: 0.1
-Nodes (54): _assert_instantiation_healed(), _creating_spec_container(), _deliver_design(), _legacy_spec_tree_with_leaked_creating_spec(), _multi(), State-based recovery contract (spec §6, plan L7/L10).  These tests assert the *h, A read_file that returns `text` for any path -- deliver reads one spec., A spec container mid-instantiation: carries `creating-spec`, not yet     `planne (+46 more)
-
-### Community 51 - "Community 51"
-Cohesion: 0.05
-Nodes (26): CliDeployPort, CliSpec, One deployable CLI package. ``name`` is the uv tool name; ``binary``     the con, Injected subprocess seam for uv-tool deploys. All installed-state     decisions, IOPort, Single injectable abstraction for every prompt, diff, header, and     log line i, Outcome, What actually happened to one install item — finer than ``Counters``.      ``Cou (+18 more)
-
-### Community 52 - "Community 52"
+### Community 45 - "Community 45"
 Cohesion: 0.07
-Nodes (43): Test fake for CliDeployPort.      Idempotent queries (uv_version / bin_dir / too, ScriptedCliDeploy, deploy_clis(), The CLI deploy half (spec §6): registry order, PATH-independent     decision sig, _pkg(), _prior_with_current_digest(), Tests for the deploy_clis decision engine (spec §6)., Given a receipt entry, shim missing, env absent entirely     When deploy_clis ru (+35 more)
+Nodes (45): CliSpec, Test fake for CliDeployPort.      Idempotent queries (uv_version / bin_dir / too, One deployable CLI package. ``name`` is the uv tool name; ``binary``     the con, ScriptedCliDeploy, deploy_clis(), The CLI deploy half (spec §6): registry order, PATH-independent     decision sig, _pkg(), _prior_with_current_digest() (+37 more)
 
-### Community 53 - "Community 53"
-Cohesion: 0.11
-Nodes (47): MemoryEntry, One classified memory entry on the fix-output ``memory`` channel (§8.5).      ``, One classified memory entry on the fix-output ``memory`` channel (§8.5).      ``, anchor(), _audit_entry(), audit_memory(), _is_contained(), MemoryAuditResult (+39 more)
+### Community 46 - "Community 46"
+Cohesion: 0.04
+Nodes (26): CliDeployPort, Injected subprocess seam for uv-tool deploys. All installed-state     decisions, IOPort, Single injectable abstraction for every prompt, diff, header, and     log line i, Outcome, What actually happened to one install item — finer than ``Counters``.      ``Cou, _check_reachability(), CliDeployOutcome (+18 more)
 
-### Community 54 - "Community 54"
-Cohesion: 0.06
-Nodes (49): _check_cluster_ids_unique(), _check_clusters_well_formed(), _check_coverage(), Pure cluster-output validator (§5 audit guards).  :func:`audit_cluster` checks t, AuditViolation, escalation_for(), failed_disposition(), provider_failure_disposition() (+41 more)
+### Community 47 - "Community 47"
+Cohesion: 0.05
+Nodes (52): _entry_probe(), _execute_step(), _flush_terminal_signals(), _guarded_has_queued(), _poll(), _push(), ``run`` — the aggregate verb that threads the lifecycle under one lock (§3.3)., Run the lifecycle under one lock; return the §3.3 exit code (the CLI entry). (+44 more)
 
-### Community 55 - "Community 55"
-Cohesion: 0.09
-Nodes (49): The whole receipt. ``roots`` is the persisted install-root allowlist., Receipt, prune_pipeline(), Scan ``adapters`` for orphans against ``plans``, then run the prune flow.      `, Diff ``prior`` against this run's desired staged keys and prune the orphans., Diff ``prior`` against this run's desired staged keys and prune the orphans., get_adapter(), Lookup. Raises KeyError on miss — callers expected to have     validated via par (+41 more)
-
-### Community 56 - "Community 56"
+### Community 48 - "Community 48"
 Cohesion: 0.05
 Nodes (51): backlog_grooming_nag_line(), bd_json(), bead_sort_key(), build_in_flight(), claim_age_days(), detect_prefix(), extract_typed_ancestors(), is_brainstorm_candidate() (+43 more)
 
-### Community 57 - "Community 57"
+### Community 49 - "Community 49"
+Cohesion: 0.07
+Nodes (24): map_bd_failure(), Translate a nonzero bd exit into a typed error (decision 4).      NOT_FOUND, TYP, Translate a nonzero bd exit into a typed error (decision 4).      NOT_FOUND, TYP, _is_retryable_stderr(), Bounded backoff around a single bd invocation (locked decision 8).  Retryable =, run_with_retry(), _AlwaysTimeoutRunner, _invoke() (+16 more)
+
+### Community 50 - "Community 50"
 Cohesion: 0.06
 Nodes (48): Bounded-memory file hashing.  A single streaming sha-256 helper shared by every, Return the raw sha-256 digest of ``path``'s contents, read in bounded memory., sha256_file(), Orphan, One destination-side entry not present in this run's staging plan.      Replaces, One destination-side entry not present in this run's staging plan.      One reco, One destination-side entry not present in this run's staging plan.      Replaces, One destination-side entry not present in this run's staging plan.      One reco (+40 more)
 
-### Community 58 - "Community 58"
-Cohesion: 0.07
-Nodes (48): FileKind, Provenance, Pure data model for the installer engine.  No behaviour beyond construction, equ, Tools the installer can target. Closed set — adding a tool requires     a new ad, Merge-dispatch discriminator. Namespace context for `NAMESPACED_MD`     lives on, Tagged origin marker on every `StagedItem`. Tool and plugin     adapters live in, Tagged origin marker on every `StagedItem`. Tool and plugin     adapters live in, Tagged origin marker on every `StagedItem`. Tool and plugin     adapters live in (+40 more)
-
-### Community 59 - "Community 59"
-Cohesion: 0.1
-Nodes (46): fake_reader(), Shared pytest fixtures and helpers for the vizsuite test suite., A dict-backed fake `read_file`: tests script exact spec text per path.      Neve, A dict-backed fake `read_file`: tests script exact spec text per path.      Neve, Invoke `main()` capturing stdout/stderr; return `(exit_code, envelope, stderr)`., Invoke `main()` against a `ScriptedBdRunner`, capturing stdout/stderr.      Retu, Invoke `main()` against a `ScriptedBdRunner`, capturing stdout/stderr.      Retu, Like `run_cli`, but takes a caller-built `ScriptedBdRunner`.      `run_cli` buil (+38 more)
-
-### Community 60 - "Community 60"
+### Community 51 - "Community 51"
 Cohesion: 0.09
 Nodes (48): _agents_config_root(), _cf(), _facts(), _git(), _init_repo(), _marker(), The agents-config source root (dir holding packages/installer AND     scripts/in, test_absent_section_yields_defaults() (+40 more)
 
-### Community 61 - "Community 61"
-Cohesion: 0.07
-Nodes (49): Counters, Run-level totals reported at install completion. Mutable; the run     increments, Run-level totals reported at install completion. Mutable; the run     increments, Run-level totals reported at install completion. Mutable; the run     increments, Run-level totals reported at install completion. Mutable; the run     increments, _is_changed(), Install / prune summary renderer.  ``cli.main`` merges the per-target ``Counters, Render the install / prune summary through ``io``.      ``counters`` is the merg (+41 more)
+### Community 52 - "Community 52"
+Cohesion: 0.08
+Nodes (45): FileKind, Provenance, Pure data model for the installer engine.  No behaviour beyond construction, equ, In-memory record of one entry destined for a tool's install root.      `content`, Tools the installer can target. Closed set — adding a tool requires     a new ad, Merge-dispatch discriminator. Namespace context for `NAMESPACED_MD`     lives on, Tagged origin marker on every `StagedItem`. Tool and plugin     adapters live in, Tagged origin marker on every `StagedItem`. Tool and plugin     adapters live in (+37 more)
 
-### Community 62 - "Community 62"
-Cohesion: 0.1
-Nodes (46): audit_cluster(), Validate a cluster output against the §5 invariants. Pure; ``[]`` when clean., ClusterResult, One cluster produced by the cluster contract (§5)., One cluster produced by the cluster contract (§5)., cluster_pr(), ``cluster_pr`` — the lock-held ``_cluster`` lifecycle internal (§3.2, §5).  ``cl, Cluster the unclustered items, applying the assignments to a state copy.      Ca (+38 more)
-
-### Community 63 - "Community 63"
+### Community 53 - "Community 53"
 Cohesion: 0.09
-Nodes (42): GhCli, gh adapter. Structurally satisfies :class:`GhClient`., gh adapter. Structurally satisfies :class:`GhClient`., gh adapter. Structurally satisfies :class:`GhClient`., gh adapter. Structurally satisfies :class:`GhClient`., CommandResult, The captured outcome of one external command — the boundary's data shape., _fixture() (+34 more)
+Nodes (46): prune_pipeline(), Scan ``adapters`` for orphans against ``plans``, then run the prune flow.      `, Diff ``prior`` against this run's desired staged keys and prune the orphans., Diff ``prior`` against this run's desired staged keys and prune the orphans., The project-scoped tail: resolve, validate, and install project content.      Ha, The project-scoped tail: resolve, validate, and install project content.      Ha, _run_project(), get_adapter() (+38 more)
 
-### Community 64 - "Community 64"
-Cohesion: 0.05
-Nodes (24): ProcessHandle, A thin ``subprocess.Popen`` facade — the single OS seam this wrapper needs., A thin ``subprocess.Popen`` facade — the single OS seam this wrapper needs., _classify_gh_failure(), GhClient, GhNotFoundError, _merge_paginated_output(), The gh adapter — GitHub access via the ``gh`` subprocess (§1, §3, §7.6).  ``GhCl (+16 more)
+### Community 54 - "Community 54"
+Cohesion: 0.1
+Nodes (37): audit_cluster(), Validate a cluster output against the §5 invariants. Pure; ``[]`` when clean., ClusterResult, from_dict(), Agent-dispatch contract Protocols + their input/output shapes (§5).  Each contra, One cluster produced by the cluster contract (§5)., One cluster produced by the cluster contract (§5)., _item() (+29 more)
 
-### Community 65 - "Community 65"
+### Community 55 - "Community 55"
 Cohesion: 0.1
 Nodes (43): export_legacy_inventory(), _head_sha(), legacy_inventory_path(), _legacy_item(), Emit merge-guard's legacy pr-inventory format alongside prgroom state.  ``merge-, ``{export_dir}/{owner}-{repo}-{number}-{head_sha}.json`` (consumer filename)., Translate one dispositioned ReviewItem into a legacy inventory item.      Precon, Translate grooming state into the legacy pr-inventory JSON object.      Only ite (+35 more)
 
-### Community 66 - "Community 66"
+### Community 56 - "Community 56"
+Cohesion: 0.14
+Nodes (42): _ctx(), _quiescent_state(), _raiser(), Tests for the ``run`` aggregate verb — the §3.3 keystone.  The orchestration is, A state that satisfies every quiescence gate (no reviewers/items, green CI, idle, A state that satisfies every quiescence gate (no reviewers/items, green CI, idle, _recorder(), test_build_pipeline_order() (+34 more)
+
+### Community 57 - "Community 57"
 Cohesion: 0.07
 Nodes (34): ApproveError, attestation_body(), b64url(), build_jwt(), _expect(), main(), mint(), App JWT -> (short-lived installation token, app slug). (+26 more)
 
-### Community 67 - "Community 67"
+### Community 58 - "Community 58"
+Cohesion: 0.08
+Nodes (45): bd(), bl(), bs(), cf(), cl(), Df(), dl(), ds() (+37 more)
+
+### Community 59 - "Community 59"
+Cohesion: 0.13
+Nodes (36): push_pr(), Upload queued commits to the PR head branch, bumping ``round`` on success., Upload queued commits to the PR head branch, counting the consumed retry.      C, PrgroomConfig, Resolved runtime configuration., FakeGh, FakeGit, Tests for ``push_pr`` — the lock-held ``_push`` lifecycle internal (§3.2/§3.4/§3 (+28 more)
+
+### Community 60 - "Community 60"
 Cohesion: 0.08
 Nodes (38): InstallerToml, Parsed ``installer.toml`` contents the engine consumes.      ``tool_dest_overrid, Parsed ``installer.toml`` contents the engine consumes.      ``prune_globs`` are, Parsed ``installer.toml`` contents the engine consumes.      ``prune_globs`` are, Orphan scan — identify retired dest entries to prune.  An orphan is a top-level, Scan every active tool's namespaces plus ``~/.beads/formulas`` for orphans., Scan every active tool's namespaces plus ``~/.beads/formulas`` for orphans., Top-level entry names the plan stages under ``namespace``.      The plan keys it (+30 more)
 
-### Community 68 - "Community 68"
+### Community 61 - "Community 61"
+Cohesion: 0.13
+Nodes (41): MemoryEntry, One classified memory entry on the fix-output ``memory`` channel (§8.5).      ``, One classified memory entry on the fix-output ``memory`` channel (§8.5).      ``, audit_memory(), MemoryAuditResult, Validate the §8.5 memory channel. Pure; returns a :class:`MemoryAuditResult`., The computed result of a memory audit (8.7 returns; 8.15 applies).      ``violat, Basic validation of a skill (+33 more)
+
+### Community 62 - "Community 62"
+Cohesion: 0.08
+Nodes (26): _atomic_write_json(), _load_json(), _load_manifest(), _load_records(), _locked(), _LockTimeoutError, _MalformedSidecarFileError, `.viz/` sidecar store — read/write for the fingerprint manifest plus the five Ti (+18 more)
+
+### Community 63 - "Community 63"
 Cohesion: 0.09
 Nodes (42): _accumulate_bullets(), deserialize_manifest(), _is_none_bullet(), Manifest, ManifestItem, _none_reason(), parse_continuations(), _parse_item_bullet() (+34 more)
 
-### Community 69 - "Community 69"
-Cohesion: 0.09
-Nodes (36): _assignments(), ClusterRunResult, _degenerate(), ``run_cluster`` orchestration — retry-once, then degenerate fallback (§5).  This, The computed result of one ``run_cluster`` call (8.7 returns; 8.15 applies)., The computed result of one ``run_cluster`` call (8.7 returns; 8.15 applies)., One cluster per input item, id derived from the gh_id. Coverage-complete., One cluster per input item, id derived from the gh_id. Coverage-complete. (+28 more)
+### Community 64 - "Community 64"
+Cohesion: 0.11
+Nodes (39): FakeBackend, _args(), _backend_with_epic_anchor(), _config(), _not_found_config_loader(), _out_of_scope_args(), `work discover` -- mechanical enforcement of discovered-work triage form.  Cover, _sibling_backend() (+31 more)
 
-### Community 70 - "Community 70"
+### Community 65 - "Community 65"
 Cohesion: 0.12
 Nodes (40): _args(), _backend(), _config(), `work groom --done` / `work groom --status` -- Backlog Grooming state (track spe, The config gate runs before backend I/O -- a backend that would raise     NOT_FO, _raw_bead(), test_cli_done_end_to_end(), test_cli_not_configured_when_groom_state_bead_blank() (+32 more)
 
-### Community 71 - "Community 71"
+### Community 66 - "Community 66"
+Cohesion: 0.07
+Nodes (41): _backend(), _graph_args(), work graph --json: bulk node/edge export validating against the shipped schema., _schema(), test_graph_carries_every_nonclosed_bead_with_track_and_typed_edges(), test_graph_output_validates_against_shipped_schema(), test_graph_without_json_flag_is_usage_error(), derive_track: the single label->track rule every consumer shares (track spec §4) (+33 more)
+
+### Community 67 - "Community 67"
+Cohesion: 0.07
+Nodes (35): GhRunner, parse_scc(), scc JSON shape parsing → typed `SccRecord`s keyed by normalized `Location`.  `Su, Parse one scc `--by-file --format json` response into `{location: SccRecord}`., SccRecord, _shape_error(), The scc subprocess port — the fake's seam.  `SccRunner` is the interface every c, Drives the real `scc` binary, scanning the materialized snapshot dir.      Prefl (+27 more)
+
+### Community 68 - "Community 68"
+Cohesion: 0.08
+Nodes (42): _abstain(), assemble_diff(), _base_head_commits(), build_envelope(), _cache_no_go(), _cache_path(), changed_paths(), _codex_home() (+34 more)
+
+### Community 69 - "Community 69"
 Cohesion: 0.08
 Nodes (42): ChangedFile, classify_file(), collect_diff(), compute_scale_hint(), compute_tier(), critical_hits(), CriticalHit, CriticalMarker (+34 more)
 
-### Community 72 - "Community 72"
-Cohesion: 0.08
-Nodes (35): ApprovalCandidate, derive_human_review(), fetch_human_review_inputs(), _get(), HumanReview, _is_bot(), Human-review merge-constraint derivation (§4.4, §4.6).  The ``human-review-requi, Derive the §4.6 human-review block from fetched labels + reviews (pure).      `` (+27 more)
-
-### Community 73 - "Community 73"
-Cohesion: 0.09
-Nodes (39): _append_orphan_marker(), _check_duplicate_title(), create_noun(), _create_spec_container(), finalize_spec_instantiation(), instantiate_spec_shape(), `work create <noun>` -- noun-templated creation (plan Task 3).  `create_noun` is, Track resolution for `work create <noun>`: derive, else enforce (track spec §4). (+31 more)
-
-### Community 74 - "Community 74"
+### Community 70 - "Community 70"
 Cohesion: 0.07
 Nodes (42): apply_patch(), Apply one patch to ``text`` and return the patched document.      ``section`` is, Pure markdown patch engine (core/md_patch.py).  Behavioural tests for ``apply_pa, A ``## Heading``-shaped line inside a fence neither matches a target     nor ter, A ```` ```` ```` opener is not closed by ``~~~`` nor by a shorter     backtick r, ``##NoSpace`` (no space) and ``  ## Indented`` (leading whitespace)     are not, ``## Title ##`` strips LEADING hashes only: matchable text is     ``Title ##`` (, R4 worked example 1: no trailing blanks. (+34 more)
 
-### Community 75 - "Community 75"
-Cohesion: 0.12
-Nodes (38): FakeBackend, _args(), _backend_with_epic_anchor(), _config(), _GetFailingBackend, _out_of_scope_args(), `work discover` -- mechanical enforcement of discovered-work triage form.  Cover, _sibling_backend() (+30 more)
-
-### Community 76 - "Community 76"
+### Community 71 - "Community 71"
 Cohesion: 0.07
-Nodes (40): Unit tests for installer.core.templates — B.4 (DYNAMIC-INCLUDE file form).  Each, Given a template interleaving prose and two file markers     When flatten_templa, Given a marker whose target file does not exist     When flatten_template runs, Given a marker whose target file does not exist     When flatten_template runs, Given a template with no markers     When flatten_template runs     Then the con, Given a template with no markers     When flatten_template runs     Then the con, Given a template ending in a newline     When flatten_template runs     Then the, Given an empty rules_dir (no *.md files)     When flatten_template runs with the (+32 more)
+Nodes (37): _closed(), deliver(), _deliver_design(), _deliver_leaf(), _design_sibling(), _leaf_evidence(), `deliver` -- evidence-gated leaf delivery + design-spec placeholder reconciliati, Verify + describe the evidence for a leaf `deliver` (plan L8).      `--pr` is ca (+29 more)
 
-### Community 77 - "Community 77"
+### Community 72 - "Community 72"
+Cohesion: 0.05
+Nodes (22): _classify_gh_failure(), GhClient, GhNotFoundError, _merge_paginated_output(), The gh adapter — GitHub access via the ``gh`` subprocess (§1, §3, §7.6).  ``GhCl, Map a failed ``gh`` invocation to its registry error (§3.6/§3.7)., A gh API 404. A typed signal, NOT a :class:`PrgroomError` (§3.7).      404 is am, The GitHub access surface the lifecycle verbs depend on (§3). (+14 more)
+
+### Community 73 - "Community 73"
+Cohesion: 0.1
+Nodes (37): _append_orphan_marker(), _check_duplicate_title(), create_noun(), _create_spec_container(), finalize_spec_instantiation(), instantiate_spec_shape(), `work create <noun>` -- noun-templated creation (plan Task 3).  `create_noun` is, Track resolution for `work create <noun>`: derive, else enforce (track spec §4). (+29 more)
+
+### Community 74 - "Community 74"
 Cohesion: 0.1
 Nodes (38): Exception, _AbortStep, _ArgError, blocking_paths(), build_envelope(), build_finish_command(), classify_pr(), classify_status_paths() (+30 more)
 
-### Community 78 - "Community 78"
+### Community 75 - "Community 75"
 Cohesion: 0.15
 Nodes (39): apply_extensions(), Apply every active plugin's extension patches to ``plan`` (one tool),     in R6, _ext_yaml(), _plan_with_agent_md(), _Plugin, Phase 6.5 plugin extensions (plugins/extensions.py).  Behavioural tests for YAML, The relative-path guard cites ``target_file`` like the adjacent .md     guard, s, A non-UTF-8 extension yaml is a cited terminal ExtensionError (R7),     mirrorin (+31 more)
 
-### Community 79 - "Community 79"
-Cohesion: 0.07
-Nodes (26): AgentInvocation, _elapsed_ms(), _input_section(), _invocation_for_claude(), _invocation_for_codex(), _invocation_for_ollama(), _invocation_for_opencode(), _parse_codex_usage() (+18 more)
-
-### Community 80 - "Community 80"
-Cohesion: 0.08
-Nodes (37): InstallOutcome, One item's install result. ``dest`` is absolute; ``sha256`` is the hex     diges, desired_route_keys(), desired_staged_keys(), entries_from_outcomes(), entries_from_route_outcomes(), merge_receipt(), Build receipt entries and desired-key sets from staging plans and install outcom (+29 more)
-
-### Community 81 - "Community 81"
+### Community 76 - "Community 76"
 Cohesion: 0.06
-Nodes (25): Integration tests for LegacyExportStore (bead abn9.8.13.1).  The wrapping Store, _state(), test_delegates_lock_list_and_delete(), test_export_failure_does_not_propagate_and_inner_persists(), test_write_persists_inner_and_emits_legacy(), The injected lock-held internals the run-loop drives (§3.3).      Each is a ``ct, The injected lock-held internals the run-loop drives (§3.3).      Each is a ``ct, The injected lock-held internals the run-loop drives (§3.3).      Each is a ``ct (+17 more)
+Nodes (39): _build_cluster_dispatcher(), _build_fix_dispatcher(), _build_sink(), _decided_by(), _git_user(), _has_clusters(), main(), _needs_clustering() (+31 more)
 
-### Community 82 - "Community 82"
+### Community 77 - "Community 77"
+Cohesion: 0.06
+Nodes (39): _build_gh(), _build_git(), cluster(), fix(), push(), Build the production git adapter (real subprocess boundary).      A seam: tests, Group unprocessed items into fix-bundles for cohesive fix work., Dispatch the fix agent per cluster: decide disposition AND implement. (+31 more)
+
+### Community 78 - "Community 78"
 Cohesion: 0.1
 Nodes (33): Run-orchestration seam: stage every active tool (Phases 1-5), overlay active plu, Build a StagingPlan for each active tool (staging Phases 1-5) and run     that t, Build a StagingPlan for each active tool (staging Phases 1-5), overlay the     a, Build a StagingPlan for each active tool (staging Phases 1-5), overlay the     a, Build a StagingPlan for each active tool (staging Phases 1-5), overlay the     a, stage_and_transform(), Phase 6.5 wired through stage_and_transform (core/orchestrator.py).  End-to-end, Round-trip equivalence (AC #9 analog): the resolved SKILL.md bytes     contain t (+25 more)
 
-### Community 83 - "Community 83"
-Cohesion: 0.09
-Nodes (37): _abstain(), assemble_diff(), _base_head_commits(), build_envelope(), _cache_no_go(), _cache_path(), changed_paths(), collapse() (+29 more)
+### Community 79 - "Community 79"
+Cohesion: 0.08
+Nodes (29): exit_code_for_tier(), lock_held_error(), PreconditionError, A precondition failure with a structured what/why/how stderr block (§1).      Th, Build the ``PRECONDITION_LOCK_HELD`` error naming the ref and holder pid (§2)., Translate a tier-tagged error into its documented sysexits code (§3.3).      Eve, A precondition failure with a structured what/why/how stderr block (§1).      Th, A precondition failure with a structured what/why/how stderr block (§1).      Th (+21 more)
 
-### Community 84 - "Community 84"
-Cohesion: 0.09
-Nodes (8): FakeBackend, FakeBackend: an in-memory `Backend` for state-based lifecycle tests.  The recove, Insert an item with an explicit id; returns self for chaining., Sanity checks for `FakeBackend` -- the fidelity properties every recovery test l, test_append_note_is_line_wise_and_missing_item_raises_not_found(), test_create_assigns_id_and_wires_into_parent_children(), test_get_reports_children_but_query_is_lean(), test_label_and_status_mutations_are_observable_through_get()
+### Community 80 - "Community 80"
+Cohesion: 0.08
+Nodes (34): _first_marker_payload(), has_marker(), is_container(), manifest_snapshot(), The stripped payload after the first line matching `prefix`, or None., The path recorded after the first `[work] spec:` marker, or None.      Used by `, The parsed manifest recorded after the first `[work] manifest:` marker, or None., Declared-state container test -- never child-count (spec §5/invariant 5). (+26 more)
 
-### Community 85 - "Community 85"
+### Community 81 - "Community 81"
 Cohesion: 0.07
-Nodes (36): load_installer_toml(), Loader for ``installer.toml`` — the optional installer configuration.  Reads an, Parse ``installer.toml`` at ``path``; return an ``InstallerToml``.      A missin, Parse ``installer.toml`` at ``path``; return an ``InstallerToml``.      A missin, Parse ``installer.toml`` at ``path``; return an ``InstallerToml``.      A missin, Unit tests for installer.core.installer_toml (G.2 — TOML config loader).  Each t, Given a [tools] entry that declares no dest key (only some other field)     When, Given retired declared as a bare string instead of a list     When the loader re (+28 more)
+Nodes (36): _consent_to_overwrite(), _dir_is_unchanged(), _ensure_parent_dir(), _install_dir(), _install_file(), _is_unchanged(), _is_valid_json(), Minimal single-file sync engine (B.2 + G.1 backup).  Copies one source file to o (+28 more)
 
-### Community 86 - "Community 86"
+### Community 82 - "Community 82"
 Cohesion: 0.09
 Nodes (11): b64pad(), FakeHttp, _FakeSubprocess, The body is an honest attestation: it names itself as non-human, carries     the, openssl invocation failures are expected environment errors, not bugs:     they, Route-table fake transport. Records every call for behavior assertions., run_main(), TestAttestationBody (+3 more)
 
-### Community 87 - "Community 87"
-Cohesion: 0.08
-Nodes (29): is_graph_terminal(), is_terminal_for_cli(), Lifecycle spine — the pure, gh/git-free core of the grooming loop (§3, §4).  Thi, True iff the CLI rests at ``phase`` and awaits an external trigger (§3.1)., True iff ``phase`` is absorbing — ``merged`` only (§3.1)., True iff the CLI rests at ``phase`` and awaits an external trigger (§3.1)., True iff ``phase`` is absorbing — ``merged`` only (§3.1)., bootstrap_state() (+21 more)
+### Community 83 - "Community 83"
+Cohesion: 0.07
+Nodes (36): load_installer_toml(), Loader for ``installer.toml`` — the optional installer configuration.  Reads an, Parse ``installer.toml`` at ``path``; return an ``InstallerToml``.      A missin, Parse ``installer.toml`` at ``path``; return an ``InstallerToml``.      A missin, Parse ``installer.toml`` at ``path``; return an ``InstallerToml``.      A missin, Unit tests for installer.core.installer_toml (G.2 — TOML config loader).  Each t, Given a [tools] entry that declares no dest key (only some other field)     When, Given retired declared as a bare string instead of a list     When the loader re (+28 more)
 
-### Community 88 - "Community 88"
-Cohesion: 0.08
-Nodes (32): install_plugin_routes(), Install every active plugin's bespoke routes (e.g. beads' ``~/.beads/...``)., Install every active plugin's bespoke routes (e.g. beads' ``~/.beads/...``)., Install every active plugin's bespoke routes (e.g. beads' ``~/.beads/...``)., Install every active plugin's bespoke routes (e.g. beads' ``~/.beads/...``)., BeadsPlugin, Specialized `PluginAdapter` for the beads issue tracker.      Beads is unlike a, Unit tests for installer.plugins.beads.  Each test pins a coded decision from F. (+24 more)
-
-### Community 89 - "Community 89"
+### Community 84 - "Community 84"
 Cohesion: 0.08
 Nodes (26): OpenCodeAdapter, Adapter for OpenCode. Two divergences from the dot-dir tools:     it installs un, No-op. OpenCode has no standalone rules/ destination, but the loose         rule, No-op. OpenCode has no standalone rules/ destination, but the loose         rule, _make_opencode_repo(), End-to-end staging plan build over a fixture repo, driving the real OpenCodeAdap, Given an OpenCode plan that still carries shared rules/ items (build_plan keeps, Given an OpenCode plan that still carries shared rules/ items (build_plan keeps (+18 more)
 
-### Community 90 - "Community 90"
-Cohesion: 0.08
-Nodes (34): ConsentRequiredError, Non-interactive consent guard (G.7).  The Python installer makes a destructive r, Raised when a destructive run cannot obtain interactive consent.      The sessio, Raised when a destructive run cannot obtain interactive consent.      The sessio, Raise ``ConsentRequiredError`` if a destructive run lacks any consent path., Raise ``ConsentRequiredError`` if a destructive run lacks any consent path., require_consent(), _check_reachability() (+26 more)
-
-### Community 91 - "Community 91"
-Cohesion: 0.11
-Nodes (33): changed_keys(), evaluate_fact(), FlaggedForReassessment, Staleness funnel rungs 1-2 — pure fact-reassessment classification (spec §5.4)., Deterministic hash of the entire current fingerprint set — "the new fingerprint", Run `fact` through funnel rungs 1-2 and return its typed exit outcome.      `cha, Rung 1 cleared: no tracked input changed since the fact's manifest baseline., Rung 2 cleared: inputs changed, but none the fact cites — auto-restamped.      ` (+25 more)
-
-### Community 92 - "Community 92"
+### Community 85 - "Community 85"
 Cohesion: 0.08
 Nodes (35): _build_env(), Runner for the golden-master parity harness.  Runs ``scripts/install.sh`` (bash), Run both installers with ``args`` into fresh homes under ``tmp_path``.      ``se, Hermetic environment for an installer subprocess.      Inherits the ambient env, Raise if a run failed, so a warm-up run's exit code can't be silently     masked, _require_ok(), _run(), run_parity() (+27 more)
 
-### Community 93 - "Community 93"
+### Community 86 - "Community 86"
 Cohesion: 0.07
-Nodes (21): _coerce_int(), load(), _parse_bool(), parse_duration(), Config surface + loader for prgroom (§3.5, §4.3, §7).  Settings resolve with pre, CLI flag > env var > ``[quiescence]`` table > default for a boolean knob., Parse the per-repo ``.prgroom.toml`` (missing file -> ``{}``).      The single p, Parse the per-repo ``.prgroom.toml`` (missing file -> ``{}``).      The single p (+13 more)
+Nodes (31): InstallIgnore, load_installignore(), Loader for ``.installignore`` — the shared source-file exclusion manifest consum, Parsed manifest: the set of excluded file basenames and directory names.      ``, Parse ``.installignore`` at ``path``; return an ``InstallIgnore``.      Raises `, ignore(), _neutralize_opencode_path_probe(), Shared fixtures for the installer unit suite.  OpenCode auto-detection probes th (+23 more)
 
-### Community 94 - "Community 94"
-Cohesion: 0.08
-Nodes (34): derive_track: the single label->track rule every consumer shares (track spec §4), test_multiple_track_labels_derive_none(), test_no_track_label_derives_none(), test_non_track_prefix_lookalikes_ignored(), test_single_track_label_derives_its_name(), _backlog_counts(), _closed_ancestors(), _cross_track_edge_counts() (+26 more)
-
-### Community 95 - "Community 95"
-Cohesion: 0.07
-Nodes (30): InstallIgnore, load_installignore(), Loader for ``.installignore`` — the shared source-file exclusion manifest consum, Parsed manifest: the set of excluded file basenames and directory names.      ``, Parse ``.installignore`` at ``path``; return an ``InstallIgnore``.      Raises `, ignore(), _neutralize_opencode_path_probe(), Shared fixtures for the installer unit suite.  OpenCode auto-detection probes th (+22 more)
-
-### Community 96 - "Community 96"
+### Community 87 - "Community 87"
 Cohesion: 0.09
 Nodes (28): MergeRegistry, _normalize(), Dispatch registry mapping ``(FileKind, namespace)`` to a strategy.  The registry, Collapse the namespace to None for non-namespaced kinds so register     and reso, Raised when ``resolve`` is asked for a ``(kind, namespace)`` with no     registe, Mutable ``(FileKind, namespace) -> MergeStrategy`` lookup, easily     populated, Bind ``strategy`` to ``(kind, namespace)``. For non-namespaced         kinds the, Return the strategy for ``(kind, namespace)``. For non-namespaced         kinds (+20 more)
 
-### Community 97 - "Community 97"
+### Community 88 - "Community 88"
+Cohesion: 0.07
+Nodes (33): _effective_content(), The bytes to actually write for one item.      A ``settings.json`` over an exist, The bytes to actually write for one item.      A ``settings.json`` over an exist, The bytes to actually write for one item.      A ``settings.json`` over an exist, _deep_merge(), _jq_sort_key(), merge_settings_bytes(), _parse() (+25 more)
+
+### Community 89 - "Community 89"
+Cohesion: 0.11
+Nodes (24): ad(), al(), Bf(), cd(), dd(), ed, fd(), ft() (+16 more)
+
+### Community 90 - "Community 90"
 Cohesion: 0.13
 Nodes (29): _emit(), escalate_if_needed(), Terminal-signal flush hooks for the run-loop (§3.3, §4.7).  The run-loop emits i, Emit ``escalation``; return whether it succeeded, swallowing any Sink error (§3., True iff a review-content gate is active (§4.7): budget-trip or an ESCALATED/FAI, Add the ``human-review-required`` label once per gating event (§4.7).      Short, File one Sink event per un-filed blocker item + one per lifecycle gate (§3.3)., request_human_review_if_needed() (+21 more)
 
-### Community 98 - "Community 98"
+### Community 91 - "Community 91"
 Cohesion: 0.1
 Nodes (31): Behavioral tests for workcli.config.load_config (track spec §3, criterion 16/17), A fake git repo root: .git marker + optional project-config.toml., _repo(), test_backlog_groom_nag_days_bool_is_invalid(), test_backlog_groom_nag_days_negative_is_invalid(), test_bogus_enforcement_value_is_invalid(), test_enforcement_omitted_defaults_to_advisory(), test_explicit_config_flag_missing_path_is_not_configured() (+23 more)
 
-### Community 99 - "Community 99"
+### Community 92 - "Community 92"
+Cohesion: 0.13
+Nodes (31): fake_reader(), Shared pytest fixtures and helpers for the vizsuite test suite., A dict-backed fake `read_file`: tests script exact spec text per path.      Neve, A dict-backed fake `read_file`: tests script exact spec text per path.      Neve, Invoke `main()` capturing stdout/stderr; return `(exit_code, envelope, stderr)`., Invoke `main()` against a `ScriptedBdRunner`, capturing stdout/stderr.      Retu, Invoke `main()` against a `ScriptedBdRunner`, capturing stdout/stderr.      Retu, run_cli() (+23 more)
+
+### Community 93 - "Community 93"
+Cohesion: 0.09
+Nodes (32): InstallOutcome, One item's install result. ``dest`` is absolute; ``sha256`` is the hex     diges, desired_route_keys(), desired_staged_keys(), entries_from_outcomes(), entries_from_route_outcomes(), Build receipt entries and desired-key sets from staging plans and install outcom, Desired keys for the active plugins' currently-shipped route files.      A plugi (+24 more)
+
+### Community 94 - "Community 94"
 Cohesion: 0.12
 Nodes (34): Install every plugin route's globbed files at its dest root.      For each ``Plu, Install every plugin route's globbed files at its dest root.      The in-memory, Install every plugin route's globbed files at its dest root.      For each ``Plu, sync_routes(), PluginRoute, One bespoke source→destination route for a plugin whose content does     NOT ove, Unit tests for installer.core.sync.sync_routes (F.4 / G2 — plugin-route install), Given an exec route whose dest already holds byte-identical content but has (+26 more)
 
-### Community 100 - "Community 100"
+### Community 95 - "Community 95"
 Cohesion: 0.15
 Nodes (32): _decline(), evaluate_reviewer_timeouts(), failing_gate(), _g_ci(), _g_dispositions(), _g_idle(), _g_no_blockers(), _g_reviewers() (+24 more)
 
-### Community 101 - "Community 101"
-Cohesion: 0.07
-Nodes (22): _chain_from_toml(), _loads_lenient(), Provider-chain dispatch + fallback ladder (§5 agent-CLI config & fallback).  A :, Build an :class:`AgentSpec` from one TOML provider table at ``path``.      ``cli, Build an :class:`AgentSpec` from one TOML provider table at ``path``.      ``cli, Read ``primary`` … ``fallback3`` from a present ``[agents.<contract>]`` section., Read ``primary`` … ``fallback3`` from a present ``[agents.<contract>]`` section., Try each provider; return the first parseable output, else raise both-fail. (+14 more)
-
-### Community 102 - "Community 102"
+### Community 96 - "Community 96"
 Cohesion: 0.17
 Nodes (30): centrality_axis(), CentralityAxis, from_indegree(), Graphify EXTRACTED-dependency centrality axis (spec §6.2, plan §3.6).  Load-bear, Per-file 0-1 in-degree centrality, or unavailable with a reason.      `scores` i, Load-bearing axis from graphify. Tier-1 determinism: `EXTRACTED` edges     only, unavailable(), _graph_json() (+22 more)
 
-### Community 103 - "Community 103"
+### Community 97 - "Community 97"
+Cohesion: 0.07
+Nodes (22): _chain_from_toml(), _loads_lenient(), Provider-chain dispatch + fallback ladder (§5 agent-CLI config & fallback).  A :, Build an :class:`AgentSpec` from one TOML provider table at ``path``.      ``cli, Build an :class:`AgentSpec` from one TOML provider table at ``path``.      ``cli, Read ``primary`` … ``fallback3`` from a present ``[agents.<contract>]`` section., Read ``primary`` … ``fallback3`` from a present ``[agents.<contract>]`` section., Try each provider; return the first parseable output, else raise both-fail. (+14 more)
+
+### Community 98 - "Community 98"
 Cohesion: 0.13
 Nodes (31): diff_orphans(), Diff a prior receipt against the desired staged plan to find orphans.  Finds orp, Whether a recorded entry is safe to act on (prune).      Rejects (returns False), Owners whose recorded entries are eligible for pruning this run.      Resolved t, scope_owners(), validate_entry(), _entry(), A recorded entry that fails validate_entry (here: claude forging codex's     roo (+23 more)
 
-### Community 104 - "Community 104"
-Cohesion: 0.09
-Nodes (32): Resolve the plugin *source* root.      Defaults to ``repo_root/src/plugins``. Th, Translate the `--plugins=` CLI value into the resolved plugin tuple.      - `ove, Translate the `--plugins=` CLI value into the resolved plugin tuple.      - `ove, Translate the `--plugins=` CLI value into the resolved plugin tuple.      - `ove, Resolve the plugin *source* root.      Defaults to ``repo_root/src/plugins``. Th, Resolve the plugin *source* root.      Defaults to ``repo_root/src/plugins``. Th, resolve_plugins(), resolve_plugins_root() (+24 more)
+### Community 99 - "Community 99"
+Cohesion: 0.1
+Nodes (31): _audit_note(), _check_dependency_cycle(), _choose_bead_pair(), _decide_edge_promotion(), _dependency_sidecar_edges(), _execute_edge_promotion(), _is_orphaned(), _ledger_to_json() (+23 more)
 
-### Community 105 - "Community 105"
-Cohesion: 0.11
-Nodes (15): _atomic_write_json(), _load_json(), _load_manifest(), _load_records(), _locked(), _LockTimeoutError, _MalformedSidecarFileError, `.viz/` sidecar store — read/write for the fingerprint manifest plus the five Ti (+7 more)
-
-### Community 106 - "Community 106"
-Cohesion: 0.17
-Nodes (30): ModifiedFileRow, One PyDriller `ModifiedFile` reduced to the fields churn needs.      `new_path`, blob(), Feeds one scripted scc `SccResult`; records the snapshot dir it was told to scan, Build a successful scc `SccResult` scoring `{location: complexity}` (one Python, Build a `blob` `LsTreeRow` (the common case) for fixtures., Build an in-memory tar of `{path: text}` — a stand-in for `git archive` bytes., scc_result() (+22 more)
-
-### Community 107 - "Community 107"
+### Community 100 - "Community 100"
 Cohesion: 0.11
 Nodes (22): _adapter_failure(), _parse_ls_tree_line(), The git subprocess port — the fake's seam.  `GitRunner` is the interface every c, Parse one `git ls-tree -r` line into an `LsTreeRow`.      Line shape is ``<mode>, Drives real `git`. Every read is against the immutable object DB — the tree, SubprocessGitRunner, _git(), _git_out() (+14 more)
 
-### Community 108 - "Community 108"
+### Community 101 - "Community 101"
+Cohesion: 0.07
+Nodes (32): ap(), at(), bp(), cp(), ct(), dp(), et(), fp() (+24 more)
+
+### Community 102 - "Community 102"
+Cohesion: 0.06
+Nodes (33): When main(["--dump-stage=<p>", "--prune"]) is invoked     Then argparse exits 2, When main(["--dump-stage=<p>", "--prune"]) is invoked     Then argparse exits 2, A hermetic repo plus a discoverable 'widget' plugin whose overlay     contribute, Given a discoverable 'widget' plugin (overlaying claude rules/widget-rule.md), A hermetic repo plus a discoverable 'widget' plugin whose overlay     contribute, Given a discoverable 'widget' plugin (overlaying claude rules/widget-rule.md), When main(["--dump-stage=<p>", "--prune"]) is invoked     Then argparse exits 2, Given a repo whose discoverable plugin set does not include 'bogus'     When mai (+25 more)
+
+### Community 103 - "Community 103"
+Cohesion: 0.09
+Nodes (32): Resolve the plugin *source* root.      Defaults to ``repo_root/src/plugins``. Th, Translate the `--plugins=` CLI value into the resolved plugin tuple.      - `ove, Translate the `--plugins=` CLI value into the resolved plugin tuple.      - `ove, Translate the `--plugins=` CLI value into the resolved plugin tuple.      - `ove, Resolve the plugin *source* root.      Defaults to ``repo_root/src/plugins``. Th, Resolve the plugin *source* root.      Defaults to ``repo_root/src/plugins``. Th, resolve_plugins(), resolve_plugins_root() (+24 more)
+
+### Community 104 - "Community 104"
 Cohesion: 0.11
 Nodes (21): Idea, A captured Idea living in the Holding Place.      `ready_for_promote` is the Hol, Return a copy stamped with the Objective this Idea promoted into., HoldingPlace, Owns the Idea pipeline and the two-call contract to the orchestrator.      The `, Spawn a fresh Idea for a decomposed sub-unit of a Container.          Children o, FilesystemIdeaStorage, Stores each Idea as a YAML document under ``<root>/ideas/``.      Structurally s (+13 more)
 
-### Community 109 - "Community 109"
+### Community 105 - "Community 105"
 Cohesion: 0.15
 Nodes (30): build_status(), _item_row(), _items_summary(), _last_error_clear(), _no_blocker_items(), The §4.6 ``status --json`` envelope — the stable merge-gate handoff contract.  :, Build the §4.6 ``status --json`` envelope (pure; never persists).      ``auto_me, Build the §4.6 ``status --json`` envelope (pure; never persists).      ``auto_me (+22 more)
 
-### Community 110 - "Community 110"
+### Community 106 - "Community 106"
 Cohesion: 0.09
 Nodes (30): ArgumentParser, _add_discover_subparser(), _add_read_subparsers(), _add_relations_subparsers(), _add_report_subparsers(), _add_sync_subparser(), _add_track_subparsers(), _add_transition_subparsers() (+22 more)
 
-### Community 111 - "Community 111"
-Cohesion: 0.08
-Nodes (29): _deep_merge(), _jq_sort_key(), merge_settings_bytes(), _parse(), Deep union-merge strategy for ``(SETTINGS_JSON, *)`` collisions.  When two ``set, Serialise to JSON: 2-space indent, single trailing newline. Key order is     wha, Deep union-merge two settings.json byte payloads to canonical bytes.      The re, Deep union-merge two settings.json byte payloads, preserving existing's     key (+21 more)
+### Community 107 - "Community 107"
+Cohesion: 0.06
+Nodes (32): _hermetic_repo(), Given a hermetic repo (one shared template -> a claude create), under     --tool, Given a hermetic repo (one shared template -> a claude create), under     --tool, Given a hermetic repo and a home whose prior receipt records ~/.claude/     skil, Given a hermetic repo and a home whose prior receipt records ~/.claude/     skil, An UnknownMergeKeyError — a registry wiring miss (no strategy for a     (kind, n, An UnknownMergeKeyError — a registry wiring miss (no strategy for a     (kind, n, A --dry-run run must leave NO installer state behind — not even the receipt (+24 more)
 
-### Community 112 - "Community 112"
+### Community 108 - "Community 108"
 Cohesion: 0.09
-Nodes (24): ClusterContract, ClusterInput, FixContract, from_dict(), Agent-dispatch contract Protocols + their input/output shapes (§5).  Each contra, The fix dispatch surface. A provider decides disposition AND implements., The fix dispatch surface. A provider decides disposition AND implements., The fix dispatch surface. A provider decides disposition AND implements. (+16 more)
+Nodes (30): _build_parser(), _has_install_table(), main(), _merge_into(), CLI entry point. Runs the installer, catching Ctrl-C at the boundary so an     i, CLI entry point. Runs the installer, catching Ctrl-C at the boundary so an     i, CLI entry point. Runs the installer, catching Ctrl-C at the boundary so an     i, True iff ``project_config_path`` exists, parses as TOML, and has an     ``[insta (+22 more)
 
-### Community 113 - "Community 113"
-Cohesion: 0.09
-Nodes (28): _add_item(), classify_file(), _mark_carrier(), Staging-phase construction of a StagingPlan from source files.  Phase 1-5 pure b, Stamp the shared-carrier flag on a shared skills/agents DIR item.      Only ``ki, Insert one item, raising on a duplicate dest_relpath.      The data model overwr, Stamp the shared-carrier flag on a shared skills/agents DIR item.      Only ``ki, Stamp the shared-carrier flag on a shared skills/agents DIR item.      Port of t (+20 more)
-
-### Community 114 - "Community 114"
+### Community 109 - "Community 109"
 Cohesion: 0.1
 Nodes (22): Precision, The five patch verbs (R4/R5). ``INSERT_AFTER`` and ``PREPEND`` are     intention, PluginAdapter, Plugin-specific behaviour the engine consults. Unlike `ToolAdapter`,     plugins, Plugin-specific behaviour the engine consults. Unlike `ToolAdapter`,     plugins, _apply_one(), _DirTarget, _Extension (+14 more)
 
-### Community 115 - "Community 115"
+### Community 110 - "Community 110"
+Cohesion: 0.12
+Nodes (29): Stage one namespace subdir into StagedItems.      Walks ``source_root/namespace/, Stage one namespace subdir into StagedItems.      Walks ``source_root/namespace/, Stage one namespace subdir into StagedItems.      Port of bash ``stage_content_f, Stage one namespace subdir into StagedItems.      Port of bash ``stage_content_f, stage_namespace(), _prov(), Unit tests for installer.core.staging — B.3 (.template suffix strip).  Each test, A skill directory is staged as a single DIR unit; content is None     (bytes der (+21 more)
+
+### Community 111 - "Community 111"
+Cohesion: 0.18
+Nodes (28): blob(), Feeds one scripted scc `SccResult`; records the snapshot dir it was told to scan, Build a successful scc `SccResult` scoring `{location: complexity}` (one Python, Build a `blob` `LsTreeRow` (the common case) for fixtures., Build an in-memory tar of `{path: text}` — a stand-in for `git archive` bytes., scc_result(), ScriptedSccRunner, tar_of() (+20 more)
+
+### Community 112 - "Community 112"
+Cohesion: 0.13
+Nodes (28): changed_keys(), evaluate_fact(), FlaggedForReassessment, Staleness funnel rungs 1-2 — pure fact-reassessment classification (spec §5.4)., Deterministic hash of the entire current fingerprint set — "the new fingerprint", Run `fact` through funnel rungs 1-2 and return its typed exit outcome.      `cha, Rung 1 cleared: no tracked input changed since the fact's manifest baseline., Rung 2 cleared: inputs changed, but none the fact cites — auto-restamped.      ` (+20 more)
+
+### Community 113 - "Community 113"
+Cohesion: 0.08
+Nodes (30): _hermetic_repo_with_skill(), ``python -m installer`` must propagate the CLI's non-zero exit code.      Guards, ``python -m installer`` must propagate the CLI's non-zero exit code.      Guards, ``python -m installer`` must propagate the CLI's non-zero exit code.      Guards, Ctrl-C during a run aborts cleanly: exit 130, a short message, no traceback., Ctrl-C during a run aborts cleanly: exit 130, a short message, no traceback., A hermetic repo where a shared agent and a tool-root agent collide on the     sa, An irreconcilable merge collision during staging is surfaced as an     actionabl (+22 more)
+
+### Community 114 - "Community 114"
 Cohesion: 0.12
 Nodes (13): InMemoryWorkTracker, Reference MVP adapter. Structurally satisfies `WorkTracker`.      Discovery mark, Contract tests for the in-memory reference WorkTracker adapter.  A miniature of, test_bulk_get_returns_records_for_requested_ids(), test_create_assigns_distinct_ids_and_propagates_originating_idea(), test_decomposition_provenance_recorded_as_audit_note(), test_discover_since_returns_only_changes_after_the_marker(), test_lifecycle_mutations_accumulate_audit_notes_with_reasons() (+5 more)
+
+### Community 115 - "Community 115"
+Cohesion: 0.1
+Nodes (23): _clone_with_identity(), _CwdRunner, _git(), Integration test: the git adapter against real ``git`` on a fixture repo (§7.6)., A SubprocessRunner pinned to a working directory (so the test repo is the cwd)., repo(), test_cwd_runner_satisfies_protocol(), test_head_sha_against_real_git() (+15 more)
 
 ### Community 116 - "Community 116"
 Cohesion: 0.14
 Nodes (21): cancelled_error(), ``wait_pr`` — the lock-held ``_wait`` blocking poll loop (§4.2).  ``_wait`` is t, Sleep+poll until phase moves, quiescence trips, or a signal cancels (§4.2)., Production cancel token wrapping a :class:`threading.Event`.      ``trip`` is ca, Build the ``RUNTIME_CANCELLED`` error for ``signum`` (SIGINT→130, SIGTERM→143; §, SignalCancelToken, wait_pr(), FakeCancel (+13 more)
 
 ### Community 117 - "Community 117"
-Cohesion: 0.1
-Nodes (28): _build_parser(), _has_install_table(), main(), _merge_into(), CLI entry point. Runs the installer, catching Ctrl-C at the boundary so an     i, CLI entry point. Runs the installer, catching Ctrl-C at the boundary so an     i, True iff ``project_config_path`` exists, parses as TOML, and has an     ``[insta, Field-wise accumulate ``source`` into ``target`` per target name.      A name ma (+20 more)
+Cohesion: 0.09
+Nodes (29): assemble_snapshot(), _branch_state(), _build_recurrence(), _fetch_review_threads(), gh_get(), _prior_dispositions(), §8.1 complete-PR-snapshot assembly + §8.2 recurrence derivation.  The fix agent, True iff the item's thread has a reply newer than its disposition (§8.2). (+21 more)
 
 ### Community 118 - "Community 118"
-Cohesion: 0.11
-Nodes (28): dump_plan(), Materialise an in-memory StagingPlan to a real directory tree (G.6).  Backs the, Write every plan in ``plans`` under ``target/<tool>/`` and print the path., _write_bytes(), _write_item(), _dir_item(), _file_item(), Materialiser for the ``--dump-stage`` debug mode (G.6).  ``dump_plan`` writes th (+20 more)
-
-### Community 119 - "Community 119"
 Cohesion: 0.1
 Nodes (23): _dir_item(), _file_item(), _IdentityAdapter, _one_dir_plan(), _one_file_plan(), Unit tests for the per-item ``InstallOutcome`` stream threaded through ``sync_pl, Given a FILE item whose dest is absent (a first install)     When sync_plan walk, Given a dest already holding the item's bytes (a hash-equal skip)     When sync_ (+15 more)
 
-### Community 120 - "Community 120"
-Cohesion: 0.14
-Nodes (29): _append_audit_notes(), apply(), _apply_dry_run(), _apply_live(), _as_bool_field(), _as_optional_str_field(), _as_str_field(), _audit_note() (+21 more)
-
-### Community 121 - "Community 121"
+### Community 119 - "Community 119"
 Cohesion: 0.09
 Nodes (27): AllRulesInclude, FileInclude, DYNAMIC-INCLUDE form — verbatim file substitution., DYNAMIC-INCLUDE form — verbatim file substitution., DYNAMIC-INCLUDE form — glob rules from the staged tree, sort     lexicographical, DYNAMIC-INCLUDE form — glob rules from the staged tree, sort     lexicographical, DYNAMIC-INCLUDE form — verbatim file substitution., DYNAMIC-INCLUDE form — glob rules from the staged tree, sort     lexicographical (+19 more)
+
+### Community 120 - "Community 120"
+Cohesion: 0.11
+Nodes (28): dump_plan(), Materialise an in-memory StagingPlan to a real directory tree (G.6).  Backs the, Write every plan in ``plans`` under ``target/<tool>/`` and print the path., _write_bytes(), _write_item(), _dir_item(), _file_item(), Materialiser for the ``--dump-stage`` debug mode (G.6).  ``dump_plan`` writes th (+20 more)
+
+### Community 121 - "Community 121"
+Cohesion: 0.13
+Nodes (26): derive_human_review(), fetch_human_review_inputs(), _get(), _is_bot(), Human-review merge-constraint derivation (§4.4, §4.6).  The ``human-review-requi, Derive the §4.6 human-review block from fetched labels + reviews (pure).      ``, ``gh.rest("GET", path)`` with a 404 mapped to a terminal ``PrgroomError``., Live gh reads for the human-review derivation: labels + PR-approval reviews. (+18 more)
 
 ### Community 122 - "Community 122"
 Cohesion: 0.09
 Nodes (17): CodexAdapter, Adapter for OpenAI's Codex CLI. Detected when ~/.codex/ exists., _make_codex_repo(), End-to-end staging plan build over a fixture repo, driving the real CodexAdapter, Given a repo with shared rules/skills/agents content     When build_plan runs wi, Given a repo with shared rules/skills/agents content     When build_plan runs wi, Given CodexAdapter.scoped_namespaces() returns ()     When build_plan runs     T, Given CodexAdapter.scoped_namespaces() returns ()     When build_plan runs     T (+9 more)
 
 ### Community 123 - "Community 123"
-Cohesion: 0.12
-Nodes (26): assemble(), Scene assembler: estate nodes + fingerprints + Tier-2/3 facts → `Scene`.  Slice, Refuse any Tier-2/3 fact lacking provenance or citations (spec test item 8)., Assemble the estate `{path: blob_sha}` plus fingerprints/facts into a `Scene`., _validate_facts(), Slider/legend render hints for the cross-axis heat mix (spec §4.5/§6.2).      `d, RenderConfig, Scene assembly + render determinism (spec test item 6).  Same scene + template → (+18 more)
+Cohesion: 0.11
+Nodes (21): bootstrap_state(), The zero-value state a first ``run`` invocation starts from (§3.3).      Every n, The zero-value state a first ``run`` invocation starts from (§3.3).      Every n, The zero-value state a first ``run`` invocation starts from (§3.3).      Every n, Tests for the terminal-phase predicates and zero-value bootstrap (§3.1, §2).  Th, _sentinel_item(), test_bootstrap_state_is_the_zero_value_shape(), test_bootstrap_state_uses_distinct_state_instances_per_call() (+13 more)
 
 ### Community 124 - "Community 124"
-Cohesion: 0.07
-Nodes (28): A hermetic repo plus a discoverable 'widget' plugin whose overlay     contribute, Given a discoverable 'widget' plugin (overlaying claude rules/widget-rule.md), A hermetic repo plus a discoverable 'widget' plugin whose overlay     contribute, Given a discoverable 'widget' plugin (overlaying claude rules/widget-rule.md), Given a repo whose discoverable plugin set does not include 'bogus'     When mai, Given a repo whose discoverable plugin set does not include 'bogus'     When mai, Given a discoverable 'widget' plugin (overlaying claude rules/widget-rule.md), Given a discoverable 'widget' plugin and an explicit --plugins= that excludes it (+20 more)
+Cohesion: 0.21
+Nodes (27): derive_recurrence(), Derive the §8.2 recurrence signal for one item, or ``None`` if no prior.      Re, _gh(), _item(), _ok(), Tests for §8.1 snapshot assembly + §8.2 recurrence derivation.  The snapshot mod, Queue the snapshot's gh reads: PR resource, review comments, thread-id map., A gh-api-graphql reviewThreads success envelope (the thread-id map read). (+19 more)
 
 ### Community 125 - "Community 125"
-Cohesion: 0.11
-Nodes (22): The scc subprocess port — the fake's seam.  `SccRunner` is the interface every c, Drives the real `scc` binary, scanning the materialized snapshot dir.      Prefl, SubprocessSccRunner, `SubprocessSccRunner` preflight: a missing scc binary alarms before any scan.  T, test_scan_without_scc_on_path_alarms_with_install_hint(), _add_apply_subparser(), _add_pr_subparser(), _add_queue_subparser() (+14 more)
+Cohesion: 0.08
+Nodes (26): back_up(), _backup_path_for(), new_timestamp(), Path-aware timestamped backup placement (shared by sync and prune).  A target wh, Current local wall-clock time as ``YYYYMMDD-HHMMSS``., Current local wall-clock time as ``YYYYMMDD-HHMMSS``., Current local wall-clock time as ``YYYYMMDD-HHMMSS`` (bash local-TZ ``date``)., True when ``timestamp`` matches the ``YYYYMMDD-HHMMSS`` backup contract. (+18 more)
 
 ### Community 126 - "Community 126"
-Cohesion: 0.11
-Nodes (21): _clone_with_identity(), _CwdRunner, _git(), Integration test: the git adapter against real ``git`` on a fixture repo (§7.6)., A SubprocessRunner pinned to a working directory (so the test repo is the cwd)., repo(), test_cwd_runner_satisfies_protocol(), test_head_sha_against_real_git() (+13 more)
+Cohesion: 0.15
+Nodes (18): ModifiedFileRow, One PyDriller `ModifiedFile` reduced to the fields churn needs.      `new_path`, gh_pr_result(), Build a successful `gh api graphql` `GhResult` for a PR (the common fixture)., Feeds scripted git results; records every call flat as ``(method, *args)``., Feeds one scripted `gh api graphql` result; records the PR number every     call, ScriptedGhRunner, ScriptedGitRunner (+10 more)
 
 ### Community 127 - "Community 127"
+Cohesion: 0.18
+Nodes (25): apply_retry_budget_gate(), _has_disposition_kind(), End-of-cycle phase resolution — the §3.2 six-priority cascade.  ``resolve_end_of, The §3.5 budget-trip core: the counter has consumed the whole retry budget., Gate a budget-tripping push to ``human-gated`` (§3.5) — the shared refusal., Resolve the next phase from ``fixes-pending`` via the §3.2 cascade.      First-m, Resolve the next phase from ``fixes-pending`` via the §3.2 cascade.      First-m, resolve_end_of_cycle_phase() (+17 more)
+
+### Community 128 - "Community 128"
 Cohesion: 0.1
 Nodes (22): LastWinsSilentStrategy, Last-wins-silent strategy for ``(OTHER, *)``.  ``OTHER`` is the catch-all kind f, Resolve an ``OTHER`` collision by replacing ``existing`` with     ``incoming`` s, Return ``incoming`` unchanged — it already carries its own         ``provenance`, LastWinsWarnStrategy, Last-wins-with-warning strategy for ``(JSONC, *)`` and ``(TOML, *)``.  JSONC and, Resolve a JSONC/TOML collision by replacing ``existing`` with     ``incoming`` a, Warn (naming both source paths), then return ``incoming``.          ``incoming`` (+14 more)
 
-### Community 128 - "Community 128"
+### Community 129 - "Community 129"
 Cohesion: 0.14
 Nodes (26): flatten_plan_templates(), Phase 6.5/6.75: flatten the plan's instruction templates, then drop the     incl, Phase 6.5/6.75: flatten the plan's instruction templates, then drop the     stan, Phase 6.5/6.75: flatten the plan's instruction templates, then drop the     incl, _dir_item(), _item(), _plan(), Unit tests for installer.core.templates.flatten_plan_templates — the plan-level (+18 more)
 
-### Community 129 - "Community 129"
-Cohesion: 0.11
-Nodes (8): Orchestrator, The Orchestrator — the CLI-driven tick that drives Objectives through the FSM., Drives Objectives through the PDLC FSM, one tick at a time., Record the human signoff that satisfies the `CANDIDATE_UOW ->         AGENT_WORT, Idempotently remove every sandbox worktree opened for `objective_id`., The TransitionLog event schema.  `OrchestratorStateRepo.TransitionLog` is append, One append-only event in an Objective's lifecycle.      `from_stage` is None for, TransitionEntry
-
 ### Community 130 - "Community 130"
-Cohesion: 0.14
-Nodes (24): flip_stale_required_reviews(), has_required_reviewers_to_refresh(), new_lifecycle_gate_this_cycle(), push_uploaded_commits_this_cycle(), Pure state predicates the §3.3 run-loop and resolver depend on (§3.4).  Every fu, True iff ≥1 ``required`` reviewer is in ``{not_requested, declined}`` (§3.4)., True iff ``_push`` advanced ``last_pushed_head_sha`` during this cycle (§3.4)., True iff a review-invalidating HEAD has not yet been rereviewed (§3.4, §6). (+16 more)
+Cohesion: 0.16
+Nodes (26): _append_audit_notes(), apply(), _apply_dry_run(), _apply_live(), _as_bool_field(), _as_optional_str_field(), _as_str_field(), _audit_note() (+18 more)
 
 ### Community 131 - "Community 131"
-Cohesion: 0.09
-Nodes (24): _carrier_merge_allowed(), _carry_files(), _place(), Phase 6: overlay active plugins onto a base StagingPlan.  After base staging (Ph, True when ``incoming`` (a plugin ``.agents/`` DIR) may carrier-merge into     ``, True when ``incoming`` (a plugin ``.agents/`` DIR) may carrier-merge into     ``, True when ``incoming`` (a plugin ``.agents/`` DIR) may carrier-merge into     ``, True when ``incoming`` (a plugin ``.agents/`` DIR) may carrier-merge into     `` (+16 more)
+Cohesion: 0.14
+Nodes (24): flip_stale_required_reviews(), has_required_reviewers_to_refresh(), new_lifecycle_gate_this_cycle(), push_uploaded_commits_this_cycle(), Pure state predicates the §3.3 run-loop and resolver depend on (§3.4).  Every fu, True iff ≥1 ``required`` reviewer is in ``{not_requested, declined}`` (§3.4)., True iff ``_push`` advanced ``last_pushed_head_sha`` during this cycle (§3.4)., True iff a review-invalidating HEAD has not yet been rereviewed (§3.4, §6). (+16 more)
 
 ### Community 132 - "Community 132"
 Cohesion: 0.13
 Nodes (21): _ExplodingGitRunner, _ExplodingRunner, CLI dispatch + envelope invariants (spec test item 12).  Every machine invocatio, `cli.main` resolves `Path.cwd()` exactly once and threads it into the     dispat, The default runners get an absolute repo root captured at construction —     `cw, A `BdRunner` that fails the test the instant it's asked to do anything.      Pro, A `GitRunner` that fails the test the instant it is asked to do anything.      P, _run() (+13 more)
 
 ### Community 133 - "Community 133"
-Cohesion: 0.19
-Nodes (23): _create_result(), _item_raw(), `claim`/`release`/`plan`/`promote` -- guarded lifecycle transitions (plan Task 4, _ready_result(), _show_result(), test_claim_on_already_in_progress_is_a_noop_with_no_claim_call(), test_claim_on_childless_epic_is_not_claimable_with_no_ready_or_claim_call(), test_claim_on_closed_item_is_not_claimable() (+15 more)
+Cohesion: 0.1
+Nodes (17): _dispatch(), Envelope machinery: emit_success/emit_failure shapes and the cli dispatch paths, test_emit_failure_writes_error_envelope_and_returns_one(), test_emit_success_writes_ok_envelope_and_returns_zero(), test_handler_exception_yields_internal_envelope_with_traceback(), test_handler_exception_yields_internal_envelope_with_traceback_on_stderr(), test_handler_raising_viz_error_yields_that_errors_envelope(), test_handler_raising_work_error_yields_that_errors_envelope() (+9 more)
 
 ### Community 134 - "Community 134"
-Cohesion: 0.15
-Nodes (16): gh_pr_result(), Build a successful `gh api graphql` `GhResult` for a PR (the common fixture)., Feeds scripted git results; records every call flat as ``(method, *args)``., Feeds one scripted `gh api graphql` result; records the PR number every     call, ScriptedGhRunner, ScriptedGitRunner, PR reconciler — the two-source scalar drift alarm (spec test item 11).  Local gi, test_big_pr_over_100_files_does_not_false_drift() (+8 more)
+Cohesion: 0.14
+Nodes (26): The in-memory staging plan.      Built incrementally during the staging phase; c, The in-memory replacement for the bash installer's temp-dir staging.      Built, The in-memory staging plan.      Built incrementally during the staging phase; c, StagingPlan, filter_plan_to_scope(), project_universe(), One staged item's tool + destination path, indexed under its     normalized sele, Project the union of every given tool plan into the normalized     selector voca (+18 more)
 
 ### Community 135 - "Community 135"
 Cohesion: 0.09
-Nodes (26): ar(), Ce(), cr(), de(), displayable(), dr(), Er(), fe() (+18 more)
-
-### Community 136 - "Community 136"
-Cohesion: 0.09
 Nodes (24): _file_include_dests(), _flatten_with_plan_rules(), DYNAMIC-INCLUDE flattening for instruction templates.  Some tools do not resolve, Expand the ALL-RULES directive to the concatenated content of all *.md     files, Read the verbatim text of an included file, or warn and return ''.      Mirrors, The dests of the include-only templates referenced by file markers.      Each ma, The dests of the include-only templates referenced by file markers.      Each ma, Flatten ``text``, sourcing ALL-RULES from the plan's staged ``rules/``.      The (+16 more)
 
+### Community 136 - "Community 136"
+Cohesion: 0.11
+Nodes (8): Orchestrator, The Orchestrator — the CLI-driven tick that drives Objectives through the FSM., Drives Objectives through the PDLC FSM, one tick at a time., Record the human signoff that satisfies the `CANDIDATE_UOW ->         AGENT_WORT, Idempotently remove every sandbox worktree opened for `objective_id`., The TransitionLog event schema.  `OrchestratorStateRepo.TransitionLog` is append, One append-only event in an Objective's lifecycle.      `from_stage` is None for, TransitionEntry
+
 ### Community 137 - "Community 137"
+Cohesion: 0.1
+Nodes (21): load_prompt(), _override_path(), Prompt-template loader (§5 prompt templates).  Each contract's prompt lives in `, A template referenced a ``{placeholder}`` the render data did not supply.      S, A ``format_map`` backing dict that turns a missing key into a clear error., Substitute ``{placeholder}`` fields from ``data`` (strict on missing keys)., The ``PRGROOM_PROMPTS_DIR/<name>.tmpl`` override path if it exists, else ``None`, Load the ``<name>`` contract template (override dir wins, else shipped).      `` (+13 more)
+
+### Community 138 - "Community 138"
+Cohesion: 0.16
+Nodes (23): _backend(), _list_args(), list --track filters on DERIVED Item.track, not raw label presence (criterion 8), test_filters_on_derived_track_value(), test_limit_applies_after_track_filtering(), test_limit_negative_is_also_unbounded(), test_limit_zero_is_the_unbounded_sentinel(), test_no_track_flag_never_loads_config() (+15 more)
+
+### Community 139 - "Community 139"
 Cohesion: 0.09
 Nodes (12): ObjectiveRuntime, OrchestratorStateRepo, The OrchestratorStateRepo — the orchestrator's own canonical store.  Holds every, An Objective's orchestrator-side runtime: where it is in the FSM and     its acc, In-memory orchestrator state. Single-host, single-process — the lease     discip, Create runtime for a freshly-discovered Objective at the universal         entry, The pending/running Session blocking a new dispatch, if any., Running Sessions whose worker has produced terminal status. (+4 more)
 
-### Community 138 - "Community 138"
-Cohesion: 0.12
-Nodes (22): _deferred_memory_message(), _fix_one_cluster(), _group_unprocessed_by_cluster(), ``fix_pr`` — the lock-held ``_fix`` lifecycle internal (§3.2, §5, §8).  ``fix_pr, Assemble the snapshot, dispatch run_fix, and APPLY the result for one cluster., Assemble the snapshot, dispatch run_fix, and APPLY the result for one cluster., A one-line notice for an accepted-but-deferred non-CONTEXTUAL memory entry (§8.3, A one-line notice for an accepted-but-deferred non-CONTEXTUAL memory entry (§8.3 (+14 more)
-
-### Community 139 - "Community 139"
+### Community 140 - "Community 140"
 Cohesion: 0.13
 Nodes (19): kit_adapters(), kit_name_of(), kit_routes(), kit_universe(), _KitRouteAdapter, The kit name is the segment directly under ``kits/`` — the single source of, Walk ``src/kits/<kit>/**``; one StagedKitRef per file. dest_relpath is verbatim, Per kit, one PluginRoute per file: ``glob`` is the file's exact name and     the (+11 more)
 
-### Community 140 - "Community 140"
-Cohesion: 0.08
-Nodes (25): _hermetic_repo(), An UnknownMergeKeyError — a registry wiring miss (no strategy for a     (kind, n, An UnknownMergeKeyError — a registry wiring miss (no strategy for a     (kind, n, A --dry-run run must leave NO installer state behind — not even the receipt, A --dry-run run must leave NO installer state behind — not even the receipt, Given an empty home directory (no install signals) and a hermetic repo,     unde, Given an empty home directory (no install signals) and a hermetic repo,     unde, Given an empty home directory (no install signals) and a hermetic repo,     unde (+17 more)
-
 ### Community 141 - "Community 141"
+Cohesion: 0.12
+Nodes (15): buildProxyHeaders(), createSSEFixer(), isStreamingRequest(), proxyRequest(), block(), blockDelta(), blockStart(), blockStop() (+7 more)
+
+### Community 142 - "Community 142"
 Cohesion: 0.09
 Nodes (24): _home_with_claude_settings(), Given a hermetic repo and a home whose install-receipt lock is already held, Given a hermetic repo and a home whose install-receipt lock is already held, Given an empty home directory (no agent tools detectable)     When main([], home, Given two repo_roots — one whose src/plugins/ contains a plugin directory and, Given two repo_roots — one whose src/plugins/ contains a plugin directory and, Given plain --prune (not --prune-only), a non-interactive io, and no --yes     W, Given plain --prune (not --prune-only), a non-interactive io, and no --yes     W (+16 more)
 
-### Community 142 - "Community 142"
+### Community 143 - "Community 143"
 Cohesion: 0.1
 Nodes (24): _files_equal(), _index_tree(), _is_accepted_settings_backup(), _is_executable(), _is_namespace_dead_marker(), json_semantically_equal(), normalize_relpath(), _order_insensitive() (+16 more)
 
-### Community 143 - "Community 143"
-Cohesion: 0.11
-Nodes (18): load_prompt(), _override_path(), Prompt-template loader (§5 prompt templates).  Each contract's prompt lives in `, A template referenced a ``{placeholder}`` the render data did not supply.      S, A ``format_map`` backing dict that turns a missing key into a clear error., Substitute ``{placeholder}`` fields from ``data`` (strict on missing keys)., The ``PRGROOM_PROMPTS_DIR/<name>.tmpl`` override path if it exists, else ``None`, Load the ``<name>`` contract template (override dir wins, else shipped).      `` (+10 more)
-
 ### Community 144 - "Community 144"
-Cohesion: 0.17
-Nodes (15): ClusterDispatcherStub, FakeGit, _gh(), _item(), _ok(), patched(), Tests for the wired ``cluster`` CLI verb (§1, §2, §3.2).  The verb resolves the, _state() (+7 more)
+Cohesion: 0.16
+Nodes (14): FakeGit, FixDispatcherStub, _gh(), _item(), _ok(), patched(), Tests for the wired ``fix`` CLI verb (§1, §2, §3.2).  The verb resolves the stor, _state() (+6 more)
 
 ### Community 145 - "Community 145"
-Cohesion: 0.11
-Nodes (15): Escalation, FileSink, EscalationSink abstraction (§5).  The CLI never calls ``bd label add`` directly, One escalation event (§5). ``item`` is the optional triggering review item., Flat, public-safe dict for the file sink's JSONL line., Records ("files", verb-sense) an :class:`Escalation`. Implemented by the     std, Default sink (chat/interactive). Pretty-prints to a stream (stderr by default)., File sink. Appends one JSON line per escalation; used by external watchers / cro (+7 more)
+Cohesion: 0.1
+Nodes (16): AgentInvocation, _elapsed_ms(), _invocation_for_claude(), _invocation_for_codex(), _invocation_for_ollama(), _invocation_for_opencode(), _parse_codex_usage(), ProcessHandle (+8 more)
 
 ### Community 146 - "Community 146"
-Cohesion: 0.25
-Nodes (23): audit_fix_items(), Validate each fix item's disposition+evidence. Pure; keyed by gh_id., Validate each fix item's disposition+evidence. Pure; keyed by gh_id., _item(), Tests for the pure fix-output validator (§5 fix audit guards).  The caller suppl, _req(), _row(), test_already_addressed_claiming_brand_new_sha_is_audit_failed() (+15 more)
-
-### Community 147 - "Community 147"
-Cohesion: 0.23
-Nodes (22): _args(), _fixture(), _not_configured_loader(), `work triggers`: extraction pressure/eligibility evaluation (track spec §5, crit, Exercises all three statuses, an organizing-only track, and bidirectional     cr, test_backlog_counts_cover_every_configured_track(), test_cross_track_edges_densified_to_every_configured_track(), test_no_pressure_track() (+14 more)
-
-### Community 148 - "Community 148"
-Cohesion: 0.11
-Nodes (21): parse_tool_name(), Raised when a CLI-supplied tool name is not in the registry.     Structured attr, Translate a `--tools=` CSV element to its Tool enum value. Filters     on regist, UnknownToolError, Unit tests for installer.tools.registry.  Each test pins a design decision from, When parse_tool_name("foo") is called     Then UnknownToolError is raised     An, When UnknownToolError("opencode", ("claude",)) is constructed     Then the insta, Given a Tool whose adapter is absent from the registry     When the caller invok (+13 more)
-
-### Community 149 - "Community 149"
 Cohesion: 0.14
 Nodes (21): AppendRulesStrategy, Append-merge strategy for ``(NAMESPACED_MD, namespace="rules")`` collisions.  Tw, Concatenate two colliding rule bodies, ``existing`` then ``incoming``.      Hono, _item(), Unit tests for installer.core.merge.strategies.append_rules.  Each test pins a c, The synthesised item attributes the merge to the incoming source:     provenance, dest_relpath, kind and namespace are identical on both by definition of     the, Both bodies present: result is existing + separator + incoming, in that     orde (+13 more)
 
-### Community 150 - "Community 150"
+### Community 147 - "Community 147"
 Cohesion: 0.13
 Nodes (19): churn(), FileChurn, Churn extractor — per-file added/deleted sums over the PR's net set.  Symmetric, Sum per-file line churn across the commit set, restricted to `net_files`.      K, complexity(), Complexity heat axis — scc baseline + never-cool churn boost (spec §6.2, slice 3, Per-file 0-1 complexity heat over the estate scope.      `estate` is the canonic, PR snapshot resolution + git↔GitHub scalar reconciliation (plan §3.5).  `reconci (+11 more)
 
-### Community 151 - "Community 151"
+### Community 148 - "Community 148"
 Cohesion: 0.14
 Nodes (17): applyEncoding(), buildTileContent(), collectAncestorChain(), displayPathFor(), fullRender(), labelColorFor(), layoutTreemap(), persistState() (+9 more)
 
-### Community 152 - "Community 152"
-Cohesion: 0.08
-Nodes (7): TestCollapse, TestDiffAssembly, TestEnvelope, TestFinalMessageText, TestMainErrorEnvelope, TestNonce, TestNonceInDiff
+### Community 149 - "Community 149"
+Cohesion: 0.11
+Nodes (21): parse_tool_name(), Raised when a CLI-supplied tool name is not in the registry.     Structured attr, Translate a `--tools=` CSV element to its Tool enum value. Filters     on regist, UnknownToolError, Unit tests for installer.tools.registry.  Each test pins a design decision from, When parse_tool_name("foo") is called     Then UnknownToolError is raised     An, When UnknownToolError("opencode", ("claude",)) is constructed     Then the insta, Given a Tool whose adapter is absent from the registry     When the caller invok (+13 more)
 
-### Community 153 - "Community 153"
+### Community 150 - "Community 150"
 Cohesion: 0.13
 Nodes (18): BaseHTTPRequestHandler, build_run(), embed_file(), find_runs(), _find_runs_recursive(), generate_html(), get_mime_type(), _kill_port() (+10 more)
 
-### Community 154 - "Community 154"
-Cohesion: 0.12
-Nodes (19): driver(), _create_raw(), Typed error envelopes against real bd, within reason., test_bad_flag_is_usage_error(), test_deliver_without_evidence_is_refused(), test_show_bogus_id_is_not_found(), test_type_wall_raw_bd_marker_drift(), test_type_wall_verb_envelope() (+11 more)
-
-### Community 155 - "Community 155"
-Cohesion: 0.11
-Nodes (19): discover(), Raised when a `--plugins=` element names a plugin absent from the     discovered, Discover plugins by scanning the direct subdirectories of     `plugins_root`. No, UnknownPluginError, Given a plugins root containing a `beads/` directory     When discover() builds, test_registry_dispatches_beads_name_to_beads_plugin(), _FakeSpecialized, Unit tests for installer.plugins.registry.  Each test pins a design decision fro (+11 more)
-
-### Community 156 - "Community 156"
-Cohesion: 0.11
-Nodes (14): I/O seam for the installer.  Every prompt, diff, header, and log line in the ins, One record per call to `ScriptedIO`. The transcript is the test's     primary as, Raised when ScriptedIO is asked for a prompt answer beyond its     pre-loaded qu, ScriptExhaustedError, TranscriptEntry, PruneAbortedError, Raised when a non-interactive ``--prune-only`` run lacks authorization.      The, Raised when a non-interactive ``--prune-only`` run lacks authorization.      Mir (+6 more)
-
-### Community 157 - "Community 157"
-Cohesion: 0.11
-Nodes (22): _back_up_and_delete(), _delete_all(), _delete_one_by_one(), _display(), _lstat_identity(), _prompt_and_delete(), Interactive prune flow — confirm and perform orphan deletion.  Takes the orphan, Three-way prompt then act. (+14 more)
-
-### Community 158 - "Community 158"
+### Community 151 - "Community 151"
 Cohesion: 0.1
 Nodes (16): _create_result(), `work create --raw` (spec test-plan item 3, locked decisions 6/7).  `create` is, test_create_raw_called_directly_without_raw_flag_still_refuses(), test_create_raw_not_found_parent_maps_to_not_found_envelope(), test_create_raw_with_labels_joins_them_into_one_labels_flag(), test_create_raw_with_legal_flags_still_succeeds(), test_create_raw_with_parent_sends_exactly_one_bd_call_and_no_dep_add(), close() (+8 more)
 
-### Community 159 - "Community 159"
+### Community 152 - "Community 152"
+Cohesion: 0.25
+Nodes (21): _args(), _fixture(), `work triggers`: extraction pressure/eligibility evaluation (track spec §5, crit, Exercises all three statuses, an organizing-only track, and bidirectional     cr, test_backlog_counts_cover_every_configured_track(), test_cross_track_edges_densified_to_every_configured_track(), test_no_pressure_track(), test_organizing_only_track_excluded_from_statuses() (+13 more)
+
+### Community 153 - "Community 153"
+Cohesion: 0.09
+Nodes (23): Strip .template if it is the final suffix; return path unchanged otherwise., Strip .template if it is the final suffix; return path unchanged otherwise., Strip .template if it is the final suffix; return path unchanged otherwise., Strip .template if it is the final suffix; return path unchanged otherwise., strip_template_suffix(), Given a path whose final suffix is .template     When strip_template_suffix is c, Given a path whose final suffix is .template     When strip_template_suffix is c, Given a path with no .template suffix     When strip_template_suffix is called (+15 more)
+
+### Community 154 - "Community 154"
 Cohesion: 0.16
 Nodes (22): apply_labels(), ApproverConfig, _check_keys(), main(), _parse_approver(), parse_duration(), PolicyError, 20m' / '48h' / '90s' / bare int (seconds) -> seconds. Raises PolicyError. (+14 more)
 
-### Community 160 - "Community 160"
-Cohesion: 0.1
-Nodes (21): _has_clusters(), main(), _needs_clustering(), poll(), prgroom CLI root — typer app with the MVP verb skeletons.  This is the foundatio, The four terminal dispositions a human may flip an escalated item to (§3.2)., Re-request review from required bot reviewers., Query gh for new review items, reviews, and CI status; update state (read-only). (+13 more)
+### Community 155 - "Community 155"
+Cohesion: 0.13
+Nodes (18): driver(), _create_raw(), Typed error envelopes against real bd, within reason., test_bad_flag_is_usage_error(), test_deliver_without_evidence_is_refused(), test_show_bogus_id_is_not_found(), test_type_wall_raw_bd_marker_drift(), test_type_wall_verb_envelope() (+10 more)
 
-### Community 161 - "Community 161"
+### Community 156 - "Community 156"
 Cohesion: 0.2
 Nodes (20): work track set: validated label swap; cascade in Task 10 (criteria 6-7)., root(alpha) -> child-same(alpha), child-other(beta), child-untracked;     child-, test_cascade_relabels_matching_and_untracked_skips_other_tracks(), test_cascade_skips_and_reports_descendants_on_a_third_track(), test_missing_bead_is_not_found(), test_set_heals_a_multi_label_bead_to_exactly_one(), test_set_on_untracked_bead_is_a_pure_add(), test_set_swaps_to_exactly_one_track_label() (+12 more)
 
-### Community 162 - "Community 162"
+### Community 157 - "Community 157"
+Cohesion: 0.1
+Nodes (21): _carrier_merge_allowed(), _carry_files(), _place(), Phase 6: overlay active plugins onto a base StagingPlan.  After base staging (Ph, True when ``incoming`` (a plugin ``.agents/`` DIR) may carrier-merge into     ``, True when ``incoming`` (a plugin ``.agents/`` DIR) may carrier-merge into     ``, True when ``incoming`` (a plugin ``.agents/`` DIR) may carrier-merge into     ``, True when ``incoming`` (a plugin ``.agents/`` DIR) may carrier-merge into     `` (+13 more)
+
+### Community 158 - "Community 158"
 Cohesion: 0.14
 Nodes (19): entry_for(), is_prunable(), Decide which staged items the receipt records (wholesale-owned, prune-eligible)., True iff this item is a wholesale file/dir under a prune namespace., True iff this item is a wholesale file/dir under a prune namespace., Build a ReceiptEntry for a tool-tree item, or None if not prunable.      sha256, Build a ReceiptEntry for a tool-tree item, or None if not prunable.      sha256, ReceiptEntry for one plugin-routed file (e.g. ``~/.beads/formulas/x.toml``). (+11 more)
 
-### Community 163 - "Community 163"
+### Community 159 - "Community 159"
 Cohesion: 0.16
 Nodes (3): Return the first changed path that hits a protected class, else None., scan_protected(), TestScanProtected
 
-### Community 164 - "Community 164"
-Cohesion: 0.16
-Nodes (22): bd command (beads CLI), beads plugin (src/plugins/beads/), for-bead-<id> molecule lookup label, brainstorm-bead formula, fix-bug formula, implement-feature formula, merge-and-cleanup formula, bd human escalation mechanism (+14 more)
-
-### Community 165 - "Community 165"
+### Community 160 - "Community 160"
 Cohesion: 0.1
 Nodes (5): ObjectiveRecord, The WorkTracker protocol and its in-memory reference adapter.  The protocol is *, The tracker's view of an Objective. `lifecycle_status` is the coarse     open/in, The four-domain work-tracker contract the orchestrator depends on., WorkTracker
 
-### Community 166 - "Community 166"
-Cohesion: 0.16
-Nodes (18): append_usage(), Per-attempt usage JSONL emitter (§5 token-usage logging).  One row per **chain-l, One agent invocation's usage record. The §5 JSONL line schema verbatim., One agent invocation's usage record. The §5 JSONL line schema verbatim., The flat JSONL line. ``pr`` renders as the ``owner/repo#n`` shorthand., The flat JSONL line. ``pr`` renders as the ``owner/repo#n`` shorthand., Append one usage line to ``$XDG_STATE_HOME/prgroom/usage.jsonl``.      A ``None`, Append one usage line to ``$XDG_STATE_HOME/prgroom/usage.jsonl``.      A ``None` (+10 more)
+### Community 161 - "Community 161"
+Cohesion: 0.13
+Nodes (18): _Lockable, Per-verb locking wrappers (§2 transactional model).  Every public verb (except `, The narrow slice of :class:`~prgroom.prsession.store.Store` the wrappers need., Acquire the PR lock, run ``internal`` under it, release on ``finally`` (§2)., Acquire the PR lock **once** and run ``body`` (which threads many internals)., run_locked(), with_lock(), poll() (+10 more)
 
-### Community 167 - "Community 167"
-Cohesion: 0.15
-Nodes (20): _closed(), deliver(), _deliver_design(), _deliver_leaf(), _design_sibling(), _leaf_evidence(), `deliver` -- evidence-gated leaf delivery + design-spec placeholder reconciliati, Verify + describe the evidence for a leaf `deliver` (plan L8).      `--pr` is ca (+12 more)
+### Community 162 - "Community 162"
+Cohesion: 0.19
+Nodes (14): _create_result(), _item_raw(), _not_found_config_loader(), `work create <noun>` -- noun-templated creation (plan Task 3, test-plan items 1-, _search_result(), test_create_chore_with_orphan_creates_with_no_parent_and_records_orphan_note(), test_create_duplicate_title_blocks_before_any_create_call(), test_create_epic_sends_one_create_with_epic_type_and_shape_label() (+6 more)
 
-### Community 168 - "Community 168"
-Cohesion: 0.1
-Nodes (20): Given a hermetic repo (one shared template -> a claude create), under     --tool, Given a hermetic repo (one shared template -> a claude create), under     --tool, ``python -m installer`` must propagate the CLI's non-zero exit code.      Guards, ``python -m installer`` must propagate the CLI's non-zero exit code.      Guards, ``python -m installer`` must propagate the CLI's non-zero exit code.      Guards, Ctrl-C during a run aborts cleanly: exit 130, a short message, no traceback., Ctrl-C during a run aborts cleanly: exit 130, a short message, no traceback., A hermetic repo where a shared agent and a tool-root agent collide on the     sa (+12 more)
-
-### Community 169 - "Community 169"
-Cohesion: 0.29
-Nodes (20): FileNode, Render a `Scene` to one self-contained HTML string.      Pure function of the `S, render_html(), _encoded_fact(), _inlined_scene_block(), HTML embedding boundary: the script-safe serializer and the inlined scene.  Spec, _scene(), test_hostile_strings_in_paths_and_fact_notes_render_inert() (+12 more)
-
-### Community 170 - "Community 170"
+### Community 163 - "Community 163"
 Cohesion: 0.1
 Nodes (16): CollisionError, MergeStrategy, Merge contract shared by every collision strategy.  Two symbols form the contrac, Resolve a collision between two items at the same ``dest_relpath``.      Returns, Raised when two sources collide at one destination and may not be     merged. Th, Raise :class:`CollisionError` naming both source paths.          The ``-> NoRetu, _item(), Unit tests for installer.core.merge.base.  Each test pins a coded decision in th (+8 more)
 
+### Community 164 - "Community 164"
+Cohesion: 0.12
+Nodes (17): BeadsPlugin, Specialized `PluginAdapter` for the beads issue tracker.      Beads is unlike a, Unit tests for installer.plugins.beads.  Each test pins a coded decision from F., Given a beads adapter with source_path <src>     When routes(home) is consulted, Given a plugins root containing a `beads/` directory     When discover() builds, Pick the single route whose glob matches; raises if not exactly one., Given a home with no ~/.beads/ directory     But `bd` resolvable on PATH (inject, Given a home containing a ~/.beads/ directory     But `bd` not resolvable on PAT (+9 more)
+
+### Community 165 - "Community 165"
+Cohesion: 0.14
+Nodes (18): anchor(), _audit_entry(), _is_contained(), §8.6 memory-channel + containment audit (pure).  :func:`audit_memory` validates, Lexically anchor a (possibly relative) ``path`` to ``memory_dir``. Pure, no fs., Pure lexical containment: is ``path`` inside ``memory_dir``? No fs access., Resolve routable CONTEXTUAL entries into RoutedMemory (§8.3). Two-layer containm, Resolve routable CONTEXTUAL entries into RoutedMemory (§8.3). Two-layer containm (+10 more)
+
+### Community 166 - "Community 166"
+Cohesion: 0.1
+Nodes (18): _add_item(), _mark_carrier(), Staging-phase construction of a StagingPlan from source files.  Phase 1-5 pure b, Stamp the shared-carrier flag on a shared skills/agents DIR item.      Only ``ki, Insert one item, raising on a duplicate dest_relpath.      The data model overwr, Stamp the shared-carrier flag on a shared skills/agents DIR item.      Only ``ki, Stamp the shared-carrier flag on a shared skills/agents DIR item.      Port of t, Insert one item, resolving a duplicate dest_relpath through the registry.      T (+10 more)
+
+### Community 167 - "Community 167"
+Cohesion: 0.21
+Nodes (20): assemble(), Assemble the estate `{path: blob_sha}` plus fingerprints/facts into a `Scene`., Slider/legend render hints for the cross-axis heat mix (spec §4.5/§6.2).      `d, Serialize a `Scene` to a plain JSON-shaped mapping, files/facts sorted by key., RenderConfig, scene_to_json(), Scene assembly: fingerprint manifest + full-envelope shape (plan slice 5).  `ass, test_attributes_thread_into_matching_file_nodes_by_path() (+12 more)
+
+### Community 168 - "Community 168"
+Cohesion: 0.29
+Nodes (20): FileNode, Render a `Scene` to one self-contained HTML string.      Pure function of the `S, render_html(), _encoded_fact(), _inlined_scene_block(), HTML embedding boundary: the script-safe serializer and the inlined scene.  Spec, _scene(), test_hostile_strings_in_paths_and_fact_notes_render_inert() (+12 more)
+
+### Community 169 - "Community 169"
+Cohesion: 0.1
+Nodes (7): TestCollapse, TestCurrency, TestDiffAssembly, TestEnvelope, TestMainErrorEnvelope, TestNonce, TestNonceInDiff
+
+### Community 170 - "Community 170"
+Cohesion: 0.12
+Nodes (17): discover(), Raised when a `--plugins=` element names a plugin absent from the     discovered, Discover plugins by scanning the direct subdirectories of     `plugins_root`. No, UnknownPluginError, _FakeSpecialized, Unit tests for installer.plugins.registry.  Each test pins a design decision fro, Stand-in for a future specialized adapter (e.g. beads, F.4). Same     constructi, Given the committed tests/fixtures/sources/ tree     When discover() scans it (+9 more)
+
 ### Community 171 - "Community 171"
-Cohesion: 0.11
-Nodes (16): default_warn(), Shared soft-warning sink for the lifecycle verbs (§3.3).  A one-line ``prgroom:`, Write a one-line ``prgroom:`` soft-warning notice to stderr., _build_cluster_dispatcher(), _build_fix_dispatcher(), _decided_by(), Derive ``decided_by`` from a resolved chain's primary provider (``"<cli> <model>, Resolve the cluster provider chain + a dispatcher.      A seam: tests monkeypatc (+8 more)
+Cohesion: 0.17
+Nodes (21): bd command (beads CLI), beads plugin (src/plugins/beads/), for-bead-<id> molecule lookup label, brainstorm-bead formula, fix-bug formula, implement-feature formula, merge-and-cleanup formula, bd human escalation mechanism (+13 more)
 
 ### Community 172 - "Community 172"
 Cohesion: 0.16
 Nodes (11): FakeGh, FakeGit, patched(), Tests for the wired ``push`` CLI verb (§1, §3.2).  The verb resolves the store +, _state(), test_push_budget_exhausted_without_queued_commits_stays_ungated(), test_push_no_state_exits_two(), test_push_refuses_when_budget_exhausted_with_queued_commits() (+3 more)
 
 ### Community 173 - "Community 173"
-Cohesion: 0.12
-Nodes (18): back_up(), _backup_path_for(), Path-aware timestamped backup placement (shared by sync and prune).  A target wh, True when ``timestamp`` matches the ``YYYYMMDD-HHMMSS`` backup contract., True when ``timestamp`` matches the ``YYYYMMDD-HHMMSS`` backup contract., True when ``timestamp`` matches the ``YYYYMMDD-HHMMSS`` backup contract., Resolve the backup destination for ``target`` (no I/O).      A target whose pare, Resolve the backup destination for ``target`` (no I/O).      A target whose pare (+10 more)
-
-### Community 174 - "Community 174"
 Cohesion: 0.24
 Nodes (19): _fact(), _git(), `viz sweep` — funnel rungs 1-2 over the sidecar's fact files (spec §5.4/§5.5)., `sweep` takes `repo_root` as an explicit third argument -- its sidecar     store, test_sweep_carries_forward_existing_manifest_contract_versions(), test_sweep_flags_a_fact_when_a_cited_input_changed(), test_sweep_holds_the_lock_across_the_whole_transaction(), test_sweep_is_lock_guarded() (+11 more)
 
-### Community 175 - "Community 175"
-Cohesion: 0.21
-Nodes (13): _create_result(), _item_raw(), `work create <noun>` -- noun-templated creation (plan Task 3, test-plan items 1-, _search_result(), test_create_chore_with_orphan_creates_with_no_parent_and_records_orphan_note(), test_create_duplicate_title_blocks_before_any_create_call(), test_create_epic_sends_one_create_with_epic_type_and_shape_label(), test_create_feat_with_spec_evidence_adds_spec_ready_label() (+5 more)
-
-### Community 176 - "Community 176"
+### Community 174 - "Community 174"
 Cohesion: 0.16
 Nodes (19): _core_tools_present(), _path_without_uv(), install.sh prgroom-CLI install/uninstall behavior (bash installer only).  Unlike, A normal install (uv present, package in source tree) hands     ``tool install -, True if the bash installer's core tools all resolve under ``path``., A PATH on which uv is absent but the installer's core tools resolve, or     None, With uv off PATH, install.sh skips the prgroom CLI install and still exits     0, ``--prune`` with the prgroom package gone from the source tree hands     ``tool (+11 more)
 
-### Community 177 - "Community 177"
+### Community 175 - "Community 175"
 Cohesion: 0.25
 Nodes (19): diff_trees(), Compare two installed HOME trees comparison-type-aware.      ``.json`` entries a, Unit tests for the golden-master tree differ (``tests.golden_master._diff``).  F, test_backup_timestamp_difference_is_not_a_diff(), test_byte_identical_invalid_json_is_parity(), test_executable_bit_mismatch_is_detected(), test_file_only_in_a_breaks_parity(), test_file_only_in_b_breaks_parity() (+11 more)
 
+### Community 176 - "Community 176"
+Cohesion: 0.15
+Nodes (17): assert_off_repo(), bd_binary(), _bd_init(), fresh_install(), Fixtures + guards for the real-bd integration suite.  Every install is a throwaw, A pristine bd install per test (for mutation/lifecycle/crash sequences)., One shared, seeded install for read/happy-path assertions. Seeded via RAW     bd, Absolute path to the bd binary. When bd is absent this raises pytest.skip     at (+9 more)
+
+### Community 177 - "Community 177"
+Cohesion: 0.11
+Nodes (18): Integration tests for ``default_registry()`` — the concrete dispatch table.  The, The factory wires specific namespaces; an un-wired NAMESPACED_MD     namespace i, The factory hands back a populated MergeRegistry instance — callers     wire col, rules/ collisions are additive — they must route to the append     strategy, nev, commands/skills/agents collisions are irreconcilable — each must route     to Fa, Pins the dispatch-by-namespace contract end to end: the SAME kind     with two n, SETTINGS_JSON is wired under None; the factory must rely on the     registry's n, test_default_registry_returns_a_merge_registry() (+10 more)
+
 ### Community 178 - "Community 178"
-Cohesion: 0.12
-Nodes (19): _build_gh(), _build_git(), cluster(), fix(), push(), Build the production git adapter (real subprocess boundary).      A seam: tests, Group unprocessed items into fix-bundles for cohesive fix work., Dispatch the fix agent per cluster: decide disposition AND implement. (+11 more)
-
-### Community 179 - "Community 179"
-Cohesion: 0.12
-Nodes (18): _gh_get(), _head_ref_oid(), _pr_is_merged(), ``poll_pr`` — the read-only ``_poll`` lifecycle internal (§3.2, §3.4, §4.1).  ``, Map a 404 on a required PR/repo read to ``RUNTIME_GH_TERMINAL`` (§3.6/§3.7)., Read the remote HEAD SHA; a 404 (vanished PR/repo) is terminal (§3.6)., ``gh.rest("GET", path)`` with a 404 mapped to terminal (vanished PR/repo)., Read the remote HEAD SHA; a 404 (vanished PR/repo) is terminal (§3.6). (+10 more)
-
-### Community 180 - "Community 180"
 Cohesion: 0.18
 Nodes (17): combine(), HeatModel, Cross-axis heat fusion — the §6.2 weighted average over complexity, load-bearing, The combined cross-axis fusion result for one estate (spec §6.2/§4.4).      `att, Fuse the three §6.2 axes into one per-file heat, weighted-average style.      ``, _available_centrality(), Cross-axis heat fusion (spec §6.2/§4.5): the weighted average over complexity, l, test_combine_computes_the_weighted_average_at_default_weights() (+9 more)
 
-### Community 181 - "Community 181"
-Cohesion: 0.15
-Nodes (17): assert_off_repo(), bd_binary(), _bd_init(), fresh_install(), Fixtures + guards for the real-bd integration suite.  Every install is a throwaw, A pristine bd install per test (for mutation/lifecycle/crash sequences)., One shared, seeded install for read/happy-path assertions. Seeded via RAW     bd, Absolute path to the bd binary. When bd is absent this raises pytest.skip     at (+9 more)
+### Community 179 - "Community 179"
+Cohesion: 0.22
+Nodes (17): _nonzero_exit_error(), parse_pr_view(), PrView, gh api graphql shape parsing → typed `PrView` (embeds `PrMeta`).  `gh api graphq, Parse one `gh api graphql` PR response into a `PrView` (with embedded `PrMeta`)., _shape_error(), GhResult, _graphql_stdout() (+9 more)
+
+### Community 180 - "Community 180"
+Cohesion: 0.21
+Nodes (18): appendBulletList(), appendConstellationToggle(), appendSonarAffordance(), appendStaleGraphBadge(), buildControls(), buildLegend(), buildViewSwitcher(), computeHeatFactory() (+10 more)
 
 ### Community 182 - "Community 182"
 Cohesion: 0.11
 Nodes (19): Given a home with a claude skills/ entry matching the bundled prune list and, Given a home with a claude skills/ entry matching the bundled prune list and, Given --prune-only with a matching orphan, a non-interactive io, and no --yes, Given --prune-only with a matching orphan, a non-interactive io, and no --yes, Create a repo_root whose packages/installer/installer.toml carries the     given, Given --prune-only with a matching orphan, a non-interactive io, and no --yes, Given --prune-only with a matching orphan, a non-interactive io, and no --yes, Create a repo_root whose packages/installer/installer.toml carries the     given (+11 more)
 
 ### Community 183 - "Community 183"
-Cohesion: 0.22
-Nodes (17): _nonzero_exit_error(), parse_pr_view(), PrView, gh api graphql shape parsing → typed `PrView` (embeds `PrMeta`).  `gh api graphq, Parse one `gh api graphql` PR response into a `PrView` (with embedded `PrMeta`)., _shape_error(), GhResult, _graphql_stdout() (+9 more)
-
-### Community 184 - "Community 184"
-Cohesion: 0.21
-Nodes (18): appendBulletList(), appendConstellationToggle(), appendSonarAffordance(), appendStaleGraphBadge(), buildControls(), buildLegend(), buildViewSwitcher(), computeHeatFactory() (+10 more)
-
-### Community 186 - "Community 186"
 Cohesion: 0.18
 Nodes (16): Store-adapter selector (§2 "Selection at runtime").  Resolves a ``--store`` flag, Resolve a store name to a concrete adapter (flag > env > default ``file``)., Resolve a store name to a concrete adapter (flag > env > default ``file``)., resolve_store(), Tests for the store-adapter selector (§2 "Selection at runtime").  Pins the code, test_bd_is_a_terminal_user_error(), test_blank_env_falls_back_to_default_file(), test_blank_flag_is_an_explicit_error_not_a_fallback() (+8 more)
 
-### Community 187 - "Community 187"
+### Community 184 - "Community 184"
 Cohesion: 0.25
 Nodes (16): _can_release(), _find_escalated(), ``resolve_escalated_pr`` — human reclassification of one escalated item (§3.2)., Resolve ``item_id`` (``gh_id`` or ``kind:gh_id``) to one escalated item, fail-sa, Flip one escalated item to a terminal disposition; maybe release human-gated (§3, resolve_escalated_pr(), _esc_item(), _ref() (+8 more)
 
-### Community 188 - "Community 188"
+### Community 185 - "Community 185"
+Cohesion: 0.17
+Nodes (15): append_usage(), Per-attempt usage JSONL emitter (§5 token-usage logging).  One row per **chain-l, The flat JSONL line. ``pr`` renders as the ``owner/repo#n`` shorthand., The flat JSONL line. ``pr`` renders as the ``owner/repo#n`` shorthand., Append one usage line to ``$XDG_STATE_HOME/prgroom/usage.jsonl``.      A ``None`, Append one usage line to ``$XDG_STATE_HOME/prgroom/usage.jsonl``.      A ``None`, Token-usage JSONL emitter (§5 token-usage logging).  MVP baseline-capture only:, _record() (+7 more)
+
+### Community 186 - "Community 186"
+Cohesion: 0.13
+Nodes (8): captured(), _MergedGh, Tests for the wired ``run`` CLI verb (§3.3).  Two layers: wiring tests monkeypat, Unused under a stubbed run_lifecycle; satisfies the build seam's return shape., Stub every build seam + capture the kwargs the command hands ``run_lifecycle``., A fake gh where the PR reads as merged and no items/CI exist (real poll_pr path), _StubDispatcher, test_run_integration_merged_pr_reaches_terminal()
+
+### Community 187 - "Community 187"
 Cohesion: 0.15
 Nodes (8): The `--format human` renderer: recursive key/value indentation to stderr., _render(), test_error_envelope_renders_error_section(), test_list_of_dicts_scalars_and_empties(), test_ok_envelope_renders_nested_data(), test_top_level_empty_dict_renders_empty_marker(), test_top_level_empty_list_renders_empty_marker(), test_top_level_scalar_value()
 
-### Community 189 - "Community 189"
+### Community 188 - "Community 188"
 Cohesion: 0.17
 Nodes (17): install_pipeline(), Walk each adapter's ``StagingPlan`` to disk via ``sync_plan``, per tool.      Th, Walk each adapter's ``StagingPlan`` to disk via ``sync_plan``, per tool.      Th, Walk each adapter's ``StagingPlan`` to disk via ``sync_plan``, per tool.      Th, _file_item(), Unit tests for installer.core.run.install_pipeline (W1 — multi-tool compose).  `, Given a tool whose dest already holds a settings.json that a staged     settings, Given a tool with a file that a real install WOULD write     When install_pipeli (+9 more)
 
+### Community 189 - "Community 189"
+Cohesion: 0.15
+Nodes (17): install_plugin_routes(), Install every active plugin's bespoke routes (e.g. beads' ``~/.beads/...``)., Install every active plugin's bespoke routes (e.g. beads' ``~/.beads/...``)., Install every active plugin's bespoke routes (e.g. beads' ``~/.beads/...``)., Install every active plugin's bespoke routes (e.g. beads' ``~/.beads/...``)., Unit tests for installer.core.run.install_plugin_routes (G2 — plugin-route dispa, Given a generic plugin (routes() == ())     When install_plugin_routes runs, Given a BeadsPlugin whose source carries a formula and a script     When install (+9 more)
+
 ### Community 190 - "Community 190"
 Cohesion: 0.14
-Nodes (16): _effective_content(), _install_file(), _is_unchanged(), _is_valid_json(), Minimal single-file sync engine (B.2 + G.1 backup).  Copies one source file to o, Install one FILE item: skip an unchanged dest, back up a differing dest     befo, Install one FILE item: skip an unchanged dest, back up a differing dest     befo, Install one FILE item: skip an unchanged dest, back up a differing dest     befo (+8 more)
+Nodes (16): ConsentRequiredError, Non-interactive consent guard (G.7).  The Python installer makes a destructive r, Raised when a destructive run cannot obtain interactive consent.      The sessio, Raised when a destructive run cannot obtain interactive consent.      The sessio, Raise ``ConsentRequiredError`` if a destructive run lacks any consent path., Raise ``ConsentRequiredError`` if a destructive run lacks any consent path., require_consent(), Unit tests for installer.core.consent (G.7 — non-interactive consent guard).  Pi (+8 more)
 
 ### Community 191 - "Community 191"
 Cohesion: 0.18
@@ -1227,59 +1226,59 @@ Nodes (14): estate(), _in_estate(), Estate scope extractor — the canonical fil
 
 ### Community 192 - "Community 192"
 Cohesion: 0.12
-Nodes (17): at(), ct(), et(), gg(), gt(), ht(), it(), jt() (+9 more)
+Nodes (15): normalize(), Stdout normalization for golden-master parity tests.  The tree-diff scenarios (`, Canonicalize one installer's stdout to a list of comparable lines., Slice ``lines`` from the first occurrence of ``marker`` to the end.      Used to, region_from(), Golden-master stdout parity beyond the Summary block: bash ``install.sh`` vs Pyt, Default (non-verbose) install: the ENTIRE stdout transcript byte-matches     the, Seed two retired entries (a skill dir + an agent file) into the Claude tree. (+7 more)
 
 ### Community 193 - "Community 193"
-Cohesion: 0.16
-Nodes (17): AttributeDescriptor, _descriptor_to_json(), _edge_to_json(), _fact_to_json(), _file_story_to_json(), FileStory, Fingerprints, _fingerprints_to_json() (+9 more)
+Cohesion: 0.17
+Nodes (17): _coerce_int(), load(), _parse_bool(), Config surface + loader for prgroom (§3.5, §4.3, §7).  Settings resolve with pre, CLI flag > env var > ``[quiescence]`` table > default for a boolean knob., Parse the per-repo ``.prgroom.toml`` (missing file -> ``{}``).      The single p, Parse the per-repo ``.prgroom.toml`` (missing file -> ``{}``).      The single p, Return the named sub-table; ``{}`` if absent, raise if present-but-not-a-table. (+9 more)
 
 ### Community 194 - "Community 194"
 Cohesion: 0.12
-Nodes (15): normalize(), Stdout normalization for golden-master parity tests.  The tree-diff scenarios (`, Canonicalize one installer's stdout to a list of comparable lines., Slice ``lines`` from the first occurrence of ``marker`` to the end.      Used to, region_from(), Golden-master stdout parity beyond the Summary block: bash ``install.sh`` vs Pyt, Default (non-verbose) install: the ENTIRE stdout transcript byte-matches     the, Seed two retired entries (a skill dir + an agent file) into the Claude tree. (+7 more)
+Nodes (4): parse_duration(), Parse a duration string (``30s`` / ``10m`` / ``1h30m``) into a timedelta.      U, test_parse_duration_accepts_compound_units(), test_parse_duration_rejects_malformed_strings()
 
 ### Community 195 - "Community 195"
-Cohesion: 0.13
-Nodes (18): flatten_template(), Flatten DYNAMIC-INCLUDE markers in a template's text.      Each file-marker line, Flatten DYNAMIC-INCLUDE markers in a template's text.      Each file-marker line, Flatten DYNAMIC-INCLUDE markers in a template's text.      Each file-marker line, Flatten DYNAMIC-INCLUDE markers in a template's text.      Each file-marker line, Given rules_dir=None (no rules dir provided)     When flatten_template runs with, Given rules_dir=None (no rules dir provided)     When flatten_template runs with, Materialise a rule at the fixed named-RULES source path under base_dir. (+10 more)
+Cohesion: 0.14
+Nodes (18): Anti-Pattern: Incomplete Mocks, Anti-Pattern: Testing Mock Behavior, Anti-Pattern: Mocking Without Understanding, Anti-Pattern: Test-Only Production Methods, Iron Laws of Unit Testing, Mocks Are A Smell, Refactoring For Testability, Test Refusal Criteria (+10 more)
 
 ### Community 196 - "Community 196"
 Cohesion: 0.14
-Nodes (18): Anti-Pattern: Incomplete Mocks, Anti-Pattern: Testing Mock Behavior, Anti-Pattern: Mocking Without Understanding, Anti-Pattern: Test-Only Production Methods, Iron Laws of Unit Testing, Mocks Are A Smell, Refactoring For Testability, Test Refusal Criteria (+10 more)
+Nodes (13): Single-writer advisory lock for the install -> prune -> receipt-write section., Another installer holds the lock; this run cannot safely proceed., Hold an exclusive advisory lock on ``lock_path`` for the duration.      Non-bloc, receipt_lock(), ReceiptLockBusy, NotReadyForPromoteError, The Holding Place service — the two orchestrator-facing operations.  `promote(id, Raised when `promote` is called on an Idea that has not been groomed     and sha (+5 more)
 
 ### Community 197 - "Community 197"
 Cohesion: 0.17
 Nodes (15): GateEvidence, GateEvidenceError, Gate-evidence schema — the YAML a worker emits, read back at REAP.  Structural f, Raised when a gate-evidence document is missing or schema-invalid., One gate's evidence, as written by a worker and validated at reap., Serialise gate evidence to YAML at `path`, creating parent dirs., Read and schema-validate a gate-evidence document.      Raises `GateEvidenceErro, read_and_validate() (+7 more)
 
 ### Community 198 - "Community 198"
-Cohesion: 0.17
-Nodes (14): _Lockable, Per-verb locking wrappers (§2 transactional model).  Every public verb (except `, The narrow slice of :class:`~prgroom.prsession.store.Store` the wrappers need., Acquire the PR lock, run ``internal`` under it, release on ``finally`` (§2)., Acquire the PR lock **once** and run ``body`` (which threads many internals)., run_locked(), with_lock(), Tests for the §2 locking wrappers.  Pins the wrapper contract the public verbs s (+6 more)
-
-### Community 199 - "Community 199"
-Cohesion: 0.38
-Nodes (16): _item(), Table-driven tests for the §3.2 end-of-cycle phase resolver.  The resolver is a, _resolve(), _state(), test_first_match_wins_cascade(), test_p1_cap_first_match_wins_over_escalated_and_failed(), test_p1_cap_not_tripped_below_max_rounds(), test_p1_cap_not_tripped_below_pr_review_retries() (+8 more)
-
-### Community 200 - "Community 200"
-Cohesion: 0.24
-Nodes (15): _gh(), _ok(), patched(), _quiesced_state(), Tests for the wired ``status`` CLI verb (§3.3 carve-out, §4.6 envelope).  ``stat, test_status_bot_approval_does_not_satisfy(), test_status_default_render(), test_status_gh_404_enrichment_maps_to_terminal() (+7 more)
-
-### Community 201 - "Community 201"
 Cohesion: 0.3
 Nodes (15): ``resolve_pr`` — the lock-held ``_resolve`` lifecycle internal (§3.2).  ``_resol, Resolve every fixed/already_addressed review thread not yet resolved.      Calle, resolve_pr(), _disp(), _item(), Tests for ``resolve_pr`` — the lock-held ``_resolve`` lifecycle internal (§3.2)., _resolved_ok(), _state() (+7 more)
+
+### Community 199 - "Community 199"
+Cohesion: 0.17
+Nodes (15): handle_cli_error(), Render and post replies for every item per template matrix., Render a tier-tagged error and return its process exit code (§1, §3.3, §7.6)., Render and post replies for every unreplied item; route pending CONTEXTUAL memor, Render and post replies for every unreplied item; route pending CONTEXTUAL memor, Render a tier-tagged error and return its process exit code (§1, §3.3, §7.6)., Render a tier-tagged error and return its process exit code (§1, §3.3, §7.6)., reply() (+7 more)
+
+### Community 201 - "Community 201"
+Cohesion: 0.14
+Nodes (15): _assert_stdout_is_exactly_one_envelope(), _create_ok(), _dep_list_down(), _dep_list_up(), _label_list_ok(), _lifecycle_create_result(), _list_result(), _not_found_config_loader() (+7 more)
+
+### Community 202 - "Community 202"
+Cohesion: 0.23
+Nodes (16): _build_create_namespace(), _derive_lands_in(), discover(), _parse_scope(), `work discover` -- mechanical enforcement of discovered-work triage form.  Imple, Scope-dependent anchor validity (spec §3.4). Only called when `--anchor` is give, `work discover --noun N --title T (--anchor ID | --orphan) --discovered-from ID, The rationale-shape rule (spec §3.2): required, non-blank after strip, single-li (+8 more)
 
 ### Community 203 - "Community 203"
 Cohesion: 0.12
 Nodes (8): The canonical namespace vocabulary (core/namespaces.py) and its per-concern view, formulas is a plugin-routed namespace (beads -> ~/.beads/formulas), never a, hooks is a tool-scoped, deployed namespace (src/user/.claude/hooks/ ->     ~/.cl, test_claude_scoped_namespaces_consumes_canonical_tool_scoped(), test_every_view_is_a_subset_of_the_vocabulary(), test_formulas_is_plugin_routed_backup_only(), test_hooks_is_staged_but_not_pruned_or_backed_up(), test_shared_carrier_is_a_subset_of_shared()
 
 ### Community 204 - "Community 204"
-Cohesion: 0.23
-Nodes (16): _build_create_namespace(), _derive_lands_in(), discover(), _parse_scope(), `work discover` -- mechanical enforcement of discovered-work triage form.  Imple, Scope-dependent anchor validity (spec §3.4). Only called when `--anchor` is give, `work discover --noun N --title T (--anchor ID | --orphan) --discovered-from ID, The rationale-shape rule (spec §3.2): required, non-blank after strip, single-li (+8 more)
-
-### Community 205 - "Community 205"
-Cohesion: 0.18
-Nodes (16): _append_point(), _frontmatter_close(), _patch_body_section(), _patch_frontmatter(), PatchError, Pure markdown patch engine for plugin extensions (Phase 6.5, F.5).  Applies one, All recognized ATX headers as (line index, depth, matchable text),     skipping, R5: the frontmatter block is a section whose header is the opening     ``---`` a (+8 more)
-
-### Community 207 - "Community 207"
 Cohesion: 0.13
 Nodes (17): NamedRulesInclude, DYNAMIC-INCLUDE form — inline a comma-separated *subset* of rules, by     name,, DYNAMIC-INCLUDE form — inline a comma-separated *subset* of rules, by     name,, DYNAMIC-INCLUDE form — inline a comma-separated *subset* of rules, by     name,, parse_directive(), Recognise a DYNAMIC-INCLUDE directive on a single line.      The line must match, Recognise a DYNAMIC-INCLUDE directive on a single line.      The line must match, Recognise a DYNAMIC-INCLUDE directive on a single line.      The line must match (+9 more)
+
+### Community 205 - "Community 205"
+Cohesion: 0.14
+Nodes (16): merge_clis(), Union merge over registry CLIs and prior entries (spec §7).      Registry CLI ->, canonical_bytes(), _entry_canonical(), Deterministic content bytes for the integrity digest — EXCLUDES ``integrity``., Deterministic content bytes for the integrity digest — EXCLUDES ``integrity``., Canonical list form of an entry. ``dir_digest`` is appended ONLY when present,, Canonical list form of an entry. ``dir_digest`` is appended ONLY when present, (+8 more)
+
+### Community 206 - "Community 206"
+Cohesion: 0.2
+Nodes (16): prune_clis(), Retire prior CLI entries no longer in the registry (spec §7).      Uninstall aut, _prior(), Tests for the CLI prune half (spec §7, item 10)., Given a retired allowlisted entry under --dry-run     When prune_clis runs     T, Given a retired allowlisted entry on a non-interactive session without     --yes, Given a prior entry not in the registry but in RETIRED_CLIS     When prune_clis, Given a retired allowlisted entry and a declining confirm     When prune_clis ru (+8 more)
 
 ### Community 208 - "Community 208"
 Cohesion: 0.15
@@ -1290,452 +1289,444 @@ Cohesion: 0.15
 Nodes (17): detect-pr-push.sh hook, fix-bug formula, implement-feature formula, merge-and-cleanup formula, check-merge-eligibility.sh, Mode-aware ESCALATE (interactive vs autonomous), Per-Comment Subagent Contract, Beads-aware Delivery Addendum (+9 more)
 
 ### Community 210 - "Community 210"
-Cohesion: 0.12
-Nodes (16): Render and post replies for every item per template matrix., Resolve review threads whose disposition is fixed or already_addressed., Emit the shared not-yet-implemented notice and exit non-zero., Emit the shared not-yet-implemented notice and exit non-zero., Cross-PR autonomous mode: list open PRs and run each serially., Render and post replies for every unreplied item; route pending CONTEXTUAL memor, Render and post replies for every unreplied item; route pending CONTEXTUAL memor, Resolve review threads whose disposition is fixed or already_addressed.      A l (+8 more)
-
-### Community 211 - "Community 211"
 Cohesion: 0.31
 Nodes (14): ``rereview_pr`` — the lock-held ``_rereview`` lifecycle internal (§3.2/§3.4).  A, Re-request review from every stale required reviewer via the remove/add dance., rereview_pr(), _deps(), _not_found(), _ok(), Tests for ``rereview_pr`` — the lock-held ``_rereview`` lifecycle internal (§3.2, _reviewer() (+6 more)
 
+### Community 211 - "Community 211"
+Cohesion: 0.17
+Nodes (10): Integration tests for LegacyExportStore (bead abn9.8.13.1).  The wrapping Store, _state(), test_delegates_lock_list_and_delete(), test_export_failure_does_not_propagate_and_inner_persists(), test_write_persists_inner_and_emits_legacy(), LegacyExportStore, Decorator Store: persist via ``inner``, then best-effort legacy export.      Str, The user-facing ``--store`` / ``PRGROOM_STORE`` vocabulary. (+2 more)
+
 ### Community 212 - "Community 212"
-Cohesion: 0.18
-Nodes (14): _gh_terminal(), _gh_transient(), _gh_with_head(), _ok(), patched(), Tests for the wired ``poll`` CLI verb (§1, §2, §3.2).  The verb resolves the sto, Wire the verb to an InMemoryStore; the gh adapter is set per-test., Wire the verb to an InMemoryStore; the gh adapter is set per-test. (+6 more)
+Cohesion: 0.16
+Nodes (14): read_only_driver(), Smoke-proves the fixtures stand up a real isolated bd and the driver round-trips, test_fresh_install_is_empty_and_isolated(), test_read_only_corpus_is_seeded(), Every verb once against real bd, asserting VALUE-LEVEL, not just ok=True.  Read, test_claim_and_release(), test_create_raw_update_note_close_reopen_roundtrip(), test_dep_add_list_remove() (+6 more)
 
 ### Community 213 - "Community 213"
-Cohesion: 0.29
-Nodes (13): FixDispatcherStub, _gh(), _item(), _ok(), patched(), Tests for the wired ``fix`` CLI verb (§1, §2, §3.2).  The verb resolves the stor, _state(), test_fix_all_dispositioned_is_idempotent_noop() (+5 more)
-
-### Community 214 - "Community 214"
 Cohesion: 0.15
 Nodes (12): GenericPluginAdapter, Default `PluginAdapter` for a discovered plugin with no specialized     class. A, Default `PluginAdapter` for a discovered plugin with no specialized     class. A, Unit tests for installer.plugins.generic.  Each test pins a design decision from, Given a home directory containing a directory named `.myplugin`     When the ada, Given an empty home directory     When the adapter for `myplugin` is asked is_de, Given a home directory containing a *file* named `.myplugin`     When the adapte, Given a generic plugin adapter     When routes(home) is consulted     Then it re (+4 more)
 
+### Community 214 - "Community 214"
+Cohesion: 0.19
+Nodes (15): _append_point(), _frontmatter_close(), _patch_body_section(), _patch_frontmatter(), PatchError, Pure markdown patch engine for plugin extensions (Phase 6.5, F.5).  Applies one, All recognized ATX headers as (line index, depth, matchable text),     skipping, R5: the frontmatter block is a section whose header is the opening     ``---`` a (+7 more)
+
 ### Community 215 - "Community 215"
 Cohesion: 0.13
-Nodes (15): Read the persisted profile selection from ``<project_root>/project-config.toml``, Persist ``profiles`` to ``<project_root>/project-config.toml``'s     ``[install], read_project_profiles(), write_project_profiles(), Given <project>/project-config.toml with [install] profiles = ["beads-kit"], Given a project root with no project-config.toml     When read_project_profiles(, Given project-config.toml present but with no [install] table     When read_proj, Given a project root with no project-config.toml     When write_project_profiles (+7 more)
+Nodes (15): AttributeDescriptor, _descriptor_to_json(), _edge_to_json(), _fact_to_json(), _file_story_to_json(), FileStory, Fingerprints, _fingerprints_to_json() (+7 more)
 
 ### Community 216 - "Community 216"
-Cohesion: 0.15
-Nodes (16): ap(), bp(), cp(), dp(), fp(), gp(), hp(), Ip() (+8 more)
-
-### Community 217 - "Community 217"
 Cohesion: 0.12
 Nodes (16): refresh-agents-md command, foreign-agent-prompt.md template, foreign-eyes-prompt.md template, Foreign-Eyes Subagent, Graceful degradation to pure fresh-eyes, .ralf/{session_id}/ artifact directory, bugfix skill, condition-based-waiting skill (+8 more)
+
+### Community 217 - "Community 217"
+Cohesion: 0.17
+Nodes (16): Claude source README, Action Categories (Automatic vs Authorized), Template Install Model (.template suffix), PR Comments Audit (top-level + inline), Sandbox Heredoc Failure, Verification Checklist, Worktree Location Convention, completion-gate rule (+8 more)
 
 ### Community 218 - "Community 218"
 Cohesion: 0.18
 Nodes (14): Scenario 1 — happy-path Idea -> Promote -> MERGED. The architectural tracer.  Th, The Objective minted by promote carries its originating Idea's id —     the prov, The Objective reaches MERGED via exactly the nine contracted advances., Each worker-reap advance points at a real, parseable gate-evidence     YAML; eac, The happy path passes every gate first try — no cognition strikes., ``config_hash`` and ``ts`` are flexible in value but must be present     and wel, On MERGED the tracker shows the Objective closed; worktree cleanup is     safe t, _run_to_terminal() (+6 more)
 
 ### Community 219 - "Community 219"
-Cohesion: 0.22
-Nodes (14): _finding(), _placeholder_reconciled(), `reconcile` -- handle-driven recovery sweep (plan L10).  Candidate sets are enum, Enumerate `shape-design` children; close any still open whose own     (`blocks`-, Enumerate `creating-spec` handles; finish each interrupted spec     instantiatio, `work reconcile [--dry-run]` (plan L10). Reads no external state (no spec     fi, An `in_progress` leaf carrying `[work] delivered:` but still open -> close     i, Enumerate `impl-placeholder` handles; replay the shared completion toward     th (+6 more)
+Cohesion: 0.28
+Nodes (13): _gh(), _ok(), patched(), _quiesced_state(), Tests for the wired ``status`` CLI verb (§3.3 carve-out, §4.6 envelope).  ``stat, test_status_bot_approval_does_not_satisfy(), test_status_default_render(), test_status_human_approval_satisfies() (+5 more)
 
 ### Community 220 - "Community 220"
-Cohesion: 0.17
-Nodes (13): read_only_driver(), Smoke-proves the fixtures stand up a real isolated bd and the driver round-trips, test_fresh_install_is_empty_and_isolated(), test_read_only_corpus_is_seeded(), Every verb once against real bd, asserting VALUE-LEVEL, not just ok=True.  Read, test_claim_and_release(), test_dep_add_list_remove(), test_label_add_list_remove() (+5 more)
+Cohesion: 0.13
+Nodes (14): is_graph_terminal(), is_terminal_for_cli(), Lifecycle spine — the pure, gh/git-free core of the grooming loop (§3, §4).  Thi, True iff the CLI rests at ``phase`` and awaits an external trigger (§3.1)., True iff ``phase`` is absorbing — ``merged`` only (§3.1)., True iff the CLI rests at ``phase`` and awaits an external trigger (§3.1)., True iff ``phase`` is absorbing — ``merged`` only (§3.1)., Lock-held body of the ``wait`` verb: precondition-gate, then block in ``wait_pr` (+6 more)
 
 ### Community 221 - "Community 221"
-Cohesion: 0.13
-Nodes (15): Given a home with a .claude/settings.json install signal and a hermetic repo,, When main(["--help"]) is invoked     Then usage text is printed to stdout., Given a home with a .claude/settings.json install signal and a hermetic repo,, Given a Tool enum value whose adapter is absent from the registry     When main(, Given a Tool enum value whose adapter is absent from the registry     When main(, Given a Tool enum value whose adapter is absent from the registry     When main(, Given a Tool enum value whose adapter is absent from the registry     When main(, When main(["--help"]) is invoked     Then usage text is printed to stdout. (+7 more)
-
-### Community 222 - "Community 222"
-Cohesion: 0.13
-Nodes (15): When main(["--tools=foo"], home=any) is invoked     Then it returns 2., When main(["--tools="], home=any) is invoked     Then it returns 2     And stder, When main(["--tools=foo"], home=any) is invoked     Then it returns 2., When main(["--tools="], home=any) is invoked     Then it returns 2     And stder, When main(["--tools=foo"], home=any) is invoked     Then it returns 2., When main(["--prune", "--prune-only"]) is invoked     Then argparse exits 2 (mut, When main(["--tools="], home=any) is invoked     Then it returns 2     And stder, When main(["--tools="], home=any) is invoked     Then it returns 2     And stder (+7 more)
-
-### Community 223 - "Community 223"
 Cohesion: 0.2
 Nodes (13): Behavioural tests for OpenCodeAdapter detection.  OpenCode auto-detection differ, Force the module-local which('opencode') to a fixed result so the PATH     branc, Force the module-local which('opencode') to a fixed result so the PATH     branc, Given ~/.config/opencode/ exists as a directory and opencode is NOT on PATH, Given ~/.config/opencode/ exists as a directory and opencode is NOT on PATH, Given opencode is on PATH and ~/.config/opencode/ does NOT exist     When is_det, Given opencode is on PATH and ~/.config/opencode/ does NOT exist     When is_det, Given opencode is NOT on PATH and ~/.config/opencode/ does NOT exist     When is (+5 more)
 
-### Community 224 - "Community 224"
+### Community 222 - "Community 222"
 Cohesion: 0.2
 Nodes (13): FatalStrategy, Fatal-collision strategy: refuse to merge irreconcilable kinds.  Some collisions, Resolve an irreconcilable collision by raising.      Structurally a :class:`~ins, _item(), Unit tests for installer.core.merge.strategies.fatal.  ``FatalStrategy`` resolve, The fatal strategy NEVER returns a StagedItem — merge always raises     Collisio, The raised error's message names BOTH colliding source paths so an     operator, The error's structured attributes come from the two inputs, with     ``existing` (+5 more)
 
+### Community 223 - "Community 223"
+Cohesion: 0.13
+Nodes (15): When main(["--tools=foo"], home=any) is invoked     Then it returns 2., When main(["--tools="], home=any) is invoked     Then it returns 2     And stder, When main(["--tools=foo"], home=any) is invoked     Then it returns 2., When main(["--tools="], home=any) is invoked     Then it returns 2     And stder, When main(["--tools=foo"], home=any) is invoked     Then it returns 2., When main(["--prune", "--prune-only"]) is invoked     Then argparse exits 2 (mut, When main(["--tools="], home=any) is invoked     Then it returns 2     And stder, When main(["--tools="], home=any) is invoked     Then it returns 2     And stder (+7 more)
+
+### Community 224 - "Community 224"
+Cohesion: 0.13
+Nodes (15): Given a home with a .claude/settings.json install signal and a hermetic repo,, When main(["--help"]) is invoked     Then usage text is printed to stdout., Given a home with a .claude/settings.json install signal and a hermetic repo,, Given a Tool enum value whose adapter is absent from the registry     When main(, Given a Tool enum value whose adapter is absent from the registry     When main(, Given a Tool enum value whose adapter is absent from the registry     When main(, Given a Tool enum value whose adapter is absent from the registry     When main(, When main(["--help"]) is invoked     Then usage text is printed to stdout. (+7 more)
+
 ### Community 225 - "Community 225"
-Cohesion: 0.18
-Nodes (15): Claude source README, Action Categories (Automatic vs Authorized), PR Comments Audit (top-level + inline), Sandbox Heredoc Failure, Verification Checklist, Worktree Location Convention, completion-gate rule, delivery rule (+7 more)
-
-### Community 226 - "Community 226"
-Cohesion: 0.4
-Nodes (13): handle_verb_error(), Apply the §3.3 verb-error policy to ``state``; return the control disposition., _err(), Tests for the §3.3 verb-error policy (`handle_verb_error` + `VerbDisposition`)., _state(), test_contract_audit_failed_continues_without_last_error(), test_every_tier_member_has_a_defined_disposition(), test_runtime_cancelled_propagates_without_mutation() (+5 more)
-
-### Community 227 - "Community 227"
 Cohesion: 0.16
 Nodes (9): JobSupervisor, The JobSupervisor — orchestrator-side ownership of worker Sessions.  In producti, Returned by `lease`; carries the identity and filesystem handles the     orchest, Worker terminal status, queried at REAP., Spawns (canned) workers and remembers their terminal status. `root` is     the o, Fork (synchronously, canned) the worker for `session`, write its         passing, Remove a Session's sandbox worktree. Idempotent: a second call on         an alr, SupervisorLease (+1 more)
 
-### Community 228 - "Community 228"
+### Community 226 - "Community 226"
+Cohesion: 0.2
+Nodes (12): _gh_with_head(), _ok(), patched(), Tests for the wired ``poll`` CLI verb (§1, §2, §3.2).  The verb resolves the sto, Wire the verb to an InMemoryStore; the gh adapter is set per-test., Wire the verb to an InMemoryStore; the gh adapter is set per-test., test_poll_acquires_lock_and_exits_seventyfive_on_contention(), test_poll_bare_number_is_bad_ref_pending_repo_context() (+4 more)
+
+### Community 227 - "Community 227"
 Cohesion: 0.21
 Nodes (7): BdRunner, The bd subprocess port — the fake's seam.  `BdRunner` is the one interface every, FaultInjectingBdRunner, A fake inner BdRunner: records calls, returns a benign ok result., _RecordingRunner, test_delegates_until_predicate_then_injects_nonzero(), test_malformed_json_fault_is_exit_zero_garbage_stdout()
 
-### Community 229 - "Community 229"
-Cohesion: 0.33
-Nodes (13): _backend(), _list_args(), list --track filters on DERIVED Item.track, not raw label presence (criterion 8), test_filters_on_derived_track_value(), test_limit_applies_after_track_filtering(), test_limit_negative_is_also_unbounded(), test_limit_zero_is_the_unbounded_sentinel(), test_no_track_flag_never_loads_config() (+5 more)
+### Community 228 - "Community 228"
+Cohesion: 0.4
+Nodes (13): handle_verb_error(), Apply the §3.3 verb-error policy to ``state``; return the control disposition., _err(), Tests for the §3.3 verb-error policy (`handle_verb_error` + `VerbDisposition`)., _state(), test_contract_audit_failed_continues_without_last_error(), test_every_tier_member_has_a_defined_disposition(), test_runtime_cancelled_propagates_without_mutation() (+5 more)
 
-### Community 230 - "Community 230"
+### Community 229 - "Community 229"
 Cohesion: 0.18
 Nodes (12): is_safe_relpath(), Shared path-safety helpers.  A single home for the relpath-traversal invariant t, True when ``path`` is safe to join under a trusted base directory.      Safe mea, Unit tests for installer.core.paths — the shared path-safety helper.  Behavioura, A relative path with no parent-dir component joins safely under a base., An absolute path discards the base on join, so it can never be safe., Any ``..`` component lets the join climb out of the base — unsafe., ``..`` inside a single filename is not a parent-dir component: the guard     che (+4 more)
 
+### Community 230 - "Community 230"
+Cohesion: 0.23
+Nodes (7): PerItemResult, I/O seam for the installer.  Every prompt, diff, header, and log line in the ins, Return type of `IOPort.confirm_per_item`.      `decisions` carries only the item, One record per call to `ScriptedIO`. The transcript is the test's     primary as, Raised when ScriptedIO is asked for a prompt answer beyond its     pre-loaded qu, ScriptExhaustedError, TranscriptEntry
+
 ### Community 231 - "Community 231"
-Cohesion: 0.25
-Nodes (12): parse_scc(), scc JSON shape parsing → typed `SccRecord`s keyed by normalized `Location`.  `Su, Parse one scc `--by-file --format json` response into `{location: SccRecord}`., SccRecord, _shape_error(), SccResult, `scc --by-file --format json` shape parsing → typed per-file `SccRecord`s.  Mirr, _scc_result() (+4 more)
+Cohesion: 0.21
+Nodes (13): classify_file(), Merge-dispatch classification of a source path.      Port of the bash ``classify, Merge-dispatch classification of a source path.      Port of the bash ``classify, Merge-dispatch classification of a source path.      ``namespace`` is the parent, Merge-dispatch classification of a source path.      ``namespace`` is the parent, Unit tests for installer.core.staging.classify_file — C.1.  Each test pins a row, test_directory_classifies_as_dir(), test_jsonc_template() (+5 more)
 
 ### Community 232 - "Community 232"
 Cohesion: 0.21
 Nodes (9): cu(), eu(), ja(), ku(), Mu(), nu(), pu(), su() (+1 more)
 
 ### Community 233 - "Community 233"
-Cohesion: 0.2
-Nodes (12): `.viz/` sidecar bootstrap: idempotent dir creation + canonical managed ignore., test_appends_only_the_missing_managed_entry(), test_creates_out_dir_and_ignores_the_managed_set(), test_idempotent_no_duplicate_ignore_lines(), test_no_op_when_managed_set_already_present(), test_preserves_existing_gitignore_content(), test_gitignore_is_call_order_independent_across_both_writers(), ensure_viz_dir() (+4 more)
-
-### Community 234 - "Community 234"
 Cohesion: 0.19
 Nodes (7): asFactsObject(), coerceFacts(), fence(), fingerprint(), fixPrompt(), norm(), refutePrompt()
 
-### Community 235 - "Community 235"
+### Community 234 - "Community 234"
 Cohesion: 0.19
 Nodes (14): bd CLI command, Bead Lifecycle and Labels, I1 Claim Walk (walk up on start), I2 Close Walk (walk up on close), I3 Discovered-Work Placement (sibling test), brainstorm-bead formula, Molecule to Bead Linkage Convention (for-bead label), Parent-Chain Invariants (+6 more)
 
-### Community 236 - "Community 236"
+### Community 235 - "Community 235"
 Cohesion: 0.19
 Nodes (14): codex-companion.mjs, Claude Code Codex plugin, Gemini CLI, Definition of Done Alignment (RALF Step 1), RALF foreign-agent prompt template, RALF foreign-eyes subagent prompt, RALF fresh-eyes subagent prompt, RALF implementer subagent prompt (+6 more)
 
+### Community 236 - "Community 236"
+Cohesion: 0.18
+Nodes (12): _check_runs_state(), _ci_state(), _combined_status_state(), ``poll_pr`` — the read-only ``_poll`` lifecycle internal (§3.2, §3.4, §4.1).  ``, Map the gh combined-status for ``head_sha`` to the §4.1 ci_state vocabulary., Map the gh combined-status for ``head_sha`` to the §4.1 ci_state vocabulary., Resolve §4.1 ci_state for ``head_sha``, preferring check runs over combined-stat, Resolve §4.1 ci_state for ``head_sha``, preferring check runs over combined-stat (+4 more)
+
 ### Community 237 - "Community 237"
 Cohesion: 0.24
-Nodes (11): handle_cli_error(), Render a tier-tagged error and return its process exit code (§1, §3.3, §7.6)., Render a tier-tagged error and return its process exit code (§1, §3.3, §7.6)., Render a tier-tagged error and return its process exit code (§1, §3.3, §7.6)., Tests for the CLI's structured-error handling (§1, §7.6).  When a verb raises a, test_main_converts_a_raised_prgroom_error_into_a_system_exit(), test_no_work_precondition_returns_zero(), test_non_precondition_error_renders_block_and_returns_tier_code() (+3 more)
+Nodes (10): Lock-contention retry (spec test-plan item 7, locked decision 8).  Retryable = l, A minimal BdRunner double for the one branch ScriptedBdRunner's pinned     shape, _recording_sleep(), test_cli_show_exhausting_all_lock_retries_yields_lock_contention_envelope(), test_cli_show_retries_two_lock_contention_failures_then_succeeds(), test_lock_contention_exhausting_all_attempts_raises_lock_contention_error(), test_non_retryable_failure_returns_immediately_with_zero_retries_and_zero_sleeps(), test_timeout_expired_is_retried_like_lock_contention() (+2 more)
 
 ### Community 238 - "Community 238"
 Cohesion: 0.15
-Nodes (13): _ingest_items(), _observe_engagement(), Fetch the three item sources; return new items + per-reviewer terminal verdicts., Fetch the three item sources; return new items + per-reviewer terminal verdicts., Fetch the three item sources; return new items + per-reviewer terminal verdicts., Fetch the three item sources; return new items + per-reviewer terminal verdicts., Build a :class:`ReviewItem` from one gh comment/review payload.      ``thread_id, Update reviewer engagement + terminal verdict from this poll's activity (§4.1). (+5 more)
+Nodes (13): End-to-end against the committed fixture: its .claude/rules/test-plugin-     rul, The fixture's .claude/commands/test-plugin-command.md is fatal when it     colli, The fixture's shared-scope .agents/skills/test-plugin-skill/ lands in the     pl, End-to-end against the committed fixture: its .claude/rules/test-plugin-     rul, The fixture's .claude/commands/test-plugin-command.md is fatal when it     colli, End-to-end against the committed fixture: its .claude/rules/test-plugin-     rul, The fixture's shared-scope .agents/skills/test-plugin-skill/ lands in the     pl, The fixture's .claude/commands/test-plugin-command.md is fatal when it     colli (+5 more)
 
 ### Community 239 - "Community 239"
-Cohesion: 0.26
-Nodes (11): fetch_thread_id_map(), Shared REST→GraphQL review-thread key bridge (§8.1, §8.2).  poll and snapshot bo, Map each REST review-comment ``databaseId`` (str) to its GraphQL thread node id., _graphql(), Tests for ``fetch_thread_id_map`` — the shared REST→GraphQL thread key bridge., A gh-api-graphql success envelope carrying ``reviewThreads.nodes``., test_empty_map_when_pr_has_no_threads(), test_empty_map_when_response_shape_is_degenerate() (+3 more)
+Cohesion: 0.15
+Nodes (13): Stage tool-root settings templates (Phase 5).      Globs the JSON/JSONC/TOML tem, Stage tool-root settings templates (Phase 5).      Globs the JSON/JSONC/TOML tem, Stage tool-root settings templates (bash Phase 5).      Globs the JSON/JSONC/TOM, Stage tool-root settings templates (bash Phase 5).      Globs the JSON/JSONC/TOM, stage_settings(), settings.json.template, *.jsonc.template, *.toml.template each stage     to the, Only settings templates are staged here; .md and subdirs are not., settings.json.template, *.jsonc.template, *.toml.template each stage     to the (+5 more)
 
 ### Community 240 - "Community 240"
-Cohesion: 0.19
-Nodes (12): apply_retry_budget_gate(), _has_disposition_kind(), End-of-cycle phase resolution — the §3.2 six-priority cascade.  ``resolve_end_of, The resolver's verdict — the run-loop applies all three fields to state.      ``, The resolver's verdict — the run-loop applies all three fields to state.      ``, The §3.5 budget-trip core: the counter has consumed the whole retry budget., Gate a budget-tripping push to ``human-gated`` (§3.5) — the shared refusal., Resolve the next phase from ``fixes-pending`` via the §3.2 cascade.      First-m (+4 more)
-
-### Community 241 - "Community 241"
-Cohesion: 0.22
-Nodes (11): has_marker(), NounTemplate, _item(), Noun taxonomy (plan L9) + the lifecycle marker/container helpers (plan `lifecycl, test_has_marker_false_when_the_prefix_is_absent(), test_has_marker_true_when_a_line_starts_with_the_prefix(), test_is_container_false_for_feature_item_with_children_but_no_container_label_or_type(), test_is_container_true_for_childless_epic_typed_item() (+3 more)
-
-### Community 242 - "Community 242"
 Cohesion: 0.15
 Nodes (13): Given --verbose (or its -v alias) and no injected io     When main builds the de, Given --verbose (or its -v alias) and no injected io     When main builds the de, Given --verbose (or its -v alias) and no injected io     When main builds the de, Given a hermetic repo (one shared template -> a non-empty claude plan),     unde, Given a hermetic repo (one shared template -> a non-empty claude plan),     unde, Given a hermetic repo (one shared template -> a non-empty claude plan),     unde, Given a hermetic source repo (a shared template -> a non-empty claude plan),, Given a hermetic source repo (a shared template -> a non-empty claude plan), (+5 more)
 
-### Community 243 - "Community 243"
+### Community 241 - "Community 241"
 Cohesion: 0.18
 Nodes (13): FIX/SKIP/ESCALATE Classification, Concurrency Recovery Branch (--resume mode), Default-on Skill A → Skill B chain, detect-pr-push.sh PostToolUse hook, Hand-off Contract JSON Inventory, Mode-aware ESCALATE (interactive vs autonomous), Orphaned Threads Bug (lu3 PR #11), CronCreate/CronDelete polling lifecycle (+5 more)
 
-### Community 244 - "Community 244"
-Cohesion: 0.24
-Nodes (10): Enum, FileClass, Tier, Fault, FaultInjectingBdRunner: wrap the real runner, count .run() calls, and inject a f, Verb-error policy — tier → control-flow disposition + mandated mutation (§3.3)., str, Convention (+2 more)
+### Community 242 - "Community 242"
+Cohesion: 0.2
+Nodes (9): The §8.2 ``recurrence`` signal — a per-item derived input to the fix agent.  prg, One item's recurrence signal (§8.2). Frozen + slots: a hashable value type., Serialize for the fix snapshot. ``prior_commits`` omitted when empty (§8.2)., Serialize for the fix snapshot. ``prior_commits`` omitted when empty (§8.2)., Recurrence, Recurrence — the §8.2 derived per-item recurrence signal.  These tests pin the J, test_recurrence_is_hashable(), test_recurrence_omits_prior_commits_when_empty() (+1 more)
 
-### Community 245 - "Community 245"
-Cohesion: 0.24
-Nodes (11): aggregate_results(), calculate_stats(), generate_benchmark(), generate_markdown(), load_run_results(), main(), Aggregate run results into summary statistics.      Returns run_summary with sta, Generate complete benchmark.json from run results. (+3 more)
-
-### Community 246 - "Community 246"
-Cohesion: 0.29
-Nodes (6): _Dispatcher, _FakeGit, _item(), _req(), test_contextual_memory_carried_for_cluster_thread(), test_non_cluster_target_hint_not_routed()
-
-### Community 247 - "Community 247"
-Cohesion: 0.17
-Nodes (4): Tests for the §8.5 memory-channel extension to ``FixOutput`` (additive).  The fi, test_memory_entry_parses_file_form_with_target_hint(), test_memory_entry_parses_inline_content_form(), test_memory_skips_non_dict_entries()
-
-### Community 248 - "Community 248"
-Cohesion: 0.23
-Nodes (9): Drives the real bd binary. timeout=60s; TimeoutExpired is retryable (decision 8), SubprocessBdRunner, _make_driver(), Return a callable that drives the PRODUCTION main() against this install     and, SubprocessBdRunner: the one real I/O boundary in workcli.  Every contract test e, test_run_defaults_are_unchanged(), test_run_invokes_bd_with_the_given_args_and_captures_the_full_result(), test_run_uses_injected_bd_binary_cwd_and_env() (+1 more)
-
-### Community 249 - "Community 249"
-Cohesion: 0.18
-Nodes (10): _create(), missing_capability(), VERBS registry: maps a verb name to its handler `(Runners, Namespace, repo_root:, True when `verb` declares a required capability `capabilities` lacks., True when `verb` declares a required capability `capabilities` lacks., Noun/lifecycle-only inputs that `create_raw` never consumes.      `create_raw` r, Noun/lifecycle-only inputs that `create_raw` never consumes.      `create_raw` r, Dispatch `work create`: `--raw` (transport primitive) or a NOUN;     absent both (+2 more)
-
-### Community 250 - "Community 250"
-Cohesion: 0.17
-Nodes (12): _consent_to_overwrite(), _dir_is_unchanged(), _install_dir(), Whether re-materialising ``dest`` from ``source_path`` + ``overrides`` would, Whether re-materialising ``dest`` from ``source_path`` + ``overrides`` would, Materialise one DIR item: back up then cleanly replace an existing dest,     cop, Whether re-materialising ``dest`` from ``source_path`` + ``overrides`` would, Materialise one DIR item: back up then cleanly replace an existing dest,     cop (+4 more)
-
-### Community 251 - "Community 251"
+### Community 243 - "Community 243"
 Cohesion: 0.23
 Nodes (11): `_default_read_file` -- the default `--spec`/manifest reader that types its own, End-to-end: the default reader's `WorkError` becomes a typed envelope.      With, _raw(), _show(), test_default_read_file_missing_path_raises_usage(), test_default_read_file_non_utf8_raises_manifest(), test_default_read_file_reads_utf8_file(), test_deliver_missing_spec_yields_usage_envelope_not_internal() (+3 more)
 
-### Community 252 - "Community 252"
+### Community 244 - "Community 244"
+Cohesion: 0.23
+Nodes (9): Drives the real bd binary. timeout=60s; TimeoutExpired is retryable (decision 8), SubprocessBdRunner, _make_driver(), Return a callable that drives the PRODUCTION main() against this install     and, SubprocessBdRunner: the one real I/O boundary in workcli.  Every contract test e, test_run_defaults_are_unchanged(), test_run_invokes_bd_with_the_given_args_and_captures_the_full_result(), test_run_uses_injected_bd_binary_cwd_and_env() (+1 more)
+
+### Community 245 - "Community 245"
+Cohesion: 0.18
+Nodes (10): _create(), missing_capability(), VERBS registry: maps a verb name to its handler `(Runners, Namespace, repo_root:, True when `verb` declares a required capability `capabilities` lacks., True when `verb` declares a required capability `capabilities` lacks., Noun/lifecycle-only inputs that `create_raw` never consumes.      `create_raw` r, Noun/lifecycle-only inputs that `create_raw` never consumes.      `create_raw` r, Dispatch `work create`: `--raw` (transport primitive) or a NOUN;     absent both (+2 more)
+
+### Community 246 - "Community 246"
+Cohesion: 0.24
+Nodes (10): Enum, FileClass, Tier, Fault, FaultInjectingBdRunner: wrap the real runner, count .run() calls, and inject a f, Verb-error policy — tier → control-flow disposition + mandated mutation (§3.3)., str, Convention (+2 more)
+
+### Community 247 - "Community 247"
+Cohesion: 0.24
+Nodes (11): aggregate_results(), calculate_stats(), generate_benchmark(), generate_markdown(), load_run_results(), main(), Aggregate run results into summary statistics.      Returns run_summary with sta, Generate complete benchmark.json from run results. (+3 more)
+
+### Community 248 - "Community 248"
+Cohesion: 0.17
+Nodes (4): Tests for the §8.5 memory-channel extension to ``FixOutput`` (additive).  The fi, test_memory_entry_parses_file_form_with_target_hint(), test_memory_entry_parses_inline_content_form(), test_memory_skips_non_dict_entries()
+
+### Community 249 - "Community 249"
 Cohesion: 0.23
 Nodes (10): _assert_estate_materialized(), materialize(), Materialize a PR-head snapshot from `git archive` (plan §3.5, slice 3).  `materi, Alarm loudly if any estate path is absent from the extracted snapshot., Extract the `git archive` tar at `head_oid` to a tempdir; sanity-check the estat, _git(), `materialize()` — extract the git-archive tar to a tempdir, sanity-check the est, test_materialize_extracts_the_archive_at_the_head_oid() (+2 more)
 
-### Community 253 - "Community 253"
+### Community 250 - "Community 250"
 Cohesion: 0.23
 Nodes (8): The gh subprocess port — the fake's seam.  `GhRunner` is the interface every rec, Drives the real `gh` binary against an injected `repo_root` (default     ``"."``, SubprocessGhRunner, SubprocessGhRunner: real `gh` subprocess wiring.  `gh api graphql` needs auth +, _record_run(), _RecordingCompletedProcess, test_default_repo_root_is_dot(), test_pr_graphql_runs_against_the_injected_repo_root()
 
-### Community 254 - "Community 254"
+### Community 251 - "Community 251"
 Cohesion: 0.17
 Nodes (11): _fill_template(), Self-contained HTML rendering: script-safe scene embedding + minimal template., Fill the template placeholders in a single ``re.sub`` pass.      One pass (never, Read a vendored asset from package data (works installed and from source)., Concatenate every registered view module under ``templates/static/views/``., Serialize the scene for inlining inside `<script>` (plan §3.5.3).      A repo-de, _read_static(), _read_views_bundle() (+3 more)
 
-### Community 255 - "Community 255"
+### Community 252 - "Community 252"
 Cohesion: 0.26
 Nodes (3): family_of(), Best-effort provider family from a model name. None if underivable., TestFamilyOf
 
-### Community 256 - "Community 256"
+### Community 253 - "Community 253"
 Cohesion: 0.17
 Nodes (11): Golden-master prune parity: bash ``install.sh`` vs Python ``install.py`` --prune, --prune-only --yes: Phase 7 install is skipped; orphaned retired files are     b, Place retired files into the Claude tool tree to act as prune targets.      ``co, --prune --yes: install runs, then orphaned retired files are backed up and     r, Place an unmanaged file into the Claude ``hooks/`` tree. It is not staged by, --prune --yes with a stray ``hooks/`` file present: an unmanaged file in     ``h, _seed_hooks_orphan(), _seed_orphans() (+3 more)
 
-### Community 257 - "Community 257"
+### Community 254 - "Community 254"
+Cohesion: 0.17
+Nodes (11): AGENTS.md (project root), Project Purpose: multi-tool agents-config, Repository Structure (src/user, src/plugins), Session Completion Workflow, CLAUDE.md (project root), Claude-specific content (src/user/.claude/), Codex-specific content (src/user/.codex/), Gemini-specific content (src/user/.gemini/) (+3 more)
+
+### Community 255 - "Community 255"
 Cohesion: 0.17
 Nodes (12): Bugfix Three Threads (git/test/dataflow), Iron Law: No Fix Without Parallel Evidence, Fresh-Eyes Principle (no bias from prior context), bugfix skill, condition-based-waiting skill, Beads + Superpowers Skill Partnership, superpowers:brainstorming, superpowers:executing-plans (off-limits for beads) (+4 more)
 
+### Community 256 - "Community 256"
+Cohesion: 0.22
+Nodes (6): captured(), patched(), Tests for the wired ``wait`` CLI verb (§4.2).  Wiring tests monkeypatch ``wait_l, _state(), test_wait_fixes_pending_is_not_applicable(), test_wait_merged_is_noop()
+
+### Community 257 - "Community 257"
+Cohesion: 0.29
+Nodes (10): _item(), Tests for the agent-dispatch contract surfaces (§5).  The contracts are stable,, test_a_fake_provider_is_driveable_through_the_cluster_protocol(), test_a_fake_provider_is_driveable_through_the_fix_protocol(), test_cluster_input_omits_memory_path_when_absent(), test_cluster_input_serializes_items_and_paths(), test_cluster_output_parses_cluster_rows(), test_contract_version_is_one_on_the_wire() (+2 more)
+
 ### Community 258 - "Community 258"
-Cohesion: 0.18
-Nodes (11): _check_runs_state(), _ci_state(), _combined_status_state(), Map the gh combined-status for ``head_sha`` to the §4.1 ci_state vocabulary., Map the gh combined-status for ``head_sha`` to the §4.1 ci_state vocabulary., Resolve §4.1 ci_state for ``head_sha``, preferring check runs over combined-stat, Resolve §4.1 ci_state for ``head_sha``, preferring check runs over combined-stat, Roll the head SHA's check runs up to success|pending|failure; ``None`` if none e (+3 more)
+Cohesion: 0.22
+Nodes (10): cluster_pr(), ``cluster_pr`` — the lock-held ``_cluster`` lifecycle internal (§3.2, §5).  ``cl, Cluster the unclustered items, applying the assignments to a state copy.      Ca, Cluster the unclustered items, applying the assignments to a state copy.      Ca, Items eligible for clustering: not yet clustered AND not yet processed (§5)., Items eligible for clustering: not yet clustered AND not yet processed (§5)., Write the light PR-context file the cluster contract passes (§5).      A read-on, Write the light PR-context file the cluster contract passes (§5).      A read-on (+2 more)
 
 ### Community 259 - "Community 259"
 Cohesion: 0.27
-Nodes (10): show, list, ready, search — the read-only verbs.  Pure functions over a `Backend, `work show ID...` — one id -> object, 2+ ids -> `{"items": [...]}` (decision 10), `work show ID...` — one id -> object, 2+ ids -> `{"items": [...]}` (decision 10), `work ready [--label]` — unbounded by default (spec §3)., `work ready [--label]` — unbounded by default (spec §3)., ready(), search(), _serialize_item() (+2 more)
+Nodes (10): _extract_flatten_fn(), Golden-master parity for the named-RULES subset DYNAMIC-INCLUDE form.  No live `, Given a single-name named-RULES subset — the exact input the bash     inner-loop, The verbatim ``flatten_agents_md`` function body from the real install.sh., Run the extracted bash ``flatten_agents_md`` and return the flattened text., Given a named-RULES marker whose TRAILING field is a no-op (a missing     rule),, _run_bash_flatten(), test_named_rules_single_name_python_correct_where_bash_drops_it() (+2 more)
 
 ### Community 260 - "Community 260"
-Cohesion: 0.2
-Nodes (11): Given a repo_root whose packages/installer/installer.toml does NOT exist,     un, Given a repo_root whose packages/installer/installer.toml does NOT exist,     un, Mirror the real repo-root .installignore so cli.main's up-front fail-fast     lo, Given a repo_root whose packages/installer/installer.toml is type-malformed, Given a repo_root whose packages/installer/installer.toml is type-malformed, Create a repo_root whose installer.toml is type-malformed: prune.retired     is, Mirror the real repo-root .installignore so cli.main's up-front fail-fast     lo, _repo_with_malformed_installer_toml() (+3 more)
-
-### Community 261 - "Community 261"
-Cohesion: 0.22
-Nodes (11): Eg(), hf(), Jc(), jl(), lf(), ol(), ql(), sf() (+3 more)
-
-### Community 262 - "Community 262"
 Cohesion: 0.31
 Nodes (8): buildAxisMiniBars(), buildDiffLinkHolder(), buildRow(), buildSection(), computeRows(), renderAll(), wireRowActivation(), wireRowTooltip()
 
-### Community 264 - "Community 264"
-Cohesion: 0.27
-Nodes (10): _extract_flatten_fn(), Golden-master parity for the named-RULES subset DYNAMIC-INCLUDE form.  No live `, Given a single-name named-RULES subset — the exact input the bash     inner-loop, The verbatim ``flatten_agents_md`` function body from the real install.sh., Run the extracted bash ``flatten_agents_md`` and return the flattened text., Given a named-RULES marker whose TRAILING field is a no-op (a missing     rule),, _run_bash_flatten(), test_named_rules_single_name_python_correct_where_bash_drops_it() (+2 more)
-
-### Community 265 - "Community 265"
+### Community 262 - "Community 262"
 Cohesion: 0.18
 Nodes (6): quality-reviewer agent, merge-guard skill, self-improving-agent skill, test-review skill, testing-anti-patterns skill, tech-lead agent
 
-### Community 266 - "Community 266"
-Cohesion: 0.18
-Nodes (10): AGENTS.md (project root), Project Purpose: multi-tool agents-config, Repository Structure (src/user, src/plugins), Session Completion Workflow, CLAUDE.md (project root), Claude-specific content (src/user/.claude/), Codex-specific content (src/user/.codex/), Gemini-specific content (src/user/.gemini/) (+2 more)
-
-### Community 267 - "Community 267"
-Cohesion: 0.31
-Nodes (11): Claude AGENTS.md template, CLAUDE-EXTENSIONS.md template, Claude CLAUDE.md template, Codex AGENTS.md template, CODEX-EXTENSIONS.md template, Collision Rules (unique vs append vs union-merge), Template Install Model (.template suffix), Gemini AGENTS.md template (+3 more)
-
-### Community 268 - "Community 268"
+### Community 263 - "Community 263"
 Cohesion: 0.2
 Nodes (5): IdeaStorage, ObjectiveCreator, The Idea primitive, the storage seam, and the ObjectiveCreator port.  These thre, Persistence seam for Ideas. The MVP backend is filesystem; the     Protocol is w, The outbound port `promote` depends on — "something that can create an     Objec
 
-### Community 269 - "Community 269"
+### Community 264 - "Community 264"
+Cohesion: 0.2
+Nodes (7): The §3.7 what/why/how triple for this code., The §3.7 what/why/how triple for this code., Strip URL userinfo from ``text`` so a tokenized remote never reaches output., Render the canonical 4-line ``error / what / why / how`` block (§1)., Render the registry ``error / what / why / how`` block (§1).          The raw ``, Render the registry ``error / what / why / how`` block (§1).          The raw ``, _redact()
+
+### Community 265 - "Community 265"
+Cohesion: 0.31
+Nodes (9): push_awaiting_rereview(), True iff a push awaits rereview AND a required reviewer needs refresh (§3.3, §6), True iff a push awaits rereview AND a required reviewer needs refresh (§3.3, §6), True iff a push awaits rereview AND a required reviewer needs refresh (§3.3, §6), _rereview_guard(), _state(), test_false_after_rereview_caught_up(), test_false_when_both_shas_empty_bootstrap() (+1 more)
+
+### Community 266 - "Community 266"
 Cohesion: 0.2
 Nodes (10): _parse_ts(), Map each reviewer login to its latest APPROVED/CHANGES_REQUESTED time (§4.1)., Map each reviewer login to its latest APPROVED/CHANGES_REQUESTED time (§4.1)., Parse a gh ISO-8601 timestamp; fall back to the injected ``now`` when absent., Map each reviewer login to its latest APPROVED/CHANGES_REQUESTED time (§4.1)., Parse a gh ISO-8601 timestamp; fall back to the injected ``now`` when absent., Map each reviewer login to its latest APPROVED/CHANGES_REQUESTED time (§4.1)., Parse a gh ISO-8601 timestamp; fall back to the injected ``now`` when absent. (+2 more)
 
-### Community 270 - "Community 270"
+### Community 267 - "Community 267"
 Cohesion: 0.31
 Nodes (9): _apply_sha_attribution(), Apply §3.4 round/attribution for the observed HEAD; return external-push flag., Apply §3.4 round/attribution for the observed HEAD; return external-push flag., Apply §3.4 retry counting/attribution for the observed HEAD; return external-pus, Apply §3.4 retry counting/attribution for the observed HEAD; return external-pus, _state(), test_bootstrap_does_not_stamp(), test_external_push_stamps_review_invalidated_sha() (+1 more)
 
-### Community 271 - "Community 271"
-Cohesion: 0.33
-Nodes (9): _fixed_item(), patched(), Tests for the wired ``resolve`` CLI verb (§1, §3.2).  ``read -> resolve_pr -> wr, _resolved_ok(), _state(), test_resolve_acts_in_quiesced(), test_resolve_merged_is_noop(), test_resolve_no_state_exits_two() (+1 more)
+### Community 268 - "Community 268"
+Cohesion: 0.2
+Nodes (10): _gh_get(), _pr_is_merged(), ``gh.rest("GET", path)`` with a 404 mapped to terminal (vanished PR/repo)., True iff the PR resource shows a merged close (§3.2 poll-row merge edge)., ``gh.rest("GET", path)`` with a 404 mapped to terminal (vanished PR/repo)., True iff the PR resource shows a merged close (§3.2 poll-row merge edge)., ``gh.rest("GET", path)`` with a 404 mapped to terminal (vanished PR/repo)., ``gh.rest("GET", path)`` with a 404 mapped to terminal (vanished PR/repo). (+2 more)
 
-### Community 272 - "Community 272"
-Cohesion: 0.24
-Nodes (9): _first_marker_payload(), is_container(), manifest_snapshot(), The stripped payload after the first line matching `prefix`, or None., The path recorded after the first `[work] spec:` marker, or None.      Used by `, The parsed manifest recorded after the first `[work] manifest:` marker, or None., Declared-state container test -- never child-count (spec §5/invariant 5)., spec_path() (+1 more)
-
-### Community 273 - "Community 273"
+### Community 269 - "Community 269"
 Cohesion: 0.31
 Nodes (9): _bd_env(), Inherit the ambient env, force non-interactive, and BIND bd to this temp     .be, _design_and_placeholder(), _drive(), Crash-recovery against real bd state: a fault mid-`deliver` leaves the impl-plac, Return (design_child_id, placeholder_id): the container's two children., Fault a design-child `deliver` at the set_type call (after the spec: and     man, test_interrupted_deliver_is_healed_by_reconcile() (+1 more)
 
-### Community 274 - "Community 274"
-Cohesion: 0.27
-Nodes (8): Single-writer advisory lock for the install -> prune -> receipt-write section., Another installer holds the lock; this run cannot safely proceed., Hold an exclusive advisory lock on ``lock_path`` for the duration.      Non-bloc, receipt_lock(), ReceiptLockBusy, test_lock_creates_parent_dir(), test_lock_is_released_after_context_exit(), test_second_acquire_while_held_raises_busy()
-
-### Community 275 - "Community 275"
-Cohesion: 0.2
-Nodes (10): When main(["--help"]) is invoked     Then SystemExit(0) is raised., When main(["--tools=claude", "--dry-run"]) runs against a hermetic repo     Then, When main(["--tools=claude", "--dry-run"]) runs against a hermetic repo     Then, When main(["--tools=claude", "--dry-run"]) runs against a hermetic repo     Then, When main(["--help"]) is invoked     Then SystemExit(0) is raised., When main(["--help"]) is invoked     Then SystemExit(0) is raised., When main(["--help"]) is invoked     Then SystemExit(0) is raised., When main(["--help"]) is invoked     Then SystemExit(0) is raised. (+2 more)
-
-### Community 276 - "Community 276"
-Cohesion: 0.2
-Nodes (8): `update` (replace-semantics fields), `close` (batch + disposition), `reopen`.  `, test_close_not_found_maps_to_not_found_envelope(), test_close_with_disposition_closes_then_appends_one_note_per_id_in_order(), test_close_without_disposition_sends_exactly_one_bd_call(), test_reopen_not_found_maps_to_not_found_envelope(), test_reopen_sends_exactly_one_bd_call_with_the_id(), test_update_not_found_maps_to_not_found_envelope(), test_update_set_title_and_set_priority_sends_one_bd_call_with_both_flags()
-
-### Community 277 - "Community 277"
-Cohesion: 0.22
-Nodes (9): Edge, A directed top-level file-dependency edge (spec §4.4 typed-edge shape).      `ki, The visible staleness label for an explicitly-accepted stale graph (spec §6.2)., StaleGraph, _commits_behind(), pr(), `viz pr <n>` — build the PR-shape artifact.  Reconcile the PR to its immutable h, How many commits `head_oid` is ahead of the stale graph's build commit.      Reu (+1 more)
-
-### Community 278 - "Community 278"
+### Community 270 - "Community 270"
 Cohesion: 0.2
 Nodes (10): Existing scalar vs incoming dict at the same key: keep the scalar     (the recur, Existing scalar vs incoming dict at the same key: keep the scalar     (the recur, Existing scalar vs incoming dict at the same key: keep the scalar     (the recur, When both sides have a scalar at the same key, existing wins., When both sides have a scalar at the same key, existing wins., Existing dict vs incoming scalar at the same key: keep the dict., Existing dict vs incoming scalar at the same key: keep the dict., test_scalar_conflict_keeps_existing() (+2 more)
 
-### Community 279 - "Community 279"
+### Community 271 - "Community 271"
 Cohesion: 0.2
 Nodes (10): Existing array vs incoming scalar at the same key: keep the array., Existing array vs incoming scalar at the same key: keep the array., null is treated as an ordinary scalar: existing null beats incoming 2,     and e, null is treated as an ordinary scalar: existing null beats incoming 2,     and e, null is treated as an ordinary scalar: existing null beats incoming 2,     and e, Scalar-keep-existing applies to strings, not just numbers., Scalar-keep-existing applies to strings, not just numbers., test_null_is_a_scalar_kept_on_conflict() (+2 more)
 
-### Community 280 - "Community 280"
+### Community 272 - "Community 272"
+Cohesion: 0.22
+Nodes (9): Edge, A directed top-level file-dependency edge (spec §4.4 typed-edge shape).      `ki, The visible staleness label for an explicitly-accepted stale graph (spec §6.2)., StaleGraph, _commits_behind(), pr(), `viz pr <n>` — build the PR-shape artifact.  Reconcile the PR to its immutable h, How many commits `head_oid` is ahead of the stale graph's build commit.      Reu (+1 more)
+
+### Community 273 - "Community 273"
+Cohesion: 0.2
+Nodes (10): When main(["--help"]) is invoked     Then SystemExit(0) is raised., When main(["--tools=claude", "--dry-run"]) runs against a hermetic repo     Then, When main(["--tools=claude", "--dry-run"]) runs against a hermetic repo     Then, When main(["--tools=claude", "--dry-run"]) runs against a hermetic repo     Then, When main(["--help"]) is invoked     Then SystemExit(0) is raised., When main(["--help"]) is invoked     Then SystemExit(0) is raised., When main(["--help"]) is invoked     Then SystemExit(0) is raised., When main(["--help"]) is invoked     Then SystemExit(0) is raised. (+2 more)
+
+### Community 274 - "Community 274"
+Cohesion: 0.36
+Nodes (10): Claude AGENTS.md template, CLAUDE-EXTENSIONS.md template, Claude CLAUDE.md template, Codex AGENTS.md template, CODEX-EXTENSIONS.md template, Collision Rules (unique vs append vs union-merge), Gemini AGENTS.md template, GEMINI-EXTENSIONS.md template (+2 more)
+
+### Community 275 - "Community 275"
 Cohesion: 0.2
 Nodes (10): /optimize-my-agent command, /optimize-my-skill command, /refresh-agents-md command, Progressive Disclosure (skill levels), Three-Tier Agent Boundaries (Always/Ask/Never), Iron Law: If Removing a Line Wouldn't Cause Mistakes, Delete It, Self-Improving Prevention Rule, dispatching-parallel-agents skill (+2 more)
 
-### Community 281 - "Community 281"
+### Community 276 - "Community 276"
 Cohesion: 0.31
 Nodes (4): buildLegendHtml(), legendRow(), render(), seedOnCircle()
 
-### Community 282 - "Community 282"
-Cohesion: 0.39
-Nodes (8): _ok(), Tests for the wired ``rereview`` CLI verb (§1, §3.2).  ``read -> rereview_pr ->, _stale_reviewer(), _state(), test_rereview_acts_in_quiesced(), test_rereview_merged_is_noop(), test_rereview_no_state_exits_two(), test_rereview_re_requests_and_persists()
-
-### Community 283 - "Community 283"
+### Community 278 - "Community 278"
 Cohesion: 0.39
 Nodes (8): _find_config(), load_config(), _not_configured(), Track-layer config: discovery, parsing, validation (track spec §3).  Loaded lazi, Upward search from `start_dir`, bounded by the enclosing git root (spec §3)., Resolve, parse, and validate `[tracks]`/`[operating-model]`.      `explicit_path, _string_tuple(), _validate()
 
-### Community 284 - "Community 284"
-Cohesion: 0.22
-Nodes (9): _hermetic_repo_with_skill(), A hermetic repo whose shared tree also carries a skills/ dir.      The skill sta, A hermetic repo whose shared tree also carries a skills/ dir.      The skill sta, A plain install (NO --prune) now writes the receipt.      Pins the core new beha, A plain install (NO --prune) now writes the receipt.      Pins the core new beha, A scoped run over a corrupt receipt leaves it untouched, preserving the     entr, A scoped run over a corrupt receipt leaves it untouched, preserving the     entr, test_main_scoped_run_over_corrupt_receipt_preserves_other_owners() (+1 more)
-
-### Community 285 - "Community 285"
+### Community 279 - "Community 279"
 Cohesion: 0.28
 Nodes (7): Reads `.critical-paths` from a materialized snapshot — the sole I/O boundary for, Read `.critical-paths` lines from the snapshot dir (`[]` if absent)., read_critical_paths(), `read_critical_paths` — the sole I/O boundary for the consequence axis., test_absent_marker_file_returns_empty_list(), test_reads_lines_from_an_existing_marker_file(), test_unreadable_marker_file_alarms_as_adapter_failure()
 
-### Community 286 - "Community 286"
+### Community 280 - "Community 280"
 Cohesion: 0.28
 Nodes (9): quality-reviewer agent, tech-lead agent, Completion Gate (review/simplify/verify), Simplify Apply-vs-Flag Classification, Simplify Three Axes (Reuse/Quality/Efficiency), simplify skill, verify-checklist skill, superpowers:dispatching-parallel-agents (+1 more)
 
-### Community 287 - "Community 287"
+### Community 281 - "Community 281"
 Cohesion: 0.32
 Nodes (7): find_project_root(), main(), Run the full eval set and return results., Find the project root by walking up from cwd looking for .claude/.      Mimics h, Run a single query and return whether the skill was triggered.      Creates a co, run_eval(), run_single_query()
 
-### Community 288 - "Community 288"
+### Community 282 - "Community 282"
 Cohesion: 0.36
 Nodes (5): allocateMinutes(), buildRow(), fileName(), meterRow(), renderLedger()
 
-### Community 289 - "Community 289"
+### Community 283 - "Community 283"
+Cohesion: 0.43
+Nodes (7): ancestors(), anchor_track(), classify(), keyword_track(), milestone_of(), parent_of(), Classify every non-closed bead into a track by anchor-epic then keyword heuristi
+
+### Community 285 - "Community 285"
 Cohesion: 0.25
 Nodes (8): _build_store(), Resolve the state store eagerly so an invalid --store fails before any verb., Resolve the state store eagerly so an invalid --store fails before any verb., Resolve the configured Store adapter (flag > env > default ``file``).      A sea, Resolve the configured Store adapter (flag > env > default ``file``).      A sea, Resolve the state store eagerly so an invalid --store fails before any verb., Resolve the configured Store adapter (flag > env > default ``file``).      A sea, _root()
 
-### Community 290 - "Community 290"
+### Community 286 - "Community 286"
 Cohesion: 0.25
 Nodes (8): Print current grooming state + the §4.6 merge-gate envelope (read-only).      Th, Render the §4.6 status envelope as JSON (``--json``) or a human summary.      ``, Print current grooming state + the §4.6 merge-gate envelope (read-only).      Th, Print current grooming state + the §4.6 merge-gate envelope (read-only).      Th, Render the §4.6 status envelope as JSON (``--json``) or a human summary.      ``, Render the §4.6 status envelope as JSON (``--json``) or a human summary.      ``, _render_status(), status()
 
-### Community 292 - "Community 292"
-Cohesion: 0.54
-Nodes (7): _audit_already_addressed(), _audit_fixed(), _audit_one(), _audit_rationale(), _fail(), Pure fix-output validator (§5 fix audit guards).  These functions are pure: the, _unreachable()
-
-### Community 293 - "Community 293"
-Cohesion: 0.32
-Nodes (6): _fixture(), _lint_args(), _not_configured_loader(), work lint: five advisory invariants over one sweep (criteria 9-11)., One backend exercising every invariant class (criterion 10)., test_lint_reports_every_invariant_class()
-
-### Community 294 - "Community 294"
-Cohesion: 0.5
-Nodes (7): _backend(), _graph_args(), work graph --json: bulk node/edge export validating against the shipped schema., _schema(), test_graph_carries_every_nonclosed_bead_with_track_and_typed_edges(), test_graph_output_validates_against_shipped_schema(), test_graph_without_json_flag_is_usage_error()
-
-### Community 296 - "Community 296"
+### Community 287 - "Community 287"
 Cohesion: 0.25
-Nodes (8): new_timestamp(), Current local wall-clock time as ``YYYYMMDD-HHMMSS``., Current local wall-clock time as ``YYYYMMDD-HHMMSS``., Current local wall-clock time as ``YYYYMMDD-HHMMSS`` (bash local-TZ ``date``)., _back_up(), Back up ``target`` (file or dir) before an overwrite, resolving and     validati, Back up ``target`` (file or dir) before an overwrite, resolving and     validati, Back up ``target`` (file or dir) before an overwrite, resolving and     validati
+Nodes (8): _build_pipeline(), _cap_guard_step(), The ordered FIXES_PENDING pipeline (§3.3): cluster→fix→cap→push→reply→resolve→[r, The ordered FIXES_PENDING pipeline (§3.3): cluster→fix→cap→push→reply→resolve→[r, The ordered FIXES_PENDING pipeline (§3.3): cluster→fix→cap→push→reply→resolve→[r, Build the pre-push retry-budget guard (§3.5): refuse the budget-tripping push., Build the pre-push hard-cap guard (§3.5): refuse the cap-tripping push.      Whe, Build the pre-push retry-budget guard (§3.5): refuse the budget-tripping push.
 
-### Community 297 - "Community 297"
+### Community 288 - "Community 288"
+Cohesion: 0.25
+Nodes (8): _observe_engagement(), Build a :class:`ReviewItem` from one gh comment/review payload.      ``thread_id, Update reviewer engagement + terminal verdict from this poll's activity (§4.1)., Build a :class:`ReviewItem` from one gh comment/review payload.      ``thread_id, Build a :class:`ReviewItem` from one gh comment/review payload.      ``thread_id, Update reviewer engagement + terminal verdict from this poll's activity (§4.1)., Update reviewer engagement + terminal verdict from this poll's activity (§4.1)., _to_item()
+
+### Community 289 - "Community 289"
 Cohesion: 0.36
 Nodes (7): `show` verb normalization (spec test-plan item 2, decision 10).  A single id mus, _read(), test_show_missing_id_yields_not_found_envelope_end_to_end(), test_show_sends_bd_show_with_all_requested_ids_and_json_flag(), test_show_single_id_returns_a_lean_object_not_an_array(), test_show_single_id_with_a_real_dependency_yields_a_lean_dep_edge(), test_show_two_ids_returns_an_items_array()
 
-### Community 298 - "Community 298"
+### Community 290 - "Community 290"
+Cohesion: 0.32
+Nodes (7): _bare_items(), `list`/`ready` default to unbounded (spec test-plan item 5).  bd's own `list`/`r, test_list_defaults_to_unbounded_and_every_row_surfaces(), test_list_limit_flag_passes_through_a_positive_limit(), test_list_status_label_parent_type_filters_map_to_bd_flags(), test_ready_defaults_to_unbounded_and_every_row_surfaces(), test_ready_label_flag_passes_through()
+
+### Community 291 - "Community 291"
 Cohesion: 0.39
 Nodes (7): _bd_item(), Item.track envelope field on all read verbs (track spec §4, criterion 8)., Minimal bd show/list JSON record accepted by adapters/bd/parse.py.      Mirror t, _show_step(), test_every_list_shaped_read_verb_carries_track(), test_show_carries_derived_track(), test_show_zero_or_multi_track_labels_carry_null()
 
-### Community 299 - "Community 299"
+### Community 292 - "Community 292"
+Cohesion: 0.32
+Nodes (6): _fixture(), _lint_args(), _not_configured_loader(), work lint: five advisory invariants over one sweep (criteria 9-11)., One backend exercising every invariant class (criterion 10)., test_lint_reports_every_invariant_class()
+
+### Community 293 - "Community 293"
+Cohesion: 0.32
+Nodes (8): Eg(), hf(), Jc(), lf(), sf(), Uf(), Wc(), zc()
+
+### Community 294 - "Community 294"
 Cohesion: 0.39
 Nodes (5): computeHops(), groupByHop(), mount(), renderRings(), renderUnavailable()
 
-### Community 300 - "Community 300"
+### Community 295 - "Community 295"
 Cohesion: 0.43
 Nodes (7): Fact, A Tier-2/Tier-3-touched fact attached to the scene (spec §4.4).      `provenance, _assemble(), Schema gate: `scene.assemble.assemble` rejects a Tier-2/3 fact lacking provenanc, test_accepted_then_doubted_fact_carries_both_axes_through_assembly(), test_fact_missing_provenance_is_rejected(), test_fact_with_provenance_but_no_citations_is_rejected()
 
-### Community 302 - "Community 302"
+### Community 297 - "Community 297"
 Cohesion: 0.39
 Nodes (7): _find_config_root(), main(), Walk upward for a ruff config; return the directory that holds it., Prefer the project-pinned ruff (uv, no sync); else PATH ruff., _read_file_path(), _ruff_argv(), _run()
 
-### Community 303 - "Community 303"
+### Community 299 - "Community 299"
 Cohesion: 0.25
 Nodes (7): Golden-master plugin parity: bash vs Python with an active plugin overlay.  Real, The fixture beads plugin ships formulas + an executable script, routed to     ~/, A plugin overlaying non-colliding files (a command + a rule, fresh names)     in, The fixture beads plugin overlays a rule named ``delegation.md`` that     collid, test_plugin_clean_overlay(), test_plugin_overlay_collision_merges(), test_plugin_routes()
 
-### Community 304 - "Community 304"
+### Community 300 - "Community 300"
 Cohesion: 0.25
 Nodes (7): Unit tests for the golden-master runner's environment construction.  These pin t, An INSTALLER_PLUGINS_SRC exported in the ambient environment must not bleed, When a fixture is requested via extra_env, it overrides the inert default., HOME isolates the install; LC_ALL/LANG pin locale-sensitive sorts., test_build_env_extra_env_overrides_inert_default(), test_build_env_pins_home_and_locale(), test_build_env_pins_plugins_src_inert_against_ambient_leak()
 
-### Community 305 - "Community 305"
+### Community 301 - "Community 301"
 Cohesion: 0.39
 Nodes (8): Codex CLI (codex exec -s read-only), Gemini CLI (gemini -p approval-mode plan), ralf:cycles=N bead label, RALF Invariants (iteration, independence, adversarial, convergence), ralf:required bead label, ralf-implement skill, ralf-it skill, ralf-review skill
 
-### Community 306 - "Community 306"
+### Community 302 - "Community 302"
+Cohesion: 0.48
+Nodes (5): clean_title(), main(), mk_node(), prio_r(), track_of()
+
+### Community 303 - "Community 303"
 Cohesion: 0.29
 Nodes (6): IdeaNotFoundError, Filesystem-backed Idea storage — the MVP backend behind `IdeaStorage`.  One YAML, Raised when an Idea id has no document on disk., LookupError, ObjectiveNotFoundError, Raised when an objective id is unknown to the tracker.
 
-### Community 307 - "Community 307"
-Cohesion: 0.29
-Nodes (7): _build_sink(), Build the default escalation sink (stderr).      A seam: tests monkeypatch this, Build the default escalation sink (stderr).      A seam: tests monkeypatch this, Aggregate: orchestrate the verbs in sequence until quiescent or capped., Aggregate: orchestrate the verbs under one lock until quiescent or human-gated (, Aggregate: orchestrate the verbs under one lock until quiescent or capped (§3.3), run()
-
-### Community 308 - "Community 308"
-Cohesion: 0.29
-Nodes (7): _git_user(), Resolve the local git user for ``resolve-escalated`` provenance (via the seam)., Resolve the local git user for ``resolve-escalated`` provenance (via the seam)., Human-initiated reclassification of an escalated item., Human reclassification of one escalated item to a terminal disposition (§3.2)., Human reclassification of one escalated item to a terminal disposition (§3.2)., resolve_escalated()
-
-### Community 309 - "Community 309"
+### Community 304 - "Community 304"
 Cohesion: 0.38
 Nodes (6): End-to-end: a single ``_run`` cycle through the REAL reply/resolve/rereview verb, A required Copilot reviewer in ``not_requested`` — satisfies the rereview guard', A required Copilot reviewer in ``not_requested`` — satisfies the rereview guard', _seed_state(), _stale_required_copilot(), test_run_cycle_reply_resolve_rereview_last_e2e()
 
-### Community 310 - "Community 310"
+### Community 305 - "Community 305"
+Cohesion: 0.29
+Nodes (7): _head_ref_oid(), Map a 404 on a required PR/repo read to ``RUNTIME_GH_TERMINAL`` (§3.6/§3.7)., Read the remote HEAD SHA; a 404 (vanished PR/repo) is terminal (§3.6)., Read the remote HEAD SHA; a 404 (vanished PR/repo) is terminal (§3.6)., Read the remote HEAD SHA; a 404 (vanished PR/repo) is terminal (§3.6)., Read the remote HEAD SHA; a 404 (vanished PR/repo) is terminal (§3.6)., _vanished_pr_terminal()
+
+### Community 306 - "Community 306"
+Cohesion: 0.29
+Nodes (5): `label add`/`remove`/`list` — one bd invocation per label (bd needs it).  bd's o, test_label_add_sends_one_bd_call_per_label_in_order(), test_label_list_returns_the_flat_string_array_from_the_golden_fixture_shape(), test_label_not_found_maps_to_not_found_envelope(), test_label_remove_sends_exactly_one_bd_call()
+
+### Community 307 - "Community 307"
 Cohesion: 0.43
 Nodes (5): `--format human` (locked decision 2, spec §4).  Human rendering is opt-in and go, _run(), test_format_human_stdout_is_byte_identical_to_json_default_and_stderr_is_nonempty(), test_format_json_default_never_writes_to_stderr(), test_format_json_explicit_never_writes_to_stderr()
+
+### Community 308 - "Community 308"
+Cohesion: 0.29
+Nodes (7): Two empty arrays at a key union to an empty array, not null., Two empty arrays at a key union to an empty array, not null., The deep_merge guard requires BOTH operands to be objects; when     incoming is, The deep_merge guard requires BOTH operands to be objects; when     incoming is, The deep_merge guard requires BOTH operands to be objects; when     incoming is, test_empty_arrays_union_to_empty_array(), test_top_level_existing_object_incoming_array_keeps_existing()
+
+### Community 309 - "Community 309"
+Cohesion: 0.43
+Nodes (5): ancestors(), inherited_track(), milestone_of(), parent_of(), Build the layout-ready backlog graph JSON from a bd export + track classificatio
+
+### Community 310 - "Community 310"
+Cohesion: 0.33
+Nodes (7): Be(), clamp(), formatHsl(), ge(), Tg(), Ve(), ye()
 
 ### Community 312 - "Community 312"
 Cohesion: 0.33
 Nodes (4): The four ways two installed HOME trees can diverge. Empty everywhere == parity., TreeDiff, ParityResult, Outcome of one parity run: the two HOME trees plus each installer's exit.
 
 ### Community 313 - "Community 313"
-Cohesion: 0.29
-Nodes (7): Two empty arrays at a key union to an empty array, not null., Two empty arrays at a key union to an empty array, not null., The deep_merge guard requires BOTH operands to be objects; when     incoming is, The deep_merge guard requires BOTH operands to be objects; when     incoming is, The deep_merge guard requires BOTH operands to be objects; when     incoming is, test_empty_arrays_union_to_empty_array(), test_top_level_existing_object_incoming_array_keeps_existing()
-
-### Community 314 - "Community 314"
 Cohesion: 0.47
 Nodes (5): main(), package_skill(), Check if a path should be excluded from packaging., Package a skill folder into a .skill file.      Args:         skill_path: Path t, should_exclude()
 
-### Community 315 - "Community 315"
+### Community 314 - "Community 314"
 Cohesion: 0.47
 Nodes (5): _call_claude(), improve_description(), main(), Run `claude -p` with the prompt on stdin and return the text response.      Prom, Call Claude to improve the description based on eval results.
 
-### Community 316 - "Community 316"
+### Community 315 - "Community 315"
 Cohesion: 0.47
 Nodes (5): main(), Split eval set into train and test sets, stratified by should_trigger., Run the eval + improvement loop., run_loop(), split_eval_set()
 
-### Community 317 - "Community 317"
+### Community 316 - "Community 316"
 Cohesion: 0.53
 Nodes (4): combineGraphs(), extractDotBlocks(), main(), renderToSvg()
 
-### Community 319 - "Community 319"
+### Community 318 - "Community 318"
 Cohesion: 0.33
 Nodes (5): ObjectiveLifecycleState, Provenance, Orchestrator-owned Objective state.  `Provenance` and `ObjectiveLifecycleState`, Nullable backreferences recording where an Objective came from. For     the trac, The Orchestrator's per-Objective mutable state. `strike_counts` is the     input
 
 ### Community 320 - "Community 320"
 Cohesion: 0.33
-Nodes (5): The Session primitive — one worker invocation.  A Session is a first-class entit, The Session lifecycle. `crashed` exists for the failure scenarios; the     happy, One worker invocation targeting one gate. `config_hash` is pinned at     dispatc, Session, SessionStatus
+Nodes (5): has_queued_fix_commits(), ``push_pr`` — the lock-held ``_push`` lifecycle internal (§3.2/§3.4/§3.5).  ``pu, True iff the local PR-branch HEAD has ≥1 commit not yet on the remote (§3.4)., True iff the local PR-branch HEAD has ≥1 commit not yet on the remote (§3.4)., _has_queued()
 
-### Community 321 - "Community 321"
-Cohesion: 0.67
-Nodes (5): push_awaiting_rereview(), _state(), test_false_after_rereview_caught_up(), test_false_when_both_shas_empty_bootstrap(), test_true_after_invalidation_not_yet_rereviewed()
+### Community 322 - "Community 322"
+Cohesion: 0.47
+Nodes (5): `--format human` — a generic, boring renderer for direct human use.  Renders the, Render an already-built envelope's `data` or `error` to `out` (stderr).      Cal, render_human(), _render_scalar(), _render_value()
 
 ### Community 323 - "Community 323"
 Cohesion: 0.33
 Nodes (5): Actor, LifecycleStage, Lifecycle stage constants and the FSM topology.  `LifecycleStage` is the canonic, The Orchestrator-owned position of an Objective in the FSM.      The full consta, Who initiated a TransitionLog event.
 
-### Community 325 - "Community 325"
-Cohesion: 0.47
-Nodes (5): `--format human` — a generic, boring renderer for direct human use.  Renders the, Render an already-built envelope's `data` or `error` to `out` (stderr).      Cal, render_human(), _render_scalar(), _render_value()
+### Community 324 - "Community 324"
+Cohesion: 0.33
+Nodes (5): The Session primitive — one worker invocation.  A Session is a first-class entit, The Session lifecycle. `crashed` exists for the failure scenarios; the     happy, One worker invocation targeting one gate. `config_hash` is pinned at     dispatc, Session, SessionStatus
+
+### Community 326 - "Community 326"
+Cohesion: 0.33
+Nodes (6): An executable source file (a hook script) stages with executable=True; a     non, A tool-root AGENTS.md.template stages to AGENTS.md as FileKind.OTHER     at the, An executable source file (a hook script) stages with executable=True; a     non, A tool-root AGENTS.md.template stages to AGENTS.md as FileKind.OTHER     at the, test_stage_namespace_preserves_executable_bit(), test_stage_templates_strips_suffix_and_is_other()
 
 ### Community 327 - "Community 327"
-Cohesion: 0.4
-Nodes (5): _facts_by_id(), queue(), `viz queue` — the reassessment queue read path (spec §5.3/§5.4 rung 4).  Rung 4, Merge the three Tier-2 fact files into one `fact_id -> FactRecord` map.      `fa, Handle `viz queue`: read `flags.json`, join to facts and verdicts.      Returns
-
-### Community 328 - "Community 328"
-Cohesion: 0.33
-Nodes (4): `label add`/`remove`/`list` — one bd invocation per label (bd needs it).  bd's o, test_label_add_sends_one_bd_call_per_label_in_order(), test_label_not_found_maps_to_not_found_envelope(), test_label_remove_sends_exactly_one_bd_call()
-
-### Community 329 - "Community 329"
 Cohesion: 0.47
 Nodes (5): `--format human` — a generic, boring renderer for direct human use.  Renders the, Render an already-built envelope's `data` or `error` to `out` (stderr).      Cal, render_human(), _render_scalar(), _render_value()
 
-### Community 330 - "Community 330"
+### Community 328 - "Community 328"
 Cohesion: 0.4
 Nodes (5): consequence(), _heuristic_hit(), Consequence heat axis — `.critical-paths` markers + path-class heuristics (spec, A path-class heuristic match: gate-policy, security-adjacent, or public-contract, Per-file 0-1 consequence over the estate: `.critical-paths` markers + heuristics
+
+### Community 329 - "Community 329"
+Cohesion: 0.33
+Nodes (5): Scene assembly + render determinism (spec test item 6).  Same scene + template →, test_assemble_maps_estate_to_sorted_file_nodes(), test_heat_populated_scene_is_still_deterministic_modulo_stamp(), test_render_is_deterministic_for_a_fixed_scene(), test_same_scene_same_html_modulo_stamp()
 
 ### Community 331 - "Community 331"
 Cohesion: 0.4
@@ -1761,121 +1752,109 @@ Nodes (6): gpt-5.3-codex-spark model, gpt-5.4 model, gpt-5.4-mini model, codex-r
 Cohesion: 0.6
 Nodes (4): waitForEvent(), waitForEventCount(), waitForEventMatch(), example.ts
 
-### Community 338 - "Community 338"
-Cohesion: 0.4
-Nodes (5): Resolve the next phase from the §3.2 poll row (first applicable edge wins)., Resolve the next phase from the §3.2 poll row (first applicable edge wins)., Resolve the next phase from the §3.2 poll row (first applicable edge wins)., Resolve the next phase from the §3.2 poll row (first applicable edge wins)., _resolve_poll_phase()
-
 ### Community 339 - "Community 339"
-Cohesion: 0.6
-Nodes (3): Fit-test: the foundation pieces compose (§7.6 fit-test commitment).  Exercises t, test_locked_write_read_cycle_stamps_injected_clock(), test_store_round_trips_through_json_dict_form()
+Cohesion: 0.4
+Nodes (4): default_warn(), Shared soft-warning sink for the lifecycle verbs (§3.3).  A one-line ``prgroom:`, Write a one-line ``prgroom:`` soft-warning notice to stderr., test_default_warn_writes_a_one_line_prgroom_notice()
 
 ### Community 340 - "Community 340"
 Cohesion: 0.4
-Nodes (5): Given a home where the claude plan is already installed (a second run), under, Given a home where the claude plan is already installed (a second run), under, Given a home where the claude plan is already installed (a second run), under, Given a home where the claude plan is already installed (a second run), under, test_main_quiet_reinstall_renders_all_up_to_date()
+Nodes (5): Resolve the next phase from the §3.2 poll row (first applicable edge wins)., Resolve the next phase from the §3.2 poll row (first applicable edge wins)., Resolve the next phase from the §3.2 poll row (first applicable edge wins)., Resolve the next phase from the §3.2 poll row (first applicable edge wins)., _resolve_poll_phase()
 
 ### Community 341 - "Community 341"
 Cohesion: 0.4
-Nodes (5): Given a --dump-stage target that already holds files     When main runs in --dum, Given a --dump-stage target that already holds files     When main runs in --dum, Given a --dump-stage target that already holds files     When main runs in --dum, Given a --dump-stage target that already holds files     When main runs in --dum, test_dump_stage_non_empty_target_returns_2_with_stderr_message()
-
-### Community 342 - "Community 342"
-Cohesion: 0.4
-Nodes (5): Given a hermetic source repo and a non-interactive io, under --tools=claude, Given a hermetic source repo and a non-interactive io, under --tools=claude, Given a hermetic source repo and a non-interactive io, under --tools=claude, Given a hermetic source repo and a non-interactive io, under --tools=claude, test_main_default_install_non_interactive_without_consent_returns_one()
-
-### Community 343 - "Community 343"
-Cohesion: 0.4
-Nodes (5): When main runs in --dump-stage mode     Then the dump path is printed to stdout, When main runs in --dump-stage mode     Then the dump path is printed to stdout, When main runs in --dump-stage mode     Then the dump path is printed to stdout, When main runs in --dump-stage mode     Then the dump path is printed to stdout, test_dump_stage_prints_dump_path_to_stdout()
-
-### Community 344 - "Community 344"
-Cohesion: 0.4
-Nodes (5): Given --tools=claude --yes --verbose against a hermetic repo     When main runs, Given --tools=claude --yes --verbose against a hermetic repo     When main runs, Given --tools=claude --yes --verbose against a hermetic repo     When main runs, Given --tools=claude --yes --verbose against a hermetic repo     When main runs, test_main_verbose_install_renders_per_tool_block_and_skipped_footer()
-
-### Community 345 - "Community 345"
-Cohesion: 0.4
-Nodes (5): Given --tools=claude --dry-run against a hermetic repo (a claude create)     Whe, Given --tools=claude --dry-run against a hermetic repo (a claude create)     Whe, Given --tools=claude --dry-run against a hermetic repo (a claude create)     Whe, Given --tools=claude --dry-run against a hermetic repo (a claude create)     Whe, test_main_dry_run_summary_reports_would_be_installs()
+Nodes (5): _ingest_items(), Fetch the three item sources; return new items + per-reviewer terminal verdicts., Fetch the three item sources; return new items + per-reviewer terminal verdicts., Fetch the three item sources; return new items + per-reviewer terminal verdicts., Fetch the three item sources; return new items + per-reviewer terminal verdicts.
 
 ### Community 346 - "Community 346"
 Cohesion: 0.4
-Nodes (5): When main(["--dump-stage=<p>", "--prune"]) is invoked     Then argparse exits 2, When main(["--dump-stage=<p>", "--prune"]) is invoked     Then argparse exits 2, When main(["--dump-stage=<p>", "--prune"]) is invoked     Then argparse exits 2, When main(["--dump-stage=<p>", "--prune"]) is invoked     Then argparse exits 2, test_dump_stage_and_prune_together_is_mutually_exclusive_error()
+Nodes (5): When main runs in --dump-stage mode     Then the dump path is printed to stdout, When main runs in --dump-stage mode     Then the dump path is printed to stdout, When main runs in --dump-stage mode     Then the dump path is printed to stdout, When main runs in --dump-stage mode     Then the dump path is printed to stdout, test_dump_stage_prints_dump_path_to_stdout()
 
 ### Community 347 - "Community 347"
 Cohesion: 0.4
-Nodes (5): Given a hermetic repo whose installer.toml retires '*/skills/ralf-it', a home, Given a hermetic repo, a home holding a prior receipt that records     ~/.claude, Given a hermetic repo whose installer.toml retires '*/skills/ralf-it', a home, Given a hermetic repo, a home holding a prior receipt that records     ~/.claude, test_main_prune_installs_then_prunes()
+Nodes (5): Given a hermetic source repo and a non-interactive io, under --tools=claude, Given a hermetic source repo and a non-interactive io, under --tools=claude, Given a hermetic source repo and a non-interactive io, under --tools=claude, Given a hermetic source repo and a non-interactive io, under --tools=claude, test_main_default_install_non_interactive_without_consent_returns_one()
 
 ### Community 348 - "Community 348"
 Cohesion: 0.4
-Nodes (5): Given a hermetic repo and a home whose prior receipt records ~/.claude/     skil, Given a hermetic repo and a home whose prior receipt records ~/.claude/     skil, Given a hermetic repo retiring '*/skills/ralf-it' and a home holding that     or, Given a hermetic repo retiring '*/skills/ralf-it' and a home holding that     or, test_main_prune_summary_reports_pruned_counts()
+Nodes (5): Given a hermetic repo whose installer.toml retires '*/skills/ralf-it', a home, Given a hermetic repo, a home holding a prior receipt that records     ~/.claude, Given a hermetic repo whose installer.toml retires '*/skills/ralf-it', a home, Given a hermetic repo, a home holding a prior receipt that records     ~/.claude, test_main_prune_installs_then_prunes()
+
+### Community 349 - "Community 349"
+Cohesion: 0.4
+Nodes (5): Given a --dump-stage target that already holds files     When main runs in --dum, Given a --dump-stage target that already holds files     When main runs in --dum, Given a --dump-stage target that already holds files     When main runs in --dum, Given a --dump-stage target that already holds files     When main runs in --dum, test_dump_stage_non_empty_target_returns_2_with_stderr_message()
+
+### Community 350 - "Community 350"
+Cohesion: 0.4
+Nodes (5): Given an empty home directory (no install signals) and a hermetic repo,     unde, Given an empty home directory (no install signals) and a hermetic repo,     unde, Given an empty home directory (no install signals) and a hermetic repo,     unde, Given an empty home directory (no install signals) and a hermetic repo,     unde, test_main_autodetect_empty_home_dry_run_selects_claude_returns_zero()
+
+### Community 351 - "Community 351"
+Cohesion: 0.4
+Nodes (5): Given --tools=claude --dry-run against a hermetic repo (a claude create)     Whe, Given --tools=claude --dry-run against a hermetic repo (a claude create)     Whe, Given --tools=claude --dry-run against a hermetic repo (a claude create)     Whe, Given --tools=claude --dry-run against a hermetic repo (a claude create)     Whe, test_main_dry_run_summary_reports_would_be_installs()
+
+### Community 352 - "Community 352"
+Cohesion: 0.4
+Nodes (5): Given --tools=claude --yes --verbose against a hermetic repo     When main runs, Given --tools=claude --yes --verbose against a hermetic repo     When main runs, Given --tools=claude --yes --verbose against a hermetic repo     When main runs, Given --tools=claude --yes --verbose against a hermetic repo     When main runs, test_main_verbose_install_renders_per_tool_block_and_skipped_footer()
 
 ### Community 353 - "Community 353"
 Cohesion: 0.4
-Nodes (5): _codex_home(), _final_message_text(), Blocking read-only codex `task` subprocess; returns the model's final     messag, Unwrap the model's final message from `task --json` output.      Verified agains, run_backend()
+Nodes (5): Given a home where the claude plan is already installed (a second run), under, Given a home where the claude plan is already installed (a second run), under, Given a home where the claude plan is already installed (a second run), under, Given a home where the claude plan is already installed (a second run), under, test_main_quiet_reinstall_renders_all_up_to_date()
 
 ### Community 354 - "Community 354"
-Cohesion: 0.4
-Nodes (5): Given a template that does not end in a newline     When flatten_template runs, Given a template that does not end in a newline     When flatten_template runs, Given an included file with no trailing newline, followed by a prose line     Wh, test_absent_trailing_newline_is_not_invented(), test_included_file_without_trailing_newline_glues_to_next_line()
-
-### Community 355 - "Community 355"
 Cohesion: 0.67
 Nodes (3): generate_html(), main(), Generate HTML report from loop output data. If auto_refresh is True, adds a meta
 
-### Community 356 - "Community 356"
+### Community 355 - "Community 355"
 Cohesion: 0.5
 Nodes (3): parse_skill_md(), Shared utilities for skill-creator scripts., Parse a SKILL.md file, returning (name, description, full_content).
-
-### Community 357 - "Community 357"
-Cohesion: 0.5
-Nodes (4): Sleep/poll until SHA changes or quiescence threshold trips., Block until the PR's phase moves, quiescence trips, or a signal cancels (§4.2)., Block until the PR's phase moves, quiescence trips, or a signal cancels (§4.2)., wait()
 
 ### Community 358 - "Community 358"
 Cohesion: 0.5
 Nodes (3): Shared gh-error -> tagged-error mappings for the lifecycle verbs (§3.6/§3.7).  A, Map a 404 on a required PR/repo read to terminal ``RUNTIME_GH_TERMINAL``., vanished_pr_terminal()
 
-### Community 360 - "Community 360"
-Cohesion: 0.5
-Nodes (3): Behavioural coverage for GeminiAdapter via the sync engine.  Drives the real Gem, Given a file in the repo's src/user/.gemini/ tree     When sync installs it for, test_gemini_adapter_installs_file_under_dot_gemini()
-
 ### Community 361 - "Community 361"
 Cohesion: 0.5
-Nodes (3): Behavioural coverage for OpenCodeAdapter via the sync engine.  Drives the real O, Given a file in the repo's src/user/.opencode/ tree     When sync installs it fo, test_opencode_adapter_installs_file_under_xdg_config_opencode()
+Nodes (4): Two dicts at the same key deep-merge: shared scalar keeps existing,     disjoint, Two dicts at the same key deep-merge: shared scalar keeps existing,     disjoint, Two dicts at the same key deep-merge: shared scalar keeps existing,     disjoint, test_nested_dicts_recurse_and_union_keys()
 
 ### Community 362 - "Community 362"
 Cohesion: 0.5
-Nodes (3): Behavioural coverage for CodexAdapter via the sync engine.  Drives the real Code, Given a file in the repo's src/user/.codex/ tree     When sync installs it for t, test_codex_adapter_installs_file_under_dot_codex()
+Nodes (4): The merge parses BOTH sides; a malformed INCOMING (existing good) is     equally, The merge parses BOTH sides; a malformed INCOMING (existing good) is     equally, The merge parses BOTH sides; a malformed INCOMING (existing good) is     equally, test_incoming_side_unparseable_raises_same_collision_error()
 
 ### Community 363 - "Community 363"
 Cohesion: 0.5
-Nodes (4): Restore a lost exec bit on a hash-equal dest without a full rewrite.      Fires, Restore a lost exec bit on a hash-equal dest without a full rewrite.     Route-s, Restore a lost exec bit on a hash-equal dest without a full rewrite.      Fires, _restore_exec_bit()
+Nodes (3): Behavioural coverage for ClaudeAdapter via the B.2 sync engine.  Drives the *rea, Given a file in the repo's src/user/.claude/ tree     When sync installs it for, test_claude_adapter_installs_file_under_dot_claude()
 
 ### Community 364 - "Community 364"
 Cohesion: 0.5
-Nodes (4): _ensure_parent_dir(), Validate ``target``'s parent chain and, unless ``dry_run``, create it.      Rais, Validate ``target``'s parent chain and, unless ``dry_run``, create it.      Rais, Validate ``target``'s parent chain and, unless ``dry_run``, create it.      Rais
+Nodes (4): Raw AGENTS.md / CLAUDE.md at the tool root (in-repo dev docs) are not     *.md.t, Raw AGENTS.md / CLAUDE.md at the tool root (in-repo dev docs) are not     *.md.t, Raw AGENTS.md / CLAUDE.md at the tool root (in-repo dev docs) are not     *.md.t, test_stage_templates_ignores_raw_markdown()
 
 ### Community 365 - "Community 365"
 Cohesion: 0.5
-Nodes (4): Preview the would-be write under ``dry_run`` and tally it as a create,     updat, Preview the would-be write under ``dry_run`` and tally it as a create,     updat, Preview the would-be write under ``dry_run`` and tally it as a create,     updat, _record_write()
+Nodes (3): Scene assembler: estate nodes + fingerprints + Tier-2/3 facts → `Scene`.  Slice, Refuse any Tier-2/3 fact lacking provenance or citations (spec test item 8)., _validate_facts()
 
-### Community 368 - "Community 368"
+### Community 367 - "Community 367"
 Cohesion: 0.5
 Nodes (4): AGENT-PERSONA.md.template, INSTRUCTIONS.md.template, Shared README (src/user/.agents), USER-PERSONA.md.template
 
+### Community 371 - "Community 371"
+Cohesion: 0.67
+Nodes (3): Given a nested path whose filename ends in .template     When strip_template_suf, Given a nested path whose filename ends in .template     When strip_template_suf, test_directory_components_are_preserved()
+
 ## Knowledge Gaps
-- **3103 isolated node(s):** `BaseHTTPRequestHandler`, `Recursively find directories that contain an outputs/ subdirectory.`, `Build a run dict with prompt, outputs, and grading data.`, `Read a file and return an embedded representation.`, `Load previous iteration's feedback and outputs.      Returns a map of run_id ->` (+3098 more)
+- **3129 isolated node(s):** `BaseHTTPRequestHandler`, `Recursively find directories that contain an outputs/ subdirectory.`, `Build a run dict with prompt, outputs, and grading data.`, `Read a file and return an embedded representation.`, `Load previous iteration's feedback and outputs.      Returns a map of run_id ->` (+3124 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **59 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **63 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `ScriptedIO` connect `Community 27` to `Community 128`, `Community 3`, `Community 260`, `Community 264`, `Community 140`, `Community 141`, `Community 18`, `Community 275`, `Community 20`, `Community 156`, `Community 284`, `Community 33`, `Community 34`, `Community 168`, `Community 46`, `Community 52`, `Community 182`, `Community 55`, `Community 57`, `Community 189`, `Community 61`, `Community 195`, `Community 76`, `Community 80`, `Community 82`, `Community 340`, `Community 342`, `Community 88`, `Community 89`, `Community 90`, `Community 347`, `Community 344`, `Community 221`, `Community 348`, `Community 345`, `Community 354`, `Community 99`, `Community 360`, `Community 361`, `Community 362`, `Community 242`, `Community 118`, `Community 119`, `Community 124`?**
+- **Why does `ScriptedIO` connect `Community 28` to `Community 129`, `Community 259`, `Community 6`, `Community 8`, `Community 142`, `Community 15`, `Community 273`, `Community 22`, `Community 25`, `Community 32`, `Community 38`, `Community 40`, `Community 42`, `Community 45`, `Community 50`, `Community 53`, `Community 182`, `Community 188`, `Community 189`, `Community 190`, `Community 78`, `Community 206`, `Community 84`, `Community 347`, `Community 348`, `Community 93`, `Community 94`, `Community 350`, `Community 224`, `Community 353`, `Community 352`, `Community 351`, `Community 230`, `Community 102`, `Community 363`, `Community 107`, `Community 240`, `Community 113`, `Community 118`, `Community 120`?**
   _High betweenness centrality (0.133) - this node is a cross-community bridge._
-- **Why does `StrEnum` connect `Community 1` to `Community 320`, `Community 323`, `Community 58`, `Community 5`, `Community 167`, `Community 9`, `Community 45`, `Community 112`, `Community 81`, `Community 114`, `Community 51`, `Community 54`, `Community 22`, `Community 26`, `Community 29`?**
-  _High betweenness centrality (0.131) - this node is a cross-community bridge._
-- **Why does `WorkError` connect `Community 29` to `Community 2`, `Community 147`, `Community 22`, `Community 23`, `Community 283`, `Community 158`, `Community 32`, `Community 293`, `Community 167`, `Community 68`, `Community 70`, `Community 73`, `Community 75`, `Community 204`, `Community 77`, `Community 84`, `Community 94`, `Community 110`, `Community 249`, `Community 251`?**
-  _High betweenness centrality (0.088) - this node is a cross-community bridge._
-- **Are the 307 inferred relationships involving `ScriptedIO` (e.g. with `test_retired_allowlisted_cli_uninstalled_with_consent()` and `test_declined_uninstall_retains_entry()`) actually correct?**
-  _`ScriptedIO` has 307 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 193 inferred relationships involving `ScriptedStep` (e.g. with `_EdgeFailingBackend` and `_GetFailingBackend`) actually correct?**
+- **Why does `StrEnum` connect `Community 1` to `Community 2`, `Community 323`, `Community 324`, `Community 133`, `Community 71`, `Community 12`, `Community 109`, `Community 46`, `Community 18`, `Community 211`, `Community 52`, `Community 20`, `Community 26`?**
+  _High betweenness centrality (0.122) - this node is a cross-community bridge._
+- **Why does `PRRef` connect `Community 3` to `Community 1`, `Community 2`, `Community 131`, `Community 4`, `Community 265`, `Community 10`, `Community 267`, `Community 12`, `Community 144`, `Community 19`, `Community 277`, `Community 23`, `Community 31`, `Community 161`, `Community 34`, `Community 172`, `Community 54`, `Community 184`, `Community 185`, `Community 186`, `Community 59`, `Community 61`, `Community 72`, `Community 79`, `Community 211`, `Community 90`, `Community 95`, `Community 228`, `Community 357`, `Community 116`, `Community 121`, `Community 123`, `Community 127`?**
+  _High betweenness centrality (0.064) - this node is a cross-community bridge._
+- **Are the 317 inferred relationships involving `ScriptedIO` (e.g. with `test_retired_allowlisted_cli_uninstalled_with_consent()` and `test_declined_uninstall_retains_entry()`) actually correct?**
+  _`ScriptedIO` has 317 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 193 inferred relationships involving `ScriptedStep` (e.g. with `test_config_flag_reaches_the_loader_verbatim()` and `test_label_add_sends_one_bd_call_per_label_in_order()`) actually correct?**
   _`ScriptedStep` has 193 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 183 inferred relationships involving `ScriptedBdRunner` (e.g. with `_EdgeFailingBackend` and `_GetFailingBackend`) actually correct?**
+- **Are the 183 inferred relationships involving `ScriptedBdRunner` (e.g. with `run_cli()` and `test_label_add_sends_one_bd_call_per_label_in_order()`) actually correct?**
   _`ScriptedBdRunner` has 183 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 173 inferred relationships involving `PRRef` (e.g. with `_Clock` and `_Rand`) actually correct?**
+- **Are the 173 inferred relationships involving `PRRef` (e.g. with `pr_ref()` and `_state()`) actually correct?**
   _`PRRef` has 173 INFERRED edges - model-reasoned connections that need verification._
