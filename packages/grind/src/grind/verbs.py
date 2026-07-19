@@ -64,14 +64,24 @@ def _entity_delta(before: State, after: State, event: RawEvent) -> JsonValue:
     return None
 
 
-def _new_anomaly(before: State, after_check: State) -> AnomalyRecord | None:
+def _new_anomaly(before: State, after: State) -> AnomalyRecord | None:
     """The single anomaly (if any) the just-appended event produced, isolated
-    by diffing two pure in-memory folds over `existing_events` vs.
-    `existing_events + [event]` -- `fold` is deterministic and never revisits
-    earlier events, so any new tail entries are attributable to this event
-    alone (at most one: every fold handler calls `_anomaly` at most once)."""
-    new_anomalies = after_check.anomalies[len(before.anomalies) :]
+    by diffing the pre-append fold against the post-append fold -- `fold` is
+    deterministic and never revisits earlier events, so any new tail entries
+    are attributable to this event alone (at most one: every fold handler
+    calls `_anomaly` at most once)."""
+    new_anomalies = after.anomalies[len(before.anomalies) :]
     return new_anomalies[0] if new_anomalies else None
+
+
+def _append_and_persist(dir_: Path, event: RawEvent) -> State:
+    """The one write-then-refold sequence every appending verb shares: append,
+    refold from the persisted log (never from memory -- state.json must
+    reflect what disk actually holds), rewrite state.json."""
+    append_event(dir_, event)
+    state = fold_dir(dir_)
+    write_state(dir_, full_state_json(state))
+    return state
 
 
 def cmd_create(dir_: Path, seed: RawEvent, *, now: Clock) -> dict[str, JsonValue]:
@@ -84,9 +94,7 @@ def cmd_create(dir_: Path, seed: RawEvent, *, now: Clock) -> dict[str, JsonValue
     _validate_or_raise("grind_created", seed)
 
     event: RawEvent = {"ts": _iso(now()), "type": "grind_created", **seed}
-    append_event(dir_, event)
-    state = fold_dir(dir_)
-    write_state(dir_, full_state_json(state))
+    state = _append_and_persist(dir_, event)
     return {"ok": True, "state_summary": summarize(state)}
 
 
@@ -94,21 +102,16 @@ def cmd_log(dir_: Path, event_type: str, payload: RawEvent, *, now: Clock) -> di
     """`grind log <type> --json '<payload>'` -- returns the emit-back envelope."""
     _validate_or_raise(event_type, payload)
 
-    existing_events = load_events(dir_)
-    before_state = fold(existing_events)
+    before_state = fold(load_events(dir_))
     event: RawEvent = {"ts": _iso(now()), "type": event_type, **payload}
-    check_state = fold([*existing_events, event])
+    after_state = _append_and_persist(dir_, event)
 
-    append_event(dir_, event)
-    after_state = fold_dir(dir_)
-    write_state(dir_, full_state_json(after_state))
-
-    anomaly = _new_anomaly(before_state, check_state)
+    anomaly = _new_anomaly(before_state, after_state)
     return {
         "ok": True,
         "applied": anomaly is None,
         "anomaly": anomaly_json(anomaly),
-        "delta": _entity_delta(before_state, check_state, event),
+        "delta": _entity_delta(before_state, after_state, event),
         # The conditions engine is a sibling bead (spec §"Emit-back"); this
         # verb never computes orchestration facts itself.
         "conditions": [],
@@ -128,7 +131,5 @@ def cmd_finish(dir_: Path, summary: str, *, now: Clock) -> dict[str, JsonValue]:
     _validate_or_raise("grind_finished", {"summary": summary})
 
     event: RawEvent = {"ts": _iso(now()), "type": "grind_finished", "summary": summary}
-    append_event(dir_, event)
-    state = fold_dir(dir_)
-    write_state(dir_, full_state_json(state))
+    state = _append_and_persist(dir_, event)
     return {"ok": True, "state_summary": summarize(state)}
