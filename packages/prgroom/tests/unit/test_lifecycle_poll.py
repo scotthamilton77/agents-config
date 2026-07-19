@@ -1584,6 +1584,88 @@ def test_issue_comment_activity_prevents_a_spurious_decline() -> None:
     assert state.reviewers["copilot"].declined_reason is None
 
 
+def test_timeout_no_start_decline_converts_to_withdrawn_on_observed_absence() -> None:
+    # A timeout-no-start decline never engaged, so GitHub kept it in requested_reviewers
+    # continuously. When it goes absent (operator pulled the request), that absence is a
+    # genuine withdrawal: the retained timeout reason is restamped to request-withdrawn so
+    # a later re-add can reopen the gate. Status stays DECLINED — the gate is unaffected.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("timeout-no-start"),
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.DECLINED
+    assert copilot.declined_reason == "request-withdrawn"
+    assert copilot.declined_at == _T0
+
+
+def test_timeout_no_start_decline_reactivates_after_absence_then_re_add() -> None:
+    # The full cycle the fix restores: timeout-no-start decline → absence poll converts
+    # the reason → a subsequent re-add poll reaches the reactivation branch and reopens
+    # the reviewer as REQUESTED (so the gate no longer spuriously satisfies).
+    start = _state(
+        phase=PRPhase.QUIESCED,
+        last_poll_sha="same",
+        reviewers=_declined("timeout-no-start"),
+    )
+    after_absence = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    after_readd = poll_pr(
+        after_absence,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = after_readd.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REQUESTED
+    assert copilot.declined_reason is None
+    assert copilot.declined_at is None
+
+
+def test_timeout_stalled_decline_is_not_converted_on_absence() -> None:
+    # Negative control: a timeout-stalled decline engaged (last_review_at set), so GitHub
+    # already dropped it and its absence is the ordinary post-review shape, NOT a
+    # withdrawal. Converting it would mislabel the reason and silently strip its
+    # push-driven re-ask (reviewer_needs_refresh). Its reason must survive untouched.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.DECLINED,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=_T0 - timedelta(hours=1),
+            declined_at=_T0 - timedelta(minutes=30),
+            declined_reason="timeout-stalled",
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.DECLINED
+    assert copilot.declined_reason == "timeout-stalled"
+
+
 def test_terminal_reviewer_is_not_withdrawn() -> None:
     # A reviewer who already delivered a verdict is not re-declared withdrawn just
     # because GitHub stopped listing their now-resolved request.

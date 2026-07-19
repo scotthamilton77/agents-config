@@ -442,7 +442,39 @@ def _reconcile_reviewers(
             reviewer.declined_at = now
             reviewer.declined_reason = WITHDRAWN_REASON
             changed = True
+        elif _timeout_decline_now_withdrawn(reviewer):
+            # A timeout-no-start decline is an in-memory mutation only — GitHub kept the
+            # pending request, so the login stayed CONTINUOUSLY listed in
+            # requested_reviewers until this poll. A reviewer that never engaged
+            # (last_review_at is None) can leave that array ONLY by an operator pulling
+            # the request, so this observed absence IS the withdrawal signal. Restamp the
+            # retained timeout reason to request-withdrawn — status stays DECLINED, so the
+            # reviewer gate is unaffected — so a later re-add reaches the reactivation
+            # branch above and reopens the gate. A stalled decline (last_review_at set) is
+            # deliberately left alone: it engaged, so GitHub already dropped it and its
+            # absence is the ordinary post-review shape, not a withdrawal; it keeps its
+            # push-driven re-ask via reviewer_needs_refresh.
+            reviewer.declined_at = now
+            reviewer.declined_reason = WITHDRAWN_REASON
+            changed = True
     return changed
+
+
+def _timeout_decline_now_withdrawn(reviewer: ReviewerState) -> bool:
+    """True iff a never-engaged timeout decline's absence is a genuine withdrawal (§2.1.2).
+
+    Gates the decline-pass restamp: a DECLINED reviewer carrying a non-withdrawn reason
+    (a ``timeout-no-start``) that never produced any review (``last_review_at is None``).
+    Such a reviewer was continuously listed in ``requested_reviewers`` until now, so its
+    absence this poll can only be an operator pulling the request. Excludes an
+    already-withdrawn reviewer (idempotent across polls) and a stalled decline
+    (``last_review_at`` set), whose absence is the ordinary post-review shape.
+    """
+    return (
+        reviewer.status is ReviewerStatus.DECLINED
+        and reviewer.declined_reason != WITHDRAWN_REASON
+        and reviewer.last_review_at is None
+    )
 
 
 def _terminal_review_verdicts(raw_reviews: Any, *, now: datetime) -> dict[str, datetime]:
