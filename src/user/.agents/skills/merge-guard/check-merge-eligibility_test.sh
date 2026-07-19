@@ -1141,10 +1141,13 @@ reacts_untrusted=$(jq -n --argjson a "$(mk_reaction 'evil-bot[bot]' '+1' "$PLUS1
 out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts_untrusted" FIXTURE_COMMIT="$COMMIT_FIXTURE")
 assert "+1 from untrusted identity → false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
 
-# +1 whose user.type is not "Bot" → false
+# +1 from an allowlisted login whose user.type is "User" → still true. GitHub
+# reports "User" for the live chatgpt-codex-connector[bot] on this endpoint
+# (verified 2026-07-19); the login allowlist is the trust boundary, not type.
 reacts_nonbot=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "$PLUS1_TS_OK" User)" '[$a]')
 out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts_nonbot" FIXTURE_COMMIT="$COMMIT_FIXTURE")
-assert "+1 from a non-Bot user.type → false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+assert "+1 from allowlisted login with user.type=User still recognized (field-verified Codex behavior)" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = true ]"
 
 # eyes present from a DIFFERENT allowlisted identity than the +1's → still blocks
 BOT_POLICY_2=$(jq -c '.bot_reviewers = ["trusted-bot[bot]", "second-bot[bot]"]' <<<"$BASE_POLICY")

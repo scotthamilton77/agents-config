@@ -167,6 +167,12 @@ review_by=$(jq '.by' <<<"$review_fact")
 # from any allowlisted identity (review still in flight); the +1 post-dates
 # last_head_change (head commit's committer date, or a later force-push
 # timeline event); and the head, re-read AFTER these fetches, hasn't moved.
+# Identity is the exact-login allowlist match alone — same trust boundary as
+# the review path above, which never consults .user.type either. GitHub's
+# reported user.type for connector-style bot accounts is unreliable: the live
+# chatgpt-codex-connector[bot] reports "User" on issues/{n}/reactions, not
+# "Bot" (observed 2026-07-19), so gating on it would reject every real
+# clean-pass this fact exists to recognize.
 REACTIONS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/reactions?per_page=100" --paginate | jq -s 'add // []') || {
     echo "Error: failed to fetch issue reactions" >&2; exit 3; }
 TIMELINE=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/timeline?per_page=100" --paginate | jq -s 'add // []') || {
@@ -193,8 +199,7 @@ reaction_fact=$(jq -n \
        elif ($fp_epochs | length) == 0 then $committer_epoch
        else ([$committer_epoch] + $fp_epochs | max) end) as $last_head_change
     | ([ $reactions[] | select(.content == "+1")
-         | select(.user.login as $l | ($trusted | index($l)) != null)
-         | select(.user.type == "Bot") ]
+         | select(.user.login as $l | ($trusted | index($l)) != null) ]
        | sort_by(.created_at) | last) as $plus1
     | ([ $reactions[] | select(.content == "eyes")
          | select(.user.login as $l | ($trusted | index($l)) != null) ] | length > 0) as $eyes_present
