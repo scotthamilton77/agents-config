@@ -1,11 +1,12 @@
-"""Graphify EXTRACTED-dependency centrality axis (spec §6.2, plan §3.6).
+"""Graphify two-tier dependency centrality axis (spec §6.2, plan §3.6).
 
 Fixtures use the real `directed: false` node-link shape graphify emits, with
 mixed `confidence` values, so both the confidence filter and the
 `Graph`-vs-`DiGraph` trap are exercised against ground truth, not a
 convenience shape. The tests pin the *invariants* the spec cares about
-(Tier-1 determinism, intra-file exclusion, head-graph projection, fail-soft
-optional-dependency behavior, relation filtering) — not a specific score.
+(two-tier confidence acceptance with per-edge provenance, intra-file
+exclusion, head-graph projection, fail-soft optional-dependency behavior,
+relation filtering) — not a specific score.
 """
 
 from __future__ import annotations
@@ -54,11 +55,12 @@ def _write_graph(tmp_path: Path, payload: dict[str, Any]) -> Path:
     return graph_path
 
 
-def test_only_extracted_dependency_edges_contribute_an_inferred_only_hub_scores_zero(
+def test_extracted_and_inferred_dependency_edges_both_contribute_in_degree(
     tmp_path: Path,
 ) -> None:
-    # hub.py has one incoming EXTRACTED edge and one incoming INFERRED edge from
-    # a different file; only the EXTRACTED edge may count toward its in-degree.
+    # hub.py has one incoming EXTRACTED edge and inferred_only_hub.py has one
+    # incoming INFERRED edge from a different file; both tiers now count
+    # toward in-degree on the load-bearing axis.
     payload = _graph_json(
         built_at_commit=HEAD_OID,
         nodes=[
@@ -78,10 +80,24 @@ def test_only_extracted_dependency_edges_contribute_an_inferred_only_hub_scores_
 
     assert axis.is_available
     assert axis.scores is not None
-    assert axis.scores["hub.py"] == 1.0  # its only qualifying in-edge is EXTRACTED
-    # An INFERRED-only hub never accumulates in-degree from that edge — it is
-    # either absent from the scored map or explicitly zero.
-    assert axis.scores.get("inferred_only_hub.py", 0.0) == 0.0
+    assert axis.scores["hub.py"] == 1.0
+    assert axis.scores["inferred_only_hub.py"] == 1.0
+
+
+def test_unknown_confidence_value_does_not_contribute(tmp_path: Path) -> None:
+    # Neither EXTRACTED nor INFERRED — some other/unrecognized confidence tag
+    # must still be dropped, same as before the two-tier acceptance.
+    payload = _graph_json(
+        built_at_commit=HEAD_OID,
+        nodes=[_node("s1", "caller.py"), _node("s2", "quarantined.py")],
+        links=[_link("s1", "s2", relation="calls", confidence="SPECULATIVE")],
+    )
+    graph_path = _write_graph(tmp_path, payload)
+
+    axis = centrality_axis(graph_path, HEAD_OID)
+
+    assert axis.scores is not None
+    assert axis.scores.get("quarantined.py", 0.0) == 0.0
 
 
 def test_intra_file_edges_are_excluded_and_would_flip_the_ranking(tmp_path: Path) -> None:
@@ -129,9 +145,9 @@ def test_naive_node_link_graph_construction_lacks_in_degree_locking_the_trap() -
         naive_graph.in_degree()  # type: ignore[operator]
 
 
-def test_edges_are_extracted_only_and_intra_file_excluded(tmp_path: Path) -> None:
-    # a.py -> b.py is a genuine cross-file EXTRACTED edge (must appear in edges).
-    # c.py -> d.py is INFERRED only (Tier-2, out of scope — must be excluded).
+def test_edges_carry_per_edge_provenance_and_intra_file_excluded(tmp_path: Path) -> None:
+    # a.py -> b.py is a genuine cross-file EXTRACTED edge (provenance "extracted").
+    # c.py -> d.py is a genuine cross-file INFERRED edge (provenance "inferred").
     # e1/e2 are two symbols in the SAME file (intra-file EXTRACTED edge, excluded).
     payload = _graph_json(
         built_at_commit=HEAD_OID,
@@ -154,7 +170,47 @@ def test_edges_are_extracted_only_and_intra_file_excluded(tmp_path: Path) -> Non
     axis = centrality_axis(graph_path, HEAD_OID)
 
     assert axis.is_available
-    assert axis.edges == (("a.py", "b.py"),)
+    assert axis.edges == (
+        ("a.py", "b.py", "extracted"),
+        ("c.py", "d.py", "inferred"),
+    )
+
+
+def test_same_pair_both_tiers_extracted_provenance_wins(tmp_path: Path) -> None:
+    # a.py -> b.py arises from both an INFERRED link (via a different symbol
+    # pair) and an EXTRACTED link — the stronger "extracted" claim must win,
+    # regardless of which link is encountered first in the graph.json list.
+    payload = _graph_json(
+        built_at_commit=HEAD_OID,
+        nodes=[
+            _node("a1", "a.py"),
+            _node("a2", "a.py"),
+            _node("b1", "b.py"),
+            _node("b2", "b.py"),
+        ],
+        links=[
+            _link("a1", "b1", relation="calls", confidence="INFERRED"),
+            _link("a2", "b2", relation="uses", confidence="EXTRACTED"),
+        ],
+    )
+    graph_path = _write_graph(tmp_path, payload)
+
+    axis = centrality_axis(graph_path, HEAD_OID)
+
+    assert axis.edges == (("a.py", "b.py", "extracted"),)
+
+    # Order reversed: EXTRACTED encountered first must not be downgraded by a
+    # later INFERRED link for the same file pair.
+    reversed_payload = _graph_json(
+        built_at_commit=HEAD_OID,
+        nodes=payload["nodes"],
+        links=list(reversed(payload["links"])),
+    )
+    reversed_graph_path = _write_graph(tmp_path / "reversed", reversed_payload)
+
+    reversed_axis = centrality_axis(reversed_graph_path, HEAD_OID)
+
+    assert reversed_axis.edges == (("a.py", "b.py", "extracted"),)
 
 
 def test_head_built_graph_scores_a_newly_added_files_incoming_edges(tmp_path: Path) -> None:
@@ -232,7 +288,7 @@ def test_allow_stale_accepts_mismatched_commit_and_surfaces_the_build_commit(
     assert axis.is_available
     assert axis.scores is not None
     assert axis.scores["b.py"] == 1.0  # scored exactly like the fresh path
-    assert axis.edges == (("a.py", "b.py"),)
+    assert axis.edges == (("a.py", "b.py", "extracted"),)
     assert axis.stale_built_at_commit == STALE_OID
 
 
@@ -419,8 +475,8 @@ def test_centrality_axis_unavailable_and_from_indegree_helpers() -> None:
     assert empty.is_available
     assert empty.scores == {}
 
-    edged = CentralityAxis.from_indegree({"a.py": 1}, edges=(("x.py", "a.py"),))
-    assert edged.edges == (("x.py", "a.py"),)
+    edged = CentralityAxis.from_indegree({"a.py": 1}, edges=(("x.py", "a.py", "extracted"),))
+    assert edged.edges == (("x.py", "a.py", "extracted"),)
 
     staled = CentralityAxis.from_indegree({"a.py": 1}, stale_built_at_commit="deadbeef")
     assert staled.stale_built_at_commit == "deadbeef"
