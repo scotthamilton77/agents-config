@@ -218,18 +218,23 @@ therefore can only be true through a channel that never coexists with
 findings-bearing review content, so using it to auto-clear a `review_summary`
 item never risks masking a genuine finding.
 
-A `review_summary` item — keyed by `review_id`, carrying `submitted_at` — is
-excluded from the untriaged set when it already holds a terminal disposition
-(unchanged), **or** when `reaction_clean` is true and the reaction's
-`created_at`, parsed to epoch seconds, is strictly greater than that item's
-`submitted_at`. No round counter or `review_id` tracking is needed: this is a
-timestamp-supersession check applied independently to every live
-`review_summary` item, so one fresh clean reaction retroactively clears every
-earlier round's unaddressed summary in a single evaluation. Same-second ties
-fail closed (no clear), matching the tie-break convention `last_head_change`
-already uses. This ratchet is orthogonal to the unresolved-review-thread gate
-— a distinct GitHub object handled by a separate mechanism — and never
-resolves or otherwise touches review threads.
+A `review_summary` item — keyed by `review_id`, carrying `submitted_at` and
+author — is excluded from the untriaged set when it already holds a terminal
+disposition (unchanged), **or** when its author is an allowlisted bot
+identity AND `reaction_clean` is true AND the reaction's `created_at`, parsed
+to epoch seconds, is strictly greater than that item's `submitted_at`. The
+author check is load-bearing, not incidental: `reaction_clean` is Codex's own
+attestation about Codex's own findings, never a blanket "this PR is fine"
+signal — without it, a human reviewer's untriaged review would clear the
+moment any later Codex clean pass landed, letting an autonomous merge slip
+past unaddressed human feedback. No round counter or `review_id` tracking is
+needed: this is a timestamp-supersession check applied independently to
+every live `review_summary` item, so one fresh clean reaction retroactively
+clears every earlier round's unaddressed *bot* summary in a single
+evaluation. Same-second ties fail closed (no clear), matching the tie-break
+convention `last_head_change` already uses. This ratchet is orthogonal to
+the unresolved-review-thread gate — a distinct GitHub object handled by a
+separate mechanism — and never resolves or otherwise touches review threads.
 
 ### Component 3 — handshake accounting and clean-pass completion
 

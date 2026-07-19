@@ -1400,6 +1400,18 @@ revs7=$(jq -n --argjson a "$r7" '[$a]')
 reacts7=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs7" FIXTURE_REACTIONS="$reacts7" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
 assert "reaction created_at exactly equal to review submitted_at → does not clear (strict <)" "[ \$rc -eq 1 ]"
+
+# (8) Codex review finding on PR #339: a human (non-allowlisted) reviewer's
+# untriaged review_summary must NEVER clear off a Codex clean reaction —
+# reaction_clean is Codex's own attestation about Codex's own findings, not
+# a blanket "the PR is fine" signal. A human review with no disposition,
+# submitted BEFORE a later Codex clean reaction, must still block.
+r8=$(mk_review_summary 409 "2026-01-01T01:00:00Z" "human-reviewer")
+revs8=$(jq -n --argjson a "$r8" '[$a]')
+reacts8=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs8" FIXTURE_REACTIONS="$reacts8" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "a human reviewer's untriaged review_summary is never cleared by Codex's reaction (author-scoped)" "[ \$rc -eq 1 ]"
+
 clean_invs
 
 exit $FAIL

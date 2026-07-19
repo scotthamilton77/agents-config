@@ -641,6 +641,7 @@ done < <(find "${HOME}/.claude/state/pr-inventory" -maxdepth 1 \
          -name "${OWNER}-${REPO}-${PR}-*.json.replyids" -print0 2>/dev/null)
 
 untriaged=$(jq -n \
+    --argjson trusted_reviewers "$BOT_REVIEWERS" \
     --argjson live_issue "$(jq \
         --argjson trusted "$BOT_REVIEWERS" --arg pr_author "$PR_AUTHOR" --arg auth_login "$AUTH_LOGIN" '
         # Component 2b: the re-review loop mints its own issue comments, and
@@ -698,7 +699,12 @@ untriaged=$(jq -n \
     # the reaction created_at. Strict inequality only, matching the
     # fail-closed same-second tie-break already used by the reaction-path
     # fact above (no round counter needed: one fresh reaction can clear
-    # every earlier stale item in a single pass).
+    # every earlier stale item in a single pass). Scoped to allowlisted-bot
+    # AUTHORS ONLY: reaction_clean is Codex'\''s own attestation about
+    # Codex'\''s own findings, never a human reviewer'\''s — without this, a
+    # human'\''s untriaged review would clear the moment ANY later Codex
+    # clean pass lands, letting an autonomous merge slip past unreviewed
+    # human feedback.
     def epoch: (try fromdateiso8601 catch null);
     ($reaction_created_at | if . == "" then null else epoch end) as $reaction_epoch
     | (($reaction_clean == true) and ($reaction_epoch != null)) as $reaction_supersedes
@@ -712,6 +718,7 @@ untriaged=$(jq -n \
     + ([ $live_summaries[]
          | select((.review_id as $i | $done_review | index($i)) == null)
          | select(($reaction_supersedes
+                   and (.author as $a | $trusted_reviewers | index($a)) != null
                    and (((.submitted_at // "") | epoch) as $se | $se != null and $se < $reaction_epoch)) | not)
          | "review_summary #\(.review_id) by \(.author)" ])')
 untriaged_count=$(jq 'length' <<<"$untriaged")
