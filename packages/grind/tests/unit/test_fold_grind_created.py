@@ -76,3 +76,18 @@ def test_second_grind_created_is_an_anomaly_leaving_board_unchanged() -> None:
     assert state.title == "Widget grind"
     assert len(state.anomalies) == 1
     assert state.anomalies[0].type == "grind_created"
+
+
+def test_grind_created_after_a_leading_non_first_event_leaves_board_unseeded() -> None:
+    # The taxonomy makes grind_created legal only as the log's *first* event.
+    # When an anomalous event precedes it, that leading event is flagged AND the
+    # late creation is flagged too -- the board is never seeded from an invalid
+    # log prefix.
+    leading = {"ts": "2026-07-19T00:00:00Z", "type": "item_started", "item": "ghost"}
+
+    state = fold([leading, _seed_event()])
+
+    assert state.seeded is False
+    assert state.title is None
+    assert state.items == {}
+    assert [a.type for a in state.anomalies] == ["item_started", "grind_created"]

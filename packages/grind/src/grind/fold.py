@@ -85,9 +85,9 @@ def _anomaly(state: State, evt: RawEvent, reason: str) -> None:
 
 @_handler("grind_created")
 def _h_grind_created(state: State, evt: RawEvent) -> None:
-    if state.seeded:
-        _anomaly(state, evt, "grind_created is legal only as the log's first event")
-        return
+    # The "legal only as the log's first event" invariant is enforced by `fold`
+    # before dispatch (only the loop knows log position); this handler only ever
+    # runs for a legal seeding event.
     state.seeded = True
     state.title = _str(evt, "title")
     state.repo = _str(evt, "repo")
@@ -574,9 +574,15 @@ def _h_attention_cleared(state: State, evt: RawEvent) -> None:
 def fold(events: Sequence[Mapping[str, JsonValue]]) -> State:
     """Refold from zero every time -- grind logs are hundreds of events, not millions."""
     state = State()
-    for raw in events:
+    for index, raw in enumerate(events):
         evt: RawEvent = dict(raw)
         etype = _str(evt, "type")
+        if etype == "grind_created" and index != 0:
+            # Legal only as the log's first event -- a later creation (even after
+            # a leading anomaly left the board unseeded) folds as an anomaly and
+            # never seeds the board.
+            _anomaly(state, evt, "grind_created is legal only as the log's first event")
+            continue
         if not state.seeded and etype != "grind_created":
             _anomaly(state, evt, "log must begin with grind_created")
             continue
