@@ -143,10 +143,7 @@ verify-entry-vizsuite:
 	uv --project $(VIZSUITE) run viz --help > /dev/null
 
 # ── grind (mirrors the ci-workcli block one-for-one; enforced via the
-# top-level `ci:` aggregate). No console-script entry point yet -- this bead
-# (wgclw.30.1) ships the event schema + FSM fold only; `grind` verbs land in
-# wgclw.30.2. verify-entry-grind checks the package imports cleanly instead of
-# invoking a CLI that doesn't exist yet. ──
+# top-level `ci:` aggregate). ──
 ci-grind: lint-grind format-check-grind typecheck-grind \
           cov-grind audit-grind verify-entry-grind
 
@@ -162,5 +159,8 @@ cov-grind:
 	cd $(GRIND) && uv run pytest --cov --cov-report=term-missing
 audit-grind:
 	cd $(GRIND) && uv sync --frozen && uv run pip-audit
+# verify-entry-grind asserts the console-script entry point resolves and the
+# CLI root parses (`grind --help` exits 0). Run via `uv --project` so the
+# grind venv where the entry point is installed is selected.
 verify-entry-grind:
-	uv --project $(GRIND) run python -c "import grind; import grind.fold; import grind.derive; import grind.log"
+	uv --project $(GRIND) run grind --help > /dev/null

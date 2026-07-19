@@ -50,6 +50,29 @@ def test_a_malformed_line_that_is_not_the_tail_raises() -> None:
         parse_event_log(text)
 
 
+def test_a_non_finite_constant_off_the_tail_is_treated_as_corruption() -> None:
+    # A non-finite constant is non-standard JSON, so a non-tail line carrying
+    # one is corruption -- same disposition as any other malformed non-tail
+    # line, not a silently-accepted value.
+    good = _line(seed_event())
+    text = '{"ts": "t", "type": "item_started", "item": "x", "n": NaN}\n' + good + "\n"
+
+    with pytest.raises(LogCorruptionError):
+        parse_event_log(text)
+
+
+def test_a_non_finite_constant_on_the_final_line_is_dropped_as_torn_tail() -> None:
+    # On the tail, a non-parsing line follows the torn-tail convention: dropped
+    # and flagged, never silently folded in.
+    good = _line(seed_event())
+    text = good + "\n" + '{"ts": "t", "type": "item_started", "item": "x", "n": Infinity}'
+
+    parsed = parse_event_log(text)
+
+    assert parsed.events == [seed_event()]
+    assert parsed.torn_tail is True
+
+
 def test_fold_log_records_a_torn_tail_as_an_attention_raising_observation() -> None:
     good = _line(seed_event())
     torn = '{"ts": "t", "type": "item_start'
