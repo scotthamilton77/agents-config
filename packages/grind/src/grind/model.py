@@ -175,6 +175,11 @@ class State:
     resume_checklist: tuple[str, ...] = ()
     finished: bool = False
     finish_summary: str | None = None
+    # The `ts` carried by the last event `fold` walked, whatever its outcome
+    # (applied or anomalous) -- the dashboard renderer's "as fresh as its log,
+    # never fresher" timestamp derives from this, never a wall clock (renderer
+    # spec, "Contract": "the `ts` of the last folded event").
+    last_event_ts: str | None = None
 
     lanes: dict[str, Lane] = field(default_factory=dict)
     items: dict[str, Item] = field(default_factory=dict)

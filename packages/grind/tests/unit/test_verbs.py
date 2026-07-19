@@ -1,4 +1,4 @@
-"""`grind.verbs`: the four command bodies over `grind.store` + `grind.fold`,
+"""`grind.verbs`: the five command bodies over `grind.store` + `grind.fold`,
 independent of argv/stdout wiring (that's `cli.py`, tested separately)."""
 
 from __future__ import annotations
@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from grind.envelope import GrindError
-from grind.store import events_path, load_events
-from grind.verbs import cmd_check, cmd_create, cmd_finish, cmd_log, cmd_status
+from grind.store import dashboard_path, events_path, load_events
+from grind.verbs import cmd_check, cmd_create, cmd_finish, cmd_log, cmd_render, cmd_status
 
 _NOW = lambda: datetime(2026, 7, 19, 12, 0, 0, tzinfo=UTC)  # noqa: E731
 
@@ -370,3 +370,64 @@ def test_finish_rejects_missing_summary(tmp_path: Path):
 
     with pytest.raises(GrindError):
         cmd_finish(tmp_path, "", now=_NOW)
+
+
+# -- dashboard rendering (create/log/finish re-render; render refolds only) ----
+
+
+def test_create_writes_dashboard_html(tmp_path: Path):
+    _seeded(tmp_path)
+
+    html = dashboard_path(tmp_path).read_text(encoding="utf-8")
+    assert "Widget grind" in html
+    assert "<!DOCTYPE html>" in html
+
+
+def test_log_re_renders_dashboard_html_after_append(tmp_path: Path):
+    _seeded(tmp_path)
+    before = dashboard_path(tmp_path).read_text(encoding="utf-8")
+
+    cmd_log(tmp_path, "item_started", {"item": "wgclw.1"}, now=_NOW)
+
+    after = dashboard_path(tmp_path).read_text(encoding="utf-8")
+    assert after != before  # the item's status changed, so the board changed
+    assert '"in-progress"' in after
+
+
+def test_finish_re_renders_dashboard_html(tmp_path: Path):
+    _seeded(tmp_path)
+
+    cmd_finish(tmp_path, "shipped it", now=_NOW)
+
+    html = dashboard_path(tmp_path).read_text(encoding="utf-8")
+    assert "Widget grind" in html
+
+
+def test_render_writes_dashboard_html_and_returns_its_path(tmp_path: Path):
+    _seeded(tmp_path)
+    dashboard_path(tmp_path).unlink()  # prove `render` (not `create`) produced it
+
+    result = cmd_render(tmp_path)
+
+    assert result == {"ok": True, "path": str(dashboard_path(tmp_path))}
+    assert dashboard_path(tmp_path).exists()
+
+
+def test_render_does_not_append_an_event_or_touch_state_json(tmp_path: Path):
+    _seeded(tmp_path)
+    events_before = load_events(tmp_path)
+    state_before = (tmp_path / "state.json").read_text(encoding="utf-8")
+
+    cmd_render(tmp_path)
+
+    assert load_events(tmp_path) == events_before
+    assert (tmp_path / "state.json").read_text(encoding="utf-8") == state_before
+
+
+def test_render_reflects_the_current_log_on_an_unseeded_directory(tmp_path: Path):
+    # `render` refolds from whatever is on disk -- an empty/unseeded dir still
+    # renders a (mostly empty) board rather than raising.
+    result = cmd_render(tmp_path)
+
+    assert result["ok"] is True
+    assert dashboard_path(tmp_path).exists()

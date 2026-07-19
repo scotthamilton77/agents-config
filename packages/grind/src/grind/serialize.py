@@ -141,6 +141,7 @@ def full_state_json(state: State) -> dict[str, JsonValue]:
         "resume_checklist": list(state.resume_checklist),
         "finished": state.finished,
         "finish_summary": state.finish_summary,
+        "last_event_ts": state.last_event_ts,
         "lanes": {lane_id: _lane_json(state, lane) for lane_id, lane in state.lanes.items()},
         "items": {item_id: _item_json(item) for item_id, item in state.items.items()},
         "attention": [_attention_json(a) for a in state.attention],

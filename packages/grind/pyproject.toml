@@ -61,6 +61,10 @@ select = [
 # NonFiniteJsonError's message names the exact rejected constant -- a
 # self-contained boundary-failure reason, same rationale as the modules above.
 "src/grind/jsonio.py" = ["TRY003"]
+# The dashboard's inline CSS/JS are data (a static template string), not
+# Python code to wrap -- their line lengths follow CSS/JS convention, not
+# this project's line-length rule.
+"src/grind/render.py" = ["E501"]
 
 [tool.ruff.format]
 docstring-code-format = true

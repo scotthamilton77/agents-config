@@ -22,7 +22,7 @@ from typing import NoReturn, TextIO
 from grind.envelope import GrindError
 from grind.jsonio import NonFiniteJsonError, loads
 from grind.model import JsonValue
-from grind.verbs import cmd_check, cmd_create, cmd_finish, cmd_log, cmd_status
+from grind.verbs import cmd_check, cmd_create, cmd_finish, cmd_log, cmd_render, cmd_status
 
 
 class _RaisingArgumentParser(ArgumentParser):
@@ -57,6 +57,8 @@ def _build_parser() -> _RaisingArgumentParser:
     check_parser = subparsers.add_parser("check", help="staleness probe (exits 1 when stale)")
     check_parser.add_argument("--max-age", default=None, dest="max_age", metavar="DUR")
     check_parser.add_argument("--dir", default=".", metavar="DIR")
+    render_parser = subparsers.add_parser("render", help="refold and re-render dashboard.html only")
+    render_parser.add_argument("--dir", default=".", metavar="DIR")
 
     finish_parser = subparsers.add_parser("finish", help="append grind_finished and final-fold")
     finish_parser.add_argument("--summary", required=True, metavar="TEXT")
@@ -105,11 +107,13 @@ def _dispatch(
 
     if args.verb == "check":
         return cmd_check(grind_dir, args.max_age, now=now)
+    if args.verb == "render":
+        return cmd_render(grind_dir)
 
     if args.verb == "finish":
         return cmd_finish(grind_dir, args.summary, now=now)
 
-    raise GrindError("no verb given; choose one of: create, log, status, check, finish")
+    raise GrindError("no verb given; choose one of: create, log, status, render, check, finish")
 
 
 def _default_now() -> datetime:
