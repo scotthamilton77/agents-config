@@ -96,6 +96,34 @@ def test_full_state_json_serializes_ledgers_and_parking_lot():
     assert parked["kind"] == "deferred"
 
 
+def test_full_state_json_serializes_observations_and_lessons():
+    events = [
+        seed_event(),
+        event("observation", level="WARN", message="repo quirk", lane="lane-a"),
+        event("observation", level="ERROR", message="CI is red", item="wgclw.1"),
+        event("observation", level="LESSON", message="watch for flaky test X"),
+    ]
+    state = fold(events)
+
+    full = full_state_json(state)
+
+    observations = full["observations"]
+    assert isinstance(observations, list)
+    assert [o["level"] for o in observations] == ["WARN", "ERROR", "LESSON"]  # type: ignore[index]
+    warn = observations[0]
+    assert isinstance(warn, dict)
+    assert warn["message"] == "repo quirk"
+    assert warn["lane"] == "lane-a"
+
+    lessons = full["lessons"]
+    assert isinstance(lessons, list)
+    assert len(lessons) == 1
+    lesson = lessons[0]
+    assert isinstance(lesson, dict)
+    assert lesson["message"] == "watch for flaky test X"
+    assert lesson["level"] == "LESSON"
+
+
 def test_full_state_json_is_json_serializable():
     import json
 

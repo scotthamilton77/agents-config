@@ -566,9 +566,19 @@ def _h_observation(state: State, evt: RawEvent) -> None:
     if level not in _OBSERVATION_LEVELS:
         _anomaly(state, evt, f"observation has invalid level {level!r}")
         return
-    message = _str(evt, "message") or ""
+    # `item`/`lane` are optional (a grind-wide note carries neither), but a
+    # supplied reference must resolve -- an unknown target folds as an
+    # accept-and-flag anomaly rather than attaching to a phantom entity, so the
+    # malformed observation surfaces in the anomaly/dashboard path.
     item_id = _str(evt, "item")
+    if item_id is not None and item_id not in state.items:
+        _anomaly(state, evt, f"unknown item {item_id!r}")
+        return
     lane_id = _str(evt, "lane")
+    if lane_id is not None and lane_id not in state.lanes:
+        _anomaly(state, evt, f"unknown lane {lane_id!r}")
+        return
+    message = _str(evt, "message") or ""
     obs = Observation(
         level=level,  # type: ignore[arg-type]  # validated above
         message=message,
