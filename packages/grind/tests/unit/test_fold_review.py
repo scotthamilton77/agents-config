@@ -171,4 +171,8 @@ def test_record_round_updates_non_adjacent_earlier_round_in_place() -> None:
 
     state = fold(events)
 
-    assert state.items["wgclw.1"].round_history == ((1, "z9"), (2, "a2"), (3, "a3"))
+    assert state.items["wgclw.1"].round_history == (
+        (1, "z9", "2026-07-19T00:05:00Z"),
+        (2, "a2", "2026-07-19T00:05:00Z"),
+        (3, "a3", "2026-07-19T00:05:00Z"),
+    )

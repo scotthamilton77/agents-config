@@ -145,3 +145,21 @@ def test_full_state_serializes_attention_ts():
     attention = payload["attention"]
     assert isinstance(attention, list)
     assert attention[0]["ts"] == "2026-07-19T00:05:00Z"
+
+
+def test_full_state_serializes_round_history():
+    events = [
+        seed_event(),
+        event("item_started", item="wgclw.1"),
+        event("pr_opened", item="wgclw.1", pr=1),
+        event("review_round", item="wgclw.1", kind="codex", round=1, head_sha="a1"),
+    ]
+    state = fold(events)
+
+    payload = full_state_json(state)
+
+    items = payload["items"]
+    assert isinstance(items, dict)
+    assert items["wgclw.1"]["round_history"] == [
+        {"round": 1, "head_sha": "a1", "ts": "2026-07-19T00:05:00Z"}
+    ]

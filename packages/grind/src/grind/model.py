@@ -94,12 +94,15 @@ class Item:
     review: ItemReview = field(default_factory=ItemReview)
     parked: ParkingEntry | None = None
     discovered: DiscoveredWork | None = None
-    # (round, head_sha) per distinct round, last-event-wins within a round --
-    # the raw material `conditions()` needs for `review_stalemate_risk`'s
-    # "dumb arithmetic" (spec: "the last N distinct round values ... all carry
-    # the SAME head_sha"). Recorded by the fold (a fact copied from events),
-    # never itself a computed condition.
-    round_history: tuple[tuple[int, str | None], ...] = ()
+    # (round, head_sha, ts) per distinct round, last-event-wins within a
+    # round -- the raw material `conditions()` needs for
+    # `review_stalemate_risk`'s "dumb arithmetic" (spec: "the last N distinct
+    # round values ... all carry the SAME head_sha"), with each round's
+    # authoritative event ts so the fired condition can report the window's
+    # start (`since`). Recorded by the fold (facts copied from events), never
+    # itself a computed condition; cleared by `pr_closed` -- the history
+    # belongs to one PR cycle, a new PR must not inherit an old stalemate.
+    round_history: tuple[tuple[int, str | None, str | None], ...] = ()
 
 
 @dataclass

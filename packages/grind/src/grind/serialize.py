@@ -71,6 +71,9 @@ def _item_json(item: Item) -> JsonValue:
         "review": _item_review_json(item.review),
         "parked": _parking_entry_json(item.parked),
         "discovered": _discovered_work_json(item.discovered),
+        "round_history": [
+            {"round": r, "head_sha": sha, "ts": ts} for r, sha, ts in item.round_history
+        ],
     }
 
 

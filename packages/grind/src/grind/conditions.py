@@ -220,7 +220,7 @@ def _review_stalemate_risk(state: State) -> list[Condition]:
         if len(history) < n:
             continue
         window = history[-n:]
-        shas = {sha for _, sha in window}
+        shas = {sha for _, sha, _ in window}
         if len(shas) != 1:
             continue
         head_sha = next(iter(shas))
@@ -232,6 +232,7 @@ def _review_stalemate_risk(state: State) -> list[Condition]:
                 "item": item.id,
                 "round": window[-1][0],
                 "head_sha": head_sha,
+                "since": window[0][2],
             }
         )
     return out

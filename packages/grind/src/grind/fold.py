@@ -285,7 +285,7 @@ def _h_pr_opened(state: State, evt: RawEvent) -> None:
 _REVIEWABLE = {"pr-open", "in-review", "waiting-human"}
 
 
-def _record_round(item: Item, round_: int | None, head_sha: str | None) -> None:
+def _record_round(item: Item, round_: int | None, head_sha: str | None, ts: str | None) -> None:
     """Append/replace this round's authoritative head_sha, last-event-wins
     within a round (spec `review_stalemate_risk`: "the LATEST event logged for
     that round"). A round history is thus always distinct rounds in order --
@@ -297,15 +297,15 @@ def _record_round(item: Item, round_: int | None, head_sha: str | None) -> None:
     that would inflate the distinct-round count `_review_stalemate_risk` reads."""
     if round_ is None:
         return
-    for i, (existing_round, _) in enumerate(item.round_history):
+    for i, (existing_round, _, _) in enumerate(item.round_history):
         if existing_round == round_:
             item.round_history = (
                 *item.round_history[:i],
-                (round_, head_sha),
+                (round_, head_sha, ts),
                 *item.round_history[i + 1 :],
             )
             return
-    item.round_history = (*item.round_history, (round_, head_sha))
+    item.round_history = (*item.round_history, (round_, head_sha, ts))
 
 
 @_handler("review_round")
@@ -323,7 +323,7 @@ def _h_review_round(state: State, evt: RawEvent) -> None:
     item.review.head_sha = _str(evt, "head_sha")
     item.review.detail = _str(evt, "detail")
     item.status = "in-review"
-    _record_round(item, new_round, item.review.head_sha)
+    _record_round(item, new_round, item.review.head_sha, _str(evt, "ts"))
 
 
 _OPEN_DISPOSITIONS = {"deferred", "escalated"}
@@ -374,7 +374,7 @@ def _h_review_verdict(state: State, evt: RawEvent) -> None:
     item.review.wont_fix_count = wont_fix_count
     item.review.stalemate = item.review.verdict == "stalemate"
     item.status = "in-review"
-    _record_round(item, new_round, item.review.head_sha)
+    _record_round(item, new_round, item.review.head_sha, _str(evt, "ts"))
 
 
 _PR_CLOSED_NEXT: set[ItemStatus] = {"in-progress", "queued"}
@@ -399,6 +399,9 @@ def _h_pr_closed(state: State, evt: RawEvent) -> None:
             item=item.id, pr=pr if isinstance(pr, int) else None, reason=reason, ts=_str(evt, "ts")
         )
     )
+    # the review cycle ends with its PR: a later pr_opened starts a fresh
+    # cycle that must not inherit the closed PR's stalemate history
+    item.round_history = ()
     if next_status == "parked":
         _park_item(state, item, kind=None, note=reason)
     else:

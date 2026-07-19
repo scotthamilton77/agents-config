@@ -243,6 +243,7 @@ def test_review_stalemate_risk_fires_after_n_distinct_rounds_same_sha() -> None:
         "item": "wgclw.1",
         "round": 3,
         "head_sha": "a1",
+        "since": "2026-07-19T00:05:00Z",
     }
 
 
@@ -293,7 +294,10 @@ def test_review_stalemate_risk_ignores_late_earlier_round_duplicate() -> None:
     ]
     state = fold(events)
 
-    assert state.items["wgclw.1"].round_history == ((1, "a1"), (2, "a1"))
+    assert state.items["wgclw.1"].round_history == (
+        (1, "a1", "2026-07-19T00:05:00Z"),
+        (2, "a1", "2026-07-19T00:05:00Z"),
+    )
 
     result = conditions(state, datetime(2026, 7, 19, 0, 5, 0, tzinfo=UTC))
 
@@ -513,3 +517,40 @@ def test_boolean_stalemate_threshold_falls_back_to_default() -> None:
     result = conditions(state, datetime(2026, 7, 19, 0, 5, 0, tzinfo=UTC))
 
     assert "review_stalemate_risk" not in _names(result)
+
+
+def test_stalemate_history_resets_when_pr_closes() -> None:
+    # pr_closed ends the review cycle: a fresh pr_opened must not inherit the
+    # closed PR's rounds and fire a stalemate before any new round occurs.
+    events = [
+        *_to_pr_open(),
+        event("review_round", item="wgclw.1", kind="codex", round=1, head_sha="a1"),
+        event("review_round", item="wgclw.1", kind="codex", round=2, head_sha="a1"),
+        event("review_round", item="wgclw.1", kind="codex", round=3, head_sha="a1"),
+        event("pr_closed", item="wgclw.1", pr=1, next="queued", reason="superseded"),
+        event("item_started", item="wgclw.1"),
+        event("pr_opened", item="wgclw.1", pr=2),
+    ]
+    state = fold(events)
+
+    assert state.items["wgclw.1"].round_history == ()
+
+    result = conditions(state, datetime(2026, 7, 19, 0, 5, 0, tzinfo=UTC))
+
+    assert "review_stalemate_risk" not in _names(result)
+
+
+def test_stalemate_risk_carries_window_start_as_since() -> None:
+    events = [
+        *_to_pr_open(),
+        event("review_round", item="wgclw.1", kind="codex", round=1, head_sha="a1"),
+        event("review_round", item="wgclw.1", kind="codex", round=2, head_sha="a1"),
+        event("review_round", item="wgclw.1", kind="codex", round=3, head_sha="a1"),
+    ]
+    state = fold(events)
+
+    risk = _by_name(
+        conditions(state, datetime(2026, 7, 19, 0, 5, 0, tzinfo=UTC)), "review_stalemate_risk"
+    )
+
+    assert risk[0]["since"] == "2026-07-19T00:05:00Z"
