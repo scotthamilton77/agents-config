@@ -471,6 +471,20 @@ def test_condition_names_are_never_imperative() -> None:
         assert first_word not in IMPERATIVE_VERBS, f"{name!r} reads as an imperative"
 
 
+def test_duration_threshold_over_int_digit_limit_falls_back_to_default() -> None:
+    # past ~4300 digits int() raises ValueError before timedelta's OverflowError;
+    # both are advisory-config noise, never an internal error
+    events = [
+        *_to_pr_open(),
+    ]
+    state = fold(events)
+    state.config = {"stale_item_after": "9" * 5000 + "d"}
+
+    result = conditions(state, datetime(2026, 7, 19, 0, 51, 0, tzinfo=UTC))
+
+    assert "stale_item" in _names(result)
+
+
 def test_duration_threshold_overflow_falls_back_to_default() -> None:
     # A regex-valid but astronomically large threshold overflows timedelta;
     # advisory config falls back to the default instead of erroring the verb.

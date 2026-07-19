@@ -73,9 +73,10 @@ def _duration(value: JsonValue, default_seconds: int) -> timedelta:
             amount, unit = match.groups()
             try:
                 return timedelta(seconds=int(amount) * _UNIT_SECONDS[unit])
-            except OverflowError:
-                # an absurdly large threshold is unparsable config too, not
-                # an internal error to surface on every log/status call
+            except (OverflowError, ValueError):
+                # an absurdly large threshold is unparsable config too, not an
+                # internal error to surface on every log/status call. ValueError:
+                # past ~4300 digits int() itself refuses before timedelta can
                 return timedelta(seconds=default_seconds)
     return timedelta(seconds=default_seconds)
 
