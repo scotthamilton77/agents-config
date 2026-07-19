@@ -22,10 +22,12 @@ from datetime import UTC, datetime
 import pytest
 
 from prgroom.lifecycle.predicates import (
+    WITHDRAWN_REASON,
     flip_stale_required_reviews,
     has_required_reviewers_to_refresh,
     new_lifecycle_gate_this_cycle,
     push_uploaded_commits_this_cycle,
+    reviewer_needs_refresh,
 )
 from prgroom.prsession.enums import PRPhase, ReviewerKind, ReviewerStatus
 from prgroom.prsession.pr_ref import PRRef
@@ -38,13 +40,19 @@ from prgroom.prsession.state import (
 _NOW = datetime(2026, 6, 9, 12, 0, 0, tzinfo=UTC)
 
 
-def _reviewer(status: ReviewerStatus, *, required: bool = True) -> ReviewerState:
+def _reviewer(
+    status: ReviewerStatus,
+    *,
+    required: bool = True,
+    declined_reason: str | None = None,
+) -> ReviewerState:
     return ReviewerState(
         identity="copilot",
         kind=ReviewerKind.BOT,
         status=status,
         required=required,
         last_request_at=_NOW,
+        declined_reason=declined_reason,
     )
 
 
@@ -85,6 +93,42 @@ def test_has_required_reviewers_to_refresh(
 
 def test_has_required_reviewers_to_refresh_false_when_no_reviewers() -> None:
     assert has_required_reviewers_to_refresh(_state()) is False
+
+
+# -- reviewer_needs_refresh ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("status", "reason", "expected"),
+    [
+        (ReviewerStatus.NOT_REQUESTED, None, True),
+        (ReviewerStatus.DECLINED, "timeout-no-start", True),
+        (ReviewerStatus.DECLINED, "timeout-stalled", True),
+        (ReviewerStatus.DECLINED, "user-declined", True),
+        (ReviewerStatus.DECLINED, None, True),
+        # The one exclusion: an operator (or GitHub) pulled the request. Re-asking
+        # would silently override that action.
+        (ReviewerStatus.DECLINED, WITHDRAWN_REASON, False),
+        (ReviewerStatus.REQUESTED, None, False),
+        (ReviewerStatus.IN_PROGRESS, None, False),
+        (ReviewerStatus.REVIEW_FOUND, None, False),
+    ],
+)
+def test_reviewer_needs_refresh(
+    status: ReviewerStatus, reason: str | None, expected: bool
+) -> None:
+    assert reviewer_needs_refresh(_reviewer(status, declined_reason=reason)) is expected
+
+
+def test_has_required_reviewers_to_refresh_skips_withdrawn_reviewer() -> None:
+    # A withdrawn reviewer must not re-arm the rereview step (spec behavior 16):
+    # rereview_pr would DELETE+POST them back onto the PR.
+    state = _state(
+        reviewers={
+            "copilot": _reviewer(ReviewerStatus.DECLINED, declined_reason=WITHDRAWN_REASON)
+        }
+    )
+    assert has_required_reviewers_to_refresh(state) is False
 
 
 # -- push_uploaded_commits_this_cycle --------------------------------------

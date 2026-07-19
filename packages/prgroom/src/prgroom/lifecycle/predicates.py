@@ -19,22 +19,42 @@ from __future__ import annotations
 from prgroom.prsession.enums import ReviewerStatus
 from prgroom.prsession.state import PRGroomingState, ReviewerState
 
-# Reviewer statuses that a post-push ``rereview`` re-requests (§3.4). After
-# ``flip_stale_required_reviews`` runs, ``review_found`` reviewers have moved into
-# ``not_requested``, so this set captures every required reviewer needing a fresh ask.
-_REFRESHABLE_STATUSES: frozenset[ReviewerStatus] = frozenset(
-    {ReviewerStatus.NOT_REQUESTED, ReviewerStatus.DECLINED}
-)
+# ``declined_reason`` recorded when GitHub itself stopped listing a pending request
+# (_poll's reconciliation, §2.1.3) — as opposed to prgroom's own timeout declines.
+# Public because ``_poll`` sets it and ``reviewer_needs_refresh`` reads it; one
+# spelling, one module.
+WITHDRAWN_REASON = "request-withdrawn"
+
+
+def reviewer_needs_refresh(reviewer: ReviewerState) -> bool:
+    """True iff ``reviewer`` should be re-asked for a fresh review (§3.4).
+
+    ``not_requested`` is a review a push invalidated, awaiting its re-ask. A
+    ``declined`` reviewer is re-asked too — a decline is prgroom's fallback for a
+    missing verdict, and a new push is a new chance to produce one — with exactly one
+    exception: a reviewer declined as ``request-withdrawn`` had their pending request
+    removed on GitHub's side, so re-requesting would silently override that action.
+
+    The single definition behind both ``has_required_reviewers_to_refresh`` (the
+    run-loop's rereview guard) and ``rereview_pr``'s own per-reviewer filter — they
+    MUST agree, or the guard admits a cycle the verb then no-ops.
+    """
+    if reviewer.status is ReviewerStatus.NOT_REQUESTED:
+        return True
+    return (
+        reviewer.status is ReviewerStatus.DECLINED and reviewer.declined_reason != WITHDRAWN_REASON
+    )
 
 
 def has_required_reviewers_to_refresh(state: PRGroomingState) -> bool:
-    """True iff ≥1 ``required`` reviewer is in ``{not_requested, declined}`` (§3.4).
+    """True iff ≥1 ``required`` reviewer needs a fresh review request (§3.4).
 
     Gates the post-push ``_rereview`` call. False when no required reviewers exist
-    (the PR has no Copilot/codeowner required reviewer set) or all are mid-pass
-    (``requested`` / ``in_progress``) or already engaged (``review_found``).
+    (the PR has no Copilot/codeowner required reviewer set), all are mid-pass
+    (``requested`` / ``in_progress``), already engaged (``review_found``), or were
+    deliberately withdrawn (see :func:`reviewer_needs_refresh`).
     """
-    return any(r.required and r.status in _REFRESHABLE_STATUSES for r in state.reviewers.values())
+    return any(r.required and reviewer_needs_refresh(r) for r in state.reviewers.values())
 
 
 def push_uploaded_commits_this_cycle(
