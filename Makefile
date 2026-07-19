@@ -7,14 +7,17 @@
         typecheck-workcli cov-workcli audit-workcli verify-entry-workcli \
         itest-workcli \
         ci-vizsuite test-vizsuite lint-vizsuite format-check-vizsuite \
-        typecheck-vizsuite cov-vizsuite audit-vizsuite verify-entry-vizsuite
+        typecheck-vizsuite cov-vizsuite audit-vizsuite verify-entry-vizsuite \
+        ci-grind test-grind lint-grind format-check-grind \
+        typecheck-grind cov-grind audit-grind verify-entry-grind
 
 INSTALLER := packages/installer
 PRGROOM := packages/prgroom
 WORKCLI := packages/workcli
 VIZSUITE := packages/vizsuite
+GRIND := packages/grind
 
-ci: ci-installer ci-prgroom ci-workcli ci-vizsuite lint-actions
+ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind lint-actions
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
               cov-installer audit-installer verify-entry-installer
@@ -138,3 +141,26 @@ audit-vizsuite:
 verify-entry-vizsuite:
 	uv --project $(VIZSUITE) run viz --protocol-version > /dev/null
 	uv --project $(VIZSUITE) run viz --help > /dev/null
+
+# ── grind (mirrors the ci-workcli block one-for-one; enforced via the
+# top-level `ci:` aggregate). No console-script entry point yet -- this bead
+# (wgclw.30.1) ships the event schema + FSM fold only; `grind` verbs land in
+# wgclw.30.2. verify-entry-grind checks the package imports cleanly instead of
+# invoking a CLI that doesn't exist yet. ──
+ci-grind: lint-grind format-check-grind typecheck-grind \
+          cov-grind audit-grind verify-entry-grind
+
+test-grind:
+	cd $(GRIND) && uv run pytest -q
+lint-grind:
+	cd $(GRIND) && uv run ruff check
+format-check-grind:
+	cd $(GRIND) && uv run ruff format --check
+typecheck-grind:
+	cd $(GRIND) && uv run mypy --strict src
+cov-grind:
+	cd $(GRIND) && uv run pytest --cov --cov-report=term-missing
+audit-grind:
+	cd $(GRIND) && uv sync --frozen && uv run pip-audit
+verify-entry-grind:
+	uv --project $(GRIND) run python -c "import grind; import grind.fold; import grind.derive; import grind.log"
