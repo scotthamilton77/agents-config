@@ -1,18 +1,70 @@
 #!/usr/bin/env bash
-# Grind PR watcher — an ACTIVITY DOORBELL, not a verdict.
+# Grind PR watcher — an ACTIVITY DOORBELL that also reports a PROVISIONAL CLASS.
 #
-# Wakes a parked lane when anything happens on its PR. It deliberately knows
-# NOTHING about approval signals, reviewer identity, or clean-pass phrasing:
-# reading verdicts belongs to the repo's PR-review skill, and a second copy of
-# that logic here would drift the first time a reviewer changes behavior.
+# Wakes a parked lane when anything happens on its PR, and labels the ring with
+# the SHAPE of that activity so the orchestrator does not have to disambiguate
+# it by hand every time. The class is a hint for routing, NEVER a verdict:
+# reading the actual verdict belongs to the repo's PR-review skill, and the lane
+# still consults that skill on every ring.
 #
-# This script answers exactly one question: has activity appeared on this PR
-# since I armed? On a ring, the orchestrator re-engages the owning lane, and
-# the LANE consults the review skill for what actually happened.
+# Two rules keep this from becoming the "clever watcher" that ghosts silently:
+#
+#   1. THE POLL LOOP STAYS DUMB. Detection is a plain count comparison, exactly
+#      as before. Classification runs ONCE, at ring time, on the way out.
+#   2. CLASSIFICATION CAN NEVER SUPPRESS A RING. Every failure path degrades to
+#      class=ACTIVITY and rings anyway. A missed ring costs a bounded wait; a
+#      silent watcher costs the whole lane.
+#
+# ── CLASSES, IN PRECEDENCE ORDER ────────────────────────────────────────────
+#
+#   FINDINGS   The reviewer wants changes. A new CHANGES_REQUESTED review, any
+#              new inline review comment, or a findings-marker comment.
+#   CLEAN      The reviewer signalled done-and-happy. A new APPROVED review, a
+#              `+1`/`rocket`/`hooray` reaction from a trusted reviewer, or a
+#              clean-marker comment.
+#   IN-FLIGHT  The reviewer started but has not concluded. An `eyes` reaction
+#              from a trusted reviewer.
+#   ACTIVITY   Something happened that none of the above describes — including
+#              every case where classification could not run.
+#
+# ── PRECEDENCE, AND WHY (this is the tie-breaking contract) ─────────────────
+#
+# Signals arrive out of order, collapse into one polling window, and contradict
+# each other. The class is therefore computed from PR STATE AT RING TIME, never
+# from the order events arrived in, and resolved by this fixed severity order:
+#
+#     FINDINGS  >  CLEAN  >  IN-FLIGHT  >  ACTIVITY
+#
+#   FINDINGS beats CLEAN because the costs are asymmetric. A false CLEAN can
+#   send an unaddressed finding toward a merge; a false FINDINGS costs one
+#   wasted lane check. When both are present — an approving review alongside a
+#   new inline comment — the lane must look at the comment.
+#
+#   CLEAN beats IN-FLIGHT because `eyes` is a START marker. A review that both
+#   started and finished inside one 60s window is finished; eyes->+1 nets to
+#   CLEAN, which is the exact sequence Codex produces on a fast clean pass.
+#
+#   MOST SEVERE WINS, NOT MOST RECENT. Several new reviews in one window
+#   resolve to the most severe among them. This is what makes out-of-order
+#   delivery harmless: no ordering assumption is ever made.
+#
+#   RE-ARMING RESETS EVERYTHING. A fresh watcher samples fresh baselines, so a
+#   class never carries across arms. There is no sticky state to go stale.
+#
+#   A CLASS IS NOT AUTHORIZATION. class=CLEAN is not approval, and never
+#   licenses a merge. Only `merge-guard` decides that.
 #
 # TEMPLATE — substitute before use:
-#   {{PR}}    PR number, e.g. 320
-#   {{REPO}}  owner/name, e.g. acme/widgets
+#   {{PR}}              PR number, e.g. 320
+#   {{REPO}}            owner/name, e.g. acme/widgets
+#   {{BOT_REVIEWERS}}   OPTIONAL comma-separated reviewer logins whose
+#                       reactions count as signal, e.g.
+#                       "chatgpt-codex-connector[bot],Copilot".
+#                       Leave empty to trust ANY actor's reactions.
+#   {{CLEAN_MARKER}}    OPTIONAL grep -E regex marking a clean-pass comment.
+#                       Empty disables the check.
+#   {{FINDINGS_MARKER}} OPTIONAL grep -E regex marking a findings comment.
+#                       Empty disables the check.
 #
 # LAUNCH DIRECTLY via run_in_background. NEVER nest this inside a wrapper
 # command with `&` — the wrapper exits immediately, the completion
@@ -25,6 +77,9 @@ set -uo pipefail
 
 PR="{{PR}}"
 REPO="{{REPO}}"
+BOT_REVIEWERS="{{BOT_REVIEWERS}}"
+CLEAN_MARKER="{{CLEAN_MARKER}}"
+FINDINGS_MARKER="{{FINDINGS_MARKER}}"
 
 INTERVAL_SECONDS=60
 TIMEOUT_SECONDS=1800   # 30 minutes
@@ -94,7 +149,160 @@ if [ -z "$BASE_REVIEWS" ] || [ -z "$BASE_COMMENTS" ] || [ -z "$BASE_PR_REACTIONS
 fi
 
 BASE_REACTIONS=$((BASE_PR_REACTIONS + BASE_RC_REACTIONS))
-echo "WATCH-ARMED pr=$PR reviews=$BASE_REVIEWS comments=$BASE_COMMENTS reactions=$BASE_REACTIONS"
+
+# --- Classification baselines (BEST-EFFORT) ---------------------------------
+# These feed the ring-time classifier only. Unlike the count baselines above, a
+# failure here is NOT fatal: it disables classification (every ring reports
+# class=ACTIVITY) while leaving detection fully intact. Losing the label is an
+# inconvenience; losing the doorbell is a dead lane.
+#
+# Each baseline is a high-water mark, so "new" means "id greater than the mark"
+# — no timestamps, no clock skew, no ordering assumptions.
+#
+# ── A FAILED BASELINE IS DANGEROUS, NOT MERELY MISSING ──────────────────────
+# These fetches obey the capture-check-parse rule documented for
+# `fetch_review_comment_reactions` above, and for a sharper reason. Piping `gh`
+# straight into `jq -s 'add // []' | ... max // 0` renders a FAILED call as the
+# string "0" — indistinguishable from a real empty PR. A zero baseline is not a
+# missing label; it makes every pre-existing review and comment read as NEW at
+# ring time, so a quiet PR gets classified a confident FINDINGS. That is worse
+# than no classification at all, because it is wrong rather than absent.
+#
+# So each fetch returns NON-ZERO on failure and the caller drops CLASSIFY_OK to
+# 0 — the only path to the documented safe degradation. Note the asymmetry with
+# the ring-time fetches in classify_ring(): there, a failed fetch yields
+# "nothing new", which lands on ACTIVITY and is already safe. Only the baseline
+# can fabricate a false positive, which is why only the baseline is guarded
+# this strictly.
+CLASSIFY_OK=1
+
+# Emits the highest id at `repos/$REPO/$1`, or NOTHING with a non-zero return
+# when the endpoint is unreadable. A successful fetch of an empty collection is
+# a legitimate "0" and must stay distinguishable from that failure.
+fetch_max_id() {
+  local json
+  json=$(gh api --paginate "repos/$REPO/$1" 2>/dev/null) || return 1
+  [ -n "$json" ] || return 1
+  jq -s '[ add[]?.id // empty ] | max // 0' <<<"$json" 2>/dev/null
+}
+
+# Reaction identities, not counts: "<login>:<content>" pairs. A reaction is
+# mutable, so the classifier compares SETS rather than high-water marks. An
+# empty set is a legitimate result (nobody has reacted), so failure is again
+# signalled by the return code, never by an empty string.
+fetch_reaction_set() {
+  local json
+  json=$(gh api --paginate "repos/$REPO/issues/$PR/reactions" 2>/dev/null) || return 1
+  [ -n "$json" ] || return 1
+  jq -s -r 'add // [] | [ .[] | "\(.user.login):\(.content)" ] | sort | unique | join(",")' \
+    <<<"$json" 2>/dev/null
+}
+
+BASE_MAX_REVIEW_ID=$(fetch_max_id "pulls/$PR/reviews")   || CLASSIFY_OK=0
+BASE_MAX_INLINE_ID=$(fetch_max_id "pulls/$PR/comments")  || CLASSIFY_OK=0
+BASE_MAX_ISSUE_ID=$(fetch_max_id "issues/$PR/comments")  || CLASSIFY_OK=0
+BASE_REACTION_SET=$(fetch_reaction_set)                  || CLASSIFY_OK=0
+
+# Second line of defence: `jq` itself can fail (malformed payload) after a
+# successful fetch, which yields an empty value with a zero return. Unlike the
+# check this replaces, this one is genuinely reachable.
+if [ -z "$BASE_MAX_REVIEW_ID" ] || [ -z "$BASE_MAX_INLINE_ID" ] \
+   || [ -z "$BASE_MAX_ISSUE_ID" ]; then
+  CLASSIFY_OK=0
+fi
+
+echo "WATCH-ARMED pr=$PR reviews=$BASE_REVIEWS comments=$BASE_COMMENTS reactions=$BASE_REACTIONS classify=$CLASSIFY_OK"
+
+# --- Ring-time classifier ---------------------------------------------------
+# Runs ONCE, after detection has already decided to ring. Emits exactly one of
+# FINDINGS / CLEAN / IN-FLIGHT / ACTIVITY on stdout, and CANNOT fail: every
+# error path falls through to ACTIVITY.
+#
+# `is_trusted <login>` decides whose reactions count. An empty BOT_REVIEWERS
+# trusts everyone — the permissive default, because a watcher that ignores an
+# unlisted reviewer's approval is the blind spot this classifier exists to
+# close. Matching is exact against a comma-separated list, so a login that
+# happens to contain another as a substring cannot be confused for it.
+is_trusted() {
+  [ -z "$BOT_REVIEWERS" ] && return 0
+  case ",$BOT_REVIEWERS," in (*",$1,"*) return 0 ;; esac
+  return 1
+}
+
+classify_ring() {
+  [ "$CLASSIFY_OK" -eq 1 ] || { echo "ACTIVITY"; return 0; }
+
+  local findings=0 clean=0 inflight=0
+
+  # New reviews since arm: state decides severity. A COMMENTED review is not
+  # itself a finding — its inline comments are, and those are counted below.
+  local reviews
+  reviews=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" 2>/dev/null \
+    | jq -s --argjson base "${BASE_MAX_REVIEW_ID:-0}" \
+        'add // [] | [ .[] | select((.id // 0) > $base) ]' 2>/dev/null)
+  review_state_count() {
+    jq -r --arg s "$1" '[ .[] | select(.state == $s) ] | length' <<<"$reviews" 2>/dev/null || echo 0
+  }
+  if [ -n "$reviews" ]; then
+    [ "$(review_state_count "CHANGES_REQUESTED")" -gt 0 ] && findings=1
+    [ "$(review_state_count "APPROVED")" -gt 0 ] && clean=1
+  fi
+
+  # Any new inline review comment is a finding. This is the single highest-
+  # value signal: it is how both Copilot and Codex actually raise defects.
+  local inline_new
+  inline_new=$(gh api --paginate "repos/$REPO/pulls/$PR/comments" 2>/dev/null \
+    | jq -s --argjson base "${BASE_MAX_INLINE_ID:-0}" \
+        'add // [] | [ .[] | select((.id // 0) > $base) ] | length' 2>/dev/null)
+  [ -n "$inline_new" ] && [ "$inline_new" -gt 0 ] && findings=1
+
+  # New issue comments, matched against the OPTIONAL markers. Marker matching
+  # is the one place this script reads prose, which is why both patterns are
+  # caller-supplied and default to disabled — a phrase hardcoded here would rot
+  # the first time a reviewer reworded its summary.
+  local issue_new
+  issue_new=$(gh api --paginate "repos/$REPO/issues/$PR/comments" 2>/dev/null \
+    | jq -s --argjson base "${BASE_MAX_ISSUE_ID:-0}" \
+        'add // [] | [ .[] | select((.id // 0) > $base) | .body // "" ] | join("\n")' 2>/dev/null)
+  if [ -n "$issue_new" ]; then
+    if [ -n "$FINDINGS_MARKER" ] && grep -qE "$FINDINGS_MARKER" <<<"$issue_new" 2>/dev/null; then
+      findings=1
+    fi
+    if [ -n "$CLEAN_MARKER" ] && grep -qE "$CLEAN_MARKER" <<<"$issue_new" 2>/dev/null; then
+      clean=1
+    fi
+  fi
+
+  # Reaction identities added since arm, from trusted reviewers only. A lone
+  # thumbs-up IS an approval in the reference run, and a watcher blind to it
+  # slept through to timeout — hence reactions are first-class here, not a
+  # footnote. Removals are ignored by the classifier (they still RANG, via the
+  # `-ne` count test in the poll loop); a withdrawn reaction is activity
+  # without being a verdict.
+  local now_set
+  now_set=$(gh api --paginate "repos/$REPO/issues/$PR/reactions" 2>/dev/null \
+    | jq -s -r 'add // [] | [ .[] | "\(.user.login):\(.content)" ] | sort | unique | .[]' 2>/dev/null)
+  if [ -n "$now_set" ]; then
+    while IFS= read -r pair; do
+      [ -n "$pair" ] || continue
+      case ",${BASE_REACTION_SET}," in (*",$pair,"*) continue ;; esac   # already present at arm
+      local login="${pair%%:*}" content="${pair##*:}"
+      is_trusted "$login" || continue
+      case "$content" in
+        +1|rocket|hooray) clean=1 ;;
+        eyes)             inflight=1 ;;
+      esac
+    done <<<"$now_set"
+  fi
+
+  # Fixed severity order. See the precedence contract in the header — this
+  # cascade IS that contract, and the two must be changed together.
+  if   [ "$findings" -eq 1 ]; then echo "FINDINGS"
+  elif [ "$clean"    -eq 1 ]; then echo "CLEAN"
+  elif [ "$inflight" -eq 1 ]; then echo "IN-FLIGHT"
+  else                             echo "ACTIVITY"
+  fi
+}
 
 # --- Poll loop --------------------------------------------------------------
 elapsed=0
@@ -136,8 +344,17 @@ while [ "$elapsed" -lt "$TIMEOUT_SECONDS" ]; do
   # that trade, the dumb total wins.
   if [ "$reviews" -gt "$BASE_REVIEWS" ] || [ "$comments" -gt "$BASE_COMMENTS" ] \
      || [ "$reactions" -ne "$BASE_REACTIONS" ]; then
-    echo "WATCH-RING pr=$PR t=${elapsed}s reviews=$reviews/$BASE_REVIEWS comments=$comments/$BASE_COMMENTS reactions=$reactions/$BASE_REACTIONS"
-    echo "DOORBELL ONLY — no verdict implied. Re-engage the owning lane; the lane reads the verdict via the PR-review skill."
+    # Classify AFTER the decision to ring, never before it. The ring is already
+    # guaranteed at this point, so no classifier failure can swallow it.
+    ring_class="$(classify_ring)"
+    echo "WATCH-RING pr=$PR t=${elapsed}s class=$ring_class reviews=$reviews/$BASE_REVIEWS comments=$comments/$BASE_COMMENTS reactions=$reactions/$BASE_REACTIONS"
+    case "$ring_class" in
+      FINDINGS)  echo "PROVISIONAL: the reviewer appears to want changes. Re-engage the lane to work them." ;;
+      CLEAN)     echo "PROVISIONAL: the reviewer appears done and satisfied. NOT approval and NOT merge authorization — the lane confirms via the review skill, and merge-guard rules on merging." ;;
+      IN-FLIGHT) echo "PROVISIONAL: a review appears to have STARTED but not concluded. Usually re-arm rather than re-engage the lane." ;;
+      ACTIVITY)  echo "PROVISIONAL: activity of an unrecognized shape (or classification unavailable). Treat as a bare doorbell." ;;
+    esac
+    echo "The class is a ROUTING HINT, never a verdict. The lane still consults the PR-review skill on every ring."
     exit 0
   fi
 
