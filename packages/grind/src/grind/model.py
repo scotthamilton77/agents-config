@@ -34,6 +34,10 @@ LaneStatus = ItemStatus | Literal["standing-down"]
 
 ParkKind = Literal["discovered-work", "human-gated", "later-wave", "deferred"]
 ObservationLevel = Literal["INFO", "WARN", "ERROR", "LESSON"]
+# The one auto-attention cause `item_resumed` is specified to clear. Other
+# auto-raised entries (anomaly, ERROR observation) carry `kind=None` so resume
+# leaves them standing.
+AttentionKind = Literal["waiting-human"]
 
 
 @dataclass
@@ -95,6 +99,7 @@ class AttentionEntry:
     item: str | None = None
     lane: str | None = None
     auto: bool = False  # raised by the fold itself (anomaly/waiting-human), not ROOT
+    kind: AttentionKind | None = None  # what raised it, when resume must clear only its own
 
 
 @dataclass

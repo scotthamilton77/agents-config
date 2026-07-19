@@ -411,7 +411,12 @@ def _h_item_waiting_human(state: State, evt: RawEvent) -> None:
     why = _str(evt, "why")
     item.status = "waiting-human"
     state.attention.append(
-        AttentionEntry(text=why or f"{item.id} is waiting on a human", item=item.id, auto=True)
+        AttentionEntry(
+            text=why or f"{item.id} is waiting on a human",
+            item=item.id,
+            auto=True,
+            kind="waiting-human",
+        )
     )
 
 
@@ -423,7 +428,13 @@ def _h_item_resumed(state: State, evt: RawEvent) -> None:
     if item.status != "waiting-human":
         _anomaly(state, evt, f"item_resumed illegal from status {item.status!r}")
         return
-    state.attention = [a for a in state.attention if not (a.auto and a.item == item.id)]
+    # Clear only the attention this item's item_waiting_human raised -- an
+    # unrelated ERROR/anomaly alert on the same item survives resume (spec:
+    # resume "clears the item's auto-raised attention entry", the waiting-human
+    # one, not every auto alert sharing the item).
+    state.attention = [
+        a for a in state.attention if not (a.kind == "waiting-human" and a.item == item.id)
+    ]
     # Derived-blocked takes precedence over resume.
     if _unresolved_edges(state, item):
         item.status = "blocked"

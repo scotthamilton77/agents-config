@@ -158,3 +158,23 @@ def test_item_resumed_with_no_unresolved_edges_returns_to_in_progress() -> None:
 
     assert state.items["wgclw.1"].status == "in-progress"
     assert not any(a.item == "wgclw.1" and a.auto for a in state.attention)
+
+
+def test_item_resumed_preserves_unrelated_error_attention_on_the_same_item() -> None:
+    # Resume clears only the waiting-human attention entry, not an unrelated
+    # ERROR observation's attention that happens to share the item (spec:
+    # item_resumed "clears the item's auto-raised attention entry" -- the one
+    # raised by item_waiting_human, not every auto alert for the item).
+    events = [
+        seed_event(),
+        event("item_started", item="wgclw.1"),
+        event("observation", level="ERROR", message="CI is red", item="wgclw.1"),
+        event("item_waiting_human", item="wgclw.1", why="need a decision"),
+        event("item_resumed", item="wgclw.1", ruling="proceed"),
+    ]
+
+    state = fold(events)
+
+    texts = [a.text for a in state.attention if a.item == "wgclw.1"]
+    assert "CI is red" in texts
+    assert "need a decision" not in texts
