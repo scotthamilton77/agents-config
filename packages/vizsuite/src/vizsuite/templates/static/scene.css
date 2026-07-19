@@ -642,6 +642,9 @@ body {
   position: absolute;
   top: 0.5rem;
   right: 0.75rem;
+  /* Ride above the full-size sonar zoom viewport (tree-order paints it
+     later); same precedent as .viz-constellation-reset. */
+  z-index: 2;
 }
 /* ---- Round-3: the overlay-hosted sonar owns its own zoom/pan
    (views/sonar.js wires d3.zoom on .viz-sonar-viewport with a
@@ -671,8 +674,10 @@ body {
   cursor: grab;
 }
 /* Inside the zoomable viewport the stage is transform-positioned by the
-   zoom handler (translate + scale from the top-left origin); the base
-   centered-margin rule below still serves any non-zoom fallback mount. */
+   zoom handler (translate + scale from the top-left origin). The stage is
+   always built inside this viewport, so this rule always applies; if d3 is
+   somehow absent (wireSonarZoom's guard), an oversized stage clips at the
+   viewport edge — accepted, since d3 is vendored inline. */
 .viz-sonar-viewport .viz-sonar-stage {
   position: absolute;
   left: 0;

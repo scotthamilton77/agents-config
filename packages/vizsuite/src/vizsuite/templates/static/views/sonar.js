@@ -228,10 +228,14 @@
         if (event.type === "dblclick") {
           return false;
         }
-        // A drag starting on a ring node belongs to the node's own
-        // click-vs-drag activation (recenter), never the background pan.
+        // A drag starting on an actionable ring node belongs to the node's
+        // own click-vs-drag activation (recenter), never the background pan.
+        // The center node has no activation wired, so it stays pannable.
+        // The ctrl/button tail preserves d3-zoom's documented default filter.
         var target = event.target;
-        return !(target && target.closest && target.closest(".viz-sonar-node"));
+        var onActionableNode =
+          target && target.closest && target.closest(".viz-sonar-node:not(.viz-sonar-node--center)");
+        return (!event.ctrlKey || event.type === "wheel") && !event.button && !onActionableNode;
       })
       .on("zoom", function (event) {
         stage.style.transform =
