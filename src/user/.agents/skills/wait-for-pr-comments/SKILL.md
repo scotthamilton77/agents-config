@@ -579,8 +579,8 @@ the helper's default (1) per spec decision, not a per-repo config knob.
    start signal AND a completion signal both landing in the exact same
    second as the captured timestamp reads "started" (step 3) then "stale,
    reject" (step 4) — one extra silent-ask round, never an unsafe merge. Do
-   not "fix" this into a single shared operator; see the reconciled rationale
-   in both scripts' own headers.
+   not "fix" this into a single shared operator; both scripts' own headers
+   carry a short pointer back to this section, not a restatement.
 
 5. **If** a new review arrives, return to **Phase 3 (round +1)**.
 

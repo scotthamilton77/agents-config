@@ -203,24 +203,11 @@ for ((i = 1; i <= POLL_COUNT; i++)); do
         # here would silently drop a same-second eyes reaction and count a
         # started Codex review as a silent ask.
         #
-        # RECONCILED against poll-copilot-review.sh's staleness bound: that
-        # script compares the SAME $AFTER/$SINCE value against a COMPLETION
-        # signal using strict >, the opposite
-        # operator. This is not disagreement between the two files — they
-        # answer different questions on the same timestamp. This check asks
-        # "has ANYTHING happened since the ask" (a detection question: a
-        # missed same-second response is the failure to avoid, so >= is
-        # liveness-favoring). poll-copilot-review.sh's completion check asks
-        # "is THIS signal trustworthy as a response to the CURRENT ask, not a
-        # stale leftover from before it" (a soundness question: a
-        # false-accepted stale signal is the failure to avoid, so > is
-        # soundness-favoring). Narrow, fail-closed consequence of the
-        # divergence: if a start signal AND a completion signal both land in
-        # the exact same second as $AFTER/$SINCE, this check correctly reads
-        # "started" while poll-copilot-review.sh correctly rejects that same-
-        # second completion as unproven-fresh and times out — one extra
-        # silent-ask round, never an unsafe merge. Keep the asymmetry; do not
-        # "fix" it into a single shared operator.
+        # RECONCILED, deliberately, against poll-copilot-review.sh's strict >
+        # staleness bound on this same $AFTER/$SINCE value: this is a
+        # detection question (liveness-favoring), that is a trust question
+        # (soundness-favoring) — full reasoning in wait-for-pr-comments/
+        # SKILL.md Phase 6, "Same-second boundary reconciliation".
         eyes_ts=$(printf '%s' "$reactions" | jq -r \
             --arg after "$AFTER" \
             "[.[] | select(.content == \"eyes\" and (.user.login | ${BOT_LOGIN_FILTER}) and .created_at >= \$after)] | .[0].created_at // empty")

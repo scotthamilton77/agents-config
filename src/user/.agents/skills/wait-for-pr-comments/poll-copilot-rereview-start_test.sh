@@ -333,14 +333,8 @@ rc_eyes_same_second=$?
 assert "an eyes reaction in the SAME second as --after is accepted (exit 0)" "[ \$rc_eyes_same_second -eq 0 ]"
 assert "same-second eyes reaction still reports signal eyes_reaction" "printf '%s' '$out' | jq -e '.signal == \"eyes_reaction\"' >/dev/null"
 
-# Cross-file reconciliation: this script's >= start-detection bound and
-# poll-copilot-review.sh's strict > staleness bound compare the SAME
-# $AFTER/$SINCE timestamp with opposite operators, deliberately (different
-# questions on the same value, not a shared boundary that must agree — see
-# the rationale above). Assert on the STABLE token (the sibling filename),
-# not comment prose, so a future rewording of the rationale doesn't red this
-# suite for no functional reason — it fails only if the cross-reference is
-# stripped outright.
+# Stable-token guard (not prose) that the deliberate reconciliation pointer
+# to poll-copilot-review.sh's staleness bound isn't silently stripped.
 assert "cross-references poll-copilot-review.sh's staleness bound" \
   "grep -qi 'poll-copilot-review.sh' '$SCRIPT'"
 

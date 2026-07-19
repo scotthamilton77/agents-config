@@ -396,24 +396,12 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
 
     # If --since-timestamp was provided, reject reviews that predate it (stale cache guard).
     #
-    # RECONCILED against poll-copilot-rereview-start.sh's start-detection
-    # bound: that script compares this SAME $SINCE value (passed there as
-    # --after, captured once in Phase 6 step 1 before
-    # the re-review ask is dispatched) against a START signal using >=, the
-    # opposite operator. This is not disagreement between the two files —
-    # they answer different questions on the same timestamp. This check asks
-    # "is THIS signal trustworthy as a response to the CURRENT ask, not a
-    # stale leftover from before it" (a soundness question: a false-accepted
-    # stale signal is the failure to avoid, so strict > is soundness-
-    # favoring). poll-copilot-rereview-start.sh's start check asks "has
-    # ANYTHING happened since the ask" (a detection question: a missed same-
-    # second response is the failure to avoid, so >= is liveness-favoring).
-    # Narrow, fail-closed consequence of the divergence: if a start signal
-    # AND a completion signal both land in the exact same second as
-    # $AFTER/$SINCE, the start check correctly reads "started" while this
-    # check correctly rejects that same-second completion as unproven-fresh
-    # and times out — one extra silent-ask round, never an unsafe merge.
-    # Keep the asymmetry; do not "fix" it into a single shared operator.
+    # RECONCILED, deliberately, against poll-copilot-rereview-start.sh's >=
+    # start-detection bound on this same $SINCE value (passed there as
+    # --after): this is a trust question (soundness-favoring), that is a
+    # detection question (liveness-favoring) — full reasoning in
+    # wait-for-pr-comments/SKILL.md Phase 6, "Same-second boundary
+    # reconciliation".
     if [[ -n "$SINCE" ]]; then
         fresh_reviews=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at > $since)]')
         stale_count=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at <= $since)] | length')

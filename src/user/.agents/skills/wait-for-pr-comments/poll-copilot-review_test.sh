@@ -615,14 +615,9 @@ out_mixed=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" 
 rc_mixed=$?
 assert "mixed Copilot+Codex --bot-reviewers does not exit 2 (comment-triggered identity present)" "[ \$rc_mixed -ne 2 ]"
 
-# Cross-file reconciliation: this script's strict > staleness bound and
-# poll-copilot-rereview-start.sh's >= start-detection bound compare the SAME
-# $AFTER/$SINCE timestamp with opposite operators, deliberately (different
-# questions on the same value, not a shared boundary that must agree — see
-# the rationale above). Assert on the STABLE token (the sibling filename),
-# not comment prose, so a future rewording of the rationale doesn't red this
-# suite for no functional reason — it fails only if the cross-reference is
-# stripped outright.
+# Stable-token guard (not prose) that the deliberate reconciliation pointer
+# to poll-copilot-rereview-start.sh's start-detection bound isn't silently
+# stripped.
 assert "cross-references poll-copilot-rereview-start.sh's start-detection bound" \
   "grep -qi 'poll-copilot-rereview-start.sh' '$SCRIPT'"
 
