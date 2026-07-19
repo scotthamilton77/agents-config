@@ -268,15 +268,17 @@ Two claims are stale at 65 days and are confirmed-or-released first:
 
 ### 5.6 Groom-state bead
 
-`work create` rejects `--label`, so the mint is three calls, not one — and the
-bead is a milestone orphan between them:
+`work create <noun>` rejects `--label` at runtime (labels are set by the noun),
+which would leave the new bead a milestone orphan between creation and
+labelling. `work create --raw` accepts `--label`, closing that window:
 
-1. `work create` the bead on the `ops-meta` track.
-2. `work label add lint-exempt:no-milestone`.
+1. `work create --raw --label lint-exempt:no-milestone` — the bead exists
+   already exempt, so it is never briefly a violation.
+2. `work track set <id> ops-meta` — the track goes through the validated gate,
+   never a raw label write.
 3. Record its id in `[operating-model].groom-state-bead`.
 
-All three complete **before** the §8 verification, or invariant 2 fails on the
-bead the migration itself created.
+All three complete **before** the §8 verification.
 
 ## 6. Config changes
 
