@@ -4,7 +4,7 @@
 
 **Goal:** Label every non-closed, non-milestone work item with exactly one `track:*` label, from a committed decision artifact, so `work lint` invariants 1–2 report zero violations among covered items.
 
-**Architecture:** A reviewed JSON artifact (`scripts/track-backfill/assignment.json`) holds the decided track for every item. A thin applicator reconciles it against live `work lint` output — applying what is still live, skipping what closed, reporting live-but-uncovered items as residue — then writes each label through the validated `work track set` gate. All decision logic is a pure, tested function; the I/O loop around it is deliberately trivial. No classifier ships.
+**Architecture:** A reviewed JSON artifact (`scripts/track-backfill/assignment.json`) holds the decided track for every item. A thin applicator reconciles it against the **live item set** — applying where the current track differs, leaving already-correct items untouched, skipping what closed, reporting live-but-uncovered items as residue — then writes each label through the validated `work track set` gate. Lint is consulted only to derive residue, never as evidence that an item is alive. All decision logic is a pure, tested function; the I/O loop around it is deliberately trivial. No classifier ships.
 
 **Tech Stack:** Python 3 (stdlib only), `work` CLI (workcli), `bd`/Dolt storage, TOML config.
 
@@ -29,10 +29,11 @@ Task 5 gates on the merge having happened. Do not start it otherwise.
 
 ## Execution constraints
 
-1. **Run Phase 2 from the main checkout**, never a worktree. `git rev-parse --show-toplevel` must not contain `.claude/worktrees/`.
+1. **Run Phase 2 from the main checkout**, never a worktree. `apply.py` detects this by comparing `--absolute-git-dir` against `--git-common-dir`, which catches every linked-worktree layout rather than only the `.claude/worktrees/` naming convention, and separately requires the caller's repo to be the script's own repo.
 2. **The vocabulary must be live before applying.** `work track set` calls `require_known_track` first; applying against the old vocabulary fails **147** writes (`pipeline-discipline` 92 + `review-and-merge` 47 + `grind-runtime` 8). `apply.py` pre-flights this.
-3. **Snapshot before mutating.** `bd backup sync` plus a `bd export` dump. Note: `bd dolt` has **no `reset` and no `log`** subcommands — recovery is `bd backup restore` or re-import from the export, not a Dolt reset.
-4. **`work track set` is the only track write path.** Raw `bd label add track:*` bypasses vocabulary validation and is forbidden.
+3. **The migration needs a quiescent window.** `work track set` has no status guard and the tracker offers no compare-and-set, so a concurrent agent's track write would be silently overwritten. `apply.py` refuses to run while any covered item is leased. Do not dispatch agents during the run — the applicator closes the wide window, operational discipline closes the last seconds of it.
+4. **Snapshot before mutating.** `bd backup sync` plus a `bd export` dump. Note: `bd dolt` has **no `reset` and no `log`** subcommands — recovery is `bd backup restore` or re-import from the export, not a Dolt reset.
+5. **`work track set` is the only track write path.** Raw `bd label add track:*` bypasses vocabulary validation and is forbidden.
 
 ---
 
@@ -43,11 +44,13 @@ Task 5 gates on the merge having happened. Do not start it otherwise.
 | `project-config.toml` (modify) | Track vocabulary; `[operating-model].groom-state-bead` |
 | `scripts/track-backfill/assignment.json` (exists) | The decided assignment. Input only. |
 | `scripts/track-backfill/expected_mismatches.json` (exists) | The 54 cross-track parent edges the assignment implies. Baseline for criterion 5. |
-| `scripts/track-backfill/reconcile.py` (create) | Pure reconciliation. No I/O. |
-| `scripts/track-backfill/test_reconcile.py` (create) | Tests for the above. |
-| `scripts/track-backfill/apply.py` (create) | Pre-flight guards, dry-run, apply, run-log. |
-| `scripts/track-backfill/verify.py` (create) | The seven acceptance criteria, all enforced. |
-| `scripts/track-backfill/README.md` (create) | Run instructions, constraints, recovery, retirement note. |
+| `scripts/track-backfill/reconcile.py` | Pure reconciliation against the live item set. No I/O. |
+| `scripts/track-backfill/test_reconcile.py` | Tests for the above. |
+| `scripts/track-backfill/test_payload_keys.py` | Pins the `work lint` payload keys, with non-empty fixtures. |
+| `scripts/track-backfill/apply.py` | Pre-flight guards, quiescence check, dry-run, apply, run-log. |
+| `scripts/track-backfill/anchor_orphans.py` | Guarded anchoring and exemption of the nine milestone orphans. |
+| `scripts/track-backfill/verify.py` | Acceptance criteria C1-C6, all able to fail. |
+| `scripts/track-backfill/README.md` | Run instructions, constraints, recovery, retirement note. |
 
 ---
 
@@ -111,498 +114,31 @@ git commit -m "feat(tracks): retire skills-discipline and portability, mint thre
 
 ---
 
-### Task 2: Reconciliation logic (pure, tested)
+### Tasks 2-4: The migration modules
 
-**Files:**
-- Create: `scripts/track-backfill/reconcile.py`
-- Test: `scripts/track-backfill/test_reconcile.py`
+Built and committed. The files in `scripts/track-backfill/` are authoritative —
+read them, not a transcription. Each was developed test-first and every guard
+below is exercised by a test or a demonstrated run.
 
-- [ ] **Step 1: Write the failing tests**
+| Module | Responsibility | Key guarantee |
+|---|---|---|
+| `reconcile.py` | Pure partition of the artifact against the live backlog. No I/O. | Liveness comes from the live item set, never from lint. An item carrying a *wrong* track is corrected, not silently skipped. |
+| `test_reconcile.py` | Tests for the above. | Covers wrong-track correction, already-correct no-op, partial-run resume, and residue. |
+| `test_payload_keys.py` | Pins the `work lint` payload keys the scripts read. | Fixtures are non-empty on purpose — an empty list cannot distinguish a right key from a wrong one. |
+| `apply.py` | Pre-flight guards, dry-run, apply, run log. | Refuses a linked worktree (by git-dir, not path naming), a caller repo that is not the script's repo, a vocabulary that misses the artifact's tracks, an artifact failing its own integrity metadata, and any lease on a covered item. |
+| `anchor_orphans.py` | The three anchors and six exemptions. | Every write is guarded on current state and followed by an assertion of the exact intended mapping. |
+| `verify.py` | Acceptance criteria C1-C6. | Enumerates closed items too, counts raw `track:*` labels rather than the derived track, and checks the cross-track parent set in both directions. |
 
-Create `scripts/track-backfill/test_reconcile.py`:
+Criterion 7 (idempotency) is deliberately **not** in `verify.py` — it is a
+sequenced check, run in Task 9. `verify.py` says so in its own pass message
+rather than claiming a coverage it does not have.
 
-```python
-"""Tests for track-backfill reconciliation."""
-import unittest
-
-from reconcile import reconcile
-
-
-class TestReconcile(unittest.TestCase):
-    def test_all_assigned_ids_live_applies_everything(self):
-        result = reconcile(
-            assignment={"a": "installer", "b": "prgroom"},
-            live_violations={"a", "b"},
-        )
-        self.assertEqual(result.to_apply, {"a": "installer", "b": "prgroom"})
-        self.assertEqual(result.skipped, [])
-        self.assertEqual(result.residue, [])
-
-    def test_assigned_id_no_longer_live_is_skipped_not_applied(self):
-        """An item closed since generation must not be written to."""
-        result = reconcile(
-            assignment={"a": "installer", "closed": "prgroom"},
-            live_violations={"a"},
-        )
-        self.assertEqual(result.to_apply, {"a": "installer"})
-        self.assertEqual(result.skipped, ["closed"])
-        self.assertEqual(result.residue, [])
-
-    def test_live_violation_absent_from_artifact_is_residue(self):
-        """A new untracked item is reported, never guessed at."""
-        result = reconcile(
-            assignment={"a": "installer"},
-            live_violations={"a", "brand_new"},
-        )
-        self.assertEqual(result.to_apply, {"a": "installer"})
-        self.assertEqual(result.skipped, [])
-        self.assertEqual(result.residue, ["brand_new"])
-
-    def test_skipped_and_residue_are_sorted_for_stable_reporting(self):
-        result = reconcile(
-            assignment={"z": "ops-meta", "y": "ops-meta"},
-            live_violations={"q", "b"},
-        )
-        self.assertEqual(result.skipped, ["y", "z"])
-        self.assertEqual(result.residue, ["b", "q"])
-
-    def test_empty_assignment_makes_every_violation_residue(self):
-        result = reconcile(assignment={}, live_violations={"a", "b"})
-        self.assertEqual(result.to_apply, {})
-        self.assertEqual(result.residue, ["a", "b"])
-
-    def test_is_clean_true_only_when_no_residue(self):
-        clean = reconcile(assignment={"a": "installer"}, live_violations={"a"})
-        self.assertTrue(clean.is_clean)
-        dirty = reconcile(assignment={"a": "installer"}, live_violations={"a", "n"})
-        self.assertFalse(dirty.is_clean)
-
-
-if __name__ == "__main__":
-    unittest.main()
-```
-
-- [ ] **Step 2: Run the tests to verify they fail**
-
-Run: `cd scripts/track-backfill && python3 -m unittest test_reconcile -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'reconcile'`
-
-- [ ] **Step 3: Write the minimal implementation**
-
-Create `scripts/track-backfill/reconcile.py`:
-
-```python
-"""Reconcile the decided track assignment against live lint violations.
-
-Pure logic, no I/O — see apply.py for the side-effecting wrapper. The
-migration is drift-tolerant by design (design doc §5.1): the backlog moves
-faster than the review cycle that produced the artifact, so this function
-partitions rather than assuming the artifact is exhaustive.
-"""
-
-from __future__ import annotations
-
-from dataclasses import dataclass
-
-
-@dataclass(frozen=True)
-class Reconciliation:
-    to_apply: dict[str, str]
-    """Assigned id -> track, for ids still reported as violations."""
-
-    skipped: list[str]
-    """Assigned ids no longer live (closed since generation). Never written."""
-
-    residue: list[str]
-    """Live violations absent from the artifact. Reported, never guessed."""
-
-    @property
-    def is_clean(self) -> bool:
-        """True when the artifact covers every live violation."""
-        return not self.residue
-
-
-def reconcile(assignment: dict[str, str], live_violations: set[str]) -> Reconciliation:
-    return Reconciliation(
-        to_apply={i: t for i, t in assignment.items() if i in live_violations},
-        skipped=sorted(i for i in assignment if i not in live_violations),
-        residue=sorted(live_violations - set(assignment)),
-    )
-```
-
-- [ ] **Step 4: Run the tests to verify they pass**
-
-Run: `cd scripts/track-backfill && python3 -m unittest test_reconcile -v`
-Expected: `Ran 6 tests` … `OK`
-
-- [ ] **Step 5: Commit**
+To re-verify the build at any point:
 
 ```bash
-git add scripts/track-backfill/reconcile.py scripts/track-backfill/test_reconcile.py
-git commit -m "feat(track-backfill): drift-tolerant reconciliation with tests"
+cd scripts/track-backfill && python3 -m unittest test_reconcile test_payload_keys
 ```
-
----
-
-### Task 3: The applicator, with pre-flight guards and a run log
-
-Prose constraints are not a safety mechanism for 366 writes. Both execution constraints are mechanically checkable, so the script checks them.
-
-**Files:**
-- Create: `scripts/track-backfill/apply.py`
-
-- [ ] **Step 1: Write the applicator**
-
-Create `scripts/track-backfill/apply.py`:
-
-```python
-#!/usr/bin/env python3
-"""Apply the decided track assignment to the live backlog.
-
-Usage:
-    python3 scripts/track-backfill/apply.py --dry-run
-    python3 scripts/track-backfill/apply.py --apply
-
-Refuses to run from a worktree, or against a config whose vocabulary does not
-cover the artifact. Appends every successful write to a run log so a mid-run
-abort leaves a reconcilable record.
-"""
-
-from __future__ import annotations
-
-import argparse
-import json
-import pathlib
-import subprocess
-import sys
-import tomllib
-
-HERE = pathlib.Path(__file__).parent
-ARTIFACT = HERE / "assignment.json"
-RUNLOG = HERE / "applied.log"
-
-
-def preflight(assignment: dict[str, str]) -> None:
-    """Abort on the two constraints that silently corrupt a run."""
-    if not ARTIFACT.exists():
-        raise SystemExit(f"artifact missing: {ARTIFACT} — run from the merged main checkout")
-
-    root = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True
-    ).stdout.strip()
-    if ".claude/worktrees/" in root:
-        raise SystemExit(
-            f"refusing to run from a worktree ({root}); the bd database lives in the main checkout"
-        )
-
-    config_path = pathlib.Path(root) / "project-config.toml"
-    names = set(tomllib.load(open(config_path, "rb"))["tracks"]["names"])
-    unknown = sorted(set(assignment.values()) - names)
-    if unknown:
-        raise SystemExit(
-            f"config vocabulary at {config_path} is missing {unknown} — "
-            "land the vocabulary change before applying"
-        )
-
-
-def live_violations() -> set[str]:
-    """Ids currently failing lint invariant 1."""
-    proc = subprocess.run(["work", "lint"], capture_output=True, text=True)
-    payload = json.loads(proc.stdout)
-    if not payload.get("ok"):
-        raise SystemExit(f"work lint failed: {payload.get('error')}")
-    return {v["id"] for v in payload["data"]["track_violations"]}
-
-
-def load_assignment() -> dict[str, str]:
-    doc = json.loads(ARTIFACT.read_text())
-    return {i: entry["track"] for i, entry in doc["items"].items()}
-
-
-def set_track(item_id: str, track: str) -> tuple[bool, str]:
-    """Write one track through the validated gate. Returns (ok, error_code)."""
-    proc = subprocess.run(
-        ["work", "track", "set", item_id, track], capture_output=True, text=True
-    )
-    if proc.returncode == 0:
-        return True, ""
-    try:
-        code = json.loads(proc.stdout)["error"]["code"]
-    except (ValueError, KeyError, TypeError):
-        code = proc.stderr.strip() or "UNKNOWN"
-    return False, code
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--dry-run", action="store_true", help="print the plan, mutate nothing")
-    mode.add_argument("--apply", action="store_true", help="write the labels")
-    args = parser.parse_args()
-
-    assignment = load_assignment()
-    preflight(assignment)
-    from reconcile import reconcile
-
-    plan = reconcile(assignment, live_violations())
-
-    print(f"apply  : {len(plan.to_apply)}")
-    print(f"skip   : {len(plan.skipped)} (closed since artifact generation)")
-    print(f"residue: {len(plan.residue)} (live, unassigned — reported not guessed)")
-    for i in plan.residue:
-        print(f"  RESIDUE {i}")
-
-    if args.dry_run:
-        for i, t in sorted(plan.to_apply.items()):
-            print(f"  WOULD SET {i} -> {t}")
-        return 0
-
-    applied = 0
-    with RUNLOG.open("a") as log:
-        for n, (i, t) in enumerate(sorted(plan.to_apply.items()), 1):
-            ok, code = set_track(i, t)
-            if ok:
-                log.write(f"{i}\t{t}\n")
-                log.flush()
-                applied += 1
-                continue
-            if code == "E_NOT_FOUND":
-                print(f"  VANISHED {i} (closed during run)")
-                continue
-            # Contention or timeout: stop rather than keep writing into a
-            # contended database. Re-running is safe (design doc §5.5).
-            print(f"  ABORT at {n}/{len(plan.to_apply)}: {i} -> {code}", file=sys.stderr)
-            print(f"FAILED after {applied} writes; see {RUNLOG}. Fix the cause and re-run.")
-            return 1
-
-    print(f"OK — {applied} applied, {len(plan.residue)} residue, log at {RUNLOG}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-- [ ] **Step 2: Verify the worktree guard actually fires**
-
-Run from **this worktree**: `python3 scripts/track-backfill/apply.py --dry-run`
-Expected: exits non-zero with `refusing to run from a worktree (...)`. This proves the guard works — it is the check that prevents the whole B1/B2 failure class.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add scripts/track-backfill/apply.py
-git commit -m "feat(track-backfill): applicator with preflight guards, run log, abort-on-contention"
-```
-
----
-
-### Task 4: The verifier and the README
-
-**Files:**
-- Create: `scripts/track-backfill/verify.py`
-- Create: `scripts/track-backfill/README.md`
-
-- [ ] **Step 1: Write the verifier**
-
-Every criterion must be able to fail. Criterion 4 is measured against **live** data, not the static artifact; criterion 5 against the committed 54-id baseline; the groom-state bead is carved out of the stray check.
-
-Create `scripts/track-backfill/verify.py`:
-
-```python
-#!/usr/bin/env python3
-"""Verify the seven acceptance criteria of the track backfill migration.
-
-Every criterion appends to `failures` — none is a bare print. Exit 1 on any.
-"""
-
-from __future__ import annotations
-
-import collections
-import json
-import pathlib
-import subprocess
-import tomllib
-
-HERE = pathlib.Path(__file__).parent
-
-
-def work(*argv: str) -> dict:
-    return json.loads(subprocess.run(["work", *argv], capture_output=True, text=True).stdout)
-
-
-def main() -> int:
-    root = pathlib.Path(
-        subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True
-        ).stdout.strip()
-    )
-    config = tomllib.load(open(root / "project-config.toml", "rb"))
-    organizing_only = set(config["tracks"]["organizing-only"])
-    cap = config["extraction"]["pressure"]["max-track-backlog"]
-    groom_bead = config["operating-model"]["groom-state-bead"]
-
-    assigned = {
-        i: e["track"]
-        for i, e in json.loads((HERE / "assignment.json").read_text())["items"].items()
-    }
-    expected_mismatch = set(json.loads((HERE / "expected_mismatches.json").read_text()))
-
-    lint = work("lint")["data"]
-    violations = {v["id"] for v in lint["track_violations"]}
-    items = work("list", "--limit", "0")["data"]["items"]
-    failures: list[str] = []
-
-    # C1 — outcome matches the artifact; nothing outside it was written to.
-    # The groom-state bead is minted by this migration and is deliberately
-    # not in the artifact, so it is carved out of the stray check.
-    mismatched, stray = [], []
-    for item in items:
-        want = assigned.get(item["id"])
-        if want is not None:
-            if item["track"] != want:
-                mismatched.append((item["id"], want, item["track"]))
-        elif item["track"] is not None and item["id"] != groom_bead:
-            stray.append((item["id"], item["type"], item["track"]))
-    if mismatched:
-        failures.append(f"C1 outcome != artifact: {mismatched[:5]} ({len(mismatched)} total)")
-    if stray:
-        failures.append(f"C1 track written outside the artifact: {stray[:5]} ({len(stray)} total)")
-
-    # C2 — zero violations among covered ids; residue reported, not asserted away.
-    leak = violations & set(assigned)
-    residue = violations - set(assigned)
-    if leak:
-        failures.append(f"C2 covered ids still violating: {sorted(leak)[:5]} ({len(leak)} total)")
-    print(f"residue (live, unassigned): {len(residue)} {sorted(residue)}")
-
-    # C3 — zero milestone orphans.
-    if lint["milestone_orphans"]:
-        failures.append(f"C3 milestone_orphans: {lint['milestone_orphans']}")
-
-    # C4 — no EXTRACTABLE track over the cap, measured LIVE (not from the artifact).
-    live_counts = collections.Counter(
-        item["track"] for item in items if item["track"] is not None
-    )
-    over = {t: n for t, n in live_counts.items() if t not in organizing_only and n > cap}
-    if over:
-        failures.append(f"C4 extractable tracks over cap {cap}: {over}")
-
-    # C5 — no cross-track parent edge beyond the set the artifact implies.
-    actual_mismatch = {m["id"] for m in lint["track_mismatches"]}
-    unexpected = actual_mismatch - expected_mismatch
-    if unexpected:
-        failures.append(
-            f"C5 unexpected cross-track parents: {sorted(unexpected)[:5]} "
-            f"({len(unexpected)} beyond the {len(expected_mismatch)} baseline)"
-        )
-    print(f"track_mismatches: {len(actual_mismatch)} (baseline {len(expected_mismatch)})")
-
-    # C6 — groom-state bead exists, tracked ops-meta, exempt.
-    if not groom_bead:
-        failures.append("C6 groom-state-bead empty")
-    else:
-        got = work("show", groom_bead)
-        if not got.get("ok"):
-            failures.append(f"C6 groom-state-bead {groom_bead} does not exist")
-        else:
-            it = got["data"]
-            if it["track"] != "ops-meta":
-                failures.append(f"C6 groom-state track is {it['track']}")
-            if "lint-exempt:no-milestone" not in it["labels"]:
-                failures.append("C6 groom-state missing exemption label")
-
-    for f in failures:
-        print("FAIL:", f)
-    print("ALL CRITERIA PASS" if not failures else f"{len(failures)} CRITERIA FAILED")
-    return 1 if failures else 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-Criterion 7 (idempotency) is a sequenced check, not a static one — Task 9 Step 2.
-
-- [ ] **Step 2: Verify the verifier fails before the migration runs**
-
-Run this **from the branch worktree**, not the main checkout: the verifier only exists on this branch, so from `main` there is no file to run. It is read-only (`work lint`, `work list`, `work show`), so running it from the worktree is safe — unlike `apply.py`, which writes and therefore refuses.
-
-Run: `python3 scripts/track-backfill/verify.py; echo "exit=$?"`
-Expected: `exit=1` with `C2 covered ids still violating` — nothing is labelled yet, so it *must* fail. A verifier that passes before the work is done is broken.
-
-- [ ] **Step 3: Write the README**
-
-Create `scripts/track-backfill/README.md`:
-
-```markdown
-# track-backfill
-
-One-shot migration applying the decided track assignment to the backlog.
-Design: `docs/specs/2026-07-19-track-backfill-migration-design.md`.
-
-## Constraints
-
-1. Run from the **main checkout**, never a worktree — the bd/Dolt DB lives there.
-   `apply.py` refuses otherwise.
-2. The track vocabulary in `project-config.toml` must be live before applying, or
-   147 writes fail `E_UNKNOWN_TRACK`. `apply.py` pre-flights this.
-3. Snapshot before applying (see Recovery). `bd dolt` has **no `reset` and no
-   `log`** subcommand — a Dolt-reset rollback does not exist.
-4. `work track set` is the only track write path. Raw `bd label add track:*`
-   bypasses vocabulary validation and is forbidden.
-
-Note: `work create --raw` silently ignores `--track` (it builds `CreateFields`
-with no track field). Always set a track with `work track set`, never at create.
-
-## Run
-
-    python3 scripts/track-backfill/apply.py --dry-run
-    python3 scripts/track-backfill/apply.py --apply
-    python3 scripts/track-backfill/verify.py
-
-Re-running `--apply` is safe: `work track set` is idempotent, so a partial run is
-repaired by running again. Every successful write is appended to `applied.log`.
-
-## Recovery
-
-Before applying:
-
-    bd backup sync
-    bd export --all -o /tmp/pre-track-backfill.jsonl
-    bd vc status          # record Branch/Commit
-
-To recover: `bd backup restore`, or re-import the export. `bd vc status` names
-the commit; there is no `bd dolt reset`.
-
-## Residue
-
-`assignment.json` is a snapshot and decays — items close and new untracked items
-appear. The applicator reports live-but-unassigned ids as **residue** rather than
-guessing. Residue converges to zero only once `[tracks].enforcement` flips to
-`required`. Until then each Backlog Grooming cycle sweeps what accumulated.
-
-## expected_mismatches.json
-
-The 54 cross-track parent edges the assignment implies. `track_mismatches` reads
-0 today only because nothing is labelled; labelling materializes every
-pre-existing cross-track parent. Criterion 5 asserts no mismatch *beyond* this
-baseline.
-
-## Retirement
-
-Delete this directory once enforcement is `required` and residue has been zero
-across a full Backlog Grooming cycle. Migration code earns no permanent residence.
-```
-
-- [ ] **Step 4: Commit and open the PR**
-
-```bash
-git add scripts/track-backfill/verify.py scripts/track-backfill/README.md
-git commit -m "feat(track-backfill): acceptance verifier and run instructions"
-```
-
-Then take the branch through the normal delivery chain (`finishing-a-development-branch` → PR → review → merge). **Phase 2 does not start until this is merged to `main`.**
+Expected: `Ran 18 tests` ... `OK`
 
 ---
 
@@ -717,49 +253,25 @@ Expected: `covered violations remaining: 0` and `INVARIANT_1_OK`
 
 Three items are anchored (their descriptions name their milestone); six are exempted. Anchoring is a graph mutation, not a label write. `work dep add A B --type parent-child` makes **A the child of B**.
 
-- [ ] **Step 1: Anchor the three**
+These nine decisions were made against the backlog as it stood when the artifact was generated. An item that has since closed, or gained a different parent, must not be blindly rewritten — `work dep add` adds an edge, it is not a guarded "replace parent" operation, so issuing it against an item that already has a *different* parent is a graph mutation nobody reviewed. Every write below is therefore preceded by a current-state assertion.
+
+The three anchors and six exemptions live in `scripts/track-backfill/anchor_orphans.py`, which performs the guards and the post-write verification. Anchoring is a graph mutation, not a label write; `work dep add A B --type parent-child` makes **A the child of B**, and the `blocks` type-wall does not apply to `parent-child`.
+
+- [ ] **Step 1: Dry run**
 
 ```bash
-work dep add agents-config-ysfvl  agents-config-t142  --type parent-child
-work dep add agents-config-9v0y   agents-config-7bk   --type parent-child
-work dep add agents-config-n7q0p  agents-config-yf2ov --type parent-child
+python3 scripts/track-backfill/anchor_orphans.py --dry-run
 ```
-Expected: three `ok` envelopes. All three currently have no parent, so these are pure adds. The `blocks` type-wall does not apply to `parent-child`.
+Expected: three `WOULD ANCHOR` lines and six `WOULD EXEMPT` lines, and no mutation. Any `ABORT` means the world moved since the artifact was generated — stop and re-decide that item rather than forcing the edge.
 
-If a re-run is needed, `work dep add` on an existing edge is safe to re-issue; verify with Step 2 rather than assuming.
-
-- [ ] **Step 2: Verify each now has the intended parent**
+- [ ] **Step 2: Apply**
 
 ```bash
-for id in agents-config-ysfvl agents-config-9v0y agents-config-n7q0p; do
-  work show $id | python3 -c "
-import json,sys
-d = json.load(sys.stdin)
-assert d['ok'], 'show failed'
-print(d['data']['id'], '-> parent', d['data']['parent'])
-"
-done
+python3 scripts/track-backfill/anchor_orphans.py --apply
 ```
-Expected exactly:
-```
-agents-config-ysfvl -> parent agents-config-t142
-agents-config-9v0y -> parent agents-config-7bk
-agents-config-n7q0p -> parent agents-config-yf2ov
-```
+Expected: three `ANCHORED` lines, six `EXEMPTED` lines, then `ORPHANS_OK`. On a re-run these read `ALREADY`/`SKIP` instead — the script is idempotent. `ORPHANS_OK` is an assertion over the exact intended mapping, not a print of whatever it found.
 
-- [ ] **Step 3: Exempt the six**
-
-Each needs its own label — the exemption does **not** cascade, which is why `4vn5`'s two children are listed explicitly.
-
-```bash
-for id in agents-config-4vn5 agents-config-acmh.2 agents-config-717 \
-          agents-config-bkvgz agents-config-gvt64 agents-config-ulv3; do
-  work label add $id lint-exempt:no-milestone
-done
-```
-Expected: six `ok` envelopes.
-
-- [ ] **Step 4: Verify invariant 2 is clean**
+- [ ] **Step 3: Verify invariant 2 is clean**
 
 ```bash
 work lint | python3 -c "
@@ -774,24 +286,30 @@ print('INVARIANT_2_OK')
 ```
 Expected: `milestone_orphans: 0` and `INVARIANT_2_OK`
 
-- [ ] **Step 5: Check mismatches against the committed baseline — do NOT halt on the raw count**
+- [ ] **Step 4: Assert the cross-track parent set is exactly what the migration implies**
 
 ```bash
 python3 -c "
 import json, subprocess, pathlib
 base = set(json.loads(pathlib.Path('scripts/track-backfill/expected_mismatches.json').read_text()))
+expected = base | {'agents-config-9v0y'}   # the deliberate Step 1 reparent
 d = json.loads(subprocess.run(['work','lint'],capture_output=True,text=True).stdout)
-actual = {m['id'] for m in d['data']['track_mismatches']}
-print(f'track_mismatches: {len(actual)}  baseline: {len(base)}')
-unexpected = actual - base
-print('beyond baseline:', sorted(unexpected))
-assert not unexpected, 'an unintended cross-track parent was introduced'
-print('MISMATCH_BASELINE_OK')
+assert d['ok'], f\"work lint failed: {d.get('error')}\"
+actual = {m['child'] for m in d['data']['track_mismatches']}   # keyed on 'child', NOT 'id'
+print(f'track_mismatches: {len(actual)}  expected: {len(expected)}')
+print('beyond expected:', sorted(actual - expected))
+print('expected but missing:', sorted(expected - actual))
+assert actual == expected, 'the cross-track parent set is not what the migration implies'
+print('MISMATCH_SET_OK')
 "
 ```
-Expected: around 54–55 total, `beyond baseline: []`, `MISMATCH_BASELINE_OK`.
+Expected: `track_mismatches: 55  expected: 55`, both difference lists empty, `MISMATCH_SET_OK`.
 
-**The raw count is expected to be ~54, not 1.** `track_mismatches` reads 0 before the migration only because nothing is labelled; labelling materializes every pre-existing cross-track parent edge. Only ids *beyond* the committed baseline indicate a problem. The `9v0y` reparent may add one — if `beyond baseline` contains only `agents-config-9v0y`, that is the expected consequence of Step 1 and is accepted per spec §5.4.
+Three things this step gets right that the obvious version does not:
+
+1. **The key is `child`, not `id`** (`report.py` `_track_mismatches`). The wrong key raises `KeyError` — but only once the list is non-empty, which is to say only after the migration, which is exactly when this check matters.
+2. **The count is 55, not 1.** `track_mismatches` reads 0 before the migration solely because nothing is labelled; labelling materializes every pre-existing cross-track parent edge at once.
+3. **The comparison is two-sided.** Checking only `actual - expected` passes when an expected edge *disappears*, which would mean the graph moved under the migration unnoticed.
 
 ---
 
@@ -870,7 +388,7 @@ Deliver via the normal PR chain. Do not commit directly to `main`.
 
 ---
 
-### Task 9: Verify all seven criteria
+### Task 9: Verify all seven criteria (C1-C6 mechanically, C7 by sequence)
 
 - [ ] **Step 1: Run the verifier**
 
@@ -887,7 +405,9 @@ bd vc status
 python3 scripts/track-backfill/apply.py --apply
 bd vc status
 ```
-Expected: `bd vc status` reports the same commit before and after the second `--apply`, and no new uncommitted changes — every `work track set` was a no-op because each item already carries its target label.
+Expected: `apply    : 0` and `unchanged: 366` in the applicator's own header — the reconciliation classifies every item as already-correct and issues no writes at all — and `bd vc status` reporting the same commit before and after, with no new uncommitted changes.
+
+Both signals matter. The `unchanged` count proves idempotency at the decision layer (nothing was even attempted); `bd vc status` proves it at the storage layer (nothing landed).
 
 Use `bd vc status`, **not** `bd dolt status`: the latter reports server PID and port and prints identically whether or not writes occurred, so it can never detect this.
 

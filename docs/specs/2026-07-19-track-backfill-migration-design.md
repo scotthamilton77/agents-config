@@ -255,16 +255,30 @@ issues zero writes, so **partial application is repaired by re-running**.
 The two label writes are **not transactional**: an interruption between them
 leaves the item track-less, which lint invariant 1 reports.
 
-**Rollback is `bd dolt reset` to the §5.3 step-1 checkpoint**, not re-running.
-Re-running is forward-healing only — it cannot undo a wrong decision. Note that
-rollback is trivial today only because the prior state is uniformly "no label";
-that ceases to be true after the first successful run.
+**Rollback is `bd backup restore`, or re-import from the `bd export` dump taken
+before the run** — `bd dolt` has no `reset` and no `log` subcommand, so a
+Dolt-reset rollback does not exist. `bd vc status` names the commit that is the
+recovery point. Re-running is forward-healing only — it cannot undo a wrong
+decision. Note that rollback is trivial today only because the prior state is
+uniformly "no label"; that ceases to be true after the first successful run.
 
-**Concurrency:** seven non-milestone items hold live `in_progress` claims. An
-agent that legitimately sets a track mid-run will be silently overwritten by this
-migration's explicit pass. Announce the run against live leases before starting.
-Two claims are stale at 65 days and are confirmed-or-released first:
+**Concurrency: the migration requires an exclusive, quiescent window, and the
+applicator enforces it.** `work track set` has no status guard and the tracker
+offers no compare-and-set, so between the sweep that computes the plan and the
+write that applies it, an item can close or another agent can set a track — and
+that write would be silently overwritten. Rather than hand-roll optimistic
+concurrency for a script that is deleted after one use, the migration takes the
+cheaper and stronger option: it refuses to run at all while any covered item is
+leased. `apply.py` aborts on a lease intersecting the artifact, so the operator
+confirms-or-releases first instead of racing.
+
+Two claims are stale at 65 days and are confirmed-or-released before the run:
 `agents-config-y9mm`, `agents-config-abn9.23`.
+
+The residual risk this leaves is narrow and stated rather than papered over: an
+agent that takes a *new* lease after `apply.py`'s check, on a covered item, is
+still not detected. That window is seconds wide and is closed by operational
+discipline — do not dispatch agents during the run — not by the tooling.
 
 ### 5.6 Groom-state bead
 
@@ -323,9 +337,17 @@ filed as a continuation.
 3. `work lint` reports zero `milestone_orphans`.
 4. No **extractable** track exceeds `[extraction.pressure].max-track-backlog`.
    Largest is `prgroom` at 53 against a cap of 100.
-5. `work lint` `track_mismatches` equals the count predicted in §5.4 — currently
-   1, from the `9v0y` reparent. A different number means an unintended
-   cross-track parenting was introduced.
+5. `work lint` `track_mismatches` equals **exactly** the committed baseline in
+   `scripts/track-backfill/expected_mismatches.json` (54 ids) plus the one
+   deliberate addition from the `9v0y` reparent — 55 in total. Checked in both
+   directions: an id beyond the expected set means an unintended cross-track
+   parenting was introduced; an expected id *missing* means the graph changed
+   under the migration unnoticed.
+
+   The pre-migration count is 0, but only because nothing is labelled yet —
+   labelling materializes every pre-existing cross-track parent edge at once.
+   Reading that 0 as a stable baseline is the mistake this criterion exists to
+   prevent. Note also that `work lint` keys these entries on `child`, not `id`.
 6. `[operating-model].groom-state-bead` names an existing item that carries the
    `ops-meta` track and the `lint-exempt:no-milestone` label.
 7. A second consecutive run leaves `bd dolt status` clean — no writes.
