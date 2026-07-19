@@ -217,6 +217,18 @@ _WITHDRAWABLE_STATUSES: frozenset[ReviewerStatus] = frozenset(
     {ReviewerStatus.REQUESTED, ReviewerStatus.IN_PROGRESS}
 )
 
+# Statuses whose presence in ``requested_reviewers`` on an EXISTING entry is provably a
+# NEW ask, so the request window restarts (§2.1). GitHub drops a login from
+# ``requested_reviewers`` the instant it submits any review, so a REVIEW_FOUND entry
+# re-listed there can only be a re-request; NOT_REQUESTED is a post-push flip whose
+# re-listing likewise means someone re-asked. REQUESTED / IN_PROGRESS are an ongoing
+# pending pass — leave their window alone (no churn). DECLINED is excluded entirely: a
+# withdrawn decline is handled by the reactivation branch, and a timeout decline stays
+# CONTINUOUSLY listed, so its bare presence is not a new ask.
+_NEW_ASK_RESTART_STATUSES: frozenset[ReviewerStatus] = frozenset(
+    {ReviewerStatus.REVIEW_FOUND, ReviewerStatus.NOT_REQUESTED}
+)
+
 
 def _ingest_items(
     gh: GhClient, ref: PRRef, state: PRGroomingState, *, now: datetime
@@ -417,6 +429,43 @@ def _reactivation_engagement(
     return None
 
 
+def _reconcile_existing_request(existing: ReviewerState, *, now: datetime) -> bool:
+    """Reconcile a non-declined EXISTING reviewer that GitHub is requesting NOW (§2.1).
+
+    Two independent effects, both driven by "GitHub is asking this poll":
+
+    - **Promote to required.** A formerly-optional drive-by (``required=False``) who
+      later lands in ``requested_reviewers`` is now a formal ask and must count toward
+      ``reviewers_gate_satisfied`` — even a currently-IN_PROGRESS drive-by, whose
+      in-flight review simply continues and now blocks quiescence until it produces a
+      verdict.
+    - **Restart the request window** — only when the current status makes this presence
+      provably a NEW ask (``_NEW_ASK_RESTART_STATUSES``: REVIEW_FOUND or NOT_REQUESTED).
+      GitHub removes a login from ``requested_reviewers`` the instant it reviews, so a
+      re-listed REVIEW_FOUND entry is a re-request; a NOT_REQUESTED post-push flip that
+      reappears there was re-asked by an operator. Reset to REQUESTED at ``now`` and
+      clear ``last_review_at`` (the recovery-timeout rule, commit 393e22d) so the
+      review-start timeout can still fire if the wanted fresh review never lands. A
+      REQUESTED / IN_PROGRESS reviewer is a normal in-flight pass — its window is left
+      untouched to avoid churning ``last_request_at`` every poll.
+
+    Callers gate this on ``existing.status is not DECLINED``: a withdrawn decline is the
+    reactivation branch's job, and a timeout decline is continuously present in
+    ``requested_reviewers`` (its decline never called gh), so restarting it here would
+    undo every timeout decline on the next poll. Returns whether anything changed.
+    """
+    changed = False
+    if not existing.required:
+        existing.required = True
+        changed = True
+    if existing.status in _NEW_ASK_RESTART_STATUSES:
+        existing.status = ReviewerStatus.REQUESTED
+        existing.last_request_at = now
+        existing.last_review_at = None
+        changed = True
+    return changed
+
+
 def _reconcile_reviewers(
     state: PRGroomingState,
     *,
@@ -482,6 +531,14 @@ def _reconcile_reviewers(
                 existing.declined_at = None
                 existing.declined_reason = None
                 changed = True
+            elif login in requested and existing.status is not ReviewerStatus.DECLINED:
+                # GitHub is asking NOW for a reviewer already on file: promote a drive-by
+                # to required, and restart the window when the presence is provably a new
+                # ask (§2.1). DECLINED is excluded here — the reactivation branch owns a
+                # withdrawn decline, and a timeout decline is continuously listed, so its
+                # bare presence must never restart the window.
+                if _reconcile_existing_request(existing, now=now):
+                    changed = True
             continue
         reviewed_at, reviewed_user = reviewed.get(login, (None, None))
         state.reviewers[login] = _seed_reviewer(

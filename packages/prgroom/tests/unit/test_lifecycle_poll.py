@@ -1712,6 +1712,130 @@ def test_timeout_declined_reviewer_still_satisfies_the_gate_across_polls() -> No
     assert reviewers_gate_satisfied(state) is True
 
 
+def test_drive_by_review_found_promoted_and_rewindowed_when_formally_requested() -> None:
+    # The reported gap: a drive-by (required=False) who later lands in
+    # requested_reviewers is a NEW ask. GitHub drops a login from requested_reviewers
+    # the instant it reviews, so a REVIEW_FOUND entry re-listed there is a re-request.
+    # Promote to required AND restart the window (clearing last_review_at) so the gate
+    # blocks on the pending re-review rather than passing on the stale verdict.
+    reviewers = {
+        "randomdev": ReviewerState(
+            identity="randomdev",
+            kind=ReviewerKind.HUMAN,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=False,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=_T0 - timedelta(hours=2),
+        )
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["randomdev"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["randomdev"]
+    assert rv.required is True
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.last_request_at == _T0
+    assert rv.last_review_at is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_required_review_found_reviewer_rewindowed_when_re_requested() -> None:
+    # A formally-required reviewer who already reviewed and is re-listed in
+    # requested_reviewers gets a fresh request window — the operator wants a new review
+    # of new work, and the gate must not stay satisfied on the prior verdict.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=_T0 - timedelta(hours=1),
+        )
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.required is True
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.last_request_at == _T0
+    assert rv.last_review_at is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_not_requested_required_reviewer_rewindowed_when_github_re_requests() -> None:
+    # NOT_REQUESTED is a post-push flip awaiting re-ask. If GitHub itself already lists
+    # the reviewer in requested_reviewers (an operator re-requested before prgroom's
+    # rereview ran), that presence is the new ask: move to REQUESTED at `now` and clear
+    # the stale invalidated-review stamp so the start timeout can still fire.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.NOT_REQUESTED,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=_T0 - timedelta(hours=1),
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.last_request_at == _T0
+    assert rv.last_review_at is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_drive_by_in_progress_promoted_without_window_restart_when_requested() -> None:
+    # A drive-by mid-review (IN_PROGRESS, required=False) that GitHub formally requests
+    # is promoted to required so it blocks the gate — but its in-flight review continues
+    # and now counts, so the window is NOT restarted (last_review_at/last_request_at
+    # preserved). Only REVIEW_FOUND / NOT_REQUESTED presence is a fresh-ask restart.
+    review_at = datetime(2026, 6, 9, 11, 5, 0, tzinfo=UTC)
+    reviewers = {
+        "randomdev": ReviewerState(
+            identity="randomdev",
+            kind=ReviewerKind.HUMAN,
+            status=ReviewerStatus.IN_PROGRESS,
+            required=False,
+            last_request_at=review_at,
+            last_review_at=review_at,
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["randomdev"]),
+        deps=_deps(_JUST_AFTER_ACTIVITY),  # 11:10Z — within the 15m finish timeout
+        config=_config(),
+    )
+    rv = state.reviewers["randomdev"]
+    assert rv.required is True
+    assert rv.status is ReviewerStatus.IN_PROGRESS
+    assert rv.last_review_at == review_at
+    assert rv.last_request_at == review_at
+    assert reviewers_gate_satisfied(state) is False
+
+
 def test_withdrawn_request_declines_an_in_flight_reviewer() -> None:
     # Behavior 7: GitHub dropped a pending request and the reviewer produced nothing
     # this poll — the one shape that genuinely means "the ask was pulled".
@@ -1919,7 +2043,37 @@ def test_external_push_with_stale_reviewer_advances_to_fixes_pending() -> None:
     # reviewer to NOT_REQUESTED, but `rereview` is a FIXES_PENDING pipeline step and
     # AWAITING_REVIEW only ever calls `wait` — so without this arm the reviewer is
     # never re-requested and the PR can quiesce with a stale review.
+    #
+    # requested_reviewers is empty because GitHub drops a login the instant it reviews:
+    # a REVIEW_FOUND reviewer is NOT still listed there (see the collision variant
+    # test_external_push_with_github_re_request_uses_the_pending_ask for when GitHub
+    # itself re-requests on the push).
     reviewers = _required_reviewer(ReviewerStatus.REVIEW_FOUND)
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",
+        reviewers=reviewers,
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["copilot"].status is ReviewerStatus.NOT_REQUESTED
+    assert state.phase is PRPhase.FIXES_PENDING
+
+
+def test_external_push_with_github_re_request_uses_the_pending_ask() -> None:
+    # Collision variant: an external push invalidates copilot's REVIEW_FOUND AND GitHub
+    # re-requests copilot on that same push (a codeowner re-request). Reconciliation runs
+    # before flip_stale_required_reviews, so the pending GitHub ask wins: copilot restarts
+    # to REQUESTED (a fresh window at `now`), flip then no-ops on the non-REVIEW_FOUND
+    # entry, and the gate stays unsatisfied without prgroom issuing a redundant re-request.
+    reviewers = _required_reviewer(ReviewerStatus.REVIEW_FOUND)
+    reviewers["copilot"].last_review_at = _T0 - timedelta(hours=1)
     start = _state(
         phase=PRPhase.AWAITING_REVIEW,
         last_poll_sha="old",
@@ -1933,8 +2087,11 @@ def test_external_push_with_stale_reviewer_advances_to_fixes_pending() -> None:
         deps=_deps(),
         config=_config(),
     )
-    assert state.reviewers["copilot"].status is ReviewerStatus.NOT_REQUESTED
-    assert state.phase is PRPhase.FIXES_PENDING
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REQUESTED
+    assert copilot.last_request_at == _T0
+    assert copilot.last_review_at is None
+    assert reviewers_gate_satisfied(state) is False
 
 
 def test_external_push_without_stale_reviewer_stays_awaiting_review() -> None:
