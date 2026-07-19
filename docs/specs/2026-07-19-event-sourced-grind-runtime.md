@@ -117,6 +117,10 @@ things now *are*.
 | `grind_resumed` | — | Clears pause |
 | `grind_finished` | `summary` | Terminal. Fold rejects (anomaly) further mutating events. |
 
+Seeded blocker edges (in `lanes[].blocker edges`) take effect at fold time: an
+item with unresolved edges folds as `blocked`, not `queued` — identical to
+edges recorded later by `item_blocked`.
+
 **Lane**
 
 | Type | Payload | Effect |
@@ -138,7 +142,7 @@ below)
 | `review_round` | `item`, `kind` (codex\|copilot\|ralf\|human), `round`, `detail?` | `pr-open → in-review` (or stays `in-review`); sets the round badge |
 | `review_verdict` | `item`, `kind`, `round`, `verdict` (clean \| findings \| stalemate), `findings[]` — each `{severity, summary, disposition (fixed \| wont-fix \| deferred \| escalated), thread_url?}` | Records the round's outcome. `open_threads` and `wont_fix_count` are **derived** from dispositions, not asserted. `stalemate` sets the item's stalemate flag (declared per the review skill's §3 rule — the fold records, it does not diagnose). |
 | `pr_closed` | `item`, `pr`, `reason`, `next` (in-progress \| queued \| parked) | Unmerged closure (abandoned, superseded). Item returns to `next`; without this an abandoned PR is unrepresentable except by lying. |
-| `item_blocked` | `item`, `on[]` (blocking item ids), `note?` | `→ blocked`; records blocker edges. Unblocking is **derived**: when every edge's target reaches `merged`/`done`/closed, the fold returns the item to `queued` and fires the `item_unblocked` condition — there is no unblock event. |
+| `item_blocked` | `item`, `on[]` (blocking item ids), `note?` | Records blocker edges (and `note`). `blocked` status is **derived** from unresolved edges — whichever way they arrived (seed or event), never asserted by the event. Unblocking is **derived**: when every edge's target reaches `merged`/`done`/closed, the fold returns the item to `queued` and fires the `item_unblocked` condition — there is no unblock event. |
 | `item_waiting_human` | `item`, `why` | `→ waiting-human`; auto-raises an attention entry |
 | `item_merged` | `item`, `pr`, `sha` | `→ merged`; appends to the merged ledger projection |
 | `item_done` | `item` | `merged → done` (post-merge leg complete); clears any attention/round badge for the item |
@@ -179,6 +183,10 @@ absent is an anomaly):
 | (parked) | re-enters via `item_enqueued → queued` only | | | | | | | | | |
 
 `standing-down` remains lane-only vocabulary, set by `lane_standing_down`.
+
+`item_started` on an item with unresolved blocker edges folds as an anomaly
+(accept-and-flag applies): the item is `blocked`, and the table's `(queued)`-row
+legality presumes no unresolved edges.
 
 **Anomaly policy — accept-and-flag, never reject.** An event that is not
 legal from the item's current status (or references an unknown item/lane, or
