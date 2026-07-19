@@ -195,40 +195,106 @@ The rule holds iff the emitted `verdict == "go"`.
     skipping its Phase 6 re-request entirely). Capture a timestamp
     (`ASK_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)`) BEFORE calling
     `request-rereview.sh`, then pass `--bot-reviewers
-    "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"` — the same resolved
-    allowlist Step 3 already used — to BOTH the request and the poll, plus
-    `--since-timestamp "$ASK_TS"` and `--timeout-seconds
-    "$(jq -r '.bot_inactivity_timeout_seconds' <<<"$POLICY_JSON")"` to the
-    poll. Without `--since-timestamp`, an older `COMMENTED` review from a
-    prior head (already fixed, already rejected by Step 3 on `commit_id`
-    mismatch) reads as this ask's response and never spends the silent
-    counter — the ask never truly ends, and every later invocation issues
-    another one indefinitely. Without `--timeout-seconds` bound to the
-    resolved policy, the poll falls back to its own 600-second default
-    instead of the policy's configured `bot_inactivity_timeout_seconds`
-    (1200s by default) — a bot that responds between 10 and 20 minutes then
-    reads as silent and wrongly spends the budget. This dispatches to every
-    trusted identity (including comment-triggered ones like Codex, which
-    never responds to a bare reviewer-request event), bounded to exactly
-    this ask's window — though `request-rereview.sh`'s own contract exits 0
-    once AT LEAST ONE dispatch succeeds (never per-identity), so a partial
-    failure (e.g. Copilot's reviewer-add succeeds, Codex's issue-comment
-    fails) is indistinguishable at this call site from full dispatch; the
-    identity that was never actually asked then reads as a timed-out silent
-    bot rather than an undelivered ask. Accepted here — closing it requires
-    `request-rereview.sh` itself to expose per-identity outcome, which is
-    outside this caller-edit's scope and affects its other caller (Phase 6
-    in `wait-for-pr-comments`) too. Branch on the poll's `completion_kind`,
-    not on whether a review object arrived:
-    - `"review"` or `"clean_reaction"` — the ask reached a reviewer and it
-      responded, whichever way. This is NOT silence; do not touch the silent
-      counter. Re-run Step 3 against the unchanged head exactly once. A
-      genuinely clean pass now satisfies the rule (either
-      `bot_clean_review_at_head` path) → merge (Step 5). A findings-bearing
-      review still leaves the rule unmet → fall through to hand-off.
-    - `"timeout"` — the ask was genuinely silent. THIS is what increments +
-      persists the silent counter (ask-spent), never the other two kinds.
-      Fall through to hand-off.
+    "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"`.
+    ```bash
+    ASK_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    ${CLAUDE_SKILL_DIR}/request-rereview.sh \
+      --owner <owner> --repo <repo> --pr <n> \
+      --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"
+    RR_EXIT=$?
+    ```
+    - `RR_EXIT == 1` (`request-rereview.sh`'s own contract: no identity was
+      successfully dispatched — every `gh pr edit`/`gh pr comment` call
+      failed) — **do not poll.** No bot was actually asked, so a subsequent
+      timeout would misclassify infrastructure failure as bot silence and
+      wrongly spend the budget. Hand off directly: report the dispatch
+      failure, do not touch the silent counter.
+    - `RR_EXIT == 0` — at least one dispatch succeeded — proceed to poll:
+      ```bash
+      ${CLAUDE_SKILL_DIR}/poll-copilot-review.sh \
+        --owner <owner> --repo <repo> --pr <n> \
+        --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")" \
+        --since-timestamp "$ASK_TS" \
+        --timeout-seconds "$(jq -r '.bot_inactivity_timeout_seconds' <<<"$POLICY_JSON")"
+      ```
+      `--since-timestamp` prevents an older `COMMENTED` review from a prior
+      head (already fixed, already rejected by Step 3 on `commit_id`
+      mismatch) from reading as this ask's response — without it the ask
+      never truly ends, and every later invocation issues another one
+      indefinitely. `--timeout-seconds` bound to the resolved policy
+      prevents the poll from falling back to its own 600-second default
+      instead of the policy's configured `bot_inactivity_timeout_seconds`
+      (1200s by default) — a bot that responds between 10 and 20 minutes
+      would otherwise read as silent and wrongly spend the budget.
+      `request-rereview.sh`'s own contract exits 0 once AT LEAST ONE
+      dispatch succeeded (never per-identity), so a partial failure (e.g.
+      Copilot's reviewer-add succeeds, Codex's issue-comment fails) is
+      indistinguishable at this call site from full dispatch; the identity
+      that was never actually asked then reads as a timed-out silent bot
+      rather than an undelivered ask. Accepted here — closing it requires
+      `request-rereview.sh` itself to expose per-identity outcome, which is
+      outside this caller-edit's scope and affects its other caller (Phase 6
+      in `wait-for-pr-comments`) too (bead `agents-config-abn9.44.2.9`,
+      filed and parked). Branch on the poll's `completion_kind`, not on
+      whether a review object arrived:
+      - `"review"` or `"clean_reaction"` — the ask reached a reviewer and it
+        responded, whichever way. This is NOT silence; do not touch the
+        silent counter. Re-run Step 3 against the unchanged head exactly
+        once. A genuinely clean pass now satisfies the rule (either
+        `bot_clean_review_at_head` path) → merge (Step 5). A
+        findings-bearing review still leaves the rule unmet → fall through
+        to hand-off, silent counter untouched.
+
+        **Known residual, not closed by this bead:** `poll-copilot-review.sh`
+        reports `"clean_reaction"` on EITHER a qualifying `+1` reaction OR a
+        clean-pass marker comment alone (`emit_clean_reaction_found` is
+        shared by both signals) — but `check-merge-eligibility.sh`'s
+        reaction-path fact requires the actual `+1` (Component 2, part
+        (b)(1)), not the marker comment by itself. A marker-only completion
+        (comment landed, reaction not yet earned) therefore reports
+        `"clean_reaction"` here while Step 3's re-check still finds the rule
+        unmet — and per the branch above, that leaves the silent counter
+        untouched, so the NEXT invocation retries with a fresh ask instead
+        of recognizing the retry budget as spent. Bounded by the same
+        window `poll-copilot-review.sh`'s own freshness guard uses (Codex
+        typically earns the reaction within seconds of the marker comment),
+        but not excluded. Filed as `agents-config-abn9.44.2.9`'s sibling
+        concern — flagged there rather than fixed here, since closing it
+        means either tightening `poll-copilot-review.sh`'s `clean_reaction`
+        criteria (Lane B file) or changing what counts as "silent" for the
+        cap (a cap-model semantics decision, not a caller-edit).
+      - `"timeout"` — the ask was genuinely silent. THIS is what increments
+        and persists the silent counter (ask-spent), never the other two
+        kinds:
+        ```bash
+        INV_FILE="$HOME/.claude/state/pr-inventory/<owner>-<repo>-<n>-<head-sha-12>.json"
+        # <head-sha-12> = the first 12 characters of head_ref_oid — the same
+        # truncation detect-pr-context.sh performs, and what
+        # check-merge-eligibility.sh's bot_review_cap_exhausted glob
+        # matches against. A full-40-char-SHA filename would create a
+        # SEPARATE file for the same head that neither of those readers
+        # ever looks at.
+        prior=$(jq -c '{c:(.polling.rereview_round_count // 0), e:(.polling.bot_review_cap_exhausted // false)}' \
+          "$INV_FILE" 2>/dev/null || echo '{"c":0,"e":false}')
+        result=$(${CLAUDE_SKILL_DIR}/compute-rereview-polling.sh \
+          --prior-count "$(jq -r '.c' <<<"$prior")" \
+          --prior-exhausted "$(jq -r '.e' <<<"$prior")" \
+          --event silent)
+        mkdir -p "$(dirname "$INV_FILE")"
+        [[ -f "$INV_FILE" ]] || echo '{}' > "$INV_FILE"
+        jq -c --argjson r "$result" '.polling = ((.polling // {}) + $r)' "$INV_FILE" > "${INV_FILE}.tmp" \
+          && mv "${INV_FILE}.tmp" "$INV_FILE"
+        ```
+        This reuses `compute-rereview-polling.sh` — the same
+        pure-arithmetic helper `wait-for-pr-comments` Phase 6 uses —
+        against the same head-exact inventory path
+        `check-merge-eligibility.sh` already reads for
+        `bot_review_cap_exhausted` (its `find` glob matches this filename).
+        A minimal `{}` file (created if absent) is sufficient: that fact
+        reads only `.polling.bot_review_cap_exhausted`, never the full
+        items/pr schema `build-inventory-body.sh` produces — merge-guard's
+        direct retry has no items to report and does not need that
+        ceremony. Fall through to hand-off after writing.
 
     merge-guard issues at most one re-review ask per invocation.
   - **floor-clean AND rule-unmet AND ask-spent AND force-merge available**:
