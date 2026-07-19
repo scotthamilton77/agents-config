@@ -2155,6 +2155,68 @@ def test_review_found_reviewer_rewindow_rejects_a_historical_verdict() -> None:
     assert reviewers_gate_satisfied(state) is False
 
 
+def test_external_push_with_late_pre_push_comment_does_not_backdate_re_request() -> None:
+    # Regression: an external push re-requests a REVIEW_FOUND reviewer AND this poll first
+    # observes a pre-push COMMENTED review (after the stored verdict, before the push).
+    # With reconciliation running before invalidation, that pre-push comment reactivated the
+    # reviewer to IN_PROGRESS on a backdated old-head window (last_request_at = 11:00Z), and
+    # the attribution flip (REVIEW_FOUND only) then skipped them — so the genuine new request
+    # was tracked as stale old-head engagement and could quiesce/time out without a fresh
+    # review. The invalidation flip now runs BEFORE reconciliation and stamps the boundary at
+    # `now`, so the pre-push comment is stale and the reviewer ends REQUESTED on a fresh
+    # window (last_request_at = now, last_review_at cleared), gate unsatisfied.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=_T0 - timedelta(hours=2),  # the stored verdict, on the old head
+            last_review_id=40,
+        )
+    }
+    stored_verdict = {
+        "id": 40,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T10:00:00Z",  # _T0 - 2h
+    }
+    pre_push_comment = {
+        "id": 50,
+        "user": {"login": "copilot"},
+        "state": "COMMENTED",
+        "body": "one more thought",
+        "submitted_at": "2026-06-09T11:00:00Z",  # after the verdict, before the push/now
+    }
+    start = _state(
+        phase=PRPhase.QUIESCED,
+        retries_=1,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",  # the new head is NOT the CLI's push -> external
+        reviewers=reviewers,
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(
+            head_oid="theirs",
+            requested_reviewers=["copilot"],  # GitHub re-requested on the external push
+            reviews=[stored_verdict, pre_push_comment],
+        ),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.status is not ReviewerStatus.IN_PROGRESS
+    assert rv.last_request_at == _T0  # fresh window at `now`, NOT backdated to 11:00Z
+    assert rv.last_review_at is None
+    assert state.pr_review_retries_used == 2  # the external push consumed one retry
+    assert reviewers_gate_satisfied(state) is False
+
+
 def test_review_found_reviewer_rewindow_keeps_a_same_second_fresh_verdict_by_review_id() -> None:
     # Same-second collision: a genuinely fresh re-review submitted in the SAME GitHub
     # timestamp second as the prior verdict lands with `terminal_at == boundary`, so a

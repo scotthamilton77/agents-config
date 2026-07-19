@@ -125,6 +125,20 @@ def poll_pr(
     requested_reviewers = pr.get("requested_reviewers") or []
     activity = False
 
+    # An external push (HEAD moved to a SHA the CLI did not upload) invalidates every
+    # required review bound to the superseded SHA. Flip those reviewers to NOT_REQUESTED
+    # and stamp the invalidation boundary (last_request_at = now) BEFORE reconciliation:
+    # a late-observed pre-push review must be measured against that boundary, not accepted
+    # as fresh engagement that reactivates the reviewer past the invalidation. Running the
+    # flip AFTER reconciliation (its former home in _apply_sha_attribution) let a pre-push
+    # COMMENTED review move a re-requested REVIEW_FOUND reviewer to IN_PROGRESS on a
+    # backdated old-head window, which the attribution flip (REVIEW_FOUND only) then
+    # skipped — the actual new request tracked as stale old-head engagement. Retry counting
+    # / last_poll_sha / invalidated-sha bookkeeping stay in _apply_sha_attribution below.
+    external_push = _external_push_detected(state, new_head)
+    if external_push:
+        flip_stale_required_reviews(state.reviewers, now=now)
+
     new_items, terminal_reviews, raw_reviews = _ingest_items(gh, ref, state, now=now)
     if new_items:
         state.items.extend(new_items)
@@ -154,7 +168,7 @@ def poll_pr(
         review_finish_timeout=config.review_finish_timeout,
     )
 
-    external_push = _apply_sha_attribution(state, new_head, now=now)
+    _apply_sha_attribution(state, new_head)
     if external_push:
         activity = True
 
@@ -495,11 +509,20 @@ def _reactivation_engagement(
     REVIEW_FOUND / NOT_REQUESTED window-restart in ``_reconcile_existing_request``. A
     reviewer (re-)requested this poll may have submitted a review in the window between
     the PR-resource GET and the later reviews GET. That review is genuine fresh engagement
-    iff it post-dates the reviewer's known history — the recorded withdrawal
-    (``declined_at``, ``None`` on the non-declined restart path) or any prior
-    ``last_review_at``, whichever is later. A review at or before that boundary is a
-    historical verdict that must NOT satisfy the fresh request (mirrors ``_seed_reviewer``'s
-    requested-wins rule for a first-seen re-request).
+    iff it post-dates the reviewer's known history — the current request window
+    (``last_request_at``), the recorded withdrawal (``declined_at``, ``None`` on the
+    non-declined restart path), or any prior ``last_review_at``, whichever is latest. A
+    review at or before that boundary is a historical verdict that must NOT satisfy the
+    fresh request (mirrors ``_seed_reviewer``'s requested-wins rule for a first-seen
+    re-request).
+
+    Including ``last_request_at`` in the boundary is load-bearing when an external-push
+    invalidation has just stamped it to ``now`` (ahead of ``last_review_at``): a pre-push
+    review then falls at or before the boundary and is rejected as stale, so the
+    re-requested reviewer is NOT reactivated onto a backdated old-head window. In an
+    ordinary re-request (no push) ``last_request_at <= last_review_at``, so it does not
+    move the boundary and the historical-verdict / same-second semantics below are
+    unchanged.
 
     **Same-second disambiguation.** GitHub review timestamps have second precision, so a
     genuinely fresh re-review submitted in the same wall-clock second as the prior verdict
@@ -528,7 +551,11 @@ def _reactivation_engagement(
     reopened the reviewer. Returns ``None`` when no fresh engagement arrived, so the caller
     reactivates to REQUESTED at ``now`` as before.
     """
-    history = [t for t in (existing.declined_at, existing.last_review_at) if t is not None]
+    history = [
+        t
+        for t in (existing.declined_at, existing.last_review_at, existing.last_request_at)
+        if t is not None
+    ]
     boundary = max(history) if history else None
 
     # The stored id disambiguates an equal-second collision ONLY when it corresponds to
@@ -1216,40 +1243,46 @@ def _combined_status_state(gh: GhClient, ref: PRRef, head_sha: str) -> str:
     return "pending"
 
 
-def _apply_sha_attribution(state: PRGroomingState, new_head: str, *, now: datetime) -> bool:
-    """Apply §3.4 retry counting/attribution for the observed HEAD; return external-push flag.
+def _external_push_detected(state: PRGroomingState, new_head: str) -> bool:
+    """True iff the observed HEAD is an external push (operator / third party), §3.4.
 
-    Bootstrap (``last_poll_sha == ""``): set ``last_poll_sha``, no reviewer flip,
-    counter untouched — the initial observed push consumes no retry (the counter
-    is a 0-indexed count of fix-push retries). Unchanged SHA: no-op. CLI's own
-    push (``new_head == last_pushed_head_sha``): advance ``last_poll_sha`` only.
-    External push: ``pr_review_retries_used += 1``, advance ``last_poll_sha``,
-    flip stale required reviews and stamp the invalidation boundary (``now``) on
-    each flipped reviewer.
-
-    The boundary stamp is what keeps a standalone ``poll`` (or a crash after this poll
-    persists but before ``rereview``) from silently un-inverting the flip: without it the
-    flipped reviewer's pre-push terminal review still satisfies ``terminal_at >
-    last_request_at`` on the next poll, so ``_observe_engagement`` restores REVIEW_FOUND
-    and ``rereview`` then sees nothing to refresh. Advancing ``last_request_at`` to ``now``
-    moves the freshness boundary past that stale verdict (see
-    :func:`~prgroom.lifecycle.predicates.flip_stale_required_reviews`).
+    False for the bootstrap poll (``last_poll_sha == ""`` — the initial observed push
+    anchors the counter and consumes no retry), an unchanged HEAD, and the CLI's own
+    push (``new_head == last_pushed_head_sha`` — already counted and flipped by
+    ``_push``). Only a HEAD the CLI did not upload, over an already-anchored
+    ``last_poll_sha``, is an external push.
     """
-    if state.last_poll_sha == "":
-        state.last_poll_sha = new_head
-        return False
-    if new_head == state.last_poll_sha:
-        return False
-    if new_head == state.last_pushed_head_sha:
-        # The CLI's own push — already counted by _push, reviewers already flipped.
-        state.last_poll_sha = new_head
-        return False
-    # External push (operator / third party): count it and invalidate stale reviews.
-    state.pr_review_retries_used += 1
+    return (
+        state.last_poll_sha != ""
+        and new_head != state.last_poll_sha
+        and new_head != state.last_pushed_head_sha
+    )
+
+
+def _apply_sha_attribution(state: PRGroomingState, new_head: str) -> bool:
+    """Apply §3.4 retry counting / SHA bookkeeping for the observed HEAD; return external-push.
+
+    Bootstrap (``last_poll_sha == ""``): anchor ``last_poll_sha``, no retry — the initial
+    observed push consumes no retry (the counter is a 0-indexed count of fix-push retries).
+    Unchanged SHA and the CLI's own push (``new_head == last_pushed_head_sha``, already
+    counted by ``_push``): advance ``last_poll_sha`` only. External push:
+    ``pr_review_retries_used += 1``, advance ``last_poll_sha``, and stamp
+    ``last_review_invalidated_sha`` (paired with ``last_rereviewed_sha`` for the durable
+    ``push_awaiting_rereview`` predicate).
+
+    The reviewer-invalidation flip and its boundary stamp run EARLIER in ``poll_pr`` —
+    before reconciliation — so a late-observed pre-push review cannot be reactivated as
+    fresh engagement against the superseded head; this function keeps only the SHA
+    bookkeeping. See :func:`~prgroom.lifecycle.predicates.flip_stale_required_reviews`
+    for the boundary-stamp semantics that stop a standalone ``poll`` (or a crash before
+    ``rereview``) from un-inverting the flip.
+    """
+    external = _external_push_detected(state, new_head)
     state.last_poll_sha = new_head
-    flip_stale_required_reviews(state.reviewers, now=now)
-    state.last_review_invalidated_sha = new_head
-    return True
+    if external:
+        state.pr_review_retries_used += 1
+        state.last_review_invalidated_sha = new_head
+    return external
 
 
 def _resolve_poll_phase(
