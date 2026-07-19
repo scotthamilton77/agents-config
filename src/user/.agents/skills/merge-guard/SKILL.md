@@ -150,7 +150,7 @@ it", "ship it", "yes merge". "ok"/"sure" are not sufficient.
 
 | Rule | Holds when |
 |------|-----------|
-| `bot-quiescence` | `facts.bot_clean_review_at_head == true` (a trusted `bot-reviewers` identity actually reviewed the current head clean) |
+| `bot-quiescence` | `facts.bot_clean_review_at_head == true` (a trusted `bot-reviewers` identity actually reviewed the current head clean — either a submitted clean review or a clean `+1` reaction; `facts.bot_clean_signal_source` (`"review"`/`"reaction"`) records which) |
 | `human-approvals` | `facts.distinct_current_approvers >= human_approvers_required` |
 | `agent-ruling` | `judge_merge.py` returns `verdict == "go"` (bound to `head_ref_oid` + `base_ref_oid`). Hand off on any non-`go`: a `no-go` surfaces `summary` + `merge_blocking_findings` (its `abstain_reason` is null), while `abstain`/error surface `abstain_reason` (their `summary`/`merge_blocking_findings` are empty). NO retry, NO re-run to shop a pass — a `no-go` is recorded terminal for that (head, base, diff), and the per-PR/base attempt budget caps re-rolls. |
 
@@ -166,9 +166,17 @@ python3 "${CLAUDE_SKILL_DIR}/judge_merge.py" \
 
 The rule holds iff the emitted `verdict == "go"`.
 
-- Rule holds + eligible → merge now (Step 5). Announce what authorized it:
+- Rule holds + eligible → merge now (Step 5). Announce what authorized it,
+  branching on `facts.bot_clean_signal_source`:
   > "Merging PR #N under rule-based policy (`bot-quiescence`): Copilot
   > reviewed head <sha> clean, no blockers."
+
+  When `facts.bot_clean_signal_source == "reaction"`, the announcement must
+  also cite the reaction's `id` and `created_at` from `facts.bot_clean_reaction`
+  alongside the head SHA — a reaction leaves no timeline history to audit after
+  the fact, so this is load-bearing, not decorative:
+  > "Merging PR #N under rule-based policy (`bot-quiescence`): Codex reacted
+  > `+1` clean on head <sha> (reaction id <id>, <created_at>), no blockers."
 - Rule not (yet) satisfied → branch on concrete machine signals, never prose
   judgment. All predicates below are exact facts:
   - **floor-clean** ⟺ `check-merge-eligibility.sh` returned exit 0 with
@@ -180,16 +188,28 @@ The rule holds iff the emitted `verdict == "go"`.
   - **Not floor-clean** (any blocker beyond the unmet bot-quiescence rule):
     report blockers and stop. Fail closed; no retry, no force-merge.
   - **floor-clean AND rule-unmet AND NOT ask-spent**: issue ONE re-review ask
-    on the current head by calling `request-rereview.sh` + the re-review poll
-    helpers directly (never a bare reply+resolve; **not** the full
+    on the current head by calling `request-rereview.sh` + `poll-copilot-review.sh`
+    directly (never a bare reply+resolve; **not** the full
     `wait-for-pr-comments` skill, whose Phase 2 timeout-exit path jumps
     straight to inventory-write with empty items on a no-feedback head,
-    skipping its Phase 6 re-request entirely). Increment +
-    persist the silent counter. Re-run Step 3 against the unchanged head
-    exactly once. A clean re-review now satisfies the rule → merge (Step 5).
-    Otherwise (bot silent → ask now spent, or the flag failed to persist): do
-    NOT ask again — fall through to hand-off. merge-guard issues at most one
-    re-review ask per invocation.
+    skipping its Phase 6 re-request entirely). Pass
+    `--bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"` — the same
+    resolved allowlist Step 3 already used — to BOTH the request and the poll,
+    so the ask reaches every trusted identity (including comment-triggered
+    ones like Codex, which never responds to a bare reviewer-request event).
+    Branch on the poll's `completion_kind`, not on whether a review object
+    arrived:
+    - `"review"` or `"clean_reaction"` — the ask reached a reviewer and it
+      responded, whichever way. This is NOT silence; do not touch the silent
+      counter. Re-run Step 3 against the unchanged head exactly once. A
+      genuinely clean pass now satisfies the rule (either
+      `bot_clean_review_at_head` path) → merge (Step 5). A findings-bearing
+      review still leaves the rule unmet → fall through to hand-off.
+    - `"timeout"` — the ask was genuinely silent. THIS is what increments +
+      persists the silent counter (ask-spent), never the other two kinds.
+      Fall through to hand-off.
+
+    merge-guard issues at most one re-review ask per invocation.
   - **floor-clean AND rule-unmet AND ask-spent AND force-merge available**:
     reachable ONLY when ALL of — floor-clean, rule-unmet, ask-spent,
     `policy.allow_force_after_bot_timeout == true`, and a FRESH in-session
