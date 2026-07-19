@@ -470,12 +470,13 @@ the helper's default (1) per spec decision, not a per-repo config knob.
    # split above.
 
    # An empty table (e.g. an autonomous run where every finding escalated,
-   # leaving no FIX/SKIP items) is not valid input to --disposition-table —
-   # omit the flag rather than pass "[]", or the whole re-review request
-   # (Codex AND Copilot) aborts before either ask is dispatched.
+   # leaving no FIX/SKIP items) is not valid input to --disposition-table-file
+   # — omit the flag rather than write/pass "[]", or the whole re-review
+   # request (Codex AND Copilot) aborts before either ask is dispatched.
    DISPOSITION_ARGS=()
    if [ "$(jq 'length' <<<"$disposition_table")" -gt 0 ]; then
-     DISPOSITION_ARGS=(--disposition-table "$disposition_table")
+     printf '%s' "$disposition_table" > /tmp/pr-rereview-disposition-<n>.json
+     DISPOSITION_ARGS=(--disposition-table-file /tmp/pr-rereview-disposition-<n>.json)
    fi
 
    ${CLAUDE_SKILL_DIR}/request-rereview.sh \
@@ -484,6 +485,7 @@ the helper's default (1) per spec decision, not a per-repo config knob.
      "${DISPOSITION_ARGS[@]}" \
      --since-sha "<phase4_baseline_sha>"
    # exit 0 when at least one ask succeeded; exit 1 when none did
+   rm -f /tmp/pr-rereview-disposition-<n>.json
    ```
    `--bot-reviewers` dispatches on each policy-trusted identity's own
    mechanism (the `remove-reviewer` + `add-reviewer` pair for Copilot, an
@@ -491,13 +493,17 @@ the helper's default (1) per spec decision, not a per-repo config knob.
    Copilot-only dance — omitting it would leave a Codex-reviewed repo's
    re-review ask reaching nobody. (`--add-reviewer` alone is idempotent and
    silently does nothing, which is why the helper still pairs it with
-   `--remove-reviewer` for Copilot.) `--disposition-table` and `--since-sha`
-   are Codex-only do-not-relitigate context — they render into the `@codex
-   review` comment as a structured markdown table plus a "focus on commits
-   since `<sha>`" line, and are silently ignored by the Copilot mechanism.
-   Confirmed across PR #317 and PR #331: a bare re-ask makes Codex re-cite
-   settled findings every round, while a structured disposition table
-   (including an explicit REBUT) produced zero re-raises.
+   `--remove-reviewer` for Copilot.) `--disposition-table-file` and
+   `--since-sha` are Codex-only do-not-relitigate context — they render into
+   the `@codex review` comment as a structured markdown table plus a "focus
+   on commits since `<sha>`" line, and are silently ignored by the Copilot
+   mechanism. The table is passed as a **file**, not inline JSON: a round
+   with enough items can exceed the OS's per-argument exec limit (Linux caps
+   a single argv/environ string at 128 KiB) — passing it inline fails the
+   `exec` itself, before `request-rereview.sh`'s own size handling ever gets
+   a chance to run. Confirmed across PR #317 and PR #331: a bare re-ask
+   makes Codex re-cite settled findings every round, while a structured
+   disposition table (including an explicit REBUT) produced zero re-raises.
 
 3. **Launch** `poll-copilot-rereview-start.sh --owner "$OWNER" --repo "$REPO" --pr "$PR" --after <rereview_since_timestamp>` (80s max window:
    20s pre-sleep + 6 × 10s polls). This detects the `copilot_work_started`
@@ -990,7 +996,7 @@ ${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
 **Request a bot re-review** (per-bot dispatch on the policy's
 `bot_reviewers` allowlist, not just the legacy Copilot remove+add pair).
 This is the bare form; **Phase 6 step 2 is the authoritative invocation** —
-it additionally assembles `--disposition-table`/`--since-sha` from the
+it additionally assembles `--disposition-table-file`/`--since-sha` from the
 current round's classified items so the Codex ask carries do-not-relitigate
 context. Do not call the bare form below for Phase 6 — it omits that
 context and reopens the settled-finding relitigation this mechanism exists

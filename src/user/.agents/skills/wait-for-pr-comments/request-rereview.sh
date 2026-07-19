@@ -30,18 +30,20 @@
 #                            preserve the legacy Copilot-only dance
 #                            (backward-compatible default, not how the
 #                            wait-for-pr-comments/merge-guard loops run).
-#   --disposition-table <json>
+#   --disposition-table-file <path>
 #                            Do-not-relitigate context for the Codex ask ONLY
 #                            (Copilot is unaffected, gets neither this nor
-#                            --since-sha). Non-empty JSON array of objects:
-#                            {finding, classification: FIX|SKIP|REBUT, detail}
-#                            — detail is the fixing commit SHA for FIX, a
-#                            rationale for SKIP/REBUT. Renders as a markdown
+#                            --since-sha). Path to a file containing a
+#                            non-empty JSON array of objects: {finding,
+#                            classification: FIX|SKIP|REBUT, detail} — detail
+#                            is the fixing commit SHA for FIX, a rationale
+#                            for SKIP/REBUT. A FILE, not inline JSON — see
+#                            "Argv-size note" below. Renders as a markdown
 #                            table in the '@codex review' comment instead of
 #                            the bare string, so Codex does not re-raise
 #                            settled findings next round (confirmed PR #317,
-#                            #331 — bare re-ask re-cites SKIP/fixed items;
-#                            a disposition table does not, and can carry a
+#                            #331 — bare re-ask re-cites SKIP/fixed items; a
+#                            disposition table does not, and can carry a
 #                            REBUT Codex accepts instead of re-flagging).
 #   --since-sha <sha>        Optional. Codex-only: appends a "focus on
 #                            commits since <sha>" line to the comment body.
@@ -55,18 +57,25 @@
 #
 # GraphQL projection: none directly; uses `gh pr edit` / `gh pr comment` REST
 # under the hood.
+#
+# Argv-size note: --disposition-table-file takes a PATH, not inline JSON. A
+# round with enough items (or a few verbose rationales) can exceed the OS's
+# per-argument exec limit (Linux caps a single argv/environ string at 128
+# KiB) well before it exceeds anything this script controls — passing the
+# JSON inline would fail the `exec` itself, before this script's own
+# comment-size fallback (below) ever got a chance to run.
 set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") --owner <o> --repo <r> --pr <n> [--bot-reviewers <json-array>] [--disposition-table <json-array>] [--since-sha <sha>]
+Usage: $(basename "$0") --owner <o> --repo <r> --pr <n> [--bot-reviewers <json-array>] [--disposition-table-file <path>] [--since-sha <sha>]
 
 Requests a re-review from one or more trusted bot reviewers, dispatching on
 identity: Copilot / copilot-pull-request-reviewer[bot] get the remove+re-add
 reviewer dance; chatgpt-codex-connector[bot] gets an '@codex review' issue
 comment. Omit --bot-reviewers to request only Copilot (legacy default).
---disposition-table and --since-sha add do-not-relitigate context to the
-Codex ask only; they have no effect on the Copilot mechanism.
+--disposition-table-file and --since-sha add do-not-relitigate context to
+the Codex ask only; they have no effect on the Copilot mechanism.
 EOF
   exit 2
 }
@@ -86,9 +95,10 @@ while [ $# -gt 0 ]; do
     --repo)               REPO="${2:-}";                shift 2 ;;
     --pr)                 PR="${2:-}";                  shift 2 ;;
     --bot-reviewers)      BOT_REVIEWERS="${2:-}";       shift 2 ;;
-    --disposition-table)
-      [ -n "${2:-}" ] || { echo "error: --disposition-table requires a value" >&2; usage; }
-      DISPOSITION_TABLE="$2"
+    --disposition-table-file)
+      [ -n "${2:-}" ] || { echo "error: --disposition-table-file requires a value" >&2; usage; }
+      [ -r "$2" ] || { echo "error: --disposition-table-file '$2' is not a readable file" >&2; exit 2; }
+      DISPOSITION_TABLE="$(cat "$2")"
       shift 2
       ;;
     --since-sha)
@@ -116,10 +126,11 @@ if [ -n "$BOT_REVIEWERS" ]; then
   }
 fi
 
-# Validate --disposition-table (when provided) as a non-empty JSON array of
-# objects, each with a "finding" string, a "classification" of FIX/SKIP/REBUT,
-# and a "detail" string (commit SHA for FIX, rationale for SKIP/REBUT) — same
-# fail-closed convention as --bot-reviewers, then canonicalize via jq.
+# Validate --disposition-table-file's content (when provided) as a non-empty
+# JSON array of objects, each with a "finding" string, a "classification" of
+# FIX/SKIP/REBUT, and a "detail" string (commit SHA for FIX, rationale for
+# SKIP/REBUT) — same fail-closed convention as --bot-reviewers, then
+# canonicalize via jq.
 if [ -n "$DISPOSITION_TABLE" ]; then
   DISPOSITION_TABLE=$(jq -ce '
     if (type == "array" and length > 0 and
@@ -132,7 +143,7 @@ if [ -n "$DISPOSITION_TABLE" ]; then
         )] | length) == 0)
     then . else error("bad") end
   ' <<<"$DISPOSITION_TABLE" 2>/dev/null) || {
-    echo "error: --disposition-table must be a non-empty JSON array of objects, each with a string 'finding', a 'classification' of FIX/SKIP/REBUT, and a string 'detail' (commit SHA for FIX, rationale for SKIP/REBUT)" >&2
+    echo "error: --disposition-table-file's content must be a non-empty JSON array of objects, each with a string 'finding', a 'classification' of FIX/SKIP/REBUT, and a string 'detail' (commit SHA for FIX, rationale for SKIP/REBUT)" >&2
     exit 2
   }
 fi
@@ -167,7 +178,7 @@ request_copilot() {
 MAX_CODEX_COMMENT_CHARS=60000
 
 # build_codex_comment_body — bare '@codex review' by default; when
-# --disposition-table and/or --since-sha are supplied, renders them as a
+# --disposition-table-file and/or --since-sha are supplied, renders them as a
 # structured markdown table + focus line instead. Falls back to the bare
 # string (dropping the do-not-relitigate context, not the ask itself) when
 # the rendered body would exceed MAX_CODEX_COMMENT_CHARS. This do-not-
