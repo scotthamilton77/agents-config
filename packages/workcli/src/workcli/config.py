@@ -181,9 +181,9 @@ def _validate(raw: dict[str, object], path: Path) -> TrackLayerConfig:
         raise _not_configured(
             f"[operating-model].groom-state-bead must be a string in {path}", "invalid"
         )
-    # Empty string ("" -- this repo's own project-config.toml ships it as a
-    # placeholder until the §7 backfill migration mints the bead) means
-    # "not yet configured", same as an omitted key -- not an error.
+    # Empty string means "not yet configured", same as an omitted key -- not an
+    # error. A repo may ship "" as a placeholder until its groom-state bead is
+    # minted.
     groom_state_bead = groom_state_bead_raw if groom_state_bead_raw else None
 
     extraction = raw.get("extraction")
