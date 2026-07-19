@@ -24,88 +24,104 @@ The schema and every consumer are correct; only the seed is missing.
 
 ## 2. Decision
 
-Add one new private step to `poll_pr` (`lifecycle/poll.py`) that reconciles
-`state.reviewers` against the PR resource's `requested_reviewers` array on **every
-poll** — not bootstrap-only. `poll_pr` already fetches `pulls/{n}` for `_pr_is_merged`
-(`poll.py:180-183`); this reuses that same payload rather than issuing a new GET.
+Two coordinated changes, both driven by a round of adversarial review that found the
+original single-signal design (seed and withdraw purely off GitHub's
+`requested_reviewers` array) unsafe. Both are recorded here as the shipped decision —
+see §7 for what the review actually found and why it forced this shape.
 
-Three sub-decisions, each made with you this session:
+**A. Reconcile `state.reviewers` every poll from *two* signals, not one:** GitHub's
+`requested_reviewers` array (who is currently being asked) AND this poll's `reviews`
+collection (`raw_reviews`, already fetched by `_ingest_items` — no new GH call), which
+tells us who has actually responded. Neither signal alone is sufficient: GitHub removes
+a reviewer from `requested_reviewers` the instant they submit **any** review, including
+`COMMENTED` — so absence from that array is the *ordinary* shape of "they just
+reviewed," not evidence of withdrawal. `requested_teams` is read but never expanded or
+seeded (team objects carry a slug only, not members; GitHub review attribution is
+always by individual login, never by team) — out of scope, a follow-on bead if a real
+repo needs it.
 
-1. **Reconcile every poll, not just at bootstrap.** A reviewer requested after the PR's
-   first poll (a co-reviewer added later) is a real case with no other code path to
-   catch it, and `poll_pr` already re-derives everything else (items, CI, SHA
-   attribution) fresh every cycle — bootstrap-only would be the odd one out.
-2. **A reviewer removed from `requested_reviewers` without ever reviewing is immediately
-   marked `DECLINED` (`declined_reason="request-withdrawn"`)** — not left to expire via
-   `evaluate_reviewer_timeouts`, and not dropped from the dict. GitHub itself says the
-   request is gone; waiting out `review_start_timeout`/`review_finish_timeout` for a
-   request that no longer exists would block quiescence for no reason, and dropping the
-   entry would lose the `declined_at`/`declined_reason` history `status --json` and the
-   operator may want. A reviewer already in a terminal status (`REVIEW_FOUND`,
-   `DECLINED`) is left untouched by this path — a real verdict, or an already-recorded
-   decline, is not overwritten just because GitHub stopped listing a now-resolved
-   request.
-3. **`requested_teams` is read but not expanded or seeded — out of scope.** GitHub's
-   REST payload gives team objects (slug only); expanding to individual members needs a
-   separate Teams API call, and GitHub review attribution is always by individual user
-   login, never by team — a team-keyed `ReviewerState` couldn't resolve against real
-   review data anyway. This is a distinct, separable feature (own API cost, own identity
-   question) left for a follow-on bead if a real repo needs it.
+**B. Extend `_resolve_poll_phase`'s external-push branch** so an `AWAITING_REVIEW` PR
+whose external push leaves a required reviewer needing refresh
+(`has_required_reviewers_to_refresh`, `lifecycle/predicates.py:30-38`) advances to
+`FIXES_PENDING` — the only phase whose pipeline runs the `rereview` step
+(`run.py:_build_pipeline`). Without this, a reviewer `flip_stale_required_reviews`
+moves to `NOT_REQUESTED` after an external push has no path to ever being re-requested,
+because `AWAITING_REVIEW` is a `_WAITING_PHASES` entry (`run.py:91`) that only ever
+calls `wait` and never reaches the pipeline.
 
-### Seeding a newly-seen reviewer
+### 2.1 Reconciliation, in order
 
-For each `login` present in `requested_reviewers` but absent from `state.reviewers`:
+`_reconcile_reviewers(state, requested_reviewers, raw_reviews, *, now) -> bool` runs
+**after** `_ingest_items` (not before — the original ordering put reconciliation ahead
+of the reviews read specifically so a fast reviewer's activity would be visible the
+same poll it was seeded on; keeping that goal now requires reconciliation to see
+`raw_reviews`, so it must run after that read, not before it). It does three things, in
+this order, over the union of logins in `requested_reviewers` and `raw_reviews`
+authors:
+
+1. **Seed an absent identity.** A login with no existing `state.reviewers` entry gets
+   one. If the login came from a review, seed its status and `last_review_at` directly
+   from that review's own verdict — `REVIEW_FOUND` for an `APPROVED`/
+   `CHANGES_REQUESTED` entry (matching `_TERMINAL_REVIEW_STATES`, `poll.py:189`),
+   `IN_PROGRESS` otherwise (a `COMMENTED` response or a non-review comment authored by
+   that login) — with `last_request_at` also backdated to that same timestamp. Seeding
+   status directly here (rather than leaving it to `_observe_engagement`) is
+   deliberate: `_observe_engagement`'s existing "activity after `last_request_at`" gate
+   (`poll.py:356-363`) only counts activity **strictly newer** than the request time;
+   a first-sight reviewer discovered purely via an already-submitted review has no real
+   request timestamp to compare against, and stamping `last_request_at=now` (later than
+   the review) would make that same review permanently fail the `>` comparison,
+   silently losing the exact verdict this bead exists to capture. A login present only
+   in `requested_reviewers` (never yet reviewed) seeds the same as before:
+   `status=REQUESTED`, `required=True`, `last_request_at=now`.
+2. **Reactivate a declined entry.** An existing entry with `status=DECLINED` (any
+   `declined_reason` — a prior timeout or a prior withdrawal) whose login reappears in
+   `requested_reviewers` this poll resets to `status=REQUESTED`,
+   `last_request_at=now`, `declined_at=None`, `declined_reason=None`. Without this, a
+   reviewer re-requested after an earlier decline stays permanently `DECLINED` —
+   satisfying `G_REVIEWERS` — even though GitHub is actively asking them again.
+3. **Decline a withdrawn request — narrowly.** An existing entry declines as
+   `DECLINED`/`declined_reason="request-withdrawn"` **only if** its login is absent
+   from `requested_reviewers` this poll, has **no** review or comment activity in this
+   poll's `raw_reviews`/`new_items`, **and** its current `status` is `REQUESTED` or
+   `IN_PROGRESS` — an ask GitHub itself pulled out from under an in-flight request.
+   `NOT_REQUESTED` is deliberately excluded from this decline path: under this design
+   the only producer of `NOT_REQUESTED` is `flip_stale_required_reviews`
+   (`lifecycle/predicates.py`, called from `_apply_sha_attribution` on an external
+   push) — it always means "awaiting rereview after invalidation," never "withdrawn,"
+   and declining it here would strand it exactly the way finding #3 (§7) described.
+   Terminal entries (`REVIEW_FOUND`, `DECLINED`) are untouched, as before.
+
+Bot/human classification (for either a `requested_reviewers` user object or a review's
+`user` object — same shape, `login` + optional `type`) mirrors the pinned check in
+`human_review.py:88-98` (`user.type == "Bot"`, a `[bot]`-suffixed `login` as a
+defensive fallback) as a local 3-line predicate in `poll.py` — duplicated rather than
+imported across modules, same reasoning as before: both source predicates are private
+and one-purpose, and the coupling isn't worth it at this size.
+
+### 2.2 Phase-resolver change
+
+In `_resolve_poll_phase` (`poll.py:473-506`), the `external_push` branch gains one more
+arm, checked after the existing `QUIESCED`/`HUMAN_GATED` arms and before the
+unconditional `return phase`:
 
 ```python
-ReviewerState(
-    identity=login,
-    kind=<BOT if the user object looks like a bot, else HUMAN>,
-    status=ReviewerStatus.REQUESTED,   # not NOT_REQUESTED
-    required=True,                     # GH already deciding to request it is the only
-                                        # "required" signal prgroom has (§3 below)
-    last_request_at=now,
-)
+if phase is PRPhase.AWAITING_REVIEW and has_required_reviewers_to_refresh(state):
+    return PRPhase.FIXES_PENDING
 ```
 
-`status=REQUESTED` (not `NOT_REQUESTED`) matters mechanically:
-`rereview_pr`'s `_REFRESHABLE` set is `{NOT_REQUESTED, DECLINED}`
-(`lifecycle/rereview.py:38`) — seeding as `REQUESTED` means a reviewer GitHub already
-asked (which is exactly what "present in `requested_reviewers`" means) is not
-immediately re-asked via the remove/re-add dance on the very poll that discovers them.
-
-Bot/human classification mirrors the pinned check in `human_review.py:88-98`
-(`user.type == "Bot"`, `login` ending in `[bot]` as a defensive fallback for payloads
-that omit `type`) but operates directly on the `requested_reviewers` user object rather
-than a wrapping review object — a 3-line local predicate in `poll.py`, not a
-cross-module import of a private helper (`_is_bot` stays `lifecycle/human_review.py`
-internal; duplicating the one-line check avoids a private cross-module coupling for
-something this small).
-
-### Withdrawing a reviewer
-
-For each existing `state.reviewers` entry whose login is **absent** from this poll's
-`requested_reviewers` and whose `status` is not already in `{REVIEW_FOUND, DECLINED}`:
-set `status=DECLINED`, `declined_at=now`, `declined_reason="request-withdrawn"`. This
-reuses the same field-mutation shape as `quiescence.py`'s existing `_decline()`
-(`quiescence.py:138-141`) but is written as its own 3-line block in `poll.py` rather than
-importing that private helper across modules — same reasoning as the classification
-predicate above.
-
-### Placement in `poll_pr`
-
-The reconciliation call sits in the existing `pr = _gh_get(gh, ref,
-f"{base}/pulls/{ref.number}")`-adjacent flow (today folded into `_pr_is_merged`,
-`poll.py:180-183`) — refactored so the raw PR resource is fetched once and both
-`merged` and the reviewer reconciliation read from it, **before** `_ingest_items` /
-`_observe_engagement` run. Ordering it first means a reviewer requested and reviewed
-within the same poll window (a fast bot reviewer) is seeded in time for
-`_observe_engagement` to observe their activity on that same cycle, rather than needing
-a second poll to notice them at all.
-
-`_reconcile_reviewers(state, pr, *, now) -> bool` returns whether anything changed, the
-same contribution-to-`activity` shape every other poll sub-step already uses
-(`_ingest_items`'s `new_items`, `_ci_state`'s comparison, `_apply_sha_attribution`'s
-`external_push`).
+`has_required_reviewers_to_refresh` (already public, already imported by `run.py`) is
+evaluated against the state *after* reconciliation runs, so it reflects this poll's
+freshly-flipped `NOT_REQUESTED` entries. This is self-resolving, not a ping-pong: once
+in `FIXES_PENDING`, the pipeline's `rereview` step (guarded by `_rereview_guard`, the
+same predicate) re-requests the stale reviewer and flips them to `REQUESTED`, so the
+next end-of-cycle resolution has nothing left to refresh. Returning `FIXES_PENDING`
+with no new items to fix is not a new pattern — bootstrap already does this
+(`_resolve_poll_phase`'s `phase is IDLE` arm returns `FIXES_PENDING` whenever
+`has_items`, regardless of whether those items are new); the existing resolver
+(`resolver.py:resolve_end_of_cycle_phase`) already returns a fixes-pending PR to
+`AWAITING_REVIEW` once its pipeline has nothing left to do, so no resolver change is
+needed beyond this one new arm.
 
 ## 3. What "required" means here
 
@@ -118,11 +134,12 @@ change — this bead does not block it and does not attempt to anticipate its sh
 
 ## 4. Out of scope
 
-- `requested_teams` expansion (§2.3) — follow-on bead if needed.
+- `requested_teams` expansion (§2) — follow-on bead if needed.
 - Any config surface for reviewer requiredness — none exists; not invented here.
 - Changes to `rereview_pr`, `_g_reviewers`, `_observe_engagement`, or
-  `evaluate_reviewer_timeouts` — all four already do the right thing once the dict is
-  non-empty; this bead is purely additive to `poll.py`.
+  `evaluate_reviewer_timeouts` themselves — all four already do the right thing once
+  the dict is populated correctly; this bead's code changes are confined to
+  `poll.py` (`_reconcile_reviewers` plus the one `_resolve_poll_phase` arm in §2.2).
 - agents-config-abn9.8.52 (Codex bot support) — this bead unblocks it but does not
   implement per-bot re-review mechanism selection or reaction-based clean-pass
   detection.
@@ -136,54 +153,76 @@ dicts.
 
 New behaviors:
 
-1. First-seen reviewer is seeded: `_gh(requested_reviewers=["alice"])` against an
-   otherwise-empty `state.reviewers` → after `poll_pr`, `state.reviewers["alice"]`
-   exists with `status=REQUESTED`, `required=True`, `kind=HUMAN`,
-   `last_request_at==now`.
-2. Bot classification: a `requested_reviewers` user object with `type="Bot"` (or a
-   `[bot]`-suffixed login, no `type` field) seeds `kind=BOT`.
-3. Already-known reviewer is left alone: a reviewer already in `state.reviewers` with a
-   non-default `last_request_at`/`status` and still present in `requested_reviewers` →
-   unchanged (no reset, no duplicate).
-4. Withdrawn non-terminal reviewer auto-declines: a `REQUESTED`/`IN_PROGRESS`/
-   `NOT_REQUESTED` reviewer absent from this poll's `requested_reviewers` → flips to
-   `DECLINED`, `declined_reason="request-withdrawn"`.
-5. Withdrawn terminal reviewer is untouched: a `REVIEW_FOUND` or already-`DECLINED`
-   reviewer absent from `requested_reviewers` → status, `declined_reason` (if any)
-   unchanged.
-6. `requested_teams` is read and ignored: a payload carrying `requested_teams` but no
-   matching `requested_reviewers` entry does not seed anything from the team array.
-7. Reconciliation contributes to `activity`: a poll that seeds or declines at least one
-   reviewer advances `last_activity_at`; a poll where the reviewer set is unchanged
-   does not (mirrors the existing no-noise pattern in `_observe_engagement`).
-8. Seed-then-engage in one poll: a reviewer newly present in `requested_reviewers` AND
-   whose terminal review appears in the same poll's `reviews` response → both fire
-   within the one `poll_pr` call (seeded as `REQUESTED`, then flipped to
-   `REVIEW_FOUND` by the existing `_observe_engagement`), proving the ordering
-   decision in §2.
+1. First-seen reviewer seeded from `requested_reviewers` only (no review yet):
+   `_gh(requested_reviewers=["alice"])` against an otherwise-empty `state.reviewers` →
+   after `poll_pr`, `state.reviewers["alice"]` exists with `status=REQUESTED`,
+   `required=True`, `kind=HUMAN`, `last_request_at==now`.
+2. **First-poll-after-response (the critical-finding regression guard):** a reviewer
+   absent from `requested_reviewers` but present in this poll's `reviews` with an
+   `APPROVED`/`CHANGES_REQUESTED` verdict, no pre-existing `state.reviewers` entry →
+   seeded directly to `status=REVIEW_FOUND`, `last_review_at` == that review's own
+   timestamp, `last_request_at` backdated to the same value. `_g_reviewers` sees them
+   as done on this very first poll — never vacuously empty.
+3. Same case with a `COMMENTED` verdict (the P1 regression guard): seeds to
+   `status=IN_PROGRESS`, not `REVIEW_FOUND` and not declined.
+4. Bot classification: a `requested_reviewers` **or** a review's `user` object with
+   `type="Bot"` (or a `[bot]`-suffixed login, no `type` field) seeds `kind=BOT`.
+5. Already-known, still-requested reviewer is left alone: a reviewer already in
+   `state.reviewers` with a non-default `last_request_at`/`status`, still present in
+   `requested_reviewers`, no new review activity → unchanged (no reset, no duplicate).
+6. **Reactivation on re-request:** a `DECLINED` entry (either `declined_reason`) whose
+   login reappears in `requested_reviewers` → resets to `REQUESTED`,
+   `last_request_at=now`, `declined_at`/`declined_reason` cleared.
+7. **Withdrawal is narrow:** a `REQUESTED`/`IN_PROGRESS` reviewer absent from
+   `requested_reviewers` **and** with no review/comment activity this poll → declines
+   to `DECLINED`/`request-withdrawn`.
+8. **`NOT_REQUESTED` never auto-declines (the P1 regression guard):** a reviewer
+   `flip_stale_required_reviews` has already moved to `NOT_REQUESTED` (simulating a
+   post-external-push invalidation), absent from `requested_reviewers` this poll →
+   stays `NOT_REQUESTED`, is not declined.
+9. **Activity masks a spurious decline (the other P1 regression guard):** a `REQUESTED`
+   reviewer absent from `requested_reviewers` this poll, but present in `raw_reviews`
+   with a `COMMENTED` verdict → engages to `IN_PROGRESS` (existing `_observe_engagement`
+   behavior), is never declined, even though they are simultaneously absent from
+   `requested_reviewers`.
+10. `requested_teams` is read and ignored: a payload carrying `requested_teams` but no
+    matching `requested_reviewers`/`reviews` entry does not seed anything from the team
+    array.
+11. Reconciliation contributes to `activity`: a poll that seeds, reactivates, or
+    declines at least one reviewer advances `last_activity_at`; a poll where the
+    reviewer set is unchanged does not.
+12. **Phase-resolver arm (§2.2):** a PR in `AWAITING_REVIEW` with a required reviewer
+    in `NOT_REQUESTED` and an external push observed this poll → `poll_pr` returns
+    `phase=FIXES_PENDING`, not `AWAITING_REVIEW`. A PR in the same state but with no
+    `NOT_REQUESTED` required reviewer (nothing to refresh) stays `AWAITING_REVIEW` — no
+    regression to the existing `external_push` no-op arms (`QUIESCED`→
+    `AWAITING_REVIEW`, `HUMAN_GATED`→`FIXES_PENDING`, unconditional `return phase`).
 
 **Existing-test ripple** (mechanical — `_gh()` gains a `requested_reviewers: list[str]
 | None = None` parameter defaulting to an empty GitHub array; every existing call site
-that pre-seeds a **non-terminal** reviewer via `_required_reviewer(ReviewerStatus.
-REQUESTED)` / `_required_reviewer(ReviewerStatus.NOT_REQUESTED)` / `_requested_at(...)`
-and then calls `poll_pr` must also pass `requested_reviewers=["copilot"]` (the
-fixtures' shared login) to its `_gh(...)` call, or the new withdrawal path force-declines
-that reviewer before the test's own engagement/timeout assertion gets to run.
-Call sites seeding only `REVIEW_FOUND` reviewers need no change — terminal statuses are
-protected from withdrawal by design (§2.2)). Enumerate the exact call sites during
-implementation with
-`grep -n "_required_reviewer(ReviewerStatus.REQUESTED\|_required_reviewer(ReviewerStatus.NOT_REQUESTED\|_requested_at(" tests/unit/test_lifecycle_poll.py`
+that pre-seeds a `REQUESTED`/`IN_PROGRESS` reviewer via
+`_required_reviewer(ReviewerStatus.REQUESTED)` / `_requested_at(...)` and then calls
+`poll_pr` **without** matching review/comment activity for that login must also pass
+`requested_reviewers=["copilot"]` to its `_gh(...)` call, or the new narrow-withdrawal
+path (behavior 7) declines that reviewer before the test's own engagement/timeout
+assertion runs. Call sites seeding `NOT_REQUESTED` or `REVIEW_FOUND`/`DECLINED`
+reviewers need no change (behaviors 8, 5's terminal counterpart). Enumerate the exact
+call sites during implementation with
+`grep -n "_required_reviewer(ReviewerStatus.REQUESTED\|_requested_at(" tests/unit/test_lifecycle_poll.py`
 — a spot-check this session found at least `test_requested_reviewer_past_start_timeout_auto_declines`
 (`test_lifecycle_poll.py:923`) and every `_requested_at(...)`-based engagement test
 (`test_lifecycle_poll.py:500-624` region) as certain hits.
 
-**AC (agents-config-abn9.8.51):** behaviors 1–8 covered, one red-green cycle each; the
+**AC (agents-config-abn9.8.51):** behaviors 1–12 covered, one red-green cycle each; the
 existing-test ripple applied in full; `make ci-prgroom` green from the package
 worktree root. Restated against the bug report: `state.reviewers` is non-empty after a
-real poll wherever GitHub reports pending review requests; `rereview_pr` has required
-reviewers to act on; `_g_reviewers` evaluates over real entries instead of vacuously
-passing; `ReviewerKind.BOT` and `is_bot` in the `status --json` envelope carry real
-data.
+real poll wherever GitHub reports a pending request **or** an already-submitted review,
+including on the very first poll a fast reviewer is seen (behaviors 2–3); `rereview_pr`
+has required reviewers to act on, and the `AWAITING_REVIEW` phase itself no longer
+blocks that step from ever running (behavior 12); `_g_reviewers` evaluates over real
+entries instead of vacuously passing; a reviewer's request being pulled mid-flight is
+distinguished from them simply having reviewed or being mid-rereview (behaviors 7–9);
+`ReviewerKind.BOT` and `is_bot` in the `status --json` envelope carry real data.
 
 ## 6. Assumption ledger (scan here, Scott)
 
@@ -195,12 +234,53 @@ data.
 - `ASSUMPTION:` `required=True` for every seeded reviewer is correct with no config
   surface to override it (§3) — if a real repo later wants an optional-reviewer
   concept, that is new, additive config, not a revision of this bead's seeding logic.
-- `ASSUMPTION:` Duplicating the 3-line bot-classification and decline-mutation logic
-  locally in `poll.py`, rather than importing `human_review._is_bot` /
-  `quiescence._decline` across module boundaries, is the right call at this size — both
-  are private, one-purpose helpers whose cross-module reuse would trade a few
-  duplicated lines for a coupling neither module's docstring currently advertises.
+- `ASSUMPTION:` Duplicating the 3-line bot-classification logic locally in `poll.py`,
+  rather than importing `human_review._is_bot` across module boundaries, is the right
+  call at this size — it is a private, one-purpose helper whose cross-module reuse
+  would trade a few duplicated lines for a coupling its docstring doesn't advertise.
   Revisit only if a third seeding-adjacent site needs the same logic.
+- `ASSUMPTION:` Backdating `last_request_at`/`last_review_at` to a review's own
+  timestamp for a first-poll-after-response reviewer (§2.1.1) is sufficient for every
+  downstream consumer of those fields. Checked: `evaluate_reviewer_timeouts` only acts
+  on `REQUESTED`/`IN_PROGRESS` (a `REVIEW_FOUND`-seeded reviewer is exempt);
+  `_g_idle`/quiescence's idle timer reads `state.last_activity_at`, not a per-reviewer
+  field, so it is untouched by this backdating.
+- `ASSUMPTION:` `has_required_reviewers_to_refresh` evaluated *after* reconciliation
+  (§2.2) is the correct read order — it must see this poll's freshly-flipped
+  `NOT_REQUESTED` entries (from `flip_stale_required_reviews`, which runs earlier in
+  `_apply_sha_attribution`) to decide whether `AWAITING_REVIEW` should advance.
+
+## 7. Review findings applied here
+
+This design's §2 differs from the version first approved conversationally. A Codex
+review pass and an adversarial Codex review pass, both run against the initially
+committed spec, independently converged on the same root defect: the original design
+used presence/absence in `requested_reviewers` as the sole signal for both reviewer
+*identity* and every state transition, when that set changes for at least three
+unrelated reasons (the reviewer responded; their prior review was invalidated by our
+own push-tracking and awaits re-request; an operator actually pulled the request) —
+and conflated all three into one "declare withdrawn" rule.
+
+Four findings, all addressed in §2 above:
+
+- **Critical (adversarial pass):** a reviewer who already submitted any review before
+  prgroom's first poll is never seeded at all — GitHub had already removed them from
+  `requested_reviewers` by the time of that first read. Fixed by §2.1's dual-signal
+  seeding (behaviors 2–3).
+- **P1 (standard pass):** a reviewer submitting a `COMMENTED` review mid-poll-cycle
+  would be declared withdrawn before their (non-terminal, per this codebase's MVP
+  model) engagement was observed. Fixed by reordering reconciliation after
+  `_ingest_items` and excluding any login with this-poll activity from the decline path
+  (behavior 9).
+- **P1 (standard pass):** a reviewer invalidated by `flip_stale_required_reviews` after
+  an external push had no path back to being re-requested — `AWAITING_REVIEW` never
+  reaches the `rereview` pipeline step — so the next poll would wrongly declare them
+  withdrawn instead of stale-pending-rereview. Fixed by excluding `NOT_REQUESTED` from
+  the decline path (behavior 8) and by §2.2's phase-resolver arm, which gives that
+  reviewer an actual path to re-request.
+- **P2 (standard pass):** a reactivated (re-requested) reviewer whose prior state was
+  `DECLINED` stayed permanently declined. Fixed by §2.1.2's reactivation rule
+  (behavior 6).
 
 ## Continuations
 
