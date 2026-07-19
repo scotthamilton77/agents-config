@@ -86,8 +86,16 @@ three short strings per parked worker: name, child `agentId`, path.
 
 ## Orchestrator duties when running nested workers
 
-- **Expect the bare idle.** A parked worker emits no content on its own — only a handoff if you
-  briefed it to send one. A silent idle means "check on me," not "I'm done."
+- **Expect the bare idle, and do nothing with it.** A parked worker emits no content on its own —
+  only a handoff if you briefed it to send one. An idle therefore means *parked*: not "done," not
+  "stuck," not "waiting on you."
+- **A bare idle is not an event — it is the absence of one.** Never let an idle *itself* trigger
+  anything: do not reply to it, do not `SendMessage` the parked worker about it, do not log or
+  narrate it. Idles are the most frequent notification in a nested run and carry the least
+  information; treating each one as a prompt spends the orchestrator's context on the news that
+  nothing happened. Act on **real** signals — a child's completion notification, a handoff, a
+  report, a watcher ring. The orchestrator *does* re-engage a parked worker, but because a child
+  completed, never because the parent went quiet.
 - **Verify ground truth before resuming.** A worker's narration is a claim, not a fact — read
   git/gh/bd to learn the true state, then re-engage precisely.
 - **A child's completion arriving to YOU means the parent did not see it** — that is your cue to
@@ -98,6 +106,7 @@ three short strings per parked worker: name, child `agentId`, path.
 | Mistake | Consequence | Fix |
 |---|---|---|
 | Brief a worker to spawn an agent when it could do the job inline | Needless nesting + stall risk | Rung 1: brief it to spawn nothing |
+| Reply to, or log, a bare idle notification | Context burned narrating that nothing happened; real signals buried | Treat the idle as silence; act only on completions, handoffs, and reports |
 | Brief a worker to "spawn an agent and wait" | Stalls forever | Rung 3, or the handoff |
 | Worker arms `run_in_background`/`Monitor` to await its child | Never re-invoked; still stalls | Hand off and end the turn, or rung 1/2 |
 | Child returns its full payload | Orchestrator context bloats on relay | Child returns only the filename |
