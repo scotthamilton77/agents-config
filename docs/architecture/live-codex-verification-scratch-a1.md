@@ -1,6 +1,7 @@
 # Live Codex Verification Scratch — A1
 
-This file exists only to give scenario A1 (clean-first-pass merge) of
-docs/specs/2026-07-19-live-codex-verification-design.md a real, trivial diff
-to open a PR against. It is deleted by that plan's Task 7 cleanup once all
-of A1/A2a/A2b have merged.
+This file exists only to give scenario A1 (clean-first-pass merge) of a live
+Codex-awareness verification exercise a real, trivial diff to open a PR
+against. It is deleted by a follow-up cleanup commit once the exercise's
+merge scenarios have landed. This document intentionally contains no
+external file references so it can be reviewed in isolation on any branch.
