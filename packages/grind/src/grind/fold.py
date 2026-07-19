@@ -289,13 +289,23 @@ def _record_round(item: Item, round_: int | None, head_sha: str | None) -> None:
     """Append/replace this round's authoritative head_sha, last-event-wins
     within a round (spec `review_stalemate_risk`: "the LATEST event logged for
     that round"). A round history is thus always distinct rounds in order --
-    exactly what the condition's "last N distinct round values" window needs."""
+    exactly what the condition's "last N distinct round values" window needs.
+
+    Last-event-wins applies to any distinct round, not just the final entry: a
+    late event for an earlier round updates that round's record in place
+    (preserving its position in the ordering) rather than appending a duplicate
+    that would inflate the distinct-round count `_review_stalemate_risk` reads."""
     if round_ is None:
         return
-    if item.round_history and item.round_history[-1][0] == round_:
-        item.round_history = (*item.round_history[:-1], (round_, head_sha))
-    else:
-        item.round_history = (*item.round_history, (round_, head_sha))
+    for i, (existing_round, _) in enumerate(item.round_history):
+        if existing_round == round_:
+            item.round_history = (
+                *item.round_history[:i],
+                (round_, head_sha),
+                *item.round_history[i + 1 :],
+            )
+            return
+    item.round_history = (*item.round_history, (round_, head_sha))
 
 
 @_handler("review_round")

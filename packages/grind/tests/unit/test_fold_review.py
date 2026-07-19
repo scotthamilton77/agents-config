@@ -155,3 +155,20 @@ def test_review_round_illegal_before_pr_opened() -> None:
     assert state.items["wgclw.1"].status == "queued"
     assert len(state.anomalies) == 1
     assert state.anomalies[0].type == "review_round"
+
+
+def test_record_round_updates_non_adjacent_earlier_round_in_place() -> None:
+    # A late event for round 1 (arriving after round 3) overwrites round 1's
+    # record where it sits -- last-event-wins per distinct round, ordering
+    # preserved -- instead of appending a duplicate.
+    events = [
+        *_TO_PR_OPEN,
+        event("review_round", item="wgclw.1", kind="codex", round=1, head_sha="a1"),
+        event("review_round", item="wgclw.1", kind="codex", round=2, head_sha="a2"),
+        event("review_round", item="wgclw.1", kind="codex", round=3, head_sha="a3"),
+        event("review_round", item="wgclw.1", kind="codex", round=1, head_sha="z9"),
+    ]
+
+    state = fold(events)
+
+    assert state.items["wgclw.1"].round_history == ((1, "z9"), (2, "a2"), (3, "a3"))

@@ -273,6 +273,33 @@ def test_review_stalemate_risk_not_fired_before_n_distinct_rounds() -> None:
     assert "review_stalemate_risk" not in _names(result)
 
 
+def test_review_stalemate_risk_ignores_late_earlier_round_duplicate() -> None:
+    # Two distinct rounds on the same SHA, then a valid late verdict for the
+    # earlier round: last-event-wins must update round 1 in place, not append a
+    # third entry that fakes a three-distinct-round stalemate.
+    events = [
+        *_to_pr_open(),
+        event("review_round", item="wgclw.1", kind="codex", round=1, head_sha="a1"),
+        event("review_round", item="wgclw.1", kind="codex", round=2, head_sha="a1"),
+        event(
+            "review_verdict",
+            item="wgclw.1",
+            kind="codex",
+            round=1,
+            head_sha="a1",
+            verdict="clean",
+            findings=[],
+        ),
+    ]
+    state = fold(events)
+
+    assert state.items["wgclw.1"].round_history == ((1, "a1"), (2, "a1"))
+
+    result = conditions(state, datetime(2026, 7, 19, 0, 5, 0, tzinfo=UTC))
+
+    assert "review_stalemate_risk" not in _names(result)
+
+
 # -- item_unblocked (transition) ------------------------------------------------
 
 
