@@ -286,4 +286,37 @@ assert "disposition-table with pipe/newline in cells exits 0" "[ \$rc_esc -eq 0 
 assert "embedded newlines collapse and literal pipes are escaped, keeping the row intact on one line" \
   "grep -qF -- 'a \\| b c | SKIP | line1 line2 \\| pipe |' '$FAKE_GH_LOG'"
 
+# (f) a cell containing a PRE-EXISTING literal backslash-pipe (e.g. a regex
+# excerpt) must have its backslash escaped BEFORE the pipe is escaped, or the
+# cell's own backslash consumes the added escape and the pipe still splits
+# the row.
+: > "$FAKE_GH_LOG"
+DISPOSITION_BS='[{"finding":"regex \\| here","classification":"SKIP","detail":"n/a"}]'
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table "$DISPOSITION_BS" >/dev/null 2>&1
+rc_bs=$?
+assert "disposition-table with a pre-existing backslash-pipe exits 0" "[ \$rc_bs -eq 0 ]"
+assert "the pre-existing backslash is escaped before the pipe, so the pipe stays escaped" \
+  "grep -qF -- 'regex \\\\\\| here' '$FAKE_GH_LOG'"
+
+# (g) a disposition table large enough to push the rendered comment past
+# GitHub's issue-comment size limit falls back to a short, valid
+# '@codex review' body instead of failing the gh call outright.
+: > "$FAKE_GH_LOG"
+BIG_DISPOSITION=$(python3 -c "
+import json
+items = [{'finding': 'x' * 200, 'classification': 'SKIP', 'detail': 'y' * 200} for _ in range(400)]
+print(json.dumps(items))
+")
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table "$BIG_DISPOSITION" >/dev/null 2>&1
+rc_big=$?
+assert "oversized disposition-table still exits 0" "[ \$rc_big -eq 0 ]"
+assert "oversized disposition-table posts the '@codex review' ask (not aborted)" \
+  "grep -qF -- '@codex review' '$FAKE_GH_LOG'"
+assert "oversized disposition-table falls back to a short body, not the full table" \
+  "[ \$(wc -c < '$FAKE_GH_LOG') -lt 1000 ]"
+
 exit $FAIL

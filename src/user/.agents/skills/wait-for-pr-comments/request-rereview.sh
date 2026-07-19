@@ -158,11 +158,33 @@ request_copilot() {
   fi
 }
 
+# GitHub issue-comment bodies are capped at 65536 characters. A disposition
+# table has no per-item length bound (a verbose SKIP rationale, or enough
+# FIX/SKIP items in one round, can exceed it), and gh's comment call would
+# then fail outright, leaving a Codex-only policy with no successful
+# re-review ask at all — worse than a plain, un-contextualized one. This
+# threshold leaves comfortable margin for the surrounding prose.
+MAX_CODEX_COMMENT_CHARS=60000
+
 # build_codex_comment_body — bare '@codex review' by default; when
 # --disposition-table and/or --since-sha are supplied, renders them as a
-# structured markdown table + focus line instead. This do-not-relitigate
-# context is Codex-only — request_copilot never sees it.
+# structured markdown table + focus line instead. Falls back to the bare
+# string (dropping the do-not-relitigate context, not the ask itself) when
+# the rendered body would exceed MAX_CODEX_COMMENT_CHARS. This do-not-
+# relitigate context is Codex-only — request_copilot never sees it.
 build_codex_comment_body() {
+  local full
+  full="$(_render_codex_comment_body)"
+  if [ "${#full}" -gt "$MAX_CODEX_COMMENT_CHARS" ]; then
+    echo "@codex review"
+    echo
+    echo "(do-not-relitigate context omitted: exceeded ${MAX_CODEX_COMMENT_CHARS} characters)"
+    return
+  fi
+  printf '%s' "$full"
+}
+
+_render_codex_comment_body() {
   if [ -z "$DISPOSITION_TABLE" ] && [ -z "$SINCE_SHA" ]; then
     echo "@codex review"
     return
@@ -181,8 +203,13 @@ build_codex_comment_body() {
     # cannot terminate or shift a row — free-text review excerpts and
     # rationales routinely contain both, and a shifted row breaks the
     # finding-to-classification association this table exists to preserve.
+    # Backslashes are escaped FIRST, before pipes: a cell containing a
+    # pre-existing '\|' (e.g. a regex excerpt) would otherwise have its own
+    # backslash consume the escape this function adds for the pipe,
+    # un-escaping it in the rendered Markdown and re-opening the same
+    # row-splitting hazard.
     jq -r '
-      def cell: gsub("\r\n|\r|\n"; " ") | gsub("\\|"; "\\|");
+      def cell: gsub("\r\n|\r|\n"; " ") | gsub("\\\\"; "\\\\") | gsub("\\|"; "\\|");
       .[] | "| " + (.finding | cell) + " | " + .classification + " | " + (.detail | cell) + " |"
     ' <<<"$DISPOSITION_TABLE"
     echo

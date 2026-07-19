@@ -987,8 +987,15 @@ ${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
   > /tmp/pr-inventory-build-<n>.json
 ```
 
-**Request a bot re-review** (Phase 6 — per-bot dispatch on the policy's
-`bot_reviewers` allowlist, not just the legacy Copilot remove+add pair):
+**Request a bot re-review** (per-bot dispatch on the policy's
+`bot_reviewers` allowlist, not just the legacy Copilot remove+add pair).
+This is the bare form; **Phase 6 step 2 is the authoritative invocation** —
+it additionally assembles `--disposition-table`/`--since-sha` from the
+current round's classified items so the Codex ask carries do-not-relitigate
+context. Do not call the bare form below for Phase 6 — it omits that
+context and reopens the settled-finding relitigation this mechanism exists
+to prevent. It remains valid for a caller with no round context to draw
+from (e.g. merge-guard's one-ask retry):
 
 ```bash
 ${CLAUDE_SKILL_DIR}/request-rereview.sh \
