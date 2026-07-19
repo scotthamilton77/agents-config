@@ -258,7 +258,7 @@ review; a condition whose name is an imperative is a defect.
 | `lane_complete` | last item in a lane's queue reaches `done` | lane |
 | `grind_complete` | every lane complete | — |
 | `stale_item` | item not terminal/parked and no event references it for > `config.stale_item_after` | item, age |
-| `stale_lane` | no event referencing a lane for > `config.stale_lane_after` | lane, age |
+| `stale_lane` | no event referencing the lane itself or any item currently assigned to it for > `config.stale_lane_after` | lane, age |
 | `attention_pending` | unresolved attention entries exist | count, oldest age |
 | `blocked_chain` | an item is blocked on an item that is itself blocked/parked/waiting-human | the chain, as an ordered item list |
 | `review_stalemate_risk` | the last `config.stalemate_risk_round` consecutive `review_round`/`review_verdict` events for the item carry the SAME `head_sha` (round count ≥ threshold on an unchanged head); a changed `head_sha` between rounds resets the run — dumb arithmetic only; stalemate *declaration* stays with the review skill's §3 rule | item, round, head_sha |
