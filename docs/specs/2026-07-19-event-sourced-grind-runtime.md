@@ -154,7 +154,7 @@ below)
 | `pr_opened` | `item`, `pr` | `in-progress → pr-open` |
 | `review_round` | `item`, `kind` (codex\|copilot\|ralf\|human), `round`, `head_sha` (PR head commit this round reviewed), `detail?` | `pr-open → in-review` (or stays `in-review`); sets the round badge |
 | `review_verdict` | `item`, `kind`, `round`, `head_sha` (PR head commit this round reviewed), `verdict` (clean \| findings \| stalemate), `findings[]` — each `{severity, summary, disposition (fixed \| wont-fix \| deferred \| escalated), thread_url?}` | Records the round's outcome. `open_threads` and `wont_fix_count` are **derived** from dispositions, not asserted. `stalemate` sets the item's stalemate flag (declared per the review skill's §3 rule — the fold records, it does not diagnose). |
-| `pr_closed` | `item`, `pr`, `reason`, `next` (in-progress \| queued \| parked) | Unmerged closure (abandoned, superseded). Item returns to `next`; without this an abandoned PR is unrepresentable except by lying. |
+| `pr_closed` | `item`, `pr`, `reason`, `next` (in-progress \| queued \| parked) | Unmerged closure (abandoned, superseded); appends to the closed ledger projection (`pr`, `reason`). Item returns to `next`; without this an abandoned PR is unrepresentable except by lying. |
 | `item_blocked` | `item`, `on[]` (blocking item ids), `note?` | Records blocker edges (and `note`); a later `item_blocked` for the same item **replaces** its full edge set (latest `on[]` is authoritative) — how ROOT re-scopes or drops a dependency that won't resolve on its own. `blocked` status is **derived** from unresolved edges — whichever way they arrived (seed or event), never asserted by the event. Unblocking is **derived**: an edge resolves only when its target reaches `merged`/`done` (a `pr_closed` target stays unresolved — parked or reworked work is unfinished); when every edge resolves, the fold returns the item to `queued` and fires the `item_unblocked` condition — there is no unblock event. |
 | `item_waiting_human` | `item`, `why` | `→ waiting-human`; auto-raises an attention entry |
 | `item_resumed` | `item`, `ruling` (the human's decision, terse) | `waiting-human → in-progress`, **unless** the item still has unresolved blocker edges — then it folds to `blocked` (derived-blocked takes precedence over resume); clears the item's auto-raised attention entry either way |
@@ -178,8 +178,10 @@ The fold is a **pure function** `fold(events) → State`, unit-tested in
 isolation. State contains: grind header (title, repo, mission, protocols,
 pause state), lanes with derived statuses, items with derived statuses +
 review state + PR refs, blocker edges, parking lot, attention list,
-observations, merged/closed ledgers (projections over `item_merged` /
-`item_done`), lessons, and the currently-true condition set.
+observations, merged ledger (projection of `item_merged`; `item_done`
+marks teardown complete) and closed ledger (projection of `pr_closed` —
+unmerged closures: abandoned, superseded, each with pr number and
+reason), lessons, and the currently-true condition set.
 
 Item status legality (rows = current status, event → new status; anything
 absent is an anomaly):
@@ -323,7 +325,7 @@ projection containing exactly §7's anatomy, sourced as follows:
 | 1. Mission + out-of-scope | `grind_created.mission` |
 | 2. Pause state + resume checklist | `grind_paused` (if unresumed) |
 | 3. Roster + exact positions | `grind_created.lanes` + `lane_handover` + derived item statuses |
-| 4. Merged/closed ledger | `item_merged` / `item_done` projections |
+| 4. Merged ledger + closed ledger | merged ← `item_merged` (+ `item_done` marks teardown complete); closed ← `pr_closed` (unmerged closures: abandoned, superseded — with pr number and reason) |
 | 5. Human docket + recommendations | attention list + `item_waiting_human.why` |
 | 6. Operating protocols in force | `grind_created.protocols` |
 | 7. Repo quirks and traps | `WARN`/`LESSON` observations |
