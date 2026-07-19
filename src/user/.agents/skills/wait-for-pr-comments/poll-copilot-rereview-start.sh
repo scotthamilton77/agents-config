@@ -11,10 +11,12 @@
 #   convention); enables the eyes-reaction check. Omit to keep the original
 #   Copilot-events-only behavior.
 #
-# Exit codes: 0 started (JSON), 1 not started, 3 error (bad args, auth, OR the
-# reactions endpoint still failing at the deadline with --bot-reviewers set —
-# distinct from "not started", since whether Codex started is then unknown,
-# not false; see the poll-loop comment on reactions_endpoint_failed).
+# Exit codes: 0 started (JSON), 1 not started, 3 error (bad args, auth, OR an
+# endpoint still failing at the deadline for a signal that's actually in
+# play — reactions only checked when --bot-reviewers has an eyes-capable
+# identity — distinct from "not started", since whether a re-review started
+# is then unknown, not false; see the poll-loop comment on
+# events_endpoint_failed/reactions_endpoint_failed).
 # Stdout (0): {"status":"copilot_rereview_started","signal":"event"|"eyes_reaction","event_timestamp":"..."}
 # Stdout (1): {"status":"no_rereview_started"}
 # Stdout (3, reactions endpoint failed at the deadline): {"status":"rereview_start_check_error","message":"..."}
@@ -83,6 +85,25 @@ fi
 # poll-copilot-review.sh's --bot-reviewers convention.
 BOT_LOGIN_FILTER="ascii_downcase as \$l | (${BOT_REVIEWERS:-[]} | map(ascii_downcase) | index(\$l)) != null"
 
+# Eyes-capable bot identities (mirrors poll-copilot-review.sh's
+# COMMENT_TRIGGERED_BOTS) — only these emit an 'eyes' reaction in-flight
+# marker; Copilot does not. A --bot-reviewers list can be Copilot-only (the
+# resolved policy's default), so the eyes-reaction check must be gated on
+# one of THESE identities being present, not on --bot-reviewers being
+# merely non-empty — a Copilot-only allowlist has no eyes-capable identity
+# to poll for, and polling anyway means a reactions-endpoint hiccup can
+# spuriously exit 3 on an ordinary Copilot-only re-review that the events
+# check alone already resolved correctly.
+EYES_CAPABLE_BOTS='["chatgpt-codex-connector[bot]"]'
+HAS_EYES_CAPABLE_BOT=false
+if [[ -n "$BOT_REVIEWERS" ]]; then
+    if jq -e --argjson known "$EYES_CAPABLE_BOTS" \
+        '(map(ascii_downcase)) as $mine | ($known | map(ascii_downcase)) as $known_lc | any($mine[]; . as $m | $known_lc | index($m) != null)' \
+        <<<"$BOT_REVIEWERS" >/dev/null 2>&1; then
+        HAS_EYES_CAPABLE_BOT=true
+    fi
+fi
+
 # ── Pre-flight checks ────────────────────────────────────────────────────────
 
 preflight_checks
@@ -133,12 +154,13 @@ for ((i = 1; i <= POLL_COUNT; i++)); do
         exit 0
     fi
 
-    # Eyes-reaction check (only when --bot-reviewers was given): Codex's
-    # in-flight marker on the PR body, appearing within ~15s of the
-    # '@codex review' ask — the only start signal Codex emits, since it
-    # never fires copilot_work_started. Runs regardless of whether the
-    # events check above succeeded — see the note above the loop.
-    if [[ -n "$BOT_REVIEWERS" ]]; then
+    # Eyes-reaction check (only when the allowlist contains an eyes-capable
+    # identity — see HAS_EYES_CAPABLE_BOT above): Codex's in-flight marker
+    # on the PR body, appearing within ~15s of the '@codex review' ask — the
+    # only start signal Codex emits, since it never fires
+    # copilot_work_started. Runs regardless of whether the events check
+    # above succeeded — see the note above the loop.
+    if [[ "$HAS_EYES_CAPABLE_BOT" == true ]]; then
         reactions=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/reactions?per_page=100" --paginate \
             | jq -s 'add // []') || {
             echo "Warning: reactions API failed (attempt ${i}), continuing" >&2

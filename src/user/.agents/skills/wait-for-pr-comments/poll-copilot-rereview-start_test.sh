@@ -169,6 +169,35 @@ FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$REACTIONS_EYES" PATH="$FA
 rc_no_flag=$?
 assert "eyes reaction ignored when --bot-reviewers omitted (exit 1, old behavior)" "[ \$rc_no_flag -eq 1 ]"
 
+# A Copilot-only --bot-reviewers list has no eyes-capable identity — the
+# eyes check must be skipped, not just gated on --bot-reviewers being
+# non-empty, or a Copilot-only policy starts polling an endpoint it has no
+# use for.
+FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$REACTIONS_EYES" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["Copilot"]' >/dev/null 2>&1
+rc_copilot_only=$?
+assert "eyes reaction ignored for a Copilot-only --bot-reviewers list (exit 1)" "[ \$rc_copilot_only -eq 1 ]"
+
+# A Copilot-only policy must not be exposed to reactions-endpoint failures
+# at all — a hiccup on an endpoint it never needed must not turn an
+# ordinary "Copilot didn't start" into a false infrastructure error.
+out=$(FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FAIL=1 PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["Copilot"]' 2>/dev/null)
+rc_copilot_only_reactions_fail=$?
+assert "a reactions-endpoint failure is irrelevant for a Copilot-only policy (exit 1, not 3)" "[ \$rc_copilot_only_reactions_fail -eq 1 ]"
+assert "Copilot-only policy with a reactions failure still reports no_rereview_started" \
+  "printf '%s' '$out' | jq -e '.status == \"no_rereview_started\"' >/dev/null"
+
+# A mixed allowlist (Copilot + Codex) still enables the eyes check.
+out=$(FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$REACTIONS_EYES" PATH="$FAKEBIN:$PATH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --after 2026-01-01T00:00:00Z \
+  --bot-reviewers '["Copilot", "chatgpt-codex-connector[bot]"]' 2>/dev/null)
+rc_mixed=$?
+assert "a mixed Copilot+Codex allowlist still detects the eyes reaction (exit 0)" "[ \$rc_mixed -eq 0 ]"
+assert "mixed allowlist reports signal eyes_reaction" "printf '%s' '$out' | jq -e '.signal == \"eyes_reaction\"' >/dev/null"
+
 # With --bot-reviewers, an eyes reaction from an allowlisted identity
 # post-dating --after is a start signal.
 out=$(FAKE_EVENTS_FILE="$EMPTY_EVENTS" FAKE_REACTIONS_FILE="$REACTIONS_EYES" PATH="$FAKEBIN:$PATH" \
