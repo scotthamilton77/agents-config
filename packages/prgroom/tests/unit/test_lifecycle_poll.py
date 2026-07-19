@@ -113,6 +113,29 @@ def _gh(
     return GhCli(RecordedRunner(results))
 
 
+def _gh_with_teams(*, head_oid: str, teams: list[dict[str, object]]) -> GhCli:
+    """A poll-order GhCli whose PR resource carries requested_teams but no reviewers."""
+    return GhCli(
+        RecordedRunner(
+            [
+                _ok({"headRefOid": head_oid}),
+                _ok(
+                    {
+                        "state": "open",
+                        "merged_at": None,
+                        "requested_reviewers": [],
+                        "requested_teams": teams,
+                    }
+                ),
+                _ok([]),  # issue comments
+                _ok([]),  # reviews
+                _ok([]),  # review comments
+                _ci_check_runs_read("success"),
+            ]
+        )
+    )
+
+
 def _deps(now: datetime = _T0) -> Deps:
     return Deps(clock=FrozenClock(now), randomness=FixedRandomness())
 
@@ -1180,3 +1203,105 @@ def test_ingests_reviews_beyond_the_first_thirty() -> None:
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
     state = poll_pr(start, ref=_REF, gh=GhCli(runner), deps=_deps(), config=_config())
     assert sum(i.kind is ItemKind.REVIEW_SUMMARY for i in state.items) == 35
+
+
+# ── reviewer registry reconciliation (§2.1) ──
+
+
+def test_pending_request_seeds_a_required_reviewer() -> None:
+    # Behavior 1: GitHub listing a pending request is the seed signal. Status is
+    # REQUESTED (not NOT_REQUESTED) so rereview's refreshable set does not
+    # immediately re-ask a reviewer GitHub already asked.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    alice = state.reviewers["alice"]
+    assert alice.identity == "alice"
+    assert alice.status is ReviewerStatus.REQUESTED
+    assert alice.required is True
+    assert alice.kind is ReviewerKind.HUMAN
+    assert alice.last_request_at == _T0
+    assert alice.last_review_at is None
+
+
+@pytest.mark.parametrize(
+    "user",
+    [
+        {"login": "copilot", "type": "Bot"},
+        {"login": "copilot[bot]"},  # no type field — the defensive suffix fallback
+    ],
+)
+def test_bot_request_object_seeds_bot_kind(user: dict[str, object]) -> None:
+    # Behavior 4 (request half): classification mirrors human_review._is_bot.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[user]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers[str(user["login"])].kind is ReviewerKind.BOT
+
+
+def test_already_known_requested_reviewer_is_left_alone() -> None:
+    # Behavior 5: reconciliation is idempotent — a still-requested known reviewer is
+    # not reset, re-stamped, or duplicated.
+    earlier = _T0 - timedelta(hours=3)
+    reviewers = _requested_at(at=earlier)
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert len(state.reviewers) == 1
+    assert state.reviewers["copilot"].last_request_at == earlier  # not re-stamped
+
+
+def test_requested_teams_are_read_and_ignored() -> None:
+    # Behavior 10: team objects carry a slug, not members, and GitHub attributes
+    # reviews to individual logins — so a team entry seeds nothing.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh_with_teams(head_oid="same", teams=[{"slug": "platform"}])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert state.reviewers == {}
+
+
+def test_seeding_a_reviewer_advances_last_activity() -> None:
+    # Behavior 11 (seed half): a newly-discovered reviewer is PR-side activity.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    start.quiescence = QuiescenceState(ci_state="success")
+    later = _T0 + timedelta(minutes=5)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", ci="success", requested_reviewers=["alice"]),
+        deps=_deps(later),
+        config=_config(),
+    )
+    assert state.last_activity_at == later
+
+
+def test_quiet_reviewer_poll_does_not_advance_last_activity() -> None:
+    # Behavior 11 (no-noise half): an unchanged reviewer set is not activity, or the
+    # idle gate could never trip.
+    reviewers = _requested_at(at=_T0 - timedelta(minutes=1))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    start.quiescence = QuiescenceState(ci_state="success")
+    later = _T0 + timedelta(minutes=1)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", ci="success", requested_reviewers=["copilot"]),
+        deps=_deps(later),
+        config=_config(),
+    )
+    assert state.last_activity_at == _T0

@@ -50,8 +50,8 @@ from prgroom.lifecycle.gh_errors import vanished_pr_terminal
 from prgroom.lifecycle.idempotency import carries_own_marker
 from prgroom.lifecycle.predicates import flip_stale_required_reviews
 from prgroom.lifecycle.quiescence import evaluate_reviewer_timeouts
-from prgroom.prsession.enums import ItemKind, PRPhase, ReviewerStatus
-from prgroom.prsession.state import Identity, PRGroomingState, ReviewItem
+from prgroom.prsession.enums import ItemKind, PRPhase, ReviewerKind, ReviewerStatus
+from prgroom.prsession.state import Identity, PRGroomingState, ReviewerState, ReviewItem
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -124,6 +124,8 @@ def poll_pr(
     new_items, terminal_reviews, raw_reviews = _ingest_items(gh, ref, state, now=now)
     if new_items:
         state.items.extend(new_items)
+        activity = True
+    if _reconcile_reviewers(state, requested_reviewers=requested_reviewers, now=now):
         activity = True
     if _observe_engagement(state, new_items, terminal_reviews):
         activity = True
@@ -255,6 +257,69 @@ def _ingest_items(
                 seen.add((item.kind, item.identity.gh_id))
                 new.append(item)
     return new, _terminal_review_verdicts(raw_reviews, now=now), raw_reviews
+
+
+def _reviewer_kind(user: Any) -> ReviewerKind:
+    """Classify a gh user object as bot or human (§2.1).
+
+    Mirrors the pinned check in ``lifecycle/human_review.py``: the API's
+    ``type == "Bot"`` is the primary signal, a ``[bot]``-suffixed login the
+    defensive fallback for payloads that omit ``type``. Duplicated rather than
+    imported — that helper is private, takes a review wrapper rather than a bare
+    user object, and is one line.
+    """
+    user = user or {}
+    if str(user.get("type", "")) == "Bot":
+        return ReviewerKind.BOT
+    return ReviewerKind.BOT if str(user.get("login", "")).endswith("[bot]") else ReviewerKind.HUMAN
+
+
+def _requested_by_login(requested_reviewers: list[Any]) -> dict[str, Any]:
+    """Map each pending-request login to its gh user object (§2.1).
+
+    ``requested_teams`` is deliberately not consulted: a team object carries a slug,
+    not members, and GitHub attributes every review to an individual login — a
+    team-keyed entry could never resolve against real review data.
+    """
+    out: dict[str, Any] = {}
+    for user in requested_reviewers:
+        login = str((user or {}).get("login", ""))
+        if login:
+            out[login] = user
+    return out
+
+
+def _seed_reviewer(login: str, *, user: Any, required: bool, now: datetime) -> ReviewerState:
+    """Build the entry for a login seen for the first time this poll (§2.1.1)."""
+    return ReviewerState(
+        identity=login,
+        kind=_reviewer_kind(user),
+        status=ReviewerStatus.REQUESTED,
+        required=required,
+        last_request_at=now,
+    )
+
+
+def _reconcile_reviewers(
+    state: PRGroomingState,
+    *,
+    requested_reviewers: list[Any],
+    now: datetime,
+) -> bool:
+    """Reconcile ``state.reviewers`` against GitHub's pending requests (§2.1).
+
+    Returns whether anything changed, so the caller folds it into ``activity`` the
+    same way ``_ingest_items`` / ``_ci_state`` / ``_apply_sha_attribution`` do. An
+    unchanged reviewer set is NOT activity — otherwise the §4.1 idle gate could never
+    trip and the PR could never quiesce.
+    """
+    requested = _requested_by_login(requested_reviewers)
+    changed = False
+    for login, user in requested.items():
+        if login not in state.reviewers:
+            state.reviewers[login] = _seed_reviewer(login, user=user, required=True, now=now)
+            changed = True
+    return changed
 
 
 def _terminal_review_verdicts(raw_reviews: Any, *, now: datetime) -> dict[str, datetime]:
