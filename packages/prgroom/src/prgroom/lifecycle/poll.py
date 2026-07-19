@@ -427,32 +427,24 @@ def _seed_reviewer(
 ) -> ReviewerState:
     """Build the entry for a login seen for the first time this poll (§2.1.1).
 
-    A **currently-requested** login (``required`` is True — the sole call site passes
-    ``required=login in requested_reviewers``) whose only reviews on record predate this
-    poll's ``now`` seeds ``REQUESTED`` at ``now``, ignoring those historical verdicts.
-    GitHub drops a login from ``requested_reviewers`` the instant it submits ANY review, so
-    a login STILL listed there that ALSO carries an OLDER review can only mean the request
-    post-dates that review — a re-request whose wanted fresh review has not landed yet.
-    Honouring the stale verdict would seed ``REVIEW_FOUND`` and let
-    ``reviewers_gate_satisfied`` pass without the newly-requested review, quiescing the PR
-    behind the reviewer's back.
+    A **currently-requested** login (``required`` True — the sole call site passes
+    ``required=login in requested_reviewers``) always seeds ``REQUESTED`` at ``now``,
+    ignoring any review co-present this poll. GitHub exposes review timestamps at only
+    second precision and ``now`` is captured before the PR-resource read, so a review
+    landing in the same whole second as the request cannot be ordered against it at seed
+    time: honouring it would let an operator's same-second re-request accept the reviewer's
+    OLDER verdict and let ``reviewers_gate_satisfied`` pass without the wanted fresh review,
+    quiescing the PR behind the reviewer's back.
 
-    The exception is an **in-flight same-poll response**: prgroom reads the PR resource
-    (which lists the pending request) and the reviews collection in two separate GETs, so a
-    reviewer can submit BETWEEN them — still listed as requested, yet already carrying a
-    brand-new review. Co-presence of the request and a review landing in this poll's window
-    proves the request PREDATES the review, so it is honoured like the not-required drive-by
-    branches below: seed ``REVIEW_FOUND`` / ``IN_PROGRESS`` at the review's own stamps.
-    Because GitHub review timestamps have second precision while ``now`` may carry a
-    sub-second fraction, that window is "``at`` in the same whole second as ``now`` or
-    later" (``at >= now`` floored to seconds); a strictly-earlier stamp is the historical
-    verdict above. Seeding ``REQUESTED`` at ``now`` here would instead LOSE the review — a
-    same-second verdict fails ``_observe_engagement``'s strictly-after gate, and the next
-    poll (login now absent from ``requested_reviewers``) reads that absence as a withdrawal
-    and drops the reviewer from future refreshes. Unlike ``_reactivation_engagement`` there
-    is no prior history to tiebreak an equal-second collision, so ``now`` is the freshness
-    boundary; a seed happens once, so no cross-poll re-observation can re-promote a stale
-    verdict here.
+    The decision is deferred one poll instead. GitHub drops a login from
+    ``requested_reviewers`` the instant it submits ANY review, so the NEXT poll's
+    presence/absence disambiguates for free: a genuine in-flight response (the reviewer
+    answered the pending request) leaves the login ABSENT next poll —
+    ``_reconcile_reviewers``' delayed-response pass then promotes it to
+    ``REVIEW_FOUND`` / ``IN_PROGRESS`` at the review's own stamps — while a historical
+    verdict the operator merely re-requested over keeps the login PRESENT and REQUESTED,
+    its stale review correctly rejected by ``_observe_engagement``'s strictly-after gate. A
+    bare request with no review seeds ``REQUESTED`` likewise.
 
     A login discovered ONLY through an already-submitted review (``required`` False — a
     drive-by, or a fast reviewer GitHub already cleared from ``requested_reviewers``) is
@@ -462,21 +454,14 @@ def _seed_reviewer(
     ``last_request_at`` were stamped ``now``. Backdating both stamps to the review keeps
     that comparison honest.
     """
-
-    def _in_flight(at: datetime | None) -> bool:
-        # A review this required login carries that landed in this poll's
-        # PR-resource→reviews-GET window: at or after ``now``'s whole second (GitHub's
-        # second precision vs a sub-second ``now``). A strictly-earlier stamp is historical.
-        return at is not None and at >= now.replace(microsecond=0)
-
-    if terminal_at is not None and (not required or _in_flight(terminal_at)):
+    if not required and terminal_at is not None:
         status, stamp, review_id = ReviewerStatus.REVIEW_FOUND, terminal_at, terminal_id
-    elif reviewed_at is not None and (not required or _in_flight(reviewed_at)):
+    elif not required and reviewed_at is not None:
         status, stamp, review_id = ReviewerStatus.IN_PROGRESS, reviewed_at, reviewed_id
     else:
-        # A fresh request with no in-flight review outranks any historical verdict (the
-        # requested-wins rule — see the docstring), or a bare request with no review yet:
-        # seed REQUESTED at ``now``.
+        # A currently-requested login (or a bare request with no review yet) seeds REQUESTED
+        # at ``now``; a same-second co-present review is deferred to the next poll's
+        # presence/absence disambiguation (see docstring).
         return ReviewerState(
             identity=login,
             kind=_reviewer_kind(user),
@@ -779,6 +764,29 @@ def _reconcile_reviewers(
         review_activity = reviewed.get(login)
         if review_activity is not None and review_activity[0] > reviewer.last_request_at:
             continue
+        # A now-absent REQUESTED reviewer that never engaged, but whose reviews carry a
+        # response landing at or after this poll floor of ``last_request_at``, is a DELAYED
+        # in-flight response, not a withdrawal: GitHub dropped the login BECAUSE the reviewer
+        # submitted. The seed deferred the same-second (request, review) ordering to this
+        # poll (``_seed_reviewer``); the observed absence is now the proof the review answered
+        # the request. Promote to its verdict-appropriate state at the review's own stamps
+        # before the withdrawal branch can fire.
+        terminal_at, terminal_id = _split_verdict(terminal_reviews.get(login))
+        reviewed_at, _reviewed_user, reviewed_id = reviewed.get(login, (None, None, None))
+        promotion = _delayed_in_flight_response(
+            reviewer,
+            terminal_at=terminal_at,
+            terminal_id=terminal_id,
+            reviewed_at=reviewed_at,
+            reviewed_id=reviewed_id,
+        )
+        if promotion is not None:
+            reviewer.status, stamp, review_id = promotion
+            reviewer.last_request_at = stamp
+            reviewer.last_review_at = stamp
+            reviewer.last_review_id = review_id
+            changed = True
+            continue
         if reviewer.status in _WITHDRAWABLE_STATUSES:
             reviewer.status = ReviewerStatus.DECLINED
             reviewer.declined_at = now
@@ -800,6 +808,43 @@ def _reconcile_reviewers(
             reviewer.declined_reason = WITHDRAWN_REASON
             changed = True
     return changed
+
+
+def _delayed_in_flight_response(
+    reviewer: ReviewerState,
+    *,
+    terminal_at: datetime | None,
+    terminal_id: int | None,
+    reviewed_at: datetime | None,
+    reviewed_id: int | None,
+) -> tuple[ReviewerStatus, datetime, int | None] | None:
+    """Resolve a now-absent REQUESTED reviewer's reviews as a deferred in-flight response (§2.1).
+
+    ``_seed_reviewer`` seeds a currently-requested login ``REQUESTED`` even when a review is
+    co-present, because GitHub's second-precision timestamps cannot prove a same-second
+    review post-dated the request at seed time. This poll's ABSENCE from
+    ``requested_reviewers`` is that proof: GitHub removes a login from the pending array the
+    instant it submits ANY review, so a review this reviewer carries stamped at or after
+    ``last_request_at`` floored to whole seconds is the genuine response the request was
+    waiting for. Returns the verdict-appropriate ``(status, stamp, review_id)`` — REVIEW_FOUND
+    for a terminal verdict, IN_PROGRESS for a COMMENTED response — so the caller can backdate
+    both stamps to the review and record its id.
+
+    Only a never-engaged REQUESTED reviewer (``last_review_at is None``) qualifies: an
+    already-engaged reviewer's absence is the ordinary post-review shape handled by the
+    strictly-after suppression above. A review stamped strictly BEFORE
+    ``floor(last_request_at)`` is a pre-request historical verdict — the operator pulled the
+    request after it — and returns ``None`` so the caller applies the ordinary withdrawal /
+    timeout semantics.
+    """
+    if reviewer.status is not ReviewerStatus.REQUESTED or reviewer.last_review_at is not None:
+        return None
+    boundary = reviewer.last_request_at.replace(microsecond=0)
+    if terminal_at is not None and terminal_at >= boundary:
+        return ReviewerStatus.REVIEW_FOUND, terminal_at, terminal_id
+    if reviewed_at is not None and reviewed_at >= boundary:
+        return ReviewerStatus.IN_PROGRESS, reviewed_at, reviewed_id
+    return None
 
 
 def _timeout_decline_now_withdrawn(reviewer: ReviewerState) -> bool:

@@ -1444,67 +1444,169 @@ def test_pending_request_outranks_historical_verdict_on_seed() -> None:
     assert reviewers_gate_satisfied(state) is False  # the wanted re-review is pending
 
 
-def test_pending_request_seeds_review_found_on_same_second_in_flight_verdict() -> None:
-    # Behavior 17b (Codex P1 regression guard): the in-flight-response race. prgroom reads
-    # the PR resource (still listing the pending request) and the reviews collection in two
-    # separate GETs; a first-seen required login can submit BETWEEN them — co-present as
-    # requested AND already carrying a brand-new verdict. When that verdict lands in the
-    # SAME GitHub-second as poll `now` (12:00:00Z here), seeding REQUESTED at `now` loses it:
-    # _observe_engagement's strictly-after gate rejects a same-second verdict, and the next
-    # poll (login gone from requested_reviewers) would read the absence as a withdrawal.
-    # Co-presence proves the request predates the review, so seed REVIEW_FOUND at the
-    # verdict's own stamps (backdated, so the strictly-after gate stays honest) and satisfy
-    # the gate — mirroring the not-required drive-by branch and _reactivation_engagement.
+def test_same_second_in_flight_verdict_seeds_requested_then_promotes_when_absent() -> None:
+    # Behavior 17b (Codex P1 regression guard), two-poll shape. The in-flight-response race:
+    # prgroom reads the PR resource (still listing the pending request) and the reviews
+    # collection in two separate GETs, so a first-seen required login can submit BETWEEN
+    # them — co-present as requested AND already carrying a brand-new verdict at the SAME
+    # GitHub-second as poll `now`. Second-precision timestamps cannot order that
+    # (request, review) pair at seed time, so poll 1 DEFERS: seed REQUESTED, gate unsatisfied.
+    # Poll 2 disambiguates for free — GitHub dropped the login the instant it reviewed, so its
+    # ABSENCE proves the review answered the request: promote to REVIEW_FOUND at the verdict's
+    # own stamps and satisfy the gate. The invariant preserved is "the in-flight review is not
+    # lost and the reviewer is not falsely withdrawn," now with certainty, not a same-second guess.
+    verdict = {
+        "id": 905,
+        "state": "APPROVED",
+        "submitted_at": "2026-06-09T12:00:00Z",  # == _T0 == poll-1 `now`, same second
+        "user": {"login": "alice"},
+        "body": "lgtm",
+    }
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
-    gh = _gh(
-        head_oid="same",
-        requested_reviewers=["alice"],  # PR-resource GET still lists the pending request
-        reviews=[
-            {
-                "id": 905,
-                "state": "APPROVED",
-                "submitted_at": "2026-06-09T12:00:00Z",  # == _T0 == `now`, same second
-                "user": {"login": "alice"},
-                "body": "lgtm",
-            }
-        ],
+    # Poll 1: login still listed as requested AND the verdict already present.
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"], reviews=[verdict]),
+        deps=_deps(),
+        config=_config(),
     )
-    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
-    alice = state.reviewers["alice"]
+    alice_mid = mid.reviewers["alice"]
+    assert alice_mid.status is ReviewerStatus.REQUESTED  # deferred, not a same-second guess
+    assert alice_mid.last_request_at == _T0
+    assert alice_mid.last_review_at is None
+    assert reviewers_gate_satisfied(mid) is False
+
+    # Poll 2: GitHub has dropped the login (it reviewed) — the absence promotes it.
+    end = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    alice = end.reviewers["alice"]
     assert alice.required is True
-    assert alice.status is ReviewerStatus.REVIEW_FOUND  # in-flight verdict is honoured
-    assert alice.last_review_at == _T0  # backdated to the verdict, not left unstamped
+    assert alice.status is ReviewerStatus.REVIEW_FOUND  # in-flight verdict honoured, with certainty
+    assert alice.last_review_at == _T0  # backdated to the verdict
     assert alice.last_request_at == _T0  # backdated so _observe_engagement keeps the review
-    assert reviewers_gate_satisfied(state) is True  # the real review satisfies the gate
+    assert alice.last_review_id == 905
+    assert reviewers_gate_satisfied(end) is True  # the real review satisfies the gate
 
 
-def test_pending_request_seeds_in_progress_on_same_second_in_flight_comment() -> None:
-    # The non-terminal twin: an in-flight COMMENTED response (same second as `now`) from a
-    # first-seen required login seeds IN_PROGRESS at the comment's stamp — engagement is
-    # under way but no terminal verdict has landed, so the gate stays UNSATISFIED. Without
-    # the in-flight carve-out this same-second comment would be lost exactly as the verdict
-    # above is.
+def test_same_second_in_flight_comment_seeds_requested_then_promotes_when_absent() -> None:
+    # The non-terminal twin of the verdict case. A same-second in-flight COMMENTED response
+    # from a first-seen required login defers to REQUESTED on poll 1; poll 2's absence promotes
+    # it to IN_PROGRESS at the comment's stamp — engagement under way, no terminal verdict, so
+    # the gate stays UNSATISFIED. Without the deferral this same-second comment would be lost.
+    comment = {
+        "id": 906,
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-09T12:00:00Z",  # == _T0 == poll-1 `now`, same second
+        "user": {"login": "alice"},
+        "body": "one thought",
+    }
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
-    gh = _gh(
-        head_oid="same",
-        requested_reviewers=["alice"],
-        reviews=[
-            {
-                "id": 906,
-                "state": "COMMENTED",
-                "submitted_at": "2026-06-09T12:00:00Z",  # == _T0 == `now`, same second
-                "user": {"login": "alice"},
-                "body": "one thought",
-            }
-        ],
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"], reviews=[comment]),
+        deps=_deps(),
+        config=_config(),
     )
-    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
-    alice = state.reviewers["alice"]
+    assert mid.reviewers["alice"].status is ReviewerStatus.REQUESTED
+    assert mid.reviewers["alice"].last_review_at is None
+
+    end = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    alice = end.reviewers["alice"]
     assert alice.required is True
     assert alice.status is ReviewerStatus.IN_PROGRESS
     assert alice.last_review_at == _T0
     assert alice.last_request_at == _T0
-    assert reviewers_gate_satisfied(state) is False  # no terminal verdict yet
+    assert alice.last_review_id == 906
+    assert reviewers_gate_satisfied(end) is False  # no terminal verdict yet
+
+
+def test_same_second_re_request_over_historical_verdict_stays_requested() -> None:
+    # Behavior 17c (Codex P1 core regression): the false-accept the deferral prevents. A
+    # reviewer's terminal verdict lands at second T, and an operator RE-REQUESTS them in the
+    # SAME GitHub-second; second precision cannot establish the verdict came after the request.
+    # Poll 1 seeds REQUESTED (NOT REVIEW_FOUND from the same-second verdict). Poll 2 the login is
+    # STILL present — the re-request is pending, the reviewer has not re-reviewed — so it stays
+    # REQUESTED and the historical verdict is rejected by _observe_engagement's strictly-after
+    # gate. The gate never satisfies without the wanted fresh review.
+    verdict = {
+        "id": 907,
+        "state": "APPROVED",
+        "submitted_at": "2026-06-09T12:00:00Z",  # second T == poll `now`; re-request same second
+        "user": {"login": "alice"},
+        "body": "lgtm",
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"], reviews=[verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert mid.reviewers["alice"].status is ReviewerStatus.REQUESTED  # not the same-second verdict
+    assert reviewers_gate_satisfied(mid) is False
+
+    # Poll 2: the re-request is still pending (login present); the reviewer has not re-reviewed.
+    end = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"], reviews=[verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    alice = end.reviewers["alice"]
+    assert alice.status is ReviewerStatus.REQUESTED  # presence disambiguates: historical, rejected
+    assert alice.last_request_at == _T0
+    assert reviewers_gate_satisfied(end) is False
+
+
+def test_absent_requested_reviewer_with_pre_request_verdict_is_withdrawn() -> None:
+    # Guard on the delayed-response promotion (design point 3): a review stamped strictly
+    # BEFORE floor(last_request_at) must NEVER promote. An operator re-requests a reviewer who
+    # approved an hour earlier (poll 1 → REQUESTED at `now`, the historical verdict ignored),
+    # then pulls the request (poll 2 → login absent). The only review predates the request, so
+    # this is a genuine withdrawal, not a delayed response: decline as request-withdrawn.
+    verdict = {
+        "id": 908,
+        "state": "APPROVED",
+        "submitted_at": "2026-06-09T11:00:00Z",  # _T0 - 1h, strictly before floor(last_request_at)
+        "user": {"login": "alice"},
+        "body": "lgtm",
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"], reviews=[verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert mid.reviewers["alice"].status is ReviewerStatus.REQUESTED
+
+    end = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    alice = end.reviewers["alice"]
+    assert alice.status is ReviewerStatus.DECLINED
+    assert alice.declined_reason == "request-withdrawn"
+    assert alice.declined_at == _T0
 
 
 def _declined(reason: str, *, login: str = "copilot") -> dict[str, ReviewerState]:
