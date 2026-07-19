@@ -1,21 +1,9 @@
 {
+ "cascade_used": false,
  "design": "docs/specs/2026-07-19-track-backfill-migration-design.md",
- "explicit_count": 356,
+ "explicit_count": 366,
  "generated_for": "agents-config-jpn0s",
- "inherit_via_cascade": [
-  "agents-config-2yyb.1",
-  "agents-config-7bk.19.7.1",
-  "agents-config-7bk.19.9.1",
-  "agents-config-7bk.25.1",
-  "agents-config-abn9.13.1",
-  "agents-config-abn9.14.1",
-  "agents-config-abn9.8.31",
-  "agents-config-abn9.8.53",
-  "agents-config-acmh.13.1",
-  "agents-config-jp9w.1",
-  "agents-config-phzj.4.1",
-  "agents-config-pqvc.1"
- ],
+ "inherit_via_cascade": [],
  "items": {
   "agents-config-0qwmz": {
    "provenance": "two-pass-near-agree(pass2)",
@@ -59,6 +47,10 @@
   },
   "agents-config-2yyb": {
    "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-2yyb.1": {
+   "provenance": "inherited-from-container:agents-config-2yyb",
    "track": "pipeline-discipline"
   },
   "agents-config-30fpy": {
@@ -185,6 +177,14 @@
    "provenance": "two-pass-agree",
    "track": "pipeline-discipline"
   },
+  "agents-config-7bk.19.7.1": {
+   "provenance": "explicit-closed-parent",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk.19.9.1": {
+   "provenance": "explicit-closed-parent",
+   "track": "pipeline-discipline"
+  },
   "agents-config-7bk.21": {
    "provenance": "single-pass-confident",
    "track": "pipeline-discipline"
@@ -199,6 +199,10 @@
   },
   "agents-config-7bk.25": {
    "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-7bk.25.1": {
+   "provenance": "inherited-from-container:agents-config-7bk.25",
    "track": "pipeline-discipline"
   },
   "agents-config-7bk.4": {
@@ -265,8 +269,16 @@
    "provenance": "single-pass-confident",
    "track": "review-and-merge"
   },
+  "agents-config-abn9.13.1": {
+   "provenance": "inherited-from-container:agents-config-abn9.13",
+   "track": "review-and-merge"
+  },
   "agents-config-abn9.14": {
    "provenance": "two-pass-agree",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.14.1": {
+   "provenance": "inherited-from-container:agents-config-abn9.14",
    "track": "review-and-merge"
   },
   "agents-config-abn9.15": {
@@ -433,6 +445,14 @@
    "provenance": "two-pass-agree",
    "track": "review-and-merge"
   },
+  "agents-config-abn9.44.3": {
+   "provenance": "human-decided-reconcile",
+   "track": "review-and-merge"
+  },
+  "agents-config-abn9.44.4": {
+   "provenance": "human-decided-reconcile",
+   "track": "review-and-merge"
+  },
   "agents-config-abn9.8": {
    "provenance": "single-pass-confident",
    "track": "prgroom"
@@ -483,6 +503,10 @@
   },
   "agents-config-abn9.8.30": {
    "provenance": "single-pass-confident",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.31": {
+   "provenance": "inherited-from-container:agents-config-abn9.8",
    "track": "prgroom"
   },
   "agents-config-abn9.8.33": {
@@ -549,6 +573,14 @@
    "provenance": "single-pass-confident",
    "track": "prgroom"
   },
+  "agents-config-abn9.8.53": {
+   "provenance": "inherited-from-container:agents-config-abn9.8",
+   "track": "prgroom"
+  },
+  "agents-config-abn9.8.54": {
+   "provenance": "human-decided-reconcile",
+   "track": "prgroom"
+  },
   "agents-config-acmh": {
    "provenance": "two-pass-agree",
    "track": "ops-meta"
@@ -564,6 +596,10 @@
   "agents-config-acmh.12": {
    "provenance": "single-pass-confident",
    "track": "workcli"
+  },
+  "agents-config-acmh.13.1": {
+   "provenance": "explicit-closed-parent",
+   "track": "ops-meta"
   },
   "agents-config-acmh.2": {
    "provenance": "single-pass-confident",
@@ -638,20 +674,20 @@
    "track": "pipeline-discipline"
   },
   "agents-config-cx6": {
-   "provenance": "new-track-cluster",
-   "track": "agent-skill-platform"
+   "provenance": "human-decided-retired-track",
+   "track": "ops-meta"
   },
   "agents-config-cx6.7": {
-   "provenance": "new-track-cluster",
-   "track": "agent-skill-platform"
+   "provenance": "human-decided-retired-track",
+   "track": "ops-meta"
   },
   "agents-config-cx6.7.15": {
-   "provenance": "new-track-cluster",
-   "track": "agent-skill-platform"
+   "provenance": "human-decided-retired-track",
+   "track": "ops-meta"
   },
   "agents-config-cx6.7.16": {
-   "provenance": "new-track-cluster",
-   "track": "agent-skill-platform"
+   "provenance": "human-decided-retired-track",
+   "track": "pdlc-orchestrator"
   },
   "agents-config-dawr": {
    "provenance": "single-pass-confident",
@@ -666,12 +702,12 @@
    "track": "ops-meta"
   },
   "agents-config-ep74t": {
-   "provenance": "new-track-cluster",
-   "track": "agent-skill-platform"
+   "provenance": "human-decided-retired-track",
+   "track": "ops-meta"
   },
   "agents-config-evi": {
-   "provenance": "new-track-cluster",
-   "track": "agent-skill-platform"
+   "provenance": "human-decided-retired-track",
+   "track": "pipeline-discipline"
   },
   "agents-config-f298": {
    "provenance": "human-decided",
@@ -765,6 +801,10 @@
    "provenance": "two-pass-agree",
    "track": "review-and-merge"
   },
+  "agents-config-jp9w.1": {
+   "provenance": "inherited-from-container:agents-config-jp9w",
+   "track": "review-and-merge"
+  },
   "agents-config-jpn0s": {
    "provenance": "single-pass-confident",
    "track": "workcli"
@@ -818,16 +858,16 @@
    "track": "pdlc-orchestrator"
   },
   "agents-config-nbrd": {
-   "provenance": "new-track-cluster",
-   "track": "agent-skill-platform"
+   "provenance": "human-decided-retired-track",
+   "track": "pipeline-discipline"
   },
   "agents-config-nr2e": {
    "provenance": "human-resolved-disagreement",
    "track": "ops-meta"
   },
   "agents-config-nwtz": {
-   "provenance": "new-track-cluster",
-   "track": "agent-skill-platform"
+   "provenance": "human-decided-retired-track",
+   "track": "ops-meta"
   },
   "agents-config-o2oub": {
    "provenance": "single-pass-confident",
@@ -885,8 +925,16 @@
    "provenance": "single-pass-confident",
    "track": "installer"
   },
+  "agents-config-phzj.4.1": {
+   "provenance": "inherited-from-container:agents-config-yf2ov.1",
+   "track": "installer"
+  },
   "agents-config-pqvc": {
    "provenance": "single-pass-confident",
+   "track": "pipeline-discipline"
+  },
+  "agents-config-pqvc.1": {
+   "provenance": "inherited-from-container:agents-config-abn9.25",
    "track": "pipeline-discipline"
   },
   "agents-config-psyw2": {
@@ -922,8 +970,8 @@
    "track": "installer"
   },
   "agents-config-rdkh8": {
-   "provenance": "new-track-cluster",
-   "track": "runtime-integration"
+   "provenance": "human-decided-retired-track",
+   "track": "installer"
   },
   "agents-config-s0u9c": {
    "provenance": "single-pass-confident",
@@ -998,12 +1046,12 @@
    "track": "installer"
   },
   "agents-config-uxns2.2": {
-   "provenance": "new-track-cluster",
-   "track": "runtime-integration"
+   "provenance": "human-decided-retired-track",
+   "track": "installer"
   },
   "agents-config-uxns2.2.1": {
-   "provenance": "new-track-cluster",
-   "track": "runtime-integration"
+   "provenance": "human-decided-retired-track",
+   "track": "installer"
   },
   "agents-config-uxns2.3": {
    "provenance": "single-pass-confident",
@@ -1054,8 +1102,8 @@
    "track": "review-and-merge"
   },
   "agents-config-vaac.14": {
-   "provenance": "new-track-cluster",
-   "track": "runtime-integration"
+   "provenance": "human-decided-retired-track",
+   "track": "ops-meta"
   },
   "agents-config-vaac.2": {
    "provenance": "single-pass-confident",
@@ -1114,8 +1162,8 @@
    "track": "review-and-merge"
   },
   "agents-config-vo7": {
-   "provenance": "new-track-cluster",
-   "track": "runtime-integration"
+   "provenance": "human-decided-retired-track",
+   "track": "ops-meta"
   },
   "agents-config-vximp": {
    "provenance": "single-pass-confident",
@@ -1200,26 +1248,6 @@
   "agents-config-wgclw.27": {
    "provenance": "single-pass-confident",
    "track": "review-and-merge"
-  },
-  "agents-config-wgclw.28": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-wgclw.28.1": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-wgclw.28.2": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-wgclw.28.3": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-wgclw.28.4": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
   },
   "agents-config-wgclw.3": {
    "provenance": "single-pass-confident",
@@ -1442,5 +1470,6 @@
    "track": "ops-meta"
   }
  },
+ "reconciled_against_lint": 366,
  "schema": "track-backfill-assignment-v1"
 }
