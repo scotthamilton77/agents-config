@@ -192,13 +192,26 @@ The rule holds iff the emitted `verdict == "go"`.
     directly (never a bare reply+resolve; **not** the full
     `wait-for-pr-comments` skill, whose Phase 2 timeout-exit path jumps
     straight to inventory-write with empty items on a no-feedback head,
-    skipping its Phase 6 re-request entirely). Pass
-    `--bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"` — the same
-    resolved allowlist Step 3 already used — to BOTH the request and the poll,
-    so the ask reaches every trusted identity (including comment-triggered
-    ones like Codex, which never responds to a bare reviewer-request event).
-    Branch on the poll's `completion_kind`, not on whether a review object
-    arrived:
+    skipping its Phase 6 re-request entirely). Capture a timestamp
+    (`ASK_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)`) BEFORE calling
+    `request-rereview.sh`, then pass `--bot-reviewers
+    "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"` — the same resolved
+    allowlist Step 3 already used — to BOTH the request and the poll, plus
+    `--since-timestamp "$ASK_TS"` and `--timeout-seconds
+    "$(jq -r '.bot_inactivity_timeout_seconds' <<<"$POLICY_JSON")"` to the
+    poll. Without `--since-timestamp`, an older `COMMENTED` review from a
+    prior head (already fixed, already rejected by Step 3 on `commit_id`
+    mismatch) reads as this ask's response and never spends the silent
+    counter — the ask never truly ends, and every later invocation issues
+    another one indefinitely. Without `--timeout-seconds` bound to the
+    resolved policy, the poll falls back to its own 600-second default
+    instead of the policy's configured `bot_inactivity_timeout_seconds`
+    (1200s by default) — a bot that responds between 10 and 20 minutes then
+    reads as silent and wrongly spends the budget. So the ask reaches every
+    trusted identity (including comment-triggered ones like Codex, which
+    never responds to a bare reviewer-request event), bounded to exactly
+    this ask's window. Branch on the poll's `completion_kind`, not on
+    whether a review object arrived:
     - `"review"` or `"clean_reaction"` — the ask reached a reviewer and it
       responded, whichever way. This is NOT silence; do not touch the silent
       counter. Re-run Step 3 against the unchanged head exactly once. A
