@@ -13,7 +13,9 @@ import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
+from grind.conditions import conditions, item_unblocked_conditions
 from grind.derive import lane_status
 from grind.envelope import GrindError
 from grind.fold import fold
@@ -195,28 +197,39 @@ def cmd_log(dir_: Path, event_type: str, payload: RawEvent, *, now: Clock) -> di
     _validate_or_raise(event_type, payload)
 
     before_state = fold(load_events(dir_))
-    event: RawEvent = {"ts": _iso(now()), "type": event_type, **payload}
+    now_dt = now()
+    event: RawEvent = {"ts": _iso(now_dt), "type": event_type, **payload}
     after_state, repair = _append_and_persist(dir_, event)
 
     anomaly = _new_anomaly(before_state, after_state)
+    # Transition condition first (this append's own delta), then the
+    # currently-true level conditions (spec §"Emit-back") -- both classes
+    # ride the same envelope, never a second round-trip.
+    envelope_conditions = cast(
+        "JsonValue",
+        [
+            *item_unblocked_conditions(before_state, after_state),
+            *conditions(after_state, now_dt),
+        ],
+    )
     return {
         "ok": True,
         "applied": anomaly is None,
         "anomaly": anomaly_json(anomaly),
         "torn_tail": _torn_tail_json(repair),
         "delta": _entity_delta(before_state, after_state, event),
-        # The conditions engine is a sibling bead (spec §"Emit-back"); this
-        # verb never computes orchestration facts itself.
-        "conditions": [],
+        "conditions": envelope_conditions,
     }
 
 
-def cmd_status(dir_: Path, *, full: bool) -> dict[str, JsonValue]:
-    """`grind status [--full]`."""
+def cmd_status(dir_: Path, *, full: bool, now: Clock) -> dict[str, JsonValue]:
+    """`grind status [--full]`. Level conditions only -- `item_unblocked` is a
+    transition condition, never recomputed from state (spec §"Emit-back")."""
     state = fold_dir(dir_)
+    current_conditions = cast("JsonValue", conditions(state, now()))
     if full:
-        return {"ok": True, "state": full_state_json(state), "conditions": []}
-    return {"ok": True, "state_summary": summarize(state), "conditions": []}
+        return {"ok": True, "state": full_state_json(state), "conditions": current_conditions}
+    return {"ok": True, "state_summary": summarize(state), "conditions": current_conditions}
 
 
 def cmd_check(dir_: Path, max_age: str | None, *, now: Clock) -> dict[str, JsonValue]:

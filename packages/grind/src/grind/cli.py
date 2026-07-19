@@ -101,7 +101,7 @@ def _dispatch(
         return cmd_log(grind_dir, args.type, payload, now=now)
 
     if args.verb == "status":
-        return cmd_status(grind_dir, full=args.full)
+        return cmd_status(grind_dir, full=args.full, now=now)
 
     if args.verb == "check":
         return cmd_check(grind_dir, args.max_age, now=now)

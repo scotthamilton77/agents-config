@@ -113,6 +113,72 @@ def test_log_appends_folds_and_returns_emit_back_envelope(tmp_path: Path):
     assert result["torn_tail"] is None  # intact log -> no repair to surface
 
 
+def test_log_envelope_carries_item_unblocked_on_the_resolving_append(tmp_path: Path):
+    seed = {
+        "title": "Widget grind",
+        "repo": "acme/widgets",
+        "mission": {},
+        "protocols": {},
+        "lanes": [
+            {
+                "id": "lane-a",
+                "queue": [
+                    {"id": "wgclw.1", "title": "blocker"},
+                    {"id": "wgclw.2", "title": "blocked", "on": ["wgclw.1"]},
+                ],
+            }
+        ],
+    }
+    cmd_create(tmp_path, seed, now=_NOW)
+    cmd_log(tmp_path, "item_started", {"item": "wgclw.1"}, now=_NOW)
+    cmd_log(tmp_path, "pr_opened", {"item": "wgclw.1", "pr": 1}, now=_NOW)
+
+    result = cmd_log(tmp_path, "item_merged", {"item": "wgclw.1", "pr": 1, "sha": "abc"}, now=_NOW)
+
+    assert {"condition": "item_unblocked", "item": "wgclw.2"} in result["conditions"]
+
+
+def test_log_envelope_carries_currently_true_level_conditions(tmp_path: Path):
+    _seeded(tmp_path)
+
+    result = cmd_log(tmp_path, "item_started", {"item": "wgclw.1"}, now=_NOW)
+    result = cmd_log(tmp_path, "pr_opened", {"item": "wgclw.1", "pr": 1}, now=_NOW)
+    result = cmd_log(tmp_path, "item_merged", {"item": "wgclw.1", "pr": 1, "sha": "abc"}, now=_NOW)
+    result = cmd_log(tmp_path, "item_done", {"item": "wgclw.1"}, now=_NOW)
+
+    assert {"condition": "lane_complete", "lane": "lane-a"} in result["conditions"]
+    assert {"condition": "grind_complete"} in result["conditions"]
+
+
+def test_status_reports_currently_true_level_conditions_but_never_item_unblocked(
+    tmp_path: Path,
+) -> None:
+    seed = {
+        "title": "Widget grind",
+        "repo": "acme/widgets",
+        "mission": {},
+        "protocols": {},
+        "lanes": [
+            {
+                "id": "lane-a",
+                "queue": [
+                    {"id": "wgclw.1", "title": "blocker"},
+                    {"id": "wgclw.2", "title": "blocked", "on": ["wgclw.1"]},
+                ],
+            }
+        ],
+    }
+    cmd_create(tmp_path, seed, now=_NOW)
+    cmd_log(tmp_path, "item_started", {"item": "wgclw.1"}, now=_NOW)
+    cmd_log(tmp_path, "pr_opened", {"item": "wgclw.1", "pr": 1}, now=_NOW)
+    cmd_log(tmp_path, "item_merged", {"item": "wgclw.1", "pr": 1, "sha": "abc"}, now=_NOW)
+
+    result = cmd_status(tmp_path, full=False, now=_NOW)
+
+    names = {c["condition"] for c in result["conditions"]}
+    assert "item_unblocked" not in names  # transition condition, never from state alone
+
+
 def test_log_surfaces_torn_tail_repair_when_first_writer_after_crash(tmp_path: Path):
     # A crash left the seed line without its trailing newline; `log` is the
     # first writer after the crash. append_event repairs the tail, then folds
@@ -242,7 +308,7 @@ def test_log_rewrites_state_json_after_append(tmp_path: Path):
 def test_status_default_returns_summary(tmp_path: Path):
     _seeded(tmp_path)
 
-    result = cmd_status(tmp_path, full=False)
+    result = cmd_status(tmp_path, full=False, now=_NOW)
 
     assert result["ok"] is True
     assert "state_summary" in result
@@ -252,7 +318,7 @@ def test_status_default_returns_summary(tmp_path: Path):
 def test_status_full_returns_entire_state(tmp_path: Path):
     _seeded(tmp_path)
 
-    result = cmd_status(tmp_path, full=True)
+    result = cmd_status(tmp_path, full=True, now=_NOW)
 
     assert result["ok"] is True
     state = result["state"]

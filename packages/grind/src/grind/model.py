@@ -94,6 +94,12 @@ class Item:
     review: ItemReview = field(default_factory=ItemReview)
     parked: ParkingEntry | None = None
     discovered: DiscoveredWork | None = None
+    # (round, head_sha) per distinct round, last-event-wins within a round --
+    # the raw material `conditions()` needs for `review_stalemate_risk`'s
+    # "dumb arithmetic" (spec: "the last N distinct round values ... all carry
+    # the SAME head_sha"). Recorded by the fold (a fact copied from events),
+    # never itself a computed condition.
+    round_history: tuple[tuple[int, str | None], ...] = ()
 
 
 @dataclass
@@ -114,6 +120,7 @@ class AttentionEntry:
     lane: str | None = None
     auto: bool = False  # raised by the fold itself (anomaly/waiting-human), not ROOT
     kind: AttentionKind | None = None  # what raised it, when resume must clear only its own
+    ts: str | None = None  # the raising event's ts -- needed for attention_pending's "oldest age"
 
 
 @dataclass
@@ -184,6 +191,15 @@ class State:
     closed_ledger: list[ClosedEntry] = field(default_factory=list)
     lessons: list[Observation] = field(default_factory=list)
     anomalies: list[AnomalyRecord] = field(default_factory=list)
+
+    # Last event ts that referenced each item/lane -- raw facts the fold copies
+    # forward from events (never computed from a clock), the material
+    # `conditions(State, now)` needs for `stale_item`/`stale_lane`. Keyed by
+    # item id / lane id; absent key means "never referenced after creation"
+    # (can't happen for anything the fold created, since `grind_created` and
+    # `discovered_work` both stamp an initial entry).
+    last_item_ts: dict[str, str] = field(default_factory=dict)
+    last_lane_ts: dict[str, str] = field(default_factory=dict)
 
     def parking_lot(self) -> dict[str, Item]:
         """Items currently parked -- derived, not separately stored, so it can't drift."""
