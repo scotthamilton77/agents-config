@@ -32,7 +32,7 @@ Task 5 gates on the merge having happened. Do not start it otherwise.
 1. **Run Phase 2 from the main checkout**, never a worktree. `apply.py` detects this by comparing `--absolute-git-dir` against `--git-common-dir`, which catches every linked-worktree layout rather than only the `.claude/worktrees/` naming convention, and separately requires the caller's repo to be the script's own repo.
 2. **The vocabulary must be live before applying.** `work track set` calls `require_known_track` first; applying against the old vocabulary fails **147** writes (`pipeline-discipline` 92 + `review-and-merge` 47 + `grind-runtime` 8). `apply.py` pre-flights this.
 3. **The migration needs a quiescent window.** `work track set` has no status guard and the tracker offers no compare-and-set, so a concurrent agent's track write would be silently overwritten. `apply.py` refuses to run while any covered item is leased. Do not dispatch agents during the run — the applicator closes the wide window, operational discipline closes the last seconds of it.
-4. **Snapshot before mutating.** `bd backup sync` plus a `bd export` dump. Note: `bd dolt` has **no `reset` and no `log`** subcommands — recovery is `bd backup restore` or re-import from the export, not a Dolt reset.
+4. **Snapshot before mutating.** `bd backup sync` is the recovery point; the `bd export` dump is a forensic record beside it, **not** a second restore path. `bd dolt` has no `reset` and no `log` subcommand, and `bd import` upserts rather than replaces — so re-importing the export would not remove labels this migration added. Rollback is `bd backup restore`, full stop.
 5. **`work track set` is the only track write path.** Raw `bd label add track:*` bypasses vocabulary validation and is forbidden.
 
 ---
@@ -196,7 +196,9 @@ bd backup sync
 bd export --all -o /tmp/pre-track-backfill.jsonl
 bd vc status
 ```
-Expected: backup completes; the export file is non-empty; `bd vc status` prints `Branch:` and `Commit:` — **record that commit hash, it names your recovery point.** There is no `bd dolt reset`; recovery is `bd backup restore` or re-import from the export.
+Expected: backup completes; the export file is non-empty; `bd vc status` prints `Branch:` and `Commit:` — **record that commit hash, it names your recovery point.**
+
+Do not proceed on a failed `bd backup sync`. It is the only rollback: there is no `bd dolt reset`, and the export cannot substitute (`bd import` upserts, so it would not remove the labels this migration adds).
 
 - [ ] **Step 4: Capture the pre-run violation baseline**
 

@@ -255,12 +255,17 @@ issues zero writes, so **partial application is repaired by re-running**.
 The two label writes are **not transactional**: an interruption between them
 leaves the item track-less, which lint invariant 1 reports.
 
-**Rollback is `bd backup restore`, or re-import from the `bd export` dump taken
-before the run** — `bd dolt` has no `reset` and no `log` subcommand, so a
-Dolt-reset rollback does not exist. `bd vc status` names the commit that is the
-recovery point. Re-running is forward-healing only — it cannot undo a wrong
-decision. Note that rollback is trivial today only because the prior state is
-uniformly "no label"; that ceases to be true after the first successful run.
+**Rollback is `bd backup restore`, and nothing else.** `bd dolt` has no `reset`
+and no `log` subcommand, so a Dolt-reset rollback does not exist. The `bd export`
+dump taken alongside the backup is a **forensic record, not a restore path**:
+`bd export`'s help states it does not produce the snapshot `bd backup restore`
+consumes, and `bd import` has upsert semantics — since this migration only *adds*
+labels, re-importing a pre-migration export would not remove them. `bd vc status`
+names the commit that is the recovery point.
+
+Re-running is forward-healing only — it cannot undo a wrong decision. Note that
+rollback is trivial today only because the prior state is uniformly "no label";
+that ceases to be true after the first successful run.
 
 **Concurrency: the migration requires an exclusive, quiescent window, and the
 applicator enforces it.** `work track set` has no status guard and the tracker

@@ -56,8 +56,18 @@ Before applying:
     bd export --all -o /tmp/pre-track-backfill.jsonl
     bd vc status          # record Branch/Commit
 
-To recover: `bd backup restore`, or re-import the export. `bd vc status` names
-the commit; there is no `bd dolt reset`.
+**`bd backup restore` is the only rollback.** `bd vc status` names the commit;
+there is no `bd dolt reset`.
+
+The export is a **forensic record, not a restore mechanism**. `bd export`'s own
+help states it "does not produce the JSONL backup snapshot used by `bd backup
+restore`", and `bd import` has *upsert* semantics — it creates and updates, so
+re-importing a pre-migration export would not remove the labels this migration
+added. Keep the export to answer "what did this item look like before?", and use
+`bd backup restore` to actually go back.
+
+This is why `bd backup sync` runs first and its success is checked: it is the
+recovery point, and the export is not a substitute for it.
 
 ## Residue
 
