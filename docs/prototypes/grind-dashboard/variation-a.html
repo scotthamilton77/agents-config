@@ -643,7 +643,7 @@ function reviewBits(review, itemStatus) {
     out += '<span class="pill pill-threads"' + tip + ">" + label + "</span>";
   }
   const wf = Number(review.wont_fix_count) || 0;
-  if (wf > 0) out += '<span class="pill pill-wontfix">' + wf + (wf === 1 ? " wont-fix" : " wont-fix") + "</span>";
+  if (wf > 0) out += '<span class="pill pill-wontfix">' + wf + (wf === 1 ? " wont-fix" : " wont-fix items") + "</span>";
   return out;
 }
 
