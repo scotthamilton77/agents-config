@@ -86,8 +86,16 @@ while [ $# -gt 0 ]; do
     --repo)               REPO="${2:-}";                shift 2 ;;
     --pr)                 PR="${2:-}";                  shift 2 ;;
     --bot-reviewers)      BOT_REVIEWERS="${2:-}";       shift 2 ;;
-    --disposition-table)  DISPOSITION_TABLE="${2:-}";   shift 2 ;;
-    --since-sha)          SINCE_SHA="${2:-}";            shift 2 ;;
+    --disposition-table)
+      [ -n "${2:-}" ] || { echo "error: --disposition-table requires a value" >&2; usage; }
+      DISPOSITION_TABLE="$2"
+      shift 2
+      ;;
+    --since-sha)
+      [ -n "${2:-}" ] || { echo "error: --since-sha requires a value" >&2; usage; }
+      SINCE_SHA="$2"
+      shift 2
+      ;;
     -h|--help) usage ;;
     *) echo "error: unknown flag: $1" >&2; usage ;;
   esac
@@ -168,7 +176,15 @@ build_codex_comment_body() {
     echo
     echo "| Finding | Classification | Commit / Rationale |"
     echo "| --- | --- | --- |"
-    jq -r '.[] | "| " + .finding + " | " + .classification + " | " + .detail + " |"' <<<"$DISPOSITION_TABLE"
+    # Sanitize each cell before interpolation: collapse embedded newlines to
+    # spaces and escape literal "|" so a finding/rationale containing either
+    # cannot terminate or shift a row — free-text review excerpts and
+    # rationales routinely contain both, and a shifted row breaks the
+    # finding-to-classification association this table exists to preserve.
+    jq -r '
+      def cell: gsub("\r\n|\r|\n"; " ") | gsub("\\|"; "\\|");
+      .[] | "| " + (.finding | cell) + " | " + .classification + " | " + (.detail | cell) + " |"
+    ' <<<"$DISPOSITION_TABLE"
     echo
   fi
 

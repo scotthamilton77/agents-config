@@ -224,6 +224,17 @@ assert "exits 2 for --disposition-table entry missing a required field" "[ \$rc_
 err_out=$("$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' --disposition-table 'not-json' 2>&1 >/dev/null)
 assert "malformed --disposition-table gives a clear stderr message" "printf '%s' \"\$err_out\" | grep -qiF 'disposition-table'"
 
+# --disposition-table / --since-sha as the final argument with no value must
+# be a usage error (exit 2), matching the script's documented contract —
+# not a silent exit 1 from `shift 2` running out of positional args.
+"$SCRIPT" --owner o --repo r --pr 1 --disposition-table 2>/dev/null
+rc_missing_dt_val=$?
+assert "exits 2 when --disposition-table has no value" "[ \$rc_missing_dt_val -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --since-sha 2>/dev/null
+rc_missing_ss_val=$?
+assert "exits 2 when --since-sha has no value" "[ \$rc_missing_ss_val -eq 2 ]"
+
 # (a) both flags supplied: the posted Codex comment carries the structured
 # table and the since-sha line, not the bare '@codex review' string.
 : > "$FAKE_GH_LOG"
@@ -260,5 +271,19 @@ rc_both=$?
 assert "disposition-table with both bots exits 0" "[ \$rc_both -eq 0 ]"
 assert "Copilot mechanism unaffected by --disposition-table" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
 assert "Codex mechanism still carries the disposition table when both bots dispatched" "grep -qF -- 'missing null check' '$FAKE_GH_LOG'"
+
+# (e) a finding/detail containing "|" and an embedded newline must not
+# terminate or shift the markdown table row — both are routine in review
+# excerpts and rationales, and a shifted row breaks the finding-to-
+# classification association the table exists to preserve.
+: > "$FAKE_GH_LOG"
+DISPOSITION_ESC='[{"finding":"a | b\nc","classification":"SKIP","detail":"line1\nline2 | pipe"}]'
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["chatgpt-codex-connector[bot]"]' \
+  --disposition-table "$DISPOSITION_ESC" >/dev/null 2>&1
+rc_esc=$?
+assert "disposition-table with pipe/newline in cells exits 0" "[ \$rc_esc -eq 0 ]"
+assert "embedded newlines collapse and literal pipes are escaped, keeping the row intact on one line" \
+  "grep -qF -- 'a \\| b c | SKIP | line1 line2 \\| pipe |' '$FAKE_GH_LOG'"
 
 exit $FAIL
