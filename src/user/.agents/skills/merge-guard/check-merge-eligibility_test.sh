@@ -1317,4 +1317,113 @@ assert "empty bot_reviewers allowlist → reaction path false" \
 assert "empty bot_reviewers allowlist → signal source none" \
   "[ \"\$(jq -r '.facts.bot_clean_signal_source' <<<\"\$out\")\" = none ]"
 
+# ── review_summary ratchet (2026-07-18 spec, Component 2b continuation) ──────
+# Each Codex re-review round mints a brand-new review_id, so a triaged round's
+# disposition never covers the next round's review object. A fresh
+# reaction_clean signal (never bot_clean_review_at_head, which would also
+# admit the review path) retroactively clears any review_summary item whose
+# submitted_at strictly predates the reaction's created_at — no per-round
+# bookkeeping. clean_invs/clean_sidecars first: no leftover disposition from
+# earlier Task 17 cases should leak into this section.
+clean_invs; clean_sidecars
+mk_review_summary() {  # mk_review_summary <id> <submitted_at> [login] [body]
+  jq -n --argjson id "$1" --arg t "$2" --arg l "${3:-trusted-bot[bot]}" \
+    --arg b "${4:-please address this finding}" --arg head "$HEAD_SHA" \
+    '{id: $id, user: {login: $l, type: "Bot"}, state: "COMMENTED",
+      commit_id: $head, submitted_at: $t, body: $b}'
+}
+
+# (1) stale review_summary (no disposition) + a LATER genuinely-clean reaction
+# at head → auto-cleared, eligible.
+r1=$(mk_review_summary 401 "2026-01-01T01:00:00Z")
+revs1=$(jq -n --argjson a "$r1" '[$a]')
+reacts1=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs1" FIXTURE_REACTIONS="$reacts1" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "stale review_summary superseded by a later clean reaction → eligible" "[ \$rc -eq 0 ]"
+
+# (2) TRAP CASE — review_summary submitted_at is AFTER the reaction's
+# created_at (a later round found something after an earlier clean
+# attestation) → stays untriaged, still blocks. Must never regress.
+r2=$(mk_review_summary 402 "2026-01-01T03:00:00Z")
+revs2=$(jq -n --argjson a "$r2" '[$a]')
+reacts2=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs2" FIXTURE_REACTIONS="$reacts2" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "review_summary AFTER the clean reaction is never masked → still blocks" "[ \$rc -eq 1 ]"
+assert "review_summary AFTER the clean reaction → blocker code untriaged_feedback" \
+  "jq -r '.blockers[].code' <<<\"\$out\" | grep -q untriaged_feedback"
+
+# (3) Regression: an EXISTING terminal disposition (FIX/committed or SKIP)
+# stays cleared regardless of reaction timing — no reaction fixture at all.
+clean_invs
+r3=$(mk_review_summary 403 "2026-01-01T01:00:00Z")
+revs3=$(jq -n --argjson a "$r3" '[$a]')
+write_inv "o-r-1-ratchet0001.json" '[{"kind":"review_summary","review_id":403,"classification":"SKIP","rationale":"cosmetic","fix_outcome":null}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs3"); rc=$?
+assert "existing terminal disposition clears regardless of reaction timing (unchanged)" "[ \$rc -eq 0 ]"
+clean_invs
+
+# (4) Multiple stale review_summary items from different earlier rounds, all
+# predating ONE fresh clean reaction → ALL cleared by that single reaction.
+r4a=$(mk_review_summary 404 "2026-01-01T01:00:00Z")
+r4b=$(mk_review_summary 405 "2026-01-01T01:30:00Z")
+revs4=$(jq -n --argjson a "$r4a" --argjson b "$r4b" '[$a,$b]')
+reacts4=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs4" FIXTURE_REACTIONS="$reacts4" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "one fresh clean reaction clears multiple earlier-round review_summary items" "[ \$rc -eq 0 ]"
+
+# (5) No reaction_clean at all — review path won instead (bot_clean_review_at_head
+# true via review, not reaction) — the new clearing condition must never fire
+# off the review path; a findings-bearing review_summary still blocks.
+r5=$(mk_review_summary 406 "2026-01-01T01:00:00Z")
+r5_clean=$(mk_review 'trusted-bot[bot]' APPROVED "$HEAD_SHA" "2026-01-01T03:00:00Z")
+revs5=$(jq -n --argjson a "$r5" --argjson b "$r5_clean" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs5"); rc=$?
+assert "clean signal via the review path (not reaction) never clears a review_summary" "[ \$rc -eq 1 ]"
+
+# (6) Reaction-mutability regression: a +1 is present but does NOT satisfy
+# reaction_clean (an `eyes` reaction from the same allowlisted identity makes
+# the fact false) — a stale review_summary that would have been cleared stays
+# untriaged/live. Proves the check is evaluated fresh from live GitHub state.
+r6=$(mk_review_summary 407 "2026-01-01T01:00:00Z")
+revs6=$(jq -n --argjson a "$r6" '[$a]')
+reacts6=$(jq -n \
+  --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" \
+  --argjson b "$(mk_reaction 'trusted-bot[bot]' eyes "2026-01-01T02:00:00Z")" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs6" FIXTURE_REACTIONS="$reacts6" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "a +1 that fails reaction_clean (eyes present) never clears a stale review_summary" "[ \$rc -eq 1 ]"
+
+# (7) Boundary: reaction created_at EXACTLY EQUAL to the review's submitted_at
+# (same second) → must NOT clear (strict </>, matching the tie-breaking
+# convention used throughout the reaction-path fact above).
+r7=$(mk_review_summary 408 "2026-01-01T02:00:00Z")
+revs7=$(jq -n --argjson a "$r7" '[$a]')
+reacts7=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs7" FIXTURE_REACTIONS="$reacts7" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "reaction created_at exactly equal to review submitted_at → does not clear (strict <)" "[ \$rc -eq 1 ]"
+
+# (8) Codex review finding on PR #339: a human (non-allowlisted) reviewer's
+# untriaged review_summary must NEVER clear off a Codex clean reaction —
+# reaction_clean is Codex's own attestation about Codex's own findings, not
+# a blanket "the PR is fine" signal. A human review with no disposition,
+# submitted BEFORE a later Codex clean reaction, must still block.
+r8=$(mk_review_summary 409 "2026-01-01T01:00:00Z" "human-reviewer")
+revs8=$(jq -n --argjson a "$r8" '[$a]')
+reacts8=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs8" FIXTURE_REACTIONS="$reacts8" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "a human reviewer's untriaged review_summary is never cleared by Codex's reaction (author-scoped)" "[ \$rc -eq 1 ]"
+
+# (9) Cross-identity trap: a policy trusting TWO bots (Codex + a second
+# allowlisted identity). A findings-bearing review_summary from the SECOND
+# bot must NOT be cleared by the FIRST bot's clean reaction — reaction_clean
+# is scoped to the reacting identity specifically, not "any allowlisted
+# bot". Without this, a Codex +1 could wrongly clear a stale Copilot
+# findings review.
+r9=$(mk_review_summary 410 "2026-01-01T01:00:00Z" "second-bot[bot]")
+revs9=$(jq -n --argjson a "$r9" '[$a]')
+reacts9=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
+out=$(run_script "$BOT_POLICY_2" FIXTURE_REVIEWS="$revs9" FIXTURE_REACTIONS="$reacts9" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "a different allowlisted bot's untriaged review_summary is never cleared by another bot's reaction (identity-scoped, not allowlist-scoped)" "[ \$rc -eq 1 ]"
+
+clean_invs
+
 exit $FAIL

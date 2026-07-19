@@ -641,6 +641,7 @@ done < <(find "${HOME}/.claude/state/pr-inventory" -maxdepth 1 \
          -name "${OWNER}-${REPO}-${PR}-*.json.replyids" -print0 2>/dev/null)
 
 untriaged=$(jq -n \
+    --arg reaction_by "$(jq -r '.by // ""' <<<"$reaction_fact")" \
     --argjson live_issue "$(jq \
         --argjson trusted "$BOT_REVIEWERS" --arg pr_author "$PR_AUTHOR" --arg auth_login "$AUTH_LOGIN" '
         # Component 2b: the re-review loop mints its own issue comments, and
@@ -670,10 +671,12 @@ untriaged=$(jq -n \
         [.[] | select((is_clean_pass_marker or is_trigger_comment) | not)
              | {id, author: .user.login}]
         ' <<<"$ISSUE_COMMENTS")" \
-    --argjson live_summaries "$(jq '[.[] | select((.body // "") != "") | {review_id: .id, author: .user.login}]' <<<"$ALL_REVIEWS")" \
+    --argjson live_summaries "$(jq '[.[] | select((.body // "") != "") | {review_id: .id, author: .user.login, submitted_at: .submitted_at}]' <<<"$ALL_REVIEWS")" \
     --argjson recorded "$inventory_items" \
     --argjson recorded_complete "$completed_inventory_items" \
-    --argjson sidecar_replies "$sidecar_reply_ids" '
+    --argjson sidecar_replies "$sidecar_reply_ids" \
+    --argjson reaction_clean "$reaction_clean" \
+    --arg reaction_created_at "$(jq -r '.created_at // ""' <<<"$reaction_fact")" '
     # Clears an item iff it holds a terminal, non-blocking disposition. The
     # durable inventory (validate-inventory.sh) admits only classification
     # FIX / SKIP / ESCALATE; the clean-terminal shapes are SKIP and FIX with
@@ -686,7 +689,29 @@ untriaged=$(jq -n \
         (.classification == "SKIP")
         or (.classification == "FIX"
             and (.fix_outcome == "committed" or .fix_outcome == "already_addressed"));
-    (([ $recorded[] | .posted_reply_id // empty ] + $sidecar_replies) | unique) as $agent_replies
+    # review_summary ratchet (design.md, Component 2b continuation): every
+    # Codex re-review round mints a brand-new review_id, so the terminal
+    # disposition recorded against one round never covers the next round or
+    # its review object. A fresh reaction_clean signal — never
+    # bot_clean_review_at_head, which would also admit the review path and
+    # risk masking a findings-bearing review — retroactively supersedes, and
+    # so clears, any review_summary item whose submitted_at strictly predates
+    # the reaction created_at. Strict inequality only, matching the
+    # fail-closed same-second tie-break already used by the reaction-path
+    # fact above (no round counter needed: one fresh reaction can clear
+    # every earlier stale item in a single pass). Scoped to the REACTING
+    # identity specifically ($reaction_by, .by from the reaction-path fact
+    # above) — never merely "any allowlisted bot". reaction_clean is one
+    # bot'\''s own attestation about that SAME bot'\''s own findings: with a
+    # policy trusting both Copilot and Codex, a Codex +1 says nothing about
+    # a Copilot review'\''s unaddressed findings, and neither says anything
+    # about a human'\''s. Matching only the allowlist (not the specific
+    # reactor) would let Codex'\''s clean pass wrongly clear a stale Copilot
+    # review_summary, or a human'\''s.
+    def epoch: (try fromdateiso8601 catch null);
+    ($reaction_created_at | if . == "" then null else epoch end) as $reaction_epoch
+    | (($reaction_clean == true) and ($reaction_epoch != null)) as $reaction_supersedes
+    | (([ $recorded[] | .posted_reply_id // empty ] + $sidecar_replies) | unique) as $agent_replies
     | ([ $recorded_complete[] | select(.kind == "issue_comment" and terminal_ok) | .issue_comment_id ] | unique) as $done_issue
     | ([ $recorded_complete[] | select(.kind == "review_summary" and terminal_ok) | .review_id // empty ] | unique) as $done_review
     | ([ $live_issue[]
@@ -695,6 +720,9 @@ untriaged=$(jq -n \
          | "issue_comment #\(.id) by \(.author)" ])
     + ([ $live_summaries[]
          | select((.review_id as $i | $done_review | index($i)) == null)
+         | select(($reaction_supersedes
+                   and ($reaction_by != "") and (.author == $reaction_by)
+                   and (((.submitted_at // "") | epoch) as $se | $se != null and $se < $reaction_epoch)) | not)
          | "review_summary #\(.review_id) by \(.author)" ])')
 untriaged_count=$(jq 'length' <<<"$untriaged")
 set_fact untriaged_feedback_count "$untriaged_count"
