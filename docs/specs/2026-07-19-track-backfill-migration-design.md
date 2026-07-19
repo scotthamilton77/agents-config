@@ -8,7 +8,7 @@ Supersedes the migration sketch in `docs/specs/2026-07-15-workcli-track-partitio
 ## 1. Problem
 
 `work lint` invariant 1 requires every non-closed, non-milestone work item to
-carry exactly one `track:*` label. Today **366** items carry none, and the
+carry exactly one `track:*` label. Today **367** items carry none, and the
 `[tracks]` vocabulary they would be labelled against is itself wrong: one track,
 `skills-discipline`, would absorb 181 of them — 49% of the backlog, immediately
 breaching `[extraction.pressure].max-track-backlog = 100`.
@@ -42,13 +42,13 @@ Counts are the decided assignment, not estimates.
 
 | Track | Items | Kind | Charter |
 |---|---:|---|---|
-| `ops-meta` | 76 | organizing-only | Running the operation: roadmap and milestone management, cost/model-routing economics, telemetry, dashboards; external-dependency management and adoption spikes ("decide whether to adopt X"); and purely editorial repo hygiene per §3.2. |
-| `pipeline-discipline` | 75 | organizing-only | The bead SDLC engine as it exists today: formulas, brainstorm/implement-bead, whats-next, worker-fleet agents and dispatch, RALF skills, HEP escalation, container hygiene gates. Decides *what work happens and how it moves*. |
-| `prgroom` | 48 | extractable | The deterministic PR-grooming CLI, its scripts, and the skills driving it. |
-| `installer` | 46 | extractable | The install engine: template assembly, DYNAMIC-INCLUDE flattening, per-tool projection and asset compatibility, receipts, CLI deployment, tool detection. |
-| `review-and-merge` | 44 | extractable | merge-guard, completion/quality gate including its HEAVY tier, adversarial-QA assets, cross-model review passes, sync-after-remote-merge. |
-| `pdlc-orchestrator` | 27 | extractable | The deterministic FSM engine intended to drive Objectives through the lifecycle, and its design corpus. |
-| `workcli` | 25 | extractable | The `work` facade CLI, its verbs, its bd adapter, and the `bd-*.sh` helper scripts this repo owns. |
+| `pipeline-discipline` | 92 | organizing-only | The bead SDLC engine as it exists today: formulas, brainstorm/implement-bead, whats-next, worker-fleet agents and dispatch, RALF skills, HEP escalation, container hygiene gates. Decides *what work happens and how it moves*. |
+| `prgroom` | 53 | extractable | The deterministic PR-grooming CLI, its scripts, and the skills driving it. |
+| `installer` | 50 | extractable | The install engine: template assembly, DYNAMIC-INCLUDE flattening, per-tool projection and asset compatibility, receipts, CLI deployment, tool detection. |
+| `review-and-merge` | 47 | extractable | merge-guard, completion/quality gate including its HEAVY tier, adversarial-QA assets, cross-model review passes, sync-after-remote-merge. |
+| `ops-meta` | 39 | organizing-only | Running the operation: roadmap and milestone management, cost/model-routing economics, telemetry, dashboards; external-dependency management and adoption spikes ("decide whether to adopt X"); and purely editorial repo hygiene per §3.2. |
+| `workcli` | 31 | extractable | Owner of the issue-tracker boundary: the `work` facade CLI, its verbs and adapter, the `bd-*.sh` helper scripts, bd defects and capability asks, and one-time bead-data migrations. Ownership follows the boundary, not the implementation language — see §3.5. |
+| `pdlc-orchestrator` | 29 | extractable | The deterministic FSM engine intended to drive Objectives through the lifecycle, and its design corpus. |
 | `vizsuite` | 14 | extractable | Backlog and knowledge-graph visualization and its data contracts. |
 | `grind-runtime` | 8 | organizing-only | The event-sourced grind runtime: typed event schema, single-writer append log, pure FSM fold, CLI, dashboard projection. Reclassified `extractable` once a package exists. |
 | `holding-place` | 3 | extractable | The idea pipeline and its Promote contract. |
@@ -78,7 +78,43 @@ from any track.
 An item that defines policy rather than changing code takes the track of the
 asset that will implement it.
 
-### 3.4 Known expiry: `pipeline-discipline` / `pdlc-orchestrator`
+### 3.4 `prgroom` / `review-and-merge`: the PR-corridor boundary
+
+These two are the easiest pair to confuse, because `prgroom`'s charter is a
+**code locus** while `review-and-merge`'s reads as a **purpose** — and by purpose
+alone, prgroom is a subset of review-and-merge (everything prgroom does also
+decides whether work lands).
+
+The discriminator is the asset, not the purpose:
+
+- **`prgroom`** — the PR-grooming corridor: the prgroom package and its scripts,
+  the `monitor-pr` skill, **and the `wait-for-pr-comments` / `reply-and-resolve-pr-threads`
+  assets that prgroom supersedes.** Superseded assets stay with their successor
+  so that retirement work and successor work share one track.
+- **`review-and-merge`** — the gates around that corridor: merge-guard,
+  completion/quality gate, adversarial-QA, cross-model review dispatch,
+  sync-after-remote-merge.
+
+This rule is load-bearing: 21 items in this assignment touch
+`wait-for-pr-comments` or `reply-and-resolve-pr-threads`, and without it they
+split arbitrarily between the two tracks.
+
+### 3.5 `workcli` owns a boundary, not a directory
+
+`workcli` is the one track defined by **ownership of an integration boundary**
+rather than by code locus: everything concerning how this repo talks to its
+issue tracker belongs there, including defects and capability asks against the
+`bd` binary itself.
+
+The tension this creates is acknowledged rather than resolved. `workcli` is
+marked `extractable`, yet a handful of its members (`1sso`, `f298`, `p3`) are
+upstream `bd` concerns that cannot travel with `packages/workcli/` on
+extraction. The alternative — routing upstream defects to `ops-meta` — was
+rejected because it splits one team's working set across two tracks to satisfy a
+property that only matters on the day extraction happens. If `workcli` is ever
+extracted, those members are re-homed at that point.
+
+### 3.6 Known expiry: `pipeline-discipline` / `pdlc-orchestrator`
 
 These two are separated by *time*, not structure: both own "what work happens and
 how it moves", differing only in whether the mechanism is shipped or planned.
@@ -101,7 +137,7 @@ Three independent inputs, reconciled:
    every case the two passes could not resolve.
 
 The result is `scripts/track-backfill/assignment.json`: **366 explicit
-assignments**, one per live violation, each carrying the rule that decided it in
+assignments**, each carrying the rule that decided it in
 its `provenance` field. It is committed as the migration's audit record.
 
 Inheritance for the 9 merge-artifact items is **resolved at artifact-build time**
@@ -257,9 +293,9 @@ follow promptly rather than waiting on a long observation window.
 
 The parent design justifies `max-track-backlog = 100` as "≈ 2× today's largest
 extractable track (prgroom, 49)". Under this vocabulary the largest extractable
-track is `prgroom` at 48, so the rationale survives unchanged. The largest track
-overall is `ops-meta` at 76, which is organizing-only and never evaluated for
-extraction pressure.
+track is `prgroom` at 53, so the rationale survives unchanged. The largest track overall is `pipeline-discipline` at 92, which is
+organizing-only and never evaluated for extraction pressure. Its headroom against
+the cap is only 8 items, so it is the next split candidate if it grows.
 
 ## 7. Known gap: exemption does not cascade
 
@@ -284,7 +320,7 @@ filed as a continuation.
    ids are reported as residue with their count, per §5.1.
 3. `work lint` reports zero `milestone_orphans`.
 4. No **extractable** track exceeds `[extraction.pressure].max-track-backlog`.
-   Largest is `prgroom` at 48 against a cap of 100.
+   Largest is `prgroom` at 53 against a cap of 100.
 5. `work lint` `track_mismatches` equals the count predicted in §5.4 — currently
    1, from the `9v0y` reparent. A different number means an unintended
    cross-track parenting was introduced.
