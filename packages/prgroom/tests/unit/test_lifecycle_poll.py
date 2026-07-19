@@ -1804,6 +1804,122 @@ def test_not_requested_required_reviewer_rewindowed_when_github_re_requests() ->
     assert reviewers_gate_satisfied(state) is False
 
 
+def test_review_found_reviewer_rewindow_keeps_a_same_poll_fresh_verdict() -> None:
+    # The bb92bde window-restart carries the same same-poll race the withdrawn-
+    # reactivation path already handles: a NEW review can land between the PR-resource GET
+    # (still listing the login as pending) and the later reviews GET. Restarting to
+    # REQUESTED at `now` and clearing last_review_at would strand it — a second-precision
+    # timestamp in the same second as `now` is not strictly greater than the freshly
+    # stamped last_request_at, so _observe_engagement rejects it and the next poll reads
+    # the absent request as a withdrawal. Order this poll's activity against the PRIOR
+    # last_review_at instead: a verdict newer than it is fresh post-re-request engagement
+    # → REVIEW_FOUND with both stamps backdated to the review.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=_T0 - timedelta(hours=2),
+        )
+    }
+    fresh_verdict = {
+        "id": 41,
+        "user": {"login": "copilot"},
+        "state": "CHANGES_REQUESTED",
+        "body": "needs work",
+        "submitted_at": "2026-06-09T12:00:00Z",  # same second as `now` — the race window
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[fresh_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REVIEW_FOUND
+    assert rv.last_review_at == _T0
+    assert rv.last_request_at == _T0
+    assert reviewers_gate_satisfied(state) is True
+
+
+def test_review_found_reviewer_rewindow_rejects_a_historical_verdict() -> None:
+    # The invariant bb92bde established must survive the fresh-verdict handling: the OLD
+    # review that made the reviewer REVIEW_FOUND (timestamp == prior last_review_at) is
+    # NOT newer than the boundary, so it is a historical verdict, not the re-review the
+    # new ask wants. Restart to REQUESTED at `now`, clear last_review_at, gate unsatisfied.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=datetime(2026, 6, 9, 10, 0, tzinfo=UTC),
+        )
+    }
+    historical_verdict = {
+        "id": 42,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T10:00:00Z",  # == prior last_review_at, not fresh
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[historical_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.last_request_at == _T0
+    assert rv.last_review_at is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_not_requested_reviewer_rewindow_keeps_a_same_poll_fresh_verdict() -> None:
+    # The NOT_REQUESTED post-push-flip flavor carries the same race. A reviewer flipped to
+    # NOT_REQUESTED (last_review_at retained from the invalidated verdict) that GitHub
+    # re-lists AND that submits a fresh verdict this same poll reactivates straight into
+    # REVIEW_FOUND, not a restart-to-REQUESTED that would strand the verdict.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.NOT_REQUESTED,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=_T0 - timedelta(hours=2),
+        )
+    }
+    fresh_verdict = {
+        "id": 43,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T11:59:59Z",  # newer than the prior invalidated verdict
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[fresh_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REVIEW_FOUND
+    assert rv.last_review_at == datetime(2026, 6, 9, 11, 59, 59, tzinfo=UTC)
+    assert rv.last_request_at == datetime(2026, 6, 9, 11, 59, 59, tzinfo=UTC)
+    assert reviewers_gate_satisfied(state) is True
+
+
 def test_drive_by_in_progress_promoted_without_window_restart_when_requested() -> None:
     # A drive-by mid-review (IN_PROGRESS, required=False) that GitHub formally requests
     # is promoted to required so it blocks the gate — but its in-flight review continues

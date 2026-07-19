@@ -402,15 +402,17 @@ def _reactivation_engagement(
     terminal_at: datetime | None,
     reviewed_at: datetime | None,
 ) -> tuple[ReviewerStatus, datetime] | None:
-    """Fresh same-poll engagement for a withdrawn reviewer being re-requested (§2.1).
+    """Fresh same-poll engagement for a settled reviewer being (re-)requested (§2.1).
 
-    A withdrawn reviewer re-requested this poll may have submitted a review in the
-    window between the PR-resource GET and the later reviews GET. That review is genuine
-    fresh engagement iff its timestamp post-dates the reviewer's known history — the
-    recorded withdrawal (``declined_at``) or any prior ``last_review_at``, whichever is
-    later. A review at or before that boundary is a pre-withdrawal historical verdict
-    that must NOT satisfy the fresh request (mirrors ``_seed_reviewer``'s requested-wins
-    rule for a first-seen re-request).
+    Shared by both re-request paths: a withdrawn-decline reactivation and the
+    REVIEW_FOUND / NOT_REQUESTED window-restart in ``_reconcile_existing_request``. A
+    reviewer (re-)requested this poll may have submitted a review in the window between
+    the PR-resource GET and the later reviews GET. That review is genuine fresh engagement
+    iff its timestamp post-dates the reviewer's known history — the recorded withdrawal
+    (``declined_at``, ``None`` on the non-declined restart path) or any prior
+    ``last_review_at``, whichever is later. A review at or before that boundary is a
+    historical verdict that must NOT satisfy the fresh request (mirrors ``_seed_reviewer``'s
+    requested-wins rule for a first-seen re-request).
 
     Returns the ``(status, stamp)`` to reactivate directly into — REVIEW_FOUND for a
     fresh terminal verdict, IN_PROGRESS for fresh non-terminal engagement — with the
@@ -429,7 +431,13 @@ def _reactivation_engagement(
     return None
 
 
-def _reconcile_existing_request(existing: ReviewerState, *, now: datetime) -> bool:
+def _reconcile_existing_request(
+    existing: ReviewerState,
+    *,
+    terminal_at: datetime | None,
+    reviewed_at: datetime | None,
+    now: datetime,
+) -> bool:
     """Reconcile a non-declined EXISTING reviewer that GitHub is requesting NOW (§2.1).
 
     Two independent effects, both driven by "GitHub is asking this poll":
@@ -443,11 +451,26 @@ def _reconcile_existing_request(existing: ReviewerState, *, now: datetime) -> bo
       provably a NEW ask (``_NEW_ASK_RESTART_STATUSES``: REVIEW_FOUND or NOT_REQUESTED).
       GitHub removes a login from ``requested_reviewers`` the instant it reviews, so a
       re-listed REVIEW_FOUND entry is a re-request; a NOT_REQUESTED post-push flip that
-      reappears there was re-asked by an operator. Reset to REQUESTED at ``now`` and
-      clear ``last_review_at`` (the recovery-timeout rule, commit 393e22d) so the
-      review-start timeout can still fire if the wanted fresh review never lands. A
-      REQUESTED / IN_PROGRESS reviewer is a normal in-flight pass — its window is left
-      untouched to avoid churning ``last_request_at`` every poll.
+      reappears there was re-asked by an operator. First consult this poll's review
+      activity (``terminal_at`` / ``reviewed_at``) against the reviewer's PRIOR history
+      via ``_reactivation_engagement``: a review can arrive in the window between the
+      PR-resource GET (which still lists the login as pending) and the later reviews GET,
+      and because GitHub review timestamps have second precision, a verdict posted in the
+      same second as ``now`` is not strictly greater than a ``now``-stamped
+      ``last_request_at``, so a blind restart would leave ``_observe_engagement`` to
+      reject it and the next poll to read the absent request as a withdrawal — losing a
+      real fresh verdict. Activity strictly newer than the prior ``last_review_at`` (the
+      natural boundary here: this path never touched a decline, so ``declined_at`` is
+      ``None``) is fresh post-re-request engagement → go straight to REVIEW_FOUND /
+      IN_PROGRESS with both stamps backdated to the review, mirroring the withdrawn-
+      reactivation branch. Absent such activity, reset to REQUESTED at ``now`` and clear
+      ``last_review_at`` (the recovery-timeout rule, commit 393e22d) so the review-start
+      timeout can still fire if the wanted fresh review never lands. A historical verdict
+      (timestamp <= prior ``last_review_at`` — the one that made the reviewer
+      REVIEW_FOUND) is at or before the boundary, so it correctly does NOT satisfy the
+      new window (the bb92bde invariant). A REQUESTED / IN_PROGRESS reviewer is a normal
+      in-flight pass — its window is left untouched to avoid churning ``last_request_at``
+      every poll.
 
     Callers gate this on ``existing.status is not DECLINED``: a withdrawn decline is the
     reactivation branch's job, and a timeout decline is continuously present in
@@ -459,9 +482,17 @@ def _reconcile_existing_request(existing: ReviewerState, *, now: datetime) -> bo
         existing.required = True
         changed = True
     if existing.status in _NEW_ASK_RESTART_STATUSES:
-        existing.status = ReviewerStatus.REQUESTED
-        existing.last_request_at = now
-        existing.last_review_at = None
+        reactivation = _reactivation_engagement(
+            existing, terminal_at=terminal_at, reviewed_at=reviewed_at
+        )
+        if reactivation is not None:
+            existing.status, stamp = reactivation
+            existing.last_request_at = stamp
+            existing.last_review_at = stamp
+        else:
+            existing.status = ReviewerStatus.REQUESTED
+            existing.last_request_at = now
+            existing.last_review_at = None
         changed = True
     return changed
 
@@ -537,7 +568,12 @@ def _reconcile_reviewers(
                 # ask (§2.1). DECLINED is excluded here — the reactivation branch owns a
                 # withdrawn decline, and a timeout decline is continuously listed, so its
                 # bare presence must never restart the window.
-                if _reconcile_existing_request(existing, now=now):
+                if _reconcile_existing_request(
+                    existing,
+                    terminal_at=terminal_reviews.get(login),
+                    reviewed_at=reviewed.get(login, (None, None))[0],
+                    now=now,
+                ):
                     changed = True
             continue
         reviewed_at, reviewed_user = reviewed.get(login, (None, None))
