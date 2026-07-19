@@ -643,15 +643,17 @@ untriaged=$(jq -n \
         def is_clean_pass_marker:
             (.user.login as $l | ($trusted | index($l)) != null)
             and ((.body // "") | startswith("Codex Review: Didn'\''t find any major issues"));
-        # (2) Trigger comment: the literal "@codex review" ask this repo'\''s
-        # own lieutenant workflow posts via `gh pr comment` to request a
-        # re-review — authored by either the PR author (a human re-asking)
-        # or the currently authenticated session identity (an agent
-        # re-asking as the CLI user). Matched on the same prefix
-        # request-rereview.sh posts verbatim.
+        # (2) Trigger comment: the exact "@codex review" ask
+        # request-rereview.sh posts via `gh pr comment --body "@codex
+        # review"` (verbatim, no trailing text) to request a re-review —
+        # authored by either the PR author (a human re-asking) or the
+        # currently authenticated session identity (an agent re-asking as
+        # the CLI user). EXACT match only, whitespace-trimmed — a prefix
+        # match would exempt "@codex review, also fix the race below" and
+        # silently drop the appended feedback from triage.
         def is_trigger_comment:
             ((.user.login == $pr_author) or (.user.login == $auth_login))
-            and ((.body // "") | startswith("@codex review"));
+            and (((.body // "") | gsub("^\\s+|\\s+$"; "")) == "@codex review");
         [.[] | select((is_clean_pass_marker or is_trigger_comment) | not)
              | {id, author: .user.login}]
         ' <<<"$ISSUE_COMMENTS")" \

@@ -622,10 +622,17 @@ IC_TRIGGER_OTHER='[{"id": 962, "user": {"login": "operator"}, "body": "@codex re
 out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_TRIGGER_OTHER"); rc=$?
 assert "trigger comment from unrelated identity still blocks" "[ \$rc -eq 1 ]"
 
-# (8) The trigger phrase must be at the body start too — prefix match only
+# (8) The trigger phrase must be at the body start too — not a substring
 IC_TRIGGER_NOTPREFIX='[{"id": 963, "user": {"login": "pr-author"}, "body": "please do @codex review this again"}]'
 out=$(run_script "$BASE_POLICY" FIXTURE_PR="$PR_AUTHOR_JSON" FIXTURE_ISSUE_COMMENTS="$IC_TRIGGER_NOTPREFIX"); rc=$?
-assert "trigger phrase not at body start still blocks (prefix match only)" "[ \$rc -eq 1 ]"
+assert "trigger phrase not at body start still blocks (not a substring match)" "[ \$rc -eq 1 ]"
+
+# (8b) The body must be EXACTLY the trigger phrase, not merely start with it —
+# a prefix match would let real feedback appended after "@codex review" ride
+# through unexamined (Codex review finding on PR #335, round 1).
+IC_TRIGGER_PLUS_FEEDBACK='[{"id": 964, "user": {"login": "pr-author"}, "body": "@codex review — please also fix the race described below"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_PR="$PR_AUTHOR_JSON" FIXTURE_ISSUE_COMMENTS="$IC_TRIGGER_PLUS_FEEDBACK"); rc=$?
+assert "trigger phrase plus appended feedback still blocks (exact match only)" "[ \$rc -eq 1 ]"
 
 # (9) A failed `gh api user` lookup never aborts the run (it does not gate
 # eligibility) — it degrades AUTH_LOGIN to an unmatchable empty string, so
