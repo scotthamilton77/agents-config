@@ -75,6 +75,38 @@
     "mtime": 1782070933.779198,
     "hash": "12f54919beb44ee8ca10f4bca51fedcc"
   },
+  "/Users/scott/src/projects/agents-config/scripts/track-backfill/test_reconcile.py": {
+    "mtime": 1784483400.6933298,
+    "hash": "83290168c9a7035067e8344953b45b33"
+  },
+  "/Users/scott/src/projects/agents-config/scripts/track-backfill/test_apply_contract.py": {
+    "mtime": 1784483400.6931396,
+    "hash": "921917e167930d607384660484bb8082"
+  },
+  "/Users/scott/src/projects/agents-config/scripts/track-backfill/context.py": {
+    "mtime": 1784483400.6928115,
+    "hash": "d5e82f83066a4b7fe472b107e14654df"
+  },
+  "/Users/scott/src/projects/agents-config/scripts/track-backfill/test_payload_keys.py": {
+    "mtime": 1784483400.6932306,
+    "hash": "07294d06574e09bd496b9001286ee4fb"
+  },
+  "/Users/scott/src/projects/agents-config/scripts/track-backfill/anchor_orphans.py": {
+    "mtime": 1784483400.6924443,
+    "hash": "397fe94a7239c40cf75d9e806925971a"
+  },
+  "/Users/scott/src/projects/agents-config/scripts/track-backfill/verify.py": {
+    "mtime": 1784483400.6934626,
+    "hash": "54aa6adffce0d88e28ebd28edf2412d8"
+  },
+  "/Users/scott/src/projects/agents-config/scripts/track-backfill/reconcile.py": {
+    "mtime": 1784483400.6930428,
+    "hash": "f0ddf569c71ccf14711fbae7032180df"
+  },
+  "/Users/scott/src/projects/agents-config/scripts/track-backfill/apply.py": {
+    "mtime": 1784483400.6925647,
+    "hash": "6db085c30ecefd209c3341c12608b876"
+  },
   "/Users/scott/src/projects/agents-config/scripts/backlog-landscape/classify.py": {
     "mtime": 1784411560.6047313,
     "hash": "240affd9cbdcf0b11306e82899d8a9d3"
@@ -1683,6 +1715,82 @@
     "mtime": 1781217660.4809613,
     "hash": "8e731ac43c78e817a686b2c680bc54f3"
   },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/__init__.py": {
+    "mtime": 1784483649.9352095,
+    "hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/builders.py": {
+    "mtime": 1784483649.935649,
+    "hash": "262356734e8384fab6b2ff6efa29655e"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_replay_determinism.py": {
+    "mtime": 1784483649.9388456,
+    "hash": "6bc18d83d078508f5eb3c88632c66e94"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_fold_blocking.py": {
+    "mtime": 1784483649.9369817,
+    "hash": "8280b15272a263f27c9e3b26191e4f92"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_fold_parking.py": {
+    "mtime": 1784483649.9383135,
+    "hash": "2e7024cbd7992dd8692704b2265efcf5"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/__init__.py": {
+    "mtime": 1784483649.935286,
+    "hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_fold_grind_lifecycle.py": {
+    "mtime": 1784483649.937539,
+    "hash": "3be593bb88a52f28e30804d89c2038db"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_fold_anomaly_policy.py": {
+    "mtime": 1784483649.9367845,
+    "hash": "3e8d4f0ea88539a8e56ab10b2ebbe306"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_fold_lanes_and_attention.py": {
+    "mtime": 1784483649.9381618,
+    "hash": "9c67ba30c321efc082be79d726e42c01"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_derive_lane_status.py": {
+    "mtime": 1784483649.9358897,
+    "hash": "0f1d7d588a8556de0e6fe9556f8c9c97"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_fold_grind_created.py": {
+    "mtime": 1784483649.9372387,
+    "hash": "9231f1c9f377aeeffe1dbc8bc3f3f54e"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_log_parsing.py": {
+    "mtime": 1784483649.9386435,
+    "hash": "d913fcf7c1d56384867eaab6b5c3d266"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_fold_item_core_lifecycle.py": {
+    "mtime": 1784483649.9377427,
+    "hash": "7b0f7a4310280d3a7230a8851e81e9db"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_fold_review.py": {
+    "mtime": 1784483649.938434,
+    "hash": "b38007a296b6e2298660bbe5d110af6d"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/src/grind/log.py": {
+    "mtime": 1784483649.9348772,
+    "hash": "9fc1cf551355baa4a0efe24d73425ff5"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/src/grind/derive.py": {
+    "mtime": 1784483649.934456,
+    "hash": "86edc361e5af8e1cfd9ac523a66f4030"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/src/grind/__init__.py": {
+    "mtime": 1784483649.9342513,
+    "hash": "418534cee64700e3e18cd75a01cec09f"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/src/grind/model.py": {
+    "mtime": 1784483649.9350333,
+    "hash": "e6ddfe1f42c15635ad5fae5f58e15bd4"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/src/grind/fold.py": {
+    "mtime": 1784483649.9346156,
+    "hash": "d4622d16b96843446ba2fa5cdd421507"
+  },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/tests/conftest.py": {
     "mtime": 1784114654.216945,
     "hash": "6c212a35944297e3847f1c90a4c252e8"
@@ -1756,16 +1864,16 @@
     "hash": "918b35f4d4d2217715acdd38a268953b"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/tests/unit/test_scene_assemble.py": {
-    "mtime": 1784290232.301219,
-    "hash": "b998741291890f01aafb64acce5785c8"
+    "mtime": 1784483400.691175,
+    "hash": "ee30c00f92d897daa7b876a27a7bab5b"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/tests/unit/test_render_human.py": {
     "mtime": 1783981123.112664,
     "hash": "0a8130d62190767c818be1569eedcd22"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/tests/unit/test_verbs_pr.py": {
-    "mtime": 1784328258.01354,
-    "hash": "6682ca9e6670d64ad6534f7b26507cc9"
+    "mtime": 1784483400.6915805,
+    "hash": "6b1be46928ee2d35f3ef81991d064738"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/tests/unit/test_assembly_determinism.py": {
     "mtime": 1784035804.0080702,
@@ -1780,8 +1888,8 @@
     "hash": "741ca62654000266e1c67e32d2687adc"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/tests/unit/test_templates_html.py": {
-    "mtime": 1784383870.2093754,
-    "hash": "7eea912bce9780b36e0bf8c21561f957"
+    "mtime": 1784487586.281195,
+    "hash": "92b4de65c31e2ed554787897dece92f8"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/tests/unit/test_schema_gate.py": {
     "mtime": 1784029911.172725,
@@ -1804,8 +1912,8 @@
     "hash": "c728c12b4578d209d8da4a76a4b13eea"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/tests/unit/test_extract_centrality.py": {
-    "mtime": 1784199249.3733735,
-    "hash": "53c5376ba7a00771a1d9f61d0204b4bf"
+    "mtime": 1784483400.6907947,
+    "hash": "c443b83125ed1ea68de7654d095971bd"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/tests/unit/test_extract_estate.py": {
     "mtime": 1783981123.1122625,
@@ -1940,8 +2048,8 @@
     "hash": "69faba9d2fffc70c04f5620e7076efb0"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/src/vizsuite/templates/static/app.js": {
-    "mtime": 1784290232.300669,
-    "hash": "95a8974e4d4f105b88aa8f873eae2c37"
+    "mtime": 1784485314.2202983,
+    "hash": "38cbbb719ea577b27a8f4dfc45521a83"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/src/vizsuite/templates/static/views/treemap.js": {
     "mtime": 1784289315.000531,
@@ -1956,12 +2064,12 @@
     "hash": "d5f87b6cc30970372b505c13e792cbeb"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/src/vizsuite/templates/static/views/sonar.js": {
-    "mtime": 1784059604.2849066,
-    "hash": "d8e4fc3e57854246a01cdb73e89d4b04"
+    "mtime": 1784487586.2809362,
+    "hash": "a88d4f3dd5f4ed8910d01549a07f06d0"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/src/vizsuite/templates/static/views/constellation.js": {
-    "mtime": 1784383870.208963,
-    "hash": "7fa544b2c0600a72a20c3e85f1fa2dc8"
+    "mtime": 1784487586.280642,
+    "hash": "d67c4b0a36ff32bf1c7719b9945d762d"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/src/vizsuite/sidecar/store.py": {
     "mtime": 1784078307.4727676,
@@ -1992,8 +2100,8 @@
     "hash": "1b19d5c29f5cfd2ed096762bc46f12e9"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/src/vizsuite/extract/centrality.py": {
-    "mtime": 1784199249.3715885,
-    "hash": "10f29f969273d6ad003f1094cee37b34"
+    "mtime": 1784483400.68936,
+    "hash": "3f86d03e24e610544b54d56354ed0aa4"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/src/vizsuite/extract/consequence.py": {
     "mtime": 1784031669.4150128,
@@ -2012,8 +2120,8 @@
     "hash": "95cccfff4e1f3db18212244979864747"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/src/vizsuite/verbs/pr.py": {
-    "mtime": 1784328258.0107918,
-    "hash": "9c817e120baa8b0b582a619d4e548abf"
+    "mtime": 1784483400.6905262,
+    "hash": "502548ae027c2e083d8ef84a426d76ba"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/src/vizsuite/verbs/sweep.py": {
     "mtime": 1784328258.01118,
@@ -2036,12 +2144,12 @@
     "hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/src/vizsuite/scene/assemble.py": {
-    "mtime": 1784290232.3000233,
-    "hash": "32df3cc60e157a1062734a9b90b66282"
+    "mtime": 1784483400.6897912,
+    "hash": "d31a551d72e0b0e7763e1dba228b0434"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/src/vizsuite/scene/model.py": {
-    "mtime": 1784290232.3004363,
-    "hash": "bb786c277b2600aa7a63fb2c84d5bdc3"
+    "mtime": 1784483400.6900063,
+    "hash": "4062e5be3fbb34dfd70cc52d2df553b4"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/src/vizsuite/funnel/__init__.py": {
     "mtime": 1784078307.472278,
@@ -3139,6 +3247,10 @@
     "mtime": 1782041528.8763797,
     "hash": "1e8b7c20328031e7cdded9f4c6a77ac4"
   },
+  "/Users/scott/src/projects/agents-config/docs/plans/2026-07-19-track-backfill-migration.md": {
+    "mtime": 1784483400.6730032,
+    "hash": "11d9462ce951dd2ffdc1ae04a45ade0b"
+  },
   "/Users/scott/src/projects/agents-config/docs/plans/2026-07-04-agent-ruling-merge-judge.md": {
     "mtime": 1783191617.480165,
     "hash": "3458f3672c996ed9a0b792188d9a8f15"
@@ -3220,8 +3332,8 @@
     "hash": "da52c270d40077439cd3df7f47d6f4e7"
   },
   "/Users/scott/src/projects/agents-config/docs/plans/visualization-suite/2026-07-13-implementation-plan.md": {
-    "mtime": 1783960859.0445323,
-    "hash": "92f82f85399c6b0d8f4b99929d088ff7"
+    "mtime": 1784483400.6736934,
+    "hash": "2007549740baab0e2b515a130fa6c6a7"
   },
   "/Users/scott/src/projects/agents-config/docs/plans/visualization-suite/spec-judgment-inputs.md": {
     "mtime": 1783936293.7608886,
@@ -3324,8 +3436,8 @@
     "hash": "f3cf4682c1b51eab17d435c944442842"
   },
   "/Users/scott/src/projects/agents-config/docs/specs/2026-07-19-grind-dashboard-renderer.md": {
-    "mtime": 1784470778.052019,
-    "hash": "27786d80cbfc9d9c400b2c8a54f1fe97"
+    "mtime": 1784483649.9335437,
+    "hash": "dd295150d38065b8e7ca4638b8c6ba47"
   },
   "/Users/scott/src/projects/agents-config/docs/specs/2026-07-16-prgroom-silent-path-observability.md": {
     "mtime": 1784284188.5038517,
@@ -3466,6 +3578,10 @@
   "/Users/scott/src/projects/agents-config/docs/specs/2026-07-02-completion-gate-routing-design.md": {
     "mtime": 1783113173.2014241,
     "hash": "4579c6bdbfd28d3af1227d872b85bb47"
+  },
+  "/Users/scott/src/projects/agents-config/docs/specs/2026-07-19-track-backfill-migration-design.md": {
+    "mtime": 1784483400.6740804,
+    "hash": "b0f72e6f35b2d1a2d134b21a88a67c86"
   },
   "/Users/scott/src/projects/agents-config/docs/specs/2026-05-23-pdlc-orchestrator-core-codex-adversarial-review.md": {
     "mtime": 1779550649.6315098,
@@ -3703,6 +3819,26 @@
     "mtime": 1784411042.8976836,
     "hash": "97520f7642686dc403daa9a759b78a46"
   },
+  "/Users/scott/src/projects/agents-config/docs/prototypes/grind-dashboard/variation-c.html": {
+    "mtime": 1784483649.933171,
+    "hash": "07d89ad4d2571cc42925145e22001519"
+  },
+  "/Users/scott/src/projects/agents-config/docs/prototypes/grind-dashboard/index.html": {
+    "mtime": 1784483649.9325495,
+    "hash": "d16f7dd7011cc0d9244b007c1506a409"
+  },
+  "/Users/scott/src/projects/agents-config/docs/prototypes/grind-dashboard/variation-b.html": {
+    "mtime": 1784483649.9329777,
+    "hash": "22e5195d63d0dac0009145d8d687c268"
+  },
+  "/Users/scott/src/projects/agents-config/docs/prototypes/grind-dashboard/README.md": {
+    "mtime": 1784483649.9322805,
+    "hash": "005e85dc68f096245409c1d217819c29"
+  },
+  "/Users/scott/src/projects/agents-config/docs/prototypes/grind-dashboard/variation-a.html": {
+    "mtime": 1784483649.9328077,
+    "hash": "f335ea52416ed0a89a0e543872af2655"
+  },
   "/Users/scott/src/projects/agents-config/docs/beads/4vn5.2-mattpocock-skills-audit.md": {
     "mtime": 1778562256.3137586,
     "hash": "a2ad38fb67fad36432223a0381b9d0be"
@@ -3714,6 +3850,10 @@
   "/Users/scott/src/projects/agents-config/scripts/AGENTS.md": {
     "mtime": 1783172993.7564569,
     "hash": "056e372f791a67a87a7f577b271bfe93"
+  },
+  "/Users/scott/src/projects/agents-config/scripts/track-backfill/README.md": {
+    "mtime": 1784483400.6923354,
+    "hash": "0a78ee08afd792ca41bd2ad54b70dcda"
   },
   "/Users/scott/src/projects/agents-config/scripts/backlog-landscape/README.md": {
     "mtime": 1784411560.6041462,
@@ -3754,6 +3894,10 @@
   "/Users/scott/src/projects/agents-config/packages/installer/docs/plans/2026-06-06-w1qls.4.4-gemini-frontmatter-transform.md": {
     "mtime": 1780778598.3608403,
     "hash": "25c8eb12a62e033f686583799f1a10ca"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/AGENTS.md": {
+    "mtime": 1784483649.9337835,
+    "hash": "b664c8189282a4ca49cf13bb72ea2184"
   },
   "/Users/scott/src/projects/agents-config/src/plugins/AGENTS.md": {
     "mtime": 1783172993.7567468,
@@ -3804,7 +3948,7 @@
     "hash": "3f0328dea89d0fe5acf3fd3d03365025"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/rules/worktrees.md": {
-    "mtime": 1784479683.4200242,
+    "mtime": 1784483400.7558386,
     "hash": "8e3dc2cf51434c97c6fddfd28196acea"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/rules/user-prompts.md": {
@@ -3912,8 +4056,8 @@
     "hash": "320199cf9a12037445d39369cfa3ad9d"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/skills/merge-guard/SKILL.md": {
-    "mtime": 1784425099.0904255,
-    "hash": "454612f0f882319d8f5c8ae109d4c4b7"
+    "mtime": 1784483400.695238,
+    "hash": "a389d3509a3e49f9caed1159afb46986"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/skills/test-review/SKILL.md": {
     "mtime": 1779626817.1467352,
@@ -4144,8 +4288,8 @@
     "hash": "645fd768fa7686c0b4b3f5e3f25f7388"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/skills/wait-for-pr-comments/SKILL.md": {
-    "mtime": 1784479667.7168639,
-    "hash": "5bf3190f50966565fafdcfff9fb722c2"
+    "mtime": 1784487586.281624,
+    "hash": "3bc8d1d80740ac5d0d8946ab26934644"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/skills/wait-for-pr-comments/references/handling-feedback.md": {
     "mtime": 1779626817.1472526,
