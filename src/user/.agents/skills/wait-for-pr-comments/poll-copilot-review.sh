@@ -399,9 +399,8 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
     # RECONCILED, deliberately, against poll-copilot-rereview-start.sh's >=
     # start-detection bound on this same $SINCE value (passed there as
     # --after): this is a trust question (soundness-favoring), that is a
-    # detection question (liveness-favoring) — full reasoning in
-    # wait-for-pr-comments/SKILL.md Phase 6, "Same-second boundary
-    # reconciliation".
+    # detection question (liveness-favoring) — full reasoning in this
+    # skill's "Same-second boundary reconciliation" block (Phase 6).
     if [[ -n "$SINCE" ]]; then
         fresh_reviews=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at > $since)]')
         stale_count=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at <= $since)] | length')

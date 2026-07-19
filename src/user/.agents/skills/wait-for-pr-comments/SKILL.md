@@ -439,10 +439,13 @@ the helper's default (1) per spec decision, not a per-repo config knob.
 
 1. **Capture** `<rereview_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`
    **before** issuing the re-review request in step 2. The downstream `--after`
-   (step 3) and `--since-timestamp` (step 4) filters require the bot signal to be
-   strictly later than this value, so capturing it first bounds the prior round
-   without excluding a fast Codex response that lands while `request-rereview.sh`
-   is still returning (or in the same API-timestamp second). Capturing it after
+   (step 3) and `--since-timestamp` (step 4) filters both bound the prior round
+   against this value, but not with the same operator — step 3's start-detection
+   is `>=` (inclusive of a same-second signal), step 4's staleness bound is
+   strict `>` (exclusive); see "Same-second boundary reconciliation" below for
+   why. Capturing the timestamp before dispatch, not after, is what lets step 3
+   recognize a fast Codex response that lands while `request-rereview.sh` is
+   still returning, or in the same API-timestamp second — capturing it after
    the dispatch would discard that valid `+1` or marker comment as stale and
    count the ask as a timeout.
 
