@@ -66,6 +66,19 @@ if [ "$1" = "api" ]; then
         fi
         body="${FIXTURE_EVENTS:-[]}" ;;
     */issues/*/comments*)   body="${FIXTURE_ISSUE_COMMENTS:-[]}" ;;
+    */issues/*/reactions*)
+        if [ -n "${FIXTURE_REACTIONS_PAGE2:-}" ]; then
+          # emulate `gh api --paginate` on an array-returning endpoint: each
+          # page's JSON array is later merged via `jq -s 'add // []'` — mirrors
+          # the ALL_REVIEWS / ISSUE_COMMENTS pagination idiom already in use.
+          printf '%s\n%s\n' "${FIXTURE_REACTIONS:-[]}" "$FIXTURE_REACTIONS_PAGE2"; exit 0
+        fi
+        body="${FIXTURE_REACTIONS:-[]}" ;;
+    */issues/*/timeline*)
+        if [ -n "${FIXTURE_TIMELINE_PAGE2:-}" ]; then
+          printf '%s\n%s\n' "${FIXTURE_TIMELINE:-[]}" "$FIXTURE_TIMELINE_PAGE2"; exit 0
+        fi
+        body="${FIXTURE_TIMELINE:-[]}" ;;
     */pulls/*/reviews*)     body="${FIXTURE_REVIEWS:-[]}" ;;
     */protection/required_status_checks*)
         if [ -n "${FIXTURE_BASE_REF_ENCODED:-}" ] && [[ "$path" != *"branches/${FIXTURE_BASE_REF_ENCODED}/protection"* ]]; then
@@ -97,6 +110,11 @@ if [ "$1" = "api" ]; then
           printf '%s\n%s\n' "$s1" "$s2"; exit 0
         fi
         body="${FIXTURE_COMMIT_STATUS:-'{\"statuses\":[]}'}" ;;
+    */commits/*)
+        # plain single-commit fetch (committer date for the reaction-path
+        # freshness check) — must be listed AFTER the more specific
+        # */commits/*/status* case above, since this pattern also matches it.
+        body="${FIXTURE_COMMIT:-'{\"commit\":{\"committer\":{\"date\":null}}}'}" ;;
     */rules/branches/*)
         if [ "${FIXTURE_RULES_FAIL:-0}" = 1 ]; then
           echo "gh: 500 Internal Server Error" >&2; exit 1
@@ -118,7 +136,16 @@ if [ "$1" = "api" ]; then
           */rulesets/222)  body="${FIXTURE_RULESET_222:-'{\"current_user_can_bypass\":\"none\"}'}" ;;
           *)               body="${FIXTURE_RULESET_BYPASS:-'{\"current_user_can_bypass\":\"none\"}'}" ;;
         esac ;;
-    */pulls/*)              body="${FIXTURE_PR:-'{\"state\":\"open\",\"head\":{\"sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"base\":{\"ref\":\"main\",\"sha\":\"cccccccccccccccccccccccccccccccccccccccc\"},\"created_at\":\"2026-01-01T00:00:00Z\"}'}" ;;
+    */pulls/*)
+        # The Component 2 reaction path re-reads the head SHA (via --jq
+        # .head.sha) AFTER the reactions/timeline fetch, to reject a head that
+        # moved mid-check. FIXTURE_PR_REREAD lets a test simulate that move;
+        # unset, the re-read sees the same FIXTURE_PR as the initial fetch.
+        if [ "$filter" = ".head.sha" ] && [ -n "${FIXTURE_PR_REREAD:-}" ]; then
+          body="$FIXTURE_PR_REREAD"
+        else
+          body="${FIXTURE_PR:-'{\"state\":\"open\",\"head\":{\"sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"base\":{\"ref\":\"main\",\"sha\":\"cccccccccccccccccccccccccccccccccccccccc\"},\"created_at\":\"2026-01-01T00:00:00Z\"}'}"
+        fi ;;
     *)                      body='{}' ;;
   esac
   body="${body#\'}"; body="${body%\'}"
@@ -1024,5 +1051,127 @@ assert "PR#256 counts: 3 live = 1 skip + 2 escalations + 0 blocking" \
 out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false T2:true T3:true)"); rc=$?
 assert "PR#256 after human resolves escalated threads → eligible" "[ \$rc -eq 0 ]"
 clean_invs
+
+# ── Component 2: reaction clean-pass path (2026-07-18 spec) ─────────────────
+# docs/specs/2026-07-18-codex-rereview-path-design.md — bot_clean_review_at_head
+# extends to a disjunction: (a) the existing review path, OR (b) a reaction
+# path that is the only artifact Codex leaves on an auto/push-triggered clean
+# pass. bot_clean_signal_source records which path (if either) fired.
+mk_reaction() {  # mk_reaction <login> <content> <created_at> [type]
+  jq -n --arg l "$1" --arg c "$2" --arg t "$3" --arg ty "${4:-Bot}" \
+    '{content: $c, user: {login: $l, type: $ty}, created_at: $t}'
+}
+mk_commit() {  # mk_commit <committer-date-or-"null">
+  if [ "$1" = "null" ]; then
+    jq -n '{commit:{committer:{date:null}}}'
+  else
+    jq -n --arg d "$1" '{commit:{committer:{date:$d}}}'
+  fi
+}
+mk_fp_event() {  # mk_fp_event <created_at>
+  jq -n --arg t "$1" '{event:"head_ref_force_pushed", created_at:$t}'
+}
+pr_with_head() {  # pr_with_head <sha>
+  jq -n --arg sha "$1" --arg base "$BASE_SHA" \
+    '{state:"open", head:{sha:$sha}, base:{ref:"main", sha:$base}, created_at:"2026-01-01T00:00:00Z"}'
+}
+
+COMMIT_TS="2026-01-01T00:00:00Z"           # head commit's committer date
+PLUS1_TS_OK="2026-01-01T01:00:00Z"         # post-dates COMMIT_TS
+PLUS1_TS_STALE="2025-12-31T23:00:00Z"      # pre-dates COMMIT_TS
+FORCEPUSH_TS="2026-01-01T02:00:00Z"        # post-dates PLUS1_TS_OK
+COMMIT_FIXTURE="$(mk_commit "$COMMIT_TS")"
+
+# reaction path alone → true, source "reaction"
+reacts=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "$PLUS1_TS_OK")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "reaction path alone → bot_clean_review_at_head true" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = true ]"
+assert "reaction path alone → signal source reaction" \
+  "[ \"\$(jq -r '.facts.bot_clean_signal_source' <<<\"\$out\")\" = reaction ]"
+
+# review path alone → true, source "review" (companion fact regression pin)
+revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "review path alone → signal source review" \
+  "[ \"\$(jq -r '.facts.bot_clean_signal_source' <<<\"\$out\")\" = review ]"
+
+# both present → source reads "review" (review wins over reaction)
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs" FIXTURE_REACTIONS="$reacts" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "both paths present → fact true" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = true ]"
+assert "both paths present → source review wins" \
+  "[ \"\$(jq -r '.facts.bot_clean_signal_source' <<<\"\$out\")\" = review ]"
+
+# neither → false, source "none"
+out=$(run_script "$BASE_POLICY" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "neither path → fact false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+assert "neither path → signal source none" \
+  "[ \"\$(jq -r '.facts.bot_clean_signal_source' <<<\"\$out\")\" = none ]"
+
+# +1 predating the head commit's committer date → false
+reacts_stale=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "$PLUS1_TS_STALE")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts_stale" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "+1 predating committer date → false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# +1 predating a LATER head_ref_force_pushed timeline event → false
+tl=$(jq -n --argjson a "$(mk_fp_event "$FORCEPUSH_TS")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts" FIXTURE_COMMIT="$COMMIT_FIXTURE" FIXTURE_TIMELINE="$tl")
+assert "+1 predating a later force-push event → false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# head_ref_force_pushed event on a LATER timeline page → pagination must
+# still surface it (page 1 alone would wrongly read true)
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts" FIXTURE_COMMIT="$COMMIT_FIXTURE" \
+      FIXTURE_TIMELINE='[]' FIXTURE_TIMELINE_PAGE2="$tl")
+assert "force-push event on timeline page 2 still surfaces (pagination) → false" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# +1 from an identity outside the allowlist → false
+reacts_untrusted=$(jq -n --argjson a "$(mk_reaction 'evil-bot[bot]' '+1' "$PLUS1_TS_OK")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts_untrusted" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "+1 from untrusted identity → false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# +1 whose user.type is not "Bot" → false
+reacts_nonbot=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "$PLUS1_TS_OK" User)" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts_nonbot" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "+1 from a non-Bot user.type → false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# eyes present from a DIFFERENT allowlisted identity than the +1's → still blocks
+BOT_POLICY_2=$(jq -c '.bot_reviewers = ["trusted-bot[bot]", "second-bot[bot]"]' <<<"$BASE_POLICY")
+reacts_eyes_other=$(jq -n \
+  --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "$PLUS1_TS_OK")" \
+  --argjson b "$(mk_reaction 'second-bot[bot]' eyes "$PLUS1_TS_OK")" '[$a,$b]')
+out=$(run_script "$BOT_POLICY_2" FIXTURE_REACTIONS="$reacts_eyes_other" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "eyes from a different allowlisted identity still blocks" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# eyes arriving on the SECOND PAGE of the reactions fetch → pagination must
+# still surface it (page 1 alone, with just the +1, would wrongly read true)
+eyes_page2=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' eyes "$PLUS1_TS_OK")" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts" FIXTURE_REACTIONS_PAGE2="$eyes_page2" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "eyes on reactions page 2 still surfaces (pagination) → false" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# head OID moved between the reactions fetch and the re-read → reject
+moved_pr=$(pr_with_head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts" FIXTURE_COMMIT="$COMMIT_FIXTURE" FIXTURE_PR_REREAD="$moved_pr")
+assert "head moved between reactions fetch and re-read → false (fail closed)" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# missing committer date → false (no FIXTURE_COMMIT set; stub default is null)
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts")
+assert "missing committer date → false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# unparseable reaction timestamp → false
+reacts_bad_ts=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' 'not-a-date')" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REACTIONS="$reacts_bad_ts" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "unparseable +1 timestamp → false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# empty allowlist → reaction path false
+EMPTY_ALLOWLIST_POLICY=$(jq -c '.bot_reviewers = []' <<<"$BASE_POLICY")
+out=$(run_script "$EMPTY_ALLOWLIST_POLICY" FIXTURE_REACTIONS="$reacts" FIXTURE_COMMIT="$COMMIT_FIXTURE")
+assert "empty bot_reviewers allowlist → reaction path false" \
+  "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+assert "empty bot_reviewers allowlist → signal source none" \
+  "[ \"\$(jq -r '.facts.bot_clean_signal_source' <<<\"\$out\")\" = none ]"
 
 exit $FAIL
