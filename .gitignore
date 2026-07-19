@@ -15,6 +15,7 @@
 .ralf/
 .crit.json
 .superpowers/
+.grind
 
 # Local settings
 settings.local.json
