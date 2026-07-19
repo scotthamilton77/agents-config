@@ -396,8 +396,11 @@ function text(s) { return s === null || s === undefined ? "" : String(s); }
 
 function safeHref(url) {
   try {
-    var scheme = new URL(url, "https://github.com").protocol;
-    return (scheme === "https:" || scheme === "http:") ? url : null;
+    // Return the RESOLVED href, not the input: a relative override like
+    // "/org/repo/pull/7" passes the scheme check via the GitHub base but
+    // would otherwise resolve against this file:// page when clicked.
+    var resolved = new URL(url, "https://github.com");
+    return (resolved.protocol === "https:" || resolved.protocol === "http:") ? resolved.href : null;
   } catch (e) { return null; }
 }
 // Explicit `pr.url` wins (scheme-checked); else derive from the repo slug;
