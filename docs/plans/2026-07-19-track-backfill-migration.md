@@ -526,7 +526,9 @@ Criterion 7 (idempotency) is a sequenced check, not a static one — Task 9 Step
 
 - [ ] **Step 2: Verify the verifier fails before the migration runs**
 
-Run from the **main checkout**: `python3 scripts/track-backfill/verify.py; echo "exit=$?"`
+Run this **from the branch worktree**, not the main checkout: the verifier only exists on this branch, so from `main` there is no file to run. It is read-only (`work lint`, `work list`, `work show`), so running it from the worktree is safe — unlike `apply.py`, which writes and therefore refuses.
+
+Run: `python3 scripts/track-backfill/verify.py; echo "exit=$?"`
 Expected: `exit=1` with `C2 covered ids still violating` — nothing is labelled yet, so it *must* fail. A verifier that passes before the work is done is broken.
 
 - [ ] **Step 3: Write the README**
@@ -873,7 +875,7 @@ Deliver via the normal PR chain. Do not commit directly to `main`.
 - [ ] **Step 1: Run the verifier**
 
 Run: `python3 scripts/track-backfill/verify.py`
-Expected: `ALL CRITERIA PASS`, plus the residue count and the mismatch/baseline line printed for the record.
+Expected: `C1-C6 PASS — criterion 7 (idempotency) is a sequenced check, run it separately`, plus the residue count and the mismatch/baseline line printed for the record. The verifier deliberately does not claim criterion 7; Step 2 below is what establishes it.
 
 - [ ] **Step 2: Verify criterion 7 — a second run is a no-op**
 

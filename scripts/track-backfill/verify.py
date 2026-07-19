@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the seven acceptance criteria of the track backfill migration.
+"""Verify the six acceptance criteria of the track backfill migration.
 
 Every criterion appends to `failures` — none is a bare print. Exit 1 on any.
 """
@@ -15,8 +15,24 @@ import tomllib
 HERE = pathlib.Path(__file__).parent
 
 
-def work(*argv: str) -> dict:
-    return json.loads(subprocess.run(["work", *argv], capture_output=True, text=True).stdout)
+def work(*argv: str, require_ok: bool = True) -> dict:
+    """Run a `work` verb and return its envelope.
+
+    Fails loud by default: a verifier that mistakes a failed backend call for a
+    successful one reports assurance it never established. C6 opts out with
+    require_ok=False, because there a failing envelope IS the finding.
+    """
+    proc = subprocess.run(["work", *argv], capture_output=True, text=True)
+    try:
+        payload = json.loads(proc.stdout)
+    except ValueError:
+        raise SystemExit(
+            f"`work {' '.join(argv)}` returned non-JSON (exit {proc.returncode}): "
+            f"{proc.stdout[:200]!r} {proc.stderr[:200]!r}"
+        )
+    if require_ok and not payload.get("ok"):
+        raise SystemExit(f"`work {' '.join(argv)}` failed: {payload.get('error')}")
+    return payload
 
 
 def main() -> int:
@@ -90,7 +106,7 @@ def main() -> int:
     if not groom_bead:
         failures.append("C6 groom-state-bead empty")
     else:
-        got = work("show", groom_bead)
+        got = work("show", groom_bead, require_ok=False)
         if not got.get("ok"):
             failures.append(f"C6 groom-state-bead {groom_bead} does not exist")
         else:
@@ -102,7 +118,11 @@ def main() -> int:
 
     for f in failures:
         print("FAIL:", f)
-    print("ALL CRITERIA PASS" if not failures else f"{len(failures)} CRITERIA FAILED")
+    print(
+        "C1-C6 PASS — criterion 7 (idempotency) is a sequenced check, run it separately"
+        if not failures
+        else f"{len(failures)} CRITERIA FAILED"
+    )
     return 1 if failures else 0
 
 
