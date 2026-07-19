@@ -1412,6 +1412,18 @@ reacts8=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T0
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs8" FIXTURE_REACTIONS="$reacts8" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
 assert "a human reviewer's untriaged review_summary is never cleared by Codex's reaction (author-scoped)" "[ \$rc -eq 1 ]"
 
+# (9) Cross-identity trap: a policy trusting TWO bots (Codex + a second
+# allowlisted identity). A findings-bearing review_summary from the SECOND
+# bot must NOT be cleared by the FIRST bot's clean reaction — reaction_clean
+# is scoped to the reacting identity specifically, not "any allowlisted
+# bot". Without this, a Codex +1 could wrongly clear a stale Copilot
+# findings review.
+r9=$(mk_review_summary 410 "2026-01-01T01:00:00Z" "second-bot[bot]")
+revs9=$(jq -n --argjson a "$r9" '[$a]')
+reacts9=$(jq -n --argjson a "$(mk_reaction 'trusted-bot[bot]' '+1' "2026-01-01T02:00:00Z")" '[$a]')
+out=$(run_script "$BOT_POLICY_2" FIXTURE_REVIEWS="$revs9" FIXTURE_REACTIONS="$reacts9" FIXTURE_COMMIT="$COMMIT_FIXTURE"); rc=$?
+assert "a different allowlisted bot's untriaged review_summary is never cleared by another bot's reaction (identity-scoped, not allowlist-scoped)" "[ \$rc -eq 1 ]"
+
 clean_invs
 
 exit $FAIL
