@@ -74,7 +74,26 @@ Expected: remote shows `scotthamilton77/agents-config`; all four directories/var
 python3 "$MERGE_GUARD_DIR/resolve_policy.py" --project-config project-config.toml > "$EVID/policy.json"
 cat "$EVID/policy.json"
 ```
-Expected: JSON with `"merge_authorization": "rule-based"`, `"merge_rule": "bot-quiescence"`, `"bot_reviewers"` including `"chatgpt-codex-connector[bot]"`. This is the real, live-resolved policy — not a hand-written fixture.
+Expected: JSON with `"merge_authorization": "rule-based"`, `"merge_rule": "bot-quiescence"`, `"bot_reviewers"` including `"chatgpt-codex-connector[bot]"`, and a non-null `"approver"` object (`{"type": "github-app", "app_id": ..., "key_path_env": "MERGE_GUARD_APPROVER_KEY_PATH"}`). This is the real, live-resolved policy — not a hand-written fixture. (`resolve_policy.py` requires `python3 >= 3.11` for `tomllib`; if the session's default `python3` is older, invoke it via whatever the repo's own tooling uses to pin a compatible interpreter, e.g. `uv run python3`.)
+
+- [ ] **Step 3: Confirm the App-approver key is present (precondition for Plan A's "merge fires for real" claim)**
+
+```bash
+KEY_PATH_ENV=$(jq -r '.approver.key_path_env' "$EVID/policy.json")
+KEY_PATH="${!KEY_PATH_ENV:-}"
+if [ -n "$KEY_PATH" ] && [ -r "$KEY_PATH" ]; then
+  echo "approver key present and readable at $KEY_PATH"
+else
+  echo "WARNING: $KEY_PATH_ENV is unset or unreadable — merge-guard will fail closed to a human handoff on every Plan A merge attempt (approve_pr.py has no key to attest with)."
+fi
+```
+Expected: "approver key present and readable." If the warning prints
+instead, Plan A's three merge steps (Task 1/2/3) will each stop short of an
+autonomous merge and hand off to a human — that's expected merge-guard
+behavior given the missing key, not a bug in this plan, but it means "merge
+fires for real" cannot be demonstrated until the key is available. Record
+this in the final report as a precondition failure, not a scenario failure,
+if it occurs.
 
 ---
 
@@ -151,7 +170,7 @@ Expected (per the spec's empirical grounding — 8/8 historical PRs matched this
 "$MERGE_GUARD_DIR/check-merge-eligibility.sh" \
   --owner "$OWNER" --repo "$REPO" --pr "$A1_PR" \
   --policy-json "$(cat "$EVID/policy.json")" \
-  > "$EVID/a1/verdict.json"; rc=$?
+  > "$EVID/a1/verdict.json" && rc=0 || rc=$?
 cat "$EVID/a1/verdict.json"
 echo "exit code: $rc"
 jq -r '.blockers[]?.code' "$EVID/a1/verdict.json"
@@ -242,7 +261,7 @@ found nothing" as a real result.
 
 ```bash
 "$MERGE_GUARD_DIR/check-merge-eligibility.sh" --owner "$OWNER" --repo "$REPO" --pr "$A2A_PR" \
-  --policy-json "$(cat "$EVID/policy.json")" > "$EVID/a2a/verdict-before-triage.json"; rc=$?
+  --policy-json "$(cat "$EVID/policy.json")" > "$EVID/a2a/verdict-before-triage.json" && rc=0 || rc=$?
 cat "$EVID/a2a/verdict-before-triage.json"
 echo "exit: $rc"
 jq -r '.blockers[] | select(.code=="untriaged_feedback")' "$EVID/a2a/verdict-before-triage.json"
@@ -264,7 +283,7 @@ ls -la ~/.claude/state/pr-inventory/ 2>/dev/null | tee "$EVID/a2a/post-triage-in
 
 ```bash
 "$MERGE_GUARD_DIR/check-merge-eligibility.sh" --owner "$OWNER" --repo "$REPO" --pr "$A2A_PR" \
-  --policy-json "$(cat "$EVID/policy.json")" > "$EVID/a2a/verdict-after-triage.json"; rc=$?
+  --policy-json "$(cat "$EVID/policy.json")" > "$EVID/a2a/verdict-after-triage.json" && rc=0 || rc=$?
 cat "$EVID/a2a/verdict-after-triage.json"
 echo "exit: $rc"
 jq -r '.blockers[]?.code' "$EVID/a2a/verdict-after-triage.json"
@@ -336,7 +355,9 @@ echo "STALE_REVIEW_ID=$STALE_REVIEW_ID STALE_SUBMITTED_AT=$STALE_SUBMITTED_AT"
 
 ```bash
 # actually remove the round-1 rough edge — "porpose" -> "purpose" — a real
-# diff, not an empty commit, so round 2 has genuine grounds to come back clean
+# diff, not an empty commit, so round 2 has genuine grounds to come back clean.
+# `sed -i ''` is BSD/macOS syntax (this worktree runs on Darwin); on GNU sed
+# drop the empty '' argument.
 sed -i '' 's/porpose/purpose/' docs/architecture/live-codex-verification-scratch-a2b.md
 git add docs/architecture/live-codex-verification-scratch-a2b.md
 git commit -m "fix(live-verify): address a2b round-1 finding"
@@ -361,7 +382,7 @@ re-ask once; the ratchet only clears via the reaction path.
 
 ```bash
 "$MERGE_GUARD_DIR/check-merge-eligibility.sh" --owner "$OWNER" --repo "$REPO" --pr "$A2B_PR" \
-  --policy-json "$(cat "$EVID/policy.json")" > "$EVID/a2b/verdict.json"; rc=$?
+  --policy-json "$(cat "$EVID/policy.json")" > "$EVID/a2b/verdict.json" && rc=0 || rc=$?
 cat "$EVID/a2b/verdict.json"
 echo "exit: $rc"
 jq -r '.facts.bot_clean_signal_source, .facts.bot_clean_review_at_head' "$EVID/a2b/verdict.json"
@@ -441,13 +462,13 @@ trip the separate `requested_changes_active` blocker.
 
 ```bash
 "$MERGE_GUARD_DIR/check-merge-eligibility.sh" --owner "$OWNER" --repo "$REPO" --pr "$B1_PR" \
-  --policy-json "$(cat "$EVID/policy.json")" > "$EVID/b1/verdict.json"; rc=$?
+  --policy-json "$(cat "$EVID/policy.json")" > "$EVID/b1/verdict.json" && rc=0 || rc=$?
 cat "$EVID/b1/verdict.json"
 echo "exit: $rc"
 jq -r '.blockers[] | select(.code=="untriaged_feedback")' "$EVID/b1/verdict.json"
-jq -r '.facts.reaction_clean, .facts.bot_clean_signal_source' "$EVID/b1/verdict.json"
+jq -r '.facts.bot_clean_review_at_head, .facts.bot_clean_signal_source' "$EVID/b1/verdict.json"
 ```
-Expected: exit code `1`; `untriaged_feedback` blocker naming `$HUMAN_REVIEW_ID` specifically; `reaction_clean == true` at the same time — proving Codex's clean signal never clears a different identity's finding.
+Expected: exit code `1`; `untriaged_feedback` blocker naming `$HUMAN_REVIEW_ID` specifically; `bot_clean_review_at_head == true` and `bot_clean_signal_source == "reaction"` at the same time (`reaction_clean` is an internal shell variable in `check-merge-eligibility.sh`, never emitted in the verdict JSON — these two facts are the ones that actually carry "Codex's clean signal arrived via the reaction path") — proving Codex's clean signal never clears a different identity's finding.
 
 - [ ] **Step 5: Close the PR — never merge**
 
@@ -506,7 +527,7 @@ echo "B2_PR=$B2_PR TRIGGER_COMMENT_ID=$TRIGGER_COMMENT_ID"
 "$WFPC_DIR/poll-copilot-review.sh" --owner "$OWNER" --repo "$REPO" --pr "$B2_PR" \
   --bot-reviewers '["chatgpt-codex-connector[bot]"]' | tee "$EVID/b2/completion.json"
 "$MERGE_GUARD_DIR/check-merge-eligibility.sh" --owner "$OWNER" --repo "$REPO" --pr "$B2_PR" \
-  --policy-json "$(cat "$EVID/policy.json")" > "$EVID/b2/verdict.json"; rc=$?
+  --policy-json "$(cat "$EVID/policy.json")" > "$EVID/b2/verdict.json" && rc=0 || rc=$?
 cat "$EVID/b2/verdict.json"
 echo "exit: $rc"
 HAS_UNTRIAGED=$(jq '[.blockers[]? | select(.code=="untriaged_feedback")] | length > 0' "$EVID/b2/verdict.json")
@@ -522,6 +543,14 @@ not some other blocker exists. (`.details` is a string like `"untriaged
 non-thread feedback ...: issue_comment #<id> by <author>"`, not an array —
 match it with `test()`, not `contains([...])`, which type-errors against a
 string.)
+
+Caveat for the report: because the trigger comment here is authored by the
+same identity running this test (PR author or the authenticated session),
+`is_trigger_comment`'s exemption fires and the comment simply never gets
+enumerated as a candidate blocker in the first place — `NAMES_TRIGGER ==
+false` holds either way, so this scenario is spec-faithful but a
+comparatively weak falsification test. Note this distinction in Task 8's
+report rather than presenting it as an unqualified pass.
 
 - [ ] **Step 3: Close without merging**
 
@@ -595,21 +624,31 @@ Expected: `"state": "CLOSED"`. **Never run `gh pr merge` on this PR.**
 
 **Files:** Delete the three scratch docs that landed on `main`.
 
-- [ ] **Step 1: Remove the merged scratch docs in one housekeeping commit**
+- [ ] **Step 1: Remove the merged scratch docs via a small PR (expected path — this repo's ruleset requires an approving review, so a direct push to `main` will almost certainly be rejected)**
 
 ```bash
 cd /Users/scott/src/projects/agents-config/.claude/worktrees/live-codex-verification
 git checkout main && git pull --ff-only
+git checkout -b live-verify-cleanup
 git rm docs/architecture/live-codex-verification-scratch-a1.md \
        docs/architecture/live-codex-verification-scratch-a2a.md \
        docs/architecture/live-codex-verification-scratch-a2b.md
 git commit -m "chore(live-verify): remove scratch docs from A1/A2a/A2b"
-git push origin main
+git push -u origin live-verify-cleanup
+gh pr create --title "chore(live-verify): remove scratch docs" \
+  --body "Housekeeping — removes the three scratch docs A1/A2a/A2b left on main. See docs/specs/2026-07-19-live-codex-verification-design.md Cleanup section." \
+  --base main --head live-verify-cleanup
 ```
-Expected: three files removed, pushed directly to `main` (housekeeping, not
-a PR — matches the spec's Cleanup section; if branch protection on `main`
-rejects a direct push, open a small PR instead and merge it through the
-normal flow).
+Trigger `@codex review`, wait, then merge this PR via the same `merge-guard`
+skill delegation as Task 1/2/3 Step 6 (top-level orchestrator, not a nested
+subagent) — it's a real PR like the others, not a special case.
+
+If the App-approver key is unavailable (per Shared Setup Step 3) and this
+PR needs a human merge instead, that's the same expected degradation noted
+there — not a bug in this step. A direct `git push origin main` bypassing
+the PR flow is the unlikely branch and should only be attempted if the
+repo's ruleset is confirmed to allow it (it doesn't, per this repo's
+configured `[merge-policy.approver]`).
 
 - [ ] **Step 2: Confirm all six scenario branches are gone**
 
@@ -658,7 +697,19 @@ pr review`/`gh api` call; no "TBD"/"handle appropriately" strings.
 task; `--policy-json "$(cat "$EVID/policy.json")"` and the
 `--bot-reviewers '["chatgpt-codex-connector[bot]"]'` flag are used
 consistently across all six scenarios (B3 only, per the spec, deliberately
-excludes Copilot from that array).
+excludes Copilot from that array); all six eligibility checks use the
+`> file && rc=0 || rc=$?` capture, including the two scenarios that expect a
+non-zero exit (A2a Step 3, B1 Step 4).
+
+**Revision note (ralf-review cycle 2, PASS_WITH_RESERVATIONS):** fixed a
+wrong fact name in Task 4/B1 (`.facts.reaction_clean` doesn't exist —
+replaced with `.facts.bot_clean_review_at_head` + `.facts.bot_clean_signal_source`),
+added a Shared-Setup precondition check for the App-approver key (Plan A's
+merge claim is inconclusive, not failed, if it's absent), reordered Task 7's
+cleanup to lead with a PR (a direct push to `main` will almost certainly be
+rejected by this repo's ruleset), and folded in the platform/caveat/version
+minors. This is the plan's final recorded verdict — not re-earned by a third
+cycle.
 
 ## Review routing
 
