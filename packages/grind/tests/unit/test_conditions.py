@@ -352,6 +352,71 @@ def test_item_unblocked_not_recomputed_from_state_alone() -> None:
     assert item_unblocked_conditions(after, after) == []
 
 
+def _blocked_pair_seed() -> dict[str, object]:
+    """A two-item lane where `wgclw.2` is blocked on the unfinished `wgclw.1`."""
+    return {
+        "ts": _T0,
+        "type": "grind_created",
+        "title": "t",
+        "repo": "r",
+        "mission": {},
+        "protocols": {},
+        "config": {},
+        "lanes": [
+            {
+                "id": "lane-a",
+                "queue": [
+                    {"id": "wgclw.1", "title": "blocker"},
+                    {"id": "wgclw.2", "title": "blocked", "on": ["wgclw.1"]},
+                ],
+            }
+        ],
+    }
+
+
+def test_item_unblocked_absent_when_blocked_item_goes_waiting_human() -> None:
+    # A blocked item can legally fold to waiting-human (parked for a human)
+    # without its blocker edge resolving -- its blocked_on stays unresolved and
+    # it is not startable, so this departure must NOT fire item_unblocked.
+    prefix = [_blocked_pair_seed()]
+    before = fold(prefix)
+    assert before.items["wgclw.2"].status == "blocked"
+    after = fold([*prefix, event("item_waiting_human", item="wgclw.2", why="need a human")])
+    assert after.items["wgclw.2"].status == "waiting-human"
+    assert after.items["wgclw.2"].blocked_on == ("wgclw.1",)
+
+    assert item_unblocked_conditions(before, after) == []
+
+
+def test_item_unblocked_absent_when_blocked_item_is_parked() -> None:
+    # Parking a blocked item leaves its status blocked and its edges unresolved;
+    # it never becomes startable, so no item_unblocked fires.
+    prefix = [_blocked_pair_seed()]
+    before = fold(prefix)
+    after = fold([*prefix, event("item_parked", item="wgclw.2", note="later wave")])
+    assert after.items["wgclw.2"].parked is not None
+    assert after.items["wgclw.2"].blocked_on == ("wgclw.1",)
+
+    assert item_unblocked_conditions(before, after) == []
+
+
+def test_item_unblocked_fires_when_final_edge_resolves_to_queued() -> None:
+    # The genuine case: the blocker reaches merged, the fold returns the item to
+    # queued, and item_unblocked fires exactly once.
+    prefix = [
+        _blocked_pair_seed(),
+        event("item_started", item="wgclw.1"),
+        event("pr_opened", item="wgclw.1", pr=1),
+    ]
+    before = fold(prefix)
+    after = fold([*prefix, event("item_merged", item="wgclw.1", pr=1, sha="abc")])
+    assert after.items["wgclw.2"].status == "queued"
+
+    assert item_unblocked_conditions(before, after) == [
+        {"condition": "item_unblocked", "item": "wgclw.2"}
+    ]
+
+
 # -- HARD SEAM ------------------------------------------------------------------
 
 

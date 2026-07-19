@@ -236,7 +236,18 @@ def conditions(state: State, now: datetime) -> list[Condition]:
 
 def item_unblocked_conditions(before: State, after: State) -> list[Condition]:
     """The transition condition: every item that was `blocked` before this
-    append and isn't after it -- i.e. its final blocker edge just resolved.
+    append and the fold returned to `queued` after it -- i.e. its final blocker
+    edge just resolved (spec: "when every edge resolves, the fold returns the
+    item to queued and fires the item_unblocked condition").
+
+    Gated on the `queued` landing, never on any departure from `blocked`. The
+    fold's derived-blocked invariant makes `blocked -> queued` reachable only via
+    edge resolution (`_recompute_blocked`/`_cascade_unblock`, both gated on no
+    unresolved edges), so `queued` is the concrete signal that the edges cleared.
+    A `blocked` item that departs to `waiting-human` (parked or human-gated) keeps
+    its unresolved `blocked_on` edges and is not startable -- that departure is
+    not an unblock and must not fire this condition.
+
     Derived from the delta between two folds, never recomputed from `after`
     alone (spec: immediately after the unblock the state is indistinguishable
     from an item queued with no edges, so this must ride the delta to reach
@@ -246,6 +257,6 @@ def item_unblocked_conditions(before: State, after: State) -> list[Condition]:
         before_item = before.items.get(item_id)
         if before_item is None:
             continue
-        if before_item.status == "blocked" and after_item.status != "blocked":
+        if before_item.status == "blocked" and after_item.status == "queued":
             out.append({"condition": "item_unblocked", "item": item_id})
     return out
