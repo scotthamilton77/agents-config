@@ -157,7 +157,7 @@ below)
 | `pr_closed` | `item`, `pr`, `reason`, `next` (in-progress \| queued \| parked) | Unmerged closure (abandoned, superseded). Item returns to `next`; without this an abandoned PR is unrepresentable except by lying. |
 | `item_blocked` | `item`, `on[]` (blocking item ids), `note?` | Records blocker edges (and `note`); a later `item_blocked` for the same item **replaces** its full edge set (latest `on[]` is authoritative) — how ROOT re-scopes or drops a dependency that won't resolve on its own. `blocked` status is **derived** from unresolved edges — whichever way they arrived (seed or event), never asserted by the event. Unblocking is **derived**: an edge resolves only when its target reaches `merged`/`done` (a `pr_closed` target stays unresolved — parked or reworked work is unfinished); when every edge resolves, the fold returns the item to `queued` and fires the `item_unblocked` condition — there is no unblock event. |
 | `item_waiting_human` | `item`, `why` | `→ waiting-human`; auto-raises an attention entry |
-| `item_resumed` | `item`, `ruling` (the human's decision, terse) | `waiting-human → in-progress`; clears the item's auto-raised attention entry |
+| `item_resumed` | `item`, `ruling` (the human's decision, terse) | `waiting-human → in-progress`, **unless** the item still has unresolved blocker edges — then it folds to `blocked` (derived-blocked takes precedence over resume); clears the item's auto-raised attention entry either way |
 | `item_merged` | `item`, `pr`, `sha` | `→ merged`; appends to the merged ledger projection |
 | `item_done` | `item` | `merged → done` (post-merge leg complete); clears any attention/round badge for the item |
 | `item_parked` | `item`, `kind` (discovered-work \| human-gated \| later-wave \| deferred), `note` | Removes from active queue into the parking lot |
@@ -196,8 +196,10 @@ absent is an anomaly):
 | `done` | terminal | | | | | | | | | |
 | (parked) | re-enters via `item_enqueued → queued` only | | | | | | | | | |
 
-`item_resumed`: legal only from `waiting-human`, folds to `in-progress`; any
-other source status treats it as an anomaly.
+`item_resumed`: legal only from `waiting-human`, folds to `in-progress` — but
+while any blocker edge remains unresolved it folds to `blocked`, not
+`in-progress` (derived-blocked takes precedence over resume); any other source
+status treats it as an anomaly.
 
 `standing-down` remains lane-only vocabulary, set by `lane_standing_down`.
 
