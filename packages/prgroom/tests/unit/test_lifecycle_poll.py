@@ -1439,6 +1439,69 @@ def test_pending_request_outranks_historical_verdict_on_seed() -> None:
     assert reviewers_gate_satisfied(state) is False  # the wanted re-review is pending
 
 
+def test_pending_request_seeds_review_found_on_same_second_in_flight_verdict() -> None:
+    # Behavior 17b (Codex P1 regression guard): the in-flight-response race. prgroom reads
+    # the PR resource (still listing the pending request) and the reviews collection in two
+    # separate GETs; a first-seen required login can submit BETWEEN them — co-present as
+    # requested AND already carrying a brand-new verdict. When that verdict lands in the
+    # SAME GitHub-second as poll `now` (12:00:00Z here), seeding REQUESTED at `now` loses it:
+    # _observe_engagement's strictly-after gate rejects a same-second verdict, and the next
+    # poll (login gone from requested_reviewers) would read the absence as a withdrawal.
+    # Co-presence proves the request predates the review, so seed REVIEW_FOUND at the
+    # verdict's own stamps (backdated, so the strictly-after gate stays honest) and satisfy
+    # the gate — mirroring the not-required drive-by branch and _reactivation_engagement.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=["alice"],  # PR-resource GET still lists the pending request
+        reviews=[
+            {
+                "id": 905,
+                "state": "APPROVED",
+                "submitted_at": "2026-06-09T12:00:00Z",  # == _T0 == `now`, same second
+                "user": {"login": "alice"},
+                "body": "lgtm",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    alice = state.reviewers["alice"]
+    assert alice.required is True
+    assert alice.status is ReviewerStatus.REVIEW_FOUND  # in-flight verdict is honoured
+    assert alice.last_review_at == _T0  # backdated to the verdict, not left unstamped
+    assert alice.last_request_at == _T0  # backdated so _observe_engagement keeps the review
+    assert reviewers_gate_satisfied(state) is True  # the real review satisfies the gate
+
+
+def test_pending_request_seeds_in_progress_on_same_second_in_flight_comment() -> None:
+    # The non-terminal twin: an in-flight COMMENTED response (same second as `now`) from a
+    # first-seen required login seeds IN_PROGRESS at the comment's stamp — engagement is
+    # under way but no terminal verdict has landed, so the gate stays UNSATISFIED. Without
+    # the in-flight carve-out this same-second comment would be lost exactly as the verdict
+    # above is.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=["alice"],
+        reviews=[
+            {
+                "id": 906,
+                "state": "COMMENTED",
+                "submitted_at": "2026-06-09T12:00:00Z",  # == _T0 == `now`, same second
+                "user": {"login": "alice"},
+                "body": "one thought",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    alice = state.reviewers["alice"]
+    assert alice.required is True
+    assert alice.status is ReviewerStatus.IN_PROGRESS
+    assert alice.last_review_at == _T0
+    assert alice.last_request_at == _T0
+    assert reviewers_gate_satisfied(state) is False  # no terminal verdict yet
+
+
 def _declined(reason: str, *, login: str = "copilot") -> dict[str, ReviewerState]:
     return {
         login: ReviewerState(

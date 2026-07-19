@@ -426,14 +426,31 @@ def _seed_reviewer(
     """Build the entry for a login seen for the first time this poll (§2.1.1).
 
     A **currently-requested** login (``required`` is True — the sole call site passes
-    ``required=login in requested_reviewers``) seeds ``REQUESTED`` at ``now``, ignoring
-    any historical ``terminal_at`` / ``reviewed_at``. GitHub drops a login from
-    ``requested_reviewers`` the instant it submits ANY review, so a login STILL listed
-    there that ALSO carries reviews on record can only mean the request post-dates every
-    one of those reviews — a re-request whose wanted fresh review has not landed yet.
+    ``required=login in requested_reviewers``) whose only reviews on record predate this
+    poll's ``now`` seeds ``REQUESTED`` at ``now``, ignoring those historical verdicts.
+    GitHub drops a login from ``requested_reviewers`` the instant it submits ANY review, so
+    a login STILL listed there that ALSO carries an OLDER review can only mean the request
+    post-dates that review — a re-request whose wanted fresh review has not landed yet.
     Honouring the stale verdict would seed ``REVIEW_FOUND`` and let
-    ``reviewers_gate_satisfied`` pass without the newly-requested review, quiescing the
-    PR behind the reviewer's back.
+    ``reviewers_gate_satisfied`` pass without the newly-requested review, quiescing the PR
+    behind the reviewer's back.
+
+    The exception is an **in-flight same-poll response**: prgroom reads the PR resource
+    (which lists the pending request) and the reviews collection in two separate GETs, so a
+    reviewer can submit BETWEEN them — still listed as requested, yet already carrying a
+    brand-new review. Co-presence of the request and a review landing in this poll's window
+    proves the request PREDATES the review, so it is honoured like the not-required drive-by
+    branches below: seed ``REVIEW_FOUND`` / ``IN_PROGRESS`` at the review's own stamps.
+    Because GitHub review timestamps have second precision while ``now`` may carry a
+    sub-second fraction, that window is "``at`` in the same whole second as ``now`` or
+    later" (``at >= now`` floored to seconds); a strictly-earlier stamp is the historical
+    verdict above. Seeding ``REQUESTED`` at ``now`` here would instead LOSE the review — a
+    same-second verdict fails ``_observe_engagement``'s strictly-after gate, and the next
+    poll (login now absent from ``requested_reviewers``) reads that absence as a withdrawal
+    and drops the reviewer from future refreshes. Unlike ``_reactivation_engagement`` there
+    is no prior history to tiebreak an equal-second collision, so ``now`` is the freshness
+    boundary; a seed happens once, so no cross-poll re-observation can re-promote a stale
+    verdict here.
 
     A login discovered ONLY through an already-submitted review (``required`` False — a
     drive-by, or a fast reviewer GitHub already cleared from ``requested_reviewers``) is
@@ -443,13 +460,21 @@ def _seed_reviewer(
     ``last_request_at`` were stamped ``now``. Backdating both stamps to the review keeps
     that comparison honest.
     """
-    if not required and terminal_at is not None:
+
+    def _in_flight(at: datetime | None) -> bool:
+        # A review this required login carries that landed in this poll's
+        # PR-resource→reviews-GET window: at or after ``now``'s whole second (GitHub's
+        # second precision vs a sub-second ``now``). A strictly-earlier stamp is historical.
+        return at is not None and at >= now.replace(microsecond=0)
+
+    if terminal_at is not None and (not required or _in_flight(terminal_at)):
         status, stamp, review_id = ReviewerStatus.REVIEW_FOUND, terminal_at, terminal_id
-    elif not required and reviewed_at is not None:
+    elif reviewed_at is not None and (not required or _in_flight(reviewed_at)):
         status, stamp, review_id = ReviewerStatus.IN_PROGRESS, reviewed_at, reviewed_id
     else:
-        # Requested this poll (a fresh request outranks any historical verdict — see the
-        # docstring), or a bare request with no review yet: seed REQUESTED at ``now``.
+        # A fresh request with no in-flight review outranks any historical verdict (the
+        # requested-wins rule — see the docstring), or a bare request with no review yet:
+        # seed REQUESTED at ``now``.
         return ReviewerState(
             identity=login,
             kind=_reviewer_kind(user),
