@@ -22,6 +22,7 @@ from prgroom.deps import Deps
 from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.gh import GhCli
 from prgroom.lifecycle import poll_pr
+from prgroom.lifecycle.poll import _review_activity_by_login, _terminal_review_verdicts
 from prgroom.lifecycle.quiescence import reviewers_gate_satisfied
 from prgroom.proc import CommandResult
 from prgroom.prsession.enums import (
@@ -1961,6 +1962,130 @@ def test_review_found_reviewer_rewindow_rejects_same_second_reobserved_verdict_b
     assert rv.last_review_at is None
     assert rv.last_review_id is None
     assert reviewers_gate_satisfied(state) is False
+
+
+def _same_second_review(
+    review_id: object, state: str, *, ts: str = "2026-06-09T12:00:00Z"
+) -> dict[str, object]:
+    return {
+        "id": review_id,
+        "user": {"login": "copilot"},
+        "state": state,
+        "body": "review body",
+        "submitted_at": ts,
+    }
+
+
+def test_terminal_verdict_reducer_breaks_equal_timestamp_tie_by_larger_review_id() -> None:
+    # GitHub returns reviews oldest-first, so a timestamp-only reducer retains the OLDER id
+    # (40) at an equal second and hands it to the reactivation freshness test, which then
+    # rejects the fresh same-second re-review. The reducer must keep the numerically larger
+    # id (41) — the genuinely newer submission — regardless of response order.
+    old_to_new = [_same_second_review(40, "APPROVED"), _same_second_review(41, "CHANGES_REQUESTED")]
+    assert _terminal_review_verdicts(old_to_new, now=_T0)["copilot"] == (_T0, 41)
+    assert _terminal_review_verdicts(list(reversed(old_to_new)), now=_T0)["copilot"] == (_T0, 41)
+
+
+def test_terminal_verdict_reducer_equal_timestamp_id_none_handling_is_fail_closed() -> None:
+    known = _same_second_review(40, "APPROVED")
+    missing = _same_second_review(None, "APPROVED")
+    # A known id displaces a first-seen missing id; a missing id never displaces a known one.
+    assert _terminal_review_verdicts([missing, known], now=_T0)["copilot"] == (_T0, 40)
+    assert _terminal_review_verdicts([known, missing], now=_T0)["copilot"] == (_T0, 40)
+    # Neither side carries an id: keep the first-seen entry (nothing to disambiguate).
+    assert _terminal_review_verdicts([missing, missing], now=_T0)["copilot"] == (_T0, None)
+
+
+def test_review_activity_reducer_breaks_equal_timestamp_tie_by_larger_review_id() -> None:
+    old_to_new = [_same_second_review(40, "COMMENTED"), _same_second_review(41, "COMMENTED")]
+    ts, _user, rid = _review_activity_by_login(old_to_new, now=_T0)["copilot"]
+    assert (ts, rid) == (_T0, 41)
+    ts_r, _user_r, rid_r = _review_activity_by_login(list(reversed(old_to_new)), now=_T0)["copilot"]
+    assert (ts_r, rid_r) == (_T0, 41)
+
+
+def test_review_activity_reducer_equal_timestamp_id_none_handling_is_fail_closed() -> None:
+    known = _same_second_review(40, "COMMENTED")
+    missing = _same_second_review(None, "COMMENTED")
+    assert _review_activity_by_login([missing, known], now=_T0)["copilot"][2] == 40
+    assert _review_activity_by_login([known, missing], now=_T0)["copilot"][2] == 40
+    assert _review_activity_by_login([missing, missing], now=_T0)["copilot"][2] is None
+
+
+def test_rewindow_keeps_same_second_fresh_verdict_when_response_also_carries_prior_verdict() -> (
+    None
+):
+    # Full-path guard for the reducer tiebreaker: when the reviews response carries BOTH the
+    # prior verdict (id 40) and a genuinely fresh terminal re-review (id 41) in the same
+    # second, GitHub's old-to-new order makes a timestamp-only reducer hand the OLD id 40 to
+    # _reactivation_engagement, which compares 40 vs the stored 40 and rejects the fresh
+    # review — resetting the renewed request to REQUESTED. The reviewer must be promoted on
+    # id 41 and the gate satisfied.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=_T0,  # same second as both reviews below
+            last_review_id=40,
+        )
+    }
+    prior_verdict = _same_second_review(40, "APPROVED")
+    fresh_verdict = _same_second_review(41, "CHANGES_REQUESTED")
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(
+            head_oid="same",
+            requested_reviewers=["copilot"],
+            reviews=[prior_verdict, fresh_verdict],  # old-to-new, the natural GitHub order
+        ),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REVIEW_FOUND
+    assert rv.last_review_id == 41
+    assert reviewers_gate_satisfied(state) is True
+
+
+def test_rewindow_same_second_fresh_verdict_is_response_order_independent() -> None:
+    # Control for the fix above: reversing the response (new-to-old) must yield the same
+    # promotion — the reducer keeps the larger id either way, so the outcome does not depend
+    # on which order GitHub happens to return the two same-second reviews in.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=_T0,
+            last_review_id=40,
+        )
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(
+            head_oid="same",
+            requested_reviewers=["copilot"],
+            reviews=[
+                _same_second_review(41, "CHANGES_REQUESTED"),
+                _same_second_review(40, "APPROVED"),
+            ],  # new-to-old
+        ),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REVIEW_FOUND
+    assert rv.last_review_id == 41
+    assert reviewers_gate_satisfied(state) is True
 
 
 def test_commented_review_advance_stamps_its_own_review_id() -> None:

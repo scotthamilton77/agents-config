@@ -343,8 +343,12 @@ def _review_activity_by_login(
         if not login:
             continue
         submitted = _parse_ts(entry.get("submitted_at"), now=now)
-        if login not in out or submitted > out[login][0]:
-            out[login] = (submitted, user, _review_id(entry))
+        review_id = _review_id(entry)
+        current = out.get(login)
+        if current is None or _review_rank(submitted, review_id) > _review_rank(
+            current[0], current[2]
+        ):
+            out[login] = (submitted, user, review_id)
     return out
 
 
@@ -362,6 +366,24 @@ def _review_id(entry: Any) -> int | None:
         return int(raw)
     except (TypeError, ValueError):
         return None
+
+
+def _review_rank(submitted: datetime, review_id: int | None) -> tuple[datetime, bool, int]:
+    """Ordering key for choosing a login's latest review inside a reducer.
+
+    Newest ``submitted`` timestamp wins; an equal-second tie breaks to the numerically
+    larger review id — ids are unique and monotonic per submission, so the larger id is the
+    genuinely newer review. Without this tiebreaker a timestamp-only reducer retains
+    whichever entry it saw first, and GitHub returns reviews oldest-first, so it would hand
+    the OLDER id to the reactivation freshness test, which then compares it against the
+    stored ``last_review_id`` and rejects the fresh same-second re-review.
+
+    Id handling is fail-closed: a known id outranks a missing one (the ``is not None`` flag
+    sorts below any real id), and two missing ids never displace each other, so an
+    equal-second tie with no id on either side is resolved toward the first-seen entry — the
+    bb92bde invariant, where an unknown id can never be treated as fresh.
+    """
+    return (submitted, review_id is not None, review_id if review_id is not None else 0)
 
 
 def _item_review_id(item: ReviewItem) -> int | None:
@@ -768,8 +790,10 @@ def _terminal_review_verdicts(
         if not login:
             continue
         submitted = _parse_ts(entry.get("submitted_at"), now=now)
-        if login not in verdicts or submitted > verdicts[login][0]:
-            verdicts[login] = (submitted, _review_id(entry))
+        review_id = _review_id(entry)
+        current = verdicts.get(login)
+        if current is None or _review_rank(submitted, review_id) > _review_rank(*current):
+            verdicts[login] = (submitted, review_id)
     return verdicts
 
 
