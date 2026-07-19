@@ -130,6 +130,7 @@ def poll_pr(
         requested_reviewers=requested_reviewers,
         raw_reviews=raw_reviews,
         terminal_reviews=terminal_reviews,
+        new_items=new_items,
         now=now,
     ):
         activity = True
@@ -201,6 +202,14 @@ def _pr_resource(gh: GhClient, ref: PRRef) -> Any:
 # COMMENTED is intentionally excluded: §4.1 hedges whether a COMMENTED review is
 # terminal to Section 5's fix contract, so MVP treats it as engagement only.
 _TERMINAL_REVIEW_STATES: frozenset[str] = frozenset({"APPROVED", "CHANGES_REQUESTED"})
+
+# Statuses a vanished pending request may decline (§2.1.3). Deliberately excludes
+# NOT_REQUESTED: its only producer is flip_stale_required_reviews on a push, where it
+# means "awaiting rereview after invalidation" — declining it would strand the
+# reviewer. Terminal statuses (review_found / declined) are excluded as already-settled.
+_WITHDRAWABLE_STATUSES: frozenset[ReviewerStatus] = frozenset(
+    {ReviewerStatus.REQUESTED, ReviewerStatus.IN_PROGRESS}
+)
 
 
 def _ingest_items(
@@ -361,6 +370,7 @@ def _reconcile_reviewers(
     requested_reviewers: list[Any],
     raw_reviews: Any,
     terminal_reviews: dict[str, datetime],
+    new_items: list[ReviewItem],
     now: datetime,
 ) -> bool:
     """Reconcile ``state.reviewers`` against BOTH GitHub reviewer signals (§2.1).
@@ -412,6 +422,20 @@ def _reconcile_reviewers(
             now=now,
         )
         changed = True
+
+    # Decline pass — narrowly. A login qualifies only when GitHub is no longer asking,
+    # it produced NOTHING this poll, and it is mid-flight. Any this-poll activity means
+    # "they responded" (which is itself what cleared the pending request), not
+    # "the ask was pulled".
+    active = set(reviewed) | {item.author for item in new_items if item.author}
+    for login, reviewer in state.reviewers.items():
+        if login in requested or login in active:
+            continue
+        if reviewer.status in _WITHDRAWABLE_STATUSES:
+            reviewer.status = ReviewerStatus.DECLINED
+            reviewer.declined_at = now
+            reviewer.declined_reason = WITHDRAWN_REASON
+            changed = True
     return changed
 
 

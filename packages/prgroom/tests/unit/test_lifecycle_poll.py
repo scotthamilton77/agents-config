@@ -715,7 +715,7 @@ def test_requested_reviewer_past_start_timeout_auto_declines() -> None:
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
     # No engagement this poll; advance the clock past the default 3m start timeout.
     later = _T0 + timedelta(minutes=5)
-    gh = _gh(head_oid="same")
+    gh = _gh(head_oid="same", requested_reviewers=["copilot"])
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(later), config=_config())
     rv = state.reviewers["copilot"]
     assert rv.status is ReviewerStatus.DECLINED
@@ -960,7 +960,7 @@ def test_auto_decline_only_poll_does_not_advance_last_activity() -> None:
     # No new items; advance the clock past the 3m start timeout so the reviewer
     # auto-declines and that is the ONLY state change this poll.
     later = _T0 + timedelta(minutes=5)
-    gh = _gh(head_oid="same", ci="success")
+    gh = _gh(head_oid="same", ci="success", requested_reviewers=["copilot"])
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(later), config=_config())
     assert state.reviewers["copilot"].status is ReviewerStatus.DECLINED  # the timeout fired
     assert state.last_activity_at == _T0  # but the idle clock did NOT reset
@@ -1500,3 +1500,100 @@ def test_timeout_declined_reviewer_still_satisfies_the_gate_across_polls() -> No
         config=_config(),
     )
     assert reviewers_gate_satisfied(state) is True
+
+
+def test_withdrawn_request_declines_an_in_flight_reviewer() -> None:
+    # Behavior 7: GitHub dropped a pending request and the reviewer produced nothing
+    # this poll — the one shape that genuinely means "the ask was pulled".
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.DECLINED
+    assert copilot.declined_reason == "request-withdrawn"
+    assert copilot.declined_at == _T0
+
+
+def test_not_requested_reviewer_never_auto_declines() -> None:
+    # Behavior 8 — Codex P1 regression guard. NOT_REQUESTED is produced ONLY by
+    # flip_stale_required_reviews on a push: it means "awaiting rereview after
+    # invalidation", never "withdrawn". Declining it here would strand the reviewer,
+    # and (with change C) permanently exclude them from ever being re-requested.
+    reviewers = _required_reviewer(ReviewerStatus.NOT_REQUESTED)
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["copilot"].status is ReviewerStatus.NOT_REQUESTED
+
+
+def test_this_poll_activity_prevents_a_spurious_decline() -> None:
+    # Behavior 9 — the other Codex P1 regression guard. Submitting a COMMENTED review
+    # REMOVES the reviewer from requested_reviewers, so absence plus activity is the
+    # ordinary "they just responded" shape, not a withdrawal.
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=[],
+        reviews=[
+            {
+                "id": 905,
+                "state": "COMMENTED",
+                "submitted_at": "2026-06-09T11:00:00Z",
+                "user": {"login": "copilot"},
+                "body": "a note",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(_JUST_AFTER_ACTIVITY), config=_config())
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.IN_PROGRESS  # engaged, not declined
+    assert copilot.declined_reason is None
+
+
+def test_issue_comment_activity_prevents_a_spurious_decline() -> None:
+    # Same protection via the other activity channel: a reviewer commenting outside a
+    # formal review is engagement too (it reaches new_items, not raw_reviews).
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=[],
+        issue_comments=[
+            {
+                "id": 906,
+                "created_at": "2026-06-09T11:00:00Z",
+                "user": {"login": "copilot"},
+                "body": "still looking",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(_JUST_AFTER_ACTIVITY), config=_config())
+    assert state.reviewers["copilot"].status is ReviewerStatus.IN_PROGRESS
+    assert state.reviewers["copilot"].declined_reason is None
+
+
+def test_terminal_reviewer_is_not_withdrawn() -> None:
+    # A reviewer who already delivered a verdict is not re-declared withdrawn just
+    # because GitHub stopped listing their now-resolved request.
+    reviewers = _required_reviewer(ReviewerStatus.REVIEW_FOUND)
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["copilot"].status is ReviewerStatus.REVIEW_FOUND
