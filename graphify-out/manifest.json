@@ -788,8 +788,8 @@
     "hash": "c422cd74e6fce7d2de4b58e52be61474"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_config_loading.py": {
-    "mtime": 1784404142.525136,
-    "hash": "419d29f4bf20539121deb9e743993a06"
+    "mtime": 1784500872.1067107,
+    "hash": "a646b00acf8b6ed1c04d5af56be0d296"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_nouns.py": {
     "mtime": 1784035804.0185757,
@@ -1024,8 +1024,8 @@
     "hash": "4d07382eced039ceaa8860762ed7f4a3"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/config.py": {
-    "mtime": 1784404142.5240686,
-    "hash": "892986c5e1d5c3966d01b0f02c90a277"
+    "mtime": 1784500872.1065094,
+    "hash": "e02581c84e280896bb0f65b2f6af68b6"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/tracks.py": {
     "mtime": 1784400218.694451,
@@ -1735,61 +1735,133 @@
     "mtime": 1784483649.9383135,
     "hash": "2e7024cbd7992dd8692704b2265efcf5"
   },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_verbs.py": {
+    "mtime": 1784497570.9435973,
+    "hash": "973de5bc872649ea426541e14e492bc6"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_conditions.py": {
+    "mtime": 1784497570.9421473,
+    "hash": "0cf4cf26be3307aa421500477483dddd"
+  },
   "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/__init__.py": {
     "mtime": 1784483649.935286,
     "hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_render_dashboard_smoke.py": {
+    "mtime": 1784497570.9429612,
+    "hash": "25622b2cff5f87b9752c0f72c81a0bf3"
+  },
   "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_fold_grind_lifecycle.py": {
-    "mtime": 1784483649.937539,
-    "hash": "3be593bb88a52f28e30804d89c2038db"
+    "mtime": 1784497570.9423969,
+    "hash": "bf6d67e90d0ee799c334278e0740058d"
   },
   "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_fold_anomaly_policy.py": {
     "mtime": 1784483649.9367845,
     "hash": "3e8d4f0ea88539a8e56ab10b2ebbe306"
   },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_store.py": {
+    "mtime": 1784489791.5055413,
+    "hash": "91d6276edcc24aabeaf378b449d72254"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_jsonio.py": {
+    "mtime": 1784489791.5049713,
+    "hash": "bd1dd4cfd1bc1c9f4454dfb60fa84085"
+  },
   "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_fold_lanes_and_attention.py": {
-    "mtime": 1784483649.9381618,
-    "hash": "9c67ba30c321efc082be79d726e42c01"
+    "mtime": 1784489791.5048718,
+    "hash": "1155153db46513d89149672695a2783b"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_serialize.py": {
+    "mtime": 1784497570.9433303,
+    "hash": "25dbf472b8ca1c2538353e6251145324"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_render.py": {
+    "mtime": 1784497570.9428008,
+    "hash": "5243cfba176812d35848facfb48af13d"
   },
   "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_derive_lane_status.py": {
     "mtime": 1784483649.9358897,
     "hash": "0f1d7d588a8556de0e6fe9556f8c9c97"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_cli.py": {
+    "mtime": 1784497570.9420218,
+    "hash": "fac771063120dab94df08c389973227d"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_payloads.py": {
+    "mtime": 1784489791.5052323,
+    "hash": "cc009d706f9be4171455bc7fe3d8fe3d"
   },
   "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_fold_grind_created.py": {
     "mtime": 1784483649.9372387,
     "hash": "9231f1c9f377aeeffe1dbc8bc3f3f54e"
   },
   "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_log_parsing.py": {
-    "mtime": 1784483649.9386435,
-    "hash": "d913fcf7c1d56384867eaab6b5c3d266"
+    "mtime": 1784489791.5051074,
+    "hash": "4f4ca7a5373f08e80e30028390a19fc7"
   },
   "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_fold_item_core_lifecycle.py": {
     "mtime": 1784483649.9377427,
     "hash": "7b0f7a4310280d3a7230a8851e81e9db"
   },
   "/Users/scott/src/projects/agents-config/packages/grind/tests/unit/test_fold_review.py": {
-    "mtime": 1784483649.938434,
-    "hash": "b38007a296b6e2298660bbe5d110af6d"
+    "mtime": 1784497570.942566,
+    "hash": "cd3129e0e308f70c7bf96f3168375360"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/src/grind/serialize.py": {
+    "mtime": 1784497570.94124,
+    "hash": "5c3e942f8e1560143083b1c8a005bd10"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/src/grind/store.py": {
+    "mtime": 1784497570.9414911,
+    "hash": "7b37fad02dc48db73f7975a3dd32964a"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/src/grind/jsonio.py": {
+    "mtime": 1784489791.5039027,
+    "hash": "d10d112075d78eaeca631f4651c43fd1"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/src/grind/render.py": {
+    "mtime": 1784497570.941061,
+    "hash": "203b3602601e666472a61e2aefd1c221"
   },
   "/Users/scott/src/projects/agents-config/packages/grind/src/grind/log.py": {
-    "mtime": 1784483649.9348772,
-    "hash": "9fc1cf551355baa4a0efe24d73425ff5"
+    "mtime": 1784489791.5040207,
+    "hash": "1b8548f9e60bf59f08a174fc3e1ecb9c"
   },
   "/Users/scott/src/projects/agents-config/packages/grind/src/grind/derive.py": {
-    "mtime": 1784483649.934456,
-    "hash": "86edc361e5af8e1cfd9ac523a66f4030"
+    "mtime": 1784497570.9403598,
+    "hash": "5d256ed59006661a0062eee826b10922"
   },
   "/Users/scott/src/projects/agents-config/packages/grind/src/grind/__init__.py": {
     "mtime": 1784483649.9342513,
     "hash": "418534cee64700e3e18cd75a01cec09f"
   },
   "/Users/scott/src/projects/agents-config/packages/grind/src/grind/model.py": {
-    "mtime": 1784483649.9350333,
-    "hash": "e6ddfe1f42c15635ad5fae5f58e15bd4"
+    "mtime": 1784497570.940901,
+    "hash": "dcaa7f60250f720bebda33ba0f9e75ec"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/src/grind/conditions.py": {
+    "mtime": 1784497570.9402003,
+    "hash": "858a088267979e54a4faa670e81012e8"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/src/grind/cli.py": {
+    "mtime": 1784497570.9400737,
+    "hash": "503ff57dd300900ae2ff00e7fde02cec"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/src/grind/payloads.py": {
+    "mtime": 1784489791.504157,
+    "hash": "889ab0a68a1882c781fc4a71768c0a77"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/src/grind/verbs.py": {
+    "mtime": 1784497570.94186,
+    "hash": "c987e12848d765933ce55dfbcee2f480"
   },
   "/Users/scott/src/projects/agents-config/packages/grind/src/grind/fold.py": {
-    "mtime": 1784483649.9346156,
-    "hash": "d4622d16b96843446ba2fa5cdd421507"
+    "mtime": 1784497570.940633,
+    "hash": "9b26ac4ffe2f9d146bf2750746979a73"
+  },
+  "/Users/scott/src/projects/agents-config/packages/grind/src/grind/envelope.py": {
+    "mtime": 1784489791.5034435,
+    "hash": "c6f5a3fa342f0f792933d3228ea31f9d"
   },
   "/Users/scott/src/projects/agents-config/packages/vizsuite/tests/conftest.py": {
     "mtime": 1784114654.216945,
@@ -3846,6 +3918,50 @@
   "/Users/scott/src/projects/agents-config/docs/reference/model-catalog.md": {
     "mtime": 1783679250.4428563,
     "hash": "ff75205df57e3b32c97a491eab427ecd"
+  },
+  "/Users/scott/src/projects/agents-config/SAVEPOINTS/LEFT-OFF-NOTES.md": {
+    "mtime": 1784498607.9533498,
+    "hash": "98317e665710aeef7d19a1f19f215ea4"
+  },
+  "/Users/scott/src/projects/agents-config/SAVEPOINTS/viz-215-round3-ui/handoff-20260719T215857Z-vizsuite-round3-delivered.md": {
+    "mtime": 1784498377.6474466,
+    "hash": "b416d900620033a619e29fcb2a0adc2d"
+  },
+  "/Users/scott/src/projects/agents-config/SAVEPOINTS/grind-codex-awareness/dashboard.html": {
+    "mtime": 1784487296.0812213,
+    "hash": "8982e422616d264b5fdb12cfdfcd68e1"
+  },
+  "/Users/scott/src/projects/agents-config/SAVEPOINTS/grind-codex-awareness/HANDOFF-lane-polling.md": {
+    "mtime": 1784487580.7113187,
+    "hash": "a9f551c8e8122b1d9c4755172c7ac14a"
+  },
+  "/Users/scott/src/projects/agents-config/SAVEPOINTS/grind-codex-awareness/HANDOFF-lane-eligibility.md": {
+    "mtime": 1784487582.5090902,
+    "hash": "1326a78a3b63ea53cc2395f58306977a"
+  },
+  "/Users/scott/src/projects/agents-config/SAVEPOINTS/grind-codex-awareness/LESSONS.md": {
+    "mtime": 1784487668.368962,
+    "hash": "d6c5dce69278e6d3fbc169c9dc3a3a17"
+  },
+  "/Users/scott/src/projects/agents-config/SAVEPOINTS/grind-codex-awareness/HANDOFF-bookkeeper.md": {
+    "mtime": 1784487317.2953243,
+    "hash": "3ab91fc751fb67307999f6e71a5962d8"
+  },
+  "/Users/scott/src/projects/agents-config/SAVEPOINTS/grind-codex-awareness/ORCHESTRATION-STATE.md": {
+    "mtime": 1784487616.9395835,
+    "hash": "2c0e79c8eaf09f9802971b805f5620f8"
+  },
+  "/Users/scott/src/projects/agents-config/SAVEPOINTS/vaac15-code-review-workflow/HANDOFF.md": {
+    "mtime": 1784498093.0238194,
+    "hash": "6849312df50715802215d122e2cd9dba"
+  },
+  "/Users/scott/src/projects/agents-config/SAVEPOINTS/grind-30-7-integration/handoff-20260719T215241Z-finish-grind-30-7-delivery.md": {
+    "mtime": 1784498010.7732334,
+    "hash": "f785a6fbd032bc4fc63d6559f479b088"
+  },
+  "/Users/scott/src/projects/agents-config/SAVEPOINTS/prgroom-reviewer-registry-seed/2026-07-19-handoff.md": {
+    "mtime": 1784500872.160068,
+    "hash": "a13f9dcbba4c22c0e04fec715db9290e"
   },
   "/Users/scott/src/projects/agents-config/scripts/AGENTS.md": {
     "mtime": 1783172993.7564569,
