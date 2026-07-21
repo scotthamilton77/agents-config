@@ -1,6 +1,6 @@
 # Notes from 2027-07-19 rushing to get fable used up before it's gone
 
-Lesson: I tried to do too many things, partly because my own system is slowing me down - a lot.
+Lesson: I tried to do too many things, partly because my own system is slowing me down - a lot.  But _why_?
 
 Stuff I worked on today that is left unfinished:
 * prgroom - probably the TOP priority (see below)
@@ -9,6 +9,20 @@ Stuff I worked on today that is left unfinished:
 * codex reviewer awareness and support
 * orchestrated-grind - good idea, but need to build it on top of the fixes to get the OS back into shape
 * see also the SAVEPOINTS/{branch-slug}/ files
+
+**Symptoms**
+* Things that seem like simple code changes take a longer time than expected to reach PR stage
+* PR reviews ping-pong with codex/copilot leaving a few comments, our agents address them, get reviewed locally and appear fine, and the the push to PR yields yet another batch of comments - this cycle eats up time and tokens
+* The kinds of things the PR reviewers find seem to range from fundamental oversights to inconsistencies across documentation and code - but why aren't my up-front reviewers catching these?
+
+**Additional Suspects**
+I'm suspicious that (not all these questions were asked to the frontier models below):
+* maybe my own harness (this project) is getting in the way and slowing things down and lowering quality, impeding the models from making quality decisions and changes - and from reviewing well.
+* maybe skills like brainstorming are self-defeating if they result in poorly-thought-through designs/specs with insufficient acceptance criteria
+* the brainstorming spec-writing skill - is it writing poor specs?  I've noticed not all specs have acceptance criteria!
+  * the plan docs tend to be very prescriptive, even down to bash commands and code - should they be?
+  * with the plan docs being code-heavy, it is no wonder that these sometimes eat up a lot of review bandwidth themselves
+  * these specs and plans can be very long - is it reasonable to expect models to review these well?
 
 I asked 3 frontier models to look at the project and see if I was getting in my own way.
 
