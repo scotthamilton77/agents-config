@@ -105,10 +105,14 @@ a parked state with a typed reason:
 - *Human-required* (ruleset demands human approval, bot declines, budget
   exhausted): park immediately, zero attempts.
 
-Human verbs on a parked item: re-dispatch (cause fixed) or abandon (PR closed,
-item back to ready). A read-only staleness report lists parked items and
-reasons — it reports, never acts. Optional backstop: a PR parked > 7 days is
-closed and recut fresh from main.
+Human verbs on a parked item: re-dispatch (cause fixed), abandon (PR closed,
+item back to ready), or recut (PR closed, fresh implementation from current
+main — often cheaper than grooming a stale branch). A read-only staleness
+report lists parked items and reasons — it reports, never acts. Staleness
+visibility (initial 7 days, configurable): parked items past the threshold
+are surfaced at the start of any open-new-work interaction — reviewing stuck
+work is the price of pulling new work. The machine never acts on a parked
+item of its own accord; there is no automatic TTL action.
 
 ### Platform
 
@@ -246,8 +250,14 @@ stream is low-n and per-PR gating invites Goodharting.
 ## 3. Ordered slice list
 
 Each slice gets its own child spec (with per-slice ACs) when picked up;
-ordering is by dependency, and S2/S3/S4 can run in parallel.
+ordering is by dependency. S0 is immediate and hand-deployed; S2/S3/S4 can
+run in parallel after S1.
 
+- **S0 — User AGENTS.md zero-base.** Write Appendix A into `src/` as the new
+  user-global source and hand-copy it into the standard homes now — no
+  installer dependency; the installer learns to reproduce and enforce it in
+  S3. Every session of the rework itself runs on the zero-based core from
+  day one. (D17)
 - **S1 — Tracker reset.** Export + archive the old DB; open the new DB; mint
   the Harness-rework milestone carrying this spec; re-mint the D13/D14/D18
   keepers with admission records. (Discharges D12, part of D20.)
@@ -255,9 +265,11 @@ ordering is by dependency, and S2/S3/S4 can run in parallel.
   pipeline set (V2), then close the gap; atomic composite verbs; park/reason
   semantics. (D11)
 - **S3 — Installer.** Single-home deploy + receipts + prune; surface-budget
-  enforcement (AC1); admission-record schema + check (AC3). (D15, D16)
-- **S4 — User AGENTS.md zero-base.** Ship Appendix A; delete the
-  INSTRUCTIONS.md mountain; reassess DYNAMIC-INCLUDE. (D17)
+  enforcement (AC1); admission-record schema + check (AC3); reproduces the
+  S0 hand-deploy. (D15, D16)
+- **S4 — Instruction-surface teardown.** Delete the INSTRUCTIONS.md mountain
+  (survivors already extracted in S0) and its per-tool assembly; reassess
+  DYNAMIC-INCLUDE once content shrinks below what justifies it. (D17)
 - **S5 — Spec contract.** Admit + graft `grilling`/`to-spec`; edge-case
   taxonomy; spec lint (AC4); delete the old brainstorming skill's goals-only
   path by deleting the skill. (D1, D2, D18)
