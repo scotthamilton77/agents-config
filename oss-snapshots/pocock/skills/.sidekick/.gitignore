@@ -1,0 +1,4 @@
+# Sidekick — managed file, do not edit manually
+.env
+.env.local
+*.local.yaml
