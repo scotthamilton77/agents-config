@@ -53,9 +53,7 @@
 # - github.org
 # - github.repo
 
-# sync.remote disabled 2026-07-22 (S1 tracker reset): the remote beads ref still holds the
-# pre-reset DB; re-enabling requires deliberately resetting the remote (bd init --discard-remote).
-# sync.remote: "git+https://github.com/scotthamilton77/agents-config.git"
+sync.remote: "git+https://github.com/scotthamilton77/agents-config.git"
 
 dolt:
   port: 48128
