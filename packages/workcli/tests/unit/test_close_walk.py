@@ -130,3 +130,23 @@ def test_deliver_leaf_triggers_the_same_walk():  # S2-C5
     assert backend.get("E").status == "closed"
     assert CLOSE_WALK_MARKER in backend.note_lines("E")
     assert data == {"id": "L", "status": "closed", "walked": ["E"]}
+
+
+def test_deliver_replay_on_closed_leaf_resumes_the_walk():  # S2-C5 (crash replay)
+    # Crash window: the leaf closed but the walk never ran. The deliver
+    # replay short-circuits the evidence check yet must still settle the
+    # parent chain.
+    backend = (
+        FakeBackend()
+        .add("E", type="epic", labels=["shape-epic"])
+        .add("L", parent="E", status="closed", labels=["shape-feat"])
+    )
+    args = Namespace(
+        id="L", spec=None, pr=None, items=None, trivial=False, read_file=fake_reader({})
+    )
+
+    data = deliver(backend, args)
+
+    assert backend.get("E").status == "closed"
+    assert CLOSE_WALK_MARKER in backend.note_lines("E")
+    assert data == {"id": "L", "status": "closed", "walked": ["E"]}

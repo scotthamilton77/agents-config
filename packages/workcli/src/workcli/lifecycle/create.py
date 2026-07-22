@@ -128,6 +128,13 @@ def _validate_usage(args: Namespace, noun: Noun) -> None:
             ErrorCode.USAGE,
             f"create {noun}: --type is set by the noun; omit it",
         )
+    if noun is Noun.MILESTONE and args.track is not None:
+        # Milestone-type beads are track-exempt and carry no track:* label
+        # (track spec §3) -- refuse rather than mint an exemption violation.
+        raise WorkError(
+            ErrorCode.USAGE,
+            "create milestone: milestones are track-exempt; omit --track",
+        )
     for user_label in args.label:
         # Additive user labels are welcome (single-call atomicity, V2 audit
         # row mint (c)); lifecycle/track state is not label-forgeable.
@@ -258,7 +265,12 @@ def create_noun(backend: Backend, args: Namespace) -> JsonValue:
     _check_duplicate_title(backend, args.title)
 
     parent = None if args.orphan else args.parent
-    track, warnings = _resolve_track(backend, args, parent)
+    # Milestones are track-exempt by contract (track spec §3): no requirement
+    # even under enforcement = "required", and never a track:* label.
+    track: str | None = None
+    warnings: list[str] = []
+    if noun is not Noun.MILESTONE:
+        track, warnings = _resolve_track(backend, args, parent)
 
     if noun is Noun.SPEC:
         return _with_warnings(
