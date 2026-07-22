@@ -283,7 +283,8 @@ run in parallel after S1.
   merge-eligibility evaluation; absorb the three foundation bugs. (D13, AC5)
 - **S9 — Executor loop.** Re-aim the grind runtime as the pipeline executor
   (post-V1); park/escalate wiring through `work` verbs; staleness report.
-  (D10, D14)
+  Re-evaluate the beads-installed git hooks once the loop owns explicit
+  `work sync` call sites — retire them if redundant. (D10, D14)
 - **S10 — Instruments.** Pre-PR cycle-time reporting (AC8); size-distribution
   tracking; the interventions number (AC7). (D19)
 - **Close-out:** the AC9 observation window, then milestone close.
