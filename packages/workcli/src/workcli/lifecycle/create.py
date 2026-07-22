@@ -25,15 +25,15 @@ from workcli.lifecycle.nouns import (
     Noun,
     NounTemplate,
 )
+from workcli.lifecycle.park import PARKED_LABEL
 from workcli.model import CreateFields
 from workcli.tracks import TRACK_PREFIX, derive_track, require_known_track, track_label
 
 # The reserved-namespace wall for additive `--label` (S2-D7): labels that
 # forge lifecycle state are refused at usage-validation time, before any
-# backend call. `parked` is a string literal until the park verbs (slice
-# S2-B) mint its constant.
+# backend call.
 _RESERVED_LABEL_EXACT = frozenset(
-    {PLANNED_LABEL, CREATING_SPEC_LABEL, IMPL_PLACEHOLDER_LABEL, SPEC_READY_LABEL, "parked"}
+    {PLANNED_LABEL, CREATING_SPEC_LABEL, IMPL_PLACEHOLDER_LABEL, SPEC_READY_LABEL, PARKED_LABEL}
 )
 _RESERVED_LABEL_PREFIXES = ("shape-", TRACK_PREFIX)
 
