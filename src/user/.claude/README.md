@@ -15,7 +15,7 @@ by default.
   - `orchestrating-subagents.md` — pointer to the subagent-orchestration skill
   - `worktree-safety.md` — worktree isolation and path-safety traps
 - `AGENTS.md.template` — Top-level instruction file that pulls in the shared
-  `INSTRUCTIONS.md`, personas, and `CLAUDE-EXTENSIONS.md`.
+  `AGENTS.md`, personas, and `CLAUDE-EXTENSIONS.md`.
 - `CLAUDE.md.template` — Thin wrapper pointing at `AGENTS.md`.
 - `CLAUDE-EXTENSIONS.md.template` — Stub header kept for compatibility;
   Claude-specific workflow now lives in `rules/`.

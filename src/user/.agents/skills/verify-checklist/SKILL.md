@@ -37,10 +37,9 @@ Claiming work is complete without verification is dishonesty, not efficiency. **
 Locate verification workflow definitions from your memory. These describe the steps required before work can be declared complete.
 
 **Check in order:**
-1. **Shared rules** — look for `<verification-checklist>` in instruction files (always loaded)
-2. **Tool extensions** — the `<completion-gate>` rule and the delivery skills it hands off to, for tool-specific implementation
-3. **Project config** — project-level overrides or additions (AGENTS.md, CLAUDE.md, etc.)
-4. **Memory files** — any supplemental verification workflows
+1. **Tool extensions** — the `completion-gate` rule's inline `SERIAL` steps (the canonical checklist; shared instructions no longer carry a `<verification-checklist>` block) and the delivery skills it hands off to
+2. **Project config** — project-level overrides or additions (AGENTS.md, CLAUDE.md, etc.)
+3. **Memory files** — any supplemental verification workflows
 
 **If no verification workflows found anywhere:**
 
@@ -127,9 +126,7 @@ Omit sections that are genuinely empty (no PRs, no discovered work). But you mus
 
 ## Source Dependency
 
-The canonical checklist lives in `<verification-checklist>` in shared instructions — always loaded, always available. Tool extensions provide the "how" (which skills/agents implement each step). Project config and memory can add or override steps.
-
-If `<verification-checklist>` is missing from your loaded instructions, warn the user — the shared instruction files may not be installed. Fall back to tool extensions and memory, but flag the gap.
+The canonical checklist lives in the `completion-gate` rule's inline `SERIAL` steps — shared instructions no longer carry a `<verification-checklist>` block (zero-based per D17). Project config and memory can add or override steps.
 
 ## Red Flags — STOP
 

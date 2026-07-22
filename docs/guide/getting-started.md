@@ -42,7 +42,7 @@ into its own tool.
 
 | Source | Installs to | Contains |
 |--------|-------------|----------|
-| `src/user/.agents/` | each tool's config dir | shared agents, skills, workflow rules, `INSTRUCTIONS.md`, persona templates |
+| `src/user/.agents/` | each tool's config dir | shared agents, skills, workflow rules, zero-based `AGENTS.md` core, persona templates |
 | `src/user/.claude/` | `~/.claude/` | slash commands, Claude-only skills/rules, `settings.json` |
 | `src/user/.codex/` | `~/.codex/` | Codex instruction file + extensions |
 | `src/user/.gemini/` | `~/.gemini/` | Gemini instruction file + extensions |
@@ -62,7 +62,7 @@ Open your assistant in any project and confirm the pieces are visible:
 - Ask it to list available skills — you should see `brainstorming`,
   `test-driven-development`, `verify-checklist`, `merge-guard`, and the rest.
 - Check that `~/.claude/AGENTS.md` (or your tool's instruction file) exists and
-  references the shared `INSTRUCTIONS.md`.
+  carries the `<laws>`/`<decisions>`/`<hard-lines>`/`<conventions>` core.
 
 ## Next: make it yours
 

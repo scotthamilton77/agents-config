@@ -38,7 +38,7 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
 **Implications:**
 
 - **Always edit source, never deployed artifacts** — when the user asks to change a skill, agent, command, rule, or any other configuration artifact, edit the source file under `src/` (e.g., `src/user/.agents/skills/`, `src/user/.claude/rules/`). Files under `~/.claude/`, `~/.codex/`, `~/.gemini/`, etc. are deploy outputs and will be overwritten on the next installer run. If you catch yourself editing a path outside `src/`, stop and find the source equivalent.
-- **No file-path citations in specs or prose** — Remember that the files that get written into the user space get used in OTHER projects.  Thus our assets CANNOT reference project-internal resources.  `INSTRUCTIONS.md.template` and all shared templates are flattened into per-tool assembled files at install time via `DYNAMIC-INCLUDE`. File-path citations (`INSTRUCTIONS.md > <section>`) are dead-ends after assembly. Always reference shared content by concept or block name (e.g., "the canonical decision matrix", "the `<decision-matrix>` block") so cross-references survive flattening.
+- **No file-path citations in specs or prose** — Remember that the files that get written into the user space get used in OTHER projects.  Thus our assets CANNOT reference project-internal resources.  `AGENTS.md.template` and all shared templates are flattened into per-tool assembled files at install time via `DYNAMIC-INCLUDE`. File-path citations (`AGENTS.md > <section>`) are dead-ends after assembly. Always reference shared content by concept or block name (e.g., "the canonical decision matrix", "the `<decisions>` block") so cross-references survive flattening.
 - **NEVER run `scripts/install.sh` or `scripts/install.py` automatically** — only the user runs the installer, and only when they explicitly say so
 - **Placement by capability-dependency, not asset type** — a new skill/agent/rule goes in the shared tree `src/user/.agents/` only if it works on every supported tool; anything that depends on tool-specific capabilities (e.g. Claude subagent orchestration, the Skill tool, AskUserQuestion, hooks) goes in that tool's tree (e.g. `src/user/.claude/skills/`)
 
@@ -56,7 +56,7 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
   - `agents/` - Role-based agent definitions (frontmatter + instructions)
   - `skills/` - Methodology guides, some with supporting code/scripts
   - `rules/` - Tool-agnostic workflow rules (delegation, delivery, completion-gate, subagents, worktrees); same-name collisions append-merge
-  - `INSTRUCTIONS.md.template` - Shared laws, constraints, workflow, orchestration
+  - `AGENTS.md.template` - Zero-based shared laws, decision matrix, hard lines, and conventions (D17)
   - `AGENT-PERSONA.md.template` - Agent persona/personality template
   - `USER-PERSONA.md.template` - User persona template
 - `src/user/.claude/` - **Claude-specific** content (copies to `~/.claude/`)
