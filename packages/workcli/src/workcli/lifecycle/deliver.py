@@ -186,6 +186,20 @@ def _leaf_evidence(backend: Backend, args: Namespace) -> str:
     )
 
 
+def _walked_leaf_result(backend: Backend, item_id: str) -> JsonValue:
+    """Close-walk from a closed leaf, then the leaf's `closed` envelope.
+
+    Same walk as `work close` (S2-D5/S2-C5): delivering the last open leaf
+    of a container closes the container -- this module's long-standing
+    "closes via close-walk" promise, now code.
+    """
+    walked = close_walk(backend, [item_id])
+    result: dict[str, JsonValue] = {"id": item_id, "status": "closed"}
+    if walked:
+        result["walked"] = cast("list[JsonValue]", list(walked))
+    return result
+
+
 def _deliver_leaf(backend: Backend, args: Namespace, item: Item) -> JsonValue:
     if args.spec is not None:
         raise WorkError(
@@ -193,20 +207,17 @@ def _deliver_leaf(backend: Backend, args: Namespace, item: Item) -> JsonValue:
             f"deliver {args.id}: --spec belongs to design delivery; omit for a leaf",
         )
     if item.status == "closed":
-        return _closed(args.id)
+        # Replay path: a crash between the close and the walk leaves a closed
+        # leaf under a possibly-exhausted parent -- the walk must re-run here
+        # (idempotent; no-op when the parent chain is already settled), or the
+        # replay would report success while stranding the containers open.
+        return _walked_leaf_result(backend, args.id)
 
     evidence = _leaf_evidence(backend, args)
     if not has_marker(item.notes, DELIVERED_MARKER):
         backend.append_note(args.id, f"{DELIVERED_MARKER} {evidence}")
     backend.close([args.id])
-    # Same walk as `work close` (S2-D5/S2-C5): delivering the last open leaf
-    # of a container closes the container -- this docstring's long-standing
-    # "closes via close-walk" promise, now code.
-    walked = close_walk(backend, [args.id])
-    result: dict[str, JsonValue] = {"id": args.id, "status": "closed"}
-    if walked:
-        result["walked"] = cast("list[JsonValue]", list(walked))
-    return result
+    return _walked_leaf_result(backend, args.id)
 
 
 def deliver(backend: Backend, args: Namespace) -> JsonValue:

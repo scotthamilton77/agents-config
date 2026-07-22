@@ -155,3 +155,44 @@ def test_cli_accepts_the_milestone_noun():  # S2-A1 (wiring)
 
     assert exit_code == 0
     assert envelope["data"] == {"id": "m.1"}
+
+
+def _required_config() -> TrackLayerConfig:
+    return TrackLayerConfig(
+        names=("workcli",),
+        organizing_only=(),
+        enforcement="required",
+        milestone_wip_cap=None,
+        wip_exempt_milestones=(),
+        backlog_groom_nag_days=None,
+        groom_state_bead=None,
+        extraction_max_track_backlog=None,
+    )
+
+
+def test_create_milestone_is_track_exempt_under_required_enforcement():  # S2-A1
+    # Track spec §3: milestone-type beads are track-exempt and carry no
+    # track:* label -- even when [tracks].enforcement = "required".
+    backend = FakeBackend()
+    args = _create_args("milestone", orphan=True)
+    args.load_config = _required_config
+
+    data = create_noun(backend, args)
+
+    assert isinstance(data, dict)
+    item = backend.get(str(data["id"]))
+    assert not any(label.startswith("track:") for label in item.labels)
+
+
+def test_create_milestone_with_explicit_track_is_refused():  # S2-A1 (inverse)
+    backend = FakeBackend()
+    args = _create_args("milestone", orphan=True)
+    args.track = "workcli"
+    args.load_config = _required_config
+
+    with pytest.raises(WorkError) as excinfo:
+        create_noun(backend, args)
+
+    assert excinfo.value.code is ErrorCode.USAGE
+    assert "track-exempt" in excinfo.value.message
+    assert backend.ids() == []
