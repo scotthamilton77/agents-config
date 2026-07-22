@@ -21,6 +21,7 @@ from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle.create import create_noun
 from workcli.lifecycle.deliver import deliver
 from workcli.lifecycle.discover import discover
+from workcli.lifecycle.park import abandon, park, parked, redispatch
 from workcli.lifecycle.reconcile import reconcile
 from workcli.lifecycle.transitions import claim, plan, promote, release
 from workcli.verbs.groom import groom
@@ -97,6 +98,10 @@ VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
     "reopen": reopen,
     "claim": claim,
     "release": release,
+    "park": park,
+    "redispatch": redispatch,
+    "abandon": abandon,
+    "parked": parked,
     "plan": plan,
     "promote": promote,
     "deliver": deliver,

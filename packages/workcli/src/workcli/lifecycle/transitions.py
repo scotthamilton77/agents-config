@@ -19,6 +19,7 @@ from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle import is_container
 from workcli.lifecycle.create import finalize_spec_instantiation
 from workcli.lifecycle.nouns import CREATING_SPEC_LABEL, PLANNED_LABEL
+from workcli.lifecycle.park import PARKED_LABEL
 
 
 def claim(backend: Backend, args: Namespace) -> JsonValue:
@@ -30,6 +31,14 @@ def claim(backend: Backend, args: Namespace) -> JsonValue:
         return {"id": args.id, "status": "in_progress"}
     if is_container(item):
         raise WorkError(ErrorCode.NOT_CLAIMABLE, f"{args.id}: container; planned, not claimed")
+    if PARKED_LABEL in item.labels:
+        # The blocked status alone would fall through to the generic
+        # "blocked by an open dependency" below -- name the real state and
+        # the two human verbs that resolve it (S2-B4, D10).
+        raise WorkError(
+            ErrorCode.NOT_CLAIMABLE,
+            f"{args.id}: parked; `work redispatch` or `work abandon` first",
+        )
 
     ready_ids = {ready_item.id for ready_item in backend.ready(None)}
     if args.id not in ready_ids:

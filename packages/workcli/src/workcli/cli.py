@@ -118,6 +118,28 @@ def _add_transition_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentPa
     release_parser = subparsers.add_parser("release", help="release a claimed item back to open")
     release_parser.add_argument("id", metavar="ID")
 
+    park_parser = subparsers.add_parser(
+        "park", help="park a non-merging item with a typed reason (D10); the machine disengages"
+    )
+    park_parser.add_argument("id", metavar="ID")
+    park_parser.add_argument(
+        "--reason",
+        required=True,
+        metavar="CODE",
+        help="ci-failure|merge-conflict|approval-required|bot-declined|budget-exhausted",
+    )
+    park_parser.add_argument("--note", metavar="TEXT")
+
+    redispatch_parser = subparsers.add_parser(
+        "redispatch", help="un-park an item whose cause is fixed; back to ready"
+    )
+    redispatch_parser.add_argument("id", metavar="ID")
+
+    abandon_parser = subparsers.add_parser(
+        "abandon", help="un-park an item whose PR is closed; back to ready"
+    )
+    abandon_parser.add_argument("id", metavar="ID")
+
     plan_parser = subparsers.add_parser("plan", help="add/remove an item from the Planning queue")
     plan_parser.add_argument("id", metavar="ID")
     plan_parser.add_argument("--done", action="store_true")
@@ -199,6 +221,11 @@ def _add_report_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser
     )
     graph_parser.add_argument("--json", action="store_true", dest="json_output")
     subparsers.add_parser("triggers", help="extraction pressure/eligibility per track (advisory)")
+
+    parked_parser = subparsers.add_parser(
+        "parked", help="read-only parked-item staleness report (reports, never acts)"
+    )
+    parked_parser.add_argument("--stale-days", type=int, default=7, dest="stale_days")
 
     groom_parser = subparsers.add_parser(
         "groom", help="Backlog Grooming state: --done records completion, --status reports nag"
