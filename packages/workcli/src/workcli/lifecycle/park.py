@@ -100,13 +100,35 @@ def park(backend: Backend, args: Namespace) -> JsonValue:
     }
 
 
+def _unpark_recorded_since_last_park(notes: str) -> bool:
+    """True when a redispatch/abandon marker already follows the last park marker.
+
+    The replay-dedup guard for `_unpark`: a crash after the marker append but
+    before the label removal must converge on replay without minting a second
+    (differently-timestamped) marker. Scoped to the last park stint so a
+    marker from a *previous* park/unpark cycle never suppresses the current
+    stint's record.
+    """
+    last_park = -1
+    last_unpark = -1
+    for index, line in enumerate(notes.splitlines()):
+        stripped = line.strip()
+        if stripped.startswith(f"{PARKED_MARKER} "):
+            last_park = index
+        elif stripped.startswith((REDISPATCHED_MARKER, ABANDONED_MARKER)):
+            last_unpark = index
+    return last_unpark > last_park
+
+
 def _unpark(backend: Backend, args: Namespace, verb: str, marker: str) -> JsonValue:
     """Shared `redispatch`/`abandon` transition: parked -> open (S2-B5/B6).
 
-    Status `open` FIRST, handle off second, marker last -- mirroring `park`'s
-    degradation order: a crash mid-unpark leaves an open item still carrying
-    the `parked` label, and a replay converges through the main path (the
-    `set_status` re-run is a no-op).
+    Status `open` first (the item re-enters `ready` the instant anything
+    lands), the intent marker second, and the `parked` handle off STRICTLY
+    LAST (L16): every crash window leaves the label as the recoverable
+    handle, so a replay re-enters this path -- never the no-op branch -- and
+    the marker is guaranteed durable before the handle drops. The dedup
+    guard keeps the replay from minting a second marker.
     """
     item = backend.get(args.id)
     if item.status == "closed":
@@ -116,8 +138,9 @@ def _unpark(backend: Backend, args: Namespace, verb: str, marker: str) -> JsonVa
             return {"id": args.id, "status": "open"}  # idempotent no-op
         raise WorkError(ErrorCode.USAGE, f"{verb} {args.id}: not parked (status {item.status})")
     backend.set_status(args.id, "open")
+    if not _unpark_recorded_since_last_park(item.notes):
+        backend.append_note(args.id, f"{marker} {args.now().isoformat()}")
     backend.label_mutate("remove", args.id, [PARKED_LABEL])
-    backend.append_note(args.id, f"{marker} {args.now().isoformat()}")
     return {"id": args.id, "status": "open"}
 
 

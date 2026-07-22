@@ -365,3 +365,63 @@ def test_cli_parked_with_no_parked_items_is_an_empty_report():
 
     assert exit_code == 0
     assert envelope["data"] == {"items": [], "stale_days": 7}
+
+
+# --- unpark crash-window replays (Codex P2 on PR #371) -----------------------
+
+
+def test_unpark_replay_after_marker_but_before_label_drop_converges():
+    # Crash window: status open + marker appended, `parked` handle still on.
+    # The replay must drop the handle without minting a second marker.
+    backend = FakeBackend().add(
+        "w1",
+        status="open",
+        labels=[PARKED_LABEL],
+        notes=(f"{PARKED_MARKER} {_ISO} ci-failure: CI red\n{REDISPATCHED_MARKER} {_ISO}"),
+    )
+
+    data = redispatch(backend, _id_args("w1"))
+
+    item = backend.get("w1")
+    assert PARKED_LABEL not in item.labels
+    lines = backend.note_lines("w1")
+    assert sum(1 for line in lines if line.startswith(REDISPATCHED_MARKER)) == 1
+    assert data == {"id": "w1", "status": "open"}
+
+
+def test_unpark_replay_after_status_only_still_records_the_marker():
+    # Crash window: status flipped open, marker never appended, handle on.
+    backend = FakeBackend().add(
+        "w1",
+        status="open",
+        labels=[PARKED_LABEL],
+        notes=f"{PARKED_MARKER} {_ISO} bot-declined: nope",
+    )
+
+    data = abandon(backend, _id_args("w1"))
+
+    item = backend.get("w1")
+    assert PARKED_LABEL not in item.labels
+    assert f"{ABANDONED_MARKER} {_ISO}" in backend.note_lines("w1")
+    assert data == {"id": "w1", "status": "open"}
+
+
+def test_prior_cycle_unpark_marker_does_not_suppress_the_current_one():
+    # park -> redispatch -> park -> redispatch: the second unpark must record
+    # its own marker even though an older one exists before the last park.
+    early = datetime(2026, 7, 20, 12, 0, 0, tzinfo=UTC).isoformat()
+    backend = FakeBackend().add(
+        "w1",
+        status="blocked",
+        labels=[PARKED_LABEL],
+        notes=(
+            f"{PARKED_MARKER} {early} ci-failure: first stint\n"
+            f"{REDISPATCHED_MARKER} {early}\n"
+            f"{PARKED_MARKER} {_ISO} merge-conflict: second stint"
+        ),
+    )
+
+    redispatch(backend, _id_args("w1"))
+
+    lines = backend.note_lines("w1")
+    assert sum(1 for line in lines if line.startswith(REDISPATCHED_MARKER)) == 2
