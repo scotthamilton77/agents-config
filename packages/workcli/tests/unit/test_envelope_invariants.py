@@ -150,7 +150,11 @@ VERB_CASES: list[VerbCase] = [
     VerbCase(
         "close",
         ["close", "a.1"],
-        [ScriptedStep(("close",), _OK)],
+        [
+            ScriptedStep(("close",), _OK),
+            # close-walk parent probe (S2-D5): parentless -> nothing walked
+            ScriptedStep(("show",), _show_result(_item_raw("a.1", "T", status="closed"))),
+        ],
         ["close", "bogus"],
         [ScriptedStep(("close",), _NOT_FOUND)],
     ),
@@ -266,6 +270,11 @@ VERB_CASES: list[VerbCase] = [
             ),
             ScriptedStep(("update",), _OK),  # delivered note
             ScriptedStep(("close",), _OK),
+            # close-walk parent probe (S2-D5): parentless -> nothing walked
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("d.1", "T", status="closed", labels=["shape-feat"])),
+            ),
         ],
         ["deliver", "d.2"],  # no --pr/--items/--trivial -> E_EVIDENCE
         [

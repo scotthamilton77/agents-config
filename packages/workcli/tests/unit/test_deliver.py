@@ -413,6 +413,8 @@ def test_deliver_leaf_with_pr_appends_delivered_note_then_closes():
             ),
             ScriptedStep(("update",), _OK),  # delivered note
             ScriptedStep(("close",), _OK),
+            # close-walk parent probe (S2-D5): parentless -> nothing walked
+            ScriptedStep(("show",), _show_result(_item_raw("x.1", status="closed"))),
         ]
     )
 
@@ -426,6 +428,7 @@ def test_deliver_leaf_with_pr_appends_delivered_note_then_closes():
         ("show", "x.1", "--json"),
         ("update", "x.1", "--append-notes", f"{DELIVERED_MARKER} https://example/pr/1"),
         ("close", "x.1"),
+        ("show", "x.1", "--json"),
     ]
 
 
@@ -471,9 +474,13 @@ def test_deliver_leaf_with_no_evidence_flag_is_evidence_error():
     assert runner.calls == [("show", "x.1", "--json")]
 
 
-def test_deliver_leaf_already_closed_is_a_noop_with_no_evidence_check():
+def test_deliver_leaf_already_closed_skips_evidence_but_replays_the_walk():
+    # No evidence check on a closed leaf -- but the close-walk re-runs
+    # (idempotent): a crash between close and walk must not strand exhausted
+    # parents open behind a "successful" replay (S2-D5).
     runner = ScriptedBdRunner(
         steps=[
+            ScriptedStep(("show",), _show_result(_item_raw("x.1", status="closed"))),
             ScriptedStep(("show",), _show_result(_item_raw("x.1", status="closed"))),
         ]
     )
@@ -482,7 +489,7 @@ def test_deliver_leaf_already_closed_is_a_noop_with_no_evidence_check():
 
     assert exit_code == 0
     assert envelope["data"] == {"id": "x.1", "status": "closed"}
-    assert runner.calls == [("show", "x.1", "--json")]
+    assert runner.calls == [("show", "x.1", "--json"), ("show", "x.1", "--json")]
 
 
 def test_deliver_leaf_interrupted_replay_skips_duplicate_note_and_just_closes():
@@ -500,6 +507,8 @@ def test_deliver_leaf_interrupted_replay_skips_duplicate_note_and_just_closes():
                 ),
             ),
             ScriptedStep(("close",), _OK),
+            # close-walk parent probe (S2-D5): parentless -> nothing walked
+            ScriptedStep(("show",), _show_result(_item_raw("x.1", status="closed"))),
         ]
     )
 
@@ -512,6 +521,7 @@ def test_deliver_leaf_interrupted_replay_skips_duplicate_note_and_just_closes():
     assert runner.calls == [
         ("show", "x.1", "--json"),
         ("close", "x.1"),
+        ("show", "x.1", "--json"),
     ]
 
 
@@ -547,6 +557,8 @@ def test_deliver_leaf_with_items_present_appends_items_evidence_then_closes():
             ),
             ScriptedStep(("update",), _OK),  # delivered note
             ScriptedStep(("close",), _OK),
+            # close-walk parent probe (S2-D5): parentless -> nothing walked
+            ScriptedStep(("show",), _show_result(_item_raw("x.1", status="closed"))),
         ]
     )
 
@@ -559,6 +571,7 @@ def test_deliver_leaf_with_items_present_appends_items_evidence_then_closes():
         ("show", "a", "b", "--json"),
         ("update", "x.1", "--append-notes", f"{DELIVERED_MARKER} items:a,b"),
         ("close", "x.1"),
+        ("show", "x.1", "--json"),
     ]
 
 
@@ -570,6 +583,8 @@ def test_deliver_leaf_with_trivial_appends_trivial_evidence_then_closes():
             ),
             ScriptedStep(("update",), _OK),  # delivered note
             ScriptedStep(("close",), _OK),
+            # close-walk parent probe (S2-D5): parentless -> nothing walked
+            ScriptedStep(("show",), _show_result(_item_raw("x.1", status="closed"))),
         ]
     )
 
@@ -581,6 +596,7 @@ def test_deliver_leaf_with_trivial_appends_trivial_evidence_then_closes():
         ("show", "x.1", "--json"),
         ("update", "x.1", "--append-notes", f"{DELIVERED_MARKER} trivial"),
         ("close", "x.1"),
+        ("show", "x.1", "--json"),
     ]
 
 

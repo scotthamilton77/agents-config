@@ -173,19 +173,20 @@ def test_create_feat_with_type_flag_is_usage_error_without_any_bd_call():
     assert error["code"] == str(ErrorCode.USAGE)
 
 
-def test_create_feat_with_label_flag_is_usage_error_without_any_bd_call():
-    # The noun owns its labels (lifecycle-semantic queryable handles); a
-    # user-supplied --label is rejected rather than silently dropped, mirroring
-    # the --type rejection.
+def test_create_feat_with_reserved_label_is_usage_error_without_any_bd_call():
+    # Additive --label is welcome (S2-D7, single-call atomicity), but
+    # lifecycle/track state stays noun-owned: a reserved label is rejected
+    # before any bd call. Positive additive-label coverage lives in
+    # test_create_milestone_and_labels.py (S2-A3).
     exit_code, envelope, _ = run_cli(
-        ["create", "feat", "--title", "T", "--parent", "P", "--label", "hot"], steps=[]
+        ["create", "feat", "--title", "T", "--parent", "P", "--label", "shape-hot"], steps=[]
     )
 
     assert exit_code == 1
     error = envelope["error"]
     assert isinstance(error, dict)
     assert error["code"] == str(ErrorCode.USAGE)
-    assert "--label" in error["message"]
+    assert "shape-hot" in error["message"]
 
 
 def test_create_feat_with_spec_evidence_adds_spec_ready_label():

@@ -9,9 +9,11 @@ envelope.
 from __future__ import annotations
 
 from argparse import Namespace
+from typing import cast
 
 from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
+from workcli.lifecycle.closewalk import close_walk
 from workcli.model import CreateFields, UpdateFields
 
 
@@ -73,16 +75,22 @@ def note(backend: Backend, args: Namespace) -> JsonValue:
 
 
 def close(backend: Backend, args: Namespace) -> JsonValue:
-    """`work close IDS... [--disposition TEXT]`.
+    """`work close IDS... [--disposition TEXT]` -- close + close-walk + note,
+    one call (S2-D5).
 
     Batch `bd close` for all ids first, then one `--append-notes` call per
     id carrying the disposition text (orchestrator ruling: `bd close
-    --reason` lands in the wrong field; the disposition is an appended note).
+    --reason` lands in the wrong field; the disposition is an appended note),
+    then the close-walk: exhausted non-milestone parents close with a walk
+    note. `data` stays None when nothing walked (pre-S2 envelope shape).
     """
     backend.close(args.ids)
     if args.disposition is not None:
         for item_id in args.ids:
             backend.append_note(item_id, args.disposition)
+    walked = close_walk(backend, list(args.ids))
+    if walked:
+        return {"walked": cast("list[JsonValue]", list(walked))}
     return None
 
 

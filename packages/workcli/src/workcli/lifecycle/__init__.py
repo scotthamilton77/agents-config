@@ -11,7 +11,9 @@ MANIFEST_MARKER = (
 )
 ORPHAN_MARKER = "[work] orphan-by-choice"  # item note (exact)
 
-_CONTAINER_SHAPE_LABELS = frozenset({"shape-spec", "shape-epic", IMPL_CONTAINER_LABEL})
+_CONTAINER_SHAPE_LABELS = frozenset(
+    {"shape-spec", "shape-epic", "shape-milestone", IMPL_CONTAINER_LABEL}
+)
 _CONTAINER_TYPES = frozenset({"epic", "milestone"})  # legacy/unstamped fallback
 
 

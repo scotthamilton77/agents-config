@@ -26,7 +26,16 @@ from workcli.lifecycle.nouns import (
     NounTemplate,
 )
 from workcli.model import CreateFields
-from workcli.tracks import derive_track, require_known_track, track_label
+from workcli.tracks import TRACK_PREFIX, derive_track, require_known_track, track_label
+
+# The reserved-namespace wall for additive `--label` (S2-D7): labels that
+# forge lifecycle state are refused at usage-validation time, before any
+# backend call. `parked` is a string literal until the park verbs (slice
+# S2-B) mint its constant.
+_RESERVED_LABEL_EXACT = frozenset(
+    {PLANNED_LABEL, CREATING_SPEC_LABEL, IMPL_PLACEHOLDER_LABEL, SPEC_READY_LABEL, "parked"}
+)
+_RESERVED_LABEL_PREFIXES = ("shape-", TRACK_PREFIX)
 
 
 def instantiate_spec_shape(
@@ -119,11 +128,25 @@ def _validate_usage(args: Namespace, noun: Noun) -> None:
             ErrorCode.USAGE,
             f"create {noun}: --type is set by the noun; omit it",
         )
-    if args.label:
+    if noun is Noun.MILESTONE and args.track is not None:
+        # Milestone-type beads are track-exempt and carry no track:* label
+        # (track spec §3) -- refuse rather than mint an exemption violation.
         raise WorkError(
             ErrorCode.USAGE,
-            f"create {noun}: labels are set by the noun; omit --label",
+            "create milestone: milestones are track-exempt; omit --track",
         )
+    for user_label in args.label:
+        # Additive user labels are welcome (single-call atomicity, V2 audit
+        # row mint (c)); lifecycle/track state is not label-forgeable.
+        reserved = user_label in _RESERVED_LABEL_EXACT or user_label.startswith(
+            _RESERVED_LABEL_PREFIXES
+        )
+        if reserved:
+            raise WorkError(
+                ErrorCode.USAGE,
+                f"create {noun}: label {user_label!r} is reserved (lifecycle/track "
+                f"state is set by the noun and --track, never --label)",
+            )
     if args.spec is not None and args.trivial:
         raise WorkError(
             ErrorCode.USAGE,
@@ -214,7 +237,8 @@ def _create_spec_container(
             priority=args.priority,
             parent=parent,
             labels=(template.shape_label, CREATING_SPEC_LABEL)
-            + ((track_label(track),) if track is not None else ()),
+            + ((track_label(track),) if track is not None else ())
+            + tuple(args.label),
             acceptance=args.acceptance,
         )
     )
@@ -241,7 +265,12 @@ def create_noun(backend: Backend, args: Namespace) -> JsonValue:
     _check_duplicate_title(backend, args.title)
 
     parent = None if args.orphan else args.parent
-    track, warnings = _resolve_track(backend, args, parent)
+    # Milestones are track-exempt by contract (track spec §3): no requirement
+    # even under enforcement = "required", and never a track:* label.
+    track: str | None = None
+    warnings: list[str] = []
+    if noun is not Noun.MILESTONE:
+        track, warnings = _resolve_track(backend, args, parent)
 
     if noun is Noun.SPEC:
         return _with_warnings(
@@ -253,6 +282,7 @@ def create_noun(backend: Backend, args: Namespace) -> JsonValue:
         labels.append(SPEC_READY_LABEL)
     if track is not None:
         labels.append(track_label(track))
+    labels.extend(args.label)
 
     new_id = backend.create(
         CreateFields(

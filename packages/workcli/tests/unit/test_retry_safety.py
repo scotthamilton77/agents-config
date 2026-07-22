@@ -215,7 +215,6 @@ def test_end_to_end_note_surfaces_timeout_without_retry():
 @pytest.mark.parametrize(
     "argv",
     [
-        ["close", "x.1"],
         ["update", "x.1", "--set-title", "T"],
         ["label", "add", "x.1", "foo"],
     ],
@@ -231,3 +230,37 @@ def test_end_to_end_idempotent_mutations_retry_a_timeout_then_succeed(argv: list
     assert envelope["ok"] is True
     assert sleep_calls == [0.5]
     assert len(runner.calls) == 2
+
+
+def test_end_to_end_close_retries_a_timeout_then_succeeds_and_probes_parents():
+    # close keeps its retry-a-timeout semantics; the close-walk parent probe
+    # (one bd show -- S2-D5) follows the retried success.
+    ok = BdResult(returncode=0, stdout="", stderr="")
+    show_ok = BdResult(
+        returncode=0,
+        stdout=json.dumps(
+            [
+                {
+                    "id": "x.1",
+                    "title": "T",
+                    "issue_type": "task",
+                    "status": "closed",
+                    "priority": 2,
+                    "labels": [],
+                    "parent": None,
+                    "dependencies": [],
+                    "dependents": [],
+                }
+            ]
+        ),
+        stderr="",
+    )
+    runner = _SequencedRunner([_TIMEOUT_STEP, ok, show_ok])
+    sleep_calls, sleep = _recording_sleep()
+
+    exit_code, envelope, _ = _invoke(["close", "x.1"], runner, sleep=sleep)
+
+    assert exit_code == 0
+    assert envelope["ok"] is True
+    assert sleep_calls == [0.5]
+    assert [call[0] for call in runner.calls] == ["close", "close", "show"]
