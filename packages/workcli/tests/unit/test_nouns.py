@@ -69,7 +69,8 @@ def test_is_container_false_for_feature_item_with_children_but_no_container_labe
     assert is_container(item) is False
 
 
-def test_noun_templates_covers_all_seven_nouns_per_the_l9_table():
+def test_noun_templates_covers_all_eight_nouns_per_the_l9_table():
+    # Seven from the L9 table + milestone (S2-D6).
     assert {
         Noun.SPIKE: NounTemplate("task", "shape-spike", False, False, False),
         Noun.CHORE: NounTemplate("chore", "shape-chore", False, False, False),
@@ -78,4 +79,5 @@ def test_noun_templates_covers_all_seven_nouns_per_the_l9_table():
         Noun.BUGFIX: NounTemplate("bug", "shape-bugfix", False, True, False),
         Noun.SPEC: NounTemplate("feature", "shape-spec", True, False, True),
         Noun.EPIC: NounTemplate("epic", "shape-epic", True, False, False),
+        Noun.MILESTONE: NounTemplate("milestone", "shape-milestone", True, False, False),
     } == NOUN_TEMPLATES

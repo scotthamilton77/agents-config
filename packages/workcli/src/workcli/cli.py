@@ -71,7 +71,7 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
         nargs="?",
         choices=[noun.value for noun in Noun],
         metavar="NOUN",
-        help="spike|chore|decision|feat|bugfix|spec|epic -- omit with --raw",
+        help="spike|chore|decision|feat|bugfix|spec|epic|milestone -- omit with --raw",
     )
     create_parser.add_argument("--raw", action="store_true")
     create_parser.add_argument("--title", required=True)

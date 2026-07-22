@@ -14,6 +14,7 @@ on the `impl-placeholder` label's absence.
 from __future__ import annotations
 
 from argparse import Namespace
+from typing import cast
 
 from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
@@ -26,6 +27,7 @@ from workcli.lifecycle import (
     manifest_snapshot,
     spec_path,
 )
+from workcli.lifecycle.closewalk import close_walk
 from workcli.lifecycle.manifest import Manifest, parse_continuations, serialize_manifest
 from workcli.lifecycle.nouns import (
     CREATING_SPEC_LABEL,
@@ -197,7 +199,14 @@ def _deliver_leaf(backend: Backend, args: Namespace, item: Item) -> JsonValue:
     if not has_marker(item.notes, DELIVERED_MARKER):
         backend.append_note(args.id, f"{DELIVERED_MARKER} {evidence}")
     backend.close([args.id])
-    return _closed(args.id)
+    # Same walk as `work close` (S2-D5/S2-C5): delivering the last open leaf
+    # of a container closes the container -- this docstring's long-standing
+    # "closes via close-walk" promise, now code.
+    walked = close_walk(backend, [args.id])
+    result: dict[str, JsonValue] = {"id": args.id, "status": "closed"}
+    if walked:
+        result["walked"] = cast("list[JsonValue]", list(walked))
+    return result
 
 
 def deliver(backend: Backend, args: Namespace) -> JsonValue:

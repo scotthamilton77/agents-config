@@ -81,7 +81,7 @@ def _create(backend: Backend, args: Namespace) -> JsonValue:
     raise WorkError(
         ErrorCode.USAGE,
         "create requires --raw (transport primitive) or a noun "
-        "(spike|chore|decision|feat|bugfix|spec|epic)",
+        "(spike|chore|decision|feat|bugfix|spec|epic|milestone)",
     )
 
 

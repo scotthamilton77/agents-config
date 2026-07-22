@@ -5,10 +5,14 @@ exists at all on this subparser) and requires at least one `--set-*` flag.
 `close --disposition` is one batch `bd close` call followed by one
 `--append-notes` call per id, in that order (orchestrator ruling: `bd close
 --reason` lands in the wrong field; the disposition text is an appended
-note). `reopen` is a single id, single bd call.
+note), then the close-walk's parent probe (one `bd show` of the closed ids
+-- S2-D5; walk *behavior* is state-tested in `test_close_walk.py`).
+`reopen` is a single id, single bd call.
 """
 
 from __future__ import annotations
+
+import json
 
 from tests.conftest import run_cli, run_cli_with_runner
 from tests.fakes import ScriptedBdRunner, ScriptedStep
@@ -16,6 +20,25 @@ from workcli.adapters.bd.runner import BdResult
 from workcli.envelope import ErrorCode
 
 _OK = BdResult(returncode=0, stdout="", stderr="")
+
+
+def _parentless_show_result(*ids: str) -> BdResult:
+    """A `bd show` result for the walk's parent probe: closed, parentless items."""
+    raw = [
+        {
+            "id": item_id,
+            "title": "T",
+            "issue_type": "task",
+            "status": "closed",
+            "priority": 2,
+            "labels": [],
+            "parent": None,
+            "dependencies": [],
+            "dependents": [],
+        }
+        for item_id in ids
+    ]
+    return BdResult(returncode=0, stdout=json.dumps(raw), stderr="")
 
 
 def test_update_set_title_and_set_priority_sends_one_bd_call_with_both_flags():
@@ -63,6 +86,7 @@ def test_close_with_disposition_closes_then_appends_one_note_per_id_in_order():
             ScriptedStep(("close",), _OK),
             ScriptedStep(("update",), _OK),
             ScriptedStep(("update",), _OK),
+            ScriptedStep(("show",), _parentless_show_result("a.1", "a.2")),
         ]
     )
 
@@ -75,16 +99,24 @@ def test_close_with_disposition_closes_then_appends_one_note_per_id_in_order():
         ("close", "a.1", "a.2"),
         ("update", "a.1", "--append-notes", "done, wontfix elsewhere"),
         ("update", "a.2", "--append-notes", "done, wontfix elsewhere"),
+        ("show", "a.1", "a.2", "--json"),
     ]
 
 
-def test_close_without_disposition_sends_exactly_one_bd_call():
-    runner = ScriptedBdRunner(steps=[ScriptedStep(("close",), _OK)])
+def test_close_without_disposition_sends_close_then_one_parent_probe():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(("close",), _OK),
+            ScriptedStep(("show",), _parentless_show_result("a.1")),
+        ]
+    )
 
-    exit_code, _, _ = run_cli_with_runner(["close", "a.1"], runner)
+    exit_code, envelope, _ = run_cli_with_runner(["close", "a.1"], runner)
 
     assert exit_code == 0
-    assert runner.calls == [("close", "a.1")]
+    # Nothing walked (parentless) -- the envelope keeps its pre-S2 None shape.
+    assert envelope["data"] is None
+    assert runner.calls == [("close", "a.1"), ("show", "a.1", "--json")]
 
 
 def test_close_not_found_maps_to_not_found_envelope():
