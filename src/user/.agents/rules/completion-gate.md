@@ -1,6 +1,6 @@
 # Completion Gate
 
-Implements the verification checklist's steps 1–5 with concrete tools, routed to one of three depths — `SKIP` / `SERIAL` / `HEAVY` — one contract, chosen at gate time. Mandatory for non-trivial work; the routing preamble below sizes trivially small changes into the `SKIP` tier (which still runs step 5) rather than bypassing the gate.
+Maps the `verify-checklist` skill's canonical steps 1–5 (its home for the full 10-step checklist) to concrete tools, routed to one of three depths — `SKIP` / `SERIAL` / `HEAVY` — one contract, chosen at gate time. Mandatory for non-trivial work; the routing preamble below sizes trivially small changes into the `SKIP` tier (which still runs step 5) rather than bypassing the gate.
 
 **Route first — pick the depth, then run it:**
 

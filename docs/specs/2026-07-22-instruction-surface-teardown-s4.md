@@ -61,6 +61,36 @@ copy — no new stray `AGENTS.md` leaks into a home whose main file is
   citations" rule's own example, and the repo-structure bullet list
 - `docs/guide/getting-started.md` (two hits: architecture table, prose)
 
+### 1.3.1 Edit — dead concept references (deleted section names, not just the filename)
+
+Filename-only grep missed these; the mountain's deleted `<constraints>` items
+and `<decision-matrix>` were cited by name elsewhere, independent of the
+`INSTRUCTIONS.md` string:
+
+- `src/user/.agents/rules/completion-gate.md` — cited `<verification-checklist>`
+  as "in shared instructions... always loaded"; that block is gone entirely,
+  not relocated. Repointed at `verify-checklist`'s new canonical definition
+  (§1.5, row `<verification-checklist>`).
+- `src/user/.agents/skills/verify-checklist/SKILL.md` — same dangling citation,
+  in its discovery order and "Source Dependency" section. This skill is now
+  the checklist's home (§1.5).
+- `src/user/.agents/agents/quality-reviewer.md` — cited "the shared `AGENTS.md`
+  constraints" for its 80/70 coverage floor; the survivor has no constraints
+  block. Made self-contained: floor stated inline, citation dropped.
+- `src/user/.agents/agents/tech-lead.md`, `src/user/.claude/skills/orchestrated-grind/SKILL.md`,
+  `src/user/.agents/skills/ralf-implement/subagent-implementer.md` — named the
+  deleted `<decision-matrix>` quadrants (`verify-facts` / `decide-in-scope` /
+  `escalate-architectural` / `escalate-conflicting`) or the retired "canonical
+  decision matrix" label. Rewritten in plain language against the surviving
+  `<decisions>` block; quadrant names are not resurrected into the always-on
+  surface (they're gone from `AGENTS.md.template`, on purpose).
+- root `AGENTS.md` — the "no file-path citations" rule's own example named
+  "the canonical decision matrix"; swapped for "the shared decision rules" to
+  match.
+- `src/user/.agents/rules/worktrees.md` — gained the two load-bearing-but-homeless
+  items from §1.5 (`Coordination`, `Database safety`) that this worktree rule's
+  own scope makes it the natural owner of.
+
 ### 1.4 No change needed
 
 - `packages/installer/src/installer/**` — zero literal `INSTRUCTIONS` hits.
@@ -104,12 +134,94 @@ via `DYNAMIC-INCLUDE-ALL-RULES` (dozens of files) — real, ongoing composition
 work no simpler mechanism replaces without inventing one. The machinery stays;
 this is a content deletion, not a machinery deletion.
 
+## 1.5 Content disposition (did we lose anything load-bearing?)
+
+Every block and `<constraints>` item the mountain carried, and where it lives
+now. Three dispositions: **lives in `<X>` now** (already true before this PR),
+**re-homed by this PR to `<X>`** (this PR moved it), or **dies deliberately
+per D17/D16** (fails the zero-based admission test and nothing shipped relies
+on it — re-enters only through a future admission-bar pass, out of scope
+here). Nothing is silently dropped: every "dies deliberately" row was checked
+against the live `src/` tree for a dependent shipped artifact before being
+marked dead.
+
+**`<laws>`**
+
+| Item | Disposition |
+|---|---|
+| L0–L3 | lives in `AGENTS.md.template`'s `<laws>` block |
+
+**`<constraints>`** (19 items)
+
+| Item | Disposition |
+|---|---|
+| Minimal edits | lives in `<conventions>` ("Minimal, surgical edits") |
+| Informed edits | dies deliberately per D16 |
+| Spec, diagram and code agreement | dies deliberately per D16 |
+| State the decision, not its history | lives in `<conventions>` |
+| Domain vocabulary | lives in `<conventions>` (CONTEXT.md glossary) |
+| Parallel ops | dies deliberately — redundant with Claude Code's harness-native tool-calling guidance (fails D17's not-model-default test) |
+| Root causes | dies deliberately per D16 |
+| Lead with the outcome | dies deliberately — likely redundant with harness-native response-style defaults (D17's not-model-default test) |
+| Turn-handoff text is self-contained | lives in `orchestrated-grind/SKILL.md` already, independently, in full |
+| Contracts & boundaries | lives in `improve-codebase-architecture`'s "Designing the contract" section — the deleted text's own named companion for depth |
+| Dependencies (context7/docs lookup) | dies deliberately per D16 |
+| Observability | dies deliberately per D16 |
+| Testing (80% line / 70% branch floor) | **re-homed by this PR** to `quality-reviewer.md` (made self-contained, dangling citation dropped) |
+| Git safety | lives in `<hard-lines>` |
+| Merge authorization policy | lives in `completion-gate.md` (already fully restated there) and `merge-guard`'s `resolve_policy.py` |
+| Worktree hygiene | lives in `worktrees.md` / `worktree-safety.md` |
+| Database safety (WAL / worktree-vs-main-tree) | **re-homed by this PR** to `worktrees.md` — load-bearing-but-homeless: dolt-backed beads + worktrees is live, current infrastructure, and no rule warned against the copy hazard |
+| Coordination (never `git restore` a sibling's files) | **re-homed by this PR** to `worktrees.md` — load-bearing-but-homeless: that rule's own premise is multi-agent worktree collaboration, which is exactly the hazard this item covers |
+| No tracker IDs in code or living docs | dies deliberately per D16 |
+
+**`<decision-matrix>`**
+
+| Item | Disposition |
+|---|---|
+| verify-facts / decide-in-scope / escalate-architectural / escalate-conflicting quadrants | compressed into `<decisions>`; quadrant names retired (deliberate — D17 lists "the decision matrix (compressed)" as the survivor, not the named quadrants). Plain-language references **re-homed by this PR** in `tech-lead.md`, `orchestrated-grind/SKILL.md`, `ralf-implement/subagent-implementer.md`, and root `AGENTS.md` |
+
+**`<workflow>`**
+
+| Item | Disposition |
+|---|---|
+| TDD (Design → Tests → Implement → Refactor) | lives in `test-driven-development` skill |
+| Commits: semantic prefix | dies deliberately per D16 |
+| Delivery: Worktree → Branch → PR → Review → Merge | lives in `completion-gate.md`'s HARD STOP delivery chain (already fully restated there) |
+
+**`<orchestration>`**
+
+| Item | Disposition |
+|---|---|
+| Plan first | dies deliberately — superseded by the harness-rework's own D6 (plan mode as default), not yet re-admitted |
+| Decide, don't defer | duplicate of the `<decision-matrix>` disposition above — the `<decisions>` block *is* this, compressed |
+| Subagents | lives in the `orchestrating-subagents` rule/skill |
+| Self-improvement (`self-improving-agent` hook) | dies deliberately — **explicit parent-spec call-out** (D17): the hook is deleted; corrections land in memory and become rules only through the admission bar |
+| Verify before done | lives in `verify-checklist` (Iron Law framing) + `completion-gate` step 5 |
+| Agent Integrity | lives in `verify-checklist`'s Iron Law / evidence-before-claims framing |
+| Tracer bullets | dies deliberately per D16 |
+| Isolate work | lives in `worktrees.md` + `completion-gate.md`'s delivery chain |
+| Elegance check | lives in the `simplify` skill (`completion-gate` `SERIAL` step 3) |
+
+**`<verification-checklist>`**
+
+| Item | Disposition |
+|---|---|
+| 10-step checklist (Quality gate 1–5, Delivery 6–8, Housekeeping 9–10) + SKIP/SERIAL/HEAVY taxonomy | **re-homed by this PR**: the full 10-step definition now lives in `verify-checklist/SKILL.md` (its natural owner — it's the skill that reports against it); `completion-gate.md` maps steps 1–5 to concrete tools and owns the tier-routing taxonomy, rather than defining the steps itself |
+
 ## 3. Acceptance criteria
 
 - **S4-AC1** — `find src -iname 'INSTRUCTIONS.md.template'` returns nothing.
 - **S4-AC2** — `grep -rl 'INSTRUCTIONS\.md'` over `src/`, `docs/architecture/`,
   and `packages/installer/src/` (excluding this file and the parent charter,
-  which document the deletion itself) returns nothing.
+  which document the deletion itself) returns nothing, **and** a grep of `src/`
+  for the dead concept tokens the mountain used to define — `<verification-checklist>`
+  (as a live citation, not the historical "no longer carries" explanation in
+  `verify-checklist/SKILL.md`), the retired decision-matrix quadrant names
+  (`verify-facts`, `decide-in-scope`, `escalate-architectural`,
+  `escalate-conflicting`), the "canonical decision matrix" label, and
+  "INSTRUCTIONS.md constraints" — also returns nothing outside this file's own
+  disposition table (§1.5) and historical explanations.
 - **S4-AC3** — Each of the four per-tool main templates (§1.2) DYNAMIC-INCLUDEs
   `src/user/.agents/AGENTS.md.template` where it used to DYNAMIC-INCLUDE the
   mountain.
@@ -117,6 +229,12 @@ this is a content deletion, not a machinery deletion.
   typecheck, coverage, audit, entry-verify).
 - **S4-AC5** — This document records the DYNAMIC-INCLUDE keep/kill call (§2);
   no separate action item is silently dropped.
+- **S4-AC6** — No deployed artifact cites the shared `AGENTS.md` (or any
+  always-on surface) for content it does not contain. Verified by reading
+  every surviving citation of the shared instruction file against the
+  30-line survivor (§1.5 is the audit trail); zero citations claim a
+  `<constraints>`, `<decision-matrix>`, `<workflow>`, `<orchestration>`, or
+  `<verification-checklist>` block that no longer exists there.
 
 ## 4. Verification
 

@@ -14,3 +14,10 @@ Create worktrees in your native worktree tool's preferred location, or — absen
   provably yours; `git rev-parse HEAD` / `git log -1` after the fact report
   whatever landed last, which under concurrency may not be you. Before reporting
   a SHA, confirm it matches your own commit banner's short SHA and file stats.
+- Never `git restore` another agent's files — ask the user or the owning agent
+  first. A shared workspace means an unscoped restore can discard a sibling's
+  in-flight work with no warning.
+- Never copy a Dolt or SQLite database while its WAL is locked, and never run
+  DB operations from a worktree directory when the database lives in the main
+  tree — worktrees share the repo's DB, so a worktree-scoped operation can
+  corrupt or desync the tree everyone else reads from.

@@ -129,7 +129,7 @@ three agents directly).
 
 ### Decision Criteria for Human Escalation
 
-Apply the canonical decision matrix. Role-specific additions for the
+Apply the shared decision rules. Role-specific additions for the
 tech-lead orchestrator:
 
 - A dispatched subagent explicitly requests human input
@@ -137,8 +137,9 @@ tech-lead orchestrator:
 - Team appears stuck after multiple attempts (loop detection)
 
 The architectural decisions, resource constraints, and
-ambiguous requirements bullets dropped here are already covered by the
-`escalate-architectural` quadrant of the canonical decision matrix.
+ambiguous requirements bullets dropped here are already covered by the shared
+decision rules: a genuinely balanced architectural trade-off, or an option
+space that needs human context, escalates with your ranking.
 
 ## Communication Protocols
 
