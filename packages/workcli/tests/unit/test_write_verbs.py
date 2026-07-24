@@ -5,8 +5,8 @@ exists at all on this subparser) and requires at least one `--set-*` flag.
 `close --disposition` is one batch `bd close` call followed by one
 `--append-notes` call per id, in that order (orchestrator ruling: `bd close
 --reason` lands in the wrong field; the disposition text is an appended
-note), then the close-walk's parent probe (one `bd show` of the closed ids
--- S2-D5; walk *behavior* is state-tested in `test_close_walk.py`).
+note), then the close-walk's parent probe (one `bd show` of the closed ids;
+walk *behavior* is state-tested in `test_close_walk.py`).
 `reopen` is a single id, single bd call.
 """
 
@@ -114,7 +114,7 @@ def test_close_without_disposition_sends_close_then_one_parent_probe():
     exit_code, envelope, _ = run_cli_with_runner(["close", "a.1"], runner)
 
     assert exit_code == 0
-    # Nothing walked (parentless) -- the envelope keeps its pre-S2 None shape.
+    # Nothing walked (parentless) -- the envelope keeps its legacy None shape.
     assert envelope["data"] is None
     assert runner.calls == [("close", "a.1"), ("show", "a.1", "--json")]
 

@@ -234,7 +234,7 @@ def test_end_to_end_idempotent_mutations_retry_a_timeout_then_succeed(argv: list
 
 def test_end_to_end_close_retries_a_timeout_then_succeeds_and_probes_parents():
     # close keeps its retry-a-timeout semantics; the close-walk parent probe
-    # (one bd show -- S2-D5) follows the retried success.
+    # (one bd show) follows the retried success.
     ok = BdResult(returncode=0, stdout="", stderr="")
     show_ok = BdResult(
         returncode=0,

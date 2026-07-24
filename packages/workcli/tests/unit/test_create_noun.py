@@ -174,10 +174,10 @@ def test_create_feat_with_type_flag_is_usage_error_without_any_bd_call():
 
 
 def test_create_feat_with_reserved_label_is_usage_error_without_any_bd_call():
-    # Additive --label is welcome (S2-D7, single-call atomicity), but
+    # Additive --label is welcome (single-call atomicity), but
     # lifecycle/track state stays noun-owned: a reserved label is rejected
     # before any bd call. Positive additive-label coverage lives in
-    # test_create_milestone_and_labels.py (S2-A3).
+    # test_create_milestone_and_labels.py.
     exit_code, envelope, _ = run_cli(
         ["create", "feat", "--title", "T", "--parent", "P", "--label", "shape-hot"], steps=[]
     )

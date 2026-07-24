@@ -1,13 +1,13 @@
-"""`park`/`redispatch`/`abandon`/`parked` -- D10 disengagement from
-non-merging work (S2-B, spec 2026-07-22-workcli-completion-s2).
+"""`park`/`redispatch`/`abandon`/`parked` -- disengagement from non-merging
+work.
 
 A work item whose PR won't merge parks with a typed reason and the machine
 disengages: parked is bd's `blocked` status (drops the item out of `ready`,
 so `claim` refuses it) + the `parked` label (the cheap queryable handle) + a
-timestamped `[work] parked` marker note carrying the reason (S2-D1). The two
-human verbs walk it back to `open` with distinct recorded intent -- recut is
-abandon at the tracker layer (S2-D3). `parked` is a read-only staleness
-report; the machine NEVER acts on a parked item of its own accord (S2-D4).
+timestamped `[work] parked` marker note carrying the reason. The two human
+verbs walk it back to `open` with distinct recorded intent -- recut is
+abandon at the tracker layer. `parked` is a read-only staleness report; the
+machine NEVER acts on a parked item of its own accord.
 """
 
 from __future__ import annotations
@@ -24,10 +24,10 @@ PARKED_MARKER = "[work] parked"  # full: "[work] parked <ISO-8601> <code>: <text
 REDISPATCHED_MARKER = "[work] redispatched"  # full: "[work] redispatched <ISO-8601>"
 ABANDONED_MARKER = "[work] abandoned"  # full: "[work] abandoned <ISO-8601>"
 
-# The D10 typed-reason vocabulary (S2-D2): code -> category. Machine-actionable
+# The typed-reason vocabulary: code -> category. Machine-actionable
 # reasons arrive here only after the executor's bounded budget is spent;
 # human-required reasons park immediately, zero attempts. The budget numbers
-# themselves are executor policy (S9), never counted here.
+# themselves are executor policy, never counted here.
 REASONS: dict[str, str] = {
     "ci-failure": "machine",
     "merge-conflict": "machine",
@@ -42,8 +42,7 @@ def _last_park_record(notes: str) -> tuple[str | None, str | None]:
 
     The last marker wins: a re-parked item (park -> redispatch -> park)
     reports its current stint, not its first. An unparseable payload
-    degrades field-by-field to None rather than failing the caller
-    (S2-B7's dependency-failure clause).
+    degrades field-by-field to None rather than failing the caller.
     """
     payload: str | None = None
     for line in notes.splitlines():
@@ -61,7 +60,7 @@ def _last_park_record(notes: str) -> tuple[str | None, str | None]:
 
 
 def park(backend: Backend, args: Namespace) -> JsonValue:
-    """`work park ID --reason CODE [--note TEXT]` (S2-B1..B3).
+    """`work park ID --reason CODE [--note TEXT]`.
 
     Vocabulary check first -- an unknown code fails before any backend call.
     Mutation order is graceful-degradation order: status `blocked` FIRST
@@ -121,7 +120,7 @@ def _unpark_recorded_since_last_park(notes: str) -> bool:
 
 
 def _unpark(backend: Backend, args: Namespace, verb: str, marker: str) -> JsonValue:
-    """Shared `redispatch`/`abandon` transition: parked -> open (S2-B5/B6).
+    """Shared `redispatch`/`abandon` transition: parked -> open.
 
     Status `open` first (the item re-enters `ready` the instant anything
     lands), the intent marker second, and the `parked` handle off STRICTLY
@@ -145,19 +144,19 @@ def _unpark(backend: Backend, args: Namespace, verb: str, marker: str) -> JsonVa
 
 
 def redispatch(backend: Backend, args: Namespace) -> JsonValue:
-    """`work redispatch ID` -- the cause is fixed; back to ready (D10)."""
+    """`work redispatch ID` -- the cause is fixed; back to ready."""
     return _unpark(backend, args, "redispatch", REDISPATCHED_MARKER)
 
 
 def abandon(backend: Backend, args: Namespace) -> JsonValue:
-    """`work abandon ID` -- the PR is closed; the item returns to ready (D10)."""
+    """`work abandon ID` -- the PR is closed; the item returns to ready."""
     return _unpark(backend, args, "abandon", ABANDONED_MARKER)
 
 
 def parked(backend: Backend, args: Namespace) -> JsonValue:
-    """`work parked [--stale-days N]` -- the read-only staleness report (S2-B7).
+    """`work parked [--stale-days N]` -- the read-only staleness report.
 
-    Reports, never acts (S2-D4): reads only. Query results are lean (no
+    Reports, never acts: reads only. Query results are lean (no
     notes fidelity guarantee), so the parked set is re-read via one
     `batch_get` -- the same re-get seam `reconcile` uses on its candidates.
     """
@@ -173,7 +172,7 @@ def parked(backend: Backend, args: Namespace) -> JsonValue:
                 stale = now - datetime.fromisoformat(parked_at) > threshold
             except (ValueError, TypeError):
                 # Not an ISO timestamp (or naive where aware is expected):
-                # degrade the field, never the report (S2-B7).
+                # degrade the field, never the report.
                 parked_at = None
         rows.append(
             {

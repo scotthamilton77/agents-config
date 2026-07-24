@@ -1,11 +1,10 @@
-"""Slice S2-C: close-walk atomicity (spec 2026-07-22-workcli-completion-s2 §3).
+"""close-walk atomicity (S2-C).
 
-close + close-walk + note is ONE facade call (S2-D5; V2 audit row
-close-on-merge): a non-milestone parent whose last open child closes is
-exhausted and closes with it, recursively, with a `[work] close-walk` note.
-Milestones are the boundary -- they close on their own acceptance section
-(charter AC9), never on child exhaustion. State-based against `FakeBackend`,
-driving the real `close` and `deliver` handlers.
+close + close-walk + note is ONE facade call: a non-milestone parent whose
+last open child closes is exhausted and closes with it, recursively, with a
+`[work] close-walk` note. Milestones are the boundary -- they close only when
+their own acceptance criteria are met, never on child exhaustion. State-based
+against `FakeBackend`, driving the real `close` and `deliver` handlers.
 """
 
 from __future__ import annotations

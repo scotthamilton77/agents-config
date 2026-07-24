@@ -189,7 +189,7 @@ def _leaf_evidence(backend: Backend, args: Namespace) -> str:
 def _walked_leaf_result(backend: Backend, item_id: str) -> JsonValue:
     """Close-walk from a closed leaf, then the leaf's `closed` envelope.
 
-    Same walk as `work close` (S2-D5/S2-C5): delivering the last open leaf
+    Same walk as `work close`: delivering the last open leaf
     of a container closes the container -- this module's long-standing
     "closes via close-walk" promise, now code.
     """

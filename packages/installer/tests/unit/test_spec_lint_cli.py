@@ -1,4 +1,4 @@
-"""The AC4 spec lint's CLI entry (S5-B6): a runnable ``spec-lint`` that
+"""The spec lint's CLI entry (S5-B6): a runnable ``spec-lint`` that
 exits nonzero on a violation and 0 on a clean/missing/empty tree, driving a
 deliberately malformed fixture spec red. The fixture lives under the test
 tree, never under the repo's real docs/specs/."""

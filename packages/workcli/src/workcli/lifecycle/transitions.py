@@ -34,7 +34,7 @@ def claim(backend: Backend, args: Namespace) -> JsonValue:
     if PARKED_LABEL in item.labels:
         # The blocked status alone would fall through to the generic
         # "blocked by an open dependency" below -- name the real state and
-        # the two human verbs that resolve it (S2-B4, D10).
+        # the two human verbs that resolve it.
         raise WorkError(
             ErrorCode.NOT_CLAIMABLE,
             f"{args.id}: parked; `work redispatch` or `work abandon` first",

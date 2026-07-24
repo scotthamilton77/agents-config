@@ -1,4 +1,4 @@
-"""The admission gate over finalized staging plans (S3, charter D15/D16).
+"""The admission gate over finalized staging plans.
 
 Pins the one-pass behaviour cli._run relies on: gated items are partitioned by
 record, the returned plans carry only admitted content, and budget + conflict
@@ -83,7 +83,7 @@ def test_non_gated_root_file_always_kept() -> None:
 
 def test_budget_measures_admitted_content_only() -> None:
     # A giant record-less rule is dropped before the budget is weighed, so it
-    # never pushes the surface over the cap (S3-C4).
+    # never pushes the surface over the cap.
     giant = b"# no record\n" + b"x" * (10_000 * 4)
     plans = {Tool.CLAUDE: _plan(_instruction(b"laws"), _rule("big.md", giant))}
     result = run_admission_gate(plans)
@@ -115,7 +115,7 @@ def test_conflicting_claims_across_admitted_items_fail() -> None:
 
 def test_dropped_items_claims_excluded_from_audit() -> None:
     # One admitted claim + one record-less item that (were it read) would
-    # conflict — but it is dropped, so no conflict (S3-D4).
+    # conflict — but it is dropped, so no conflict.
     record_less = b"---\nclaims:\n  pr-review-medium: comments\n---\nbody\n"
     plans = {
         Tool.CLAUDE: _plan(
@@ -129,7 +129,7 @@ def test_dropped_items_claims_excluded_from_audit() -> None:
 
 
 def test_partition_is_order_stable() -> None:
-    # Same inputs in two dict orderings drop/keep the same items (S3-B5).
+    # Same inputs in two dict orderings drop/keep the same items.
     items = [
         _instruction(b"laws"),
         _rule("a.md", _COMPLETE),

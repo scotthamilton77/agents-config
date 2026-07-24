@@ -413,7 +413,7 @@ def test_deliver_leaf_with_pr_appends_delivered_note_then_closes():
             ),
             ScriptedStep(("update",), _OK),  # delivered note
             ScriptedStep(("close",), _OK),
-            # close-walk parent probe (S2-D5): parentless -> nothing walked
+            # close-walk parent probe: parentless -> nothing walked
             ScriptedStep(("show",), _show_result(_item_raw("x.1", status="closed"))),
         ]
     )
@@ -477,7 +477,7 @@ def test_deliver_leaf_with_no_evidence_flag_is_evidence_error():
 def test_deliver_leaf_already_closed_skips_evidence_but_replays_the_walk():
     # No evidence check on a closed leaf -- but the close-walk re-runs
     # (idempotent): a crash between close and walk must not strand exhausted
-    # parents open behind a "successful" replay (S2-D5).
+    # parents open behind a "successful" replay.
     runner = ScriptedBdRunner(
         steps=[
             ScriptedStep(("show",), _show_result(_item_raw("x.1", status="closed"))),
@@ -507,7 +507,7 @@ def test_deliver_leaf_interrupted_replay_skips_duplicate_note_and_just_closes():
                 ),
             ),
             ScriptedStep(("close",), _OK),
-            # close-walk parent probe (S2-D5): parentless -> nothing walked
+            # close-walk parent probe: parentless -> nothing walked
             ScriptedStep(("show",), _show_result(_item_raw("x.1", status="closed"))),
         ]
     )
@@ -557,7 +557,7 @@ def test_deliver_leaf_with_items_present_appends_items_evidence_then_closes():
             ),
             ScriptedStep(("update",), _OK),  # delivered note
             ScriptedStep(("close",), _OK),
-            # close-walk parent probe (S2-D5): parentless -> nothing walked
+            # close-walk parent probe: parentless -> nothing walked
             ScriptedStep(("show",), _show_result(_item_raw("x.1", status="closed"))),
         ]
     )
@@ -583,7 +583,7 @@ def test_deliver_leaf_with_trivial_appends_trivial_evidence_then_closes():
             ),
             ScriptedStep(("update",), _OK),  # delivered note
             ScriptedStep(("close",), _OK),
-            # close-walk parent probe (S2-D5): parentless -> nothing walked
+            # close-walk parent probe: parentless -> nothing walked
             ScriptedStep(("show",), _show_result(_item_raw("x.1", status="closed"))),
         ]
     )

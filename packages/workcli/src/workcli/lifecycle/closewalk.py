@@ -1,11 +1,10 @@
-"""Close-walk: the containment-closure tail shared by `close` and `deliver`
-(S2-D5; V2 audit row close-on-merge).
+"""Close-walk: the containment-closure tail shared by `close` and `deliver`.
 
-D11 requires close + close-walk + note as ONE facade call: a parent whose
-last open child closes is exhausted and closes with it, recursively, so a
-fully delivered tree never strands its containers open. Milestones are the
-walk boundary -- a milestone closes on its own acceptance section (charter
-AC9), never on child exhaustion.
+Close + close-walk + note happen as ONE facade call: a parent whose last open
+child closes is exhausted and closes with it, recursively, so a fully
+delivered tree never strands its containers open. Milestones are the walk
+boundary -- a milestone closes only when its own acceptance criteria are met,
+never on child exhaustion.
 """
 
 from __future__ import annotations
@@ -22,8 +21,7 @@ def close_walk(backend: Backend, ids: list[str]) -> list[str]:
     child is closed; each auto-close appends `CLOSE_WALK_MARKER` and the walk
     recurses upward. Returns the auto-closed ids in walk order. Closing
     sibling ids in one call converges: the second sibling's walk meets the
-    already-closed parent and stops without a duplicate note (idempotency,
-    S2-C4).
+    already-closed parent and stops without a duplicate note (idempotency).
     """
     walked: list[str] = []
     for start in backend.batch_get(ids):

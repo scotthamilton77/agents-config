@@ -76,13 +76,13 @@ def note(backend: Backend, args: Namespace) -> JsonValue:
 
 def close(backend: Backend, args: Namespace) -> JsonValue:
     """`work close IDS... [--disposition TEXT]` -- close + close-walk + note,
-    one call (S2-D5).
+    one call.
 
     Batch `bd close` for all ids first, then one `--append-notes` call per
     id carrying the disposition text (orchestrator ruling: `bd close
     --reason` lands in the wrong field; the disposition is an appended note),
     then the close-walk: exhausted non-milestone parents close with a walk
-    note. `data` stays None when nothing walked (pre-S2 envelope shape).
+    note. `data` stays None when nothing walked (legacy envelope shape).
     """
     backend.close(args.ids)
     if args.disposition is not None:

@@ -1,4 +1,4 @@
-"""The always-on surface budget (S3-C, charter D16 / AC1)."""
+"""The always-on surface budget."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""CLI entry for the AC4 spec lint (S5-D5 / S5-B5 / S5-B6).
+"""CLI entry for the spec structural lint.
 
 Runnable as ``python -m installer.spec_lint_cli [REPO_ROOT]`` (default:
 cwd). Lints ``REPO_ROOT/docs/specs`` for the structural Acceptance Criteria
@@ -18,7 +18,7 @@ from installer.core.spec_lint import format_violation, lint_specs
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="spec-lint",
-        description="Lint docs/specs/*.md for the AC4 structural contract (S5-D5).",
+        description="Lint docs/specs/*.md for the acceptance-criteria structural contract.",
     )
     parser.add_argument(
         "repo_root",

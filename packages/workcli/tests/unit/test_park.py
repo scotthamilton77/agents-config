@@ -1,12 +1,10 @@
-"""Slice S2-B: park / redispatch / abandon / parked (spec
-2026-07-22-workcli-completion-s2 §3, D10).
+"""park / redispatch / abandon / parked (S2-B).
 
 Parked = status `blocked` + `parked` label + a timestamped typed marker, one
-facade call (S2-D1); the un-park verbs walk back to `open` with distinct
-recorded intent (S2-D3); `parked` is a read-only staleness report -- the
-machine never acts on a parked item (S2-D4). State-based on `FakeBackend`;
-`_ReadOnlyFakeBackend` proves the report's zero-writes contract by raising
-on every mutator.
+facade call; the un-park verbs walk back to `open` with distinct recorded
+intent; `parked` is a read-only staleness report -- the machine never acts
+on a parked item. State-based on `FakeBackend`; `_ReadOnlyFakeBackend` proves
+the report's zero-writes contract by raising on every mutator.
 """
 
 from __future__ import annotations
@@ -62,7 +60,7 @@ class _ReadOnlyFakeBackend(FakeBackend):
     """Raises on every mutator: the `parked` report reports, never acts."""
 
     def _refuse(self, *_args: object, **_kwargs: object) -> None:
-        raise AssertionError("parked report must never mutate the backend (S2-D4)")
+        raise AssertionError("parked report must never mutate the backend")
 
     def create(self, fields: CreateFields) -> str:
         self._refuse(fields)

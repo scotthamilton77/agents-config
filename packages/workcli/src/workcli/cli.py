@@ -119,7 +119,7 @@ def _add_transition_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentPa
     release_parser.add_argument("id", metavar="ID")
 
     park_parser = subparsers.add_parser(
-        "park", help="park a non-merging item with a typed reason (D10); the machine disengages"
+        "park", help="park a non-merging item with a typed reason; the machine disengages"
     )
     park_parser.add_argument("id", metavar="ID")
     park_parser.add_argument(

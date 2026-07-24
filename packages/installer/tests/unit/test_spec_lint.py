@@ -1,7 +1,7 @@
-"""The AC4 spec structural lint (S5, charter AC4 — child spec S5-D5).
+"""The spec structural lint.
 
-Pins the three mechanical checks over ``docs/specs/*.md`` per S5-B1..S5-B6:
-an Acceptance-criteria heading, ≥1 structured AC entry under it, and every
+Pins the three mechanical checks over ``docs/specs/*.md``: an
+Acceptance-criteria heading, ≥1 structured AC entry under it, and every
 slice heading citing ≥1 defined ID. Malformed fixtures live here, never
 under the repo's real ``docs/specs/``.
 """
@@ -193,8 +193,8 @@ def test_s5_b4_real_specs_tree_is_clean_and_idempotent(tmp_path: Path) -> None:
 
 
 def test_s5_b4_the_real_spec_contract_s5_passes(tmp_path: Path) -> None:
-    """S5-B4 (self-hosting) — this repo's own S5 child spec, dated inside
-    the gate, must pass the lint on content."""
+    """S5-B4 (self-hosting) — this repo's own spec for the lint contract,
+    dated inside the gate, must pass the lint on content."""
     repo_root = Path(__file__).resolve().parents[4]
     real_spec = repo_root / "docs" / "specs" / "2026-07-24-spec-contract-s5.md"
     assert real_spec.is_file(), f"expected spec at {real_spec}"
