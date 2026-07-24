@@ -15,8 +15,10 @@ from tests.unit.builders import event, seed_event
 # The `work` facade's typed park reasons, transcribed from its own vocabulary
 # table (`workcli.lifecycle.park.REASONS`, itself the charter's park-semantics
 # decision). The packages are isolated uv projects with zero cross-imports by
-# design, so this literal is the seam -- if it ever disagrees with the facade,
-# this test is the thing that says so.
+# design, so the seam is two assertions rather than one import: this one
+# catches drift originating here, and workcli's own
+# `test_vocabulary_is_closed_and_mirrored_by_the_grind_executor` pins its side
+# closed so a reason added THERE cannot ship green either.
 _FACADE_REASONS = {
     "ci-failure": "machine",
     "merge-conflict": "machine",

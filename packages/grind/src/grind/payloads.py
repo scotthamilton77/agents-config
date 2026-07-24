@@ -25,6 +25,11 @@ _DISPOSITIONS = {"fixed", "wont-fix", "deferred", "escalated"}
 # drift from the fold's idea of a legal reason.
 _PARK_REASONS: set[str] = set(PARK_REASONS)
 _PARK_REASONS_HELP = "|".join(PARK_REASONS)
+# `discovered_work` creates an item that has never run: it has no PR, no CI and
+# no branch, so no failure-axis reason can describe why it is parked. Narrowing
+# the accepted set here is what keeps the axis honest at the boundary.
+_SCHEDULING_REASONS: set[str] = {r for r, (axis, _) in PARK_REASONS.items() if axis == "scheduling"}
+_SCHEDULING_REASONS_HELP = "|".join(r for r in PARK_REASONS if r in _SCHEDULING_REASONS)
 _PR_CLOSED_NEXT = {"in-progress", "queued", "parked"}
 _OBSERVATION_LEVELS = {"INFO", "WARN", "ERROR", "LESSON"}
 _WORK_DISPOSITIONS = {"parked", "enqueued"}
@@ -316,9 +321,9 @@ def _validate_discovered_work(payload: RawEvent) -> list[str]:
     if disposition == "parked":
         _require(
             errors,
-            _is_enum(payload, "reason", _PARK_REASONS),
-            f"reason is required when disposition is parked, and must be one of "
-            f"{_PARK_REASONS_HELP}",
+            _is_enum(payload, "reason", _SCHEDULING_REASONS),
+            f"reason is required when disposition is parked, and must be a scheduling-axis "
+            f"reason: {_SCHEDULING_REASONS_HELP}",
         )
     else:
         _require_str(errors, payload, "lane")

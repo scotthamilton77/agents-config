@@ -126,6 +126,26 @@ def test_vocabulary_codes_map_to_their_d10_category(reason: str, category: str):
     assert data["category"] == category
 
 
+def test_vocabulary_is_closed_and_mirrored_by_the_grind_executor():
+    """The other half of the cross-package seam.
+
+    `packages/grind`'s `PARK_REASONS` carries these same five codes on its
+    `failure` axis, and its `tests/unit/test_park_vocabulary.py` asserts the
+    match from that side. The packages are isolated uv projects with no
+    cross-import, so without this assertion a code added HERE would ship green
+    and only surface at runtime, when the executor logs a park event the grind
+    boundary rejects. Adding a reason means changing both tables in one
+    change -- and this test is where you find that out.
+    """
+    assert REASONS == {
+        "ci-failure": "machine",
+        "merge-conflict": "machine",
+        "approval-required": "human",
+        "bot-declined": "human",
+        "budget-exhausted": "human",
+    }
+
+
 def test_park_unknown_reason_is_usage_error_before_any_backend_call():  # S2-B2 (inverse)
     backend = _ReadOnlyFakeBackend()  # any touch -- even a read's mutation -- would raise
 

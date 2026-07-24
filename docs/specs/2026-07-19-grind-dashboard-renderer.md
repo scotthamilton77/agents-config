@@ -61,9 +61,12 @@ New, from the runtime spec:
 3. **Status icons for all nine status values** (queued, in-progress, pr-open,
    in-review, merged, done, blocked, waiting-human, standing-down), since any
    lane can now be collapsed and icons become the only status signal.
-4. **Parking-lot kind chips**: each entry renders its kind
-   (discovered-work / human-gated / later-wave / deferred) as a visually
-   distinct chip.
+4. **Parking-lot reason chips**: each entry renders its park reason as a
+   chip. The chip's *label* is the reason, so every reason stays readable;
+   its *colour* encodes the reason's axis and category — machine-caused
+   failure, human-required failure, scheduling, or untyped — because the
+   question a parking lot answers at a glance is "why is this stuck", and
+   that has three shapes plus the unknown.
 5. **Lessons-learned panel**, fed by LESSON-level observations.
 6. **Drop the Merged and Closed panels entirely** — the event log is the
    ledger; replay supersedes their compaction-recovery role.
@@ -87,7 +90,8 @@ The renderer consumes the fold's `State` (runtime spec) — it never reads
 pause),
 lanes with derived statuses and queues, per-item review state (kind, round,
 derived `open_threads` / `wont_fix_count`, stalemate flag, `detail`),
-parking lot with kinds, attention list, lessons, `last_generated`.
+parking lot with reasons (and their derived axis/category), attention list,
+lessons, `last_generated`.
 
 Review counts and item statuses arrive **pre-derived** — the renderer
 computes nothing about the domain, it only lays out typed fields. Any place
@@ -102,7 +106,7 @@ The chosen design is UX §9's Control Room (variation A, mission header
 included); the other variations are retained for reference.
 
 The **fixture state** is built once and shared by the prototypes and the CI
-smoke test: all nine statuses represented, every parking kind, an active
+smoke test: all nine statuses represented, every park reason, an active
 review with findings, a stalemate, a paused banner variant, ≥6 lanes (to
 exercise overflow), long titles, and a `</script>`-bearing title (to prove
 the serialization contract).
@@ -111,7 +115,7 @@ the serialization contract).
 
 - **CI smoke test** (gates `.30.3`): render the fixture state; assert output
   is byte-stable across two runs, contains no unescaped `<` inside the state
-  block, and renders every status icon, kind chip, and panel the UX section
+  block, and renders every status icon, park chip class, and panel the UX section
   requires (string/DOM-level assertions, not screenshots).
 - Renderer unit tests: PR-link derivation order; unknown-status degradation;
   empty-state edges (no lanes, empty attention, no lessons).

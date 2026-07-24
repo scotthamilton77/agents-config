@@ -102,18 +102,22 @@ def test_item_done_illegal_before_merged() -> None:
     assert any(a.type == "item_done" for a in state.anomalies)
 
 
-def test_item_parked_illegal_from_pr_open() -> None:
+def test_item_parked_illegal_from_merged() -> None:
+    # `pr-open`/`in-review` became parkable with the failure axis (every one of
+    # its reasons is reached with a PR open). Merged work has nothing left to
+    # park -- that is the boundary the transition table still holds.
     events = [
         seed_event(),
         event("item_started", item="wgclw.1"),
         event("pr_opened", item="wgclw.1", pr=1),
+        event("item_merged", item="wgclw.1", pr=1, sha="abc"),
         event("item_parked", item="wgclw.1", reason="deferred", note="nope"),
     ]
 
     state = fold(events)
 
     assert state.items["wgclw.1"].parked is None
-    assert state.items["wgclw.1"].status == "pr-open"
+    assert state.items["wgclw.1"].status == "merged"
     assert any(a.type == "item_parked" for a in state.anomalies)
 
 
@@ -270,19 +274,46 @@ def test_park_reason_missing_becomes_none_not_a_crash() -> None:
     # An untyped park is absent from both axes, never ambiguously on one.
     assert parked.axis is None
     assert parked.category is None
+    # Nothing arrived to be discarded, so nothing is flagged.
+    assert state.anomalies == []
 
 
-def test_a_retired_pre_charter_park_reason_folds_untyped_rather_than_crashing() -> None:
-    # Accept-and-flag is also the migration story: a log written before the
-    # vocabulary was reconciled replays into an untyped park, not an exception.
+def test_an_unrecognized_park_reason_is_flagged_not_silently_dropped() -> None:
+    # Accept-and-flag: the park still lands (untyped), but throwing away a
+    # value the payload contract required is exactly what must not be quiet.
     state = fold(
-        [seed_event(), event("item_parked", item="wgclw.1", reason="human-gated", note="old log")]
+        [seed_event(), event("item_parked", item="wgclw.1", reason="ci_failure", note="typo")]
     )
 
     parked = state.items["wgclw.1"].parked
     assert parked is not None
     assert parked.reason is None
-    assert parked.note == "old log"
+    assert any(
+        a.type == "item_parked" and "unrecognized park reason" in a.reason for a in state.anomalies
+    )
+
+
+def test_a_pre_charter_log_replays_with_its_parks_still_typed() -> None:
+    # The old writer emitted the field `kind`, never `reason`. Delete-and-refold
+    # is the whole recovery story, so an upgrade must not grey out history.
+    state = fold(
+        [
+            seed_event(),
+            event("item_parked", item="wgclw.1", kind="later-wave", note="wave 2"),
+            event("item_parked", item="wgclw.2", kind="human-gated", note="needs a ruling"),
+        ]
+    )
+
+    survived = state.items["wgclw.1"].parked
+    assert survived is not None
+    assert survived.reason == "later-wave"
+    assert survived.axis == "scheduling"
+    # `human-gated` was retired into the reason that names the same state.
+    retired = state.items["wgclw.2"].parked
+    assert retired is not None
+    assert retired.reason == "approval-required"
+    assert retired.axis == "failure"
+    assert state.anomalies == []
 
 
 def test_grind_created_tolerates_a_lanes_payload_that_is_not_a_list() -> None:

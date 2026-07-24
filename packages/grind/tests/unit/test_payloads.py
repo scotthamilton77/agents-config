@@ -209,6 +209,11 @@ def test_discovered_work_requires_disposition_specific_fields():
     assert validate_payload("discovered_work", parked) == []
     # reason is required when parked
     assert validate_payload("discovered_work", {**parked, "reason": None}) != []
+    # ...and only the scheduling axis is legal: a discovered item has never
+    # run, so no failure reason can describe why it is parked.
+    assert validate_payload("discovered_work", {**parked, "reason": "later-wave"}) == []
+    assert validate_payload("discovered_work", {**parked, "reason": "ci-failure"}) != []
+    assert validate_payload("discovered_work", {**parked, "reason": "approval-required"}) != []
 
     enqueued = {
         "item": "disc-2",

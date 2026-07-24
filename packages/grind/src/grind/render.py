@@ -44,6 +44,7 @@ from grind.model import (
     PrRef,
     State,
 )
+from grind.serialize import park_fields
 
 
 def _pr_json(pr: PrRef | None) -> JsonValue:
@@ -106,15 +107,7 @@ def _lesson_json(obs: Observation) -> JsonValue:
 
 
 def _parking_json(item_id: str, item: Item) -> JsonValue:
-    parked = item.parked
-    return {
-        "id": item_id,
-        "title": item.title,
-        "reason": parked.reason if parked is not None else None,
-        "axis": parked.axis if parked is not None else None,
-        "category": parked.category if parked is not None else None,
-        "note": parked.note if parked is not None else None,
-    }
+    return {"id": item_id, "title": item.title, **park_fields(item.parked)}
 
 
 def _dashboard_state_json(state: State) -> dict[str, JsonValue]:

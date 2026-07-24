@@ -201,8 +201,15 @@ for every reason on both axes. A machine-actionable cause reaches the lot
 only once the executor has spent its bounded fix budget, so the distinction
 is spent *before* the park, never after it.
 
-A park may also be **untyped** — `pr_closed`'s `next: parked` path carries no
-reason field, so its axis and category are absent rather than ambiguous.
+Every failure-axis reason is reached with a PR open, so `pr-open` and
+`in-review` are parkable statuses — see the legality matrix below.
+
+A park may also be **untyped**. `pr_closed`'s `reason` is a free-text closure
+note that shares a field name with the park vocabulary and not its contract;
+when it happens to name a vocabulary member the park is typed with it, and
+otherwise the park carries no reason and its axis and category are absent
+rather than ambiguous. `discovered_work` narrows the other way: it creates an
+item that has never run, so only the scheduling axis is legal there.
 
 ### The fold and the transition table
 
@@ -224,8 +231,8 @@ absent is an anomaly):
 |---|---|---|---|---|---|---|---|---|---|---|
 | `queued` | in-progress | — | — | — | — | blocked | waiting-human | — | — | parked |
 | `in-progress` | — | pr-open | — | — | — | blocked | waiting-human | — | — | parked |
-| `pr-open` | — | — | in-review | in-review | per `next` | blocked | waiting-human | merged | — | — |
-| `in-review` | — | — | in-review | in-review | per `next` | blocked | waiting-human | merged | — | — |
+| `pr-open` | — | — | in-review | in-review | per `next` | blocked | waiting-human | merged | — | parked |
+| `in-review` | — | — | in-review | in-review | per `next` | blocked | waiting-human | merged | — | parked |
 | `waiting-human` | — | pr-open | in-review | in-review | per `next` | — | — | merged | — | parked |
 | `blocked` | — | — | — | — | — | — | waiting-human | — | — | parked |
 | `merged` | — | — | — | — | — | — | — | — | done | — |

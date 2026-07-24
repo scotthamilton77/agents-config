@@ -92,7 +92,48 @@ def test_pr_closed_with_next_parked_moves_item_into_parking_lot() -> None:
     item = state.items["wgclw.1"]
     assert item.parked is not None
     assert item.parked.note == "superseded"
+    # Free-text closure prose does not name a park reason, so the park is untyped.
+    assert item.parked.reason is None
     assert state.closed_ledger[0].reason == "superseded"
+
+
+def test_pr_closed_types_the_park_when_its_reason_names_a_vocabulary_member() -> None:
+    # `pr_closed.reason` shares a field name with the park vocabulary and not
+    # its contract; when it does name a member, typing beats demoting it to prose.
+    events = [
+        seed_event(),
+        event("item_started", item="wgclw.1"),
+        event("pr_opened", item="wgclw.1", pr=5),
+        event("pr_closed", item="wgclw.1", pr=5, reason="merge-conflict", next="parked"),
+    ]
+
+    state = fold(events)
+
+    parked = state.items["wgclw.1"].parked
+    assert parked is not None
+    assert parked.reason == "merge-conflict"
+    assert parked.category == "machine"
+
+
+def test_an_item_with_an_open_pr_is_parkable() -> None:
+    # Every failure-axis reason is reached with a PR open -- if `pr-open` and
+    # `in-review` were not parkable the axis could never be recorded.
+    events = [
+        seed_event(),
+        event("item_started", item="wgclw.1"),
+        event("pr_opened", item="wgclw.1", pr=7),
+        event("item_parked", item="wgclw.1", reason="ci-failure", note="budget spent"),
+        event("item_started", item="wgclw.2"),
+        event("pr_opened", item="wgclw.2", pr=8),
+        event("review_round", item="wgclw.2", kind="codex", round=1, head_sha="abc"),
+        event("item_parked", item="wgclw.2", reason="bot-declined", note="reviewer declined"),
+    ]
+
+    state = fold(events)
+
+    assert state.anomalies == []
+    assert "wgclw.1" in state.parking_lot()
+    assert "wgclw.2" in state.parking_lot()
 
 
 def test_discovered_work_enqueued_creates_a_new_queued_item() -> None:
