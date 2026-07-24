@@ -7,12 +7,12 @@ from tests.unit.builders import event, seed_event
 
 
 def test_item_parked_removes_item_from_lanes_active_queue() -> None:
-    events = [event("item_parked", item="wgclw.2", kind="later-wave", note="not yet")]
+    events = [event("item_parked", item="wgclw.2", reason="later-wave", note="not yet")]
     state = fold([seed_event(), *events])
 
     item = state.items["wgclw.2"]
     assert item.parked is not None
-    assert item.parked.kind == "later-wave"
+    assert item.parked.reason == "later-wave"
     assert item.parked.note == "not yet"
     assert "wgclw.2" not in state.lanes["lane-a"].item_ids
     assert item.id in state.parking_lot()
@@ -21,7 +21,7 @@ def test_item_parked_removes_item_from_lanes_active_queue() -> None:
 def test_item_enqueued_returns_a_parked_item_to_queued_in_the_named_lane() -> None:
     events = [
         seed_event(),
-        event("item_parked", item="wgclw.2", kind="discovered-work", note="scope cut"),
+        event("item_parked", item="wgclw.2", reason="discovered-work", note="scope cut"),
         event("item_enqueued", item="wgclw.2", lane="lane-a"),
     ]
 
@@ -38,7 +38,7 @@ def test_item_enqueued_with_unresolved_edges_folds_to_blocked_not_queued() -> No
     events = [
         seed_event(),
         event("item_blocked", item="wgclw.2", on=["wgclw.1"]),
-        event("item_parked", item="wgclw.2", kind="later-wave", note="hold"),
+        event("item_parked", item="wgclw.2", reason="later-wave", note="hold"),
         event("item_enqueued", item="wgclw.2", lane="lane-a"),
     ]
 
@@ -54,7 +54,7 @@ def test_reenqueued_blocked_item_unblocks_to_queued_when_its_edge_resolves() -> 
     events = [
         seed_event(),
         event("item_blocked", item="wgclw.2", on=["wgclw.1"]),
-        event("item_parked", item="wgclw.2", kind="later-wave", note="hold"),
+        event("item_parked", item="wgclw.2", reason="later-wave", note="hold"),
         event("item_enqueued", item="wgclw.2", lane="lane-a"),
         event("item_started", item="wgclw.1"),
         event("pr_opened", item="wgclw.1", pr=101),
@@ -69,7 +69,7 @@ def test_reenqueued_blocked_item_unblocks_to_queued_when_its_edge_resolves() -> 
 def test_events_other_than_enqueue_are_anomalies_while_item_is_parked() -> None:
     events = [
         seed_event(),
-        event("item_parked", item="wgclw.2", kind="deferred", note="paused"),
+        event("item_parked", item="wgclw.2", reason="deferred", note="paused"),
         event("item_started", item="wgclw.2"),
     ]
 
@@ -92,7 +92,106 @@ def test_pr_closed_with_next_parked_moves_item_into_parking_lot() -> None:
     item = state.items["wgclw.1"]
     assert item.parked is not None
     assert item.parked.note == "superseded"
+    # Free-text closure prose does not name a park reason, so the park is untyped.
+    assert item.parked.reason is None
     assert state.closed_ledger[0].reason == "superseded"
+
+
+def test_pr_closed_types_the_park_when_its_reason_names_a_vocabulary_member() -> None:
+    # `pr_closed.reason` shares a field name with the park vocabulary and not
+    # its contract; when it does name a member, typing beats demoting it to prose.
+    events = [
+        seed_event(),
+        event("item_started", item="wgclw.1"),
+        event("pr_opened", item="wgclw.1", pr=5),
+        event("pr_closed", item="wgclw.1", pr=5, reason="merge-conflict", next="parked"),
+    ]
+
+    state = fold(events)
+
+    parked = state.items["wgclw.1"].parked
+    assert parked is not None
+    assert parked.reason == "merge-conflict"
+    assert parked.category == "machine"
+
+
+def test_a_failure_axis_reason_needs_a_pr_and_reads_the_ref_not_the_status() -> None:
+    # A failure reason states that this item's PR did not merge, so an item
+    # that never opened one cannot carry it. The check keys on the PR ref, not
+    # on status: `blocked` legally holds an open PR, and rejecting that would
+    # refuse exactly the park the failure axis exists for.
+    no_pr = fold(
+        [
+            seed_event(),
+            event("item_started", item="wgclw.1"),
+            event("item_parked", item="wgclw.1", reason="ci-failure", note="no PR exists"),
+        ]
+    )
+
+    assert no_pr.items["wgclw.1"].parked is None
+    assert any("no PR" in a.reason for a in no_pr.anomalies)
+
+    blocked_with_pr = fold(
+        [
+            seed_event(),
+            event("item_started", item="wgclw.1"),
+            event("pr_opened", item="wgclw.1", pr=9),
+            event("item_blocked", item="wgclw.1", on=["wgclw.2"]),
+            event("item_parked", item="wgclw.1", reason="ci-failure", note="budget spent"),
+        ]
+    )
+
+    parked = blocked_with_pr.items["wgclw.1"].parked
+    assert parked is not None
+    assert parked.reason == "ci-failure"
+    assert blocked_with_pr.anomalies == []
+
+
+def test_discovered_work_rejects_a_failure_reason_but_keeps_the_item() -> None:
+    # Mirrors the boundary's axis narrowing for replayed/hand-edited logs. The
+    # false failure record is the harm; losing the discovered work would be a
+    # second one, so the item lands parked untyped.
+    events = [
+        seed_event(),
+        event(
+            "discovered_work",
+            item="disc-3",
+            description="gap found mid-grind",
+            source="lane-a",
+            disposition="parked",
+            reason="ci-failure",
+            rationale="hand-edited log",
+        ),
+    ]
+
+    state = fold(events)
+
+    item = state.items["disc-3"]
+    assert item.parked is not None
+    assert item.parked.reason is None
+    assert item.discovered is not None
+    assert any("scheduling" in a.reason for a in state.anomalies)
+
+
+def test_an_item_with_an_open_pr_is_parkable() -> None:
+    # Every failure-axis reason is reached with a PR open -- if `pr-open` and
+    # `in-review` were not parkable the axis could never be recorded.
+    events = [
+        seed_event(),
+        event("item_started", item="wgclw.1"),
+        event("pr_opened", item="wgclw.1", pr=7),
+        event("item_parked", item="wgclw.1", reason="ci-failure", note="budget spent"),
+        event("item_started", item="wgclw.2"),
+        event("pr_opened", item="wgclw.2", pr=8),
+        event("review_round", item="wgclw.2", kind="codex", round=1, head_sha="abc"),
+        event("item_parked", item="wgclw.2", reason="bot-declined", note="reviewer declined"),
+    ]
+
+    state = fold(events)
+
+    assert state.anomalies == []
+    assert "wgclw.1" in state.parking_lot()
+    assert "wgclw.2" in state.parking_lot()
 
 
 def test_discovered_work_enqueued_creates_a_new_queued_item() -> None:
@@ -188,11 +287,11 @@ def test_discovered_work_parked_creates_a_new_parked_item() -> None:
         event(
             "discovered_work",
             item="disc-2",
-            description="human call needed",
+            description="gap found mid-grind",
             source="lane-a",
             disposition="parked",
-            kind="human-gated",
-            rationale="needs a decision",
+            reason="discovered-work",
+            rationale="needs a triage decision",
         ),
     ]
 
@@ -200,7 +299,9 @@ def test_discovered_work_parked_creates_a_new_parked_item() -> None:
 
     item = state.items["disc-2"]
     assert item.parked is not None
-    assert item.parked.kind == "human-gated"
+    assert item.parked.reason == "discovered-work"
+    # Work that never had a PR parks on the scheduling axis, not the failure one.
+    assert item.parked.axis == "scheduling"
     assert "disc-2" not in state.lanes["lane-a"].item_ids
 
 
@@ -211,11 +312,11 @@ def test_discovered_work_parked_preserves_source_and_rationale() -> None:
         event(
             "discovered_work",
             item="disc-2",
-            description="human call needed",
+            description="gap found mid-grind",
             source="lane-a",
             disposition="parked",
-            kind="human-gated",
-            rationale="needs a decision",
+            reason="discovered-work",
+            rationale="needs a triage decision",
         ),
     ]
 
@@ -224,7 +325,7 @@ def test_discovered_work_parked_preserves_source_and_rationale() -> None:
     item = state.items["disc-2"]
     assert item.discovered is not None
     assert item.discovered.source == "lane-a"
-    assert item.discovered.rationale == "needs a decision"
+    assert item.discovered.rationale == "needs a triage decision"
 
 
 def test_discovered_work_with_duplicate_item_id_is_an_anomaly() -> None:

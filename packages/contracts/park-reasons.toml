@@ -1,0 +1,30 @@
+# THE park-reason contract. One definition, two implementations.
+#
+# `packages/workcli` owns the tracker verb (`work park --reason CODE`) and
+# `packages/grind` owns the executor's event log (`item_parked.reason`). They
+# are isolated uv projects with no cross-import, so without a shared artifact
+# each would only ever check its own transcription of the other's table -- and
+# a diligent one-sided edit (add a code AND update that package's own expected
+# literal) would ship green on both gates while the executor emitted a reason
+# the event boundary rejects.
+#
+# So the vocabulary lives here, and each package's test suite asserts its own
+# runtime table against this file. Adding, renaming or removing a code is a
+# three-file change by construction: this file plus both tables. Miss either
+# table and its own gate fails.
+#
+# Scope: the FAILURE axis only -- the reasons a work item's PR did not merge.
+# grind additionally carries a scheduling axis (`discovered-work`,
+# `later-wave`, `deferred`) for work that never had a PR to fail; that axis is
+# grind-native, has no tracker counterpart, and is deliberately not listed here.
+#
+# `category` records whether the park's CAUSE was machine-actionable. It grants
+# no exit: parked work is walked back by a human verb in the tracker and by an
+# explicit `item_enqueued` in the event log, whatever the reason.
+
+[reasons]
+ci-failure = "machine"
+merge-conflict = "machine"
+approval-required = "human"
+bot-declined = "human"
+budget-exhausted = "human"

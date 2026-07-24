@@ -13,14 +13,23 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from grind.model import RawEvent
+from grind.model import PARK_REASONS, RawEvent
 
 Validator = Callable[[RawEvent], list[str]]
 
 _REVIEW_KINDS = {"codex", "copilot", "ralf", "human"}
 _VERDICTS = {"clean", "findings", "stalemate"}
 _DISPOSITIONS = {"fixed", "wont-fix", "deferred", "escalated"}
-_PARK_KINDS = {"discovered-work", "human-gated", "later-wave", "deferred"}
+# One vocabulary, one definition: `grind.model.PARK_REASONS` is the source and
+# both the enum check and its error text derive from it, so the boundary can't
+# drift from the fold's idea of a legal reason.
+_PARK_REASONS: set[str] = set(PARK_REASONS)
+_PARK_REASONS_HELP = "|".join(PARK_REASONS)
+# `discovered_work` creates an item that has never run: it has no PR, no CI and
+# no branch, so no failure-axis reason can describe why it is parked. Narrowing
+# the accepted set here is what keeps the axis honest at the boundary.
+_SCHEDULING_REASONS: set[str] = {r for r, (axis, _) in PARK_REASONS.items() if axis == "scheduling"}
+_SCHEDULING_REASONS_HELP = "|".join(r for r in PARK_REASONS if r in _SCHEDULING_REASONS)
 _PR_CLOSED_NEXT = {"in-progress", "queued", "parked"}
 _OBSERVATION_LEVELS = {"INFO", "WARN", "ERROR", "LESSON"}
 _WORK_DISPOSITIONS = {"parked", "enqueued"}
@@ -282,8 +291,8 @@ def _validate_item_parked(payload: RawEvent) -> list[str]:
     _require_str(errors, payload, "item")
     _require(
         errors,
-        _is_enum(payload, "kind", _PARK_KINDS),
-        "kind must be one of discovered-work|human-gated|later-wave|deferred",
+        _is_enum(payload, "reason", _PARK_REASONS),
+        f"reason must be one of {_PARK_REASONS_HELP}",
     )
     _require_str(errors, payload, "note")
     return errors
@@ -312,9 +321,9 @@ def _validate_discovered_work(payload: RawEvent) -> list[str]:
     if disposition == "parked":
         _require(
             errors,
-            _is_enum(payload, "kind", _PARK_KINDS),
-            "kind is required when disposition is parked, and must be one of "
-            "discovered-work|human-gated|later-wave|deferred",
+            _is_enum(payload, "reason", _SCHEDULING_REASONS),
+            f"reason is required when disposition is parked, and must be a scheduling-axis "
+            f"reason: {_SCHEDULING_REASONS_HELP}",
         )
     else:
         _require_str(errors, payload, "lane")

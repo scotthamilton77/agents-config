@@ -78,7 +78,7 @@ def test_full_state_json_serializes_ledgers_and_parking_lot():
         event("item_started", item="wgclw.1"),
         event("pr_opened", item="wgclw.1", pr=1),
         event("item_merged", item="wgclw.1", pr=1, sha="abc"),
-        event("item_parked", item="wgclw.2", kind="deferred", note="later"),
+        event("item_parked", item="wgclw.2", reason="deferred", note="later"),
     ]
     state = fold(events)
 
@@ -93,7 +93,10 @@ def test_full_state_json_serializes_ledgers_and_parking_lot():
     assert isinstance(parked_item, dict)
     parked = parked_item["parked"]
     assert isinstance(parked, dict)
-    assert parked["kind"] == "deferred"
+    assert parked["reason"] == "deferred"
+    # axis/category ride the snapshot so a consumer never re-implements the table
+    assert parked["axis"] == "scheduling"
+    assert parked["category"] == "human"
 
 
 def test_full_state_json_serializes_observations_and_lessons():
