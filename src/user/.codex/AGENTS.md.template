@@ -5,6 +5,5 @@ User-scoped instructions for all projects.
 <!-- DYNAMIC-INCLUDE: src/user/.agents/AGENT-PERSONA.md.template -->
 <!-- DYNAMIC-INCLUDE: src/user/.agents/USER-PERSONA.md.template -->
 <!-- DYNAMIC-INCLUDE: src/user/.agents/SESSION-PRIMER.md.template -->
-<!-- DYNAMIC-INCLUDE: src/user/.agents/AGENTS.md.template -->
 <!-- DYNAMIC-INCLUDE-ALL-RULES -->
 <!-- DYNAMIC-INCLUDE: src/user/.codex/CODEX-EXTENSIONS.md.template -->

@@ -12,11 +12,13 @@ is useful to more than one tool, it lives here.
 - `skills/` — Methodology guides, one directory per skill with a `SKILL.md`
   and optional supporting scripts.
 - `AGENTS.md.template` — Zero-based shared laws, decision matrix, and hard
-  lines referenced by each tool's top-level instruction file.
+  lines (D17). Hand-deployed to the standard homes today (S0); not yet wired
+  into automated per-tool assembly — repointing a tool's `AGENTS.md`-dest
+  include at another `AGENTS.md`-basenamed fragment self-deletes the
+  assembled file on flatten (`agents-config-9k9.10` tracks the installer fix).
 - `SESSION-PRIMER.md.template` — Skill-invocation discipline (the "1% rule"
   + red-flag rationalization table + skill-priority ordering). Dynamically
-  included between USER-PERSONA and the shared AGENTS.md content in every
-  per-tool template.
+  included after USER-PERSONA in every per-tool template.
 - `AGENT-PERSONA.md.template` — Agent personality and expertise claims.
   Personalize after install.
 - `USER-PERSONA.md.template` — User description and interaction preferences.

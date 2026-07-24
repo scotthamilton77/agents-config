@@ -21,25 +21,39 @@ rules), then triaged by whether the hit is live/authoritative or historical.
 
 - `src/user/.agents/INSTRUCTIONS.md.template` — the mountain itself (154 lines).
 
-### 1.2 Edit — per-tool assembly (swap the dead include for the survivor)
+### 1.2 Edit — per-tool assembly (delete the dead include; do not replace it)
 
 Each of these DYNAMIC-INCLUDEs `src/user/.agents/INSTRUCTIONS.md.template` on
-one line; the line is repointed at `src/user/.agents/AGENTS.md.template` (the
-S0 zero-based survivor) so flattening reproduces what is already hand-deployed
-in the standard homes:
+one line; the line is deleted outright, with no replacement:
 
 - `src/user/.claude/AGENTS.md.template`
 - `src/user/.codex/AGENTS.md.template`
 - `src/user/.gemini/GEMINI.md.template`
 - `src/user/.opencode/AGENTS.md.template`
 
-No other line in these four files changes. This also keeps
-`packages/installer/src/installer/core/templates.py`'s existing
-`_file_include_dests` dedup working correctly for Gemini/OpenCode/Codex: since
-each tool's main file still includes the shared `AGENTS.md.template` by
-reference, the flatten step continues to drop its would-be standalone staged
-copy — no new stray `AGENTS.md` leaks into a home whose main file is
-`GEMINI.md`.
+**Round 1 of this PR repointed the line at `src/user/.agents/AGENTS.md.template`
+(the S0 survivor) instead of deleting it — that was wrong, caught in review
+(Codex + Scott).** `src/user/.agents/AGENTS.md.template` strips to the same
+basename (`AGENTS.md`) as the top-level file being assembled for Claude,
+Codex, and OpenCode (Gemini's top-level file is `GEMINI.md`, so it alone
+would have been safe). `flatten_plan_templates()` records every file-include
+destination via `_file_include_dests()` and pops those destinations from the
+plan *after* flattening, to drop the now-redundant standalone copy of an
+include-only fragment. Pointing `AGENTS.md`'s own include at another
+`AGENTS.md`-basenamed fragment makes that pop delete the just-flattened
+top-level file itself — a standard install then deploys **no instruction
+file at all** to Claude, Codex, or OpenCode. Recursive self-deletion, not a
+content problem.
+
+The correct fix is deletion with no replacement, which is what ships here.
+This leaves a real gap: the automated installer no longer composes the
+zero-based `<laws>`/`<decisions>`/`<hard-lines>`/`<conventions>` block into
+the assembled per-tool file at all — S0's hand-deploy to the standard homes
+remains the only current path to that content (see §1.5's caveat). Wiring it
+back in needs an installer-engine fix (rename the survivor's install
+destination, or fix `flatten_plan_templates()`'s pop to skip a destination a
+later same-pass write overwrote) — that's `packages/installer/` surgery,
+S3's job, not S4's. Tracked as `agents-config-9k9.10`.
 
 ### 1.3 Edit — live prose referencing `INSTRUCTIONS.md`
 
@@ -72,8 +86,10 @@ and `<decision-matrix>` were cited by name elsewhere, independent of the
   not relocated. Repointed at `verify-checklist`'s new canonical definition
   (§1.5, row `<verification-checklist>`).
 - `src/user/.agents/skills/verify-checklist/SKILL.md` — same dangling citation,
-  in its discovery order and "Source Dependency" section. This skill is now
-  the checklist's home (§1.5).
+  in its discovery order and a since-removed "Source Dependency" section
+  (Scott's review: once **The Checklist** section defines everything inline,
+  a separate section explaining where it's defined is vestigial — deleted
+  rather than repointed). This skill is now the checklist's home (§1.5).
 - `src/user/.agents/agents/quality-reviewer.md` — cited "the shared `AGENTS.md`
   constraints" for its 80/70 coverage floor; the survivor has no constraints
   block. Made self-contained: floor stated inline, citation dropped.
@@ -126,13 +142,14 @@ fragments:
 | `AGENT-PERSONA.md.template` | 16 |
 | `USER-PERSONA.md.template` | 7 |
 | `SESSION-PRIMER.md.template` | 66 |
-| `AGENTS.md.template` (zero-based survivor) | 30 |
 | tool `*-EXTENSIONS.md.template` | 0 (stub today, but a real per-tool extension point) |
 
 Codex, Gemini, and OpenCode additionally flatten their entire `rules/` tree
 via `DYNAMIC-INCLUDE-ALL-RULES` (dozens of files) — real, ongoing composition
 work no simpler mechanism replaces without inventing one. The machinery stays;
-this is a content deletion, not a machinery deletion.
+this is a content deletion, not a machinery deletion. (`AGENTS.md.template`,
+the S0 zero-based survivor, is not in this table — §1.2 explains why it isn't
+wired in as a fifth fragment yet.)
 
 ## 1.5 Content disposition (did we lose anything load-bearing?)
 
@@ -144,6 +161,14 @@ on it — re-enters only through a future admission-bar pass, out of scope
 here). Nothing is silently dropped: every "dies deliberately" row was checked
 against the live `src/` tree for a dependent shipped artifact before being
 marked dead.
+
+**Caveat on every row below citing `<laws>`/`<decisions>`/`<hard-lines>`/
+`<conventions>`:** that content exists in `src/user/.agents/AGENTS.md.template`
+(the S0 survivor) and is live today in the hand-deployed standard homes, but
+the *automated* installer does not compose it into the assembled per-tool
+file yet — the include line was deleted, not repointed, to avoid a
+self-deleting recursion bug (§1.2). Closing that gap is `agents-config-9k9.10`,
+not this PR.
 
 **`<laws>`**
 
@@ -222,9 +247,10 @@ marked dead.
   `escalate-conflicting`), the "canonical decision matrix" label, and
   "INSTRUCTIONS.md constraints" — also returns nothing outside this file's own
   disposition table (§1.5) and historical explanations.
-- **S4-AC3** — Each of the four per-tool main templates (§1.2) DYNAMIC-INCLUDEs
-  `src/user/.agents/AGENTS.md.template` where it used to DYNAMIC-INCLUDE the
-  mountain.
+- **S4-AC3** — None of the four per-tool main templates (§1.2) DYNAMIC-INCLUDEs
+  `src/user/.agents/INSTRUCTIONS.md.template` or `src/user/.agents/AGENTS.md.template`
+  — the line is gone, not repointed (repointing self-deletes the assembled
+  file for Claude/Codex/OpenCode; §1.2).
 - **S4-AC4** — `make ci-installer` passes from the edited tree (lint, format,
   typecheck, coverage, audit, entry-verify).
 - **S4-AC5** — This document records the DYNAMIC-INCLUDE keep/kill call (§2);
@@ -235,6 +261,12 @@ marked dead.
   30-line survivor (§1.5 is the audit trail); zero citations claim a
   `<constraints>`, `<decision-matrix>`, `<workflow>`, `<orchestration>`, or
   `<verification-checklist>` block that no longer exists there.
+- **S4-AC7** — No per-tool assembled template (`AGENTS.md` dest for Claude/
+  Codex/OpenCode, `GEMINI.md` for Gemini) DYNAMIC-INCLUDEs a fragment whose
+  `.template`-stripped basename collides with its own dest — the class of bug
+  behind `agents-config-9k9.10`. Mechanical check: for each of the four
+  templates, none of its `DYNAMIC-INCLUDE:` targets' basenames (`.template`
+  stripped) equals the template's own staged destination name.
 
 ## 4. Verification
 

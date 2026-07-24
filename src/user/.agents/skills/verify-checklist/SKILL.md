@@ -155,13 +155,6 @@ five cells.
 
 Omit sections that are genuinely empty (no PRs, no discovered work). But you must always include **Objective**, **Verification Checklist**, and **Remaining Work**.
 
-## Source Dependency
-
-The canonical checklist is defined above in **The Checklist** — this skill is
-its home now. Tool extensions (e.g. `completion-gate`) provide the "how"
-(which skills/agents implement each step). Project config and memory can add
-or override steps.
-
 ## Red Flags — STOP
 
 If any of these thoughts cross your mind, you're rationalizing:

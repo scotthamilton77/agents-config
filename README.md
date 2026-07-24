@@ -167,12 +167,12 @@ Slash commands that can be invoked directly:
 ### Templates
 
 **Shared** (in `src/user/.agents/`):
-- `AGENTS.md.template` - Zero-based shared laws, decision matrix, hard lines, and conventions
+- `AGENTS.md.template` - Zero-based shared laws, decision matrix, hard lines, and conventions (D17). Hand-deployed to the standard homes (S0); not yet wired into automated per-tool assembly (`agents-config-9k9.10`)
 - `AGENT-PERSONA.md.template` - Agent personality and behavioral traits (referenced via `@AGENT-PERSONA.md`)
 - `USER-PERSONA.md.template` - User description and interaction preferences (referenced via `@USER-PERSONA.md`)
 
 **Claude-specific** (in `src/user/.claude/`):
-- `AGENTS.md.template` - Claude instruction file referencing shared content + Claude extensions
+- `AGENTS.md.template` - Claude instruction file referencing shared persona/session-primer content + Claude extensions
 - `CLAUDE.md.template` - Minimal file that points to AGENTS.md
 - `CLAUDE-EXTENSIONS.md.template` - Stub header (content moved to `rules/`)
 - `settings.json.template` - Pre-configured permission allowlists, hooks, and experimental features
