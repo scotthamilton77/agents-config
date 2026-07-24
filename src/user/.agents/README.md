@@ -6,11 +6,16 @@ is useful to more than one tool, it lives here.
 
 ## What lives here
 
-- `agents/` — Role-based agent definitions (backend, frontend, reviewer, etc.).
-  Each is a single `.md` file with YAML frontmatter followed by role,
-  standards, and boundaries.
+- `agents/` — Role-based agent definitions, one `.md` file each. Empty today:
+  every agent was record-less and moved to `archive/src/user/.agents/agents/`.
+- `rules/` — Tool-agnostic always-on rules. Empty today, same reason.
 - `skills/` — Methodology guides, one directory per skill with a `SKILL.md`
-  and optional supporting scripts.
+  and optional supporting scripts. Only admitted skills live here; the rest
+  moved to `archive/src/user/.agents/skills/`.
+
+`agents/`, `rules/`, and `skills/` are gated: a file without an `admission:`
+record in its front matter is dropped at deploy and pruned from every tool's
+config. Readmission is an explicit act, not a `git mv` back.
 - `AGENTS.md.template` — Zero-based shared laws, decision matrix, and hard
   lines (D17). Hand-deployed to the standard homes today (S0); not yet wired
   into automated per-tool assembly — repointing a tool's `AGENTS.md`-dest
