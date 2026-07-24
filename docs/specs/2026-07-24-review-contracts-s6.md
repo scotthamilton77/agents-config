@@ -47,14 +47,22 @@ comments are not a review medium (D9). It records the `head_sha` it was produced
 against; a verdict whose `head_sha` ≠ the current PR head is **stale** and the
 gate treats it as absent.
 
-**"A complete round" is mechanically defined.** A round is complete iff
-(a) it declares a `base_sha` and the checkout was synced to that base before
-invocation — the phantom-finding guard (a stale checkout produced 12 phantom
-findings in one S5 round); (b) it declares every deliberately-retained category
-up front in `retained_categories` — the over-reporting guard (an under-declared
-retained set inflated an S5 round); and (c) it emits a schema-valid verdict for
-the current `head_sha`. **Review terminates clean** when a complete round
-produces zero `mechanical` findings. Advisory findings route to the backlog,
+**"A complete round" is mechanically defined — from observables only.** A
+round is complete iff (a) its declared `base_sha` equals the diff's actual base
+(the PR's merge-base against the target branch) — the observable form of the
+sync guard: a reviewer run against an unsynced checkout produces a mismatched
+declaration and the round reads incomplete (a stale checkout produced 12
+phantom findings in one S5 round); (b) it carries an explicit
+`retained_categories` declaration — a non-empty list, or an explicitly-empty
+one meaning "nothing retained" — the over-reporting guard (an under-declared
+retained set inflated an S5 round); *completeness* of the declared set is the
+invoker's adjudicated responsibility, enforced upstream as
+refusal-to-emit-a-prompt when no declaration is provided, not as a mechanical
+check on the artifact; and (c) it is a schema-valid verdict whose `head_sha`
+equals the current PR head. Completeness and terminal-clean are thus decidable
+from the artifact plus the PR's observable git state (head SHA, merge-base) —
+never from unrecorded history. **Review terminates clean** when a complete
+round produces zero `mechanical` findings. Advisory findings route to the backlog,
 never block, and are never re-litigated in the fix loop (D8).
 
 **Reviewer prompts carry the contract, never the house rulebook (D7).**
@@ -147,9 +155,12 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   `/tmp` diff-file pointer plus repo root, the declared `retained_categories`,
   and the exact-JSON completion contract — and contains no laws/decision-matrix
   text (`grep` guard on the emitted prompt).
-- **S6-B2** The emitted prompt declares all deliberately-retained categories up
-  front; a contract invocation with an empty/absent retained-category
-  declaration is refused (the over-reporting guard) rather than run.
+- **S6-B2** The emitted prompt round-trips the invoker's explicit
+  `retained_categories` declaration verbatim; an invocation providing no
+  declaration at all is refused rather than run (the over-reporting guard),
+  while an explicitly-empty declaration ("nothing retained") is accepted
+  (inverse pair). Completeness of the declared set is the invoker's
+  adjudication, not a mechanical check.
 - **S6-B3** The reviewer instruction directs ignoring in-repo intentionality
   claims: a finding stands on ACs + mechanical evidence even when the code under
   review carries a "this is intentional" comment (inverse — the comment does not
