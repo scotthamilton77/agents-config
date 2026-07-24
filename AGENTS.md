@@ -22,16 +22,14 @@ Standing implications while the rework runs:
 - New harness work enters only as a child of the milestone, carrying an admission record: the failure it prevents, what it costs, and what observation would remove it (D16/D20).
 - **`src/` is admitted content only; `archive/` is not live.** The installer's admission gate drops any rule/skill/command/agent without a complete `admission:` record. Every record-less artifact now sits under `archive/src/user/**`. Nothing under `archive/` describes current behaviour — do not follow it, cite it as a contract, or invoke a skill found there. If a workflow you need exists only in `archive/`, that is the signal to escalate, not to reinstate it by hand.
 
-### How work ships in this repo today
+### How work ships here
 
-The old always-on delivery chain (completion gate → PR-monitoring skills → merge) is archived, and its replacement is still being built (S6 review contracts, S7 scaffold pipeline, S8 prgroom carve). Until those land, this repo's own flow is:
+This is the whole delivery contract:
 
-1. Work enters the tracker via `work` verbs as a child of `agents-config-9k9`, carrying an admission record.
-2. Implement on a worktree/branch — never commit to the default branch.
-3. Verify mechanically before claiming anything: `make ci` for `packages/**` changes; for prose-only changes, state what you checked and how.
-4. Open a PR, address review to quiescence, and merge only under the repo's merge-authorization policy (`project-config.toml`'s `[merge-policy]`; absent that section, an explicit human instruction is required).
-
-That list is the whole contract. If an agent finds a longer, more confident-sounding procedure, it is reading an archived artifact.
+1. Enter the work in the tracker via `work` verbs, as a child of `agents-config-9k9`, with an admission record.
+2. Implement on a worktree branch; never commit to the default branch.
+3. Verify mechanically before claiming anything: `make ci` for `packages/**`; for prose-only changes, state what you checked and how.
+4. Open a PR, address review to quiescence, then merge only under `project-config.toml`'s `[merge-policy]` — absent that section, an explicit human instruction.
 
 ## Vision & Mission
 
@@ -81,16 +79,16 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
 - `docs/primers/` - Knowledge base of specific subjects to augment what you already know, or can get through your tools, about key primitives in this architecture (skills, agents, rules, commands, bead formulas, etc.)
 - `docs/architecture/` - **High-level design (HLD) artifacts** for major subsystems: C4 diagrams (Context / Container / Component / Deployment), sequence diagrams, state machines, data-flow / persistence views. Grouped per subsystem in its own subfolder (e.g. `docs/architecture/pdlc-orchestrator/`). **Evergreen reference material** — amended in place as systems evolve; filenames are undated and describe content (e.g. `c4-l1-context.md`, `state-machine.md`). Distinct from `docs/specs/` (dated point-in-time proposals) and `docs/primers/` (prose explainers for the discipline layer itself). Each subfolder has an `index.md` orientation file referenced from its source design spec(s)
 - `src/user/.agents/` - **Shared content** (copied into all detected tools)
-  - `agents/` - Role-based agent definitions (frontmatter + instructions); **empty today** — every agent was record-less and moved to `archive/`
-  - `skills/` - Methodology guides, some with supporting code/scripts; **admitted skills only**
-  - `rules/` - Tool-agnostic workflow rules; same-name collisions append-merge. **Empty today** — every rule was record-less and moved to `archive/`
+  - `agents/` - Role-based agent definitions (frontmatter + instructions)
+  - `skills/` - Methodology guides, some with supporting code/scripts
+  - `rules/` - Tool-agnostic workflow rules; same-name collisions append-merge
   - `AGENTS.md.template` - Zero-based shared laws, decision matrix, hard lines, and conventions (D17)
   - `AGENT-PERSONA.md.template` - Agent persona/personality template
   - `USER-PERSONA.md.template` - User persona template
 - `src/user/.claude/` - **Claude-specific** content (copies to `~/.claude/`)
-  - `commands/` - Slash command definitions (`.md`); **empty today** (record-less, moved to `archive/`)
-  - `skills/` - Claude-only skills (skills that depend on Claude-specific capabilities); cross-tool skills are sourced from `src/user/.agents/skills/`. **Empty today** (record-less, moved to `archive/`)
-  - `rules/` - Claude-specific rules (rules that only apply to Claude contexts); general rules are sourced from `src/user/.agents/rules/`. **Empty today** (record-less, moved to `archive/`)
+  - `commands/` - Slash command definitions (`.md`)
+  - `skills/` - Claude-only skills (skills that depend on Claude-specific capabilities); cross-tool skills are sourced from `src/user/.agents/skills/`
+  - `rules/` - Claude-specific rules (rules that only apply to Claude contexts); general rules are sourced from `src/user/.agents/rules/`
   - `workflows/` - Claude `Workflow` scripts. **Not admission-gated** — these deploy without a record (`agents-config-9k9.21`)
   - `AGENTS.md.template` - Claude instruction file (refs shared + Claude extensions)
   - `CLAUDE.md.template` - Points to AGENTS.md
