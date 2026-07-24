@@ -170,7 +170,7 @@ def _required_config() -> TrackLayerConfig:
 
 
 def test_create_milestone_is_track_exempt_under_required_enforcement():  # S2-A1
-    # Track spec §3: milestone-type beads are track-exempt and carry no
+    # Milestone-type beads are track-exempt and carry no
     # track:* label -- even when [tracks].enforcement = "required".
     backend = FakeBackend()
     args = _create_args("milestone", orphan=True)

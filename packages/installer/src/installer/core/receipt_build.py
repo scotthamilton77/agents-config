@@ -90,7 +90,7 @@ def merge_clis(
     uninstalled_names: set[str],
     relinquished_names: set[str],
 ) -> tuple[CliReceiptEntry, ...]:
-    """Union merge over registry CLIs and prior entries (spec §7).
+    """Union merge over registry CLIs and prior entries.
 
     Registry CLI -> the new entry when this run deployed it, else the
     retained prior entry (skip/decline/failure keep the old record).
@@ -129,7 +129,7 @@ def merge_receipt(
     by the caller as the already-computed ``merge_clis`` result; ``None``
     preserves the prior value unchanged (the ``_run_project`` path never passes
     it, so a project-local receipt's ``clis`` — none in practice — is
-    untouched; spec §7)."""
+    untouched)."""
     by_path: dict[Path, ReceiptEntry] = {
         e.path: e
         for e in prior.entries

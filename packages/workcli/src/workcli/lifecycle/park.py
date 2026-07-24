@@ -124,10 +124,10 @@ def _unpark(backend: Backend, args: Namespace, verb: str, marker: str) -> JsonVa
 
     Status `open` first (the item re-enters `ready` the instant anything
     lands), the intent marker second, and the `parked` handle off STRICTLY
-    LAST (L16): every crash window leaves the label as the recoverable
-    handle, so a replay re-enters this path -- never the no-op branch -- and
-    the marker is guaranteed durable before the handle drops. The dedup
-    guard keeps the replay from minting a second marker.
+    LAST: every crash window leaves the label as the recoverable handle, so
+    a replay re-enters this path -- never the no-op branch -- and the
+    marker is guaranteed durable before the handle drops. The dedup guard
+    keeps the replay from minting a second marker.
     """
     item = backend.get(args.id)
     if item.status == "closed":

@@ -15,7 +15,7 @@ from workcli.model import SyncResult
 
 
 def sync(backend: Backend, args: Namespace) -> JsonValue:
-    """`work sync [--pull]` (decision 9): default = commit+push; `--pull` = pull.
+    """`work sync [--pull]`: default = commit+push; `--pull` = pull.
 
     `SERVER_AUTHORITATIVE` backends have nothing to sync -- an honest no-op
     success (`synced: false`, `mode: "noop"`) without ever calling

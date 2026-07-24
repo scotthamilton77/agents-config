@@ -1,4 +1,4 @@
-"""Retry-safety fix (plan L4, 38o1v #3): `retry_on_timeout` on `run_with_retry`.
+"""Retry-safety fix: `retry_on_timeout` on `run_with_retry`.
 
 Non-idempotent bd mutations (`create`, `append_note`) must not retry a
 subprocess timeout -- re-running a possibly-completed create/append would

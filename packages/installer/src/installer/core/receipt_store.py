@@ -101,7 +101,7 @@ def _cli_entry_from_json(d: object) -> CliReceiptEntry:
         raise ValueError("cli entry is not an object")  # noqa: TRY003, TRY004  # caught -> CORRUPT
     name, binary, digest = d.get("name"), d.get("binary"), d.get("digest")
     # Non-string fields fail closed -> CORRUPT: a malformed entry must not
-    # drive deploy/prune decisions (spec §7).
+    # drive deploy/prune decisions.
     if not (isinstance(name, str) and isinstance(binary, str) and isinstance(digest, str)):
         raise ValueError(  # noqa: TRY003, TRY004  # caught -> CORRUPT; subclass not justified
             "cli entry name/binary/digest must be strings"

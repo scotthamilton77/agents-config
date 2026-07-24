@@ -16,8 +16,8 @@ class Noun(StrEnum):
 
 
 # Leaf nouns -- everything except the two container nouns (spec/epic). `work
-# discover` restricts to these (discover spec §3.1): a discovery files a work
-# item, not a structural container.
+# discover` restricts to these: a discovery files a work item, not a
+# structural container.
 LEAF_NOUNS: tuple[Noun, ...] = (Noun.SPIKE, Noun.CHORE, Noun.DECISION, Noun.FEAT, Noun.BUGFIX)
 
 
@@ -27,7 +27,7 @@ class NounTemplate:
     shape_label: str  # birth shape label, e.g. "shape-feat"
     is_container: bool  # True for spec/epic
     expects_evidence: bool  # True for feat/bugfix (evidence rule applies)
-    born_planned: bool  # True for spec -- but `planned` is stamped LAST (L16)
+    born_planned: bool  # True for spec -- but `planned` is stamped LAST
 
 
 NOUN_TEMPLATES: dict[Noun, NounTemplate] = {
@@ -78,8 +78,8 @@ IMPL_CONTAINER_LABEL = "shape-impl-container"
 # A spec container mid-instantiation: born with this handle (create spec /
 # promote) and removed STRICTLY LAST, after design child + placeholder exist and
 # `planned` is stamped. Its presence is the queryable signal `reconcile`
-# enumerates interrupted spec instantiations through (L10/L16); its absence means
-# the template is wholly minted. Not a container-shape label -- the container
+# enumerates interrupted spec instantiations through; its absence means the
+# template is wholly minted. Not a container-shape label -- the container
 # already carries `shape-spec` for the claim guard.
 CREATING_SPEC_LABEL = "creating-spec"
 PLANNED_LABEL = "planned"

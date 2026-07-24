@@ -1,4 +1,4 @@
-"""Lock-contention retry (spec test-plan item 7, locked decision 8).
+"""Lock-contention retry.
 
 Retryable = lock-contention stderr patterns or subprocess `TimeoutExpired`;
 3 attempts total, injectable `sleep(0.5)` then `sleep(1.0)` between them;

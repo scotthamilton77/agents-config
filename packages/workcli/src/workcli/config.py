@@ -1,12 +1,12 @@
-"""Track-layer config: discovery, parsing, validation (track spec §3).
+"""Track-layer config: discovery, parsing, validation.
 
-Loaded lazily -- only when a track-layer surface (a §4 flag, verb, or gate)
-needs it -- so pre-existing verbs never trigger a load. Every failure is the
-single typed `E_NOT_CONFIGURED`, its message naming the specific parse or
-validation problem; `detail.reason` distinguishes "not-found" from "invalid"
-so the create gate can stay fail-safe (spec §3: a broken config fails only
-the track layer, never an existing verb). Parse and validate once here;
-everything inward trusts the frozen dataclass.
+Loaded lazily -- only when a track-layer surface (a flag, verb, or gate) needs
+it -- so pre-existing verbs never trigger a load. Every failure is the single
+typed `E_NOT_CONFIGURED`, its message naming the specific parse or validation
+problem; `detail.reason` distinguishes "not-found" from "invalid" so the
+create gate can stay fail-safe: a broken config fails only the track layer,
+never an existing verb. Parse and validate once here; everything inward
+trusts the frozen dataclass.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ class TrackLayerConfig:
     )  # None: [operating-model] absent/key omitted -> nag check never fires
     groom_state_bead: (
         str | None
-    )  # None: omitted OR "" (not yet minted by the §7 backfill) -> groom gates E_NOT_CONFIGURED
+    )  # None: omitted OR "" (not yet minted by the config backfill) -> groom gates E_NOT_CONFIGURED
     extraction_max_track_backlog: (
         int | None
     )  # None: [extraction.pressure] absent/key omitted -> backlog pressure never fires
@@ -57,7 +57,7 @@ def _not_configured(problem: str, reason: Reason) -> WorkError:
 
 
 def _find_config(start_dir: Path) -> Path | None:
-    """Upward search from `start_dir`, bounded by the enclosing git root (spec §3).
+    """Upward search from `start_dir`, bounded by the enclosing git root.
 
     The git root is located FIRST: with no git root on the walk -- the working
     directory lies outside any repo -- the search finds nothing, even when a

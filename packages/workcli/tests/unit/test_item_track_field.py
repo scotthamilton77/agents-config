@@ -1,4 +1,4 @@
-"""Item.track envelope field on all read verbs (track spec §4, criterion 8)."""
+"""Item.track envelope field on all read verbs."""
 
 from __future__ import annotations
 

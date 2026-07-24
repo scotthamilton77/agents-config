@@ -1,4 +1,4 @@
-"""End-to-end wiring tests: main() drives the CLI deploy stage (spec §6/§7)."""
+"""End-to-end wiring tests: main() drives the CLI deploy stage."""
 
 from __future__ import annotations
 
@@ -70,8 +70,8 @@ def test_full_install_deploys_both_clis_and_records_receipt(tmp_path: Path) -> N
     Then exit 0, both CLIs deploy, and the receipt carries both clis
     entries.
 
-    Pins spec §6+§7 wiring: stage runs inside the lock, entries thread
-    through record_receipt/merge_receipt (item 11 second half).
+    Pins the receipt-wiring contract: stage runs inside the lock, entries
+    thread through record_receipt/merge_receipt.
     """
     repo = _hermetic_repo(tmp_path)
     bin_dir = tmp_path / "bin"
@@ -107,7 +107,7 @@ def test_deploy_failure_exits_1_after_summary(tmp_path: Path) -> None:
     Then exit 1, and the summary still rendered (Done./up-to-date line in
     transcript AFTER the err).
 
-    Pins spec §6 failure surfacing: exit flag carried out of the lock.
+    Pins the failure-surfacing rule: exit flag carried out of the lock.
     """
     repo = _hermetic_repo(tmp_path)
     # --yes auto-accepts the TOCTOU takeover re-route, so each fresh CLI
@@ -145,7 +145,7 @@ def test_prune_only_drops_retired_cli_through_real_receipt_path(tmp_path: Path) 
     Then the deploy half never fires, the uninstall does, and the rewritten
     receipt no longer carries the entry.
 
-    Pins spec §7 --prune-only convergence / item 10. NOTE: requires a
+    Pins the --prune-only convergence rule. NOTE: requires a
     nonzero RETIRED_CLIS in the test — monkeypatch installer.core.run's
     retired source or pass through a seam; the implementer wires
     prune_clis(retired=frozenset(RETIRED_CLIS)) in cli.py, so monkeypatch
@@ -191,7 +191,7 @@ def test_prune_only_no_tty_without_yes_exits_1(tmp_path: Path) -> None:
     the prune branch, since the existing prune try catches only
     PruneAbortedError.
 
-    Pins spec §10 item 12, prune half (the deploy half is
+    Pins the no-TTY consent rule, prune half (the deploy half is
     test_no_tty_without_yes_at_cli_consent_exits_1 below).
     """
     repo = _hermetic_repo(tmp_path)
@@ -227,7 +227,7 @@ def test_second_noop_run_skips_via_persisted_clis(tmp_path: Path) -> None:
     Then the second run smokes-and-skips (no tool_install) — the clis
     entries persisted through the real path.
 
-    Pins item 11 (second no-op run converges).
+    Pins the second-run convergence rule (no-op on repeat).
     """
     repo = _hermetic_repo(tmp_path)
     home = tmp_path / "home"
@@ -284,7 +284,7 @@ def test_project_run_no_deploys_and_clis_untouched(tmp_path: Path) -> None:
     Then no port method is called (empty queues never pop) and a
     pre-existing project receipt's clis (synthetic) is untouched.
 
-    Pins spec §6 --project exclusion / item 13.
+    Pins the --project exclusion rule.
     """
     repo = _hermetic_repo(tmp_path)
     project = tmp_path / "project"
@@ -310,7 +310,7 @@ def test_corrupt_receipt_deploy_not_persisted(tmp_path: Path) -> None:
     Then the receipt file is left untouched (still corrupt) — the deploy is
     not persisted.
 
-    Pins spec §7 corrupt-receipt consequence / item 14.
+    Pins the corrupt-receipt consequence rule.
     """
     repo = _hermetic_repo(tmp_path)
     home = tmp_path / "home"
@@ -347,7 +347,7 @@ def test_no_tty_without_yes_at_cli_consent_exits_1(tmp_path: Path) -> None:
     When main runs
     Then exit 1 via the ConsentRequiredError convention.
 
-    Pins spec §6 no-TTY / item 12.
+    Pins the no-TTY consent rule.
     """
     repo = _hermetic_repo(tmp_path)
     deploy = ScriptedCliDeploy(

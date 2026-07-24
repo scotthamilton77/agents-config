@@ -2,7 +2,7 @@
 
 Renders the envelope's `data` (on success) or `error` (on failure) to
 **stderr only** — stdout always carries the JSON envelope regardless of
-`--format` (spec §4); this module never touches stdout and never raises on
+`--format`; this module never touches stdout and never raises on
 malformed input, since a rendering bug must never break the stdout
 invariant it sits beside.
 

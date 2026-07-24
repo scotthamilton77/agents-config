@@ -8,9 +8,9 @@ All `Backend` protocol primitives are wired here: `capabilities`, `get`,
 `ready`/`search` parse through the same `parse_items` the `list`/`show`
 adapters use, on the assumption bd emits the same per-item shape for all four
 read commands. No golden fixture captures `bd ready`/`bd search` output
-specifically (decision 14 only captured `show`/`list`/`dep list`/`label
-list`) -- an actual shape difference surfaces as `E_BACKEND_DRIFT` rather than
-a silent misparse, same as any other unrecognized bd shape.
+specifically -- only `show`/`list`/`dep list`/`label list` were golden-
+captured -- an actual shape difference surfaces as `E_BACKEND_DRIFT` rather
+than a silent misparse, same as any other unrecognized bd shape.
 
 `create`'s output shape (a single JSON object, not an array -- see
 `adapters/bd/parse.py::parse_created_id`) was confirmed by reading bd's own
@@ -40,8 +40,8 @@ from workcli.backend import Capabilities, DepOp, ReadySupport, SyncSupport
 from workcli.envelope import ErrorCode, JsonValue, StepProgress, WorkError, with_progress
 from workcli.model import CreateFields, DepListing, Item, QueryFilters, SyncResult, UpdateFields
 
-# Decision 9's exact stderr wording (orchestrator ruling, not a golden capture
-# -- `bd dolt` is never run mutating against a real DB in this project): `bd
+# Exact stderr wording per an orchestrator ruling, not a golden capture
+# -- `bd dolt` is never run mutating against a real DB in this project. `bd
 # dolt commit` with nothing pending, and `bd dolt pull` against a dirty
 # working set, are asserted to log these substrings to stderr.
 _NOTHING_TO_COMMIT_STDERR_MARKER = "nothing to commit"
@@ -90,11 +90,11 @@ class BdBackend:
         by_id = {item.id: item for item in items}
         missing = [item_id for item_id in ids if item_id not in by_id]
         if missing:
-            # bd's own quirk (decision 14 golden capture): `bd show a b --json`
+            # bd's own quirk, per golden capture: `bd show a b --json`
             # exits 0 and silently omits any id it couldn't find, logging the
             # miss to stderr instead of failing the call. A partial hit must
-            # not read as full success (decision 10 needs `data.items` to
-            # match the request one-for-one).
+            # not read as full success -- `data.items` must match the
+            # request one-for-one.
             raise WorkError(
                 ErrorCode.NOT_FOUND,
                 f"bd show: no such item(s): {', '.join(missing)}",

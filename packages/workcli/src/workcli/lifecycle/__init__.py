@@ -53,7 +53,7 @@ def manifest_snapshot(notes: str) -> Manifest | None:
 
 
 def is_container(item: Item) -> bool:
-    """Declared-state container test -- never child-count (spec §5/invariant 5)."""
+    """Declared-state container test -- never child-count."""
     if _CONTAINER_SHAPE_LABELS & set(item.labels):
         return True
     return item.type in _CONTAINER_TYPES

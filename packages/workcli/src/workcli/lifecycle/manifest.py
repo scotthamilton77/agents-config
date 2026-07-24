@@ -1,7 +1,7 @@
-"""`## Continuations` manifest grammar (plan Task 2, finalizes spec §15).
+"""`## Continuations` manifest grammar.
 
-Pure text parsing -- no `Backend`, no I/O. `deliver` (Task 5) and `reconcile`
-(Task 6) feed this the spec text an injected file-reader already fetched.
+Pure text parsing -- no `Backend`, no I/O. `deliver` and `reconcile` feed
+this the spec text an injected file-reader already fetched.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ _AC_SEPARATOR = " — AC: "
 @dataclass(frozen=True)
 class ManifestItem:
     noun: str  # a bare Noun value — placement is NOT a manifest field (all items
-    title: str  # mint under the objective/placeholder; §12's cross-parent design-doc
+    title: str  # mint under the objective/placeholder; cross-parent design-doc
     acceptance: str  # annotations like "(under X)" are not part of the facade grammar)
 
 
@@ -135,8 +135,8 @@ def _reject_duplicate_titles(items: tuple[ManifestItem, ...]) -> None:
     `reconcile_placeholder`'s multi-unit path (`deliver.py::_reconcile_multi`)
     matches existing children by title to make the mint idempotent under
     replay -- a manifest with two same-titled items would silently mint only
-    one, destroying conservation of committed work (invariant 1). Caught here
-    at parse time, loudly, rather than as a silent under-mint at delivery.
+    one, destroying conservation of committed work. Caught here at parse
+    time, loudly, rather than as a silent under-mint at delivery.
     """
     seen: set[str] = set()
     for item in items:
@@ -181,7 +181,7 @@ def deserialize_manifest(text: str) -> Manifest:
     another agent can hand-edit -- so a truncated, malformed, or tampered payload
     is *expected* corruption, not an internal bug. It surfaces as a typed
     `E_BACKEND_DRIFT` carrying the offending text, so `reconcile` can report one
-    poisoned placeholder as a single attention finding (L10) instead of a raw
+    poisoned placeholder as a single attention finding instead of a raw
     `JSONDecodeError`/`KeyError` aborting the whole sweep as `E_INTERNAL`.
     Validating the noun here (not just the JSON shape) means a returned
     `Manifest` is fully trustworthy inward -- callers never re-hit `Noun(...)`.

@@ -1,4 +1,4 @@
-"""Tests for the deploy_clis decision engine (spec §6)."""
+"""Tests for the deploy_clis decision engine."""
 
 from pathlib import Path
 
@@ -37,7 +37,7 @@ def test_verify_skip_smokes_and_skips(tmp_path: Path) -> None:
     Then no install fires, the smoke ran against the absolute shim path,
     and the counter is skipped.
 
-    Pins spec §6 verify row / item 1. Shim budget: 1 (decision read only —
+    Pins the verify row. Shim budget: 1 (decision read only —
     no install happened).
     """
     prior = _prior_with_current_digest(tmp_path)
@@ -73,7 +73,7 @@ def test_verify_smoke_failure_heals_with_force(tmp_path: Path) -> None:
     Then a force=True reinstall fires without a consent prompt, then
     re-smokes; the entry is refreshed.
 
-    Pins spec §6 verify row heal-on-fail / item 1. Shim budget: 2 (decision
+    Pins the verify-row heal-on-fail branch. Shim budget: 2 (decision
     + post-install re-read after the successful heal install).
     """
     prior = _prior_with_current_digest(tmp_path)
@@ -110,7 +110,7 @@ def test_heal_missing_shim_reinstalls_without_prompt(tmp_path: Path) -> None:
     Then it reinstalls without a prompt (created counter) — env absent uses
     force=False.
 
-    Pins spec §6 heal row + provenance-absent exception / items 3, 19.
+    Pins the heal row plus the provenance-absent exception.
     Shim budget: 2 (decision None + post-install re-read).
     """
     prior = _prior_with_current_digest(tmp_path)
@@ -146,7 +146,7 @@ def test_fresh_install_no_evidence_no_prompt(tmp_path: Path) -> None:
     Then a force=False install fires with no prompt; created counter; entry
     recorded after smoke.
 
-    Pins spec §6 fresh row / items 2, 18. Shim budget: 2.
+    Pins the fresh row. Shim budget: 2.
     """
     _pkg(tmp_path)
     shim = tmp_path / "bin" / "work"
@@ -180,7 +180,7 @@ def test_upgrade_consent_accept_and_decline(tmp_path: Path) -> None:
     Then accept -> force install + updated counter; decline -> skipped and
     no install.
 
-    Pins spec §6 upgrade row / item 4. Shim budgets: accept 2, decline 1.
+    Pins the upgrade row. Shim budgets: accept 2, decline 1.
     """
     pkg = _pkg(tmp_path)
     shim = tmp_path / "bin" / "work"
@@ -235,7 +235,7 @@ def test_takeover_triggers_all_three_evidence_forms(tmp_path: Path) -> None:
     When deploy_clis runs with declining confirms
     Then each form prompts for takeover and no install fires on decline.
 
-    Pins spec §6 takeover row / item 5. Case (a) leaves the shim present,
+    Pins the takeover row. Case (a) leaves the shim present,
     so the reachability gate runs — which_map keeps it green; cases (b)/(c)
     end shimless, no gate.
     """
@@ -274,7 +274,7 @@ def test_fresh_toctou_already_exists_reroutes_to_takeover(tmp_path: Path) -> Non
     When deploy_clis runs with an accepting confirm
     Then a takeover consent fires and the retry uses force=True.
 
-    Pins spec §6 fresh row TOCTOU re-route / item 18. Shim budget: 2
+    Pins the fresh-row TOCTOU re-route. Shim budget: 2
     (decision None + post-install re-read after the consented force
     install; the FAILED non-forcing install triggers no re-read).
     """
@@ -311,7 +311,7 @@ def test_stale_receipt_foreign_provenance_requires_takeover(tmp_path: Path) -> N
     When deploy_clis runs with a declining confirm
     Then no promptless heal fires — takeover consent, decline skips.
 
-    Pins spec §6 provenance precondition / item 19.
+    Pins the provenance precondition.
     """
     shim = tmp_path / "bin" / "work"
     prior = _prior_with_current_digest(tmp_path)  # creates the package dir itself
@@ -343,7 +343,7 @@ def test_smoke_failure_after_install_fails_run_no_entry(tmp_path: Path) -> None:
     Then any_failed is True, err carries the smoke output, and no deployed
     entry is recorded (next run retries).
 
-    Pins spec §6 failure surfacing / item 7.
+    Pins the failure-surfacing rule.
     """
     _pkg(tmp_path)
     shim = tmp_path / "bin" / "work"
@@ -375,7 +375,7 @@ def test_install_ok_but_no_shim_is_failure(tmp_path: Path) -> None:
     When deploy_clis runs
     Then it is a failure (err), not a silent success.
 
-    Pins spec §6 / item 7 (install-ok-but-no-shim).
+    Pins the install-ok-but-no-shim failure rule.
     """
     _pkg(tmp_path)
     deploy = ScriptedCliDeploy(
@@ -405,7 +405,7 @@ def test_one_broken_cli_does_not_block_the_other(tmp_path: Path) -> None:
     When deploy_clis runs
     Then the second still deploys and any_failed is True.
 
-    Pins spec §6/§8: record-and-continue, exit 1 at the end / item 8.
+    Pins the record-and-continue rule: exit 1 at the end.
     CLI1 path: verify (digest equal, provenance ok) -> smoke fail -> heal
     force install FAILS -> hard failure, no consent involved. CLI2: fresh
     success. Shim budgets: CLI1 = 1 (decision; failed install, no re-read),
@@ -449,7 +449,7 @@ def test_dry_run_previews_every_branch_without_subprocess(tmp_path: Path) -> Non
     Then each reports its would-X line and never calls
     tool_install/smoke/update_shell.
 
-    Pins spec §6 dry-run / item 6 (each branch reports would-X).
+    Pins the dry-run rule (each branch reports would-X).
     """
     prior_current = _prior_with_current_digest(tmp_path)
     prior_stale = Receipt(
@@ -495,7 +495,7 @@ def test_uv_version_guard_blocks_all_cli_work(tmp_path: Path) -> None:
     Then one actionable err fires, zero install/uninstall/update_shell
     calls happen, and any_failed is True.
 
-    Pins spec §6 version guard / item 21.
+    Pins the version-guard rule.
     """
     for version in [(0, 9, 0), None]:
         deploy = ScriptedCliDeploy(uv_version=version)
@@ -523,7 +523,7 @@ def test_reachability_which_none_update_shell_consent(tmp_path: Path) -> None:
     Then the run resolves (not failed) with an info notice; decline instead
     -> err + failure.
 
-    Pins spec §6 reachability / item 9. which_map deliberately empty (miss).
+    Pins the reachability rule. which_map deliberately empty (miss).
     """
     _pkg(tmp_path)
     shim = tmp_path / "bin" / "work"
@@ -576,7 +576,7 @@ def test_reachability_shadow_is_hard_error(tmp_path: Path) -> None:
     Then err names both paths and the run fails; update_shell is never
     offered (it cannot fix PATH order).
 
-    Pins spec §6 shadowing / item 9.
+    Pins the shadowing rule.
     """
     _pkg(tmp_path)
     shim = tmp_path / "bin" / "work"
@@ -615,7 +615,7 @@ def test_reachability_memoized_per_bin_dir(tmp_path: Path) -> None:
     Then update_shell runs exactly once and the second CLI reuses the
     memoized success (no second prompt, no failure).
 
-    Pins spec §6 memoization / item 20.
+    Pins the memoization rule.
     """
     pkg2 = tmp_path / "packages" / "prgroom"
     (pkg2 / "src").mkdir(parents=True)
@@ -654,7 +654,7 @@ def test_reachability_fires_on_steady_state_skip_run(tmp_path: Path) -> None:
     Then the run FAILS — the invariant fires on SKIPPED_IDENTICAL runs,
     not only after a deploy.
 
-    Pins spec §6 steady-state enforcement / item 9.
+    Pins the steady-state enforcement rule.
     """
     prior = _prior_with_current_digest(tmp_path)
     shim = tmp_path / "bin" / "work"
@@ -689,7 +689,7 @@ def test_reachability_no_tty_without_yes_raises(tmp_path: Path) -> None:
     reachability consent point honors the same no-TTY convention as every
     other consent point, never silently returning a failure.
 
-    Pins spec §6 no-TTY / item 12 (reachability side; symmetric with the
+    Pins the no-TTY consent rule (reachability side; symmetric with the
     prune side's test_prune_no_tty_without_yes_raises).
     """
     _pkg(tmp_path)

@@ -1,4 +1,4 @@
-"""Tests for the CLI-deploy registry and source digest (spec §3, §5)."""
+"""Tests for the CLI-deploy registry and source digest."""
 
 from pathlib import Path
 
@@ -27,7 +27,7 @@ def test_registry_is_exactly_workcli_and_prgroom() -> None:
     Then it contains exactly workcli->work and prgroom->prgroom, and
     RETIRED_CLIS is empty.
 
-    Pins spec §3: closed registry; pdlc/holding-place/vizsuite must NOT
+    Pins the closed registry; pdlc/holding-place/vizsuite must NOT
     auto-deploy.
     """
     assert [s.name for s in CLI_PACKAGES] == ["workcli", "prgroom"]
@@ -45,7 +45,7 @@ def test_digest_missing_pyproject_raises(tmp_path: Path) -> None:
     When cli_source_digest runs
     Then it raises FileNotFoundError naming the dir.
 
-    Pins spec §5 / item 15: a registry entry at a non-package is a wiring
+    Pins that a registry entry at a non-package is a wiring
     bug — fail fast.
     """
     with pytest.raises(FileNotFoundError):
@@ -58,8 +58,6 @@ def test_digest_missing_lock_omitted_and_later_lock_changes_digest(tmp_path: Pat
     When a uv.lock is added later
     Then the digest changes (lock participates when present, is silently
     omitted when absent).
-
-    Pins spec §5 / item 15.
     """
     pkg = _package(tmp_path)
     before = cli_source_digest(pkg)
@@ -73,7 +71,7 @@ def test_digest_ignores_tests_pycache_and_pyc(tmp_path: Path) -> None:
     When files under tests/**, __pycache__/, or *.pyc change
     Then the digest does not change.
 
-    Pins spec §5 / item 15: docs/tests/build churn is not a reason to
+    Pins that docs/tests/build churn is not a reason to
     reinstall.
     """
     pkg = _package(tmp_path)
@@ -90,7 +88,7 @@ def test_digest_changes_on_src_change(tmp_path: Path) -> None:
     When a file under src/** changes
     Then the digest changes.
 
-    Pins spec §5: src/** is deployable source.
+    Pins that src/** is deployable source.
     """
     pkg = _package(tmp_path)
     before = cli_source_digest(pkg)

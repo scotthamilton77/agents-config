@@ -17,7 +17,7 @@ _DEFAULT_DEP_TYPE = "blocks"
 
 
 def _type_wall_check(backend: Backend, from_id: str, to_id: str, dep_type: str) -> None:
-    """Pre-check the `blocks` type wall (spec item 4, decision 5).
+    """Pre-check the `blocks` type wall.
 
     `blocks` requires both items epic, or both non-epic (a milestone counts
     as non-epic). One order-preserving `Backend.batch_get` read pays for
@@ -43,7 +43,7 @@ def _type_wall_check(backend: Backend, from_id: str, to_id: str, dep_type: str) 
 
 
 def dep(backend: Backend, args: Namespace) -> JsonValue:
-    """`work dep {add,remove,list} ID [TARGET] [--type]` (spec §3).
+    """`work dep {add,remove,list} ID [TARGET] [--type]`.
 
     `dep add A B` = A depends on B. `list` maps bd's own inverted
     `--direction` naming into `{depends_on, dependents}` (the ruling that
@@ -83,7 +83,7 @@ def label(backend: Backend, args: Namespace) -> JsonValue:
     bd's own `label add`/`label remove` accept exactly one label per call
     (orchestrator ruling) -- `add`/`remove` fan a multi-label request out
     into one bd invocation per label, still one envelope. `list` returns
-    the flat `string[]` bd itself emits (spec §4: "labels are always
+    the flat `string[]` bd itself emits ("labels are always
     `string[]`").
     """
     if args.action in ("add", "remove") and not args.labels:

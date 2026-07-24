@@ -59,7 +59,7 @@ def cli_source_digest(package_dir: Path) -> str:
     Inputs: pyproject.toml (required — missing means the registry points at a
     non-package: fail fast), uv.lock (omitted when absent), and src/** minus
     __pycache__/*.pyc. tests/README/AGENTS.md are deliberately excluded — a
-    docs-only change must not force a reinstall (spec §5)."""
+    docs-only change must not force a reinstall."""
     pyproject = package_dir / "pyproject.toml"
     if not pyproject.is_file():
         msg = f"not a deployable CLI package (no pyproject.toml): {package_dir}"
@@ -88,7 +88,7 @@ def cli_source_digest(package_dir: Path) -> str:
 class CliDeployPort(Protocol):
     """Injected subprocess seam for uv-tool deploys. All installed-state
     decisions are PATH-independent (bin_dir/shim_path/tool_list); ``which``
-    serves only the reachability invariant (spec §4)."""
+    serves only the reachability invariant."""
 
     def uv_version(self) -> tuple[int, ...] | None: ...  # pragma: no cover
     def bin_dir(self) -> Path: ...  # pragma: no cover
@@ -233,7 +233,7 @@ class UvCliDeploy:
         result = self._run(["uv", "tool", "dir", "--bin"], _QUERY_TIMEOUT)
         if result.ok and result.output.strip():
             return Path(result.output.strip().splitlines()[0])
-        # uv's documented resolution order, in full (spec §4; item 17).
+        # uv's documented resolution order, in full.
         if env := os.environ.get("UV_TOOL_BIN_DIR"):
             return Path(env)
         if env := os.environ.get("XDG_BIN_HOME"):
@@ -307,8 +307,8 @@ class UvCliDeploy:
     def update_shell(self) -> CommandResult:
         result = self._run(["uv", "tool", "update-shell"], _QUERY_TIMEOUT)
         # uv exits non-zero when the shell config already contains the PATH
-        # entry; that expected steady state counts as success (spec §6 /
-        # item 20 — repeat installs from an un-restarted shell stay green).
+        # entry; that expected steady state counts as success (repeat
+        # installs from an un-restarted shell stay green).
         if not result.ok and "already" in result.output.lower():
             return CommandResult(ok=True, output=result.output)
         return result

@@ -36,7 +36,7 @@ class ReceiptEntry:
 
 @dataclass(frozen=True, slots=True)
 class CliReceiptEntry:
-    """One installer-deployed uv tool (spec §7). ``name`` is the registry /
+    """One installer-deployed uv tool. ``name`` is the registry /
     uv tool name; ``digest`` is ``cli_source_digest`` at deploy time."""
 
     name: str

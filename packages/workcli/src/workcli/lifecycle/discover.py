@@ -6,11 +6,11 @@ triage record (Scope / Priority / Anchor), then mints the bead through the
 existing `create <noun>` path -- inheriting its noun template, duplicate
 guard, and track gate -- adds the `discovered-from` provenance edge, and
 returns the completion-report manifest row as a structured envelope field.
-The verb enforces *form*; scope correctness stays caller judgment (spec §5).
+The verb enforces *form*; scope correctness stays caller judgment.
 
 Composes over `create_noun` (lifecycle/create.py) and adds no new minting
-logic (spec §4 step 4): noun->type/shape templating, the duplicate-title
-guard, placement validation, and track resolution all execute unchanged.
+logic: noun->type/shape templating, the duplicate-title guard, placement
+validation, and track resolution all execute unchanged.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def _triage_incomplete(field: str, message: str) -> WorkError:
 
 
 def _require_rationale(value: str | None, field: str, flag: str) -> str:
-    """The rationale-shape rule (spec §3.2): required, non-blank after strip, single-line."""
+    """The rationale-shape rule: required, non-blank after strip, single-line."""
     if value is None:
         raise _triage_incomplete(field, f"{flag} is required")
     stripped = value.strip()
@@ -99,7 +99,7 @@ def _resolve_source(backend: Backend, discovered_from: str | None) -> Item:
 def _validate_anchor(
     backend: Backend, anchor: str, scope: str, source: Item, source_id: str
 ) -> None:
-    """Scope-dependent anchor validity (spec §3.4). Only called when `--anchor` is given."""
+    """Scope-dependent anchor validity. Only called when `--anchor` is given."""
     if scope == "out-of-scope":
         target = backend.get(anchor)
         if not is_container(target):
@@ -194,11 +194,11 @@ def _build_create_namespace(args: Namespace, description: str, priority: str) ->
 def discover(backend: Backend, args: Namespace) -> JsonValue:
     """`work discover --noun N --title T (--anchor ID | --orphan) --discovered-from ID ...`.
 
-    Body mirrors spec §4: validate the triage form and resolve the provenance
-    source before any mint (steps 1-2), render the triage block (step 3),
-    mint via `create_noun` (step 4), add the `discovered-from` edge (step 5),
-    then assemble the envelope (step 6). The dep-write capability gate (step
-    0) is enforced by the `REQUIRED_CAPABILITY` registration in
+    Validates the triage form and resolves the provenance source before any
+    mint (steps 1-2), renders the triage block (step 3), mints via
+    `create_noun` (step 4), adds the `discovered-from` edge (step 5), then
+    assembles the envelope (step 6). The dep-write capability gate (step 0)
+    is enforced by the `REQUIRED_CAPABILITY` registration in
     `verbs/__init__.py`, ahead of this handler ever running.
     """
     _validate_placement_usage(args)

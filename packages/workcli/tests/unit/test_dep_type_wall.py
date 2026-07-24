@@ -1,6 +1,6 @@
 """`dep add/remove/list` — type-wall pre-check, positional order, direction mapping.
 
-Spec test-plan item 4 + decision 5: a `blocks` dep between an epic and a
+A `blocks` dep between an epic and a
 non-epic is pre-checked via one `Backend.batch_get([from_id, to_id])` read
 (never a bd `dep` mutation) and raises the named `E_TYPE_WALL` before bd is
 ever asked to add the edge. The wall only applies to `blocks`; any other dep

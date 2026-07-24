@@ -1,4 +1,4 @@
-"""`list`/`ready` default to unbounded (spec test-plan item 5).
+"""`list`/`ready` default to unbounded.
 
 bd's own `list`/`ready` default row caps (50/100) are the exact quirk this
 facade exists to kill: the adapter always sends `--limit 0` unless the

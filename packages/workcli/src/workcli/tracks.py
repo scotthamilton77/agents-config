@@ -1,4 +1,4 @@
-"""Track derivation and vocabulary validation (track spec §4).
+"""Track derivation and vocabulary validation.
 
 Derivation is config-free by design -- a pure function over labels -- so the
 `Item.track` envelope field appears on every read verb regardless of config
@@ -16,7 +16,7 @@ TRACK_PREFIX = "track:"
 
 
 def derive_track(labels: Sequence[str]) -> str | None:
-    """Exactly one `track:*` label -> its name; zero or 2+ -> None (spec §4)."""
+    """Exactly one `track:*` label -> its name; zero or 2+ -> None."""
     names = [label[len(TRACK_PREFIX) :] for label in labels if label.startswith(TRACK_PREFIX)]
     if len(names) == 1:
         return names[0]

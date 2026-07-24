@@ -4,8 +4,7 @@
 `tests/fakes.ScriptedBdRunner`; `SubprocessBdRunner` is the sole
 implementation that actually shells out to the real `bd` binary. It raises
 `subprocess.TimeoutExpired` on its 60s deadline rather than catching it --
-`adapters/bd/retry.py` is the layer that treats that as retryable
-(decision 8).
+`adapters/bd/retry.py` is the layer that treats that as retryable.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ class BdRunner(Protocol):
 
 
 class SubprocessBdRunner:
-    """Drives the real bd binary. timeout=60s; TimeoutExpired is retryable (decision 8).
+    """Drives the real bd binary. timeout=60s; TimeoutExpired is retryable.
 
     Raising `subprocess.TimeoutExpired` on deadline is subprocess.run's own
     documented behavior -- this class does not catch it. `adapters/bd/retry.py`

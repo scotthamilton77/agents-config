@@ -1,5 +1,4 @@
-"""`work groom --done` / `work groom --status` -- Backlog Grooming state
-(track spec §4/§6, criteria 14-15).
+"""`work groom --done` / `work groom --status` -- Backlog Grooming state.
 
 State lives on the designated `[operating-model].groom-state-bead` as a
 parseable note line (`backlog_last_groomed: <iso8601>`) -- the fallback
@@ -280,7 +279,7 @@ def test_done_recovers_from_a_stale_future_skewed_marker() -> None:
 
 
 # -- round-3 Codex finding: clock skew across dolt-synced machines --
-# backlog_last_groomed is synced via dolt (spec §6); a marker written from a
+# backlog_last_groomed is synced via dolt; a marker written from a
 # fast-clocked machine can land slightly in the future. <=24h is ordinary
 # NTP drift and clamps to days_since=0; beyond that is invalid state.
 

@@ -1,4 +1,4 @@
-"""State-based recovery contract (spec §6, plan L7/L10).
+"""State-based recovery contract.
 
 These tests assert the *healed final state* of a bead tree after delivery and
 after a recovery sweep -- labels, status, children, notes -- against a
@@ -136,7 +136,7 @@ def test_reconcile_single_closes_design_child_and_swaps_labels_last():
 def test_deliver_design_records_manifest_snapshot_in_band():
     # The frozen target: `deliver` parses the spec once and records the parsed
     # manifest as a `[work] manifest:` note, so every later reconcile replays
-    # toward it without re-reading the (mutable) spec file (spec §6, L7).
+    # toward it without re-reading the (mutable) spec file.
     backend = FakeBackend()
     _spec_tree(backend)
 
@@ -164,7 +164,7 @@ def test_deliver_design_replay_uses_frozen_snapshot_not_the_spec_file():
     assert backend.get("d").status == "closed"
 
 
-# --- reconcile sweep (plan L10: handle-driven, no external-state gate) ---
+# --- reconcile sweep: handle-driven, no external-state gate ---
 
 
 def _snapshot_note(manifest: Manifest) -> str:
@@ -327,7 +327,7 @@ def test_deliver_design_multi_mints_children_under_placeholder_and_closes_design
     child_titles = {backend.get(cid).title for cid in placeholder.children}
     assert child_titles == {"Alpha", "Beta"}
     # The placeholder is now the impl sub-container: stamped so `claim`/the
-    # router treat it as a declared-state container (spec §6), with the
+    # router treat it as a declared-state container, with the
     # completion handle removed strictly last.
     assert IMPL_CONTAINER_LABEL in placeholder.labels
     assert IMPL_PLACEHOLDER_LABEL not in placeholder.labels
@@ -497,7 +497,7 @@ def test_reconcile_dry_run_reports_leaf_and_orphaned_design_without_mutating():
 
 def test_reconcile_flags_a_corrupt_snapshot_without_aborting_the_sweep():
     # One poisoned placeholder must not block recovery of a healthy one: the
-    # typed drift is caught per-item, reported, and the sweep continues (L10).
+    # typed drift is caught per-item, reported, and the sweep continues.
     backend = FakeBackend()
     _spec_tree(backend, design_status="in_progress", placeholder_notes=_snapshot_note(_single()))
     backend.add("c2", type="feature", labels=["shape-spec"])
@@ -562,7 +562,7 @@ def test_reconcile_repairs_pending_placeholder_with_no_design_sibling():
     assert {"id": "p", "kind": "unreconciled_placeholder", "repaired": True} in findings
 
 
-# --- creating-spec recovery (spec §6, plan L16: interrupted spec instantiation) ---
+# --- creating-spec recovery: interrupted spec instantiation ---
 
 
 def _creating_spec_container(backend: FakeBackend, *, with_design=False, with_placeholder=False):
@@ -586,7 +586,7 @@ def _creating_spec_container(backend: FakeBackend, *, with_design=False, with_pl
 def test_instantiate_spec_shape_is_idempotent_when_both_children_exist():
     # A replay (reconcile sweep, or a re-run) over a container whose design child
     # and placeholder already exist must find-or-create: return the existing ids,
-    # mint nothing new -- no duplicate template children (spec §6, L16).
+    # mint nothing new -- no duplicate template children.
     backend = FakeBackend()
     _creating_spec_container(backend, with_design=True, with_placeholder=True)
 

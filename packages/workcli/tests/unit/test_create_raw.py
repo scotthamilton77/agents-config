@@ -1,8 +1,8 @@
-"""`work create --raw` (spec test-plan item 3, locked decisions 6/7).
+"""`work create --raw`.
 
 `create` is the adapter primitive only -- public, noun-templated creation
 belongs to the lifecycle layer (bead .9.2), so a bare `work create` without
-`--raw` must refuse with `E_USAGE` naming that layer (decision 7). With
+`--raw` must refuse with `E_USAGE` naming that layer. With
 `--raw`, exactly one bd invocation reaches the runner even when a `--parent`
 is given -- bd's own `--parent` flag auto-adds the parent edge, so a second
 `dep add` call would double it (established fact from earlier tasks).

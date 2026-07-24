@@ -61,7 +61,7 @@ def _write_installignore(repo: Path) -> None:
 
 
 def _write_profiles_toml(repo: Path) -> None:
-    """Mirror the real profiles.toml so main()'s resolver pass (S2 Task 9) can
+    """Mirror the real profiles.toml so main()'s resolver pass can
     load it. Only needed by fixtures that stage non-empty tool plans — main()
     skips the resolver entirely on an empty universe, so an all-empty fixture
     (e.g. ``_repo_with_installer_toml``) needs no profiles.toml. Copied from

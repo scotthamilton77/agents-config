@@ -1,4 +1,4 @@
-"""`reconcile` -- handle-driven recovery sweep (plan L10).
+"""`reconcile` -- handle-driven recovery sweep.
 
 Candidate sets are enumerated **only** through removable completion handles
 (labels), never inferred from external state such as a design child's status or
@@ -61,7 +61,7 @@ def _sweep_pending_placeholders(backend: Backend, *, dry_run: bool) -> list[Json
     the handle last. A placeholder with no snapshot has no recorded target, so it
     surfaces as an attention finding without auto-repair. A corrupt snapshot is
     one poisoned bead, reported as its own finding rather than aborting recovery
-    of every healthy placeholder (L10) -- the typed drift `manifest_snapshot`
+    of every healthy placeholder -- the typed drift `manifest_snapshot`
     raises is caught per-item here."""
     findings: list[JsonValue] = []
     for candidate in backend.query(QueryFilters(label=IMPL_PLACEHOLDER_LABEL)):
@@ -84,7 +84,7 @@ def _placeholder_reconciled(backend: Backend, design: Item) -> bool:
     """True iff this design child's own placeholder has completed its delivery.
 
     The placeholder is the item `instantiate_spec_shape` minted `blocks`-linked
-    behind the design child (spec §6). Identify it by that structural edge *plus*
+    behind the design child. Identify it by that structural edge *plus*
     a placeholder note marker (`[work] manifest:`, or legacy `[work] spec:`) -- a
     design may carry other `blocks`-dependents for unrelated reasons, and "any
     dependent lacks impl-placeholder" would wrongly close the design on one of
@@ -126,9 +126,9 @@ def _sweep_orphaned_designs(backend: Backend, *, dry_run: bool) -> list[JsonValu
 
 def _sweep_interrupted_instantiations(backend: Backend, *, dry_run: bool) -> list[JsonValue]:
     """Enumerate `creating-spec` handles; finish each interrupted spec
-    instantiation (`create spec` / `promote` crashed before the handle came off,
-    L16) via the shared `finalize_spec_instantiation` -- the same idempotent tail
-    the write paths run, so a crashed `promote` gets its `shape-feat`->`shape-spec`
+    instantiation (`create spec` / `promote` crashed before the handle came
+    off) via the shared `finalize_spec_instantiation` -- the same idempotent
+    tail the write paths run, so a crashed `promote` gets its `shape-feat`->`shape-spec`
     swap reconstructed, not just create-spec's tail replayed. Each candidate is
     re-`get()`d for its labels first: a container's own design child /
     placeholder can carry a LEAKED `creating-spec` (bd inherited the parent's
@@ -153,7 +153,7 @@ def _sweep_interrupted_instantiations(backend: Backend, *, dry_run: bool) -> lis
 
 
 def reconcile(backend: Backend, args: Namespace) -> JsonValue:
-    """`work reconcile [--dry-run]` (plan L10). Reads no external state (no spec
+    """`work reconcile [--dry-run]`. Reads no external state (no spec
     file); every candidate is found through a completion handle."""
     dry_run = bool(args.dry_run)
     findings = _sweep_interrupted_delivers(backend, dry_run=dry_run)

@@ -1,4 +1,4 @@
-"""Envelope invariant matrix (spec test-plan item 1) + handshake tail (item 10).
+"""Envelope invariant matrix + handshake tail.
 
 Every one of the twelve contract verbs, in both a success and a failure
 case, must emit exactly one parseable JSON envelope on stdout carrying
@@ -218,8 +218,8 @@ VERB_CASES: list[VerbCase] = [
             )
         ],
     ),
-    # --- lifecycle verbs (plan Task 7 -- one success + one failure per verb,
-    # over the seven lifecycle verbs from create through reconcile) ---------
+    # --- lifecycle verbs (one success + one failure per verb, over the
+    # seven lifecycle verbs from create through reconcile) ---------
     VerbCase(
         "create_noun",
         ["create", "spec", "--title", "New Objective", "--parent", "P"],

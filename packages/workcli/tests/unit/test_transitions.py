@@ -1,9 +1,8 @@
-"""`claim`/`release`/`plan`/`promote` -- guarded lifecycle transitions (plan Task 4,
-test-plan items 8, 9, 10).
+"""`claim`/`release`/`plan`/`promote` -- guarded lifecycle transitions.
 
 `claim`'s container guard is label/type-based (`is_container`), never child-count
-(§5/invariant 5) -- the childless-`epic` test below is the proof. `promote`'s
-mutation order (labels, then `instantiate_spec_shape`, then `planned` last, L16)
+(invariant 5) -- the childless-`epic` test below is the proof. `promote`'s
+mutation order (labels, then `instantiate_spec_shape`, then `planned` last)
 mirrors `create spec`. All call-log assertions go through `run_cli_with_runner`
 (conftest.py) since `run_cli` discards its runner and exposes no `.calls`.
 """
@@ -392,10 +391,10 @@ def test_promote_shape_feat_leaf_mints_spec_shape_in_order_creating_spec_removed
         ("label", "add", "x.1", "planned"),
         ("label", "remove", "x.1", "creating-spec"),
     ]
-    # `creating-spec` comes off strictly last -- after `planned` (L16).
+    # `creating-spec` comes off strictly last -- after `planned`.
     assert runner.calls[-1] == ("label", "remove", "x.1", "creating-spec")
     # No reparent/new-parent call on x.1 itself -- id, parent, and edges
-    # untouched (L16/plan item 10).
+    # untouched.
     assert not any(call[:2] == ("update", "x.1") for call in runner.calls)
 
 

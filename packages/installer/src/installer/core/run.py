@@ -357,7 +357,7 @@ class CliDeployOutcome:
     """What the CLI deploy half did. ``deployed`` holds only this run's
     smoked-OK installs (keyed by registry name) — the merge rule retains
     prior entries for everything else. ``any_failed`` drives _run's exit
-    code (spec §6 failure surfacing)."""
+    code."""
 
     deployed: dict[str, CliReceiptEntry]
     counters: dict[str, Counters]
@@ -374,7 +374,7 @@ def deploy_clis(
     dry_run: bool = False,
     auto_yes: bool = False,
 ) -> CliDeployOutcome:
-    """The CLI deploy half (spec §6): registry order, PATH-independent
+    """The CLI deploy half: registry order, PATH-independent
     decision signals, consent on any unproven overwrite, reachability
     invariant per bin dir."""
     deployed: dict[str, CliReceiptEntry] = {}
@@ -440,7 +440,7 @@ def _deploy_one(
     deployed: dict[str, CliReceiptEntry],
     c: Counters,
 ) -> tuple[bool, bool]:
-    """Run the §6 decision table for one CLI.
+    """Run the decision table for one CLI.
 
     Returns (failed, shim_present_at_end); the caller's reachability gate
     keys off the second element instead of re-reading shim_path."""
@@ -448,7 +448,7 @@ def _deploy_one(
     shim = deploy.shim_path(spec.binary)
     env_present = tools is not None and spec.name in tools
     # Provenance: the registered env currently provides the registered
-    # binary. Unproven (tools is None) is never provenance (spec §6).
+    # binary. Unproven (tools is None) is never provenance.
     provenance = tools is not None and spec.binary in tools.get(spec.name, frozenset())
     evidence = shim is not None or env_present or tools is None
 
@@ -518,7 +518,7 @@ def _deploy_one(
                 )
             )
         # Receipt present but provenance mismatch (foreign env/shim) ->
-        # takeover consent (spec §6 provenance precondition / item 19).
+        # takeover consent (provenance precondition).
         return _done(
             *_consented_install(
                 spec,
@@ -538,7 +538,7 @@ def _deploy_one(
 
     if not evidence:
         # Fresh: non-forcing; an already-exists failure re-routes to
-        # takeover consent (spec §6 fresh row / item 18).
+        # takeover consent.
         if dry_run:
             io.info(f"cli:{spec.name}: would install")
             return _done(False, False)
@@ -681,7 +681,7 @@ def _check_reachability(
     auto_yes: bool,
     resolved_dirs: set[Path],
 ) -> bool:
-    """PATH-reachability invariant (spec §6): a property of the bin dir,
+    """PATH-reachability invariant: a property of the bin dir,
     evaluated once per dir per run; update-shell repair memoized. Returns
     False only on a genuine deployment failure."""
     bin_dir = deploy.bin_dir()
@@ -698,7 +698,7 @@ def _check_reachability(
     if bin_dir in resolved_dirs:
         return True
     # Reachability is never evaluated under dry-run: deploy_clis gates this call
-    # with `if not dry_run and shim_present` (Task 6 loop), so dry_run is always
+    # with `if not dry_run and shim_present`, so dry_run is always
     # False here — the literal below routes the no-TTY convention at this consent
     # point (raises ConsentRequiredError iff non-interactive AND not --yes).
     require_consent(io, dry_run=False, auto_yes=auto_yes)
@@ -737,7 +737,7 @@ def prune_clis(
     dry_run: bool = False,
     auto_yes: bool = False,
 ) -> CliPruneOutcome:
-    """Retire prior CLI entries no longer in the registry (spec §7).
+    """Retire prior CLI entries no longer in the registry.
 
     Uninstall authority is bounded by ``registry_names | retired`` — the
     receipt's integrity digest is tamper-evidence, not authentication, so a
