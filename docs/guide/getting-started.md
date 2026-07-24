@@ -61,11 +61,10 @@ Open your assistant in any project and confirm the pieces are visible:
 
 - Ask it to list available skills — you should see `brainstorming`,
   `test-driven-development`, `verify-checklist`, `merge-guard`, and the rest.
-- Check that `~/.claude/AGENTS.md` (or your tool's instruction file) exists.
-  It won't yet carry the zero-based `<laws>`/`<decisions>`/`<hard-lines>`/
-  `<conventions>` core from a fresh `./scripts/install.sh` run — that wiring
-  is still open (`agents-config-9k9.10`); hand-copy
-  `src/user/.agents/AGENTS.md.template` in the meantime if you want it.
+- Check that `~/.claude/AGENTS.md` (or your tool's instruction file) exists
+  and carries the zero-based `<laws>`/`<decisions>`/`<hard-lines>`/
+  `<conventions>` core — a fresh `./scripts/install.sh` run composes it from
+  the shared zero-base fragment.
 
 ## Next: make it yours
 

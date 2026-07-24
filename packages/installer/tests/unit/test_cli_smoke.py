@@ -83,6 +83,20 @@ def _repo_with_installer_toml(tmp_path: Path) -> Path:
     return repo
 
 
+# A plugin rule carrying a complete S3 admission record, so it clears the
+# admission gate and stays staged (the tests below assert its staged/deployed
+# presence; the record-less drop path is covered by the admission-gate tests).
+_ADMITTED_WIDGET_RULE = (
+    b"---\n"
+    b"admission:\n"
+    b"  prevents: an unstaged basename mis-pruning a live dest\n"
+    b"  cost: one plugin rule line\n"
+    b"  remove_when: the plugin seam grows its own fixture\n"
+    b"---\n"
+    b"widget rule\n"
+)
+
+
 def _hermetic_repo(tmp_path: Path) -> Path:
     """A minimal source repo: one shared template so a Claude plan is
     non-empty, plus empty tool-root dirs the adapters expect."""
@@ -461,7 +475,7 @@ def _repo_with_widget_plugin(tmp_path: Path) -> Path:
     repo = _hermetic_repo(tmp_path)
     rule = repo / "src" / "plugins" / "widget" / ".claude" / "rules" / "widget-rule.md"
     rule.parent.mkdir(parents=True)
-    rule.write_bytes(b"widget rule\n")
+    rule.write_bytes(_ADMITTED_WIDGET_RULE)
     return repo
 
 
@@ -632,7 +646,7 @@ def test_prune_only_honors_plugins_override(tmp_path: Path) -> None:
     _write_profiles_toml(repo)
     rule = repo / "src" / "plugins" / "widget" / ".claude" / "rules" / "widget-rule.md"
     rule.parent.mkdir(parents=True)
-    rule.write_bytes(b"widget rule\n")
+    rule.write_bytes(_ADMITTED_WIDGET_RULE)
 
     home = _home_with_claude_settings(tmp_path)
     dest_rule = home / ".claude" / "rules" / "widget-rule.md"
@@ -850,7 +864,17 @@ def _hermetic_repo_with_skill(tmp_path: Path) -> Path:
     (shared / "INSTRUCTIONS.md.template").write_bytes(b"shared laws\n")
     skill = shared / "skills" / "foo"
     skill.mkdir(parents=True)
-    (skill / "SKILL.md").write_bytes(b"a skill\n")
+    # Carries a complete admission record so it clears the S3 admission gate and
+    # deploys (the record-less path is exercised by the admission-gate tests).
+    (skill / "SKILL.md").write_bytes(
+        b"---\n"
+        b"admission:\n"
+        b"  prevents: a plain install recording nothing\n"
+        b"  cost: one staged skill dir\n"
+        b"  remove_when: the receipt path is covered elsewhere\n"
+        b"---\n"
+        b"a skill\n"
+    )
     for tool in ("claude", "codex", "gemini", "opencode"):
         (repo / "src" / "user" / f".{tool}").mkdir(parents=True)
     _write_installignore(repo)
