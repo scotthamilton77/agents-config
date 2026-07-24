@@ -2,6 +2,8 @@
 
 Source-of-truth for every skill that gets staged into each detected tool's user-space skills directory by `scripts/install.sh`. Edits here are what land in `~/.claude/skills/`, `~/.codex/skills/`, `~/.gemini/skills/`, and `~/.config/opencode/skills/` on the next install run.
 
+Staging is gated on admission: a `SKILL.md` without a complete `admission:` record (`prevents`, `cost`, `remove_when`) in its front matter is dropped at deploy and pruned from every tool. Only admitted skills live in this folder; skills awaiting or past admission live under `archive/src/user/**`.
+
 ## Layout — flat, depth-1 only
 
 Every immediate subdirectory of this folder is exactly one skill. Skills MUST NOT be nested under organizational subfolders.
@@ -47,7 +49,7 @@ The full unmodified upstream artifacts live under `<repo-root>/oss-snapshots/<sn
 
 ## Skill provenance registry
 
-Skills built from scratch in-repo do not appear here. This table tracks only OSS-derived or OSS-influenced skills shipped from `src/user/.agents/skills/`.
+Skills built from scratch in-repo do not appear here. This table tracks OSS-derived or OSS-influenced skills by name, whether they currently live in `src/user/.agents/skills/` or under `archive/src/user/**`. Archived rows are retained deliberately: a skill readmitted later must carry its provenance forward, and the drift-audit grep-targets have to keep resolving. The `Skill` column names an artifact, not a live `src/` path.
 
 | Skill | Snapshot path | Upstream | Last sync | Drift policy |
 |-------|---------------|----------|-----------|--------------|
@@ -77,8 +79,8 @@ Skills whose Claude-specific features (`!`-command syntax, `disable-model-invoca
 
 | Skill | Location | Snapshot path | Upstream | Last sync | Drift policy |
 |-------|----------|---------------|----------|-----------|--------------|
-| `handoff` | `src/user/.claude/skills/handoff/` | `oss-snapshots/pocock/skills/skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
-| `zoom-out` | `src/user/.claude/skills/zoom-out/` | formerly `oss-snapshots/pocock/zoom-out/`, snapshot removed 2026-07-24; upstream no longer ships it | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
+| `handoff` | `archive/src/user/.claude/skills/handoff/` | `oss-snapshots/pocock/skills/skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
+| `zoom-out` | `archive/src/user/.claude/skills/zoom-out/` | formerly `oss-snapshots/pocock/zoom-out/`, snapshot removed 2026-07-24; upstream no longer ships it | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 
 ## Common pitfall — extracted helpers must be wired in
 

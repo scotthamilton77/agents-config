@@ -599,15 +599,22 @@ def test_project_universe_unions_refs_across_tool_plans() -> None:
 
 
 def test_project_universe_normalization_pin_against_real_universe(ignore: InstallIgnore) -> None:
-    """Normalization pin: `rules/memory-routing` matches the
-    staged `rules/memory-routing.md`, and `instructions` matches the tool-root
-    instruction templates — both asserted directly via `project_universe`
-    keys built from the real repo root."""
+    """Normalization pin: `skills/grilling` matches the staged skill directory
+    and `instructions` matches the tool-root instruction templates — both
+    asserted directly via `project_universe` keys built from the real repo root.
+
+    The `.md`-suffix-strip arm of normalization no longer has a real-repo
+    example: every artifact in the `rules`/`agents`/`commands` namespaces was
+    record-less and moved to `archive/`, so those namespaces stage nothing.
+    That arm stays covered synthetically by
+    `test_project_universe_strips_md_suffix_for_namespaced_items`; restore a
+    real-repo assertion here when a namespaced `.md` artifact is readmitted.
+    """
     plans = [build_plan(get_adapter(tool), repo_root=_REPO_ROOT, ignore=ignore) for tool in Tool]
 
     universe = project_universe(plans)
 
-    assert "rules/memory-routing" in universe
+    assert "skills/grilling" in universe
     assert "instructions" in universe
 
 

@@ -5,15 +5,12 @@ by default.
 
 ## What lives here
 
-- `commands/` — Slash commands (e.g. `/optimize-my-agent`,
-  `/refresh-agents-md`). Plain markdown; `$ARGUMENTS` is substituted at
-  runtime.
-- `rules/` — Claude-specific workflow rules (general rules now live in
-  `src/user/.agents/rules/` and are staged into `~/.claude/rules/` at install time):
-  - `claude-sandbox.md` — commit style under the Claude Code sandbox
-  - `headless-claude.md` — fail-closed flags for `claude -p` headless dispatch
-  - `orchestrating-subagents.md` — pointer to the subagent-orchestration skill
-  - `worktree-safety.md` — worktree isolation and path-safety traps
+- `commands/` — Slash commands. Plain markdown; `$ARGUMENTS` is substituted at
+  runtime. Empty today: every command was record-less and moved to
+  `archive/src/user/.claude/commands/`.
+- `rules/` — Claude-specific workflow rules. Empty today: every rule was
+  record-less and moved to `archive/src/user/.claude/rules/`. Readmission
+  requires an admission record.
 - `AGENTS.md.template` — Top-level instruction file that pulls in the shared
   personas and session-primer, and `CLAUDE-EXTENSIONS.md`. Does not yet pull
   in the shared zero-based `AGENTS.md.template` survivor — see that file's
