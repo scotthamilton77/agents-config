@@ -17,15 +17,17 @@ run-loop bead supplies as a bool to the resolver. The pure spine never computes 
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from prgroom.lifecycle.predicates import (
+    WITHDRAWN_REASON,
     flip_stale_required_reviews,
     has_required_reviewers_to_refresh,
     new_lifecycle_gate_this_cycle,
     push_uploaded_commits_this_cycle,
+    reviewer_needs_refresh,
 )
 from prgroom.prsession.enums import PRPhase, ReviewerKind, ReviewerStatus
 from prgroom.prsession.pr_ref import PRRef
@@ -38,13 +40,19 @@ from prgroom.prsession.state import (
 _NOW = datetime(2026, 6, 9, 12, 0, 0, tzinfo=UTC)
 
 
-def _reviewer(status: ReviewerStatus, *, required: bool = True) -> ReviewerState:
+def _reviewer(
+    status: ReviewerStatus,
+    *,
+    required: bool = True,
+    declined_reason: str | None = None,
+) -> ReviewerState:
     return ReviewerState(
         identity="copilot",
         kind=ReviewerKind.BOT,
         status=status,
         required=required,
         last_request_at=_NOW,
+        declined_reason=declined_reason,
     )
 
 
@@ -85,6 +93,38 @@ def test_has_required_reviewers_to_refresh(
 
 def test_has_required_reviewers_to_refresh_false_when_no_reviewers() -> None:
     assert has_required_reviewers_to_refresh(_state()) is False
+
+
+# -- reviewer_needs_refresh ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("status", "reason", "expected"),
+    [
+        (ReviewerStatus.NOT_REQUESTED, None, True),
+        (ReviewerStatus.DECLINED, "timeout-no-start", True),
+        (ReviewerStatus.DECLINED, "timeout-stalled", True),
+        (ReviewerStatus.DECLINED, "user-declined", True),
+        (ReviewerStatus.DECLINED, None, True),
+        # The one exclusion: an operator (or GitHub) pulled the request. Re-asking
+        # would silently override that action.
+        (ReviewerStatus.DECLINED, WITHDRAWN_REASON, False),
+        (ReviewerStatus.REQUESTED, None, False),
+        (ReviewerStatus.IN_PROGRESS, None, False),
+        (ReviewerStatus.REVIEW_FOUND, None, False),
+    ],
+)
+def test_reviewer_needs_refresh(status: ReviewerStatus, reason: str | None, expected: bool) -> None:
+    assert reviewer_needs_refresh(_reviewer(status, declined_reason=reason)) is expected
+
+
+def test_has_required_reviewers_to_refresh_skips_withdrawn_reviewer() -> None:
+    # A withdrawn reviewer must not re-arm the rereview step (spec behavior 16):
+    # rereview_pr would DELETE+POST them back onto the PR.
+    state = _state(
+        reviewers={"copilot": _reviewer(ReviewerStatus.DECLINED, declined_reason=WITHDRAWN_REASON)}
+    )
+    assert has_required_reviewers_to_refresh(state) is False
 
 
 # -- push_uploaded_commits_this_cycle --------------------------------------
@@ -153,3 +193,30 @@ def test_flip_stale_required_reviews_returns_whether_it_flipped_anything() -> No
     nothing = {"r": _reviewer(ReviewerStatus.DECLINED, required=True)}
     assert flip_stale_required_reviews(flipped) is True
     assert flip_stale_required_reviews(nothing) is False
+
+
+def test_flip_stale_required_reviews_stamps_boundary_when_now_supplied() -> None:
+    # The external-push flip stamps the invalidation boundary on last_request_at so a
+    # pre-push terminal verdict cannot re-qualify; last_review_at is left intact.
+    old_request = _NOW - timedelta(hours=1)
+    old_verdict = _NOW - timedelta(minutes=55)
+    reviewer = _reviewer(ReviewerStatus.REVIEW_FOUND, required=True)
+    reviewer.last_request_at = old_request
+    reviewer.last_review_at = old_verdict
+    reviewer.last_review_id = 500
+    flip_stale_required_reviews({"r": reviewer}, now=_NOW)
+    assert reviewer.status == ReviewerStatus.NOT_REQUESTED
+    assert reviewer.last_request_at == _NOW  # boundary advanced to the push clock
+    assert reviewer.last_review_at == old_verdict  # verdict stamps untouched
+    assert reviewer.last_review_id == 500
+
+
+def test_flip_stale_required_reviews_leaves_boundary_when_now_omitted() -> None:
+    # _push omits `now` — its in-cycle rereview re-stamps last_request_at, so the flip
+    # itself must not move the boundary (preserving the pre-change behavior).
+    old_request = _NOW - timedelta(hours=1)
+    reviewer = _reviewer(ReviewerStatus.REVIEW_FOUND, required=True)
+    reviewer.last_request_at = old_request
+    flip_stale_required_reviews({"r": reviewer})
+    assert reviewer.status == ReviewerStatus.NOT_REQUESTED
+    assert reviewer.last_request_at == old_request  # untouched without `now`

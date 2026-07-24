@@ -16,25 +16,50 @@ spine never computes it.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from prgroom.prsession.enums import ReviewerStatus
 from prgroom.prsession.state import PRGroomingState, ReviewerState
 
-# Reviewer statuses that a post-push ``rereview`` re-requests (§3.4). After
-# ``flip_stale_required_reviews`` runs, ``review_found`` reviewers have moved into
-# ``not_requested``, so this set captures every required reviewer needing a fresh ask.
-_REFRESHABLE_STATUSES: frozenset[ReviewerStatus] = frozenset(
-    {ReviewerStatus.NOT_REQUESTED, ReviewerStatus.DECLINED}
-)
+if TYPE_CHECKING:
+    from datetime import datetime
+
+# ``declined_reason`` recorded when GitHub itself stopped listing a pending request
+# (_poll's reconciliation, §2.1.3) — as opposed to prgroom's own timeout declines.
+# Public because ``_poll`` sets it and ``reviewer_needs_refresh`` reads it; one
+# spelling, one module.
+WITHDRAWN_REASON = "request-withdrawn"
+
+
+def reviewer_needs_refresh(reviewer: ReviewerState) -> bool:
+    """True iff ``reviewer`` should be re-asked for a fresh review (§3.4).
+
+    ``not_requested`` is a review a push invalidated, awaiting its re-ask. A
+    ``declined`` reviewer is re-asked too — a decline is prgroom's fallback for a
+    missing verdict, and a new push is a new chance to produce one — with exactly one
+    exception: a reviewer declined as ``request-withdrawn`` had their pending request
+    removed on GitHub's side, so re-requesting would silently override that action.
+
+    The single definition behind both ``has_required_reviewers_to_refresh`` (the
+    run-loop's rereview guard) and ``rereview_pr``'s own per-reviewer filter — they
+    MUST agree, or the guard admits a cycle the verb then no-ops.
+    """
+    if reviewer.status is ReviewerStatus.NOT_REQUESTED:
+        return True
+    return (
+        reviewer.status is ReviewerStatus.DECLINED and reviewer.declined_reason != WITHDRAWN_REASON
+    )
 
 
 def has_required_reviewers_to_refresh(state: PRGroomingState) -> bool:
-    """True iff ≥1 ``required`` reviewer is in ``{not_requested, declined}`` (§3.4).
+    """True iff ≥1 ``required`` reviewer needs a fresh review request (§3.4).
 
     Gates the post-push ``_rereview`` call. False when no required reviewers exist
-    (the PR has no Copilot/codeowner required reviewer set) or all are mid-pass
-    (``requested`` / ``in_progress``) or already engaged (``review_found``).
+    (the PR has no Copilot/codeowner required reviewer set), all are mid-pass
+    (``requested`` / ``in_progress``), already engaged (``review_found``), or were
+    deliberately withdrawn (see :func:`reviewer_needs_refresh`).
     """
-    return any(r.required and r.status in _REFRESHABLE_STATUSES for r in state.reviewers.values())
+    return any(r.required and reviewer_needs_refresh(r) for r in state.reviewers.values())
 
 
 def push_uploaded_commits_this_cycle(
@@ -77,7 +102,9 @@ def new_lifecycle_gate_this_cycle(state: PRGroomingState, *, previous_error: str
     return previous_error is None and state.last_error is not None
 
 
-def flip_stale_required_reviews(reviewers: dict[str, ReviewerState]) -> bool:
+def flip_stale_required_reviews(
+    reviewers: dict[str, ReviewerState], *, now: datetime | None = None
+) -> bool:
     """Invalidate prior reviews bound to a superseded SHA (§3.4 shared flip).
 
     A new push (CLI's own in ``_push``, or external in ``_poll``) changes HEAD, so
@@ -85,10 +112,23 @@ def flip_stale_required_reviews(reviewers: dict[str, ReviewerState]) -> bool:
     flip those to ``not_requested`` so the post-push ``_rereview`` re-asks them.
     Reviewers in ``{requested, in_progress, declined}`` and all optional reviewers
     are left untouched. Mutates ``reviewers`` in place; returns whether any flipped.
+
+    ``now`` (when supplied) stamps the **invalidation boundary** on each flipped
+    reviewer: ``last_request_at`` is advanced to ``now`` — the clock any restoring
+    verdict or engagement must beat. Every freshness comparison (``_observe_engagement``'s
+    strictly-after gate) already reads ``last_request_at``, so this one field stops the
+    pre-push terminal review from re-qualifying and restoring ``review_found`` on a later
+    poll (the standalone-``poll`` / crash-before-``rereview`` window). ``_push`` passes no
+    ``now``: its in-cycle ``_rereview`` re-stamps ``last_request_at`` immediately, so the
+    stale-restore window never opens there. ``last_review_at`` / ``last_review_id`` are
+    left untouched — they still cohere with each other, and the boundary move alone closes
+    the restore.
     """
     flipped = False
     for r in reviewers.values():
         if r.required and r.status == ReviewerStatus.REVIEW_FOUND:
             r.status = ReviewerStatus.NOT_REQUESTED
+            if now is not None:
+                r.last_request_at = now
             flipped = True
     return flipped

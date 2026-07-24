@@ -23,6 +23,7 @@ from prgroom.lifecycle.quiescence import (
     evaluate_reviewer_timeouts,
     failing_gate,
     quiescence_predicate,
+    reviewers_gate_satisfied,
 )
 from prgroom.prsession.enums import (
     DispositionKind,
@@ -252,3 +253,13 @@ def test_timeouts_resumable_across_a_crash_gap() -> None:
     )
     assert state.reviewers["copilot"].status == ReviewerStatus.DECLINED
     assert state.reviewers["copilot"].declined_reason == "timeout-no-start"
+
+
+def test_reviewers_gate_satisfied_is_publicly_importable() -> None:
+    # The _poll phase resolver reads this from outside quiescence.py (spec §2.2), so
+    # it is part of the module's public surface, not a private gate helper.
+    state = _quiescent_state()
+    state.reviewers["copilot"] = _reviewer(ReviewerStatus.REQUESTED)
+    assert reviewers_gate_satisfied(state) is False
+    state.reviewers["copilot"].status = ReviewerStatus.REVIEW_FOUND
+    assert reviewers_gate_satisfied(state) is True

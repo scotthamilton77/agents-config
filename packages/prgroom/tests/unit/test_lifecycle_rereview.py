@@ -10,13 +10,14 @@ transition are the observable behavior. Works on a deepcopy; no store write (§3
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from prgroom.deps import Deps
 from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.gh import GhCli
+from prgroom.lifecycle.quiescence import evaluate_reviewer_timeouts
 from prgroom.lifecycle.rereview import rereview_pr
 from prgroom.proc import CommandResult
 from prgroom.prsession.enums import PRPhase, ReviewerKind, ReviewerStatus
@@ -142,3 +143,80 @@ def test_rereview_is_a_noop_when_no_required_reviewer_is_stale() -> None:
     assert runner.calls == []
     assert out.reviewers["copilot"].status is ReviewerStatus.REQUESTED
     assert out.reviewers["codeowner"].status is ReviewerStatus.REVIEW_FOUND
+
+
+def test_withdrawn_reviewer_is_never_re_requested() -> None:
+    # A reviewer declined as request-withdrawn had their pending request removed on
+    # GitHub's side. Re-requesting would DELETE+POST them back onto the PR, silently
+    # overriding that. No gh call at all should be issued for them (spec behavior 16).
+    from prgroom.lifecycle.predicates import WITHDRAWN_REASON
+
+    reviewers = {"copilot": _reviewer(ReviewerStatus.DECLINED)}
+    reviewers["copilot"].declined_reason = WITHDRAWN_REASON
+    runner = RecordedRunner([])  # any gh call would raise StopIteration / IndexError
+    state = rereview_pr(_state(reviewers), ref=_REF, gh=GhCli(runner), deps=_deps())
+    assert state.reviewers["copilot"].status is ReviewerStatus.DECLINED
+    assert state.reviewers["copilot"].declined_reason == WITHDRAWN_REASON
+
+
+def test_rereview_clears_the_stale_review_stamp_on_re_request() -> None:
+    # A required reviewer whose review a push invalidated is flipped to NOT_REQUESTED
+    # while KEEPING the review's last_review_at/last_review_id from that superseded SHA.
+    # rereview_pr re-requests it back to REQUESTED for a fresh review — but the
+    # review-start timeout only fires while last_review_at is None, so preserving the
+    # stale stamp would wedge the reviewer at REQUESTED forever if the fresh review never
+    # lands. Clear both stamps (as the reconcile-side re-request resets already do) so the
+    # re-requested reviewer is genuinely awaiting its first engagement.
+    reviewer = _reviewer(ReviewerStatus.NOT_REQUESTED)
+    reviewer.last_review_at = _T0  # review on the now-superseded SHA
+    reviewer.last_review_id = 4242
+    out = rereview_pr(
+        _state({"copilot": reviewer}),
+        ref=_REF,
+        gh=GhCli(RecordedRunner([_ok(), _ok()])),
+        deps=_deps(),
+    )
+    r = out.reviewers["copilot"]
+    assert r.status is ReviewerStatus.REQUESTED
+    assert r.last_request_at == _LATER
+    assert r.last_review_at is None
+    assert r.last_review_id is None
+
+
+def test_re_requested_reviewer_after_stale_review_still_times_out() -> None:
+    # Recovery guard for the clear above: a reviewer rereview_pr sends back to REQUESTED
+    # after a stale (push-invalidated) review must not be permanently stuck. With
+    # last_review_at cleared, the review-start timeout (which only fires on
+    # last_review_at is None) stays alive, so a re-requested reviewer who never delivers
+    # the wanted fresh review still auto-declines and the PR can quiesce.
+    reviewer = _reviewer(ReviewerStatus.NOT_REQUESTED)
+    reviewer.last_review_at = _T0
+    reviewer.last_review_id = 4242
+    out = rereview_pr(
+        _state({"copilot": reviewer}),
+        ref=_REF,
+        gh=GhCli(RecordedRunner([_ok(), _ok()])),
+        deps=_deps(),  # re-requested at _LATER
+    )
+    start_timeout = timedelta(minutes=3)
+    evaluate_reviewer_timeouts(
+        out,
+        now=_LATER + start_timeout + timedelta(seconds=1),
+        review_start_timeout=start_timeout,
+        review_finish_timeout=timedelta(hours=1),
+    )
+    r = out.reviewers["copilot"]
+    assert r.status is ReviewerStatus.DECLINED
+    assert r.declined_reason == "timeout-no-start"
+
+
+def test_timeout_declined_reviewer_is_still_re_requested() -> None:
+    # The narrowing is specific to the withdrawal reason — a timeout decline is
+    # still a missing verdict a fresh push deserves another shot at.
+    reviewers = {"copilot": _reviewer(ReviewerStatus.DECLINED)}
+    reviewers["copilot"].declined_reason = "timeout-no-start"
+    state = rereview_pr(
+        _state(reviewers), ref=_REF, gh=GhCli(RecordedRunner([_ok(), _ok()])), deps=_deps()
+    )
+    assert state.reviewers["copilot"].status is ReviewerStatus.REQUESTED
+    assert state.reviewers["copilot"].last_request_at == _LATER

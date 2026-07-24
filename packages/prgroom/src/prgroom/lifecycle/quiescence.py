@@ -52,7 +52,13 @@ class QuiescenceGate(StrEnum):
     G_IDLE_TIMER = "idle_timer"
 
 
-def _g_reviewers(state: PRGroomingState) -> bool:
+def reviewers_gate_satisfied(state: PRGroomingState) -> bool:
+    """True iff every REQUIRED reviewer has reached a terminal state (§4.1 G_REVIEWERS).
+
+    Public because ``_poll``'s phase resolver reads it too: a ``quiesced`` PR that
+    gains a newly-requested reviewer must reopen to ``awaiting-review``, and that
+    decision is exactly this gate (spec §2.2).
+    """
     return all(r.status in _REVIEWER_DONE for r in state.reviewers.values() if r.required)
 
 
@@ -83,7 +89,7 @@ def failing_gate(
     Gates are checked in :class:`QuiescenceGate` declaration order so the operator
     sees the most-fundamental blocker first (reviewers before CI before idle).
     """
-    if not _g_reviewers(state):
+    if not reviewers_gate_satisfied(state):
         return QuiescenceGate.G_REVIEWERS
     if not _g_ci(state):
         return QuiescenceGate.G_CI

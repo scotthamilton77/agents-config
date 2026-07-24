@@ -231,6 +231,13 @@ class ReviewerState:
     required: bool
     last_request_at: datetime
     last_review_at: datetime | None = None
+    # GitHub review id (unique, monotonic per submission) of the review that stamped
+    # ``last_review_at``. Disambiguates a genuinely fresh re-review from a re-observed
+    # historical verdict when both share GitHub's second-precision timestamp (see
+    # ``lifecycle/poll.py`` ``_reactivation_engagement``). Optional-with-default so a
+    # state persisted before the field existed loads with ``None`` (from_dict tolerates
+    # its absence, mirroring last_review_at / declined_* above).
+    last_review_id: int | None = None
     declined_at: datetime | None = None
     declined_reason: str | None = None
 
@@ -244,6 +251,8 @@ class ReviewerState:
         }
         if self.last_review_at is not None:
             d["last_review_at"] = _iso(self.last_review_at)
+        if self.last_review_id is not None:
+            d["last_review_id"] = self.last_review_id
         if self.declined_at is not None:
             d["declined_at"] = _iso(self.declined_at)
         if self.declined_reason is not None:
@@ -261,6 +270,7 @@ class ReviewerState:
             required=d["required"],
             last_request_at=_parse_dt(d["last_request_at"]),
             last_review_at=_parse_dt(raw_review) if raw_review is not None else None,
+            last_review_id=d.get("last_review_id"),
             declined_at=_parse_dt(raw_declined) if raw_declined is not None else None,
             declined_reason=d.get("declined_reason"),
         )

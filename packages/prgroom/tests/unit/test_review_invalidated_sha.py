@@ -11,6 +11,11 @@ def _state():
     return bootstrap_state(PRRef(owner="o", repo="r", number=1), now=_NOW)
 
 
+# _apply_sha_attribution now owns only the SHA bookkeeping (retry count, last_poll_sha,
+# invalidated-sha). The reviewer-invalidation flip and its `now` boundary stamp moved
+# earlier in poll_pr (before reconciliation), so this helper no longer takes `now`.
+
+
 def test_external_push_stamps_review_invalidated_sha() -> None:
     s = _state()
     s.last_poll_sha = "old"

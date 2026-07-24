@@ -22,6 +22,9 @@ from prgroom.deps import Deps
 from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.gh import GhCli
 from prgroom.lifecycle import poll_pr
+from prgroom.lifecycle.poll import _review_activity_by_login, _terminal_review_verdicts
+from prgroom.lifecycle.predicates import has_required_reviewers_to_refresh
+from prgroom.lifecycle.quiescence import reviewers_gate_satisfied
 from prgroom.proc import CommandResult
 from prgroom.prsession.enums import (
     ItemKind,
@@ -72,6 +75,7 @@ def _gh(
     *,
     head_oid: str = "headsha1",
     pr_merged: bool = False,
+    requested_reviewers: list[str | dict[str, object]] | None = None,
     issue_comments: list[dict[str, object]] | None = None,
     reviews: list[dict[str, object]] | None = None,
     review_comments: list[dict[str, object]] | None = None,
@@ -84,12 +88,21 @@ def _gh(
     ``reviewThreads`` read (the thread-id map) between the review-comments REST read
     and the CI read; ``thread_nodes`` supplies that envelope's nodes (default empty
     → every review-thread item degrades to ``thread_id == ""``).
+
+    ``requested_reviewers`` seeds the PR resource's pending-review-request array
+    (bare logins, or full gh user dicts when ``type``/bot-suffix matters).
     """
     pr = (
         {"state": "closed", "merged_at": "2026-06-09T10:00:00Z"}
         if pr_merged
         else {"state": "open", "merged_at": None}
     )
+    # GitHub's pulls/{n} carries the pending review requests on the PR resource.
+    # Accepts bare logins for brevity; a dict passes a full gh user object through
+    # (used by the bot-classification tests).
+    pr["requested_reviewers"] = [
+        {"login": r} if isinstance(r, str) else r for r in (requested_reviewers or [])
+    ]
     results = [
         _ok({"headRefOid": head_oid}),
         _ok(pr),
@@ -101,6 +114,29 @@ def _gh(
         results.append(_thread_map_ok(thread_nodes or []))
     results.append(_ci_check_runs_read(ci))
     return GhCli(RecordedRunner(results))
+
+
+def _gh_with_teams(*, head_oid: str, teams: list[dict[str, object]]) -> GhCli:
+    """A poll-order GhCli whose PR resource carries requested_teams but no reviewers."""
+    return GhCli(
+        RecordedRunner(
+            [
+                _ok({"headRefOid": head_oid}),
+                _ok(
+                    {
+                        "state": "open",
+                        "merged_at": None,
+                        "requested_reviewers": [],
+                        "requested_teams": teams,
+                    }
+                ),
+                _ok([]),  # issue comments
+                _ok([]),  # reviews
+                _ok([]),  # review comments
+                _ci_check_runs_read("success"),
+            ]
+        )
+    )
 
 
 def _deps(now: datetime = _T0) -> Deps:
@@ -681,7 +717,7 @@ def test_requested_reviewer_past_start_timeout_auto_declines() -> None:
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
     # No engagement this poll; advance the clock past the default 3m start timeout.
     later = _T0 + timedelta(minutes=5)
-    gh = _gh(head_oid="same")
+    gh = _gh(head_oid="same", requested_reviewers=["copilot"])
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(later), config=_config())
     rv = state.reviewers["copilot"]
     assert rv.status is ReviewerStatus.DECLINED
@@ -848,7 +884,11 @@ def test_last_activity_unchanged_on_quiet_poll() -> None:
     assert state.last_activity_at == _T0
 
 
-def _review_found_at(verdict_at: datetime, *, requested_at: datetime) -> dict[str, ReviewerState]:
+def _review_found_at(
+    verdict_at: datetime, *, requested_at: datetime, review_id: int | None = 21
+) -> dict[str, ReviewerState]:
+    # A review-derived advance always co-stamps the review's id, so steady state stores
+    # last_review_id alongside last_review_at (both callers re-observe verdict id 21).
     return {
         "copilot": ReviewerState(
             identity="copilot",
@@ -857,6 +897,7 @@ def _review_found_at(verdict_at: datetime, *, requested_at: datetime) -> dict[st
             required=True,
             last_request_at=requested_at,
             last_review_at=verdict_at,
+            last_review_id=review_id,
         )
     }
 
@@ -926,7 +967,7 @@ def test_auto_decline_only_poll_does_not_advance_last_activity() -> None:
     # No new items; advance the clock past the 3m start timeout so the reviewer
     # auto-declines and that is the ONLY state change this poll.
     later = _T0 + timedelta(minutes=5)
-    gh = _gh(head_oid="same", ci="success")
+    gh = _gh(head_oid="same", ci="success", requested_reviewers=["copilot"])
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(later), config=_config())
     assert state.reviewers["copilot"].status is ReviewerStatus.DECLINED  # the timeout fired
     assert state.last_activity_at == _T0  # but the idle clock did NOT reset
@@ -1170,3 +1211,2318 @@ def test_ingests_reviews_beyond_the_first_thirty() -> None:
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
     state = poll_pr(start, ref=_REF, gh=GhCli(runner), deps=_deps(), config=_config())
     assert sum(i.kind is ItemKind.REVIEW_SUMMARY for i in state.items) == 35
+
+
+# ── reviewer registry reconciliation (§2.1) ──
+
+
+def test_pending_request_seeds_a_required_reviewer() -> None:
+    # Behavior 1: GitHub listing a pending request is the seed signal. Status is
+    # REQUESTED (not NOT_REQUESTED) so rereview's refreshable set does not
+    # immediately re-ask a reviewer GitHub already asked.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    alice = state.reviewers["alice"]
+    assert alice.identity == "alice"
+    assert alice.status is ReviewerStatus.REQUESTED
+    assert alice.required is True
+    assert alice.kind is ReviewerKind.HUMAN
+    assert alice.last_request_at == _T0
+    assert alice.last_review_at is None
+
+
+@pytest.mark.parametrize(
+    "user",
+    [
+        {"login": "copilot", "type": "Bot"},
+        {"login": "copilot[bot]"},  # no type field — the defensive suffix fallback
+    ],
+)
+def test_bot_request_object_seeds_bot_kind(user: dict[str, object]) -> None:
+    # Behavior 4 (request half): classification mirrors human_review._is_bot.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[user]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers[str(user["login"])].kind is ReviewerKind.BOT
+
+
+def test_already_known_requested_reviewer_is_left_alone() -> None:
+    # Behavior 5: reconciliation is idempotent — a still-requested known reviewer is
+    # not reset, re-stamped, or duplicated.
+    earlier = _T0 - timedelta(hours=3)
+    reviewers = _requested_at(at=earlier)
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert len(state.reviewers) == 1
+    assert state.reviewers["copilot"].last_request_at == earlier  # not re-stamped
+
+
+def test_requested_teams_are_read_and_ignored() -> None:
+    # Behavior 10: team objects carry a slug, not members, and GitHub attributes
+    # reviews to individual logins — so a team entry seeds nothing.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh_with_teams(head_oid="same", teams=[{"slug": "platform"}])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert state.reviewers == {}
+
+
+def test_seeding_a_reviewer_advances_last_activity() -> None:
+    # Behavior 11 (seed half): a newly-discovered reviewer is PR-side activity.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    start.quiescence = QuiescenceState(ci_state="success")
+    later = _T0 + timedelta(minutes=5)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", ci="success", requested_reviewers=["alice"]),
+        deps=_deps(later),
+        config=_config(),
+    )
+    assert state.last_activity_at == later
+
+
+def test_quiet_reviewer_poll_does_not_advance_last_activity() -> None:
+    # Behavior 11 (no-noise half): an unchanged reviewer set is not activity, or the
+    # idle gate could never trip.
+    reviewers = _requested_at(at=_T0 - timedelta(minutes=1))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    start.quiescence = QuiescenceState(ci_state="success")
+    later = _T0 + timedelta(minutes=1)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", ci="success", requested_reviewers=["copilot"]),
+        deps=_deps(later),
+        config=_config(),
+    )
+    assert state.last_activity_at == _T0
+
+
+def test_first_poll_after_response_seeds_a_terminal_reviewer() -> None:
+    # Behavior 2 — the critical regression guard. GitHub drops a reviewer from
+    # requested_reviewers the moment they submit, so on a first poll AFTER a fast
+    # reviewer responded, the pending-request array is the wrong (empty) signal and
+    # the reviews collection is the only one carrying them.
+    review_at = "2026-06-09T11:00:00Z"
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=[],  # already cleared by GitHub
+        reviews=[
+            {
+                "id": 900,
+                "state": "APPROVED",
+                "submitted_at": review_at,
+                "user": {"login": "alice"},
+                "body": "lgtm",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    alice = state.reviewers["alice"]
+    assert alice.status is ReviewerStatus.REVIEW_FOUND
+    assert alice.last_review_at == datetime(2026, 6, 9, 11, 0, 0, tzinfo=UTC)
+    # last_request_at is backdated to the review, NOT poll time: _observe_engagement
+    # only counts activity STRICTLY newer than last_request_at, so stamping `now`
+    # would make this very review permanently fail that comparison.
+    assert alice.last_request_at == datetime(2026, 6, 9, 11, 0, 0, tzinfo=UTC)
+
+
+def test_first_poll_after_commented_response_seeds_in_progress() -> None:
+    # Behavior 3: COMMENTED is not terminal in this codebase's MVP model
+    # (_TERMINAL_REVIEW_STATES), so it seeds engagement — never REVIEW_FOUND, and
+    # never a decline.
+    #
+    # Uses _JUST_AFTER_ACTIVITY (not the default _deps() clock, 50+ minutes later)
+    # so evaluate_reviewer_timeouts's stalled-decline check — which fires on any
+    # IN_PROGRESS reviewer whose last_review_at is older than review_finish_timeout
+    # (15 min default) — does not immediately re-decline the reviewer this same
+    # poll seeds; see test_commented_review_does_not_flip_to_review_found_in_mvp for
+    # the identical convention on the pre-existing-reviewer path.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(
+        head_oid="same",
+        reviews=[
+            {
+                "id": 901,
+                "state": "COMMENTED",
+                "submitted_at": "2026-06-09T11:00:00Z",
+                "user": {"login": "alice"},
+                "body": "one thought",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(_JUST_AFTER_ACTIVITY), config=_config())
+    assert state.reviewers["alice"].status is ReviewerStatus.IN_PROGRESS
+
+
+def test_review_object_seeds_bot_kind() -> None:
+    # Behavior 4 (review half): same classification path from a review's user object.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(
+        head_oid="same",
+        reviews=[
+            {
+                "id": 902,
+                "state": "APPROVED",
+                "submitted_at": "2026-06-09T11:00:00Z",
+                "user": {"login": "copilot", "type": "Bot"},
+                "body": "lgtm",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert state.reviewers["copilot"].kind is ReviewerKind.BOT
+
+
+def test_drive_by_reviewer_is_not_required() -> None:
+    # Behavior 15: `required` tracks GitHub actually ASKING. A login that reviewed
+    # uninvited must not gain the power to block quiescence just by having an opinion.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=[],
+        reviews=[
+            {
+                "id": 903,
+                "state": "COMMENTED",
+                "submitted_at": "2026-06-09T11:00:00Z",
+                "user": {"login": "randomdev"},
+                "body": "drive-by",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert state.reviewers["randomdev"].required is False
+    assert reviewers_gate_satisfied(state) is True  # an optional reviewer never gates
+
+
+def test_pending_request_outranks_historical_verdict_on_seed() -> None:
+    # Behavior 17 (Codex P2 regression guard): GitHub removes a login from
+    # requested_reviewers the instant it submits ANY review, so a first-seen login
+    # STILL present in requested_reviewers that ALSO carries an older APPROVED verdict
+    # can only mean the request post-dates that verdict — a re-request whose fresh
+    # review is still pending. Seed REQUESTED at `now` (NOT REVIEW_FOUND from the stale
+    # verdict), keeping `required` True so the gate stays UNSATISFIED. The review's
+    # 11:00Z timestamp (_T0 - 1h) is older than poll time, so _observe_engagement's
+    # "strictly after last_request_at" gate cannot revive the historical verdict either.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=["alice"],
+        reviews=[
+            {
+                "id": 904,
+                "state": "APPROVED",
+                "submitted_at": "2026-06-09T11:00:00Z",  # _T0 - 1h, before `now`
+                "user": {"login": "alice"},
+                "body": "lgtm",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    alice = state.reviewers["alice"]
+    assert alice.required is True
+    assert alice.status is ReviewerStatus.REQUESTED  # fresh request wins over verdict
+    assert alice.last_request_at == _T0  # stamped `now`, not backdated to the review
+    assert reviewers_gate_satisfied(state) is False  # the wanted re-review is pending
+
+
+def test_same_second_in_flight_verdict_seeds_requested_then_promotes_when_absent() -> None:
+    # Behavior 17b (Codex P1 regression guard), two-poll shape. The in-flight-response race:
+    # prgroom reads the PR resource (still listing the pending request) and the reviews
+    # collection in two separate GETs, so a first-seen required login can submit BETWEEN
+    # them — co-present as requested AND already carrying a brand-new verdict at the SAME
+    # GitHub-second as poll `now`. Second-precision timestamps cannot order that
+    # (request, review) pair at seed time, so poll 1 DEFERS: seed REQUESTED, gate unsatisfied.
+    # Poll 2 disambiguates for free — GitHub dropped the login the instant it reviewed, so its
+    # ABSENCE proves the review answered the request: promote to REVIEW_FOUND at the verdict's
+    # own stamps and satisfy the gate. The invariant preserved is "the in-flight review is not
+    # lost and the reviewer is not falsely withdrawn," now with certainty, not a same-second guess.
+    verdict = {
+        "id": 905,
+        "state": "APPROVED",
+        "submitted_at": "2026-06-09T12:00:00Z",  # == _T0 == poll-1 `now`, same second
+        "user": {"login": "alice"},
+        "body": "lgtm",
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    # Poll 1: login still listed as requested AND the verdict already present.
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"], reviews=[verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    alice_mid = mid.reviewers["alice"]
+    assert alice_mid.status is ReviewerStatus.REQUESTED  # deferred, not a same-second guess
+    assert alice_mid.last_request_at == _T0
+    assert alice_mid.last_review_at is None
+    assert reviewers_gate_satisfied(mid) is False
+
+    # Poll 2: GitHub has dropped the login (it reviewed) — the absence promotes it.
+    end = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    alice = end.reviewers["alice"]
+    assert alice.required is True
+    assert alice.status is ReviewerStatus.REVIEW_FOUND  # in-flight verdict honoured, with certainty
+    assert alice.last_review_at == _T0  # backdated to the verdict
+    assert alice.last_request_at == _T0  # backdated so _observe_engagement keeps the review
+    assert alice.last_review_id == 905
+    assert reviewers_gate_satisfied(end) is True  # the real review satisfies the gate
+
+
+def test_same_second_in_flight_comment_seeds_requested_then_promotes_when_absent() -> None:
+    # The non-terminal twin of the verdict case. A same-second in-flight COMMENTED response
+    # from a first-seen required login defers to REQUESTED on poll 1; poll 2's absence promotes
+    # it to IN_PROGRESS at the comment's stamp — engagement under way, no terminal verdict, so
+    # the gate stays UNSATISFIED. Without the deferral this same-second comment would be lost.
+    comment = {
+        "id": 906,
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-09T12:00:00Z",  # == _T0 == poll-1 `now`, same second
+        "user": {"login": "alice"},
+        "body": "one thought",
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"], reviews=[comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert mid.reviewers["alice"].status is ReviewerStatus.REQUESTED
+    assert mid.reviewers["alice"].last_review_at is None
+
+    end = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    alice = end.reviewers["alice"]
+    assert alice.required is True
+    assert alice.status is ReviewerStatus.IN_PROGRESS
+    assert alice.last_review_at == _T0
+    assert alice.last_request_at == _T0
+    assert alice.last_review_id == 906
+    assert reviewers_gate_satisfied(end) is False  # no terminal verdict yet
+
+
+def test_promoted_in_flight_comment_survives_next_unchanged_absence_poll() -> None:
+    # Regression (Codex P1): the self-induced-equality withdrawal. Poll 2's delayed-response
+    # promotion backdates last_request_at = last_review_at = the review's OWN second, so on
+    # poll 3 the same still-absent review carries a timestamp EQUAL to last_request_at. The
+    # decline-pass suppression must accept that equality (`>=`): the review that justified the
+    # promotion is the reviewer's genuine in-window engagement, not a superseded ask, so it
+    # must keep suppressing the withdrawal. A strict `>` here silently declines a reviewer who
+    # actually responded — request-withdrawn is a DECLINED that can satisfy the reviewer gate,
+    # letting the PR quiesce without a terminal verdict or a finish-timeout recovery.
+    comment = {
+        "id": 906,
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-09T12:00:00Z",  # == _T0, backdated onto both stamps on poll 2
+        "user": {"login": "alice"},
+        "body": "one thought",
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    # Poll 1: co-present request + same-second comment → deferred to REQUESTED.
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"], reviews=[comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    # Poll 2: absence promotes to IN_PROGRESS at backdated stamps (last_request_at == _T0).
+    mid2 = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert mid2.reviewers["alice"].status is ReviewerStatus.IN_PROGRESS
+    assert mid2.reviewers["alice"].last_request_at == _T0
+
+    # Poll 3: unchanged — still absent, the comment re-observed (already ingested, so NOT a new
+    # item). The equal-timestamp review must NOT be read as a withdrawal.
+    end = poll_pr(
+        mid2,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    alice = end.reviewers["alice"]
+    assert alice.status is ReviewerStatus.IN_PROGRESS  # NOT declined request-withdrawn
+    assert alice.declined_at is None
+    assert alice.declined_reason is None
+    assert reviewers_gate_satisfied(end) is False
+
+
+def test_reactivated_in_progress_reviewer_survives_next_unchanged_absence_poll() -> None:
+    # Regression (Codex P1), reactivation variant. The withdrawn-decline reactivation path
+    # backdates both stamps to the fresh COMMENTED review's own second, exactly like the
+    # delayed-in-flight promotion, and funnels into the SAME decline-pass suppression check.
+    # A reviewer reactivated to IN_PROGRESS whose login GitHub then drops must survive the
+    # next unchanged absence poll on the equal-timestamp review, not be silently re-withdrawn.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("request-withdrawn"),  # declined_at = _T0 - 1h = 11:00Z
+    )
+    fresh_comment = {
+        "id": 33,
+        "user": {"login": "copilot"},
+        "state": "COMMENTED",
+        "body": "still looking",
+        # AFTER the 11:00Z withdrawal, 10m before `now` (12:00Z) — within the 15m finish
+        # timeout, so no timeout pass masks the decline-pass behaviour under test.
+        "submitted_at": "2026-06-09T11:50:00Z",
+    }
+    # Poll A: re-request + fresh comment reactivates to IN_PROGRESS at backdated stamps.
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[fresh_comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    reactivated = mid.reviewers["copilot"]
+    assert reactivated.status is ReviewerStatus.IN_PROGRESS
+    assert reactivated.last_request_at == datetime(2026, 6, 9, 11, 50, tzinfo=UTC)  # backdated
+
+    # Poll B: GitHub dropped the login, the comment re-observed (already ingested, NOT new).
+    # review_activity[0] == last_request_at == 11:50Z, so the strict `>` would re-withdraw.
+    end = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[fresh_comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = end.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.IN_PROGRESS  # NOT re-declined request-withdrawn
+    assert copilot.declined_at is None
+    assert copilot.declined_reason is None
+    assert reviewers_gate_satisfied(end) is False
+
+
+def test_same_second_re_request_over_historical_verdict_stays_requested() -> None:
+    # Behavior 17c (Codex P1 core regression): the false-accept the deferral prevents. A
+    # reviewer's terminal verdict lands at second T, and an operator RE-REQUESTS them in the
+    # SAME GitHub-second; second precision cannot establish the verdict came after the request.
+    # Poll 1 seeds REQUESTED (NOT REVIEW_FOUND from the same-second verdict). Poll 2 the login is
+    # STILL present — the re-request is pending, the reviewer has not re-reviewed — so it stays
+    # REQUESTED and the historical verdict is rejected by _observe_engagement's strictly-after
+    # gate. The gate never satisfies without the wanted fresh review.
+    verdict = {
+        "id": 907,
+        "state": "APPROVED",
+        "submitted_at": "2026-06-09T12:00:00Z",  # second T == poll `now`; re-request same second
+        "user": {"login": "alice"},
+        "body": "lgtm",
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"], reviews=[verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert mid.reviewers["alice"].status is ReviewerStatus.REQUESTED  # not the same-second verdict
+    assert reviewers_gate_satisfied(mid) is False
+
+    # Poll 2: the re-request is still pending (login present); the reviewer has not re-reviewed.
+    end = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"], reviews=[verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    alice = end.reviewers["alice"]
+    assert alice.status is ReviewerStatus.REQUESTED  # presence disambiguates: historical, rejected
+    assert alice.last_request_at == _T0
+    assert reviewers_gate_satisfied(end) is False
+
+
+def test_absent_requested_reviewer_with_pre_request_verdict_is_withdrawn() -> None:
+    # Guard on the delayed-response promotion (design point 3): a review stamped strictly
+    # BEFORE floor(last_request_at) must NEVER promote. An operator re-requests a reviewer who
+    # approved an hour earlier (poll 1 → REQUESTED at `now`, the historical verdict ignored),
+    # then pulls the request (poll 2 → login absent). The only review predates the request, so
+    # this is a genuine withdrawal, not a delayed response: decline as request-withdrawn.
+    verdict = {
+        "id": 908,
+        "state": "APPROVED",
+        "submitted_at": "2026-06-09T11:00:00Z",  # _T0 - 1h, strictly before floor(last_request_at)
+        "user": {"login": "alice"},
+        "body": "lgtm",
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"], reviews=[verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert mid.reviewers["alice"].status is ReviewerStatus.REQUESTED
+
+    end = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    alice = end.reviewers["alice"]
+    assert alice.status is ReviewerStatus.DECLINED
+    assert alice.declined_reason == "request-withdrawn"
+    assert alice.declined_at == _T0
+
+
+def _declined(reason: str, *, login: str = "copilot") -> dict[str, ReviewerState]:
+    return {
+        login: ReviewerState(
+            identity=login,
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.DECLINED,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),
+            declined_at=_T0 - timedelta(hours=1),
+            declined_reason=reason,
+        )
+    }
+
+
+def test_withdrawn_reviewer_reactivates_when_re_requested() -> None:
+    # Behavior 6: request-withdrawn is the one decline reason DEFINED by an observed
+    # absence, so a later reappearance is a genuine transition worth re-arming.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("request-withdrawn"),
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REQUESTED
+    assert copilot.last_request_at == _T0
+    assert copilot.declined_at is None
+    assert copilot.declined_reason is None
+
+
+def test_withdrawn_reviewer_reactivates_to_review_found_on_fresh_verdict() -> None:
+    # A withdrawn reviewer re-requested this poll who ALSO submitted a terminal review in
+    # the window between the PR-resource GET and the later reviews GET is genuine fresh
+    # engagement (its timestamp post-dates the recorded withdrawal at declined_at).
+    # Reactivate straight into REVIEW_FOUND with request/review stamps backdated to the
+    # verdict, so _observe_engagement's strictly-after gate does not then permanently
+    # reject the now-historical review poll after poll. Invariant (1): fresh
+    # post-withdrawal engagement is never permanently rejected.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("request-withdrawn"),  # declined_at = _T0 - 1h = 11:00Z
+    )
+    fresh_verdict = {
+        "id": 31,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T11:30:00Z",  # AFTER the 11:00Z withdrawal
+    }
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[fresh_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REVIEW_FOUND
+    assert copilot.last_review_at == datetime(2026, 6, 9, 11, 30, tzinfo=UTC)
+    assert copilot.last_request_at == datetime(2026, 6, 9, 11, 30, tzinfo=UTC)
+    assert copilot.declined_at is None
+    assert copilot.declined_reason is None
+    assert reviewers_gate_satisfied(state) is True
+
+
+def test_withdrawn_reviewer_reactivates_to_requested_on_historical_verdict() -> None:
+    # Invariant (2): a review whose timestamp PREDATES the recorded withdrawal is a
+    # pre-withdrawal historical verdict, not the fresh re-review the new request wants.
+    # It must NOT satisfy the fresh request — reactivate to REQUESTED at `now`, leaving
+    # the gate unsatisfied until the wanted review actually lands (mirrors the
+    # requested-wins rule _seed_reviewer applies to a first-seen re-request).
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("request-withdrawn"),  # declined_at = _T0 - 1h = 11:00Z
+    )
+    historical_verdict = {
+        "id": 32,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T10:30:00Z",  # BEFORE the 11:00Z withdrawal
+    }
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[historical_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REQUESTED
+    assert copilot.last_request_at == _T0
+    assert copilot.declined_at is None
+    assert copilot.declined_reason is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_withdrawn_reviewer_reactivates_to_in_progress_on_fresh_comment() -> None:
+    # Fresh NON-terminal engagement (a COMMENTED review after the withdrawal) reopens the
+    # reviewer as IN_PROGRESS rather than REQUESTED — they are actively engaged again —
+    # while still leaving the gate unsatisfied (no terminal verdict yet).
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("request-withdrawn"),  # declined_at = _T0 - 1h = 11:00Z
+    )
+    fresh_comment = {
+        "id": 33,
+        "user": {"login": "copilot"},
+        "state": "COMMENTED",
+        "body": "still looking",
+        # AFTER the 11:00Z withdrawal and within the 15m finish timeout of `now` (12:00Z),
+        # so the same-poll timeout pass does not immediately re-stall the reopened reviewer.
+        "submitted_at": "2026-06-09T11:50:00Z",
+    }
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[fresh_comment]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.IN_PROGRESS
+    assert copilot.last_review_at == datetime(2026, 6, 9, 11, 50, tzinfo=UTC)
+    assert copilot.declined_at is None
+    assert copilot.declined_reason is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_post_withdrawal_drive_by_across_polls_does_not_satisfy_a_later_re_request() -> None:
+    # The multi-poll drive-by: a withdrawn reviewer submits a drive-by review that the
+    # reconciler observes on an intermediate poll (still withdrawn, before any
+    # re-request), then the operator re-requests on a later poll. Because the review
+    # PREDATES the re-request, it must NOT promote the reviewer to REVIEW_FOUND — the
+    # re-request wants a fresh review the drive-by cannot stand in for. The gate must end
+    # UNSATISFIED (REQUESTED). requested_reviewers carries no request timestamp, so the
+    # ordering is established structurally: the drive-by's timestamp is recorded on
+    # last_review_at when first observed while withdrawn, and the later reactivation then
+    # sees terminal_at NOT strictly after that boundary.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("request-withdrawn"),  # declined_at = _T0 - 1h = 11:00Z
+    )
+    drive_by = {
+        "id": 34,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T11:30:00Z",  # AFTER the 11:00Z withdrawal
+    }
+    # Intermediate poll: drive-by observed while STILL withdrawn (login not re-requested).
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[drive_by]),
+        deps=_deps(_T0 - timedelta(minutes=29)),  # 11:31Z
+        config=_config(),
+    )
+    copilot_mid = mid.reviewers["copilot"]
+    # A drive-by against a pulled request does not resurrect the reviewer, but its
+    # timestamp is recorded so the later re-request can be ordered against it.
+    assert copilot_mid.status is ReviewerStatus.DECLINED
+    assert copilot_mid.declined_reason == "request-withdrawn"
+    assert copilot_mid.last_review_at == datetime(2026, 6, 9, 11, 30, tzinfo=UTC)
+
+    # Later poll: operator re-requests. The stale drive-by must not satisfy it.
+    final = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[drive_by]),
+        deps=_deps(_T0 - timedelta(minutes=28)),  # 11:32Z
+        config=_config(),
+    )
+    copilot = final.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REQUESTED
+    assert copilot.declined_at is None
+    assert copilot.declined_reason is None
+    assert reviewers_gate_satisfied(final) is False
+
+
+def test_re_requested_reviewer_after_drive_by_still_times_out() -> None:
+    # Recovery guard for the fix above: a reviewer reactivated to REQUESTED after a stale
+    # drive-by must not be permanently stuck. Clearing last_review_at on reactivation
+    # keeps the review-start timeout (which only fires on last_review_at is None) alive,
+    # so a re-requested reviewer who never delivers the wanted fresh review still auto-
+    # declines and the PR can quiesce — the drive-by does not disable the stall clock.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("request-withdrawn"),  # declined_at = _T0 - 1h = 11:00Z
+    )
+    drive_by = {
+        "id": 34,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T11:30:00Z",
+    }
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[], reviews=[drive_by]),
+        deps=_deps(_T0 - timedelta(minutes=29)),  # 11:31Z
+        config=_config(),
+    )
+    reactivated = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[drive_by]),
+        deps=_deps(_T0 - timedelta(minutes=28)),  # 11:32Z — REQUESTED, last_review_at cleared
+        config=_config(),
+    )
+    assert reactivated.reviewers["copilot"].last_review_at is None
+    # No fresh review lands; > review_start_timeout (3m) after the 11:32Z re-request.
+    final = poll_pr(
+        reactivated,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[drive_by]),
+        deps=_deps(_T0 - timedelta(minutes=24)),  # 11:36Z
+        config=_config(),
+    )
+    copilot = final.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.DECLINED
+    assert copilot.declined_reason == "timeout-no-start"
+    assert reviewers_gate_satisfied(final) is True
+
+
+@pytest.mark.parametrize("reason", ["timeout-no-start", "timeout-stalled"])
+def test_timeout_declined_reviewer_does_not_reactivate(reason: str) -> None:
+    # Behavior 14 — the GLM critical regression guard. A timeout decline is a purely
+    # LOCAL mutation (quiescence._decline makes no gh call), so the reviewer is still
+    # listed in requested_reviewers every poll, forever. Reactivating on bare presence
+    # would undo the decline within the same cycle it fired, making the timeout gate
+    # impossible to durably satisfy and the PR impossible to quiesce.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=_declined(reason))
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["copilot"].status is ReviewerStatus.DECLINED
+    assert state.reviewers["copilot"].declined_reason == reason
+
+
+def test_timeout_declined_reviewer_still_satisfies_the_gate_across_polls() -> None:
+    # The consequence behavior 14 protects: with the decline intact, G_REVIEWERS
+    # passes and the PR can actually reach quiescence.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("timeout-no-start"),
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert reviewers_gate_satisfied(state) is True
+
+
+def test_drive_by_review_found_promoted_and_rewindowed_when_formally_requested() -> None:
+    # The reported gap: a drive-by (required=False) who later lands in
+    # requested_reviewers is a NEW ask. GitHub drops a login from requested_reviewers
+    # the instant it reviews, so a REVIEW_FOUND entry re-listed there is a re-request.
+    # Promote to required AND restart the window (clearing last_review_at) so the gate
+    # blocks on the pending re-review rather than passing on the stale verdict.
+    reviewers = {
+        "randomdev": ReviewerState(
+            identity="randomdev",
+            kind=ReviewerKind.HUMAN,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=False,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=_T0 - timedelta(hours=2),
+        )
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["randomdev"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["randomdev"]
+    assert rv.required is True
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.last_request_at == _T0
+    assert rv.last_review_at is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_required_review_found_reviewer_rewindowed_when_re_requested() -> None:
+    # A formally-required reviewer who already reviewed and is re-listed in
+    # requested_reviewers gets a fresh request window — the operator wants a new review
+    # of new work, and the gate must not stay satisfied on the prior verdict.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=_T0 - timedelta(hours=1),
+        )
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.required is True
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.last_request_at == _T0
+    assert rv.last_review_at is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_not_requested_required_reviewer_rewindowed_when_github_re_requests() -> None:
+    # NOT_REQUESTED is a post-push flip awaiting re-ask. If GitHub itself already lists
+    # the reviewer in requested_reviewers (an operator re-requested before prgroom's
+    # rereview ran), that presence is the new ask: move to REQUESTED at `now` and clear
+    # the stale invalidated-review stamp so the start timeout can still fire.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.NOT_REQUESTED,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=_T0 - timedelta(hours=1),
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.last_request_at == _T0
+    assert rv.last_review_at is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_review_found_reviewer_rewindow_keeps_a_same_poll_fresh_verdict() -> None:
+    # The bb92bde window-restart carries the same same-poll race the withdrawn-
+    # reactivation path already handles: a NEW review can land between the PR-resource GET
+    # (still listing the login as pending) and the later reviews GET. Restarting to
+    # REQUESTED at `now` and clearing last_review_at would strand it — a second-precision
+    # timestamp in the same second as `now` is not strictly greater than the freshly
+    # stamped last_request_at, so _observe_engagement rejects it and the next poll reads
+    # the absent request as a withdrawal. Order this poll's activity against the PRIOR
+    # last_review_at instead: a verdict newer than it is fresh post-re-request engagement
+    # → REVIEW_FOUND with both stamps backdated to the review.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=_T0 - timedelta(hours=2),
+        )
+    }
+    fresh_verdict = {
+        "id": 41,
+        "user": {"login": "copilot"},
+        "state": "CHANGES_REQUESTED",
+        "body": "needs work",
+        "submitted_at": "2026-06-09T12:00:00Z",  # same second as `now` — the race window
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[fresh_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REVIEW_FOUND
+    assert rv.last_review_at == _T0
+    assert rv.last_request_at == _T0
+    assert reviewers_gate_satisfied(state) is True
+
+
+def test_review_found_reviewer_rewindow_rejects_a_historical_verdict() -> None:
+    # The invariant bb92bde established must survive the fresh-verdict handling: the OLD
+    # review that made the reviewer REVIEW_FOUND (timestamp == prior last_review_at) is
+    # NOT newer than the boundary, so it is a historical verdict, not the re-review the
+    # new ask wants. Restart to REQUESTED at `now`, clear last_review_at, gate unsatisfied.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=datetime(2026, 6, 9, 10, 0, tzinfo=UTC),
+        )
+    }
+    historical_verdict = {
+        "id": 42,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T10:00:00Z",  # == prior last_review_at, not fresh
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[historical_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.last_request_at == _T0
+    assert rv.last_review_at is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_external_push_with_late_pre_push_comment_does_not_backdate_re_request() -> None:
+    # Regression: an external push re-requests a REVIEW_FOUND reviewer AND this poll first
+    # observes a pre-push COMMENTED review (after the stored verdict, before the push).
+    # With reconciliation running before invalidation, that pre-push comment reactivated the
+    # reviewer to IN_PROGRESS on a backdated old-head window (last_request_at = 11:00Z), and
+    # the attribution flip (REVIEW_FOUND only) then skipped them — so the genuine new request
+    # was tracked as stale old-head engagement and could quiesce/time out without a fresh
+    # review. The invalidation flip now runs BEFORE reconciliation and stamps the boundary at
+    # `now`, so the pre-push comment is stale and the reviewer ends REQUESTED on a fresh
+    # window (last_request_at = now, last_review_at cleared), gate unsatisfied.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=_T0 - timedelta(hours=2),  # the stored verdict, on the old head
+            last_review_id=40,
+        )
+    }
+    stored_verdict = {
+        "id": 40,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T10:00:00Z",  # _T0 - 2h
+    }
+    pre_push_comment = {
+        "id": 50,
+        "user": {"login": "copilot"},
+        "state": "COMMENTED",
+        "body": "one more thought",
+        "submitted_at": "2026-06-09T11:00:00Z",  # after the verdict, before the push/now
+    }
+    start = _state(
+        phase=PRPhase.QUIESCED,
+        retries_=1,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",  # the new head is NOT the CLI's push -> external
+        reviewers=reviewers,
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(
+            head_oid="theirs",
+            requested_reviewers=["copilot"],  # GitHub re-requested on the external push
+            reviews=[stored_verdict, pre_push_comment],
+        ),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.status is not ReviewerStatus.IN_PROGRESS
+    assert rv.last_request_at == _T0  # fresh window at `now`, NOT backdated to 11:00Z
+    assert rv.last_review_at is None
+    assert state.pr_review_retries_used == 2  # the external push consumed one retry
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_review_found_reviewer_rewindow_keeps_a_same_second_fresh_verdict_by_review_id() -> None:
+    # Same-second collision: a genuinely fresh re-review submitted in the SAME GitHub
+    # timestamp second as the prior verdict lands with `terminal_at == boundary`, so a
+    # strict `>` would misfile it as historical, reset to REQUESTED, and let the next poll
+    # read the post-review absence as a withdrawal — excluding the reviewer. Review id is
+    # the tiebreaker: the fresh review's id (41) strictly exceeds the stored last_review_id
+    # (40), so it is accepted as fresh → REVIEW_FOUND, gate satisfied.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=_T0,  # same second as the fresh verdict below
+            last_review_id=40,
+        )
+    }
+    fresh_verdict = {
+        "id": 41,  # monotonic: a NEW submission, strictly greater than the stored 40
+        "user": {"login": "copilot"},
+        "state": "CHANGES_REQUESTED",
+        "body": "needs work",
+        "submitted_at": "2026-06-09T12:00:00Z",  # == prior last_review_at, distinct id
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[fresh_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REVIEW_FOUND
+    assert rv.last_review_at == _T0
+    assert rv.last_request_at == _T0
+    assert rv.last_review_id == 41
+    assert reviewers_gate_satisfied(state) is True
+
+
+def test_review_found_reviewer_rewindow_rejects_same_second_reobserved_verdict_by_id() -> None:
+    # The bb92bde regression guard under second-precision: the SAME review (id 42)
+    # re-observed at the SAME timestamp as the prior last_review_at is steady-state
+    # noise, not a fresh re-review. Its id equals the stored last_review_id, so it does
+    # NOT exceed the boundary → historical → reset to REQUESTED, gate unsatisfied.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=_T0,
+            last_review_id=42,
+        )
+    }
+    reobserved_verdict = {
+        "id": 42,  # identical id — the same review seen again this poll
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T12:00:00Z",  # == prior last_review_at, same id
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[reobserved_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.last_request_at == _T0
+    assert rv.last_review_at is None
+    assert rv.last_review_id is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def _same_second_review(
+    review_id: object, state: str, *, ts: str = "2026-06-09T12:00:00Z"
+) -> dict[str, object]:
+    return {
+        "id": review_id,
+        "user": {"login": "copilot"},
+        "state": state,
+        "body": "review body",
+        "submitted_at": ts,
+    }
+
+
+def test_terminal_verdict_reducer_breaks_equal_timestamp_tie_by_larger_review_id() -> None:
+    # GitHub returns reviews oldest-first, so a timestamp-only reducer retains the OLDER id
+    # (40) at an equal second and hands it to the reactivation freshness test, which then
+    # rejects the fresh same-second re-review. The reducer must keep the numerically larger
+    # id (41) — the genuinely newer submission — regardless of response order.
+    old_to_new = [_same_second_review(40, "APPROVED"), _same_second_review(41, "CHANGES_REQUESTED")]
+    assert _terminal_review_verdicts(old_to_new, now=_T0)["copilot"] == (_T0, 41)
+    assert _terminal_review_verdicts(list(reversed(old_to_new)), now=_T0)["copilot"] == (_T0, 41)
+
+
+def test_terminal_verdict_reducer_equal_timestamp_id_none_handling_is_fail_closed() -> None:
+    known = _same_second_review(40, "APPROVED")
+    missing = _same_second_review(None, "APPROVED")
+    # A known id displaces a first-seen missing id; a missing id never displaces a known one.
+    assert _terminal_review_verdicts([missing, known], now=_T0)["copilot"] == (_T0, 40)
+    assert _terminal_review_verdicts([known, missing], now=_T0)["copilot"] == (_T0, 40)
+    # Neither side carries an id: keep the first-seen entry (nothing to disambiguate).
+    assert _terminal_review_verdicts([missing, missing], now=_T0)["copilot"] == (_T0, None)
+
+
+def test_review_activity_reducer_breaks_equal_timestamp_tie_by_larger_review_id() -> None:
+    old_to_new = [_same_second_review(40, "COMMENTED"), _same_second_review(41, "COMMENTED")]
+    ts, _user, rid = _review_activity_by_login(old_to_new, now=_T0)["copilot"]
+    assert (ts, rid) == (_T0, 41)
+    ts_r, _user_r, rid_r = _review_activity_by_login(list(reversed(old_to_new)), now=_T0)["copilot"]
+    assert (ts_r, rid_r) == (_T0, 41)
+
+
+def test_review_activity_reducer_equal_timestamp_id_none_handling_is_fail_closed() -> None:
+    known = _same_second_review(40, "COMMENTED")
+    missing = _same_second_review(None, "COMMENTED")
+    assert _review_activity_by_login([missing, known], now=_T0)["copilot"][2] == 40
+    assert _review_activity_by_login([known, missing], now=_T0)["copilot"][2] == 40
+    assert _review_activity_by_login([missing, missing], now=_T0)["copilot"][2] is None
+
+
+def test_rewindow_keeps_same_second_fresh_verdict_when_response_also_carries_prior_verdict() -> (
+    None
+):
+    # Full-path guard for the reducer tiebreaker: when the reviews response carries BOTH the
+    # prior verdict (id 40) and a genuinely fresh terminal re-review (id 41) in the same
+    # second, GitHub's old-to-new order makes a timestamp-only reducer hand the OLD id 40 to
+    # _reactivation_engagement, which compares 40 vs the stored 40 and rejects the fresh
+    # review — resetting the renewed request to REQUESTED. The reviewer must be promoted on
+    # id 41 and the gate satisfied.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=_T0,  # same second as both reviews below
+            last_review_id=40,
+        )
+    }
+    prior_verdict = _same_second_review(40, "APPROVED")
+    fresh_verdict = _same_second_review(41, "CHANGES_REQUESTED")
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(
+            head_oid="same",
+            requested_reviewers=["copilot"],
+            reviews=[prior_verdict, fresh_verdict],  # old-to-new, the natural GitHub order
+        ),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REVIEW_FOUND
+    assert rv.last_review_id == 41
+    assert reviewers_gate_satisfied(state) is True
+
+
+def test_rewindow_same_second_fresh_verdict_is_response_order_independent() -> None:
+    # Control for the fix above: reversing the response (new-to-old) must yield the same
+    # promotion — the reducer keeps the larger id either way, so the outcome does not depend
+    # on which order GitHub happens to return the two same-second reviews in.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=_T0,
+            last_review_id=40,
+        )
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(
+            head_oid="same",
+            requested_reviewers=["copilot"],
+            reviews=[
+                _same_second_review(41, "CHANGES_REQUESTED"),
+                _same_second_review(40, "APPROVED"),
+            ],  # new-to-old
+        ),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REVIEW_FOUND
+    assert rv.last_review_id == 41
+    assert reviewers_gate_satisfied(state) is True
+
+
+def test_commented_review_advance_stamps_its_own_review_id() -> None:
+    # A COMMENTED review (non-terminal) with a body is ingested as a REVIEW_SUMMARY item
+    # and advances last_review_at to its own timestamp. last_review_id must advance to
+    # THAT review's own id (50), not stay pinned to an older terminal verdict (40): a
+    # stale id would later let the reactivation freshness test read a re-observed
+    # historical comment as fresh engagement.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.IN_PROGRESS,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=datetime(2026, 6, 9, 10, 0, tzinfo=UTC),  # an older verdict
+            last_review_id=40,
+        )
+    }
+    commented = _review(50, login="copilot")
+    commented["state"] = "COMMENTED"
+    commented["submitted_at"] = "2026-06-09T11:05:00Z"  # newer than the stored verdict
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", reviews=[commented]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.last_review_at == datetime(2026, 6, 9, 11, 5, tzinfo=UTC)
+    assert rv.last_review_id == 50  # stamped to the COMMENTED review, not left at 40
+
+
+def test_equal_second_reviews_stamp_greatest_review_id() -> None:
+    # Two post-request reviews from one login share a GitHub-second timestamp: an older
+    # COMMENTED review (id 40, ingested as a REVIEW_SUMMARY item) and a terminal
+    # CHANGES_REQUESTED verdict (id 41). Both land in the same poll's candidates at the
+    # same second. last_review_id must record the GREATER id (41), not whichever candidate
+    # was seen first (40) — otherwise a later re-request reads the already-observed id 41 as
+    # fresh (41 > stored 40) and lets the stale terminal verdict satisfy the new request.
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))  # before the 11:05Z reviews
+    commented = _review(40, login="copilot")
+    commented["state"] = "COMMENTED"
+    commented["submitted_at"] = "2026-06-09T11:05:00Z"
+    terminal = _review(41, login="copilot")  # CHANGES_REQUESTED, same 11:05:00Z second
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", reviews=[commented, terminal]),
+        deps=_deps(_JUST_AFTER_VERDICT),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.last_review_at == datetime(2026, 6, 9, 11, 5, tzinfo=UTC)
+    assert rv.last_review_id == 41  # greatest id at the tied second, not the first-seen 40
+
+
+def test_cross_poll_equal_second_newer_id_updates_stored_review_id() -> None:
+    # Cross-poll sibling of the same-poll greatest-id rule. Poll 1 stores (11:05:00Z, id 40).
+    # Poll 2 reveals a second review id 41 at the SAME GitHub-second (eventual consistency, or
+    # a same-second submission surfacing a poll late). advanced is False (candidate_at ==
+    # stored last_review_at), yet the newer id MUST still be recorded: otherwise a later
+    # re-request's freshness test reads the already-observed id 41 as fresh (41 > stored 40)
+    # and lets the stale verdict satisfy the new request. last_review_at and status must NOT
+    # move on this id-only update — only the stored id advances.
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))  # before the 11:05Z reviews
+    id40 = _review(40, login="copilot")  # CHANGES_REQUESTED @ 11:05:00Z
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+
+    # Poll 1: only id 40 is visible.
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", reviews=[id40]),
+        deps=_deps(_JUST_AFTER_VERDICT),
+        config=_config(),
+    )
+    rv_mid = mid.reviewers["copilot"]
+    assert rv_mid.status is ReviewerStatus.REVIEW_FOUND
+    assert rv_mid.last_review_at == datetime(2026, 6, 9, 11, 5, tzinfo=UTC)
+    assert rv_mid.last_review_id == 40
+
+    # Poll 2: id 41 surfaces at the same second as the already-stored id 40.
+    id41 = _review(41, login="copilot")  # CHANGES_REQUESTED @ 11:05:00Z, same second
+    end = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", reviews=[id40, id41]),
+        deps=_deps(_JUST_AFTER_VERDICT),
+        config=_config(),
+    )
+    rv_end = end.reviewers["copilot"]
+    assert rv_end.last_review_at == datetime(2026, 6, 9, 11, 5, tzinfo=UTC)  # unchanged
+    assert rv_end.status is ReviewerStatus.REVIEW_FOUND  # unchanged
+    assert rv_end.last_review_id == 41  # newer id at the tied second is recorded
+
+
+def test_issue_comment_advance_clears_stored_review_id() -> None:
+    # Coherence invariant: last_review_id is the id of the review observed AT
+    # last_review_at, else None. A plain issue comment is not a review; when it advances
+    # last_review_at forward, the stored id no longer corresponds to the stamped timestamp,
+    # so it is CLEARED. Leaving the stale id would let a later re-request read an old
+    # review at the same second (with a larger id) as fresh and satisfy the request from
+    # historical activity. With the id cleared, the reactivation freshness test fails
+    # closed on an equal-second collision until a strictly-later signal arrives.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.IN_PROGRESS,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=datetime(2026, 6, 9, 10, 0, tzinfo=UTC),
+            last_review_id=40,
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", issue_comments=[_issue_comment(11)]),  # 11:00Z, newer
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.last_review_at == datetime(2026, 6, 9, 11, 0, tzinfo=UTC)  # advanced
+    assert rv.last_review_id is None  # cleared — the stale id no longer matches the stamp
+
+
+def test_declined_boundary_equal_second_larger_id_is_not_fresh() -> None:
+    # Boundary-identity gate on the reactivation tiebreaker. The freshness boundary is
+    # max(declined_at, last_review_at); here declined_at (11:00Z) is later than
+    # last_review_at (10:00Z), so the boundary is declined_at and the stored last_review_id
+    # (40) belongs to the OLDER 10:00Z review, NOT to the boundary. A verdict re-observed
+    # AT the boundary second (11:00Z) carries a larger id (50), but that id cannot be
+    # ordered against a boundary the stored id does not correspond to — so it must fail
+    # closed (equality is never fresh, the bb92bde convention) and reset to REQUESTED,
+    # never let historical activity satisfy the fresh request by moving to REVIEW_FOUND.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.DECLINED,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=datetime(2026, 6, 9, 10, 0, tzinfo=UTC),
+            last_review_id=40,
+            declined_at=datetime(2026, 6, 9, 11, 0, tzinfo=UTC),
+            declined_reason="request-withdrawn",
+        )
+    }
+    boundary_verdict = {
+        "id": 50,  # larger than the stored 40, but the stored id is not the boundary's
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T11:00:00Z",  # == declined_at, the boundary second
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[boundary_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REQUESTED  # fail-closed, NOT REVIEW_FOUND
+    assert copilot.last_request_at == _T0
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_commented_drive_by_id_blocks_false_fresh_reactivation() -> None:
+    # Full harm chain. A withdrawn reviewer's COMMENTED drive-by advances last_review_at
+    # to the comment's timestamp; last_review_id must advance to THAT review's id (200),
+    # not stay pinned to an older terminal verdict (100). When GitHub later re-requests the
+    # reviewer and the SAME comment is re-observed in the same second as the boundary, the
+    # reactivation freshness test must read it as the historical review it is — id 200 does
+    # not exceed the stored 200 — and reset to REQUESTED, not mistake it for fresh
+    # post-request engagement that silently satisfies the new request.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.DECLINED,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=datetime(2026, 6, 9, 10, 0, tzinfo=UTC),
+            last_review_id=100,  # an older terminal verdict
+            declined_at=datetime(2026, 6, 9, 10, 30, tzinfo=UTC),
+            declined_reason="request-withdrawn",
+        )
+    }
+    commented = _review(200, login="copilot")
+    commented["state"] = "COMMENTED"
+    commented["submitted_at"] = "2026-06-09T11:00:00Z"  # drive-by after the withdrawal
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+
+    # Poll 1: the drive-by comment lands while the reviewer is still withdrawn.
+    mid = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", reviews=[commented]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv_mid = mid.reviewers["copilot"]
+    assert rv_mid.status is ReviewerStatus.DECLINED  # a drive-by does not reactivate
+    assert rv_mid.last_review_at == datetime(2026, 6, 9, 11, 0, tzinfo=UTC)
+    assert rv_mid.last_review_id == 200  # stamped to the comment, not left at 100
+
+    # Poll 2: GitHub re-requests the reviewer and the SAME comment is re-observed.
+    end = poll_pr(
+        mid,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[commented]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv_end = end.reviewers["copilot"]
+    assert rv_end.status is ReviewerStatus.REQUESTED  # historical comment, NOT fresh
+    assert reviewers_gate_satisfied(end) is False
+
+
+def test_not_requested_reviewer_rewindow_keeps_a_same_poll_fresh_verdict() -> None:
+    # The NOT_REQUESTED post-push-flip flavor carries the same race. A reviewer flipped to
+    # NOT_REQUESTED (last_review_at retained from the invalidated verdict) that GitHub
+    # re-lists AND that submits a fresh verdict this same poll reactivates straight into
+    # REVIEW_FOUND, not a restart-to-REQUESTED that would strand the verdict.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.NOT_REQUESTED,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=3),
+            last_review_at=_T0 - timedelta(hours=2),
+        )
+    }
+    fresh_verdict = {
+        "id": 43,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T11:59:59Z",  # newer than the prior invalidated verdict
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"], reviews=[fresh_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REVIEW_FOUND
+    assert rv.last_review_at == datetime(2026, 6, 9, 11, 59, 59, tzinfo=UTC)
+    assert rv.last_request_at == datetime(2026, 6, 9, 11, 59, 59, tzinfo=UTC)
+    assert reviewers_gate_satisfied(state) is True
+
+
+def test_drive_by_in_progress_promotion_starts_a_fresh_window() -> None:
+    # A drive-by mid-review (IN_PROGRESS, required=False) that GitHub formally requests is
+    # promoted to required so it blocks the gate — AND its request window restarts. The
+    # drive-by's engagement stamps predate the formal ask, so leaving them would let the
+    # finish-timeout auto-decline the newly-required reviewer off an unsolicited review's
+    # expired window (Codex high). Promotion is a one-time required False->True edge, so the
+    # restart there cannot churn the steady-state no-churn property. With no fresh review in
+    # this poll's response, the window resets to REQUESTED at now, clearing last_review_at.
+    review_at = datetime(2026, 6, 9, 11, 5, 0, tzinfo=UTC)
+    reviewers = {
+        "randomdev": ReviewerState(
+            identity="randomdev",
+            kind=ReviewerKind.HUMAN,
+            status=ReviewerStatus.IN_PROGRESS,
+            required=False,
+            last_request_at=review_at,
+            last_review_at=review_at,
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["randomdev"]),
+        deps=_deps(_JUST_AFTER_ACTIVITY),  # 11:10Z
+        config=_config(),
+    )
+    rv = state.reviewers["randomdev"]
+    assert rv.required is True
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.last_review_at is None
+    assert rv.last_request_at == _JUST_AFTER_ACTIVITY
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_promoted_drive_by_near_finish_boundary_is_not_stalled_declined() -> None:
+    # Codex high, multi-poll regression: an optional IN_PROGRESS drive-by whose review is
+    # ~14.9m old (just inside the 15m finish timeout) is formally requested while its own
+    # COMMENTED review is still the only review in the response. The promotion must start a
+    # fresh window, NOT inherit the stale stamp — otherwise the next poll's stalled arm
+    # (now - last_review_at > 15m) auto-declines the requested reviewer and the gate
+    # quiesces without the review the operator asked for.
+    review_at = datetime(2026, 6, 9, 11, 45, 6, tzinfo=UTC)  # 14m54s before _T0
+    drive_by = {
+        "id": 77,
+        "user": {"login": "randomdev"},
+        "state": "COMMENTED",
+        "body": "drive-by nit",
+        "submitted_at": "2026-06-09T11:45:06Z",
+    }
+    reviewers = {
+        "randomdev": ReviewerState(
+            identity="randomdev",
+            kind=ReviewerKind.HUMAN,
+            status=ReviewerStatus.IN_PROGRESS,
+            required=False,
+            last_request_at=review_at,
+            last_review_at=review_at,
+            last_review_id=77,
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    promoted = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["randomdev"], reviews=[drive_by]),
+        deps=_deps(_T0),  # 12:00Z — 14m54s after the drive-by, still inside finish timeout
+        config=_config(),
+    )
+    rv = promoted.reviewers["randomdev"]
+    assert rv.required is True  # promoted → blocks the gate
+    assert rv.status is ReviewerStatus.REQUESTED  # fresh window, not a stale IN_PROGRESS
+    assert rv.last_review_at is None  # stale engagement stamp cleared
+    assert rv.last_request_at == _T0  # window restarted at the formal request
+    assert reviewers_gate_satisfied(promoted) is False
+
+    # Next poll, 30s later (< 3m start timeout) with still no fresh review: the reviewer
+    # must NOT auto-decline off the pre-promotion drive-by age, and the promotion edge does
+    # not re-fire (already required) so the window does not churn.
+    later = poll_pr(
+        promoted,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["randomdev"], reviews=[drive_by]),
+        deps=_deps(_T0 + timedelta(seconds=30)),  # 12:00:30Z
+        config=_config(),
+    )
+    settled = later.reviewers["randomdev"]
+    assert settled.status is ReviewerStatus.REQUESTED
+    assert settled.declined_reason is None
+    assert settled.last_request_at == _T0  # no churn — window stable across the quiet poll
+    assert reviewers_gate_satisfied(later) is False
+
+
+def test_optional_declined_drive_by_promoted_to_fresh_request_when_formally_requested() -> None:
+    # Codex P1: an OPTIONAL drive-by (required=False), first seen through an old COMMENTED
+    # review and auto-declined (timeout-stalled) before the operator formally requested it,
+    # was NEVER in requested_reviewers — its DECLINED is a purely local mutation on a review
+    # prgroom discovered, not a decline of a real GitHub request. So the bb92bde
+    # continuous-presence rationale (bare presence proves nothing) does NOT apply: when the
+    # operator now adds the login to requested_reviewers, that presence is a provably
+    # brand-new formal request. Promote to required and start a fresh window so the gate
+    # blocks on the pending first review instead of vacuously passing on the stale decline.
+    reviewers = {
+        "randomdev": ReviewerState(
+            identity="randomdev",
+            kind=ReviewerKind.HUMAN,
+            status=ReviewerStatus.DECLINED,
+            required=False,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=_T0 - timedelta(hours=1, minutes=55),
+            last_review_id=50,
+            declined_at=_T0 - timedelta(hours=1),
+            declined_reason="timeout-stalled",
+        )
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["randomdev"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["randomdev"]
+    assert rv.required is True
+    assert rv.status is ReviewerStatus.REQUESTED
+    assert rv.last_request_at == _T0
+    assert rv.last_review_at is None
+    assert rv.last_review_id is None
+    assert rv.declined_at is None
+    assert rv.declined_reason is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_optional_declined_drive_by_reactivates_to_review_found_on_same_poll_verdict() -> None:
+    # The same-poll race for the optional-drive-by promotion: a fresh verdict can land
+    # between the PR-resource GET (still listing the login as newly requested) and the later
+    # reviews GET. Routing the promotion through _reactivation_engagement (as the withdrawn-
+    # reactivation branch does) catches it: a verdict strictly after the reviewer's prior
+    # history boundary reactivates straight into REVIEW_FOUND with both stamps backdated to
+    # the review, so _observe_engagement's strictly-after gate keeps it.
+    fresh_verdict = {
+        "id": 60,
+        "user": {"login": "randomdev"},
+        "state": "APPROVED",
+        "body": "lgtm now",
+        "submitted_at": "2026-06-09T11:59:00Z",  # after the 11:00Z decline boundary
+    }
+    reviewers = {
+        "randomdev": ReviewerState(
+            identity="randomdev",
+            kind=ReviewerKind.HUMAN,
+            status=ReviewerStatus.DECLINED,
+            required=False,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=_T0 - timedelta(hours=1, minutes=55),
+            last_review_id=50,
+            declined_at=_T0 - timedelta(hours=1),
+            declined_reason="timeout-stalled",
+        )
+    }
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["randomdev"], reviews=[fresh_verdict]),
+        deps=_deps(),
+        config=_config(),
+    )
+    rv = state.reviewers["randomdev"]
+    assert rv.required is True
+    assert rv.status is ReviewerStatus.REVIEW_FOUND
+    assert rv.last_request_at == datetime(2026, 6, 9, 11, 59, tzinfo=UTC)
+    assert rv.last_review_at == datetime(2026, 6, 9, 11, 59, tzinfo=UTC)
+    assert rv.last_review_id == 60
+    assert rv.declined_at is None
+    assert rv.declined_reason is None
+
+
+def test_withdrawn_request_declines_an_in_flight_reviewer() -> None:
+    # Behavior 7: GitHub dropped a pending request and the reviewer produced nothing
+    # this poll — the one shape that genuinely means "the ask was pulled".
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.DECLINED
+    assert copilot.declined_reason == "request-withdrawn"
+    assert copilot.declined_at == _T0
+
+
+def test_not_requested_reviewer_never_auto_declines() -> None:
+    # Behavior 8 — Codex P1 regression guard. NOT_REQUESTED is produced ONLY by
+    # flip_stale_required_reviews on a push: it means "awaiting rereview after
+    # invalidation", never "withdrawn". Declining it here would strand the reviewer,
+    # and (with change C) permanently exclude them from ever being re-requested.
+    reviewers = _required_reviewer(ReviewerStatus.NOT_REQUESTED)
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["copilot"].status is ReviewerStatus.NOT_REQUESTED
+
+
+def test_this_poll_activity_prevents_a_spurious_decline() -> None:
+    # Behavior 9 — the other Codex P1 regression guard. Submitting a COMMENTED review
+    # REMOVES the reviewer from requested_reviewers, so absence plus activity is the
+    # ordinary "they just responded" shape, not a withdrawal.
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=[],
+        reviews=[
+            {
+                "id": 905,
+                "state": "COMMENTED",
+                "submitted_at": "2026-06-09T11:00:00Z",
+                "user": {"login": "copilot"},
+                "body": "a note",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(_JUST_AFTER_ACTIVITY), config=_config())
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.IN_PROGRESS  # engaged, not declined
+    assert copilot.declined_reason is None
+
+
+def test_issue_comment_activity_prevents_a_spurious_decline() -> None:
+    # Same protection via the other activity channel: a reviewer commenting outside a
+    # formal review is engagement too (it reaches new_items, not raw_reviews).
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=[],
+        issue_comments=[
+            {
+                "id": 906,
+                "created_at": "2026-06-09T11:00:00Z",
+                "user": {"login": "copilot"},
+                "body": "still looking",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(_JUST_AFTER_ACTIVITY), config=_config())
+    assert state.reviewers["copilot"].status is ReviewerStatus.IN_PROGRESS
+    assert state.reviewers["copilot"].declined_reason is None
+
+
+def test_timeout_no_start_decline_converts_to_withdrawn_on_observed_absence() -> None:
+    # A timeout-no-start decline never engaged, so GitHub kept it in requested_reviewers
+    # continuously. When it goes absent (operator pulled the request), that absence is a
+    # genuine withdrawal: the retained timeout reason is restamped to request-withdrawn so
+    # a later re-add can reopen the gate. Status stays DECLINED — the gate is unaffected.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("timeout-no-start"),
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.DECLINED
+    assert copilot.declined_reason == "request-withdrawn"
+    assert copilot.declined_at == _T0
+
+
+def test_timeout_no_start_decline_reactivates_after_absence_then_re_add() -> None:
+    # The full cycle the fix restores: timeout-no-start decline → absence poll converts
+    # the reason → a subsequent re-add poll reaches the reactivation branch and reopens
+    # the reviewer as REQUESTED (so the gate no longer spuriously satisfies).
+    start = _state(
+        phase=PRPhase.QUIESCED,
+        last_poll_sha="same",
+        reviewers=_declined("timeout-no-start"),
+    )
+    after_absence = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    after_readd = poll_pr(
+        after_absence,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = after_readd.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REQUESTED
+    assert copilot.declined_reason is None
+    assert copilot.declined_at is None
+
+
+def test_timeout_stalled_decline_is_not_converted_on_absence() -> None:
+    # Negative control: a timeout-stalled decline engaged (last_review_at set), so GitHub
+    # already dropped it and its absence is the ordinary post-review shape, NOT a
+    # withdrawal. Converting it would mislabel the reason and silently strip its
+    # push-driven re-ask (reviewer_needs_refresh). Its reason must survive untouched.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.DECLINED,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),
+            last_review_at=_T0 - timedelta(hours=1),
+            declined_at=_T0 - timedelta(minutes=30),
+            declined_reason="timeout-stalled",
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.DECLINED
+    assert copilot.declined_reason == "timeout-stalled"
+
+
+def test_user_declined_never_engaged_is_not_converted_on_absence() -> None:
+    # Negative control: an explicit `user-declined` (never engaged, so last_review_at is
+    # None) must NOT be restamped to request-withdrawn on observed absence. Its contract in
+    # reviewer_needs_refresh keeps `user-declined` refreshable; converting it would flip
+    # that to false and silently strip the push-driven re-ask. Only `timeout-no-start`
+    # qualifies for the withdrawal restamp.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="same",
+        reviewers=_declined("user-declined"),
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.DECLINED
+    assert copilot.declined_reason == "user-declined"
+
+
+def test_terminal_reviewer_is_not_withdrawn() -> None:
+    # A reviewer who already delivered a verdict is not re-declared withdrawn just
+    # because GitHub stopped listing their now-resolved request.
+    reviewers = _required_reviewer(ReviewerStatus.REVIEW_FOUND)
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["copilot"].status is ReviewerStatus.REVIEW_FOUND
+
+
+def _ingested_review_item(gh_id: str, *, login: str, at: datetime) -> ReviewItem:
+    # A REVIEW_SUMMARY already on file from an EARLIER poll, so this poll's ingest keys it
+    # under (kind, gh_id) as `seen` and does NOT re-surface it in `new_items`. Lets a test
+    # place a historical review in the reviews response without also making its author a
+    # `new_items` author (which would suppress the withdrawal via the other channel).
+    return ReviewItem(
+        kind=ItemKind.REVIEW_SUMMARY,
+        identity=Identity(gh_id=gh_id),
+        author=login,
+        body_excerpt="prior-ask note",
+        seen_at=at,
+    )
+
+
+def test_stale_review_from_a_prior_window_does_not_block_withdrawal() -> None:
+    # Codex P1 (PR #348 comment 3610923471). `reviewed` is derived from the FULL reviews
+    # response, so a COMMENTED review that answered a PRIOR ask must not keep a reviewer
+    # permanently `active`. Here the reviewer engaged the earlier ask (10:00Z) and was
+    # then re-requested (window reopened to 11:00Z); GitHub now drops the pending request
+    # with no in-window response — a genuine withdrawal. Guarding on bare `login in
+    # reviewed` would wedge them IN_PROGRESS → timeout-stalled → refreshable, re-requesting
+    # an ask the operator pulled. The stale 10:00Z review predates last_request_at, so it
+    # no longer suppresses the withdrawal.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.IN_PROGRESS,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=1),  # window reopened 11:00Z
+            last_review_at=_T0 - timedelta(hours=2),  # engaged the PRIOR ask at 10:00Z
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    start.items.append(_ingested_review_item("42", login="copilot", at=_T0 - timedelta(hours=2)))
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=[],
+        reviews=[
+            {
+                "id": 42,
+                "state": "COMMENTED",
+                "submitted_at": "2026-06-09T10:00:00Z",  # BEFORE the 11:00Z window
+                "user": {"login": "copilot"},
+                "body": "note on the earlier ask",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.DECLINED
+    assert copilot.declined_reason == "request-withdrawn"
+    assert copilot.declined_at == _T0
+
+
+def test_in_window_review_still_suppresses_withdrawal() -> None:
+    # Negative control: a review whose timestamp is strictly AFTER last_request_at is
+    # in-window engagement — the reviewer is legitimately mid-review, not withdrawn. The
+    # 11:30Z review post-dates the 11:00Z window; even though it is not new THIS poll
+    # (already ingested), the window check keeps the withdrawal suppressed.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.IN_PROGRESS,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=1),  # window opened 11:00Z
+            last_review_at=datetime(2026, 6, 9, 11, 30, tzinfo=UTC),
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    start.items.append(
+        _ingested_review_item("43", login="copilot", at=datetime(2026, 6, 9, 11, 30, tzinfo=UTC))
+    )
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=[],
+        reviews=[
+            {
+                "id": 43,
+                "state": "COMMENTED",
+                "submitted_at": "2026-06-09T11:30:00Z",  # AFTER the 11:00Z window
+                "user": {"login": "copilot"},
+                "body": "still reviewing",
+            }
+        ],
+    )
+    # Poll within the finish timeout of the 11:30Z review so no stall decline masks intent.
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(_JUST_AFTER_VERDICT), config=_config())
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.IN_PROGRESS
+    assert copilot.declined_reason is None
+
+
+def test_new_item_author_suppresses_withdrawal_regardless_of_window() -> None:
+    # Negative control: a login among THIS poll's new_items authors is genuinely fresh
+    # feedback (it is itself what cleared the pending request), so it suppresses the
+    # withdrawal independent of the window check. The new COMMENTED review here predates
+    # last_request_at (window check FALSE), proving the new-item channel is load-bearing.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.IN_PROGRESS,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=1),  # window opened 11:00Z
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    gh = _gh(
+        head_oid="same",
+        requested_reviewers=[],
+        reviews=[
+            {
+                "id": 44,
+                "state": "COMMENTED",
+                "submitted_at": "2026-06-09T10:30:00Z",  # BEFORE the 11:00Z window
+                "user": {"login": "copilot"},
+                "body": "late-arriving note ingested this poll",
+            }
+        ],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(_JUST_AFTER_ACTIVITY), config=_config())
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.IN_PROGRESS
+    assert copilot.declined_reason is None
+
+
+def test_external_push_with_stale_reviewer_advances_to_fixes_pending() -> None:
+    # Behavior 12 — Codex P1 regression guard. flip_stale_required_reviews moves the
+    # reviewer to NOT_REQUESTED, but `rereview` is a FIXES_PENDING pipeline step and
+    # AWAITING_REVIEW only ever calls `wait` — so without this arm the reviewer is
+    # never re-requested and the PR can quiesce with a stale review.
+    #
+    # requested_reviewers is empty because GitHub drops a login the instant it reviews:
+    # a REVIEW_FOUND reviewer is NOT still listed there (see the collision variant
+    # test_external_push_with_github_re_request_uses_the_pending_ask for when GitHub
+    # itself re-requests on the push).
+    reviewers = _required_reviewer(ReviewerStatus.REVIEW_FOUND)
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",
+        reviewers=reviewers,
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["copilot"].status is ReviewerStatus.NOT_REQUESTED
+    assert state.phase is PRPhase.FIXES_PENDING
+
+
+def test_external_push_with_github_re_request_uses_the_pending_ask() -> None:
+    # Collision variant: an external push invalidates copilot's REVIEW_FOUND AND GitHub
+    # re-requests copilot on that same push (a codeowner re-request). Reconciliation runs
+    # before flip_stale_required_reviews, so the pending GitHub ask wins: copilot restarts
+    # to REQUESTED (a fresh window at `now`), flip then no-ops on the non-REVIEW_FOUND
+    # entry, and the gate stays unsatisfied without prgroom issuing a redundant re-request.
+    reviewers = _required_reviewer(ReviewerStatus.REVIEW_FOUND)
+    reviewers["copilot"].last_review_at = _T0 - timedelta(hours=1)
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",
+        reviewers=reviewers,
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", requested_reviewers=["copilot"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REQUESTED
+    assert copilot.last_request_at == _T0
+    assert copilot.last_review_at is None
+    assert reviewers_gate_satisfied(state) is False
+
+
+def test_external_push_without_stale_reviewer_stays_awaiting_review() -> None:
+    # The arm is conditional — nothing to refresh means no phase change, so a routine
+    # push does not spuriously drive the pipeline.
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",
+    )
+    state = poll_pr(start, ref=_REF, gh=_gh(head_oid="theirs"), deps=_deps(), config=_config())
+    assert state.phase is PRPhase.AWAITING_REVIEW
+
+
+def test_quiesced_pr_reopens_when_a_reviewer_is_newly_requested() -> None:
+    # Behavior 13 — GLM finding. A reviewer can be requested on a PR with no new
+    # commits at all; the pre-existing QUIESCED arms fire only on external_push or
+    # new_item, so neither covers an operator manually requesting review.
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same")
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["alice"].status is ReviewerStatus.REQUESTED
+    assert state.phase is PRPhase.AWAITING_REVIEW
+
+
+def test_quiesced_pr_with_satisfied_reviewers_stays_quiesced() -> None:
+    # The no-noise half: a settled reviewer set does not reopen a resting PR.
+    reviewers = _required_reviewer(ReviewerStatus.REVIEW_FOUND)
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same", reviewers=reviewers)
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.phase is PRPhase.QUIESCED
+
+
+# ── external-push invalidation boundary (§3.4): the stale-restore family ──
+
+
+def _review_found_reviewer(
+    *, last_request_at: datetime, last_review_at: datetime, last_review_id: int
+) -> dict[str, ReviewerState]:
+    """A required REVIEW_FOUND copilot carrying a prior terminal verdict's stamps."""
+    return {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=last_request_at,
+            last_review_at=last_review_at,
+            last_review_id=last_review_id,
+        )
+    }
+
+
+def test_external_push_flip_stamps_invalidation_boundary_on_last_request_at() -> None:
+    # Comment 3611146008 (unit half). The external-push flip must move last_request_at
+    # to the push clock, so the pre-push terminal review no longer post-dates the
+    # request window and cannot silently restore REVIEW_FOUND on a later poll.
+    old_request = _T0 - timedelta(hours=1)  # 11:00
+    old_verdict = _T0 - timedelta(minutes=55)  # 11:05 (the CHANGES_REQUESTED _review)
+    reviewers = _review_found_reviewer(
+        last_request_at=old_request, last_review_at=old_verdict, last_review_id=500
+    )
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",
+        reviewers=reviewers,
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", reviews=[_review(500)]),
+        deps=_deps(_T0),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.NOT_REQUESTED
+    assert copilot.last_request_at == _T0  # boundary stamped to the push clock
+    assert copilot.last_review_at == old_verdict  # verdict stamps left intact
+    assert copilot.last_review_id == 500
+
+
+def test_stale_terminal_review_does_not_restore_review_found_after_external_push() -> None:
+    # Comment 3611146008 (two-poll integration). A standalone `poll` observes the
+    # external push and persists NOT_REQUESTED; the NEXT poll re-reads the SAME pre-push
+    # terminal review. Without the invalidation boundary the second poll's engagement
+    # pass restores REVIEW_FOUND (terminal_at > last_request_at) and the reviewer drops
+    # out of the refreshable set, so `rereview` never re-asks the new head.
+    old_request = _T0 - timedelta(hours=1)
+    old_verdict = _T0 - timedelta(minutes=55)
+    reviewers = _review_found_reviewer(
+        last_request_at=old_request, last_review_at=old_verdict, last_review_id=500
+    )
+    start = _state(
+        phase=PRPhase.AWAITING_REVIEW,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",
+        reviewers=reviewers,
+    )
+    after_push = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", reviews=[_review(500)]),
+        deps=_deps(_T0),
+        config=_config(),
+    )
+    assert after_push.reviewers["copilot"].status is ReviewerStatus.NOT_REQUESTED
+
+    # Second poll: same head (no push), same historical verdict re-observed.
+    later = poll_pr(
+        after_push,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", reviews=[_review(500)]),
+        deps=_deps(_T0 + timedelta(minutes=10)),
+        config=_config(),
+    )
+    copilot = later.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.NOT_REQUESTED  # not restored
+    assert has_required_reviewers_to_refresh(later) is True  # rereview still sees it
+
+
+def _invalidated_reviewer(
+    *, boundary: datetime, last_review_at: datetime, last_review_id: int
+) -> dict[str, ReviewerState]:
+    """A required NOT_REQUESTED copilot post external-push flip (boundary already stamped)."""
+    return {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.NOT_REQUESTED,
+            required=True,
+            last_request_at=boundary,
+            last_review_at=last_review_at,
+            last_review_id=last_review_id,
+        )
+    }
+
+
+def test_post_boundary_comment_does_not_promote_invalidated_reviewer() -> None:
+    # Comment 3611228915. A reviewer invalidated by a push who then merely CHATS
+    # (issue/inline comment, non-terminal review) must NOT be promoted out of
+    # NOT_REQUESTED: only a re-request or a post-boundary terminal verdict may. Otherwise
+    # reviewer_needs_refresh goes false and the FIXES_PENDING pipeline skips rereview.
+    boundary = _T0  # 12:00 (the stamped invalidation boundary)
+    old_verdict = _T0 - timedelta(minutes=55)  # 11:05
+    reviewers = _invalidated_reviewer(
+        boundary=boundary, last_review_at=old_verdict, last_review_id=500
+    )
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="theirs", reviewers=reviewers)
+    post_push_comment = {
+        "id": 700,
+        "user": {"login": "copilot"},
+        "body": "just chatting after the push",
+        "created_at": "2026-06-09T12:05:00Z",
+    }
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", issue_comments=[post_push_comment]),
+        deps=_deps(_T0 + timedelta(minutes=10)),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.NOT_REQUESTED  # still invalidated
+    assert copilot.last_review_at == datetime(2026, 6, 9, 12, 5, tzinfo=UTC)  # activity tracked
+    assert has_required_reviewers_to_refresh(state) is True  # still refreshable
+
+
+def test_post_boundary_terminal_verdict_restores_invalidated_reviewer() -> None:
+    # Comment 3611228915 (the other half). A genuine post-boundary terminal verdict DOES
+    # re-establish the review window: the boundary gate admits it (verdict_at > boundary),
+    # so the reviewer returns to REVIEW_FOUND and drops out of the refreshable set.
+    boundary = _T0  # 12:00
+    old_verdict = _T0 - timedelta(minutes=55)  # 11:05
+    reviewers = _invalidated_reviewer(
+        boundary=boundary, last_review_at=old_verdict, last_review_id=500
+    )
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="theirs", reviewers=reviewers)
+    fresh_verdict = {
+        "id": 600,
+        "user": {"login": "copilot"},
+        "state": "CHANGES_REQUESTED",
+        "body": "re-reviewed the new head",
+        "submitted_at": "2026-06-09T12:05:00Z",
+    }
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", reviews=[fresh_verdict]),
+        deps=_deps(_T0 + timedelta(minutes=10)),
+        config=_config(),
+    )
+    copilot = state.reviewers["copilot"]
+    assert copilot.status is ReviewerStatus.REVIEW_FOUND  # restored by the post-boundary verdict
+    assert copilot.last_review_at == datetime(2026, 6, 9, 12, 5, tzinfo=UTC)
+    assert has_required_reviewers_to_refresh(state) is False
+
+
+def test_quiesced_external_push_with_stale_reviewer_advances_to_fixes_pending() -> None:
+    # Comment 3611228917. A QUIESCED PR with a required REVIEW_FOUND reviewer takes an
+    # external push: the flip to NOT_REQUESTED makes reviewers unsatisfied, and the
+    # `QUIESCED and not reviewers_satisfied` early arm would return AWAITING_REVIEW --
+    # sending the run loop into `wait`, never `rereview`, so the new head stays
+    # unreviewed. The external-push refresh path must take precedence and route to
+    # FIXES_PENDING so the pipeline executes rereview.
+    reviewers = _required_reviewer(ReviewerStatus.REVIEW_FOUND)
+    start = _state(
+        phase=PRPhase.QUIESCED,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",
+        reviewers=reviewers,
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["copilot"].status is ReviewerStatus.NOT_REQUESTED
+    assert state.phase is PRPhase.FIXES_PENDING
+
+
+def test_quiesced_external_push_without_refresh_stays_awaiting_review() -> None:
+    # Keep-green: a QUIESCED PR whose push invalidates NO required reviewer (here an
+    # OPTIONAL REVIEW_FOUND reviewer, which the flip leaves untouched) has nothing to
+    # rereview, so the external-push arm keeps returning AWAITING_REVIEW.
+    reviewers = {
+        "human": ReviewerState(
+            identity="human",
+            kind=ReviewerKind.HUMAN,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=False,
+            last_request_at=_T0,
+        )
+    }
+    start = _state(
+        phase=PRPhase.QUIESCED,
+        last_poll_sha="old",
+        last_pushed_head_sha="mine",
+        reviewers=reviewers,
+    )
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="theirs", requested_reviewers=[]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["human"].status is ReviewerStatus.REVIEW_FOUND  # optional untouched
+    assert has_required_reviewers_to_refresh(state) is False
+    assert state.phase is PRPhase.AWAITING_REVIEW
+
+
+def test_quiesced_no_push_newly_requested_reviewer_stays_awaiting_review() -> None:
+    # Keep-green: the no-push QUIESCED arm is unchanged. A reviewer requested on a
+    # resting PR with no push (external_push False, needs_reviewer_refresh False) still
+    # reopens to AWAITING_REVIEW via the `not reviewers_satisfied` arm, not FIXES_PENDING.
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same")
+    state = poll_pr(
+        start,
+        ref=_REF,
+        gh=_gh(head_oid="same", requested_reviewers=["alice"]),
+        deps=_deps(),
+        config=_config(),
+    )
+    assert state.reviewers["alice"].status is ReviewerStatus.REQUESTED
+    assert has_required_reviewers_to_refresh(state) is False
+    assert state.phase is PRPhase.AWAITING_REVIEW
