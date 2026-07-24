@@ -27,6 +27,7 @@ def _run(
     argv: Sequence[str],
     read_file: dict[str, str] | None = None,
     now: Callable[[], datetime] | None = None,
+    env: dict[str, str] | None = None,
 ) -> tuple[int, dict, str]:
     out, err = StringIO(), StringIO()
     exit_code = main(
@@ -35,6 +36,9 @@ def _run(
         err=err,
         now=now,
         read_file=(lambda p: (read_file or {})[p]) if read_file is not None else None,
+        # Always an explicit mapping: the real environment must not decide a
+        # test's grind directory via GRIND_DIR.
+        env=env or {},
     )
     return exit_code, json.loads(out.getvalue()), err.getvalue()
 
