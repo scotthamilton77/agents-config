@@ -4,7 +4,7 @@ description: Find deepening opportunities in a codebase, informed by the domain 
 ---
 
 <!--
-Source: oss-snapshots/pocock/improve-codebase-architecture/
+Source: oss-snapshots/pocock/skills/skills/engineering/improve-codebase-architecture/
 Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7
 Last sync: 2026-05-23
 Drift policy: rewrite-and-divorce (project-extended fork)

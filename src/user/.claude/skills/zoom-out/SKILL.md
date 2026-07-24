@@ -5,8 +5,8 @@ disable-model-invocation: true
 ---
 
 <!--
-Source: oss-snapshots/pocock/zoom-out/
-Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7
+Source: formerly oss-snapshots/pocock/zoom-out/, snapshot removed 2026-07-24; upstream no longer ships it
+Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7 (historical origin — upstream has since removed this skill)
 Last sync: 2026-05-23
 Drift policy: accept-periodic-resync
 -->

@@ -4,7 +4,7 @@ description: Grilling session that challenges your plan against the existing dom
 ---
 
 <!--
-Source: oss-snapshots/pocock/grill-with-docs/
+Source: oss-snapshots/pocock/skills/skills/engineering/grill-with-docs/
 Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7
 Last sync: 2026-05-23
 Drift policy: accept-periodic-resync
