@@ -1,13 +1,17 @@
 ---
 name: grill-with-docs
 description: Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) inline as decisions crystallise. Use when user wants to stress-test a plan against their project's language and documented decisions.
+admission:
+  prevents: An existing plan advancing to implementation while it still contradicts the project's glossary, ADRs, and code — the drift surfaces late as rework and human intervention.
+  cost: Adds a standalone deep session that cross-checks every claim against CONTEXT.md/ADR docs and holds the plan until its acceptance criteria are enumerated.
+  remove_when: The readiness gate can mechanically detect glossary/ADR contradictions and prove enumerated red-test-convertible acceptance criteria without this session having run.
 ---
 
 <!--
 Source: oss-snapshots/pocock/skills/skills/engineering/grill-with-docs/
 Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7
 Last sync: 2026-05-23
-Drift policy: accept-periodic-resync
+Drift policy: local-fork — grafted, do not re-sync
 Note: promoted from byte-identical local copy at <repo>/.claude/skills/grill-with-docs/.
 -->
 
@@ -22,11 +26,6 @@ If a question can be answered by exploring the codebase, explore the codebase in
 </what-to-do>
 
 <supporting-info>
-
-Note: the brainstorming skill adopts this skill's glossary discipline inline
-(challenge terms, sharpen language, update `CONTEXT.md`) whenever a `CONTEXT.md`
-or `CONTEXT-MAP.md` exists at brainstorm time. grill-with-docs remains the
-standalone deep session for stress-testing an existing plan.
 
 ## Domain awareness
 
@@ -97,5 +96,19 @@ Only offer to create an ADR when all three are true:
 3. **The result of a real trade-off** — there were genuine alternatives and you picked one for specific reasons
 
 If any of the three is missing, skip the ADR. Use the format in [ADR-FORMAT.md](./ADR-FORMAT.md).
+
+## Exit criterion
+
+A deep session against the docs does not end at glossary agreement. It ends only when the plan's **acceptance criteria are enumerated with stable IDs**, each one stated so it is directly expressible as a *failing test* (red-test-convertible: a concrete observable — false today, true when the work is done — that a reader can check against the code and the docs).
+
+For every acceptance criterion, apply the edge-case taxonomy — surface and resolve, or explicitly rule out with a reason, each of:
+
+- **Inverse case** — the negative/failure path, not just the happy path.
+- **Empty / boundary input** — zero, empty, min, max, first, last.
+- **Dependency failure** — an upstream tool, file, service, or precondition is absent or errors.
+- **Repeated / concurrent invocation** — run twice, run in parallel, interleaved.
+- **Idempotency** — a second identical run changes nothing beyond the first.
+
+Cross-check each criterion against `CONTEXT.md` and the ADRs as you go: an AC that contradicts the recorded glossary or a documented decision is not done — resolve the contradiction (update the docs or revise the AC) before the session ends. If any AC lacks an ID, cannot be phrased as a failing test, or has an unaddressed taxonomy row, keep grilling until it can.
 
 </supporting-info>

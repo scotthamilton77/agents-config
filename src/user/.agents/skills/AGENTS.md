@@ -60,7 +60,9 @@ Skills built from scratch in-repo do not appear here. This table tracks only OSS
 | `using-git-worktrees` | `oss-snapshots/superpowers/using-git-worktrees/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
 | `writing-plans` | `oss-snapshots/superpowers/writing-plans/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
 | `improve-codebase-architecture` | `oss-snapshots/pocock/skills/skills/engineering/improve-codebase-architecture/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended fork) |
-| `grill-with-docs` | `oss-snapshots/pocock/skills/skills/engineering/grill-with-docs/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
+| `grill-with-docs` | `oss-snapshots/pocock/skills/skills/engineering/grill-with-docs/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | local-fork |
+| `grilling` | `oss-snapshots/pocock/skills/skills/productivity/grilling/` | `mattpocock/skills @ e74f0061` | 2026-07-24 | local-fork |
+| `to-spec` | `oss-snapshots/pocock/skills/skills/engineering/to-spec/` | `mattpocock/skills @ e74f0061` | 2026-07-24 | local-fork |
 | `caveman` | repo-owned (upstream removed the skill; detached 2026-07-24) | `mattpocock/skills @ e74f0061` (historical origin) | 2026-05-23 | rewrite-and-divorce |
 | `prototype` | `oss-snapshots/pocock/skills/skills/engineering/prototype/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 | `writing-unit-tests` | `oss-snapshots/pocock/skills/skills/engineering/tdd/` (amalgamated deltas only) | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
