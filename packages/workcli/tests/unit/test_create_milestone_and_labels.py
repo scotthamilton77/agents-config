@@ -27,7 +27,7 @@ _OK = BdResult(returncode=0, stdout="", stderr="")
 
 
 def _raise_not_configured() -> TrackLayerConfig:
-    # Track gate as a no-op (criterion 17): these tests are about nouns and
+    # Track gate as a no-op: these tests are about nouns and
     # labels, never track resolution.
     raise WorkError(
         ErrorCode.NOT_CONFIGURED,

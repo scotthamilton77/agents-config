@@ -41,8 +41,8 @@ def _require_groom_state_bead(config: TrackLayerConfig) -> str:
     if config.groom_state_bead is None:
         raise WorkError(
             ErrorCode.NOT_CONFIGURED,
-            "[operating-model].groom-state-bead is not configured; run the backfill "
-            "migration (agents-config-jpn0s) to mint it",
+            "[operating-model].groom-state-bead is not configured; run the "
+            "groom-state backfill migration to mint it",
             detail={"reason": "invalid"},
         )
     return config.groom_state_bead

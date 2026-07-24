@@ -20,9 +20,9 @@ from workcli.model import CreateFields, UpdateFields
 def create_raw(backend: Backend, args: Namespace) -> JsonValue:
     """`work create --raw --title T [...]` — the adapter primitive.
 
-    Public, noun-templated creation belongs to the lifecycle layer (bead
-    .9.2); `--raw` gates this transport-layer passthrough so a caller can
-    never reach it by accident.
+    Public, noun-templated creation belongs to the lifecycle layer; `--raw`
+    gates this transport-layer passthrough so a caller can never reach it by
+    accident.
     """
     if not args.raw:
         raise WorkError(

@@ -27,7 +27,7 @@ from workcli.envelope import ErrorCode, WorkError
 
 
 def _not_found_config_loader(_explicit_path: str | None) -> TrackLayerConfig:
-    # Byte-identical to pre-track-layer behavior (criterion 17): keeps the
+    # Byte-identical to pre-track-layer behavior: keeps the
     # lifecycle `create_noun` case from making an unscripted `bd show
     # <parent>` call against this repo's own real project-config.toml.
     raise WorkError(

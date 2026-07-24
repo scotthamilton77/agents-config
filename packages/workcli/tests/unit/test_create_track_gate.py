@@ -93,7 +93,7 @@ def test_required_mode_underivable_fails_and_creates_nothing() -> None:
 
 @pytest.mark.parametrize("enforcement", ["advisory"])
 def test_advisory_underivable_succeeds_untracked_with_warning(enforcement: str) -> None:
-    # Criterion 4's create leg rides on config parsing: an omitted enforcement
+    # The create leg rides on config parsing: an omitted enforcement
     # key already parses to "advisory" (test_config_loading), so this single
     # behavior covers both spellings.
     backend = FakeBackend()
