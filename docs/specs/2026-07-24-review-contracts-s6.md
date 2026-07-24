@@ -43,12 +43,16 @@ Each finding is `{"type":"mechanical"|"advisory", "ac", "claim", "evidence"}`.
 `evidence` is **mandatory** for `mechanical` findings (a failing test, lint
 output, or a broken link) and optional for `advisory`. The artifact lives at a
 deterministic path in the PR branch so the merge gate reads it as a file — PR
-comments are not a review medium (D9). It records the `head_sha` of the
+comments are not a review medium (D9). The path is fixed by this contract:
+`.review/verdict.json` at the repository root, one file, overwritten each
+round (prior rounds live in git history); "verdict-only commit" means a
+commit whose touched paths are all under `.review/`. It records the
+`head_sha` of the
 **reviewed head** — the head the diff was taken at. Because committing the
 verdict itself advances the branch, staleness is defined over reviewed
 content, not raw head equality: a verdict is **stale** iff any commit after
-its recorded `head_sha` changes anything outside the verdict artifact's
-deterministic path. Verdict-only commits neither stale nor refresh a verdict;
+its recorded `head_sha` changes anything outside `.review/`. Verdict-only
+commits neither stale nor refresh a verdict;
 a stale verdict is treated as absent by the gate. This is decidable from git
 observables (the paths touched by the commits between the recorded head and
 the current head).
@@ -143,7 +147,7 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   (evidence-mandatory-for-mechanical boundary).
 - **S6-A2** A verdict records the `head_sha` of the reviewed head; the
   merge-eligibility check treats it as absent when any commit after that head
-  changes a path outside the verdict artifact's deterministic path
+  changes a path outside `.review/` — the contract-fixed verdict location
   (stale-verdict guard) — while a verdict whose only successor commit is the
   verdict commit itself remains fresh (the self-invalidation inverse).
   Satisfiable by hand-comparison now; names the S8
