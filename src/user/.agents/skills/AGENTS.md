@@ -59,11 +59,11 @@ Skills built from scratch in-repo do not appear here. This table tracks only OSS
 | `test-driven-development` | `oss-snapshots/superpowers/test-driven-development/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
 | `using-git-worktrees` | `oss-snapshots/superpowers/using-git-worktrees/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
 | `writing-plans` | `oss-snapshots/superpowers/writing-plans/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
-| `improve-codebase-architecture` | `oss-snapshots/pocock/improve-codebase-architecture/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended fork) |
-| `grill-with-docs` | `oss-snapshots/pocock/grill-with-docs/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
-| `caveman` | `oss-snapshots/pocock/caveman/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended fork) |
-| `prototype` | `oss-snapshots/pocock/prototype/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
-| `writing-unit-tests` | `oss-snapshots/pocock/tdd/` (amalgamated deltas only) | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
+| `improve-codebase-architecture` | `oss-snapshots/pocock/skills/skills/engineering/improve-codebase-architecture/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended fork) |
+| `grill-with-docs` | `oss-snapshots/pocock/skills/skills/engineering/grill-with-docs/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
+| `caveman` | repo-owned (upstream removed the skill; detached 2026-07-24) | `mattpocock/skills @ e74f0061` (historical origin) | 2026-05-23 | rewrite-and-divorce |
+| `prototype` | `oss-snapshots/pocock/skills/skills/engineering/prototype/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
+| `writing-unit-tests` | `oss-snapshots/pocock/skills/skills/engineering/tdd/` (amalgamated deltas only) | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 | `verify-checklist` | `oss-snapshots/superpowers/verification-before-completion/` (amalgamated lift only — Iron Law framing, gate function) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | accept-periodic-resync |
 | `bugfix` | `oss-snapshots/superpowers/systematic-debugging/` (selective amalgamation — 3-strike escalation, multi-component boundary instrumentation lifted only) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | selective-amalgamation |
 | `wait-for-pr-comments` | `oss-snapshots/superpowers/receiving-code-review/` (selective amalgamation — pushback discipline lifted into `references/handling-feedback.md`) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | selective-amalgamation |
@@ -77,8 +77,8 @@ Skills whose Claude-specific features (`!`-command syntax, `disable-model-invoca
 
 | Skill | Location | Snapshot path | Upstream | Last sync | Drift policy |
 |-------|----------|---------------|----------|-----------|--------------|
-| `handoff` | `src/user/.claude/skills/handoff/` | `oss-snapshots/pocock/handoff/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
-| `zoom-out` | `src/user/.claude/skills/zoom-out/` | `oss-snapshots/pocock/zoom-out/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
+| `handoff` | `src/user/.claude/skills/handoff/` | `oss-snapshots/pocock/skills/skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
+| `zoom-out` | `src/user/.claude/skills/zoom-out/` | formerly `oss-snapshots/pocock/zoom-out/`, snapshot removed 2026-07-24; upstream no longer ships it | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 
 ## Common pitfall — extracted helpers must be wired in
 
