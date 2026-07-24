@@ -265,7 +265,11 @@ class UvCliDeploy:
     def tool_install(self, package_dir: Path, *, force: bool) -> CommandResult:
         cmd = ["uv", "tool", "install"]
         if force:
-            cmd.append("--force")
+            # --force alone reuses uv's build cache for local path packages,
+            # which keys on package metadata (version), not src/** contents.
+            # --reinstall forces a rebuild from source so a digest-triggered
+            # upgrade can't silently install a stale cached wheel.
+            cmd.extend(["--force", "--reinstall"])
         lock = package_dir / "uv.lock"
         if not lock.is_file():
             cmd.append(str(package_dir))

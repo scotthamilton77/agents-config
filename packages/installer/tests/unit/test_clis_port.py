@@ -169,6 +169,11 @@ def test_tool_install_exports_constraints_when_lock_present(
     assert port.tool_install(lockless, force=True).ok
     assert calls[0][:3] == ["uv", "tool", "install"]
     assert "--force" in calls[0] and "--constraints" not in calls[0]
+    # --force alone reuses uv's build cache for local path packages (keyed on
+    # package metadata/version, not src/** contents); --reinstall forces a
+    # rebuild from source so a digest-triggered upgrade can't silently install
+    # a stale cached wheel (agents-config-9k9.14).
+    assert "--reinstall" in calls[0]
 
 
 def test_subprocess_failures_map_to_not_ok(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
