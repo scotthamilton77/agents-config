@@ -373,7 +373,7 @@ def test_create_includes_description_type_priority_and_parent_when_provided():
 def test_create_disables_bd_label_inheritance_only_for_parented_creates():
     # bd copies the parent's current labels onto a --parent child by default
     # (verified against bd 1.0.3), which leaked transient handles like
-    # `creating-spec` onto spec children (wgclw.9.8). The Backend contract is
+    # `creating-spec` onto spec children. The Backend contract is
     # "the created item carries exactly the requested labels", so every
     # parented create opts out; an unparented create has nothing to inherit
     # and stays flag-free.
