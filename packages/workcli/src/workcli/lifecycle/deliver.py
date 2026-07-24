@@ -340,7 +340,7 @@ def reconcile_placeholder(backend: Backend, placeholder_id: str, manifest: Manif
         backend.close([design.id])
     if CREATING_SPEC_LABEL in placeholder.labels:
         # A legacy placeholder minted before the adapter's --no-inherit-labels
-        # opt-out inherited the container's `creating-spec` (wgclw.9.8). Strip
+        # opt-out inherited the container's `creating-spec`. Strip
         # it with the handle -- BEFORE the handle, which stays strictly last --
         # or the later instantiation sweep in the same `reconcile` call would
         # see a handle-free leaf carrying `creating-spec` and re-finalize it

@@ -1,7 +1,7 @@
 """`work create --raw`.
 
 `create` is the adapter primitive only -- public, noun-templated creation
-belongs to the lifecycle layer (bead .9.2), so a bare `work create` without
+belongs to the lifecycle layer, so a bare `work create` without
 `--raw` must refuse with `E_USAGE` naming that layer. With
 `--raw`, exactly one bd invocation reaches the runner even when a `--parent`
 is given -- bd's own `--parent` flag auto-adds the parent edge, so a second
@@ -149,9 +149,9 @@ def test_create_missing_title_yields_usage_envelope():
 
 def test_create_raw_called_directly_without_raw_flag_still_refuses():
     # verbs/__init__.py's dispatcher gates --raw before ever calling
-    # create_raw, so this branch is unreachable through the CLI (Task 3) --
+    # create_raw, so this branch is unreachable through the CLI --
     # it stays as create_raw's own defensive contract for any direct,
-    # non-CLI caller (create_raw itself is unchanged by Task 3).
+    # non-CLI caller (create_raw itself carries this guard independently).
     try:
         create_raw(None, Namespace(raw=False))  # type: ignore[arg-type]
         raise AssertionError("expected WorkError")

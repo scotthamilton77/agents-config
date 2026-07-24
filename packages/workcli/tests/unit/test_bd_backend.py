@@ -1,10 +1,10 @@
 """BdBackend: the Backend protocol's bd implementation, over a BdRunner.
 
-Task 2 wired the read primitives (`capabilities`, `get`, `batch_get`,
-`query`); Task 4 added the write primitives (`create`, `set_fields`,
-`append_note`, `close`, `reopen`); Task 5 adds the relation/sync primitives
-(`dep_mutate`, `dep_list`, `label_mutate`, `labels`, `sync`). Every test here
-drives a `ScriptedBdRunner`, never a real subprocess.
+Covers the read primitives (`capabilities`, `get`, `batch_get`, `query`), the
+write primitives (`create`, `set_fields`, `append_note`, `close`, `reopen`),
+and the relation/sync primitives (`dep_mutate`, `dep_list`, `label_mutate`,
+`labels`, `sync`). Every test here drives a `ScriptedBdRunner`, never a real
+subprocess.
 """
 
 from __future__ import annotations
@@ -91,7 +91,7 @@ def test_batch_get_raises_not_found_when_bd_silently_omits_a_requested_id():
     # Empirically confirmed against the real bd binary: `bd show valid bogus
     # --json` exits 0 and returns only the valid item, logging the miss to
     # stderr rather than failing the whole call -- the facade must not treat
-    # that as success (decision 10 needs `data.items` to match the request).
+    # that as success (the contract needs `data.items` to match the request).
     runner = ScriptedBdRunner(
         steps=[
             ScriptedStep(
@@ -373,7 +373,7 @@ def test_create_includes_description_type_priority_and_parent_when_provided():
 def test_create_disables_bd_label_inheritance_only_for_parented_creates():
     # bd copies the parent's current labels onto a --parent child by default
     # (verified against bd 1.0.3), which leaked transient handles like
-    # `creating-spec` onto spec children (wgclw.9.8). The Backend contract is
+    # `creating-spec` onto spec children. The Backend contract is
     # "the created item carries exactly the requested labels", so every
     # parented create opts out; an unparented create has nothing to inherit
     # and stays flag-free.

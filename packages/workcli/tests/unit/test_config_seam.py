@@ -17,7 +17,7 @@ def _exploding_loader(_explicit_path: str | None) -> TrackLayerConfig:
 
 
 def test_pre_existing_verbs_never_touch_the_config_loader() -> None:
-    # Criterion 17's laziness leg: `show` with no track flags must complete
+    # The laziness leg: `show` with no track flags must complete
     # without the loader ever running -- even with --config on the command line.
     step = ScriptedStep(
         ("show",),

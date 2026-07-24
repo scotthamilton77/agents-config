@@ -2,8 +2,8 @@
 (docs/specs/2026-07-06-profiles-scope-routing.md).
 
 # NOTE: the DYNAMIC-INCLUDE-ALL-RULES vs DYNAMIC-INCLUDE-RULES
-# template-flattening boundary is deferred to the orchestrator-wiring slice
-# (S2/S3) — it concerns `templates.py`/the orchestrator, not this pure
+# template-flattening boundary is deferred to the orchestrator-wiring work
+# — it concerns `templates.py`/the orchestrator, not this pure
 # resolver, and is intentionally not implemented or tested here.
 """
 

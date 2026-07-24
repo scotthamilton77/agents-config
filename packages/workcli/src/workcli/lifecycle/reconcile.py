@@ -135,7 +135,7 @@ def _sweep_interrupted_instantiations(backend: Backend, *, dry_run: bool) -> lis
     labels at mint, before the adapter's `--no-inherit-labels` opt-out); such a
     leaf is healed by stripping the leaked handle, never finalized as a
     container -- finalizing a leaf would mint grandchildren under it and stamp
-    it `planned` (wgclw.9.8). A second sweep over a healed tree finds no
+    it `planned`. A second sweep over a healed tree finds no
     handle -- idempotent."""
     findings: list[JsonValue] = []
     candidates = list(backend.query(QueryFilters(label=CREATING_SPEC_LABEL)))

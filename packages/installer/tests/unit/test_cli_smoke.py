@@ -83,7 +83,7 @@ def _repo_with_installer_toml(tmp_path: Path) -> Path:
     return repo
 
 
-# A plugin rule carrying a complete S3 admission record, so it clears the
+# A plugin rule carrying a complete admission record, so it clears the
 # admission gate and stays staged (the tests below assert its staged/deployed
 # presence; the record-less drop path is covered by the admission-gate tests).
 _ADMITTED_WIDGET_RULE = (
@@ -864,7 +864,7 @@ def _hermetic_repo_with_skill(tmp_path: Path) -> Path:
     (shared / "INSTRUCTIONS.md.template").write_bytes(b"shared laws\n")
     skill = shared / "skills" / "foo"
     skill.mkdir(parents=True)
-    # Carries a complete admission record so it clears the S3 admission gate and
+    # Carries a complete admission record so it clears the admission gate and
     # deploys (the record-less path is exercised by the admission-gate tests).
     (skill / "SKILL.md").write_bytes(
         b"---\n"

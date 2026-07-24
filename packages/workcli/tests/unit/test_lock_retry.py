@@ -78,7 +78,7 @@ def test_non_retryable_failure_returns_immediately_with_zero_retries_and_zero_sl
 class _TimeoutThenSuccessRunner:
     """A minimal BdRunner double for the one branch ScriptedBdRunner's pinned
     shape can't express: a subprocess.TimeoutExpired raised instead of a
-    BdResult returned (decision 8's other retryable trigger).
+    BdResult returned (the retry logic's other retryable trigger).
     """
 
     def __init__(self, success: BdResult) -> None:

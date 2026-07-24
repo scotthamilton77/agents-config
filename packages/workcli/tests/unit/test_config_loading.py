@@ -128,7 +128,7 @@ def test_non_list_names_is_invalid(tmp_path: Path) -> None:
 
 
 def test_enforcement_omitted_defaults_to_advisory(tmp_path: Path) -> None:
-    # Criterion 4's config-layer leg: omitted key parses as advisory.
+    # The config-layer leg: an omitted enforcement key parses as advisory.
     root = _repo(tmp_path, config_text='[tracks]\nnames = ["alpha"]\n')
     assert load_config(root).enforcement == "advisory"
 
@@ -232,7 +232,7 @@ def test_backlog_groom_nag_days_bool_is_invalid(tmp_path: Path) -> None:
 def test_backlog_groom_nag_days_negative_is_invalid(tmp_path: Path) -> None:
     # REGRESSION PIN (Codex finding): a negative threshold makes day 0
     # (immediately after `work groom --done`) already breached (0 > -1),
-    # defeating the reset --done is meant to guarantee (criterion 15).
+    # defeating the reset --done is meant to guarantee.
     root = _repo(
         tmp_path,
         config_text=(

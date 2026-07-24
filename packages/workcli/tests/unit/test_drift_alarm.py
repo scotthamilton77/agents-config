@@ -49,7 +49,7 @@ def test_non_array_show_payload_raises_backend_drift():
     # The real not-found shape bd emits on stdout when a lookup fails
     # entirely (`{"error": ..., "schema_version": 1}`) -- a JSON object,
     # not the expected array. Nonzero-exit not-found is mapped from stderr
-    # before parsing is ever reached (BdBackend.get, Task 2 below); this
+    # before parsing is ever reached (BdBackend.get, below); this
     # covers any other case where bd's stdout is an object instead of a list.
     payload = json.dumps(
         {"error": "no issues found matching the provided IDs", "schema_version": 1}

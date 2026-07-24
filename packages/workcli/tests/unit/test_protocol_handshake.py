@@ -18,7 +18,7 @@ from workcli.cli import entry, main
 
 
 def test_run_cli_helper_drives_protocol_version_without_touching_the_scripted_runner():
-    # No verb reaches a Backend yet (Task 2) -- an empty script proves
+    # No verb reaches a Backend yet -- an empty script proves
     # `--protocol-version` never calls the injected ScriptedBdRunner.
     exit_code, envelope, stderr_text = run_cli(["--protocol-version"], [])
 

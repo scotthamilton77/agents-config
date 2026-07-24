@@ -68,7 +68,7 @@ def test_missing_groom_state_bead_fails_not_configured() -> None:
     assert exc_info.value.code is ErrorCode.NOT_CONFIGURED
     assert exc_info.value.detail["reason"] == "invalid"
     assert "groom-state-bead" in exc_info.value.message
-    assert "agents-config-jpn0s" in exc_info.value.message
+    assert "groom-state backfill migration" in exc_info.value.message
 
 
 def test_missing_groom_state_bead_gates_before_any_backend_call() -> None:
@@ -130,7 +130,7 @@ def test_status_not_yet_breached() -> None:
 
 
 def test_status_exactly_on_boundary_is_not_breached() -> None:
-    # Strict greater-than (criterion 14): days_since == nag_days is NOT breached.
+    # Strict greater-than: days_since == nag_days is NOT breached.
     backend = _backend(notes="backlog_last_groomed: 2026-07-11T12:00:00Z")
     result = groom(
         backend,
@@ -304,7 +304,7 @@ def test_status_gross_future_skew_is_invalid_state() -> None:
     assert GROOM_STATE_BEAD in exc_info.value.message
 
 
-# -- criterion 15: immediately after --done, --status reports not-breached --
+# -- immediately after --done, --status reports not-breached --
 
 
 def test_done_then_status_is_immediately_not_breached() -> None:

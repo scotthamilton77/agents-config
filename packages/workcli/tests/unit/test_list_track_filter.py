@@ -1,4 +1,4 @@
-"""list --track filters on DERIVED Item.track, not raw label presence (criterion 8)."""
+"""list --track filters on DERIVED Item.track, not raw label presence."""
 
 from __future__ import annotations
 

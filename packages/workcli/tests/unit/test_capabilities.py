@@ -1,4 +1,4 @@
-"""The capability gate (decision 11): dispatch refuses a verb the backend's
+"""The capability gate: dispatch refuses a verb the backend's
 `Capabilities` declares unsupported, before its handler ever runs.
 
 bd's own `Capabilities` are all native (`ready`, `sync`, `supports_dep_write`),

@@ -33,7 +33,7 @@ def _lint_args(config: TrackLayerConfig = CONFIG) -> Namespace:
 
 
 def _fixture() -> FakeBackend:
-    """One backend exercising every invariant class (criterion 10)."""
+    """One backend exercising every invariant class."""
     backend = FakeBackend()
     # Milestones: two in_progress non-exempt (cap 1 -> breach) + one exempt.
     backend.add("m-1", type="milestone", status="in_progress")
@@ -85,7 +85,7 @@ def test_lint_reports_every_invariant_class() -> None:
     assert wip["breached"] is True
     active = wip["active"]
     assert isinstance(active, list)
-    assert sorted(str(m) for m in active) == ["m-1", "m-2"]  # criterion 11: exempt excluded
+    assert sorted(str(m) for m in active) == ["m-1", "m-2"]  # exempt milestones excluded
 
     leases = report["leases"]
     assert isinstance(leases, dict)
@@ -123,7 +123,7 @@ def test_lint_without_config_is_e_not_configured() -> None:
 
 
 def test_lint_with_violations_still_exits_zero() -> None:
-    # Criterion 10's advisory leg: violations live in the envelope, exit stays 0.
+    # The advisory leg: violations live in the envelope, exit stays 0.
     def loader(_explicit_path: str | None) -> TrackLayerConfig:
         return CONFIG
 
