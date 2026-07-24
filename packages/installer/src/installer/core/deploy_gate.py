@@ -1,4 +1,4 @@
-"""The deploy-time admission gate (S3, charter D15/D16 — AC1/AC2/AC3).
+"""The deploy-time admission gate.
 
 One pass over the finalized staging plans, run in ``cli._run`` after the plan
 is assembled and before any write. It:
@@ -6,18 +6,18 @@ is assembled and before any write. It:
 1. **partitions** every gated artifact (rules/skills/commands/agents) by its
    admission record — dropping the record-less (the zero-base mechanism),
    collecting the malformed as violations, keeping the complete;
-2. measures the **surface budget** (AC1) over the *admitted* content — the
+2. measures the **surface budget** over the *admitted* content — the
    always-on surface per tool and each admitted skill body;
-3. runs the **conflict audit** (AC2) over the admitted artifacts' claims.
+3. runs the **conflict audit** over the admitted artifacts' claims.
 
 Any violation makes ``GateResult.ok`` false; the caller reports each and aborts
 with a non-zero exit *before* the write block, so a breach never half-deploys.
 The returned ``plans`` are the admission-filtered plans the caller installs —
 content the gate dropped is no longer desired, so the existing prune removes
-any previously-deployed copy (this is what reproduces the empty S0 dirs).
+any previously-deployed copy (this is what reproduces the empty zero-base dirs).
 
 The gate runs on the user-home deploy only; the ``--project`` surface is not
-gated in S3 (the always-on budget is a user-home concept).
+gated (the always-on budget is a user-home concept).
 """
 
 from __future__ import annotations

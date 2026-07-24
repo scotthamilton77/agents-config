@@ -56,10 +56,10 @@ NOUN_TEMPLATES: dict[Noun, NounTemplate] = {
     Noun.EPIC: NounTemplate(
         "epic", "shape-epic", is_container=True, expects_evidence=False, born_planned=False
     ),
-    # S2-D6: closes the milestone-with-acceptance expressibility gap (V2 audit
-    # row mint (a)/(b)) -- `--acceptance` flows through like every noun, and
-    # `create --raw` stays transport-minimal. Never a discover noun (a
-    # discovery is not a roadmap anchor), so LEAF_NOUNS is unchanged.
+    # Closes the milestone-with-acceptance expressibility gap -- `--acceptance`
+    # flows through like every noun, and `create --raw` stays transport-minimal.
+    # Never a discover noun (a discovery is not a roadmap anchor), so LEAF_NOUNS
+    # is unchanged.
     Noun.MILESTONE: NounTemplate(
         "milestone",
         "shape-milestone",

@@ -1,4 +1,4 @@
-"""The admission bar (S3, charter D16 / AC3).
+"""The admission bar.
 
 Every artifact in a *gated namespace* (``rules``, ``skills``, ``commands``,
 ``agents``) must carry a complete ``admission`` record in its front matter to
@@ -6,7 +6,7 @@ be deployed. The record states the failure the artifact prevents, what it
 costs, and the observation that would remove it — so nothing enters the
 always-on / on-invoke surface by default or nostalgia.
 
-Classification is three-valued (charter D16 semantics):
+Classification is three-valued:
 
 - **no record** — no ``admission`` block at all → *not admitted* (dropped and
   reported). This is the zero-base mechanism: today's content carries no
@@ -15,9 +15,9 @@ Classification is three-valued (charter D16 semantics):
   required non-empty field → a mechanical defect that *aborts* the deploy.
 - **complete** — all three fields present and non-empty → *admitted*.
 
-``agents`` is gated alongside the D16 ``rule/skill/command`` set: an agent is an
+``agents`` is gated alongside the ``rule/skill/command`` set: an agent is an
 on-invoke capability indistinguishable from a skill for admission purposes, and
-the S0 hand-deploy emptied ``agents/`` too.
+the zero-base hand-deploy emptied ``agents/`` too.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ class AdmissionOutcome(Enum):
 
 @dataclass(frozen=True, slots=True)
 class AdmissionRecord:
-    """A complete admission record (D16)."""
+    """A complete admission record."""
 
     prevents: str
     cost: str

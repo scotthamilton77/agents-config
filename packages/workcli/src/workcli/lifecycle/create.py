@@ -29,7 +29,7 @@ from workcli.lifecycle.park import PARKED_LABEL
 from workcli.model import CreateFields
 from workcli.tracks import TRACK_PREFIX, derive_track, require_known_track, track_label
 
-# The reserved-namespace wall for additive `--label` (S2-D7): labels that
+# The reserved-namespace wall for additive `--label`: labels that
 # forge lifecycle state are refused at usage-validation time, before any
 # backend call.
 _RESERVED_LABEL_EXACT = frozenset(
@@ -136,8 +136,8 @@ def _validate_usage(args: Namespace, noun: Noun) -> None:
             "create milestone: milestones are track-exempt; omit --track",
         )
     for user_label in args.label:
-        # Additive user labels are welcome (single-call atomicity, V2 audit
-        # row mint (c)); lifecycle/track state is not label-forgeable.
+        # Additive user labels are welcome (single-call atomicity); lifecycle/
+        # track state is not label-forgeable.
         reserved = user_label in _RESERVED_LABEL_EXACT or user_label.startswith(
             _RESERVED_LABEL_PREFIXES
         )

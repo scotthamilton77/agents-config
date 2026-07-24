@@ -1,4 +1,4 @@
-"""The admission bar's per-item classification (S3-B, charter D16 / AC3).
+"""The admission bar's per-item classification.
 
 Pins the three-valued verdict — no-record drops, malformed aborts, complete
 admits — across file-shaped (rules/commands) and directory-shaped (skills)

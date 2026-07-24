@@ -70,7 +70,7 @@ def test_is_container_false_for_feature_item_with_children_but_no_container_labe
 
 
 def test_noun_templates_covers_all_eight_nouns_per_the_l9_table():
-    # Seven from the L9 table + milestone (S2-D6).
+    # Seven base nouns + milestone.
     assert {
         Noun.SPIKE: NounTemplate("task", "shape-spike", False, False, False),
         Noun.CHORE: NounTemplate("chore", "shape-chore", False, False, False),

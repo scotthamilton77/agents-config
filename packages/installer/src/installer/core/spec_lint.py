@@ -1,14 +1,15 @@
-"""The spec structural lint (S5, charter AC4 — child spec S5-D5).
+"""The spec structural lint.
 
-Enforces the D1/D2 output contract mechanically over ``docs/specs/*.md``: a
+Enforces the spec output contract mechanically over ``docs/specs/*.md``: a
 spec must declare its acceptance criteria as structured, ID-bearing entries,
 and — if it slices the work — every slice must cite at least one of those
-IDs. This is the AC4 half of the structural-AC enforcement `admission.py`
-(AC3) and `surface_budget.py` (AC1) already carry; it lives beside them.
+IDs. This is the spec-structure half of the deploy-time structural checks
+that `admission.py` and `surface_budget.py` already carry; it lives beside
+them.
 
 Scope: files matching ``docs/specs/YYYY-MM-DD-*.md`` with date ≥
 ``GATE_START_DATE``. Earlier dates are exempt by date alone — no allowlist
-file. Three mechanical, gaming-resistant checks (S5-D5):
+file. Three mechanical, gaming-resistant checks:
 
 1. an "Acceptance criteria" heading exists (case-insensitive, matched as a
    markdown heading line);
@@ -80,7 +81,7 @@ def _parse_spec_date(filename: str) -> date | None:
 def discover_spec_files(specs_dir: Path) -> list[Path]:
     """Spec files under ``specs_dir`` in scope for the lint: dated ≥
     ``GATE_START_DATE``. A missing or empty directory yields an empty list
-    (S5-B5) — no crash, nothing to lint."""
+    — no crash, nothing to lint."""
     if not specs_dir.is_dir():
         return []
     out: list[Path] = []
@@ -150,7 +151,8 @@ def _defined_ids(lines: list[str], headings: list[_Heading], fenced: list[bool])
     Nested subheadings (e.g. per-slice sections) stay inside the AC section's
     scope, since their level is deeper — only a same-or-shallower heading
     closes it. A fenced line (an illustrative example of the entry shape)
-    never contributes — the S5-B2 gaming case."""
+    never contributes — the gaming case where an example entry inside a code
+    fence must not count."""
     ids: set[str] = set()
     for idx, (line_idx, level, text) in enumerate(headings):
         if _AC_HEADING_KEYWORD not in text.lower():
@@ -196,7 +198,8 @@ def lint_spec_text(path: Path, text: str) -> list[Violation]:
             continue
         end = _section_end(headings, idx, level, len(lines))
         # Fenced lines (e.g. a quoted example slice heading) never count
-        # toward a citation — the S5-B3 gaming/inverse case.
+        # toward a citation — the inverse gaming case where a quoted example
+        # slice heading must not satisfy the citation requirement.
         section_lines = [
             line for offset, line in enumerate(lines[line_idx:end]) if not fenced[line_idx + offset]
         ]
@@ -215,9 +218,9 @@ def lint_spec_text(path: Path, text: str) -> list[Violation]:
 
 def lint_specs(specs_dir: Path) -> list[Violation]:
     """Lint every in-scope spec under ``specs_dir``. A missing/empty
-    directory, or a directory holding no in-scope specs, yields ``[]``
-    (S5-B5). Reading the same clean tree twice returns the identical result
-    (S5-B4 idempotency) — this function has no side effects."""
+    directory, or a directory holding no in-scope specs, yields ``[]``.
+    Reading the same clean tree twice returns the identical result
+    (idempotency) — this function has no side effects."""
     violations: list[Violation] = []
     for path in discover_spec_files(specs_dir):
         try:

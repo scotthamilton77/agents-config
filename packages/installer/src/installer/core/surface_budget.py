@@ -1,4 +1,4 @@
-"""The always-on surface budget (S3, charter D16 / AC1).
+"""The always-on surface budget.
 
 Two mechanical caps, each a hard failure that aborts the deploy before any
 write:
@@ -9,10 +9,9 @@ write:
   the on-invoke payload) is capped at ``SKILL_BODY_TOKEN_CAP``.
 
 Token count is the ``bytes / 4`` approximation (ceil): no tokenizer dependency
-is added. The choice is documented in the S3 child spec — the cap carries >20x
-margin at the zero-base (~418 tokens vs 10 000), and the size-distribution
-erosion tripwire (charter D19) watches the trend. Swapping in ``tiktoken`` is a
-later refinement, not a blocker.
+is added. The cap carries >20x margin at the zero-base (~418 tokens vs
+10 000), and the size-distribution erosion tripwire watches the trend.
+Swapping in ``tiktoken`` is a later refinement, not a blocker.
 """
 
 from __future__ import annotations

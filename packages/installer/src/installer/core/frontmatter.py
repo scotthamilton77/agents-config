@@ -1,5 +1,5 @@
 """Leading YAML front-matter split, shared by the admission bar and the surface
-budget (S3).
+budget.
 
 A markdown artifact optionally opens with a ``---`` fenced YAML block. The
 admission gate reads the ``admission``/``claims`` mappings out of it; the

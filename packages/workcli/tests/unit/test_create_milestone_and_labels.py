@@ -1,10 +1,9 @@
-"""Slice S2-A: mint completeness (spec 2026-07-22-workcli-completion-s2 §3).
+"""mint completeness (S2-A).
 
-The milestone noun closes the milestone-with-acceptance expressibility gap
-(S2-D6; V2 audit rows mint (a)/(b)); additive `--label` behind the
-reserved-namespace wall closes the single-call-atomicity gap (S2-D7; row
-mint (c)). State assertions run against `FakeBackend`; one CLI-level test
-pins the argparse wiring for the new noun.
+The milestone noun closes the milestone-with-acceptance expressibility gap;
+additive `--label` behind the reserved-namespace wall closes the
+single-call-atomicity gap. State assertions run against `FakeBackend`; one
+CLI-level test pins the argparse wiring for the new noun.
 """
 
 from __future__ import annotations

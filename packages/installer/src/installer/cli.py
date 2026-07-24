@@ -342,7 +342,7 @@ def _run(
             for tool, plan in plans.items()
         }
 
-    # Admission gate (S3, charter D15/D16 — AC1/AC2/AC3): partition every gated
+    # Admission gate: partition every gated
     # artifact by its admission record, then weigh the surface budget and run the
     # conflict audit over the admitted set. Record-less content is dropped here
     # (the zero-base mechanism — prune then removes any previously-deployed copy);

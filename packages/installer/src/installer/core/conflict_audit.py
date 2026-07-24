@@ -1,4 +1,4 @@
-"""The deploy-time conflict audit (S3, charter D16 / AC2).
+"""The deploy-time conflict audit.
 
 A deployed artifact may declare a ``claims`` mapping in its front matter —
 ``<claim-key>: <value>`` — where a claim-key names a fact about the live
@@ -6,7 +6,7 @@ workflow (e.g. ``pr-review-medium: verdict-artifact``). The audit reconciles
 every admitted artifact's claims: if two artifacts assert *distinct* values for
 the same key, that pair is a conflict and the deploy aborts.
 
-This is the deliberately simple first implementation the charter sanctioned —
+This is a deliberately simple first implementation —
 a pairwise key/value lint, not semantic (NLI) conflict detection over prose.
 With zero admitted claimants (the zero-base state) the audit is vacuously
 green.

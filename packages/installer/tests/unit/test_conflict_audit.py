@@ -1,4 +1,4 @@
-"""The deploy-time conflict audit (S3-D, charter D16 / AC2)."""
+"""The deploy-time conflict audit."""
 
 from __future__ import annotations
 
