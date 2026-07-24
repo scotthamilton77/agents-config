@@ -9,7 +9,8 @@
         ci-vizsuite test-vizsuite lint-vizsuite format-check-vizsuite \
         typecheck-vizsuite cov-vizsuite audit-vizsuite verify-entry-vizsuite \
         ci-grind test-grind lint-grind format-check-grind \
-        typecheck-grind cov-grind audit-grind verify-entry-grind
+        typecheck-grind cov-grind audit-grind verify-entry-grind \
+        spec-lint
 
 INSTALLER := packages/installer
 PRGROOM := packages/prgroom
@@ -17,7 +18,7 @@ WORKCLI := packages/workcli
 VIZSUITE := packages/vizsuite
 GRIND := packages/grind
 
-ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind lint-actions
+ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind lint-actions spec-lint
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
               cov-installer audit-installer verify-entry-installer
@@ -39,6 +40,12 @@ cov-installer:
 
 audit-installer:
 	cd $(INSTALLER) && uv sync --frozen && uv run pip-audit
+
+# spec-lint runs from the repo root (no `cd`) so it resolves docs/specs/
+# relative to the repo, mirroring lint-actions/verify-entry-installer below.
+# The `uv --project` flag selects the installer venv (AC4, S5-D5/S5-B6).
+spec-lint:
+	uv --project $(INSTALLER) run python -m installer.spec_lint_cli .
 
 # lint-actions and verify-entry-installer run from the repo root (no `cd`) so
 # they can resolve .github/workflows/ and scripts/ respectively. The
