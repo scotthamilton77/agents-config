@@ -46,13 +46,13 @@ deterministic path in the PR branch so the merge gate reads it as a file — PR
 comments are not a review medium (D9). The path is fixed by this contract:
 `.review/verdict.json` at the repository root, one file, overwritten each
 round (prior rounds live in git history); "verdict-only commit" means a
-commit whose touched paths are all under `.review/`. It records the
+commit whose only touched path is `.review/verdict.json`. It records the
 `head_sha` of the
 **reviewed head** — the head the diff was taken at. Because committing the
 verdict itself advances the branch, staleness is defined over reviewed
 content, not raw head equality: a verdict is **stale** iff any commit after
-its recorded `head_sha` changes anything outside `.review/`. Verdict-only
-commits neither stale nor refresh a verdict;
+its recorded `head_sha` changes anything outside `.review/verdict.json`.
+Verdict-only commits neither stale nor refresh a verdict;
 a stale verdict is treated as absent by the gate. This is decidable from git
 observables (the paths touched by the commits between the recorded head and
 the current head).
@@ -115,8 +115,14 @@ All machine-posted PR comments and approvals use the GitHub App identity, never
 the human's auth, reusing the proven merge-guard/App-approver plumbing (the App
 must hold `contents:write` for its approval to count). Merge eligibility =
 CI green + a terminal-clean, non-stale verdict covering the current reviewed
-head + an App approval attesting that specific verdict (its content hash and
-the head it covers). A missing, stale, non-terminal, unattested, or unparseable verdict
+head + an App approval attesting that specific verdict. The attestation is
+mechanically defined: the App-posted approving review's body carries exactly
+one JSON object `{"verdict_blob": "<git blob OID of .review/verdict.json>",
+"head_sha": "<reviewed head it covers>"}`; it attests the verdict iff
+`verdict_blob` equals the blob OID of `.review/verdict.json` as committed for
+that reviewed head (`git rev-parse <verdict-commit>:.review/verdict.json`)
+and `head_sha` equals the verdict's recorded reviewed head — both plain git
+observables. A missing, stale, non-terminal, unattested, or unparseable verdict
 **blocks** the
 merge — broken review machinery never silently passes. A human PR comment is by
 definition an intervention: it routes to escalation, never into the fix loop.
@@ -147,7 +153,8 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   (evidence-mandatory-for-mechanical boundary).
 - **S6-A2** A verdict records the `head_sha` of the reviewed head; the
   merge-eligibility check treats it as absent when any commit after that head
-  changes a path outside `.review/` — the contract-fixed verdict location
+  changes a path other than `.review/verdict.json` — the contract-fixed
+  verdict location
   (stale-verdict guard) — while a verdict whose only successor commit is the
   verdict commit itself remains fresh (the self-invalidation inverse).
   Satisfiable by hand-comparison now; names the S8
@@ -255,8 +262,10 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   App-approver plumbing — not rebuilt here).
 - **S6-D3** Merge eligibility requires CI green + a terminal-clean, non-stale
   verdict per the Slice A staleness rule + an App approval that **attests the
-  specific verdict** — the approval binds the verdict's content hash and the
-  head SHA it covers, so a contributor-committed "clean" verdict paired with an
+  specific verdict** — the approval body carries the attestation JSON defined
+  in the decisions (the verdict file's git blob OID + the reviewed head), and
+  it binds only when both match the committed verdict, so a
+  contributor-committed "clean" verdict paired with an
   App approval issued for an earlier head (or a different verdict) is not
   eligible. A missing, stale, non-terminal, or unattested verdict blocks the
   merge (fail-closed). Satisfiable by hand-verification now; names the S8
