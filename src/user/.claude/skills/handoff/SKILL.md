@@ -48,7 +48,7 @@ After writing, print the absolute file path on its own line so the user can pass
 5. **Open questions and blockers** — anything the next agent needs to resolve before progress
 6. **Next concrete steps** — ordered, actionable
 7. **References** — paths and URLs only; do NOT duplicate content from PRDs, plans, ADRs, issues/beads, commits, or diffs
-8. **Suggested skills** — skills the next agent should invoke (e.g. `brainstorming`, `prototype`, `bugfix`)
+8. **Suggested skills** — skills the next agent should invoke (e.g. `grilling`, `prototype`, `bugfix`)
 
 ## Constraints
 
