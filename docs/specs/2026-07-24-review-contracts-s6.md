@@ -124,8 +124,8 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   head as absent (stale-verdict guard). Satisfiable by hand-comparison now;
   names the S8 merge-eligibility-evaluation handoff for the automated check.
 - **S6-A3** A round declaring a `base_sha` that differs from the diff's actual
-  base is rejected as an **incomplete** round (the phantom-finding guard,
-  the phantom-finding guard); a round whose declared base matches is accepted
+  base is rejected as an **incomplete** round (the phantom-finding guard); a round
+  whose declared base matches is accepted
   (inverse pair).
 - **S6-A4** Terminal-clean is defined as a complete round with zero
   `type:"mechanical"` findings; a verdict carrying only `advisory` findings
