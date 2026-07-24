@@ -1,4 +1,4 @@
-"""VERBS registry and the capability gate (decision 11).
+"""VERBS registry and the capability gate.
 
 `VERBS` maps a verb name to its handler: `(Backend, Namespace) -> JsonValue`.
 `REQUIRED_CAPABILITY` maps a verb name to a predicate function over
@@ -61,7 +61,7 @@ def _raw_incompatible_flags(args: Namespace) -> list[str]:
 
 def _create(backend: Backend, args: Namespace) -> JsonValue:
     """Dispatch `work create`: `--raw` (transport primitive) or a NOUN;
-    absent both, refuse naming the two valid modes (spec §2, plan L9/CLI surface).
+    absent both, refuse naming the two valid modes.
 
     `--raw` is transport-only: combining it with a noun or a lifecycle flag it
     cannot honor is rejected as `E_USAGE` rather than proceeding with a
@@ -123,7 +123,7 @@ REQUIRED_CAPABILITY: dict[str, Callable[[Capabilities, Namespace], bool]] = {
     "dep": lambda c, a: a.action == "list" or c.supports_dep_write,
     # discover always mints a typed discovered-from edge (step 5), so it
     # carries the same precondition as `dep add`/`dep remove` -- gated
-    # ahead of the handler exactly like `dep` itself (spec §4 step 0).
+    # ahead of the handler exactly like `dep` itself.
     "discover": lambda c, _a: c.supports_dep_write,
 }
 

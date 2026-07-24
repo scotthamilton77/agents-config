@@ -1,4 +1,4 @@
-"""Tests for the additive Receipt.clis field (spec §7, item 11)."""
+"""Tests for the additive Receipt.clis field."""
 
 import json
 from pathlib import Path
@@ -16,7 +16,7 @@ def test_clis_round_trip(tmp_path: Path) -> None:
     When written and re-read
     Then status is OK and the entry survives intact.
 
-    Pins spec §7 / item 11: receipt_store round-trips the field.
+    Pins that receipt_store round-trips the field.
     """
     path = tmp_path / "install-receipt.json"
     write_receipt(path, Receipt(clis=(_ENTRY,)))
@@ -31,8 +31,8 @@ def test_legacy_receipt_without_clis_still_validates(tmp_path: Path) -> None:
     When read by the new code
     Then it reads OK (integrity still validates) with clis == ().
 
-    Pins spec §7: canonical_bytes includes "clis" only when non-empty, so a
-    legacy receipt hashes byte-identically (item 11).
+    Pins that canonical_bytes includes "clis" only when non-empty, so a
+    legacy receipt hashes byte-identically.
     """
     path = tmp_path / "install-receipt.json"
     legacy = Receipt()  # no clis
@@ -50,7 +50,7 @@ def test_empty_clis_hashes_identically_to_absent() -> None:
     When canonical_bytes runs
     Then the bytes are identical (no integrity break for legacy receipts).
 
-    Pins spec §7 omit-when-empty.
+    Pins the omit-when-empty rule.
     """
     assert canonical_bytes(Receipt()) == canonical_bytes(Receipt(clis=()))
     assert compute_integrity(Receipt()) == compute_integrity(Receipt(clis=()))
@@ -64,7 +64,7 @@ def test_malformed_clis_entry_reads_corrupt(tmp_path: Path) -> None:
     Then status is CORRUPT (fail closed — only the clis type validation can
     produce this, since the restamped integrity MATCHES the coerced value).
 
-    Pins spec §7 validation / item 11: the fail-closed type check in
+    Pins that the fail-closed type check in
     _cli_entry_from_json — not a stale integrity — is what rejects the entry.
     """
     path = tmp_path / "install-receipt.json"
@@ -92,7 +92,7 @@ def test_merge_clis_union_rule() -> None:
     Then the merge keeps workcli's prior entry (skip retains), adds
     prgroom's new entry, and drops oldtool.
 
-    Pins spec §7 union merge rule (registry -> new-if-deployed else
+    Pins the union merge rule (registry -> new-if-deployed else
     retained; non-registry -> dropped iff uninstalled).
     """
     merged = merge_clis(
@@ -113,7 +113,7 @@ def test_merge_clis_declined_uninstall_retained_foreign_relinquished() -> None:
     Then the declined one is retained (retried next prune) and the
     relinquished foreign one is dropped without uninstall.
 
-    Pins spec §7 (decline retains; foreign names relinquished — item 10).
+    Pins the decline-retains / foreign-names-relinquished rule.
     """
     merged = merge_clis(
         prior_clis=(_e("oldtool"), _e("ruff")),

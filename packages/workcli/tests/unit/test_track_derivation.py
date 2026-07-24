@@ -1,4 +1,4 @@
-"""derive_track: the single label->track rule every consumer shares (track spec §4)."""
+"""derive_track: the single label->track rule every consumer shares."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def test_no_track_label_derives_none() -> None:
 
 
 def test_multiple_track_labels_derive_none() -> None:
-    # Reachable via raw label writes; spec §4 pins null, lint invariant 1 flags it.
+    # Reachable via raw label writes; the rule pins null, lint invariant 1 flags it.
     assert derive_track(["track:installer", "track:prgroom"]) is None
 
 

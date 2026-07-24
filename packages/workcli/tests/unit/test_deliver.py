@@ -1,9 +1,9 @@
 """`deliver` -- evidence-gated leaf delivery + design-spec placeholder
-reconciliation (plan Task 5, test-plan items 4, 5, 6).
+reconciliation.
 
 DESIGN path dispatches on the `shape-design` label: it locates the sibling
 placeholder under the design child's parent (the container always has
-exactly the two children `instantiate_spec_shape` minted -- L9), records the
+exactly the two children `instantiate_spec_shape` minted), records the
 `[work] spec:` marker on the placeholder, reconciles it against the parsed
 `## Continuations` manifest, then closes the design child. LEAF path
 verifies bd-observable evidence (`--items` existence via `batch_get`,

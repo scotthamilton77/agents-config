@@ -1,11 +1,11 @@
 """`work note` is append-only; `work update` refuses to clobber notes.
 
-Spec test-plan item 6: two `note` calls concatenate via bd's `--append-notes`
+Two `note` calls concatenate via bd's `--append-notes`
 flag, in order; no verb path may ever reach bd's bare replace flag `--notes`.
 `--set-notes` on `update` is recognized by argparse (so it is never swallowed
 as a generic `E_USAGE` unknown-flag error) but the verb handler rejects it
-with the named `E_FIELD_CLOBBER_GUARD` code before any bd call (locked
-decision 6) -- notes only ever move through `work note`. The flag is also
+with the named `E_FIELD_CLOBBER_GUARD` code before any bd call --
+notes only ever move through `work note`. The flag is also
 suppressed from `--help` (rationale at its `add_argument` site in `cli.py`).
 """
 

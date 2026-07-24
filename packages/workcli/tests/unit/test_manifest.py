@@ -1,4 +1,4 @@
-"""`## Continuations` manifest parser (plan Task 2 / spec §6, §15).
+"""`## Continuations` manifest parser.
 
 `parse_continuations` turns a spec's `## Continuations` section into a typed
 `Manifest`. The grammar is wrap-tolerant (a bullet's title/AC may continue

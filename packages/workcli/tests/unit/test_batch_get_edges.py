@@ -1,4 +1,4 @@
-"""`BdBackend.batch_get` edge cases (plan L5, 38o1v #4).
+"""`BdBackend.batch_get` edge cases.
 
 Empty `ids` -> `[]` with zero bd calls (a new guard -- previously an empty
 request still built and sent a `show --json` argv). Duplicate/extra-record

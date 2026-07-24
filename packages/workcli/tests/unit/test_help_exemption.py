@@ -1,5 +1,5 @@
 """Finding 3: `--help`/`-h` is a documented, pinned exemption from the
-"stdout is always exactly one envelope" invariant (spec §4).
+"stdout is always exactly one envelope" invariant.
 
 argparse's built-in help action prints human-oriented usage text to the
 *real* `sys.stdout` and raises `SystemExit(0)` -- it never routes through

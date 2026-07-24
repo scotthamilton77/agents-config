@@ -1,11 +1,11 @@
-"""`work create <noun>` -- noun-templated creation (plan Task 3).
+"""`work create <noun>` -- noun-templated creation.
 
 `create_noun` is the lifecycle layer's public creation mode, dispatched to
 from `verbs/__init__.py`'s `create` router (never called directly by
 `--raw`, which stays the transport primitive in `verbs/write.py`).
-`instantiate_spec_shape` is shared with `promote` (Task 4): it mints the
-design child + blocked placeholder under an existing container and never
-stamps `planned` -- the caller stamps it strictly last (L16).
+`instantiate_spec_shape` is shared with `promote`: it mints the design
+child + blocked placeholder under an existing container and never stamps
+`planned` -- the caller stamps it strictly last.
 """
 
 from __future__ import annotations
@@ -43,8 +43,8 @@ def instantiate_spec_shape(
 ) -> tuple[str, str]:
     """Find-or-create the design child + blocked placeholder under a container.
 
-    Returns (design_child_id, placeholder_id). **Idempotent** (spec §6, L16):
-    a child already carrying `shape-design` / `impl-placeholder` under the
+    Returns (design_child_id, placeholder_id). **Idempotent**: a child
+    already carrying `shape-design` / `impl-placeholder` under the
     container is reused, never duplicated -- so the `reconcile` sweep (or a
     re-run) that replays an interrupted instantiation mints only what a partial
     crash left missing. Does NOT stamp `planned` or touch `creating-spec` -- the
@@ -98,10 +98,11 @@ def finalize_spec_instantiation(
 ) -> tuple[str, str]:
     """Idempotently complete a spec container born under `creating-spec`.
 
-    The single source of the L16 completion tail shared by `create spec`,
-    `promote`, and the `reconcile` sweep -- triplicating it is what let the
-    `promote` crash window drift open. Every step is idempotent, so replaying it
-    over any crash point (or a fully healed container) converges:
+    The single source of the completion tail (stamps `planned` strictly
+    last) shared by `create spec`, `promote`, and the `reconcile` sweep --
+    triplicating it is what let the `promote` crash window drift open.
+    Every step is idempotent, so replaying it over any crash point (or a
+    fully healed container) converges:
 
     1. Ensure the container *shape* (`shape-spec` on, `shape-feat` off). `create
        spec` births the container already `shape-spec`, so this is a no-op there;
@@ -129,8 +130,8 @@ def _validate_usage(args: Namespace, noun: Noun) -> None:
             f"create {noun}: --type is set by the noun; omit it",
         )
     if noun is Noun.MILESTONE and args.track is not None:
-        # Milestone-type beads are track-exempt and carry no track:* label
-        # (track spec §3) -- refuse rather than mint an exemption violation.
+        # Milestone-type beads are track-exempt and carry no track:* label --
+        # refuse rather than mint an exemption violation.
         raise WorkError(
             ErrorCode.USAGE,
             "create milestone: milestones are track-exempt; omit --track",
@@ -174,13 +175,13 @@ def _check_duplicate_title(backend: Backend, title: str) -> None:
 def _resolve_track(
     backend: Backend, args: Namespace, parent: str | None
 ) -> tuple[str | None, list[str]]:
-    """Track resolution for `work create <noun>`: derive, else enforce (track spec §4).
+    """Track resolution for `work create <noun>`: derive, else enforce.
 
     Explicit --track wins; else a tracked parent's derived track is inherited
     (a track-less parent falls through); else enforcement decides. A repo with
-    no resolvable config behaves exactly as before the track layer existed
-    (criterion 17); an INVALID config skips the gate with a warning instead of
-    breaking `create` (spec §3: a broken config fails only the track layer).
+    no resolvable config behaves exactly as before the track layer existed;
+    an INVALID config skips the gate with a warning instead of breaking
+    `create` -- a broken config fails only the track layer.
     """
     try:
         config = args.load_config()
@@ -245,7 +246,7 @@ def _create_spec_container(
     if args.orphan:
         _append_orphan_marker(backend, container_id)
     # The completion tail (mint children, stamp `planned`, drop `creating-spec`
-    # strictly last -- L16) is shared with `promote` and the `reconcile` sweep.
+    # strictly last) is shared with `promote` and the `reconcile` sweep.
     # A crash anywhere before the handle comes off leaves a `shape-spec`
     # container that is NOT `planned` and still carries `creating-spec`: it
     # self-reports into the Planning queue (visible) AND is finished by the sweep
@@ -257,7 +258,7 @@ def _create_spec_container(
 
 
 def create_noun(backend: Backend, args: Namespace) -> JsonValue:
-    """`work create <noun> --title T (--parent ID | --orphan) [...]` (plan L9/L13/L14/L16)."""
+    """`work create <noun> --title T (--parent ID | --orphan) [...]`."""
     noun = Noun(args.noun)
     template = NOUN_TEMPLATES[noun]
 
@@ -265,8 +266,8 @@ def create_noun(backend: Backend, args: Namespace) -> JsonValue:
     _check_duplicate_title(backend, args.title)
 
     parent = None if args.orphan else args.parent
-    # Milestones are track-exempt by contract (track spec §3): no requirement
-    # even under enforcement = "required", and never a track:* label.
+    # Milestones are track-exempt by contract: no requirement even under
+    # enforcement = "required", and never a track:* label.
     track: str | None = None
     warnings: list[str] = []
     if noun is not Noun.MILESTONE:
@@ -301,7 +302,7 @@ def create_noun(backend: Backend, args: Namespace) -> JsonValue:
 
 
 def _append_orphan_marker(backend: Backend, item_id: str) -> None:
-    """Append the orphan marker, surfacing `item_id` on failure (discover spec §3.2).
+    """Append the orphan marker, surfacing `item_id` on failure.
 
     The mint (`backend.create`) already returned by the time this runs, so a
     failure here leaves a created-but-unmarked bead. `detail.created_id` lets

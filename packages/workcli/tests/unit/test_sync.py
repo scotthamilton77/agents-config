@@ -1,4 +1,4 @@
-"""`sync` — ordered dolt commit+push, or `--pull` (spec §3, decision 9).
+"""`sync` — ordered dolt commit+push, or `--pull`.
 
 Default mode is commit-then-push, in that exact order (a dolt commit failing
 with "nothing to commit" is still success -- idempotent sync, still

@@ -1,4 +1,4 @@
-"""Tests for the CliDeployPort fake and real implementation (spec §4)."""
+"""Tests for the CliDeployPort fake and real implementation."""
 
 import subprocess
 from pathlib import Path
@@ -19,7 +19,7 @@ def test_scripted_fake_stable_reads_and_stateful_queues(tmp_path: Path) -> None:
     (shim_path/install/smoke/...) pop per-method queues, and the transcript
     records (method, key-arg) tuples.
 
-    Pins spec §4 fake contract (queue semantics reserved for calls whose
+    Pins the fake contract (queue semantics reserved for calls whose
     sequence matters — ralf plan-review cycle 1 M3).
     """
     bin_dir = tmp_path / "bin"
@@ -52,7 +52,7 @@ def test_scripted_fake_exhaustion_is_loud(tmp_path: Path) -> None:
     When tool_install / shim_path are called
     Then each raises with a message naming the exhausted queue.
 
-    Pins spec §4: exhaustion-error self-diagnosis mirrors ScriptedIO.
+    Pins that exhaustion-error self-diagnosis mirrors ScriptedIO.
     """
     fake = ScriptedCliDeploy()
     with pytest.raises(RuntimeError, match="installs"):
@@ -74,7 +74,7 @@ def test_uv_version_parses_semver(monkeypatch: pytest.MonkeyPatch) -> None:
     When uv_version() runs
     Then it returns (0, 10, 4); an unparseable output returns None.
 
-    Pins spec §4/§6: the MIN_UV_VERSION guard input.
+    Pins the MIN_UV_VERSION guard input.
     """
     port = UvCliDeploy()
     monkeypatch.setattr(
@@ -92,7 +92,7 @@ def test_bin_dir_fallback_chain(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     Then it honors UV_TOOL_BIN_DIR, then XDG_BIN_HOME, then
     XDG_DATA_HOME/../bin, then ~/.local/bin.
 
-    Pins spec §4 / item 17 (full documented uv precedence).
+    Pins the full documented uv precedence.
     """
 
     def _boom(*_a: object, **_k: object) -> _FakeCompleted:
@@ -121,7 +121,7 @@ def test_tool_list_parses_names_and_executables(monkeypatch: pytest.MonkeyPatch)
     Then it returns {tool: frozenset(executables)}; a failed query returns
     None.
 
-    Pins spec §4: the provenance mapping gating promptless heal (item 19).
+    Pins the provenance mapping gating promptless heal.
     """
     out = "workcli v0.1.0\n- work\nprgroom v0.1.0\n- prgroom\n"
     port = UvCliDeploy()
@@ -144,7 +144,7 @@ def test_tool_install_exports_constraints_when_lock_present(
     `uv tool install --constraints <file> <dir>`; force=True adds --force;
     a lock-less package installs unconstrained.
 
-    Pins spec §4 / items 16, 18 (lock-respecting + non-forcing fresh).
+    Pins the lock-respecting + non-forcing-fresh install rules.
     """
     calls: list[list[str]] = []
 
@@ -172,7 +172,7 @@ def test_tool_install_exports_constraints_when_lock_present(
     # --force alone reuses uv's build cache for local path packages (keyed on
     # package metadata/version, not src/** contents); --reinstall forces a
     # rebuild from source so a digest-triggered upgrade can't silently install
-    # a stale cached wheel (agents-config-9k9.14).
+    # a stale cached wheel.
     assert "--reinstall" in calls[0]
 
 
@@ -182,7 +182,7 @@ def test_subprocess_failures_map_to_not_ok(monkeypatch: pytest.MonkeyPatch, tmp_
     When tool_uninstall or smoke runs
     Then CommandResult(ok=False, output=...) is returned, never an exception.
 
-    Pins spec §4/§8: fail loud via the result, no exception leakage.
+    Pins the fail-loud rule: return the result, no exception leakage.
     """
     port = UvCliDeploy()
 
@@ -215,8 +215,8 @@ def test_update_shell_already_configured_counts_as_success(
     from an un-restarted shell stay green); a genuinely different failure
     stays ok=False.
 
-    Pins spec §6 already-configured classification / item 20 (real-impl
-    branch; the stage-level behavior is driven through the fake in Task 9).
+    Pins the already-configured classification (real-impl
+    branch; the stage-level behavior is driven through the fake elsewhere).
     """
     port = UvCliDeploy()
     monkeypatch.setattr(
@@ -241,8 +241,8 @@ def test_bin_dir_uses_uv_tool_dir_when_available(
     When bin_dir() resolves
     Then the printed path wins over every env fallback.
 
-    Pins spec §4: the uv query is the primary source; the env chain is
-    fallback only (success arm of item 17).
+    Pins that the uv query is the primary source; the env chain is
+    fallback only.
     """
     monkeypatch.setenv("UV_TOOL_BIN_DIR", str(tmp_path / "ignored"))
     monkeypatch.setattr(
@@ -260,7 +260,7 @@ def test_tool_install_export_failure_aborts_install(
     Then the failing export result is returned and `uv tool install` never
     runs — a lock-respecting install refuses to proceed unconstrained.
 
-    Pins spec §4 / item 16 export-failure arm.
+    Pins the export-failure arm.
     """
     calls: list[list[str]] = []
 

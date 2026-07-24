@@ -372,7 +372,7 @@ def test_cli_targets_render_as_blocks() -> None:
     Then verbose renders a '-- cli:workcli --' block and quiet renders its
     change line (previously cli:* keys were silently dropped).
 
-    Pins spec §6 summary-rendering change.
+    Pins the summary-rendering change for cli: targets.
     """
     counters = {"cli:workcli": Counters(created=1)}
     io = ScriptedIO()
@@ -412,8 +412,7 @@ def test_quiet_cli_failure_with_no_counters_does_not_claim_up_to_date() -> None:
     reach render_summary with empty cli: counters, right before cli.py
     returns exit 1, so the quiet summary must not claim success.
 
-    Pins spec §6 summary-rendering change (Task 12) + failure surfacing
-    (Task 8/9).
+    Pins the summary-rendering change plus the failure-surfacing rule.
     """
     io = ScriptedIO()
     render_summary(

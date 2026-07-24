@@ -1,8 +1,8 @@
 """Behavioural tests for the profiles manifest + pure scope-routing resolver
-(spec §10 items 1-11; docs/specs/2026-07-06-profiles-scope-routing.md).
+(docs/specs/2026-07-06-profiles-scope-routing.md).
 
-# NOTE: spec §10 item 4 (the DYNAMIC-INCLUDE-ALL-RULES vs DYNAMIC-INCLUDE-RULES
-# template-flattening boundary) is deferred to the orchestrator-wiring slice
+# NOTE: the DYNAMIC-INCLUDE-ALL-RULES vs DYNAMIC-INCLUDE-RULES
+# template-flattening boundary is deferred to the orchestrator-wiring slice
 # (S2/S3) — it concerns `templates.py`/the orchestrator, not this pure
 # resolver, and is intentionally not implemented or tested here.
 """
@@ -479,7 +479,7 @@ def test_load_manifest_string_exclude_errors(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# project_universe — selector-key normalization (spec §3)
+# project_universe — selector-key normalization
 # ---------------------------------------------------------------------------
 
 
@@ -599,7 +599,7 @@ def test_project_universe_unions_refs_across_tool_plans() -> None:
 
 
 def test_project_universe_normalization_pin_against_real_universe(ignore: InstallIgnore) -> None:
-    """spec §10 item 6 normalization pin: `rules/memory-routing` matches the
+    """Normalization pin: `rules/memory-routing` matches the
     staged `rules/memory-routing.md`, and `instructions` matches the tool-root
     instruction templates — both asserted directly via `project_universe`
     keys built from the real repo root."""
@@ -612,7 +612,7 @@ def test_project_universe_normalization_pin_against_real_universe(ignore: Instal
 
 
 # ---------------------------------------------------------------------------
-# resolve() — spec §10 items 2, 3, 5, 6, 8, 9, 10, 11
+# resolve()
 # ---------------------------------------------------------------------------
 
 
@@ -896,7 +896,7 @@ def test_filter_plan_to_scope_carries_over_kept_dir_overrides() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Golden / zero-breakage pin — spec §10 item 1
+# Golden / zero-breakage pin
 # ---------------------------------------------------------------------------
 
 

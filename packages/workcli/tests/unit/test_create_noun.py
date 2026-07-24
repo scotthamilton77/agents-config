@@ -1,8 +1,8 @@
-"""`work create <noun>` -- noun-templated creation (plan Task 3, test-plan items 1-3).
+"""`work create <noun>` -- noun-templated creation.
 
-Duplicate-title guard (L13) fires before any `create` reaches bd; placement
-(L14) requires exactly one of `--parent`/`--orphan`; the spec shape mints its
-design child + placeholder before stamping `planned` LAST (L16). All
+Duplicate-title guard fires before any `create` reaches bd; placement
+requires exactly one of `--parent`/`--orphan`; the spec shape mints its
+design child + placeholder before stamping `planned` LAST. All
 call-log assertions go through `run_cli_with_runner` (conftest.py) since
 `run_cli` discards its runner and exposes no `.calls`.
 """
@@ -423,7 +423,7 @@ def test_create_spec_mints_shape_with_creating_spec_handle_removed_last():
         ("label", "add", "x.1", "planned"),
         ("label", "remove", "x.1", "creating-spec"),
     ]
-    # `creating-spec` comes off strictly last, after `planned` (L16).
+    # `creating-spec` comes off strictly last, after `planned`.
     assert runner.calls[-1] == ("label", "remove", "x.1", "creating-spec")
 
 

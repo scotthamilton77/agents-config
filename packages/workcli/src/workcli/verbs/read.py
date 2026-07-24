@@ -22,7 +22,7 @@ def _serialize_item(item: Item) -> dict[str, JsonValue]:
     # `deps` comes out already lean (`{id, type, status}`) with no extra work.
     serialized = cast("dict[str, JsonValue]", dataclasses.asdict(item))
     # Derived in the verb layer, config-free, so every read envelope carries
-    # it regardless of config state (track spec §4; the 1.1 additive field).
+    # it regardless of config state (the 1.1 additive field).
     serialized["track"] = derive_track(item.labels)
     return serialized
 
@@ -32,7 +32,7 @@ def _serialize_items(items: list[Item]) -> JsonValue:
 
 
 def show(backend: Backend, args: Namespace) -> JsonValue:
-    """`work show ID...` — one id -> object, 2+ ids -> `{"items": [...]}` (decision 10)."""
+    """`work show ID...` — one id -> object, 2+ ids -> `{"items": [...]}`."""
     items = backend.batch_get(args.ids)
     if len(items) == 1:
         return _serialize_item(items[0])
@@ -44,7 +44,7 @@ def list_(backend: Backend, args: Namespace) -> JsonValue:
 
     `--track` filters on the DERIVED `Item.track` (never raw label presence),
     so filter and envelope field always agree: zero-or-multi-label beads
-    derive to null and match nothing (track spec §4). Validated against the
+    derive to null and match nothing. Validated against the
     vocabulary for parity with `create --track` -- a typo returns
     E_UNKNOWN_TRACK, not a silently-empty result. Ordering matters twice:
     config loads BEFORE the backend query (E_NOT_CONFIGURED must precede any
@@ -84,7 +84,7 @@ def list_(backend: Backend, args: Namespace) -> JsonValue:
 
 
 def ready(backend: Backend, args: Namespace) -> JsonValue:
-    """`work ready [--label]` — unbounded by default (spec §3)."""
+    """`work ready [--label]` — unbounded by default."""
     return _serialize_items(backend.ready(args.label))
 
 

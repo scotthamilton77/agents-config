@@ -1,4 +1,4 @@
-"""The four lifecycle seam primitives (plan L2) + `create`'s new fields (L3).
+"""The four lifecycle seam primitives + `create`'s new fields.
 
 `claim`/`set_status`/`set_type`/`set_acceptance` are thin `BdBackend`
 primitives the lifecycle verb layer (bead .9.2, later tasks) composes into

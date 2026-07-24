@@ -1,4 +1,4 @@
-"""Behavioral tests for workcli.config.load_config (track spec §3, criterion 16/17)."""
+"""Behavioral tests for workcli.config.load_config."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def test_search_stops_at_git_root(tmp_path: Path) -> None:
 
 
 def test_outside_any_git_repo_is_not_configured(tmp_path: Path) -> None:
-    # No .git anywhere on the walk -> treated as "no config found" (spec §3),
+    # No .git anywhere on the walk -> treated as "no config found",
     # even when a project-config.toml exists in a parent dir. REGRESSION PIN:
     # a naive walk that checks for the config file before establishing a git
     # root adopts that unrelated parent config instead of failing safe --
@@ -167,7 +167,7 @@ def test_non_table_operating_model_is_invalid(tmp_path: Path) -> None:
     assert "[operating-model]" in exc_info.value.message
 
 
-# -- [operating-model].backlog-groom-nag-days / .groom-state-bead (groom state, track spec §4/§6) --
+# -- [operating-model].backlog-groom-nag-days / .groom-state-bead (groom state) --
 
 
 def test_groom_fields_parsed(tmp_path: Path) -> None:
@@ -256,7 +256,7 @@ def test_git_file_marker_counts_as_root(tmp_path: Path) -> None:
     assert load_config(root).names == ("alpha", "beta", "gamma")
 
 
-# -- [extraction.pressure] / [extraction.eligibility] (extraction policy §5) --
+# -- [extraction.pressure] / [extraction.eligibility] (extraction policy) --
 
 
 def test_extraction_tables_absent_yield_safe_defaults(tmp_path: Path) -> None:

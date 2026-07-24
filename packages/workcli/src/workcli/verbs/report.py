@@ -1,12 +1,11 @@
 """`work lint` + `work graph --json` + `work triggers` -- the repo-wide
 reporting verbs.
 
-All three are defined as aggregations over tracks (track spec §4's
-split-portability rule): one sweep, pure reducers, no single-DB semantics in
-the contract. Advisory in v1: lint always exits 0 (spec §9 defers CI-gating);
-violations live in the envelope, not the exit code. `triggers` (spec §5) is
-likewise advisory-only -- it evaluates extraction pressure/eligibility and
-never edits config or splits anything.
+All three are defined as aggregations over tracks, per the split-portability
+rule: one sweep, pure reducers, no single-DB semantics in the contract.
+Advisory in v1: lint always exits 0; violations live in the envelope, not
+the exit code. `triggers` is likewise advisory-only -- it evaluates
+extraction pressure/eligibility and never edits config or splits anything.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ def _sweep(backend: Backend) -> list[Item]:
 
 
 def _track_violations(non_milestone: list[Item], config: TrackLayerConfig) -> list[JsonValue]:
-    """Invariant 1: exactly one track:* label per non-closed, non-milestone
+    """Exactly one track:* label per non-closed, non-milestone
     bead, AND its name in the configured vocabulary -- raw label writes can
     mint `track:ghost`, which no gate sees and `list --track` can't query;
     lint is the net that makes that corruption recoverable."""
@@ -72,7 +71,7 @@ def _has_milestone_ancestor(
 def _milestone_orphans(
     backend: Backend, swept: list[Item], by_id: dict[str, Item]
 ) -> list[JsonValue]:
-    """Invariant 2: milestone ancestor, or an explicit exempt label."""
+    """A milestone ancestor is required, or an explicit exempt label."""
     fetched: dict[str, Item] = {}
     return [
         item.id
@@ -84,9 +83,9 @@ def _milestone_orphans(
 
 
 def _milestone_wip(swept: list[Item], config: TrackLayerConfig) -> JsonValue:
-    """Invariant 3: in_progress milestones vs the WIP cap, exempt list excluded.
+    """In_progress milestones vs the WIP cap, exempt list excluded.
     An unset cap ([operating-model] absent) skips the check: breached=False,
-    cap=null -- §6 hardcodes nothing."""
+    cap=null -- nothing is hardcoded."""
     active = [
         item.id
         for item in swept
@@ -104,7 +103,7 @@ def _milestone_wip(swept: list[Item], config: TrackLayerConfig) -> JsonValue:
 
 
 def _lease_report(non_milestone: list[Item]) -> JsonValue:
-    """Invariant 4: every non-milestone lease listed; tracks holding >1 flagged."""
+    """Every non-milestone lease listed; tracks holding >1 flagged."""
     leases = [item for item in non_milestone if item.status == "in_progress"]
     counts: dict[str, int] = {}
     for item in leases:
@@ -118,7 +117,7 @@ def _lease_report(non_milestone: list[Item]) -> JsonValue:
 
 
 def _track_mismatches(non_milestone: list[Item], by_id: dict[str, Item]) -> list[JsonValue]:
-    """Invariant 5: soft warning on parent-child track mismatch below milestone level."""
+    """Soft warning on parent-child track mismatch below milestone level."""
     mismatches: list[JsonValue] = []
     for item in non_milestone:
         if item.parent is None or item.parent not in by_id:
@@ -141,7 +140,7 @@ def _track_mismatches(non_milestone: list[Item], by_id: dict[str, Item]) -> list
 
 
 def lint(backend: Backend, args: Namespace) -> JsonValue:
-    """`work lint` -- five advisory invariants, one sweep (track spec §4)."""
+    """`work lint` -- five advisory invariants, one sweep."""
     config = args.load_config()
     swept = _sweep(backend)
     by_id = {item.id: item for item in swept}
@@ -188,10 +187,10 @@ def _closed_ancestors(backend: Backend, items: list[Item], by_id: dict[str, Item
 
 def graph(backend: Backend, args: Namespace) -> JsonValue:
     """`work graph --json` -- the vizsuite V2 / landscape data contract
-    (track spec §4; schema shipped at workcli/schemas/work-graph.schema.json)."""
+    (schema shipped at workcli/schemas/work-graph.schema.json)."""
     if not args.json_output:
         raise WorkError(ErrorCode.USAGE, "work graph requires --json (the only v1 output)")
-    args.load_config()  # new-verb gate (criterion 17); the payload itself is config-free
+    args.load_config()  # new-verb gate; the payload itself is config-free
     lean = _sweep(backend)
     items = backend.batch_get([item.id for item in lean])  # full detail: deps + children
     by_id = {item.id: item for item in items}
@@ -209,8 +208,9 @@ def graph(backend: Backend, args: Namespace) -> JsonValue:
 
 def _backlog_counts(swept: list[Item], config: TrackLayerConfig) -> dict[str, int]:
     """Every configured track name -> count of non-closed beads whose derived
-    track equals it (spec §4). Beads with zero or 2+ track labels derive to
-    `None` and count toward no track -- lint invariant 1 is the net for those."""
+    track equals it. Beads with zero or 2+ track labels derive to
+    `None` and count toward no track -- lint's track-label check is the net
+    for those."""
     counts = dict.fromkeys(config.names, 0)
     for item in swept:
         track_name = derive_track(item.labels)
@@ -222,7 +222,7 @@ def _backlog_counts(swept: list[Item], config: TrackLayerConfig) -> dict[str, in
 def _cross_track_edge_counts(
     backend: Backend, items: list[Item], by_id: dict[str, Item]
 ) -> dict[str, int]:
-    """Spec §5: for every raw (non-parent-child) dep edge between two
+    """For every raw (non-parent-child) dep edge between two
     non-closed beads whose tracks differ, +1 to each endpoint's track total --
     both directions counted independently via the two endpoints of one edge.
     A dep target outside the sweep (closed, or absent from the batch) is
@@ -266,11 +266,11 @@ def _review_question(config: TrackLayerConfig) -> str:
 
 
 def triggers(backend: Backend, args: Namespace) -> JsonValue:
-    """`work triggers` -- extraction pressure/eligibility per track (track
-    spec §5, criterion 13). Organizing-only tracks appear in `backlog_counts`
-    but never receive an extraction status. An unconfigured eligibility
-    ceiling (`max-cross-track-edges` omitted) can never prove eligibility --
-    a deliberate fail-safe, never a false `pressured-eligible`."""
+    """`work triggers` -- extraction pressure/eligibility per track.
+    Organizing-only tracks appear in `backlog_counts` but never receive an
+    extraction status. An unconfigured eligibility ceiling
+    (`max-cross-track-edges` omitted) can never prove eligibility -- a
+    deliberate fail-safe, never a false `pressured-eligible`."""
     config = args.load_config()
     swept = _sweep(backend)
     items = backend.batch_get([item.id for item in swept])  # full detail: deps

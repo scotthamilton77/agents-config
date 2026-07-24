@@ -50,7 +50,7 @@ class DepListing:
 class SyncResult:
     synced: bool
     # "push" | "pull" | "noop" -- "noop" is reserved for server-authoritative
-    # backends (spec §6's declared no-op); the bd adapter never emits it.
+    # backends that declare themselves a no-op; the bd adapter never emits it.
     mode: str
 
 

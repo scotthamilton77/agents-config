@@ -1,4 +1,4 @@
-"""`work triggers`: extraction pressure/eligibility evaluation (track spec §5, criterion 13)."""
+"""`work triggers`: extraction pressure/eligibility evaluation."""
 
 from __future__ import annotations
 
@@ -167,7 +167,7 @@ def test_unconfigured_ceiling_never_yields_eligible() -> None:
 
 def test_parent_child_edges_not_counted_as_cross_track() -> None:
     # A synthesized parent-child edge must never inflate the cross-track
-    # count -- only raw `item.deps` entries count (spec §5).
+    # count -- only raw `item.deps` entries count.
     config = TrackLayerConfig(
         names=("alpha", "beta"),
         organizing_only=(),

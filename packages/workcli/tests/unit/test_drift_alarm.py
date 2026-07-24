@@ -1,4 +1,4 @@
-"""The drift alarm (spec test-plan item 9): whenever bd's actual output shape
+"""The drift alarm: whenever bd's actual output shape
 no longer matches what the parser expects, the facade raises
 `WorkError(BACKEND_DRIFT)` naming exactly what broke -- never a silent
 best-effort guess.
@@ -433,7 +433,7 @@ def test_show_shape_dependency_edge_missing_id_raises_backend_drift():
     # A `dependencies[]` entry carrying `dependency_type` (show-shape) but no
     # `id` for the other end would raise a raw KeyError -> E_INTERNAL from
     # `_dep_edge_from_raw`'s direct indexing. It must alarm as BACKEND_DRIFT
-    # like every other unmappable shape (spec test-plan item 9).
+    # like every other unmappable shape.
     raw_item = {
         "id": "x.1",
         "title": "t",
@@ -478,8 +478,7 @@ def test_parent_child_dependent_missing_id_raises_backend_drift():
     # A `dependents[]` parent-child record (the shape that becomes `children`)
     # carrying `dependency_type` but no `id` for the other end would raise a
     # raw KeyError -> E_INTERNAL from `children`'s direct indexing. It must
-    # alarm as BACKEND_DRIFT like the `dependencies[]` show-shape edge does
-    # (spec test-plan item 9).
+    # alarm as BACKEND_DRIFT like the `dependencies[]` show-shape edge does.
     raw_item = {
         "id": "x.1",
         "title": "t",
@@ -502,7 +501,7 @@ def test_non_object_dependency_entry_raises_backend_drift_not_a_silent_drop():
     # A `dependencies[]` entry that isn't a JSON object (e.g. a bare string)
     # was previously filtered out silently by `isinstance(entry, dict)` and
     # continued with a partially-mangled Item -- that is bd shape drift, not
-    # something to drop and carry on from (spec test-plan item 9).
+    # something to drop and carry on from.
     raw_item = {
         "id": "x.1",
         "title": "t",

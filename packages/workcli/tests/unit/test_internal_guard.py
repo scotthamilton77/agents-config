@@ -5,7 +5,7 @@ gate, and the handler call -- must stay inside one guarded region.
 Before this fix, `_build_backend(runner, sleep)` and `backend.capabilities`
 (via `missing_capability`) ran unguarded in `main()`: an exception raised
 there escaped with a raw traceback and NO envelope on stdout at all,
-violating "stdout is always exactly one envelope" (spec §4). This file pins
+violating "stdout is always exactly one envelope". This file pins
 that any exception raised anywhere in that region still yields exactly one
 `E_INTERNAL` envelope on stdout, a traceback on stderr, and exit code 1.
 """

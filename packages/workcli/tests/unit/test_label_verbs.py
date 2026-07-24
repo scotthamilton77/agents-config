@@ -2,7 +2,7 @@
 
 bd's own `label add`/`label remove` accept only one label per call; the
 facade's `work label add ID a b c` fans that out into three ordered bd
-invocations behind a single envelope (spec §3). `label list` normalizes to
+invocations behind a single envelope. `label list` normalizes to
 the golden `bd label list --json` shape: a flat `string[]`.
 """
 

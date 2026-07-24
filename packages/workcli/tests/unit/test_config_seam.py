@@ -1,4 +1,4 @@
-"""The config-loader seam: injected, lazy, --config passthrough (track spec §3)."""
+"""The config-loader seam: injected, lazy, --config passthrough."""
 
 from __future__ import annotations
 

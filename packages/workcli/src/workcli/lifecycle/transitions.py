@@ -1,13 +1,12 @@
-"""`claim`/`release`/`plan`/`promote` -- guarded lifecycle transitions (plan Task 4).
+"""`claim`/`release`/`plan`/`promote` -- guarded lifecycle transitions.
 
-Every mutation here reads current state first and no-ops when already applied
-(L7). `claim`'s container guard is declared-state (`is_container`), never
-child-count (L16/§5 invariant 5) -- a childless `epic` is refused exactly
-like a populated one. `promote` mirrors `create spec`'s L16 mint-before-
-`planned` discipline: the two label swaps, then `instantiate_spec_shape`,
-then `planned` stamped strictly last, so an interrupted promote leaves a
-self-reporting, not-yet-planned container in the Planning queue rather than
-a queue-invisible one.
+Every mutation here reads current state first and no-ops when already
+applied. `claim`'s container guard is declared-state (`is_container`), never
+child-count -- a childless `epic` is refused exactly like a populated one.
+`promote` mirrors `create spec`'s mint-before-`planned` discipline: the two
+label swaps, then `instantiate_spec_shape`, then `planned` stamped strictly
+last, so an interrupted promote leaves a self-reporting, not-yet-planned
+container in the Planning queue rather than a queue-invisible one.
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ from workcli.lifecycle.park import PARKED_LABEL
 
 
 def claim(backend: Backend, args: Namespace) -> JsonValue:
-    """`work claim ID` (plan L1: bd's own atomic `--claim`; invariant 3 staleness detection)."""
+    """`work claim ID` -- uses bd's own atomic `--claim`; detects stale claims."""
     item = backend.get(args.id)
     if item.status == "closed":
         raise WorkError(ErrorCode.NOT_CLAIMABLE, f"{args.id}: a closed item cannot be claimed")
@@ -49,7 +48,7 @@ def claim(backend: Backend, args: Namespace) -> JsonValue:
 
 
 def release(backend: Backend, args: Namespace) -> JsonValue:
-    """`work release ID` -- returns a claimed item to `open` (plan L1)."""
+    """`work release ID` -- returns a claimed item to `open`."""
     item = backend.get(args.id)
     if item.status == "in_progress":
         backend.set_status(args.id, "open")
@@ -60,7 +59,7 @@ def release(backend: Backend, args: Namespace) -> JsonValue:
 
 
 def plan(backend: Backend, args: Namespace) -> JsonValue:
-    """`work plan ID (--done | --undo) [--force]` -- Planning-queue membership (§5, L16)."""
+    """`work plan ID (--done | --undo) [--force]` -- Planning-queue membership."""
     if args.done == args.undo:
         raise WorkError(ErrorCode.USAGE, "plan: exactly one of --done or --undo is required")
 
@@ -79,7 +78,7 @@ def plan(backend: Backend, args: Namespace) -> JsonValue:
 
 
 def promote(backend: Backend, args: Namespace) -> JsonValue:
-    """`work promote ID` -- a `shape-feat` leaf becomes a `shape-spec` container (L16)."""
+    """`work promote ID` -- a `shape-feat` leaf becomes a `shape-spec` container."""
     item = backend.get(args.id)
     # `shape-spec` short-circuit FIRST, so a promote rerun is replay-safe: an
     # interrupted promote leaves `[shape-spec, creating-spec]` (shape-feat already
@@ -95,7 +94,7 @@ def promote(backend: Backend, args: Namespace) -> JsonValue:
     # from here on leaves the handle set and the `reconcile` sweep replays the
     # shared completion tail (`finalize_spec_instantiation`: swap shape-feat->
     # shape-spec, mint the template children, stamp `planned`, drop the handle
-    # strictly last, L16). A crash before the handle is added leaves an untouched
+    # strictly last). A crash before the handle is added leaves an untouched
     # `shape-feat` leaf -- promote simply never started.
     backend.label_mutate("add", args.id, [CREATING_SPEC_LABEL])
     finalize_spec_instantiation(backend, args.id, item.title)

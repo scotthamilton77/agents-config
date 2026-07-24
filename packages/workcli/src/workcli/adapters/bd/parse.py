@@ -5,7 +5,7 @@ this module is the single place that turns bd's raw, occasionally
 inconsistent shapes into workcli's normalized `Item`/`DepEdge` model. Any
 shape bd emits that this module cannot map raises `WorkError(BACKEND_DRIFT)`
 -- bd's own model of itself broke, and silently guessing is worse than
-alarming loudly (spec test-plan item 9).
+alarming loudly.
 
 Two known shape inconsistencies this module bridges (found capturing the
 golden fixtures, not documented anywhere in bd's `--help`):
@@ -33,7 +33,7 @@ from workcli.model import DepEdge, Item
 
 _REQUIRED_ITEM_KEYS = ("id", "title", "issue_type", "status", "priority")
 
-# Confirmed against the real bd binary (decision 14 golden capture): a
+# Confirmed against the real bd binary, per golden capture: a
 # not-found `show` logs this exact wording to stderr per missing id, even
 # though the overall process may still exit 0 if other requested ids matched
 # (see BdBackend.batch_get's own missing-id reconciliation for that case).
@@ -74,8 +74,8 @@ def _dep_edge_from_raw(entry: dict[str, JsonValue], self_id: str) -> DepEdge:
     if "dependency_type" in entry:
         # show-shape: full embedded bead + dependency_type; id/status
         # describe the OTHER end of the edge directly. A drifted bd omitting
-        # `id` here must alarm loudly (spec test-plan item 9), not raise a
-        # raw KeyError that surfaces as E_INTERNAL.
+        # `id` here must alarm loudly, not raise a raw KeyError that surfaces
+        # as E_INTERNAL.
         if "id" not in entry:
             raise _drift(
                 "bd dependency edge (show-shape) is missing required key: id",
@@ -134,8 +134,8 @@ def _list_field(raw: dict[str, JsonValue], key: str, item_id: str) -> list[Any]:
 
     An explicit JSON `null` is NOT the same as a missing key: bd emitting
     `null` where the facade's model says the field is an array is itself
-    model drift (spec test-plan item 9) -- it must alarm loudly via
-    `WorkError(BACKEND_DRIFT)`, never silently coerce to `[]` and never
+    model drift -- it must alarm loudly via `WorkError(BACKEND_DRIFT)`,
+    never silently coerce to `[]` and never
     raise a raw `AssertionError`/`TypeError` from an unguarded downstream
     `isinstance`/iteration.
     """
@@ -192,9 +192,8 @@ def _string_list_field(raw: dict[str, JsonValue], key: str, item_id: str) -> lis
     Layers per-element string validation on top of `_list_field` (absent ->
     `[]`, null/non-array -> drift). The normalized contract types this field
     as a `string[]`; a non-string element (a number, an object, ...) is bd
-    model drift, not something to silently coerce with `str()` (spec
-    test-plan item 9) -- the same discipline `parse_labels` applies to the
-    `label list` command.
+    model drift, not something to silently coerce with `str()` -- the same
+    discipline `parse_labels` applies to the `label list` command.
     """
     values = _list_field(raw, key, item_id)
     for value in values:
@@ -219,8 +218,8 @@ def _assert_object_elements(entries: list[Any], *, field: str, item_id: str) -> 
     was previously filtered out silently by an `isinstance(entry, dict)`
     guard at the call site, dropping the edge and continuing with a
     partially-mangled Item. That is bd shape drift, not something to drop and
-    carry on from (spec test-plan item 9) -- same discipline as
-    `parse_items`'/`parse_dep_edges`' own `element_not_an_object` check.
+    carry on from -- same discipline as `parse_items`'/`parse_dep_edges`'
+    own `element_not_an_object` check.
     """
     for entry in entries:
         if not isinstance(entry, dict):
@@ -374,7 +373,7 @@ def parse_labels(stdout: str, *, command: str = "label list") -> list[str]:
 
 
 def map_bd_failure(argv: Sequence[str], result: BdResult) -> WorkError:
-    """Translate a nonzero bd exit into a typed error (decision 4).
+    """Translate a nonzero bd exit into a typed error.
 
     NOT_FOUND, TYPE_WALL, and DEP_CYCLE are mapped here; anything this
     function doesn't recognize is the same alarm class as an unparseable

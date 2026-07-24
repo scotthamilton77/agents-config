@@ -3,7 +3,7 @@
 Its own verb family: `update` stays scalar-replace-only per the contract's
 layering (labels are not `UpdateFields`). The two underlying label operations
 are NOT transactional -- an interruption can leave the bead track-less, which
-lint invariant 1 surfaces (track spec §4: lint-recoverable, not atomic). Raw
+lint's track-derivation check surfaces: lint-recoverable, not atomic. Raw
 `work label add track:<anything>` stays possible and unvalidated by design:
 lint is the net, `track set` is the gate.
 """
@@ -20,9 +20,9 @@ from workcli.tracks import TRACK_PREFIX, derive_track, require_known_track, trac
 def _swap_track_label(
     backend: Backend, current_labels: list[str], item_id: str, new_name: str
 ) -> None:
-    """Remove stale `track:*` labels, then add the target (spec §4 ordering:
+    """Remove stale `track:*` labels, then add the target -- ordering:
     a crash between the two leaves the bead track-less -- lint's case --
-    never double-tracked)."""
+    never double-tracked."""
     target = track_label(new_name)
     stale = [
         label for label in current_labels if label.startswith(TRACK_PREFIX) and label != target
@@ -38,7 +38,7 @@ def _cascade(
 ) -> tuple[int, list[str]]:
     """Relabel descendants on the root's PRE-change track (plus untracked ones);
     skip-and-report everything else -- cross-track parenting is legal and a
-    descendant deliberately on another track is never clobbered (spec §4).
+    descendant deliberately on another track is never clobbered.
     Whole-subtree traversal: a skipped child's own descendants are still
     evaluated by the same one rule."""
     relabeled = 0

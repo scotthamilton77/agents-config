@@ -444,7 +444,7 @@ def test_project_kit_selector_scoped_to_user_errors_pre_resolve(
 
 def test_user_install_byte_identical_through_resolver(tmp_path: Path) -> None:
     """A plain user install (no --project) must stay byte-identical once
-    main()'s resolver pass (S2 Task 9) is wired in ahead of install_pipeline.
+    main()'s resolver pass is wired in ahead of install_pipeline.
 
     An empty CLI profile selection resolves to the "full" profile
     (`include = ["**"]` in profiles.toml), so every staged item matches and
@@ -468,7 +468,7 @@ def test_project_install_persists_profiles_then_bare_rerun_reinstalls(tmp_path: 
     """A successful ``--project p --profiles=beads-kit`` install writes
     <p>/project-config.toml's [install].profiles; a subsequent BARE
     ``--project p`` (no --profiles) then reads that persisted selection
-    (Task 10's read_project_profiles path) and reinstalls beads-kit."""
+    (the read_project_profiles path) and reinstalls beads-kit."""
     repo = _hermetic_repo_with_profiles(tmp_path)
     kit = repo / "src" / "kits" / "beads" / ".beads"
     kit.mkdir(parents=True)

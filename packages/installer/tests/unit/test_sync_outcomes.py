@@ -1,5 +1,5 @@
 """Unit tests for the per-item ``InstallOutcome`` stream threaded through
-``sync_plan`` (Task 8 — outcome plumbing).
+``sync_plan`` (outcome plumbing).
 
 ``Counters.skipped`` conflates a hash-equal skip with a consent-declined
 overwrite; the receipt must tell them apart (a DECLINED item holds the user's

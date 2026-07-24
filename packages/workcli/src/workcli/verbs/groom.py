@@ -1,5 +1,4 @@
-"""`work groom --done` / `work groom --status` -- Backlog Grooming state
-(track spec §4/§6, criteria 14-15).
+"""`work groom --done` / `work groom --status` -- Backlog Grooming state.
 
 Its own module, not `report.py`: `--done` MUTATES state (bd's own
 per-item state, on a note field) unlike the read-only aggregations
@@ -28,7 +27,7 @@ from workcli.envelope import ErrorCode, JsonValue, WorkError
 
 _NOTE_LINE_PATTERN = re.compile(r"^backlog_last_groomed: (.*)$", re.MULTILINE)
 _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
-# backlog_last_groomed is dolt-synced across machines (spec §6): ordinary
+# backlog_last_groomed is dolt-synced across machines: ordinary
 # NTP drift on a fast clock can leave a freshly-written marker slightly in
 # the future, and treating that as invalid would fail a groom that just
 # happened. A marker further in the future than this isn't drift -- it's
@@ -139,7 +138,7 @@ def _status(
     # clamp to 0 rather than reporting a negative days_since, so an honest
     # cross-machine groom never falsely reports breached=True.
     days_since = max((now - parsed).days, 0)
-    breached = nag_days is not None and days_since > nag_days  # strict > (criterion 14)
+    breached = nag_days is not None and days_since > nag_days  # strictly greater-than
     return {
         "backlog_last_groomed": last_groomed,
         "days_since": days_since,

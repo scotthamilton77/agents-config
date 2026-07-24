@@ -1,4 +1,4 @@
-"""Bounded backoff around a single bd invocation (locked decision 8).
+"""Bounded backoff around a single bd invocation.
 
 Retryable = a lock-contention stderr pattern, or subprocess `TimeoutExpired`.
 3 attempts total; injectable `sleep(0.5)` then `sleep(1.0)` between them.

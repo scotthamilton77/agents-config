@@ -1,4 +1,4 @@
-"""Protocol handshake tests (spec §5, test-plan item 10).
+"""Protocol handshake tests.
 
 `work --protocol-version` is the consumer handshake at adapter init: prgroom
 and PDLC pin a major version and refuse to run against a mismatched facade.

@@ -2,9 +2,10 @@
 
 close + close-walk + note is ONE facade call: a non-milestone parent whose
 last open child closes is exhausted and closes with it, recursively, with a
-`[work] close-walk` note. Milestones are the boundary -- they close only when
-their own acceptance criteria are met, never on child exhaustion. State-based
-against `FakeBackend`, driving the real `close` and `deliver` handlers.
+`[work] close-walk` note. Milestones are the boundary -- they never auto-close
+on child exhaustion; closing one is always a deliberate, explicit close call.
+State-based against `FakeBackend`, driving the real `close` and `deliver`
+handlers.
 """
 
 from __future__ import annotations

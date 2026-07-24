@@ -1,4 +1,4 @@
-"""`show` verb normalization (spec test-plan item 2, decision 10).
+"""`show` verb normalization.
 
 A single id must yield an object (never a single-element array), with lean
 dep edges (`{id, type, status}`) and `string[]` labels. Multiple ids must

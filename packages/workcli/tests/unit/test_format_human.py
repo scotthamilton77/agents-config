@@ -1,4 +1,4 @@
-"""`--format human` (locked decision 2, spec §4).
+"""`--format human`.
 
 Human rendering is opt-in and goes to **stderr only** — stdout must remain
 byte-identical to the same invocation without the flag, so the "stdout is
@@ -54,7 +54,7 @@ def test_format_json_explicit_never_writes_to_stderr() -> None:
 
 
 def test_format_human_on_a_usage_error_still_renders_to_stderr() -> None:
-    # A parse/usage failure raises before the verb dispatches, but spec §4's
+    # A parse/usage failure raises before the verb dispatches, but the
     # "human view to stderr" invariant still applies: --format human must be
     # recovered from argv even though full parsing never completed.
     out = StringIO()

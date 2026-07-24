@@ -1,13 +1,13 @@
 """`deliver` -- evidence-gated leaf delivery + design-spec placeholder
-reconciliation (plan Task 5, test-plan items 4, 5, 6).
+reconciliation.
 
 Dispatches on the `shape-design` label (CLI surface table): a design
 child's `deliver` parses the merged spec's `## Continuations` manifest and
-reconciles the sibling placeholder (L7/L8); a leaf's `deliver` verifies
+reconciles the sibling placeholder; a leaf's `deliver` verifies
 bd-observable evidence before recording the `[work] delivered:` marker and
 closing. A container is refused outright -- it completes via close-walk when
 its children close, never through `deliver`. `reconcile_placeholder` is
-exported for reuse by `reconcile` (Task 6) -- it is short-circuit idempotent
+exported for reuse by `reconcile` -- it is short-circuit idempotent
 on the `impl-placeholder` label's absence.
 """
 
@@ -135,8 +135,8 @@ def _deliver_design(backend: Backend, args: Namespace, design_item: Item) -> Jso
         )
 
     # Replay toward the frozen in-band snapshot when one exists; only the first
-    # delivery parses the spec file and records the target (spec §6, L7), so a
-    # post-delivery edit to the file can never alter a committed unit. `manifest:`
+    # delivery parses the spec file and records the target, so a post-delivery
+    # edit to the file can never alter a committed unit. `manifest:`
     # and `spec:` are written together at first delivery, but the appends are
     # gated independently: an old bead carrying only a `spec:` marker (pre-snapshot
     # delivery, interrupted) gets the snapshot added without a duplicate `spec:`.
@@ -156,7 +156,7 @@ def _deliver_design(backend: Backend, args: Namespace, design_item: Item) -> Jso
 
 
 def _leaf_evidence(backend: Backend, args: Namespace) -> str:
-    """Verify + describe the evidence for a leaf `deliver` (plan L8).
+    """Verify + describe the evidence for a leaf `deliver`.
 
     `--pr` is caller-attested (no bd verification); `--items` is verified
     via `batch_get` -- a miss surfaces `E_NOT_FOUND`, translated here to
@@ -221,12 +221,12 @@ def _deliver_leaf(backend: Backend, args: Namespace, item: Item) -> JsonValue:
 
 
 def deliver(backend: Backend, args: Namespace) -> JsonValue:
-    """`work deliver ID [--spec PATH] [--pr REF] [--items ID,ID] [--trivial]` (plan L8)."""
+    """`work deliver ID [--spec PATH] [--pr REF] [--items ID,ID] [--trivial]`."""
     item = backend.get(args.id)
     if DESIGN_CHILD_LABEL in item.labels:
         return _deliver_design(backend, args, item)
     # A container is never delivered directly: it closes via close-walk when its
-    # children close (spec §6/§8). Refuse at dispatch -- before any evidence
+    # children close. Refuse at dispatch -- before any evidence
     # check or leaf mutation -- so `deliver` on a spec/epic/`shape-impl-container`
     # fails loud instead of silently recording a leaf delivery on a container.
     if is_container(item):
@@ -242,9 +242,9 @@ def deliver(backend: Backend, args: Namespace) -> JsonValue:
 
 def _reconcile_single(backend: Backend, placeholder_id: str, manifest: Manifest) -> None:
     # Add the shape + spec-ready labels here; `impl-placeholder` is removed by
-    # the shared completion tail, STRICTLY LAST (C2 -- an add-then-remove-here
+    # the shared completion tail, STRICTLY LAST -- an add-then-remove-here
     # order would, on a crash between the two, strand the placeholder without
-    # its shape label yet already off the sweep's handle).
+    # its shape label yet already off the sweep's handle.
     item = manifest.items[0]
     template = NOUN_TEMPLATES[Noun(item.noun)]
     backend.set_type(placeholder_id, template.bd_type)
@@ -271,13 +271,13 @@ def _reconcile_multi(backend: Backend, placeholder: Item, manifest: Manifest) ->
             )
         )
     # Stamp the placeholder as the impl sub-container so `claim` and the router
-    # treat it as a declared-state container (spec §6 -- keyed on the label, not
-    # child count). Idempotent (label add is set-union), so an interrupted
+    # treat it as a declared-state container -- keyed on the label, not
+    # child count. Idempotent (label add is set-union), so an interrupted
     # expansion replays through the still-present handle and re-stamps
     # harmlessly. Applied BEFORE the shared tail removes `impl-placeholder`
     # last: that handle is the queryable signal `reconcile` enumerates
     # interrupted expansions through, dropped only once every child exists AND
-    # the design child has closed (L10).
+    # the design child has closed.
     backend.label_mutate("add", placeholder.id, [IMPL_CONTAINER_LABEL])
 
 
@@ -304,7 +304,7 @@ def _design_sibling(backend: Backend, placeholder: Item) -> Item | None:
 
 def reconcile_placeholder(backend: Backend, placeholder_id: str, manifest: Manifest) -> None:
     """Idempotently complete one placeholder's delivery against a parsed manifest
-    (spec §6) -- the single completion routine both `deliver` and the `reconcile`
+    -- the single completion routine both `deliver` and the `reconcile`
     sweep call, so every crash point heals to the same final state.
 
     Body, by manifest shape:
@@ -314,7 +314,7 @@ def reconcile_placeholder(backend: Backend, placeholder_id: str, manifest: Manif
     `shape-impl-container` on the placeholder.
 
     Then the shared tail, unconditionally: close the design child, then remove
-    `impl-placeholder` STRICTLY LAST. That ordering (C1/C2, L10) makes the
+    `impl-placeholder` STRICTLY LAST. That ordering makes the
     handle's absence the sole "delivery wholly done" signal -- no body path
     removes it -- so a replay short-circuits on its absence and a crash anywhere
     leaves it present for the sweep.

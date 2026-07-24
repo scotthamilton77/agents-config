@@ -1,4 +1,4 @@
-"""Tests for the CLI prune half (spec §7, item 10)."""
+"""Tests for the CLI prune half."""
 
 import pytest
 
@@ -23,8 +23,6 @@ def test_retired_allowlisted_cli_uninstalled_with_consent() -> None:
     When prune_clis runs with an accepting confirm
     Then uv tool uninstall fires, pruned counter increments, and the name
     lands in uninstalled_names.
-
-    Pins spec §7 / item 10.
     """
     deploy = ScriptedCliDeploy(uninstalls=[_OK])
     io = ScriptedIO(confirms=[True])
@@ -49,7 +47,7 @@ def test_declined_uninstall_retains_entry() -> None:
     Then no uninstall fires and the name is NOT in uninstalled_names
     (retirement retried next prune).
 
-    Pins spec §7 decline / item 10.
+    Pins the declined-uninstall retention rule.
     """
     deploy = ScriptedCliDeploy()
     outcome = prune_clis(
@@ -73,7 +71,7 @@ def test_foreign_name_never_uninstalled_relinquished_instead() -> None:
     Then NO uninstall fires even under --yes; the name is warned about and
     relinquished.
 
-    Pins spec §7 closed uninstall authority / item 10 (tampered receipt).
+    Pins the closed-registry uninstall authority (tampered receipt).
     """
     deploy = ScriptedCliDeploy()
     io = ScriptedIO()
@@ -97,8 +95,6 @@ def test_uninstall_of_absent_tool_counts_as_success() -> None:
     Given a retired entry whose uv uninstall fails with 'not installed'
     When prune_clis runs (auto_yes)
     Then the outcome treats it as uninstalled (desired state: absent).
-
-    Pins spec §7 / item 10.
     """
     deploy = ScriptedCliDeploy(
         uninstalls=[CommandResult(ok=False, output="`oldtool` is not installed")]
@@ -121,7 +117,7 @@ def test_dry_run_previews_no_uninstall() -> None:
     When prune_clis runs
     Then it reports would-uninstall and calls nothing.
 
-    Pins spec §7 dry-run / item 10.
+    Pins the dry-run uninstall preview.
     """
     deploy = ScriptedCliDeploy()
     io = ScriptedIO()
@@ -147,7 +143,7 @@ def test_prune_no_tty_without_yes_raises() -> None:
     Then ConsentRequiredError raises (the caller maps it to exit 1) — the
     prune side honors the same no-TTY convention as the deploy side.
 
-    Pins spec §7 no-TTY / item 12 (prune side).
+    Pins the no-TTY consent convention (prune side).
     """
     deploy = ScriptedCliDeploy()
     with pytest.raises(ConsentRequiredError):

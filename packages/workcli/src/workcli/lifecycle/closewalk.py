@@ -3,8 +3,8 @@
 Close + close-walk + note happen as ONE facade call: a parent whose last open
 child closes is exhausted and closes with it, recursively, so a fully
 delivered tree never strands its containers open. Milestones are the walk
-boundary -- a milestone closes only when its own acceptance criteria are met,
-never on child exhaustion.
+boundary -- a milestone never auto-closes on child exhaustion; closing one is
+always a deliberate, explicit close call.
 """
 
 from __future__ import annotations

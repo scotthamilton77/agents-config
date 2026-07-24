@@ -1,4 +1,4 @@
-"""create track gate (track spec §4; criteria 1-5, 9, 17)."""
+"""create track gate."""
 
 from __future__ import annotations
 
@@ -178,7 +178,7 @@ def test_invalid_config_skips_gate_with_warning_never_breaks_create() -> None:
 
 
 def test_raw_milestone_create_bypasses_gate_even_in_required_mode() -> None:
-    # Milestones are track-exempt (track spec §3) and enter via --raw; the
+    # Milestones are track-exempt and enter via --raw; the
     # gate must not touch this path regardless of enforcement. The exploding
     # loader proves --raw never even loads config.
     def explode(_explicit_path: str | None) -> TrackLayerConfig:

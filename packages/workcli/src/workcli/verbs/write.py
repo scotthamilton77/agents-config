@@ -18,11 +18,11 @@ from workcli.model import CreateFields, UpdateFields
 
 
 def create_raw(backend: Backend, args: Namespace) -> JsonValue:
-    """`work create --raw --title T [...]` — the adapter primitive (spec §2).
+    """`work create --raw --title T [...]` — the adapter primitive.
 
     Public, noun-templated creation belongs to the lifecycle layer (bead
     .9.2); `--raw` gates this transport-layer passthrough so a caller can
-    never reach it by accident (locked decision 7).
+    never reach it by accident.
     """
     if not args.raw:
         raise WorkError(
@@ -45,10 +45,10 @@ def create_raw(backend: Backend, args: Namespace) -> JsonValue:
 def update(backend: Backend, args: Namespace) -> JsonValue:
     """`work update ID [--set-title] [--set-priority] [--set-description]`.
 
-    Replace semantics only (spec §3); status never moves through this verb
+    Replace semantics only; status never moves through this verb
     (lifecycle verbs own claiming/status). `--set-notes` is recognized by
     argparse only so it reaches this named clobber-guard rather than a
-    generic `E_USAGE` (locked decision 6) — notes only ever move through
+    generic `E_USAGE` — notes only ever move through
     `work note`. (Suppressed from `--help`; rationale at its
     `add_argument` site in `cli.py`.)
     """
@@ -69,7 +69,7 @@ def update(backend: Backend, args: Namespace) -> JsonValue:
 
 
 def note(backend: Backend, args: Namespace) -> JsonValue:
-    """`work note ID TEXT` — append-only (spec §3; PDLC `append_audit_note`)."""
+    """`work note ID TEXT` — append-only."""
     backend.append_note(args.id, args.text)
     return None
 

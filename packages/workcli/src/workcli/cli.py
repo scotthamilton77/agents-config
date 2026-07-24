@@ -4,8 +4,8 @@
 (argv, the bd runner, stdout/stderr, sleep) arrives as an argument, never a
 module global. The `Backend` itself is constructed lazily, inside `main()`,
 only when a verb actually dispatches -- `--protocol-version` short-circuits
-before it and never touches the runner (spec §5: the handshake is cheap and
-side-effect-free).
+before it and never touches the runner: the handshake is cheap and
+side-effect-free.
 """
 
 from __future__ import annotations
@@ -34,8 +34,8 @@ class _EnvelopeArgumentParser(ArgumentParser):
 
     Default argparse behavior on error prints a usage block to stderr and
     exits — that would violate the "stdout is always exactly one JSON
-    envelope" invariant (spec §4). Raising lets `main()` convert the failure
-    into an `E_USAGE` envelope instead.
+    envelope" invariant. Raising lets `main()` convert the failure into an
+    `E_USAGE` envelope instead.
     """
 
     def error(self, message: str) -> NoReturn:
@@ -281,8 +281,8 @@ def _peek_format(argv: list[str] | None) -> str:
     """Best-effort recovery of `--format` when full parsing has already failed.
 
     `parse_args()` can raise (bad flag, unknown verb) before we learn whether
-    `--format human` was requested, yet spec §4 says the human view still
-    renders to stderr alongside the stdout envelope even on usage errors. A
+    `--format human` was requested, yet the human view still renders to
+    stderr alongside the stdout envelope even on usage errors. A
     lenient parser that knows only `--format` and ignores everything else
     recovers the value without re-raising on the very error we're about to
     report; anything it can't make sense of (e.g. an invalid `--format`
@@ -300,8 +300,8 @@ def _peek_format(argv: list[str] | None) -> str:
 def _finish_success(data: JsonValue, out: TextIO, err: TextIO, fmt: str) -> int:
     """Emit the success envelope to `out`; additionally render it to `err` on `--format human`.
 
-    stdout always carries the envelope regardless of `fmt` (spec §4) -- this
-    never replaces `emit_success`, only adds the human view alongside it.
+    stdout always carries the envelope regardless of `fmt` -- this never
+    replaces `emit_success`, only adds the human view alongside it.
     """
     exit_code = emit_success(data, out)
     if fmt == "human":
@@ -359,7 +359,7 @@ def _default_read_file(path: str) -> str:
 
 
 def _default_config_loader(explicit_path: str | None) -> TrackLayerConfig:
-    """The real track-layer config resolution: upward search from cwd (track spec §3)."""
+    """The real track-layer config resolution: upward search from cwd."""
     return load_config(Path.cwd(), explicit_path)
 
 
@@ -402,13 +402,13 @@ def main(
 
     # Resolved once here and attached to the parsed Namespace -- only
     # `deliver` reads it, but every handler keeps the transport's
-    # `(Backend, Namespace) -> JsonValue` signature (plan L12), so this
-    # travels as an `args` attribute rather than an extra handler parameter.
+    # `(Backend, Namespace) -> JsonValue` signature, so this travels as an
+    # `args` attribute rather than an extra handler parameter.
     args.read_file = read_file if read_file is not None else _default_read_file
 
     # Same args-attachment precedent as read_file: resolved once, loaded
     # LAZILY -- only a track-layer surface calls args.load_config(), so
-    # pre-existing verbs never trigger config resolution (track spec §3).
+    # pre-existing verbs never trigger config resolution.
     resolved_config_loader = config_loader if config_loader is not None else _default_config_loader
     args.load_config = lambda: resolved_config_loader(args.config)
 
@@ -439,12 +439,12 @@ def main(
     # Everything from here on -- backend construction, the capability gate,
     # and the handler call -- runs inside one guarded region. An exception
     # anywhere in this region must still yield exactly one envelope on
-    # stdout (spec §4's invariant holds even on internal bugs, §4's
+    # stdout (the invariant holds even on internal bugs; see the
     # `E_INTERNAL` note) rather than escaping with a raw traceback and no
     # envelope at all.
     try:
         # Constructed only now -- never for --protocol-version above -- so the
-        # handshake never touches the runner (spec §5).
+        # handshake never touches the runner.
         backend = _build_backend(runner, sleep)
 
         if missing_capability(args.verb, backend.capabilities, args):

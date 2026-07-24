@@ -116,7 +116,7 @@ def render_summary(
     order; ``all_tools`` / ``all_plugins`` are the ALL_* universes used to emit
     the '(not detected, skipped)' footers. ``clis`` is the active cli:<name>
     deploy/prune target set. ``any_failed`` is the CLI-deploy stage's
-    record-and-continue failure flag (spec §6/§8): a hard failure (version
+    record-and-continue failure flag: a hard failure (version
     guard, install, smoke) never touches a per-target counter, so it would
     otherwise reach quiet mode's all-zero branch and print a false
     'up to date' line right before the caller returns exit 1. ``verbose``
