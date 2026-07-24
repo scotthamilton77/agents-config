@@ -19,15 +19,18 @@ schema = 1
 [profiles.full]
 include = ["**"]
 
-# A deliberately tiny user install.
+# A deliberately tiny user install. Selectors must match the staged universe —
+# a dead selector fails the install loud — so this lists only what exists.
+# `rules/**`, `agents/**`, and `commands/**` are absent from the universe today:
+# every artifact in them was record-less and moved to `archive/`. Re-add the
+# selectors here in the same change that readmits content into those namespaces.
 [profiles.minimal-user]
-include = ["instructions", "rules/memory-routing", "rules/user-prompts"]
+include = ["instructions"]
 
-# The SDLC discipline content. commands/** and workflows/** exist only for
-# Claude; the union-universe rule keeps them valid, and they no-op on tools
-# that lack them.
+# The SDLC discipline content. workflows/** exists only for Claude; the
+# union-universe rule keeps it valid, and it no-ops on tools that lack it.
 [profiles.sdlc]
-include = ["rules/**", "skills/**", "agents/**", "commands/**", "workflows/**"]
+include = ["skills/**", "workflows/**"]
 
 # The beads project kit (PRIME.md -> <project>/.beads/PRIME.md). Project-scoped.
 [profiles.beads-kit]

@@ -32,7 +32,49 @@ ItemStatus = Literal[
 ]
 LaneStatus = ItemStatus | Literal["standing-down"]
 
-ParkKind = Literal["discovered-work", "human-gated", "later-wave", "deferred"]
+# The park vocabulary spans two axes, and every typed park sits on exactly
+# one of them.
+#
+# `failure` is the harness charter's typed park reasons, mirrored member for
+# member from the `work` facade's `park --reason` vocabulary so a park reason
+# crosses the boundary between the two without being translated at the call
+# site. `scheduling` is grind-native: a sequencing decision about work that
+# never failed and may never have had a PR.
+#
+# `category` records whether the park's CAUSE was machine-actionable. It is
+# not a statement about who may act on the park: the parking lot's only exit
+# is an explicit `item_enqueued`, for every reason on both axes -- the charter
+# is categorical that the machine never acts on a parked item of its own
+# accord, and there is no automatic TTL action. A machine-actionable cause
+# reaches the parking lot only once the executor has spent its bounded budget
+# trying to fix it, so the distinction is spent *before* the park, never after.
+ParkAxis = Literal["failure", "scheduling"]
+ParkCategory = Literal["machine", "human"]
+ParkReason = Literal[
+    "ci-failure",
+    "merge-conflict",
+    "approval-required",
+    "bot-declined",
+    "budget-exhausted",
+    "discovered-work",
+    "later-wave",
+    "deferred",
+]
+
+# The one table. Axis and category are looked up here and never stored on an
+# event or in `State`, so a park cannot carry a reason that disagrees with its
+# own axis.
+PARK_REASONS: dict[ParkReason, tuple[ParkAxis, ParkCategory]] = {
+    "ci-failure": ("failure", "machine"),
+    "merge-conflict": ("failure", "machine"),
+    "approval-required": ("failure", "human"),
+    "bot-declined": ("failure", "human"),
+    "budget-exhausted": ("failure", "human"),
+    "discovered-work": ("scheduling", "human"),
+    "later-wave": ("scheduling", "human"),
+    "deferred": ("scheduling", "human"),
+}
+
 ObservationLevel = Literal["INFO", "WARN", "ERROR", "LESSON"]
 # The one auto-attention cause `item_resumed` is specified to clear. Other
 # auto-raised entries (anomaly, ERROR observation) carry `kind=None` so resume
@@ -62,10 +104,24 @@ class ItemReview:
 
 @dataclass
 class ParkingEntry:
-    """Typed parking-lot metadata -- `kind` drives the renderer's icon, never free text."""
+    """Typed parking-lot metadata -- `reason` drives the renderer's icon, never free text.
 
-    kind: ParkKind | None
+    `axis` and `category` are derived from `reason` through `PARK_REASONS`,
+    never stored -- the same derived-never-asserted rule the item statuses
+    follow. `reason=None` is the untyped park: `pr_closed`'s `next: parked`
+    path carries no reason field, so its axis is *absent*, not ambiguous.
+    """
+
+    reason: ParkReason | None
     note: str | None = None
+
+    @property
+    def axis(self) -> ParkAxis | None:
+        return PARK_REASONS[self.reason][0] if self.reason is not None else None
+
+    @property
+    def category(self) -> ParkCategory | None:
+        return PARK_REASONS[self.reason][1] if self.reason is not None else None
 
 
 @dataclass

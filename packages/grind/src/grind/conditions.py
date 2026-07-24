@@ -274,9 +274,9 @@ def item_unblocked_conditions(before: State, after: State) -> list[Condition]:
     fold's derived-blocked invariant makes `blocked -> queued` reachable only via
     edge resolution (`_recompute_blocked`/`_cascade_unblock`, both gated on no
     unresolved edges), so `queued` is the concrete signal that the edges cleared.
-    A `blocked` item that departs to `waiting-human` (parked or human-gated) keeps
-    its unresolved `blocked_on` edges and is not startable -- that departure is
-    not an unblock and must not fire this condition.
+    A `blocked` item that departs to `waiting-human`, or into the parking lot,
+    keeps its unresolved `blocked_on` edges and is not startable -- that
+    departure is not an unblock and must not fire this condition.
 
     Derived from the delta between two folds, never recomputed from `after`
     alone (spec: immediately after the unblock the state is indistinguishable

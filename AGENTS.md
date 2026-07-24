@@ -20,6 +20,16 @@ Standing implications while the rework runs:
 - Where any deployed rule, skill, or doc (including this file) contradicts the charter, the charter wins — and flag the contradiction explicitly so it gets fixed.
 - Address the tracker through the `work` facade (D11). Fall back to `bd` only when the facade cannot express the operation, and record each fallback as a facade gap in a note on `agents-config-9k9`.
 - New harness work enters only as a child of the milestone, carrying an admission record: the failure it prevents, what it costs, and what observation would remove it (D16/D20).
+- **`src/` is admitted content only; `archive/` is not live.** The installer's admission gate drops any rule/skill/command/agent without a complete `admission:` record. Every record-less artifact now sits under `archive/src/user/**`. Nothing under `archive/` describes current behaviour — do not follow it, cite it as a contract, or invoke a skill found there. If a workflow you need exists only in `archive/`, that is the signal to escalate, not to reinstate it by hand.
+
+### How work ships here
+
+This is the whole delivery contract:
+
+1. Enter the work in the tracker via `work` verbs, as a child of `agents-config-9k9`, with an admission record.
+2. Implement on a worktree branch; never commit to the default branch.
+3. Verify mechanically before claiming anything: `make ci` for `packages/**`; for prose-only changes, state what you checked and how.
+4. Open a PR, address review to quiescence, then merge only under `project-config.toml`'s `[merge-policy]` — absent that section, an explicit human instruction.
 
 ## Vision & Mission
 
@@ -62,6 +72,7 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
 - `scripts/` - Installation and maintenance scripts
   - `install.sh` - Thin exec stub; delegates to the uv-managed Python installer (`packages/installer`) via `uv run`
   - `install.py` - Python entry point (`from installer.cli import main`); also invocable as `uv run python -m installer`
+- `archive/` - Retired content, mirroring the live tree's shape (`archive/src/user/**`, `archive/docs/**`). **Historical only — never a behavioural contract.** Read it to recover an idea; do not follow it, cite it, or copy a path back into `src/` without an admission record
 - `docs/guide/` - **User guide** for people *using* the deployed assets: how to install, configure a project, and run the opinionated agentic SDLC (`index`, `getting-started`, `configuration`, `sdlc-workflow`, `reference`)
 - `docs/plans/` - Design documents for features in development
 - `docs/specs/` - Design specifications (point-in-time proposals; date-prefixed filenames; status varies from draft through implemented)
@@ -70,7 +81,7 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
 - `src/user/.agents/` - **Shared content** (copied into all detected tools)
   - `agents/` - Role-based agent definitions (frontmatter + instructions)
   - `skills/` - Methodology guides, some with supporting code/scripts
-  - `rules/` - Tool-agnostic workflow rules (delegation, delivery, completion-gate, subagents, worktrees); same-name collisions append-merge
+  - `rules/` - Tool-agnostic workflow rules; same-name collisions append-merge
   - `AGENTS.md.template` - Zero-based shared laws, decision matrix, hard lines, and conventions (D17)
   - `AGENT-PERSONA.md.template` - Agent persona/personality template
   - `USER-PERSONA.md.template` - User persona template
@@ -78,6 +89,7 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
   - `commands/` - Slash command definitions (`.md`)
   - `skills/` - Claude-only skills (skills that depend on Claude-specific capabilities); cross-tool skills are sourced from `src/user/.agents/skills/`
   - `rules/` - Claude-specific rules (rules that only apply to Claude contexts); general rules are sourced from `src/user/.agents/rules/`
+  - `workflows/` - Claude `Workflow` scripts. **Not admission-gated** — these deploy without a record (`agents-config-9k9.21`)
   - `AGENTS.md.template` - Claude instruction file (refs shared + Claude extensions)
   - `CLAUDE.md.template` - Points to AGENTS.md
   - `CLAUDE-EXTENSIONS.md.template` - Stub header (content moved to `rules/`)

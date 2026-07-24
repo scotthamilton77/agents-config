@@ -9,9 +9,11 @@ the report's zero-writes contract by raising on every mutator.
 
 from __future__ import annotations
 
+import tomllib
 from argparse import Namespace
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -33,6 +35,9 @@ from workcli.model import CreateFields, UpdateFields
 
 _NOW = datetime(2026, 7, 22, 12, 0, 0, tzinfo=UTC)
 _ISO = _NOW.isoformat()
+# Deliberately not guarded with a skip-if-missing: a silent skip would reopen
+# the drift hole the shared contract exists to close.
+_PARK_REASON_CONTRACT = Path(__file__).resolve().parents[3] / "contracts" / "park-reasons.toml"
 
 
 def _park_args(item_id: str, reason: str, note: str | None = None) -> Namespace:
@@ -124,6 +129,23 @@ def test_vocabulary_codes_map_to_their_d10_category(reason: str, category: str):
 
     assert isinstance(data, dict)
     assert data["category"] == category
+
+
+def test_vocabulary_matches_the_shared_park_reason_contract():
+    """The tracker half of the cross-package seam.
+
+    `packages/contracts/park-reasons.toml` is the one definition; `packages/
+    grind` carries the same codes on its `failure` axis and asserts against
+    the same file. The two packages are isolated uv projects with no
+    cross-import, so a transcription here would only catch a forgetful edit --
+    update this table and a local copy of the expectation together and this
+    gate stays green while the executor emits a reason grind's event boundary
+    rejects. Reading the contract makes a vocabulary change a three-file
+    change: the contract plus both tables.
+    """
+    contract = _PARK_REASON_CONTRACT.read_bytes()
+
+    assert dict(tomllib.loads(contract.decode())["reasons"]) == REASONS
 
 
 def test_park_unknown_reason_is_usage_error_before_any_backend_call():  # S2-B2 (inverse)

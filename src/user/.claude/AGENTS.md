@@ -25,12 +25,16 @@ into `~/.claude/` (Claude is always an active tool; never auto-detected away).
 - Shared content from `src/user/.agents/` also stages into `~/.claude/`, so
   collisions in `agents/`, `skills/`, or top-level templates span both trees.
   Check before adding.
-- `rules/` is the append-only extension point for Claude-specific workflow.
-  It now contains only Claude-specific rule files (stuff that would only apply in a claude context, and
-  any plugin append-merges); the general rules (delegation, completion-gate,
-  subagents, worktrees, etc.) source from `src/user/.agents/rules/` and
-  are staged into `~/.claude/rules/` at install time. Keep files scoped and
+- `rules/` is the append-only extension point for Claude-specific workflow
+  (stuff that would only apply in a Claude context, plus any plugin
+  append-merges); tool-agnostic rules source from `src/user/.agents/rules/`
+  and stage into `~/.claude/rules/` at install time. Both are empty today —
+  the record-less rules moved to `archive/src/user/**`. Keep files scoped and
   single-purpose.
+- Everything in `commands/`, `skills/`, `agents/`, and `rules/` is subject to
+  the admission gate: no `admission:` record in front matter means the
+  installer drops it and prunes any deployed copy. Adding a file here without
+  a record ships nothing.
 
 See the root [AGENTS.md](../../../AGENTS.md) for the full install model, file
 format conventions, and repo-wide rules.

@@ -46,10 +46,26 @@ def _item_review_json(review: ItemReview) -> JsonValue:
     }
 
 
+def park_fields(parked: ParkingEntry | None) -> dict[str, JsonValue]:
+    """The park projection, defined once for every consumer that emits it.
+
+    `axis`/`category` are emitted, not stored: a consumer asking "which of
+    these parks had a machine-actionable cause" reads the snapshot instead of
+    re-implementing the reason table. Shared with the dashboard renderer so
+    `state.json` and the dashboard cannot disagree about a parked item's shape.
+    """
+    return {
+        "reason": parked.reason if parked is not None else None,
+        "axis": parked.axis if parked is not None else None,
+        "category": parked.category if parked is not None else None,
+        "note": parked.note if parked is not None else None,
+    }
+
+
 def _parking_entry_json(parked: ParkingEntry | None) -> JsonValue:
     if parked is None:
         return None
-    return {"kind": parked.kind, "note": parked.note}
+    return park_fields(parked)
 
 
 def _discovered_work_json(discovered: DiscoveredWork | None) -> JsonValue:

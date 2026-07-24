@@ -579,7 +579,7 @@ def test_stalemate_risk_excluded_for_parked_item() -> None:
         event("review_round", item="wgclw.1", kind="codex", round=2, head_sha="a1"),
         event("review_round", item="wgclw.1", kind="codex", round=3, head_sha="a1"),
         event("item_waiting_human", item="wgclw.1", why="stalemate"),
-        event("item_parked", item="wgclw.1", kind="deferred"),
+        event("item_parked", item="wgclw.1", reason="deferred"),
     ]
     state = fold(events)
 
