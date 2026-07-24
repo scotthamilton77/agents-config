@@ -7,7 +7,11 @@ exists or when the user passes `--tools=gemini`.
 ## What lives here
 
 - `GEMINI.md.template` — Top-level instruction file that pulls in the shared
-  `INSTRUCTIONS.md`, personas, and `GEMINI-EXTENSIONS.md`.
+  personas, session-primer, and all rules; and `GEMINI-EXTENSIONS.md`. Gemini
+  is the one tool where the shared zero-based `AGENTS.md.template` survivor
+  *could* wire in safely today (its dest is `GEMINI.md`, not `AGENTS.md`, so
+  no basename collision) — not done here to keep the four tools' behavior
+  consistent until `agents-config-9k9.10` fixes it for all of them at once.
 - `GEMINI-EXTENSIONS.md.template` — Placeholder for Gemini-specific workflow
   additions. Currently empty; populate as Gemini-specific conventions emerge.
 
@@ -17,7 +21,7 @@ Into `~/.gemini/` (user-scoped Gemini CLI config). The installer strips the
 `.template` suffix on copy.
 
 Shared content from `src/user/.agents/` also installs into `~/.gemini/`
-(agents, skills, `INSTRUCTIONS.md`, personas).
+(agents, skills, personas).
 
 ## Who it's for
 

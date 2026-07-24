@@ -42,7 +42,7 @@ This configuration relies on two Claude Code plugins being installed:
 - **[obra/superpowers](https://github.com/obra/superpowers)** - Provides the skill/agent framework referenced throughout: brainstorming, TDD, verification-before-completion, dispatching-parallel-agents, finishing-a-development-branch, and more
 - **[steveyegge/beads](https://github.com/steveyegge/beads)** - Git-backed issue tracker providing the `bd` command used for task tracking in the AGENTS.md template
 
-Without these plugins, the shared `<orchestration>` section in `src/user/.agents/INSTRUCTIONS.md.template` (installed as `INSTRUCTIONS.md` in the target tool config directory) and several shared workflow rules (`delegation`, `completion-gate` under `src/user/.agents/rules/`, and `beads` under `src/plugins/beads/`) will reference skills and commands that don't exist.
+Without these plugins, several shared workflow rules (`delegation`, `completion-gate` under `src/user/.agents/rules/`, and `beads` under `src/plugins/beads/`) will reference skills and commands that don't exist.
 
 **Optional integrations** (each degrades gracefully if absent):
 
@@ -73,7 +73,7 @@ src/
 │   │   ├── agents/                 # Role-based agent definitions
 │   │   ├── rules/                  # Shared workflow rules (delegation, completion-gate, subagents, worktrees, …)
 │   │   ├── skills/                 # Methodology guides with examples
-│   │   ├── INSTRUCTIONS.md.template      # Shared laws, constraints, workflow
+│   │   ├── AGENTS.md.template             # Zero-based shared laws, decision matrix, hard lines
 │   │   ├── AGENT-PERSONA.md.template     # Agent persona/personality
 │   │   └── USER-PERSONA.md.template      # User persona
 │   ├── .claude/                    # Claude-specific (→ ~/.claude/)
@@ -167,12 +167,12 @@ Slash commands that can be invoked directly:
 ### Templates
 
 **Shared** (in `src/user/.agents/`):
-- `INSTRUCTIONS.md.template` - Shared laws, constraints, workflow, and orchestration
+- `AGENTS.md.template` - Zero-based shared laws, decision matrix, hard lines, and conventions (D17). Hand-deployed to the standard homes (S0); not yet wired into automated per-tool assembly (`agents-config-9k9.10`)
 - `AGENT-PERSONA.md.template` - Agent personality and behavioral traits (referenced via `@AGENT-PERSONA.md`)
 - `USER-PERSONA.md.template` - User description and interaction preferences (referenced via `@USER-PERSONA.md`)
 
 **Claude-specific** (in `src/user/.claude/`):
-- `AGENTS.md.template` - Claude instruction file referencing shared content + Claude extensions
+- `AGENTS.md.template` - Claude instruction file referencing shared persona/session-primer content + Claude extensions
 - `CLAUDE.md.template` - Minimal file that points to AGENTS.md
 - `CLAUDE-EXTENSIONS.md.template` - Stub header (content moved to `rules/`)
 - `settings.json.template` - Pre-configured permission allowlists, hooks, and experimental features
@@ -180,7 +180,7 @@ Slash commands that can be invoked directly:
 > **Note:** The templates contain content specific to the author's setup:
 > - The persona templates reflect personal interaction preferences
 > - The `beads` plugin (under `src/plugins/beads/`) assumes use of [steveyegge/beads](https://github.com/steveyegge/beads) as a task tracker
-> - The `<orchestration>` section (in `INSTRUCTIONS.md`) and the `delegation` and `completion-gate` rules (in `src/user/.agents/rules/`) assume [obra/superpowers](https://github.com/obra/superpowers) skills are available
+> - The `delegation` and `completion-gate` rules (in `src/user/.agents/rules/`) assume [obra/superpowers](https://github.com/obra/superpowers) skills are available
 > - Various constraints have a TypeScript/Node.js bias
 >
 > You'll want to customize or remove these to match your own workflow.
@@ -262,7 +262,6 @@ cp -r src/user/.claude/commands ~/.claude/
 cp -r src/user/.claude/rules ~/.claude/
 
 # Copy and customize shared templates
-cp src/user/.agents/INSTRUCTIONS.md.template ~/.claude/INSTRUCTIONS.md
 cp src/user/.agents/AGENT-PERSONA.md.template ~/.claude/AGENT-PERSONA.md
 cp src/user/.agents/USER-PERSONA.md.template ~/.claude/USER-PERSONA.md
 
@@ -293,12 +292,11 @@ The `.template` files ship with the author's personal configuration and must be 
 2. **`AGENT-PERSONA.md`** — Defines the AI's personality and expertise claims. Adjust to your preferred style
 
 **Adjust to your workflow:**
-3. **`INSTRUCTIONS.md`** — Laws, constraints, workflow, and orchestration. The `<orchestration>` section references [superpowers](https://github.com/obra/superpowers) skills — remove or replace if not using that plugin
-4. **Tool-specific extensions** — Remove rules for plugins you don't use:
+3. **Tool-specific extensions** — Remove rules for plugins you don't use:
    - **Claude:** shared workflow rules live in `src/user/.agents/rules/` — `delegation.md`, `completion-gate.md`, `subagents.md`, `worktrees.md`, `memory-routing.md`, `user-prompts.md`, `bash-scripting.md`; Claude-specific rules in `src/user/.claude/rules/` — `claude-sandbox.md`, `headless-claude.md`, `orchestrating-subagents.md`, `worktree-safety.md`. `delegation` and `completion-gate` reference superpowers skills; delivery (worktree isolation → PR creation → review monitoring) is now handled by the `using-git-worktrees`, `finishing-a-development-branch`, and `monitor-pr`/`wait-for-pr-comments` skills rather than a standalone rule
    - **Beads plugin** (`src/plugins/beads/`) — adds `beads.md` to `rules/` at install time; assumes [beads](https://github.com/steveyegge/beads)
    - **Codex/Gemini** — see `CODEX-EXTENSIONS.md` or `GEMINI-EXTENSIONS.md`
-5. **`settings.json`** (Claude only) — Adjust permission allowlists, hooks, and deny rules to match your needs
+4. **`settings.json`** (Claude only) — Adjust permission allowlists, hooks, and deny rules to match your needs
 
 **No changes needed:**
 - `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` — Thin wrappers that reference the files above

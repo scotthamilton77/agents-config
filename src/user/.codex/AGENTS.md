@@ -21,7 +21,7 @@ or selected via `--tools=codex`).
 - These are **source templates**, not runtime config. Editing a file here
   changes what gets installed to users' real `~/.codex/` on next install.
 - Shared content from `src/user/.agents/` also stages into `~/.codex/`
-  (agents, skills, `INSTRUCTIONS.md`, personas). Name collisions across the
+  (agents, skills, personas). Name collisions across the
   shared tree + this folder + active plugins are a **fatal install error**
   in `commands/`, `skills/`, and `agents/`.
 - `CODEX-EXTENSIONS.md.template` is the Codex-specific workflow extension

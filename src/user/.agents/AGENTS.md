@@ -7,7 +7,8 @@ dir exists or `--tools=` selects them).
 ## Install model
 
 - `*.md.template` — `.template` suffix stripped on copy; lands at
-  `~/.<tool>/<basename>.md` (e.g. `INSTRUCTIONS.md.template` → `~/.claude/INSTRUCTIONS.md`).
+  `~/.<tool>/<basename>.md` (e.g. `AGENTS.md.template` → `~/.claude/AGENTS.md`,
+  by DYNAMIC-INCLUDE into the per-tool assembled instruction file).
 - `agents/` — each top-level entry copied; **names must be unique** across the
   combined tree (shared + tool-specific + active plugins). Collisions are a
   **fatal install error**.

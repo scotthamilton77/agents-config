@@ -11,11 +11,14 @@ is useful to more than one tool, it lives here.
   standards, and boundaries.
 - `skills/` — Methodology guides, one directory per skill with a `SKILL.md`
   and optional supporting scripts.
-- `INSTRUCTIONS.md.template` — Shared laws, constraints, workflow, and
-  orchestration referenced by each tool's top-level instruction file.
+- `AGENTS.md.template` — Zero-based shared laws, decision matrix, and hard
+  lines (D17). Hand-deployed to the standard homes today (S0); not yet wired
+  into automated per-tool assembly — repointing a tool's `AGENTS.md`-dest
+  include at another `AGENTS.md`-basenamed fragment self-deletes the
+  assembled file on flatten (`agents-config-9k9.10` tracks the installer fix).
 - `SESSION-PRIMER.md.template` — Skill-invocation discipline (the "1% rule"
   + red-flag rationalization table + skill-priority ordering). Dynamically
-  included between USER-PERSONA and INSTRUCTIONS in every per-tool template.
+  included after USER-PERSONA in every per-tool template.
 - `AGENT-PERSONA.md.template` — Agent personality and expertise claims.
   Personalize after install.
 - `USER-PERSONA.md.template` — User description and interaction preferences.
@@ -26,9 +29,9 @@ is useful to more than one tool, it lives here.
 Into every detected tool's config directory:
 
 - Claude Code → `~/.claude/agents/`, `~/.claude/skills/`,
-  `~/.claude/INSTRUCTIONS.md`, etc.
-- Codex CLI → `~/.codex/agents/`, `~/.codex/skills/`, `~/.codex/INSTRUCTIONS.md`, etc.
-- Gemini CLI → `~/.gemini/agents/`, `~/.gemini/skills/`, `~/.gemini/INSTRUCTIONS.md`, etc.
+  `~/.claude/AGENTS.md`, etc.
+- Codex CLI → `~/.codex/agents/`, `~/.codex/skills/`, `~/.codex/AGENTS.md`, etc.
+- Gemini CLI → `~/.gemini/agents/`, `~/.gemini/skills/`, `~/.gemini/GEMINI.md`, etc.
 
 The installer strips the `.template` suffix on copy and skips installing to
 tools that aren't detected on the system.

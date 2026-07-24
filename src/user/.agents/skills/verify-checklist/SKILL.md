@@ -30,6 +30,36 @@ Claiming work is complete without verification is dishonesty, not efficiency. **
 - Trivial one-liners (config tweaks, typo fixes)
 - User explicitly says to skip verification
 
+## The Checklist
+
+This is the canonical home of the 10-step checklist — shared instructions no
+longer carry a `<verification-checklist>` block (zero-based per D17). The
+`completion-gate` rule routes it at gate time to one of three depths: `SKIP`
+(step 5 only), `SERIAL` (all ten, steps 1–4 run in-house), or `HEAVY` (steps
+1–4 run as a multi-agent adversarial pass). Step 5 is non-substitutable under
+every tier. Delivery and Housekeeping are not tiered — they always run.
+
+**Quality gate:**
+1. Code review — changes reviewed against plan, standards, and architectural intent
+2. Address review findings — all findings resolved or explicitly deferred with rationale
+3. Simplification review — changed code assessed for clarity, duplication, and maintainability
+4. Address simplification findings — all findings resolved
+5. Verify with evidence — tests pass, build succeeds, static analysis clean; output as proof
+
+**Delivery:**
+6. Work isolation — changes on a feature branch or worktree, not directly on trunk
+7. Pull request — PR created with summary, linked to tracking if applicable
+8. Automated review — automated reviewer feedback collected and triaged
+
+**Housekeeping:**
+9. Discovered work recorded and triaged — issues found during work are tracked, priority-rated with rationale, and anchored to the roadmap per the discovered-work discipline
+10. Memory updated — non-obvious decisions, corrections, or context preserved
+
+Tool-specific extensions define which skills, agents, or commands implement
+each step — see the `completion-gate` rule for Claude's concrete `SERIAL` 1–5
+tool mapping and delivery-chain wiring for 6–8. Project-level config may add
+or override steps.
+
 ## The Process
 
 ### 1. Load Verification Workflows
@@ -37,8 +67,8 @@ Claiming work is complete without verification is dishonesty, not efficiency. **
 Locate verification workflow definitions from your memory. These describe the steps required before work can be declared complete.
 
 **Check in order:**
-1. **Shared rules** — look for `<verification-checklist>` in instruction files (always loaded)
-2. **Tool extensions** — the `<completion-gate>` rule and the delivery skills it hands off to, for tool-specific implementation
+1. **This skill's checklist** (above) — the canonical 10-step definition, always available
+2. **Tool extensions** — the `completion-gate` rule and the delivery skills it hands off to, for tool-specific implementation
 3. **Project config** — project-level overrides or additions (AGENTS.md, CLAUDE.md, etc.)
 4. **Memory files** — any supplemental verification workflows
 
@@ -124,12 +154,6 @@ tracked item or priority); every row that files a tracked item must fill all
 five cells.
 
 Omit sections that are genuinely empty (no PRs, no discovered work). But you must always include **Objective**, **Verification Checklist**, and **Remaining Work**.
-
-## Source Dependency
-
-The canonical checklist lives in `<verification-checklist>` in shared instructions — always loaded, always available. Tool extensions provide the "how" (which skills/agents implement each step). Project config and memory can add or override steps.
-
-If `<verification-checklist>` is missing from your loaded instructions, warn the user — the shared instruction files may not be installed. Fall back to tool extensions and memory, but flag the gap.
 
 ## Red Flags — STOP
 

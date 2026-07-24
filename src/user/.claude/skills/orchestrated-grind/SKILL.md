@@ -654,8 +654,9 @@ forks, and reviewer stalemates or malfunctions that have run out §3's ladder �
 a stalemate after its do-not-relitigate round, a malfunction after its one
 evidence-forward nudge. The two are different diagnoses with different exits,
 not steps in one chain: a confirmed malfunction escalates on its own path
-without first spending the stalemate rounds. Everything else is
-decide-in-scope or verify-facts — decide it.
+without first spending the stalemate rounds. Everything else is either a
+verifiable fact or an in-scope decision, per the shared decision rules —
+decide it.
 
 **Workers self-flag deviations** — TDD compromises, fixture fixes, plan drift —
 in their reports. Lieutenants verify rather than relitigate. Honesty is never

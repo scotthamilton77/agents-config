@@ -31,7 +31,9 @@ Agent tool (subagent_type: provided by orchestrator, mode: "auto"):
     6. Self-review against the Definition of Done
     7. Report back with a structured implementation summary
 
-    If anything is unclear, apply the canonical decision matrix. Don't guess.
+    If anything is unclear, apply the shared decision rules — verify facts
+    yourself, decide in-scope choices, escalate only genuinely balanced
+    trade-offs. Don't guess.
 
     ## Report Format
 

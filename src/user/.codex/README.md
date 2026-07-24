@@ -7,7 +7,9 @@ because `~/.codex/` already exists.
 ## What lives here
 
 - `AGENTS.md.template` — Top-level instruction file that pulls in the shared
-  `INSTRUCTIONS.md`, personas, and `CODEX-EXTENSIONS.md`.
+  personas, session-primer, and all rules; and `CODEX-EXTENSIONS.md`. Does not
+  yet pull in the shared zero-based `AGENTS.md.template` survivor — see that
+  file's entry in `src/user/.agents/README.md` (`agents-config-9k9.10`).
 - `CODEX-EXTENSIONS.md.template` — Placeholder for Codex-specific workflow
   additions. Currently empty; populate as Codex-specific conventions emerge.
 
@@ -17,7 +19,7 @@ Into `~/.codex/` (user-scoped Codex CLI config). The installer strips the
 `.template` suffix on copy.
 
 Shared content from `src/user/.agents/` also installs into `~/.codex/`
-(agents, skills, `INSTRUCTIONS.md`, personas).
+(agents, skills, personas).
 
 ## Who it's for
 
