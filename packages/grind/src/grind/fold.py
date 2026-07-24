@@ -51,17 +51,20 @@ def _park_reason(evt: RawEvent) -> ParkReason | None:
     trust inward"); an unrecognized value here is tolerated as `None` rather
     than raised, consistent with accept-and-flag.
 
-    Reads the legacy `kind` field when `reason` is absent, so an
+    Reads the legacy `kind` field ONLY when `reason` is absent, so an
     `events.jsonl` written under the old vocabulary replays with its parks
     still typed -- delete-and-refold is the runtime's whole recovery story,
     and it would be a poor one if an upgrade greyed out every historical park.
+    Absent-only is load-bearing, not a detail: a current event that carries an
+    unrecognized `reason` alongside a stale `kind` must stay untyped and get
+    flagged, never have its recorded cause quietly replaced by the older field.
 
     No `cast` is needed: membership in `PARK_REASONS` narrows the `str` to the
     key type, which is exactly the guarantee the table is there to give.
     """
     reason = evt.get("reason")
-    if isinstance(reason, str) and reason in PARK_REASONS:
-        return reason
+    if reason is not None:
+        return reason if isinstance(reason, str) and reason in PARK_REASONS else None
     legacy = evt.get("kind")
     if isinstance(legacy, str):
         return _LEGACY_PARK_KINDS.get(legacy)

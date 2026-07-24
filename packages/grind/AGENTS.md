@@ -140,25 +140,31 @@ must pass before push.
     them without lying. `human-gated` was the one old kind that *was*
     failure-shaped, and `approval-required` names the same state — two names
     for one state is the drift the reconciliation removes.
-  - The `failure` axis is not this package's to extend unilaterally: it mirrors
-    the `work` facade's `park --reason` vocabulary member for member. The
-    isolated-project boundary rules out a cross-import, so the seam is two
-    assertions — grind's `test_failure_axis_matches_the_work_facades_park_reasons_exactly`
-    and workcli's `test_vocabulary_is_closed_and_mirrored_by_the_grind_executor`.
-    Both must change together; either one alone fails its own gate.
+  - The `failure` axis is not this package's to define: it lives in
+    `packages/contracts/park-reasons.toml`, which `packages/workcli`
+    implements as `work park --reason`. The isolated-project boundary rules
+    out a cross-import, and a transcription in each test file would only catch
+    a *forgetful* one-sided edit — so both suites read that one file instead.
+    Changing the vocabulary is a three-file change by construction: the
+    contract plus both tables, with each missing table failing its own gate.
+    The scheduling axis is grind-native and deliberately absent from the
+    contract; it has no tracker counterpart.
 - **`pr-open` and `in-review` are parkable, and that is load-bearing.** Every
   failure-axis reason (`ci-failure`, `merge-conflict`, `bot-declined`, …) is
   reached with a PR open, so excluding those statuses from `_PARKABLE` would
   let the boundary accept a park the fold then rejects as an anomaly — the
   axis would be unrecordable from exactly the states it names. `merged`/`done`
   stay unparkable: finished work has nothing left to park.
-- **The fold still reads the retired `kind` field.** `_LEGACY_PARK_KINDS`
-  (`fold.py`) maps the pre-charter vocabulary on read only — three members
-  pass through unchanged, `human-gated` lands on `approval-required`. Nothing
-  writes `kind` and the validator rejects it on input; the map exists because
-  delete-and-refold is this runtime's whole recovery story, and an upgrade
-  that greyed out every historical park would make it a poor one. A value that
-  matches neither vocabulary records the anomaly triple rather than vanishing.
+- **The fold still reads the retired `kind` field — but only when `reason` is
+  absent.** `_LEGACY_PARK_KINDS` (`fold.py`) maps the pre-charter vocabulary
+  on read: three members pass through unchanged, `human-gated` lands on
+  `approval-required`. Nothing writes `kind` and the validator rejects it on
+  input; the map exists because delete-and-refold is this runtime's whole
+  recovery story, and an upgrade that greyed out every historical park would
+  make it a poor one. Absent-only is the load-bearing part: an event carrying
+  an unrecognized `reason` *alongside* a stale `kind` must not have its
+  recorded cause quietly replaced by the older field — it stays untyped and
+  records the anomaly triple, as any unrecognized value does.
 - **`discovered_work` accepts only the scheduling axis.** It creates an item
   with no PR, no branch and no CI, so a failure reason there would be an
   untrue statement — the boundary narrows to `_SCHEDULING_REASONS` instead of

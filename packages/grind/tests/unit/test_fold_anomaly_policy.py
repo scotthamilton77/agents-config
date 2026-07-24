@@ -293,6 +293,25 @@ def test_an_unrecognized_park_reason_is_flagged_not_silently_dropped() -> None:
     )
 
 
+def test_a_stale_kind_never_overrides_an_unrecognized_reason() -> None:
+    # The legacy read is absent-only. A current event whose `reason` did not
+    # narrow must stay untyped and be flagged -- silently substituting the
+    # older field would replace the cause the event actually recorded.
+    state = fold(
+        [
+            seed_event(),
+            event(
+                "item_parked", item="wgclw.1", reason="not-a-reason", kind="later-wave", note="x"
+            ),
+        ]
+    )
+
+    parked = state.items["wgclw.1"].parked
+    assert parked is not None
+    assert parked.reason is None
+    assert any("unrecognized park reason" in a.reason for a in state.anomalies)
+
+
 def test_a_pre_charter_log_replays_with_its_parks_still_typed() -> None:
     # The old writer emitted the field `kind`, never `reason`. Delete-and-refold
     # is the whole recovery story, so an upgrade must not grey out history.

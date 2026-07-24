@@ -1,39 +1,47 @@
 """The park vocabulary contract: two axes, one table, and one exit.
 
 These tests pin decisions, not the language. The failure axis is not grind's
-to choose -- it is the `work` facade's `park --reason` vocabulary, and the two
-must stay member-for-member identical or the executor has to translate a
-reason at the call site, which is the drift this vocabulary exists to remove.
+to choose -- it is the shared park-reason contract that the `work` facade also
+implements, and the two must stay member-for-member identical or the executor
+has to translate a reason at the call site, which is the drift this vocabulary
+exists to remove.
 """
 
 from __future__ import annotations
+
+import tomllib
+from pathlib import Path
 
 from grind.fold import fold
 from grind.model import PARK_REASONS, ParkingEntry
 from tests.unit.builders import event, seed_event
 
-# The `work` facade's typed park reasons, transcribed from its own vocabulary
-# table (`workcli.lifecycle.park.REASONS`, itself the charter's park-semantics
-# decision). The packages are isolated uv projects with zero cross-imports by
-# design, so the seam is two assertions rather than one import: this one
-# catches drift originating here, and workcli's own
-# `test_vocabulary_is_closed_and_mirrored_by_the_grind_executor` pins its side
-# closed so a reason added THERE cannot ship green either.
-_FACADE_REASONS = {
-    "ci-failure": "machine",
-    "merge-conflict": "machine",
-    "approval-required": "human",
-    "bot-declined": "human",
-    "budget-exhausted": "human",
-}
+# The failure axis is not grind's to define: it is the shared park-reason
+# contract, which `packages/workcli` implements as `work park --reason`. The
+# packages are isolated uv projects with no cross-import, so a transcription
+# in either test file would only catch a *forgetful* one-sided edit -- update
+# the other package and its own copied expectation together and both gates
+# stay green while the two runtimes disagree. Reading the one contract file
+# closes that: changing the vocabulary means editing this file plus both
+# tables, and skipping either table fails that table's own gate.
+#
+# Deliberately not guarded with a skip-if-missing: this package's tests are
+# run from the repo, and a silent skip would reopen the hole the file exists
+# to close.
+_CONTRACT = Path(__file__).resolve().parents[3] / "contracts" / "park-reasons.toml"
 
 
-def test_failure_axis_matches_the_work_facades_park_reasons_exactly() -> None:
+def _contract_reasons() -> dict[str, str]:
+    with _CONTRACT.open("rb") as handle:
+        return dict(tomllib.load(handle)["reasons"])
+
+
+def test_failure_axis_matches_the_shared_park_reason_contract() -> None:
     failure_axis = {
         reason: category for reason, (axis, category) in PARK_REASONS.items() if axis == "failure"
     }
 
-    assert failure_axis == _FACADE_REASONS
+    assert failure_axis == _contract_reasons()
 
 
 def test_scheduling_axis_holds_the_grind_native_sequencing_reasons() -> None:
