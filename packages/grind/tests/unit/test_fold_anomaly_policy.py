@@ -107,7 +107,7 @@ def test_item_parked_illegal_from_pr_open() -> None:
         seed_event(),
         event("item_started", item="wgclw.1"),
         event("pr_opened", item="wgclw.1", pr=1),
-        event("item_parked", item="wgclw.1", kind="deferred", note="nope"),
+        event("item_parked", item="wgclw.1", reason="deferred", note="nope"),
     ]
 
     state = fold(events)
@@ -127,7 +127,7 @@ def test_item_started_with_no_item_reference_is_an_anomaly() -> None:
 def test_item_enqueued_with_unknown_lane_is_an_anomaly_and_item_stays_parked() -> None:
     events = [
         seed_event(),
-        event("item_parked", item="wgclw.1", kind="deferred", note="paused"),
+        event("item_parked", item="wgclw.1", reason="deferred", note="paused"),
         event("item_enqueued", item="wgclw.1", lane="ghost-lane"),
     ]
 
@@ -261,11 +261,28 @@ def test_item_blocked_on_an_already_blocked_item_can_immediately_resolve() -> No
     assert state.items["wgclw.2"].status == "queued"
 
 
-def test_park_kind_missing_becomes_none_not_a_crash() -> None:
-    state = fold([seed_event(), event("item_parked", item="wgclw.1", note="no kind given")])
+def test_park_reason_missing_becomes_none_not_a_crash() -> None:
+    state = fold([seed_event(), event("item_parked", item="wgclw.1", note="no reason given")])
 
-    assert state.items["wgclw.1"].parked is not None
-    assert state.items["wgclw.1"].parked.kind is None
+    parked = state.items["wgclw.1"].parked
+    assert parked is not None
+    assert parked.reason is None
+    # An untyped park is absent from both axes, never ambiguously on one.
+    assert parked.axis is None
+    assert parked.category is None
+
+
+def test_a_retired_pre_charter_park_reason_folds_untyped_rather_than_crashing() -> None:
+    # Accept-and-flag is also the migration story: a log written before the
+    # vocabulary was reconciled replays into an untyped park, not an exception.
+    state = fold(
+        [seed_event(), event("item_parked", item="wgclw.1", reason="human-gated", note="old log")]
+    )
+
+    parked = state.items["wgclw.1"].parked
+    assert parked is not None
+    assert parked.reason is None
+    assert parked.note == "old log"
 
 
 def test_grind_created_tolerates_a_lanes_payload_that_is_not_a_list() -> None:

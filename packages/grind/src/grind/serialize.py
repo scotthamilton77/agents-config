@@ -49,7 +49,15 @@ def _item_review_json(review: ItemReview) -> JsonValue:
 def _parking_entry_json(parked: ParkingEntry | None) -> JsonValue:
     if parked is None:
         return None
-    return {"kind": parked.kind, "note": parked.note}
+    # `axis`/`category` are emitted, not stored: a consumer asking "which of
+    # these parks had a machine-actionable cause" reads the snapshot instead
+    # of re-implementing the reason table.
+    return {
+        "reason": parked.reason,
+        "axis": parked.axis,
+        "category": parked.category,
+        "note": parked.note,
+    }
 
 
 def _discovered_work_json(discovered: DiscoveredWork | None) -> JsonValue:

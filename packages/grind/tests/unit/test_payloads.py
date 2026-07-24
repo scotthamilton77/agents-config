@@ -171,10 +171,23 @@ def test_item_done_requires_item():
     assert validate_payload("item_done", {}) != []
 
 
-def test_item_parked_requires_item_kind_note():
-    assert validate_payload("item_parked", {"item": "a", "kind": "deferred", "note": "n"}) == []
-    assert validate_payload("item_parked", {"item": "a", "kind": "bogus", "note": "n"}) != []
-    assert validate_payload("item_parked", {"item": "a", "kind": "deferred"}) != []
+def test_item_parked_requires_item_reason_note():
+    assert validate_payload("item_parked", {"item": "a", "reason": "deferred", "note": "n"}) == []
+    assert validate_payload("item_parked", {"item": "a", "reason": "ci-failure", "note": "n"}) == []
+    assert validate_payload("item_parked", {"item": "a", "reason": "bogus", "note": "n"}) != []
+    assert validate_payload("item_parked", {"item": "a", "reason": "deferred"}) != []
+
+
+def test_item_parked_rejects_a_retired_pre_charter_reason():
+    # `human-gated` was a park kind before the vocabulary was reconciled onto
+    # the charter's typed reasons; it is subsumed by `approval-required` and
+    # must not be quietly accepted alongside its replacement.
+    retired = {"item": "a", "reason": "human-gated", "note": "n"}
+    assert validate_payload("item_parked", retired) != []
+    assert (
+        validate_payload("item_parked", {"item": "a", "reason": "approval-required", "note": "n"})
+        == []
+    )
 
 
 def test_item_enqueued_requires_item_and_lane():
@@ -191,11 +204,11 @@ def test_discovered_work_requires_disposition_specific_fields():
         "source": "lane-a",
         "disposition": "parked",
         "rationale": "why",
-        "kind": "discovered-work",
+        "reason": "discovered-work",
     }
     assert validate_payload("discovered_work", parked) == []
-    # kind is required when parked
-    assert validate_payload("discovered_work", {**parked, "kind": None}) != []
+    # reason is required when parked
+    assert validate_payload("discovered_work", {**parked, "reason": None}) != []
 
     enqueued = {
         "item": "disc-2",

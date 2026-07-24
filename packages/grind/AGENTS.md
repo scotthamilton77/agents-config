@@ -113,10 +113,35 @@ must pass before push.
   report `done` for a lane that's barely started. `derive.lane_status`
   computes the "most advanced" rank only among non-`done` items, falling
   back to `done` only when every item in the lane is.
-- **`pr_closed`'s `next: parked` path has no `kind`.** Unlike `item_parked`
-  (which always carries a `kind` enum), `pr_closed`'s payload has no parking
-  kind — this package parks with `kind=None` and reuses the closure's
-  `reason` as the parking note.
+- **`pr_closed`'s `next: parked` path has no park reason.** Unlike
+  `item_parked` (which always carries a `reason` enum), `pr_closed`'s payload
+  has no park reason — this package parks with `reason=None` and reuses the
+  closure's own `reason` text as the parking note. That untyped park is
+  *absent* from both axes, not ambiguously on one; giving `pr_closed` a typed
+  reason would mean minting a code the charter's vocabulary does not have.
+- **The park vocabulary has two axes and one exit.** `PARK_REASONS`
+  (`model.py`) is the single table; `axis` and `category` are `@property`
+  lookups on `ParkingEntry`, never stored, so a park cannot carry a reason
+  that disagrees with its own axis. Two decisions are pinned in
+  `tests/unit/test_park_vocabulary.py` and worth not re-litigating:
+  - *No routed re-entry for machine-actionable reasons.* The charter is
+    categorical that the machine never acts on a parked item of its own
+    accord, and there is no automatic TTL action. `category: machine` describes
+    the **cause**, and the executor's bounded fix budget is spent *before* the
+    park — so `ci-failure` waits for an explicit `item_enqueued` exactly as
+    `deferred` does. Adding an auto-recheck path would also need a decision
+    verb, which the `conditions.py` seam forbids this package from owning.
+  - *The scheduling axis is kept, `human-gated` is dropped.*
+    `discovered-work`/`later-wave`/`deferred` describe work that never failed
+    (`discovered_work` parks items that never had a PR, and `later-wave` is the
+    schema's only surviving trace of a wave), so no failure reason can describe
+    them without lying. `human-gated` was the one old kind that *was*
+    failure-shaped, and `approval-required` names the same state — two names
+    for one state is the drift the reconciliation removes.
+  - The `failure` axis is not this package's to extend unilaterally: it mirrors
+    the `work` facade's `park --reason` vocabulary member for member, and the
+    isolated-project boundary means a literal in that test file is the only
+    thing holding the two together.
 
 ## Tests
 

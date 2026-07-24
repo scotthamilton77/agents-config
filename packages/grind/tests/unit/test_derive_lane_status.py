@@ -53,7 +53,7 @@ def test_parked_items_are_excluded_from_lane_status_derivation() -> None:
         event("pr_opened", item="wgclw.1", pr=1),
         event("item_merged", item="wgclw.1", pr=1, sha="a"),
         event("item_done", item="wgclw.1"),
-        event("item_parked", item="wgclw.2", kind="later-wave", note="not yet"),
+        event("item_parked", item="wgclw.2", reason="later-wave", note="not yet"),
     ]
 
     state = fold(events)
@@ -65,8 +65,8 @@ def test_parked_items_are_excluded_from_lane_status_derivation() -> None:
 def test_lane_standing_down_with_empty_active_queue_reports_standing_down() -> None:
     events = [
         seed_event(),
-        event("item_parked", item="wgclw.1", kind="later-wave", note="cut"),
-        event("item_parked", item="wgclw.2", kind="later-wave", note="cut"),
+        event("item_parked", item="wgclw.1", reason="later-wave", note="cut"),
+        event("item_parked", item="wgclw.2", reason="later-wave", note="cut"),
         event("lane_standing_down", lane="lane-a"),
     ]
 

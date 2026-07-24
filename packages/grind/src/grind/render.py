@@ -10,7 +10,7 @@ into the inlined `<script id="grind-dashboard">` block, with every `<` escaped a
 work-item title containing literal HTML can never break out of the block.
 
 The renderer only lays out typed fields already computed by the fold --
-review counts, item/lane status, parking kind -- it never re-derives domain
+review counts, item/lane status, parking reason -- it never re-derives domain
 facts from prose (renderer spec, "Input"). Two fields the reference prototype
 (`docs/prototypes/grind-dashboard/variation-a.html`) shows but `State` has no
 typed home for are deliberately dropped here rather than invented:
@@ -107,9 +107,14 @@ def _lesson_json(obs: Observation) -> JsonValue:
 
 def _parking_json(item_id: str, item: Item) -> JsonValue:
     parked = item.parked
-    kind = parked.kind if parked is not None else None
-    note = parked.note if parked is not None else None
-    return {"id": item_id, "title": item.title, "kind": kind, "note": note}
+    return {
+        "id": item_id,
+        "title": item.title,
+        "reason": parked.reason if parked is not None else None,
+        "axis": parked.axis if parked is not None else None,
+        "category": parked.category if parked is not None else None,
+        "note": parked.note if parked is not None else None,
+    }
 
 
 def _dashboard_state_json(state: State) -> dict[str, JsonValue]:
@@ -262,15 +267,16 @@ h1 {
   background: var(--panel-2); color: var(--text-dim);
 }
 .chip-blocker { border-color: rgba(198,40,40,0.45); color: var(--red); background: rgba(198,40,40,0.07); }
-.kind {
+.park {
   font-family: inherit; font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
   text-transform: uppercase; border-radius: 3px; padding: 2px 6px;
 }
-.kind-discovered-work { background: rgba(15,118,110,0.13); color: #0f766e; }
-.kind-human-gated     { background: rgba(190,18,60,0.11); color: #be123c; }
-.kind-later-wave      { background: rgba(67,56,202,0.11); color: #4338ca; }
-.kind-deferred        { background: rgba(82,82,82,0.13);  color: #525252; }
-.kind-unknown         { background: rgba(138,148,163,0.15); color: #6e7681; }
+/* Coloured by axis + category, not per reason: the eye's question of a
+   parking lot is "why is this stuck", and the answer has three shapes. */
+.park-machine    { background: rgba(154,108,0,0.13); color: #9a6c00; }
+.park-human      { background: rgba(190,18,60,0.11); color: #be123c; }
+.park-scheduling { background: rgba(67,56,202,0.11); color: #4338ca; }
+.park-unknown    { background: rgba(138,148,163,0.15); color: #6e7681; }
 .item { border: 1px solid var(--border); border-left: 3px solid var(--c); border-radius: 6px; padding: 7px 9px; background: #fff; }
 .item-top { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
 .item-top .icon { color: var(--c); flex: none; }
@@ -446,11 +452,14 @@ function reviewBits(review, itemStatus) {
   return out;
 }
 
-var KNOWN_KINDS = ["discovered-work", "human-gated", "later-wave", "deferred"];
-function kindChip(kind) {
-  var k = String(kind || "").toLowerCase();
-  var cls = KNOWN_KINDS.indexOf(k) >= 0 ? "kind-" + k : "kind-unknown";
-  return '<span class="kind ' + cls + '">' + escapeHtml(kind || "unknown") + "</span>";
+// The park vocabulary lives in one place (grind.model.PARK_REASONS) and the
+// snapshot carries the derived axis/category, so this holds no copy of it.
+function parkChip(p) {
+  var cls = "park-unknown";
+  if (p.axis === "scheduling") cls = "park-scheduling";
+  else if (p.category === "machine") cls = "park-machine";
+  else if (p.category === "human") cls = "park-human";
+  return '<span class="park ' + cls + '">' + escapeHtml(p.reason || "unknown") + "</span>";
 }
 
 // Mission is a typed JsonValue, not guaranteed to be a plain string --
@@ -557,7 +566,7 @@ function renderDock() {
   var parked = STATE.parking_lot || [];
   document.getElementById("park-count").textContent = parked.length;
   document.getElementById("parking-list").innerHTML = parked.map(function (p) {
-    return "<li>" + kindChip(p.kind) +
+    return "<li>" + parkChip(p) +
       '<span class="pt"><span class="pid">' + escapeHtml(p.id) + "</span>" + escapeHtml(text(p.title) || p.id) +
       (p.note ? '<span class="pn">' + escapeHtml(p.note) + "</span>" : "") + "</span></li>";
   }).join("");

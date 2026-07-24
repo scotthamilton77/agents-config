@@ -11,9 +11,9 @@ auto-raises an ERROR observation. It never raises or refuses.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from typing import cast
 
 from grind.model import (
+    PARK_REASONS,
     AnomalyRecord,
     AttentionEntry,
     ClosedEntry,
@@ -26,25 +26,28 @@ from grind.model import (
     MergedEntry,
     Observation,
     ParkingEntry,
-    ParkKind,
+    ParkReason,
     PrRef,
     RawEvent,
     State,
 )
 
-_PARK_KINDS = {"discovered-work", "human-gated", "later-wave", "deferred"}
 
-
-def _park_kind(evt: RawEvent) -> ParkKind | None:
-    """Cast a trusted-inward `kind` string to the closed vocabulary.
+def _park_reason(evt: RawEvent) -> ParkReason | None:
+    """Narrow a trusted-inward `reason` string to the closed vocabulary.
 
     Payload shape validation is the CLI boundary's job (spec: "parse once,
     trust inward"); an unrecognized value here is tolerated as `None` rather
-    than raised, consistent with accept-and-flag.
+    than raised, consistent with accept-and-flag. That tolerance is also the
+    whole migration story for logs written under the pre-charter vocabulary:
+    a retired reason folds to an untyped park, never a crash.
+
+    No `cast` is needed: membership in `PARK_REASONS` narrows the `str` to the
+    key type, which is exactly the guarantee the table is there to give.
     """
-    kind = evt.get("kind")
-    if isinstance(kind, str) and kind in _PARK_KINDS:
-        return cast("ParkKind", kind)
+    reason = evt.get("reason")
+    if isinstance(reason, str) and reason in PARK_REASONS:
+        return reason
     return None
 
 
@@ -250,8 +253,8 @@ def _cascade_unblock(state: State) -> None:
                 changed = True
 
 
-def _park_item(state: State, item: Item, kind: ParkKind | None, note: str | None) -> None:
-    item.parked = ParkingEntry(kind=kind, note=note)
+def _park_item(state: State, item: Item, reason: ParkReason | None, note: str | None) -> None:
+    item.parked = ParkingEntry(reason=reason, note=note)
     if item.lane is not None:
         lane = state.lanes.get(item.lane)
         if lane is not None and item.id in lane.item_ids:
@@ -403,7 +406,7 @@ def _h_pr_closed(state: State, evt: RawEvent) -> None:
     # cycle that must not inherit the closed PR's stalemate history
     item.round_history = ()
     if next_status == "parked":
-        _park_item(state, item, kind=None, note=reason)
+        _park_item(state, item, reason=None, note=reason)
     else:
         item.status = next_status  # type: ignore[assignment]  # validated above
 
@@ -525,7 +528,7 @@ def _h_item_parked(state: State, evt: RawEvent) -> None:
     if item.status not in _PARKABLE:
         _anomaly(state, evt, f"item_parked illegal from status {item.status!r}")
         return
-    _park_item(state, item, kind=_park_kind(evt), note=_str(evt, "note"))
+    _park_item(state, item, reason=_park_reason(evt), note=_str(evt, "note"))
 
 
 @_handler("item_enqueued")
@@ -575,7 +578,7 @@ def _h_discovered_work(state: State, evt: RawEvent) -> None:
     provenance = DiscoveredWork(source=_str(evt, "source"), rationale=rationale)
     if disposition == "parked":
         item = Item(id=item_id, lane=None, title=description, status="queued", bead=bead)
-        item.parked = ParkingEntry(kind=_park_kind(evt), note=rationale)
+        item.parked = ParkingEntry(reason=_park_reason(evt), note=rationale)
         item.discovered = provenance
         state.items[item_id] = item
     elif disposition == "enqueued":
