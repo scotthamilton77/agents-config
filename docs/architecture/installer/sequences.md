@@ -102,7 +102,7 @@ sequenceDiagram
         Note over CLI,Port: Phase 3 — CLI-deploy stage (still inside the receipt lock), via run.deploy_clis
         CLI->>CliDep: deploy_clis(CLI_PACKAGES, prior, deploy=cli_deploy)
         CliDep->>Port: uv_version() -- MIN_UV_VERSION guard
-        loop per registry CLI (workcli, then prgroom)
+        loop per registry CLI (workcli, then prgroom, then grind)
             CliDep->>Port: shim_path / tool_list (PATH-independent decision signals)
             alt verify (digest unchanged, shim + provenance proven)
                 CliDep->>Port: smoke(shim, spec.smoke_args)
@@ -131,7 +131,7 @@ sequenceDiagram
 - **Tool order is the detection order; tools are independent within each pass.** Each tool gets its own plan and its own sync pass — there is no cross-tool state. A failure shaping one tool's plan does not corrupt another's.
 - **Collisions happen in both base staging and overlay.** Within a single tool's plan, shared + per-tool content can collide (base staging, `staging.py`); the more common case is plugin content landing on a base asset (`overlay.py`). Both route through the same merge registry (Sequence 2), never through `Sync`.
 - **`Config` is built between the two passes, not before the loop.** `resolve_tools` / `resolve_plugins` (pure functions in `config.py`) run once, up front; the frozen `Config` dataclass itself (`home`, `tools`, `auto_yes`) is constructed after staging finishes and before the sync pass begins. `installer.toml` plays no part in any of this — its loader is parsed but unwired (see [`data-view.md`](data-view.md)).
-- **The CLI-deploy stage runs third, still inside the receipt lock, and only on the user path.** `deploy_clis` walks the closed `CLI_PACKAGES` registry (`workcli` → `work`, `prgroom` → `prgroom`) in order, deciding verify/heal/fresh per CLI from PATH-independent signals (`shim_path`, `tool_list`) rather than trusting `PATH` itself — `which` is consulted only for the reachability invariant after a successful install. A `--project` run never constructs a `CliDeployPort` and never calls `deploy_clis`/`prune_clis` — the user-space CLI deploy is entirely out of scope for project-local installs. Its outcome merges into `record_receipt` via `merge_clis` alongside the file-install/prune outcomes (see [`data-view.md`](data-view.md) §"Install receipt").
+- **The CLI-deploy stage runs third, still inside the receipt lock, and only on the user path.** `deploy_clis` walks the closed `CLI_PACKAGES` registry (`workcli` → `work`, `prgroom` → `prgroom`, `grind` → `grind`) in order, deciding verify/heal/fresh per CLI from PATH-independent signals (`shim_path`, `tool_list`) rather than trusting `PATH` itself — `which` is consulted only for the reachability invariant after a successful install. A `--project` run never constructs a `CliDeployPort` and never calls `deploy_clis`/`prune_clis` — the user-space CLI deploy is entirely out of scope for project-local installs. Its outcome merges into `record_receipt` via `merge_clis` alongside the file-install/prune outcomes (see [`data-view.md`](data-view.md) §"Install receipt").
 
 ---
 
