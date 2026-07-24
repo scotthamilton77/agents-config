@@ -41,21 +41,24 @@ A review round emits a JSON object conforming to a shipped JSON Schema:
 "retained_categories":[…], "verdict":"clean"|"findings", "findings":[…]}`.
 Each finding is `{"type":"mechanical"|"advisory", "ac", "claim", "evidence"}`.
 `evidence` is **mandatory** for `mechanical` findings (a failing test, lint
-output, or a broken link) and optional for `advisory`. The artifact lives at a
-deterministic path in the PR branch so the merge gate reads it as a file — PR
-comments are not a review medium (D9). The path is fixed by this contract:
-`.review/verdict.json` at the repository root, one file, overwritten each
-round (prior rounds live in git history); "verdict-only commit" means a
-commit whose only touched path is `.review/verdict.json`. It records the
-`head_sha` of the
-**reviewed head** — the head the diff was taken at. Because committing the
-verdict itself advances the branch, staleness is defined over reviewed
-content, not raw head equality: a verdict is **stale** iff any commit after
-its recorded `head_sha` changes anything outside `.review/verdict.json`.
-Verdict-only commits neither stale nor refresh a verdict;
-a stale verdict is treated as absent by the gate. This is decidable from git
-observables (the paths touched by the commits between the recorded head and
-the current head).
+output, or a broken link) and optional for `advisory`.
+
+**The verdict lives outside the branch, posted by the App.** The verdict is
+attached to the commit it reviewed, never committed into the PR branch: the
+review artifact must not live inside the artifact under review. (A
+branch-resident verdict self-invalidates — committing it advances the head it
+must match — pollutes history, conflicts across concurrent PRs, and is
+writable by the reviewed party, which would demand a separate attestation
+layer to restore trust.) Primary medium: a GitHub **check run** named by this
+contract (`review-verdict`), posted by the App against the reviewed head SHA,
+its output carrying the verdict JSON verbatim. Until the check-run wiring
+exists, the degraded mode is the same verdict JSON as the body of the App's
+approving review — both media are App-posted and SHA-keyed. Provenance is
+part of validity: a verdict-shaped payload posted by any identity other than
+the App is not a verdict. Staleness is plain equality: a verdict whose
+`head_sha` ≠ the current PR head is **stale** and the gate treats it as
+absent — every push invalidates by construction, with no carve-outs. Human
+PR comments remain a non-medium (D9).
 
 **"A complete round" is mechanically defined — from observables only.** A
 round is complete iff (a) its declared `base_sha` equals the diff's actual base
@@ -68,11 +71,10 @@ one meaning "nothing retained" — the over-reporting guard (an under-declared
 retained set inflated an S5 round); *completeness* of the declared set is the
 invoker's adjudicated responsibility, enforced upstream as
 refusal-to-emit-a-prompt when no declaration is provided, not as a mechanical
-check on the artifact; and (c) it is a schema-valid verdict that is not stale
-— its recorded `head_sha` reaches the current PR head through verdict-only
-commits (possibly none). Completeness and terminal-clean are thus decidable
-from the artifact plus the PR's observable git state (head SHA, merge-base,
-paths touched since the reviewed head) —
+check on the artifact; and (c) it is a schema-valid, App-posted verdict whose
+`head_sha` equals the current PR head. Completeness and terminal-clean are
+thus decidable from the artifact plus the PR's observable state (head SHA,
+merge-base, posting identity) —
 never from unrecorded history. **Review terminates clean** when a complete
 round produces zero `mechanical` findings. Advisory findings route to the backlog,
 never block, and are never re-litigated in the fix loop (D8).
@@ -114,17 +116,12 @@ runs before the PR verdict.
 All machine-posted PR comments and approvals use the GitHub App identity, never
 the human's auth, reusing the proven merge-guard/App-approver plumbing (the App
 must hold `contents:write` for its approval to count). Merge eligibility =
-CI green + a terminal-clean, non-stale verdict covering the current reviewed
-head + an App approval attesting that specific verdict. The attestation is
-mechanically defined: the App-posted approving review's body carries exactly
-one JSON object `{"verdict_blob": "<git blob OID of .review/verdict.json>",
-"head_sha": "<reviewed head it covers>"}`; it attests the verdict iff
-`verdict_blob` equals the blob OID of `.review/verdict.json` as committed for
-that reviewed head (`git rev-parse <verdict-commit>:.review/verdict.json`)
-and `head_sha` equals the verdict's recorded reviewed head — both plain git
-observables. A missing, stale, non-terminal, unattested, or unparseable verdict
-**blocks** the
-merge — broken review machinery never silently passes. A human PR comment is by
+CI green + an App-posted terminal-clean verdict whose `head_sha` equals the
+current PR head + App approval. Forgery is excluded structurally: only the
+App can post the verdict medium, so no separate attestation layer is needed
+— verdict provenance (the posting identity) is checked as part of validity.
+A missing, stale, non-terminal, wrongly-provenanced, or unparseable verdict
+**blocks** the merge — broken review machinery never silently passes. A human PR comment is by
 definition an intervention: it routes to escalation, never into the fix loop.
 The gate's *evaluation code* is S8 (D13); S6 fixes the contract it evaluates.
 
@@ -151,13 +148,13 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   non-blank `evidence` — omitted, empty, and whitespace-only all fail
   validation, while the same finding as `advisory` validates
   (evidence-mandatory-for-mechanical boundary).
-- **S6-A2** A verdict records the `head_sha` of the reviewed head; the
-  merge-eligibility check treats it as absent when any commit after that head
-  changes a path other than `.review/verdict.json` — the contract-fixed
-  verdict location
-  (stale-verdict guard) — while a verdict whose only successor commit is the
-  verdict commit itself remains fresh (the self-invalidation inverse).
-  Satisfiable by hand-comparison now; names the S8
+- **S6-A2** A verdict records the `head_sha` of the reviewed head and is
+  posted outside the PR branch (check run, or the App approval body in
+  degraded mode); the merge-eligibility check treats a verdict whose
+  `head_sha` ≠ the current PR head as absent (stale-verdict guard), and a
+  verdict-shaped payload posted by any identity other than the App as absent
+  (provenance guard) — while an App-posted verdict matching the current head
+  reads present (inverse). Satisfiable by hand-comparison now; names the S8
   merge-eligibility-evaluation handoff for the automated check.
 - **S6-A3** A round declaring a `base_sha` that differs from the diff's actual
   base is rejected as an **incomplete** round (the phantom-finding guard); a round
@@ -260,16 +257,14 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   human auth, and counts toward required reviews only when the App holds
   `contents:write` (carried from proven repo behavior, reusing the merge-guard /
   App-approver plumbing — not rebuilt here).
-- **S6-D3** Merge eligibility requires CI green + a terminal-clean, non-stale
-  verdict per the Slice A staleness rule + an App approval that **attests the
-  specific verdict** — the approval body carries the attestation JSON defined
-  in the decisions (the verdict file's git blob OID + the reviewed head), and
-  it binds only when both match the committed verdict, so a
-  contributor-committed "clean" verdict paired with an
-  App approval issued for an earlier head (or a different verdict) is not
-  eligible. A missing, stale, non-terminal, or unattested verdict blocks the
-  merge (fail-closed). Satisfiable by hand-verification now; names the S8
-  merge-eligibility-evaluation handoff for both checks.
+- **S6-D3** Merge eligibility requires CI green + an App-posted terminal-clean
+  verdict whose `head_sha` equals the current PR head (Slice A) + App
+  approval. A verdict-shaped payload from any non-App identity is not a
+  verdict, so a contributor-forged "clean" verdict is ineligible by
+  construction; an App verdict for an earlier head is stale and equally
+  ineligible. A missing, stale, non-terminal, or wrongly-provenanced verdict
+  blocks the merge (fail-closed). Satisfiable by hand-verification now; names
+  the S8 merge-eligibility-evaluation handoff.
 - **S6-D4** A human PR comment is treated as an intervention → escalation, and
   is never fed into the fix loop (D9); machine (App) and human comments are
   separable on the PR, which is the substrate the S10 interventions-per-PR
