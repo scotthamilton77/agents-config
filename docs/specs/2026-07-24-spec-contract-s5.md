@@ -17,7 +17,7 @@ their exit criterion, add the AC4 mechanical spec lint, and delete
 | Artifact | State | Facts |
 | --- | --- | --- |
 | `grill-with-docs` | deployed, `src/user/.agents/skills/grill-with-docs/` | 3 files, 225 lines (~1.3k tokens). Content-identical to upstream `mattpocock/skills @ e74f0061` except the provenance header and a brainstorming cross-ref note (SKILL.md:26–29). Drift policy `accept-periodic-resync`. No admission record. |
-| `grill-me` | upstream only, `oss-snapshots/pocock/grill-me/` | 10-line flat interview loop; the verbatim ancestor of grill-with-docs' `<what-to-do>` block. No output contract. Never promoted to `src/`. |
+| `grilling` | upstream only, `oss-snapshots/pocock/skills/skills/productivity/grilling/` | The evolved interview core (one question at a time with a recommended answer, look-up-facts-instead-of-asking, confirm-shared-understanding-before-acting). Upstream `grill-me` is now a one-line alias onto it. The old top-level snapshot set (including the 10-line ancestor `grill-me`) is slated for deletion as separate work — S5 sources only the current mirror (`oss-snapshots/pocock/skills/`). Never promoted to `src/`. |
 | `to-spec` | vendored only, `oss-snapshots/pocock/skills/skills/engineering/to-spec/` | Synthesis-not-interview; `disable-model-invocation: true`. Its embedded spec template has **no Acceptance Criteria section and no slice pattern** — Pocock's own template would fail AC4. The D18 graft is load-bearing, not cosmetic. Absent from `src/`. |
 | `brainstorming` | deployed | 8 files, 1,484 lines (~9–10k tokens, dominated by the browser-companion server) — over the 2k skill-body cap by itself. Hard-chains into writing-plans at SKILL.md:40, :91, :225–228. Nine referencing files outside its folder. |
 | `writing-plans` | deployed | 245 lines. Exactly one external reference: its provenance-registry row (`skills/AGENTS.md:61`). |
@@ -34,10 +34,12 @@ label), plus generic-word prose mentions in `SKILLS_PRIMER.md:14`,
 
 ## 2. Decisions
 
-**S5-D1 — Two grill skills, two seats.** `grill-me` is admitted (promoted
-from `oss-snapshots/pocock/grill-me/` to `src/user/.agents/skills/grill-me/`)
-as the lightweight interview core — the brainstorming replacement's front
-half. `grill-with-docs` is regularized in place as the standalone deep
+**S5-D1 — Two grill skills, two seats.** `grilling` is admitted (promoted
+from the current mirror `oss-snapshots/pocock/skills/skills/productivity/grilling/`
+to `src/user/.agents/skills/grilling/`) as the lightweight interview core —
+the brainstorming replacement's front half; it matches D18's name, and
+upstream `grill-me` is now merely an alias onto it (the alias is not
+admitted). `grill-with-docs` is regularized in place as the standalone deep
 session for stress-testing an existing plan against `CONTEXT.md`/ADR docs.
 Each carries its own admission record; neither is grandfathered.
 
@@ -57,7 +59,13 @@ per-slice AC citations and the D2 size tripwire (spec > 400 lines or > 8
 slices splits). The upstream "publish to tracker with `ready-for-agent`
 label" step is dropped — output lands as a dated file in the project's spec
 home; tracker publication is `to-tickets`' seat (admitted separately per
-D18). `disable-model-invocation: true` is retained (user-invoked).
+D18). The upstream `disable-model-invocation: true` frontmatter is **not**
+carried into the shared-tree source — it is a Claude-specific capability
+field, and shared content must stay portable (placement-by-capability rule).
+The user-invoked-only intent is expressed portably in the description
+("invoke when the user asks to turn the conversation into a spec"); if a
+Claude-side invocation hard-stop proves necessary later, that is a
+Claude-tree override admitted separately.
 
 **S5-D4 — Drift policy flips to local-fork at graft time.** All three
 skills keep their provenance headers but change `Drift policy:` to
@@ -70,17 +78,22 @@ erase the contract.
 entry, a `make spec-lint` target, and a step in the CI gate. Scope: files
 matching `docs/specs/YYYY-MM-DD-*.md` with date ≥ **2026-07-24** (legacy
 specs are exempt by date, no allowlist file; this spec itself is inside the
-gate — self-hosting). Mechanical checks only: (1) an `Acceptance criteria`
-heading exists (case-insensitive); (2) at least one AC ID matching
-`[A-Z0-9]+-[A-Z]\d+|AC\d+` is defined under it; (3) if slice headings exist
-(`Slice` in a heading), every slice section cites ≥ 1 AC ID. Prose quality
-stays advisory review; the lint never judges content.
+gate — self-hosting). Mechanical checks only, but gaming-resistant: (1) an
+`Acceptance criteria` heading exists (case-insensitive); (2) under it, at
+least one **structured AC definition entry** exists — a list item of the
+form `- **<ID>** <text>` where `<ID>` matches
+`[A-Z0-9]+-[A-Z]\d+|AC\d+` and `<text>` is non-empty; a bare ID token that
+is not a definition entry defines nothing; (3) the defined-ID set is
+extracted, and if slice headings exist (`Slice` in a heading), every slice
+section cites ≥ 1 ID **from the defined set** — citing an ID the AC section
+never defined fails. Prose quality stays advisory review; the lint never
+judges content.
 
 **S5-D6 — brainstorming and writing-plans die unreformed; the blast radius
 is re-pointed, never annotated.** Both skill folders and their registry rows
 are deleted. Re-pointing: `delegation.md` routes planning to the
 grill → to-spec path; `handoff`'s example skill list swaps `brainstorming`
-for `grill-me`; `whats-next`'s `brainstorm` queue routing re-points at the
+for `grilling`; `whats-next`'s `brainstorm` queue routing re-points at the
 grill/to-spec path; the cross-ref note inside `grill-with-docs` is deleted.
 Generic-word prose mentions ("brainstorming" as an activity, not the skill)
 in `SKILLS_PRIMER.md`, `writing-unit-tests`, `where-does-this-fit`, and
@@ -100,7 +113,7 @@ to-spec targets to exist); B is independent and may run in parallel.
 
 ### Slice A — Admissions and grafts
 
-- **S5-A1** `src/user/.agents/skills/grill-me/SKILL.md` exists with a
+- **S5-A1** `src/user/.agents/skills/grilling/SKILL.md` exists with a
   provenance header (`Drift policy: local-fork`), a complete `admission:`
   block (`admission.classify()` → `COMPLETE`), and an exit-criterion
   section requiring enumerated AC IDs with the edge-case taxonomy applied.
@@ -110,7 +123,9 @@ to-spec targets to exist); B is independent and may run in parallel.
 - **S5-A3** `src/user/.agents/skills/to-spec/SKILL.md` exists with the
   admission block; its embedded template contains an Acceptance Criteria
   section and an ordered slice list with per-slice AC citations and the
-  size tripwire; no tracker-publish step remains.
+  size tripwire; no tracker-publish step remains; the frontmatter carries
+  no Claude-specific field (`disable-model-invocation` absent — the
+  user-invoked intent lives in the description).
 - **S5-A4** All three skill bodies pass
   `surface_budget.skill_body_violations` (≤ 2k tokens each — boundary).
 - **S5-A5** The provenance registry (`skills/AGENTS.md`) rows for the three
@@ -121,11 +136,14 @@ to-spec targets to exist); B is independent and may run in parallel.
 
 - **S5-B1** A spec dated ≥ 2026-07-24 with no Acceptance-criteria heading
   fails the lint (nonzero exit, message names the file).
-- **S5-B2** A spec with the heading but zero AC IDs under it fails
+- **S5-B2** A spec with the heading but zero structured definition entries
+  under it fails — including the gaming case where a bare `AC4` token
+  appears under the heading without being a `- **<ID>** <text>` entry
   (inverse of "heading is enough").
-- **S5-B3** A spec with slice headings where any slice cites no AC ID
-  fails naming the slice; the same spec with every slice citing ≥ 1 AC
-  passes (inverse pair).
+- **S5-B3** A spec with slice headings where any slice cites no defined AC
+  ID fails naming the slice — including the gaming case where the slice
+  repeats an ID the AC section never defined; the same spec with every
+  slice citing ≥ 1 defined ID passes (inverse pair).
 - **S5-B4** The lint over the current `docs/specs/` tree exits 0 (legacy
   specs date-exempt; this spec passes on content), and a second run
   returns the identical result (idempotency).
@@ -144,7 +162,7 @@ to-spec targets to exist); B is independent and may run in parallel.
   generic-word files named in S5-D6, and none of them backtick-quotes the
   skill name or references its path.
 - **S5-C3** `delegation.md` routes planning to the grill/to-spec path;
-  `handoff`'s suggested-skills example names `grill-me`; `whats-next`'s
+  `handoff`'s suggested-skills example names `grilling`; `whats-next`'s
   `brainstorm` queue routing points at the grill/to-spec path (verified at
   implementation time against its actual routing semantics).
 - **S5-C4** The registry rows for `brainstorming` and `writing-plans` are
