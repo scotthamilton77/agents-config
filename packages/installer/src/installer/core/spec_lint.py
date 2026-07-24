@@ -22,6 +22,13 @@ file. Three mechanical, gaming-resistant checks (S5-D5):
    section), that section must cite ≥ 1 ID **from the defined set** — citing
    only an undefined ID still fails, naming the slice.
 
+Fenced code blocks (```` ``` ```` or ``~~~``) are inert to all three checks —
+a heading, list-item, or citation that only appears *inside* a fence (e.g. an
+illustrative "here's what a definition entry looks like" example) does not
+count. Fence state is a simple open/close toggle per line starting with the
+fence marker, which covers the gaming cases in practice without a full
+CommonMark parser.
+
 Prose quality stays advisory human review; this module never judges
 content, only structure. Results are data (``Violation``); printing happens
 at the CLI edge (``installer.spec_lint_cli``).
@@ -39,6 +46,7 @@ GATE_START_DATE = date(2026, 7, 24)
 _SPEC_FILENAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-.+\.md$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 _AC_ENTRY_RE = re.compile(r"^\s*-\s+\*\*([A-Z0-9]+-[A-Z]\d+|AC\d+)\*\*\s+(\S.*)$")
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
 
 _AC_HEADING_KEYWORD = "acceptance criteria"
 _SLICE_HEADING_KEYWORD = "slice"
@@ -85,9 +93,37 @@ def discover_spec_files(specs_dir: Path) -> list[Path]:
     return out
 
 
-def _headings(lines: list[str]) -> list[_Heading]:
+def _fence_mask(lines: list[str]) -> list[bool]:
+    """``True`` for every line that is inert to structural parsing because it
+    sits inside a fenced code block — including the fence marker lines
+    themselves. A fence toggles open on the first ``` `` ` `` ``or ``~~~``
+    marker line and closes on the next line starting with the same marker
+    character; this per-line toggle is enough to cover the gaming cases
+    (an example definition entry or slice heading quoted inside a fence)
+    without a full CommonMark parser."""
+    mask: list[bool] = []
+    open_marker: str | None = None
+    for line in lines:
+        m = _FENCE_RE.match(line)
+        if m:
+            marker_char = m.group(1)[0]
+            if open_marker is None:
+                open_marker = marker_char
+                mask.append(True)
+                continue
+            if marker_char == open_marker:
+                open_marker = None
+                mask.append(True)
+                continue
+        mask.append(open_marker is not None)
+    return mask
+
+
+def _headings(lines: list[str], fenced: list[bool]) -> list[_Heading]:
     out: list[_Heading] = []
     for i, line in enumerate(lines):
+        if fenced[i]:
+            continue
         m = _HEADING_RE.match(line)
         if m:
             out.append((i, len(m.group(1)), m.group(2).strip()))
@@ -103,18 +139,21 @@ def _section_end(headings: list[_Heading], idx: int, level: int, total_lines: in
     return total_lines
 
 
-def _defined_ids(lines: list[str], headings: list[_Heading]) -> set[str]:
+def _defined_ids(lines: list[str], headings: list[_Heading], fenced: list[bool]) -> set[str]:
     """Every AC id from a structured ``- **<ID>** <text>`` entry found under
     any heading whose text names "acceptance criteria" (case-insensitive).
     Nested subheadings (e.g. per-slice sections) stay inside the AC section's
     scope, since their level is deeper — only a same-or-shallower heading
-    closes it."""
+    closes it. A fenced line (an illustrative example of the entry shape)
+    never contributes — the S5-B2 gaming case."""
     ids: set[str] = set()
     for idx, (line_idx, level, text) in enumerate(headings):
         if _AC_HEADING_KEYWORD not in text.lower():
             continue
         end = _section_end(headings, idx, level, len(lines))
-        for line in lines[line_idx + 1 : end]:
+        for offset, line in enumerate(lines[line_idx + 1 : end], start=line_idx + 1):
+            if fenced[offset]:
+                continue
             m = _AC_ENTRY_RE.match(line)
             if m:
                 ids.add(m.group(1))
@@ -126,13 +165,14 @@ def lint_spec_text(path: Path, text: str) -> list[Violation]:
     through only for violation labeling — content is never read from disk
     here, keeping this function pure."""
     lines = text.splitlines()
-    headings = _headings(lines)
+    fenced = _fence_mask(lines)
+    headings = _headings(lines, fenced)
 
     ac_headings = [h for h in headings if _AC_HEADING_KEYWORD in h[2].lower()]
     if not ac_headings:
         return [Violation(file=path, reason="no 'Acceptance criteria' heading found")]
 
-    defined_ids = _defined_ids(lines, headings)
+    defined_ids = _defined_ids(lines, headings, fenced)
     if not defined_ids:
         return [
             Violation(
@@ -150,7 +190,12 @@ def lint_spec_text(path: Path, text: str) -> list[Violation]:
         if (line_idx, level, heading_text) not in slice_headings:
             continue
         end = _section_end(headings, idx, level, len(lines))
-        section_text = "\n".join(lines[line_idx:end])
+        # Fenced lines (e.g. a quoted example slice heading) never count
+        # toward a citation — the S5-B3 gaming/inverse case.
+        section_lines = [
+            line for offset, line in enumerate(lines[line_idx:end]) if not fenced[line_idx + offset]
+        ]
+        section_text = "\n".join(section_lines)
         cited = any(re.search(rf"\b{re.escape(id_)}\b", section_text) for id_ in defined_ids)
         if not cited:
             violations.append(

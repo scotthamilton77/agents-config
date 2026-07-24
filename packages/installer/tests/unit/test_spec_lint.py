@@ -68,6 +68,30 @@ Cites S5-A1, fine.
 Cites only S5-Z9, which the AC section never defined.
 """
 
+_FENCED_EXAMPLE_ONLY = """# A spec
+
+## Acceptance criteria
+
+```markdown
+- **AC1** only an example
+```
+"""
+
+_FENCED_SLICE_HEADING_IS_INERT = """# A spec
+
+## Acceptance criteria
+
+- **AC1** criterion
+
+### Slice A
+
+Cites AC1 right here, before any fenced example.
+
+```markdown
+### Slice Example
+```
+"""
+
 
 def test_s5_b1_missing_heading_fails_naming_file() -> None:
     """S5-B1 — no Acceptance-criteria heading at all fails, naming the file."""
@@ -110,6 +134,31 @@ def test_s5_b3_every_slice_citing_a_defined_id_passes() -> None:
     """Inverse pair of S5-B3: every slice citing ≥1 defined ID passes."""
     path = Path("docs/specs/2026-07-25-example.md")
     assert lint_spec_text(path, _CLEAN_WITH_SLICES) == []
+
+
+def test_codex_review_regression_s5_b2_fenced_example_entry_is_inert() -> None:
+    """codex-review regression (S5-B2 gaming case) — an Acceptance-criteria
+    section containing ONLY a fenced ```markdown block with
+    ``- **AC1** only an example`` inside it must still fail: the fenced
+    example is not a real definition entry, so no AC id is actually
+    defined. Before the fence fix, the parser was blind to fences and
+    counted the fenced line as a structured entry, passing incorrectly."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _FENCED_EXAMPLE_ONLY)
+    assert len(violations) == 1
+    assert "no structured AC definition entry" in violations[0].reason
+
+
+def test_codex_review_regression_s5_b3_fenced_slice_heading_is_inert() -> None:
+    """codex-review regression (S5-B3 inverse case) — a real
+    ``- **AC1** criterion`` entry plus a fenced code block containing
+    ``### Slice Example`` must pass: the fenced line is not a real slice
+    heading and must not be parsed as one. Before the fence fix, the
+    parser treated the fenced heading as real, prematurely closing the
+    genuine "Slice A" section and reporting a spurious "slice cites no AC
+    ID from the defined set" violation against the phantom section."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert lint_spec_text(path, _FENCED_SLICE_HEADING_IS_INERT) == []
 
 
 def test_s5_b4_real_specs_tree_is_clean_and_idempotent(tmp_path: Path) -> None:
