@@ -102,8 +102,10 @@ runs before the PR verdict.
 All machine-posted PR comments and approvals use the GitHub App identity, never
 the human's auth, reusing the proven merge-guard/App-approver plumbing (the App
 must hold `contents:write` for its approval to count). Merge eligibility =
-CI green + a terminal-clean verdict keyed to the current `head_sha` + App
-approval. A missing, stale, non-terminal, or unparseable verdict **blocks** the
+CI green + a terminal-clean verdict keyed to the current `head_sha` + an App
+approval attesting that specific verdict (its content hash and the head it
+covers). A missing, stale, non-terminal, unattested, or unparseable verdict
+**blocks** the
 merge — broken review machinery never silently passes. A human PR comment is by
 definition an intervention: it routes to escalation, never into the fix loop.
 The gate's *evaluation code* is S8 (D13); S6 fixes the contract it evaluates.
