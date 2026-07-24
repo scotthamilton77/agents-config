@@ -32,15 +32,27 @@ requirements, not lore.
 | Bot identity / merge-guard | working | The merge-guard + GitHub App approver machinery exists and is proven on this repo: an App approval counts toward required reviews when the App holds `contents:write` (not merely `pull_requests:write`). Auto-merge additionally needs `MERGE_GUARD_APPROVER_KEY_PATH` set. The plumbing exists; no verdict rides it yet. |
 | prgroom | carved target (S8) | Retains `gh`/`git` clients, config, error taxonomy, escalation typing. The **verdict harvester** and **merge-eligibility evaluation** are S8 deliverables (D13), not built here. `wait-for-pr-comments`, `reply-and-resolve-pr-threads`, `monitor-pr` remain deployed until S8 deletes them (AC5). |
 | completion-gate / quality-gate skills | deployed, contradictory | House-rulebook review text that D8 supersedes as a review *medium*. S6 does not delete them (that is teardown scope elsewhere); it defines the replacement contract they will route into. |
-| Multi-vendor reviewer transport | deployed, un-admitted | The `openrouter-claude-subagent` skill (Claude tree) runs a nested Claude Code harness against any OpenRouter-hosted model through a stream-repair proxy, with a versioned model-routing table and a read-only-default tool gate — the ready-made transport for non-codex panel lenses. It predates the admission bar and carries no `admission:` frontmatter block; regularized in Slice B. |
+| Multi-vendor reviewer transport | deployed, un-admitted | The `openrouter-claude-subagent` skill (Claude tree) runs a nested Claude Code harness against any OpenRouter-hosted model through a stream-repair proxy, with a versioned model-routing table and a read-only-default tool gate — the intended transport for non-codex panel lenses. Two defects, both Slice B scope: it predates the admission bar (no `admission:` frontmatter block), and it is broken under the current harness (observed 2026-07-24: the nested process emits mid-conversation tool-change blocks that non-Anthropic models reject with a 400 — the stream-repair proxy must strip or the harness feature must be disabled for nested runs). Until repaired, all panel lenses run serially through the codex CLI — single-vendor, a known diversity concession. |
 
 ## 2. Decisions
 
 **Verdict artifact — a typed JSON file keyed to a head SHA.**
 A review round emits a JSON object conforming to a shipped JSON Schema:
 `{"schema_version", "artifact_class", "round", "base_sha", "head_sha",
-"retained_categories":[…], "verdict":"clean"|"findings", "findings":[…]}`.
-Each finding is `{"type":"mechanical"|"advisory", "ac", "claim", "evidence"}`.
+"claim_id", "retained_categories":[…], "lenses":[{"lens",
+"verdict":"clean"|"findings"}…], "prior_dispositions":[…],
+"verdict":"clean"|"findings", "findings":[…]}`.
+Each finding is `{"id", "lens", "type":"mechanical"|"advisory", "ac",
+"claim", "evidence"}` — `id` unique within the artifact, so a finding's
+durable identity across rounds is (round, id) and its producing lens is
+recorded. `claim_id` names the canonical readiness claim this round answers.
+`lenses` records one entry per lens that reported, green included — lens
+coverage is read off the artifact, never inferred from silence.
+`prior_dispositions` is the durable fix-loop ledger: one entry
+`{"round", "id", "disposition":"fixed"|"rebutted"|"advisory-deferred",
+"evidence"}` per prior-round mechanical finding (evidence required for
+`rebutted`); a round whose ledger does not cover every mechanical finding
+from every prior round's posted verdict is incomplete.
 `evidence` is **mandatory** for `mechanical` findings (a failing test, lint
 output, or a broken link) and optional for `advisory`.
 
@@ -72,19 +84,23 @@ one meaning "nothing retained" — the over-reporting guard (an under-declared
 retained set inflated an S5 round); *completeness* of the declared set is the
 invoker's adjudicated responsibility, enforced upstream as
 refusal-to-emit-a-prompt when no declaration is provided, not as a mechanical
-check on the artifact; and (c) it is a schema-valid, App-posted verdict whose
-`head_sha` equals the current PR head. Completeness and terminal-clean are
+check on the artifact; (c) it is a schema-valid, App-posted verdict whose
+`head_sha` equals the current PR head; (d) its `lenses` array covers the
+artifact class's declared lens set — every lens reported, green included;
+and (e) its `prior_dispositions` ledger covers every mechanical finding from
+every prior round's posted verdict. Completeness and terminal-clean are
 thus decidable from the artifact plus the PR's observable state (head SHA,
-merge-base, posting identity) —
+merge-base, posting identity, prior posted verdicts) —
 never from unrecorded history. **Review terminates clean** when a complete
 round produces zero `mechanical` findings. Advisory findings route to the backlog,
 never block, and are never re-litigated in the fix loop (D8).
 
 **Reviewer prompts carry the contract, never the house rulebook (D7).**
-Each class-specific prompt carries only: the artifact class, the diff's ACs to
-judge against, a pointer to the diff file (under `/tmp`) plus the repo root for
-surrounding context, the declared `retained_categories`, and the exact-JSON
-completion contract. It carries no laws, decision matrix, or in-repo
+Each emitted prompt carries only: the artifact class, the lens's mandate and
+the ACs it judges, the per-lens round-N preamble (prior findings of that lens
+with their dispositions), a pointer to the diff file (under `/tmp`) plus the
+repo root for surrounding context, the declared `retained_categories`, and
+the exact-JSON completion contract. It carries no laws, decision matrix, or in-repo
 intentionality claims. Reviewers are instructed to **ignore intentionality
 claims** in the code/docs under review — a "this is intentional" comment is not
 evidence; verdicts judge against ACs and mechanical artifacts only.
@@ -130,7 +146,15 @@ these ACs while still being wrong." Output is a JSON array of **proposed ACs**,
 each `{"target_ac", "hole", "proposed_ac", "red_test_sketch"}` — testable claims
 about inputs/states, never free-form concerns. Each proposal is adjudicated
 **accepted** (into the AC set) or **rejected** (out-of-scope); the round
-terminates only when every proposal has a disposition. This is distinct from and
+terminates only when every proposal has a disposition. The round persists as
+a JSON record committed beside the attacked spec (same directory,
+`<spec-basename>-ac-attack.json`): the attacked revision, the proposal array
+with stable indices, and one disposition per index — coverage and the
+re-run-is-a-no-op check are decided from that record, not from memory. A
+spec record is ordinary spec material, so it carries none of the PR-verdict
+staleness machinery. "Pre-implementation" has a tracker observable: the
+round's record must be complete before any implementation work item for the
+slice is claimed. This is distinct from and
 runs before the PR verdict.
 
 **Verdicts ride the existing bot identity; the gate fails closed (D9).**
@@ -217,9 +241,11 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   suppress the finding).
 - **S6-B4** A push with no readiness/fix claim triggers no review round
   (inverse of "every push reviews"); a re-invocation after a claimed fix carries
-  a round-N preamble per lens enumerating that lens's prior findings and
-  their typed dispositions (a lens's preamble carries no other lens's
-  history).
+  a round-N preamble per lens enumerating that lens's prior findings by
+  their durable identity — (round, finding id) read from the prior rounds'
+  posted verdicts — and their typed dispositions (a lens's preamble carries
+  no other lens's history); the dispositions land durably in the new round's
+  `prior_dispositions` ledger.
   A `rebutted` disposition must carry its rebuttal evidence; a preamble entry
   marking a prior mechanical finding rebutted with no evidence is refused at
   prompt emission — an unsupported rebuttal never settles a finding.
@@ -241,16 +267,22 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   in breadth); and a lens with no findings must return an explicit green
   report, which counts toward round completeness (a silent lens leaves the
   round incomplete — absence of a report is never absence of findings).
-- **S6-B9** The round verdict is the union of all lens reports; the round is
-  complete only when every lens in the class's declared lens set has reported
-  (dependency failure: a lens whose reviewer errored or returned unparseable
-  output leaves the round incomplete — fail-closed, consistent with the
+- **S6-B9** The round verdict is the union of all lens reports, recorded in
+  the envelope's `lenses` array (one entry per lens, green included), so lens
+  coverage is decided by comparing that array against the class's declared
+  lens set — never inferred from an empty findings list (dependency failure:
+  a lens whose reviewer errored or returned unparseable output has no entry
+  and leaves the round incomplete — fail-closed, consistent with the
   broken-machinery rule); terminal-clean requires zero mechanical findings
   across the union.
 - **S6-B10** The multi-vendor transport skill used for non-codex lenses gains
   its admission frontmatter block (prevents/cost/remove-when), bringing it
   under the same admission bar as every deployed asset; the admission check
-  that gates deployed skills passes over it.
+  that gates deployed skills passes over it. Its nested-harness invocation is
+  repaired against the current harness: a nested run against a non-Anthropic
+  model completes without the mid-conversation tool-change 400 (the defect
+  observed 2026-07-24), verified by a live invocation returning a parseable
+  result.
 
 ### Slice C — AC-attack contract (D3)
 
@@ -266,13 +298,19 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   testable claim — is rejected as malformed (inverse: a concern is not a valid
   finding).
 - **S6-C3** Every proposal is adjudicated `accepted` or `rejected`
-  (out-of-scope); an `accepted` disposition must reference the concrete
+  (out-of-scope), recorded in the round's committed attack record (proposal
+  indices → dispositions), which is the observable for coverage; an
+  `accepted` disposition must reference the concrete
   revision of the attacked AC artifact that incorporates the proposal — an
   acceptance with the artifact unchanged leaves the proposal unadjudicated. An
   un-adjudicated proposal blocks round termination — the round terminates only
-  when the disposition set covers every proposal
-  (repeated-invocation-safe: re-running over a fully-adjudicated set is a no-op).
-- **S6-C4** The round runs pre-implementation against the spec artifact and is
+  when the record's disposition set covers every proposal index
+  (repeated-invocation-safe: re-running over a complete record is a no-op,
+  decided from the record).
+- **S6-C4** The round runs pre-implementation against the spec artifact —
+  observable: the committed attack record is complete before any
+  implementation work item for the slice is claimed in the tracker (a claim
+  predating record completion violates the ordering) — and is
   distinct from the S6-A/S6-B PR verdict; an empty proposal list (the attacker
   finds no hole) terminates the round clean (empty-input boundary).
 - **S6-C5** The AC-attack skill body is ≤ 2k tokens and reads standalone — no
@@ -288,9 +326,14 @@ first (B and D consume the schema); B, C, D may then run in parallel.
 - **S6-D1** The review trigger fires on an explicit readiness claim, never on
   every push; the trigger contract ships as a deployed asset that reads
   standalone. The contract defines one canonical, machine-parseable claim form
-  — its authorized location, authorized actor, and the head SHA it claims. A
-  claim covers only the head it names: it triggers at most one round, for that
-  head, and a subsequent push mints a new head that no prior claim covers —
+  — its authorized location, authorized actor, a stable `claim_id`, and the
+  head SHA it claims. A
+  claim covers only the head it names, and consumption is observable: a claim
+  is consumed by the first complete round whose posted verdict records its
+  `claim_id`; invoking a round for an already-consumed claim is refused
+  (decidable against the posted verdicts), while a claim whose round died
+  before posting a verdict remains unconsumed and may be re-invoked. A
+  subsequent push mints a new head that no prior claim covers —
   each fresh head needs a fresh claim. Lookalike text ("ready for review" in a
   commit message or an ordinary comment) never triggers a round, and a push
   absent a canonical claim for its head fires nothing (inverse pair).
@@ -313,7 +356,10 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   instrument reads (the number itself is S10, not S6).
 - **S6-D5** Broken review machinery — reviewer error, no verdict emitted, or an
   unparseable verdict — blocks the merge rather than passing silently
-  (fail-closed; dependency-failure case).
+  (fail-closed; dependency-failure case). Satisfiable by hand-verification now
+  (the merge decision checks the posted verdict exists and parses before
+  proceeding); names the S8 merge-eligibility-evaluation handoff for the
+  automated check.
 - **S6-D6** The eligibility contract enumerates every merge-authorizing path
   enabled on the repository (merge button, auto-merge, merge queue, direct API
   merge, admin bypass) and requires each to consult the same fail-closed
