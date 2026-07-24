@@ -312,6 +312,23 @@ def test_a_stale_kind_never_overrides_an_unrecognized_reason() -> None:
     assert any("unrecognized park reason" in a.reason for a in state.anomalies)
 
 
+def test_an_explicit_null_reason_is_present_garbage_not_an_absent_field() -> None:
+    # Key presence, not a non-None value, is what admits the legacy read: an
+    # explicit `"reason": null` is structural garbage the fold must flag, and
+    # is not the same thing as an old event that never carried the key.
+    state = fold(
+        [
+            seed_event(),
+            event("item_parked", item="wgclw.1", reason=None, kind="later-wave", note="x"),
+        ]
+    )
+
+    parked = state.items["wgclw.1"].parked
+    assert parked is not None
+    assert parked.reason is None
+    assert any("unrecognized park reason" in a.reason for a in state.anomalies)
+
+
 def test_a_pre_charter_log_replays_with_its_parks_still_typed() -> None:
     # The old writer emitted the field `kind`, never `reason`. Delete-and-refold
     # is the whole recovery story, so an upgrade must not grey out history.

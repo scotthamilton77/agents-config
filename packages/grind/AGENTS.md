@@ -164,7 +164,10 @@ must pass before push.
   make it a poor one. Absent-only is the load-bearing part: an event carrying
   an unrecognized `reason` *alongside* a stale `kind` must not have its
   recorded cause quietly replaced by the older field — it stays untyped and
-  records the anomaly triple, as any unrecognized value does.
+  records the anomaly triple, as any unrecognized value does. Absence means
+  **key absence**, not a `None` value: an explicit `"reason": null` is
+  present-and-garbage, which flags, and is a different thing from an old event
+  that never carried the key.
 - **`discovered_work` accepts only the scheduling axis.** It creates an item
   with no PR, no branch and no CI, so a failure reason there would be an
   untrue statement — the boundary narrows to `_SCHEDULING_REASONS` instead of

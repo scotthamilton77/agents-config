@@ -58,12 +58,15 @@ def _park_reason(evt: RawEvent) -> ParkReason | None:
     Absent-only is load-bearing, not a detail: a current event that carries an
     unrecognized `reason` alongside a stale `kind` must stay untyped and get
     flagged, never have its recorded cause quietly replaced by the older field.
+    Absence is tested by KEY PRESENCE, not by a non-`None` value -- an explicit
+    `"reason": null` is present-and-garbage, which this fold flags, and is not
+    the same thing as an old event that never carried the key at all.
 
     No `cast` is needed: membership in `PARK_REASONS` narrows the `str` to the
     key type, which is exactly the guarantee the table is there to give.
     """
-    reason = evt.get("reason")
-    if reason is not None:
+    if "reason" in evt:
+        reason = evt["reason"]
         return reason if isinstance(reason, str) and reason in PARK_REASONS else None
     legacy = evt.get("kind")
     if isinstance(legacy, str):
@@ -81,8 +84,9 @@ def _typed_park_reason(state: State, evt: RawEvent) -> ParkReason | None:
     happens to be a vocabulary member.
     """
     reason = _park_reason(evt)
-    if reason is None and (evt.get("reason") is not None or evt.get("kind") is not None):
-        _anomaly(state, evt, f"unrecognized park reason {evt.get('reason') or evt.get('kind')!r}")
+    if reason is None and ("reason" in evt or "kind" in evt):
+        offered = evt["reason"] if "reason" in evt else evt.get("kind")
+        _anomaly(state, evt, f"unrecognized park reason {offered!r}")
     return reason
 
 
