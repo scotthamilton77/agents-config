@@ -6,6 +6,21 @@ This file provides guidance to AI agents when working with code in this reposito
 
 This is a versioned collection of agents, skills, commands, and templates for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, **Google Gemini CLI**, and **OpenCode**. Shared content is installed to all detected tools; tool-specific content goes only where it belongs.
 
+## Harness Rework (active — read this first)
+
+The harness this repo shipped through mid-2026 obstructed its own mission and is being rebuilt. Until the rework milestone closes (charter AC9), orient new work against these sources, in this order:
+
+1. `docs/specs/2026-07-21-harness-rework-way-forward.md` — the canonical charter: all decisions (D1–D20), acceptance criteria (AC1–AC9), the ordered slice plan (S0–S10), and the zero-based user AGENTS.md draft (Appendix A). If you read only one file, read this one.
+2. `work show agents-config-9k9` — where "where are we right now" lives: the milestone bead carries the charter pointer, records facade gaps in its notes, and its children are the live status of what's minted, in-flight, and done. The charter deliberately tracks no progress.
+3. `SAVEPOINTS/2026-07-20-harness-findings-handoff.md` — the findings that motivated the charter: why the old harness failed and the evidence behind the decisions. Read when a decision seems underjustified.
+4. `docs/specs/2026-07-22-workcli-completion-s2.md` — the S2 child spec: the current state of the `work` facade, and the worked example of the per-slice pattern (child spec → per-slice ACs → implement).
+
+Standing implications while the rework runs:
+
+- Where any deployed rule, skill, or doc (including this file) contradicts the charter, the charter wins — and flag the contradiction explicitly so it gets fixed.
+- Address the tracker through the `work` facade (D11). Fall back to `bd` only when the facade cannot express the operation, and record each fallback as a facade gap in a note on `agents-config-9k9`.
+- New harness work enters only as a child of the milestone, carrying an admission record: the failure it prevents, what it costs, and what observation would remove it (D16/D20).
+
 ## Vision & Mission
 
 **Vision** — Make AI software development reliably autonomous. Concentrate human time *upstream* (brainstorming, design, judgment) and at thin verification gates (validation testing, exception handling); have agents execute implementation and machine-verifiable QA in the background, including overnight.
@@ -27,7 +42,7 @@ This is a versioned collection of agents, skills, commands, and templates for AI
 - **Code over Prose** — anything code can do better than agents, we move out of prose and into code helpers
 - **Python/Go/Node over Bash** — thin shell script wrappers are fine; any logic that needs testing goes in Python, Go, or Node
 - **Consolidate over conflict** — where plugins' assets overlap, merge the best-of-breed into the canonical source; avoid competing instructions
-- **Beads is the work tracker** — use the `bd` CLI for task tracking directly; a higher-level `work` abstraction is planned but not yet in place
+- **The `work` facade is the tracker interface** — address the tracker through `work` verbs (charter D11); the harness never speaks `bd`. Fall back to `bd` only for operations the facade can't express, and record each fallback as a facade gap (note on `agents-config-9k9`)
 - **Flag confusing context** — if instructions, rules, or skills in this repo are conflicting or unclear, say so explicitly; cleaning up agent context is a first-class priority
 - **Apply backpressure** — if a requested change doesn't clearly align with "cleaning house" or "advancing the vision", push back and ask how it fits before proceeding
 
@@ -78,13 +93,13 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
   - `OPENCODE-EXTENSIONS.md.template` - OpenCode-specific notes and conventions
   - `opencode.jsonc.template` - Settings (model, permissions, skills paths)
 - `src/plugins/` - **Optional plugin content** (auto-detected and installed by the Python installer via a directory scan of `src/plugins/`; a plugin's rules deploy only when its tool is detected)
-  - `beads/` - beads plugin: ships two rules — `beads.md` (bd CLI gotchas) and `discovered-work.md` (sibling-test placement). Gets a specialized adapter that also routes `~/.beads/`
+  - `beads/` - beads plugin: ships two rules — `beads.md` (bd CLI gotchas) and `discovered-work.md` (sibling-test placement). Gets a specialized adapter that also routes `~/.beads/`. The bd instruction surface is slated for deletion from agent reach once the `work` cutover completes (charter D11)
   - `graphify/` - graphify plugin: the graphify discipline rule (shared)
   - `codex/` - codex plugin: the Codex routing rule (Claude-only)
 - `packages/` - **Real Python packages** (standalone uv projects, each with its own `pyproject.toml`; not part of the installed config surface)
   - `installer/` - the installer engine that `scripts/install.sh` execs; CI-gated (`make ci-installer`)
-  - `prgroom/` - deterministic PR-grooming CLI intended to eventually replace the `wait-for-pr-comments` and `reply-and-resolve-pr-threads` skills via `monitor-pr`; CI-gated (`make ci-prgroom`). **Not yet the active path** — `completion-gate.md` still routes PR-review monitoring through `wait-for-pr-comments` until the cutover ships (and the 2026-07-21 harness-rework spec proposes carving prgroom and deleting all three skills outright rather than completing this cutover — don't treat this line as settled). **Installed onto PATH by the installer** (`uv tool install`, receipt-tracked, pruned on retirement)
-  - `workcli/` - the `work` facade CLI: quarantines the issue-tracker backend (bd) behind a stable JSON-envelope contract, twelve verbs over an injected `Backend` seam; CI-gated (`make ci-workcli`). Driven by the work-facade CLI contract spec (`docs/specs/2026-07-04-work-facade-cli-contract.md`). **Installed onto PATH by the installer** (`uv tool install`, receipt-tracked, pruned on retirement)
+  - `prgroom/` - deterministic PR-grooming CLI; CI-gated (`make ci-prgroom`). Per charter D13 it is **carved, not finished** (slice S8): retain the `gh`/`git` clients, config, error taxonomy, and escalation typing; delete reply/poll/wait/snapshot/legacy-export and the in-package fix-dispatch machinery; add a thin verdict harvester and merge-eligibility evaluation. The `wait-for-pr-comments`, `reply-and-resolve-pr-threads`, and `monitor-pr` skills are slated for deletion (AC5) but remain deployed until S8 lands. **Installed onto PATH by the installer** (`uv tool install`, receipt-tracked, pruned on retirement)
+  - `workcli/` - the `work` facade CLI: quarantines the issue-tracker backend (bd) behind a stable JSON-envelope contract, verbs over an injected `Backend` seam; CI-gated (`make ci-workcli`). Driven by the S2 completion spec (`docs/specs/2026-07-22-workcli-completion-s2.md`), which supersedes the 2026-07-04 work-facade contract spec where they conflict. The D11 pipeline verb set is implemented (S2 closed): mint incl. the milestone noun, ready/claim, park/redispatch/abandon with typed reasons, close with close-walk atomicity, dependency edges, containment; re-parenting is a recorded facade boundary. **Installed onto PATH by the installer** (`uv tool install`, receipt-tracked, pruned on retirement)
   - `pdlc/` - PDLC Orchestrator: the deterministic FSM engine intended to drive Objectives through the lifecycle. Early — happy-path tracer bullet only; not yet CI-gated
   - `holding-place/` - Idea pipeline + the Promote contract into the PDLC Orchestrator. Early; not yet CI-gated
 - `project-config.toml` - part of the target architecture, contains key project-level configuration for how skills, agents, rules, etc. should behave for things like validation, agent delegation, etc.
@@ -94,21 +109,6 @@ Other notes:
 - Most of the repo (config content under `src/`) is documentation and templates with no build step — changes there just follow existing formatting conventions per file type.
 - **Exception — the packages under `packages/` are real Python code with mandatory quality gates.** `make ci` (the whole-repo gate CI enforces) runs `ci-installer` + `ci-prgroom` + `ci-workcli` + `lint-actions`. Before pushing a change under `packages/installer/` run `make ci-installer`; under `packages/prgroom/` run `make ci-prgroom`; under `packages/workcli/` run `make ci-workcli`. Each gate runs lint, format-check, typecheck, coverage, audit, and entry-verify. See the package's own `AGENTS.md` for its scoped workflow. (`packages/pdlc/` and `packages/holding-place/` are early and not yet wired into `make ci`.)
 
-**Milestones** are `milestone`-type beads — no required fields, "contains no work itself" by convention. They anchor roadmap phases; child beads carry the actual work. Enumerate with `bd list --type milestone`.
-
-Milestones form a sequential `blocks` chain: M0 → M1 → M2 → M3 → M4 → M5. PORT runs in parallel (no chain edge). Each milestone's `description` field is the canonical scope statement.
-
-| ID                     | Status      | Milestone                                                                              |
-| ---------------------- | ----------- | -------------------------------------------------------------------------------------- |
-| `agents-config-wgclw`  | in_progress | **M0** — Discipline-layer rearchitecture (narrowed: land the in-flight epic-hygiene hardening, then close; PDLC-orchestrator design deferred) |
-| `agents-config-abn9`   | in_progress | **M1** — Post-Fable operations: run the pipeline on Opus/Sonnet/cheap-model economics  |
-| `agents-config-uxns2`  | open        | **PORT** — Portable discipline layer: home + work machine (parallel track)             |
-| `agents-config-qn0g`   | open        | **M2** — Brainstorm-readiness gate                                                     |
-| `agents-config-vaac`   | in_progress | **M3** — Worker fleet through PR autonomy, on cheap models with escalation ladders     |
-| `agents-config-t142`   | open        | **M4** — Overnight autonomy: two-shift operating model + review feedback loop          |
-| `agents-config-yf2ov`  | open        | **M5** — Post-MVP capabilities (frozen)                                                |
-
-All milestones are P1. Work that maps to a milestone is a child of that milestone bead. A large share of the backlog carries status `deferred`: those beads were parked deliberately and are revivable with one command — do not treat a deferred bead as missing work or a stale queue.
 
 ## graphify
 
