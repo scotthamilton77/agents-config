@@ -4,7 +4,7 @@ description: Build a throwaway prototype to flesh out a design before committing
 ---
 
 <!--
-Source: oss-snapshots/pocock/prototype/
+Source: oss-snapshots/pocock/skills/skills/engineering/prototype/
 Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7
 Last sync: 2026-05-23
 Drift policy: accept-periodic-resync

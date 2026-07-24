@@ -8,11 +8,11 @@ description: >
 ---
 
 <!--
-Source: oss-snapshots/pocock/caveman/ (pristine upstream); promoted project-extended fork
-Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7
+Source: repo-owned (upstream removed the skill; detached 2026-07-24)
+Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7 (historical origin — upstream has since removed this skill)
 Local extensions: lite/full/ultra intensity levels, expanded auto-clarity rules, boundaries section
 Last sync: 2026-05-23
-Drift policy: rewrite-and-divorce (project-extended; do not re-sync from upstream)
+Drift policy: rewrite-and-divorce
 -->
 
 Respond terse like smart caveman. All technical substance stay. Only fluff die.

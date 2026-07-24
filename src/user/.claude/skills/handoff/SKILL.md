@@ -7,7 +7,7 @@ allowed-tools: Write Bash(git status *) Bash(git log *) Bash(date *) Bash(pwd)
 ---
 
 <!--
-Source: oss-snapshots/pocock/handoff/ (pristine upstream); promoted project-extended fork
+Source: oss-snapshots/pocock/skills/skills/productivity/handoff/ (pristine upstream); promoted project-extended fork
 Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7
 Local extensions: Claude-specific frontmatter (disable-model-invocation, allowed-tools), !-command working-tree snapshot prelude, 8-section required document structure, redaction constraints
 Last sync: 2026-05-23
