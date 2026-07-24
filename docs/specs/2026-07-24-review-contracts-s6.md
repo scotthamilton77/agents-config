@@ -43,9 +43,15 @@ Each finding is `{"type":"mechanical"|"advisory", "ac", "claim", "evidence"}`.
 `evidence` is **mandatory** for `mechanical` findings (a failing test, lint
 output, or a broken link) and optional for `advisory`. The artifact lives at a
 deterministic path in the PR branch so the merge gate reads it as a file — PR
-comments are not a review medium (D9). It records the `head_sha` it was produced
-against; a verdict whose `head_sha` ≠ the current PR head is **stale** and the
-gate treats it as absent.
+comments are not a review medium (D9). It records the `head_sha` of the
+**reviewed head** — the head the diff was taken at. Because committing the
+verdict itself advances the branch, staleness is defined over reviewed
+content, not raw head equality: a verdict is **stale** iff any commit after
+its recorded `head_sha` changes anything outside the verdict artifact's
+deterministic path. Verdict-only commits neither stale nor refresh a verdict;
+a stale verdict is treated as absent by the gate. This is decidable from git
+observables (the paths touched by the commits between the recorded head and
+the current head).
 
 **"A complete round" is mechanically defined — from observables only.** A
 round is complete iff (a) its declared `base_sha` equals the diff's actual base
@@ -58,9 +64,11 @@ one meaning "nothing retained" — the over-reporting guard (an under-declared
 retained set inflated an S5 round); *completeness* of the declared set is the
 invoker's adjudicated responsibility, enforced upstream as
 refusal-to-emit-a-prompt when no declaration is provided, not as a mechanical
-check on the artifact; and (c) it is a schema-valid verdict whose `head_sha`
-equals the current PR head. Completeness and terminal-clean are thus decidable
-from the artifact plus the PR's observable git state (head SHA, merge-base) —
+check on the artifact; and (c) it is a schema-valid verdict that is not stale
+— its recorded `head_sha` reaches the current PR head through verdict-only
+commits (possibly none). Completeness and terminal-clean are thus decidable
+from the artifact plus the PR's observable git state (head SHA, merge-base,
+paths touched since the reviewed head) —
 never from unrecorded history. **Review terminates clean** when a complete
 round produces zero `mechanical` findings. Advisory findings route to the backlog,
 never block, and are never re-litigated in the fix loop (D8).
@@ -102,9 +110,9 @@ runs before the PR verdict.
 All machine-posted PR comments and approvals use the GitHub App identity, never
 the human's auth, reusing the proven merge-guard/App-approver plumbing (the App
 must hold `contents:write` for its approval to count). Merge eligibility =
-CI green + a terminal-clean verdict keyed to the current `head_sha` + an App
-approval attesting that specific verdict (its content hash and the head it
-covers). A missing, stale, non-terminal, unattested, or unparseable verdict
+CI green + a terminal-clean, non-stale verdict covering the current reviewed
+head + an App approval attesting that specific verdict (its content hash and
+the head it covers). A missing, stale, non-terminal, unattested, or unparseable verdict
 **blocks** the
 merge — broken review machinery never silently passes. A human PR comment is by
 definition an intervention: it routes to escalation, never into the fix loop.
@@ -133,10 +141,13 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   non-blank `evidence` — omitted, empty, and whitespace-only all fail
   validation, while the same finding as `advisory` validates
   (evidence-mandatory-for-mechanical boundary).
-- **S6-A2** A verdict records the `head_sha` it was produced against; the
-  merge-eligibility check treats a verdict whose `head_sha` ≠ the current PR
-  head as absent (stale-verdict guard). Satisfiable by hand-comparison now;
-  names the S8 merge-eligibility-evaluation handoff for the automated check.
+- **S6-A2** A verdict records the `head_sha` of the reviewed head; the
+  merge-eligibility check treats it as absent when any commit after that head
+  changes a path outside the verdict artifact's deterministic path
+  (stale-verdict guard) — while a verdict whose only successor commit is the
+  verdict commit itself remains fresh (the self-invalidation inverse).
+  Satisfiable by hand-comparison now; names the S8
+  merge-eligibility-evaluation handoff for the automated check.
 - **S6-A3** A round declaring a `base_sha` that differs from the diff's actual
   base is rejected as an **incomplete** round (the phantom-finding guard); a round
   whose declared base matches passes the base-sync condition — the other
@@ -238,8 +249,8 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   human auth, and counts toward required reviews only when the App holds
   `contents:write` (carried from proven repo behavior, reusing the merge-guard /
   App-approver plumbing — not rebuilt here).
-- **S6-D3** Merge eligibility requires CI green + a terminal-clean verdict keyed
-  to the current `head_sha` (Slice A) + an App approval that **attests the
+- **S6-D3** Merge eligibility requires CI green + a terminal-clean, non-stale
+  verdict per the Slice A staleness rule + an App approval that **attests the
   specific verdict** — the approval binds the verdict's content hash and the
   head SHA it covers, so a contributor-committed "clean" verdict paired with an
   App approval issued for an earlier head (or a different verdict) is not
