@@ -171,7 +171,17 @@ must pass before push.
 - **`discovered_work` accepts only the scheduling axis.** It creates an item
   with no PR, no branch and no CI, so a failure reason there would be an
   untrue statement — the boundary narrows to `_SCHEDULING_REASONS` instead of
-  the full table.
+  the full table, and the fold mirrors the check so a replayed or hand-edited
+  log cannot land one either. The fold *keeps* the item and parks it untyped
+  rather than dropping it: a false failure record is the harm to prevent, and
+  losing the discovered work would be a second one.
+- **A failure-axis reason requires a PR ref, checked on `item.pr` and not on
+  status.** A failure reason is a statement that this item's PR did not merge,
+  so an item that never opened one folds as an anomaly instead. Status is the
+  wrong key: `blocked` and `waiting-human` both legally hold an open PR, and
+  those are exactly where an `approval-required` or `ci-failure` park lands.
+  `pr_closed` leaves the ref behind, so a re-queued item still passes — the
+  check is deliberately permissive there rather than risking a false rejection.
 
 ## Tests
 

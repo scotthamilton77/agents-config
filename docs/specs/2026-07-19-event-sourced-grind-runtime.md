@@ -201,8 +201,11 @@ for every reason on both axes. A machine-actionable cause reaches the lot
 only once the executor has spent its bounded fix budget, so the distinction
 is spent *before* the park, never after it.
 
-Every failure-axis reason is reached with a PR open, so `pr-open` and
-`in-review` are parkable statuses — see the legality matrix below.
+Every failure-axis reason is a statement about a PR, so `pr-open` and
+`in-review` are parkable statuses (see the legality matrix below) and a
+failure-axis park on an item that never opened a PR folds as an anomaly. That
+check reads the item's PR ref, not its status: `blocked` and `waiting-human`
+legally hold an open PR, and those are exactly where such a park lands.
 
 A park may also be **untyped**. `pr_closed`'s `reason` is a free-text closure
 note that shares a field name with the park vocabulary and not its contract;

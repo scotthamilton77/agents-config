@@ -115,6 +115,64 @@ def test_pr_closed_types_the_park_when_its_reason_names_a_vocabulary_member() ->
     assert parked.category == "machine"
 
 
+def test_a_failure_axis_reason_needs_a_pr_and_reads_the_ref_not_the_status() -> None:
+    # A failure reason states that this item's PR did not merge, so an item
+    # that never opened one cannot carry it. The check keys on the PR ref, not
+    # on status: `blocked` legally holds an open PR, and rejecting that would
+    # refuse exactly the park the failure axis exists for.
+    no_pr = fold(
+        [
+            seed_event(),
+            event("item_started", item="wgclw.1"),
+            event("item_parked", item="wgclw.1", reason="ci-failure", note="no PR exists"),
+        ]
+    )
+
+    assert no_pr.items["wgclw.1"].parked is None
+    assert any("no PR" in a.reason for a in no_pr.anomalies)
+
+    blocked_with_pr = fold(
+        [
+            seed_event(),
+            event("item_started", item="wgclw.1"),
+            event("pr_opened", item="wgclw.1", pr=9),
+            event("item_blocked", item="wgclw.1", on=["wgclw.2"]),
+            event("item_parked", item="wgclw.1", reason="ci-failure", note="budget spent"),
+        ]
+    )
+
+    parked = blocked_with_pr.items["wgclw.1"].parked
+    assert parked is not None
+    assert parked.reason == "ci-failure"
+    assert blocked_with_pr.anomalies == []
+
+
+def test_discovered_work_rejects_a_failure_reason_but_keeps_the_item() -> None:
+    # Mirrors the boundary's axis narrowing for replayed/hand-edited logs. The
+    # false failure record is the harm; losing the discovered work would be a
+    # second one, so the item lands parked untyped.
+    events = [
+        seed_event(),
+        event(
+            "discovered_work",
+            item="disc-3",
+            description="gap found mid-grind",
+            source="lane-a",
+            disposition="parked",
+            reason="ci-failure",
+            rationale="hand-edited log",
+        ),
+    ]
+
+    state = fold(events)
+
+    item = state.items["disc-3"]
+    assert item.parked is not None
+    assert item.parked.reason is None
+    assert item.discovered is not None
+    assert any("scheduling" in a.reason for a in state.anomalies)
+
+
 def test_an_item_with_an_open_pr_is_parkable() -> None:
     # Every failure-axis reason is reached with a PR open -- if `pr-open` and
     # `in-review` were not parkable the axis could never be recorded.

@@ -130,11 +130,23 @@ def _events() -> list[RawEvent]:
             detail="round 4 re-raised on an unchanged head",
         ),
         e("lane_standing_down", lane="lane-standing-down"),
-        e("item_parked", item="park-ci-failure", reason="ci-failure", note="CI red after 2 fixes"),
-        e("item_parked", item="park-merge-conflict", reason="merge-conflict", note="rebase failed"),
-        e("item_parked", item="park-approval", reason="approval-required", note="ruleset gate"),
-        e("item_parked", item="park-bot-declined", reason="bot-declined", note="reviewer declined"),
-        e("item_parked", item="park-budget", reason="budget-exhausted", note="attempts spent"),
+        # Failure-axis parks are statements about a PR, so each of these opens
+        # one first -- the fold rejects a failure reason on an item that never did.
+        *[
+            evt
+            for item_id, reason, note, pr in (
+                ("park-ci-failure", "ci-failure", "CI red after 2 fixes", 201),
+                ("park-merge-conflict", "merge-conflict", "rebase failed", 202),
+                ("park-approval", "approval-required", "ruleset gate", 203),
+                ("park-bot-declined", "bot-declined", "reviewer declined", 204),
+                ("park-budget", "budget-exhausted", "attempts spent", 205),
+            )
+            for evt in (
+                e("item_started", item=item_id),
+                e("pr_opened", item=item_id, pr=pr),
+                e("item_parked", item=item_id, reason=reason, note=note),
+            )
+        ],
         e(
             "item_parked",
             item="park-discovered",

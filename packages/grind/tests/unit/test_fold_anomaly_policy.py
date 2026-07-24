@@ -336,6 +336,10 @@ def test_a_pre_charter_log_replays_with_its_parks_still_typed() -> None:
         [
             seed_event(),
             event("item_parked", item="wgclw.1", kind="later-wave", note="wave 2"),
+            # `human-gated` maps onto the failure axis, so this one needs the
+            # PR its new reason is a statement about.
+            event("item_started", item="wgclw.2"),
+            event("pr_opened", item="wgclw.2", pr=12),
             event("item_parked", item="wgclw.2", kind="human-gated", note="needs a ruling"),
         ]
     )

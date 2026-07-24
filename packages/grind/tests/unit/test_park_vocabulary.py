@@ -89,8 +89,17 @@ def test_a_machine_actionable_park_still_has_only_the_manual_exit() -> None:
     parking -- it buys no routed re-entry afterwards. So `ci-failure` parks
     exactly as `deferred` does, and both wait for an explicit `item_enqueued`.
     """
+    # A failure reason needs the PR it is a statement about.
+    to_pr_open = [
+        event("item_started", item="wgclw.1"),
+        event("pr_opened", item="wgclw.1", pr=11),
+    ]
     machine_parked = fold(
-        [seed_event(), event("item_parked", item="wgclw.1", reason="ci-failure", note="red")]
+        [
+            seed_event(),
+            *to_pr_open,
+            event("item_parked", item="wgclw.1", reason="ci-failure", note="red"),
+        ]
     )
     scheduling_parked = fold(
         [seed_event(), event("item_parked", item="wgclw.2", reason="deferred", note="later")]
@@ -105,6 +114,7 @@ def test_a_machine_actionable_park_still_has_only_the_manual_exit() -> None:
     resumed = fold(
         [
             seed_event(),
+            *to_pr_open,
             event("item_parked", item="wgclw.1", reason="ci-failure", note="red"),
             event("item_enqueued", item="wgclw.1", lane="lane-a"),
         ]

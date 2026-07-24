@@ -583,7 +583,17 @@ def _h_item_parked(state: State, evt: RawEvent) -> None:
     if item.status not in _PARKABLE:
         _anomaly(state, evt, f"item_parked illegal from status {item.status!r}")
         return
-    _park_item(state, item, reason=_typed_park_reason(state, evt), note=_str(evt, "note"))
+    reason = _typed_park_reason(state, evt)
+    # A failure-axis reason states that this item's PR did not merge, so an
+    # item that never opened one cannot honestly carry it. Keyed on the PR
+    # ref, NOT on status: `blocked` and `waiting-human` both legally hold an
+    # open PR, and those are exactly where an `approval-required` or
+    # `ci-failure` park lands. (A closed PR leaves its ref behind, so this
+    # admits a re-queued item -- permissive, never a false rejection.)
+    if reason is not None and PARK_REASONS[reason][0] == "failure" and item.pr is None:
+        _anomaly(state, evt, f"failure-axis park reason {reason!r} on an item with no PR")
+        return
+    _park_item(state, item, reason=reason, note=_str(evt, "note"))
 
 
 @_handler("item_enqueued")
@@ -632,8 +642,18 @@ def _h_discovered_work(state: State, evt: RawEvent) -> None:
     rationale = _str(evt, "rationale")
     provenance = DiscoveredWork(source=_str(evt, "source"), rationale=rationale)
     if disposition == "parked":
+        reason = _typed_park_reason(state, evt)
+        # The boundary narrows this to the scheduling axis; the fold mirrors it
+        # so a hand-edited or historical log cannot replay discovered work --
+        # which has no PR, no branch and no CI -- as a machine-caused failure.
+        # The item is still created, parked untyped: a false failure record is
+        # the harm to prevent, and losing the discovered work outright would be
+        # a second one.
+        if reason is not None and PARK_REASONS[reason][0] != "scheduling":
+            _anomaly(state, evt, f"discovered_work park reason {reason!r} is not a scheduling one")
+            reason = None
         item = Item(id=item_id, lane=None, title=description, status="queued", bead=bead)
-        item.parked = ParkingEntry(reason=_typed_park_reason(state, evt), note=rationale)
+        item.parked = ParkingEntry(reason=reason, note=rationale)
         item.discovered = provenance
         state.items[item_id] = item
     elif disposition == "enqueued":
