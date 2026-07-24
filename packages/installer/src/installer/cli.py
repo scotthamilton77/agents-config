@@ -19,6 +19,7 @@ from installer.config import (
 )
 from installer.core.clis import CLI_PACKAGES, RETIRED_CLIS, CliDeployPort
 from installer.core.consent import ConsentRequiredError
+from installer.core.deploy_gate import run_admission_gate
 from installer.core.dump import dump_plan
 from installer.core.installignore import load_installignore
 from installer.core.kits import kit_adapters, kit_name_of, kit_universe, stage_kits
@@ -340,6 +341,25 @@ def _run(
             tool: filter_plan_to_scope(plan, kept_by_tool.get(tool, set()))
             for tool, plan in plans.items()
         }
+
+    # Admission gate (S3, charter D15/D16 — AC1/AC2/AC3): partition every gated
+    # artifact by its admission record, then weigh the surface budget and run the
+    # conflict audit over the admitted set. Record-less content is dropped here
+    # (the zero-base mechanism — prune then removes any previously-deployed copy);
+    # a malformed record, an over-cap surface, or a claim conflict aborts the
+    # whole deploy before any write. Runs on the user-home path only; the
+    # --project fork returned above is ungated by design.
+    gate = run_admission_gate(plans)
+    for label in gate.skipped:
+        io.info(f"admission: not admitted (no admission record): {label}", verbose=True)
+    if gate.skipped:
+        io.info(f"admission: {len(gate.skipped)} artifact(s) not admitted (no admission record)")
+    if not gate.ok:
+        for violation in gate.violations:
+            io.err(f"admission gate: {violation}")
+        io.err(f"deploy aborted: {len(gate.violations)} admission-bar violation(s)")
+        return 1
+    plans = gate.plans
 
     config = Config(home=resolved_home, tools=tools, auto_yes=args.yes)
     adapters = [get_adapter(tool) for tool in tools]

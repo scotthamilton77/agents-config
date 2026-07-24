@@ -41,7 +41,7 @@ class TestScanProtected(unittest.TestCase):
         self.assertIsNotNone(self._hit(".env.local"))
 
     def test_instruction_template(self):
-        self.assertIsNotNone(self._hit("src/user/.agents/AGENTS.md.template"))
+        self.assertIsNotNone(self._hit("src/user/.agents/USER-CORE.md.template"))
 
     def test_prompt_and_rubric_self_protected(self):
         self.assertIsNotNone(self._hit("src/user/.agents/skills/merge-guard/merge_judge_prompt.md"))
