@@ -5,8 +5,9 @@
 **Tracker:** `agents-config-9k9.17`
 
 The rework's review layer stops being prose machinery and becomes a set of
-contracts: a typed verdict artifact, class-specific reviewer prompts that carry
-only the artifact class and the ACs, a pre-implementation AC-attack round, and a
+contracts: a typed verdict artifact, panels of single-lens reviewer prompts
+that carry the review contract and never the house rulebook, a
+pre-implementation AC-attack round, and a
 self-managed invocation that posts under a bot identity and fails merges closed
 when the machinery is broken. S6 ships the **contracts, schemas, and
 skill/prompt assets** only — the verdict harvester and merge-eligibility
@@ -123,7 +124,9 @@ Transport for non-codex lenses is the OpenRouter nested-harness skill
 (read-only tool grant). The round's verdict is the union of the lens reports;
 the round is complete when every lens has reported (green included);
 terminal-clean requires zero mechanical findings across all lenses. Per-lens
-round-N preambles carry only that lens's prior findings.
+round-N preambles carry that lens's prior findings plus the round-global
+ledger of dispositioned items (see the Slice B contract) — full lens
+histories stay per-lens; dispositions travel to every lens.
 
 **Three artifact classes, one review skill.** Classes: **typed code**,
 **spec**, **skill/config prose**. One review skill carries all three contracts
@@ -162,7 +165,10 @@ All machine-posted PR comments and approvals use the GitHub App identity, never
 the human's auth, reusing the proven merge-guard/App-approver plumbing (the App
 must hold `contents:write` for its approval to count). Merge eligibility =
 CI green + an App-posted terminal-clean verdict whose `head_sha` equals the
-current PR head + App approval. Forgery is excluded structurally: only the
+current PR head + App approval. "CI green" has a named observable: every
+check required by the target branch's protection rules reports success for
+the current head (the same state the merge platform itself consults) —
+pending, skipped-required, or failing required checks are all not-green. Forgery is excluded structurally: only the
 App can post the verdict medium, so no separate attestation layer is needed
 — verdict provenance (the posting identity) is checked as part of validity.
 A missing, stale, non-terminal, wrongly-provenanced, or unparseable verdict
@@ -243,8 +249,10 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   (inverse of "every push reviews"); a re-invocation after a claimed fix carries
   a round-N preamble per lens enumerating that lens's prior findings by
   their durable identity — (round, finding id) read from the prior rounds'
-  posted verdicts — and their typed dispositions (a lens's preamble carries
-  no other lens's history); the dispositions land durably in the new round's
+  posted verdicts — and their typed dispositions, plus the round-global
+  cross-lens disposition ledger (other lenses' full finding histories stay
+  out; their dispositioned items travel to every lens so no lens re-raises a
+  settled or deferred item); the dispositions land durably in the new round's
   `prior_dispositions` ledger.
   A `rebutted` disposition must carry its rebuttal evidence; a preamble entry
   marking a prior mechanical finding rebutted with no evidence is refused at
@@ -274,7 +282,12 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   a lens whose reviewer errored or returned unparseable output has no entry
   and leaves the round incomplete — fail-closed, consistent with the
   broken-machinery rule); terminal-clean requires zero mechanical findings
-  across the union.
+  across the union. Dispositions are round-global: every lens's preamble
+  additionally carries the cross-lens ledger of already-dispositioned items
+  (advisory-deferred and rebutted-with-evidence), and a finding that restates
+  a dispositioned item — whichever lens raised it first — is answered by that
+  disposition, not re-litigated (observed failure: a per-lens-only preamble
+  let one lens re-raise another lens's deferred advisory as mechanical).
 - **S6-B10** The multi-vendor transport skill used for non-codex lenses gains
   its admission frontmatter block (prevents/cost/remove-when), bringing it
   under the same admission bar as every deployed asset; the admission check
@@ -350,10 +363,13 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   ineligible. A missing, stale, non-terminal, or wrongly-provenanced verdict
   blocks the merge (fail-closed). Satisfiable by hand-verification now; names
   the S8 merge-eligibility-evaluation handoff.
-- **S6-D4** A human PR comment is treated as an intervention → escalation, and
+- **S6-D4** A human PR comment is treated as an intervention, and
   is never fed into the fix loop (D9); machine (App) and human comments are
   separable on the PR, which is the substrate the S10 interventions-per-PR
-  instrument reads (the number itself is S10, not S6).
+  instrument reads (the number itself is S10, not S6). The escalation routing
+  itself — what state the work item enters and who is notified — is the S9
+  park/escalate wiring; S6's testable surface is only the separability of the
+  two comment classes and the exclusion of human comments from the fix loop.
 - **S6-D5** Broken review machinery — reviewer error, no verdict emitted, or an
   unparseable verdict — blocks the merge rather than passing silently
   (fail-closed; dependency-failure case). Satisfiable by hand-verification now
