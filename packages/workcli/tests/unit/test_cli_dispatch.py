@@ -1,11 +1,11 @@
 """cli.py dispatch: subparser E_USAGE propagation and lazy backend construction.
 
-Task 1 left an open question: does a bad flag *inside* a known subcommand
+An open question: does a bad flag *inside* a known subcommand
 (`work show --bogus`) reach the same `E_USAGE` envelope path as an unknown
 top-level verb, or does argparse's default subparser dump straight to
-stderr? Task 3 replaces the placeholder `nargs='?'` verb positional with
-real subparsers built with `parser_class=_EnvelopeArgumentParser`, closing
-that question: both cases raise into `main()`'s `WorkError` handling.
+stderr? Real subparsers built with `parser_class=_EnvelopeArgumentParser`
+replace the placeholder `nargs='?'` verb positional, closing that question:
+both cases raise into `main()`'s `WorkError` handling.
 """
 
 from __future__ import annotations

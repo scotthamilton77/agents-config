@@ -77,7 +77,7 @@ def test_invalid_argparse_choice_yields_usage_envelope_not_argparse_stderr_dump(
 
 def test_handler_success_yields_success_envelope_with_returned_data(monkeypatch):
     # A stub replaces a REGISTERED verb's handler ("show") rather than
-    # inventing a new verb name -- real argparse subparsers (Task 3+) reject
+    # inventing a new verb name -- real argparse subparsers reject
     # any subcommand name that isn't wired up before VERBS is ever consulted.
     def _echo(_backend: object, _args: object) -> dict[str, str]:
         return {"id": "x.1"}

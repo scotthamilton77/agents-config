@@ -60,7 +60,7 @@ def _schema() -> dict[str, object]:
 
 def test_graph_output_validates_against_shipped_schema() -> None:
     data = graph(_backend(), _graph_args())
-    jsonschema.validate(data, _schema())  # criterion 12's contract leg
+    jsonschema.validate(data, _schema())  # the schema-contract leg
 
 
 def test_graph_carries_every_nonclosed_bead_with_track_and_typed_edges() -> None:

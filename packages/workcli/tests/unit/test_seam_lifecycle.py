@@ -1,7 +1,7 @@
 """The four lifecycle seam primitives + `create`'s new fields.
 
 `claim`/`set_status`/`set_type`/`set_acceptance` are thin `BdBackend`
-primitives the lifecycle verb layer (bead .9.2, later tasks) composes into
+primitives the lifecycle verb layer composes into
 guarded transitions -- each is exactly one `bd update` call, mapped through
 the existing `map_bd_failure` table on a nonzero exit. `create` gains
 `--acceptance`/`--deps <id>` (bare id -- bd's own `blocks:<id>` form is the

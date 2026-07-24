@@ -1,7 +1,7 @@
 """Parser behavior against real `bd --json` golden captures.
 
 Fixtures under tests/fixtures/ are raw `bd ... --json` stdout, captured
-read-only from the main repo (decision 14). Every test here pins the parser's
+read-only from the main repo. Every test here pins the parser's
 mapping from bd's actual output shape to workcli's normalized `Item`/`DepEdge`
 model -- not a shape we imagined.
 """
