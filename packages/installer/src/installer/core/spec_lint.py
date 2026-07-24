@@ -46,7 +46,7 @@ GATE_START_DATE = date(2026, 7, 24)
 _SPEC_FILENAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-.+\.md$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 _AC_ENTRY_RE = re.compile(r"^\s*-\s+\*\*([A-Z0-9]+-[A-Z]\d+|AC\d+)\*\*\s+(\S.*)$")
-_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 
 _AC_HEADING_KEYWORD = "acceptance criteria"
 _SLICE_HEADING_KEYWORD = "slice"
@@ -96,26 +96,31 @@ def discover_spec_files(specs_dir: Path) -> list[Path]:
 def _fence_mask(lines: list[str]) -> list[bool]:
     """``True`` for every line that is inert to structural parsing because it
     sits inside a fenced code block — including the fence marker lines
-    themselves. A fence toggles open on the first ``` `` ` `` ``or ``~~~``
-    marker line and closes on the next line starting with the same marker
-    character; this per-line toggle is enough to cover the gaming cases
-    (an example definition entry or slice heading quoted inside a fence)
-    without a full CommonMark parser."""
+    themselves. A fence opens on any run of ``>= 3`` backticks or tildes and
+    records that marker's character and run length; while open, a line
+    closes the fence only if it starts with a run of the SAME character of
+    length ``>=`` the opener's (CommonMark's closing-fence rule) — a
+    shorter or different-character run nested inside (e.g. a 3-backtick
+    fence quoted inside a 4-backtick outer fence) is inert content, not a
+    real close. Full CommonMark indentation/info-string rules are out of
+    scope; this char+length rule is enough to cover the gaming cases (an
+    example definition entry or slice heading quoted inside a fence)."""
     mask: list[bool] = []
-    open_marker: str | None = None
+    open_char: str | None = None
+    open_len = 0
     for line in lines:
         m = _FENCE_RE.match(line)
         if m:
-            marker_char = m.group(1)[0]
-            if open_marker is None:
-                open_marker = marker_char
+            marker = m.group(1)
+            if open_char is None:
+                open_char, open_len = marker[0], len(marker)
                 mask.append(True)
                 continue
-            if marker_char == open_marker:
-                open_marker = None
+            if marker[0] == open_char and len(marker) >= open_len:
+                open_char, open_len = None, 0
                 mask.append(True)
                 continue
-        mask.append(open_marker is not None)
+        mask.append(open_char is not None)
     return mask
 
 

@@ -161,6 +161,24 @@ def test_codex_review_regression_s5_b3_fenced_slice_heading_is_inert() -> None:
     assert lint_spec_text(path, _FENCED_SLICE_HEADING_IS_INERT) == []
 
 
+def test_codex_round_2_s5_b2_longer_nested_fence_char_is_inert() -> None:
+    """codex round-2 regression (S5-B2) — a fence closes only on a marker of
+    the SAME character with length >= the opener's. A 4-backtick outer
+    fence wrapping a 3-backtick inner marker and a fake '## Acceptance
+    criteria' + '- **AC1** example only' entry must stay entirely fenced:
+    there is no real AC heading or entry outside it, so the lint must fail
+    with the no-heading (or no-entry) violation, not pass. Before this fix,
+    the mask toggled closed on the inner 3-backtick line, un-fencing the
+    fake heading/entry and passing incorrectly."""
+    path = Path("x.md")
+    text = (
+        "# Demo\n\n````markdown\n```python\n## Acceptance criteria\n- **AC1** example only\n````\n"
+    )
+    violations = lint_spec_text(path, text)
+    assert len(violations) == 1
+    assert "no 'Acceptance criteria' heading" in violations[0].reason
+
+
 def test_s5_b4_real_specs_tree_is_clean_and_idempotent(tmp_path: Path) -> None:
     """S5-B4 — a clean tree exits with no violations, and linting it twice
     in a row returns the identical result (idempotency; the lint has no
