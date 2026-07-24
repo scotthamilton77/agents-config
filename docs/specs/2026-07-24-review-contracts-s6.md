@@ -137,7 +137,8 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   names the S8 merge-eligibility-evaluation handoff for the automated check.
 - **S6-A3** A round declaring a `base_sha` that differs from the diff's actual
   base is rejected as an **incomplete** round (the phantom-finding guard); a round
-  whose declared base matches is accepted
+  whose declared base matches passes the base-sync condition — the other
+  completeness conditions still apply
   (inverse pair).
 - **S6-A4** Terminal-clean is defined as a complete round with zero
   `type:"mechanical"` findings; a verdict carrying only `advisory` findings
@@ -224,10 +225,12 @@ first (B and D consume the schema); B, C, D may then run in parallel.
 - **S6-D1** The review trigger fires on an explicit readiness claim, never on
   every push; the trigger contract ships as a deployed asset that reads
   standalone. The contract defines one canonical, machine-parseable claim form
-  — its authorized location, authorized actor, and the head SHA it claims;
-  lookalike text ("ready for review" in a commit message or an ordinary
-  comment) never triggers a round, and a push absent a canonical claim fires
-  nothing (inverse pair).
+  — its authorized location, authorized actor, and the head SHA it claims. A
+  claim covers only the head it names: it triggers at most one round, for that
+  head, and a subsequent push mints a new head that no prior claim covers —
+  each fresh head needs a fresh claim. Lookalike text ("ready for review" in a
+  commit message or an ordinary comment) never triggers a round, and a push
+  absent a canonical claim for its head fires nothing (inverse pair).
 - **S6-D2** Machine-posted PR comments and approvals carry the GitHub App
   identity; a verdict-driven approval is attributable to the App, never the
   human auth, and counts toward required reviews only when the App holds
