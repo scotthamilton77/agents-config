@@ -1,5 +1,5 @@
 """CI smoke test for `grind render` (renderer spec, "Testing"): a State built
-from a rich event log exercising every status, every parking kind, an active
+from a rich event log exercising every status, every park reason, an active
 review, a stalemate, and a paused grind -- the same scenario shape as
 `docs/prototypes/grind-dashboard/fixture-state.json`, adapted into a real
 folded `State` rather than a hand-authored display blob (the renderer's only
@@ -7,14 +7,14 @@ legal input, per its contract, is `State`; it never reads `events.jsonl` or a
 display-shaped fixture directly).
 
 Asserts (per spec): byte-stable output across two folds of the same log, no
-unescaped `<` inside the inlined state block, and every status icon / kind
+unescaped `<` inside the inlined state block, and every status icon / park
 chip / required panel is present -- string/DOM-level, not a screenshot.
 """
 
 from __future__ import annotations
 
 from grind.fold import fold
-from grind.model import JsonValue, RawEvent
+from grind.model import PARK_REASONS, JsonValue, RawEvent
 from grind.render import render_dashboard
 
 _SCRIPT_PROBE_TITLE = 'Serializer probe: "</script>" must render as inert text, never execute'
@@ -58,10 +58,15 @@ _SEED: RawEvent = {
             "name": "Lane Three — parking source",
             "agent": "lt-three",
             "queue": [
+                {"id": "park-ci-failure", "title": "CI-failure candidate"},
+                {"id": "park-merge-conflict", "title": "Merge-conflict candidate"},
+                {"id": "park-approval", "title": "Approval-required candidate"},
+                {"id": "park-bot-declined", "title": "Bot-declined candidate"},
+                {"id": "park-budget", "title": "Budget-exhausted candidate"},
                 {"id": "park-discovered", "title": "Discovered work candidate"},
-                {"id": "park-human", "title": "Human-gated candidate"},
                 {"id": "park-later", "title": "Later-wave candidate"},
                 {"id": "park-deferred", "title": "Deferred candidate"},
+                {"id": "park-untyped", "title": "Untyped park candidate"},
             ],
         },
         {"id": "lane-standing-down", "name": "Lane Four — standing down", "agent": "lt-four"},
@@ -125,15 +130,24 @@ def _events() -> list[RawEvent]:
             detail="round 4 re-raised on an unchanged head",
         ),
         e("lane_standing_down", lane="lane-standing-down"),
+        e("item_parked", item="park-ci-failure", reason="ci-failure", note="CI red after 2 fixes"),
+        e("item_parked", item="park-merge-conflict", reason="merge-conflict", note="rebase failed"),
+        e("item_parked", item="park-approval", reason="approval-required", note="ruleset gate"),
+        e("item_parked", item="park-bot-declined", reason="bot-declined", note="reviewer declined"),
+        e("item_parked", item="park-budget", reason="budget-exhausted", note="attempts spent"),
         e(
             "item_parked",
             item="park-discovered",
-            kind="discovered-work",
+            reason="discovered-work",
             note="surfaced during review",
         ),
-        e("item_parked", item="park-human", kind="human-gated", note="needs a human"),
-        e("item_parked", item="park-later", kind="later-wave", note="wave 2"),
-        e("item_parked", item="park-deferred", kind="deferred", note="revisit later"),
+        e("item_parked", item="park-later", reason="later-wave", note="wave 2"),
+        e("item_parked", item="park-deferred", reason="deferred", note="revisit later"),
+        # The untyped park: `pr_closed`'s `next: parked` path carries no reason
+        # field, so it renders the unknown chip -- the fourth branch.
+        e("item_started", item="park-untyped"),
+        e("pr_opened", item="park-untyped", pr=106),
+        e("pr_closed", item="park-untyped", pr=106, reason="superseded", next="parked"),
         e(
             "grind_paused",
             reason="Human decision needed before lanes resume",
@@ -157,7 +171,12 @@ _ALL_ITEM_STATUSES = (
     "blocked",
     "waiting-human",
 )
-_ALL_PARK_KINDS = ("discovered-work", "human-gated", "later-wave", "deferred")
+# Read off the vocabulary itself: a reason added to `PARK_REASONS` without a
+# fixture park fails here rather than shipping unexercised through the renderer.
+_ALL_PARK_REASONS = frozenset(PARK_REASONS)
+# The renderer colours by axis + category, not per reason, so these four -- not
+# the eight reasons -- are the branches its chip function can take.
+_ALL_PARK_CHIP_CLASSES = ("park-machine", "park-human", "park-scheduling", "park-unknown")
 
 
 def _state_json_blob(html: str) -> str:
@@ -168,7 +187,7 @@ def _state_json_blob(html: str) -> str:
 
 def test_fixture_state_is_a_valid_rich_scenario():
     """Sanity-check the fixture itself before trusting the renderer
-    assertions below: every status/kind this test claims to cover must
+    assertions below: every status/park reason this test claims to cover must
     actually be present in the folded state, and folding must not have
     silently anomalied any of the crafted events."""
     state = fold(_events())
@@ -177,8 +196,10 @@ def test_fixture_state_is_a_valid_rich_scenario():
     statuses = {item.status for item in state.items.values()}
     assert statuses == set(_ALL_ITEM_STATUSES)
     assert state.lanes["lane-standing-down"].standing_down is True
-    parked_kinds = {item.parked.kind for item in state.parking_lot().values() if item.parked}
-    assert parked_kinds == set(_ALL_PARK_KINDS)
+    parked = [item.parked for item in state.parking_lot().values() if item.parked]
+    assert {p.reason for p in parked} == _ALL_PARK_REASONS | {None}
+    assert {p.axis for p in parked} == {"failure", "scheduling", None}
+    assert {p.category for p in parked} == {"machine", "human", None}
     assert state.items["item-stalemate"].review.stalemate is True
     assert state.paused is True
 
@@ -204,7 +225,7 @@ def test_state_block_has_no_unescaped_angle_bracket():
     assert "</script>" not in blob
 
 
-def test_renders_every_status_icon_and_kind_chip():
+def test_renders_every_status_icon_and_park_chip():
     html = render_dashboard(fold(_events()))
     blob = _state_json_blob(html)
 
@@ -213,9 +234,12 @@ def test_renders_every_status_icon_and_kind_chip():
         assert f".st-{status}" in html, f"no status palette entry for {status!r}"
         assert f'"{status}":' in html, f"no ICONS entry for {status!r}"
 
-    for kind in _ALL_PARK_KINDS:
-        assert f'"{kind}"' in blob, f"parking kind {kind!r} missing from the state payload"
-        assert f".kind-{kind}" in html, f"no kind-chip CSS entry for {kind!r}"
+    for reason in _ALL_PARK_REASONS:
+        assert f'"{reason}"' in blob, f"park reason {reason!r} missing from the state payload"
+
+    for chip_class in _ALL_PARK_CHIP_CLASSES:
+        assert f".{chip_class} " in html, f"no chip CSS entry for {chip_class!r}"
+        assert f'"{chip_class}"' in html, f"chip class {chip_class!r} unreachable in the renderer"
 
 
 def test_renders_required_panels_and_no_merged_or_closed_panels():

@@ -54,7 +54,7 @@ Derived views (computed by the fold, never stored, never event payloads):
 Deliberately **not** an entity:
 
 - **Wave** — a sequencing cohort ("these items now, those after"). Survives
-  only as the parking kind `later-wave`. No wave arithmetic exists anywhere in
+  only as the park reason `later-wave`. No wave arithmetic exists anywhere in
   the schema; a parked later-wave item re-enters play via `item_enqueued`.
 
 ## Design
@@ -160,9 +160,9 @@ below)
 | `item_resumed` | `item`, `ruling` (the human's decision, terse) | `waiting-human → in-progress`, **unless** the item still has unresolved blocker edges — then it folds to `blocked` (derived-blocked takes precedence over resume); clears the item's auto-raised attention entry either way |
 | `item_merged` | `item`, `pr`, `sha` | `→ merged`; appends to the merged ledger projection |
 | `item_done` | `item` | `merged → done` (post-merge leg complete); clears any attention/round badge for the item |
-| `item_parked` | `item`, `kind` (discovered-work \| human-gated \| later-wave \| deferred), `note` | Removes from active queue into the parking lot |
+| `item_parked` | `item`, `reason` (see the park vocabulary below), `note` | Removes from active queue into the parking lot |
 | `item_enqueued` | `item`, `lane`, `position?` | Parking lot's one exit: `parked → queued` in the named lane. Also legalizes mid-grind queue additions. |
-| `discovered_work` | `item` (durable id), `description`, `source` (lane/PR that surfaced it), `bead?`, `disposition` (parked \| enqueued), `kind?` (when parked), `lane?` (when enqueued), `rationale` | Creates a new item carrying its triage rationale, keyed by the required `item` id: the bead id when one exists, else a ROOT-assigned run-unique slug (`disc-<n>`, next free ordinal). `bead?` is optional metadata, carried only when it differs from `item`. `enqueued` is sugar for discover + `item_enqueued` in one event. |
+| `discovered_work` | `item` (durable id), `description`, `source` (lane/PR that surfaced it), `bead?`, `disposition` (parked \| enqueued), `reason?` (when parked), `lane?` (when enqueued), `rationale` | Creates a new item carrying its triage rationale, keyed by the required `item` id: the bead id when one exists, else a ROOT-assigned run-unique slug (`disc-<n>`, next free ordinal). `bead?` is optional metadata, carried only when it differs from `item`. `enqueued` is sugar for discover + `item_enqueued` in one event. |
 
 **Cross-cutting**
 
@@ -171,6 +171,45 @@ below)
 | `observation` | `level` (INFO \| WARN \| ERROR \| LESSON), `message`, `item?`, `lane?` | Terse markers, not narration. `ERROR` auto-raises an attention entry; `LESSON` feeds the lessons-learned projection (the grind-retrospective capture mechanism — no bespoke lessons protocol). |
 | `attention_raised` | `text`, `item?` | Adds to the human docket / red banner |
 | `attention_cleared` | `text` or `item` | Removes the matching entry |
+
+### The park vocabulary
+
+A park reason sits on exactly one of two axes, and both the axis and the
+`machine`/`human` category are **derived** from the reason through a single
+table — never carried on an event, so no park can contradict its own axis.
+
+| Axis | Reason | Category | Meaning |
+|------|--------|----------|---------|
+| `failure` | `ci-failure` | machine | CI stayed red after the executor's fix budget |
+| `failure` | `merge-conflict` | machine | The branch would not rebase within budget |
+| `failure` | `approval-required` | human | The ruleset demands a human approval |
+| `failure` | `bot-declined` | human | The review bot declined to approve |
+| `failure` | `budget-exhausted` | human | Attempts spent without a merge |
+| `scheduling` | `discovered-work` | human | Work surfaced mid-grind and triaged to the lot |
+| `scheduling` | `later-wave` | human | Out of the current sequencing cohort |
+| `scheduling` | `deferred` | human | Held for a later decision |
+
+The `failure` axis is the harness charter's typed park reasons, mirrored
+member for member from the `work` facade's `park --reason` vocabulary so a
+reason crosses that boundary untranslated. The `scheduling` axis is
+grind-native: a decision about *when* work runs, covering items that never
+failed and may never have had a PR.
+
+`category` records whether the park's **cause** was machine-actionable. It
+grants no exit: the parking lot's only exit is an explicit `item_enqueued`,
+for every reason on both axes. A machine-actionable cause reaches the lot
+only once the executor has spent its bounded fix budget, so the distinction
+is spent *before* the park, never after it.
+
+Every failure-axis reason is reached with a PR open, so `pr-open` and
+`in-review` are parkable statuses — see the legality matrix below.
+
+A park may also be **untyped**. `pr_closed`'s `reason` is a free-text closure
+note that shares a field name with the park vocabulary and not its contract;
+when it happens to name a vocabulary member the park is typed with it, and
+otherwise the park carries no reason and its axis and category are absent
+rather than ambiguous. `discovered_work` narrows the other way: it creates an
+item that has never run, so only the scheduling axis is legal there.
 
 ### The fold and the transition table
 
@@ -192,8 +231,8 @@ absent is an anomaly):
 |---|---|---|---|---|---|---|---|---|---|---|
 | `queued` | in-progress | — | — | — | — | blocked | waiting-human | — | — | parked |
 | `in-progress` | — | pr-open | — | — | — | blocked | waiting-human | — | — | parked |
-| `pr-open` | — | — | in-review | in-review | per `next` | blocked | waiting-human | merged | — | — |
-| `in-review` | — | — | in-review | in-review | per `next` | blocked | waiting-human | merged | — | — |
+| `pr-open` | — | — | in-review | in-review | per `next` | blocked | waiting-human | merged | — | parked |
+| `in-review` | — | — | in-review | in-review | per `next` | blocked | waiting-human | merged | — | parked |
 | `waiting-human` | — | pr-open | in-review | in-review | per `next` | — | — | merged | — | parked |
 | `blocked` | — | — | — | — | — | — | waiting-human | — | — | parked |
 | `merged` | — | — | — | — | — | — | — | — | done | — |

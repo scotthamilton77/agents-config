@@ -11,9 +11,9 @@ auto-raises an ERROR observation. It never raises or refuses.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from typing import cast
 
 from grind.model import (
+    PARK_REASONS,
     AnomalyRecord,
     AttentionEntry,
     ClosedEntry,
@@ -26,26 +26,61 @@ from grind.model import (
     MergedEntry,
     Observation,
     ParkingEntry,
-    ParkKind,
+    ParkReason,
     PrRef,
     RawEvent,
     State,
 )
 
-_PARK_KINDS = {"discovered-work", "human-gated", "later-wave", "deferred"}
+# The pre-charter park vocabulary, which lived on a field named `kind`. Three
+# of its four members survived the reconciliation unchanged; `human-gated` is
+# retired because `approval-required` names the same state. Read-side only --
+# nothing writes `kind` any more, and the validator rejects it on input.
+_LEGACY_PARK_KINDS: dict[str, ParkReason] = {
+    "discovered-work": "discovered-work",
+    "later-wave": "later-wave",
+    "deferred": "deferred",
+    "human-gated": "approval-required",
+}
 
 
-def _park_kind(evt: RawEvent) -> ParkKind | None:
-    """Cast a trusted-inward `kind` string to the closed vocabulary.
+def _park_reason(evt: RawEvent) -> ParkReason | None:
+    """Narrow a trusted-inward park reason to the closed vocabulary.
 
     Payload shape validation is the CLI boundary's job (spec: "parse once,
     trust inward"); an unrecognized value here is tolerated as `None` rather
     than raised, consistent with accept-and-flag.
+
+    Reads the legacy `kind` field when `reason` is absent, so an
+    `events.jsonl` written under the old vocabulary replays with its parks
+    still typed -- delete-and-refold is the runtime's whole recovery story,
+    and it would be a poor one if an upgrade greyed out every historical park.
+
+    No `cast` is needed: membership in `PARK_REASONS` narrows the `str` to the
+    key type, which is exactly the guarantee the table is there to give.
     """
-    kind = evt.get("kind")
-    if isinstance(kind, str) and kind in _PARK_KINDS:
-        return cast("ParkKind", kind)
+    reason = evt.get("reason")
+    if isinstance(reason, str) and reason in PARK_REASONS:
+        return reason
+    legacy = evt.get("kind")
+    if isinstance(legacy, str):
+        return _LEGACY_PARK_KINDS.get(legacy)
     return None
+
+
+def _typed_park_reason(state: State, evt: RawEvent) -> ParkReason | None:
+    """`_park_reason` for the two events whose payload *requires* one.
+
+    A value that arrived but did not narrow was a typed reason the fold just
+    threw away, which is the one thing accept-and-flag must not do quietly --
+    so it records the anomaly triple. `pr_closed` deliberately does not come
+    through here: its `reason` is a free-text closure note that only sometimes
+    happens to be a vocabulary member.
+    """
+    reason = _park_reason(evt)
+    if reason is None and (evt.get("reason") is not None or evt.get("kind") is not None):
+        _anomaly(state, evt, f"unrecognized park reason {evt.get('reason') or evt.get('kind')!r}")
+    return reason
 
 
 # Statuses `merged`/`done` resolve any blocker edge pointing at that item
@@ -250,8 +285,8 @@ def _cascade_unblock(state: State) -> None:
                 changed = True
 
 
-def _park_item(state: State, item: Item, kind: ParkKind | None, note: str | None) -> None:
-    item.parked = ParkingEntry(kind=kind, note=note)
+def _park_item(state: State, item: Item, reason: ParkReason | None, note: str | None) -> None:
+    item.parked = ParkingEntry(reason=reason, note=note)
     if item.lane is not None:
         lane = state.lanes.get(item.lane)
         if lane is not None and item.id in lane.item_ids:
@@ -403,7 +438,12 @@ def _h_pr_closed(state: State, evt: RawEvent) -> None:
     # cycle that must not inherit the closed PR's stalemate history
     item.round_history = ()
     if next_status == "parked":
-        _park_item(state, item, kind=None, note=reason)
+        # `pr_closed.reason` is a free-text closure note, not the typed park
+        # vocabulary -- the two share a field name and not a contract. When it
+        # does name a vocabulary member, type the park with it rather than
+        # demoting a legal reason to prose; anything else parks untyped and
+        # keeps the text as the note, as it always has.
+        _park_item(state, item, reason=_park_reason(evt), note=reason)
     else:
         item.status = next_status  # type: ignore[assignment]  # validated above
 
@@ -514,7 +554,18 @@ def _h_item_done(state: State, evt: RawEvent) -> None:
     _cascade_unblock(state)
 
 
-_PARKABLE: set[ItemStatus] = {"queued", "in-progress", "waiting-human", "blocked"}
+# `pr-open`/`in-review` are parkable because the failure axis exists to
+# describe exactly those states: a park for `ci-failure`, `merge-conflict` or
+# `bot-declined` is *always* reached with a PR open. Without them the axis
+# would validate at the boundary and then anomaly in the fold.
+_PARKABLE: set[ItemStatus] = {
+    "queued",
+    "in-progress",
+    "pr-open",
+    "in-review",
+    "waiting-human",
+    "blocked",
+}
 
 
 @_handler("item_parked")
@@ -525,7 +576,7 @@ def _h_item_parked(state: State, evt: RawEvent) -> None:
     if item.status not in _PARKABLE:
         _anomaly(state, evt, f"item_parked illegal from status {item.status!r}")
         return
-    _park_item(state, item, kind=_park_kind(evt), note=_str(evt, "note"))
+    _park_item(state, item, reason=_typed_park_reason(state, evt), note=_str(evt, "note"))
 
 
 @_handler("item_enqueued")
@@ -575,7 +626,7 @@ def _h_discovered_work(state: State, evt: RawEvent) -> None:
     provenance = DiscoveredWork(source=_str(evt, "source"), rationale=rationale)
     if disposition == "parked":
         item = Item(id=item_id, lane=None, title=description, status="queued", bead=bead)
-        item.parked = ParkingEntry(kind=_park_kind(evt), note=rationale)
+        item.parked = ParkingEntry(reason=_typed_park_reason(state, evt), note=rationale)
         item.discovered = provenance
         state.items[item_id] = item
     elif disposition == "enqueued":

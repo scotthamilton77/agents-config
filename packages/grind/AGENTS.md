@@ -113,10 +113,56 @@ must pass before push.
   report `done` for a lane that's barely started. `derive.lane_status`
   computes the "most advanced" rank only among non-`done` items, falling
   back to `done` only when every item in the lane is.
-- **`pr_closed`'s `next: parked` path has no `kind`.** Unlike `item_parked`
-  (which always carries a `kind` enum), `pr_closed`'s payload has no parking
-  kind — this package parks with `kind=None` and reuses the closure's
-  `reason` as the parking note.
+- **`pr_closed.reason` shares a field name with the park vocabulary and not
+  its contract.** It is a free-text closure note, validated as any non-empty
+  string, while `item_parked.reason` is a closed enum. On the `next: parked`
+  path this package runs the text through the same lookup: if it names a
+  vocabulary member the park is typed with it (demoting a legal reason to
+  prose would lose it silently), otherwise the park is untyped and the text
+  becomes the note. An untyped park is *absent* from both axes, not
+  ambiguously on one.
+- **The park vocabulary has two axes and one exit.** `PARK_REASONS`
+  (`model.py`) is the single table; `axis` and `category` are `@property`
+  lookups on `ParkingEntry`, never stored, so a park cannot carry a reason
+  that disagrees with its own axis. Two decisions are pinned in
+  `tests/unit/test_park_vocabulary.py` and worth not re-litigating:
+  - *No routed re-entry for machine-actionable reasons.* The charter is
+    categorical that the machine never acts on a parked item of its own
+    accord, and there is no automatic TTL action. `category: machine` describes
+    the **cause**, and the executor's bounded fix budget is spent *before* the
+    park — so `ci-failure` waits for an explicit `item_enqueued` exactly as
+    `deferred` does. Adding an auto-recheck path would also need a decision
+    verb, which the `conditions.py` seam forbids this package from owning.
+  - *The scheduling axis is kept, `human-gated` is dropped.*
+    `discovered-work`/`later-wave`/`deferred` describe work that never failed
+    (`discovered_work` parks items that never had a PR, and `later-wave` is the
+    schema's only surviving trace of a wave), so no failure reason can describe
+    them without lying. `human-gated` was the one old kind that *was*
+    failure-shaped, and `approval-required` names the same state — two names
+    for one state is the drift the reconciliation removes.
+  - The `failure` axis is not this package's to extend unilaterally: it mirrors
+    the `work` facade's `park --reason` vocabulary member for member. The
+    isolated-project boundary rules out a cross-import, so the seam is two
+    assertions — grind's `test_failure_axis_matches_the_work_facades_park_reasons_exactly`
+    and workcli's `test_vocabulary_is_closed_and_mirrored_by_the_grind_executor`.
+    Both must change together; either one alone fails its own gate.
+- **`pr-open` and `in-review` are parkable, and that is load-bearing.** Every
+  failure-axis reason (`ci-failure`, `merge-conflict`, `bot-declined`, …) is
+  reached with a PR open, so excluding those statuses from `_PARKABLE` would
+  let the boundary accept a park the fold then rejects as an anomaly — the
+  axis would be unrecordable from exactly the states it names. `merged`/`done`
+  stay unparkable: finished work has nothing left to park.
+- **The fold still reads the retired `kind` field.** `_LEGACY_PARK_KINDS`
+  (`fold.py`) maps the pre-charter vocabulary on read only — three members
+  pass through unchanged, `human-gated` lands on `approval-required`. Nothing
+  writes `kind` and the validator rejects it on input; the map exists because
+  delete-and-refold is this runtime's whole recovery story, and an upgrade
+  that greyed out every historical park would make it a poor one. A value that
+  matches neither vocabulary records the anomaly triple rather than vanishing.
+- **`discovered_work` accepts only the scheduling axis.** It creates an item
+  with no PR, no branch and no CI, so a failure reason there would be an
+  untrue statement — the boundary narrows to `_SCHEDULING_REASONS` instead of
+  the full table.
 
 ## Tests
 
