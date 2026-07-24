@@ -121,7 +121,13 @@ its reasoning demand (hard-reasoning lenses get frontier models, mechanical
 walks get mid-tier), and the panel spans vendors — blind spots correlate
 within a vendor, so diversity sits at the panel level, not inside each lens.
 Transport for non-codex lenses is the OpenRouter nested-harness skill
-(read-only tool grant). The round's verdict is the union of the lens reports;
+(read-only tool grant). Each lens also declares its **re-review scope**:
+`full` (default — every round re-reads the whole artifact) or `diff` (a lens
+that reported green in the prior round may review only the change since the
+head it judged). Diff-scoping is sound only for lenses whose judgments are
+local to the changed text; a global-coherence lens (internal consistency,
+decidability) is always `full` — a fix in one section can break a
+previously-green claim in another. The round's verdict is the union of the lens reports;
 the round is complete when every lens has reported (green included);
 terminal-clean requires zero mechanical findings across all lenses. Per-lens
 round-N preambles carry that lens's prior findings plus the round-global
@@ -143,9 +149,27 @@ carries a round-N preamble listing every prior finding and its disposition
 (fixed-with-regression-test / rebutted / advisory-deferred), so the reviewer
 does not re-raise settled items.
 
-**AC-attack is a pre-implementation round on the spec (D3).** A foreign
-(non-Anthropic) model attacks the spec's AC set — "name behaviors that satisfy
-these ACs while still being wrong." Output is a JSON array of **proposed ACs**,
+**The fix loop is bounded.** Each class contract declares a **round cap**
+(default: three complete rounds per readiness claim chain). When the cap is
+reached without terminal-clean, further round invocations are refused and the
+item escalates as an intervention — non-convergence is a signal that the
+artifact or its ACs need human judgment, not more rounds. Rounds consumed are
+decidable from observables (the count of complete posted verdicts for the
+PR since the last terminal-clean). The escalation routing itself is S9
+wiring; the contract's testable surface is the refusal and the separable
+escalation signal.
+
+**AC-attack is a pre-implementation panel on the spec (D3).** The attack
+fans out like the review panel — a single attacker satisfices the same way a
+single reviewer does. The contract defines a set of **attack lenses**: holes
+in existing ACs ("name behaviors that satisfy these ACs while still being
+wrong"), edge-case holes against the authoring taxonomy (inverse, boundary,
+dependency failure, concurrency, idempotency cases no AC tests), and absent
+requirements (obligations the spec implies but no AC covers). One attacker
+runs per lens, exhaustive within it, reporting an explicit empty result when
+it finds no hole; the round's proposal set is the union, and at least one
+attack lens runs on a foreign (non-Anthropic) model.
+Output is a JSON array of **proposed ACs**,
 each `{"target_ac", "hole", "proposed_ac", "red_test_sketch"}` — testable claims
 about inputs/states, never free-form concerns. Each proposal is adjudicated
 **accepted** (into the AC set) or **rejected** (out-of-scope); the round
@@ -175,6 +199,17 @@ A missing, stale, non-terminal, wrongly-provenanced, or unparseable verdict
 **blocks** the merge — broken review machinery never silently passes. A human PR comment is by
 definition an intervention: it routes to escalation, never into the fix loop.
 The gate's *evaluation code* is S8 (D13); S6 fixes the contract it evaluates.
+
+**Every finding lands in a durable, mineable medium.** With PR-comment
+looping gone, no part of the review trail may live only in conversation:
+mechanical findings and their disposition ledgers persist in the App-posted
+verdicts (SHA-keyed check runs / approval bodies, queryable via the platform
+API); advisory findings persist in the tracker backlog; AC-attack proposals
+and dispositions persist in the committed attack records. Aggregating these
+into a local corpus for mining candidate rules and memories is an extension
+of the S8 harvester (which already reads the verdict medium) — named in §4;
+S6's obligation is only that every finding class has a durable, queryable
+home.
 
 **Every deployed asset reads standalone.** The verdict schema, the
 review skill, the AC-attack skill, and the invocation/trigger doc are written to
@@ -228,7 +263,11 @@ first (B and D consume the schema); B, C, D may then run in parallel.
 
 - **S6-B1** A review skill under `src/user/.claude/skills/` carries three class
   contracts (typed code / spec / skill-config prose), each defining a lens set
-  with a per-lens model tier; for a given class the skill emits one
+  with a per-lens model tier and re-review scope (`full` by default; `diff`
+  only where the contract marks the lens's judgments local to changed text —
+  a global-coherence lens is never `diff`-scoped, and a `diff`-scoped lens
+  runs `full` on round 1 or when it had findings in the prior round); for a
+  given class the skill emits one
   single-lens prompt per lens, and each emitted prompt contains the artifact
   class, that lens's mandate and the ACs it judges, the
   `/tmp` diff-file pointer plus repo root, the declared `retained_categories`,
@@ -299,13 +338,15 @@ first (B and D consume the schema); B, C, D may then run in parallel.
 
 ### Slice C — AC-attack contract (D3)
 
-- **S6-C1** An AC-attack skill under `src/user/.claude/skills/` emits a prompt
-  carrying the spec's AC set **plus the spec definitions and scope boundaries
-  that give those ACs meaning** (an AC set referencing terms defined elsewhere
-  in the spec ships with those definitions — a bare AC list starves the
-  attacker into a vacuous empty round), the "name behaviors that satisfy these
-  ACs while still being wrong" mandate, and the proposed-AC output contract —
-  and no house rulebook.
+- **S6-C1** An AC-attack skill under `src/user/.claude/skills/` emits one
+  prompt per attack lens (holes in existing ACs, edge-case-taxonomy holes,
+  absent requirements), each carrying the spec's AC set **plus the spec
+  definitions and scope boundaries that give those ACs meaning** (an AC set
+  referencing terms defined elsewhere in the spec ships with those
+  definitions — a bare AC list starves the attacker into a vacuous empty
+  round), that lens's attack mandate with the exhaustiveness clause, and the
+  proposed-AC output contract — and no house rulebook and no other lens's
+  mandate (single-lens boundary).
 - **S6-C2** Output is proposed ACs (each a testable input/state claim with a
   `red_test_sketch`); a returned item shaped as a free-form concern — no
   testable claim — is rejected as malformed (inverse: a concern is not a valid
@@ -324,8 +365,8 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   observable: the committed attack record is complete before any
   implementation work item for the slice is claimed in the tracker (a claim
   predating record completion violates the ordering) — and is
-  distinct from the S6-A/S6-B PR verdict; an empty proposal list (the attacker
-  finds no hole) terminates the round clean (empty-input boundary).
+  distinct from the S6-A/S6-B PR verdict; an empty union (no attack lens
+  proposes anything) terminates the round clean (empty-input boundary).
 - **S6-C5** The AC-attack skill body is ≤ 2k tokens and reads standalone — no
   charter/slice/AC jargon in the deployed asset (standalone read).
 - **S6-C6** An attack round records the revision (commit SHA or content hash)
@@ -333,6 +374,12 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   invalidates the round's completion — evaluating the old disposition set
   against the edited artifact reports incomplete, requiring a fresh attack or
   explicit re-adjudication against the new revision (staleness guard).
+- **S6-C7** The round's proposal set is the union of all attack-lens reports,
+  and the record identifies each proposal's producing lens; an attack lens
+  with no proposals returns an explicit empty report, which counts toward
+  round completeness — a silent or errored attack lens leaves the round
+  incomplete (fail-closed, dependency failure) — and at least one attack lens
+  runs on a foreign (non-Anthropic) model.
 
 ### Slice D — Self-managed invocation + bot identity (D7, D9, AC7)
 
@@ -383,6 +430,13 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   failure that itself blocks eligibility. Hand-verifiable against repo
   settings now; names the S8 merge-eligibility-evaluation handoff for the
   automated configuration check.
+- **S6-D7** The class contract declares a round cap; invoking a round beyond
+  the cap without an intervening terminal-clean is refused, and the refusal
+  emits the escalation signal (observable: the refusal names the cap and the
+  complete rounds consumed, counted from the posted verdicts). A loop that
+  reaches terminal-clean within the cap never triggers the escalation
+  (inverse); the work-item state transition and notification are the S9
+  park/escalate wiring, not S6.
 
 ## 4. Out of scope
 
@@ -395,7 +449,11 @@ inputs a parked item keys off, never park state itself. Deletion of
 `wait-for-pr-comments` / `reply-and-resolve-pr-threads` / `monitor-pr` and the
 contradictory completion-gate text (S8, D13/AC5). The **interventions-per-PR
 number** and **pre-PR cycle-time** instruments (S10, D19) — S6 lands only the
-bot-identity substrate that makes the interventions count separable. Building the
+bot-identity substrate that makes the interventions count separable. The
+**verdict-corpus archive** — the S8 harvester extension that aggregates posted
+verdicts, backlog advisories, and attack records into a locally mineable corpus
+for candidate rules and memories; S6 guarantees only the durable media that
+archive would read. Building the
 codex-companion CLI or the App/merge-guard plumbing (both pre-exist). Wiring the
 same review contracts onto foreign harnesses beyond the Claude tree (pipeline
 work; the portable verdict schema is the seam that keeps that door open).
