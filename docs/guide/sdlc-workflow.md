@@ -8,7 +8,7 @@ machine-checkable QA in between.
 
 ```
 capture → brainstorm → plan → implement (TDD) → completion gate → deliver → merge → persist
-  bd     brainstorming  writing-plans  TDD      SKIP/SERIAL/HEAVY  worktree→PR  merge-guard  memory
+  bd     grilling       to-spec        TDD      SKIP/SERIAL/HEAVY  worktree→PR  merge-guard  memory
 ```
 
 You don't invoke these by hand step by step — the rules and skills fire
@@ -44,20 +44,21 @@ doing*.
 
 ## 2. Brainstorm — the "no, not ready" gate
 
-Before any creative work, the **`brainstorming`** skill explores intent,
-requirements, and design. This is the most important human touchpoint: it's
-where you pin down what you actually want. The discipline here is that
-under-specified work is **bounced back before implementation** — the agent is
-built to say "not ready, here's what's missing" rather than burn an autonomous
-run on a guess.
+Before any creative work, the **`grilling`** skill interviews you one question
+at a time to explore intent, requirements, and design. This is the most
+important human touchpoint: it's where you pin down what you actually want.
+The discipline here is that under-specified work is **bounced back before
+implementation** — the agent is built to say "not ready, here's what's
+missing" rather than burn an autonomous run on a guess.
 
 Use **`grill-with-docs`** to stress-test a plan against your project's domain
 model and update `CONTEXT.md`/ADRs as decisions crystallize.
 
 ## 3. Plan
 
-Once intent is clear, **`writing-plans`** turns it into a concrete multi-step
-plan before any code. For multi-step or architectural work the agent plans
+Once intent is clear, **`to-spec`** turns it into a concrete, dated spec —
+acceptance criteria and an ordered slice list — before any code. For
+multi-step or architectural work the agent plans
 first and validates the approach with you. The **tracer-bullet** habit applies:
 implement one tiny end-to-end slice through all layers first, confirm the
 architecture, then expand.

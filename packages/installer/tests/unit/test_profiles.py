@@ -921,7 +921,7 @@ def test_golden_full_profile_is_byte_identical_to_todays_install(ignore: Install
 
 @pytest.mark.parametrize(
     "selection",
-    [("full",), ("minimal-user",), ("sdlc",), ("full", "no-brainstorming")],
+    [("full",), ("minimal-user",), ("sdlc",)],
 )
 def test_shipped_profiles_resolve_against_real_universe(
     ignore: InstallIgnore, selection: tuple[str, ...]

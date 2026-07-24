@@ -7,7 +7,7 @@ the [README](../../README.md#installation).
 
 | Phase | Skills |
 |-------|--------|
-| Brainstorm / design | `brainstorming`¹, `grill-with-docs`, `prototype`, `writing-plans` |
+| Brainstorm / design | `grilling`, `grill-with-docs`, `to-spec`, `prototype` |
 | Implement | `test-driven-development`¹, `writing-unit-tests`, `bugfix` |
 | Test review | `test-review`, `writing-unit-tests` |
 | Completion gate | `gate-triage`, `simplify`, `verify-checklist` |

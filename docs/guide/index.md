@@ -19,7 +19,7 @@ The mental model has four kinds of pieces:
 | Piece | Answers | Example |
 |-------|---------|---------|
 | **Rules** | the *always-on* contract | "find root causes, not band-aids"; the decide-vs-escalate matrix |
-| **Skills** | *how* to do a thing | `brainstorming`, `test-driven-development`, `verify-checklist` |
+| **Skills** | *how* to do a thing | `grilling`, `test-driven-development`, `verify-checklist` |
 | **Agents** | *who* does a thing | `quality-reviewer`, `tech-lead` |
 | **Gates** | *proof* before "done" | the three-tier completion gate; `merge-guard` |
 

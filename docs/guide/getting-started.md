@@ -7,7 +7,7 @@
   to each.
 - **[obra/superpowers](https://github.com/obra/superpowers)** (Claude Code
   plugin) — provides the process skills the workflow rules lean on
-  (`brainstorming`, `test-driven-development`, verification, worktree helpers).
+  (`test-driven-development`, verification, worktree helpers).
   Without it, several skills and rules reference things that don't exist.
 - **[steveyegge/beads](https://github.com/steveyegge/beads)** — the `bd`
   work tracker. The workflow treats durable work as beads that survive across
@@ -59,7 +59,7 @@ required for this stage).
 
 Open your assistant in any project and confirm the pieces are visible:
 
-- Ask it to list available skills — you should see `brainstorming`,
+- Ask it to list available skills — you should see `grilling`,
   `test-driven-development`, `verify-checklist`, `merge-guard`, and the rest.
 - Check that `~/.claude/AGENTS.md` (or your tool's instruction file) exists
   and carries the zero-based `<laws>`/`<decisions>`/`<hard-lines>`/

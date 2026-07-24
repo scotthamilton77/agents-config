@@ -216,7 +216,7 @@ Close with a summary line driven by `totals` (which always carries the full, unf
 | `all` (or omitted)      | `All clear — no open beads ready for attention.`                                  |
 | `human`                 | `No beads currently flagged for human attention.`                                 |
 | `planning`              | `No childless container beads ready for planning.`                                |
-| `brainstorm`            | `No beads ready for brainstorming.`                                               |
+| `brainstorm`            | `No beads ready to brainstorm.`                                                   |
 | `implementation`        | `No beads ready for implementation.`                                              |
 
 ## Red Flags
