@@ -125,7 +125,7 @@ things now *are*.
 
 | Type | Payload | Effect |
 |------|---------|--------|
-| `grind_created` | `title`, `repo` (owner/name), `mission` (goal + explicit out-of-scope), `protocols` (structured block: review protocol choice, merge-policy resolution, watcher conventions, session grants), `config` (thresholds, below), `lanes[]` (id, name, agent, model+effort the lieutenant runs at, queue of items with work ids, titles, blocker edges) | Seeds the entire board. Legal only as the log's **first** event; any subsequent `grind_created` folds as an anomaly (accept-and-flag), leaving the board unchanged. The mission/protocols block is what makes `status --handoff` self-contained (§7 replacement). |
+| `grind_created` | `title`, `repo` (owner/name), `mission` (goal + explicit out-of-scope), `protocols` (structured block: review protocol choice, merge-policy resolution, watcher conventions, session grants), `config` (thresholds, below), `lanes[]` (id, name, agent, model+effort the lieutenant runs at, queue of items with ids, titles, blocker edges, `work_id?`) | Seeds the entire board. A seeded item's `id` is its work-tracker id when one exists, so `work_id?` is optional metadata carried only when it differs from `id` — identical semantics to `discovered_work`'s. Legal only as the log's **first** event; any subsequent `grind_created` folds as an anomaly (accept-and-flag), leaving the board unchanged. The mission/protocols block is what makes `status --handoff` self-contained (§7 replacement). |
 | `grind_paused` | `reason`, `resume_checklist[]` | Board banner; handoff carries pause state |
 | `grind_resumed` | — | Clears pause |
 | `grind_finished` | `summary` | Terminal. Fold rejects (anomaly) further mutating events. |

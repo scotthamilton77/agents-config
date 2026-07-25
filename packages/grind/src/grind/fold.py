@@ -112,6 +112,22 @@ def _str(evt: RawEvent, key: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _work_id(payload: RawEvent, item_id: str) -> str | None:
+    """The item's external tracker handle, or None when it has no distinct one.
+
+    Both producers (`grind_created` seed queues, `discovered_work`) route through
+    here so `work_id` carries one meaning in state: present means a handle that
+    differs from `id`. An id equal to `item_id` is the redundant case, and `""`
+    is not a handle -- the boundary rejects both, and this mirrors it so a
+    hand-edited or historical log cannot falsify the invariant a consumer reads
+    as "non-None means the handle differs from `id`".
+    """
+    work_id = _str(payload, "work_id")
+    if not work_id or work_id == item_id:
+        return None
+    return work_id
+
+
 def _anomaly(state: State, evt: RawEvent, reason: str) -> None:
     etype = _str(evt, "type") or "<missing type>"
     item_id = _str(evt, "item")
@@ -172,11 +188,16 @@ def _h_grind_created(state: State, evt: RawEvent) -> None:
             on = item_payload.get("on")
             blocked_on = tuple(o for o in on if isinstance(o, str)) if isinstance(on, list) else ()
             status: ItemStatus = "blocked" if blocked_on else "queued"
+            # The seed queue carries "items with work ids" (spec), and an item
+            # id is itself "the work-tracker id when one exists" (spec) -- so a
+            # seeded work id equal to the item id is the redundant case.
+            work_id = _work_id(item_payload, item_id)
             item = Item(
                 id=item_id,
                 lane=lane_id,
                 title=_str(item_payload, "title"),
                 status=status,
+                work_id=work_id,
                 blocked_on=blocked_on,
             )
             state.items[item_id] = item
@@ -634,9 +655,7 @@ def _h_discovered_work(state: State, evt: RawEvent) -> None:
     # `item`" (spec) -- a caller-supplied work id equal to the item id is
     # redundant, so it's normalized away rather than stored twice under two
     # names.
-    work_id = _str(evt, "work_id")
-    if work_id == item_id:
-        work_id = None
+    work_id = _work_id(evt, item_id)
     # The item "carries its triage rationale" (spec) plus its source -- state is
     # the renderer's only input, so both dispositions must preserve this
     # provenance or a later projection can't explain the work's origin.

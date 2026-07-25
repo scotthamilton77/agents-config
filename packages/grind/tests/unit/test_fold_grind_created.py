@@ -67,6 +67,70 @@ def test_seeded_blocker_edges_fold_item_as_blocked_not_queued() -> None:
     assert state.items["wgclw.3"].blocked_on == ("wgclw.1",)
 
 
+def test_seeded_item_folds_with_its_work_id() -> None:
+    event = _seed_event()
+    lanes = event["lanes"]
+    assert isinstance(lanes, list)
+    lanes[0]["queue"].append({"id": "disc-1", "title": "Slug-keyed item", "work_id": "wgclw.9"})
+
+    state = fold([event])
+
+    assert state.items["disc-1"].work_id == "wgclw.9"
+
+
+def test_seeded_item_without_a_work_id_folds_to_none() -> None:
+    state = fold([_seed_event()])
+
+    assert state.items["wgclw.1"].work_id is None
+
+
+def test_seeded_work_id_equal_to_the_item_id_is_normalized_away() -> None:
+    # `work_id` carries the tracker handle only when it differs from `id`, the
+    # same normalization `discovered_work` applies -- a seeded work id equal to
+    # the item id is redundant, not a second name to store.
+    event = _seed_event()
+    lanes = event["lanes"]
+    assert isinstance(lanes, list)
+    lanes[0]["queue"][0]["work_id"] = "wgclw.1"
+
+    state = fold([event])
+
+    assert state.items["wgclw.1"].work_id is None
+
+
+def test_seeded_empty_work_id_folds_to_none() -> None:
+    # The boundary rejects `""`; the fold mirrors it -- as it mirrors the
+    # park-reason axis and the observation levels -- so a hand-edited or
+    # historical log cannot leave a present-but-unusable handle in state.
+    event = _seed_event()
+    lanes = event["lanes"]
+    assert isinstance(lanes, list)
+    lanes[0]["queue"][0]["work_id"] = ""
+
+    state = fold([event])
+
+    assert state.items["wgclw.1"].work_id is None
+
+
+def test_seeded_item_does_not_accept_the_tracker_backends_noun() -> None:
+    # Name lock (D11): the tracker backend is quarantined behind the `work`
+    # facade, so its noun must not be a key grind's seed schema honours. A queue
+    # item carrying `bead` leaves `work_id` unset rather than reviving it.
+    #
+    # The noun is spelled here deliberately -- pinning an absence requires naming
+    # what is absent. The seed handler reads a tracker field, so it carries the
+    # same hazard `discovered_work` does: a careless rename re-adding the old key
+    # as a fallback, silently, into the persisted schema.
+    event = _seed_event()
+    lanes = event["lanes"]
+    assert isinstance(lanes, list)
+    lanes[0]["queue"].append({"id": "disc-1", "title": "Backend noun", "bead": "wgclw.9"})
+
+    state = fold([event])
+
+    assert state.items["disc-1"].work_id is None
+
+
 def test_second_grind_created_is_an_anomaly_leaving_board_unchanged() -> None:
     first = _seed_event()
     second = _seed_event(title="Different title")

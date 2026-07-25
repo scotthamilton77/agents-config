@@ -281,6 +281,29 @@ def test_discovered_work_keeps_work_id_when_it_differs_from_item_id() -> None:
     assert state.items["disc-1"].work_id == "wgclw.99"
 
 
+def test_discovered_work_empty_work_id_folds_to_none() -> None:
+    # `""` is not a handle. The boundary rejects it on this event as well as on
+    # seed queues, and the fold mirrors that so no log can leave a
+    # present-but-unusable value under a field whose presence is the signal.
+    events = [
+        seed_event(),
+        event(
+            "discovered_work",
+            item="disc-1",
+            work_id="",
+            description="empty work id",
+            source="lane-a",
+            disposition="enqueued",
+            lane="lane-a",
+            rationale="r",
+        ),
+    ]
+
+    state = fold(events)
+
+    assert state.items["disc-1"].work_id is None
+
+
 def test_discovered_work_does_not_accept_the_tracker_backends_noun() -> None:
     # Name lock (D11): the tracker backend is quarantined behind the `work`
     # facade, so its noun must not be a key grind's event schema honours. A

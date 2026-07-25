@@ -81,6 +81,26 @@ def _optional_nested_str(errors: list[str], container: RawEvent, key: str, prefi
         )
 
 
+# An identifier a consumer resolves against an external system carries a
+# presence invariant -- absent means "no distinct handle", present means "this
+# handle" -- so `""` must not pass as present. Free text (`title`, `description`)
+# has no such invariant and keeps the permissive variants above.
+def _optional_nonempty_str(errors: list[str], payload: RawEvent, key: str) -> None:
+    if key in payload and payload[key] is not None:
+        _require(errors, _is_str(payload, key), f"{key} must be a non-empty string when present")
+
+
+def _optional_nested_nonempty_str(
+    errors: list[str], container: RawEvent, key: str, prefix: str
+) -> None:
+    if container.get(key) is not None:
+        _require(
+            errors,
+            _is_str(container, key),
+            f"{prefix}.{key} must be a non-empty string when present",
+        )
+
+
 def _optional_nested_list_of_str(
     errors: list[str], container: RawEvent, key: str, prefix: str
 ) -> None:
@@ -124,6 +144,7 @@ def _validate_grind_created(payload: RawEvent) -> list[str]:
                 errors.append(f"{item_prefix} must be an object with a non-empty string id")
                 continue
             _optional_nested_str(errors, item, "title", item_prefix)
+            _optional_nested_nonempty_str(errors, item, "work_id", item_prefix)
             _optional_nested_list_of_str(errors, item, "on", item_prefix)
     return errors
 
@@ -313,7 +334,7 @@ def _validate_discovered_work(payload: RawEvent) -> list[str]:
     _require_str(errors, payload, "description")
     _require_str(errors, payload, "source")
     _require_str(errors, payload, "rationale")
-    _optional_str(errors, payload, "work_id")
+    _optional_nonempty_str(errors, payload, "work_id")
     disposition = payload.get("disposition")
     if disposition not in _WORK_DISPOSITIONS:
         errors.append("disposition must be one of parked|enqueued")
