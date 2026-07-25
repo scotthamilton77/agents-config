@@ -430,18 +430,32 @@ def _make_branch(
     )
 
 
+def parse_timestamp(value: str | None) -> datetime | None:
+    """An aware datetime, or None when the value cannot be read.
+
+    The two clocks gitclean reads do NOT agree on format: git's
+    `committerdate:iso-strict` carries the committer's local UTC offset
+    (`...T09:00:00-05:00`) while gh always emits UTC (`...T12:00:00Z`).
+    Comparing those as strings is wrong in the direction that costs work --
+    lexically `-05:00` sorts before `Z`, so a commit made AFTER a PR closed
+    can read as before it. Every comparison goes through here so both sides
+    are real instants."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
 def idle_since(last_activity: str | None, now: datetime, window: timedelta) -> bool:
     """True when the timestamp is older than the window. An unparseable or
     missing timestamp is NOT idle -- an unknown age must never be evidence for
     deletion."""
-    if not last_activity:
+    parsed = parse_timestamp(last_activity)
+    if parsed is None:
         return False
-    try:
-        parsed = datetime.fromisoformat(last_activity)
-    except ValueError:
-        return False
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
     return (now - parsed) > window
 
 

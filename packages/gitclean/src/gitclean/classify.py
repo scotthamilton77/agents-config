@@ -28,7 +28,7 @@ from gitclean.model import (
     TargetKind,
     Worktree,
 )
-from gitclean.survey import idle_since
+from gitclean.survey import idle_since, parse_timestamp
 
 DEFAULT_IDLE_DAYS = 14
 
@@ -58,12 +58,20 @@ def _discard_decision_is_current(branch: Branch) -> bool:
     """True when a closed-unmerged PR still speaks for the branch's contents.
 
     Commits pushed after the close mean the branch moved on since the human
-    decided; the decision no longer covers what is there now."""
+    decided; the decision no longer covers what is there now.
+
+    Both sides are parsed to instants rather than compared as strings: git and
+    gh disagree on timestamp format, and the lexical order of a local offset
+    against `Z` is not the chronological order. This decision gates
+    ``Risk.NONE``, which is what lets a target into the bare sweep, so an
+    unreadable timestamp on either side counts the decision as expired."""
     if branch.merge_evidence is not MergeEvidence.PR_CLOSED_UNMERGED or branch.pr is None:
         return False
-    if not branch.pr.updated_at or not branch.last_activity:
+    closed_at = parse_timestamp(branch.pr.updated_at)
+    last_commit = parse_timestamp(branch.last_activity)
+    if closed_at is None or last_commit is None:
         return False
-    return branch.last_activity <= branch.pr.updated_at
+    return last_commit <= closed_at
 
 
 def classify_branch(

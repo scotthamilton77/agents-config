@@ -62,6 +62,36 @@ def test_closed_pr_makes_an_unmerged_branch_safe(now: datetime) -> None:
     assert target.risk is Risk.NONE
 
 
+def test_a_local_offset_commit_after_a_utc_close_is_still_stale(now: datetime) -> None:
+    """git emits the committer's local offset; gh always emits Z. Compared as
+    strings, `-05:00` sorts before `Z`, so a commit made two hours AFTER the
+    PR closed reads as before it -- and the branch lands in the bare sweep at
+    Risk.NONE. Both sides must be compared as instants."""
+    branch = make_branch(
+        merge_evidence=MergeEvidence.PR_CLOSED_UNMERGED,
+        pr=make_pr(state="CLOSED", updated_at="2026-07-20T12:00:00Z"),
+        last_activity="2026-07-20T09:00:00-05:00",  # 14:00Z -- two hours later
+        unmerged_commits=4,
+        upstream=None,
+    )
+    target = _one(branch, now=now)
+    assert target.disposition is not Disposition.SAFE
+    assert target.risk is not Risk.NONE
+
+
+def test_an_unreadable_timestamp_expires_the_discard_decision(now: datetime) -> None:
+    """This decision gates Risk.NONE, so 'cannot tell' must not read as
+    'still authorised'."""
+    branch = make_branch(
+        merge_evidence=MergeEvidence.PR_CLOSED_UNMERGED,
+        pr=make_pr(state="CLOSED", updated_at="whenever"),
+        last_activity=iso(5),
+        unmerged_commits=4,
+        upstream=None,
+    )
+    assert _one(branch, now=now).risk is not Risk.NONE
+
+
 def test_commits_after_the_close_make_the_discard_decision_stale(now: datetime) -> None:
     """The human said 'drop this' two days ago; the branch gained a commit
     yesterday. The decision no longer covers what is there now."""
