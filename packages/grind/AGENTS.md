@@ -23,7 +23,7 @@ true is what lets the runtime serve as the executor substrate
 inject, and no module below calls `datetime.now()`, `Path.cwd()`, or reads
 `os.environ`. The seed-file reader sits on that same seam.
 
-**Filesystem access does not.** `store.py` reads and writes grind-directory files
+**Grind-directory file access does not.** `store.py` reads and writes those files
 directly, and `resolve.py` probes for `events.jsonl` while resolving a directory.
 A caller redirects that I/O by choosing the directory, not by injecting a reader.
 `fold()` does no I/O at all.
@@ -102,7 +102,8 @@ must pass before push.
   *non-tail* log line, which is a different failure class — see "Torn tail"
   in the spec). Every anomaly path records an `AnomalyRecord`, an ERROR
   `Observation`, and an auto-raised `AttentionEntry` — the three always
-  travel together (see `fold._anomaly`).
+  travel together, on both paths that record one (`fold._anomaly` for events,
+  `log.fold_log` for a torn tail).
 - **Layout.** Core: `model.py` (the `State` shape and its typed sub-records —
   `Item`, `Lane`, `ItemReview`, `ParkingEntry`, …), `fold.py` (the transition
   table and every event handler), `derive.py` (read-side projections needing no
@@ -119,8 +120,9 @@ must pass before push.
 - **A condition is a fact with evidence, never an instruction.** Its name
   states what is true and its fields carry the evidence — no "nudge the lane",
   no "escalate the review". `conditions.IMPERATIVE_VERBS` is the convention
-  lock a test asserts every condition name against; acting on a condition is
-  the decision layer's call, not this package's.
+  lock, asserted in `test_conditions.py` against the names a folded fixture
+  produces; acting on a condition is the decision layer's call, not this
+  package's.
 - **Payload validation lives at the CLI boundary, not in the fold.** Per spec
   ("parse once, trust inward"), `fold()` trusts that a well-formed event's
   payload fields are shaped correctly; `payloads.py` rejects malformed payloads
