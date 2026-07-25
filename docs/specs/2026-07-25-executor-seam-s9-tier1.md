@@ -29,9 +29,9 @@ dispatch loop: with no driver calling these pieces, do not report Tier 1 as
 | workcli | D11 verb set complete (post-S2) | `create`, `ready`, `claim`, `park --reason` (failure axis only), `redispatch`, `abandon`, `close` (close-walk default, milestone-bounded), `dep`, `parked` (read-only report, `--stale-days` default 7), `sync` (Dolt plane). Protocol-versioned envelope. The facade records outcomes and never counts attempts (S2-D2). |
 | installer | registers 3 CLIs | `CLI_PACKAGES` deploys `work`, `prgroom`, `grind` onto PATH with receipts and prune-on-retirement. |
 
-Beads git hooks and `.beads/issues.jsonl` are a separate plane from
-`work sync`; neither the executor nor workcli nor grind needs any awareness of
-hook configuration or the JSONL plane (`agents-config-9k9.1.7` closed void).
+Beads git hooks and `.beads/issues.jsonl` are a separate plane from `work
+sync`; no executor, workcli, or grind awareness of either is needed
+(`agents-config-9k9.1.7` closed void).
 
 ## 2. Decisions
 
@@ -392,8 +392,7 @@ Tier 1 covers exactly `agents-config-9k9.1.4`, `agents-config-9k9.1.3`, and
   a dispatch brief carries (S7).
 - **Beads git hooks and `issues.jsonl`.** `agents-config-9k9.1.7` is closed
   void; no capability detection or hook awareness is built anywhere.
-- **grind envelope protocol version** — `agents-config-9k9.1.18`, its own
-  item.
+- **grind envelope protocol version** — `agents-config-9k9.1.18`.
 - **A scheduling axis in the facade.** grind's scheduling parks never cross
   the boundary (S9T1-D7); whether `work park` should grow a scheduling
   vocabulary is a facade question outside S9.
