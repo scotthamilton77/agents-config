@@ -2,10 +2,10 @@
 
 The write-path repair belongs here, not in `grind.log` (spec "Torn tail":
 "the write path repairs before it appends"; `grind.log`'s docstring calls this
-"a later bead" -- this module is that bead). `grind.log` stays the read-only,
-defense-in-depth half: it tolerates an unrepaired torn tail for a log read
-before any write-path call has touched it (e.g. `status` on a freshly-crashed
-grind), but never writes.
+"a later work item" -- this module is that work item). `grind.log` stays the
+read-only, defense-in-depth half: it tolerates an unrepaired torn tail for a
+log read before any write-path call has touched it (e.g. `status` on a
+freshly-crashed grind), but never writes.
 """
 
 from __future__ import annotations

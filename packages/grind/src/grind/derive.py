@@ -2,7 +2,7 @@
 
 Lane status is "otherwise fully derived from item statuses" (spec): all done
 -> `done`; any in flight -> the most advanced active state. Unlike
-`conditions(State, now)` (a sibling bead's time-dependent facts), lane status
+`conditions(State, now)` (a sibling work item's time-dependent facts), lane status
 needs no wall clock and is safe to compute inline wherever `State` is read.
 """
 

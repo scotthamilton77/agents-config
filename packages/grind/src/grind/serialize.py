@@ -80,7 +80,7 @@ def _item_json(item: Item) -> JsonValue:
         "lane": item.lane,
         "title": item.title,
         "status": item.status,
-        "bead": item.bead,
+        "work_id": item.work_id,
         "blocked_on": list(item.blocked_on),
         "blocked_note": item.blocked_note,
         "pr": _pr_ref_json(item.pr),
