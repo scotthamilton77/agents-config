@@ -173,7 +173,7 @@ def test_status_reports_currently_true_level_conditions_but_never_item_unblocked
     cmd_log(tmp_path, "pr_opened", {"item": "wgclw.1", "pr": 1}, now=_NOW)
     cmd_log(tmp_path, "item_merged", {"item": "wgclw.1", "pr": 1, "sha": "abc"}, now=_NOW)
 
-    result = cmd_status(tmp_path, full=False, now=_NOW)
+    result = cmd_status(tmp_path, now=_NOW)
 
     names = {c["condition"] for c in result["conditions"]}
     assert "item_unblocked" not in names  # transition condition, never from state alone
@@ -308,7 +308,7 @@ def test_log_rewrites_state_json_after_append(tmp_path: Path):
 def test_status_default_returns_summary(tmp_path: Path):
     _seeded(tmp_path)
 
-    result = cmd_status(tmp_path, full=False, now=_NOW)
+    result = cmd_status(tmp_path, now=_NOW)
 
     assert result["ok"] is True
     assert "state_summary" in result
@@ -318,7 +318,7 @@ def test_status_default_returns_summary(tmp_path: Path):
 def test_status_full_returns_entire_state(tmp_path: Path):
     _seeded(tmp_path)
 
-    result = cmd_status(tmp_path, full=True, now=_NOW)
+    result = cmd_status(tmp_path, view="full", now=_NOW)
 
     assert result["ok"] is True
     state = result["state"]

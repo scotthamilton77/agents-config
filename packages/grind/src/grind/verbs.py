@@ -13,12 +13,13 @@ import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 from grind.conditions import conditions, item_unblocked_conditions
 from grind.derive import lane_status
 from grind.envelope import GrindError
 from grind.fold import fold
+from grind.handoff import handoff_json
 from grind.model import DEFAULT_CONFIG, AnomalyRecord, JsonValue, RawEvent, State
 from grind.payloads import validate_payload
 from grind.render import render_dashboard
@@ -35,6 +36,11 @@ from grind.store import (
 )
 
 Clock = Callable[[], datetime]
+
+# The three alternative projections of one fold `grind status` can report
+# (spec CLI contract: "Default: summary + conditions. `--full`: entire state.
+# `--handoff`: the compaction handoff").
+StatusView = Literal["summary", "full", "handoff"]
 
 # `ts` and `type` are stamped by the CLI at append time (spec: "ts ... Never
 # supplied by the caller"; `type` is the CLI-selected taxonomy). A payload/seed
@@ -226,13 +232,19 @@ def cmd_log(dir_: Path, event_type: str, payload: RawEvent, *, now: Clock) -> di
     }
 
 
-def cmd_status(dir_: Path, *, full: bool, now: Clock) -> dict[str, JsonValue]:
-    """`grind status [--full]`. Level conditions only -- `item_unblocked` is a
-    transition condition, never recomputed from state (spec §"Emit-back")."""
+def cmd_status(dir_: Path, *, view: StatusView = "summary", now: Clock) -> dict[str, JsonValue]:
+    """`grind status [--full | --handoff]`. Level conditions only -- `item_unblocked`
+    is a transition condition, never recomputed from state (spec §"Emit-back").
+
+    One `view` rather than a flag per mode: the three are alternative
+    projections of the same fold, and a signature that can express "full and
+    handoff at once" would be describing a state the CLI refuses anyway."""
     state = fold_dir(dir_)
     current_conditions = cast("JsonValue", conditions(state, now()))
-    if full:
+    if view == "full":
         return {"ok": True, "state": full_state_json(state), "conditions": current_conditions}
+    if view == "handoff":
+        return {"ok": True, "handoff": handoff_json(state), "conditions": current_conditions}
     return {"ok": True, "state_summary": summarize(state), "conditions": current_conditions}
 
 
