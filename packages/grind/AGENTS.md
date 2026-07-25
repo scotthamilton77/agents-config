@@ -11,21 +11,41 @@ truth, `fold(events) -> State` is the pure transition function that turns it
 into a `state.json`-shaped snapshot, and `conditions(state, now)` reports the
 level facts derived from that snapshot.
 
-**This package emits facts; it does not decide.** Dispatch, fix/rebase
-budgets, review triggering, merge eligibility, and every tracker call belong to
-the decision layer above it — grind imports no tracker facade, shells out to no
-`gh`/`git`, and assumes no filesystem beyond a caller-supplied `--dir`. That
-boundary is the verified basis for keeping this runtime as the executor
-substrate (`SAVEPOINTS/2026-07-24-v1-executor-loop-fit-report.md`).
+**This package emits facts; it does not decide.** Dispatch, fix/rebase budgets,
+review triggering, merge eligibility, and every tracker call belong to the
+decision layer above it. Mechanically: zero third-party imports, so no tracker
+facade; and no `subprocess` anywhere, so no shelling to `gh`/`git`. That boundary
+is the verified basis for keeping this runtime as the executor substrate
+(`SAVEPOINTS/2026-07-24-v1-executor-loop-fit-report.md`).
+
+**The library reads no ambient state; `cli.main()` is the only place process
+state enters.** Every module below the CLI takes its clock, its file reader, its
+cwd, and its environment as arguments — `main()` defaults those four from the
+process only when a caller injects none, and no other module calls
+`datetime.now()`, `Path.cwd()`, or reads `os.environ`. `fold()` does no I/O at
+all. A caller above this package therefore owns every input, which is what makes
+the runtime drivable and replayable from a test or from an executor.
+
+**Two distinct filesystem inputs, and the state directory is not just `--dir`.**
+The runtime's own files — `events.jsonl`, `events.quarantine`, `state.json`,
+`dashboard.html` — all sit under one resolved grind directory, and `store.py` is
+the only module that builds those paths. The seed file is a separate explicit
+input: `create --file PATH` is *required*, and that path is read through the
+injected reader, from wherever it names. The directory itself resolves through
+`resolve.py`'s four-step precedence (`DirSource`): `--dir`, else `GRIND_DIR`,
+else the nearest ancestor of cwd holding a non-empty `events.jsonl`, else — for
+`create` alone — cwd. Only the first is caller-supplied, so a decision layer
+that wants no ambient resolution passes `--dir`, or injects `cwd`/`env`.
 
 **CLI:** `[project.scripts]` declares `grind = "grind.cli:entry"`, shipping six
 subcommands — `create`, `log`, `status`, `check`, `render`, `finish`. The
 installer registers grind in `CLI_PACKAGES`
 (`packages/installer/src/installer/core/clis.py`), so the `grind` binary is
-installed onto PATH alongside `work` and `prgroom`, receipt-tracked and pruned
-on retirement. Every command emits exactly one JSON envelope on stdout and
-exits non-zero only on a command error — except `grind check`, whose exit 1
-carries the staleness verdict itself.
+installed onto PATH via `uv tool install` alongside `work` and `prgroom`. Every
+command emits exactly one JSON envelope on stdout — a bad flag or unknown verb
+included, which is what `_RaisingArgumentParser` exists for — and exits non-zero
+only on a command error, except `grind check`, whose exit 1 carries the
+staleness verdict itself.
 
 ## The quality gate is mandatory — run it, do not approximate it
 
@@ -57,8 +77,9 @@ must pass before push.
   combined floor over branch-enabled coverage, not a line/branch pair. It is the
   lowest floor of any package here: `installer`, `prgroom`, `workcli`, and
   `vizsuite` all gate at 90.
-- Zero runtime dependencies by design (stdlib only: `json`/`dataclasses`/
-  `typing`) — keeps the `pip-audit` surface nil.
+- Zero runtime dependencies by design — stdlib only (`json`, `argparse`,
+  `pathlib`, `datetime`, `dataclasses`, `typing`), which keeps the `pip-audit`
+  surface nil. There are no third-party imports anywhere in `src/`.
 
 ## Design principles for this package
 
@@ -86,13 +107,13 @@ must pass before push.
   wall clock, e.g. lane status), `conditions.py` (the time-dependent level
   facts and the one transition condition). I/O: `log.py` (JSONL parsing with
   torn-tail tolerance, and `fold_log()` composing parse + fold), `store.py`
-  (the write path — torn-tail repair, append, read-back), `jsonio.py` (strict
-  JSON decoding, non-finite constants refused), `serialize.py` (`State` ->
-  `state.json` and the `status` views). Boundary: `cli.py` (argparse wiring and
-  dispatch), `verbs.py` (the command bodies), `payloads.py` (per-type payload
-  validation), `envelope.py` (`GrindError`), `resolve.py` (`--dir`
-  resolution). Projections: `render.py` (`dashboard.html`), `handoff.py`
-  (`status --handoff`).
+  (the write path — torn-tail repair, append, read-back, and persisting
+  `state.json`/`dashboard.html`), `jsonio.py` (strict JSON decoding, non-finite
+  constants refused), `serialize.py` (`State` -> `state.json` and the `status`
+  views). Boundary: `cli.py` (argparse wiring and dispatch), `verbs.py` (the
+  command bodies), `payloads.py` (per-type payload validation), `envelope.py`
+  (`GrindError`), `resolve.py` (state-directory resolution). Projections:
+  `render.py` (`dashboard.html`), `handoff.py` (`status --handoff`).
 - **A condition is a fact with evidence, never an instruction.** Its name
   states what is true and its fields carry the evidence — no "nudge the lane",
   no "escalate the review". `conditions.IMPERATIVE_VERBS` is the convention
