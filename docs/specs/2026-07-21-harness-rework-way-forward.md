@@ -162,9 +162,13 @@ nothing more).
 (everything loading before the user types) is capped at **10k tokens**,
 enforced mechanically by the installer at deploy time. Skill bodies load on
 invoke and are capped at **2k tokens** each — a skill needing more delegates
-to code. Every deployed rule/skill/command carries an admission record: the
-failure it prevents, what it costs, and what observation would remove it.
-Nothing enters by default or nostalgia.
+to code. Every deployed rule/skill/command carries an admission record: what
+it is worth, what it costs, and what observation would remove it. Worth is
+stated one of two ways and a record carries exactly one — `prevents` (the
+failure it stops) or `provides` (the capability it supplies). The assistive
+case is first-class: a repeatable procedure earns admission on its own terms,
+and forcing it into failure language produces a fiction rather than a
+justification. Nothing enters by default or nostalgia.
 
 **D17 — User-scoped AGENTS.md is zero-based.** A line earns always-on status
 only if all four hold: universal across projects; not model-default behavior;
