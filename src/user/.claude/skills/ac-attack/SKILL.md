@@ -82,7 +82,7 @@ required; the shape is fixed by `attack-record.schema.json`.
 | `spec_revision` | The revision attacked. |
 | `lenses` | `{"lens", "report": "proposals"\|"empty"}`, one per lens that reported. A lens that errored or returned unreadable output has no entry and the round is unfinished — coverage is read off the record, never inferred from an empty proposal list. |
 | `proposals` | The union of the reports, each carrying its producing lens. Position is the stable index. |
-| `dispositions` | `{"index", "disposition": "accepted"\|"rejected", "rationale", "revision"?, "covering_ac"?}`. |
+| `dispositions` | `{"index", "disposition": "accepted"\|"rejected", "rationale"?, "revision"?, "covering_ac"?}`. |
 
 - Every proposal index carries exactly one disposition.
 - **Accepted** names the `revision` of the document that now carries the proposal — necessarily a
