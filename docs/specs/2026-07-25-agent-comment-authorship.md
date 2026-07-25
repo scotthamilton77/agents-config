@@ -193,7 +193,7 @@ flagged here for repair in S6 — a criterion that overstates its own slice is
 exactly the kind of contradiction to surface rather than route around — and this
 record claims none of S6-D2's scope as its own.
 
-This record adds three things no S6 criterion delivers.
+This record adds four things no S6 criterion delivers.
 
 **It supplies the precondition S6-D4 assumes.** S6-D4 states that machine and
 human comments "are separable on the PR". §1 establishes that this is false today
@@ -228,6 +228,14 @@ is scoped to verdict payloads. Extending it from "a verdict is only a verdict if
 posted it" to "a comment is only an instruction if a human wrote it" is this
 record's contribution, and it is a reader-side rule where every S6-D criterion is
 a writer-side or gate-side one.
+
+**It makes the grooming tool's own human-review constraint fail closed.** That
+constraint is a separate gate from the verdict-based merge-eligibility predicate
+S6-D3 defines, and no S6 criterion touches it. §2 shows it failing open twice: an
+approval counts unless it fails a bot test, and a label outranks every approval
+with no actor recoverable from the data read. AUTH-7 and AUTH-8 close both, and
+they belong here rather than in S6 because they are about who is believed, not
+about what a verdict says.
 
 ## 4. Options, ranked
 
@@ -394,9 +402,10 @@ other.
   that reads PR comments, review bodies, or issue comments to state whether it
   treats them as instructions and, if so, what authorship check it applies. A
   proposal that reads comments and states no check is declined. Inverse: a
-  proposal that reads comments purely as data (counting, summarizing) passes
-  without a check. Repeated invocation: re-evaluating an already-admitted
-  artifact reaches the same verdict.
+  proposal that reads comments purely as data (counting, summarizing) satisfies
+  this requirement without stating a check — satisfying it is not admission, which
+  the gate decides on its own grounds. Repeated invocation: re-evaluating an
+  already-admitted artifact reaches the same verdict.
 
 ### Identity conversion (option i)
 
