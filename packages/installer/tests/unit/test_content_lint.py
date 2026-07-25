@@ -97,10 +97,76 @@ def test_over_cap_skill_body_in_real_src_is_a_violation(tmp_path: Path) -> None:
 def test_a_violation_carrying_no_tool_prefix_passes_through_whole() -> None:
     """The conflict audit reports across artifacts, not per tool, so its message has
     no prefix to group on and must survive the grouping untouched."""
-    from installer.core.content_lint import _collapse_per_tool
+    from installer.core.content_lint import _collapse_findings
 
     audit = "conflicting claim 'x': 'a' (one), 'b' (two)"
-    assert _collapse_per_tool([audit], frozenset({"claude"})) == [audit]
+    assert _collapse_findings([audit], sources={}, tool_values=frozenset({"claude"})) == [audit]
+
+
+def test_two_artifacts_sharing_a_destination_stay_two_findings() -> None:
+    """Grouping is by source artifact, never by rendered text. Two distinct
+    tool-scoped artifacts can stage to the same destination at the same measured
+    size — their messages are then identical once the tool prefix comes off, and
+    folding them would report one defect where there are two."""
+    from installer.core.content_lint import _collapse_findings
+
+    sources = {
+        "claude:skills/foo": Path("src/user/.claude/skills/foo"),
+        "gemini:skills/foo": Path("src/user/.gemini/skills/foo"),
+    }
+    same_text = "skill body is 2250 tokens, over the 2000-token cap"
+    collapsed = _collapse_findings(
+        [f"claude:skills/foo: {same_text}", f"gemini:skills/foo: {same_text}"],
+        sources=sources,
+        tool_values=frozenset({"claude", "gemini"}),
+    )
+
+    assert len(collapsed) == 2
+    assert any(".claude/skills/foo" in line for line in collapsed)
+    assert any(".gemini/skills/foo" in line for line in collapsed)
+
+
+def test_one_shared_artifact_folds_across_its_tools_and_names_the_source() -> None:
+    """The same source staged into four plans is one defect in one file. The source
+    path replaces the destination in the output — that is the file to edit."""
+    from installer.core.content_lint import _collapse_findings
+
+    source = Path("src/user/.agents/skills/foo")
+    sources = {f"{t}:skills/foo": source for t in ("claude", "codex")}
+    collapsed = _collapse_findings(
+        ["claude:skills/foo: body too big", "codex:skills/foo: body too big"],
+        sources=sources,
+        tool_values=frozenset({"claude", "codex"}),
+    )
+
+    assert collapsed == [f"[claude, codex] {source}: body too big"]
+
+
+def test_a_label_cannot_claim_a_longer_labels_message() -> None:
+    """Prefix matching is longest-first, so ``skills/foo`` never absorbs the finding
+    that belongs to ``skills/foobar``."""
+    from installer.core.content_lint import _matching_label
+
+    sources = {
+        "claude:skills/foo": Path("a"),
+        "claude:skills/foobar": Path("b"),
+    }
+    assert _matching_label("claude:skills/foobar: msg", sources) == "claude:skills/foobar"
+
+
+def test_always_on_breach_groups_on_its_text_having_no_artifact_behind_it() -> None:
+    """The always-on surface is a property of the tool, not of one file, so there is
+    no source identity to group on — identical breaches still fold."""
+    from installer.core.content_lint import _collapse_findings
+
+    text = "always-on surface is 10001 tokens, over the 10000-token cap"
+    collapsed = _collapse_findings(
+        [f"claude: {text}", f"codex: {text}"],
+        sources={},
+        tool_values=frozenset({"claude", "codex"}),
+    )
+
+    assert collapsed == [f"[claude, codex] {text}"]
 
 
 def test_malformed_record_is_a_violation(tmp_path: Path) -> None:

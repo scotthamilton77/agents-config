@@ -90,29 +90,64 @@ class ContentLintResult:
         return not self.violations and not self.fatal_unadmitted
 
 
-def _collapse_per_tool(violations: list[str], tool_values: frozenset[str]) -> list[str]:
+def _matching_label(message: str, sources: dict[str, Path]) -> str | None:
+    """The artifact label a violation message is prefixed with, if any.
+
+    Matched against the known label set rather than by splitting on punctuation,
+    and longest-first so ``claude:skills/foo`` cannot claim a message belonging
+    to ``claude:skills/foobar``.
+    """
+    candidates = [label for label in sources if message.startswith(f"{label}:")]
+    return max(candidates, key=len) if candidates else None
+
+
+def _collapse_findings(
+    violations: list[str], *, sources: dict[str, Path], tool_values: frozenset[str]
+) -> list[str]:
     """Fold a violation repeated once per tool into one line naming the tools.
 
     Shared content stages into every tool's plan, so one over-cap skill body
     yields four findings differing only in their ``<tool>:`` prefix. Left
     expanded they read as four defects in four files, and the failure count says
-    four. The installer prints them per tool because it is reporting per deploy
-    target; the lint is reporting on one source tree, so it groups. The verdict
-    is unchanged either way — only the rendering differs.
+    four. The installer prints them per tool because it reports per deploy
+    target; the lint reports on one source tree, so it groups. The verdict is
+    unchanged either way — only the rendering differs.
 
-    A message with no tool prefix (the conflict audit's) passes through whole.
+    Grouping is by **source artifact**, never by the rendered message, because
+    two distinct tool-scoped artifacts can share a destination path and a
+    measured size — their messages would then be identical after the tool prefix
+    came off, and folding them would report one defect where there are two. The
+    label→source index the caller already holds is the identity; the message is
+    only its rendering. Where identity is available the source path replaces the
+    destination in the output, since that is the file a reader has to edit.
+
+    A finding with a tool prefix but no artifact behind it (the always-on
+    surface, which is a property of the tool) groups on its text. A finding with
+    no tool prefix at all (the conflict audit's, which spans artifacts) passes
+    through whole.
     """
-    tools_by_finding: dict[str, list[str]] = {}
+    tools_by_finding: dict[tuple[str, str], list[str]] = {}
     for message in violations:
-        head, _sep, tail = message.partition(":")
-        finding = tail.strip() if head in tool_values and tail.strip() else message
-        entry = tools_by_finding.setdefault(finding, [])
-        if finding is not message:
-            entry.append(head)
-    return [
-        f"[{', '.join(sorted(tools))}] {finding}" if tools else finding
-        for finding, tools in tools_by_finding.items()
-    ]
+        label = _matching_label(message, sources)
+        if label is not None:
+            tool, _sep, _dest = label.partition(":")
+            key = (str(sources[label]), message[len(label) + 1 :].strip())
+        else:
+            head, _sep, tail = message.partition(":")
+            if head not in tool_values or not tail.strip():
+                tools_by_finding.setdefault(("", message), [])
+                continue
+            tool, key = head, ("", tail.strip())
+        tools_by_finding.setdefault(key, []).append(tool)
+
+    rendered: list[str] = []
+    for (source, text), tools in tools_by_finding.items():
+        if not tools:
+            rendered.append(text)
+            continue
+        prefix = f"[{', '.join(sorted(tools))}]"
+        rendered.append(f"{prefix} {source}: {text}" if source else f"{prefix} {text}")
+    return rendered
 
 
 def _is_admitted_only(source: Path, repo_root: Path) -> bool:
@@ -173,8 +208,10 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
     ]
 
     return ContentLintResult(
-        violations=_collapse_per_tool(
-            gate.violations, frozenset(tool.value for tool in known_tools())
+        violations=_collapse_findings(
+            gate.violations,
+            sources=sources,
+            tool_values=frozenset(tool.value for tool in known_tools()),
         ),
         unadmitted=unadmitted,
         surfaces=list(gate.surfaces),
