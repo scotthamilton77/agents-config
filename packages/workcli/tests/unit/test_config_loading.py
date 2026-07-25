@@ -442,3 +442,30 @@ def test_external_consumer_tracks_non_list_is_invalid(tmp_path: Path) -> None:
         load_config(root)
     assert exc_info.value.detail["reason"] == "invalid"
     assert "external-consumer-tracks" in exc_info.value.message
+
+
+def test_superseded_groom_state_key_empty_is_none_and_still_reported(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\n[operating-model]\ngroom-state-bead = ""\n',
+    )
+    config = load_config(root)
+    assert config.groom_state_item is None
+    assert len(config.deprecations) == 1
+
+
+def test_superseded_groom_state_key_is_unvalidated_once_current_key_is_set(tmp_path: Path) -> None:
+    # Type validation applies to the key actually read. A junk value under the
+    # superseded spelling is inert once the current key is set, so migrating a
+    # config never requires cleaning the old key first -- the deprecation says
+    # to delete it.
+    root = _repo(
+        tmp_path,
+        config_text=(
+            '[tracks]\nnames = ["alpha"]\n[operating-model]\n'
+            'groom-state-bead = 5\ngroom-state-item = "new-id"\n'
+        ),
+    )
+    config = load_config(root)
+    assert config.groom_state_item == "new-id"
+    assert len(config.deprecations) == 1
