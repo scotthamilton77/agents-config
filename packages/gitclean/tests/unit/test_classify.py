@@ -47,6 +47,48 @@ def test_pr_merged_evidence_is_recorded_in_reasons(now: datetime) -> None:
     assert any("pr_merged" in reason for reason in target.reasons)
 
 
+def test_a_merged_pr_that_does_not_cover_the_tip_stays_out_of_the_sweep(now: datetime) -> None:
+    """The survey declined the PR verdict (evidence is NONE) but the merged PR
+    is still attached. Reading state instead of evidence is what deleted
+    post-merge commits."""
+    branch = make_branch(
+        merge_evidence=MergeEvidence.NONE,
+        pr=make_pr(state="MERGED", head_oid="b" * 40),
+        upstream=None,
+    )
+    target = _one(branch, now=now)
+    assert target.disposition is not Disposition.SAFE
+    assert target.risk is not Risk.NONE
+
+
+def test_a_declined_pr_verdict_says_why(now: datetime) -> None:
+    """Without this the branch silently stops being sweepable and the reader is
+    left diffing SHAs to find out what changed."""
+    branch = make_branch(
+        merge_evidence=MergeEvidence.NONE, pr=make_pr(state="MERGED", head_oid="b" * 40)
+    )
+    reasons = " ".join(_one(branch, now=now).reasons)
+    assert "does not cover what is here" in reasons
+    assert "bbbbbbbb" in reasons
+
+
+def test_an_honoured_pr_verdict_adds_no_coverage_complaint(now: datetime) -> None:
+    branch = make_branch(merge_evidence=MergeEvidence.PR_MERGED, pr=make_pr(state="MERGED"))
+    assert not any("does not cover" in r for r in _one(branch, now=now).reasons)
+
+
+def test_a_lower_tier_proving_the_merge_silences_the_coverage_complaint(now: datetime) -> None:
+    """The PR verdict was declined but squash equivalence proved the merge, so
+    the branch is merged. Saying "does not cover what is here" beside "merge
+    proven by squash_equal" reads as a contradiction, not an explanation."""
+    branch = make_branch(
+        merged=True,
+        merge_evidence=MergeEvidence.SQUASH_EQUAL,
+        pr=make_pr(state="MERGED", head_oid="b" * 40),
+    )
+    assert not any("does not cover" in r for r in _one(branch, now=now).reasons)
+
+
 # -- the closed-PR discard decision, and its expiry ---------------------------
 
 
@@ -106,6 +148,48 @@ def test_commits_after_the_close_make_the_discard_decision_stale(now: datetime) 
     assert target.disposition is not Disposition.SAFE
     assert target.risk is Risk.RECOVERABLE
     assert any("stale" in reason for reason in target.reasons)
+
+
+# -- an unknown is never evidence for deletion -------------------------------
+
+
+def test_an_uncounted_unmerged_total_never_yields_the_bare_sweep(now: datetime) -> None:
+    """`rev-list --count` failing must not resolve to 'nothing ahead of base'.
+    SAFE + Risk.NONE is exactly the pair a bare --cleanup deletes."""
+    branch = make_branch(unmerged_commits=None, upstream=None)
+    target = _one(branch, now=now)
+    assert target.disposition is not Disposition.SAFE
+    assert target.risk is not Risk.NONE
+    assert any("merge state unproven" in reason for reason in target.reasons)
+
+
+def test_an_uncounted_unpushed_total_is_not_fully_pushed(now: datetime) -> None:
+    """The pushed-and-therefore-free verdict requires a count of zero, not the
+    absence of a count."""
+    branch = make_branch(upstream="origin/feat/thing", unpushed_commits=None)
+    target = _one(branch, now=now)
+    assert target.risk is Risk.RECOVERABLE
+    assert any("not fully pushed" in reason for reason in target.reasons)
+
+
+def test_a_branch_with_no_timestamp_is_not_abandoned(now: datetime) -> None:
+    """Unknown age is not old age. Abandoned is a reportable verdict, and
+    reporting it on no evidence invites a human to approve a deletion."""
+    branch = make_branch(last_activity=None)
+    target = _one(branch, now=now)
+    assert target.disposition is Disposition.ACTIVE
+    assert any("age is unknown" in reason for reason in target.reasons)
+
+
+def test_an_unstatable_worktree_is_treated_as_holding_work(now: datetime) -> None:
+    from datetime import timedelta
+
+    worktree = make_worktree(dirty_file_count=None, untracked_file_count=None)
+    target = classify_worktree(worktree, {}, now=now, idle_window=timedelta(days=14))
+    assert target.disposition is Disposition.ACTIVE
+    assert target.risk is Risk.DATA_LOSS
+    assert target.salvage_needed
+    assert any("unknown" in reason for reason in target.reasons)
 
 
 # -- protection is absolute --------------------------------------------------

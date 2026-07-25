@@ -205,6 +205,17 @@ class Executor:
             return _failed(target, "removal command failed")
         self._port.git(["worktree", "prune"], cwd=self._cwd)
         listing = self._port.git(["worktree", "list", "--porcelain"], cwd=self._cwd)
+        if not listing.ok:
+            # Absence of the worktree in output that was never produced is not
+            # evidence of anything. Unverified is its own outcome, distinct
+            # from verified-gone.
+            self._record(
+                "verify",
+                target.id,
+                f"could not confirm {target.name} is gone; the removal reported success",
+                listing.transcript(),
+            )
+            return _failed(target, "deletion unverified")
         still_there = any(
             line.strip() == f"worktree {target.name}" for line in listing.stdout.splitlines()
         )
@@ -232,14 +243,25 @@ class Executor:
                 "delete", target.id, f"could not delete branch {target.name}", removal.transcript()
             )
             return _failed(target, "delete command failed")
-        probe = self._port.git(
-            ["show-ref", "--verify", "--quiet", f"refs/heads/{target.name}"], cwd=self._cwd
-        )
-        if probe.ok:
+        # `show-ref --verify` cannot answer this: it exits nonzero both when the
+        # ref is absent and when the command itself failed, so "gone" and
+        # "broken" are the same signal. `for-each-ref` exits 0 either way and
+        # answers in stdout, which separates them.
+        ref = f"refs/heads/{target.name}"
+        probe = self._port.git(["for-each-ref", "--format=%(refname)", ref], cwd=self._cwd)
+        if not probe.ok:
             self._record(
                 "verify",
                 target.id,
-                f"refs/heads/{target.name} still resolves after `git branch -D`",
+                f"could not confirm {ref} is gone; the delete reported success",
+                probe.transcript(),
+            )
+            return _failed(target, "deletion unverified")
+        if any(line.strip() == ref for line in probe.stdout.splitlines()):
+            self._record(
+                "verify",
+                target.id,
+                f"{ref} still resolves after `git branch -D`",
                 probe.transcript(),
             )
             return _failed(target, "ref survived deletion")

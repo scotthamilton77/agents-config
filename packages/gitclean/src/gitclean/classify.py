@@ -12,6 +12,13 @@ that tree as stale is how cleanup scripts eat work.
 unmerged is a human saying "drop this", which is what makes an unmerged branch
 sweepable at all. But if commits landed on the branch *after* the PR closed,
 the decision predates the work and no longer authorises anything.
+
+**An unknown is never evidence for deletion.** Any field the read layer left
+as ``None`` is a question git declined to answer. Deletion needs proof, so an
+unanswered question can never produce ``SAFE`` or ``Risk.NONE``; it produces
+the conservative verdict and a reason saying which probe went quiet. That rule
+is one-directional on purpose: it costs an occasional branch left uncleaned,
+and the alternative costs work.
 """
 
 from __future__ import annotations
@@ -74,6 +81,47 @@ def _discard_decision_is_current(branch: Branch) -> bool:
     return last_commit <= closed_at
 
 
+def unanswered_probes(branch: Branch, base_ref: str) -> tuple[str, ...]:
+    """Reasons naming each count the read layer could not obtain.
+
+    Kept separate from the verdict functions so the audit trail and the
+    conservative fallback cannot drift apart: whatever appears here is exactly
+    what ``_branch_risk`` refuses to treat as proven."""
+    unknown: list[str] = []
+    if branch.unmerged_commits is None:
+        unknown.append(f"could not count commits missing from {base_ref}; merge state unproven")
+    if branch.upstream is not None and branch.unpushed_commits is None:
+        unknown.append(
+            f"could not count commits missing from {branch.upstream}; "
+            f"assuming this branch is not fully pushed"
+        )
+    if branch.last_activity is None:
+        unknown.append("no commit timestamp; age is unknown, so it cannot be called abandoned")
+    return tuple(unknown)
+
+
+def _uncovered_pr_reason(branch: Branch) -> tuple[str, ...]:
+    """Said out loud when declining a PR verdict is what kept a branch out of
+    the sweep. Otherwise the branch quietly stops being sweepable and the
+    reader is left comparing SHAs by hand to find out why.
+
+    Suppressed when a lower tier proved the merge anyway: the PR verdict was
+    declined, but the branch *is* merged, and a coverage complaint next to
+    `merge proven by squash_equal` reads as a contradiction rather than an
+    explanation."""
+    pr = branch.pr
+    if pr is None or pr.state not in {"MERGED", "CLOSED"}:
+        return ()
+    honoured = {MergeEvidence.PR_MERGED, MergeEvidence.PR_CLOSED_UNMERGED}
+    if branch.merged or branch.merge_evidence in honoured or not pr.head_oid:
+        return ()
+    verb = "merged" if pr.state == "MERGED" else "closed"
+    return (
+        f"PR #{pr.number} was {verb} at {pr.head_oid[:8]}, which does not contain "
+        f"this branch's tip {branch.head[:8]}; that decision does not cover what is here",
+    )
+
+
 def classify_branch(
     branch: Branch,
     survey_data: Survey,
@@ -102,6 +150,7 @@ def classify_branch(
             )
     if branch.pr is not None and branch.pr.state == "OPEN":
         reasons.append(f"PR #{branch.pr.number} is open")
+    reasons.extend(_uncovered_pr_reason(branch))
     if branch.checked_out_at:
         reasons.append(f"checked out at {branch.checked_out_at}")
     if branch.unmerged_commits:
@@ -111,6 +160,7 @@ def classify_branch(
             reasons.append("no upstream: never pushed")
         elif branch.unpushed_commits:
             reasons.append(f"{branch.unpushed_commits} commit(s) not on {branch.upstream}")
+    reasons.extend(unanswered_probes(branch, survey_data.base_ref))
 
     disposition = _branch_disposition(
         branch, merged=merged, discarded=discarded, idle=idle, survey_data=survey_data
@@ -192,6 +242,9 @@ def _branch_risk(
         return Risk.NONE
     if branch.upstream is not None and branch.unpushed_commits == 0:
         return Risk.NONE
+    # Everything left is either genuinely unpushed or a count that did not
+    # come back. Both mean the same thing here: nothing proves a copy exists
+    # elsewhere, so this does not enter the bare sweep.
     return Risk.RECOVERABLE
 
 
@@ -214,6 +267,14 @@ def classify_worktree(
     elif worktree.prunable:
         reasons.append("directory is gone; only the administrative record remains")
         disposition, risk = Disposition.SAFE, Risk.NONE
+    elif worktree.dirty is None:
+        # An unstatable tree is the one most likely to be holding something,
+        # so it inherits the dirty verdict rather than the clean one.
+        reasons.append(
+            "git could not read this tree's status, so whether it holds uncommitted "
+            "work is unknown -- treated as if it does"
+        )
+        disposition, risk = Disposition.ACTIVE, Risk.DATA_LOSS
     elif worktree.dirty:
         reasons.append(
             f"{worktree.dirty_file_count} modified and "

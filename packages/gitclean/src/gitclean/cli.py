@@ -120,6 +120,12 @@ def _envelope(
         "gitclean": get_version(),
         "ok": ok,
         "mode": mode,
+        # Hoisted out of `repo` deliberately. `ok` says the run did what it was
+        # asked; it does not say the survey could see everything. A reader who
+        # checks one field must not have to dig for the degradations, so they
+        # sit at the top level -- `repo.warnings` and `repo.gh_error` keep the
+        # structured detail for anyone who needs to tell them apart.
+        "warnings": list(survey_data.all_warnings()) if survey_data else [],
         "repo": survey_data.as_json() if survey_data else None,
         "summary": _summary(targets),
         "targets": [t.as_json() for t in targets],
@@ -151,8 +157,11 @@ def _render_human(payload: dict[str, object], out: TextIO) -> None:
     if isinstance(repo, dict):
         print(f"repo:  {repo.get('repo_root')}", file=out)
         print(f"base:  {repo.get('base_ref')}", file=out)
-        if repo.get("gh_error"):
-            print(f"WARN:  {repo.get('gh_error')}", file=out)
+
+    warnings = payload.get("warnings")
+    if isinstance(warnings, list):
+        for warning in warnings:
+            print(f"WARN:  {warning}", file=out)
 
     targets = payload.get("targets")
     if isinstance(targets, list) and targets:

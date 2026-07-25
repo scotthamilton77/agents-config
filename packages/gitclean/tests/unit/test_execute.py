@@ -73,7 +73,7 @@ def test_branch_deletion_is_verified_by_re_asking_git() -> None:
     port = ScriptedCommands(
         git={
             "branch -D feat/x": ok(),
-            "show-ref --verify --quiet refs/heads/feat/x": fail(),
+            "for-each-ref --format=%(refname) refs/heads/feat/x": ok(""),
         }
     )
     report = run(port, plan(target(TargetKind.BRANCH, "feat/x")))
@@ -87,13 +87,30 @@ def test_a_ref_surviving_a_successful_delete_is_an_anomaly() -> None:
     port = ScriptedCommands(
         git={
             "branch -D feat/x": ok(),
-            "show-ref --verify --quiet refs/heads/feat/x": ok(),
+            "for-each-ref --format=%(refname) refs/heads/feat/x": ok("refs/heads/feat/x"),
         }
     )
     report = run(port, plan(target(TargetKind.BRANCH, "feat/x")))
     assert not report.ok
     assert report.anomalies[0].stage == "verify"
     assert not report.deletions[0].deleted
+
+
+def test_a_broken_ref_probe_is_unverified_not_deleted() -> None:
+    """`show-ref --verify` cannot express this: it exits nonzero both when the
+    ref is absent and when the command failed, so a fatal error read as a
+    successful deletion. `for-each-ref` exits 0 and answers in stdout."""
+    port = ScriptedCommands(
+        git={
+            "branch -D feat/x": ok(),
+            "for-each-ref --format=%(refname) refs/heads/feat/x": fail("fatal: bad repository"),
+        }
+    )
+    report = run(port, plan(target(TargetKind.BRANCH, "feat/x")))
+    assert not report.ok
+    assert not report.deletions[0].deleted
+    assert report.deletions[0].detail == "deletion unverified"
+    assert "bad repository" in "\n".join(report.anomalies[0].transcript)
 
 
 def test_a_failed_delete_carries_the_command_transcript() -> None:
@@ -134,6 +151,22 @@ def test_worktree_still_listed_after_removal_is_an_anomaly() -> None:
     report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
     assert not report.ok
     assert report.anomalies[0].stage == "verify"
+
+
+def test_an_unlistable_worktree_check_is_unverified_not_removed() -> None:
+    """Absence from output that was never produced is not evidence. Empty
+    stdout on a failed command previously read as 'gone'."""
+    port = ScriptedCommands(
+        git={
+            "worktree remove --force /repo/wt": ok(),
+            "worktree prune": ok(),
+            "worktree list --porcelain": fail("fatal: not a git repository"),
+        }
+    )
+    report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
+    assert not report.ok
+    assert not report.deletions[0].deleted
+    assert report.deletions[0].detail == "deletion unverified"
 
 
 # -- remote branch -----------------------------------------------------------
@@ -193,7 +226,7 @@ def _branch_salvage_port(**overrides: object) -> ScriptedCommands:
         "bundle create /salvage/wip.bundle wip": ok(),
         "bundle verify /salvage/wip.bundle": ok(),
         "branch -D wip": ok(),
-        "show-ref --verify --quiet refs/heads/wip": fail(),
+        "for-each-ref --format=%(refname) refs/heads/wip": ok(""),
     }
     table.update(overrides)  # type: ignore[arg-type]
     return ScriptedCommands(git=table)  # type: ignore[arg-type]
@@ -343,7 +376,7 @@ def test_an_unrelated_branch_still_deletes_when_a_worktree_fails() -> None:
         git={
             "worktree remove --force /repo/wt": fail("contains modified files"),
             "branch -D other": ok(),
-            "show-ref --verify --quiet refs/heads/other": fail(),
+            "for-each-ref --format=%(refname) refs/heads/other": ok(""),
         }
     )
     survey = make_survey(branches=(make_branch("other", checked_out_at=None),))

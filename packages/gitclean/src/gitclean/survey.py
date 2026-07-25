@@ -17,6 +17,7 @@ residue nothing cheaper could resolve.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -123,7 +124,20 @@ def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree],
             continue
         branch_ref = block.get("branch")
         branch = branch_ref.removeprefix("refs/heads/") if branch_ref else None
-        dirty_count, untracked_count = _count_dirt(port, Path(path))
+        prunable = "prunable" in block
+        if prunable:
+            # The directory is gone by definition, so there is nothing to hold
+            # uncommitted work and nothing to stat. Probing would fail and
+            # report an unknown that is in fact perfectly well known.
+            dirt: tuple[int, int] | None = (0, 0)
+        else:
+            dirt = _count_dirt(port, Path(path))
+            if dirt is None:
+                warnings.append(
+                    f"could not read the working-tree status of {path}; "
+                    f"treating it as if it holds uncommitted work"
+                )
+        dirty_count, untracked_count = dirt if dirt is not None else (None, None)
         worktrees.append(
             Worktree(
                 path=path,
@@ -131,8 +145,8 @@ def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree],
                 head=block.get("HEAD", ""),
                 is_main=index == 0,
                 locked="locked" in block,
-                prunable="prunable" in block,
-                dirty=(dirty_count + untracked_count) > 0,
+                prunable=prunable,
+                dirty=None if dirt is None else sum(dirt) > 0,
                 dirty_file_count=dirty_count,
                 untracked_file_count=untracked_count,
                 last_activity=None,
@@ -141,13 +155,12 @@ def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree],
     return worktrees, warnings
 
 
-def _count_dirt(port: CommandPort, path: Path) -> tuple[int, int]:
-    """(tracked-modified count, untracked count). A worktree git can no longer
-    stat counts as clean here; `prunable` on the block is the signal that
-    matters for that case."""
+def _count_dirt(port: CommandPort, path: Path) -> tuple[int, int] | None:
+    """(tracked-modified count, untracked count), or None when git would not
+    answer -- an unstatable tree is unknown, not clean."""
     status = port.git(["status", "--porcelain=v1", "--untracked-files=normal"], cwd=path)
     if not status.ok:
-        return 0, 0
+        return None
     dirty = 0
     untracked = 0
     for line in status.stdout.splitlines():
@@ -178,7 +191,7 @@ def read_pull_requests(
             "--limit",
             str(_PR_LIMIT),
             "--json",
-            "number,state,headRefName,url,updatedAt",
+            "number,state,headRefName,headRefOid,url,updatedAt",
         ],
         cwd=cwd,
     )
@@ -204,6 +217,7 @@ def read_pull_requests(
             state=str(entry.get("state", "")).upper(),
             url=str(entry.get("url", "")),
             updated_at=str(entry.get("updatedAt", "")),
+            head_oid=str(entry.get("headRefOid", "")),
         )
         existing = index.get(head)
         if existing is None or pr.updated_at > existing.updated_at:
@@ -211,24 +225,39 @@ def read_pull_requests(
     return index, None
 
 
-def _merged_set(port: CommandPort, cwd: Path | None, base_ref: str, *, remote: bool) -> set[str]:
+def _merged_set(
+    port: CommandPort, cwd: Path | None, base_ref: str, *, remote: bool
+) -> tuple[set[str], str | None]:
+    """Branches the batch ancestry check calls merged, plus a warning when it
+    would not run. An empty set only costs the cheap tier -- the per-branch
+    probes still answer -- so failure here degrades speed, not safety."""
     args = ["branch", "--merged", base_ref, "--format=%(refname:short)"]
     if remote:
         args.insert(1, "-r")
     result = port.git(args, cwd=cwd)
     if not result.ok:
-        return set()
-    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+        scope = "remote" if remote else "local"
+        return set(), (
+            f"batch ancestry check for {scope} branches failed "
+            f"(exit {result.returncode}); falling back to per-branch probes"
+        )
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}, None
 
 
-def _count_revs(port: CommandPort, cwd: Path | None, spec: str) -> int:
+def _count_revs(port: CommandPort, cwd: Path | None, spec: str) -> int | None:
+    """The commit count for a range, or None when git did not answer.
+
+    None is load-bearing. Returning 0 for a failed count reads downstream as
+    "nothing ahead of base", which resolves to ANCESTOR, which is proof of a
+    merge -- so a transient failure would authorise deleting the branch it
+    failed on."""
     result = port.git(["rev-list", "--count", spec], cwd=cwd)
     if not result.ok:
-        return 0
+        return None
     try:
-        return int(result.out or "0")
+        return int(result.out)
     except ValueError:
-        return 0
+        return None
 
 
 def _patch_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str) -> bool:
@@ -274,6 +303,27 @@ def _squash_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str)
     return bool(lines) and all(line.startswith("-") for line in lines)
 
 
+def _pr_covers_tip(port: CommandPort, cwd: Path | None, pr: PullRequest, head: str) -> bool:
+    """True when what the PR decided demonstrably accounts for this tip.
+
+    A PR's state describes the commit it had at its head, not every commit the
+    branch has acquired since. Without this check a merged PR authorises
+    deleting work pushed onto the branch *after* the merge -- which in a
+    many-agent workflow is the normal way a second change begins.
+
+    The question is containment, and it is directional. A tip *behind* the
+    merged head is covered: a final commit made on the forge is routine and
+    does not mean the branch moved on. A tip *ahead of* or divergent from it is
+    not covered, and neither is one git cannot place -- the merged commit is
+    frequently absent locally once the remote branch is gone, and an
+    unanswerable question falls through to the tiers that read content."""
+    if not pr.head_oid or not head:
+        return False
+    if pr.head_oid == head:
+        return True
+    return port.git(["merge-base", "--is-ancestor", head, pr.head_oid], cwd=cwd).ok
+
+
 def _resolve_merge(
     port: CommandPort,
     cwd: Path | None,
@@ -281,17 +331,29 @@ def _resolve_merge(
     name: str,
     *,
     pr: PullRequest | None,
+    head: str,
     ancestor_merged: bool,
-    unmerged_commits: int,
+    unmerged_commits: int | None,
 ) -> tuple[bool, MergeEvidence]:
-    """Tiered merge proof, cheapest conclusive answer first."""
-    if pr is not None and pr.state == "MERGED":
+    """Tiered merge proof, cheapest conclusive answer first.
+
+    Both PR tiers are gated on containment. Falling through costs only speed:
+    the ancestry, patch-id and squash tiers below re-derive the answer from
+    what is actually in the repository, which is the stronger evidence anyway."""
+    if pr is not None and pr.state == "MERGED" and _pr_covers_tip(port, cwd, pr, head):
         return True, MergeEvidence.PR_MERGED
-    if ancestor_merged or unmerged_commits == 0:
+    if ancestor_merged:
         return True, MergeEvidence.ANCESTOR
-    if pr is not None and pr.state == "CLOSED":
+    if unmerged_commits is not None and unmerged_commits == 0:
+        # Spelled out rather than folded into `unmerged_commits == 0`: this
+        # tier turns a count into proof of a merge, so an unanswered count
+        # must visibly fall through instead of quietly satisfying it.
+        return True, MergeEvidence.ANCESTOR
+    if pr is not None and pr.state == "CLOSED" and _pr_covers_tip(port, cwd, pr, head):
         # Not merged -- but a human closed the PR, which is an explicit
-        # decision to abandon the branch. classify turns that into SAFE.
+        # decision to abandon the branch. classify turns that into SAFE, so it
+        # is gated on containment too: "drop this" applies to what was in the
+        # PR, not to commits that arrived afterwards.
         return False, MergeEvidence.PR_CLOSED_UNMERGED
     if _patch_equal(port, cwd, base_ref, name):
         return True, MergeEvidence.PATCH_EQUAL
@@ -308,15 +370,19 @@ def read_branches(
     default_branch: str,
     prs: dict[str, PullRequest],
     worktree_by_branch: dict[str, str],
-) -> list[Branch]:
+) -> tuple[list[Branch], list[str]]:
     result = port.git(
         ["for-each-ref", f"--format={_REF_FORMAT}", "refs/heads", "refs/remotes"], cwd=cwd
     )
     if not result.ok:
-        return []
+        return [], [
+            f"could not list refs (exit {result.returncode}); "
+            f"no branch was surveyed, so this report describes worktrees only"
+        ]
 
-    local_merged = _merged_set(port, cwd, base_ref, remote=False)
-    remote_merged = _merged_set(port, cwd, base_ref, remote=True)
+    local_merged, local_warning = _merged_set(port, cwd, base_ref, remote=False)
+    remote_merged, remote_warning = _merged_set(port, cwd, base_ref, remote=True)
+    warnings = [w for w in (local_warning, remote_warning) if w]
 
     branches: list[Branch] = []
     for line in result.stdout.splitlines():
@@ -338,96 +404,58 @@ def read_branches(
 
         if is_remote and short == default_branch:
             continue
-        if not is_remote and name == default_branch:
+
+        is_default = not is_remote and name == default_branch
+        pr = None if is_default else prs.get(short)
+        if is_default:
             # The default branch is surveyed only as the base; it is never a
             # deletion candidate, and probing it against itself is noise.
-            branches.append(
-                _make_branch(
-                    name=name,
-                    is_remote=False,
-                    remote=None,
-                    head=head,
-                    committed=committed,
-                    upstream=upstream,
-                    head_marker=head_marker,
-                    is_default=True,
-                    worktree_by_branch=worktree_by_branch,
-                    unpushed=0,
-                    unmerged=0,
-                    merged=True,
-                    evidence=MergeEvidence.ANCESTOR,
-                    pr=None,
+            unmerged: int | None = 0
+            unpushed: int | None = 0
+            merged, evidence = True, MergeEvidence.ANCESTOR
+        else:
+            unmerged = _count_revs(port, cwd, f"{base_ref}..{name}")
+            if unmerged is None:
+                warnings.append(
+                    f"could not count the commits on {name} missing from {base_ref}; "
+                    f"it will not be treated as merged"
                 )
+            unpushed = _count_revs(port, cwd, f"{upstream}..{name}") if upstream else None
+            if upstream and unpushed is None:
+                warnings.append(
+                    f"could not count the commits on {name} missing from {upstream}; "
+                    f"it will not be treated as fully pushed"
+                )
+            merged, evidence = _resolve_merge(
+                port,
+                cwd,
+                base_ref,
+                name,
+                pr=pr,
+                head=head,
+                ancestor_merged=name in (remote_merged if is_remote else local_merged),
+                unmerged_commits=unmerged,
             )
-            continue
 
-        unmerged = _count_revs(port, cwd, f"{base_ref}..{name}")
-        unpushed = _count_revs(port, cwd, f"{upstream}..{name}") if upstream else 0
-        pr = prs.get(short)
-        ancestor = name in (remote_merged if is_remote else local_merged)
-        merged, evidence = _resolve_merge(
-            port,
-            cwd,
-            base_ref,
-            name,
-            pr=pr,
-            ancestor_merged=ancestor,
-            unmerged_commits=unmerged,
-        )
         branches.append(
-            _make_branch(
+            Branch(
                 name=name,
                 is_remote=is_remote,
                 remote=remote,
                 head=head,
-                committed=committed,
-                upstream=upstream,
-                head_marker=head_marker,
-                is_default=False,
-                worktree_by_branch=worktree_by_branch,
-                unpushed=unpushed,
-                unmerged=unmerged,
+                last_activity=committed or None,
+                upstream=upstream or None,
+                is_default=is_default,
+                is_current=head_marker == "*",
+                checked_out_at=worktree_by_branch.get(name),
+                unpushed_commits=unpushed,
+                unmerged_commits=unmerged,
                 merged=merged,
-                evidence=evidence,
+                merge_evidence=evidence,
                 pr=pr,
             )
         )
-    return branches
-
-
-def _make_branch(
-    *,
-    name: str,
-    is_remote: bool,
-    remote: str | None,
-    head: str,
-    committed: str,
-    upstream: str,
-    head_marker: str,
-    is_default: bool,
-    worktree_by_branch: dict[str, str],
-    unpushed: int,
-    unmerged: int,
-    merged: bool,
-    evidence: MergeEvidence,
-    pr: PullRequest | None,
-) -> Branch:
-    return Branch(
-        name=name,
-        is_remote=is_remote,
-        remote=remote,
-        head=head,
-        last_activity=committed,
-        upstream=upstream or None,
-        is_default=is_default,
-        is_current=head_marker == "*",
-        checked_out_at=worktree_by_branch.get(name),
-        unpushed_commits=unpushed,
-        unmerged_commits=unmerged,
-        merged=merged,
-        merge_evidence=evidence,
-        pr=pr,
-    )
+    return branches, warnings
 
 
 def parse_timestamp(value: str | None) -> datetime | None:
@@ -479,11 +507,11 @@ def survey(
     if current == "HEAD":
         current = None
 
-    worktrees, _warnings = read_worktrees(port, cwd)
+    worktrees, warnings = read_worktrees(port, cwd)
     worktree_by_branch = {w.branch: w.path for w in worktrees if w.branch}
 
     prs, gh_error = read_pull_requests(port, cwd)
-    branches = read_branches(
+    branches, branch_warnings = read_branches(
         port,
         cwd,
         base_ref=base_ref,
@@ -491,21 +519,13 @@ def survey(
         prs=prs,
         worktree_by_branch=worktree_by_branch,
     )
+    warnings.extend(branch_warnings)
 
+    # A worktree's age is the age of the branch it holds; that is only known
+    # once the branches have been read, hence the second pass.
     activity_by_branch = {b.name: b.last_activity for b in branches}
     worktrees = [
-        Worktree(
-            path=w.path,
-            branch=w.branch,
-            head=w.head,
-            is_main=w.is_main,
-            locked=w.locked,
-            prunable=w.prunable,
-            dirty=w.dirty,
-            dirty_file_count=w.dirty_file_count,
-            untracked_file_count=w.untracked_file_count,
-            last_activity=activity_by_branch.get(w.branch) if w.branch else None,
-        )
+        replace(w, last_activity=activity_by_branch.get(w.branch) if w.branch else None)
         for w in worktrees
     ]
 
@@ -519,4 +539,5 @@ def survey(
         gh_error=gh_error,
         worktrees=tuple(worktrees),
         branches=tuple(branches),
+        warnings=tuple(warnings),
     )

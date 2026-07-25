@@ -40,7 +40,7 @@ def merged_branch_port() -> ScriptedCommands:
         counts={"origin/main..done": "0"},
         extra={
             "branch -D done": ok(),
-            "show-ref --verify --quiet refs/heads/done": fail(),
+            "for-each-ref --format=%(refname) refs/heads/done": ok(""),
         },
     )
 
@@ -198,7 +198,7 @@ def test_an_anomaly_exits_three_with_the_transcript() -> None:
         counts={"origin/main..done": "0"},
         extra={
             "branch -D done": ok(),
-            "show-ref --verify --quiet refs/heads/done": ok(),
+            "for-each-ref --format=%(refname) refs/heads/done": ok("refs/heads/done"),
         },
     )
     code, payload = invoke(["--cleanup"], port)
@@ -280,7 +280,7 @@ def test_human_output_names_a_failed_deletion() -> None:
         counts={"origin/main..done": "0"},
         extra={
             "branch -D done": ok(),
-            "show-ref --verify --quiet refs/heads/done": ok(),
+            "for-each-ref --format=%(refname) refs/heads/done": ok("refs/heads/done"),
         },
     )
     _, text = invoke_human(["--cleanup"], port)

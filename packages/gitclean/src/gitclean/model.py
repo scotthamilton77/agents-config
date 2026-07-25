@@ -13,6 +13,14 @@ can be active and carry no risk at all because everything is pushed.
 
 Cleanup keys on both: the default sweep takes only ``SAFE`` + ``NONE``, and
 ``Risk`` is what ``--force`` overrides -- never ``Disposition.PROTECTED``.
+
+A third commitment runs through the field types: **every fact read from git is
+optional, and ``None`` means "the probe did not answer".** It does not mean
+zero, clean, or absent. A tool that deletes things must be able to say "I do
+not know", because the alternative -- defaulting an unanswered question to the
+value that authorises deletion -- turns every transient git failure into data
+loss. Classification treats ``None`` as the conservative answer, never the
+convenient one.
 """
 
 from __future__ import annotations
@@ -95,6 +103,10 @@ class PullRequest:
     """OPEN | MERGED | CLOSED, verbatim from gh."""
     url: str
     updated_at: str
+    head_oid: str = ""
+    """The commit this PR's head ref pointed at. A PR's state describes *that*
+    commit, not whatever the branch of the same name happens to point at now,
+    so this is what binds the verdict to content."""
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -102,6 +114,7 @@ class PullRequest:
             "state": self.state,
             "url": self.url,
             "updated_at": self.updated_at,
+            "head_oid": self.head_oid,
         }
 
 
@@ -114,9 +127,11 @@ class Worktree:
     is_main: bool
     locked: bool
     prunable: bool
-    dirty: bool
-    dirty_file_count: int
-    untracked_file_count: int
+    dirty: bool | None
+    """None when git could not stat the tree. Unknown, NOT clean -- an
+    unreadable worktree is the one most likely to be holding something."""
+    dirty_file_count: int | None
+    untracked_file_count: int | None
     last_activity: str | None
 
     def as_json(self) -> dict[str, object]:
@@ -141,17 +156,20 @@ class Branch:
     is_remote: bool
     remote: str | None
     head: str
-    last_activity: str
+    last_activity: str | None
     upstream: str | None
     is_default: bool
     is_current: bool
     checked_out_at: str | None
     """Path of the worktree holding this branch, if any."""
-    unpushed_commits: int
-    """Commits on this branch that its upstream does not have. 0 when there is
-    no upstream is a lie, so `upstream is None` is reported separately."""
-    unmerged_commits: int
-    """Commits not reachable from the base tip."""
+    unpushed_commits: int | None
+    """Commits on this branch that its upstream does not have. None means the
+    count was not obtained -- either there is no upstream to count against
+    (see `upstream`, which distinguishes the two) or the count failed. Zero
+    would claim "fully pushed" in both cases, which is a lie in both."""
+    unmerged_commits: int | None
+    """Commits not reachable from the base tip. None when the count failed --
+    which must never be read as 'none, therefore merged'."""
     merged: bool
     merge_evidence: MergeEvidence
     pr: PullRequest | None
@@ -219,6 +237,13 @@ class Survey:
     see squash merges -- so this is reported, never swallowed."""
     worktrees: tuple[Worktree, ...]
     branches: tuple[Branch, ...]
+    warnings: tuple[str, ...] = ()
+    """Every probe that did not answer, in reader-facing prose.
+
+    A survey that could not read part of the repository is still a survey --
+    it just describes less than the caller assumes. Discarding these is how a
+    report becomes confidently incomplete, so they travel with the data and
+    are hoisted to the top of the output envelope."""
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -229,9 +254,19 @@ class Survey:
             "current_branch": self.current_branch,
             "gh_available": self.gh_available,
             "gh_error": self.gh_error,
+            "warnings": list(self.warnings),
             "worktrees": [w.as_json() for w in self.worktrees],
             "branches": [b.as_json() for b in self.branches],
         }
+
+    def all_warnings(self) -> tuple[str, ...]:
+        """Every degradation in one list, gh included.
+
+        ``gh_error`` stays a distinct field because "PR data is missing" has a
+        specific consequence -- squash merges become invisible -- that a reader
+        may want to branch on. This is the flat channel for a reader who only
+        needs to know that something did not answer."""
+        return (*((self.gh_error,) if self.gh_error else ()), *self.warnings)
 
 
 @dataclass(frozen=True, slots=True)
