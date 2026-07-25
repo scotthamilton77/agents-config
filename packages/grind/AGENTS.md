@@ -18,12 +18,15 @@ decision layer above it. Mechanically: no import of a tracker facade, and no
 true is what lets the runtime serve as the executor substrate
 (`SAVEPOINTS/2026-07-24-v1-executor-loop-fit-report.md`).
 
-**Ambient state enters through `cli.main()` and nowhere else.** The clock, cwd,
-environment, and seed-file reader are parameters it defaults from the process
-only when a caller injects none; modules below take just the inputs they need,
-and none of them calls `datetime.now()`, `Path.cwd()`, or reads `os.environ`.
-Grind-directory file I/O is not injected — `store.py` reads and writes those
-paths directly. `fold()` does no I/O at all.
+**Process-global state — the clock, cwd, and environment — is defaulted in
+`cli.main()` and read nowhere else.** All three arrive as parameters a caller can
+inject, and no module below calls `datetime.now()`, `Path.cwd()`, or reads
+`os.environ`. The seed-file reader sits on that same seam.
+
+**Filesystem access does not.** `store.py` reads and writes grind-directory files
+directly, and `resolve.py` probes for `events.jsonl` while resolving a directory.
+A caller redirects that I/O by choosing the directory, not by injecting a reader.
+`fold()` does no I/O at all.
 
 **Two distinct filesystem inputs, and the state directory is not just `--dir`.**
 The runtime's own files — `events.jsonl`, `events.quarantine`, `state.json`,
@@ -51,8 +54,7 @@ ambient resolution passes it explicitly, or injects `cwd`/`env`.
 subcommands — `create`, `log`, `status`, `check`, `render`, `finish`. The
 installer registers grind in `CLI_PACKAGES`
 (`packages/installer/src/installer/core/clis.py`), so the `grind` binary is
-installed onto PATH via `uv tool install`. The stdout-envelope and exit-code
-contract is stated in `cli.py`'s own docstrings, at the code that enforces it.
+installed onto PATH via `uv tool install`.
 
 ## The quality gate is mandatory — run it, do not approximate it
 
