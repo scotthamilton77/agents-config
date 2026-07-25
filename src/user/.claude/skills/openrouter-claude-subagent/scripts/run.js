@@ -14,6 +14,9 @@
 // Usage:
 //   node run.js --model <id> --effort <level> --permission-mode dontAsk \
 //               --allowedTools Read Grep -p "<prompt>"
+//
+// All four of those flags are required — see REQUIRED_FLAGS for why each one
+// is refused rather than defaulted. Everything else is passed through verbatim.
 
 const { spawn } = require("child_process");
 const path = require("path");
@@ -21,6 +24,45 @@ const proxy = require("./proxy.js");
 
 /** Launcher-level failure (bad config), distinct from any `claude` exit code. */
 const EXIT_CONFIG_ERROR = 78;
+
+/** Flags this launcher refuses to run without, each as its accepted spellings.
+ *
+ *  Every one of them fails invisibly when omitted, which is why the check is
+ *  here rather than in prose the caller may not have read:
+ *
+ *  - `--permission-mode`: the nested process has no terminal to prompt at, so
+ *    it queues every tool call and exits 0 having done nothing.
+ *  - `--allowedTools`: the proxy strips the deferred-tool declaration for
+ *    non-Anthropic models, so this list is the entire tool grant.
+ *  - `--model`: without it the redirect points at whatever default the client
+ *    picks, which the OpenRouter account may not serve at all.
+ *  - `--effort`: the harness otherwise picks a reasoning level the task never
+ *    asked for, at a cost nobody chose.
+ */
+const REQUIRED_FLAGS = [
+  ["--model"],
+  ["--effort"],
+  ["--permission-mode"],
+  ["--allowedTools", "--allowed-tools"],
+];
+
+/** Check argv for the required flags, accepting both `--flag v` and `--flag=v`.
+ *  @returns {string|null} a message naming every missing flag, or null if none. */
+function validateArgv(argv) {
+  const present = new Set(
+    argv.filter((arg) => arg.startsWith("--")).map((arg) => arg.split("=", 1)[0])
+  );
+  const missing = REQUIRED_FLAGS.filter(
+    (spellings) => !spellings.some((flag) => present.has(flag))
+  ).map((spellings) => spellings[0]);
+
+  if (missing.length === 0) return null;
+  return (
+    `missing required flag(s): ${missing.join(", ")}. This launcher requires ` +
+    "--model, --effort, --permission-mode, and --allowedTools, because " +
+    "omitting any of them fails silently rather than loudly."
+  );
+}
 
 /** Build the child environment. The launcher owns every variable that decides
  *  WHERE the traffic goes, so a caller cannot half-configure the redirect and
@@ -57,6 +99,13 @@ function resolveExitCode(code, signal) {
 }
 
 async function main(argv) {
+  // Before the proxy binds anything: a bad invocation should cost no listener.
+  const argvError = validateArgv(argv);
+  if (argvError) {
+    process.stderr.write(`[run] ${argvError}\n`);
+    return EXIT_CONFIG_ERROR;
+  }
+
   const { port, close } = await proxy.start({ port: 0 });
   const proxyUrl = `http://127.0.0.1:${port}`;
 
@@ -111,4 +160,10 @@ if (require.main === module) {
     });
 }
 
-module.exports = { main, buildChildEnv, resolveExitCode, EXIT_CONFIG_ERROR };
+module.exports = {
+  main,
+  validateArgv,
+  buildChildEnv,
+  resolveExitCode,
+  EXIT_CONFIG_ERROR,
+};
