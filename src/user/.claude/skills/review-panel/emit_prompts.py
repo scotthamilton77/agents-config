@@ -186,6 +186,13 @@ def load_prior_verdicts(
                 f"{document.get('artifact_class')!r}, not this round's claim {claim!r} of class "
                 f"{artifact_class!r}; a foreign verdict cannot seed this round's ledger",
             )
+        if not isinstance(document.get("round"), int) or document["round"] >= round_no:
+            raise Refusal(
+                "bad-prior-verdict",
+                f"prior verdict {path} is for round {document.get('round')!r}, which is not "
+                f"earlier than the round {round_no} under emission; only earlier rounds' "
+                "verdicts may seed the ledger",
+            )
         verdicts.append(document)
     verdicts.sort(key=lambda doc: doc.get("round", 0))
     covered = {doc.get("round") for doc in verdicts}

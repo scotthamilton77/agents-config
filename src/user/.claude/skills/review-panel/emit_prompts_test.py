@@ -327,6 +327,20 @@ class TestRoundsAndLedger:
             code, result = run(flat, capsys)
             assert code == 2 and result["errors"][0]["code"] == "bad-prior-verdict"
 
+    def test_b4_current_or_future_round_verdict_is_refused(self, repo, acs_file, tmp_path,
+                                                           capsys):
+        """S6-B4: only earlier rounds' verdicts seed the ledger; a verdict claiming the current
+        or a later round cannot inject its findings into this round's disposition demands."""
+        for claimed_round in (2, 3):
+            future = {**verdict_round1(repo), "round": claimed_round}
+            prior = tmp_path / "future.json"
+            prior.write_text(json.dumps(future), encoding="utf-8")
+            flat = argv(repo, acs_file, tmp_path / "out", **{"--round": "2"})
+            flat += ["--prior-verdict", str(prior)]
+            code, result = run(flat, capsys)
+            assert code == 2 and result["errors"][0]["code"] == "bad-prior-verdict"
+            assert "earlier" in result["errors"][0]["message"]
+
     def test_b9_ledger_gap_is_refused(self, repo, acs_file, tmp_path, capsys):
         """S6-B9: a prior mechanical finding with no disposition blocks the round."""
         flat, _ = round2(tmp_path, repo, acs_file, [
