@@ -62,6 +62,15 @@ reviewer request, and a label have no body to mark. The remaining two are the
 ambient paths — the commit/push and the ad-hoc `gh` invocation — which could
 carry a marker and are constrained by nothing in this repo that would make them.
 
+**The prgroom rows are audited as they stand today, not as they will stand.** The
+charter carves prgroom rather than finishing it (D13): it retains the `gh`/`git`
+clients, config, error taxonomy, and escalation typing, and deletes reply, poll,
+wait, snapshot, legacy export, and the in-package fix-dispatch machinery with
+their tests — the `reply` module alone carries three of the rows above. This
+inventory measures the exposure that exists now, which is what the reader-side
+question needs; it is not a list of paths each owed a conversion. §5 binds
+conversion to the client that survives the carve.
+
 **The App is the counterexample that fixes the direction.** Its writes are
 distinguishable because the platform types the actor, not because the payload
 declares anything. Nothing an agent writes with the owner's token can imitate
@@ -234,13 +243,19 @@ commit, which is why that path needs a trailer (AUTH-9) and not this option.
 **Costs:** a token-minting path (PEM → installation token) at every call site.
 `GhCli` has no credential seam — `proc.py` passes ambient environment — so this
 is a real adapter change plus a secret already gated on
-`MERGE_GUARD_APPROVER_KEY_PATH`. The ad-hoc `gh` channel is the hard part: an
-agent typing `gh pr comment` must be routed through a wrapper or denied, since a
-convention it can bypass by typing the obvious command is not a control.
+`MERGE_GUARD_APPROVER_KEY_PATH`. The ad-hoc channel is the hard part, and it is
+harder than a wrapper. §1 establishes that an agent's subprocesses inherit the
+owner's credential and that the credential is keyring-held, so denying the `gh`
+binary leaves the same token reachable through another client, a direct HTTP
+call, or any process the agent can start. The invariant — every machine write is
+App-attested — is established by putting the write-scoped credential out of the
+agent's reach, not by denying a command name. Denying the raw call is still worth
+doing as a guardrail over the common accidental path; it is not the boundary.
 
 **Fails:** open, if conversion is partial. An unconverted path, or an App-token
 failure that falls back to raw `gh`, silently reverts to owner identity and looks
-exactly like today. It is only a control once raw `gh` writes are blocked. An App
+exactly like today. It is only a control once the write-scoped credential is out
+of the agent's reach — blocking one binary does not put it there. An App
 also cannot approve a PR it authored, and its approval counts toward required
 reviews only with `contents:write` — both already known constraints.
 
@@ -379,24 +394,40 @@ other.
 
 ### Identity conversion (option i)
 
-- **AUTH-5** Each of the six prgroom paths in §1 that write to the GitHub API
-  either authenticates as the App or is recorded as a named, dated exception with
-  the reason it cannot; the commit/push path is AUTH-9's, not this one's. The two
-  comment paths — the `_post_reply` issue comment or thread reply, and the
-  routed-memory thread reply — are inherited from S6-D2, whose text already covers
-  them (§3); this criterion covers the remainder: the PR-body PATCH, the thread
-  resolution, the reviewer re-request, and the `human-review-required` label add.
-  Observable: the actor GitHub records for the write — the comment's `user`, the
-  thread's `resolvedBy`, the timeline event's `actor` — carries `type: "Bot"` for
-  a converted path. Inverse: an unconverted path fails the check rather than
-  passing by default — the enumeration is closed, and a write path absent from it
-  is itself a failure. Dependency failure: an App-token mint failure aborts the
-  write rather than falling back to the owner credential.
-- **AUTH-6** A raw `gh` write from an agent session — comment, review, approval,
-  label, or thread resolution — is refused by the permission surface rather than
-  posted as the owner. Inverse: `gh` reads are unaffected. Boundary: the
-  App-routed helper is permitted by the same surface that denies the raw call, so
-  the denial redirects rather than blocks the work.
+- **AUTH-5** The conversion target is the write surface that survives the prgroom
+  carve, not today's path list. D13 retains the `gh`/`git` clients, config, error
+  taxonomy, and escalation typing and deletes the named modules with their tests,
+  the `reply` module among them — which carries three of the six API-write paths
+  in §1. A path inside a deleted module is owed no conversion: deletion removes it
+  from the audit surface outright. What must convert is `GhClient` itself, the
+  single client every retained and future write passes through, plus any write the
+  replacement machinery — the verdict harvester and merge-eligibility
+  evaluation — introduces. Binding the criterion to the client rather than to a
+  call-site list also settles the paths the carve leaves undecided: whichever
+  grooming writes survive, they flow through the converted client. Machine-posted
+  comments and approvals stay S6-D2's (§3); the commit/push path is AUTH-9's.
+  Observable: the actor GitHub records for a write made through the retained
+  client — the comment's `user`, the thread's `resolvedBy`, the timeline event's
+  `actor` — carries `type: "Bot"`. Inverse: a write that reaches GitHub without
+  passing through the converted client fails the check rather than passing by
+  default. Dependency failure: an App-token mint failure aborts the write rather
+  than falling back to the owner credential. Ordering: this sequences behind the
+  carve rather than racing it — converting call sites that are about to be deleted
+  is wasted work, and the client seam is cheaper and less error-prone to cut once,
+  afterward.
+- **AUTH-6** No credential carrying write scope is reachable from an agent
+  process: the agent's environment holds a read-scoped credential, and the
+  write-scoped one lives where that process cannot read it. Observable is
+  reachability, not command refusal — from inside an agent session an attempted
+  write fails authorization identically through `gh`, through a direct HTTP call,
+  and through any other client, while reads succeed (inverse). Guardrail, not
+  boundary: the permission surface additionally refuses the raw `gh` write and
+  names the App-routed helper in the refusal, which catches the common accidental
+  path and makes the intended route discoverable — but a denied command name is
+  not the control, and the criterion is not satisfied by the denial alone.
+  Residual risk, stated rather than designed away: while an agent process can read
+  a credential with write scope, no enumeration of blocked commands makes the
+  invariant true — it raises the cost of the bypass and nothing more.
 - **AUTH-7** `derive_human_review` counts an approval only from an identity a
   positive test establishes as human, not from one that merely fails the bot test.
   The observable is App attestation, and the criterion is decidable only once
