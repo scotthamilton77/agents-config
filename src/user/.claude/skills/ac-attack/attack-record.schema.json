@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agents.local/schemas/attack-record/1",
+  "title": "Criteria attack record",
+  "description": "Record of one attack round over a document's acceptance criteria: the revision attacked, which lenses reported, what they proposed, and how each proposal was adjudicated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "spec_path",
+    "spec_revision",
+    "lenses",
+    "proposals",
+    "dispositions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "spec_path": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "The attacked document, which this record is committed beside."
+    },
+    "spec_revision": {
+      "$ref": "#/$defs/revision",
+      "description": "Revision of the document this round attacked."
+    },
+    "lenses": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lens", "report"],
+        "properties": {
+          "lens": {"type": "string", "pattern": "\\S"},
+          "report": {"enum": ["proposals", "empty"]}
+        }
+      },
+      "description": "One entry per lens that reported, empty reports included. A lens that errored or returned unreadable output has no entry, and the round is unfinished."
+    },
+    "proposals": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/proposal"},
+      "description": "The union of the lens reports. A proposal's position is the stable index its disposition names."
+    },
+    "dispositions": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/disposition"},
+      "description": "One entry per proposal index."
+    }
+  },
+  "$defs": {
+    "revision": {
+      "type": "string",
+      "pattern": "^(sha256:[0-9a-f]{64}|[0-9a-f]{40})$",
+      "description": "Content-addressed revision of the document: sha256: followed by the hex digest of its bytes, or the 40-hex object id of the same content."
+    },
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lens", "target_ac", "hole", "proposed_ac", "red_test_sketch"],
+      "properties": {
+        "lens": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "The attack lens that produced this proposal."
+        },
+        "target_ac": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "Identifier of the criterion attacked, or \"none\" when no criterion covers the ground at all."
+        },
+        "hole": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "What the criteria as written let through."
+        },
+        "proposed_ac": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "The criterion proposed to close the hole, stated as an observable claim."
+        },
+        "red_test_sketch": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["given", "when", "expect"],
+          "properties": {
+            "given": {"type": "string", "pattern": "\\S"},
+            "when": {"type": "string", "pattern": "\\S"},
+            "expect": {"type": "string", "pattern": "\\S"}
+          },
+          "description": "The failing test the proposed criterion makes writable. All three parts are required and non-blank: an item that cannot name a starting state, an action, and an observable outcome is a concern rather than a testable claim, and is not a proposal."
+        }
+      }
+    },
+    "disposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "disposition"],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Position of the proposal this adjudicates."
+        },
+        "disposition": {"enum": ["accepted", "rejected"]},
+        "rationale": {
+          "type": "string",
+          "description": "Why. Required and non-blank on a rejection."
+        },
+        "revision": {
+          "$ref": "#/$defs/revision",
+          "description": "Revision of the document that carries an accepted proposal. Required on an acceptance, and different from the revision attacked."
+        },
+        "covering_ac": {
+          "type": "string",
+          "description": "Identifier of the criterion in that revision which carries it. Required on an acceptance."
+        }
+      }
+    }
+  }
+}
