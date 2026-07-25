@@ -37,8 +37,8 @@ endpoint (OpenRouter's "Anthropic Skin"), which is what lets
 `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` route a stock Claude Code
 process through it. Compatibility is not complete, though: responses that end
 on a reasoning block break the client, which is why this skill routes through
-the local repair proxy rather than pointing at OpenRouter directly (see the
-main SKILL.md). Model IDs are OpenRouter's normal
+the local repair proxy rather than pointing at OpenRouter directly (see
+`proxy-contract.md`). Model IDs are OpenRouter's normal
 `vendor/model-slug` form — no extra prefixing needed beyond what's in this
 table. OpenRouter also normalizes a `reasoning.effort` parameter
 (`none`/`minimal`/`low`/`medium`/`high`/`xhigh`, internally mapped to a
@@ -50,9 +50,46 @@ each model's own OpenRouter page, and the OpenRouter reasoning-tokens guide.
 
 ## Supplemental registry
 
-This table is the versioned, source-controlled baseline. A model a user
-names that isn't listed here may still be recorded in
-`~/.config/agents-config/openrouter-model-registry.json` — a runtime
-registry SKILL.md's Unknown Model Workflow reads and writes. Check both
-before concluding a model is unverified; see SKILL.md for the registry's
-schema and update procedure.
+This table is the versioned, source-controlled baseline. A model a user names
+that isn't listed here may still be recorded in
+`~/.config/agents-config/openrouter-model-registry.json` — a runtime registry
+the workflow below reads and writes. Check both before concluding a model is
+unverified.
+
+The registry lives outside the repo because it is runtime state this skill
+accumulates across invocations, not versioned skill content. It is a JSON
+object keyed by model ID:
+
+```json
+{
+  "vendor/model-id": {
+    "input_per_m": 0.00,
+    "output_per_m": 0.00,
+    "context": "...",
+    "effort_param": "confirmed | not confirmed | unknown",
+    "best_for": "...",
+    "added": "YYYY-MM-DD",
+    "source": "user-reported | researched: <url>"
+  }
+}
+```
+
+## Unknown Model Workflow
+
+Triggered when a user-named `vendor/model-id` appears in neither the table
+above nor the supplemental registry.
+
+1. Tell the user plainly: this skill has no pricing, context, or effort data
+   on that model.
+2. Ask them to choose — **(a)** proceed with it as specified, accepting that
+   cost and capability are unverified, or **(b)** research it now (its
+   OpenRouter model page: pricing, context window, whether it honors
+   `reasoning.effort`).
+3. If they choose research, gather it and present what you found *and from
+   where* for confirmation before using it. Don't silently trust a single
+   scraped page for something that drives both cost and tool-grant risk. Ask
+   the user for any field you couldn't find — if the model page doesn't say
+   whether it honors `reasoning.effort`, ask rather than assuming.
+4. Once confirmed, ask whether to persist it for future invocations. If yes,
+   create `~/.config/agents-config/` if absent and write or update the entry
+   using the schema above.
