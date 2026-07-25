@@ -37,8 +37,8 @@ def _write_profiles_toml(repo: Path) -> None:
 def _hermetic_repo(tmp_path: Path) -> Path:
     """test_cli_smoke's minimal source repo (one shared template so the
     Claude plan is non-empty, plus the empty tool-root dirs the adapters
-    expect) extended with BOTH registry package dirs so
-    cli_source_digest(package_dir) resolves for workcli and prgroom."""
+    expect) extended with ALL THREE registry package dirs so
+    cli_source_digest(package_dir) resolves for workcli, prgroom, and grind."""
     repo = tmp_path / "repo"
     shared = repo / "src" / "user" / ".agents"
     shared.mkdir(parents=True)
@@ -47,7 +47,7 @@ def _hermetic_repo(tmp_path: Path) -> Path:
         (repo / "src" / "user" / f".{tool}").mkdir(parents=True)
     _write_installignore(repo)
     _write_profiles_toml(repo)
-    for pkg in ("workcli", "prgroom"):
+    for pkg in ("workcli", "prgroom", "grind"):
         (repo / "packages" / pkg / "src").mkdir(parents=True)
         (repo / "packages" / pkg / "pyproject.toml").write_bytes(b"[project]\n")
         (repo / "packages" / pkg / "src" / "m.py").write_bytes(b"pass")
@@ -63,11 +63,11 @@ def _hermetic_repo(tmp_path: Path) -> Path:
 
 
 @pytest.mark.cli_deploy
-def test_full_install_deploys_both_clis_and_records_receipt(tmp_path: Path) -> None:
+def test_full_install_deploys_all_clis_and_records_receipt(tmp_path: Path) -> None:
     """
     Given a hermetic repo and a fresh home
     When main(["--tools=claude", "--yes"]) runs with a scripted deploy port
-    Then exit 0, both CLIs deploy, and the receipt carries both clis
+    Then exit 0, all registry CLIs deploy, and the receipt carries all clis
     entries.
 
     Pins the receipt-wiring contract: stage runs inside the lock, entries
@@ -75,15 +75,15 @@ def test_full_install_deploys_both_clis_and_records_receipt(tmp_path: Path) -> N
     """
     repo = _hermetic_repo(tmp_path)
     bin_dir = tmp_path / "bin"
-    w, p = bin_dir / "work", bin_dir / "prgroom"
+    w, p, g = bin_dir / "work", bin_dir / "prgroom", bin_dir / "grind"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=bin_dir,
         tool_list={},
-        which_map={"work": w, "prgroom": p},
-        shims=[None, w, None, p],
-        installs=[_OK, _OK],
-        smokes=[_OK, _OK],
+        which_map={"work": w, "prgroom": p, "grind": g},
+        shims=[None, w, None, p, None, g],
+        installs=[_OK, _OK, _OK],
+        smokes=[_OK, _OK, _OK],
     )
     rc = main(
         ["--tools=claude", "--yes"],
@@ -96,7 +96,7 @@ def test_full_install_deploys_both_clis_and_records_receipt(tmp_path: Path) -> N
     result = read_receipt(tmp_path / "home" / ".config" / "agents-config" / "install-receipt.json")
     assert result.status is ReadStatus.OK
     assert result.receipt is not None
-    assert {c.name for c in result.receipt.clis} == {"workcli", "prgroom"}
+    assert {c.name for c in result.receipt.clis} == {"workcli", "prgroom", "grind"}
 
 
 @pytest.mark.cli_deploy
@@ -111,13 +111,14 @@ def test_deploy_failure_exits_1_after_summary(tmp_path: Path) -> None:
     """
     repo = _hermetic_repo(tmp_path)
     # --yes auto-accepts the TOCTOU takeover re-route, so each fresh CLI
-    # pops TWO installs (non-forcing fail, then forced fail) = 4 total.
+    # pops TWO installs (non-forcing fail, then forced fail) = 6 total
+    # across the three registry CLIs.
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
         tool_list={},
-        shims=[None, None],
-        installs=[CommandResult(ok=False, output="x")] * 4,
+        shims=[None, None, None],
+        installs=[CommandResult(ok=False, output="x")] * 6,
     )
     io = ScriptedIO(interactive=False)
     rc = main(
@@ -232,17 +233,17 @@ def test_second_noop_run_skips_via_persisted_clis(tmp_path: Path) -> None:
     repo = _hermetic_repo(tmp_path)
     home = tmp_path / "home"
     bin_dir = tmp_path / "bin"
-    w, p = bin_dir / "work", bin_dir / "prgroom"
+    w, p, g = bin_dir / "work", bin_dir / "prgroom", bin_dir / "grind"
 
     def _first() -> ScriptedCliDeploy:
         return ScriptedCliDeploy(
             uv_version=(0, 10, 4),
             bin_dir=bin_dir,
             tool_list={},
-            which_map={"work": w, "prgroom": p},
-            shims=[None, w, None, p],
-            installs=[_OK, _OK],
-            smokes=[_OK, _OK],
+            which_map={"work": w, "prgroom": p, "grind": g},
+            shims=[None, w, None, p, None, g],
+            installs=[_OK, _OK, _OK],
+            smokes=[_OK, _OK, _OK],
         )
 
     assert (
@@ -258,10 +259,14 @@ def test_second_noop_run_skips_via_persisted_clis(tmp_path: Path) -> None:
     second = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=bin_dir,
-        tool_list={"workcli": frozenset({"work"}), "prgroom": frozenset({"prgroom"})},
-        which_map={"work": w, "prgroom": p},
-        shims=[w, p],
-        smokes=[_OK, _OK],
+        tool_list={
+            "workcli": frozenset({"work"}),
+            "prgroom": frozenset({"prgroom"}),
+            "grind": frozenset({"grind"}),
+        },
+        which_map={"work": w, "prgroom": p, "grind": g},
+        shims=[w, p, g],
+        smokes=[_OK, _OK, _OK],
     )
     assert (
         main(
@@ -318,15 +323,15 @@ def test_corrupt_receipt_deploy_not_persisted(tmp_path: Path) -> None:
     receipt_path.parent.mkdir(parents=True)
     receipt_path.write_text("{not json")
     bin_dir = tmp_path / "bin"
-    w, p = bin_dir / "work", bin_dir / "prgroom"
+    w, p, g = bin_dir / "work", bin_dir / "prgroom", bin_dir / "grind"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=bin_dir,
         tool_list=None,  # unproven -> takeover (auto-accepted by --yes)
-        which_map={"work": w, "prgroom": p},
-        shims=[None, w, None, p],
-        installs=[_OK, _OK],
-        smokes=[_OK, _OK],
+        which_map={"work": w, "prgroom": p, "grind": g},
+        shims=[None, w, None, p, None, g],
+        installs=[_OK, _OK, _OK],
+        smokes=[_OK, _OK, _OK],
     )
     rc = main(
         ["--tools=claude", "--yes"],
