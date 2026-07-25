@@ -630,12 +630,13 @@ def _h_discovered_work(state: State, evt: RawEvent) -> None:
         return
     disposition = _str(evt, "disposition")
     description = _str(evt, "description")
-    # `bead?` is "optional metadata, carried only when it differs from `item`"
-    # (spec) -- a caller-supplied bead equal to the item id is redundant, so
-    # it's normalized away rather than stored twice under two names.
-    bead = _str(evt, "bead")
-    if bead == item_id:
-        bead = None
+    # `work_id?` is "optional metadata, carried only when it differs from
+    # `item`" (spec) -- a caller-supplied work id equal to the item id is
+    # redundant, so it's normalized away rather than stored twice under two
+    # names.
+    work_id = _str(evt, "work_id")
+    if work_id == item_id:
+        work_id = None
     # The item "carries its triage rationale" (spec) plus its source -- state is
     # the renderer's only input, so both dispositions must preserve this
     # provenance or a later projection can't explain the work's origin.
@@ -652,7 +653,7 @@ def _h_discovered_work(state: State, evt: RawEvent) -> None:
         if reason is not None and PARK_REASONS[reason][0] != "scheduling":
             _anomaly(state, evt, f"discovered_work park reason {reason!r} is not a scheduling one")
             reason = None
-        item = Item(id=item_id, lane=None, title=description, status="queued", bead=bead)
+        item = Item(id=item_id, lane=None, title=description, status="queued", work_id=work_id)
         item.parked = ParkingEntry(reason=reason, note=rationale)
         item.discovered = provenance
         state.items[item_id] = item
@@ -660,7 +661,7 @@ def _h_discovered_work(state: State, evt: RawEvent) -> None:
         lane = _resolve_lane(state, evt)
         if lane is None:
             return
-        item = Item(id=item_id, lane=lane.id, title=description, status="queued", bead=bead)
+        item = Item(id=item_id, lane=lane.id, title=description, status="queued", work_id=work_id)
         item.discovered = provenance
         state.items[item_id] = item
         lane.item_ids.append(item_id)

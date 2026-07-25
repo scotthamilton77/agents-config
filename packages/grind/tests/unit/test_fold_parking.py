@@ -240,15 +240,15 @@ def test_discovered_work_enqueued_preserves_source_and_rationale() -> None:
     assert item.discovered.rationale == "blocks the milestone"
 
 
-def test_discovered_work_bead_is_normalized_away_when_equal_to_item_id() -> None:
-    # spec: bead? is "optional metadata, carried only when it differs from item".
+def test_discovered_work_work_id_is_normalized_away_when_equal_to_item_id() -> None:
+    # spec: work_id? is "optional metadata, carried only when it differs from item".
     events = [
         seed_event(),
         event(
             "discovered_work",
             item="disc-1",
-            bead="disc-1",
-            description="dup bead id",
+            work_id="disc-1",
+            description="dup work id",
             source="lane-a",
             disposition="enqueued",
             lane="lane-a",
@@ -258,17 +258,40 @@ def test_discovered_work_bead_is_normalized_away_when_equal_to_item_id() -> None
 
     state = fold(events)
 
-    assert state.items["disc-1"].bead is None
+    assert state.items["disc-1"].work_id is None
 
 
-def test_discovered_work_keeps_bead_when_it_differs_from_item_id() -> None:
+def test_discovered_work_keeps_work_id_when_it_differs_from_item_id() -> None:
+    events = [
+        seed_event(),
+        event(
+            "discovered_work",
+            item="disc-1",
+            work_id="wgclw.99",
+            description="real work id",
+            source="lane-a",
+            disposition="enqueued",
+            lane="lane-a",
+            rationale="r",
+        ),
+    ]
+
+    state = fold(events)
+
+    assert state.items["disc-1"].work_id == "wgclw.99"
+
+
+def test_discovered_work_does_not_accept_the_tracker_backends_noun() -> None:
+    # Name lock (D11): the tracker backend is quarantined behind the `work`
+    # facade, so its noun must not be a key grind's event schema honours. A
+    # payload carrying `bead` leaves `work_id` unset rather than reviving it.
     events = [
         seed_event(),
         event(
             "discovered_work",
             item="disc-1",
             bead="wgclw.99",
-            description="real bead id",
+            description="backend noun",
             source="lane-a",
             disposition="enqueued",
             lane="lane-a",
@@ -278,7 +301,7 @@ def test_discovered_work_keeps_bead_when_it_differs_from_item_id() -> None:
 
     state = fold(events)
 
-    assert state.items["disc-1"].bead == "wgclw.99"
+    assert state.items["disc-1"].work_id is None
 
 
 def test_discovered_work_parked_creates_a_new_parked_item() -> None:

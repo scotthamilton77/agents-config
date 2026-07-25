@@ -37,7 +37,7 @@ First-class entities (present in the schema):
   `grind_created` … `grind_finished` bound its lifetime.
 - **Lane** — a conflict-partitioned, ordered queue of items owned by one
   lieutenant. An *ownership* grouping, nothing more.
-- **Item** — **the** atomic unit of the FSM. Maps 1:1 to a work-tracker bead,
+- **Item** — **the** atomic unit of the FSM. Maps 1:1 to a work-tracker item,
   typically ships as one PR, and is the only entity carrying the nine-status
   lifecycle. Every typed event that is not grind- or lane-scoped references
   exactly one item.
@@ -125,7 +125,7 @@ things now *are*.
 
 | Type | Payload | Effect |
 |------|---------|--------|
-| `grind_created` | `title`, `repo` (owner/name), `mission` (goal + explicit out-of-scope), `protocols` (structured block: review protocol choice, merge-policy resolution, watcher conventions, session grants), `config` (thresholds, below), `lanes[]` (id, name, agent, model+effort the lieutenant runs at, queue of items with bead ids, titles, blocker edges) | Seeds the entire board. Legal only as the log's **first** event; any subsequent `grind_created` folds as an anomaly (accept-and-flag), leaving the board unchanged. The mission/protocols block is what makes `status --handoff` self-contained (§7 replacement). |
+| `grind_created` | `title`, `repo` (owner/name), `mission` (goal + explicit out-of-scope), `protocols` (structured block: review protocol choice, merge-policy resolution, watcher conventions, session grants), `config` (thresholds, below), `lanes[]` (id, name, agent, model+effort the lieutenant runs at, queue of items with work ids, titles, blocker edges) | Seeds the entire board. Legal only as the log's **first** event; any subsequent `grind_created` folds as an anomaly (accept-and-flag), leaving the board unchanged. The mission/protocols block is what makes `status --handoff` self-contained (§7 replacement). |
 | `grind_paused` | `reason`, `resume_checklist[]` | Board banner; handoff carries pause state |
 | `grind_resumed` | — | Clears pause |
 | `grind_finished` | `summary` | Terminal. Fold rejects (anomaly) further mutating events. |
@@ -162,7 +162,7 @@ below)
 | `item_done` | `item` | `merged → done` (post-merge leg complete); clears any attention/round badge for the item |
 | `item_parked` | `item`, `reason` (see the park vocabulary below), `note` | Removes from active queue into the parking lot |
 | `item_enqueued` | `item`, `lane`, `position?` | Parking lot's one exit: `parked → queued` in the named lane. Also legalizes mid-grind queue additions. |
-| `discovered_work` | `item` (durable id), `description`, `source` (lane/PR that surfaced it), `bead?`, `disposition` (parked \| enqueued), `reason?` (when parked), `lane?` (when enqueued), `rationale` | Creates a new item carrying its triage rationale, keyed by the required `item` id: the bead id when one exists, else a ROOT-assigned run-unique slug (`disc-<n>`, next free ordinal). `bead?` is optional metadata, carried only when it differs from `item`. `enqueued` is sugar for discover + `item_enqueued` in one event. |
+| `discovered_work` | `item` (durable id), `description`, `source` (lane/PR that surfaced it), `work_id?`, `disposition` (parked \| enqueued), `reason?` (when parked), `lane?` (when enqueued), `rationale` | Creates a new item carrying its triage rationale, keyed by the required `item` id: the work-tracker id when one exists, else a ROOT-assigned run-unique slug (`disc-<n>`, next free ordinal). `work_id?` is optional metadata, carried only when it differs from `item`. `enqueued` is sugar for discover + `item_enqueued` in one event. |
 
 **Cross-cutting**
 
