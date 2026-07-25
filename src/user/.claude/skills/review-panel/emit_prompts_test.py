@@ -79,7 +79,7 @@ def acs_file(tmp_path) -> Path:
 def argv(repo: Repo, acs: Path, out_dir: Path, **overrides: Any) -> list[str]:
     args = {
         "--class": "typed-code", "--claim": "claim-7", "--round": "1", "--acs": str(acs),
-        "--diff": "/tmp/change.diff", "--repo-root": str(repo.root), "--base-sha": repo.base,
+        "--target": "pull request 7", "--repo-root": str(repo.root), "--base-sha": repo.base,
         "--head-sha": repo.head, "--target-branch": "main", "--retained": "[]",
         "--out-dir": str(out_dir),
     }
@@ -146,7 +146,7 @@ class TestPromptContent:
             assert lens["mandate"] in text
             assert "typed-code" in text
             assert "the reader returns every record" in text
-            assert "/tmp/change.diff" in text and str(repo.root) in text
+            assert "pull request 7" in text and str(repo.root) in text
             assert '"verdict": "clean|findings"' in text
             assert f'"lens": "{lens["lens"]}"' in text
 
