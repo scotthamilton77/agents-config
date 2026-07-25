@@ -13,18 +13,17 @@ level facts derived from that snapshot.
 
 **This package emits facts; it does not decide.** Dispatch, fix/rebase budgets,
 review triggering, merge eligibility, and every tracker call belong to the
-decision layer above it. Mechanically: zero third-party imports, so no tracker
-facade; and no `subprocess` anywhere, so no shelling to `gh`/`git`. That boundary
-is the verified basis for keeping this runtime as the executor substrate
+decision layer above it. Mechanically: no import of a tracker facade, and no
+`subprocess` anywhere, so nothing here shells out to `gh`/`git`. Keeping that
+true is what lets the runtime serve as the executor substrate
 (`SAVEPOINTS/2026-07-24-v1-executor-loop-fit-report.md`).
 
-**The library reads no ambient state; `cli.main()` is the only place process
-state enters.** Every module below the CLI takes its clock, its file reader, its
-cwd, and its environment as arguments — `main()` defaults those four from the
-process only when a caller injects none, and no other module calls
-`datetime.now()`, `Path.cwd()`, or reads `os.environ`. `fold()` does no I/O at
-all. A caller above this package therefore owns every input, which is what makes
-the runtime drivable and replayable from a test or from an executor.
+**Ambient state enters through `cli.main()` and nowhere else.** The clock, cwd,
+environment, and seed-file reader are parameters it defaults from the process
+only when a caller injects none; modules below take just the inputs they need,
+and none of them calls `datetime.now()`, `Path.cwd()`, or reads `os.environ`.
+Grind-directory file I/O is not injected — `store.py` reads and writes those
+paths directly. `fold()` does no I/O at all.
 
 **Two distinct filesystem inputs, and the state directory is not just `--dir`.**
 The runtime's own files — `events.jsonl`, `events.quarantine`, `state.json`,
@@ -52,16 +51,8 @@ ambient resolution passes it explicitly, or injects `cwd`/`env`.
 subcommands — `create`, `log`, `status`, `check`, `render`, `finish`. The
 installer registers grind in `CLI_PACKAGES`
 (`packages/installer/src/installer/core/clis.py`), so the `grind` binary is
-installed onto PATH via `uv tool install` alongside `work` and `prgroom`.
-
-Every *command* emits exactly one JSON envelope on stdout and exits non-zero only
-on a command error — `grind check` excepted, whose exit 1 carries the staleness
-verdict itself. `_RaisingArgumentParser` extends that to parse failures: it
-overrides `error()` only, so a bad flag or unknown verb is enveloped too. It does
-not cover argparse's help action, which raises `SystemExit` and so passes through
-`main()`'s `except Exception` — `grind --help` prints plain usage text and exits 0
-with no envelope, as a CLI should, and that is the path `verify-entry-grind`
-exercises.
+installed onto PATH via `uv tool install`. The stdout-envelope and exit-code
+contract is stated in `cli.py`'s own docstrings, at the code that enforces it.
 
 ## The quality gate is mandatory — run it, do not approximate it
 
@@ -75,8 +66,7 @@ make ci-grind   # the full gate CI enforces
 It runs, in order: `ruff check` (lint), `ruff format --check` (formatting),
 `mypy --strict src` (types), `pytest --cov` (tests + coverage), `pip-audit`
 (deps), and `verify-entry-grind` — which asserts the console script resolves
-and the CLI root parses by running `grind --help`. `make ci` runs this alongside
-`ci-installer`, `ci-prgroom`, `ci-workcli`, and `ci-vizsuite`.
+and the CLI root parses by running `grind --help`.
 
 Do **not** hand-pick a subset (e.g. `ruff check` alone). The `Makefile` is
 the single source of truth for the gate; mirror it exactly. Faster inner
@@ -89,11 +79,9 @@ must pass before push.
 - Run tools via `uv run …` from inside `packages/grind/`, or the `make`
   targets from the repo root.
 - Config lives in `pyproject.toml`: ruff (line-length 100), mypy
-  `strict = true`, coverage `branch = true` / `fail_under = 80` — a single
-  combined floor over branch-enabled coverage, not a line/branch pair, and the
-  lowest floor of any package here (the siblings gate at 90).
-- Zero third-party imports anywhere in `src/`, by design — stdlib only, which
-  keeps the `pip-audit` surface nil.
+  `strict = true`, coverage `branch = true` / `fail_under = 80`.
+- Zero runtime dependencies by design: nothing in `src/` imports a third-party
+  package, and adding one is a decision, not a detail.
 
 ## Design principles for this package
 
