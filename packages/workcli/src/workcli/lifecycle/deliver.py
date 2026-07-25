@@ -138,7 +138,7 @@ def _deliver_design(backend: Backend, args: Namespace, design_item: Item) -> Jso
     # delivery parses the spec file and records the target, so a post-delivery
     # edit to the file can never alter a committed unit. `manifest:`
     # and `spec:` are written together at first delivery, but the appends are
-    # gated independently: an old bead carrying only a `spec:` marker (pre-snapshot
+    # gated independently: an old item carrying only a `spec:` marker (pre-snapshot
     # delivery, interrupted) gets the snapshot added without a duplicate `spec:`.
     manifest = manifest_snapshot(placeholder.notes)
     if manifest is None:

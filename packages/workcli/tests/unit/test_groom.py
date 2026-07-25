@@ -1,6 +1,6 @@
 """`work groom --done` / `work groom --status` -- Backlog Grooming state.
 
-State lives on the designated `[operating-model].groom-state-bead` as a
+State lives on the designated `[operating-model].groom-state-item` as a
 parseable note line (`backlog_last_groomed: <iso8601>`) -- the fallback
 mechanism the spec names, since the `Backend` protocol has no metadata
 primitive. `--status` never mutates; `--done` appends exactly one note line
@@ -23,11 +23,14 @@ from workcli.config import TrackLayerConfig
 from workcli.envelope import ErrorCode, WorkError
 from workcli.verbs.groom import groom
 
-GROOM_STATE_BEAD = "proj-groom1"
+GROOM_STATE_ITEM = "proj-groom1"
 
 
 def _config(
-    *, nag_days: int | None = 7, groom_state_bead: str | None = GROOM_STATE_BEAD
+    *,
+    nag_days: int | None = 7,
+    groom_state_item: str | None = GROOM_STATE_ITEM,
+    deprecations: tuple[str, ...] = (),
 ) -> TrackLayerConfig:
     return TrackLayerConfig(
         names=("alpha",),
@@ -36,11 +39,12 @@ def _config(
         milestone_wip_cap=None,
         wip_exempt_milestones=(),
         backlog_groom_nag_days=nag_days,
-        groom_state_bead=groom_state_bead,
+        groom_state_item=groom_state_item,
         extraction_max_track_backlog=None,
         extraction_external_consumer_tracks=(),
         extraction_independent_release_tracks=(),
         extraction_max_cross_track_edges=None,
+        deprecations=deprecations,
     )
 
 
@@ -56,27 +60,27 @@ def _args(
 
 
 def _backend(*, notes: str = "") -> FakeBackend:
-    return FakeBackend().add(GROOM_STATE_BEAD, notes=notes)
+    return FakeBackend().add(GROOM_STATE_ITEM, notes=notes)
 
 
 # -- config gate --
 
 
-def test_missing_groom_state_bead_fails_not_configured() -> None:
+def test_missing_groom_state_item_fails_not_configured() -> None:
     with pytest.raises(WorkError) as exc_info:
-        groom(_backend(), _args(status=True, config=_config(groom_state_bead=None)))
+        groom(_backend(), _args(status=True, config=_config(groom_state_item=None)))
     assert exc_info.value.code is ErrorCode.NOT_CONFIGURED
     assert exc_info.value.detail["reason"] == "invalid"
-    assert "groom-state-bead" in exc_info.value.message
+    assert "groom-state-item" in exc_info.value.message
     assert "groom-state backfill migration" in exc_info.value.message
 
 
-def test_missing_groom_state_bead_gates_before_any_backend_call() -> None:
+def test_missing_groom_state_item_gates_before_any_backend_call() -> None:
     """The config gate runs before backend I/O -- a backend that would raise
-    NOT_FOUND for the (unconfigured) bead id must never be reached."""
+    NOT_FOUND for the (unconfigured) item id must never be reached."""
     backend = FakeBackend()  # empty: any .get() call raises E_NOT_FOUND
     with pytest.raises(WorkError) as exc_info:
-        groom(backend, _args(done=True, config=_config(groom_state_bead=None)))
+        groom(backend, _args(done=True, config=_config(groom_state_item=None)))
     assert exc_info.value.code is ErrorCode.NOT_CONFIGURED
 
 
@@ -87,7 +91,7 @@ def test_done_appends_note_and_returns_new_timestamp() -> None:
     backend = _backend()
     result = groom(backend, _args(done=True))
     assert result == {"backlog_last_groomed": "2026-07-18T12:00:00Z"}
-    assert backend.note_lines(GROOM_STATE_BEAD) == ["backlog_last_groomed: 2026-07-18T12:00:00Z"]
+    assert backend.note_lines(GROOM_STATE_ITEM) == ["backlog_last_groomed: 2026-07-18T12:00:00Z"]
 
 
 def test_second_done_call_appends_a_new_line_not_a_replace() -> None:
@@ -96,7 +100,7 @@ def test_second_done_call_appends_a_new_line_not_a_replace() -> None:
         backend,
         _args(done=True, now=datetime(2026, 7, 18, 12, 0, 0, tzinfo=UTC)),
     )
-    assert backend.note_lines(GROOM_STATE_BEAD) == [
+    assert backend.note_lines(GROOM_STATE_ITEM) == [
         "backlog_last_groomed: 2026-07-01T00:00:00Z",
         "backlog_last_groomed: 2026-07-18T12:00:00Z",
     ]
@@ -223,7 +227,7 @@ def test_status_malformed_timestamp_fails_loud_not_e_internal() -> None:
     assert exc_info.value.code is ErrorCode.NOT_CONFIGURED
     assert exc_info.value.detail["reason"] == "invalid"
     assert "not-a-timestamp" in exc_info.value.message
-    assert GROOM_STATE_BEAD in exc_info.value.message
+    assert GROOM_STATE_ITEM in exc_info.value.message
 
 
 def test_status_skips_malformed_line_when_a_valid_marker_exists() -> None:
@@ -301,7 +305,7 @@ def test_status_gross_future_skew_is_invalid_state() -> None:
         groom(backend, _args(status=True, now=now))
     assert exc_info.value.code is ErrorCode.NOT_CONFIGURED
     assert exc_info.value.detail["reason"] == "invalid"
-    assert GROOM_STATE_BEAD in exc_info.value.message
+    assert GROOM_STATE_ITEM in exc_info.value.message
 
 
 # -- immediately after --done, --status reports not-breached --
@@ -361,7 +365,7 @@ def test_cli_status_end_to_end() -> None:
                     stdout=json.dumps(
                         [
                             _raw_bead(
-                                GROOM_STATE_BEAD, notes="backlog_last_groomed: 2026-07-10T12:00:00Z"
+                                GROOM_STATE_ITEM, notes="backlog_last_groomed: 2026-07-10T12:00:00Z"
                             )
                         ]
                     ),
@@ -392,13 +396,42 @@ def test_cli_done_end_to_end() -> None:
     assert envelope["data"] == {"backlog_last_groomed": "2026-07-18T12:00:00Z"}
 
 
-def test_cli_not_configured_when_groom_state_bead_blank() -> None:
+def test_cli_not_configured_when_groom_state_item_blank() -> None:
     exit_code, envelope, _ = run_cli(
         ["groom", "--status"],
         steps=[],
-        config_loader=lambda _explicit_path: _config(groom_state_bead=None),
+        config_loader=lambda _explicit_path: _config(groom_state_item=None),
     )
     assert exit_code == 1
     error = envelope["error"]
     assert isinstance(error, dict)
     assert error["code"] == str(ErrorCode.NOT_CONFIGURED)
+
+
+# -- config deprecations --
+
+_DEPRECATION = (
+    "[operating-model].groom-state-bead is superseded by groom-state-item; rename the key"
+)
+
+
+def test_status_surfaces_config_deprecations_as_warnings() -> None:
+    result = groom(
+        _backend(notes="backlog_last_groomed: 2026-07-17T12:00:00Z"),
+        _args(status=True, config=_config(deprecations=(_DEPRECATION,))),
+    )
+    assert result == {
+        "backlog_last_groomed": "2026-07-17T12:00:00Z",
+        "days_since": 1,
+        "nag_days": 7,
+        "breached": False,
+        "warnings": [_DEPRECATION],
+    }
+
+
+def test_done_surfaces_config_deprecations_as_warnings() -> None:
+    result = groom(_backend(), _args(done=True, config=_config(deprecations=(_DEPRECATION,))))
+    assert result == {
+        "backlog_last_groomed": "2026-07-18T12:00:00Z",
+        "warnings": [_DEPRECATION],
+    }

@@ -22,7 +22,10 @@ def main() -> int:
     config = tomllib.load(open(root / "project-config.toml", "rb"))
     organizing_only = set(config["tracks"]["organizing-only"])
     cap = config["extraction"]["pressure"]["max-track-backlog"]
-    groom_bead = config["operating-model"]["groom-state-bead"]
+    operating = config["operating-model"]
+    # Same precedence as the facade: the current key wins whenever present,
+    # the superseded spelling is read only in its absence.
+    groom_item = operating.get("groom-state-item", operating.get("groom-state-bead", ""))
 
     assigned = {
         i: e["track"]
@@ -51,7 +54,7 @@ def main() -> int:
         return [x for x in item["labels"] if x.startswith("track:")]
 
     # C1 — outcome matches the artifact; nothing outside it was written to.
-    # The groom-state bead is minted by this migration and is deliberately not in
+    # The groom-state item is minted by this migration and is deliberately not in
     # the artifact, so it is carved out of the stray check.
     #
     # The target-track comparison applies to LIVE items only. `reconcile()`
@@ -72,7 +75,7 @@ def main() -> int:
                 skipped_closed.append(item["id"])
             elif item["track"] != want:
                 mismatched.append((item["id"], want, item["track"], item["status"]))
-        elif labels and item["id"] != groom_bead:
+        elif labels and item["id"] != groom_item:
             stray.append((item["id"], item["type"], item["status"], labels))
     if mismatched:
         failures.append(f"C1 outcome != artifact: {mismatched[:5]} ({len(mismatched)} total)")
@@ -153,13 +156,13 @@ def main() -> int:
         )
     print(f"track_mismatches: {len(actual_edges)} edges (expected {len(expected_edges)})")
 
-    # C6 — groom-state bead exists, tracked ops-meta, exempt.
-    if not groom_bead:
-        failures.append("C6 groom-state-bead empty")
+    # C6 — groom-state item exists, tracked ops-meta, exempt.
+    if not groom_item:
+        failures.append("C6 groom-state-item empty")
     else:
-        got = work(root, "show", groom_bead, require_ok=False)
+        got = work(root, "show", groom_item, require_ok=False)
         if not got.get("ok"):
-            failures.append(f"C6 groom-state-bead {groom_bead} does not exist")
+            failures.append(f"C6 groom-state-item {groom_item} does not exist")
         else:
             it = got["data"]
             if it["track"] != "ops-meta":

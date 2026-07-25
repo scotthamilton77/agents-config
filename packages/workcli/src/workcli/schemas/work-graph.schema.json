@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "workcli/work-graph.schema.json",
   "title": "work graph --json `data` payload",
-  "description": "Bulk export: every non-closed bead plus closed containers needed for ancestry; dependency edges typed as bd emits them, parent-child edges synthesized child->parent. Edge endpoints MAY reference closed beads absent from nodes (severed-blocker case).",
+  "description": "Bulk export: every non-closed work item plus closed containers needed for ancestry; dependency edges carry the backend's own edge type, parent-child edges synthesized child->parent. Edge endpoints MAY reference closed items absent from nodes (severed-blocker case).",
   "type": "object",
   "required": ["nodes", "edges"],
   "additionalProperties": false,

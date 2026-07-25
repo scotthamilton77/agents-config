@@ -8,7 +8,7 @@ per-item state, on a note field) unlike the read-only aggregations
 Persistence mechanism: the `Backend` protocol has no metadata primitive
 (only `get`/`append_note`), so state lives as a parseable note line
 (`backlog_last_groomed: <iso8601>`) on the designated
-`[operating-model].groom-state-bead` -- the spec's named fallback. Notes are
+`[operating-model].groom-state-item` -- the spec's named fallback. Notes are
 append-only (bd's `--append-notes`, same discipline as `work note`), so
 `--done` never edits an existing line; `--status` selects the marker with
 the latest PARSED timestamp, not the physically last line -- concurrent
@@ -36,20 +36,20 @@ _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _FUTURE_SKEW_TOLERANCE = timedelta(hours=24)
 
 
-def _require_groom_state_bead(config: TrackLayerConfig) -> str:
+def _require_groom_state_item(config: TrackLayerConfig) -> str:
     """Config gate, checked before any backend I/O (both --done and --status)."""
-    if config.groom_state_bead is None:
+    if config.groom_state_item is None:
         raise WorkError(
             ErrorCode.NOT_CONFIGURED,
-            "[operating-model].groom-state-bead is not configured; run the "
+            "[operating-model].groom-state-item is not configured; run the "
             "groom-state backfill migration to mint it",
             detail={"reason": "invalid"},
         )
-    return config.groom_state_bead
+    return config.groom_state_item
 
 
 def _latest_marker(
-    backend: Backend, groom_state_bead: str, now: datetime
+    backend: Backend, groom_state_item: str, now: datetime
 ) -> tuple[str, datetime] | None:
     """The `backlog_last_groomed: <ts>` marker with the LATEST TRUSTWORTHY
     timestamp, or None when no matching line exists yet (bootstrap: never
@@ -74,7 +74,7 @@ def _latest_marker(
     where no trustworthy answer exists at all -- it doesn't demand refusing
     a trustworthy answer because a corpse is also in the room (round 4
     refinement)."""
-    matches = _NOTE_LINE_PATTERN.findall(backend.get(groom_state_bead).notes)
+    matches = _NOTE_LINE_PATTERN.findall(backend.get(groom_state_item).notes)
     if not matches:
         return None
     trustworthy: list[tuple[str, datetime]] = []
@@ -94,33 +94,33 @@ def _latest_marker(
     # Every candidate is untrustworthy: unlike a single corrupted line among
     # valid ones, there is no trustworthy answer anywhere in history.
     raw, problem = problems[0]
-    raise _invalid_marker(groom_state_bead, raw, problem)
+    raise _invalid_marker(groom_state_item, raw, problem)
 
 
-def _invalid_marker(groom_state_bead: str, last_groomed: str, problem: str) -> WorkError:
+def _invalid_marker(groom_state_item: str, last_groomed: str, problem: str) -> WorkError:
     """Notes are append-only and raw `bd note`/`bd label` writes stay possible
     outside `work groom --done` -- any marker this module cannot trust must
     fail loud as a typed error here, never crash into E_INTERNAL (which would
     silently drop the nag rather than surfacing the broken state)."""
     return WorkError(
         ErrorCode.NOT_CONFIGURED,
-        f"backlog_last_groomed note on {groom_state_bead} is malformed: "
+        f"backlog_last_groomed note on {groom_state_item} is malformed: "
         f"{last_groomed!r} ({problem})",
         detail={"reason": "invalid"},
     )
 
 
-def _done(backend: Backend, args: Namespace, groom_state_bead: str) -> JsonValue:
+def _done(backend: Backend, args: Namespace, groom_state_item: str) -> dict[str, JsonValue]:
     timestamp = args.now().strftime(_TIMESTAMP_FORMAT)
-    backend.append_note(groom_state_bead, f"backlog_last_groomed: {timestamp}")
+    backend.append_note(groom_state_item, f"backlog_last_groomed: {timestamp}")
     return {"backlog_last_groomed": timestamp}
 
 
 def _status(
-    backend: Backend, args: Namespace, config: TrackLayerConfig, groom_state_bead: str
-) -> JsonValue:
+    backend: Backend, args: Namespace, config: TrackLayerConfig, groom_state_item: str
+) -> dict[str, JsonValue]:
     now = args.now()
-    latest = _latest_marker(backend, groom_state_bead, now)
+    latest = _latest_marker(backend, groom_state_item, now)
     nag_days = config.backlog_groom_nag_days
     if latest is None:
         # Never groomed = maximally overdue -- a deliberate design decision:
@@ -147,11 +147,20 @@ def _status(
     }
 
 
+def _with_warnings(data: dict[str, JsonValue], config: TrackLayerConfig) -> JsonValue:
+    """Additive `warnings` key (same convention as `create`), omitted when empty:
+    this verb is the only consumer of the groom-state key, so it is where a
+    superseded spelling of that key gets reported back to the user."""
+    if config.deprecations:
+        data["warnings"] = list(config.deprecations)
+    return data
+
+
 def groom(backend: Backend, args: Namespace) -> JsonValue:
     """Dispatch `work groom --done` / `work groom --status`; argparse's
     required mutually-exclusive group guarantees exactly one flag is set."""
     config = args.load_config()
-    groom_state_bead = _require_groom_state_bead(config)
+    groom_state_item = _require_groom_state_item(config)
     if args.done:
-        return _done(backend, args, groom_state_bead)
-    return _status(backend, args, config, groom_state_bead)
+        return _with_warnings(_done(backend, args, groom_state_item), config)
+    return _with_warnings(_status(backend, args, config, groom_state_item), config)

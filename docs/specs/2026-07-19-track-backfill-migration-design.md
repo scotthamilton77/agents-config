@@ -198,7 +198,7 @@ applying before the config update fails every write to a new track with
 4. Dry run: print the full write plan, mutate nothing.
 5. Apply the 366 assignments.
 6. Reparent the 3 anchored orphans (§5.4); label the 6 exempted.
-7. Mint the groom-state bead (§5.6) and set `groom-state-bead`.
+7. Mint the groom-state work item (§5.6) and set `groom-state-item`.
 8. Verify §8.
 9. `bd dolt commit` + `bd dolt push`.
 
@@ -295,7 +295,7 @@ labelling. `work create --raw` accepts `--label`, closing that window:
    already exempt, so it is never briefly a violation.
 2. `work track set <id> ops-meta` — the track goes through the validated gate,
    never a raw label write.
-3. Record its id in `[operating-model].groom-state-bead`.
+3. Record its id in `[operating-model].groom-state-item`.
 
 All three complete **before** the §8 verification.
 
@@ -306,7 +306,7 @@ All three complete **before** the §8 verification.
 - `[tracks].names` — remove `skills-discipline`, `portability`; add
   `pipeline-discipline`, `review-and-merge`, `grind-runtime`
 - `[tracks].organizing-only` — `pipeline-discipline`, `grind-runtime`, `ops-meta`
-- `[operating-model].groom-state-bead` — the id minted in §5.6
+- `[operating-model].groom-state-item` — the id minted in §5.6
 
 `[tracks].enforcement` stays `advisory`. Flipping it is a separate work item —
 and per §5.1, the flip is what makes this migration's result stable, so it should
@@ -353,7 +353,7 @@ filed as a continuation.
    labelling materializes every pre-existing cross-track parent edge at once.
    Reading that 0 as a stable baseline is the mistake this criterion exists to
    prevent. Note also that `work lint` keys these entries on `child`, not `id`.
-6. `[operating-model].groom-state-bead` names an existing item that carries the
+6. `[operating-model].groom-state-item` names an existing item that carries the
    `ops-meta` track and the `lint-exempt:no-milestone` label.
 7. A second consecutive run leaves `bd dolt status` clean — no writes.
 

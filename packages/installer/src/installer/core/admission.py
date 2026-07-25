@@ -2,18 +2,30 @@
 
 Every artifact in a *gated namespace* (``rules``, ``skills``, ``commands``,
 ``agents``) must carry a complete ``admission`` record in its front matter to
-be deployed. The record states the failure the artifact prevents, what it
-costs, and the observation that would remove it — so nothing enters the
-always-on / on-invoke surface by default or nostalgia.
+be deployed. The record states what the artifact is worth, what it costs, and
+the observation that would remove it — so nothing enters the always-on /
+on-invoke surface by default or nostalgia.
+
+Worth is stated one of two ways, and a record carries **exactly one**:
+
+- ``prevents`` — the failure the artifact stops. The preventative case.
+- ``provides`` — the capability it supplies. The assistive case: a repeatable
+  procedure is worth having even though no failure precedes it, and forcing it
+  into failure language produces a fiction rather than a justification.
+
+Requiring exactly one keeps the record a claim rather than a brochure: an
+author must decide which case the artifact actually makes.
 
 Classification is three-valued:
 
 - **no record** — no ``admission`` block at all → *not admitted* (dropped and
   reported). This is the zero-base mechanism: today's content carries no
   records, so all of it is skipped and prune empties the deployed dirs.
-- **malformed** — an ``admission`` block that is not a mapping or is missing a
-  required non-empty field → a mechanical defect that *aborts* the deploy.
-- **complete** — all three fields present and non-empty → *admitted*.
+- **malformed** — an ``admission`` block that is not a mapping, is missing a
+  required non-empty field, or states neither/both worth fields → a mechanical
+  defect that *aborts* the deploy.
+- **complete** — one worth field plus ``cost`` and ``remove_when``, all
+  non-empty → *admitted*.
 
 ``agents`` is gated alongside the ``rule/skill/command`` set: an agent is an
 on-invoke capability indistinguishable from a skill for admission purposes, and
@@ -33,11 +45,16 @@ if TYPE_CHECKING:
 
 GATED_NAMESPACES = frozenset({"rules", "skills", "commands", "agents"})
 
-_REQUIRED_FIELDS = ("prevents", "cost", "remove_when")
+_REQUIRED_FIELDS = ("cost", "remove_when")
+
+# The two ways a record can state the artifact's worth. Exactly one is carried.
+_WORTH_FIELDS = ("prevents", "provides")
 
 # Where a gated artifact's front matter lives when the staged item is a
 # directory (skills, and any directory-shaped agent): the canonical entry file.
-_DIR_RECORD_FILE = "SKILL.md"
+# Public because the gate rewrites this same file's bytes when it sanitizes an
+# admitted directory.
+DIR_RECORD_FILE = "SKILL.md"
 
 
 class AdmissionOutcome(Enum):
@@ -50,11 +67,15 @@ class AdmissionOutcome(Enum):
 
 @dataclass(frozen=True, slots=True)
 class AdmissionRecord:
-    """A complete admission record."""
+    """A complete admission record.
 
-    prevents: str
+    Exactly one of ``prevents`` / ``provides`` is set; the other is ``None``.
+    """
+
     cost: str
     remove_when: str
+    prevents: str | None = None
+    provides: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,7 +107,7 @@ def record_source_text(item: StagedItem) -> str | None:
     """
     if item.content is not None:
         return item.content.decode("utf-8", errors="replace")
-    entry = item.source_path / _DIR_RECORD_FILE
+    entry = item.source_path / DIR_RECORD_FILE
     if entry.is_file():
         return entry.read_text(encoding="utf-8")
     return None
@@ -108,9 +129,16 @@ def _coerce_claims(raw: Any) -> dict[str, str]:
     return out
 
 
-def classify(item: StagedItem) -> ItemAdmission:
-    """Classify one gated item against the admission bar."""
-    text = record_source_text(item)
+def classify(item: StagedItem, *, text: str | None = None) -> ItemAdmission:
+    """Classify one gated item against the admission bar.
+
+    ``text`` overrides the record source. The gate passes it for a directory
+    item whose entry file has been patched into ``dir_overrides`` (a plugin
+    extension), so the bar reads the bytes that will actually deploy rather
+    than the unpatched file under ``source_path``.
+    """
+    if text is None:
+        text = record_source_text(item)
     if text is None:
         return ItemAdmission(AdmissionOutcome.NO_RECORD)
     mapping, _body = split_frontmatter(text)
@@ -123,20 +151,32 @@ def classify(item: StagedItem) -> ItemAdmission:
 
     missing: list[str] = []
     values: dict[str, str] = {}
-    for key in _REQUIRED_FIELDS:
+    for key in (*_REQUIRED_FIELDS, *_WORTH_FIELDS):
         raw = block.get(key)
-        if not isinstance(raw, str) or not raw.strip():
-            missing.append(key)
-        else:
+        if isinstance(raw, str) and raw.strip():
             values[key] = raw.strip()
+        elif key in _REQUIRED_FIELDS:
+            missing.append(key)
     if missing:
         return ItemAdmission(
             AdmissionOutcome.MALFORMED,
             detail=f"missing or empty field(s): {', '.join(missing)}",
         )
 
+    stated = [key for key in _WORTH_FIELDS if key in values]
+    if len(stated) != 1:
+        named = " or ".join(_WORTH_FIELDS)
+        defect = "states both" if stated else "states neither"
+        return ItemAdmission(
+            AdmissionOutcome.MALFORMED,
+            detail=f"{defect} {named} — a record carries exactly one",
+        )
+
     record = AdmissionRecord(
-        prevents=values["prevents"], cost=values["cost"], remove_when=values["remove_when"]
+        cost=values["cost"],
+        remove_when=values["remove_when"],
+        prevents=values.get("prevents"),
+        provides=values.get("provides"),
     )
     return ItemAdmission(
         AdmissionOutcome.COMPLETE, record=record, claims=_coerce_claims(mapping.get("claims"))

@@ -87,9 +87,11 @@ enforcement = "advisory"   # "advisory" | "required"; omitted key ⇒ "advisory"
 
 [operating-model]
 milestone-wip-cap = 2
-wip-exempt-milestones = ["agents-config-uxns2"]  # PORT — identified by bead id, never display name
+wip-exempt-milestones = ["agents-config-uxns2"]  # PORT — identified by work item id, never display name
 backlog-groom-nag-days = 7
-groom-state-bead = ""   # bead id holding backlog-groom state; minted during backfill (§7)
+groom-state-item = ""   # work item id holding backlog-groom state; minted during backfill (§7)
+                        # the superseded spelling `groom-state-bead` is still
+                        # accepted on read; this key wins when both are set
 
 [extraction.pressure]
 # PRESSURE signals — "this track would BENEFIT from its own repo."
@@ -222,7 +224,7 @@ field, so the protocol version bumps MINOR.
   Grooming** completion. State (`backlog_last_groomed` — the persisted bd
   state field name, intentionally snake_case mirroring CONTEXT.md's
   `last_groomed`, distinct from the kebab-case TOML config keys) lives **in
-  the bd backend itself**, on the designated `[operating-model].groom-state-bead`
+  the bd backend itself**, on the designated `[operating-model].groom-state-item`
   (metadata preferred; a parseable note is the fallback — the mechanism is an
   implementation decision, the requirements are fixed: dolt-synced across
   machines, no per-machine divergence, no git commit churn). `--status`
@@ -327,8 +329,8 @@ permanent residence):
    `lint-exempt:no-milestone` explicitly.
 5. One-time lease sweep of the non-milestone `in_progress` beads: confirm
    live (two are the in-flight vizsuite V2 build) or release.
-6. Mint the groom-state bead (ops-meta track, `lint-exempt:no-milestone`) and
-   record its id in `[operating-model].groom-state-bead`.
+6. Mint the groom-state work item (ops-meta track, `lint-exempt:no-milestone`)
+   and record its id in `[operating-model].groom-state-item`.
 
 Exit criterion: `work lint` invariants 1–2 report zero violations. Holding that
 criterion across a full Backlog Grooming cycle is the precondition for the
@@ -435,7 +437,7 @@ implementation plan, authored under the writing-unit-tests discipline.
   `work groom` (bd-backed state per §4); wire the backlog-grooming nag line
   into the whats-next surface. Acceptance: criteria 13–15.
 - **Backfill migration** — the §7 script and its one-time supervised run,
-  including minting the groom-state bead. Acceptance: §7 exit criterion.
+  including minting the groom-state work item. Acceptance: §7 exit criterion.
 - **Enforcement flip** — audit programmatic `work create` call sites
   (holding-place Promote design, capture flows), confirm each supplies or
   derives track, then set `enforcement = "required"`. Precondition: §7 exit
