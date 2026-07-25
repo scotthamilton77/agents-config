@@ -1,0 +1,110 @@
+{
+  "typed-code": {
+    "lenses": [
+      {
+        "lens": "correctness",
+        "mandate": "Judge whether the code does what the acceptance criteria require on every path it can be reached through. Look for wrong results, unhandled error and boundary conditions, broken invariants, resource and concurrency hazards, and control flow that cannot reach its stated outcome. A defect counts even when no test covers it.",
+        "acs_hint": "criteria describing the behaviour of the changed code paths",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "codex"
+      },
+      {
+        "lens": "security",
+        "mandate": "Judge whether this change can be made to act against the interests of the system that runs it. Look for untrusted input reaching an interpreter, filesystem, or network sink; missing authentication, authorisation, or bounds checks; secret and credential exposure; unsafe deserialisation; and dependency risk introduced here. Reachability matters more than severity labels: say how an attacker gets there.",
+        "acs_hint": "criteria describing trust boundaries, inputs, and permissions",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "openrouter"
+      },
+      {
+        "lens": "test-adequacy",
+        "mandate": "Judge whether the tests shipped with this change would actually fail if the behaviour the acceptance criteria require were broken. Look for assertions that cannot fail, missing negative and boundary cases, untested error paths, over-mocked seams that assert only the mock, and criteria with no covering test at all.",
+        "acs_hint": "criteria that a test is expected to pin",
+        "tier": "mid",
+        "rescope": "full",
+        "transport": "codex"
+      },
+      {
+        "lens": "simplification-efficiency",
+        "mandate": "Judge whether the changed code is more complicated or more costly than the acceptance criteria require. Look for logic duplicating a helper that already exists, redundant indirection, dead branches, and avoidable repeated work on hot paths. Raise only what the changed text itself demonstrates.",
+        "acs_hint": "criteria bounding the scope and cost of the change",
+        "tier": "mid",
+        "rescope": "diff",
+        "transport": "openrouter"
+      }
+    ]
+  },
+  "spec": {
+    "lenses": [
+      {
+        "lens": "internal-consistency-decidability",
+        "mandate": "Judge whether the document contradicts itself and whether every statement it makes could be settled by an observation. Look for claims restated differently in two places, a term carrying more than one meaning, rules whose preconditions overlap with conflicting outcomes, and requirements phrased so that no observer could decide whether they hold. Read the whole document: a change in one section can break a claim in another.",
+        "acs_hint": "criteria the document's own rules and definitions must satisfy",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "codex"
+      },
+      {
+        "lens": "ac-testability",
+        "mandate": "Judge whether each acceptance criterion can be converted into a test that fails before the work and passes after it. Look for criteria that name no observable, bundle several behaviours into one, depend on unstated setup, or assert a quality such as robust or clean with no measurable threshold. Name the failing test that is impossible to write.",
+        "acs_hint": "the criteria themselves, judged as testable claims",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "openrouter"
+      },
+      {
+        "lens": "completeness-vs-scope",
+        "mandate": "Judge whether the document's declared scope and its content agree in both directions: obligations the document implies but never specifies, and material it specifies that its own scope excludes. Look for decisions with no owning section, dangling forward references, and required work that no part of the plan covers.",
+        "acs_hint": "criteria describing what the document must and must not cover",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "codex"
+      },
+      {
+        "lens": "clarity-standalone-read",
+        "mandate": "Judge whether a competent reader outside this effort could act on the changed text without asking a question. Look for undefined terms, unexplained references to other work, ambiguous antecedents, and instructions whose subject or trigger is left unstated.",
+        "acs_hint": "criteria describing how the text must read to an outside reader",
+        "tier": "mid",
+        "rescope": "diff",
+        "transport": "openrouter"
+      }
+    ]
+  },
+  "skill-config-prose": {
+    "lenses": [
+      {
+        "lens": "instruction-correctness",
+        "mandate": "Judge whether an agent following these instructions literally would produce the behaviour the acceptance criteria require. Look for steps that contradict each other, commands or flags that do not do what the surrounding text claims, missing preconditions, and branches whose trigger condition is never stated.",
+        "acs_hint": "criteria describing the behaviour the instructions must produce",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "codex"
+      },
+      {
+        "lens": "robustness-injection",
+        "mandate": "Judge whether content this asset processes could redirect the agent that reads it. Look for interpolated or fetched data placed where instructions are read, absent or forgeable delimiters between trusted instructions and untrusted content, missing statements that fenced data is inert, and paths where a hostile string in the data would be obeyed rather than reported.",
+        "acs_hint": "criteria describing trusted-versus-untrusted handling",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "openrouter"
+      },
+      {
+        "lens": "altitude-token-budget",
+        "mandate": "Judge whether the changed text sits at the right level of detail for its budget: state the rule and the reason, do not narrate cases a competent agent infers. Look for restated general knowledge, redundant examples, ceremony that costs tokens without changing behaviour, and detail belonging in a referenced asset.",
+        "acs_hint": "criteria bounding the asset's size and level of detail",
+        "tier": "mid",
+        "rescope": "diff",
+        "transport": "codex"
+      },
+      {
+        "lens": "standalone-read",
+        "mandate": "Judge whether the changed text is usable by an agent that has none of the surrounding project context. Look for references to internal file paths, planning identifiers, or effort names that will not exist where the asset is deployed, undefined jargon, and cross-references that resolve to nothing after deployment.",
+        "acs_hint": "criteria describing what the deployed text must convey on its own",
+        "tier": "mid",
+        "rescope": "diff",
+        "transport": "openrouter"
+      }
+    ]
+  }
+}
