@@ -51,6 +51,12 @@ uv run emit_prompts.py --class typed-code --claim <claim-id> --round 1 \
   --retained '[]' --out-dir /tmp/round-1
 ```
 
+`--acs` points at a file the invoker writes before round 1: the acceptance criteria the claim is
+judged against, gathered from wherever the claim is stated — the work item, the governing design
+document, or the change's own description — as a plain list of observable criteria. Every lens of
+every round of the same claim judges against that same file; if the criteria change mid-review,
+that is a new claim and a new round 1, not an edit to the file.
+
 One `<lens>.md` prompt lands per lens, plus `round.json` recording the class, claim, commits,
 retained categories, the lens list with its tier, transport and scope, and the disposition ledger.
 Stdout is `{"emitted": true, "prompts": [...]}`.
