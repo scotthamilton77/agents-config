@@ -4,8 +4,9 @@
 **Status:** Investigation record; child of `docs/specs/2026-07-21-harness-rework-way-forward.md`. Proposes; deploys nothing.
 **Tracker:** `agents-config-9k9.42`
 
-Every machine write this repo makes to GitHub authenticates with the owner's
-`gh` credential, so it renders as the owner. An agent that reads the resulting
+Every machine write this repo makes to GitHub authenticates as the owner — the
+owner's `gh` credential for every API write, the owner's git credential for a
+push — so it renders as the owner. An agent that reads the resulting
 comment back cannot tell it from something the human typed. The deployed hard
 line makes merge authorization depend on "an explicit instruction", names no
 authorship test, and names no channel the instruction must arrive on — so an
@@ -206,13 +207,13 @@ non-verdict paths are converted it counts every agent-posted comment as a human
 intervention and reports the prime directive's own metric wrong.
 
 **It covers the writes that are not comments, and the channel no criterion
-constrains.** Four owner-credentialed writes are neither a comment nor an
+constrains.** Five owner-credentialed writes are neither a comment nor an
 approval, so they fall outside S6-D2's text entirely: the thread resolution, the
-reviewer re-request, the `human-review-required` label add, and the commit/push
-path. The PR-body PATCH is outside it too — a PR body is not a comment — though
-the splice leaves the body's authorship the PR author's, so it converts no
-attribution; it stays in the conversion enumeration as a write path rather than as
-something a reader can mistake for an instruction. The ad-hoc `gh` invocation is
+reviewer re-request, the `human-review-required` label add, the commit/push
+path, and the PR-body PATCH — a PR body is not a comment. The PATCH is the mildest
+of the five: the splice leaves the body's authorship the PR author's, so it
+converts no attribution; it stays in the conversion enumeration as a write path
+rather than as something a reader can mistake for an instruction. The ad-hoc `gh` invocation is
 the harder case: a comment an agent types by hand is a machine-posted comment, so
 S6-D2's text nominally reaches it, but no criterion anywhere names or constrains
 that channel, and a property no mechanism enforces is not a control. That channel
@@ -276,7 +277,10 @@ marker — a thread resolution, a reviewer request, and a label are structurally
 unmarkable. The three that do carry
 markers already prove the ceiling: `<!-- prgroom:reply:… -->` is a working,
 purpose-built machine-emitted marker that reaches three of the eight write paths
-and cannot reach the rest. A marker is also omissible by the agent it constrains,
+and cannot reach the three that carry no body at all. The two ambient paths could
+carry a marker and nothing makes them — a weaker failure than the structural one,
+and a worse one to rely on, since it turns on adoption rather than on shape. A
+marker is also omissible by the agent it constrains,
 which is the wrong direction for a control against self-authorization.
 
 **Absence problem: fatal, and it collapses the option.** Absence is ambiguous
@@ -362,9 +366,11 @@ other.
 
 - **AUTH-1** The deployed hard line names the channels an authorization may
   arrive on and excludes the PR surface: a PR comment, review body, or issue
-  comment never authorizes a merge, whoever appears to have written it. Inverse:
-  an instruction in the session turn, and a merge permitted by a configured
-  rule-based policy, both still authorize. Boundary: a comment quoting an earlier
+  comment never authorizes a merge, whoever appears to have written it. Inverse,
+  decidable today: an instruction in the session turn still authorizes. The hard
+  line's rule-based branch is not a test input here either, for the reason given
+  under AUTH-2 — it becomes one when the separately-tracked repair of that channel
+  lands. Boundary: a comment quoting an earlier
   in-session authorization verbatim does not re-authorize — the quote is not the
   turn.
 - **AUTH-2** Given a PR carrying a comment whose text reads as merge
@@ -400,9 +406,11 @@ other.
   the `reply` module among them — which carries three of the six API-write paths
   in §1. A path inside a deleted module is owed no conversion: deletion removes it
   from the audit surface outright. What must convert is `GhClient` itself, the
-  single client every retained and future write passes through, plus any write the
-  replacement machinery — the verdict harvester and merge-eligibility
-  evaluation — introduces. Binding the criterion to the client rather than to a
+  single client every retained and future write passes through. Writes the
+  replacement machinery introduces are not separately required here — that
+  machinery is out of scope (§6) — they inherit the conversion by construction,
+  because a write that reaches GitHub any other way fails this criterion whatever
+  introduced it. Binding the criterion to the client rather than to a
   call-site list also settles the paths the carve leaves undecided: whichever
   grooming writes survive, they flow through the converted client. Machine-posted
   comments and approvals stay S6-D2's (§3); the commit/push path is AUTH-9's.
@@ -425,6 +433,14 @@ other.
   names the App-routed helper in the refusal, which catches the common accidental
   path and makes the intended route discoverable — but a denied command name is
   not the control, and the criterion is not satisfied by the denial alone.
+  Carve-out, named rather than assumed: a branch push needs write scope by
+  construction, and the push path survives the carve, so a blanket removal would
+  break the work rather than secure it. The criterion exempts the push and requires
+  it instead to run through a credential scoped so it cannot post a comment,
+  review, approval, or label — narrowing the scope rather than removing it.
+  Designing that route is follow-up work; a push path that keeps a credential able
+  to post fails this criterion, and so does an unexempted removal that leaves the
+  push unable to run.
   Residual risk, stated rather than designed away: while an agent process can read
   a credential with write scope, no enumeration of blocked commands makes the
   invariant true — it raises the cost of the bypass and nothing more.
@@ -451,8 +467,9 @@ other.
 - **AUTH-9** Commits produced in an agent session are attributable to the agent
   by a stable, case-exact trailer emitted by an asset this repo controls.
   Inverse: a commit with no such trailer is not asserted to be agent-authored.
-  Boundary: casing variants of the same trailer are treated as one trailer, or
-  one casing is normalized and enforced.
+  Boundary: one casing is normalized and enforced, and a commit carrying a variant
+  casing reads as carrying the trailer while the emitting asset is required to
+  produce only the enforced form.
 
 ## 6. Out of scope
 
