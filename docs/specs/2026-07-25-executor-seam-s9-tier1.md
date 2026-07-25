@@ -105,7 +105,10 @@ reported to the tracker — the fact stays recorded even when the tracker call
 fails, and the failure surfaces for retry. The rule does not prevent
 divergence — S9T1-A8 and S9T1-C2 deliberately permit transient one-sided
 states — it bounds every divergence to a single failed call whose retry
-converges, and it fixes which side leads.
+converges, and it fixes which side leads. Enactment is also state-checked
+idempotent: when grind already records the transition — a retry whose first
+run appended but whose response was lost — the executor appends no duplicate
+and reports success.
 
 **S9T1-D7 — Failure-axis parks cross untranslated; the executor is the
 contract's third reader.** The pairing layer contains no reason-mapping table.
@@ -155,27 +158,29 @@ unversioned envelope is a minted defect (`agents-config-9k9.1.18`); the new
 package does not repeat it.
 
 **S9T1-D12 — The pairing universe is closed.** The pairing table is exactly
-these rows; the parenthesized grind event and tracker action are the whole
-effect of each verb:
+these rows. Each row states its verb's whole per-item effect; S9T1-D9's
+invocation-level trailing `work sync` applies over any mutating row and is
+deliberately not repeated here:
 
-| Executor verb | Grind event | Tracker action |
+| Executor verb and arguments | Grind event | Tracker action |
 | --- | --- | --- |
-| `start` | `item_started` | `work claim` |
-| `park` (failure axis) | `item_parked` | `work park --reason` (same code) |
-| `park` (scheduling axis) | `item_parked` | none |
-| `redispatch` | `item_enqueued` | `work redispatch` |
-| `abandon` | `item_enqueued` | `work abandon` |
-| `pr-opened` | `pr_opened` | none |
-| `pr-closed` | `pr_closed` | none |
-| `merged` | `item_merged` | `work close` |
-| `done` | `item_done` | none |
-| `attempt` at exhaustion | `item_parked` (`budget-exhausted`) | `work park --reason budget-exhausted` |
+| `start <id>` | `item_started` | `work claim` |
+| `park <id> --reason <code> [--note <text>]`, failure axis | `item_parked` | `work park --reason` (same code) |
+| `park <id> --reason <code> [--note <text>]`, scheduling axis | `item_parked` | none |
+| `redispatch <id>` | `item_enqueued`, no closure | `work redispatch` |
+| `abandon <id> --pr <n> [--reason <text>]` | `item_enqueued` with closure (S9T1-B7) | `work abandon` |
+| `pr-opened <id> --pr <n>` | `pr_opened` | none |
+| `pr-closed <id> --pr <n> --next <status> [--reason <text>]` | `pr_closed` | none |
+| `merged <id>` | `item_merged` | `work close` |
+| `done <id>` | `item_done` | none |
+| `attempt <id> --kind <k>` under budget | `fix_attempted` | none |
+| `attempt <id> --kind <k>` at exhaustion | `item_parked` (`budget-exhausted`) | `work park --reason budget-exhausted` |
 
 The rest of grind's event vocabulary — run lifecycle (`grind_*`), lanes,
 attention, reviews, `item_blocked`/`item_resumed`/`item_waiting_human`,
 `discovered_work` — is enacted and observed by no Tier-1 executor command;
-those planes belong to the run's driver and to later tiers. A totality claim
-about the pairing layer is decidable against this table and nothing else.
+those planes belong to the run's driver and to later tiers. Totality claims
+are decidable against this table and nothing else.
 
 ## 3. Slices and acceptance criteria
 
@@ -184,8 +189,9 @@ PRs. The edge-case taxonomy (inverse, empty/boundary, dependency failure,
 repeated invocation, idempotency) is applied per slice. Each slice is
 separately mergeable. Item mapping: Slice A discharges `agents-config-9k9.1.4`;
 Slices B and C together discharge `agents-config-9k9.1.3` (the item stays open
-until C lands — its admission requires enforcement, not just counting); Slices
-P and N together discharge `agents-config-9k9.1.6`. Ordering: A, B, and P are
+until C lands — its admission requires enforcement, not just counting; Slice B
+also carries S9T1-B7, the abandon-closure fold addition, same fold/payload
+surface); Slices P and N together discharge `agents-config-9k9.1.6`. Ordering: A, B, and P are
 independent and parallelizable; C needs A and B; N needs A. C and N both touch
 the executor's `cli.py` — land C before N.
 
@@ -206,10 +212,11 @@ the executor's `cli.py` — land C before N.
   quirk: `grind check` exiting 1 with an `ok: true` envelope parses as a
   healthy staleness verdict, not a crash (boundary).
 - **S9T1-A4** The pairing table is total over the closed universe: a
-  parametrized test walks every S9T1-D12 row and asserts exactly that row's
+  parametrized test walks every S9T1-D12 row except the two `attempt` rows
+  (whose pairing S9T1-C1/C2 pin in Slice C) and asserts exactly that row's
   tracker action or its explicit none; the CLI exposes exactly the S9T1-D12
-  verbs plus `attempt` and `next` — an executor verb outside the enumeration,
-  or a table row without a test, fails the suite (absent-row boundary).
+  verbs plus `next` — an executor verb outside the enumeration, or a walked
+  row without a test, fails the suite (absent-row boundary).
 - **S9T1-A5** A failure-axis park crosses untranslated: `item_parked.reason`
   reaches `work park --reason` byte-identical for every failure code, and the
   executor's suite asserts its vocabulary against
@@ -226,7 +233,9 @@ the executor's `cli.py` — land C before N.
   `claim`/`park`/`redispatch`/`abandon`, no grind event is appended and the
   command reports a typed error with `retryable: true`; re-running after the
   fake recovers succeeds with no duplicated tracker effect, riding the S2
-  verbs' idempotency (dependency failure + repeated invocation). Convergence
+  verbs' idempotency (dependency failure + repeated invocation); an intent
+  whose grind event is already applied — a response-lost retry — appends no
+  duplicate and reports success (S9T1-D6 idempotent enactment). Convergence
   here means status, label, and grind agreement; repairing a facade-internal
   partial park (a marker lost under S2-B3's no-op) is the facade's concern,
   tracked separately, never an executor retry obligation.
@@ -247,9 +256,10 @@ the executor's `cli.py` — land C before N.
 
 - **S9T1-B1** New event `fix_attempted` with payload `{item, kind, note?}`,
   `kind` one of `ci-fix`\|`rebase`: an unknown kind is a command error
-  appending nothing (validator); on a parked, terminal, or absent item the
-  event is an accept-and-flag anomaly leaving the ledger unchanged — grind's
-  uniform anomaly discipline (inverse + dependency failure).
+  appending nothing (validator); on a parked, terminal, or absent item — or
+  one holding no open PR (attempts exist only inside a PR cycle, mirroring
+  the failure-park rule) — the event is an accept-and-flag anomaly leaving
+  the ledger unchanged (inverse + dependency failure).
 - **S9T1-B2** `Item.attempts` folds per-kind counts: two `ci-fix` events fold
   to a ci-fix count of 2; a third is still recorded and folds to 3 — grind
   counts, it never caps (inverse of enforcement).
@@ -268,6 +278,14 @@ the executor's `cli.py` — land C before N.
 - **S9T1-B6** `attempts` joins the serialized item in `status --full`, and the
   existing replay-determinism suite stays green over logs containing the new
   event (fold/replay idempotency).
+- **S9T1-B7** `item_enqueued` accepts an optional `closure` payload
+  `{pr, reason}`: when present, the fold appends the closed-ledger entry,
+  clears the item's PR reference, and the park exit proceeds unchanged — an
+  abandoned, unmerged PR's closure is recorded on the single exit without
+  granting `pr_closed` a new source state; when absent, the PR reference
+  survives the exit (redispatch resumes the same PR — inverse). A closure
+  without an integer `pr` is a command error appending nothing (dependency
+  failure).
 
 ### Slice C — budget enforcement in the executor (S9b, executor half)
 
