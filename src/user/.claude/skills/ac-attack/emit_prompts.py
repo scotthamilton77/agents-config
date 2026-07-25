@@ -103,6 +103,13 @@ def read_document(path: str | None) -> tuple[str, str]:
             f"the --spec document {path} is empty; an attacker given nothing to read reports "
             "nothing, and an empty round proves nothing",
         )
+    if FENCE_OPEN in text or FENCE_CLOSE in text:
+        raise Refusal(
+            "spec-contains-marker",
+            f"the --spec document {path} carries an untrusted-content marker of its own and "
+            "cannot be fenced without being altered; the round would then attack text the "
+            "recorded revision does not name, so it refuses rather than rewrite what it hashed",
+        )
     return text, "sha256:" + hashlib.sha256(data).hexdigest()
 
 
@@ -150,7 +157,9 @@ def render_prompt(lens: dict, ctx: dict) -> str:
             f"Path: {inert(ctx['spec_path'])}\n"
             f"Revision: {ctx['spec_revision']}\n"
         ),
-        f"{inert(ctx['document'])}\n",
+        # Not neutralised: the document is what `spec_revision` names, so it travels unaltered —
+        # a document carrying a marker of its own is refused upstream rather than rewritten here.
+        f"{ctx['document']}\n",
         f"{FENCE_CLOSE}\n",
     ]
     return "\n".join(parts)

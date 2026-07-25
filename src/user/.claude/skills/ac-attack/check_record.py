@@ -76,9 +76,14 @@ def schema_errors(record: Any) -> list[dict[str, Any]]:
 
 
 def read_document(record_path: Path, record: dict, override: str | None) -> bytes:
-    """Find the attacked document: --spec if given, else spec_path as written or beside the record."""
+    """Find the attacked document: --spec if given, else spec_path beside the record or as written.
+
+    The record is committed beside the document it names, so that directory is tried first: a
+    same-named file in whatever directory the check happens to run from is not the attacked
+    document, and reading it would check the round against unrelated text.
+    """
     raw = override or record.get("spec_path", "")
-    candidates = [Path(raw)] if override else [Path(raw), record_path.parent / raw]
+    candidates = [Path(raw)] if override else [record_path.parent / raw, Path(raw)]
     for candidate in candidates:
         if candidate.is_file():
             try:
@@ -89,8 +94,8 @@ def read_document(record_path: Path, record: dict, override: str | None) -> byte
                 ) from exc
     raise RecordError(
         "spec-unreadable",
-        f"cannot find the attacked document {raw!r}; the record names it relative to the working "
-        "directory or to its own directory, and --spec overrides both",
+        f"cannot find the attacked document {raw!r}; the record names it relative to its own "
+        "directory first and to the working directory second, and --spec overrides both",
     )
 
 
@@ -126,6 +131,44 @@ def _lens_errors(record: dict) -> list[dict[str, Any]]:
             "code": "unknown-lens",
             "message": f"{name!r} reported, but it is not one of the declared attack lenses",
         })
+    return errors
+
+
+def _report_errors(record: dict) -> list[dict[str, Any]]:
+    """Hold each lens's report against the proposals attributed to it.
+
+    A report and the proposal list are two accounts of the same round, and a record where they
+    disagree describes no round at all: it either credits a lens with work it did not report or
+    loses the work it did.
+    """
+    declared = set(declared_lenses())
+    attributed = {proposal["lens"] for proposal in record["proposals"]}
+    errors = [
+        {"code": "unknown-proposal-lens", "index": index,
+         "message": f"proposal {index} is attributed to {proposal['lens']!r}, which is not one of "
+                    "the declared attack lenses; every proposal carries the lens that produced it"}
+        for index, proposal in enumerate(record["proposals"])
+        if proposal["lens"] not in declared
+    ]
+    seen: set[tuple[str, str]] = set()
+    for entry in record["lenses"]:
+        name, report = entry["lens"], entry["report"]
+        if (name, report) in seen:
+            continue
+        seen.add((name, report))
+        if report == "empty" and name in attributed:
+            errors.append({
+                "code": "contradicted-empty-report",
+                "message": f"the {name} lens reports empty, yet proposals in this round are "
+                           "attributed to it; a report and the proposal list are one account",
+            })
+        elif report == "proposals" and name not in attributed:
+            errors.append({
+                "code": "contradicted-proposals-report",
+                "message": f"the {name} lens reports proposals, yet none in this round are "
+                           "attributed to it; a proposal it made and the record lost is a hole "
+                           "nobody adjudicates",
+            })
     return errors
 
 
@@ -191,7 +234,7 @@ def _disposition_errors(record: dict, present: set[str]) -> tuple[list[dict[str,
 def check(record: dict, document: bytes) -> list[dict[str, Any]]:
     """Everything wrong with this round, as a pure function of the record and the document."""
     present = revisions_of(document)
-    errors = _lens_errors(record)
+    errors = _lens_errors(record) + _report_errors(record)
     disposition_errors, accounted = _disposition_errors(record, present)
     errors += disposition_errors
     if not present & (accounted | {record["spec_revision"]}):
@@ -219,7 +262,9 @@ def report(errors: list[dict[str, Any]], started: bool, code: int, clean: bool =
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=True)
-    parser.add_argument("record")
+    # Optional so that naming no record answers in the JSON contract like every other failure,
+    # rather than in argparse's usage text on stderr.
+    parser.add_argument("record", nargs="?")
     parser.add_argument("--spec")
     parser.add_argument("--implementation-started", action="store_true")
     return parser
@@ -229,17 +274,23 @@ def main(argv: list[str]) -> int:
     args = build_parser().parse_args(argv)
     started = args.implementation_started
     try:
+        if not args.record:
+            raise RecordError(
+                "no-record",
+                "no attack record was named; the check reads the record committed beside the "
+                "attacked document, and an unnamed record is not an unattacked one",
+            )
         record_path = Path(args.record)
         record = read_record(record_path)
         invalid = schema_errors(record)
         if invalid:
             return report(invalid, started, EXIT_UNUSABLE)
         document = read_document(record_path, record, args.spec)
+        errors = check(record, document)
     except RecordError as exc:
         return report([exc.as_dict()], started, EXIT_UNUSABLE)
     except Exception as exc:  # noqa: BLE001 - stdout is a parsed contract; no traceback may escape
-        return report([{"code": "unreadable", "message": str(exc)}], started, EXIT_UNUSABLE)
-    errors = check(record, document)
+        return report([{"code": "checker-failure", "message": str(exc)}], started, EXIT_UNUSABLE)
     if errors:
         return report(errors, started, EXIT_INCOMPLETE)
     return report([], started, EXIT_COMPLETE, clean=not record["proposals"])
