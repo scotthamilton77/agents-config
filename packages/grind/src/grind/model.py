@@ -143,7 +143,11 @@ class Item:
     lane: str | None
     title: str | None
     status: ItemStatus
-    bead: str | None = None
+    # The item's id in the external work tracker, when it differs from `id`.
+    # Named for the `work` facade, never for a tracker backend: the backend is
+    # quarantined behind that facade, so its nouns must not be frozen into
+    # grind's persisted event schema or its `state.json` projection.
+    work_id: str | None = None
     blocked_on: tuple[str, ...] = ()
     blocked_note: str | None = None
     pr: PrRef | None = None

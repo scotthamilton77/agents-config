@@ -72,6 +72,34 @@ def test_full_state_json_round_trips_item_fields():
     assert review["head_sha"] == "deadbeef"
 
 
+def test_item_projection_publishes_work_id_and_never_the_backends_noun():
+    # Name lock (D11): `state.json` is grind's public JSON, so the tracker
+    # backend's noun must not appear as a key any consumer could come to
+    # depend on. The tracker id rides as `work_id` or not at all.
+    events = [
+        seed_event(),
+        event(
+            "discovered_work",
+            item="disc-1",
+            work_id="wgclw.99",
+            description="found in review",
+            source="lane-a",
+            disposition="enqueued",
+            lane="lane-a",
+            rationale="r",
+        ),
+    ]
+    state = fold(events)
+
+    items = full_state_json(state)["items"]
+    assert isinstance(items, dict)
+    for item in items.values():
+        assert isinstance(item, dict)
+        assert "work_id" in item
+        assert "bead" not in item
+    assert items["disc-1"]["work_id"] == "wgclw.99"
+
+
 def test_full_state_json_serializes_ledgers_and_parking_lot():
     events = [
         seed_event(),
