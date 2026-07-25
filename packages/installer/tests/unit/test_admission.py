@@ -137,3 +137,54 @@ def test_complete_record_captures_claims() -> None:
     assert v.outcome is AdmissionOutcome.COMPLETE
     # Scalars are stringified; non-scalar/None claims are dropped.
     assert v.claims == {"pr-review-medium": "verdict-artifact", "attempts": "2"}
+
+
+def test_provides_record_admits_and_captures_it() -> None:
+    # The assistive case: a repeatable procedure states what it supplies
+    # rather than inventing a failure to prevent.
+    content = (
+        b"---\n"
+        b"admission:\n"
+        b"  provides: a repeatable release procedure\n"
+        b"  cost: some tokens\n"
+        b"  remove_when: an observation\n"
+        b"---\n"
+        b"skill body\n"
+    )
+    verdict = classify(_file_item("rules", content))
+    assert verdict.outcome is AdmissionOutcome.COMPLETE
+    assert verdict.record is not None
+    assert verdict.record.provides == "a repeatable release procedure"
+    assert verdict.record.prevents is None
+
+
+def test_record_stating_neither_worth_field_is_malformed() -> None:
+    content = b"---\nadmission:\n  cost: c\n  remove_when: r\n---\nbody\n"
+    verdict = classify(_file_item("rules", content))
+    assert verdict.outcome is AdmissionOutcome.MALFORMED
+    assert "states neither" in verdict.detail
+
+
+def test_record_stating_both_worth_fields_is_malformed() -> None:
+    # An author must decide which case the artifact makes; a record asserting
+    # both is a brochure, not a claim.
+    content = (
+        b"---\n"
+        b"admission:\n"
+        b"  prevents: a failure\n"
+        b"  provides: a capability\n"
+        b"  cost: c\n"
+        b"  remove_when: r\n"
+        b"---\n"
+        b"body\n"
+    )
+    verdict = classify(_file_item("rules", content))
+    assert verdict.outcome is AdmissionOutcome.MALFORMED
+    assert "states both" in verdict.detail
+
+
+def test_missing_cost_is_still_malformed_with_provides() -> None:
+    content = b"---\nadmission:\n  provides: a capability\n  remove_when: r\n---\nbody\n"
+    verdict = classify(_file_item("rules", content))
+    assert verdict.outcome is AdmissionOutcome.MALFORMED
+    assert "cost" in verdict.detail
