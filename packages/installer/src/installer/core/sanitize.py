@@ -62,6 +62,12 @@ def _split_raw(text: str) -> tuple[list[str] | None, str]:
     return None, text  # pragma: no cover - caller pre-validated
 
 
+def _line_ending(text: str) -> str:
+    """The line ending ``text`` opens with — ``\\r\\n`` for a CRLF artifact."""
+    first = text.splitlines(keepends=True)[0]
+    return "\r\n" if first.endswith("\r\n") else "\n"
+
+
 def _drop_governance_keys(lines: list[str]) -> list[str]:
     """``lines`` with every ``GOVERNANCE_KEYS`` block removed.
 
@@ -125,8 +131,12 @@ def sanitize_text(text: str) -> str:
     kept = _drop_governance_keys(fm_lines)
     body = _strip_provenance(body)
     if not any(line.strip() for line in kept):
-        return body.lstrip("\n")
-    return f"{_FENCE}\n{''.join(kept)}{_FENCE}\n{body}"
+        return body.lstrip("\r\n")
+    # Re-emit the fences with the artifact's own line ending: the retained
+    # lines keep theirs (``keepends``), so hardcoding ``\n`` would mix endings
+    # in a CRLF-authored artifact and break the byte-preservation contract.
+    newline = _line_ending(text)
+    return f"{_FENCE}{newline}{''.join(kept)}{_FENCE}{newline}{body}"
 
 
 def sanitize_bytes(data: bytes) -> bytes:

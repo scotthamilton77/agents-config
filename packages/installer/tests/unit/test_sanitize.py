@@ -110,3 +110,13 @@ def test_sanitizing_twice_is_a_no_op() -> None:
     text = f"---\nname: a\n{_RECORD}---\n\n<!--\nSource: x\n-->\n\nbody\n"
     once = sanitize_text(text)
     assert sanitize_text(once) == once
+
+
+def test_crlf_artifact_keeps_crlf_endings() -> None:
+    text = "---\r\nname: a\r\n" + _RECORD.replace("\n", "\r\n") + "---\r\nbody\r\n"
+    assert sanitize_text(text) == "---\r\nname: a\r\n---\r\nbody\r\n"
+
+
+def test_crlf_artifact_with_only_governance_keys_drops_the_fence() -> None:
+    text = "---\r\n" + _RECORD.replace("\n", "\r\n") + "---\r\n\r\nbody\r\n"
+    assert sanitize_text(text) == "body\r\n"
