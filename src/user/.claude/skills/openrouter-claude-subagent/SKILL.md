@@ -100,11 +100,15 @@ bucket table already encodes.
 Use the user's level if they named one. `max` only on an explicit request —
 it is the most expensive tier.
 
-Whether the level reaches the target model depends on that model honoring
-OpenRouter's normalized `reasoning.effort` parameter. The routing table and
-the registry both record this per model; trust the recorded value rather than
-re-verifying at dispatch. Where it is unconfirmed, pass `--effort` anyway and
-treat model *choice* as the reliable capability lever.
+Not every model accepts every level. `references/model-routing.md` lists the
+levels each one takes — pick from that list, since two of the listed models
+accept no level at all and others are missing the middle of the range. Trust
+the recorded value rather than re-verifying at dispatch.
+
+Whether `--effort` actually reaches the model as that level is unverified: it
+travels through an Anthropic-compatible skin that speaks thinking budgets, not
+`reasoning.effort`. Pass it regardless — it costs nothing — and treat model
+*choice* as the reliable capability lever.
 
 ## Example
 
