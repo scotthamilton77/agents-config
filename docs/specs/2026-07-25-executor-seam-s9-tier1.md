@@ -43,12 +43,15 @@ tests. grind is unchanged by Tier 1 except Slice B's data-model additions;
 workcli is unchanged except Slice P. `make ci-executor` mirrors the sibling
 gates (lint, format-check, typecheck, coverage, audit, entry-verify) and joins
 the top-level `ci` target; the installer registers the package in
-`CLI_PACKAGES`. The CLI exposes the pairing enactments plus the two Tier-1
-decision surfaces (`attempt`, `next`); enactment verb naming is the
-implementer's. Named fallback, decided by measurement not preference: if the
-typed parse of grind's envelope exceeds ~150 lines, take a path dependency on
-`packages/grind` for the read side, keep `work` as a subprocess, and record
-the switch in the package docs.
+`CLI_PACKAGES`. The CLI surface is part of the contract: `executor start`,
+`park`, `redispatch`, `abandon`, `pr-opened`, `pr-closed`, `merged`, and
+`done` enact the pairing table (S9T1-D12), and `attempt` (S9T1-D3) and `next`
+(S9T1-D10) are the two decision surfaces. Named fallback, recorded rather than
+re-litigated: if grind's envelope parse grows into a disproportionate typed
+mapping (on the order of 150+ lines), the read side may switch to a path
+dependency on `packages/grind` — `work` stays a subprocess either way, and
+the deviation is recorded in the package docs; until then the CLI envelope is
+the only grind boundary.
 
 **S9T1-D2 — The budget split: counts are facts, budgets are config,
 enforcement is policy.** "N attempts recorded for item X" is folded state in
@@ -99,8 +102,10 @@ tracker failure leaves grind un-advanced and the operation retryable, which is
 safe because the S2 verbs are idempotent. A fact about the outside world that
 already happened (`pr_opened`, `item_merged`) is appended to grind first, then
 reported to the tracker — the fact stays recorded even when the tracker call
-fails, and the failure surfaces for retry. This one rule is the mechanism that
-keeps execution state and tracker state from drifting apart.
+fails, and the failure surfaces for retry. The rule does not prevent
+divergence — S9T1-A8 and S9T1-C2 deliberately permit transient one-sided
+states — it bounds every divergence to a single failed call whose retry
+converges, and it fixes which side leads.
 
 **S9T1-D7 — Failure-axis parks cross untranslated; the executor is the
 contract's third reader.** The pairing layer contains no reason-mapping table.
@@ -117,8 +122,11 @@ internal post-merge teardown with no tracker counterpart.
 
 **S9T1-D9 — Sync batching per invocation.** Tier 1 has no loop, so the unit of
 batching is one executor command invocation: one or more tracker mutations →
-exactly one `work sync`, issued last; zero mutations → no sync. Sync is the
-Dolt plane only (§1's hooks note).
+exactly one `work sync`, issued last; zero mutations → no sync. A sync that
+fails after successful mutations is reported as a typed, retryable
+degradation naming its repair — running `work sync` directly; an enacting
+command is never re-run to repair sync, and a refusal envelope issues none.
+Sync is the Dolt plane only (§1's hooks note).
 
 **S9T1-D10 — The open-new-work surface is two-layered.** `executor next
 [--stale-days N]` is the composed surface: it reads `work parked` first, then
@@ -131,16 +139,43 @@ is suppressed — a degraded report that still hands out new work inverts D10's
 whose age cannot be read — always present, empty when nothing qualifies. The block is what makes D10's "surfaced
 at the start of any open-new-work interaction" hold for callers that never go
 through the executor. It joins two reads and counts nothing (S2-D2 intact),
-and it fails closed: a `ready` or `claim` that cannot compute the block errors
-rather than emitting an envelope without it.
+and it fails closed: a `ready` or `claim` that cannot compute the block fails
+with a typed error rather than emitting an envelope without it.
 `ready` and `claim` take no new flags: the block rides S2-D4's default
 threshold (7 days), and threshold tuning stays on `work parked --stale-days`.
 
 **S9T1-D11 — The executor envelope is protocol-versioned from birth.** Exactly
 one JSON envelope on stdout per invocation, in workcli's
-`{"protocol", "ok", "data", "error"}` style, with typed errors and never a
-traceback. grind's unversioned envelope is a minted defect
-(`agents-config-9k9.1.18`); the new package does not repeat it.
+`{"protocol", "ok", "data", "error"}` style; the protocol value starts at
+`"1"`. `error` is `{code, message, retryable}` — codes form a closed set the
+package documents, `retryable` is the boolean the ordering rule's retry
+semantics key off — and a failure is never a traceback. `attempt`'s success
+data carries `{item, kind, attempts, budget, remaining, proceed}`. grind's
+unversioned envelope is a minted defect (`agents-config-9k9.1.18`); the new
+package does not repeat it.
+
+**S9T1-D12 — The pairing universe is closed.** The pairing table is exactly
+these rows; the parenthesized grind event and tracker action are the whole
+effect of each verb:
+
+| Executor verb | Grind event | Tracker action |
+| --- | --- | --- |
+| `start` | `item_started` | `work claim` |
+| `park` (failure axis) | `item_parked` | `work park --reason` (same code) |
+| `park` (scheduling axis) | `item_parked` | none |
+| `redispatch` | `item_enqueued` | `work redispatch` |
+| `abandon` | `item_enqueued` | `work abandon` |
+| `pr-opened` | `pr_opened` | none |
+| `pr-closed` | `pr_closed` | none |
+| `merged` | `item_merged` | `work close` |
+| `done` | `item_done` | none |
+| `attempt` at exhaustion | `item_parked` (`budget-exhausted`) | `work park --reason budget-exhausted` |
+
+The rest of grind's event vocabulary — run lifecycle (`grind_*`), lanes,
+attention, reviews, `item_blocked`/`item_resumed`/`item_waiting_human`,
+`discovered_work` — is enacted and observed by no Tier-1 executor command;
+those planes belong to the run's driver and to later tiers. A totality claim
+about the pairing layer is decidable against this table and nothing else.
 
 ## 3. Slices and acceptance criteria
 
@@ -163,16 +198,18 @@ the executor's `cli.py` — land C before N.
   with a receipt and prunes it on retirement.
 - **S9T1-A2** Every executor command emits exactly one protocol-versioned JSON
   envelope on stdout; a failed subprocess or an unparseable reply from either
-  port yields a typed error envelope, never a traceback (dependency failure).
+  port yields a typed error envelope in the S9T1-D11 shape, never a traceback
+  (dependency failure).
 - **S9T1-A3** All `work`/`grind` subprocess I/O sits behind
   `TrackerPort`/`RuntimePort`; the unit suite passes with both ports faked and
   neither binary present. The grind client absorbs the documented staleness
   quirk: `grind check` exiting 1 with an `ok: true` envelope parses as a
   healthy staleness verdict, not a crash (boundary).
-- **S9T1-A4** The pairing table is total under test: a parametrized test walks
-  every execution transition the executor enacts or observes and finds exactly
-  one tracker action or an explicit no-action row; a transition without a row
-  fails the suite rather than silently doing nothing (absent-row boundary).
+- **S9T1-A4** The pairing table is total over the closed universe: a
+  parametrized test walks every S9T1-D12 row and asserts exactly that row's
+  tracker action or its explicit none; the CLI exposes exactly the S9T1-D12
+  verbs plus `attempt` and `next` — an executor verb outside the enumeration,
+  or a table row without a test, fails the suite (absent-row boundary).
 - **S9T1-A5** A failure-axis park crosses untranslated: `item_parked.reason`
   reaches `work park --reason` byte-identical for every failure code, and the
   executor's suite asserts its vocabulary against
@@ -187,9 +224,12 @@ the executor's `cli.py` — land C before N.
   first-class case, not an error path).
 - **S9T1-A7** Intent ordering: with the fake tracker raising on
   `claim`/`park`/`redispatch`/`abandon`, no grind event is appended and the
-  command reports a retryable typed error; re-running after the fake recovers
-  succeeds with no duplicated tracker effect, riding the S2 verbs' idempotency
-  (dependency failure + repeated invocation).
+  command reports a typed error with `retryable: true`; re-running after the
+  fake recovers succeeds with no duplicated tracker effect, riding the S2
+  verbs' idempotency (dependency failure + repeated invocation). Convergence
+  here means status, label, and grind agreement; repairing a facade-internal
+  partial park (a marker lost under S2-B3's no-op) is the facade's concern,
+  tracked separately, never an executor retry obligation.
 - **S9T1-A8** World-fact ordering: with the fake tracker raising on `close`,
   the `item_merged` grind event is appended anyway and the failure surfaces
   for retry (inverse of S9T1-A7); the retry re-issues only the tracker close
@@ -200,7 +240,8 @@ the executor's `cli.py` — land C before N.
   exactly one `work sync`, issued after the last mutation; an invocation with
   zero mutations issues none (empty boundary).
 - **S9T1-A10** A source-scan test pins that `bd` is never invoked from
-  `packages/executor/src/**` — the admission's remove-when observable.
+  `packages/executor/src/**` — the executor addresses the tracker only
+  through `work`.
 
 ### Slice B — attempt counting in grind's fold (S9b, grind half)
 
@@ -231,9 +272,9 @@ the executor's `cli.py` — land C before N.
 ### Slice C — budget enforcement in the executor (S9b, executor half)
 
 - **S9T1-C1** `executor attempt <item> --kind …` under budget appends
-  `fix_attempted` before returning and reports proceed with the remaining
-  count — the append happens even though no fix has run yet (pre-charge: a
-  crash after the call has already spent the attempt).
+  `fix_attempted` before returning and reports the S9T1-D11 attempt fields
+  with `proceed: true` — the append happens even though no fix has run yet
+  (pre-charge: a crash after the call has already spent the attempt).
 - **S9T1-C2** At exhaustion the same command refuses: no `fix_attempted` is
   appended, `work park --reason budget-exhausted` is called first and
   `item_parked` with reason `budget-exhausted` appended second (S9T1-D6 intent
@@ -254,7 +295,10 @@ the executor's `cli.py` — land C before N.
   (inverse cases).
 - **S9T1-C5** A second `executor attempt` after the exhaustion park is fully
   recorded is refused as parked, with zero further grind events and zero
-  further tracker mutations — no double-park (repeated invocation).
+  further tracker mutations — no double-park (repeated invocation). A sync
+  that failed in the exhausting invocation is repaired by running `work sync`
+  directly, which that invocation's degradation report names (S9T1-D9); the
+  refusal itself still issues none.
 
 ### Slice P — the parked_stale block in the facade (S9e, workcli half)
 
@@ -283,6 +327,9 @@ the executor's `cli.py` — land C before N.
   deliberately more conservative than `work parked`'s stale flag, which stays
   false when age is unprovable (S2-B7) — so a corrupted marker never exempts
   an item from surfacing (dependency failure, fail-closed).
+- **S9T1-P6** Two consecutive `work ready` calls against an unchanged backend
+  and a held clock return identical `parked_stale` blocks, with zero
+  mutations both times (repeated invocation; idempotent read).
 
 ### Slice N — `executor next` (S9e, executor half)
 
@@ -290,8 +337,8 @@ the executor's `cli.py` — land C before N.
   (order pinned against the fake), and emits one envelope carrying the full
   parked report with per-item stale flags ahead of the ready list.
 - **S9T1-N2** A failed parked read suppresses the ready list entirely: the
-  envelope reports the degradation and hands out no new work (fail-closed;
-  dependency failure).
+  envelope reports the degradation as an S9T1-D11 typed error with the ready
+  list absent, and hands out no new work (fail-closed; dependency failure).
 - **S9T1-N3** The whole command is mutation-free: the fake tracker's mutation
   log is empty and no grind event is appended (read-only; and by S9T1-D9, no
   sync — zero mutations).
@@ -299,6 +346,9 @@ the executor's `cli.py` — land C before N.
   boundary), and `--stale-days` passes through to `work parked` verbatim — the
   executor does not reimplement the threshold, whose default stays the
   facade's (S2-D4).
+- **S9T1-N5** Two consecutive `executor next` runs against an unchanged fake
+  return identical envelopes and stay mutation-free (repeated invocation;
+  idempotent read).
 
 ## 4. Out of scope — this is Tier 1, not the S9 spec
 
