@@ -17,6 +17,7 @@ import argparse
 import hashlib
 import json
 import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -46,9 +47,11 @@ class RecordError(Exception):
         return {"code": self.code, "message": self.message}
 
 
-def declared_lenses() -> list[str]:
+@lru_cache(maxsize=1)
+def declared_lenses() -> tuple[str, ...]:
+    """The declared lens set. Cached: the file is static for the life of a run."""
     with LENSES_PATH.open(encoding="utf-8") as handle:
-        return [lens["lens"] for lens in json.load(handle)["lenses"]]
+        return tuple(lens["lens"] for lens in json.load(handle)["lenses"])
 
 
 def read_record(path: Path) -> Any:
@@ -292,8 +295,31 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def parse_or_report(argv: list[str]) -> argparse.Namespace | int:
+    """Parse, or return the exit status after reporting on stdout.
+
+    Argparse exits on its own for a malformed command line, which would end the run without the
+    JSON stdout every other failure produces. A caller parsing stdout must not have to special-case
+    the one failure that predates the parse.
+    """
+    try:
+        return build_parser().parse_args(argv)
+    except SystemExit as exc:
+        if exc.code == 0:  # --help asked for and given
+            raise
+        return report(
+            [{"code": "bad-arguments",
+              "message": "the command line could not be parsed; an option was given without its "
+                         "value, or an unknown option was passed (argparse wrote the detail to "
+                         "stderr)"}],
+            "--implementation-started" in argv, EXIT_UNUSABLE,
+        )
+
+
 def main(argv: list[str]) -> int:
-    args = build_parser().parse_args(argv)
+    args = parse_or_report(argv)
+    if isinstance(args, int):
+        return args
     started = args.implementation_started
     try:
         if not args.record:

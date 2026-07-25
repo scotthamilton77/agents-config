@@ -239,7 +239,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str]) -> int:
-    args = build_parser().parse_args(argv)
+    try:
+        args = build_parser().parse_args(argv)
+    except SystemExit as exc:
+        if exc.code == 0:  # --help asked for and given
+            raise
+        # Argparse exits on its own for a malformed command line, which would end the run without
+        # the JSON stdout every other refusal produces.
+        print(json.dumps({"emitted": False, "errors": [
+            {"code": "bad-arguments",
+             "message": "the command line could not be parsed; an option was given without its "
+                        "value, or an unknown option was passed (argparse wrote the detail to "
+                        "stderr)"}]}, sort_keys=True))
+        return EXIT_REFUSED
     try:
         result = emit(args)
     except Refusal as exc:

@@ -284,8 +284,8 @@ class TestOrdering:
                 imported |= {alias.name.split(".")[0] for alias in node.names}
             elif isinstance(node, ast.ImportFrom):
                 imported.add("." * node.level + (node.module or "").split(".")[0])
-        assert imported == {"__future__", "argparse", "hashlib", "json", "sys", "pathlib",
-                            "typing", "jsonschema"}
+        assert imported == {"__future__", "argparse", "functools", "hashlib", "json", "sys",
+                            "pathlib", "typing", "jsonschema"}
         assert '# dependencies = ["jsonschema>=4"]' in source
         called = {node.func.id for node in ast.walk(tree)
                   if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
