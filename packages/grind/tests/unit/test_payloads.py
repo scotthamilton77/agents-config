@@ -92,6 +92,9 @@ def test_grind_created_validates_optional_seed_string_fields():
     # by the fold when malformed -- validate them at the boundary.
     errors = validate_payload("grind_created", _seed_with_item({"title": 42}))
     assert any("lanes[0].queue[0].title" in e for e in errors)
+    assert validate_payload("grind_created", _seed_with_item({"work_id": "wgclw.9"})) == []
+    errors = validate_payload("grind_created", _seed_with_item({"work_id": 42}))
+    assert any("lanes[0].queue[0].work_id" in e for e in errors)
     errors = validate_payload(
         "grind_created",
         {

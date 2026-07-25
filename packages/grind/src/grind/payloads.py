@@ -124,6 +124,7 @@ def _validate_grind_created(payload: RawEvent) -> list[str]:
                 errors.append(f"{item_prefix} must be an object with a non-empty string id")
                 continue
             _optional_nested_str(errors, item, "title", item_prefix)
+            _optional_nested_str(errors, item, "work_id", item_prefix)
             _optional_nested_list_of_str(errors, item, "on", item_prefix)
     return errors
 

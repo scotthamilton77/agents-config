@@ -172,11 +172,23 @@ def _h_grind_created(state: State, evt: RawEvent) -> None:
             on = item_payload.get("on")
             blocked_on = tuple(o for o in on if isinstance(o, str)) if isinstance(on, list) else ()
             status: ItemStatus = "blocked" if blocked_on else "queued"
+            # The seed queue carries "items with work ids" (spec), and an item
+            # id is itself "the work-tracker id when one exists" (spec) -- so a
+            # seeded work id equal to the item id is the redundant case, and is
+            # normalized away exactly as `discovered_work` does. `work_id` then
+            # means one thing for every producer: the tracker handle when it
+            # differs from `id`. Skipping this would make two items with
+            # identical facts project differently in `state.json` depending on
+            # which event created them.
+            work_id = _str(item_payload, "work_id")
+            if work_id == item_id:
+                work_id = None
             item = Item(
                 id=item_id,
                 lane=lane_id,
                 title=_str(item_payload, "title"),
                 status=status,
+                work_id=work_id,
                 blocked_on=blocked_on,
             )
             state.items[item_id] = item
