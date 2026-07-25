@@ -37,6 +37,8 @@ EXIT_REFUSED = 2
 FENCE_OPEN = "<<<BEGIN UNTRUSTED CONTENT>>>"
 FENCE_CLOSE = "<<<END UNTRUSTED CONTENT>>>"
 
+DISPOSITIONS = ("fixed", "rebutted", "advisory-deferred")
+
 EXHAUSTIVENESS = (
     "Report every violation of this lens findable this round; a withheld finding is a review "
     "defect. Be exhaustive in depth within this lens and never step outside it: another reviewer "
@@ -160,7 +162,9 @@ def check_base_sync(repo_root: str | None, target_branch: str | None, base_sha: 
         )
 
 
-def load_prior_verdicts(paths: list[str], round_no: int, schema: Path | None) -> list[dict]:
+def load_prior_verdicts(
+    paths: list[str], round_no: int, schema: Path | None, artifact_class: str, claim: str
+) -> list[dict]:
     if round_no > 1 and not paths:
         raise Refusal(
             "no-prior-verdicts",
@@ -175,6 +179,13 @@ def load_prior_verdicts(paths: list[str], round_no: int, schema: Path | None) ->
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise Refusal("bad-prior-verdict", f"cannot read prior verdict {path}: {exc}") from exc
         _validate_prior(document, path, schema)
+        if (document.get("artifact_class"), document.get("claim_id")) != (artifact_class, claim):
+            raise Refusal(
+                "bad-prior-verdict",
+                f"prior verdict {path} adjudicates claim {document.get('claim_id')!r} of class "
+                f"{document.get('artifact_class')!r}, not this round's claim {claim!r} of class "
+                f"{artifact_class!r}; a foreign verdict cannot seed this round's ledger",
+            )
         verdicts.append(document)
     verdicts.sort(key=lambda doc: doc.get("round", 0))
     covered = {doc.get("round") for doc in verdicts}
@@ -241,6 +252,13 @@ def build_ledger(prior_findings: list[dict], dispositions: list[dict]) -> list[d
     for entry in dispositions:
         key = (entry.get("round"), entry.get("id"))
         evidence = entry.get("evidence") or ""
+        if entry.get("disposition") not in DISPOSITIONS:
+            raise Refusal(
+                "ledger-gap",
+                f"finding {key[1]} from round {key[0]} carries the unknown disposition "
+                f"{entry.get('disposition')!r}; a finding settles only as one of: "
+                + ", ".join(DISPOSITIONS),
+            )
         if entry.get("disposition") == "rebutted" and not evidence.strip():
             raise Refusal(
                 "unsupported-rebuttal",
@@ -374,7 +392,9 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
     acs = read_acs(args.acs)
     check_base_sync(args.repo_root, args.target_branch, args.base_sha)
     schema = find_schema(args.schema)
-    verdicts = load_prior_verdicts(args.prior_verdict, args.round, schema)
+    verdicts = load_prior_verdicts(
+        args.prior_verdict, args.round, schema, args.artifact_class, args.claim
+    )
     prior_findings = prior_findings_of(verdicts)
     ledger = build_ledger(prior_findings, load_dispositions(args.disposition))
 

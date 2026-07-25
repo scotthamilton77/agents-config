@@ -143,11 +143,19 @@ function stripDeferredTools(body) {
   if (!Array.isArray(body.messages)) return body;
   for (const msg of body.messages) {
     if (msg?.role !== "system") continue;
+    // Every mid-array system turn must be demoted — the role there is itself an
+    // Anthropic-only extension — but the correction belongs only on the turn that
+    // announced the now-unreachable tools, not on unrelated system content.
     msg.role = "user";
     const blocks = Array.isArray(msg.content)
       ? msg.content
       : [{ type: "text", text: String(msg.content ?? "") }];
-    msg.content = [...blocks, { type: "text", text: NO_DEFERRED_TOOLS_NOTE }];
+    const announcesTools = blocks.some(
+      (b) => typeof b?.text === "string" && /ToolSearch|deferred tool/i.test(b.text),
+    );
+    msg.content = announcesTools
+      ? [...blocks, { type: "text", text: NO_DEFERRED_TOOLS_NOTE }]
+      : blocks;
   }
   return body;
 }

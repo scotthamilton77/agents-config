@@ -306,6 +306,27 @@ class TestRoundsAndLedger:
             {"round": 1, "id": "f2", "lens": "security", "disposition": "advisory-deferred"},
         ]
 
+    def test_b4_unknown_disposition_value_is_refused(self, repo, acs_file, tmp_path, capsys):
+        """S6-B4: a disposition outside the closed set cannot settle a mechanical finding."""
+        flat, _ = round2(tmp_path, repo, acs_file, [
+            {"round": 1, "id": "f1", "disposition": "banana"},
+            {"round": 1, "id": "f2", "disposition": "advisory-deferred"},
+        ])
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "ledger-gap"
+        assert "banana" in result["errors"][0]["message"]
+
+    def test_b4_foreign_prior_verdict_is_refused(self, repo, acs_file, tmp_path, capsys):
+        """S6-B4: a schema-valid verdict for another claim or class cannot seed the ledger."""
+        for override in ({"claim_id": "claim-8"}, {"artifact_class": "spec"}):
+            foreign = {**verdict_round1(repo), **override}
+            prior = tmp_path / "foreign.json"
+            prior.write_text(json.dumps(foreign), encoding="utf-8")
+            flat = argv(repo, acs_file, tmp_path / "out", **{"--round": "2"})
+            flat += ["--prior-verdict", str(prior)]
+            code, result = run(flat, capsys)
+            assert code == 2 and result["errors"][0]["code"] == "bad-prior-verdict"
+
     def test_b9_ledger_gap_is_refused(self, repo, acs_file, tmp_path, capsys):
         """S6-B9: a prior mechanical finding with no disposition blocks the round."""
         flat, _ = round2(tmp_path, repo, acs_file, [

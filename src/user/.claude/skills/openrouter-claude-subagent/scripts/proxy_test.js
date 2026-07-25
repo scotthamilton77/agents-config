@@ -779,6 +779,20 @@ test("demotes the mid-conversation system turn to user and corrects it", () => {
   assert.match(demoted[1].text, /no further tools can be loaded/i, "the model must be told the announced tools are unreachable");
 });
 
+test("demotes an unrelated system turn without appending the correction", () => {
+  const body = deferredBody("google/gemini-3.1-flash-lite");
+  body.messages.push({ role: "system", content: [{ type: "text", text: "Conversation summary follows." }] });
+  stripDeferredTools(body);
+
+  const unrelated = body.messages[2];
+  assert.equal(unrelated.role, "user", "the mid-array system role must still be demoted for transport");
+  assert.equal(unrelated.content.length, 1, "an unrelated system turn gets no correction appended");
+  assert.equal(unrelated.content[0].text, "Conversation summary follows.");
+
+  const announcement = body.messages[1];
+  assert.match(announcement.content.at(-1).text, /no further tools/i, "the announcing turn still gets the correction");
+});
+
 test("leaves a request untouched when no tool defers loading", () => {
   const body = { model: "google/gemini-3.1-flash-lite", tools: [{ name: "Read" }], messages: [{ role: "system", content: [{ type: "text", text: "keep me" }] }] };
   const out = stripDeferredTools(body);
