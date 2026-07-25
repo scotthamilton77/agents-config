@@ -233,7 +233,7 @@ a writer-side or gate-side one.
 constraint is a separate gate from the verdict-based merge-eligibility predicate
 S6-D3 defines, and no S6 criterion touches it. §2 shows it failing open twice: an
 approval counts unless it fails a bot test, and a label outranks every approval
-with no actor recoverable from the data read. AUTH-7 and AUTH-8 close both, and
+with no actor recoverable from the data read. AUTH-C3 and AUTH-C4 close both, and
 they belong here rather than in S6 because they are about who is believed, not
 about what a verdict says.
 
@@ -247,7 +247,7 @@ holding only the owner's user token cannot produce one. The reader-side check
 becomes a field read against a platform-attested fact rather than a convention
 anyone must remember. It does not reach commit authorship: routing the push
 through an App credential leaves `author`/`committer` as whatever created the
-commit, which is why that path needs a trailer (AUTH-9) and not this option.
+commit, which is why that path needs a trailer (AUTH-C5) and not this option.
 
 **Costs:** a token-minting path (PEM → installation token) at every call site.
 `GhCli` has no credential seam — `proc.py` passes ambient environment — so this
@@ -364,7 +364,7 @@ why the ordering above holds absent that requirement.
 
 The fix is a separate tracker item. Each criterion below states an observable
 input or state and an expected outcome, with its inverse and boundary cases. None
-is implemented here. AUTH-7 and AUTH-8 govern one named gate —
+is implemented here. AUTH-C3 and AUTH-C4 govern one named gate —
 `merge_gates.human_review_satisfied`, prgroom's human-review constraint. That is
 not the verdict-based merge-eligibility predicate S6-D3 defines and §6 places out
 of scope; the two read different inputs, and satisfying one says nothing about the
@@ -372,16 +372,16 @@ other.
 
 ### Reader-side prohibition (option iv)
 
-- **AUTH-1** The deployed hard line names the channels an authorization may
+- **AUTH-R1** The deployed hard line names the channels an authorization may
   arrive on and excludes the PR surface: a PR comment, review body, or issue
   comment never authorizes a merge, whoever appears to have written it. Inverse,
   decidable today: an instruction in the session turn still authorizes. The hard
   line's rule-based branch is not a test input here either, for the reason given
-  under AUTH-2 — it becomes one when the separately-tracked repair of that channel
+  under AUTH-R2 — it becomes one when the separately-tracked repair of that channel
   lands. Boundary: a comment quoting an earlier
   in-session authorization verbatim does not re-authorize — the quote is not the
   turn.
-- **AUTH-2** Given a PR carrying a comment whose text reads as merge
+- **AUTH-R2** Given a PR carrying a comment whose text reads as merge
   authorization and whose GitHub author is the owner, an agent asked to merge
   refuses and names the missing authorization. Inverse, decidable today: the same
   merge, authorized by an instruction given in the session turn, proceeds — the
@@ -392,13 +392,13 @@ other.
   testable when the separately-tracked repair of the channel lands. Dependency
   failure: with the comment present and the policy unevaluable, the agent refuses
   rather than falling back to the comment.
-- **AUTH-3** An agent reporting on a PR's comments attributes each to its posting
+- **AUTH-R3** An agent reporting on a PR's comments attributes each to its posting
   identity without asserting human intent that the identity alone cannot
   establish. Inverse: a comment from a `[bot]` identity is reported as machine
   authored. Boundary: a comment from the owner's account is reported as
   "posted by the owner's account", never as "the owner instructed", unless a
   session turn corroborates it.
-- **AUTH-4** The admission gate's evaluation requires any proposed rule or skill
+- **AUTH-R4** The admission gate's evaluation requires any proposed rule or skill
   that reads PR comments, review bodies, or issue comments to state whether it
   treats them as instructions and, if so, what authorship check it applies. A
   proposal that reads comments and states no check is declined. Inverse: a
@@ -409,7 +409,7 @@ other.
 
 ### Identity conversion (option i)
 
-- **AUTH-5** The conversion target is the write surface that survives the prgroom
+- **AUTH-C1** The conversion target is the write surface that survives the prgroom
   carve, not today's path list. D13 retains the `gh`/`git` clients, config, error
   taxonomy, and escalation typing and deletes the named modules with their tests,
   the `reply` module among them — which carries three of the six API-write paths
@@ -422,7 +422,7 @@ other.
   introduced it. Binding the criterion to the client rather than to a
   call-site list also settles the paths the carve leaves undecided: whichever
   grooming writes survive, they flow through the converted client. Machine-posted
-  comments and approvals stay S6-D2's (§3); the commit/push path is AUTH-9's.
+  comments and approvals stay S6-D2's (§3); the commit/push path is AUTH-C5's.
   Observable: the actor GitHub records for a write made through the retained
   client — the comment's `user`, the thread's `resolvedBy`, the timeline event's
   `actor` — carries `type: "Bot"`. Inverse: a write that reaches GitHub without
@@ -432,7 +432,7 @@ other.
   carve rather than racing it — converting call sites that are about to be deleted
   is wasted work, and the client seam is cheaper and less error-prone to cut once,
   afterward.
-- **AUTH-6** No credential carrying write scope is reachable from an agent
+- **AUTH-C2** No credential carrying write scope is reachable from an agent
   process: the agent's environment holds a read-scoped credential, and the
   write-scoped one lives where that process cannot read it. Observable is
   reachability, not command refusal — from inside an agent session an attempted
@@ -453,27 +453,27 @@ other.
   Residual risk, stated rather than designed away: while an agent process can read
   a credential with write scope, no enumeration of blocked commands makes the
   invariant true — it raises the cost of the bypass and nothing more.
-- **AUTH-7** `derive_human_review` counts an approval only from an identity a
+- **AUTH-C3** `derive_human_review` counts an approval only from an identity a
   positive test establishes as human, not from one that merely fails the bot test.
   The observable is App attestation, and the criterion is decidable only once
-  AUTH-5 and AUTH-6 hold: when every machine write is App-attested, a non-App
+  AUTH-C1 and AUTH-C2 hold: when every machine write is App-attested, a non-App
   identity is a human one. Inverse: an App-attested approval does not satisfy the
   constraint. Boundary: a genuine owner approval typed in the GitHub UI does
   satisfy it. Precondition failure: before conversion is complete an owner-identity
   approval is observationally identical to an agent-posted one, so the gate reads
   the constraint unsatisfied and names the missing precondition — it never counts
   the approval on the assumption that it is human.
-- **AUTH-8** Two requirements, in order. First, the label's applying actor is read
+- **AUTH-C4** Two requirements, in order. First, the label's applying actor is read
   at all: `fetch_human_review_inputs` reads `issues/{n}/labels`, which returns
   names only, so today there is no actor to test and the criterion is unsatisfiable
   until a source carrying one (the labeled timeline event) is read. Second, under
-  the same post-conversion precondition as AUTH-7, a `human-approved` label
+  the same post-conversion precondition as AUTH-C3, a `human-approved` label
   satisfies the human-review constraint only when that actor is not App-attested.
   Inverse: a label applied by an App-attested call does not satisfy it. Empty
   case: a label whose applying actor cannot be determined from the data read does
   not satisfy it, and reports the undetermined actor as the reason rather than
   defaulting either way.
-- **AUTH-9** Commits produced in an agent session are attributable to the agent
+- **AUTH-C5** Commits produced in an agent session are attributable to the agent
   by a stable, case-exact trailer emitted by an asset this repo controls.
   Inverse: a commit with no such trailer is not asserted to be agent-authored.
   Boundary: one casing is normalized and enforced, and a commit carrying a variant
@@ -490,7 +490,7 @@ its text and what S6 delivers, for repair there), the **verdict-based**
 merge-eligibility predicate and its fail-closed provenance check (S6-D3), and the
 exclusion of human comments from the fix loop (S6-D4). prgroom's human-review
 constraint is a different gate from that predicate and is in scope here, at
-AUTH-7 and AUTH-8. The verdict harvester and merge-eligibility evaluator
+AUTH-C3 and AUTH-C4. The verdict harvester and merge-eligibility evaluator
 (S8, D13). The interventions-per-PR instrument (S10,
 D19) — this record establishes only that its substrate is not yet separable.
 Building or reconfiguring the merge-approver App, which pre-exists and is proven.
