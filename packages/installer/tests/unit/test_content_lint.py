@@ -154,6 +154,24 @@ def test_a_label_cannot_claim_a_longer_labels_message() -> None:
     assert _matching_label("claude:skills/foobar: msg", sources) == "claude:skills/foobar"
 
 
+def test_findings_of_different_kinds_never_share_a_bucket() -> None:
+    """Every gate violation must reach the output. If an ungrouped finding could key
+    into a grouped one, the ungrouped one is absorbed and vanishes — a swallowed
+    violation is worse than a mis-grouped one, because nothing signals the loss."""
+    from installer.core.content_lint import _collapse_findings
+
+    text = "always-on surface is 10001 tokens"
+    collapsed = _collapse_findings(
+        [f"claude: {text}", text],  # the second carries no tool prefix at all
+        sources={},
+        tool_values=frozenset({"claude"}),
+    )
+
+    assert len(collapsed) == 2
+    assert f"[claude] {text}" in collapsed
+    assert text in collapsed
+
+
 def test_always_on_breach_groups_on_its_text_having_no_artifact_behind_it() -> None:
     """The always-on surface is a property of the tool, not of one file, so there is
     no source identity to group on — identical breaches still fold."""

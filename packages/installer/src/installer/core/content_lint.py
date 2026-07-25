@@ -53,6 +53,12 @@ if TYPE_CHECKING:
 # artifact under it is a mistake rather than a tracked exception.
 ADMITTED_ONLY_SUBTREE = Path("src") / "user"
 
+# Finding kinds, used only as the first element of a grouping key so that two
+# findings of different kinds can never land in one bucket.
+_ARTIFACT = "artifact"  # attributable to one source file
+_SURFACE = "surface"  # a property of the tool, not of any one file
+_WHOLE = "whole"  # spans artifacts; grouped with nothing
+
 
 @dataclass(frozen=True, slots=True)
 class Unadmitted:
@@ -126,22 +132,26 @@ def _collapse_findings(
     no tool prefix at all (the conflict audit's, which spans artifacts) passes
     through whole.
     """
-    tools_by_finding: dict[tuple[str, str], list[str]] = {}
+    tools_by_finding: dict[tuple[str, str, str], list[str]] = {}
     for message in violations:
         label = _matching_label(message, sources)
         if label is not None:
             tool, _sep, _dest = label.partition(":")
-            key = (str(sources[label]), message[len(label) + 1 :].strip())
+            key = (_ARTIFACT, str(sources[label]), message[len(label) + 1 :].strip())
         else:
             head, _sep, tail = message.partition(":")
             if head not in tool_values or not tail.strip():
-                tools_by_finding.setdefault(("", message), [])
+                # Ungrouped, and keyed under its own kind: two findings of
+                # different kinds must never share a bucket, or the one that
+                # carries no tool is absorbed into the one that does and
+                # disappears from the report.
+                tools_by_finding.setdefault((_WHOLE, "", message), [])
                 continue
-            tool, key = head, ("", tail.strip())
+            tool, key = head, (_SURFACE, "", tail.strip())
         tools_by_finding.setdefault(key, []).append(tool)
 
     rendered: list[str] = []
-    for (source, text), tools in tools_by_finding.items():
+    for (_kind, source, text), tools in tools_by_finding.items():
         if not tools:
             rendered.append(text)
             continue
