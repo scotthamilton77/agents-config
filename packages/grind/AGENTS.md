@@ -1,24 +1,31 @@
 # AGENTS.md — `packages/grind/`
 
-Package-scoped guidance for the event-sourced grind runtime's schema + fold.
-The repo-root `AGENTS.md` still applies; this file adds what is specific to
-this package. Unlike the config content under `src/`, **this is real code
-with a real quality gate.**
+Package-scoped guidance for the event-sourced grind runtime. The repo-root
+`AGENTS.md` still applies; this file adds what is specific to this package.
+Unlike the config content under `src/`, **this is real code with a real
+quality gate.**
 
-`grind` is the event log and materialized-state engine behind an
-orchestrated-grind run: an append-only `events.jsonl` is the source of
-truth, and `fold(events) -> State` is the pure transition function that
-turns it into a `state.json`-shaped snapshot. See
-`docs/specs/2026-07-19-event-sourced-grind-runtime.md` for the full design —
-this package implements its event envelope, event taxonomy, the fold and
-transition table, and the observations schema (`.30.1` in the spec's
-Delivery section).
+`grind` is the event log and materialized-state engine under the pipeline
+executor loop (charter D14): an append-only `events.jsonl` is the source of
+truth, `fold(events) -> State` is the pure transition function that turns it
+into a `state.json`-shaped snapshot, and `conditions(state, now)` reports the
+level facts derived from that snapshot.
 
-**Scope note:** this package currently ships schema + fold only — no `grind`
-CLI exists yet (`grind create`/`log`/`status`/`render`/`check`/`finish` land
-in a later bead, `wgclw.30.2`). There is deliberately no
-`[project.scripts]` entry point; `verify-entry-grind` in the root `Makefile`
-checks the package imports cleanly instead of invoking a nonexistent binary.
+**This package emits facts; it does not decide.** Dispatch, fix/rebase
+budgets, review triggering, merge eligibility, and every tracker call belong to
+the decision layer above it — grind imports no tracker facade, shells out to no
+`gh`/`git`, and assumes no filesystem beyond a caller-supplied `--dir`. That
+boundary is the verified basis for keeping this runtime as the executor
+substrate (`SAVEPOINTS/2026-07-24-v1-executor-loop-fit-report.md`).
+
+**CLI:** `[project.scripts]` declares `grind = "grind.cli:entry"`, shipping six
+subcommands — `create`, `log`, `status`, `check`, `render`, `finish`. The
+installer registers grind in `CLI_PACKAGES`
+(`packages/installer/src/installer/core/clis.py`), so the `grind` binary is
+installed onto PATH alongside `work` and `prgroom`, receipt-tracked and pruned
+on retirement. Every command emits exactly one JSON envelope on stdout and
+exits non-zero only on a command error — except `grind check`, whose exit 1
+carries the staleness verdict itself.
 
 ## The quality gate is mandatory — run it, do not approximate it
 
@@ -31,7 +38,8 @@ make ci-grind   # the full gate CI enforces
 
 It runs, in order: `ruff check` (lint), `ruff format --check` (formatting),
 `mypy --strict src` (types), `pytest --cov` (tests + coverage), `pip-audit`
-(deps), and an import-verify smoke check. `make ci` runs this alongside
+(deps), and `verify-entry-grind` — which asserts the console script resolves
+and the CLI root parses by running `grind --help`. `make ci` runs this alongside
 `ci-installer`, `ci-prgroom`, `ci-workcli`, and `ci-vizsuite`.
 
 Do **not** hand-pick a subset (e.g. `ruff check` alone). The `Makefile` is
@@ -45,10 +53,10 @@ must pass before push.
 - Run tools via `uv run …` from inside `packages/grind/`, or the `make`
   targets from the repo root.
 - Config lives in `pyproject.toml`: ruff (line-length 100), mypy
-  `strict = true`, coverage `branch = true` / `fail_under = 80` (this
-  package's floor matches the repo's global 80%/70% default — see
-  `packages/workcli/AGENTS.md` for a sibling package that raised its own
-  floor; this one hasn't needed to).
+  `strict = true`, coverage `branch = true` / `fail_under = 80` — a single
+  combined floor over branch-enabled coverage, not a line/branch pair. It is the
+  lowest floor of any package here: `installer`, `prgroom`, `workcli`, and
+  `vizsuite` all gate at 90.
 - Zero runtime dependencies by design (stdlib only: `json`/`dataclasses`/
   `typing`) — keeps the `pip-audit` surface nil.
 
@@ -72,21 +80,32 @@ must pass before push.
   in the spec). Every anomaly path records an `AnomalyRecord`, an ERROR
   `Observation`, and an auto-raised `AttentionEntry` — the three always
   travel together (see `fold._anomaly`).
-- **Layout:** `model.py` (the `State` shape and its typed sub-records —
+- **Layout.** Core: `model.py` (the `State` shape and its typed sub-records —
   `Item`, `Lane`, `ItemReview`, `ParkingEntry`, …), `fold.py` (the transition
-  table and every event handler), `derive.py` (read-side projections that
-  need no wall clock, e.g. lane status; time-dependent `conditions(State,
-  now)` is a sibling bead's scope, not this package's yet), `log.py`
-  (JSONL parsing with torn-tail tolerance, and `fold_log()` composing parse
-  + fold).
-- **Payload validation lives at the CLI boundary, not here.** Per spec
+  table and every event handler), `derive.py` (read-side projections needing no
+  wall clock, e.g. lane status), `conditions.py` (the time-dependent level
+  facts and the one transition condition). I/O: `log.py` (JSONL parsing with
+  torn-tail tolerance, and `fold_log()` composing parse + fold), `store.py`
+  (the write path — torn-tail repair, append, read-back), `jsonio.py` (strict
+  JSON decoding, non-finite constants refused), `serialize.py` (`State` ->
+  `state.json` and the `status` views). Boundary: `cli.py` (argparse wiring and
+  dispatch), `verbs.py` (the command bodies), `payloads.py` (per-type payload
+  validation), `envelope.py` (`GrindError`), `resolve.py` (`--dir`
+  resolution). Projections: `render.py` (`dashboard.html`), `handoff.py`
+  (`status --handoff`).
+- **A condition is a fact with evidence, never an instruction.** Its name
+  states what is true and its fields carry the evidence — no "nudge the lane",
+  no "escalate the review". `conditions.IMPERATIVE_VERBS` is the convention
+  lock a test asserts every condition name against; acting on a condition is
+  the decision layer's call, not this package's.
+- **Payload validation lives at the CLI boundary, not in the fold.** Per spec
   ("parse once, trust inward"), `fold()` trusts that a well-formed event's
-  payload fields are shaped correctly; the CLI (a later bead) is
-  responsible for rejecting malformed payloads before they ever reach the
-  log. This package's tolerance is about *structural* garbage (missing
-  keys, wrong JSON types, unknown event types) — it degrades gracefully
-  rather than crashing, but it doesn't second-guess a well-typed field's
-  business validity beyond what the transition table itself encodes.
+  payload fields are shaped correctly; `payloads.py` rejects malformed payloads
+  before they ever reach the log, as a command error that appends nothing. The
+  fold's tolerance is about *structural* garbage (missing keys, wrong JSON
+  types, unknown event types) — it degrades gracefully rather than crashing,
+  but it doesn't second-guess a well-typed field's business validity beyond
+  what the transition table itself encodes.
 
 ## Judgment calls worth knowing about
 
@@ -191,25 +210,18 @@ must pass before push.
   house standard this mirrors.
 - `tests/unit/builders.py` holds small event-builder helpers (`seed_event`,
   `event`) shared across test modules — not a fixture file, a plain module.
-- Coverage floor is 80% line / 70% branch (house default); current numbers
-  run well above that (see `make cov-grind` output).
-
-## Out of scope for this bead (`wgclw.30.1`)
-
-The following are explicitly sibling beads under `wgclw.30`, not this
-package's current surface:
-
-- `grind` CLI verbs (`create`/`log`/`status`/`render`/`check`/`finish`) —
-  `.30.2`.
-- The dashboard renderer — `.30.3`.
-- ERROR -> attention and LESSON -> panel *routing policy* beyond the fold
-  already producing the right typed records — `.30.4`.
-- The emit-back envelope and the full condition vocabulary
-  (`conditions(State, now)`, including `review_stalemate_risk` and the
-  transition condition `item_unblocked`) — `.30.5`.
-- `grind check` and the staleness watchdog — `.30.6`.
-- `orchestrated-grind/SKILL.md` integration — `.30.7`.
+- Coverage floor is `fail_under = 80` over branch-enabled coverage; current
+  numbers run well above it (see `make cov-grind` output).
 
 ## Reference
 
-Spec: `docs/specs/2026-07-19-event-sourced-grind-runtime.md`.
+Specs: `docs/specs/2026-07-19-event-sourced-grind-runtime.md` (event envelope,
+taxonomy, transition table, CLI contract, emit-back, staleness, handoff) and
+`docs/specs/2026-07-19-grind-dashboard-renderer.md` (the renderer contract).
+
+Both specs predate the harness-rework charter and frame their consumer as an
+agent-topology skill that no longer exists; the runtime spec's "Integration
+into orchestrated-grind" section is discarded by charter D14. Read them for the
+substrate contract this package implements, and take the consumer, the
+executor's role, and the park vocabulary from
+`docs/specs/2026-07-21-harness-rework-way-forward.md` where the two disagree.
