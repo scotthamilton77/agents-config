@@ -31,21 +31,37 @@ The runtime's own files — `events.jsonl`, `events.quarantine`, `state.json`,
 `dashboard.html` — all sit under one resolved grind directory, and `store.py` is
 the only module that builds those paths. The seed file is a separate explicit
 input: `create --file PATH` is *required*, and that path is read through the
-injected reader, from wherever it names. The directory itself resolves through
-`resolve.py`'s four-step precedence (`DirSource`): `--dir`, else `GRIND_DIR`,
-else the nearest ancestor of cwd holding a non-empty `events.jsonl`, else — for
-`create` alone — cwd. Only the first is caller-supplied, so a decision layer
-that wants no ambient resolution passes `--dir`, or injects `cwd`/`env`.
+injected reader, from wherever it names.
+
+The directory itself resolves through `resolve.py` (`DirSource`), and **`create`
+follows a different precedence from every other verb, deliberately:**
+
+- `resolve_existing` — every verb but `create`: `--dir`, else `GRIND_DIR`, else
+  the nearest ancestor of cwd holding a non-empty `events.jsonl`, else a command
+  error. A resolved directory holding no state is a command error too, whatever
+  resolved it.
+- `resolve_for_create` — `--dir`, else `GRIND_DIR`, else cwd. **Never searched.**
+  Create asks where a new grind should live, not where the existing one is, so
+  running it under an ancestor grind with no `--dir` makes a *nested* grind
+  rather than reusing the one above.
+
+Only `--dir` is caller-supplied in either, so a decision layer that wants no
+ambient resolution passes it explicitly, or injects `cwd`/`env`.
 
 **CLI:** `[project.scripts]` declares `grind = "grind.cli:entry"`, shipping six
 subcommands — `create`, `log`, `status`, `check`, `render`, `finish`. The
 installer registers grind in `CLI_PACKAGES`
 (`packages/installer/src/installer/core/clis.py`), so the `grind` binary is
-installed onto PATH via `uv tool install` alongside `work` and `prgroom`. Every
-command emits exactly one JSON envelope on stdout — a bad flag or unknown verb
-included, which is what `_RaisingArgumentParser` exists for — and exits non-zero
-only on a command error, except `grind check`, whose exit 1 carries the
-staleness verdict itself.
+installed onto PATH via `uv tool install` alongside `work` and `prgroom`.
+
+Every *command* emits exactly one JSON envelope on stdout and exits non-zero only
+on a command error — `grind check` excepted, whose exit 1 carries the staleness
+verdict itself. `_RaisingArgumentParser` extends that to parse failures: it
+overrides `error()` only, so a bad flag or unknown verb is enveloped too. It does
+not cover argparse's help action, which raises `SystemExit` and so passes through
+`main()`'s `except Exception` — `grind --help` prints plain usage text and exits 0
+with no envelope, as a CLI should, and that is the path `verify-entry-grind`
+exercises.
 
 ## The quality gate is mandatory — run it, do not approximate it
 
@@ -74,12 +90,10 @@ must pass before push.
   targets from the repo root.
 - Config lives in `pyproject.toml`: ruff (line-length 100), mypy
   `strict = true`, coverage `branch = true` / `fail_under = 80` — a single
-  combined floor over branch-enabled coverage, not a line/branch pair. It is the
-  lowest floor of any package here: `installer`, `prgroom`, `workcli`, and
-  `vizsuite` all gate at 90.
-- Zero runtime dependencies by design — stdlib only (`json`, `argparse`,
-  `pathlib`, `datetime`, `dataclasses`, `typing`), which keeps the `pip-audit`
-  surface nil. There are no third-party imports anywhere in `src/`.
+  combined floor over branch-enabled coverage, not a line/branch pair, and the
+  lowest floor of any package here (the siblings gate at 90).
+- Zero third-party imports anywhere in `src/`, by design — stdlib only, which
+  keeps the `pip-audit` surface nil.
 
 ## Design principles for this package
 
@@ -88,11 +102,9 @@ must pass before push.
   sequence — delete-and-refold is the runtime's entire recovery story, so
   nondeterminism here is a correctness bug, not a cosmetic one (see
   `tests/unit/test_replay_determinism.py`).
-- **Status is derived, never asserted.** There is no `status_changed` event;
-  every event handler in `fold.py` computes the entity's new status from its
-  current status and the event's payload. Blocked/unblocked is doubly
-  derived — from blocker edges, recomputed on every relevant transition, not
-  read off any event field directly.
+- **Status is derived by the fold, never asserted.** There is no
+  `status_changed` event. Blocked/unblocked is doubly derived — from blocker
+  edges, recomputed on every relevant transition, never read off an event field.
 - **Anomaly policy is accept-and-flag, not reject.** An event illegal from
   the entity's current status, or naming an unknown item/lane, or of an
   unknown type, is still folded in: `fold()` never raises for a bad event
@@ -150,9 +162,10 @@ must pass before push.
   work.** "All done -> done; any in flight -> the most advanced active
   state" reads ambiguously for a mixed lane (one item done, one still
   queued): naively taking the max-rank status across *all* items would
-  report `done` for a lane that's barely started. `derive.lane_status`
-  computes the "most advanced" rank only among non-`done` items, falling
-  back to `done` only when every item in the lane is.
+  report `done` for a lane that's barely started. `derive.lane_status` drops
+  parked items from consideration first, then computes the "most advanced" rank
+  among the non-`done` remainder — so `done` means every *unparked* item is
+  done, and a lane with nothing active reports `standing-down` or `queued`.
 - **`pr_closed.reason` shares a field name with the park vocabulary and not
   its contract.** It is a free-text closure note, validated as any non-empty
   string, while `item_parked.reason` is a closed enum. On the `next: parked`
@@ -231,8 +244,6 @@ must pass before push.
   house standard this mirrors.
 - `tests/unit/builders.py` holds small event-builder helpers (`seed_event`,
   `event`) shared across test modules — not a fixture file, a plain module.
-- Coverage floor is `fail_under = 80` over branch-enabled coverage; current
-  numbers run well above it (see `make cov-grind` output).
 
 ## Reference
 
