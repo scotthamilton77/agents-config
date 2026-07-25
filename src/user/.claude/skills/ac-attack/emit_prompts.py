@@ -15,6 +15,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import stat
 import sys
 from pathlib import Path
 from typing import Any
@@ -113,6 +115,40 @@ def read_document(path: str | None) -> tuple[str, str]:
     return text, "sha256:" + hashlib.sha256(data).hexdigest()
 
 
+def refuse_unless_plain(path: Path) -> None:
+    """Refuse an output name already held by anything but a plain file.
+
+    The names are predictable, so one of them may be waiting: a link there would send the whole
+    document wherever it points, under whatever rights the invoker holds. Overwriting a plain file
+    is ordinary re-emission and is allowed.
+    """
+    try:
+        mode = os.lstat(path).st_mode
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise Refusal(
+            "unsafe-output-path", f"cannot inspect the output path {path}: {exc}"
+        ) from exc
+    if not stat.S_ISREG(mode):
+        raise Refusal(
+            "unsafe-output-path",
+            f"the output path {path} is already held by something other than a plain file; a link "
+            "or device there would take the whole document somewhere the round never named, so it "
+            "refuses rather than write through it",
+        )
+
+
+def write_private(path: Path, text: str) -> None:
+    """Write owner-only, and never through a link swapped in after the name was checked."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+    with os.fdopen(os.open(path, flags, 0o600), "w", encoding="utf-8") as handle:
+        # That mode covers only a file this call creates; one already at the name keeps its own,
+        # so narrow the handle we hold before any of the document goes down it.
+        os.fchmod(handle.fileno(), 0o600)
+        handle.write(text)
+
+
 def render_prompt(lens: dict, ctx: dict) -> str:
     """One lens, one prompt: fixed instructions first, the whole document fenced after."""
     name = lens["lens"]
@@ -170,12 +206,18 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
     lenses = load_lenses()
     ctx = {"spec_path": args.spec, "spec_revision": revision, "document": document}
 
+    # A prompt carries the whole document, which is not always public, and these land in shared
+    # temporary directories. Owner-only from the moment it exists, so there is no readable window.
+    # A directory already there is somebody else's: it keeps the permissions its owner gave it.
     out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    names = [f"{lens['lens']}.md" for lens in lenses] + ["round.json"]
+    for name in names:
+        refuse_unless_plain(out_dir / name)
     written = []
     for lens in lenses:
         path = out_dir / f"{lens['lens']}.md"
-        path.write_text(render_prompt(lens, ctx), encoding="utf-8")
+        write_private(path, render_prompt(lens, ctx))
         written.append(str(path))
     round_meta = {
         "spec_path": args.spec, "spec_revision": revision,
@@ -184,9 +226,7 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
             for lens in lenses
         ],
     }
-    (out_dir / "round.json").write_text(
-        json.dumps(round_meta, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    write_private(out_dir / "round.json", json.dumps(round_meta, indent=2, sort_keys=True) + "\n")
     written.append(str(out_dir / "round.json"))
     return {"emitted": True, "prompts": written}
 

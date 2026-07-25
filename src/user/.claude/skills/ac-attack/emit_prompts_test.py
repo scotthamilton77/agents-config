@@ -13,8 +13,10 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -350,6 +352,72 @@ class TestRefusals:
         result = json.loads(proc.stdout)
         assert result["emitted"] is False
         assert [error["code"] for error in result["errors"]] == ["emitter-failure"]
+
+
+class TestOutputSafety:
+    def test_c1_the_prompts_land_owner_only(self, document, tmp_path, capsys):
+        """S6-C1: a prompt carries the whole attacked document, which is not always public, and
+        these land in shared temporary directories — the directory the round creates and every
+        file in it are reachable by their owner and by nobody else on the machine."""
+        out_dir = tmp_path / "attack"
+        emit(document, out_dir, capsys)
+        assert stat.S_IMODE(out_dir.stat().st_mode) == 0o700
+        for path in sorted(out_dir.iterdir()):
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600, path.name
+
+    def test_c1_an_existing_output_directory_keeps_its_own_permissions(self, document, tmp_path,
+                                                                        capsys):
+        """S6-C1: a directory the round did not create belongs to whoever did, so its permissions
+        are left as they were set rather than silently widened or narrowed — the prompts written
+        into it are still owner-only, which is what keeps the document unreadable."""
+        out_dir = tmp_path / "attack"
+        out_dir.mkdir()
+        os.chmod(out_dir, 0o755)
+        emit(document, out_dir, capsys)
+        assert stat.S_IMODE(out_dir.stat().st_mode) == 0o755
+        for path in sorted(out_dir.iterdir()):
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600, path.name
+
+    @pytest.mark.parametrize("name", (f"{LENS_NAMES[0]}.md", f"{LENS_NAMES[-1]}.md", "round.json"))
+    def test_c1_a_link_at_an_output_name_is_refused_not_followed(self, document, tmp_path, capsys,
+                                                                  name):
+        """S6-C1: the output names are predictable, so one of them can be waiting as a link, and
+        following it would write the whole document wherever it points with the invoker's rights.
+        Every name is checked before anything is written, so the round refuses whole rather than
+        part-way through, and the file at the far end of the link is untouched."""
+        outside = tmp_path / "elsewhere.txt"
+        outside.write_text("not the round's to write\n", encoding="utf-8")
+        out_dir = tmp_path / "attack"
+        out_dir.mkdir()
+        (out_dir / name).symlink_to(outside)
+        code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
+        assert code == 2 and result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["unsafe-output-path"]
+        assert outside.read_text(encoding="utf-8") == "not the round's to write\n"
+        assert [path.name for path in out_dir.iterdir()] == [name]
+
+    def test_c1_an_output_name_held_by_a_directory_is_refused(self, document, tmp_path, capsys):
+        """S6-C1: a link is not the only thing that can hold a predictable name — anything that is
+        not a plain file refuses, rather than the emitter discovering it by raising."""
+        out_dir = tmp_path / "attack"
+        (out_dir / "round.json").mkdir(parents=True)
+        code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
+        assert code == 2 and result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["unsafe-output-path"]
+
+    def test_c1_a_plain_file_at_an_output_name_is_ordinary_re_emission(self, document, tmp_path,
+                                                                        capsys):
+        """S6-C1: inverse — overwriting its own output is how a round is re-emitted, so a plain
+        file at the name is replaced, and replaced owner-only however wide it was before."""
+        out_dir = tmp_path / "attack"
+        out_dir.mkdir()
+        stale = out_dir / f"{LENS_NAMES[0]}.md"
+        stale.write_text("a previous round\n", encoding="utf-8")
+        os.chmod(stale, 0o644)
+        emitted = emit(document, out_dir, capsys)
+        assert "a previous round" not in emitted[LENS_NAMES[0]]
+        assert DOCUMENT in emitted[LENS_NAMES[0]]
+        assert stat.S_IMODE(stale.stat().st_mode) == 0o600
 
 
 class TestRoundFile:

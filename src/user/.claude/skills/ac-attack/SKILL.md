@@ -46,8 +46,15 @@ or empty document refuses as `no-spec`. One carrying an untrusted-content marker
 `spec-contains-marker`: fencing it would rewrite it, and the round would then attack text its
 revision does not name.
 
+A prompt carries the whole document, so every file written is owner-only, as is an output directory
+the round creates — one already there keeps the permissions its owner gave it. An output name held
+by a link or anything but a plain file refuses as `unsafe-output-path` rather than being written
+through.
+
 A revision names content, not history: `sha256:` plus the digest of the document's bytes, or the
-equivalent 40-hex object id, recomputable from the document in front of you.
+equivalent 40-hex object id, recomputable from the document in front of you. One record picks one
+notation and writes every revision in it: revisions compare as strings, so the same content in both
+notations would read as two revisions.
 
 ## What a prompt contains
 
@@ -111,6 +118,7 @@ that nothing was proposed. Exit 0 complete, 1 not, 2 on unusable input.
 | --- | --- |
 | `no-record` / `unreadable` / `invalid-json` / `schema` / `checker-failure` | No record named, or it is missing, undecodable, not a record, or the check could not run. |
 | `spec-unreadable` | The document is not where the record says. `--spec` points at it. |
+| `mixed-revision-notation` | The record writes revisions in both notations, so equal content would compare unequal. |
 | `lens-missing` / `duplicate-lens` / `unknown-lens` | The lens reports do not match the declared set one for one. |
 | `unknown-proposal-lens` / `contradicted-empty-report` / `contradicted-proposals-report` | A proposal names an undeclared lens; a lens reporting empty has proposals; a lens reporting proposals has none. |
 | `unadjudicated-proposal` | A proposal has no disposition. |

@@ -108,6 +108,27 @@ def revisions_of(data: bytes) -> set[str]:
     }
 
 
+def require_one_notation(record: dict) -> None:
+    """Refuse a record that writes its revisions in both notations.
+
+    Revisions are compared as strings, and the two notations for one content share no characters,
+    so a record mixing them reads the same document as two different revisions. The checker cannot
+    reconcile them either: a revision is a hash, and the content it names is not recoverable from
+    it. Held to one notation, string equality decides revision identity soundly.
+    """
+    revisions = [record["spec_revision"]] + [
+        entry["revision"] for entry in record["dispositions"] if "revision" in entry
+    ]
+    notations = {"digest" if rev.startswith("sha256:") else "object id" for rev in revisions}
+    if len(notations) > 1:
+        raise RecordError(
+            "mixed-revision-notation",
+            "this record writes revisions in both notations, as a digest and as an object id; "
+            "revisions are compared as strings, so one content written both ways would read as "
+            "two revisions and an acceptance that changed nothing could pass as an incorporation",
+        )
+
+
 def _lens_errors(record: dict) -> list[dict[str, Any]]:
     reported = [entry["lens"] for entry in record["lenses"]]
     errors = []
@@ -172,11 +193,12 @@ def _report_errors(record: dict) -> list[dict[str, Any]]:
     return errors
 
 
-def _disposition_errors(record: dict, present: set[str]) -> tuple[list[dict[str, Any]], set[str]]:
+def _disposition_errors(record: dict) -> tuple[list[dict[str, Any]], set[str]]:
     """Adjudication of every proposal, plus the revisions the acceptances account for.
 
-    `present` is every revision naming the document's current content, which is what lets an
-    acceptance that renames the attacked revision in the other notation be caught as a rename.
+    An acceptance names a revision other than the one attacked, decided by string comparison: the
+    record is refused upstream unless every revision in it is written in one notation, so two
+    revision strings differ exactly when the content they name does.
     """
     proposals, attacked = record["proposals"], record["spec_revision"]
     errors: list[dict[str, Any]] = []
@@ -206,7 +228,7 @@ def _disposition_errors(record: dict, present: set[str]) -> tuple[list[dict[str,
                     "message": f"proposal {index} was accepted without naming both the revision "
                                "of the document that now carries it and the criterion that does",
                 })
-            elif revision == attacked or {revision, attacked} <= present:
+            elif revision == attacked:
                 errors.append({
                     "code": "unincorporated-acceptance", "index": index,
                     "message": f"proposal {index} was accepted against the revision it attacked; "
@@ -235,7 +257,7 @@ def check(record: dict, document: bytes) -> list[dict[str, Any]]:
     """Everything wrong with this round, as a pure function of the record and the document."""
     present = revisions_of(document)
     errors = _lens_errors(record) + _report_errors(record)
-    disposition_errors, accounted = _disposition_errors(record, present)
+    disposition_errors, accounted = _disposition_errors(record)
     errors += disposition_errors
     if not present & (accounted | {record["spec_revision"]}):
         errors.append({
@@ -285,6 +307,7 @@ def main(argv: list[str]) -> int:
         invalid = schema_errors(record)
         if invalid:
             return report(invalid, started, EXIT_UNUSABLE)
+        require_one_notation(record)
         document = read_document(record_path, record, args.spec)
         errors = check(record, document)
     except RecordError as exc:

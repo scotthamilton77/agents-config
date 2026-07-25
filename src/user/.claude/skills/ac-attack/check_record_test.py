@@ -10,6 +10,7 @@ Run: uv run check_record_test.py
 
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import importlib.util
@@ -104,9 +105,10 @@ class Attack:
         record["dispositions"] = []
         return record
 
-    def save(self, record: Any) -> str:
-        self.path.write_text(json.dumps(record, indent=2), encoding="utf-8")
-        return str(self.path)
+    def save(self, record: Any, name: str | None = None) -> str:
+        path = self.root / name if name else self.path
+        path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        return str(path)
 
 
 @pytest.fixture
@@ -129,6 +131,24 @@ def codes(result: dict) -> set[str]:
 
 def error_of(result: dict, code: str) -> dict:
     return next(error for error in result["errors"] if error["code"] == code)
+
+
+DELETE = object()
+CACHES = {"__pycache__", ".pytest_cache", ".ruff_cache"}
+
+
+def snapshot(root: Path) -> dict[str, bytes]:
+    """Every file under root, minus the caches the interpreter and the test runner write."""
+    return {
+        str(path.relative_to(root)): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and not CACHES & set(path.relative_to(root).parts)
+    }
+
+
+# Taken before any test invokes the checker: a stray file it leaves in its own directory is then
+# caught however early it appeared, rather than being folded into a baseline taken after the fact.
+SKILL_DIR_UNTOUCHED = snapshot(HERE)
 
 
 BUNDLED = ("check_record.py", "lenses.json", "attack-record.schema.json")
@@ -177,23 +197,25 @@ class TestCompleteRound:
 
     def test_c3_an_acceptance_must_name_the_revision_that_carries_it(self, attack, capsys):
         """S6-C3: an acceptance references the concrete revision incorporating the proposal and
-        the criterion carrying it; accepting with the document unchanged adjudicates nothing, in
-        whichever notation the unchanged revision is written."""
+        the criterion carrying it — a field absent and a field holding only whitespace name
+        neither — and accepting with the document unchanged adjudicates nothing, in whichever
+        notation the unchanged revision is written."""
         attack.write_document(DOCUMENT)
-        for drop in ("revision", "covering_ac"):
+        for field, value in (("revision", DELETE), ("covering_ac", DELETE),
+                             ("covering_ac", " \t ")):
             record = attack.record()
-            del record["dispositions"][0][drop]
+            if value is DELETE:
+                del record["dispositions"][0][field]
+            else:
+                record["dispositions"][0][field] = value
             code, result = check(attack, record, capsys)
             assert code == 1 and codes(result) == {"unincorporated-acceptance"}
-        record = attack.record()
-        record["dispositions"][0]["revision"] = record["spec_revision"]
-        code, result = check(attack, record, capsys)
-        assert code == 1 and codes(result) == {"unincorporated-acceptance"}
-        record = attack.record()
-        record["spec_revision"] = blob_revision(DOCUMENT)
-        record["dispositions"][0]["revision"] = sha_revision(DOCUMENT)
-        code, result = check(attack, record, capsys)
-        assert code == 1 and codes(result) == {"unincorporated-acceptance"}
+        for unchanged in (sha_revision(DOCUMENT), blob_revision(DOCUMENT)):
+            record = attack.record()
+            record["spec_revision"] = unchanged
+            record["dispositions"][0]["revision"] = unchanged
+            code, result = check(attack, record, capsys)
+            assert code == 1 and codes(result) == {"unincorporated-acceptance"}
         attack.write_document(REVISED)
         assert check(attack, attack.record(), capsys)[0] == 0
 
@@ -207,18 +229,24 @@ class TestCompleteRound:
             assert code == 1 and codes(result) == {"missing-rationale"}
         assert check(attack, attack.record(), capsys)[0] == 0
 
-    def test_c3_rechecking_a_complete_record_is_a_no_op(self, attack, capsys):
+    def test_c3_rechecking_a_complete_record_is_a_no_op(self, attack, monkeypatch, capsys):
         """S6-C3: re-running over a complete record decides the same thing from the record and
-        changes nothing on disk — the inputs are captured before the first run, so a checker that
-        rewrote the record or the document would be caught rather than compared against itself
-        (repeated invocation)."""
+        changes nothing on disk — not the record or the document, not the checker's own directory,
+        and not the directory it was run from, where a scratch file would be easiest to leave. The
+        inputs are captured before the first run, so a checker that rewrote any of them would be
+        caught rather than compared against itself (repeated invocation)."""
+        workdir = attack.root / "run-from-here"
+        workdir.mkdir()
+        monkeypatch.chdir(workdir)
         path = attack.save(attack.record())
-        before = {file.name: file.read_bytes() for file in attack.root.iterdir()}
+        before = snapshot(attack.root)
         assert set(before) == {attack.document.name, attack.path.name}
         first = run([path], capsys)
         second = run([path], capsys)
         assert first == second == (0, {"clean": False, "complete": True, "errors": []})
-        assert {file.name: file.read_bytes() for file in attack.root.iterdir()} == before
+        assert snapshot(attack.root) == before
+        assert snapshot(HERE) == SKILL_DIR_UNTOUCHED
+        assert list(workdir.iterdir()) == []
 
 
 class TestEmptyUnion:
@@ -241,6 +269,27 @@ class TestOrdering:
         assert code == 1
         assert "ordering-violation" in codes(result)
         assert "unadjudicated-proposal" in codes(result)
+
+    def test_c4_the_check_can_reach_nothing_but_the_files_it_is_handed(self):
+        """S6-C4: the verdict comes from the record, the document, and the declared observation —
+        never from a tracker, which would make the same round decide differently on two machines.
+        Held against what the module imports and calls rather than what it says about itself: the
+        import allowlist leaves no route to a subprocess, a socket, or an HTTP client, the
+        declared dependencies put none of them in reach, and nothing is imported dynamically."""
+        source = CHECKER_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported |= {alias.name.split(".")[0] for alias in node.names}
+            elif isinstance(node, ast.ImportFrom):
+                imported.add("." * node.level + (node.module or "").split(".")[0])
+        assert imported == {"__future__", "argparse", "hashlib", "json", "sys", "pathlib",
+                            "typing", "jsonschema"}
+        assert '# dependencies = ["jsonschema>=4"]' in source
+        called = {node.func.id for node in ast.walk(tree)
+                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
+        assert not called & {"eval", "exec", "compile", "__import__"}
 
     def test_c4_a_complete_round_permits_the_work_to_start(self, attack, capsys):
         """S6-C4: inverse — the declaration is not itself a violation once the round is closed."""
@@ -294,13 +343,43 @@ class TestStaleness:
         assert code == 1 and codes(result) == {"stale-revision"}
 
     def test_c6_an_object_id_names_the_same_content_as_its_digest(self, attack, capsys):
-        """S6-C6: the revision is content-addressed in either notation, so a record keyed to the
-        document's object id is checkable against the document itself."""
+        """S6-C6: the revision is content-addressed in either notation, so a record keyed
+        throughout to object ids is checkable against the document itself."""
         record = attack.record()
+        record["spec_revision"] = blob_revision(DOCUMENT)
         record["dispositions"][0]["revision"] = blob_revision(REVISED)
         assert check(attack, record, capsys)[0] == 0
         record["dispositions"][0]["revision"] = blob_revision(UNRELATED)
         assert check(attack, record, capsys)[0] == 1
+
+
+class TestRevisionNotation:
+    @pytest.mark.parametrize("where", ("attacked", "acceptance", "rejection"))
+    def test_c6_a_record_mixing_the_two_notations_is_refused(self, attack, capsys, where):
+        """S6-C6: revisions are compared as strings and a hash cannot be turned back into the
+        content it names, so a record mixing the notations could pass an unchanged document off as
+        an incorporation — the two strings differ while the content is identical. Every revision
+        in one record is held to one notation instead, wherever in the record it is written."""
+        record = attack.record()
+        if where == "attacked":
+            record["spec_revision"] = blob_revision(DOCUMENT)
+        else:
+            index = 0 if where == "acceptance" else 1
+            record["dispositions"][index]["revision"] = blob_revision(REVISED)
+        code, result = check(attack, record, capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"mixed-revision-notation"}
+
+    def test_c6_either_notation_alone_decides_the_round_the_same_way(self, attack, capsys):
+        """S6-C6: inverse — a notation is a way of writing a revision, not a different revision,
+        so the same round written wholly in digests and wholly in object ids closes either way."""
+        digests = attack.record()
+        object_ids = copy.deepcopy(digests)
+        object_ids["spec_revision"] = blob_revision(DOCUMENT)
+        object_ids["dispositions"][0]["revision"] = blob_revision(REVISED)
+        closed = (0, {"clean": False, "complete": True, "errors": []})
+        assert check(attack, digests, capsys) == closed
+        assert check(attack, object_ids, capsys) == closed
 
 
 class TestLensCoverage:
@@ -418,8 +497,6 @@ class TestProposalShape:
         record["proposals"][0] = {"lens": "edge-cases", "concern": "this feels risky"}
         assert check(attack, record, capsys)[0] == 2
 
-
-DELETE = object()
 
 BAD_ENVELOPE = [
     ("schema_version", DELETE), ("schema_version", "2"), ("schema_version", 1),
@@ -568,21 +645,31 @@ class TestUnusableInput:
 
     def test_c3_output_is_byte_identical_through_the_command_boundary(self, attack):
         """S6-C3: two runs of the command over the same inputs print the same bytes, so a stored
-        answer can be compared with a fresh one without normalising anything first."""
-        record_path = attack.save(attack.record())
-        command = [sys.executable, str(CHECKER_PATH), record_path]
-        first = subprocess.run(command, capture_output=True, check=False)
-        second = subprocess.run(command, capture_output=True, check=False)
-        assert first.returncode == second.returncode == 0
-        assert first.stdout == second.stdout
-        broken = attack.record()
-        broken["dispositions"] = []
-        broken["lenses"] = broken["lenses"][1:]
-        command = [sys.executable, str(CHECKER_PATH), attack.save(broken)]
-        first = subprocess.run(command, capture_output=True, check=False)
-        second = subprocess.run(command, capture_output=True, check=False)
-        assert first.returncode == second.returncode == 1
-        assert first.stdout == second.stdout
+        answer can be compared with a fresh one without normalising anything first — for a closed
+        round, an unfinished one, and every shape of input the check refuses outright, where a
+        message assembled from whatever went wrong is likeliest to vary between runs."""
+        unfinished = attack.record()
+        unfinished["dispositions"] = []
+        unfinished["lenses"] = unfinished["lenses"][1:]
+        malformed = attack.record()
+        malformed["schema_version"] = "2"
+        mixed = attack.record()
+        mixed["dispositions"][0]["revision"] = blob_revision(REVISED)
+        (attack.root / "prose.json").write_text("not json at all", encoding="utf-8")
+        cases = [
+            (0, attack.save(attack.record(), "closed.json")),
+            (1, attack.save(unfinished, "unfinished.json")),
+            (2, str(attack.root / "absent.json")),
+            (2, str(attack.root / "prose.json")),
+            (2, attack.save(malformed, "malformed.json")),
+            (2, attack.save(mixed, "mixed.json")),
+        ]
+        for expected, target in cases:
+            command = [sys.executable, str(CHECKER_PATH), target]
+            first = subprocess.run(command, capture_output=True, check=False)
+            second = subprocess.run(command, capture_output=True, check=False)
+            assert first.returncode == second.returncode == expected, target
+            assert first.stdout == second.stdout, target
 
 
 if __name__ == "__main__":
