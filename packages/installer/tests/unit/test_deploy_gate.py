@@ -11,7 +11,7 @@ from pathlib import Path
 
 from installer.core.deploy_gate import run_admission_gate
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
-from installer.core.surface_budget import SKILL_BODY_TOKEN_CAP
+from installer.core.surface_budget import ALWAYS_ON_TOKEN_CAP, SKILL_BODY_TOKEN_CAP
 
 _COMPLETE = b"---\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\nbody\n"
 
@@ -160,3 +160,96 @@ def test_skill_body_cap_uses_stripped_body(tmp_path: Path) -> None:
     result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
     assert not result.ok
     assert any("skill body" in v and "skills/big" in v for v in result.violations)
+
+
+def test_admitted_file_deploys_without_its_record() -> None:
+    plans = {Tool.CLAUDE: _plan(_instruction(b"laws"), _rule("a.md", _COMPLETE))}
+    result = run_admission_gate(plans)
+    assert result.ok
+    kept = result.plans[Tool.CLAUDE].items[Path("rules/a.md")]
+    assert kept.content == b"body\n"
+
+
+def test_admitted_file_deploys_without_its_provenance_comment() -> None:
+    content = (
+        b"---\nname: a\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\n\n"
+        b"<!--\nSource: oss-snapshots/x/\nDrift policy: local-fork\n-->\n\nbody\n"
+    )
+    plans = {Tool.CLAUDE: _plan(_instruction(b"laws"), _rule("a.md", content))}
+    result = run_admission_gate(plans)
+    assert result.ok
+    kept = result.plans[Tool.CLAUDE].items[Path("rules/a.md")]
+    assert kept.content == b"---\nname: a\n---\n\nbody\n"
+
+
+def test_always_on_budget_excludes_the_record_it_enforces() -> None:
+    # A rule body just under the cap, plus a record that would tip it over.
+    # The record does not deploy, so it must not be charged against the budget.
+    body = b"x" * (ALWAYS_ON_TOKEN_CAP * 4 - 64)
+    content = b"---\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\n" + body
+    plans = {Tool.CLAUDE: _plan(_instruction(b"laws"), _rule("a.md", content))}
+    result = run_admission_gate(plans)
+    assert result.ok, result.violations
+
+
+def test_admitted_dir_entry_is_sanitized_through_dir_overrides(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "grilling"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_bytes(
+        b"---\nname: grilling\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\n"
+        b"\n<!--\nSource: oss-snapshots/x/\n-->\n\nbody\n"
+    )
+    item = StagedItem(
+        source_path=skill,
+        dest_relpath=Path("skills") / "grilling",
+        kind=FileKind.DIR,
+        namespace="skills",
+        provenance=Provenance(kind="tool", name="claude"),
+        content=None,
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+    assert result.ok
+    overrides = result.plans[Tool.CLAUDE].dir_overrides[Path("skills/grilling")]
+    assert overrides[Path("SKILL.md")] == b"---\nname: grilling\n---\n\nbody\n"
+
+
+def test_dir_overrides_of_dropped_items_are_discarded(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "plain"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_bytes(b"---\nname: plain\n---\nbody\n")
+    item = StagedItem(
+        source_path=skill,
+        dest_relpath=Path("skills") / "plain",
+        kind=FileKind.DIR,
+        namespace="skills",
+        provenance=Provenance(kind="tool", name="claude"),
+        content=None,
+    )
+    plan = _plan(_instruction(b"laws"), item)
+    plan.dir_overrides[Path("skills/plain")] = {Path("extra.md"): b"x"}
+    result = run_admission_gate({Tool.CLAUDE: plan})
+    assert result.ok
+    assert result.plans[Tool.CLAUDE].dir_overrides == {}
+
+
+def test_patched_entry_bytes_are_the_ones_gated_and_sanitized(tmp_path: Path) -> None:
+    # A plugin extension patched the entry file into dir_overrides. Those bytes
+    # are what reach disk, so they are what the bar reads and what it strips.
+    skill = tmp_path / "skills" / "patched"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_bytes(b"---\nname: patched\n---\nunpatched\n")
+    item = StagedItem(
+        source_path=skill,
+        dest_relpath=Path("skills") / "patched",
+        kind=FileKind.DIR,
+        namespace="skills",
+        provenance=Provenance(kind="tool", name="claude"),
+        content=None,
+    )
+    plan = _plan(_instruction(b"laws"), item)
+    plan.dir_overrides[Path("skills/patched")] = {Path("SKILL.md"): _COMPLETE}
+    result = run_admission_gate({Tool.CLAUDE: plan})
+    assert result.ok
+    assert result.skipped == []  # source file has no record; the patched bytes do
+    overrides = result.plans[Tool.CLAUDE].dir_overrides[Path("skills/patched")]
+    assert overrides[Path("SKILL.md")] == b"body\n"

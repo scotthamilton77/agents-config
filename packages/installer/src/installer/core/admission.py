@@ -37,7 +37,9 @@ _REQUIRED_FIELDS = ("prevents", "cost", "remove_when")
 
 # Where a gated artifact's front matter lives when the staged item is a
 # directory (skills, and any directory-shaped agent): the canonical entry file.
-_DIR_RECORD_FILE = "SKILL.md"
+# Public because the gate rewrites this same file's bytes when it sanitizes an
+# admitted directory.
+DIR_RECORD_FILE = "SKILL.md"
 
 
 class AdmissionOutcome(Enum):
@@ -86,7 +88,7 @@ def record_source_text(item: StagedItem) -> str | None:
     """
     if item.content is not None:
         return item.content.decode("utf-8", errors="replace")
-    entry = item.source_path / _DIR_RECORD_FILE
+    entry = item.source_path / DIR_RECORD_FILE
     if entry.is_file():
         return entry.read_text(encoding="utf-8")
     return None
@@ -108,9 +110,16 @@ def _coerce_claims(raw: Any) -> dict[str, str]:
     return out
 
 
-def classify(item: StagedItem) -> ItemAdmission:
-    """Classify one gated item against the admission bar."""
-    text = record_source_text(item)
+def classify(item: StagedItem, *, text: str | None = None) -> ItemAdmission:
+    """Classify one gated item against the admission bar.
+
+    ``text`` overrides the record source. The gate passes it for a directory
+    item whose entry file has been patched into ``dir_overrides`` (a plugin
+    extension), so the bar reads the bytes that will actually deploy rather
+    than the unpatched file under ``source_path``.
+    """
+    if text is None:
+        text = record_source_text(item)
     if text is None:
         return ItemAdmission(AdmissionOutcome.NO_RECORD)
     mapping, _body = split_frontmatter(text)
