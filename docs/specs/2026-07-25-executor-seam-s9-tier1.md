@@ -56,8 +56,7 @@ grind. The budget numbers (2 CI-fix, 1 rebase — D10's initial, tunable values)
 are caller-supplied config the executor seeds into grind's `config`, exactly
 as `stalemate_risk_round` works today. Exhaustion enforcement — refusing the
 next attempt and parking with `budget-exhausted` — is executor-only. grind
-never caps and never acts: it records a third attempt beyond a budget of two
-and reports the condition.
+never caps and never acts.
 
 **S9T1-D3 — One enforcement point with pre-charge semantics:
 `executor attempt <item> --kind ci-fix|rebase`.** The caller (a future
@@ -189,8 +188,8 @@ claims are decidable against this table and nothing else.
 ## 3. Slices and acceptance criteria
 
 Each AC is red-test-convertible; IDs are cited by the implementing tests and
-PRs. The edge-case taxonomy (inverse, empty/boundary, dependency failure,
-repeated invocation, idempotency) is applied per slice. Each slice is
+PRs; the edge-case taxonomy (inverse, empty/boundary, dependency failure,
+repeated invocation, idempotency) is applied per slice; each slice is
 separately mergeable. Item mapping: Slice A discharges `agents-config-9k9.1.4`;
 Slices B and C together discharge `agents-config-9k9.1.3` (the item stays open
 until C lands — its admission requires enforcement, not just counting; Slice B
@@ -287,11 +286,10 @@ the executor's `cli.py` — land C before N.
 - **S9T1-B7** `item_enqueued` accepts an optional `closure` payload
   `{pr, reason}`: when present, the fold appends the closed-ledger entry,
   clears the item's PR reference, and the park exit proceeds unchanged — an
-  abandoned, unmerged PR's closure is recorded on the single exit without
-  granting `pr_closed` a new source state; when absent, the PR reference
-  survives the exit (redispatch resumes the same PR — inverse). A closure
-  without an integer `pr` is a command error appending nothing (dependency
-  failure).
+  abandoned PR's closure is recorded on the single exit without granting
+  `pr_closed` a new source state; when absent, the PR reference survives the
+  exit (redispatch resumes the same PR — inverse); a closure without an
+  integer `pr` is a command error appending nothing (dependency failure).
 
 ### Slice C — budget enforcement in the executor (S9b, executor half)
 
