@@ -29,7 +29,7 @@ def _sweep(backend: Backend) -> list[Item]:
 
 def _track_violations(non_milestone: list[Item], config: TrackLayerConfig) -> list[JsonValue]:
     """Exactly one track:* label per non-closed, non-milestone
-    bead, AND its name in the configured vocabulary -- raw label writes can
+    item, AND its name in the configured vocabulary -- raw label writes can
     mint `track:ghost`, which no gate sees and `list --track` can't query;
     lint is the net that makes that corruption recoverable."""
     violations: list[JsonValue] = []
@@ -207,8 +207,8 @@ def graph(backend: Backend, args: Namespace) -> JsonValue:
 
 
 def _backlog_counts(swept: list[Item], config: TrackLayerConfig) -> dict[str, int]:
-    """Every configured track name -> count of non-closed beads whose derived
-    track equals it. Beads with zero or 2+ track labels derive to
+    """Every configured track name -> count of non-closed items whose derived
+    track equals it. Items with zero or 2+ track labels derive to
     `None` and count toward no track -- lint's track-label check is the net
     for those."""
     counts = dict.fromkeys(config.names, 0)
@@ -223,7 +223,7 @@ def _cross_track_edge_counts(
     backend: Backend, items: list[Item], by_id: dict[str, Item]
 ) -> dict[str, int]:
     """For every raw (non-parent-child) dep edge between two
-    non-closed beads whose tracks differ, +1 to each endpoint's track total --
+    non-closed items whose tracks differ, +1 to each endpoint's track total --
     both directions counted independently via the two endpoints of one edge.
     A dep target outside the sweep (closed, or absent from the batch) is
     resolved with `backend.get()`; a closed endpoint excludes the edge

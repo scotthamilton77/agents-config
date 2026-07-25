@@ -2,7 +2,7 @@
 
 Its own verb family: `update` stays scalar-replace-only per the contract's
 layering (labels are not `UpdateFields`). The two underlying label operations
-are NOT transactional -- an interruption can leave the bead track-less, which
+are NOT transactional -- an interruption can leave the item track-less, which
 lint's track-derivation check surfaces: lint-recoverable, not atomic. Raw
 `work label add track:<anything>` stays possible and unvalidated by design:
 lint is the net, `track set` is the gate.
@@ -21,7 +21,7 @@ def _swap_track_label(
     backend: Backend, current_labels: list[str], item_id: str, new_name: str
 ) -> None:
     """Remove stale `track:*` labels, then add the target -- ordering:
-    a crash between the two leaves the bead track-less -- lint's case --
+    a crash between the two leaves the item track-less -- lint's case --
     never double-tracked."""
     target = track_label(new_name)
     stale = [

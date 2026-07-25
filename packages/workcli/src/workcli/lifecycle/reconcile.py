@@ -60,7 +60,7 @@ def _sweep_pending_placeholders(backend: Backend, *, dry_run: bool) -> list[Json
     routine mints only the missing children, closes the design child, and removes
     the handle last. A placeholder with no snapshot has no recorded target, so it
     surfaces as an attention finding without auto-repair. A corrupt snapshot is
-    one poisoned bead, reported as its own finding rather than aborting recovery
+    one poisoned item, reported as its own finding rather than aborting recovery
     of every healthy placeholder -- the typed drift `manifest_snapshot`
     raises is caught per-item here."""
     findings: list[JsonValue] = []

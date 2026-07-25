@@ -167,7 +167,7 @@ def test_non_table_operating_model_is_invalid(tmp_path: Path) -> None:
     assert "[operating-model]" in exc_info.value.message
 
 
-# -- [operating-model].backlog-groom-nag-days / .groom-state-bead (groom state) --
+# -- [operating-model].backlog-groom-nag-days / .groom-state-item (groom state) --
 
 
 def test_groom_fields_parsed(tmp_path: Path) -> None:
@@ -179,33 +179,88 @@ names = ["alpha"]
 
 [operating-model]
 backlog-groom-nag-days = 7
-groom-state-bead = "proj-groom1"
+groom-state-item = "proj-groom1"
 """,
     )
     config = load_config(root)
     assert config.backlog_groom_nag_days == 7
-    assert config.groom_state_bead == "proj-groom1"
+    assert config.groom_state_item == "proj-groom1"
+    assert config.deprecations == ()
 
 
 def test_groom_fields_omitted_are_none(tmp_path: Path) -> None:
     root = _repo(tmp_path, config_text='[tracks]\nnames = ["alpha"]\n')
     config = load_config(root)
     assert config.backlog_groom_nag_days is None
-    assert config.groom_state_bead is None
+    assert config.groom_state_item is None
+    assert config.deprecations == ()
 
 
-def test_groom_state_bead_empty_string_is_none(tmp_path: Path) -> None:
-    # A repo may ship groom-state-bead = "" as a placeholder until its
-    # groom-state bead is minted -- empty string means "not yet configured",
-    # not an error.
+def test_groom_state_item_empty_string_is_none(tmp_path: Path) -> None:
+    # A repo may ship groom-state-item = "" as a placeholder until its
+    # groom-state work item is minted -- empty string means "not yet
+    # configured", not an error.
     root = _repo(
         tmp_path,
-        config_text='[tracks]\nnames = ["alpha"]\n[operating-model]\ngroom-state-bead = ""\n',
+        config_text='[tracks]\nnames = ["alpha"]\n[operating-model]\ngroom-state-item = ""\n',
     )
-    assert load_config(root).groom_state_bead is None
+    assert load_config(root).groom_state_item is None
 
 
-def test_groom_state_bead_non_string_is_invalid(tmp_path: Path) -> None:
+def test_groom_state_item_non_string_is_invalid(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\n[operating-model]\ngroom-state-item = 5\n',
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "groom-state-item" in exc_info.value.message
+
+
+def test_superseded_groom_state_key_is_read_and_reported(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\n[operating-model]\ngroom-state-bead = "proj-g"\n',
+    )
+    config = load_config(root)
+    assert config.groom_state_item == "proj-g"
+    assert len(config.deprecations) == 1
+    assert "groom-state-bead" in config.deprecations[0]
+    assert "groom-state-item" in config.deprecations[0]
+    assert "rename" in config.deprecations[0]
+
+
+def test_current_groom_state_key_wins_over_superseded(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text=(
+            '[tracks]\nnames = ["alpha"]\n[operating-model]\n'
+            'groom-state-bead = "old-id"\ngroom-state-item = "new-id"\n'
+        ),
+    )
+    config = load_config(root)
+    assert config.groom_state_item == "new-id"
+    assert len(config.deprecations) == 1
+    assert "ignored" in config.deprecations[0]
+
+
+def test_current_groom_state_key_wins_even_when_placeholder(tmp_path: Path) -> None:
+    # An explicit "" is "not yet minted", so it does not fall back to the
+    # superseded key: a config migrating spellings never resurrects an old id.
+    root = _repo(
+        tmp_path,
+        config_text=(
+            '[tracks]\nnames = ["alpha"]\n[operating-model]\n'
+            'groom-state-bead = "old-id"\ngroom-state-item = ""\n'
+        ),
+    )
+    config = load_config(root)
+    assert config.groom_state_item is None
+    assert len(config.deprecations) == 1
+
+
+def test_superseded_groom_state_key_non_string_is_invalid(tmp_path: Path) -> None:
     root = _repo(
         tmp_path,
         config_text='[tracks]\nnames = ["alpha"]\n[operating-model]\ngroom-state-bead = 5\n',
