@@ -68,7 +68,11 @@ budget that counts only completed attempts is not a bound. At exhaustion: the
 executor refuses without appending, parks the item with `budget-exhausted`,
 and reports the refusal. Exhaustion has exactly one definition — grind's
 `attempt_budget_spent` condition; the executor maintains no counter of its
-own.
+own. Concurrency is scoped by the substrate: grind's documented model is a
+single writer per run log, and the executor is that writer. Tier 1 builds no
+cross-process lock; concurrent `attempt` invocations against one run are
+outside the contract until the Tier-2 dispatcher owns the loop as that single
+writer.
 
 **S9T1-D4 — Attempt-ledger lifetime is one PR cycle.** `pr_closed` clears an
 item's ledger (a new PR must not inherit spent budget); `item_enqueued` clears
@@ -123,8 +127,8 @@ stale flags) ahead of the ready list; if the parked read fails, the ready list
 is suppressed — a degraded report that still hands out new work inverts D10's
 "reviewing stuck work is the price of pulling new work." Independently,
 `work ready` and `work claim` success envelopes gain a read-only
-`parked_stale` block — the parked items past the staleness threshold — always
-present, empty when nothing is stale. The block is what makes D10's "surfaced
+`parked_stale` block — the parked items past the staleness threshold, plus any
+whose age cannot be read — always present, empty when nothing qualifies. The block is what makes D10's "surfaced
 at the start of any open-new-work interaction" hold for callers that never go
 through the executor. It joins two reads and counts nothing (S2-D2 intact),
 and it fails closed: a `ready` or `claim` that cannot compute the block errors
@@ -188,7 +192,10 @@ the executor's `cli.py` — land C before N.
   (dependency failure + repeated invocation).
 - **S9T1-A8** World-fact ordering: with the fake tracker raising on `close`,
   the `item_merged` grind event is appended anyway and the failure surfaces
-  for retry (inverse of S9T1-A7); `item_done` produces zero tracker calls.
+  for retry (inverse of S9T1-A7); the retry re-issues only the tracker close
+  and sync — when grind already records the item `merged`, the enactment
+  appends no second `item_merged` (repeated invocation); `item_done` produces
+  zero tracker calls.
 - **S9T1-A9** Sync batching: N tracker mutations in one invocation produce
   exactly one `work sync`, issued after the last mutation; an invocation with
   zero mutations issues none (empty boundary).
@@ -231,28 +238,33 @@ the executor's `cli.py` — land C before N.
   appended, `work park --reason budget-exhausted` is called first and
   `item_parked` with reason `budget-exhausted` appended second (S9T1-D6 intent
   ordering), and the envelope names the kind, the count, and the budget
-  (boundary at count == budget).
+  (boundary at count == budget). If the grind append fails after the tracker
+  park succeeded, a retry converges: the exhaustion path re-runs, the facade
+  re-park is an idempotent no-op (S2-B3), and the missing `item_parked` is
+  appended (dependency failure).
 - **S9T1-C3** Exhaustion has one definition: the executor honors the
   `attempt_budget_spent` condition as reported through `RuntimePort` and
   maintains no attempt counter of its own — with the fake runtime reporting
   the condition, the refusal fires in a fresh executor process that has
   observed no prior attempts (single source of truth; fresh-process case).
-- **S9T1-C4** Refusal edges: `executor attempt` on an already-parked item, and
+- **S9T1-C4** Refusal edges: `executor attempt` on an item grind records as
+  parked, and
   on an item holding no open PR, are typed refusals with zero grind events and
   zero tracker calls — matching grind's failure-reason-requires-a-PR fold rule
   (inverse cases).
-- **S9T1-C5** A second `executor attempt` after the exhaustion park is refused
-  as parked, with zero further grind events and zero further tracker
-  mutations — no double-park (repeated invocation).
+- **S9T1-C5** A second `executor attempt` after the exhaustion park is fully
+  recorded is refused as parked, with zero further grind events and zero
+  further tracker mutations — no double-park (repeated invocation).
 
 ### Slice P — the parked_stale block in the facade (S9e, workcli half)
 
 - **S9T1-P1** `work ready` and `work claim` success envelopes carry a
   read-only `parked_stale` block listing the parked items older than the
-  staleness threshold (S2-D4's default, 7 days), each with id, title, reason,
-  category, and parked-at; the block is always present — an empty list when
-  nothing is stale, because the absence of stale parked work is a reported
-  fact, not a missing field (empty boundary).
+  staleness threshold (S2-D4's default, 7 days) together with any parked item
+  whose age is unknowable, each with id, title, reason, category, and
+  parked-at; the block is always present — an empty list when nothing
+  qualifies, because the absence of stale parked work is a reported fact, not
+  a missing field (empty boundary).
 - **S9T1-P2** The block is computed by reads only: `work ready`'s backend call
   log shows zero mutations, and `work claim`'s write set is unchanged from its
   pre-block behavior (S2-D2 intact — joins two reads, counts nothing).
@@ -261,10 +273,16 @@ the executor's `cli.py` — land C before N.
   D10 names, not a second full report (inverse/boundary).
 - **S9T1-P4** If the parked read fails, `ready` and `claim` fail with a typed
   error rather than emitting an envelope without the block — the surfacing
-  cannot be bypassed by a degraded report (dependency failure, fail-closed).
+  cannot be bypassed by a degraded report; for `claim` the parked read
+  precedes the backend claim mutation, so that failure leaves the backend
+  mutation log empty — an error envelope never hides a taken item
+  (dependency failure, fail-closed).
 - **S9T1-P5** An item whose park marker is unparseable surfaces in the block
-  with a null reason rather than crashing the verb — S2-B7's tolerance carries
-  over (dependency failure).
+  with null reason and null parked-at rather than crashing the verb or being
+  silently exempted: block membership is proven-stale or unknown-age —
+  deliberately more conservative than `work parked`'s stale flag, which stays
+  false when age is unprovable (S2-B7) — so a corrupted marker never exempts
+  an item from surfacing (dependency failure, fail-closed).
 
 ### Slice N — `executor next` (S9e, executor half)
 
