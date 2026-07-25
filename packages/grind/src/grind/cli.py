@@ -65,7 +65,20 @@ def _build_parser() -> _RaisingArgumentParser:
     _add_dir_flag(log_parser)
 
     status_parser = subparsers.add_parser("status", help="report the folded state")
-    status_parser.add_argument("--full", action="store_true")
+    # Alternative projections of one fold, so the parser refuses the
+    # combination outright rather than silently picking a winner.
+    status_view = status_parser.add_mutually_exclusive_group()
+    status_view.add_argument(
+        "--full", action="store_const", const="full", dest="view", help="the entire folded state"
+    )
+    status_view.add_argument(
+        "--handoff",
+        action="store_const",
+        const="handoff",
+        dest="view",
+        help="the re-orientation projection a contextless session resumes from",
+    )
+    status_parser.set_defaults(view="summary")
     _add_dir_flag(status_parser)
 
     check_parser = subparsers.add_parser("check", help="staleness probe (exits 1 when stale)")
@@ -131,7 +144,7 @@ def _dispatch(
         return cmd_log(grind_dir, args.type, payload, now=now)
 
     if args.verb == "status":
-        return cmd_status(grind_dir, full=args.full, now=now)
+        return cmd_status(grind_dir, view=args.view, now=now)
 
     if args.verb == "check":
         return cmd_check(grind_dir, args.max_age, now=now)

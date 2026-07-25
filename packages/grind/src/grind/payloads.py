@@ -313,7 +313,7 @@ def _validate_discovered_work(payload: RawEvent) -> list[str]:
     _require_str(errors, payload, "description")
     _require_str(errors, payload, "source")
     _require_str(errors, payload, "rationale")
-    _optional_str(errors, payload, "bead")
+    _optional_str(errors, payload, "work_id")
     disposition = payload.get("disposition")
     if disposition not in _WORK_DISPOSITIONS:
         errors.append("disposition must be one of parked|enqueued")

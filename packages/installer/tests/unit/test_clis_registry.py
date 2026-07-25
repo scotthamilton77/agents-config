@@ -20,22 +20,23 @@ def _package(tmp_path: Path) -> Path:
     return pkg
 
 
-def test_registry_is_exactly_workcli_and_prgroom() -> None:
+def test_registry_is_exactly_workcli_prgroom_and_grind() -> None:
     """
     Given the shipped registry
     When CLI_PACKAGES is consulted
-    Then it contains exactly workcli->work and prgroom->prgroom, and
-    RETIRED_CLIS is empty.
+    Then it contains exactly workcli->work, prgroom->prgroom, and
+    grind->grind, and RETIRED_CLIS is empty.
 
     Pins the closed registry; pdlc/holding-place/vizsuite must NOT
     auto-deploy.
     """
-    assert [s.name for s in CLI_PACKAGES] == ["workcli", "prgroom"]
+    assert [s.name for s in CLI_PACKAGES] == ["workcli", "prgroom", "grind"]
     by_name = {s.name: s for s in CLI_PACKAGES}
     assert by_name["workcli"] == CliSpec(
         "workcli", "packages/workcli", "work", ("--protocol-version",)
     )
     assert by_name["prgroom"] == CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",))
+    assert by_name["grind"] == CliSpec("grind", "packages/grind", "grind", ("--help",))
     assert RETIRED_CLIS == ()
 
 

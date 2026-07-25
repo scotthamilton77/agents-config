@@ -80,7 +80,7 @@ def _item_json(item: Item) -> JsonValue:
         "lane": item.lane,
         "title": item.title,
         "status": item.status,
-        "bead": item.bead,
+        "work_id": item.work_id,
         "blocked_on": list(item.blocked_on),
         "blocked_note": item.blocked_note,
         "pr": _pr_ref_json(item.pr),
@@ -106,7 +106,9 @@ def _lane_json(state: State, lane: Lane) -> JsonValue:
     }
 
 
-def _attention_json(entry: AttentionEntry) -> JsonValue:
+def attention_json(entry: AttentionEntry) -> JsonValue:
+    """Public like `park_fields`: `state.json` and the handoff projection emit
+    the same attention row, so neither can drift from the other."""
     return {
         "text": entry.text,
         "item": entry.item,
@@ -117,7 +119,7 @@ def _attention_json(entry: AttentionEntry) -> JsonValue:
     }
 
 
-def _observation_json(obs: Observation) -> JsonValue:
+def observation_json(obs: Observation) -> JsonValue:
     return {
         "level": obs.level,
         "message": obs.message,
@@ -127,11 +129,11 @@ def _observation_json(obs: Observation) -> JsonValue:
     }
 
 
-def _merged_entry_json(entry: MergedEntry) -> JsonValue:
+def merged_entry_json(entry: MergedEntry) -> JsonValue:
     return {"item": entry.item, "pr": entry.pr, "sha": entry.sha, "ts": entry.ts}
 
 
-def _closed_entry_json(entry: ClosedEntry) -> JsonValue:
+def closed_entry_json(entry: ClosedEntry) -> JsonValue:
     return {"item": entry.item, "pr": entry.pr, "reason": entry.reason, "ts": entry.ts}
 
 
@@ -164,11 +166,11 @@ def full_state_json(state: State) -> dict[str, JsonValue]:
         "last_event_ts": state.last_event_ts,
         "lanes": {lane_id: _lane_json(state, lane) for lane_id, lane in state.lanes.items()},
         "items": {item_id: _item_json(item) for item_id, item in state.items.items()},
-        "attention": [_attention_json(a) for a in state.attention],
-        "observations": [_observation_json(o) for o in state.observations],
-        "merged_ledger": [_merged_entry_json(m) for m in state.merged_ledger],
-        "closed_ledger": [_closed_entry_json(c) for c in state.closed_ledger],
-        "lessons": [_observation_json(o) for o in state.lessons],
+        "attention": [attention_json(a) for a in state.attention],
+        "observations": [observation_json(o) for o in state.observations],
+        "merged_ledger": [merged_entry_json(m) for m in state.merged_ledger],
+        "closed_ledger": [closed_entry_json(c) for c in state.closed_ledger],
+        "lessons": [observation_json(o) for o in state.lessons],
         "anomalies": [anomaly_json(a) for a in state.anomalies],
         "last_item_ts": cast("JsonValue", dict(state.last_item_ts)),
         "last_lane_ts": cast("JsonValue", dict(state.last_lane_ts)),
