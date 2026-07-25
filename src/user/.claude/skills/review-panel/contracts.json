@@ -1,0 +1,118 @@
+{
+  "typed-code": {
+    "lenses": [
+      {
+        "lens": "correctness",
+        "mandate": "Judge whether the changed code does what the acceptance criteria require on every path it can be reached through, including error and boundary paths.",
+        "acs_hint": "criteria describing the behaviour of the changed code paths",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "codex"
+      },
+      {
+        "lens": "security",
+        "mandate": "Judge whether this change can be made to act against the interests of the system that runs it, and say how an attacker gets there.",
+        "acs_hint": "criteria describing trust boundaries, inputs, and permissions",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "openrouter"
+      },
+      {
+        "lens": "test-adequacy",
+        "mandate": "Judge whether the tests shipped with this change would fail if the required behaviour were broken — including the negative, edge, and resiliency cases the criteria enumerate — and whether each test is of the appropriate kind for what it pins.",
+        "acs_hint": "criteria that a test is expected to pin, including enumerated failure modes",
+        "tier": "mid",
+        "rescope": "full",
+        "transport": "codex"
+      },
+      {
+        "lens": "simplification-efficiency",
+        "mandate": "Judge whether the changed code is more complicated, or more costly to run, than the acceptance criteria require.",
+        "acs_hint": "criteria bounding the scope and cost of the change",
+        "tier": "mid",
+        "rescope": "diff",
+        "transport": "openrouter"
+      },
+      {
+        "lens": "documentation-quality",
+        "mandate": "Judge whether the change's comments and documentation are right-sized: nothing over-documented, no identifiers a reader has no context for, and no narrated history that belongs in the commit log.",
+        "acs_hint": "criteria describing what the change must explain and to whom",
+        "tier": "mid",
+        "rescope": "diff",
+        "transport": "codex"
+      }
+    ]
+  },
+  "spec": {
+    "lenses": [
+      {
+        "lens": "internal-consistency-decidability",
+        "mandate": "Judge whether the document contradicts itself, and whether every statement it makes could be settled by an observation. Read the whole document: a change in one section can break a claim in another.",
+        "acs_hint": "criteria the document's own rules and definitions must satisfy",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "codex"
+      },
+      {
+        "lens": "ac-testability",
+        "mandate": "Judge whether each acceptance criterion can be converted into one or more tests that fail before the work and pass after it. Name the failing test that is impossible to write.",
+        "acs_hint": "the criteria themselves, judged as testable claims",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "openrouter"
+      },
+      {
+        "lens": "completeness-vs-scope",
+        "mandate": "Judge whether the document's declared scope and its content agree in both directions: nothing implied but never specified, nothing specified that the scope excludes.",
+        "acs_hint": "criteria describing what the document must and must not cover",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "codex"
+      },
+      {
+        "lens": "architectural-fit",
+        "mandate": "Judge whether the proposed design holds together on its own terms and sits coherently in the architecture of the project and module around it. Read the surrounding structure, not only the document.",
+        "acs_hint": "criteria describing the design's obligations to the surrounding system",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "openrouter"
+      },
+      {
+        "lens": "clarity-standalone-concision",
+        "mandate": "Judge whether a competent reader outside this effort could act on the text without asking a question, and whether it says so in as few words as the content allows.",
+        "acs_hint": "criteria describing how the text must read to an outside reader",
+        "tier": "mid",
+        "rescope": "diff",
+        "transport": "openrouter"
+      }
+    ]
+  },
+  "prose": {
+    "lenses": [
+      {
+        "lens": "internal-consistency",
+        "mandate": "Judge whether the document contradicts itself: claims restated differently in two places, a term carrying two meanings, rules whose outcomes conflict.",
+        "acs_hint": "criteria the document's own claims must satisfy",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "codex"
+      },
+      {
+        "lens": "global-consistency",
+        "mandate": "Judge whether the document fits the bigger picture: read the surrounding project material and report where the text contradicts, duplicates, or silently diverges from it.",
+        "acs_hint": "criteria describing the document's obligations to its surroundings",
+        "tier": "frontier",
+        "rescope": "full",
+        "transport": "openrouter"
+      },
+      {
+        "lens": "standalone-read",
+        "mandate": "Judge whether the text is usable on its own where it is deployed. References to other documents are fine, and an explainer or key section legitimises the identifiers it defines; undefined jargon and cross-references that resolve to nothing are not.",
+        "acs_hint": "criteria describing what the deployed text must convey on its own",
+        "tier": "mid",
+        "rescope": "diff",
+        "transport": "codex"
+      }
+    ]
+  }
+}
