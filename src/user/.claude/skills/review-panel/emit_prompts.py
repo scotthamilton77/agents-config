@@ -177,6 +177,14 @@ def load_prior_verdicts(paths: list[str], round_no: int, schema: Path | None) ->
         _validate_prior(document, path, schema)
         verdicts.append(document)
     verdicts.sort(key=lambda doc: doc.get("round", 0))
+    covered = {doc.get("round") for doc in verdicts}
+    missing = [str(n) for n in range(1, round_no) if n not in covered]
+    if missing:
+        raise Refusal(
+            "no-prior-verdicts",
+            f"round {round_no} needs the posted verdict of every earlier round; missing "
+            f"round(s) {', '.join(missing)}",
+        )
     return verdicts
 
 

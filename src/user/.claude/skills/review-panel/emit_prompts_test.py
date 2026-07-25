@@ -321,6 +321,18 @@ class TestRoundsAndLedger:
         code, result = run(argv(repo, acs_file, tmp_path / "out", **{"--round": "2"}), capsys)
         assert code == 2 and result["errors"][0]["code"] == "no-prior-verdicts"
 
+    def test_b4_missing_intermediate_round_verdict_is_refused(self, repo, acs_file, tmp_path,
+                                                              capsys):
+        """S6-B4: round 3 invoked with only round 1's verdict is missing round 2's; every
+        earlier round's posted verdict is required, not merely a non-empty list."""
+        prior = tmp_path / "verdict-1.json"
+        prior.write_text(json.dumps(verdict_round1(repo)), encoding="utf-8")
+        flat = argv(repo, acs_file, tmp_path / "out", **{"--round": "3"})
+        flat += ["--prior-verdict", str(prior)]
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "no-prior-verdicts"
+        assert "2" in result["errors"][0]["message"]
+
     def test_b4_unparseable_prior_verdict_is_refused(self, repo, acs_file, tmp_path, capsys):
         """S6-B4: a prior verdict that is not schema-valid cannot seed a preamble."""
         broken = tmp_path / "broken.json"
