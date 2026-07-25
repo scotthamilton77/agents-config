@@ -28,6 +28,12 @@ class AppendRulesStrategy:
     — identical on both by definition of the collision), sets ``content`` to
     the joined bytes, and takes ``provenance`` and ``source_path`` from
     ``incoming``.
+
+    Because ``existing``'s bytes lead the merged content while ``source_path``
+    names ``incoming``, the synthesised item's ``source_path`` does NOT identify
+    the file that supplied the head of the content — front matter, most
+    obviously. ``merged_head`` records the file that did, so a consumer reading
+    the head can attribute it to the right source instead of the wrong one.
     """
 
     def merge(self, existing: StagedItem, incoming: StagedItem) -> StagedItem:
@@ -36,4 +42,9 @@ class AppendRulesStrategy:
         return replace(
             incoming,
             content=merged,
+            # The side whose bytes go first — and whose front matter therefore
+            # survives as the merged item's. Preserved from `existing` if it was
+            # itself a merge product, so a three-way chain still names the
+            # original head rather than the middle link.
+            merged_head=existing.merged_head or existing.source_path,
         )

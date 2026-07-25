@@ -239,3 +239,62 @@ def test_source_path_outside_the_repo_is_not_treated_as_admitted_only(
     from installer.core.content_lint import _is_admitted_only
 
     assert not _is_admitted_only(tmp_path / "elsewhere" / "x.md", tmp_path / "repo")
+
+
+def test_a_merged_rule_is_blamed_on_the_file_whose_record_was_read() -> None:
+    """The rule append-merge keeps `source_path` from the incoming side while the
+    existing side's bytes — and so its front matter — go first. Blaming
+    `source_path` sends a reader to a file whose record was never examined, and
+    splits one defective source into one finding per merge product."""
+    from installer.core.content_lint import _classified_source
+    from installer.core.merge.strategies.append_rules import AppendRulesStrategy
+    from installer.core.model import FileKind, Provenance, StagedItem
+
+    def _rule(source: Path, body: bytes) -> StagedItem:
+        return StagedItem(
+            source_path=source,
+            dest_relpath=Path("rules") / "x.md",
+            kind=FileKind.NAMESPACED_MD,
+            namespace="rules",
+            provenance=Provenance(kind="tool", name="claude"),
+            content=body,
+        )
+
+    shared = _rule(Path("src/user/.agents/rules/x.md"), b"---\nbad: record\n---\nshared\n")
+    plugin = _rule(Path("src/plugins/p/.claude/rules/x.md"), b"plugin\n")
+
+    merged = AppendRulesStrategy().merge(shared, plugin)
+
+    # The merge product still points at the plugin file...
+    assert merged.source_path == plugin.source_path
+    # ...but the record the gate reads came from the shared rule, and that is
+    # what the lint attributes the finding to.
+    assert merged.content is not None
+    assert merged.content.startswith(b"---\nbad: record\n---")
+    assert _classified_source(merged) == shared.source_path
+    # An unmerged item is unaffected: source_path stays authoritative.
+    assert _classified_source(shared) == shared.source_path
+
+
+def test_a_chained_merge_still_names_the_original_head() -> None:
+    """Three rules colliding merge pairwise. The head of the final content is the
+    first rule's, not the middle one's, so the attribution must not walk forward."""
+    from installer.core.content_lint import _classified_source
+    from installer.core.merge.strategies.append_rules import AppendRulesStrategy
+    from installer.core.model import FileKind, Provenance, StagedItem
+
+    def _rule(name: str) -> StagedItem:
+        return StagedItem(
+            source_path=Path(f"src/{name}.md"),
+            dest_relpath=Path("rules") / "x.md",
+            kind=FileKind.NAMESPACED_MD,
+            namespace="rules",
+            provenance=Provenance(kind="tool", name="claude"),
+            content=f"{name}\n".encode(),
+        )
+
+    strategy = AppendRulesStrategy()
+    first_two = strategy.merge(_rule("first"), _rule("second"))
+    all_three = strategy.merge(first_two, _rule("third"))
+
+    assert _classified_source(all_three) == Path("src/first.md")

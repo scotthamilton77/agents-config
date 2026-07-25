@@ -48,6 +48,7 @@ from installer.tools.registry import known_tools
 
 if TYPE_CHECKING:
     from installer.core.io_port import IOPort
+    from installer.core.model import StagedItem
 
 # The subtree the repo declares to be admitted content only, so a record-less
 # artifact under it is a mistake rather than a tracked exception.
@@ -94,6 +95,19 @@ class ContentLintResult:
     @property
     def ok(self) -> bool:
         return not self.violations and not self.fatal_unadmitted
+
+
+def _classified_source(item: StagedItem) -> Path:
+    """The file whose front matter the gate actually read for ``item``.
+
+    Normally that is ``source_path``. For an item synthesised by the rule
+    append-merge it is not: the merge keeps ``source_path`` from the incoming
+    side while placing the existing side's bytes — and therefore its front
+    matter — first. Blaming ``source_path`` there sends a reader to a file whose
+    record was never examined, and splits one defective source into one finding
+    per merge product. ``merged_head`` names the side that was read.
+    """
+    return item.merged_head if item.merged_head is not None else item.source_path
 
 
 def _matching_label(message: str, sources: dict[str, Path]) -> str | None:
@@ -194,7 +208,7 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
     # with the dropped items already gone, so this is the only place the skipped
     # labels can still be joined back to the file they came from.
     sources = {
-        item_label(tool, dest): item.source_path
+        item_label(tool, dest): _classified_source(item)
         for tool, plan in plans.items()
         for dest, item in plan.items.items()
     }
