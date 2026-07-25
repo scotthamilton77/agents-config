@@ -12,7 +12,7 @@ file's anatomy (spec "Compaction handoff"), sourced from the fold:
 | handoff key | source |
 |---|---|
 | `mission` | `grind_created.mission` |
-| `pause` | `grind_paused`, while unresumed |
+| `paused` / `pause_reason` / `resume_checklist` | `grind_paused`, while unresumed |
 | `lanes` / `frontier` | seeded lanes + `lane_handover` + derived item statuses |
 | `merged_ledger` / `closed_ledger` | `item_merged` / `pr_closed` |
 | `human_docket` | the attention list (`item_waiting_human.why` lands there) |
@@ -61,16 +61,16 @@ _FRONTIER_EMPTY = "every item in the lane's queue order is terminal or parked"
 
 def _item_row(item: Item) -> dict[str, JsonValue]:
     """One item as the handoff reports it: identity, position, and the handles
-    a cold reader needs to pick the work back up (`bead` to cross-reference the
-    tracker, `pr` to find the open change). Narrower than `status --full`'s
-    item -- round history and discovery provenance are audit material, not
-    re-orientation."""
+    a cold reader needs to pick the work back up (`work_id` to cross-reference
+    the external work tracker, `pr` to find the open change). Narrower than
+    `status --full`'s item -- round history and discovery provenance are audit
+    material, not re-orientation."""
     return {
         "id": item.id,
         "lane": item.lane,
         "title": item.title,
         "status": item.status,
-        "bead": item.bead,
+        "work_id": item.work_id,
         "pr": {"number": item.pr.number, "url": item.pr.url} if item.pr is not None else None,
         "blocked_on": list(item.blocked_on),
         "parked": park_fields(item.parked) if item.parked is not None else None,

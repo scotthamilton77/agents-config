@@ -92,7 +92,7 @@ def _rich_log() -> list[dict[str, Any]]:
         event("item_started", item="wgclw.4"),
         event("pr_opened", item="wgclw.4", pr=104),
         event("pr_closed", item="wgclw.4", pr=104, reason="superseded", next="parked"),
-        # work discovered mid-run, admitted to lane-a with its tracker id
+        # work discovered mid-run, admitted to lane-a with its work-tracker id
         event(
             "discovered_work",
             item="wgclw.9",
@@ -101,7 +101,7 @@ def _rich_log() -> list[dict[str, Any]]:
             rationale="the schema change needs its own item",
             disposition="enqueued",
             lane="lane-a",
-            bead="acme-9",
+            work_id="acme-9",
         ),
         # roster change, traps, and a pause
         event(
@@ -190,10 +190,10 @@ def test_a_contextless_session_re_orients_from_one_call(tmp_path: Path):
         "wgclw.3": "waiting-human",
         "wgclw.9": "queued",
     }
-    # The tracker handle rides along, so the session can cross-reference the
-    # item without a second source.
-    beads = {item["id"]: item["bead"] for lane in handoff["lanes"] for item in lane["items"]}
-    assert beads["wgclw.9"] == "acme-9"
+    # The work-tracker handle rides along, so the session can cross-reference
+    # the item without a second source.
+    work_ids = {item["id"]: item["work_id"] for lane in handoff["lanes"] for item in lane["items"]}
+    assert work_ids["wgclw.9"] == "acme-9"
 
     # 5. Where does each lane pick up?
     frontier = {row["lane"]: row for row in handoff["frontier"]}
@@ -301,7 +301,11 @@ def test_no_handoff_key_reads_as_an_instruction():
     state = _state()
 
     coined = _keys(handoff_json(state)) - _keys(full_state_json(state))
+    # The exemption is load-bearing in both directions, so pin both: it must
+    # not swallow this projection's own vocabulary, and it must actually
+    # resolve against the real serializer rather than degrading to a no-op.
     assert "frontier" in coined, "the exemption must not swallow the whole key set"
+    assert "resume_checklist" not in coined, "State's own vocabulary must resolve as inherited"
 
     for key in coined:
         for word in re.split(r"[_\s]", key):
