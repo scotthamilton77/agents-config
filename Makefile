@@ -10,6 +10,8 @@
         typecheck-vizsuite cov-vizsuite audit-vizsuite verify-entry-vizsuite \
         ci-grind test-grind lint-grind format-check-grind \
         typecheck-grind cov-grind audit-grind verify-entry-grind \
+        ci-gitclean test-gitclean lint-gitclean format-check-gitclean \
+        typecheck-gitclean cov-gitclean audit-gitclean verify-entry-gitclean \
         spec-lint
 
 INSTALLER := packages/installer
@@ -17,8 +19,9 @@ PRGROOM := packages/prgroom
 WORKCLI := packages/workcli
 VIZSUITE := packages/vizsuite
 GRIND := packages/grind
+GITCLEAN := packages/gitclean
 
-ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind lint-actions spec-lint
+ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind ci-gitclean lint-actions spec-lint
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
               cov-installer audit-installer verify-entry-installer
@@ -171,3 +174,26 @@ audit-grind:
 # grind venv where the entry point is installed is selected.
 verify-entry-grind:
 	uv --project $(GRIND) run grind --help > /dev/null
+
+# ── gitclean (mirrors the ci-grind block one-for-one; enforced via the
+# top-level `ci:` aggregate). ──
+ci-gitclean: lint-gitclean format-check-gitclean typecheck-gitclean \
+             cov-gitclean audit-gitclean verify-entry-gitclean
+
+test-gitclean:
+	cd $(GITCLEAN) && uv run pytest -q
+lint-gitclean:
+	cd $(GITCLEAN) && uv run ruff check
+format-check-gitclean:
+	cd $(GITCLEAN) && uv run ruff format --check
+typecheck-gitclean:
+	cd $(GITCLEAN) && uv run mypy --strict src
+cov-gitclean:
+	cd $(GITCLEAN) && uv run pytest --cov --cov-report=term-missing
+audit-gitclean:
+	cd $(GITCLEAN) && uv sync --frozen && uv run pip-audit
+# verify-entry-gitclean asserts the console-script entry point resolves and the
+# CLI root parses (`gitclean --help` exits 0). Run via `uv --project` so the
+# gitclean venv where the entry point is installed is selected.
+verify-entry-gitclean:
+	uv --project $(GITCLEAN) run gitclean --help > /dev/null

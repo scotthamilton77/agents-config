@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from installer.cli import main
-from installer.core.clis import CommandResult, ScriptedCliDeploy
+from installer.core.clis import CLI_PACKAGES, CommandResult, ScriptedCliDeploy
 from installer.core.io_port import ScriptedIO
 from installer.core.receipt import CliReceiptEntry, Receipt
 from installer.core.receipt_store import ReadStatus, read_receipt, write_receipt
@@ -37,8 +37,8 @@ def _write_profiles_toml(repo: Path) -> None:
 def _hermetic_repo(tmp_path: Path) -> Path:
     """test_cli_smoke's minimal source repo (one shared template so the
     Claude plan is non-empty, plus the empty tool-root dirs the adapters
-    expect) extended with ALL THREE registry package dirs so
-    cli_source_digest(package_dir) resolves for workcli, prgroom, and grind."""
+    expect) extended with EVERY registry package dir so
+    cli_source_digest(package_dir) resolves for each entry in CLI_PACKAGES."""
     repo = tmp_path / "repo"
     shared = repo / "src" / "user" / ".agents"
     shared.mkdir(parents=True)
@@ -47,7 +47,7 @@ def _hermetic_repo(tmp_path: Path) -> Path:
         (repo / "src" / "user" / f".{tool}").mkdir(parents=True)
     _write_installignore(repo)
     _write_profiles_toml(repo)
-    for pkg in ("workcli", "prgroom", "grind"):
+    for pkg in (spec.package_dir.split("/")[-1] for spec in CLI_PACKAGES):
         (repo / "packages" / pkg / "src").mkdir(parents=True)
         (repo / "packages" / pkg / "pyproject.toml").write_bytes(b"[project]\n")
         (repo / "packages" / pkg / "src" / "m.py").write_bytes(b"pass")
@@ -60,6 +60,25 @@ def _hermetic_repo(tmp_path: Path) -> Path:
     kit.mkdir(parents=True)
     (kit / "PRIME.md").write_bytes(b"dummy kit\n")
     return repo
+
+
+# The registry is open to new entries, so these fixtures derive their queue
+# depths from CLI_PACKAGES rather than hard-coding three. Adding a CLI should
+# not mean re-counting scripted pops in four tests.
+def _bin_map(bin_dir: Path) -> dict[str, Path]:
+    return {spec.binary: bin_dir / spec.binary for spec in CLI_PACKAGES}
+
+
+def _fresh_shims(bin_dir: Path) -> list[Path | None]:
+    """Per CLI: one absent-shim decision read, then the post-install re-read."""
+    shims: list[Path | None] = []
+    for spec in CLI_PACKAGES:
+        shims.extend([None, bin_dir / spec.binary])
+    return shims
+
+
+def _per_cli(result: CommandResult) -> list[CommandResult]:
+    return [result] * len(CLI_PACKAGES)
 
 
 @pytest.mark.cli_deploy
@@ -75,15 +94,14 @@ def test_full_install_deploys_all_clis_and_records_receipt(tmp_path: Path) -> No
     """
     repo = _hermetic_repo(tmp_path)
     bin_dir = tmp_path / "bin"
-    w, p, g = bin_dir / "work", bin_dir / "prgroom", bin_dir / "grind"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=bin_dir,
         tool_list={},
-        which_map={"work": w, "prgroom": p, "grind": g},
-        shims=[None, w, None, p, None, g],
-        installs=[_OK, _OK, _OK],
-        smokes=[_OK, _OK, _OK],
+        which_map=_bin_map(bin_dir),
+        shims=_fresh_shims(bin_dir),
+        installs=_per_cli(_OK),
+        smokes=_per_cli(_OK),
     )
     rc = main(
         ["--tools=claude", "--yes"],
@@ -96,7 +114,7 @@ def test_full_install_deploys_all_clis_and_records_receipt(tmp_path: Path) -> No
     result = read_receipt(tmp_path / "home" / ".config" / "agents-config" / "install-receipt.json")
     assert result.status is ReadStatus.OK
     assert result.receipt is not None
-    assert {c.name for c in result.receipt.clis} == {"workcli", "prgroom", "grind"}
+    assert {c.name for c in result.receipt.clis} == {spec.name for spec in CLI_PACKAGES}
 
 
 @pytest.mark.cli_deploy
@@ -111,14 +129,13 @@ def test_deploy_failure_exits_1_after_summary(tmp_path: Path) -> None:
     """
     repo = _hermetic_repo(tmp_path)
     # --yes auto-accepts the TOCTOU takeover re-route, so each fresh CLI
-    # pops TWO installs (non-forcing fail, then forced fail) = 6 total
-    # across the three registry CLIs.
+    # pops TWO installs (non-forcing fail, then forced fail).
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
         tool_list={},
-        shims=[None, None, None],
-        installs=[CommandResult(ok=False, output="x")] * 6,
+        shims=[None] * len(CLI_PACKAGES),
+        installs=[CommandResult(ok=False, output="x")] * (2 * len(CLI_PACKAGES)),
     )
     io = ScriptedIO(interactive=False)
     rc = main(
@@ -233,17 +250,16 @@ def test_second_noop_run_skips_via_persisted_clis(tmp_path: Path) -> None:
     repo = _hermetic_repo(tmp_path)
     home = tmp_path / "home"
     bin_dir = tmp_path / "bin"
-    w, p, g = bin_dir / "work", bin_dir / "prgroom", bin_dir / "grind"
 
     def _first() -> ScriptedCliDeploy:
         return ScriptedCliDeploy(
             uv_version=(0, 10, 4),
             bin_dir=bin_dir,
             tool_list={},
-            which_map={"work": w, "prgroom": p, "grind": g},
-            shims=[None, w, None, p, None, g],
-            installs=[_OK, _OK, _OK],
-            smokes=[_OK, _OK, _OK],
+            which_map=_bin_map(bin_dir),
+            shims=_fresh_shims(bin_dir),
+            installs=_per_cli(_OK),
+            smokes=_per_cli(_OK),
         )
 
     assert (
@@ -259,14 +275,10 @@ def test_second_noop_run_skips_via_persisted_clis(tmp_path: Path) -> None:
     second = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=bin_dir,
-        tool_list={
-            "workcli": frozenset({"work"}),
-            "prgroom": frozenset({"prgroom"}),
-            "grind": frozenset({"grind"}),
-        },
-        which_map={"work": w, "prgroom": p, "grind": g},
-        shims=[w, p, g],
-        smokes=[_OK, _OK, _OK],
+        tool_list={spec.name: frozenset({spec.binary}) for spec in CLI_PACKAGES},
+        which_map=_bin_map(bin_dir),
+        shims=[bin_dir / spec.binary for spec in CLI_PACKAGES],
+        smokes=_per_cli(_OK),
     )
     assert (
         main(
@@ -323,15 +335,14 @@ def test_corrupt_receipt_deploy_not_persisted(tmp_path: Path) -> None:
     receipt_path.parent.mkdir(parents=True)
     receipt_path.write_text("{not json")
     bin_dir = tmp_path / "bin"
-    w, p, g = bin_dir / "work", bin_dir / "prgroom", bin_dir / "grind"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=bin_dir,
         tool_list=None,  # unproven -> takeover (auto-accepted by --yes)
-        which_map={"work": w, "prgroom": p, "grind": g},
-        shims=[None, w, None, p, None, g],
-        installs=[_OK, _OK, _OK],
-        smokes=[_OK, _OK, _OK],
+        which_map=_bin_map(bin_dir),
+        shims=_fresh_shims(bin_dir),
+        installs=_per_cli(_OK),
+        smokes=_per_cli(_OK),
     )
     rc = main(
         ["--tools=claude", "--yes"],
