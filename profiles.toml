@@ -27,10 +27,12 @@ include = ["**"]
 [profiles.minimal-user]
 include = ["instructions"]
 
-# The SDLC discipline content. workflows/** exists only for Claude; the
-# union-universe rule keeps it valid, and it no-ops on tools that lack it.
+# The SDLC discipline content. `workflows/**` is absent from the universe today:
+# the last workflow (quality-gate.js) was quarantined to `archive/` on 2026-07-25
+# (revisit tracked as agents-config-9k9.17.6). Re-add the selector here in the
+# same change that readmits content into that namespace.
 [profiles.sdlc]
-include = ["skills/**", "workflows/**"]
+include = ["skills/**"]
 
 # The beads project kit (PRIME.md -> <project>/.beads/PRIME.md). Project-scoped.
 [profiles.beads-kit]
