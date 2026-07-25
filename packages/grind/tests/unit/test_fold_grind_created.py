@@ -98,6 +98,20 @@ def test_seeded_work_id_equal_to_the_item_id_is_normalized_away() -> None:
     assert state.items["wgclw.1"].work_id is None
 
 
+def test_seeded_empty_work_id_folds_to_none() -> None:
+    # The boundary rejects `""`; the fold mirrors it -- as it mirrors the
+    # park-reason axis and the observation levels -- so a hand-edited or
+    # historical log cannot leave a present-but-unusable handle in state.
+    event = _seed_event()
+    lanes = event["lanes"]
+    assert isinstance(lanes, list)
+    lanes[0]["queue"][0]["work_id"] = ""
+
+    state = fold([event])
+
+    assert state.items["wgclw.1"].work_id is None
+
+
 def test_seeded_item_does_not_accept_the_tracker_backends_noun() -> None:
     # Name lock (D11): the tracker backend is quarantined behind the `work`
     # facade, so its noun must not be a key grind's seed schema honours. A queue

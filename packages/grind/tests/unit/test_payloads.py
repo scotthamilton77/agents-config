@@ -108,6 +108,28 @@ def test_grind_created_validates_optional_seed_string_fields():
     assert any("lanes[0].model" in e for e in errors)
 
 
+def test_work_id_must_be_non_empty_when_present_on_both_producers():
+    # `work_id` is an identifier a consumer resolves against an external system:
+    # absent means "no distinct handle", present means "this handle". `""` reads
+    # as present while resolving to nothing, so it is rejected at the boundary on
+    # every event carrying the field -- the seed queue and `discovered_work`
+    # alike, or the invariant holds for one producer and not the other.
+    errors = validate_payload("grind_created", _seed_with_item({"work_id": ""}))
+    assert any("lanes[0].queue[0].work_id" in e and "non-empty" in e for e in errors)
+
+    discovered = {
+        "item": "disc-1",
+        "description": "d",
+        "source": "lane-a",
+        "rationale": "r",
+        "disposition": "enqueued",
+        "lane": "lane-a",
+    }
+    assert validate_payload("discovered_work", {**discovered, "work_id": "wgclw.9"}) == []
+    errors = validate_payload("discovered_work", {**discovered, "work_id": ""})
+    assert any("work_id" in e and "non-empty" in e for e in errors)
+
+
 # -- item lifecycle -----------------------------------------------------------
 
 
