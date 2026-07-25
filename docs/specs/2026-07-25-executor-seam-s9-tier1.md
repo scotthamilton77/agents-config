@@ -129,19 +129,19 @@ Sync is the Dolt plane only (§1's hooks note).
 
 **S9T1-D10 — The open-new-work surface is two-layered.** `executor next
 [--stale-days N]` is the composed surface: it reads `work parked` first, then
-`work ready`, and emits one envelope carrying the full parked report (per-item
-stale flags) ahead of the ready list; if the parked read fails, the ready list
-is suppressed — a degraded report that still hands out new work inverts D10's
-"reviewing stuck work is the price of pulling new work." Independently,
-`work ready` and `work claim` success envelopes gain a read-only
-`parked_stale` block — the parked items past the staleness threshold, plus any
-whose age cannot be read — always present, empty when nothing qualifies. The block is what makes D10's "surfaced
-at the start of any open-new-work interaction" hold for callers that never go
-through the executor; it joins two reads, counts nothing (S2-D2 intact), and
-fails closed: a `ready` or `claim` that cannot compute it fails with a typed
-error rather than emitting an envelope without it.
-`ready` and `claim` take no new flags: the block rides S2-D4's default
-threshold (7 days), and threshold tuning stays on `work parked --stale-days`.
+`work ready`, and emits one envelope with the S9T1-D11 `{parked, ready}`
+data; if the parked read fails, the ready list is suppressed — a degraded
+report that still hands out new work inverts D10's "reviewing stuck work is
+the price of pulling new work." Independently, `work ready` and `work claim`
+success envelopes gain a read-only `parked_stale` block — the parked items
+past the staleness threshold, plus any whose age cannot be read — always
+present, empty when nothing qualifies, and the layer that makes D10's "any
+open-new-work interaction" hold for callers that never touch the executor.
+It joins two reads, counts nothing (S2-D2 intact), and fails closed: a
+`ready` or `claim` that cannot compute it fails typed rather than emitting an
+envelope without it. `ready` and `claim` take no new flags: the block rides
+S2-D4's default threshold (7 days); tuning stays on `work parked
+--stale-days`.
 
 **S9T1-D11 — The executor envelope is protocol-versioned from birth.** Exactly
 one JSON envelope on stdout per invocation, in workcli's
@@ -155,8 +155,8 @@ refusals are not: `E_ITEM_PARKED`, `E_NO_OPEN_PR`, `E_BUDGET_EXHAUSTED`
 carries `{item, kind, attempts, budget, remaining, proceed}`; `next`'s data
 carries `{parked, ready}` (the parked report's items with their stale flags,
 and the ready list); a case-(c) item touched by any enactment is surfaced
-under the command data's `unpromoted` list. grind's unversioned envelope is a
-minted defect (`agents-config-9k9.1.18`); the new package does not repeat it.
+under the command data's `unpromoted` list. (grind's own unversioned envelope
+is the minted defect `agents-config-9k9.1.18`, §1.)
 
 **S9T1-D12 — The pairing universe is closed.** The pairing table is exactly
 these rows:
