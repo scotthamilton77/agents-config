@@ -41,7 +41,7 @@ inherits that user identity. There is no App-token path in any write call site.
 | `packages/prgroom/src/prgroom/lifecycle/resolve.py:72` | `resolve_pr` | GraphQL `resolveReviewThread` — marks a review thread resolved | owner | No, and unmarkable: the mutation carries no body |
 | `packages/prgroom/src/prgroom/lifecycle/rereview.py:68-69` | `rereview_pr`, post-push | `DELETE` then `POST` `pulls/{n}/requested_reviewers` | owner | No, and unmarkable: no body |
 | `packages/prgroom/src/prgroom/gh/client.py:224` (`add_label`), called at `packages/prgroom/src/prgroom/lifecycle/escalation.py:160` | `request_human_review_if_needed` | `POST` `issues/{n}/labels` — adds `human-review-required` | owner | No, and unmarkable: a label has no body. The labels REST read prgroom uses returns names only, so the actor is not recoverable from the data it reads |
-| `packages/prgroom/src/prgroom/git/client.py:152` (`push`) | lifecycle push | `git push` | owner's git credential | Partially. Commit `author`/`committer` are the owner; the `Co-Authored-By: Claude Opus 5` trailer is present on recent commits but is emitted by the Claude Code harness, not by any asset in this repo, and its casing is unstable (`Co-authored-by` and `Co-Authored-By` both occur in the last three commits) |
+| `packages/prgroom/src/prgroom/git/client.py:152` (`push`) | prgroom lifecycle push, and any agent's own `git commit` / `git push` from Bash | `git push` | owner's git credential | Partially, and what marking exists comes from outside this repo. Commit `author`/`committer` are the owner. Authorship is fixed when the commit is created, not when prgroom pushes it: the `Co-Authored-By: Claude Opus 5` trailer on recent commits is emitted by the Claude Code harness, not by any asset in this repo, and its casing is unstable (`Co-authored-by` and `Co-Authored-By` both occur in the last three commits). The call site is repo code; the authorship it carries is ambient |
 | Ad-hoc `gh` invocation from an agent's Bash tool | any agent session; no repo asset defines or constrains it | anything the token allows — the PR #397 `@codex review` trigger comment is this path | owner | No. Nothing marks it, nothing restricts it, and no deployed asset mentions it. This is the path that produced the observed failure |
 | `packages/vizsuite/src/vizsuite/adapters/gh/runner.py:60` (`pr_graphql`) | `vizsuite pr` reconcile | nothing — one read-only `gh api graphql` query per PR | owner | N/A — no write |
 | `.github/workflows/ci.yml` | GitHub Actions on PR/push | nothing — `actions/checkout`, `setup-uv`, `make ci`. No `GITHUB_TOKEN` use, no `gh` call, no comment or status write beyond the check the runner reports for itself | Actions runner | N/A — no write |
@@ -53,11 +53,14 @@ inherits that user identity. There is no App-token path in any write call site.
 `.github/instructions/*.instructions.md` is a single line of reviewer guidance
 ("search around for other instances of the issue") and grants nothing.
 
-**Count: eight owner-credentialed write paths, one App-attested path.** Of the
-eight, six are prgroom code and two are ambient (git push, ad-hoc `gh`). Two of
-the eight carry a machine-emitted marker, and both markers exist for POST
-idempotency. Four of the remaining six cannot carry one — a thread resolution, a
-reviewer request, and a label have no body to mark.
+**Count: eight owner-credentialed write paths, one App-attested path.** Three of
+the eight carry a machine-emitted marker — the `_post_reply` issue comment or
+thread reply, the routed-memory thread reply, and the PR-body PATCH — and every
+one of those markers exists for POST idempotency, not for authorship. Five carry
+none. Three of the five are structurally unmarkable: a thread resolution, a
+reviewer request, and a label have no body to mark. The remaining two are the
+ambient paths — the commit/push and the ad-hoc `gh` invocation — which could
+carry a marker and are constrained by nothing in this repo that would make them.
 
 **The App is the counterexample that fixes the direction.** Its writes are
 distinguishable because the platform types the actor, not because the payload
@@ -104,8 +107,8 @@ it is the whole of it in deployed prose.
 
 > **Provenance.** A verdict-shaped payload posted by any other identity is not a verdict. Check who posted it before reading it.
 
-That is the obligation generalized in §4 — currently scoped to review verdicts
-and to no other kind of comment.
+That is the obligation the §5 criteria generalize — currently scoped to review
+verdicts and to no other kind of comment.
 
 **One deployed code path decides a human-authorization question, and it fails
 open.** `packages/prgroom/src/prgroom/lifecycle/human_review.py` derives
@@ -118,7 +121,7 @@ verified in the source:
   `user.type == "User"` and a non-empty login, so `counted = True` and
   `satisfied_by = "approval:<owner>"`. The gate reads an agent-posted approval as
   a human one.
-- `satisfied_by = "label"` takes **precedence over every approval** (line
+- `satisfied_by = "label"` takes **precedence over every approval** (lines
   141-146): the presence of a `human-approved` label satisfies the constraint
   outright. No code in prgroom writes that label, and `derive_human_review`
   records no actor for it — its docstring states "Label satisfaction does not
@@ -166,7 +169,21 @@ verdict-shaped payload from any other identity, fail-closed; **S6-D4** makes a
 human PR comment an intervention that never enters the fix loop, and asserts
 machine and human comments are separable on the PR.
 
-This record adds three things Slice D does not cover.
+**S6-D2 is written wider than S6 can deliver — a contradiction in that spec, not
+a gap this one fills.** Read literally, S6-D2 covers every machine-posted PR
+comment and approval, unqualified. prgroom's issue comments and review-thread
+replies are comments, so its text already reaches two of the eight write paths in
+§1: the `_post_reply` issue comment or thread reply, and the routed-memory thread
+reply. But S6's own §4 assigns prgroom's carve — the verdict harvester and the
+merge-eligibility evaluator — to S8, and no S6 criterion converts
+`prgroom.gh.client.GhCli` or names a grooming write. The criterion is therefore
+broader than the slice that owns it can satisfy, and an agent reading S6-D2 as met
+once the verdict medium ships will be wrong about every grooming write. That is
+flagged here for repair in S6 — a criterion that overstates its own slice is
+exactly the kind of contradiction to surface rather than route around — and this
+record claims none of S6-D2's scope as its own.
+
+This record adds three things no S6 criterion delivers.
 
 **It supplies the precondition S6-D4 assumes.** S6-D4 states that machine and
 human comments "are separable on the PR". §1 establishes that this is false today
@@ -179,14 +196,18 @@ the S10 interventions-per-PR instrument reads that same substrate, so until the
 non-verdict paths are converted it counts every agent-posted comment as a human
 intervention and reports the prime directive's own metric wrong.
 
-**It covers write paths Slice D does not.** S6-D2's scope is the review
-medium — verdicts and verdict-driven approvals. Six prgroom write paths are
-grooming writes, not verdicts: thread replies, the PR-body PATCH, thread
-resolution, reviewer re-requests, and the `human-review-required` label add. No
-S6 criterion converts `prgroom.gh.client.GhCli`, and prgroom is out of S6 scope
-by that spec's own §4, which assigns the harvester and eligibility evaluator to
-S8. The ad-hoc `gh` invocation — the path that produced the observed failure — is
-named by no S6 criterion at all, because it is not review machinery.
+**It covers the writes that are not comments, and the channel no criterion
+constrains.** Four owner-credentialed writes are neither a comment nor an
+approval, so they fall outside S6-D2's text entirely: the thread resolution, the
+reviewer re-request, the `human-review-required` label add, and the commit/push
+path. The PR-body PATCH is outside it too — a PR body is not a comment — though
+the splice leaves the body's authorship the PR author's, so it converts no
+attribution; it stays in the conversion enumeration as a write path rather than as
+something a reader can mistake for an instruction. The ad-hoc `gh` invocation is
+the harder case: a comment an agent types by hand is a machine-posted comment, so
+S6-D2's text nominally reaches it, but no criterion anywhere names or constrains
+that channel, and a property no mechanism enforces is not a control. That channel
+produced the observed failure.
 
 **It states a reader-side obligation Slice D does not.** S6-D4 governs what the
 *fix loop* consumes. It says nothing about the merge hard line, and the hard line
@@ -202,10 +223,13 @@ a writer-side or gate-side one.
 
 ### (i) Generalize the App identity to every machine write
 
-**Prevents:** all of it. An App write carries `type: "Bot"` and a `[bot]` login;
-an agent holding only the owner's user token cannot produce one. The reader-side
-check becomes a field read against a platform-attested fact rather than a
-convention anyone must remember.
+**Prevents:** every comment, review, approval, label, and thread write being read
+as a human's. An App write carries `type: "Bot"` and a `[bot]` login; an agent
+holding only the owner's user token cannot produce one. The reader-side check
+becomes a field read against a platform-attested fact rather than a convention
+anyone must remember. It does not reach commit authorship: routing the push
+through an App credential leaves `author`/`committer` as whatever created the
+commit, which is why that path needs a trailer (AUTH-9) and not this option.
 
 **Costs:** a token-minting path (PEM → installation token) at every call site.
 `GhCli` has no credential seam — `proc.py` passes ambient environment — so this
@@ -231,12 +255,13 @@ third state to disambiguate. This is the decisive property.
 **Costs:** every write path emits it, every reader checks it, and a deployed
 asset documents it.
 
-**Fails:** on adoption, and the failure is not recoverable by discipline. Four of
-the six prgroom paths have no body to carry a marker — a thread resolution, a
-reviewer request, and a label are structurally unmarkable. The two that do carry
+**Fails:** on adoption, and the failure is not recoverable by discipline. Three of
+the six prgroom paths that write to the GitHub API have no body to carry a
+marker — a thread resolution, a reviewer request, and a label are structurally
+unmarkable. The three that do carry
 markers already prove the ceiling: `<!-- prgroom:reply:… -->` is a working,
-purpose-built machine-emitted marker that reaches a third of the write paths and
-cannot reach the rest. A marker is also omissible by the agent it constrains,
+purpose-built machine-emitted marker that reaches three of the eight write paths
+and cannot reach the rest. A marker is also omissible by the agent it constrains,
 which is the wrong direction for a control against self-authorization.
 
 **Absence problem: fatal, and it collapses the option.** Absence is ambiguous
@@ -272,9 +297,11 @@ rule ever derives authorization from a comment, an agent writing a comment
 cannot manufacture authorization, converted paths or not.
 
 **Costs:** narrow. Authorization must arrive in the session turn or from a
-rule-based policy, which is what the hard line already says — this adds the
-missing clause about channel. The real loss is asynchronous approval: the owner
-can no longer authorize a merge by leaving a comment on the PR from a phone.
+rule-based policy. The hard line already requires an explicit instruction and is
+silent on channel; this option supplies the channel clause it lacks — an addition
+to the existing rule, not a new regime. The real loss is asynchronous approval:
+the owner can no longer authorize a merge by leaving a comment on the PR from a
+phone.
 
 **Fails:** silently, if the prohibition is not written down — an agent absent an
 explicit rule will still infer intent from a comment. It also does not fix
@@ -310,7 +337,11 @@ why the ordering above holds absent that requirement.
 
 The fix is a separate tracker item. Each criterion below states an observable
 input or state and an expected outcome, with its inverse and boundary cases. None
-is implemented here.
+is implemented here. AUTH-7 and AUTH-8 govern one named gate —
+`merge_gates.human_review_satisfied`, prgroom's human-review constraint. That is
+not the verdict-based merge-eligibility predicate S6-D3 defines and §6 places out
+of scope; the two read different inputs, and satisfying one says nothing about the
+other.
 
 ### Reader-side prohibition (option iv)
 
@@ -323,10 +354,15 @@ is implemented here.
   turn.
 - **AUTH-2** Given a PR carrying a comment whose text reads as merge
   authorization and whose GitHub author is the owner, an agent asked to merge
-  refuses and names the missing authorization. Inverse: the same PR under a
-  satisfied rule-based policy merges. Dependency failure: with the comment
-  present and the policy file unreadable, the agent refuses rather than falling
-  back to the comment.
+  refuses and names the missing authorization. Inverse, decidable today: the same
+  merge, authorized by an instruction given in the session turn, proceeds — the
+  turn authorizes and the comment does not. The hard line's rule-based branch is
+  not a test input here: §2 establishes that no deployed asset evaluates the
+  configured policy, so an inverse resting on "a satisfied rule-based policy"
+  would assume the thing this record puts out of scope. That branch becomes
+  testable when the separately-tracked repair of the channel lands. Dependency
+  failure: with the comment present and the policy unevaluable, the agent refuses
+  rather than falling back to the comment.
 - **AUTH-3** An agent reporting on a PR's comments attributes each to its posting
   identity without asserting human intent that the identity alone cannot
   establish. Inverse: a comment from a `[bot]` identity is reported as machine
@@ -343,28 +379,44 @@ is implemented here.
 
 ### Identity conversion (option i)
 
-- **AUTH-5** Each of the six prgroom write paths in §1 either authenticates as
-  the App or is recorded as a named, dated exception with the reason it cannot.
-  Observable: the posted artifact's `user.type` is `"Bot"` for a converted path.
-  Inverse: an unconverted path fails the check rather than passing by default —
-  the enumeration is closed, and a write path absent from it is itself a failure.
-  Dependency failure: an App-token mint failure aborts the write rather than
-  falling back to the owner credential.
+- **AUTH-5** Each of the six prgroom paths in §1 that write to the GitHub API
+  either authenticates as the App or is recorded as a named, dated exception with
+  the reason it cannot; the commit/push path is AUTH-9's, not this one's. The two
+  comment paths — the `_post_reply` issue comment or thread reply, and the
+  routed-memory thread reply — are inherited from S6-D2, whose text already covers
+  them (§3); this criterion covers the remainder: the PR-body PATCH, the thread
+  resolution, the reviewer re-request, and the `human-review-required` label add.
+  Observable: the actor GitHub records for the write — the comment's `user`, the
+  thread's `resolvedBy`, the timeline event's `actor` — carries `type: "Bot"` for
+  a converted path. Inverse: an unconverted path fails the check rather than
+  passing by default — the enumeration is closed, and a write path absent from it
+  is itself a failure. Dependency failure: an App-token mint failure aborts the
+  write rather than falling back to the owner credential.
 - **AUTH-6** A raw `gh` write from an agent session — comment, review, approval,
   label, or thread resolution — is refused by the permission surface rather than
   posted as the owner. Inverse: `gh` reads are unaffected. Boundary: the
   App-routed helper is permitted by the same surface that denies the raw call, so
   the denial redirects rather than blocks the work.
-- **AUTH-7** `derive_human_review` counts an approval only from an identity
-  established as human by a positive test, not by failing the bot test. Inverse:
-  an `APPROVED` review posted with the owner's `gh` token by an agent does not
-  satisfy the constraint. Boundary: a genuine owner approval typed in the GitHub
-  UI does satisfy it, and an App approval does not.
-- **AUTH-8** The `human-approved` label satisfies the human-review constraint
-  only when the actor who applied it is read and is established as human.
-  Inverse: a label applied by an agent's `gh` call does not satisfy it. Empty
+- **AUTH-7** `derive_human_review` counts an approval only from an identity a
+  positive test establishes as human, not from one that merely fails the bot test.
+  The observable is App attestation, and the criterion is decidable only once
+  AUTH-5 and AUTH-6 hold: when every machine write is App-attested, a non-App
+  identity is a human one. Inverse: an App-attested approval does not satisfy the
+  constraint. Boundary: a genuine owner approval typed in the GitHub UI does
+  satisfy it. Precondition failure: before conversion is complete an owner-identity
+  approval is observationally identical to an agent-posted one, so the gate reads
+  the constraint unsatisfied and names the missing precondition — it never counts
+  the approval on the assumption that it is human.
+- **AUTH-8** Two requirements, in order. First, the label's applying actor is read
+  at all: `fetch_human_review_inputs` reads `issues/{n}/labels`, which returns
+  names only, so today there is no actor to test and the criterion is unsatisfiable
+  until a source carrying one (the labeled timeline event) is read. Second, under
+  the same post-conversion precondition as AUTH-7, a `human-approved` label
+  satisfies the human-review constraint only when that actor is not App-attested.
+  Inverse: a label applied by an App-attested call does not satisfy it. Empty
   case: a label whose applying actor cannot be determined from the data read does
-  not satisfy it, and says so rather than defaulting either way.
+  not satisfy it, and reports the undetermined actor as the reason rather than
+  defaulting either way.
 - **AUTH-9** Commits produced in an agent session are attributable to the agent
   by a stable, case-exact trailer emitted by an asset this repo controls.
   Inverse: a commit with no such trailer is not asserted to be agent-authored.
@@ -375,11 +427,14 @@ is implemented here.
 
 Deploying any convention this record proposes — a separate tracker item, and
 deliberately so: a half-adopted marker is worse than none, because its absence
-stops meaning anything. Everything S6 Slice D already owns: App identity for
-review verdicts and verdict-driven approvals (S6-D2), the merge-eligibility
-predicate and its fail-closed provenance check (S6-D3), and the exclusion of
-human comments from the fix loop (S6-D4). The verdict harvester and
-merge-eligibility evaluator (S8, D13). The interventions-per-PR instrument (S10,
+stops meaning anything. Everything S6 Slice D already owns: the App identity for
+machine-posted comments and approvals (S6-D2 — §3 flags the contradiction between
+its text and what S6 delivers, for repair there), the **verdict-based**
+merge-eligibility predicate and its fail-closed provenance check (S6-D3), and the
+exclusion of human comments from the fix loop (S6-D4). prgroom's human-review
+constraint is a different gate from that predicate and is in scope here, at
+AUTH-7 and AUTH-8. The verdict harvester and merge-eligibility evaluator
+(S8, D13). The interventions-per-PR instrument (S10,
 D19) — this record establishes only that its substrate is not yet separable.
 Building or reconfiguring the merge-approver App, which pre-exists and is proven.
 Repairing the unowned rule-based merge-authorization channel identified at the
