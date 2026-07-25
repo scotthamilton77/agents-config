@@ -3,9 +3,23 @@
 `main()` is the single injectable entry point: argv, stdout/stderr, the wall
 clock, the seed-file reader, the working directory, and the environment all
 arrive as arguments, never a module global (same seam precedent as workcli's
-`cli.py`). Every command emits exactly one JSON envelope on stdout and exits 0
-unless the command itself failed (spec CLI contract: "exit code 0 unless the
-command itself failed -- an anomalous event still exits 0, it was recorded").
+`cli.py`).
+
+Envelope and exit codes -- the whole contract, since this docstring is what the
+package's other artifacts point at:
+
+- Every verb emits exactly one JSON envelope on stdout, failures included: a
+  `GrindError` and any unexpected exception both render as `{"ok": false, ...}`
+  and exit 1. A parse failure is enveloped too (see `_RaisingArgumentParser`).
+- Argparse's help action is the one path that emits no envelope: it raises
+  `SystemExit`, which no handler here catches, so `grind --help` prints plain
+  usage and exits 0.
+- Otherwise exit 0 (spec CLI contract: "exit code 0 unless the command itself
+  failed -- an anomalous event still exits 0, it was recorded").
+- `grind check` is the single exception to that last rule: when the grind is
+  stale it exits 1 on an `ok: true` envelope, the code carrying the staleness
+  verdict rather than a failure (pinned by
+  `test_check_verb_exits_one_when_stale`).
 """
 
 from __future__ import annotations
