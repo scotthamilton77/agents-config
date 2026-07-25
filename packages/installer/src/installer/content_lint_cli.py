@@ -77,7 +77,12 @@ def main(argv: list[str] | None = None) -> int:
     for entry in result.unadmitted:
         stream = sys.stderr if entry.fatal else sys.stdout
         verdict = "carries no admission record" if entry.fatal else "not admitted (no record)"
-        stream.write(f"content-lint: {entry.source}: {verdict} [{', '.join(entry.tools)}]\n")
+        # A None source is an entry file supplied through the override channel,
+        # which records no origin. Say that plainly rather than printing "None".
+        where = (
+            str(entry.source) if entry.source is not None else "<merged entry, source unrecorded>"
+        )
+        stream.write(f"content-lint: {where}: {verdict} [{', '.join(entry.tools)}]\n")
     if result.unadmitted:
         sys.stdout.write(
             f"content-lint: {len(result.unadmitted)} artifact(s) in src/ carry no admission "

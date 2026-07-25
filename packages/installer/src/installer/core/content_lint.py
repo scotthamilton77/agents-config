@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from installer.core.admission import DIR_RECORD_FILE
 from installer.core.deploy_gate import item_label, run_admission_gate
 from installer.core.installignore import load_installignore
 from installer.core.orchestrator import stage_and_transform
@@ -68,9 +69,12 @@ class Unadmitted:
     ``tools`` names every tool whose plan dropped it — a shared skill is staged
     once per tool, so without grouping the same file reports four times.
     ``fatal`` records whether its location makes the omission a failure.
+    ``source`` is ``None`` when the classified bytes arrived through the
+    directory-override channel, which records no origin: the omission is real
+    and still reported, but there is no file to name or to locate in a tree.
     """
 
-    source: Path
+    source: Path | None
     tools: tuple[str, ...]
     fatal: bool
 
@@ -97,20 +101,30 @@ class ContentLintResult:
         return not self.violations and not self.fatal_unadmitted
 
 
-def _classified_source(item: StagedItem) -> Path:
+def _classified_source(item: StagedItem, *, overrides: dict[Path, bytes]) -> Path | None:
     """The file whose front matter the gate actually read for ``item``.
 
-    Normally that is ``source_path``. For an item synthesised by the rule
-    append-merge it is not: the merge keeps ``source_path`` from the incoming
-    side while placing the existing side's bytes — and therefore its front
-    matter — first. Blaming ``source_path`` there sends a reader to a file whose
-    record was never examined, and splits one defective source into one finding
-    per merge product. ``merged_head`` names the side that was read.
+    Normally that is ``source_path``. Two cases where it is not:
+
+    - An item synthesised by the rule append-merge keeps ``source_path`` from
+      the incoming side while placing the existing side's bytes — and therefore
+      its front matter — first. ``merged_head`` names the side that was read.
+    - A directory item whose entry file arrives through ``dir_overrides`` (a
+      carrier merge contributing the entry, or a plugin extension patching it):
+      the gate deliberately classifies those bytes, and the plan records no
+      origin for them. There is no file to name, so this returns ``None``
+      rather than guessing ``source_path``.
+
+    Blaming ``source_path`` in either case sends a reader to a file whose record
+    was never examined — and, for the override case, would apply the
+    admitted-content-only rule to a path that contributed nothing.
     """
+    if item.content is None and Path(DIR_RECORD_FILE) in overrides:
+        return None
     return item.merged_head if item.merged_head is not None else item.source_path
 
 
-def _matching_label(message: str, sources: dict[str, Path]) -> str | None:
+def _matching_label(message: str, sources: dict[str, Path | None]) -> str | None:
     """The artifact label a violation message is prefixed with, if any.
 
     Matched against the known label set rather than by splitting on punctuation,
@@ -122,7 +136,7 @@ def _matching_label(message: str, sources: dict[str, Path]) -> str | None:
 
 
 def _collapse_findings(
-    violations: list[str], *, sources: dict[str, Path], tool_values: frozenset[str]
+    violations: list[str], *, sources: dict[str, Path | None], tool_values: frozenset[str]
 ) -> list[str]:
     """Fold a violation repeated once per tool into one line naming the tools.
 
@@ -150,8 +164,14 @@ def _collapse_findings(
     for message in violations:
         label = _matching_label(message, sources)
         if label is not None:
-            tool, _sep, _dest = label.partition(":")
-            key = (_ARTIFACT, str(sources[label]), message[len(label) + 1 :].strip())
+            tool, _sep, dest = label.partition(":")
+            # An unattributable entry (bytes from the override channel) still
+            # groups per artifact — the destination is a stable identity even
+            # when the origin file is unknown — and renders as that destination
+            # rather than as a source path the plan cannot supply.
+            source = sources[label]
+            identity = str(source) if source is not None else dest
+            key = (_ARTIFACT, identity, message[len(label) + 1 :].strip())
         else:
             head, _sep, tail = message.partition(":")
             if head not in tool_values or not tail.strip():
@@ -165,12 +185,12 @@ def _collapse_findings(
         tools_by_finding.setdefault(key, []).append(tool)
 
     rendered: list[str] = []
-    for (_kind, source, text), tools in tools_by_finding.items():
+    for (_kind, where, text), tools in tools_by_finding.items():
         if not tools:
             rendered.append(text)
             continue
         prefix = f"[{', '.join(sorted(tools))}]"
-        rendered.append(f"{prefix} {source}: {text}" if source else f"{prefix} {text}")
+        rendered.append(f"{prefix} {where}: {text}" if where else f"{prefix} {text}")
     return rendered
 
 
@@ -206,29 +226,33 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
 
     # Built from the PRE-gate plans: run_admission_gate returns a filtered copy
     # with the dropped items already gone, so this is the only place the skipped
-    # labels can still be joined back to the file they came from.
+    # labels can still be joined back to the file they came from. A label whose
+    # entry file arrives through dir_overrides maps to None — see
+    # _classified_source; the gate read bytes that no single source file owns.
     sources = {
-        item_label(tool, dest): _classified_source(item)
+        item_label(tool, dest): _classified_source(item, overrides=plan.dir_overrides.get(dest, {}))
         for tool, plan in plans.items()
         for dest, item in plan.items.items()
     }
 
     gate = run_admission_gate(plans)
 
-    tools_by_source: dict[Path, list[str]] = {}
+    tools_by_source: dict[Path | None, list[str]] = {}
     for label in gate.skipped:
-        source = sources.get(label)
-        if source is None:  # pragma: no cover - a label always joins to its item
-            continue
-        tools_by_source.setdefault(source, []).append(label.split(":", 1)[0])
+        tools_by_source.setdefault(sources.get(label), []).append(label.split(":", 1)[0])
 
     unadmitted = [
         Unadmitted(
             source=source,
             tools=tuple(sorted(set(tools))),
-            fatal=_is_admitted_only(source, repo_root),
+            # An unattributable entry is never fatal: the admitted-content-only
+            # rule is about which tree a FILE lives in, and here the classified
+            # bytes came from an override whose origin the plan does not record.
+            # Failing the build against a path that was never read would blame
+            # the carrier for its contributor's missing record.
+            fatal=source is not None and _is_admitted_only(source, repo_root),
         )
-        for source, tools in sorted(tools_by_source.items())
+        for source, tools in sorted(tools_by_source.items(), key=lambda kv: str(kv[0]))
     ]
 
     return ContentLintResult(

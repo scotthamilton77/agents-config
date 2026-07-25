@@ -271,9 +271,9 @@ def test_a_merged_rule_is_blamed_on_the_file_whose_record_was_read() -> None:
     # what the lint attributes the finding to.
     assert merged.content is not None
     assert merged.content.startswith(b"---\nbad: record\n---")
-    assert _classified_source(merged) == shared.source_path
+    assert _classified_source(merged, overrides={}) == shared.source_path
     # An unmerged item is unaffected: source_path stays authoritative.
-    assert _classified_source(shared) == shared.source_path
+    assert _classified_source(shared, overrides={}) == shared.source_path
 
 
 def test_a_chained_merge_still_names_the_original_head() -> None:
@@ -297,4 +297,59 @@ def test_a_chained_merge_still_names_the_original_head() -> None:
     first_two = strategy.merge(_rule("first"), _rule("second"))
     all_three = strategy.merge(first_two, _rule("third"))
 
-    assert _classified_source(all_three) == Path("src/first.md")
+    assert _classified_source(all_three, overrides={}) == Path("src/first.md")
+
+
+def _staged_rule(source: Path, body: bytes):
+    from installer.core.model import FileKind, Provenance, StagedItem
+
+    return StagedItem(
+        source_path=source,
+        dest_relpath=Path("rules") / "x.md",
+        kind=FileKind.NAMESPACED_MD,
+        namespace="rules",
+        provenance=Provenance(kind="tool", name="claude"),
+        content=body,
+    )
+
+
+def test_an_empty_existing_side_does_not_become_the_merged_head() -> None:
+    """`sides` drops a falsy side, so an empty existing rule contributes no bytes
+    and the merged content — front matter included — begins with the incoming
+    rule. Recording the empty file as the head would blame a file that supplied
+    nothing at all."""
+    from installer.core.content_lint import _classified_source
+    from installer.core.merge.strategies.append_rules import AppendRulesStrategy
+
+    empty = _staged_rule(Path("src/user/.agents/rules/empty.md"), b"")
+    real = _staged_rule(Path("src/plugins/p/.claude/rules/x.md"), b"---\nbad: record\n---\nreal\n")
+
+    merged = AppendRulesStrategy().merge(empty, real)
+
+    assert merged.content == real.content  # the empty side contributed nothing
+    assert _classified_source(merged, overrides={}) == real.source_path
+
+
+def test_an_overridden_entry_file_is_not_attributed_or_made_fatal() -> None:
+    """When a directory item's entry file arrives through dir_overrides, the gate
+    classifies those bytes and the plan records no origin for them. Attributing
+    them to source_path would blame the carrier for a contributor's missing
+    record — and, under src/user, fail the build over it."""
+    from installer.core.admission import DIR_RECORD_FILE
+    from installer.core.content_lint import _classified_source
+    from installer.core.model import FileKind, Provenance, StagedItem
+
+    carrier = StagedItem(
+        source_path=Path("src/user/.agents/skills/foo"),
+        dest_relpath=Path("skills") / "foo",
+        kind=FileKind.DIR,
+        namespace="skills",
+        provenance=Provenance(kind="tool", name="claude"),
+        content=None,
+    )
+
+    assert _classified_source(carrier, overrides={}) == carrier.source_path
+    assert _classified_source(carrier, overrides={Path(DIR_RECORD_FILE): b"x"}) is None
+    # An unrelated carried file leaves attribution intact — only the entry file
+    # displaces the record source.
+    assert _classified_source(carrier, overrides={Path("other.md"): b"x"}) == carrier.source_path

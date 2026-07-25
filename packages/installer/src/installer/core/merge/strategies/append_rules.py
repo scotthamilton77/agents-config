@@ -43,8 +43,14 @@ class AppendRulesStrategy:
             incoming,
             content=merged,
             # The side whose bytes go first — and whose front matter therefore
-            # survives as the merged item's. Preserved from `existing` if it was
-            # itself a merge product, so a three-way chain still names the
-            # original head rather than the middle link.
-            merged_head=existing.merged_head or existing.source_path,
+            # survives as the merged item's. Read off the same `sides` filter
+            # that built the content, not off `existing` directly: an empty
+            # existing side contributes no bytes, so the merged content (and its
+            # front matter) actually begins with `incoming`, and naming
+            # `existing` here would blame a file that supplied nothing.
+            # Preserved from `existing` when it did contribute, so a three-way
+            # chain still names the original head rather than the middle link.
+            merged_head=(existing.merged_head or existing.source_path)
+            if existing.content
+            else incoming.merged_head,
         )
