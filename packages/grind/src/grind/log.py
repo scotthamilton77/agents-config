@@ -3,7 +3,7 @@
 This module only *reads*. The write-path repair described in the spec's
 "Torn tail" section (moving an unparsable fragment to `events.quarantine`,
 appending the missing newline to a complete-but-unterminated line) belongs to
-the CLI's append path (a later bead) -- this module is the defense-in-depth
+the CLI's append path (a later work item) -- this module is the defense-in-depth
 half: it tolerates a torn tail when reading a log no repair has touched yet
 (e.g. `status` on a freshly-crashed grind), per spec: "the fold still
 tolerates a non-parsing last line (drops it, reports the torn_tail anomaly)".
