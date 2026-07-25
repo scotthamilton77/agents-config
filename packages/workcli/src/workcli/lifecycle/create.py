@@ -130,7 +130,7 @@ def _validate_usage(args: Namespace, noun: Noun) -> None:
             f"create {noun}: --type is set by the noun; omit it",
         )
     if noun is Noun.MILESTONE and args.track is not None:
-        # Milestone-type beads are track-exempt and carry no track:* label --
+        # Milestone-type items are track-exempt and carry no track:* label --
         # refuse rather than mint an exemption violation.
         raise WorkError(
             ErrorCode.USAGE,
@@ -305,7 +305,7 @@ def _append_orphan_marker(backend: Backend, item_id: str) -> None:
     """Append the orphan marker, surfacing `item_id` on failure.
 
     The mint (`backend.create`) already returned by the time this runs, so a
-    failure here leaves a created-but-unmarked bead. `detail.created_id` lets
+    failure here leaves a created-but-unmarked item. `detail.created_id` lets
     the caller replay only this step against the already-minted id, rather
     than discarding it behind a bare error.
     """

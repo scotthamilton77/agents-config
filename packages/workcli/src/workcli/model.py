@@ -14,7 +14,7 @@ from dataclasses import dataclass
 class DepEdge:
     id: str
     type: str  # "blocks" | "related-to" | "parent-child" | "discovered-from" | ...
-    status: str  # status of the bead at the other end
+    status: str  # status of the item at the other end
 
 
 @dataclass(frozen=True)

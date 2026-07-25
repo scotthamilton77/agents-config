@@ -20,6 +20,11 @@ from workcli.envelope import ErrorCode, WorkError
 
 CONFIG_FILENAME = "project-config.toml"
 
+GROOM_STATE_KEY = "groom-state-item"
+# Superseded spelling, still accepted on read so existing project configs keep
+# working; `GROOM_STATE_KEY` wins whenever both are set.
+GROOM_STATE_KEY_SUPERSEDED = "groom-state-bead"
+
 Reason = Literal["not-found", "invalid"]
 
 
@@ -35,7 +40,7 @@ class TrackLayerConfig:
     backlog_groom_nag_days: (
         int | None
     )  # None: [operating-model] absent/key omitted -> nag check never fires
-    groom_state_bead: (
+    groom_state_item: (
         str | None
     )  # None: omitted OR "" (not yet minted by the config backfill) -> groom gates E_NOT_CONFIGURED
     extraction_max_track_backlog: (
@@ -46,6 +51,7 @@ class TrackLayerConfig:
     extraction_max_cross_track_edges: (
         int | None
     )  # None: [extraction.eligibility] absent/key omitted -> eligibility never proven (fail-safe)
+    deprecations: tuple[str, ...] = ()  # superseded keys found in the file, as user-facing advice
 
 
 def _not_configured(problem: str, reason: Reason) -> WorkError:
@@ -120,6 +126,41 @@ def _string_tuple(value: object, where: str, path: Path) -> tuple[str, ...]:
     return tuple(value)
 
 
+def _groom_state(
+    operating_table: dict[str, object], path: Path
+) -> tuple[str | None, tuple[str, ...]]:
+    """Resolve the groom-state work item id from either accepted spelling.
+
+    `GROOM_STATE_KEY` wins whenever it is present -- including when set to the
+    "" placeholder, an explicit "not yet minted" -- so a project migrating its
+    config never has to delete the superseded key first. The superseded
+    spelling is read only in the current key's absence, and its presence is
+    always reported back as a deprecation for the caller to surface.
+    """
+    superseded_present = GROOM_STATE_KEY_SUPERSEDED in operating_table
+    key = GROOM_STATE_KEY if GROOM_STATE_KEY in operating_table else GROOM_STATE_KEY_SUPERSEDED
+    raw = operating_table.get(key)
+    if raw is not None and not isinstance(raw, str):
+        raise _not_configured(f"[operating-model].{key} must be a string in {path}", "invalid")
+    # Empty string means "not yet configured", same as an omitted key -- not an
+    # error. A repo may ship "" as a placeholder until its groom-state work
+    # item is minted.
+    resolved = raw if raw else None
+    if not superseded_present:
+        return resolved, ()
+    if key == GROOM_STATE_KEY:
+        deprecation = (
+            f"[operating-model].{GROOM_STATE_KEY_SUPERSEDED} is superseded by "
+            f"{GROOM_STATE_KEY} and ignored; delete the superseded key"
+        )
+    else:
+        deprecation = (
+            f"[operating-model].{GROOM_STATE_KEY_SUPERSEDED} is superseded by "
+            f"{GROOM_STATE_KEY}; rename the key"
+        )
+    return resolved, (deprecation,)
+
+
 def _validate(raw: dict[str, object], path: Path) -> TrackLayerConfig:
     tracks = raw.get("tracks")
     if not isinstance(tracks, dict):
@@ -176,15 +217,7 @@ def _validate(raw: dict[str, object], path: Path) -> TrackLayerConfig:
             f"got {backlog_groom_nag_days} in {path}",
             "invalid",
         )
-    groom_state_bead_raw = operating_table.get("groom-state-bead")
-    if groom_state_bead_raw is not None and not isinstance(groom_state_bead_raw, str):
-        raise _not_configured(
-            f"[operating-model].groom-state-bead must be a string in {path}", "invalid"
-        )
-    # Empty string means "not yet configured", same as an omitted key -- not an
-    # error. A repo may ship "" as a placeholder until its groom-state bead is
-    # minted.
-    groom_state_bead = groom_state_bead_raw if groom_state_bead_raw else None
+    groom_state_item, deprecations = _groom_state(operating_table, path)
 
     extraction = raw.get("extraction")
     if extraction is not None and not isinstance(extraction, dict):
@@ -247,9 +280,10 @@ def _validate(raw: dict[str, object], path: Path) -> TrackLayerConfig:
         milestone_wip_cap=cap,
         wip_exempt_milestones=exempt,
         backlog_groom_nag_days=backlog_groom_nag_days,
-        groom_state_bead=groom_state_bead,
+        groom_state_item=groom_state_item,
         extraction_max_track_backlog=max_track_backlog,
         extraction_external_consumer_tracks=external_consumer_tracks,
         extraction_independent_release_tracks=independent_release_tracks,
         extraction_max_cross_track_edges=max_cross_track_edges,
+        deprecations=deprecations,
     )

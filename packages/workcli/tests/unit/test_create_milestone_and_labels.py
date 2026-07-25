@@ -164,7 +164,7 @@ def _required_config() -> TrackLayerConfig:
         milestone_wip_cap=None,
         wip_exempt_milestones=(),
         backlog_groom_nag_days=None,
-        groom_state_bead=None,
+        groom_state_item=None,
         extraction_max_track_backlog=None,
     )
 

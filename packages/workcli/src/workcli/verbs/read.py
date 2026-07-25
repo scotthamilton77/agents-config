@@ -43,7 +43,7 @@ def list_(backend: Backend, args: Namespace) -> JsonValue:
     """`work list [--status --label --parent --type --limit --track]`.
 
     `--track` filters on the DERIVED `Item.track` (never raw label presence),
-    so filter and envelope field always agree: zero-or-multi-label beads
+    so filter and envelope field always agree: zero-or-multi-label items
     derive to null and match nothing. Validated against the
     vocabulary for parity with `create --track` -- a typo returns
     E_UNKNOWN_TRACK, not a silently-empty result. Ordering matters twice:

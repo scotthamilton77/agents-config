@@ -2,7 +2,7 @@
 
 Implements the 2026-07-17 design spec: refuses to file a discovery without an
 anchor (or an explicit `--orphan` escalation) and a complete, well-formed
-triage record (Scope / Priority / Anchor), then mints the bead through the
+triage record (Scope / Priority / Anchor), then mints the work item through the
 existing `create <noun>` path -- inheriting its noun template, duplicate
 guard, and track gate -- adds the `discovered-from` provenance edge, and
 returns the completion-report manifest row as a structured envelope field.
