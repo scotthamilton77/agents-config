@@ -12,7 +12,7 @@ from conftest import make_branch, make_survey
 
 from gitclean.execute import Executor, default_salvage_dir, slug
 from gitclean.model import Disposition, Plan, Risk, Target, TargetKind
-from gitclean.ports import ScriptedCommands, fail, ok
+from gitclean.ports import CommandResult, ScriptedCommands, fail, ok
 
 
 def target(
@@ -221,10 +221,13 @@ def test_unparseable_remote_name_is_reported_not_guessed() -> None:
 # -- salvage -----------------------------------------------------------------
 
 
+WIP_BUNDLE = f"/salvage/{slug('wip')}.bundle"
+
+
 def _branch_salvage_port(**overrides: object) -> ScriptedCommands:
     table = {
-        "bundle create /salvage/wip.bundle wip": ok(),
-        "bundle verify /salvage/wip.bundle": ok(),
+        f"bundle create {WIP_BUNDLE} wip": ok(),
+        f"bundle verify {WIP_BUNDLE}": ok(),
         "branch -D wip": ok(),
         "for-each-ref --format=%(refname) refs/heads/wip": ok(""),
     }
@@ -242,7 +245,7 @@ def test_salvage_precedes_deletion() -> None:
 
 
 def test_a_bundle_that_fails_to_write_aborts_the_deletion() -> None:
-    port = _branch_salvage_port(**{"bundle create /salvage/wip.bundle wip": fail("disk full")})
+    port = _branch_salvage_port(**{f"bundle create {WIP_BUNDLE} wip": fail("disk full")})
     report = run(port, plan(target(TargetKind.BRANCH, "wip", risk=Risk.RECOVERABLE)))
     assert not report.ok
     assert "branch" not in [t[1] for t in port.transcript]
@@ -251,7 +254,7 @@ def test_a_bundle_that_fails_to_write_aborts_the_deletion() -> None:
 
 def test_a_bundle_that_does_not_verify_aborts_the_deletion() -> None:
     """An unverified bundle is not a safety net, so it does not buy a deletion."""
-    port = _branch_salvage_port(**{"bundle verify /salvage/wip.bundle": fail("corrupt")})
+    port = _branch_salvage_port(**{f"bundle verify {WIP_BUNDLE}": fail("corrupt")})
     report = run(port, plan(target(TargetKind.BRANCH, "wip", risk=Risk.RECOVERABLE)))
     assert not report.ok
     assert "did not verify" in report.anomalies[0].message
@@ -271,83 +274,74 @@ def test_missing_salvage_directory_aborts_rather_than_deleting_unprotected() -> 
 # -- worktree salvage --------------------------------------------------------
 
 
-def _worktree_salvage_port(**overrides: object) -> ScriptedCommands:
-    ref = "refs/gitclean/salvage/repo-wt"
-    table = {
-        "stash create": ok("deadbeef"),
-        f"update-ref {ref} deadbeef": ok(),
-        f"bundle create /salvage/repo-wt/tracked-changes.bundle {ref}": ok(),
-        "bundle verify /salvage/repo-wt/tracked-changes.bundle": ok(),
-        f"update-ref -d {ref}": ok(),
-        "ls-files --others --exclude-standard": ok("scratch.txt\n"),
-        "worktree remove --force /repo/wt": ok(),
-        "worktree prune": ok(),
-        "worktree list --porcelain": ok("worktree /repo\n"),
-    }
-    table.update(overrides)  # type: ignore[arg-type]
-    return ScriptedCommands(git=table)  # type: ignore[arg-type]
+def _worktree_salvage_port(
+    *, create: CommandResult | None = None, listing: CommandResult | None = None
+) -> ScriptedCommands:
+    return ScriptedCommands(
+        git={
+            "worktree remove --force /repo/wt": ok(),
+            "worktree prune": ok(),
+            "worktree list --porcelain": ok("worktree /repo\n"),
+        },
+        archive_create=create if create is not None else ok(),
+        archive_list=listing if listing is not None else ok("./\n./scratch.txt\n./.env\n"),
+    )
 
 
-def test_worktree_salvage_bundles_tracked_changes_and_copies_untracked() -> None:
+def test_worktree_salvage_archives_the_whole_tree() -> None:
     port = _worktree_salvage_port()
     report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt", risk=Risk.DATA_LOSS)))
     assert report.ok
-    assert port.copies == [("/repo/wt/scratch.txt", "/salvage/repo-wt/untracked/scratch.txt")]
-    assert "untracked scratch.txt" in report.salvages[0].detail
+    source, dest = port.archives[0]
+    assert source == "/repo/wt"
+    assert dest.startswith("/salvage/") and dest.endswith(".tar.gz")
+    assert report.salvages[0].verified
+    assert "2 entries" in report.salvages[0].detail
 
 
-def test_the_temporary_salvage_ref_is_always_cleaned_up() -> None:
-    """It exists only to give `git bundle` a ref to package; leaving it behind
-    would put a phantom ref in the repo gitclean itself would later survey."""
+def test_the_archive_is_written_before_the_worktree_is_removed() -> None:
     port = _worktree_salvage_port()
     run(port, plan(target(TargetKind.WORKTREE, "/repo/wt", risk=Risk.DATA_LOSS)))
-    assert ("git", "update-ref", "-d", "refs/gitclean/salvage/repo-wt") in port.transcript
+    verbs = [t[0] for t in port.transcript]
+    assert verbs.index("tar") < verbs.index("git")
 
 
-def test_the_temporary_ref_is_cleaned_up_even_when_the_bundle_fails() -> None:
-    port = _worktree_salvage_port(
-        **{
-            "bundle create /salvage/repo-wt/tracked-changes.bundle "
-            "refs/gitclean/salvage/repo-wt": fail("empty bundle")
-        }
-    )
-    report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt", risk=Risk.DATA_LOSS)))
-    assert not report.ok
-    assert ("git", "update-ref", "-d", "refs/gitclean/salvage/repo-wt") in port.transcript
-
-
-def test_a_stash_that_captures_nothing_still_salvages_untracked_files() -> None:
-    port = _worktree_salvage_port(**{"stash create": ok("")})
-    report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt", risk=Risk.DATA_LOSS)))
-    assert report.ok
-    assert port.copies
-
-
-def test_a_dirty_worktree_that_yields_nothing_is_not_deleted() -> None:
-    """Classified dirty but nothing captured means the survey and the tree
-    disagree. Deleting on a contradiction is exactly the wrong move."""
-    port = _worktree_salvage_port(
-        **{"stash create": ok(""), "ls-files --others --exclude-standard": ok("")}
-    )
-    report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt", risk=Risk.DATA_LOSS)))
-    assert not report.ok
-    assert "worktree" not in [t[1] for t in port.transcript if t[1] == "worktree"]
-
-
-def test_a_failing_stash_aborts_before_any_deletion() -> None:
-    port = _worktree_salvage_port(**{"stash create": fail("not a git repository")})
+def test_a_failing_archive_aborts_before_any_deletion() -> None:
+    port = _worktree_salvage_port(create=fail("tar: no space left on device"))
     report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt", risk=Risk.DATA_LOSS)))
     assert not report.ok
     assert report.anomalies[0].stage == "salvage"
+    assert "git" not in [t[0] for t in port.transcript]
+    assert "salvage failed" in report.deletions[0].detail
 
 
-def test_a_failing_update_ref_aborts_before_any_deletion() -> None:
-    port = _worktree_salvage_port(
-        **{"update-ref refs/gitclean/salvage/repo-wt deadbeef": fail("permission denied")}
-    )
+def test_an_archive_that_cannot_be_read_back_aborts_the_deletion() -> None:
+    """An archive nobody could open is not a safety net, so it does not buy a
+    deletion."""
+    port = _worktree_salvage_port(listing=fail("tar: unexpected EOF"))
     report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt", risk=Risk.DATA_LOSS)))
     assert not report.ok
-    assert "salvage ref" in report.anomalies[0].message
+    assert "could not be read back" in report.anomalies[0].message
+    assert "git" not in [t[0] for t in port.transcript]
+
+
+def test_an_empty_archive_is_not_treated_as_a_successful_capture() -> None:
+    """tar writes an archive of nothing and reads it back without complaint,
+    so a clean exit code is not proof that anything was captured."""
+    port = _worktree_salvage_port(listing=ok("./\n"))
+    report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt", risk=Risk.DATA_LOSS)))
+    assert not report.ok
+    assert "nothing was captured" in report.anomalies[0].message
+    assert "git" not in [t[0] for t in port.transcript]
+
+
+def test_the_archive_captures_ignored_files() -> None:
+    """A worktree whose only content is a .env used to read clean, be swept at
+    Risk.NONE, and not even be captured by salvage if it had been."""
+    port = _worktree_salvage_port(listing=ok("./\n./.env\n"))
+    report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt", risk=Risk.DATA_LOSS)))
+    assert report.ok
+    assert "1 entries" in report.salvages[0].detail
 
 
 # -- cascade -----------------------------------------------------------------
@@ -391,9 +385,18 @@ def test_an_unrelated_branch_still_deletes_when_a_worktree_fails() -> None:
 # -- helpers -----------------------------------------------------------------
 
 
-def test_slug_is_filesystem_safe() -> None:
-    assert slug("feat/x y") == "feat-x-y"
-    assert slug("///") == "target"
+def test_slug_is_filesystem_safe_and_readable() -> None:
+    assert slug("feat/x y").startswith("feat-x-y-")
+    assert slug("///").startswith("target-")
+
+
+def test_slug_does_not_collide_where_the_readable_part_does() -> None:
+    """`origin/feat/a` and `origin-feat-a` flatten to the same readable string.
+    Sharing a filename means the second verified salvage overwrites the first
+    and both deletions proceed -- one having destroyed the only copy."""
+    assert slug("origin/feat/a") != slug("origin-feat-a")
+    assert slug("feat+x") != slug("feat-x")
+    assert slug("feat/x") == slug("feat/x")
 
 
 def test_salvage_dir_lands_in_the_common_git_dir() -> None:

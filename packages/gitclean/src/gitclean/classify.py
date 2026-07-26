@@ -302,6 +302,14 @@ def classify_worktree(
                 else held.disposition
             )
             reasons.append(f"clean checkout of {worktree.branch} ({held.disposition.value})")
+        # Named on every worktree that carries any, deletable or not: ignored
+        # content does not block a sweep, so this reason is the only place the
+        # reader learns it is about to go.
+        if worktree.ignored_file_count:
+            reasons.append(
+                f"{worktree.ignored_file_count} ignored file(s) will be deleted with it "
+                f"(caches and virtualenvs regenerate; a .env living only here would not)"
+            )
 
     return Target(
         id=ident,

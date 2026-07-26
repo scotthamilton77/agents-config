@@ -129,7 +129,7 @@ def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree],
             # The directory is gone by definition, so there is nothing to hold
             # uncommitted work and nothing to stat. Probing would fail and
             # report an unknown that is in fact perfectly well known.
-            dirt: tuple[int, int] | None = (0, 0)
+            dirt: tuple[int, int, int] | None = (0, 0, 0)
         else:
             dirt = _count_dirt(port, Path(path))
             if dirt is None:
@@ -137,7 +137,9 @@ def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree],
                     f"could not read the working-tree status of {path}; "
                     f"treating it as if it holds uncommitted work"
                 )
-        dirty_count, untracked_count = dirt if dirt is not None else (None, None)
+        dirty_count, untracked_count, ignored_count = (
+            dirt if dirt is not None else (None, None, None)
+        )
         worktrees.append(
             Worktree(
                 path=path,
@@ -146,31 +148,44 @@ def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree],
                 is_main=index == 0,
                 locked="locked" in block,
                 prunable=prunable,
-                dirty=None if dirt is None else sum(dirt) > 0,
+                # Ignored files are counted but excluded from `dirty`: caches
+                # and virtualenvs are not work at risk, and treating them as
+                # such would make every finished worktree need --force.
+                dirty=None if dirt is None else (dirt[0] + dirt[1]) > 0,
                 dirty_file_count=dirty_count,
                 untracked_file_count=untracked_count,
+                ignored_file_count=ignored_count,
                 last_activity=None,
             )
         )
     return worktrees, warnings
 
 
-def _count_dirt(port: CommandPort, path: Path) -> tuple[int, int] | None:
-    """(tracked-modified count, untracked count), or None when git would not
-    answer -- an unstatable tree is unknown, not clean."""
-    status = port.git(["status", "--porcelain=v1", "--untracked-files=normal"], cwd=path)
+def _count_dirt(port: CommandPort, path: Path) -> tuple[int, int, int] | None:
+    """(tracked-modified, untracked, ignored) counts, or None when git would
+    not answer -- an unstatable tree is unknown, not clean.
+
+    ``--ignored`` buys visibility, not a verdict. What it finds in practice is
+    build detritus, so the caller reports the count rather than acting on it --
+    see ``Worktree.ignored_file_count`` for the trade that settles."""
+    status = port.git(
+        ["status", "--porcelain=v1", "--untracked-files=normal", "--ignored=matching"], cwd=path
+    )
     if not status.ok:
         return None
     dirty = 0
     untracked = 0
+    ignored = 0
     for line in status.stdout.splitlines():
         if not line.strip():
             continue
-        if line.startswith("??"):
+        if line.startswith("!!"):
+            ignored += 1
+        elif line.startswith("??"):
             untracked += 1
         else:
             dirty += 1
-    return dirty, untracked
+    return dirty, untracked, ignored
 
 
 def read_pull_requests(

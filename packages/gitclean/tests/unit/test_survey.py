@@ -185,19 +185,52 @@ def test_a_worktree_block_without_a_path_is_warned_not_dropped_silently() -> Non
     assert warnings and "no path" in warnings[0]
 
 
-def test_dirty_and_untracked_files_are_counted_separately() -> None:
+def test_modified_untracked_and_ignored_files_are_counted_separately() -> None:
     port = ScriptedCommands(
         git={
             "worktree list --porcelain": ok("worktree /repo\n"),
             "status --porcelain=v1 --untracked-files=normal": ok(
-                " M a.txt\nA  b.txt\n?? c.txt\n?? d.txt\n"
+                " M a.txt\nA  b.txt\n?? c.txt\n?? d.txt\n!! .env\n"
             ),
         }
     )
     worktrees, _ = read_worktrees(port, None)
     assert worktrees[0].dirty_file_count == 2
-    assert worktrees[0].untracked_file_count == 4 - 2
+    assert worktrees[0].untracked_file_count == 2
+    assert worktrees[0].ignored_file_count == 1
     assert worktrees[0].dirty
+
+
+def test_ignored_files_are_counted_but_do_not_make_a_worktree_dirty() -> None:
+    """The settled trade. Ignored content is overwhelmingly caches and
+    virtualenvs; calling it work at risk would make every finished worktree
+    need --force and turn an automatic cleanup into a manual triage. It is
+    counted so the report can name it, and the count drives nothing."""
+    port = ScriptedCommands(
+        git={
+            "worktree list --porcelain": ok("worktree /repo\n"),
+            "status --porcelain=v1 --untracked-files=normal": ok(
+                "!! .venv/\n!! __pycache__/\n!! .env\n"
+            ),
+        }
+    )
+    worktrees, _ = read_worktrees(port, None)
+    assert worktrees[0].ignored_file_count == 3
+    assert worktrees[0].dirty is False
+
+
+def test_the_dirt_probe_asks_git_about_ignored_files() -> None:
+    """Counted for the report even though it does not drive the verdict: a
+    reader deciding whether to sweep needs to know what goes with it."""
+    port = ScriptedCommands(
+        git={
+            "worktree list --porcelain": ok("worktree /repo\n"),
+            "status --porcelain=v1 --untracked-files=normal": ok(""),
+        }
+    )
+    read_worktrees(port, None)
+    status_call = next(t for t in port.transcript if t[1] == "status")
+    assert "--ignored=matching" in status_call
 
 
 def test_a_worktree_git_cannot_stat_is_unknown_not_clean() -> None:

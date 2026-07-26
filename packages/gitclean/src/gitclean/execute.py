@@ -3,8 +3,10 @@
 Three commitments shape this module:
 
 **Salvage precedes deletion, and a salvage that cannot be verified aborts the
-deletion.** A bundle nobody checked is not a safety net. If `git bundle
-verify` does not pass, the target is left alone and the failure is reported.
+deletion.** An archive nobody opened is not a safety net. A branch is bundled
+and the bundle verified; a worktree is archived and the archive read back and
+found non-empty. If either check does not pass, the target is left alone and
+the failure is reported.
 
 **Every deletion is verified by re-asking git.** A zero exit code is a claim,
 not a fact -- `git push --delete` in particular can exit 0 against a ref the
@@ -18,6 +20,7 @@ streams of the surprising command travel with the finding.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -47,9 +50,17 @@ class ExecutionReport:
 
 
 def slug(name: str) -> str:
-    """Filesystem-safe stand-in for a ref or path."""
+    """Filesystem-safe, collision-free stand-in for a ref or path.
+
+    The readable part alone is not injective: `origin/feat/a` and
+    `origin-feat-a` flatten to the same string, as do `feat+x` and `feat-x`.
+    Two targets sharing a filename means the second verified salvage silently
+    overwrites the first and both deletions proceed -- one of them having
+    destroyed the only copy. The digest restores injectivity; the readable
+    prefix is kept so a human can still find their work."""
     cleaned = "".join(c if c.isalnum() or c in "-._" else "-" for c in name)
-    return cleaned.strip("-") or "target"
+    digest = hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]
+    return f"{cleaned.strip('-') or 'target'}-{digest}"
 
 
 def default_salvage_dir(survey_data: Survey, now: datetime) -> str:
@@ -70,77 +81,42 @@ class Executor:
     # -- salvage ------------------------------------------------------------
 
     def _salvage_worktree(self, target: Target, salvage_dir: Path) -> bool:
-        """Capture a dirty tree: tracked changes as a bundle, untracked files
-        as copies. Returns False when nothing verifiable was captured."""
-        wt = Path(target.name)
-        dest = salvage_dir / slug(target.name)
-        captured: list[str] = []
+        """Archive the whole tree as it stands, then prove the archive readable.
 
-        stash = self._port.git(["stash", "create"], cwd=wt)
-        if not stash.ok:
+        One tar replaces what used to be a stash, a temporary ref, a bundle and
+        a file-by-file copy. Each of those had its own way of losing content --
+        the copy followed symlinks and could not see ignored files, and the
+        stash captured only what git already tracked -- and none of them
+        captured what is actually at risk, which is the directory."""
+        archive = salvage_dir / f"{slug(target.name)}.tar.gz"
+        created = self._port.create_archive(Path(target.name), archive)
+        if not created.ok:
             self._record(
                 "salvage",
                 target.id,
-                f"could not snapshot tracked changes in {target.name}",
-                stash.transcript(),
+                f"could not archive {target.name}; deletion aborted",
+                created.transcript(),
             )
             return False
-        sha = stash.out
-        if sha:
-            bundle = dest / "tracked-changes.bundle"
-            self._port.write_text(dest / ".gitclean-keep", "")
-            # `git bundle` packages REFS, not revisions: handed a bare SHA it
-            # writes nothing and then refuses the empty result. So the stash
-            # commit gets a temporary ref, which the bundle captures along with
-            # its full history, leaving a self-contained clonable archive.
-            temp_ref = f"refs/gitclean/salvage/{slug(target.name)}"
-            pointed = self._port.git(["update-ref", temp_ref, sha], cwd=wt)
-            if not pointed.ok:
-                self._record(
-                    "salvage",
-                    target.id,
-                    f"could not park a salvage ref for {target.name}",
-                    pointed.transcript(),
-                )
-                return False
-            created = self._port.git(["bundle", "create", str(bundle), temp_ref], cwd=wt)
-            verified = (
-                self._port.git(["bundle", "verify", str(bundle)], cwd=wt) if created.ok else created
-            )
-            # The ref exists only to give the bundle something to package; drop
-            # it on every path so a failed salvage leaves no debris behind.
-            self._port.git(["update-ref", "-d", temp_ref], cwd=wt)
-            if not created.ok:
-                self._record(
-                    "salvage",
-                    target.id,
-                    f"bundle of tracked changes in {target.name} failed",
-                    created.transcript(),
-                )
-                return False
-            if not verified.ok:
-                self._record(
-                    "salvage",
-                    target.id,
-                    f"bundle written for {target.name} did not verify; deletion aborted",
-                    verified.transcript(),
-                )
-                return False
-            captured.append(f"tracked changes -> {bundle}")
 
-        untracked = self._port.git(["ls-files", "--others", "--exclude-standard"], cwd=wt)
-        if untracked.ok:
-            for rel in (line.strip() for line in untracked.stdout.splitlines()):
-                if rel:
-                    self._port.copy_file(wt / rel, dest / "untracked" / rel)
-                    captured.append(f"untracked {rel}")
-
-        if not captured:
+        listing = self._port.list_archive(archive)
+        if not listing.ok:
             self._record(
                 "salvage",
                 target.id,
-                f"{target.name} was classified dirty but nothing could be captured",
-                stash.transcript(),
+                f"archive written for {target.name} could not be read back; deletion aborted",
+                listing.transcript(),
+            )
+            return False
+        entries = [line for line in listing.stdout.splitlines() if line.strip() not in ("", "./")]
+        if not entries:
+            # tar happily writes an archive of nothing and reads it back
+            # without complaint, so a clean exit code is not proof of capture.
+            self._record(
+                "salvage",
+                target.id,
+                f"archive of {target.name} is empty; nothing was captured, so nothing is deleted",
+                listing.transcript(),
             )
             return False
 
@@ -148,9 +124,9 @@ class Executor:
             SalvageRecord(
                 target_id=target.id,
                 kind="worktree",
-                path=str(dest),
+                path=str(archive),
                 verified=True,
-                detail="; ".join(captured),
+                detail=f"{len(entries)} entries; restore with: tar -xzf {archive} -C <dir>",
             )
         )
         return True

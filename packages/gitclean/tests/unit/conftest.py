@@ -87,11 +87,14 @@ def make_worktree(
     prunable: bool = False,
     dirty_file_count: int | None = 0,
     untracked_file_count: int | None = 0,
+    ignored_file_count: int | None = 0,
     last_activity: str | None = _UNSET,
 ) -> Worktree:
-    # Either count being None means git would not answer, which makes `dirty`
+    # Any count being None means git would not answer, which makes `dirty`
     # itself unknown -- the state a test reaches by passing None explicitly.
-    unknown = dirty_file_count is None or untracked_file_count is None
+    # Ignored files are counted but excluded from `dirty`, mirroring survey.
+    counts = (dirty_file_count, untracked_file_count, ignored_file_count)
+    unknown = any(c is None for c in counts)
     return Worktree(
         path=path,
         branch=branch,
@@ -102,6 +105,7 @@ def make_worktree(
         dirty=None if unknown else (dirty_file_count or 0) + (untracked_file_count or 0) > 0,
         dirty_file_count=dirty_file_count,
         untracked_file_count=untracked_file_count,
+        ignored_file_count=ignored_file_count,
         last_activity=iso(1) if last_activity == _UNSET else last_activity,
     )
 

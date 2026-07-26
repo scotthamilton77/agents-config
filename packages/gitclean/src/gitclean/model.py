@@ -132,6 +132,19 @@ class Worktree:
     unreadable worktree is the one most likely to be holding something."""
     dirty_file_count: int | None
     untracked_file_count: int | None
+    ignored_file_count: int | None
+    """Reported, but deliberately NOT part of ``dirty``.
+
+    Ignored content is overwhelmingly build detritus -- caches, virtualenvs,
+    coverage files -- that regenerates for free. Treating it as work at risk
+    would make almost every finished worktree require --force, replacing an
+    automatic cleanup with a manual triage, which costs far more than it saves.
+
+    The accepted trade: a bare sweep of an already-merged worktree deletes its
+    ignored files too, so a `.env` living only there goes with it. The count is
+    surfaced in the report and in the target's reasons so that consequence is
+    visible before anyone runs cleanup, and a --force salvage archives ignored
+    files along with everything else."""
     last_activity: str | None
 
     def as_json(self) -> dict[str, object]:
@@ -145,6 +158,7 @@ class Worktree:
             "dirty": self.dirty,
             "dirty_file_count": self.dirty_file_count,
             "untracked_file_count": self.untracked_file_count,
+            "ignored_file_count": self.ignored_file_count,
             "last_activity": self.last_activity,
         }
 

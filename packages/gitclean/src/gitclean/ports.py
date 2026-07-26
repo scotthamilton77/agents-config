@@ -65,13 +65,29 @@ class CommandPort(Protocol):
 
     def has_gh(self) -> bool: ...  # pragma: no cover
 
-    def read_text(self, path: Path) -> str | None: ...  # pragma: no cover
-
     def write_text(self, path: Path, content: str) -> None: ...  # pragma: no cover
 
-    def copy_file(self, src: Path, dest: Path) -> None: ...  # pragma: no cover
+    def create_archive(self, source: Path, dest: Path) -> CommandResult: ...  # pragma: no cover
 
-    def exists(self, path: Path) -> bool: ...  # pragma: no cover
+    def list_archive(self, path: Path) -> CommandResult: ...  # pragma: no cover
+
+
+def _self_exclusion(source: Path, dest: Path) -> list[str]:
+    """Keep tar from archiving its own output.
+
+    A caller is free to point --salvage-dir inside the very worktree being
+    salvaged, and archiving a whole directory that contains the growing archive
+    is a race at best. GNU tar notices and warns; BSD tar, which is what ships
+    on macOS, does not."""
+    try:
+        relative = dest.parent.resolve().relative_to(source.resolve())
+    except (ValueError, OSError):
+        return []
+    # A salvage directory one level down is excluded whole; one that *is* the
+    # worktree root cannot be, so only the archive file itself is skipped.
+    if str(relative) == ".":
+        return [f"--exclude=./{dest.name}"]
+    return [f"--exclude=./{relative}"]
 
 
 class SubprocessCommands:
@@ -116,22 +132,26 @@ class SubprocessCommands:
     def has_gh(self) -> bool:
         return shutil.which("gh") is not None
 
-    def read_text(self, path: Path) -> str | None:
-        try:
-            return path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return None
-
     def write_text(self, path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 
-    def copy_file(self, src: Path, dest: Path) -> None:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest)
+    def create_archive(self, source: Path, dest: Path) -> CommandResult:
+        """Archive a whole directory, symlinks kept AS symlinks.
 
-    def exists(self, path: Path) -> bool:
-        return path.exists()
+        tar rather than a file-by-file copy for three reasons that each cost
+        work when got wrong: `shutil.copy2` follows symlinks by default, so an
+        untracked link to ~/.ssh/id_rsa would copy the key's bytes into the
+        salvage directory; it crashes outright on a dangling link; and a copy
+        driven by `git ls-files` cannot see ignored files, which is where a
+        .env lives. `.git` is excluded because it is reconstructible and, in
+        the main worktree, would drag in the whole object store."""
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        excludes = ["--exclude=./.git", *_self_exclusion(source, dest)]
+        return self._run(["tar", "-czf", str(dest), "-C", str(source), *excludes, "."], None)
+
+    def list_archive(self, path: Path) -> CommandResult:
+        return self._run(["tar", "-tzf", str(path)], None)
 
 
 class ScriptedCommands:
@@ -151,13 +171,20 @@ class ScriptedCommands:
         gh: dict[str, CommandResult | list[CommandResult]] | None = None,
         has_gh: bool = True,
         files: dict[str, str] | None = None,
+        archive_create: CommandResult | None = None,
+        archive_list: CommandResult | None = None,
     ) -> None:
         self._git = dict(git or {})
         self._gh = dict(gh or {})
         self._has_gh = has_gh
         self.files: dict[str, str] = dict(files or {})
-        self.copies: list[tuple[str, str]] = []
         self.transcript: list[tuple[str, ...]] = []
+        # Same discipline as the command tables: an unscripted archive call
+        # raises rather than defaulting, because a salvage that silently
+        # "succeeded" in a test is the failure this fake exists to catch.
+        self._archive_create = archive_create
+        self._archive_list = archive_list
+        self.archives: list[tuple[str, str]] = []
 
     @staticmethod
     def _match(
@@ -211,17 +238,21 @@ class ScriptedCommands:
     def has_gh(self) -> bool:
         return self._has_gh
 
-    def read_text(self, path: Path) -> str | None:
-        return self.files.get(str(path))
-
     def write_text(self, path: Path, content: str) -> None:
         self.files[str(path)] = content
 
-    def copy_file(self, src: Path, dest: Path) -> None:
-        self.copies.append((str(src), str(dest)))
+    def create_archive(self, source: Path, dest: Path) -> CommandResult:
+        self.transcript.append(("tar", "-czf", str(dest), "-C", str(source)))
+        self.archives.append((str(source), str(dest)))
+        if self._archive_create is None:
+            raise AssertionError(f"ScriptedCommands has no archive answer for: {source} -> {dest}")
+        return self._archive_create
 
-    def exists(self, path: Path) -> bool:
-        return str(path) in self.files
+    def list_archive(self, path: Path) -> CommandResult:
+        self.transcript.append(("tar", "-tzf", str(path)))
+        if self._archive_list is None:
+            raise AssertionError(f"ScriptedCommands has no archive listing for: {path}")
+        return self._archive_list
 
 
 def ok(stdout: str = "", *, stderr: str = "") -> CommandResult:

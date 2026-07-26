@@ -315,6 +315,31 @@ def test_untracked_files_alone_make_a_worktree_dirty(now: datetime) -> None:
     assert target.risk is Risk.DATA_LOSS
 
 
+def test_ignored_files_do_not_block_a_sweep_but_are_named_before_it(now: datetime) -> None:
+    """The settled trade: caches and virtualenvs must not cost a --force. The
+    reason line is then the only place a reader learns what goes with the
+    worktree, so it is not optional."""
+    survey = make_survey(
+        branches=(make_branch("feat/thing", merge_evidence=MergeEvidence.PR_MERGED),),
+        worktrees=(make_worktree("/repo/wt", branch="feat/thing", ignored_file_count=9),),
+        current_branch="main",
+    )
+    worktree = next(t for t in classify(survey, now=now) if t.id == "worktree:/repo/wt")
+    assert worktree.disposition is Disposition.SAFE
+    assert worktree.risk is Risk.NONE
+    assert not worktree.salvage_needed
+    assert any("9 ignored file(s) will be deleted with it" in r for r in worktree.reasons)
+
+
+def test_a_worktree_with_no_ignored_files_says_nothing_about_them(now: datetime) -> None:
+    from datetime import timedelta
+
+    target = classify_worktree(
+        make_worktree(branch=None), {}, now=now, idle_window=timedelta(days=14)
+    )
+    assert not any("ignored" in r for r in target.reasons)
+
+
 def test_main_worktree_is_protected(now: datetime) -> None:
     from datetime import timedelta
 
