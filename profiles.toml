@@ -33,7 +33,3 @@ include = ["instructions"]
 # same change that readmits content into that namespace.
 [profiles.sdlc]
 include = ["skills/**"]
-
-# The beads project kit (PRIME.md -> <project>/.beads/PRIME.md). Project-scoped.
-[profiles.beads-kit]
-include = ["kits/beads/**"]

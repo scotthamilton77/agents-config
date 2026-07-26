@@ -24,8 +24,10 @@ needs it yet.
 
 ## The quality gate is mandatory — run it, do not approximate it
 
-Before pushing **any** change under `packages/workcli/`, run the canonical
-gate from the repo root:
+Before pushing **any** change under `packages/workcli/`, run the canonical gate
+from the root of **the tree you are working in** (the worktree root, if you are
+on a worktree branch — the `Makefile` `cd`s relative to the invoking directory,
+so a run from the main checkout gates code you did not change):
 
 ```bash
 make ci-workcli   # the full gate CI enforces

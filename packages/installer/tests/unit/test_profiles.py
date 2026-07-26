@@ -944,10 +944,11 @@ def test_shipped_profiles_resolve_against_real_universe(
     resolve(manifest, selection, universe, bound_scopes=frozenset({Scope.USER}))
 
 
-def test_beads_kit_profile_exists_and_scopes_kits_to_project() -> None:
+def test_kits_selector_scopes_to_project() -> None:
+    """`kits/**` routes to PROJECT, not USER. This pins the scope *vocabulary*, which
+    is a coded decision; it deliberately asserts nothing about which profiles the repo
+    happens to ship, since that is content and changes without the routing changing."""
     manifest = load_manifest(_REPO_ROOT / "profiles.toml")
-    assert "beads-kit" in manifest.profiles
-    # The kits/** scope default routes to project.
     assert any(
         sel == "kits/**" and scope is Scope.PROJECT for sel, scope in manifest.scopes.items()
     )

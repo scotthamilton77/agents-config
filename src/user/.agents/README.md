@@ -1,52 +1,43 @@
 # src/user/.agents/ — Shared Content
 
 Tool-agnostic content that `scripts/install.sh` copies into **every detected
-AI coding assistant** (Claude Code, Codex CLI, Gemini CLI). If something here
-is useful to more than one tool, it lives here.
+AI coding assistant** (Claude Code, Codex CLI, Gemini CLI, OpenCode). If
+something here is useful to more than one tool, it lives here.
 
 ## What lives here
 
-- `agents/` — Role-based agent definitions, one `.md` file each. Empty today:
-  every agent was record-less and moved to `archive/src/user/.agents/agents/`.
-- `rules/` — Tool-agnostic always-on rules. Empty today, same reason.
-- `skills/` — Methodology guides, one directory per skill with a `SKILL.md`
-  and optional supporting scripts. Only admitted skills live here; the rest
-  moved to `archive/src/user/.agents/skills/`.
+- `USER-CORE.md.template` — the zero-based shared laws, decision matrix, hard
+  lines, and conventions (D17). Every tool's instruction template pulls this in
+  with a `DYNAMIC-INCLUDE` marker, so it is the one file whose text reaches all
+  four tools verbatim. It is currently hand-deployed to the standard homes;
+  `agents-config-9k9.10` tracks wiring it into automated per-tool assembly.
+- `skills/` — methodology guides, one directory per skill with a `SKILL.md` and
+  optional supporting scripts.
+- `rules/` — tool-agnostic always-on rules. Empty today: the record-less rules
+  moved to `archive/src/user/.agents/rules/`.
 
-`agents/`, `rules/`, and `skills/` are gated: a file without an `admission:`
-record in its front matter is dropped at deploy and pruned from every tool's
-config. Readmission is an explicit act, not a `git mv` back.
-- `AGENTS.md.template` — Zero-based shared laws, decision matrix, and hard
-  lines (D17). Hand-deployed to the standard homes today (S0); not yet wired
-  into automated per-tool assembly — repointing a tool's `AGENTS.md`-dest
-  include at another `AGENTS.md`-basenamed fragment self-deletes the
-  assembled file on flatten (`agents-config-9k9.10` tracks the installer fix).
-- `SESSION-PRIMER.md.template` — Skill-invocation discipline (the "1% rule"
-  + red-flag rationalization table + skill-priority ordering). Dynamically
-  included after USER-PERSONA in every per-tool template.
-- `AGENT-PERSONA.md.template` — Agent personality and expertise claims.
-  Personalize after install.
-- `USER-PERSONA.md.template` — User description and interaction preferences.
-  Personalize after install.
+`skills/` and `rules/` are gated on admission: a file without a complete
+`admission:` record in its front matter is dropped at deploy and pruned from
+every tool's config. Readmission is an explicit act, not a `git mv` back. An
+admitted artifact can still fail a mechanical staging check and deploy nothing,
+so confirm against the tool's own config directory rather than assuming.
 
 ## Where it installs
 
-Into every detected tool's config directory:
+Into every detected tool's config directory — Claude Code `~/.claude/`, Codex
+CLI `~/.codex/`, Gemini CLI `~/.gemini/`, OpenCode `~/.config/opencode/`.
+Skills land under `<config>/skills/`, rules under `<config>/rules/`, and the
+instruction text is assembled into each tool's own instruction file.
 
-- Claude Code → `~/.claude/agents/`, `~/.claude/skills/`,
-  `~/.claude/AGENTS.md`, etc.
-- Codex CLI → `~/.codex/agents/`, `~/.codex/skills/`, `~/.codex/AGENTS.md`, etc.
-- Gemini CLI → `~/.gemini/agents/`, `~/.gemini/skills/`, `~/.gemini/GEMINI.md`, etc.
-
-The installer strips the `.template` suffix on copy and skips installing to
-tools that aren't detected on the system.
+The installer strips the `.template` suffix on copy and skips tools that aren't
+detected on the system.
 
 ## Who it's for
 
-Fork-and-install users who want a ready-made set of agents, skills, and
-persona templates to drop into their `~/.<tool>/` config. Not a library for
-programmatic consumption — these are prose files meant to be read by an LLM
-at runtime.
+Fork-and-install users who want a ready-made set of skills and shared
+instruction text to drop into their `~/.<tool>/` config. Not a library for
+programmatic consumption — these are prose files meant to be read by an LLM at
+runtime.
 
 See the [root README](../../../README.md) for install flow and customization
 pointers. Do not duplicate install instructions here.

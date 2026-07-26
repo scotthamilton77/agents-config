@@ -56,9 +56,16 @@ Each plugin directory follows this layout (all subdirs are optional):
    `packages/installer/src/installer/plugins/` and register it in
    `registry.py`'s `_SPECIALIZED` map.
 
+## Admission applies here too
+
+Discovery makes a plugin's content *eligible*; the admission gate decides
+whether any of it deploys. A rule, skill, or command without a complete
+`admission:` record (`prevents` **or** `provides`, plus `cost` and
+`remove_when`) is dropped at deploy and pruned, wherever it sits. A plugin can
+be discovered, activated, and still install nothing.
+
 ## Current Plugins
 
 | Plugin | Auto-detect footprint | Adapter | What it installs |
 |--------|----------------------|---------|-----------------|
-| `beads` | `bd` on PATH or `~/.beads/` exists | specialized (`BeadsPlugin`) | `beads.md` + `discovered-work.md` rules; also routes `~/.beads/` (e.g. formulas/scripts when present) |
-| `codex` | `~/.codex/` or `codex` on PATH | generic | Codex routing rule (Claude-only) |
+| `codex` | `~/.codex/` or `codex` on PATH | generic | Nothing today — its one rule carries no `admission:` record, so the gate drops it |
