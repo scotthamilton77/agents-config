@@ -213,9 +213,26 @@ def _require_status(item: ItemView, legal: frozenset[str], verb: str) -> None:
         )
 
 
+def _require_unparked(item: ItemView, verb: str) -> None:
+    """Parked is not a status -- it is a flag the fold carries alongside one.
+
+    A parked item keeps whatever status it held, so a status check alone waves
+    a parked item straight through. The fold treats a parked item as absent for
+    every handler but `item_enqueued`, which makes this a precondition of the
+    tracker-first rows in its own right.
+    """
+    if item.parked:
+        raise ExecutorError(
+            ErrorCode.ITEM_PARKED,
+            f"{verb} is not legal on parked item {item.id!r}; "
+            f"the parking lot's only exit is a redispatch or an abandon",
+        )
+
+
 def _plan_start(item: ItemView) -> Plan:
-    if item.status == "in-progress":
+    if item.status == "in-progress" and not item.parked:
         return Plan(ROWS["start"], item, None)
+    _require_unparked(item, "start")
     _require_status(item, _STARTABLE, "start")
     return Plan(ROWS["start"], item, {"item": item.id})
 
@@ -276,21 +293,43 @@ def _plan_abandon(args: VerbArgs, item: ItemView) -> Plan:
     return Plan(ROWS["abandon"], item, payload)
 
 
-def _plan_pr_opened(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
+# Where a closure leaves an item: `pr_closed` sets `in-progress` or `queued`,
+# or parks it. An item holding a PR reference while sitting in one of these has
+# had that PR closed and not reopened since.
+_POST_CLOSURE = frozenset({"in-progress", "queued"})
+# Where a PR is still live -- the only statuses the fold accepts `pr_closed`
+# from, and the ones it moves the item out of.
+_REVIEWABLE = frozenset({"pr-open", "in-review", "waiting-human"})
+
+
+def _closed_out(item: ItemView) -> bool:
+    return item.parked or item.status in _POST_CLOSURE
+
+
+def _plan_pr_opened(args: VerbArgs, item: ItemView) -> Plan:
     pr = _require_pr(args, "pr-opened")
     # "This PR's opening is already recorded" is not "the item is still sitting
     # at pr-open". An opened PR outlives that status -- review, a human wait, a
-    # blocker -- and re-appending from any of them is wrong in a different way
-    # each time: from `waiting-human` the fold ACCEPTS it and silently drags the
-    # item back to `pr-open`, discarding a wait that only `item_resumed` should
-    # end; from `in-review` it flags.
+    # blocker, a merge -- and re-appending from any of them is wrong in a
+    # different way each time: from `waiting-human` the fold ACCEPTS it and
+    # silently drags the item back to `pr-open`, discarding a wait that only
+    # `item_resumed` should end; from `in-review` it flags.
     #
-    # So the evidence is the PR reference plus the absence of a recorded
-    # closure. The status clause survives only for the one case the ledger
-    # cannot express: a PR closed and then genuinely reopened, whose closure
-    # stays in the ledger forever and must not make every later retry look new.
-    closure_recorded = (item.id, pr) in state.closed_prs
-    applied = item.pr_number == pr and (not closure_recorded or item.status == "pr-open")
+    # The closed-PR ledger cannot answer this. It is a set of closures with no
+    # counterpart for openings, so a PR closed once and reopened looks the same
+    # as one still closed, forever. The item's own position does answer it: a
+    # closure puts the item somewhere a live PR never leaves it, so the
+    # evidence is this PR reference plus the item not sitting post-closure.
+    #
+    # Residual, and deliberately chosen: an item closed to `in-progress` that
+    # then goes `waiting-human` sits in a status reachable both ways, and a
+    # genuine reopen there is read as a retry and not recorded. The runtime's
+    # snapshot carries nothing that separates the two, so this is a limit of
+    # the substrate rather than a rule that could be written more sharply. The
+    # direction is picked for its failure mode: a skipped append is visible in
+    # the envelope as `event_appended: false` and is recoverable, where the
+    # other direction silently ends a human wait.
+    applied = item.pr_number == pr and not _closed_out(item)
     return Plan(ROWS["pr-opened"], item, None if applied else {"item": item.id, "pr": pr})
 
 
@@ -300,9 +339,15 @@ def _plan_pr_closed(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
         raise ExecutorError(ErrorCode.USAGE, "pr-closed requires --next")
     if args.reason is None:
         raise ExecutorError(ErrorCode.USAGE, "pr-closed requires --reason")
-    # The closed-PR ledger is the only evidence a close already applied: the
-    # item keeps its PR reference across one, so the item alone cannot answer.
-    applied = (item.id, pr) in state.closed_prs
+    # Both halves are needed, and each covers the other's blind spot. The
+    # ledger alone deduplicates every closure of a PR number forever, so a PR
+    # closed, reopened and closed again would never record its second closure.
+    # The item's position alone cannot tell "already closed" from "resumed out
+    # of a human wait with the PR still open", which lands at the same status
+    # having never been closed. Together: a closure is already recorded when
+    # the ledger holds one for this PR *and* the item is no longer anywhere a
+    # live PR puts it.
+    applied = (item.id, pr) in state.closed_prs and item.status not in _REVIEWABLE
     payload: dict[str, JsonValue] | None = None
     if not applied:
         payload = {
@@ -351,7 +396,7 @@ def build_plan(verb: str, args: VerbArgs, state: RunState) -> Plan:
     if verb == "abandon":
         return _plan_abandon(args, item)
     if verb == "pr-opened":
-        return _plan_pr_opened(args, item, state)
+        return _plan_pr_opened(args, item)
     if verb == "pr-closed":
         return _plan_pr_closed(args, item, state)
     if verb == "merged":

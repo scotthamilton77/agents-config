@@ -80,14 +80,23 @@ ports.py  →  state.py  →  pairing.py  →  enact.py  →  cli.py
   a flagged event stops the command before any tracker write — and
   `redispatch`/`abandon` need none either, since the fold's precondition there
   ("is parked") is the same fact their idempotency check already reads. Adding
-  a tracker-first row means auditing its fold handler for preconditions.
-- **Idempotency evidence is the fold's, not a status guess.** "This
-  transition is already recorded" has to be read from state that outlives the
-  moment: `pr-opened` reads the PR reference plus the closed-PR ledger,
-  because an opened PR outlives the `pr-open` status, and a status-only check
-  would re-append from `waiting-human` — which the fold *accepts*, dragging
-  the item back to `pr-open` and discarding a wait only an explicit resume
+  a tracker-first row means auditing its fold handler for preconditions —
+  including the one that is not a status. **Parked is a flag beside a status,
+  not a status**: a scheduling park leaves the item `queued`, so a
+  status-set check waves a parked item straight through, and the fold treats a
+  parked item as absent for every handler but `item_enqueued`.
+- **Idempotency evidence has to survive the transition it is about.** "This
+  is already recorded" cannot be read off the status the transition produced,
+  because the item moves on: an opened PR outlives `pr-open`, and re-appending
+  from `waiting-human` is the worst case, since the fold *accepts* it and
+  drags the item back to `pr-open`, ending a wait only an explicit resume
   should end. A silent state regression is worse than a flagged one.
+  Symmetrically, the closed-PR ledger cannot carry the evidence alone: it is a
+  set of closures with no counterpart for openings, so a PR closed once looks
+  closed forever. The two rules read the pair — `pr-opened` asks whether the
+  item is sitting where a closure leaves it, `pr-closed` asks for a ledger
+  entry *and* an item no longer where a live PR puts it. Neither half is
+  redundant; each covers the other's blind spot.
 - **`ok: true` from the runtime is not "it applied".** The runtime's policy is
   accept-and-flag: an event that is well-shaped but illegal from the entity's
   current state is still written, as `applied: false` plus an anomaly record.
@@ -148,3 +157,13 @@ ports.py  →  state.py  →  pairing.py  →  enact.py  →  cli.py
   ignores.** The runtime's validator accepts the extra key and the fold drops
   it until slice B lands; the event is recorded either way, which is what
   makes the two slices independently mergeable.
+- **One PR-cycle case the runtime's snapshot cannot answer.** An item closed
+  to `in-progress` that then goes `waiting-human` sits in a status reachable
+  both by a resume and by an opening, so a genuine reopen there reads as a
+  retry and is not recorded. The snapshot carries closures but no openings,
+  which is what makes the two indistinguishable; the decision layer cannot
+  sharpen a rule the state does not support. The direction is chosen for its
+  failure mode — a skipped append shows up as `event_appended: false` and is
+  recoverable, where appending silently ends a human wait. Closing it properly
+  means the runtime recording openings the way it records closures, which is a
+  fold change and belongs to the runtime, not here.

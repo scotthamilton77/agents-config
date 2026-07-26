@@ -221,23 +221,40 @@ def test_a_different_pr_number_is_always_a_new_opening() -> None:
     assert runtime.appended == [("pr_opened", {"item": "it-1", "pr": 43})]
 
 
-def test_a_reopen_that_has_already_landed_is_recognized_as_such() -> None:
+@pytest.mark.parametrize("status", ["pr-open", "in-review", "waiting-human", "merged"])
+def test_a_reopened_pr_stays_recognized_as_its_cycle_advances(status: str) -> None:
     """
-    Given a PR closed, genuinely reopened, and now re-run
-    When `pr-opened` runs again
+    Given a PR closed, genuinely reopened, and since advanced
+    When `pr-opened` is re-run
     Then nothing is appended.
 
-    The closure stays in the ledger forever, so the ledger alone would call
-    every later retry new. The status clause exists for exactly this case.
+    The closure stays in the ledger forever, so any rule that reads it as
+    "this PR is closed" calls every retry of the *reopened* cycle new — and
+    re-appending from `waiting-human` is the silent-revert case again. The
+    reopened cycle has to stay recognizable for as long as the first one does.
     """
-    runtime = FakeRuntime(
-        run_state(item("it-1", status="pr-open", pr=42), closed_prs=[("it-1", 42)])
-    )
+    runtime = FakeRuntime(run_state(item("it-1", status=status, pr=42), closed_prs=[("it-1", 42)]))
 
     code, _ = invoke(["pr-opened", "it-1", "--pr", "42"], runtime, FakeTracker())
 
     assert code == 0
     assert runtime.appended == []
+
+
+def test_a_pr_opening_is_recorded_again_once_the_item_is_parked_out() -> None:
+    """
+    Given an item parked by its PR's closure
+    When that PR is recorded as opened again
+    Then the event is appended.
+
+    Parked is where `pr_closed --next parked` leaves an item, so it counts as
+    closed-out exactly like `in-progress` and `queued` do.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="pr-open", pr=42, parked=True)))
+
+    invoke(["pr-opened", "it-1", "--pr", "42"], runtime, FakeTracker())
+
+    assert runtime.event_types == ["pr_opened"]
 
 
 def test_reopening_the_same_pr_after_a_recorded_close_is_not_a_duplicate() -> None:
@@ -262,12 +279,17 @@ def test_reopening_the_same_pr_after_a_recorded_close_is_not_a_duplicate() -> No
 
 def test_re_recording_a_closure_already_in_the_ledger_appends_no_duplicate() -> None:
     """
-    Given a closure the runtime's closed ledger already holds
+    Given a closure the ledger already holds, with the item sitting where that
+    closure's `--next` put it
     When `pr-closed` is re-run for the same item and PR
     Then nothing is appended and success is reported.
+
+    Both facts make the retry legible. A landed closure moves the item out of
+    the reviewable statuses, so an item still sitting in one has an open PR
+    whatever the ledger remembers of an earlier cycle.
     """
     runtime = FakeRuntime(
-        run_state(item("it-1", status="pr-open", pr=42), closed_prs=[("it-1", 42)])
+        run_state(item("it-1", status="queued", pr=42), closed_prs=[("it-1", 42)])
     )
 
     code, envelope = invoke(
@@ -279,6 +301,54 @@ def test_re_recording_a_closure_already_in_the_ledger_appends_no_duplicate() -> 
     assert code == 0
     assert runtime.appended == []
     assert envelope["data"]["event_appended"] is False
+
+
+def test_a_second_closure_of_a_reopened_pr_is_recorded() -> None:
+    """
+    Given a PR closed, reopened, and now closing again
+    When `pr-closed` runs
+    Then the event is appended.
+
+    The ledger holds the first cycle's closure forever, so reading it alone
+    would deduplicate every later closure of the same PR number — the runtime
+    would stay `pr-open` and never learn the second closure's reason or next
+    status.
+    """
+    runtime = FakeRuntime(
+        run_state(item("it-1", status="pr-open", pr=42), closed_prs=[("it-1", 42)])
+    )
+
+    invoke(
+        ["pr-closed", "it-1", "--pr", "42", "--next", "queued", "--reason", "second"],
+        runtime,
+        FakeTracker(),
+    )
+
+    assert runtime.appended == [
+        ("pr_closed", {"item": "it-1", "pr": 42, "next": "queued", "reason": "second"})
+    ]
+
+
+def test_a_closure_is_recorded_for_an_item_resumed_with_its_pr_still_open() -> None:
+    """
+    Given an item resumed out of a human wait, back in progress with its PR
+    still open and never closed
+    When that PR is recorded as closed
+    Then the event is appended.
+
+    The item's position alone cannot answer this: a resume lands at the same
+    status a closure does, having closed nothing. The ledger is what separates
+    them.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="in-progress", pr=42)))
+
+    invoke(
+        ["pr-closed", "it-1", "--pr", "42", "--next", "queued", "--reason", "stale"],
+        runtime,
+        FakeTracker(),
+    )
+
+    assert runtime.event_types == ["pr_closed"]
 
 
 def test_a_closure_for_a_different_pr_is_still_appended() -> None:

@@ -123,6 +123,49 @@ def test_a_park_on_a_terminal_item_is_refused_before_the_tracker_is_touched(
     assert tracker.syncs == 0
 
 
+def test_start_on_a_parked_item_is_refused_before_the_claim() -> None:
+    """
+    Given a queued item that a scheduling-axis park took out of play
+    When it is started
+    Then E_ITEM_PARKED comes back with nothing claimed.
+
+    Parked is a flag beside a status, not a status: a scheduling park leaves
+    the item `queued`, so the startable-status check waves it straight
+    through. The fold treats a parked item as absent, so claiming first would
+    put the tracker in progress against a runtime that stays parked.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="queued", parked=True, work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["start", "it-1"], runtime, tracker)
+
+    assert code == 1
+    assert envelope["error"]["code"] == "E_ITEM_PARKED"
+    assert envelope["error"]["retryable"] is False
+    assert runtime.appended == []
+    assert tracker.mutations == []
+    assert tracker.syncs == 0
+
+
+def test_start_on_a_parked_in_progress_item_is_refused_not_called_idempotent() -> None:
+    """
+    Given a parked item whose status is still `in-progress`
+    When it is started
+    Then it is refused rather than reported as already started.
+
+    The idempotency skip would otherwise claim the tracker item for work the
+    runtime has taken out of play.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="in-progress", parked=True, work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["start", "it-1"], runtime, tracker)
+
+    assert code == 1
+    assert envelope["error"]["code"] == "E_ITEM_PARKED"
+    assert tracker.mutations == []
+
+
 @pytest.mark.parametrize("status", ["merged", "done", "pr-open"])
 def test_start_is_refused_from_any_status_the_runtime_would_flag(status: str) -> None:
     """
