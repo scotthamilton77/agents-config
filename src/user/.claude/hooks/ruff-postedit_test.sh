@@ -15,7 +15,7 @@ assert_argv_line() { # $1=desc $2=marker $3=needle
   if grep -- "$2" "$RUFF_ARGV_LOG" 2>/dev/null | grep -q -- "$3"; then PASS=$((PASS+1));
   else FAIL=$((FAIL+1)); echo "FAIL: $1 (no ruff invocation matching '$2' carried '$3')"; fi; }
 
-WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+WORK="$(mktemp -d)"; trap 'command rm -rf "$WORK"' EXIT
 
 # fake ruff shim. Records every invocation's argv to $RUFF_ARGV_LOG so tests can
 # assert the hook's *contract with ruff* (which flags it passes) without depending
@@ -48,7 +48,16 @@ PROJ="$WORK/proj"; mkdir -p "$PROJ"
 printf '[tool.ruff]\nline-length = 100\n' > "$PROJ/pyproject.toml"
 echo "x = 1" > "$PROJ/clean.py"
 
-run_hook() { local _tmp; _tmp=$(mktemp); printf '%s' "$1" | python3 "$HOOK" >"$_tmp" 2>&1; RC=${PIPESTATUS[1]}; ERR=$(<"$_tmp"); rm -f "$_tmp"; }
+run_hook() {
+  local _tmp _input
+  _tmp=$(mktemp)
+  _input=$(mktemp)
+  printf '%s' "$1" >"$_input"
+  python3 "$HOOK" <"$_input" >"$_tmp" 2>&1
+  RC=$?
+  ERR=$(<"$_tmp")
+  command rm -f "$_tmp" "$_input"
+}
 
 # 1. non-.py -> silent 0
 run_hook "{\"tool_input\":{\"file_path\":\"$PROJ/clean.txt\"}}"

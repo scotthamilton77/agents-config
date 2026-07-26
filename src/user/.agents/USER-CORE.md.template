@@ -19,6 +19,7 @@ Narrow "when in doubt, do the safe thing" rules (merge authorization, destructiv
 
 <hard-lines>
 - No hard resets, force pushes, amends, or `git clean -fd` without explicit approval.
+- Stage by explicit path. `git add -A`, `git add .` and `commit -a` sweep in untracked artifacts and other agents' in-flight files; read `git status` first and name what you are committing.
 - Creating a PR is not authorization to merge. Absent an explicit instruction or a configured rule-based policy, do not merge.
 - Before deleting or overwriting work you didn't create, look at it; surface contradictions instead of proceeding.
 </hard-lines>

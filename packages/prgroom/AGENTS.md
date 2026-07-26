@@ -4,16 +4,22 @@ Package-scoped guidance for the prgroom CLI. The repo-root `AGENTS.md` still
 applies; this file adds what is specific to this package. Unlike the config
 content under `src/`, **this is real code with a real quality gate.**
 
-`prgroom` is a deterministic PR-grooming CLI that supersedes the
-`wait-for-pr-comments` and `reply-and-resolve-pr-threads` skills: it polls a
-PR's review feedback, clusters it, dispatches fixes, pushes, replies, and
-resolves threads — as locked, resumable lifecycle verbs rather than
-model-driven prose. The `monitor-pr` skill drives it.
+`prgroom` is a deterministic PR-grooming CLI: it polls a PR's review feedback,
+clusters it, dispatches fixes, pushes, replies, and resolves threads — as
+locked, resumable lifecycle verbs rather than model-driven prose. It was built
+to replace the `wait-for-pr-comments` and `reply-and-resolve-pr-threads` skills,
+both now archived along with the `monitor-pr` skill that used to drive it.
+
+**Nothing drives it today.** Per charter D13 this package is carved, not
+finished (slice S8); no deployed asset invokes it and no harness path depends on
+it. Read its lifecycle verbs as a designed surface, not a running one.
 
 ## The quality gate is mandatory — run it, do not approximate it
 
 Before pushing **any** change under `packages/prgroom/`, run the canonical gate
-from the repo root:
+from the root of **the tree you are working in** (the worktree root, if you are
+on a worktree branch — the `Makefile` `cd`s relative to the invoking directory,
+so a run from the main checkout gates code you did not change):
 
 ```bash
 make ci-prgroom   # the full gate CI enforces

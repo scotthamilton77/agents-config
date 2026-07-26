@@ -180,14 +180,14 @@ def test_read_project_profiles_returns_tuple_when_install_profiles_present(
     tmp_path: Path,
 ) -> None:
     """
-    Given <project>/project-config.toml with [install] profiles = ["beads-kit"]
+    Given <project>/project-config.toml with [install] profiles = ["demo-kit"]
     When read_project_profiles(project_root) is called
-    Then the result is ("beads-kit",).
+    Then the result is ("demo-kit",).
     """
     (tmp_path / "project-config.toml").write_text(
-        '[install]\nprofiles = ["beads-kit"]\n', encoding="utf-8"
+        '[install]\nprofiles = ["demo-kit"]\n', encoding="utf-8"
     )
-    assert read_project_profiles(tmp_path) == ("beads-kit",)
+    assert read_project_profiles(tmp_path) == ("demo-kit",)
 
 
 def test_read_project_profiles_returns_none_when_file_absent(tmp_path: Path) -> None:
@@ -212,22 +212,22 @@ def test_read_project_profiles_returns_none_when_install_table_absent(tmp_path: 
 def test_write_project_profiles_round_trips_through_read(tmp_path: Path) -> None:
     """
     Given a project root with no project-config.toml
-    When write_project_profiles(project_root, ("beads-kit",)) is called
-    Then read_project_profiles(project_root) returns ("beads-kit",).
+    When write_project_profiles(project_root, ("demo-kit",)) is called
+    Then read_project_profiles(project_root) returns ("demo-kit",).
     """
-    write_project_profiles(tmp_path, ("beads-kit",))
-    assert read_project_profiles(tmp_path) == ("beads-kit",)
+    write_project_profiles(tmp_path, ("demo-kit",))
+    assert read_project_profiles(tmp_path) == ("demo-kit",)
 
 
 def test_parse_profiles_csv_strips_dedupes_preserving_order() -> None:
-    assert parse_profiles_csv("beads-kit") == ("beads-kit",)
+    assert parse_profiles_csv("demo-kit") == ("demo-kit",)
     assert parse_profiles_csv(" a , b , a ") == ("a", "b")  # strip + dedupe first-occurrence
 
 
 def test_parse_profiles_csv_rejects_empty_name() -> None:
     # A stray trailing comma would otherwise resolve as an unknown empty profile.
     with pytest.raises(ValueError, match="empty profile name"):
-        parse_profiles_csv("beads-kit,")
+        parse_profiles_csv("demo-kit,")
 
 
 def test_read_project_profiles_malformed_toml_normalized_to_valueerror(tmp_path: Path) -> None:
@@ -242,14 +242,14 @@ def test_read_project_profiles_malformed_toml_normalized_to_valueerror(tmp_path:
 def test_write_project_profiles_preserves_other_tables(tmp_path: Path) -> None:
     """
     Given project-config.toml with an unrelated [merge-policy] table
-    When write_project_profiles(project_root, ("beads-kit",)) is called
+    When write_project_profiles(project_root, ("demo-kit",)) is called
     Then [merge-policy] survives and [install].profiles is set.
     """
     path = tmp_path / "project-config.toml"
     path.write_text('[merge-policy]\nmerge-authorization = "explicit"\n', encoding="utf-8")
 
-    write_project_profiles(tmp_path, ("beads-kit",))
+    write_project_profiles(tmp_path, ("demo-kit",))
 
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     assert data["merge-policy"] == {"merge-authorization": "explicit"}
-    assert data["install"]["profiles"] == ["beads-kit"]
+    assert data["install"]["profiles"] == ["demo-kit"]
