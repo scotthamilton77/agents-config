@@ -14,6 +14,8 @@ from tests.conftest import run_cli_with_runner
 from tests.fakes import ScriptedBdRunner, ScriptedStep
 from workcli.adapters.bd.runner import BdResult
 
+_EMPTY = BdResult(returncode=0, stdout="[]", stderr="")
+
 
 def _bare_items(count: int, *, prefix: str = "x") -> list[dict[str, object]]:
     return [
@@ -103,10 +105,11 @@ def test_list_status_label_parent_type_filters_map_to_bd_flags():
 def test_ready_defaults_to_unbounded_and_every_row_surfaces():
     runner = ScriptedBdRunner(
         steps=[
+            ScriptedStep(("list",), _EMPTY),  # parked_stale, read first
             ScriptedStep(
                 ("ready",),
                 BdResult(returncode=0, stdout=json.dumps(_bare_items(120)), stderr=""),
-            )
+            ),
         ]
     )
 
@@ -116,15 +119,26 @@ def test_ready_defaults_to_unbounded_and_every_row_surfaces():
     data = envelope["data"]
     assert isinstance(data, dict)
     assert len(data["items"]) == 120
-    assert runner.calls == [("ready", "--json", "--limit", "0")]
+    assert runner.calls == [
+        ("list", "--json", "--label", "parked", "--limit", "0"),
+        ("ready", "--json", "--limit", "0"),
+    ]
 
 
 def test_ready_label_flag_passes_through():
     runner = ScriptedBdRunner(
-        steps=[ScriptedStep(("ready",), BdResult(returncode=0, stdout="[]", stderr=""))]
+        steps=[
+            ScriptedStep(("list",), _EMPTY),
+            ScriptedStep(("ready",), _EMPTY),
+        ]
     )
 
     exit_code, _, _ = run_cli_with_runner(["ready", "--label", "tech-debt"], runner)
 
     assert exit_code == 0
-    assert runner.calls == [("ready", "--json", "--label", "tech-debt", "--limit", "0")]
+    # `--label` reaches `bd ready` only; the parked read is never re-scoped by
+    # it -- the surfacing is the whole parking lot regardless of the filter.
+    assert runner.calls == [
+        ("list", "--json", "--label", "parked", "--limit", "0"),
+        ("ready", "--json", "--label", "tech-debt", "--limit", "0"),
+    ]
