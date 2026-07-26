@@ -183,16 +183,77 @@ def test_re_recording_an_open_pr_appends_no_duplicate() -> None:
     assert envelope["data"]["event_appended"] is False
 
 
-def test_reopening_the_same_pr_after_a_close_is_not_a_duplicate() -> None:
+@pytest.mark.parametrize("status", ["pr-open", "in-review", "waiting-human", "blocked", "merged"])
+def test_an_opened_pr_stays_recognized_after_the_item_moves_on(status: str) -> None:
     """
-    Given an item whose PR reference survived a close, back in progress
+    Given an item whose PR opened and which has since advanced
+    When `pr-opened` is re-run for that same PR
+    Then nothing is appended.
+
+    An opened PR outlives the `pr-open` status, and re-appending is wrong in a
+    different way from each state it can reach. From `waiting-human` the fold
+    *accepts* the event and drags the item back to `pr-open`, discarding a wait
+    that only an explicit resume should end — a silent state regression, not a
+    flagged one.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status=status, pr=42)))
+
+    code, envelope = invoke(["pr-opened", "it-1", "--pr", "42"], runtime, FakeTracker())
+
+    assert code == 0
+    assert runtime.appended == []
+    assert envelope["data"]["event_appended"] is False
+
+
+def test_a_different_pr_number_is_always_a_new_opening() -> None:
+    """
+    Given an item holding one PR
+    When a different PR is recorded as opened
+    Then the event is appended.
+
+    The reference has to match: a second PR on the same item is new work, not
+    a retry of the first.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="pr-open", pr=42)))
+
+    invoke(["pr-opened", "it-1", "--pr", "43"], runtime, FakeTracker())
+
+    assert runtime.appended == [("pr_opened", {"item": "it-1", "pr": 43})]
+
+
+def test_a_reopen_that_has_already_landed_is_recognized_as_such() -> None:
+    """
+    Given a PR closed, genuinely reopened, and now re-run
+    When `pr-opened` runs again
+    Then nothing is appended.
+
+    The closure stays in the ledger forever, so the ledger alone would call
+    every later retry new. The status clause exists for exactly this case.
+    """
+    runtime = FakeRuntime(
+        run_state(item("it-1", status="pr-open", pr=42), closed_prs=[("it-1", 42)])
+    )
+
+    code, _ = invoke(["pr-opened", "it-1", "--pr", "42"], runtime, FakeTracker())
+
+    assert code == 0
+    assert runtime.appended == []
+
+
+def test_reopening_the_same_pr_after_a_recorded_close_is_not_a_duplicate() -> None:
+    """
+    Given an item back in progress after its PR closed, with that closure in
+    the ledger and the PR reference left behind
     When that same PR is recorded as opened again
     Then the event is appended.
 
-    The PR reference alone cannot answer this: it survives a close, so
-    matching on the number would silently swallow a genuine reopen.
+    The PR reference alone cannot answer this — it survives a close, so
+    matching on the number would swallow a genuine reopen. The recorded
+    closure is what makes the reopen legible.
     """
-    runtime = FakeRuntime(run_state(item("it-1", status="in-progress", pr=42)))
+    runtime = FakeRuntime(
+        run_state(item("it-1", status="in-progress", pr=42), closed_prs=[("it-1", 42)])
+    )
 
     invoke(["pr-opened", "it-1", "--pr", "42"], runtime, FakeTracker())
 

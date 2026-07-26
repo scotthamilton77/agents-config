@@ -192,9 +192,32 @@ def _lane(item: ItemView, verb: str) -> str:
     return item.lane
 
 
+# The fold's source-status preconditions, mirrored for the TRACKER-FIRST rows
+# only. Those rows write to the tracker before appending, so an append the fold
+# would flag leaves the tracker moved and the runtime not — a disagreement no
+# retry converges, since the retry reproduces it. The runtime-first rows need no
+# mirror: their append leads, so a flagged event stops the command before any
+# tracker write. `redispatch`/`abandon` need none either — the fold's
+# precondition there is "is parked", which is the same fact their idempotency
+# check already reads.
+_STARTABLE = frozenset({"queued"})
+_PARKABLE = frozenset({"queued", "in-progress", "pr-open", "in-review", "waiting-human", "blocked"})
+
+
+def _require_status(item: ItemView, legal: frozenset[str], verb: str) -> None:
+    if item.status not in legal:
+        raise ExecutorError(
+            ErrorCode.USAGE,
+            f"{verb} is not legal from status {item.status!r}; "
+            f"the runtime accepts it from {'|'.join(sorted(legal))}",
+        )
+
+
 def _plan_start(item: ItemView) -> Plan:
-    applied = item.status == "in-progress"
-    return Plan(ROWS["start"], item, None if applied else {"item": item.id})
+    if item.status == "in-progress":
+        return Plan(ROWS["start"], item, None)
+    _require_status(item, _STARTABLE, "start")
+    return Plan(ROWS["start"], item, {"item": item.id})
 
 
 def _plan_park(args: VerbArgs, item: ItemView) -> Plan:
@@ -218,9 +241,14 @@ def _plan_park(args: VerbArgs, item: ItemView) -> Plan:
     # the reason does.
     note = args.note if args.note is not None else args.reason
     row = ROWS["park:failure" if axis is Axis.FAILURE else "park:scheduling"]
-    payload: dict[str, JsonValue] | None = None
-    if not item.parked:
-        payload = {"item": item.id, "reason": args.reason, "note": note}
+    if item.parked:
+        return Plan(row, item, None, park_reason=args.reason, park_note=note)
+    # A terminal item is not parkable: finished work has nothing left to park.
+    # Reachable through a legitimately one-sided state — a merge whose tracker
+    # close failed leaves the runtime terminal while the tracker item is still
+    # open — so the check has to sit here, ahead of the tracker write.
+    _require_status(item, _PARKABLE, "park")
+    payload: dict[str, JsonValue] = {"item": item.id, "reason": args.reason, "note": note}
     return Plan(row, item, payload, park_reason=args.reason, park_note=note)
 
 
@@ -248,11 +276,21 @@ def _plan_abandon(args: VerbArgs, item: ItemView) -> Plan:
     return Plan(ROWS["abandon"], item, payload)
 
 
-def _plan_pr_opened(args: VerbArgs, item: ItemView) -> Plan:
+def _plan_pr_opened(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     pr = _require_pr(args, "pr-opened")
-    # Both halves matter: the PR reference survives a close, so the number
-    # alone would call a genuine reopen of the same PR "already applied".
-    applied = item.pr_number == pr and item.status == "pr-open"
+    # "This PR's opening is already recorded" is not "the item is still sitting
+    # at pr-open". An opened PR outlives that status -- review, a human wait, a
+    # blocker -- and re-appending from any of them is wrong in a different way
+    # each time: from `waiting-human` the fold ACCEPTS it and silently drags the
+    # item back to `pr-open`, discarding a wait that only `item_resumed` should
+    # end; from `in-review` it flags.
+    #
+    # So the evidence is the PR reference plus the absence of a recorded
+    # closure. The status clause survives only for the one case the ledger
+    # cannot express: a PR closed and then genuinely reopened, whose closure
+    # stays in the ledger forever and must not make every later retry look new.
+    closure_recorded = (item.id, pr) in state.closed_prs
+    applied = item.pr_number == pr and (not closure_recorded or item.status == "pr-open")
     return Plan(ROWS["pr-opened"], item, None if applied else {"item": item.id, "pr": pr})
 
 
@@ -313,7 +351,7 @@ def build_plan(verb: str, args: VerbArgs, state: RunState) -> Plan:
     if verb == "abandon":
         return _plan_abandon(args, item)
     if verb == "pr-opened":
-        return _plan_pr_opened(args, item)
+        return _plan_pr_opened(args, item, state)
     if verb == "pr-closed":
         return _plan_pr_closed(args, item, state)
     if verb == "merged":

@@ -7,7 +7,7 @@ import pytest
 
 from executor.enact import SYNC_REPAIR, TrackerSession
 from executor.pairing import FAILURE_REASONS, SCHEDULING_REASONS, TrackerVerb
-from tests.unit.fakes import FakeRuntime, FakeTracker, invoke, item, run_state
+from tests.unit.fakes import FakeRuntime, FakeTracker, FlaggingRuntime, invoke, item, run_state
 
 
 def test_start_claims_then_records_the_item_started() -> None:
@@ -93,6 +93,74 @@ def test_a_failure_axis_park_on_an_item_with_no_pr_is_refused(reason: str) -> No
     assert runtime.appended == []
     assert tracker.mutations == []
     assert tracker.syncs == 0
+
+
+@pytest.mark.parametrize("status", ["merged", "done"])
+def test_a_park_on_a_terminal_item_is_refused_before_the_tracker_is_touched(
+    status: str,
+) -> None:
+    """
+    Given a merge whose tracker close has not landed — the runtime terminal,
+    the tracker item still open
+    When a failure-axis park is requested
+    Then it is refused with nothing mutated.
+
+    That partial state is legitimate: world-facts lead with the runtime, so a
+    failed close leaves exactly this. The item still holds its PR, so the
+    no-PR check does not catch it — and a terminal item is not parkable, so
+    enacting would park the tracker against a runtime that stays merged, with
+    a non-retryable failure and no path back.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status=status, pr=42, work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["park", "it-1", "--reason", "ci-failure"], runtime, tracker)
+
+    assert code == 1
+    assert status in envelope["error"]["message"]
+    assert runtime.appended == []
+    assert tracker.mutations == []
+    assert tracker.syncs == 0
+
+
+@pytest.mark.parametrize("status", ["merged", "done", "pr-open"])
+def test_start_is_refused_from_any_status_the_runtime_would_flag(status: str) -> None:
+    """
+    Given an item past the queue
+    When it is started
+    Then the claim is refused rather than issued.
+
+    The other tracker-first row: the runtime accepts `item_started` only from
+    `queued`, so claiming first and appending second would move the tracker
+    against a runtime that does not follow.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status=status, work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, _ = invoke(["start", "it-1"], runtime, tracker)
+
+    assert code == 1
+    assert runtime.appended == []
+    assert tracker.mutations == []
+
+
+@pytest.mark.parametrize("status", ["queued", "in-progress", "pr-open", "in-review", "blocked"])
+def test_park_is_allowed_from_every_status_the_runtime_accepts(status: str) -> None:
+    """
+    Given each non-terminal status
+    When a failure-axis park is requested
+    Then it proceeds.
+
+    The inverse of the terminal refusal, and the guard against over-refusing:
+    `blocked` and `waiting-human` both legally hold an open PR, and those are
+    exactly where an `approval-required` or `ci-failure` park lands.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status=status, pr=42, work_id="w-1")))
+
+    code, _ = invoke(["park", "it-1", "--reason", "ci-failure"], runtime, FakeTracker())
+
+    assert code == 0
+    assert runtime.event_types == ["item_parked"]
 
 
 @pytest.mark.parametrize("reason", SCHEDULING_REASONS)
@@ -499,6 +567,32 @@ def test_a_mutation_that_landed_before_a_failed_append_is_still_synced() -> None
     assert envelope["error"]["data"]["synced"] is True
     assert envelope["error"]["data"]["tracker_called"] is True
     assert envelope["error"]["data"]["event_appended"] is False
+
+
+def test_an_event_the_runtime_wrote_but_flagged_is_reported_as_appended() -> None:
+    """
+    Given a tracker-first row whose tracker write landed and whose event the
+    runtime wrote and then flagged as inapplicable
+    When the error data is read
+    Then it reports the event as appended.
+
+    The runtime writes the event before reporting that it did not apply, so
+    the two are separate facts. Reporting `event_appended: false` against a
+    log that holds the event would mislead exactly the repair and audit
+    tooling the field exists for.
+    """
+    runtime = FlaggingRuntime(run_state(item("it-1", work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["start", "it-1"], runtime, tracker)
+
+    assert code == 1
+    assert envelope["error"]["code"] == "E_USAGE"
+    assert envelope["error"]["data"]["event_appended"] is True
+    assert envelope["error"]["data"]["tracker_called"] is True
+    assert envelope["error"]["data"]["synced"] is True
+    # The port/enact marker is consumed, not republished into the envelope.
+    assert "_event_was_written" not in envelope["error"]["data"]
 
 
 def test_an_owed_sync_that_also_fails_is_reported_under_the_original_cause() -> None:

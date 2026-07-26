@@ -21,6 +21,14 @@ from typing import Protocol, TypeGuard, cast, runtime_checkable
 from executor.envelope import ErrorCode, ExecutorError, JsonValue
 from executor.state import RunState, parse_state
 
+# Marks an ExecutorError raised *after* the runtime durably wrote the event:
+# the write happened, the transition did not. The two are separate facts and a
+# report that conflates them contradicts the event log — an audit reading
+# `event_appended: false` against a log that holds the event is worse served
+# than by no field at all. Internal to the port/enact seam; it never reaches
+# the envelope under this name.
+EVENT_WAS_WRITTEN = "_event_was_written"
+
 _TIMEOUT_S = 120
 # The exit code a shell reports for "command not found"; reused here so a
 # missing binary is reported as a failed call rather than as an exception
@@ -216,6 +224,7 @@ class GrindRuntime:
                 ErrorCode.USAGE,
                 f"the runtime recorded {event_type} as an anomaly rather than a transition: "
                 f"{_anomaly_reason(reply)}",
+                {EVENT_WAS_WRITTEN: True},
             )
 
     def staleness(self, max_age: str | None = None) -> StalenessVerdict:

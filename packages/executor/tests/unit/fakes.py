@@ -14,7 +14,13 @@ from typing import Any
 
 from executor.cli import main
 from executor.envelope import ErrorCode, ExecutorError, JsonValue
-from executor.ports import CommandResult, RuntimePort, StalenessVerdict, TrackerPort
+from executor.ports import (
+    EVENT_WAS_WRITTEN,
+    CommandResult,
+    RuntimePort,
+    StalenessVerdict,
+    TrackerPort,
+)
 from executor.state import ItemView, RunState
 
 # Every FakeTracker built during a test, so conftest can inspect the whole
@@ -53,6 +59,24 @@ class FakeRuntime:
     @property
     def event_types(self) -> list[str]:
         return [event_type for event_type, _ in self.appended]
+
+
+class FlaggingRuntime(FakeRuntime):
+    """A runtime that writes the event and then reports it did not apply.
+
+    The accept-and-flag outcome, modelled faithfully: the append is recorded
+    *and* the failure is raised, carrying the marker the real port sets. A fake
+    that only raised would let a test pass while the report contradicted the
+    event log.
+    """
+
+    def append(self, event_type: str, payload: Mapping[str, JsonValue]) -> None:
+        self.appended.append((event_type, dict(payload)))
+        raise ExecutorError(
+            ErrorCode.USAGE,
+            f"the runtime recorded {event_type} as an anomaly rather than a transition: scripted",
+            {EVENT_WAS_WRITTEN: True},
+        )
 
 
 class FakeTracker:

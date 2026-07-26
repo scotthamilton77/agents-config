@@ -70,17 +70,33 @@ ports.py  →  state.py  →  pairing.py  →  enact.py  →  cli.py
   its suite asserts against that file rather than a transcription. The
   scheduling axis is runtime-native and issues zero tracker writes — the facade
   deliberately has no vocabulary for it.
-- **A refusal the runtime's fold makes is mirrored here, before enacting.**
-  The fold rejects a failure-axis park on an item holding no PR, so
-  `_plan_park` rejects it too. Skipping the mirror does not get the park
-  through: the tracker half lands, the runtime records an anomaly and leaves
-  the item unparked, and every retry reproduces exactly that. When a fold rule
-  can make an append a no-op, check it in `pairing.py`.
+- **Every fold precondition a tracker-first row depends on is mirrored in
+  `pairing.py`, before either plane is touched.** Those rows write to the
+  tracker first, so an append the fold would flag leaves the tracker moved and
+  the runtime not — a disagreement no retry converges, because the retry
+  reproduces it. Currently mirrored: `start`'s source status, `park`'s
+  parkable-status set, and the fold's rule that a failure-axis reason needs a
+  PR reference. The runtime-first rows need no mirror — their append leads, so
+  a flagged event stops the command before any tracker write — and
+  `redispatch`/`abandon` need none either, since the fold's precondition there
+  ("is parked") is the same fact their idempotency check already reads. Adding
+  a tracker-first row means auditing its fold handler for preconditions.
+- **Idempotency evidence is the fold's, not a status guess.** "This
+  transition is already recorded" has to be read from state that outlives the
+  moment: `pr-opened` reads the PR reference plus the closed-PR ledger,
+  because an opened PR outlives the `pr-open` status, and a status-only check
+  would re-append from `waiting-human` — which the fold *accepts*, dragging
+  the item back to `pr-open` and discarding a wait only an explicit resume
+  should end. A silent state regression is worse than a flagged one.
 - **`ok: true` from the runtime is not "it applied".** The runtime's policy is
   accept-and-flag: an event that is well-shaped but illegal from the entity's
   current state is still written, as `applied: false` plus an anomaly record.
   `GrindRuntime.append` turns that into a typed failure. Reading only `ok`
-  would let the executor report a pairing it did not enact.
+  would let the executor report a pairing it did not enact. **Written and
+  applied stay separate facts**: that failure carries `EVENT_WAS_WRITTEN`, so
+  the report says `event_appended: true` and does not contradict the event
+  log. The marker is internal to the port/enact seam and never reaches the
+  envelope under that name.
 - **"No tracker handle" is a success value, not an error.** An item whose id
   matches the run-local slug grammar and which carries no work id has no
   tracker handle at all. Every tracker column for it reads *none* and the item

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 from executor.envelope import ExecutorError, JsonValue
 from executor.pairing import Order, Plan, TrackerVerb
-from executor.ports import RuntimePort, TrackerPort
+from executor.ports import EVENT_WAS_WRITTEN, RuntimePort, TrackerPort
 from executor.state import tracker_handle
 
 SYNC_REPAIR = "work sync"
@@ -147,7 +147,8 @@ def _with_owed_sync(
         sync_error = sync_failure.message
     data: dict[str, JsonValue] = {
         **_report(plan, handle, session, appended=appended, synced=synced),
-        **failure.data,
+        # The port/enact marker is consumed above, not republished.
+        **{key: value for key, value in failure.data.items() if key != EVENT_WAS_WRITTEN},
     }
     if sync_error is not None:
         data["sync_error"] = sync_error
@@ -168,7 +169,16 @@ def enact(plan: Plan, runtime: RuntimePort, tracker: TrackerPort) -> dict[str, J
             appended = _runtime_step(runtime, plan)
             _tracker_step(session, plan, handle)
     except ExecutorError as failure:
-        raise _with_owed_sync(plan, handle, session, failure, appended=appended) from failure
+        # The runtime writes the event before it reports that the event did not
+        # apply, so a failure can still mean "appended". Whether the append
+        # happened and whether it transitioned anything are separate facts.
+        raise _with_owed_sync(
+            plan,
+            handle,
+            session,
+            failure,
+            appended=appended or failure.data.get(EVENT_WAS_WRITTEN) is True,
+        ) from failure
 
     # Flushed outside the block above so a sync failure is never mistaken for a
     # step failure and re-flushed.
