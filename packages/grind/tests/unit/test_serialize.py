@@ -215,9 +215,14 @@ def test_full_state_reports_whether_a_retained_pr_ref_is_closed():
         assert isinstance(items, dict)
         return items["wgclw.1"]["pr"]
 
+    merged = [*open_pr, event("item_merged", item="wgclw.1", pr=1, sha="abc")]
+
     assert pr_of(open_pr)["closed"] is False
     assert pr_of(closed)["closed"] is True
     assert pr_of(closed)["number"] == 1
+    # a merge ends the PR's life too -- reporting it as open would tell a
+    # consumer that finished work still has something to fix
+    assert pr_of(merged)["closed"] is True
 
 
 def test_full_state_serializes_the_attempt_ledger():

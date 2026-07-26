@@ -599,6 +599,11 @@ def _h_item_merged(state: State, evt: RawEvent) -> None:
         return
     pr = evt.get("pr")
     item.status = "merged"
+    # A merge ends the PR's life as surely as a close does -- `closed` records
+    # "no longer open", and both transitions that reach it must say so or the
+    # retained ref reports a merged PR as still open.
+    if item.pr is not None:
+        item.pr.closed = True
     state.merged_ledger.append(
         MergedEntry(
             item=item.id,
