@@ -307,6 +307,84 @@ def test_re_recording_a_closure_already_in_the_ledger_appends_no_duplicate() -> 
     assert envelope["data"]["event_appended"] is False
 
 
+def test_a_closure_that_parked_the_item_is_recognized_on_retry() -> None:
+    """
+    Given a closure that parked the item, and an identical retry
+    When it runs
+    Then nothing is appended and success is reported.
+
+    A closure to `parked` leaves the item's review status alone and sets the
+    park instead, so a rule reading status alone calls the item still-open and
+    refuses its own retry as parked. The park is the outcome to compare.
+    """
+    runtime = FakeRuntime(
+        run_state(
+            item("it-1", status="pr-open", pr=42, park_reason="ci-failure"),
+            closed_prs=[("it-1", 42)],
+        )
+    )
+
+    code, envelope = invoke(
+        ["pr-closed", "it-1", "--pr", "42", "--next", "parked", "--reason", "ci-failure"],
+        runtime,
+        FakeTracker(),
+    )
+
+    assert code == 0
+    assert runtime.appended == []
+    assert envelope["data"]["event_appended"] is False
+
+
+def test_a_closure_retry_naming_a_different_next_is_not_a_retry() -> None:
+    """
+    Given a closure already applied to `queued`
+    When the same PR is closed again asking for `in-progress`
+    Then it is refused rather than reported as done.
+
+    The outcome has to match: the requested transition never happened, and
+    the item is no longer anywhere a closure can be applied from, so claiming
+    success would report a state neither plane holds.
+    """
+    runtime = FakeRuntime(
+        run_state(item("it-1", status="queued", pr=42), closed_prs=[("it-1", 42)])
+    )
+
+    code, envelope = invoke(
+        ["pr-closed", "it-1", "--pr", "42", "--next", "in-progress", "--reason", "stale"],
+        runtime,
+        FakeTracker(),
+    )
+
+    assert code == 1
+    assert "queued" in envelope["error"]["message"]
+    assert runtime.appended == []
+
+
+def test_a_parked_closure_retry_that_would_type_the_park_differently_is_refused() -> None:
+    """
+    Given a closure that parked the item untyped
+    When it is retried with a reason that names a vocabulary member
+    Then it is refused rather than reported as done.
+
+    The runtime types a closure's park from the closure's own text, so this
+    retry asks for a differently-typed park than the one on record — the same
+    mismatch a direct re-park is refused for.
+    """
+    runtime = FakeRuntime(
+        run_state(item("it-1", status="pr-open", pr=42, parked=True), closed_prs=[("it-1", 42)])
+    )
+
+    code, envelope = invoke(
+        ["pr-closed", "it-1", "--pr", "42", "--next", "parked", "--reason", "ci-failure"],
+        runtime,
+        FakeTracker(),
+    )
+
+    assert code == 1
+    assert envelope["error"]["code"] == "E_ITEM_PARKED"
+    assert runtime.appended == []
+
+
 def test_a_second_closure_of_a_reopened_pr_is_recorded() -> None:
     """
     Given a PR closed, reopened, and now closing again

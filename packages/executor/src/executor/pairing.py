@@ -362,23 +362,51 @@ def _plan_pr_opened(args: VerbArgs, item: ItemView) -> Plan:
     return Plan(ROWS["pr-opened"], item, {"item": item.id, "pr": pr})
 
 
+def _park_typing(reason: str) -> str | None:
+    """How the runtime types the park a closure produces.
+
+    `pr_closed.reason` is free text that shares a field name with the park
+    vocabulary and not its contract: on the `parked` path the runtime runs it
+    through the same lookup, typing the park when the text names a member and
+    leaving it untyped otherwise. Mirrored so a retry can be compared against
+    the park it would produce.
+    """
+    return reason if reason in FAILURE_REASONS or reason in SCHEDULING_REASONS else None
+
+
+def _closure_applied(
+    item: ItemView, state: RunState, *, pr: int, next_status: str, reason: str
+) -> bool:
+    """Whether this exact closure is already recorded.
+
+    Two facts, each covering the other's blind spot. The ledger alone
+    deduplicates every closure of a PR number forever, so a PR closed,
+    reopened and closed again would never record its second closure. The
+    item's position alone cannot tell "already closed" from "resumed out of a
+    human wait with the PR still open", which lands where a closure leaves an
+    item having closed nothing.
+
+    And the outcome has to match, not just the fact of a closure: a retry
+    naming a different `--next` is asking for something that never happened,
+    so reporting success for it would claim a transition the runtime never
+    made. A closure to `parked` is the awkward one -- the runtime leaves the
+    item's review status alone and sets the park instead, so the park it
+    produced is what the retry is compared against.
+    """
+    if (item.id, pr) not in state.closed_prs:
+        return False
+    if next_status == "parked":
+        return item.parked and item.park_reason == _park_typing(reason)
+    return not item.parked and item.status == next_status
+
+
 def _plan_pr_closed(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     pr = _require_pr(args, "pr-closed")
     if args.next_status is None:
         raise ExecutorError(ErrorCode.USAGE, "pr-closed requires --next")
     if args.reason is None:
         raise ExecutorError(ErrorCode.USAGE, "pr-closed requires --reason")
-    # Both halves are needed, and each covers the other's blind spot. The
-    # ledger alone deduplicates every closure of a PR number forever, so a PR
-    # closed, reopened and closed again would never record its second closure.
-    # The item's position alone cannot tell "already closed" from "resumed out
-    # of a human wait with the PR still open", which lands at the same status
-    # having never been closed -- and calling that a retry would report success
-    # for a closure neither plane holds. It falls through to the source-status
-    # check below instead, which refuses it. Together: a closure is already
-    # recorded when the ledger holds one for this PR *and* the item is no
-    # longer anywhere a live PR puts it.
-    if (item.id, pr) in state.closed_prs and item.status not in _REVIEWABLE:
+    if _closure_applied(item, state, pr=pr, next_status=args.next_status, reason=args.reason):
         return Plan(ROWS["pr-closed"], item, None)
     # The fold does not compare the event's PR against the item's own, so a
     # closure naming an older number tears down the current review cycle and

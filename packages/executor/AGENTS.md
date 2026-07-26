@@ -89,11 +89,17 @@ ports.py  →  state.py  →  pairing.py  →  enact.py  →  cli.py
   drifting from the runtime's.
 - **An idempotent retry has to be the same command, not just the same verb.**
   `park` on an already-parked item is a retry only when the recorded reason
-  matches the requested one; a different reason cannot be enacted on either
-  plane (the append flags, and the facade's park is a no-op keeping the reason
-  it has), so reporting success would claim a transition neither plane made.
-  The reason is compared and the note is not: the reason is the typed fact
-  both planes record, the note is free text a retry may word differently.
+  matches; `pr-closed` only when the recorded *outcome* matches the requested
+  `--next`. A mismatch is a request for something that never happened, so
+  reporting success would claim a transition neither plane made — and it falls
+  through to the precondition checks, which refuse it with the reason. Two
+  traps here: a closure to `parked` leaves the item's review status alone and
+  sets the park instead, so status alone would make such a closure refuse its
+  own retry as parked; and on that path the runtime types the park from the
+  closure's own free text, so the park it produced is what a retry is compared
+  against. What is *not* compared is free text as text — the park note, and a
+  closure reason that types nothing — because a retry may legitimately word it
+  differently.
 - **Idempotency evidence has to survive the transition it is about.** "This
   is already recorded" cannot be read off the status the transition produced,
   because the item moves on: an opened PR outlives `pr-open`, and re-appending
