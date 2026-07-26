@@ -33,7 +33,7 @@ This is the whole delivery contract:
 2. Implement on a worktree branch; never commit to the default branch.
 3. Verify mechanically before claiming anything. For `packages/**` that is `make ci` — read the `ci` target in the `Makefile` for its current membership, and note that a single package's gate is not the whole-repo gate. Run it from the root of the tree you are working in: the `Makefile` `cd`s relative to the invoking directory, so a gate run from the main checkout while you are on a worktree branch reports green on code you did not change. Run the gate standalone and read its exit status — never pipe it into a `grep && commit` chain, where the pipeline's status is the grep's and a red gate ships. For prose-only changes, state what you checked and how.
 4. Open a PR and address review to quiescence. Every item gets a disposition in your own inventory; only items that change the code get a reply on the PR. Bookkeeping and meta comments are dispositioned silently — a thread of "no action required" replies is noise the next reader has to wade through.
-5. **Merge only on an explicit human instruction.** `project-config.toml` declares `merge-authorization = "rule-based"`, but no implementation of that policy is deployed and the repository ruleset requires an approving review that no configured reviewer submits — see `agents-config-9k9.23`. Read those sections as inert, never as authorization. The shared hard-lines permit merging under "a configured rule-based policy"; that clause is not satisfied here.
+5. **Merge only on an explicit human instruction.** No rule-based merge policy is configured here, no implementation of one is deployed, and the repository ruleset requires an approving review that no configured reviewer submits — see `agents-config-9k9.23`. The shared hard-lines permit merging under "a configured rule-based policy"; that clause has nothing here to match. If you believe it does, read `project-config.toml`'s `[merge-policy]` before acting on it, and read anything commented out there as future work rather than permission.
 
 ## Vision & Mission
 
@@ -96,7 +96,7 @@ This project hosts agent configuration under `src/`, which the install script de
   - `prgroom/` — PR-grooming CLI. Per charter D13 it is **carved, not finished** (slice S8).
   - `pdlc/`, `holding-place/`, `vizsuite/`, `contracts/` — earlier-stage packages
   - `workcli`, `prgroom` and `grind` are the only packages installed onto PATH (`uv tool install`, receipt-tracked, pruned on retirement), landing as the `work`, `prgroom` and `grind` commands; `CLI_PACKAGES` in `packages/installer/src/installer/core/clis.py` holds that list. Most packages carry their own `AGENTS.md` with a scoped workflow — read it before changing that package.
-- `project-config.toml` — project-level configuration. Its `[merge-policy]`, `[merge-policy.approver]` and `[completion-gate]` sections are **inert**: they are annotated as such in the file, nothing reads them, and none of them is authorization. `.critical-paths` is inert for the same reason.
+- `project-config.toml` — project-level configuration, and the convention is that **a commented-out key is future work nothing reads**, not a live setting. Uncomment one only in the change that deploys its reader. `.critical-paths` follows the same convention and currently selects nothing.
 - `.beads/` — the tracker's storage layer. Addressed through the `work` CLI, never `bd` and never by hand; see `.beads/AGENTS.md`.
 
 Other notes:
