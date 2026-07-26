@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 
 from grind.model import (
+    ATTEMPT_BUDGETS,
     PARK_REASONS,
     AnomalyRecord,
     AttentionEntry,
@@ -30,6 +31,7 @@ from grind.model import (
     PrRef,
     RawEvent,
     State,
+    new_attempt_ledger,
 )
 
 # The pre-charter park vocabulary, which lived on a field named `kind`. Three
@@ -90,9 +92,10 @@ def _typed_park_reason(state: State, evt: RawEvent) -> ParkReason | None:
     return reason
 
 
-# Statuses `merged`/`done` resolve any blocker edge pointing at that item
-# (spec: "an edge resolves only when its target reaches merged/done").
-_TERMINAL_RESOLVING = {"merged", "done"}
+# The two terminal item statuses. An item that reached either resolves any
+# blocker edge pointing at it (spec: "an edge resolves only when its target
+# reaches merged/done"), and has no work left to attempt.
+_TERMINAL_ITEM_STATUSES = {"merged", "done"}
 
 Handler = Callable[[State, RawEvent], None]
 
@@ -281,7 +284,7 @@ def _unresolved_edges(state: State, item: Item) -> tuple[str, ...]:
         target
         for target in item.blocked_on
         if (target_item := state.items.get(target)) is None
-        or target_item.status not in _TERMINAL_RESOLVING
+        or target_item.status not in _TERMINAL_ITEM_STATUSES
     )
 
 
@@ -463,8 +466,10 @@ def _h_pr_closed(state: State, evt: RawEvent) -> None:
         )
     )
     # the review cycle ends with its PR: a later pr_opened starts a fresh
-    # cycle that must not inherit the closed PR's stalemate history
+    # cycle that must not inherit the closed PR's stalemate history, nor the
+    # fix budget spent on it -- the attempt ledger's lifetime is one PR cycle
     item.round_history = ()
+    item.attempts = new_attempt_ledger()
     if next_status == "parked":
         # `pr_closed.reason` is a free-text closure note, not the typed park
         # vocabulary -- the two share a field name and not a contract. When it
@@ -474,6 +479,36 @@ def _h_pr_closed(state: State, evt: RawEvent) -> None:
         _park_item(state, item, reason=_park_reason(evt), note=reason)
     else:
         item.status = next_status  # type: ignore[assignment]  # validated above
+
+
+@_handler("fix_attempted")
+def _h_fix_attempted(state: State, evt: RawEvent) -> None:
+    """Count one fix attempt against the item's ledger, and only ever count it.
+
+    Whether the budget is spent is a condition's report and whether to refuse
+    the next attempt is the decision layer's call; this handler never caps, so
+    the count past the budget keeps climbing and stays an honest record of what
+    was attempted.
+
+    An attempt exists only inside a PR cycle, so the PR ref gates it -- the
+    same key, and the same permissiveness after `pr_closed` leaves the ref
+    behind, as the failure-axis park rule below.
+    """
+    item = _active_item(state, evt)
+    if item is None:
+        return
+    if item.status in _TERMINAL_ITEM_STATUSES:
+        _anomaly(state, evt, f"fix_attempted illegal from status {item.status!r}")
+        return
+    if item.pr is None:
+        _anomaly(state, evt, "fix_attempted on an item with no PR")
+        return
+    kind = _str(evt, "kind")
+    # Membership narrows the `str` to the key type, as it does for park reasons.
+    if kind is None or kind not in ATTEMPT_BUDGETS:
+        _anomaly(state, evt, f"unrecognized attempt kind {kind!r}")
+        return
+    item.attempts[kind] = item.attempts.get(kind, 0) + 1
 
 
 # Statuses from which recording/replacing blocker edges is legal. A currently
@@ -617,6 +652,36 @@ def _h_item_parked(state: State, evt: RawEvent) -> None:
     _park_item(state, item, reason=reason, note=_str(evt, "note"))
 
 
+def _record_closure(state: State, item: Item, evt: RawEvent) -> None:
+    """`item_enqueued.closure` -- the abandoned PR whose cycle this exit ends.
+
+    The parking lot keeps its single exit: an abandoned item re-enters play
+    exactly as any other does, and the closure only adds what abandonment
+    means on top of that -- the ledger entry recording which PR closed and why,
+    and dropping the PR ref (with the review history belonging to it) so the
+    next cycle starts clean. `pr_closed` gains no new source state from this.
+
+    Structural garbage is tolerated as everywhere else in the fold: the
+    boundary rejects a closure that cannot name an integer PR, so a
+    hand-edited log reaching here records the entry with a null `pr` rather
+    than losing the closure.
+    """
+    closure = evt.get("closure")
+    if not isinstance(closure, dict):
+        return
+    pr = closure.get("pr")
+    state.closed_ledger.append(
+        ClosedEntry(
+            item=item.id,
+            pr=pr if isinstance(pr, int) else None,
+            reason=_str(closure, "reason"),
+            ts=_str(evt, "ts"),
+        )
+    )
+    item.pr = None
+    item.round_history = ()
+
+
 @_handler("item_enqueued")
 def _h_item_enqueued(state: State, evt: RawEvent) -> None:
     item_id = _str(evt, "item")
@@ -629,6 +694,10 @@ def _h_item_enqueued(state: State, evt: RawEvent) -> None:
         return
     item.parked = None
     item.lane = lane.id
+    # Leaving the parking lot deliberately grants a fresh fix budget: whatever
+    # was spent belonged to the cycle that ended in the park.
+    item.attempts = new_attempt_ledger()
+    _record_closure(state, item, evt)
     # Queued is the baseline; blocked is derived, never asserted -- an item
     # re-entering play with unresolved blocker edges surfaces as blocked.
     item.status = "queued"

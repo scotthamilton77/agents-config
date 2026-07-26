@@ -230,6 +230,29 @@ must pass before push.
   `pr_closed` leaves the ref behind, so a re-queued item still passes — the
   check is deliberately permissive there rather than risking a false rejection.
 
+- **The attempt ledger counts and never caps.** `fix_attempted` folds a
+  per-kind count onto `Item.attempts`; `ci_fix_budget`/`rebase_budget` are
+  `config` numbers the `attempt_budget_spent` condition compares those counts
+  against — the same caller-seeded-threshold shape as `stalemate_risk_round`,
+  and the same tolerance for garbage config. Nothing here refuses an attempt,
+  so a count past its budget keeps climbing and the condition keeps reporting
+  the larger number; refusing, parking, and spending the budget belong to the
+  decision layer. Two consequences worth not re-litigating:
+  - *An attempt is gated on the PR ref, not on status* — the same key and the
+    same post-`pr_closed` permissiveness as a failure-axis park, for the same
+    reason: an attempt is a statement about fixing a PR that has not merged.
+  - *The ledger's lifetime is one PR cycle.* `pr_closed` clears it (a new PR
+    must not inherit spent budget) and `item_enqueued` clears it (leaving the
+    parking lot deliberately grants a fresh window). No other event does —
+    parking itself does not, so the count survives to be read at the park.
+- **`item_enqueued.closure` records an abandoned PR on the lot's one exit.**
+  Abandonment ends a PR cycle from inside the parking lot, and the alternative
+  — letting `pr_closed` fire on a parked item — would give that event a new
+  source state and a second exit from the lot. The optional `closure` payload
+  instead adds the closed-ledger entry and drops the PR ref (with the review
+  history belonging to it) as the item re-enters play; without it the ref
+  survives, which is what makes a plain re-enqueue resume the same PR.
+
 ## Tests
 
 - Behavioural, not tautological — each test pins a coded transition-table

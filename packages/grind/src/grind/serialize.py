@@ -85,6 +85,9 @@ def _item_json(item: Item) -> JsonValue:
         "blocked_note": item.blocked_note,
         "pr": _pr_ref_json(item.pr),
         "review": _item_review_json(item.review),
+        # The per-kind fix-attempt counts, every kind present. The decision
+        # layer reads its attempt evidence here rather than counting for itself.
+        "attempts": cast("JsonValue", dict(item.attempts)),
         "parked": _parking_entry_json(item.parked),
         "discovered": _discovered_work_json(item.discovered),
         "round_history": [

@@ -21,7 +21,7 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 
 from grind.derive import lane_status
-from grind.model import Item, JsonValue, State
+from grind.model import ATTEMPT_BUDGETS, Item, JsonValue, State
 
 Condition = dict[str, JsonValue]
 
@@ -81,7 +81,11 @@ def _duration(value: JsonValue, default_seconds: int) -> timedelta:
     return timedelta(seconds=default_seconds)
 
 
-def _round_threshold(value: JsonValue, default: int) -> int:
+def _positive_int_threshold(value: JsonValue, default: int) -> int:
+    """A caller-seeded count threshold, falling back to `default` when the
+    config value is missing or not a usable count -- thresholds are advisory
+    config, never validated payload (the tolerance `_duration` gives the
+    staleness timers)."""
     # bool is an int subtype: `true` would otherwise read as threshold 1
     return (
         value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else default
@@ -214,7 +218,7 @@ def _blocked_chains(state: State) -> list[Condition]:
 
 
 def _review_stalemate_risk(state: State) -> list[Condition]:
-    n = _round_threshold(state.config.get("stalemate_risk_round"), 3)
+    n = _positive_int_threshold(state.config.get("stalemate_risk_round"), 3)
     out: list[Condition] = []
     for item in state.items.values():
         # round_history survives the review cycle (it is fold history, never
@@ -245,6 +249,40 @@ def _review_stalemate_risk(state: State) -> list[Condition]:
     return out
 
 
+def _attempt_budget_spent(state: State) -> list[Condition]:
+    """Per item and kind: the fix attempts already spent have reached the
+    configured budget.
+
+    A fact with its evidence, and nothing beyond it. The counts come from the
+    fold, the budget is a number the caller seeded into `config` (the
+    `stalemate_risk_round` precedent), and both ride the condition so the
+    decision layer never keeps a counter of its own. Refusing the next attempt
+    is that layer's call: this fires while the count keeps climbing.
+
+    Parked and terminal items are excluded -- a parked item is already out of
+    play and its exit grants a fresh window, and finished work spends nothing.
+    """
+    out: list[Condition] = []
+    for item in state.items.values():
+        if item.parked is not None or item.status in _TERMINAL_ITEM_STATUSES:
+            continue
+        for kind, (config_key, default) in ATTEMPT_BUDGETS.items():
+            budget = _positive_int_threshold(state.config.get(config_key), default)
+            attempts = item.attempts.get(kind, 0)
+            if attempts < budget:
+                continue
+            out.append(
+                {
+                    "condition": "attempt_budget_spent",
+                    "item": item.id,
+                    "kind": kind,
+                    "attempts": attempts,
+                    "budget": budget,
+                }
+            )
+    return out
+
+
 def conditions(state: State, now: datetime) -> list[Condition]:
     """Every currently-true level condition (spec table, all rows but
     `item_unblocked`). Returned by both the `grind log` emit-back envelope and
@@ -261,6 +299,7 @@ def conditions(state: State, now: datetime) -> list[Condition]:
         *_attention_pending(state, now),
         *_blocked_chains(state),
         *_review_stalemate_risk(state),
+        *_attempt_budget_spent(state),
     ]
 
 

@@ -196,6 +196,23 @@ def test_full_state_serializes_round_history():
     ]
 
 
+def test_full_state_serializes_the_attempt_ledger():
+    # The decision layer reads its attempt evidence off this surface rather
+    # than counting for itself, so every kind is present with its count.
+    events = [
+        seed_event(),
+        event("item_started", item="wgclw.1"),
+        event("pr_opened", item="wgclw.1", pr=1),
+        event("fix_attempted", item="wgclw.1", kind="ci-fix"),
+    ]
+    state = fold(events)
+
+    items = full_state_json(state)["items"]
+    assert isinstance(items, dict)
+    assert items["wgclw.1"]["attempts"] == {"ci-fix": 1, "rebase": 0}
+    assert items["wgclw.2"]["attempts"] == {"ci-fix": 0, "rebase": 0}
+
+
 def test_full_state_serializes_staleness_ts_maps():
     events = [seed_event(), event("item_started", item="wgclw.1")]
     state = fold(events)
