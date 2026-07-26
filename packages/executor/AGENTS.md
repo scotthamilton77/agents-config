@@ -87,18 +87,18 @@ ports.py  →  state.py  →  pairing.py  →  enact.py  →  cli.py
   Duplicating the fold's tables is the cost, and `GrindRuntime.append`
   refusing an `applied: false` reply is the backstop that catches this table
   drifting from the runtime's.
-- **`abandon` has no idempotent retry path, and that is the design.** It is
-  the one row whose "already done" the fold cannot express: `item_enqueued` is
-  the same event whether an abandon or a redispatch produced it, and an
-  abandon's closure is an ordinary closed-ledger entry. Position, PR reference
-  and ledger membership were each tried in review and each matches a state
-  some other command produced — an ordinary `pr-closed --next queued` looks
-  identical. Accepting any of them claims a closure that exists nowhere *and*
-  issues a tracker write for a transition that never happened. Refusing costs
-  little: the row is tracker-first, so a failed append leaves the item parked
-  and the ordinary path handles that retry, and the only case reaching the
-  refusal has both sides already landed with nothing left to converge. Do not
-  reintroduce a proxy here without state that distinguishes the cause.
+- **`abandon`'s retry evidence is a *cleared* PR reference plus a closure for
+  that PR, and nothing weaker.** Only an abandon produces both: S9T1-B7 has the
+  fold clear the reference when it interprets an `item_enqueued` closure, where
+  an ordinary `pr_closed` records its closure and leaves the reference in
+  place. Position, the surviving reference, and ledger membership alone were
+  each tried in review and each matches a state another command produced — an
+  ordinary `pr-closed --next queued` looks identical — and accepting one
+  claims a closure that exists nowhere *and* issues a tracker write for a
+  transition that never happened. Do not reintroduce a weaker proxy. Until B7
+  lands the evidence is unreachable and the command refuses instead; the row is
+  tracker-first, so a failed append leaves the item parked and the ordinary
+  path handles that retry.
 - **An idempotent retry has to be the same command, not just the same verb.**
   `park` on an already-parked item is a retry only when the recorded reason
   matches; `pr-closed` only when the recorded *outcome* matches the requested

@@ -403,20 +403,49 @@ def test_abandoning_an_item_that_never_had_a_pr_is_refused() -> None:
     assert envelope["error"]["code"] == "E_NO_OPEN_PR"
 
 
-def test_abandon_has_no_idempotent_retry_path() -> None:
+def test_an_abandon_retry_is_recognized_once_the_fold_clears_the_reference() -> None:
+    """
+    Given the state S9T1-B7 produces for a completed abandon — the item back
+    on its lane, its PR reference cleared by the closure, and that closure on
+    record
+    When the abandon is re-run
+    Then it succeeds, re-issuing only the facade call.
+
+    A cleared reference plus a closure for that PR is unique to an abandon:
+    B7 has the fold clear the reference when it interprets an
+    `item_enqueued` closure, where an ordinary `pr_closed` records its
+    closure and leaves the reference in place.
+
+    This pins the B7 contract, not today's fold — today the reference
+    survives an abandon, so this path is unreachable and the command refuses
+    instead (below). The gap closes when B7 lands, with no change here.
+    """
+    runtime = FakeRuntime(
+        run_state(item("it-1", status="queued", work_id="w-1"), closures=[("it-1", 8)])
+    )
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["abandon", "it-1", "--pr", "8"], runtime, tracker)
+
+    assert code == 0
+    assert runtime.appended == []
+    assert envelope["data"]["event_appended"] is False
+    assert tracker.mutations == [("abandon", "w-1")]
+
+
+def test_abandon_has_no_idempotent_retry_path_before_that_fold_change() -> None:
     """
     Given an ordinary closure that left the item queued with its PR closed —
     a state that looks exactly like a completed abandon
     When abandon is invoked
     Then it is refused rather than reported as already done.
 
-    This is the one row whose "already done" the fold cannot express.
-    `item_enqueued` is the same event whether an abandon or a redispatch
-    produced it, and an abandon's closure is an ordinary closed-ledger entry.
-    Every proxy — position, PR reference, ledger membership — matches a state
-    some other command produced, so accepting one would claim a closure that
-    exists nowhere and issue a tracker write for a transition that never
-    happened.
+    Today's fold records an abandon's closure without interpreting it, so
+    the PR reference survives and this state is exactly what an ordinary
+    closure leaves behind. Every weaker proxy — position, surviving PR
+    reference, ledger membership — matches it, so accepting one would claim a
+    closure that exists nowhere and issue a tracker write for a transition
+    that never happened.
     """
     runtime = FakeRuntime(
         run_state(item("it-1", status="queued", pr=8, work_id="w-1"), closures=[("it-1", 8)])

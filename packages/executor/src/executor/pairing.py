@@ -339,31 +339,45 @@ def _require_current_pr(item: ItemView, pr: int, verb: str) -> None:
     _require_matching_pr(item, pr)
 
 
-def _plan_abandon(args: VerbArgs, item: ItemView) -> Plan:
-    """`abandon` has no idempotent retry path, deliberately.
+def _abandon_applied(item: ItemView, state: RunState, pr: int) -> bool:
+    """Whether this abandon's own postcondition is on record.
 
-    Every other row can tell "already done" from "never happened" out of the
-    fold. This one cannot: nothing distinguishes an item that left the parking
-    lot by an abandon from one that left by a redispatch, or from one that was
-    never parked -- `item_enqueued` is the same event, and the closure an
-    abandon records is, to the fold, an ordinary closed-ledger entry
-    indistinguishable from a `pr_closed`. Every proxy tried in review
-    (position, PR reference, ledger membership) matched a state some other
-    command produced, and answering "already abandoned" for one of those both
-    claims a closure that exists nowhere and issues a tracker write for a
-    transition that never happened.
+    The two halves that identify it are a *cleared* PR reference and a closure
+    for that PR. Only an abandon produces both: S9T1-B7 has the fold clear the
+    reference when it interprets the closure an `item_enqueued` carries, while
+    an ordinary `pr_closed` records its closure and leaves the reference in
+    place. Nothing else clears a reference at all.
 
-    Refusing costs little, because the retry path buys almost nothing here.
-    The row is tracker-first, so a failed append leaves the item parked and
-    the ordinary appending path handles the retry. The only case reaching this
-    refusal is one where both sides already landed and the response was lost --
-    nothing left to converge -- and the refusal names the true state.
+    Until B7 lands this is unreachable -- today's fold records the closure
+    payload without interpreting it, so the reference survives an abandon and
+    the item falls through to the refusal below. That is the interim gap
+    S9T1-A7 asks about, and it closes on B7 with no change here.
+
+    Every weaker proxy was tried in review and each matched a state some other
+    command produced: being out of the parking lot (also true of an item never
+    in it), the surviving PR reference, and ledger membership alone (an
+    ordinary `pr-closed --next queued` leaves exactly that). Accepting one of
+    those claims a closure that exists nowhere *and* issues a tracker write
+    for a transition that never happened.
     """
+    return item.pr_number is None and (item.id, pr) in state.closures
+
+
+def _plan_abandon(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     pr = _require_pr(args, "abandon")
     if not item.parked:
+        if _abandon_applied(item, state, pr):
+            # The retry path: the enqueue is recorded, so only the facade call
+            # is re-issued.
+            return Plan(ROWS["abandon"], item, None)
+        # Refusing costs little. The row is tracker-first, so a failed append
+        # leaves the item parked and the ordinary appending path handles that
+        # retry; the case reaching here has both sides landed and the response
+        # lost, where nothing needs converging and this names the true state.
         raise ExecutorError(
             ErrorCode.USAGE,
-            f"item {item.id!r} is not parked; there is nothing to abandon",
+            f"item {item.id!r} is not parked and records no abandoned PR {pr}; "
+            f"there is nothing to abandon",
         )
     # The appending path writes the closure into the log, where it is the
     # record, so the PR it names has to be the item's own.
@@ -541,7 +555,7 @@ def build_plan(verb: str, args: VerbArgs, state: RunState) -> Plan:
     if verb == "redispatch":
         return _plan_redispatch(item)
     if verb == "abandon":
-        return _plan_abandon(args, item)
+        return _plan_abandon(args, item, state)
     if verb == "pr-opened":
         return _plan_pr_opened(args, item)
     if verb == "pr-closed":
