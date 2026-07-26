@@ -269,6 +269,46 @@ def test_a_closure_is_optional_and_the_pr_survives_an_exit_without_one() -> None
     assert state.closed_ledger == []
 
 
+def test_a_closure_naming_another_pr_is_flagged_and_not_applied() -> None:
+    # `--pr` is only shape-checked at the boundary, so a mistyped number
+    # arrives well-formed. Applying it would write a closure record for a PR
+    # this item never had and throw away the live ref the park rule and the
+    # attempt gate both read -- while the enqueue itself must still happen.
+    state = fold(
+        [
+            *_parked_with_history(),
+            event("item_enqueued", item="wgclw.1", lane="lane-a", closure={"pr": 9}),
+        ]
+    )
+
+    item = state.items["wgclw.1"]
+    assert state.closed_ledger == []
+    assert item.pr is not None
+    assert item.pr.number == 7
+    assert any(
+        a.type == "item_enqueued" and "closure names PR 9" in a.reason for a in state.anomalies
+    )
+    # the exit from the parking lot proceeds regardless
+    assert item.parked is None
+    assert item.status == "queued"
+
+
+def test_a_closure_on_an_item_holding_no_pr_is_flagged_and_not_applied() -> None:
+    state = fold(
+        [
+            seed_event(),
+            event("item_parked", item="wgclw.1", reason="later-wave", note="not yet"),
+            event("item_enqueued", item="wgclw.1", lane="lane-a", closure={"pr": 7}),
+        ]
+    )
+
+    assert state.closed_ledger == []
+    assert state.items["wgclw.1"].parked is None
+    assert any(
+        a.type == "item_enqueued" and "the item holds None" in a.reason for a in state.anomalies
+    )
+
+
 def test_a_closure_reason_is_optional() -> None:
     state = fold(
         [

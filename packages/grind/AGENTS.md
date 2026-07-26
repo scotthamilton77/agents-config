@@ -259,7 +259,12 @@ must pass before push.
   source state and a second exit from the lot. The optional `closure` payload
   instead adds the closed-ledger entry and drops the PR ref (with the review
   history belonging to it) as the item re-enters play; without it the ref
-  survives, which is what makes a plain re-enqueue resume the same PR.
+  survives, which is what makes a plain re-enqueue resume the same PR. The
+  closure must name the PR the item actually holds — the boundary can only
+  check that the number is an integer, so a mistyped one would record a
+  closure for a PR this item never had *and* discard the live ref the park
+  rule and the attempt gate read. A mismatch is accept-and-flag: the closure
+  does not apply, the enqueue still does.
 
 ## Tests
 

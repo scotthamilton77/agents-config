@@ -668,22 +668,25 @@ def _record_closure(state: State, item: Item, evt: RawEvent) -> None:
     and dropping the PR ref (with the review history belonging to it) so the
     next cycle starts clean. `pr_closed` gains no new source state from this.
 
-    Structural garbage is tolerated as everywhere else in the fold: the
-    boundary rejects a closure that cannot name an integer PR, so a
-    hand-edited log reaching here records the entry with a null `pr` rather
-    than losing the closure.
+    The PR named must be the one the item actually holds. The boundary can
+    only check that `--pr` is an integer, so a mistyped number arrives
+    well-formed and would otherwise write a closure record for a PR this item
+    never had *and* discard the live ref two other rules read (the failure-axis
+    park, and the attempt gate). Accept-and-flag applies as it does to a
+    failure-axis park on an item with no PR: the mismatch is recorded, the
+    closure is not applied, and the enqueue itself still proceeds -- losing the
+    item's exit from the parking lot would be a second harm.
     """
     closure = evt.get("closure")
     if not isinstance(closure, dict):
         return
     pr = closure.get("pr")
+    if item.pr is None or not isinstance(pr, int) or item.pr.number != pr:
+        held = item.pr.number if item.pr is not None else None
+        _anomaly(state, evt, f"closure names PR {pr!r}, but the item holds {held!r}")
+        return
     state.closed_ledger.append(
-        ClosedEntry(
-            item=item.id,
-            pr=pr if isinstance(pr, int) else None,
-            reason=_str(closure, "reason"),
-            ts=_str(evt, "ts"),
-        )
+        ClosedEntry(item=item.id, pr=pr, reason=_str(closure, "reason"), ts=_str(evt, "ts"))
     )
     item.pr = None
     item.round_history = ()
