@@ -75,15 +75,29 @@ class Refusal(Exception):
 
 
 def load_lenses() -> list[dict[str, Any]]:
+    """The declared lenses, refused unless each yields one attacker at a name of its own.
+
+    A lens's name is also its prompt's filename, so two lenses sharing one leave the round writing
+    a single file and reporting both — the mandate written second is the only one any model reads,
+    and nothing downstream shows the loss. A name that is not a bare filename escapes the
+    owner-only directory the round just created and lands somewhere it never set permissions on.
+    """
     with LENSES_PATH.open(encoding="utf-8") as handle:
         lenses = json.load(handle)["lenses"]
+    names = [lens["lens"] for lens in lenses]
     if not lenses:
-        raise Refusal(
-            "no-lenses",
-            "the lens registry declares no lens; the round would send no attacker at anything and "
-            "still report itself emitted, which reads as coverage nobody obtained",
-        )
-    return lenses
+        problem = "declares no lens"
+    elif len(set(names)) != len(names):
+        problem = "names one lens twice, so one mandate would overwrite the other's prompt"
+    elif any(name != Path(name).name or name in ("", ".", "..") for name in names):
+        problem = "names a lens that is not a bare filename, so its prompt would land elsewhere"
+    else:
+        return lenses
+    raise Refusal(
+        "no-lenses",
+        f"the lens registry {problem}; the round would report itself emitted while an attacker "
+        "it declared never ran, which reads as coverage nobody obtained",
+    )
 
 
 def inert(text: str) -> str:

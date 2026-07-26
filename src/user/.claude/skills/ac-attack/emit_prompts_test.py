@@ -389,6 +389,27 @@ class TestRefusals:
         assert [error["code"] for error in result["errors"]] == ["no-lenses"]
         assert not out_dir.exists()
 
+    @pytest.mark.parametrize("name", (LENS_NAMES[0], "../escaped", "nested/lens", ""))
+    def test_c7_a_registry_that_loses_an_attacker_is_refused(self, document, tmp_path, name):
+        """S6-C7: a lens's name is its prompt's filename, so a repeated name silently drops the
+        mandate written first and a name that is not a bare filename drops the prompt outside the
+        owner-only directory — both while the round reports every declared lens emitted."""
+        registry = json.loads(LENSES_PATH.read_text(encoding="utf-8"))
+        registry["lenses"][1]["lens"] = name
+        skill = skill_copy(tmp_path, {"lenses.json": json.dumps(registry)})
+        out_dir = tmp_path / "out"
+        proc = subprocess.run(
+            [sys.executable, str(skill / "emit_prompts.py"), "--spec", str(document),
+             "--out-dir", str(out_dir)],
+            capture_output=True, text=True, check=False,
+        )
+        assert proc.returncode == 2
+        assert "Traceback" not in proc.stderr
+        assert [error["code"] for error in json.loads(proc.stdout)["errors"]] == ["no-lenses"]
+        # Nothing written anywhere: not in the round's own directory, not beside it.
+        assert not out_dir.exists()
+        assert not (tmp_path / "escaped.md").exists()
+
     @pytest.mark.parametrize("damage", (None, "{not json", '{"lenses": "all of them"}'))
     def test_damaged_bundled_data_is_typed_not_a_traceback(self, document, tmp_path, damage):
         """S6-C1: the skill's own data is a dependency like any other — missing or corrupt, it
