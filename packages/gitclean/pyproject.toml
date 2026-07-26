@@ -64,7 +64,10 @@ select = [
 docstring-code-format = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests/unit"]
+# The integration suite is inside the gate, not beside it. It needs only git --
+# no gh, no network, no credentials -- and the claim it checks (that a squash
+# merge is detected at all) is the one the package exists to make.
+testpaths = ["tests/unit", "tests/integration"]
 
 [tool.mypy]
 strict = true
