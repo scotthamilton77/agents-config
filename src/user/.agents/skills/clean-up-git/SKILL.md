@@ -14,9 +14,8 @@ run it, read it, and **not talk yourself past its refusals**.
 ## Never hand-roll the analysis
 
 **MUST NOT** decide what is deletable with `git branch --merged`, `git log`,
-branch-name patterns, or commit dates. Under a squash-merge workflow ancestry
-lies in both directions: it hides merged branches forever and reports live
-work as merged.
+branch-name patterns, or commit dates. Every one of those is wrong in both
+directions under a squash-merge workflow.
 
 **MUST NOT** run `git branch -D`, `git worktree remove`, or
 `git push --delete` directly during a cleanup task. `gitclean` verifies every

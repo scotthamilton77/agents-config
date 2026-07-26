@@ -56,19 +56,52 @@ Without `gh` on PATH there is no squash signal at all. That is reported in
 ## Safety
 
 - **Cleanup re-surveys before acting.** The report you read may be stale.
-- **`--force` salvages before deleting.** Branches become verified `git bundle`
-  archives; a dirty worktree's tracked changes become a bundle and its
-  untracked files are copied. A bundle that does not verify **aborts that
-  deletion**.
+- **`--force` salvages before deleting.** A branch becomes a verified
+  `git bundle`; a worktree becomes a `tar` archive of the whole directory —
+  symlinks kept as symlinks, ignored files included. A salvage that cannot be
+  read back **aborts that deletion**.
+- **A worktree is force-removed only when its archive exists.** git refuses to
+  remove a worktree holding modified or untracked files, and that refusal is
+  what catches a tree that changed after the survey read it. Nothing that was
+  not archived is forced past.
+- **Remote deletes are leased.** Every verdict about a remote branch comes from
+  your local `refs/remotes` cache. The delete carries
+  `--force-with-lease`, so if the server moved since your last fetch it is
+  rejected rather than taking commits nobody surveyed.
 - **Every deletion is verified by re-asking git.** A zero exit code is a claim,
   not a fact. A ref that survives becomes an anomaly, not a success line.
 - **Anomalies carry the transcript** — argv, exit code, both streams — so a
   reader can remediate without re-running anything.
 - **Omissions are named.** An automatic sweep that skips a target reports it
-  under `plan.skipped`.
+  under `plan.skipped`, and anything a probe could not answer lands in the
+  top-level `warnings`.
 
 Salvage lands in `<git-common-dir>/gitclean-salvage/<timestamp>/`. Restore a
-branch with `git clone <bundle> -b <branch>`.
+branch with `git clone <bundle> -b <branch>`, a worktree with
+`tar -xzf <archive> -C <dir>`.
+
+## Trades worth knowing
+
+**Ignored files are reported, not protected.** They are counted per worktree
+and named in its `reasons`, but they do not make it `data_loss`. In practice
+ignored content is build detritus — caches, virtualenvs, coverage data — and
+treating it as work at risk made most finished worktrees require `--force`,
+which replaces an automatic cleanup with a manual triage. The accepted cost: a
+bare sweep of an **already-merged** worktree deletes a `.env` that lives only
+there. The count appears in the report before you run cleanup, and `--force`
+archives ignored files along with everything else.
+
+**`--report` writes one loose object.** Proving a squash merge means
+synthesising the equivalent single commit with `git commit-tree` and asking
+`git cherry` about that. The object is unreachable, touches no ref, and `git
+gc` collects it. Suppressing it in report mode would make `--report` and
+`--cleanup` disagree about what is merged, which is worse than a stray blob.
+
+**A branch whose name begins with `-` is swept, but cannot be named directly.**
+`git branch` will not create such a ref, but `git update-ref` will and a remote
+can push one; deletions terminate their argv so git reads it as a name. Naming
+one on the command line is a different matter — the argument parser claims
+`-m` as a flag first — so select it by its `id`: `gitclean --cleanup branch:-m`.
 
 ## Exit codes
 
@@ -83,7 +116,12 @@ branch with `git clone <bundle> -b <branch>`.
 
 The current repository only: the cwd's repo, its linked worktrees, and its
 local and remote branches. Remote deletions require `--include-remote` —
-they affect other people's fetches, open PRs, and CI refs.
+they affect other people's fetches, open PRs, and CI refs — and naming a
+remote branch without that flag is refused rather than quietly dropped.
+
+`--base` changes what merges are measured against; it does not change which
+branch is the repository's trunk. Both the trunk and whatever you measure
+against are `protected`.
 
 ## Development
 
