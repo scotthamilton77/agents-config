@@ -234,10 +234,12 @@ must pass before push.
   per-kind count onto `Item.attempts`; `ci_fix_budget`/`rebase_budget` are
   `config` numbers the `attempt_budget_spent` condition compares those counts
   against — the same caller-seeded-threshold shape as `stalemate_risk_round`,
-  and the same tolerance for garbage config. Nothing here refuses an attempt,
-  so a count past its budget keeps climbing and the condition keeps reporting
-  the larger number; refusing, parking, and spending the budget belong to the
-  decision layer. Two consequences worth not re-litigating:
+  and the same tolerance for garbage config, with one difference: a budget of
+  `0` is honored (the caller spends nothing on that kind) where a stalemate
+  window of `0` rounds is meaningless and falls back. Nothing here refuses an
+  attempt, so a count past its budget keeps climbing and the condition keeps
+  reporting the larger number; refusing, parking, and spending the budget
+  belong to the decision layer. Two consequences worth not re-litigating:
   - *An attempt is gated on the PR ref, not on status* — the same key and the
     same post-`pr_closed` permissiveness as a failure-axis park, for the same
     reason: an attempt is a statement about fixing a PR that has not merged.

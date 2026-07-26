@@ -370,6 +370,25 @@ def test_attempt_budget_spent_honors_a_caller_seeded_budget() -> None:
     assert _by_name(at_three, "attempt_budget_spent")[0]["budget"] == 3
 
 
+def test_a_zero_budget_is_honored_and_spent_before_the_first_attempt() -> None:
+    # Zero is a caller saying "spend nothing on this kind", not garbage config:
+    # restoring the default here would hand the decision layer two attempts its
+    # caller forbade. Negative and boolean values stay garbage and fall back.
+    seed = _two_item_lane_seed()
+    seed["config"] = {"ci_fix_budget": 0}
+    events = [seed, event("item_started", item="wgclw.1"), event("pr_opened", item="wgclw.1", pr=1)]
+
+    spent = _by_name(conditions(fold(events), _NOW), "attempt_budget_spent")
+
+    assert [(c["kind"], c["attempts"], c["budget"]) for c in spent] == [("ci-fix", 0, 0)]
+
+    for garbage in (-1, True, "2", None):
+        seed = _two_item_lane_seed()
+        seed["config"] = {"ci_fix_budget": garbage}
+        state = fold([seed, event("item_started", item="wgclw.1")])
+        assert "attempt_budget_spent" not in _names(conditions(state, _NOW)), garbage
+
+
 def test_attempt_budget_spent_absent_for_parked_and_terminal_items() -> None:
     # A parked item is out of play and its exit grants a fresh window; a merged
     # one has nothing left to attempt. Neither is a live budget fact.

@@ -81,14 +81,23 @@ def _duration(value: JsonValue, default_seconds: int) -> timedelta:
     return timedelta(seconds=default_seconds)
 
 
-def _positive_int_threshold(value: JsonValue, default: int) -> int:
+def _int_threshold(value: JsonValue, default: int, *, minimum: int) -> int:
     """A caller-seeded count threshold, falling back to `default` when the
-    config value is missing or not a usable count -- thresholds are advisory
+    config value is missing or below `minimum` -- thresholds are advisory
     config, never validated payload (the tolerance `_duration` gives the
-    staleness timers)."""
+    staleness timers).
+
+    `minimum` differs by threshold because zero means different things to each.
+    A stalemate window of zero rounds is meaningless, so it falls back; an
+    attempt budget of zero is a caller saying "spend nothing on this kind", and
+    silently restoring the default there would hand the decision layer attempts
+    its caller forbade.
+    """
     # bool is an int subtype: `true` would otherwise read as threshold 1
     return (
-        value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else default
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value >= minimum
+        else default
     )
 
 
@@ -218,7 +227,7 @@ def _blocked_chains(state: State) -> list[Condition]:
 
 
 def _review_stalemate_risk(state: State) -> list[Condition]:
-    n = _positive_int_threshold(state.config.get("stalemate_risk_round"), 3)
+    n = _int_threshold(state.config.get("stalemate_risk_round"), 3, minimum=1)
     out: list[Condition] = []
     for item in state.items.values():
         # round_history survives the review cycle (it is fold history, never
@@ -267,7 +276,7 @@ def _attempt_budget_spent(state: State) -> list[Condition]:
         if item.parked is not None or item.status in _TERMINAL_ITEM_STATUSES:
             continue
         for kind, (config_key, default) in ATTEMPT_BUDGETS.items():
-            budget = _positive_int_threshold(state.config.get(config_key), default)
+            budget = _int_threshold(state.config.get(config_key), default, minimum=0)
             attempts = item.attempts.get(kind, 0)
             if attempts < budget:
                 continue
