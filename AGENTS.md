@@ -105,9 +105,8 @@ Other notes:
 
 ## graphify
 
-This project has a graphify knowledge graph at `graphify-out/`, tracked in git.
-
-- **Check its freshness before trusting it.** Compare the mtime of `graphify-out/graph.json` against the files you care about; a stale graph and a current one are indistinguishable at the point of use. The refresh, and the branch conflict it runs into, are owned by `agents-config-9k9.65`.
-- `graphify-out/GRAPH_REPORT.md` carries god nodes and community structure, useful for orienting in an unfamiliar subsystem.
-- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files.
-- Regenerating the graph is not a side task: the deployed graphify rule forbids committing `graphify-out/` from a worktree onto a feature branch, which collides with this repo's "never commit to the default branch". Do not resolve that on your own — it is the open question on `agents-config-9k9.65`.
+`graphify-out/` is untracked and usually absent. When it is there, it is a snapshot
+someone built by hand at some past moment — not an index that follows the tree. A graph
+built before a refactor still names the files that refactor deleted, so verify anything it
+reports against the working tree before asserting it. `graphify update .` builds a fresh
+one in a few seconds if you want it.
