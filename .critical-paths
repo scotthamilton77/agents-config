@@ -1,8 +1,11 @@
-# .critical-paths — force the HEAVY completion gate on load-bearing changes.
-# gitignore syntax, anchored to this repo root. Read by the gate-triage skill;
-# HEAVY routing is Claude-only, so other tools fall back to the serial gate.
-src/**
-packages/**
-scripts/**
-.github/**
-Makefile
+# .critical-paths — anticipates future work. Nothing reads this file.
+#
+# The selectors below would force the HEAVY tier of a completion gate. Uncomment
+# them in the change that deploys a tier router; thresholds go in
+# project-config.toml's [completion-gate], commented out for the same reason.
+# gitignore syntax, anchored to this repo root.
+# src/**
+# packages/**
+# scripts/**
+# .github/**
+# Makefile

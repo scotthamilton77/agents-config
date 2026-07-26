@@ -9,16 +9,14 @@ node "$CODEX_HOME/scripts/codex-companion.mjs" task [--model <name>] [--write] <
 ```
 `CLAUDE_PLUGIN_ROOT` is only set for plugin-owned code; fall back to the marketplace install path. Omit `--write` for read-only (the sandbox enforces it); add `--write` only when Codex must edit files. Pipe the prompt on stdin — `--prompt-file` works today but lives in the plugin's internal `codex-cli-runtime` contract, so prefer stdin for forward-compat.
 
-**Merge-gate contract (pinned):** `codex task` accepts `--json`, `-m/--model`, and
+**Flags:** `codex task` accepts `--json`, `-m/--model`, and
 `--effort <none|minimal|low|medium|high|xhigh>`, and runs read-only when `--write`
-is omitted (the sandbox enforces it). The `agent-ruling` merge-judge
-(`merge-guard/judge_merge.py`) is a **sanctioned autonomous `task` caller** — it
-pipes its prompt on stdin and relies on exactly these flags. Do not change or
-remove them without updating that judge.
+is omitted (the sandbox enforces it). Autonomous callers pipe their prompt on
+stdin and depend on these flags; check for such callers before changing them.
 
 **Model selection** (leave `--model` unset to accept the plugin default; set explicitly when a task profile matches):
 - Architecture, cross-subsystem, security, final pre-merge pass → `gpt-5.6-sol`
-- Standard review, implementation, merge-judge default → `gpt-5.6-terra`
+- Standard review, implementation, general default → `gpt-5.6-terra`
 - First-pass triage, diff summary, per-file parallel review, cost-sensitive runs → `gpt-5.6-luna`
 - Deeply code-centric, Codex-tuned agentic work → `gpt-5.3-codex`
 

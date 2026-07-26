@@ -6,4 +6,4 @@ Installation is gated on admission: a rule without a complete `admission:` recor
 
 ## Companion readmes
 
-Longer rationale, incident history, and examples live in `rules-readmes/` under the same base name (e.g. `worktree-safety.md` → `rules-readmes/worktree-safety-readme.md`). Readmes are source-level documentation only — they are not installed. Rule files are self-contained.
+When a rule needs longer rationale, incident history, or examples than belong in the deployed bytes, put them in a sibling `rules-readmes/` directory under the rule's base name plus `-readme` (`<rule>.md` → `rules-readmes/<rule>-readme.md`). Readmes are source-level documentation only — they are not installed, so the rule file must stand alone without one. Neither this directory nor `rules-readmes/` has any contents today; create the readme directory with the first rule that needs it.

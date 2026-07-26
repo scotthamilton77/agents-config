@@ -7,11 +7,16 @@ config content under `src/`, **this is real code with a real quality gate.**
 ## The quality gate is mandatory — run it, do not approximate it
 
 Before pushing **any** change under `packages/installer/`, run the canonical
-gate from the repo root:
+gate from the root of **the tree you are working in**:
 
 ```bash
 make ci-installer   # the full gate CI enforces
 ```
+
+If you are on a worktree branch, that means the worktree root. The `Makefile`
+targets `cd` into a path relative to the invoking directory, so running this
+from the main checkout gates the main checkout's copy of the package and
+reports green on code you did not change.
 
 It runs, in order: `ruff check` (lint), `ruff format --check` (formatting),
 `mypy --strict src` (types), `pytest --cov` (tests + coverage),
@@ -44,6 +49,12 @@ but the full gate must pass before push.
   `rich` directly.
 - Layout: `core/` (engine: model, staging, sync, templates, …), `tools/`
   (per-tool adapters keyed by the `Tool` enum), `cli.py`, `config.py`.
+- **Namespace vocabulary is consolidated in `core/namespaces.py`** — `ALL` plus
+  per-concern views (`TOOL_SCOPED`, `SHARED`, `SHARED_CARRIER`,
+  `PLUGIN_TOOL_SCOPED`, `PRUNE`, `BACKUP`). Adding a namespace means adding it
+  there *and* to each view it belongs in; a namespace carrying `.md` files also
+  needs the merge registry. `scripts/install.sh` holds no namespace logic —
+  it is a thin stub.
 
 ## Tests
 
