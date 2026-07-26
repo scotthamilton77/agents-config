@@ -104,8 +104,8 @@ Exit 0 on success, 1 on any typed failure.
 | `E_RUNTIME_ENVELOPE` | yes | the runtime replied with something unparseable |
 | `E_TRACKER_SUBPROCESS` | yes | the facade call failed |
 | `E_SYNC_FAILED` | yes | mutations landed, the sync did not — repair with `work sync` |
-| `E_NO_OPEN_PR` | no | a merge or a failure-axis park named an item holding no PR |
-| `E_ITEM_PARKED` | no | reserved for `attempt` |
+| `E_NO_OPEN_PR` | no | a row needing a PR named an item holding none |
+| `E_ITEM_PARKED` | no | a row that is not legal on a parked item named one |
 | `E_BUDGET_EXHAUSTED` | no | reserved for `attempt` |
 | `E_USAGE` | no | bad arguments, unknown item, a park reason on neither axis, or a transition the runtime flagged instead of applying |
 | `E_INTERNAL` | no | an unexpected fault, typed rather than thrown |

@@ -107,6 +107,57 @@ def test_an_event_the_runtime_flags_instead_of_applying_is_a_typed_failure() -> 
     assert "item_done illegal from status 'queued'" in raised.value.message
 
 
+@pytest.mark.parametrize(
+    "reply",
+    [
+        {"ok": True},
+        {"ok": True, "applied": None},
+        {"ok": True, "applied": "yes"},
+        {"ok": True, "applied": 1},
+    ],
+    ids=["absent", "null", "string", "int"],
+)
+def test_an_append_reply_without_a_usable_applied_flag_is_an_envelope_fault(
+    reply: object,
+) -> None:
+    """
+    Given a runtime whose `log` reply carries no usable `applied` flag
+    When the port appends
+    Then E_RUNTIME_ENVELOPE is raised rather than success reported.
+
+    Reading "not false" as applied would report a transition on no evidence
+    at all — the exact failure the flag check exists to prevent, reached
+    instead through an incompatible or corrupt runtime.
+    """
+    runner = ScriptedRunner({_LOG: _ok(reply)})
+
+    with pytest.raises(ExecutorError) as raised:
+        GrindRuntime(runner).append("item_started", {"item": "it-1"})
+
+    assert raised.value.code is ErrorCode.RUNTIME_ENVELOPE
+
+
+def test_a_binary_that_cannot_be_launched_is_a_failed_result() -> None:
+    """
+    Given a resolved binary that cannot be executed
+    When the real runner runs it
+    Then a failed CommandResult comes back naming the reason.
+
+    A launch failure is a transport problem. Letting the OSError escape would
+    have the CLI reduce it to a non-retryable internal error and hide the
+    actionable reason.
+    """
+
+    def _denied(*_args: object, **_kwargs: object) -> object:
+        raise PermissionError(13, "Permission denied")
+
+    with mock.patch.object(subprocess, "run", _denied):
+        result = SubprocessRunner().run(["grind", "status"])
+
+    assert result.exit_code != 0
+    assert "Permission denied" in result.stderr
+
+
 def test_a_flagged_event_with_no_readable_anomaly_still_fails_typed() -> None:
     """
     Given a flagged event whose anomaly record says nothing usable

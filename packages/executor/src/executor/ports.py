@@ -70,6 +70,13 @@ class SubprocessRunner:
             return CommandResult(_NOT_FOUND, "", f"not found: {exc}")
         except subprocess.TimeoutExpired:
             return CommandResult(_NOT_FOUND, "", f"timed out after {_TIMEOUT_S}s")
+        except OSError as exc:
+            # A resolved binary can still fail to launch -- no execute
+            # permission, a bad executable format, a exhausted process table.
+            # Those are transport problems, and letting one escape would have
+            # the CLI reduce it to a non-retryable internal error, hiding the
+            # actionable reason.
+            return CommandResult(_NOT_FOUND, "", f"cannot launch: {exc}")
         return CommandResult(proc.returncode, proc.stdout or "", proc.stderr or "")
 
 
@@ -219,13 +226,23 @@ class GrindRuntime:
         either way; that is what the message says.
         """
         reply = self._call("log", event_type, "--json", json.dumps(dict(payload)))
-        if reply.get("applied") is False:
+        applied = reply.get("applied")
+        if applied is True:
+            return
+        if applied is False:
             raise ExecutorError(
                 ErrorCode.USAGE,
                 f"the runtime recorded {event_type} as an anomaly rather than a transition: "
                 f"{_anomaly_reason(reply)}",
                 {EVENT_WAS_WRITTEN: True},
             )
+        # Absent or mistyped: an incompatible or corrupt runtime. Treating
+        # "not false" as applied would report a transition on no evidence at
+        # all, which is the failure this check exists to prevent.
+        raise ExecutorError(
+            ErrorCode.RUNTIME_ENVELOPE,
+            f"the runtime's reply to {event_type} carries no usable `applied` flag: {applied!r}",
+        )
 
     def staleness(self, max_age: str | None = None) -> StalenessVerdict:
         """`grind check` exits 1 on a stale verdict while emitting `ok: true`.
