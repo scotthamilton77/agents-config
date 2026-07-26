@@ -55,9 +55,9 @@ def blob_revision(text: str) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
-def proposal(lens: str, target: str) -> dict[str, Any]:
+def proposal(lens: str, target: str, identifier: str) -> dict[str, Any]:
     return {
-        "lens": lens, "target_ac": target,
+        "id": identifier, "lens": lens, "target_ac": target,
         "hole": "an unwritable output path is never exercised",
         "proposed_ac": "the exporter exits non-zero when the output cannot be written",
         "red_test_sketch": {"given": "a read-only output directory",
@@ -87,12 +87,12 @@ class Attack:
                 {"lens": name, "report": "proposals" if name != "criteria-holes" else "empty"}
                 for name in LENS_NAMES
             ],
-            "proposals": [proposal("edge-cases", "A1"),
-                          proposal("absent-requirements", "none")],
+            "proposals": [proposal("edge-cases", "A1", "p1"),
+                          proposal("absent-requirements", "none", "p2")],
             "dispositions": [
-                {"index": 0, "disposition": "accepted", "rationale": "a real hole",
+                {"id": "p1", "disposition": "accepted", "rationale": "a real hole",
                  "revision": sha_revision(REVISED), "covering_ac": "A2"},
-                {"index": 1, "disposition": "rejected",
+                {"id": "p2", "disposition": "rejected",
                  "rationale": "currency conversion is out of scope for this document"},
             ],
         }
@@ -123,6 +123,14 @@ def run(args: list[str], capsys) -> tuple[int, dict]:
 
 def check(attack: Attack, record: Any, capsys, *extra: str) -> tuple[int, dict]:
     return run([attack.save(record), *extra], capsys)
+
+
+def closed(attack: Attack, clean: bool = False, revision: str | None = None) -> dict[str, Any]:
+    """The whole result a terminating round prints, document named, for exact comparison."""
+    return {
+        "clean": clean, "complete": True, "errors": [], "document": str(attack.document),
+        "revision": revision or sha_revision(attack.document.read_text(encoding="utf-8")),
+    }
 
 
 def codes(result: dict) -> set[str]:
@@ -170,10 +178,10 @@ def skill_copy(tmp_path: Path, corrupt: dict[str, str | None]) -> Path:
 
 class TestCompleteRound:
     def test_c3_a_fully_adjudicated_round_is_complete(self, attack, capsys):
-        """S6-C3: the disposition set covers every proposal index, so the round terminates."""
+        """S6-C3: the disposition set covers every proposal id, so the round terminates."""
         code, result = check(attack, attack.record(), capsys)
         assert code == 0
-        assert result == {"clean": False, "complete": True, "errors": []}
+        assert result == closed(attack)
 
     def test_c3_a_proposal_without_a_disposition_blocks_termination(self, attack, capsys):
         """S6-C3: coverage is decided from the record — one unadjudicated proposal leaves the
@@ -183,50 +191,63 @@ class TestCompleteRound:
         code, result = check(attack, record, capsys)
         assert code == 1 and result["complete"] is False
         assert codes(result) == {"unadjudicated-proposal"}
-        assert result["errors"][0]["index"] == 1
+        assert result["errors"][0]["id"] == "p2"
 
-    def test_c3_a_duplicate_or_out_of_range_index_is_rejected(self, attack, capsys):
-        """S6-C3: a disposition set that adjudicates one proposal twice, or one that does not
-        exist, is not an account of the round."""
+    def test_c3_a_duplicate_or_unknown_proposal_id_is_rejected(self, attack, capsys):
+        """S6-C3: a disposition set that adjudicates one proposal twice, or one the round does
+        not hold, is not an account of the round."""
         record = attack.record()
         record["dispositions"].append(dict(record["dispositions"][1]))
         assert codes(check(attack, record, capsys)[1]) == {"duplicate-disposition"}
         record = attack.record()
-        record["dispositions"].append({"index": 7, "disposition": "rejected", "rationale": "no"})
-        assert codes(check(attack, record, capsys)[1]) == {"unknown-proposal-index"}
+        record["dispositions"].append({"id": "p7", "disposition": "rejected", "rationale": "no"})
+        code, result = check(attack, record, capsys)
+        assert code == 1 and result["complete"] is False
+        assert codes(result) == {"unknown-proposal-id"}
+        assert error_of(result, "unknown-proposal-id")["id"] == "p7"
+
+    def test_c3_two_proposals_may_not_share_an_id(self, attack, capsys):
+        """S6-C3: the id is what a disposition adjudicates through, so two proposals wearing one
+        id leave every disposition naming it ambiguous — refused rather than resolved towards
+        either proposal, since the record cannot say which was adjudicated."""
+        record = attack.record()
+        record["proposals"][1]["id"] = "p1"
+        code, result = check(attack, record, capsys)
+        assert code == 1 and result["complete"] is False
+        assert codes(result) == {"duplicate-proposal-id", "unknown-proposal-id"}
+        assert error_of(result, "duplicate-proposal-id")["id"] == "p1"
+
+    def test_c3_dropping_a_proposal_leaves_the_rest_bound_to_their_dispositions(self, attack,
+                                                                                capsys):
+        """S6-C3: a malformed proposal is dropped from the round, which moves every proposal after
+        it up a position; dispositions name their proposal by id, so the survivors stay paired
+        with the adjudication written for them instead of silently re-pointing at a neighbour."""
+        attack.write_document(DOCUMENT)
+        record = attack.record()
+        del record["proposals"][0]
+        del record["dispositions"][0]
+        record["lenses"] = [
+            {"lens": name, "report": "proposals" if name == "absent-requirements" else "empty"}
+            for name in LENS_NAMES
+        ]
+        assert [entry["id"] for entry in record["proposals"]] == ["p2"]
+        assert record["dispositions"][0]["id"] == "p2"
+        assert check(attack, record, capsys)[0] == 0
 
     def test_c3_an_acceptance_must_name_the_revision_that_carries_it(self, attack, capsys):
-        """S6-C3: an acceptance references the concrete revision incorporating the proposal and
-        the criterion carrying it — a field absent and a field holding only whitespace name
-        neither — and accepting with the document unchanged adjudicates nothing, in whichever
-        notation the unchanged revision is written."""
+        """S6-C3: accepting with the document unchanged adjudicates nothing — the proposal is
+        neither carried into the criteria nor answered — in whichever notation the unchanged
+        revision is written; the same acceptance naming the revision that does carry it closes
+        the round (inverse)."""
         attack.write_document(DOCUMENT)
-        for field, value in (("revision", DELETE), ("covering_ac", DELETE),
-                             ("covering_ac", " \t ")):
-            record = attack.record()
-            if value is DELETE:
-                del record["dispositions"][0][field]
-            else:
-                record["dispositions"][0][field] = value
-            code, result = check(attack, record, capsys)
-            assert code == 1 and codes(result) == {"unincorporated-acceptance"}
         for unchanged in (sha_revision(DOCUMENT), blob_revision(DOCUMENT)):
             record = attack.record()
             record["spec_revision"] = unchanged
             record["dispositions"][0]["revision"] = unchanged
             code, result = check(attack, record, capsys)
             assert code == 1 and codes(result) == {"unincorporated-acceptance"}
+            assert error_of(result, "unincorporated-acceptance")["id"] == "p1"
         attack.write_document(REVISED)
-        assert check(attack, attack.record(), capsys)[0] == 0
-
-    def test_c3_a_rejection_must_state_a_reason(self, attack, capsys):
-        """S6-C3: out-of-scope is a judgement that has to be written down; the same rejection
-        with a reason completes the round (inverse pair)."""
-        for rationale in ({}, {"rationale": "   "}):
-            record = attack.record()
-            record["dispositions"][1] = {"index": 1, "disposition": "rejected", **rationale}
-            code, result = check(attack, record, capsys)
-            assert code == 1 and codes(result) == {"missing-rationale"}
         assert check(attack, attack.record(), capsys)[0] == 0
 
     def test_c3_rechecking_a_complete_record_is_a_no_op(self, attack, monkeypatch, capsys):
@@ -243,7 +264,7 @@ class TestCompleteRound:
         assert set(before) == {attack.document.name, attack.path.name}
         first = run([path], capsys)
         second = run([path], capsys)
-        assert first == second == (0, {"clean": False, "complete": True, "errors": []})
+        assert first == second == (0, closed(attack))
         assert snapshot(attack.root) == before
         assert snapshot(HERE) == SKILL_DIR_UNTOUCHED
         assert list(workdir.iterdir()) == []
@@ -255,7 +276,7 @@ class TestEmptyUnion:
         reported, nothing was proposed, and the round is over."""
         code, result = check(attack, attack.empty_round(), capsys)
         assert code == 0
-        assert result == {"clean": True, "complete": True, "errors": []}
+        assert result == closed(attack, clean=True)
 
 
 class TestOrdering:
@@ -329,7 +350,7 @@ class TestStaleness:
         revision any acceptance names — not merely the latest — and the document reads current
         against each of them, while a revision no acceptance names is still stale."""
         record = attack.record()
-        record["dispositions"][1] = {"index": 1, "disposition": "accepted",
+        record["dispositions"][1] = {"id": "p2", "disposition": "accepted",
                                      "rationale": "a second real hole",
                                      "revision": sha_revision(FURTHER), "covering_ac": "A3"}
         accepted = {disposition["revision"] for disposition in record["dispositions"]}
@@ -353,6 +374,59 @@ class TestStaleness:
         assert check(attack, record, capsys)[0] == 1
 
 
+class TestProvenance:
+    def test_c6_the_answer_names_the_document_it_was_decided_against(self, attack, tmp_path,
+                                                                     capsys):
+        """S6-C6: a round checked against a copy handed to --spec answers a different question
+        from one checked against the live document — here the same record reads complete against
+        a copy holding the revision it attacked, while the document beside it has moved on. The
+        answer carries the file it read and what that file hashes to, so the substitution is on
+        the record rather than invisible to whoever reads the verdict."""
+        code, result = check(attack, attack.record(), capsys)
+        assert code == 0
+        assert result["document"] == str(attack.document)
+        assert result["revision"] == sha_revision(REVISED)
+        stale = tmp_path / "stale.md"
+        stale.write_text(DOCUMENT, encoding="utf-8")
+        code, result = run([str(attack.path), "--spec", str(stale)], capsys)
+        assert code == 0
+        assert result["document"] == str(stale)
+        assert result["revision"] == sha_revision(DOCUMENT)
+
+    def test_c6_an_unfinished_round_names_its_document_too(self, attack, capsys):
+        """S6-C6: the pair reports what was read, not what was concluded, so a verdict of stale
+        or unfinished says which document it was reached against — the reading a caller most
+        needs to check before it edits either one."""
+        attack.write_document(UNRELATED)
+        code, result = check(attack, attack.record(), capsys)
+        assert code == 1 and codes(result) == {"stale-revision"}
+        assert result["document"] == str(attack.document)
+        assert result["revision"] == sha_revision(UNRELATED)
+
+    def test_c6_the_revision_is_written_in_the_records_own_notation(self, attack, capsys):
+        """S6-C6: the reader holds this revision against the record's as a string, so it is
+        written the way that record writes revisions; the same content in the other notation
+        shares no characters with it and would read as a different document."""
+        record = attack.record()
+        record["spec_revision"] = blob_revision(DOCUMENT)
+        record["dispositions"][0]["revision"] = blob_revision(REVISED)
+        code, result = check(attack, record, capsys)
+        assert code == 0 and result["revision"] == blob_revision(REVISED)
+
+    @pytest.mark.parametrize("broken", ("no-record", "unreadable", "schema"))
+    def test_c6_a_check_that_read_no_document_names_none(self, attack, capsys, broken):
+        """S6-C6: the pair is an observation of a file the check opened. A run that failed before
+        opening one omits both keys rather than naming a document it never read or padding the
+        answer with a null that a caller would have to tell apart from a real reading."""
+        record = attack.record()
+        record["schema_version"] = "2"
+        target = {"no-record": [], "unreadable": [str(attack.root / "absent.json")],
+                  "schema": [attack.save(record)]}[broken]
+        code, result = run(target, capsys)
+        assert code == 2
+        assert "document" not in result and "revision" not in result
+
+
 class TestRevisionNotation:
     @pytest.mark.parametrize("where", ("attacked", "acceptance", "rejection"))
     def test_c6_a_record_mixing_the_two_notations_is_refused(self, attack, capsys, where):
@@ -372,14 +446,15 @@ class TestRevisionNotation:
 
     def test_c6_either_notation_alone_decides_the_round_the_same_way(self, attack, capsys):
         """S6-C6: inverse — a notation is a way of writing a revision, not a different revision,
-        so the same round written wholly in digests and wholly in object ids closes either way."""
+        so the same round written wholly in digests and wholly in object ids closes either way,
+        each answered in the notation the record it decided is written in."""
         digests = attack.record()
         object_ids = copy.deepcopy(digests)
         object_ids["spec_revision"] = blob_revision(DOCUMENT)
         object_ids["dispositions"][0]["revision"] = blob_revision(REVISED)
-        closed = (0, {"clean": False, "complete": True, "errors": []})
-        assert check(attack, digests, capsys) == closed
-        assert check(attack, object_ids, capsys) == closed
+        assert check(attack, digests, capsys) == (0, closed(attack))
+        assert check(attack, object_ids, capsys) == (
+            0, closed(attack, revision=blob_revision(REVISED)))
 
 
 class TestLensCoverage:
@@ -422,7 +497,7 @@ class TestLensCoverage:
         assert code == 1
         assert codes(result) == {"unknown-proposal-lens", "contradicted-proposals-report"}
         error = error_of(result, "unknown-proposal-lens")
-        assert error["index"] == 0 and "vibes" in error["message"]
+        assert error["id"] == "p1" and "vibes" in error["message"]
 
     def test_c7_a_lens_reporting_empty_cannot_have_proposals_attributed_to_it(self, attack,
                                                                               capsys):
@@ -430,8 +505,8 @@ class TestLensCoverage:
         said it found nothing, credited with a proposal, means one of them is wrong and the
         record cannot say which."""
         record = attack.record()
-        record["proposals"].append(proposal("criteria-holes", "A1"))
-        record["dispositions"].append({"index": 2, "disposition": "rejected",
+        record["proposals"].append(proposal("criteria-holes", "A1", "p3"))
+        record["dispositions"].append({"id": "p3", "disposition": "rejected",
                                        "rationale": "already covered by A2"})
         code, result = check(attack, record, capsys)
         assert code == 1 and codes(result) == {"contradicted-empty-report"}
@@ -455,7 +530,7 @@ class TestLensCoverage:
 
 
 class TestProposalShape:
-    @pytest.mark.parametrize("field", ("lens", "target_ac", "hole", "proposed_ac",
+    @pytest.mark.parametrize("field", ("id", "lens", "target_ac", "hole", "proposed_ac",
                                        "red_test_sketch"))
     @pytest.mark.parametrize("mutation", ("absent", "blank"))
     def test_c2_every_part_of_a_proposal_is_required_and_carries_content(self, attack, capsys,
@@ -494,7 +569,7 @@ class TestProposalShape:
     def test_c2_prose_in_place_of_a_proposal_is_rejected(self, attack, capsys):
         """S6-C2: a bare worry returned by an attacker never enters the round as a proposal."""
         record = attack.record()
-        record["proposals"][0] = {"lens": "edge-cases", "concern": "this feels risky"}
+        record["proposals"][0] = {"id": "p1", "lens": "edge-cases", "concern": "this feels risky"}
         assert check(attack, record, capsys)[0] == 2
 
 
@@ -506,9 +581,19 @@ BAD_ENVELOPE = [
     ("lenses", [{"lens": "edge-cases"}]), ("lenses", [{"lens": "edge-cases", "report": "maybe"}]),
     ("proposals", DELETE), ("proposals", {"0": "a proposal"}),
     ("dispositions", DELETE), ("dispositions", "none of them"),
-    ("dispositions", [{"index": 0}]), ("dispositions", [{"index": 0, "disposition": "deferred"}]),
-    ("dispositions", [{"index": -1, "disposition": "accepted"}]),
+    ("dispositions", [{"id": "p1"}]), ("dispositions", [{"id": "p1", "disposition": "deferred"}]),
+    ("dispositions", [{"disposition": "rejected", "rationale": "no"}]),
+    ("dispositions", [{"id": "  ", "disposition": "rejected", "rationale": "no"}]),
+    ("dispositions", [{"id": "p1", "disposition": "accepted"}]),
     ("attacker", "whoever ran the round"),
+]
+
+# The fields each verdict needs to be an adjudication at all: an acceptance names where the
+# proposal landed, a rejection why it did not.
+BAD_DISPOSITION = [
+    ("accepted", "revision", DELETE), ("accepted", "covering_ac", DELETE),
+    ("accepted", "covering_ac", " \t "),
+    ("rejected", "rationale", DELETE), ("rejected", "rationale", "   "),
 ]
 
 
@@ -525,6 +610,24 @@ class TestRecordShape:
             record[field] = value
         code, result = check(attack, record, capsys)
         assert code == 2 and codes(result) == {"schema"}
+
+    @pytest.mark.parametrize(("verdict", "field", "value"), BAD_DISPOSITION)
+    def test_c3_each_verdict_carries_the_fields_that_make_it_an_adjudication(self, attack, capsys,
+                                                                             verdict, field,
+                                                                             value):
+        """S6-C3: an acceptance names the revision and criterion that now carry the proposal and a
+        rejection states its reason — a field absent and a field holding only whitespace name
+        neither. The shape of a disposition is the schema's to fix, so the record is refused as
+        unusable before any question about the round is decided from it."""
+        record = attack.record()
+        entry = next(one for one in record["dispositions"] if one["disposition"] == verdict)
+        if value is DELETE:
+            del entry[field]
+        else:
+            entry[field] = value
+        code, result = check(attack, record, capsys)
+        assert code == 2 and codes(result) == {"schema"}
+        assert field in result["errors"][0]["message"]
 
     def test_c3_the_declared_envelope_is_the_whole_record(self, attack, capsys):
         """S6-C3: inverse — those six fields, correctly shaped, are a record and nothing more is
@@ -567,12 +670,13 @@ class TestUnusableInput:
         code, _ = run([str(attack.path), "--spec", str(moved)], capsys)
         assert code == 0
 
-    def test_c6_the_document_beside_the_record_beats_the_working_directory(self, attack, tmp_path,
-                                                                           monkeypatch, capsys):
-        """S6-C6: the record is committed beside the document it names, so that directory is
-        where the document is; a same-named file in whatever directory the check is run from is
-        another document, and checking the round against it would decide nothing about this
-        one. --spec still overrides both."""
+    def test_c6_the_document_is_read_beside_the_record_and_nowhere_else(self, attack, tmp_path,
+                                                                        monkeypatch, capsys):
+        """S6-C6: the record is committed beside the document it names, so that directory is the
+        only one the check reads it from; a same-named file in whatever directory the check is run
+        from is another document, and a round checked against it decides nothing about this one.
+        Absent beside the record, the check says so rather than falling through to that file.
+        --spec still points at the document when it has genuinely moved."""
         elsewhere = tmp_path / "elsewhere"
         elsewhere.mkdir()
         (elsewhere / attack.document.name).write_text(UNRELATED, encoding="utf-8")
@@ -581,6 +685,19 @@ class TestUnusableInput:
         assert run([path], capsys)[0] == 0
         code, result = run([path, "--spec", attack.document.name], capsys)
         assert code == 1 and codes(result) == {"stale-revision"}
+        attack.document.unlink()
+        code, result = run([path], capsys)
+        assert code == 2 and codes(result) == {"spec-unreadable"}
+
+    def test_c6_spec_given_without_a_document_is_refused_not_ignored(self, attack, capsys):
+        """S6-C6: --spec names the document to decide the round against, so an empty one is a
+        caller that meant to name a document and did not — a wrapper passing through an unset
+        variable. Reading the record's own document instead would answer a question nobody asked
+        and green-light the round against whatever file sits beside the record."""
+        for blank in ("", "   "):
+            code, result = run([attack.save(attack.record()), "--spec", blank], capsys)
+            assert code == 2 and codes(result) == {"no-spec"}
+            assert "document" not in result
 
     def test_c3_output_is_deterministic_and_sorted(self, attack, capsys):
         """S6-C3: two runs over the same broken record print byte-identical JSON, so the result

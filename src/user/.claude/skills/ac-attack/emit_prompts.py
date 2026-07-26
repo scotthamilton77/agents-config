@@ -5,7 +5,7 @@
 # ///
 """Emit one single-lens attacker prompt per attack lens over a document's criteria.
 
-Usage: uv run emit_prompts.py --spec <path> [--out-dir <dir>]
+Usage: uv run emit_prompts.py --spec <path> --out-dir <dir>
 
 Stdout is JSON. Exit 0 on emission, 2 on refusal. Output is deterministic.
 """
@@ -76,7 +76,14 @@ class Refusal(Exception):
 
 def load_lenses() -> list[dict[str, Any]]:
     with LENSES_PATH.open(encoding="utf-8") as handle:
-        return json.load(handle)["lenses"]
+        lenses = json.load(handle)["lenses"]
+    if not lenses:
+        raise Refusal(
+            "no-lenses",
+            "the lens registry declares no lens; the round would send no attacker at anything and "
+            "still report itself emitted, which reads as coverage nobody obtained",
+        )
+    return lenses
 
 
 def inert(text: str) -> str:
@@ -115,26 +122,58 @@ def read_document(path: str | None) -> tuple[str, str]:
     return text, "sha256:" + hashlib.sha256(data).hexdigest()
 
 
+def prepare_out_dir(path: str | None) -> Path:
+    """Return the directory the round writes into, created owner-only when it is the round's own.
+
+    A prompt carries the whole document, which is not always public, and these land in shared
+    temporary directories. Owner-only from the moment it exists, so there is no readable window.
+    A directory already there is somebody else's: it keeps the permissions its owner gave it.
+    """
+    if not path:
+        raise Refusal(
+            "no-out-dir",
+            "no --out-dir was supplied; the output names are fixed, so a round with nowhere named "
+            "would truncate four files wherever it ran — name the directory the prompts land in",
+        )
+    out_dir = Path(path)
+    if out_dir.is_symlink():
+        raise Refusal(
+            "unsafe-output-path",
+            f"the output directory {out_dir} is a link; every file the round writes would follow "
+            "it somewhere the invoker never named and be reported back under the name they gave",
+        )
+    try:
+        # Exactly one directory, because the mode covers only what this call creates: a parent
+        # made on the way would take the umask's, leaving the prompts in a directory anyone reads.
+        out_dir.mkdir(exist_ok=True, mode=0o700)
+    except OSError as exc:
+        raise Refusal(
+            "no-out-dir", f"cannot create the output directory {out_dir}: {exc}"
+        ) from exc
+    return out_dir
+
+
 def refuse_unless_plain(path: Path) -> None:
-    """Refuse an output name already held by anything but a plain file.
+    """Refuse an output name held by anything but a plain file of its own.
 
     The names are predictable, so one of them may be waiting: a link there would send the whole
-    document wherever it points, under whatever rights the invoker holds. Overwriting a plain file
-    is ordinary re-emission and is allowed.
+    document wherever it points, under whatever rights the invoker holds — and the O_NOFOLLOW the
+    write relies on stops only the symbolic kind, never a second name for the same file.
+    Overwriting a plain file is ordinary re-emission and is allowed.
     """
     try:
-        mode = os.lstat(path).st_mode
+        info = os.lstat(path)
     except FileNotFoundError:
         return
     except OSError as exc:
         raise Refusal(
             "unsafe-output-path", f"cannot inspect the output path {path}: {exc}"
         ) from exc
-    if not stat.S_ISREG(mode):
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink > 1:
         raise Refusal(
             "unsafe-output-path",
-            f"the output path {path} is already held by something other than a plain file; a link "
-            "or device there would take the whole document somewhere the round never named, so it "
+            f"the output path {path} is held by a link, or by something that is not a plain file "
+            "at all; writing would take the whole document somewhere the round never named, so it "
             "refuses rather than write through it",
         )
 
@@ -204,13 +243,11 @@ def render_prompt(lens: dict, ctx: dict) -> str:
 def emit(args: argparse.Namespace) -> dict[str, Any]:
     document, revision = read_document(args.spec)
     lenses = load_lenses()
-    ctx = {"spec_path": args.spec, "spec_revision": revision, "document": document}
-
-    # A prompt carries the whole document, which is not always public, and these land in shared
-    # temporary directories. Owner-only from the moment it exists, so there is no readable window.
-    # A directory already there is somebody else's: it keeps the permissions its owner gave it.
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    out_dir = prepare_out_dir(args.out_dir)
+    # The record is committed beside the document and resolves this against its own directory, so
+    # the basename is what finds it there — and no local layout travels to a third-party model.
+    spec_name = Path(args.spec).name
+    ctx = {"spec_path": spec_name, "spec_revision": revision, "document": document}
     names = [f"{lens['lens']}.md" for lens in lenses] + ["round.json"]
     for name in names:
         refuse_unless_plain(out_dir / name)
@@ -220,7 +257,7 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
         write_private(path, render_prompt(lens, ctx))
         written.append(str(path))
     round_meta = {
-        "spec_path": args.spec, "spec_revision": revision,
+        "spec_path": spec_name, "spec_revision": revision,
         "lenses": [
             {"lens": lens["lens"], "tier": lens["tier"], "transport": lens["transport"]}
             for lens in lenses
@@ -234,7 +271,7 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--spec")
-    parser.add_argument("--out-dir", default=".")
+    parser.add_argument("--out-dir")
     return parser
 
 

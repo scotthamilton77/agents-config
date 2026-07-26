@@ -43,12 +43,12 @@
     "proposals": {
       "type": "array",
       "items": {"$ref": "#/$defs/proposal"},
-      "description": "The union of the lens reports. A proposal's position is the stable index its disposition names."
+      "description": "The union of the lens reports. Each proposal carries the id its disposition names."
     },
     "dispositions": {
       "type": "array",
       "items": {"$ref": "#/$defs/disposition"},
-      "description": "One entry per proposal index."
+      "description": "One entry per proposal id."
     }
   },
   "$defs": {
@@ -60,8 +60,13 @@
     "proposal": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["lens", "target_ac", "hole", "proposed_ac", "red_test_sketch"],
+      "required": ["id", "lens", "target_ac", "hole", "proposed_ac", "red_test_sketch"],
       "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "Identifies this proposal to its disposition. Assigned when the lens reports are unioned, and distinct within the round: dropping a malformed proposal renumbers positions, so a disposition keyed on position would adjudicate a different proposal after the edit."
+        },
         "lens": {
           "type": "string",
           "pattern": "\\S",
@@ -98,17 +103,18 @@
     "disposition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["index", "disposition"],
+      "required": ["id", "disposition"],
       "properties": {
-        "index": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Position of the proposal this adjudicates."
+        "id": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "Id of the proposal this adjudicates."
         },
         "disposition": {"enum": ["accepted", "rejected"]},
         "rationale": {
           "type": "string",
-          "description": "Why. Required and non-blank on a rejection."
+          "pattern": "\\S",
+          "description": "Why. Required on a rejection."
         },
         "revision": {
           "$ref": "#/$defs/revision",
@@ -116,9 +122,21 @@
         },
         "covering_ac": {
           "type": "string",
+          "pattern": "\\S",
           "description": "Identifier of the criterion in that revision which carries it. Required on an acceptance."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {"required": ["disposition"], "properties": {"disposition": {"const": "accepted"}}},
+          "then": {"required": ["revision", "covering_ac"]}
+        },
+        {
+          "if": {"required": ["disposition"], "properties": {"disposition": {"const": "rejected"}}},
+          "then": {"required": ["rationale"]}
+        }
+      ],
+      "description": "Each verdict carries the fields that make it an adjudication: an acceptance the revision and criterion that now carry the proposal, a rejection the reason it was not taken."
     }
   }
 }

@@ -10,6 +10,7 @@ Run: uv run emit_prompts_test.py
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import importlib.util
 import json
@@ -27,6 +28,7 @@ HERE = Path(__file__).resolve().parent
 EMITTER_PATH = HERE / "emit_prompts.py"
 CHECKER_PATH = HERE / "check_record.py"
 SKILL_PATH = HERE / "SKILL.md"
+ERRORS_PATH = HERE / "errors.md"
 LENSES_PATH = HERE / "lenses.json"
 SCHEMA_PATH = HERE / "attack-record.schema.json"
 
@@ -159,9 +161,11 @@ class TestPromptContent:
                                         "expect": "the observable outcome"},
                 }],
             }
-            # The shape asked of the attacker is the shape the record's schema will demand.
+            # The shape asked of the attacker is the shape the record's schema will demand, less
+            # the id: an attacker sees its own lens and not the round, so it cannot pick one that
+            # is distinct across the union. The author assigns ids when unioning the reports.
             item = contract["proposals"][0]
-            assert set(item) == set(proposal_schema["required"])
+            assert set(item) == set(proposal_schema["required"]) - {"id"}
             assert set(item["red_test_sketch"]) == set(
                 proposal_schema["properties"]["red_test_sketch"]["required"])
 
@@ -280,9 +284,22 @@ class TestRevision:
         meta = json.loads((tmp_path / "attack" / "round.json").read_text(encoding="utf-8"))
         digest = hashlib.sha256(document.read_bytes()).hexdigest()
         assert meta["spec_revision"] == f"sha256:{digest}"
-        assert meta["spec_path"] == str(document)
+        assert meta["spec_path"] == document.name
         for text in prompts(tmp_path / "attack").values():
             assert f"sha256:{digest}" in text
+
+    def test_c6_the_document_is_named_by_basename_not_by_where_it_sat(self, document, tmp_path,
+                                                                       capsys):
+        """S6-C6: the record is committed beside the document and its path is resolved against the
+        record's own directory, so the basename is what finds the document there — and a prompt
+        going out to a third-party model carries no machine-local directory layout."""
+        emitted = emit(document, tmp_path / "attack", capsys)
+        round_json = (tmp_path / "attack" / "round.json").read_text(encoding="utf-8")
+        assert json.loads(round_json)["spec_path"] == "ledger-export.md"
+        assert str(tmp_path) not in round_json
+        for text in emitted.values():
+            assert "Path: ledger-export.md\n" in text
+            assert str(tmp_path) not in text
 
     def test_c6_editing_the_document_changes_the_revision(self, document, tmp_path, capsys):
         """S6-C6: revisions are content-addressed, so any edit produces a different one and a
@@ -337,6 +354,41 @@ class TestRefusals:
         assert result["emitted"] is False
         assert [error["code"] for error in result["errors"]] == ["no-spec"]
 
+    def test_c1_a_round_naming_no_output_directory_refuses_rather_than_write_where_it_stands(
+            self, document, tmp_path):
+        """S6-C1: the output names are fixed and predictable, so a round that defaulted to where it
+        was run would truncate four same-named files there, each replaced by the whole document —
+        including in the skill's own directory, which is where it is documented to be run from."""
+        proc = subprocess.run(
+            [sys.executable, str(EMITTER_PATH), "--spec", str(document)],
+            capture_output=True, text=True, check=False, cwd=str(tmp_path),
+        )
+        assert proc.returncode == 2
+        assert "Traceback" not in proc.stderr and "usage:" not in proc.stderr
+        result = json.loads(proc.stdout)
+        assert result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["no-out-dir"]
+        assert [path.name for path in tmp_path.iterdir()] == [document.name]
+
+    def test_c7_an_empty_lens_registry_is_refused_not_reported_as_an_emitted_round(self, document,
+                                                                                    tmp_path):
+        """S6-C7: coverage is read off what the round declares, so a registry naming no lens would
+        report an emitted round having sent no attacker at anything — which a caller parsing that
+        report cannot tell from an attack that ran and found nothing."""
+        skill = skill_copy(tmp_path, {"lenses.json": '{"lenses": []}'})
+        out_dir = tmp_path / "out"
+        proc = subprocess.run(
+            [sys.executable, str(skill / "emit_prompts.py"), "--spec", str(document),
+             "--out-dir", str(out_dir)],
+            capture_output=True, text=True, check=False,
+        )
+        assert proc.returncode == 2
+        assert "Traceback" not in proc.stderr
+        result = json.loads(proc.stdout)
+        assert result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["no-lenses"]
+        assert not out_dir.exists()
+
     @pytest.mark.parametrize("damage", (None, "{not json", '{"lenses": "all of them"}'))
     def test_damaged_bundled_data_is_typed_not_a_traceback(self, document, tmp_path, damage):
         """S6-C1: the skill's own data is a dependency like any other — missing or corrupt, it
@@ -377,6 +429,49 @@ class TestOutputSafety:
         assert stat.S_IMODE(out_dir.stat().st_mode) == 0o755
         for path in sorted(out_dir.iterdir()):
             assert stat.S_IMODE(path.stat().st_mode) == 0o600, path.name
+
+    def test_c1_a_missing_parent_of_the_output_directory_is_refused_not_created(self, document,
+                                                                                 tmp_path, capsys):
+        """S6-C1: the owner-only mode covers only the directory the round itself creates, so a
+        parent made on the way would be left at whatever the umask gives, holding the prompts in a
+        directory anyone on the machine can read. Exactly one directory is created."""
+        code, result = run(["--spec", str(document),
+                            "--out-dir", str(tmp_path / "shared" / "round1")], capsys)
+        assert code == 2 and result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["no-out-dir"]
+        assert not (tmp_path / "shared").exists()
+
+    def test_c1_a_linked_output_directory_is_refused_not_followed(self, document, tmp_path,
+                                                                   capsys):
+        """S6-C1: every output name is resolved through the directory, so a link standing there
+        sends all of them — each file holding the whole document — somewhere the invoker never
+        named, while the round reports them back under the name the invoker gave."""
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        out_dir = tmp_path / "attack"
+        out_dir.symlink_to(elsewhere, target_is_directory=True)
+        code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
+        assert code == 2 and result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["unsafe-output-path"]
+        assert list(elsewhere.iterdir()) == []
+
+    @pytest.mark.parametrize("name", (f"{LENS_NAMES[0]}.md", "round.json"))
+    def test_c1_a_hard_link_at_an_output_name_is_refused_not_written_through(self, document,
+                                                                             tmp_path, capsys,
+                                                                             name):
+        """S6-C1: a second name for a file is a link too, and it is a plain file by every test the
+        write applies — truncating it would put the whole document into a file nobody named, in
+        place and with no link to follow afterwards to see where it went."""
+        outside = tmp_path / "precious.txt"
+        outside.write_text("not the round's to write\n", encoding="utf-8")
+        out_dir = tmp_path / "attack"
+        out_dir.mkdir()
+        os.link(outside, out_dir / name)
+        code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
+        assert code == 2 and result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["unsafe-output-path"]
+        assert outside.read_text(encoding="utf-8") == "not the round's to write\n"
+        assert [path.name for path in out_dir.iterdir()] == [name]
 
     @pytest.mark.parametrize("name", (f"{LENS_NAMES[0]}.md", f"{LENS_NAMES[-1]}.md", "round.json"))
     def test_c1_a_link_at_an_output_name_is_refused_not_followed(self, document, tmp_path, capsys,
@@ -429,7 +524,7 @@ class TestRoundFile:
         emit(document, tmp_path / "attack", capsys)
         meta = json.loads((tmp_path / "attack" / "round.json").read_text(encoding="utf-8"))
         assert meta == {
-            "spec_path": str(document),
+            "spec_path": document.name,
             "spec_revision": "sha256:" + hashlib.sha256(document.read_bytes()).hexdigest(),
             "lenses": [{"lens": lens["lens"], "tier": lens["tier"], "transport": lens["transport"]}
                        for lens in LENSES],
@@ -482,7 +577,8 @@ class TestSurface:
         """S6-C5: the deployed files read standalone — no planning identifiers or vocabulary."""
         jargon = re.compile(r"\bD[0-9]|S6-|\bAC[0-9]|\bslice\b|\bcharter\b|\bmilestone\b|9k9",
                             re.IGNORECASE)
-        for path in (SKILL_PATH, LENSES_PATH, SCHEMA_PATH, EMITTER_PATH, CHECKER_PATH):
+        for path in (SKILL_PATH, ERRORS_PATH, LENSES_PATH, SCHEMA_PATH, EMITTER_PATH,
+                     CHECKER_PATH):
             hits = [line for line in path.read_text(encoding="utf-8").splitlines()
                     if jargon.search(line)]
             assert not hits, f"{path.name}: {hits}"
@@ -492,10 +588,31 @@ class TestSurface:
         its own directory is a dead reference wherever it is read."""
         outside = re.compile(r"\.\./|~/|\bsrc/user/|\bpackages/|\bdocs/|\barchive/|"
                              r"\.claude/|\.agents/|\.codex/|\.gemini/")
-        for path in (SKILL_PATH, LENSES_PATH, SCHEMA_PATH, EMITTER_PATH, CHECKER_PATH):
+        for path in (SKILL_PATH, ERRORS_PATH, LENSES_PATH, SCHEMA_PATH, EMITTER_PATH,
+                     CHECKER_PATH):
             hits = [line for line in path.read_text(encoding="utf-8").splitlines()
                     if outside.search(line)]
             assert not hits, f"{path.name}: {hits}"
+
+    def test_c5_every_error_code_the_scripts_emit_is_documented(self):
+        """S6-C5: a code a caller can receive and cannot look up is an undocumented contract, and
+        the drift is silent — the scripts are the source, so the docs are held against them."""
+        for path in (EMITTER_PATH, CHECKER_PATH):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            emitted = set()
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                        and node.func.id in ("Refusal", "RecordError") and node.args
+                        and isinstance(node.args[0], ast.Constant)):
+                    emitted.add(node.args[0].value)
+                if isinstance(node, ast.Dict):
+                    for key, value in zip(node.keys, node.values):
+                        if (isinstance(key, ast.Constant) and key.value == "code"
+                                and isinstance(value, ast.Constant)):
+                            emitted.add(value.value)
+            documented = ERRORS_PATH.read_text(encoding="utf-8")
+            missing = sorted(code for code in emitted if f"`{code}`" not in documented)
+            assert not missing, f"{path.name}: {missing}"
 
     def test_c5_skill_declares_its_admission_record(self):
         """S6-C5: the deployed skill carries the record the install gate requires."""

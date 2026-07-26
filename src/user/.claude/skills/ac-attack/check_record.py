@@ -78,37 +78,44 @@ def schema_errors(record: Any) -> list[dict[str, Any]]:
     ]
 
 
-def read_document(record_path: Path, record: dict, override: str | None) -> bytes:
-    """Find the attacked document: --spec if given, else spec_path beside the record or as written.
+def read_document(record_path: Path, record: dict, override: str | None) -> tuple[Path, bytes]:
+    """Find the attacked document: --spec if given, else spec_path relative to the record.
 
-    The record is committed beside the document it names, so that directory is tried first: a
-    same-named file in whatever directory the check happens to run from is not the attacked
-    document, and reading it would check the round against unrelated text.
+    The record is committed beside the document it names, so that directory is the only one
+    searched: a same-named file in whatever directory the check happens to run from is not the
+    attacked document, and reading it would check the round against unrelated text. --spec is
+    read for presence, not content — a wrapper passing an unset variable is refused rather than
+    falling back to the document the record names.
     """
-    raw = override or record.get("spec_path", "")
-    candidates = [Path(raw)] if override else [record_path.parent / raw, Path(raw)]
-    for candidate in candidates:
-        if candidate.is_file():
-            try:
-                return candidate.read_bytes()
-            except OSError as exc:
-                raise RecordError(
-                    "spec-unreadable", f"cannot read the attacked document {candidate}: {exc}"
-                ) from exc
-    raise RecordError(
-        "spec-unreadable",
-        f"cannot find the attacked document {raw!r}; the record names it relative to its own "
-        "directory first and to the working directory second, and --spec overrides both",
-    )
+    if override is not None and not override.strip():
+        raise RecordError(
+            "no-spec",
+            "--spec was given without a document; name the document to check the round against, "
+            "or drop the option to read the one the record names",
+        )
+    path = Path(override) if override is not None else record_path.parent / record["spec_path"]
+    try:
+        return path, path.read_bytes()
+    except OSError as exc:
+        raise RecordError(
+            "spec-unreadable",
+            f"cannot read the attacked document {path}: {exc}; the record names it relative to "
+            "its own directory, and --spec overrides that when the document has moved",
+        ) from exc
 
 
-def revisions_of(data: bytes) -> set[str]:
-    """Every revision string that names this exact content."""
+def revisions_of(data: bytes) -> dict[str, str]:
+    """This content's revision written in each notation; both name these exact bytes."""
     blob = b"blob %d\0" % len(data) + data
     return {
-        "sha256:" + hashlib.sha256(data).hexdigest(),
-        hashlib.sha1(blob, usedforsecurity=False).hexdigest(),
+        "digest": "sha256:" + hashlib.sha256(data).hexdigest(),
+        "object id": hashlib.sha1(blob, usedforsecurity=False).hexdigest(),
     }
+
+
+def notation_of(revision: str) -> str:
+    """Which of the two ways of writing a revision this one is written in."""
+    return "digest" if revision.startswith("sha256:") else "object id"
 
 
 def require_one_notation(record: dict) -> None:
@@ -122,7 +129,7 @@ def require_one_notation(record: dict) -> None:
     revisions = [record["spec_revision"]] + [
         entry["revision"] for entry in record["dispositions"] if "revision" in entry
     ]
-    notations = {"digest" if rev.startswith("sha256:") else "object id" for rev in revisions}
+    notations = {notation_of(rev) for rev in revisions}
     if len(notations) > 1:
         raise RecordError(
             "mixed-revision-notation",
@@ -168,10 +175,11 @@ def _report_errors(record: dict) -> list[dict[str, Any]]:
     declared = set(declared_lenses())
     attributed = {proposal["lens"] for proposal in record["proposals"]}
     errors = [
-        {"code": "unknown-proposal-lens", "index": index,
-         "message": f"proposal {index} is attributed to {proposal['lens']!r}, which is not one of "
-                    "the declared attack lenses; every proposal carries the lens that produced it"}
-        for index, proposal in enumerate(record["proposals"])
+        {"code": "unknown-proposal-lens", "id": proposal["id"],
+         "message": f"proposal {proposal['id']!r} is attributed to {proposal['lens']!r}, which is "
+                    "not one of the declared attack lenses; every proposal carries the lens that "
+                    "produced it"}
+        for proposal in record["proposals"]
         if proposal["lens"] not in declared
     ]
     seen: set[tuple[str, str]] = set()
@@ -199,58 +207,58 @@ def _report_errors(record: dict) -> list[dict[str, Any]]:
 def _disposition_errors(record: dict) -> tuple[list[dict[str, Any]], set[str]]:
     """Adjudication of every proposal, plus the revisions the acceptances account for.
 
+    A disposition names its proposal by id, not by position: dropping a malformed proposal
+    renumbers every position after it, and a disposition keyed on position would then adjudicate a
+    proposal nobody wrote it against. Two proposals sharing an id leave the same doubt, so the
+    round is refused rather than resolved either way.
+
     An acceptance names a revision other than the one attacked, decided by string comparison: the
     record is refused upstream unless every revision in it is written in one notation, so two
     revision strings differ exactly when the content they name does.
     """
-    proposals, attacked = record["proposals"], record["spec_revision"]
-    errors: list[dict[str, Any]] = []
+    ids = [proposal["id"] for proposal in record["proposals"]]
+    attacked = record["spec_revision"]
+    errors: list[dict[str, Any]] = [
+        {"code": "duplicate-proposal-id", "id": name,
+         "message": f"two proposals in this round carry the id {name!r}; a disposition naming it "
+                    "adjudicates neither of them, so give each proposal an id of its own"}
+        for name in dict.fromkeys(ids)
+        if ids.count(name) > 1
+    ]
     accounted: set[str] = set()
-    seen: set[int] = set()
+    seen: set[str] = set()
     for entry in record["dispositions"]:
-        index = entry["index"]
-        if index >= len(proposals):
+        name = entry["id"]
+        if name not in ids:
             errors.append({
-                "code": "unknown-proposal-index", "index": index,
-                "message": f"there is no proposal {index}; the round holds {len(proposals)}",
+                "code": "unknown-proposal-id", "id": name,
+                "message": f"there is no proposal {name!r} in this round; every disposition "
+                           "adjudicates a proposal the round holds",
             })
             continue
-        if index in seen:
+        if name in seen:
             errors.append({
-                "code": "duplicate-disposition", "index": index,
-                "message": f"proposal {index} is adjudicated more than once; each proposal gets "
+                "code": "duplicate-disposition", "id": name,
+                "message": f"proposal {name!r} is adjudicated more than once; each proposal gets "
                            "exactly one disposition",
             })
             continue
-        seen.add(index)
+        seen.add(name)
         if entry["disposition"] == "accepted":
-            revision, covering = entry.get("revision", ""), entry.get("covering_ac", "").strip()
-            if not revision or not covering:
+            if entry["revision"] == attacked:
                 errors.append({
-                    "code": "unincorporated-acceptance", "index": index,
-                    "message": f"proposal {index} was accepted without naming both the revision "
-                               "of the document that now carries it and the criterion that does",
-                })
-            elif revision == attacked:
-                errors.append({
-                    "code": "unincorporated-acceptance", "index": index,
-                    "message": f"proposal {index} was accepted against the revision it attacked; "
+                    "code": "unincorporated-acceptance", "id": name,
+                    "message": f"proposal {name!r} was accepted against the revision it attacked; "
                                "accepting a proposal without changing the document leaves it "
                                "unadjudicated",
                 })
             else:
-                accounted.add(revision)
-        elif not entry.get("rationale", "").strip():
+                accounted.add(entry["revision"])
+    for name in dict.fromkeys(ids):
+        if name not in seen:
             errors.append({
-                "code": "missing-rationale", "index": index,
-                "message": f"proposal {index} was rejected with no reason stated; out of scope is "
-                           "a judgement, and a judgement is written down",
-            })
-    for index in range(len(proposals)):
-        if index not in seen:
-            errors.append({
-                "code": "unadjudicated-proposal", "index": index,
-                "message": f"proposal {index} has no disposition; the round closes only once "
+                "code": "unadjudicated-proposal", "id": name,
+                "message": f"proposal {name!r} has no disposition; the round closes only once "
                            "every proposal is accepted or rejected",
             })
     return errors, accounted
@@ -258,7 +266,7 @@ def _disposition_errors(record: dict) -> tuple[list[dict[str, Any]], set[str]]:
 
 def check(record: dict, document: bytes) -> list[dict[str, Any]]:
     """Everything wrong with this round, as a pure function of the record and the document."""
-    present = revisions_of(document)
+    present = set(revisions_of(document).values())
     errors = _lens_errors(record) + _report_errors(record)
     disposition_errors, accounted = _disposition_errors(record)
     errors += disposition_errors
@@ -272,14 +280,22 @@ def check(record: dict, document: bytes) -> list[dict[str, Any]]:
     return errors
 
 
-def report(errors: list[dict[str, Any]], started: bool, code: int, clean: bool = False) -> int:
+def report(errors: list[dict[str, Any]], started: bool, code: int, clean: bool = False,
+           read: dict[str, str] | None = None) -> int:
+    """Print the result; `read` names the document the verdict was decided against.
+
+    A round checked against a copy handed to --spec answers a different question from one checked
+    against the live document, and that substitution is invisible unless the answer says which
+    file it read. A run that opened none omits both keys rather than naming a document it never
+    read.
+    """
     if errors and started:
         errors = [*errors, {"code": "ordering-violation", "message": ORDERING_MESSAGE}]
     result = {
         "clean": clean,
         "complete": code == EXIT_COMPLETE,
-        "errors": sorted(errors, key=lambda err: (err["code"], err.get("index", -1),
-                                                  err["message"])),
+        "errors": sorted(errors, key=lambda err: (err["code"], err.get("id", ""), err["message"])),
+        **(read or {}),
     }
     print(json.dumps(result, sort_keys=True))
     return code
@@ -334,15 +350,19 @@ def main(argv: list[str]) -> int:
         if invalid:
             return report(invalid, started, EXIT_UNUSABLE)
         require_one_notation(record)
-        document = read_document(record_path, record, args.spec)
+        path, document = read_document(record_path, record, args.spec)
+        # The revision goes out in the record's own notation: the reader holds it against
+        # spec_revision as a string, and the other notation for it would read as another document.
+        read = {"document": str(path),
+                "revision": revisions_of(document)[notation_of(record["spec_revision"])]}
         errors = check(record, document)
     except RecordError as exc:
         return report([exc.as_dict()], started, EXIT_UNUSABLE)
     except Exception as exc:  # noqa: BLE001 - stdout is a parsed contract; no traceback may escape
         return report([{"code": "checker-failure", "message": str(exc)}], started, EXIT_UNUSABLE)
     if errors:
-        return report(errors, started, EXIT_INCOMPLETE)
-    return report([], started, EXIT_COMPLETE, clean=not record["proposals"])
+        return report(errors, started, EXIT_INCOMPLETE, read=read)
+    return report([], started, EXIT_COMPLETE, clean=not record["proposals"], read=read)
 
 
 if __name__ == "__main__":
