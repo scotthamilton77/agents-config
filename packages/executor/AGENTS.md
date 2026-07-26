@@ -103,14 +103,20 @@ and the fold treats a parked item as absent for every handler but
 | `redispatch` | any | **required** | a lane |
 | `abandon` | any | **required** | a PR reference, matching `--pr`, a lane |
 | `pr-opened` | in-progress, waiting-human | forbidden | — |
-| `pr-closed` | pr-open, in-review, waiting-human | forbidden | matching `--pr` |
+| `pr-closed` | pr-open, in-review, waiting-human | forbidden | a PR reference, matching `--pr` |
 | `merged` | pr-open, in-review, waiting-human | forbidden | a PR reference |
 | `done` | merged | forbidden | — |
 
-Two rows in "also requires" have no counterpart in the fold. **The fold
+Two of the "also requires" entries have no counterpart in the fold. **The fold
 compares an event's PR against nothing**, so only `PR_MATCHES_ITEM` stops a
 delayed notification for a superseded PR being recorded as fact — and for
-`pr-closed`, tearing down the live review cycle.
+`pr-closed`, tearing down the live review cycle. It is strict about absence:
+an item holding no reference matches no PR. A requirement named "the PR
+matches" that passed vacuously when there was none would be a trap for the
+next row to use it, which is how `pr-closed` came to accept an invented
+closure against a `waiting-human` item that had never opened one. Rows wanting
+the clearer `E_NO_OPEN_PR` for that case pair it with `PR_REFERENCE`, which is
+why the two stay separate.
 
 Why refuse at all, when the fold would flag it anyway: the executor is the
 runtime's single writer, so an event it can prove illegal is a caller's

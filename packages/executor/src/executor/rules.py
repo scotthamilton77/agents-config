@@ -98,6 +98,13 @@ class Requires(StrEnum):
     compares an event's PR against nothing, so a delayed notification naming a
     superseded PR would be taken as fact and, for `pr-closed`, would tear down
     the live review cycle.
+
+    It is strict about absence: an item holding no reference matches no PR.
+    A requirement named "the PR matches" that passed vacuously when there was
+    no PR would be a trap for the next row that used it -- which is exactly
+    how `pr-closed` came to accept an invented closure against an item that
+    had never opened one. Rows wanting the clearer `E_NO_OPEN_PR` for that
+    case pair it with `PR_REFERENCE`, which is why the two stay separate.
     """
 
     LANE = "lane"
@@ -382,7 +389,10 @@ ROW_RULES: dict[str, RowRules] = {
         verb="pr-closed",
         legal_states=REVIEWABLE,
         parked=Parked.FORBIDDEN,
-        requires=(Requires.PR_MATCHES_ITEM,),
+        # `waiting-human` is reachable without a PR ever having opened, and the
+        # fold does not check for one either, so without PR_REFERENCE a closure
+        # could be invented against a waiting item and silently move it.
+        requires=(Requires.PR_REFERENCE, Requires.PR_MATCHES_ITEM),
         identity_fields=("item", "pr", "next"),
         identity=_pr_closed_identity,
         recorded=_pr_closed_recorded,
@@ -479,7 +489,6 @@ def _check_requirement(rules: RowRules, request: Request, requirement: Requires)
         )
     if (
         requirement is Requires.PR_MATCHES_ITEM
-        and item.pr_number is not None
         and request.pr is not None
         and item.pr_number != request.pr
     ):

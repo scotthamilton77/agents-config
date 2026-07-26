@@ -626,6 +626,32 @@ def test_pr_closed_records_the_closure_and_tells_the_tracker_nothing() -> None:
     assert tracker.mutations == []
 
 
+def test_a_closure_against_an_item_that_never_opened_a_pr_is_refused() -> None:
+    """
+    Given an item waiting on a human, having never opened a PR
+    When a closure is recorded for it
+    Then it is refused with nothing appended.
+
+    `waiting-human` is reachable straight from `queued`, and the fold checks
+    neither that the item holds a PR nor that the event's number is its own —
+    so without this the closure would be invented and the waiting item
+    silently moved to `queued` or parked.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="waiting-human", work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, envelope = invoke(
+        ["pr-closed", "it-1", "--pr", "42", "--next", "queued", "--reason", "stale"],
+        runtime,
+        tracker,
+    )
+
+    assert code == 1
+    assert envelope["error"]["code"] == "E_NO_OPEN_PR"
+    assert runtime.appended == []
+    assert tracker.mutations == []
+
+
 def test_a_closure_naming_a_pr_the_item_is_not_on_is_refused() -> None:
     """
     Given an item on PR 42
