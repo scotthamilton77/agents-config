@@ -173,4 +173,10 @@ function main() {
   }
 }
 
-main();
+// Exported so the pure extraction/combining helpers can be unit-tested without
+// running the CLI, which shells out to graphviz.
+module.exports = { extractDotBlocks, extractGraphBody, combineGraphs };
+
+if (require.main === module) {
+  main();
+}
