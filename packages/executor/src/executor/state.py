@@ -8,7 +8,8 @@ testable surface rather than a scatter of `.get()` calls.
 Fields absent or of the wrong JSON type degrade to `None`/`False` rather than
 raising: the runtime is a separate versioned program, and a decision that needs
 a field it did not get refuses by name (`E_USAGE`, `E_NO_OPEN_PR`) instead of
-crashing on a shape mismatch.
+crashing on a shape mismatch. The exception is `parked`, where the degraded
+reading would *authorise* rather than refuse -- see `_parked`.
 """
 
 from __future__ import annotations
@@ -86,9 +87,29 @@ def _opt_int(payload: Mapping[str, JsonValue], key: str) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def _parked(item_id: str, payload: Mapping[str, JsonValue]) -> Mapping[str, JsonValue] | None:
+    """`parked` is the one field that may not degrade.
+
+    Everywhere else a wrong-typed field falls back to `None` and the decision
+    above fails closed -- a missing PR reference refuses, a missing lane
+    refuses. Parkedness inverts that: read as a bare "not null", a malformed
+    `parked: false` would make an unparked item look parked, which refuses
+    legal commands *and* waves `redispatch`/`abandon` past their precondition
+    into a tracker-first mutation the runtime then flags. A degraded value that
+    authorises is not a degraded value; it is a corrupt reply.
+    """
+    parked = payload.get("parked")
+    if parked is None or isinstance(parked, dict):
+        return parked
+    raise ExecutorError(
+        ErrorCode.RUNTIME_ENVELOPE,
+        f"item {item_id!r} carries a malformed `parked` value: {parked!r}",
+    )
+
+
 def _item_view(item_id: str, payload: Mapping[str, JsonValue]) -> ItemView:
     pr = payload.get("pr")
-    parked = payload.get("parked")
+    parked = _parked(item_id, payload)
     return ItemView(
         id=item_id,
         status=_opt_str(payload, "status") or "",
@@ -96,7 +117,7 @@ def _item_view(item_id: str, payload: Mapping[str, JsonValue]) -> ItemView:
         work_id=_opt_str(payload, "work_id"),
         pr_number=_opt_int(pr, "number") if isinstance(pr, dict) else None,
         parked=parked is not None,
-        park_reason=_opt_str(parked, "reason") if isinstance(parked, dict) else None,
+        park_reason=_opt_str(parked, "reason") if parked is not None else None,
     )
 
 

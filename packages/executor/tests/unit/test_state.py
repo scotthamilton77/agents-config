@@ -108,6 +108,25 @@ def test_a_reply_without_a_usable_items_object_is_an_envelope_fault(payload: obj
     assert raised.value.code is ErrorCode.RUNTIME_ENVELOPE
 
 
+@pytest.mark.parametrize("parked", [False, True, 0, "", "parked", []], ids=repr)
+def test_a_malformed_parked_value_is_an_envelope_fault(parked: object) -> None:
+    """
+    Given an item whose `parked` is neither null nor an object
+    When it is parsed
+    Then E_RUNTIME_ENVELOPE is raised.
+
+    The one field that may not degrade. Read as a bare "not null", a
+    malformed `parked: false` would make an unparked item look parked —
+    refusing legal commands, and waving `redispatch`/`abandon` past their
+    precondition into a tracker-first mutation. A degraded value that
+    authorises is a corrupt reply, not a degraded value.
+    """
+    with pytest.raises(ExecutorError) as raised:
+        parse_state({"items": {"it-1": {"parked": parked}}})
+
+    assert raised.value.code is ErrorCode.RUNTIME_ENVELOPE
+
+
 def test_a_boolean_pr_number_is_not_a_pr_number() -> None:
     """
     Given an item whose PR number decoded as `true`

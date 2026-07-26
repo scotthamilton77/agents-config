@@ -204,6 +204,52 @@ def test_a_stale_check_exits_one_on_an_ok_envelope_and_is_still_a_verdict() -> N
     assert runner.calls == [("grind", "check", "--max-age", "30m")]
 
 
+@pytest.mark.parametrize(
+    ("argv", "call"),
+    [
+        (_STATUS, lambda rt: rt.state()),
+        (_LOG, lambda rt: rt.append("item_started", {"item": "it-1"})),
+    ],
+    ids=["status", "log"],
+)
+def test_a_nonzero_exit_is_a_failure_on_every_verb_but_the_staleness_probe(
+    argv: tuple[str, ...], call: Callable[[GrindRuntime], object]
+) -> None:
+    """
+    Given a runtime command that emits `ok: true` but exits non-zero
+    When the port calls it
+    Then it is a subprocess failure, not a success.
+
+    The exit-code tolerance belongs to `grind check` alone, whose code carries
+    a verdict. Applying it generally would let a wrapper or post-command
+    failure read as success — and the executor would go on to enact the other
+    side of the pairing.
+    """
+    runner = ScriptedRunner({argv: _ok({"ok": True, "applied": True, "state": {"items": {}}}, 1)})
+
+    with pytest.raises(ExecutorError) as raised:
+        call(GrindRuntime(runner))
+
+    assert raised.value.code is ErrorCode.RUNTIME_SUBPROCESS
+
+
+def test_a_nonzero_exit_from_the_facade_is_a_failure_whatever_it_says() -> None:
+    """
+    Given a facade command that emits `ok: true` but exits non-zero
+    When the port calls it
+    Then it is a transport failure.
+
+    No facade verb carries a verdict in its exit code, so the tolerance never
+    applies on this side at all.
+    """
+    runner = ScriptedRunner({("work", "claim"): _ok({"protocol": "1", "ok": True}, 1)})
+
+    with pytest.raises(ExecutorError) as raised:
+        WorkTracker(runner).claim("w-1")
+
+    assert raised.value.code is ErrorCode.TRACKER_SUBPROCESS
+
+
 def test_a_healthy_check_reports_not_stale() -> None:
     """
     Given a fresh grind

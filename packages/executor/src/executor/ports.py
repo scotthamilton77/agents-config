@@ -196,7 +196,15 @@ class GrindRuntime:
             argv.extend(["--dir", self._grind_dir])
         return argv
 
-    def _call(self, *args: str) -> dict[str, JsonValue]:
+    def _call(self, *args: str, verdict_in_exit_code: bool = False) -> dict[str, JsonValue]:
+        """Run one runtime command and return its `ok: true` envelope.
+
+        A non-zero exit is a failure everywhere except the one verb whose exit
+        code carries a verdict rather than an outcome (S9T1-A3 scopes that to
+        `grind check`). Ignoring the exit code generally would let a wrapper
+        or post-command failure read as success, and the executor would go on
+        to enact the other side of the pairing.
+        """
         argv = self._argv(*args)
         result = self._runner.run(argv)
         decoded = _decode(
@@ -205,11 +213,15 @@ class GrindRuntime:
             subprocess_code=ErrorCode.RUNTIME_SUBPROCESS,
             envelope_code=ErrorCode.RUNTIME_ENVELOPE,
         )
-        if not _is_ok_envelope(decoded):
+        failed = not _is_ok_envelope(decoded) or (
+            result.exit_code != 0 and not verdict_in_exit_code
+        )
+        if failed:
             raise ExecutorError(
                 ErrorCode.RUNTIME_SUBPROCESS,
                 _envelope_message(decoded, result.transcript(argv)),
             )
+        assert isinstance(decoded, dict)  # noqa: S101  # proven by _is_ok_envelope above
         return decoded
 
     def state(self) -> RunState:
@@ -252,7 +264,7 @@ class GrindRuntime:
         a stale grind cannot surface here as a crashed subprocess.
         """
         args = ("check",) if max_age is None else ("check", "--max-age", max_age)
-        decoded = self._call(*args)
+        decoded = self._call(*args, verdict_in_exit_code=True)
         ts = decoded.get("last_event_ts")
         return StalenessVerdict(
             stale=decoded.get("stale") is True,
@@ -275,7 +287,9 @@ class WorkTracker:
         # the tracker side one code), so both faults report as the same
         # retryable transport failure.
         decoded = _decode(result, argv, subprocess_code=code, envelope_code=code)
-        if not _is_ok_envelope(decoded):
+        # No facade verb carries a verdict in its exit code, so a non-zero exit
+        # is a failure whatever the envelope says.
+        if not _is_ok_envelope(decoded) or result.exit_code != 0:
             raise ExecutorError(code, _envelope_message(decoded, result.transcript(argv)))
 
     def claim(self, handle: str) -> None:
