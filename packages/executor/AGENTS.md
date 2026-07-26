@@ -87,14 +87,18 @@ ports.py  →  state.py  →  pairing.py  →  enact.py  →  cli.py
   Duplicating the fold's tables is the cost, and `GrindRuntime.append`
   refusing an `applied: false` reply is the backstop that catches this table
   drifting from the runtime's.
-- **A retry is recognised by the command's postcondition, not by one half of
-  it.** `abandon` leaves the item back in play *and* this PR's closure on
-  record; being out of the parking lot alone is also true of an item that was
-  never in it, and answering "already abandoned" for one claims a closure that
-  exists nowhere. Where the second half's evidence lives shifts as the runtime
-  grows — today the item keeps naming the PR, and once the fold interprets an
-  abandon's closure it clears that reference and lands a ledger entry instead
-  — so both are accepted for the same claim.
+- **`abandon` has no idempotent retry path, and that is the design.** It is
+  the one row whose "already done" the fold cannot express: `item_enqueued` is
+  the same event whether an abandon or a redispatch produced it, and an
+  abandon's closure is an ordinary closed-ledger entry. Position, PR reference
+  and ledger membership were each tried in review and each matches a state
+  some other command produced — an ordinary `pr-closed --next queued` looks
+  identical. Accepting any of them claims a closure that exists nowhere *and*
+  issues a tracker write for a transition that never happened. Refusing costs
+  little: the row is tracker-first, so a failed append leaves the item parked
+  and the ordinary path handles that retry, and the only case reaching the
+  refusal has both sides already landed with nothing left to converge. Do not
+  reintroduce a proxy here without state that distinguishes the cause.
 - **An idempotent retry has to be the same command, not just the same verb.**
   `park` on an already-parked item is a retry only when the recorded reason
   matches; `pr-closed` only when the recorded *outcome* matches the requested

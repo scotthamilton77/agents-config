@@ -339,41 +339,31 @@ def _require_current_pr(item: ItemView, pr: int, verb: str) -> None:
     _require_matching_pr(item, pr)
 
 
-# Where an enqueue leaves an item: `queued`, or `blocked` when it re-enters
-# play with unresolved blocker edges.
-_ENQUEUED = frozenset({"queued", "blocked"})
+def _plan_abandon(args: VerbArgs, item: ItemView) -> Plan:
+    """`abandon` has no idempotent retry path, deliberately.
 
+    Every other row can tell "already done" from "never happened" out of the
+    fold. This one cannot: nothing distinguishes an item that left the parking
+    lot by an abandon from one that left by a redispatch, or from one that was
+    never parked -- `item_enqueued` is the same event, and the closure an
+    abandon records is, to the fold, an ordinary closed-ledger entry
+    indistinguishable from a `pr_closed`. Every proxy tried in review
+    (position, PR reference, ledger membership) matched a state some other
+    command produced, and answering "already abandoned" for one of those both
+    claims a closure that exists nowhere and issues a tracker write for a
+    transition that never happened.
 
-def _abandon_applied(item: ItemView, state: RunState, pr: int) -> bool:
-    """Whether the item is already where an abandon would leave it.
-
-    Being out of the parking lot is not enough on its own -- an item that was
-    never parked is out of it too, and answering "already abandoned" for one
-    claims a closure that exists nowhere. Abandon's postcondition is both
-    halves: the item back in play *and* this PR's closure on record.
-
-    The second half is read two ways, because the runtime is mid-migration.
-    Today the fold records an abandon's closure without interpreting it, so
-    the item keeps naming the PR and that reference is the evidence; once the
-    closure is interpreted it clears the reference and lands a ledger entry,
-    which becomes the evidence instead. Either satisfies the same claim.
+    Refusing costs little, because the retry path buys almost nothing here.
+    The row is tracker-first, so a failed append leaves the item parked and
+    the ordinary appending path handles the retry. The only case reaching this
+    refusal is one where both sides already landed and the response was lost --
+    nothing left to converge -- and the refusal names the true state.
     """
-    if item.parked or item.status not in _ENQUEUED:
-        return False
-    return (item.id, pr) in state.closures or item.pr_number == pr
-
-
-def _plan_abandon(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     pr = _require_pr(args, "abandon")
-    if _abandon_applied(item, state, pr):
-        # The retry path: the enqueue is recorded, so only the facade call is
-        # re-issued.
-        return Plan(ROWS["abandon"], item, None)
     if not item.parked:
         raise ExecutorError(
             ErrorCode.USAGE,
-            f"item {item.id!r} is not parked and records no closure for PR {pr}; "
-            f"there is nothing to abandon",
+            f"item {item.id!r} is not parked; there is nothing to abandon",
         )
     # The appending path writes the closure into the log, where it is the
     # record, so the PR it names has to be the item's own.
@@ -551,7 +541,7 @@ def build_plan(verb: str, args: VerbArgs, state: RunState) -> Plan:
     if verb == "redispatch":
         return _plan_redispatch(item)
     if verb == "abandon":
-        return _plan_abandon(args, item, state)
+        return _plan_abandon(args, item)
     if verb == "pr-opened":
         return _plan_pr_opened(args, item)
     if verb == "pr-closed":

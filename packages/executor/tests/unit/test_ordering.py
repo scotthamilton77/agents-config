@@ -87,14 +87,9 @@ def test_re_running_an_intent_after_the_tracker_recovers_converges(
             "park",
         ),
         (["redispatch", "it-1"], item("it-1", parked=False, work_id="w-1"), "redispatch"),
-        (
-            ["abandon", "it-1", "--pr", "7"],
-            item("it-1", parked=False, pr=7, work_id="w-1"),
-            "abandon",
-        ),
         (["done", "it-1"], item("it-1", status="done"), None),
     ],
-    ids=["start", "park", "redispatch", "abandon", "done"],
+    ids=["start", "park", "redispatch", "done"],
 )
 def test_a_transition_the_runtime_already_records_appends_no_duplicate(
     argv: list[str], view: ItemView, tracker_verb: str | None
@@ -104,6 +99,10 @@ def test_a_transition_the_runtime_already_records_appends_no_duplicate(
     When the command is re-run
     Then no second event is appended and success is still reported, with the
     tracker side re-issued so a half-landed pair converges.
+
+    `abandon` is absent deliberately: it is the one row whose "already done"
+    the fold cannot express, and it refuses instead (see
+    `test_abandon_has_no_idempotent_retry_path`).
     """
     runtime = FakeRuntime(run_state(view))
     tracker = FakeTracker()

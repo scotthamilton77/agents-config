@@ -403,50 +403,33 @@ def test_abandoning_an_item_that_never_had_a_pr_is_refused() -> None:
     assert envelope["error"]["code"] == "E_NO_OPEN_PR"
 
 
-def test_an_abandon_retry_still_checks_a_pr_reference_that_is_there() -> None:
+def test_abandon_has_no_idempotent_retry_path() -> None:
     """
-    Given an item already back on its lane, still holding its PR reference
-    When the abandon is re-run naming a different PR
+    Given an ordinary closure that left the item queued with its PR closed —
+    a state that looks exactly like a completed abandon
+    When abandon is invoked
     Then it is refused rather than reported as already done.
 
-    Skipping the append does not make "success" true of a PR the item was
-    never on. Today's fold records an abandon's closure without interpreting
-    it, so the reference does survive — and this is the path a typo takes
-    once the first abandon has landed.
-    """
-    runtime = FakeRuntime(run_state(item("it-1", parked=False, pr=42, work_id="w-1")))
-    tracker = FakeTracker()
-
-    code, envelope = invoke(["abandon", "it-1", "--pr", "99"], runtime, tracker)
-
-    assert code == 1
-    assert envelope["error"]["code"] == "E_USAGE"
-    assert tracker.mutations == []
-
-
-def test_an_abandon_retry_reads_the_ledger_once_the_reference_is_cleared() -> None:
-    """
-    Given an item back on its lane with its PR reference gone and the closure
-    on record — the state the fold produces once it interprets an abandon's
-    closure
-    When the abandon is re-run
-    Then it succeeds, re-issuing only the facade call.
-
-    Abandon's postcondition has two halves, and which one carries the
-    evidence shifts as the runtime grows: the surviving PR reference today,
-    the ledger entry afterwards. Demanding the reference would strand exactly
-    the retry that is converging, once the closure is what removes it.
+    This is the one row whose "already done" the fold cannot express.
+    `item_enqueued` is the same event whether an abandon or a redispatch
+    produced it, and an abandon's closure is an ordinary closed-ledger entry.
+    Every proxy — position, PR reference, ledger membership — matches a state
+    some other command produced, so accepting one would claim a closure that
+    exists nowhere and issue a tracker write for a transition that never
+    happened.
     """
     runtime = FakeRuntime(
-        run_state(item("it-1", parked=False, work_id="w-1"), closures=[("it-1", 8)])
+        run_state(item("it-1", status="queued", pr=8, work_id="w-1"), closures=[("it-1", 8)])
     )
     tracker = FakeTracker()
 
-    code, _ = invoke(["abandon", "it-1", "--pr", "8"], runtime, tracker)
+    code, envelope = invoke(["abandon", "it-1", "--pr", "8"], runtime, tracker)
 
-    assert code == 0
+    assert code == 1
+    assert "nothing to abandon" in envelope["error"]["message"]
     assert runtime.appended == []
-    assert tracker.mutations == [("abandon", "w-1")]
+    assert tracker.mutations == []
+    assert tracker.syncs == 0
 
 
 def test_abandoning_an_item_that_was_never_parked_is_refused() -> None:
