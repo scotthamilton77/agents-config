@@ -87,7 +87,11 @@ def test_re_running_an_intent_after_the_tracker_recovers_converges(
             "park",
         ),
         (["redispatch", "it-1"], item("it-1", parked=False, work_id="w-1"), "redispatch"),
-        (["abandon", "it-1", "--pr", "7"], item("it-1", parked=False, work_id="w-1"), "abandon"),
+        (
+            ["abandon", "it-1", "--pr", "7"],
+            item("it-1", parked=False, pr=7, work_id="w-1"),
+            "abandon",
+        ),
         (["done", "it-1"], item("it-1", status="done"), None),
     ],
     ids=["start", "park", "redispatch", "abandon", "done"],

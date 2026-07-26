@@ -424,17 +424,22 @@ def test_an_abandon_retry_still_checks_a_pr_reference_that_is_there() -> None:
     assert tracker.mutations == []
 
 
-def test_an_abandon_retry_does_not_demand_a_pr_the_closure_cleared() -> None:
+def test_an_abandon_retry_reads_the_ledger_once_the_reference_is_cleared() -> None:
     """
-    Given an item already back on its lane, its PR reference gone with the
-    closure that recorded it
+    Given an item back on its lane with its PR reference gone and the closure
+    on record — the state the fold produces once it interprets an abandon's
+    closure
     When the abandon is re-run
     Then it succeeds, re-issuing only the facade call.
 
-    The append already happened, so demanding a match here would strand
-    exactly the retry that is converging.
+    Abandon's postcondition has two halves, and which one carries the
+    evidence shifts as the runtime grows: the surviving PR reference today,
+    the ledger entry afterwards. Demanding the reference would strand exactly
+    the retry that is converging, once the closure is what removes it.
     """
-    runtime = FakeRuntime(run_state(item("it-1", parked=False, work_id="w-1")))
+    runtime = FakeRuntime(
+        run_state(item("it-1", parked=False, work_id="w-1"), closures=[("it-1", 8)])
+    )
     tracker = FakeTracker()
 
     code, _ = invoke(["abandon", "it-1", "--pr", "8"], runtime, tracker)
@@ -442,6 +447,45 @@ def test_an_abandon_retry_does_not_demand_a_pr_the_closure_cleared() -> None:
     assert code == 0
     assert runtime.appended == []
     assert tracker.mutations == [("abandon", "w-1")]
+
+
+def test_abandoning_an_item_that_was_never_parked_is_refused() -> None:
+    """
+    Given an ordinary queued item that was never parked and holds no PR
+    When it is abandoned
+    Then it is refused rather than reported as already done.
+
+    Being out of the parking lot is not evidence of an abandon — an item that
+    was never in it is out of it too, and answering "already abandoned"
+    claims a closure that exists nowhere.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["abandon", "it-1", "--pr", "8"], runtime, tracker)
+
+    assert code == 1
+    assert envelope["error"]["code"] == "E_USAGE"
+    assert "nothing to abandon" in envelope["error"]["message"]
+    assert runtime.appended == []
+    assert tracker.mutations == []
+
+
+def test_abandoning_an_unparked_item_with_a_live_pr_is_refused() -> None:
+    """
+    Given an item with an open PR, not parked
+    When it is abandoned naming that PR
+    Then it is refused.
+
+    The PR reference matches, but the item is not where an enqueue leaves it
+    — it is mid-review, with the PR still open. Nothing has been abandoned.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="pr-open", pr=8, work_id="w-1")))
+
+    code, envelope = invoke(["abandon", "it-1", "--pr", "8"], runtime, FakeTracker())
+
+    assert code == 1
+    assert "nothing to abandon" in envelope["error"]["message"]
 
 
 def test_a_merge_retry_naming_a_different_commit_is_refused() -> None:

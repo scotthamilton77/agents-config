@@ -339,16 +339,42 @@ def _require_current_pr(item: ItemView, pr: int, verb: str) -> None:
     _require_matching_pr(item, pr)
 
 
-def _plan_abandon(args: VerbArgs, item: ItemView) -> Plan:
+# Where an enqueue leaves an item: `queued`, or `blocked` when it re-enters
+# play with unresolved blocker edges.
+_ENQUEUED = frozenset({"queued", "blocked"})
+
+
+def _abandon_applied(item: ItemView, state: RunState, pr: int) -> bool:
+    """Whether the item is already where an abandon would leave it.
+
+    Being out of the parking lot is not enough on its own -- an item that was
+    never parked is out of it too, and answering "already abandoned" for one
+    claims a closure that exists nowhere. Abandon's postcondition is both
+    halves: the item back in play *and* this PR's closure on record.
+
+    The second half is read two ways, because the runtime is mid-migration.
+    Today the fold records an abandon's closure without interpreting it, so
+    the item keeps naming the PR and that reference is the evidence; once the
+    closure is interpreted it clears the reference and lands a ledger entry,
+    which becomes the evidence instead. Either satisfies the same claim.
+    """
+    if item.parked or item.status not in _ENQUEUED:
+        return False
+    return (item.id, pr) in state.closures or item.pr_number == pr
+
+
+def _plan_abandon(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     pr = _require_pr(args, "abandon")
-    if not item.parked:
+    if _abandon_applied(item, state, pr):
         # The retry path: the enqueue is recorded, so only the facade call is
-        # re-issued. The reference is still compared while there is one --
-        # skipping the append does not make "success" true of a PR the item was
-        # never on -- but its absence is not a mismatch, since the closure the
-        # first run recorded is what clears it.
-        _require_matching_pr(item, pr)
+        # re-issued.
         return Plan(ROWS["abandon"], item, None)
+    if not item.parked:
+        raise ExecutorError(
+            ErrorCode.USAGE,
+            f"item {item.id!r} is not parked and records no closure for PR {pr}; "
+            f"there is nothing to abandon",
+        )
     # The appending path writes the closure into the log, where it is the
     # record, so the PR it names has to be the item's own.
     _require_current_pr(item, pr, "abandon")
@@ -525,7 +551,7 @@ def build_plan(verb: str, args: VerbArgs, state: RunState) -> Plan:
     if verb == "redispatch":
         return _plan_redispatch(item)
     if verb == "abandon":
-        return _plan_abandon(args, item)
+        return _plan_abandon(args, item, state)
     if verb == "pr-opened":
         return _plan_pr_opened(args, item)
     if verb == "pr-closed":

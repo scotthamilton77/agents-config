@@ -87,6 +87,14 @@ ports.py  →  state.py  →  pairing.py  →  enact.py  →  cli.py
   Duplicating the fold's tables is the cost, and `GrindRuntime.append`
   refusing an `applied: false` reply is the backstop that catches this table
   drifting from the runtime's.
+- **A retry is recognised by the command's postcondition, not by one half of
+  it.** `abandon` leaves the item back in play *and* this PR's closure on
+  record; being out of the parking lot alone is also true of an item that was
+  never in it, and answering "already abandoned" for one claims a closure that
+  exists nowhere. Where the second half's evidence lives shifts as the runtime
+  grows — today the item keeps naming the PR, and once the fold interprets an
+  abandon's closure it clears that reference and lands a ledger entry instead
+  — so both are accepted for the same claim.
 - **An idempotent retry has to be the same command, not just the same verb.**
   `park` on an already-parked item is a retry only when the recorded reason
   matches; `pr-closed` only when the recorded *outcome* matches the requested
