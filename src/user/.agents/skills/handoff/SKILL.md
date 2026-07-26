@@ -4,6 +4,10 @@ description: Compact the current conversation into a handoff document so a fresh
 argument-hint: [focus of next session]
 disable-model-invocation: true
 allowed-tools: Write Bash(git status *) Bash(git log *) Bash(date *) Bash(pwd)
+admission:
+  provides: Mechanism to capture the current conversation and working-tree snapshot into a handoff document for a fresh agent to resume work in a new session.
+  cost: None
+  remove_when: Agents can resume work in a new session without a handoff document, can safely compact on their own (in a way the user trusts) or can cheaply handle large contexts without context rot.
 ---
 
 <!--

@@ -1,6 +1,11 @@
 ---
 name: writing-skills
 description: Use when creating a new skill, editing an existing skill, or verifying a skill works before deploying it. Apply whenever the user mentions skills, SKILL.md, skill authoring, skill testing, skill triggering accuracy, capturing a workflow as a reusable skill, or wants to know whether a skill is ready to ship — even if they don't explicitly say "skill" and just describe wanting to "package this up" or "make this reusable."
+admission:
+  provides: Mechanism for creating, editing and verifying skills for agents.
+  cost: Unknown
+  remove_when: Agents prove they can craft their own skills with high quality.
+  exemption: File exceeds max limit; special case.
 ---
 
 <!--
