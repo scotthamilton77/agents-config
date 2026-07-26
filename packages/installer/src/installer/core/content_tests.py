@@ -14,9 +14,12 @@ Two rules, both mechanical and both anti-drift:
    convention must be loud, since a silently-skipped suite is the exact failure
    this module exists to prevent.
 2. **Every shipped script has a suite.** A non-test ``.py``/``.js``/``.sh`` file
-   under ``src/`` must have a sibling named ``<stem>_test.*``. Adding code to a
-   skill therefore requires adding tests for it, rather than requiring someone
-   to notice that none arrived.
+   under ``src/`` must have a sibling named ``<stem>_test.*`` or
+   ``test_<stem>.*``. Adding code to a skill therefore requires adding tests for
+   it, rather than requiring someone to notice that none arrived. Both naming
+   conventions are accepted here because both are accepted as suites: a
+   contributor who writes ``test_foo.py`` for ``foo.py`` has tests, and telling
+   them otherwise would be the gate lying.
 
 Discovery walks the filesystem rather than the staging plan on purpose:
 ``.installignore`` keeps test artifacts out of the *deployed* fileset, which
@@ -53,6 +56,18 @@ _SKIP_DIRS = frozenset({"node_modules", "__pycache__", ".venv"})
 _TEST_SUFFIX = "_test"
 _TEST_PREFIX = "test_"
 
+# A shipped suite is a handful of assertions over one small script; nothing here
+# legitimately runs for minutes. Without a bound, one suite that waits on a port
+# or reads stdin hangs `make ci` until the job-level kill, which reports as an
+# infrastructure timeout rather than as the suite that caused it.
+_SUITE_TIMEOUT = 120
+
+# The exit code reported for a suite the runner had to kill. 124 is the
+# conventional `timeout(1)` code, and any non-zero value makes `SuiteResult.ok`
+# false — a hang is a failing suite, not an exception that aborts the run and
+# hides every suite behind it.
+_TIMEOUT_RETURNCODE = 124
+
 
 @dataclass(frozen=True, slots=True)
 class Suite:
@@ -82,6 +97,21 @@ class SuiteRunner(Protocol):
     def run(self, suite: Suite) -> SuiteResult: ...  # pragma: no cover
 
 
+def _decode(captured: bytes | str | None) -> str:
+    """The partial output a killed suite left behind, as text.
+
+    ``TimeoutExpired`` carries whatever was buffered at the kill, and does not
+    honour ``text=True`` consistently across platforms — it can hand back bytes.
+    Decoding is lossy on purpose: a truncated multibyte character at the cut
+    point must not turn a reported timeout into a decode traceback.
+    """
+    if captured is None:
+        return ""
+    if isinstance(captured, bytes):
+        return captured.decode("utf-8", errors="replace")
+    return captured
+
+
 class SubprocessRunner:
     """Runs a suite as a child process from its own directory.
 
@@ -94,13 +124,24 @@ class SubprocessRunner:
 
     def run(self, suite: Suite) -> SuiteResult:
         target = suite.path.resolve()
-        proc = subprocess.run(  # noqa: S603  # argv is built from the RUNNERS table and discovered paths
-            [*suite.argv, str(target)],
-            capture_output=True,
-            text=True,
-            check=False,
-            cwd=target.parent,
-        )
+        try:
+            proc = subprocess.run(  # noqa: S603  # argv is built from the RUNNERS table and discovered paths
+                [*suite.argv, str(target)],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=target.parent,
+                timeout=_SUITE_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired as exc:
+            # Whatever the suite managed to emit before the kill is the only
+            # clue to where it hung, so it is reported rather than discarded.
+            partial = _decode(exc.stdout) + _decode(exc.stderr)
+            return SuiteResult(
+                suite=suite,
+                returncode=_TIMEOUT_RETURNCODE,
+                output=f"{partial}timed out after {_SUITE_TIMEOUT}s\n",
+            )
         return SuiteResult(
             suite=suite, returncode=proc.returncode, output=proc.stdout + proc.stderr
         )
@@ -108,6 +149,17 @@ class SubprocessRunner:
 
 def _is_suite_name(stem: str) -> bool:
     return stem.endswith(_TEST_SUFFIX) or stem.startswith(_TEST_PREFIX)
+
+
+def _paired_suite_stems(stem: str) -> tuple[str, str]:
+    """The suite names that count as coverage for a script called ``stem``.
+
+    Both conventions ``_is_suite_name`` recognises, because the two checks must
+    agree: recognising ``test_foo.py`` as a suite while demanding ``foo_test.*``
+    before ``foo.py`` counts as covered tells a contributor who wrote real tests
+    that they have none.
+    """
+    return (stem + _TEST_SUFFIX, _TEST_PREFIX + stem)
 
 
 def _walk(src_root: Path) -> list[Path]:
@@ -152,10 +204,11 @@ def discover_suites(src_root: Path) -> tuple[list[Suite], list[str]]:
                 )
                 continue
             suites.append(Suite(path=path, argv=argv))
-        elif path.suffix in RUNNERS and (path.parent, path.stem + _TEST_SUFFIX) not in suite_stems:
-            violations.append(
-                f"{path}: shipped script has no sibling {path.stem}{_TEST_SUFFIX}.* test suite"
-            )
+        elif path.suffix in RUNNERS and not any(
+            (path.parent, stem) in suite_stems for stem in _paired_suite_stems(path.stem)
+        ):
+            wanted = " or ".join(f"{stem}.*" for stem in _paired_suite_stems(path.stem))
+            violations.append(f"{path}: shipped script has no sibling {wanted} test suite")
 
     return suites, violations
 

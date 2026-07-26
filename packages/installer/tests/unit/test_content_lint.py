@@ -62,7 +62,7 @@ def test_clean_tree_passes_and_still_reports_its_numbers(tmp_path: Path) -> None
 
     assert result.ok
     assert result.violations == []
-    assert [m.tokens for m in result.skills if m.label.endswith("skills/tidy")]
+    assert [b.tokens for b in result.skills if b.where.endswith("skills/tidy")]
     assert all(s.tokens > 0 for s in result.surfaces)
 
 
@@ -140,6 +140,87 @@ def test_one_shared_artifact_folds_across_its_tools_and_names_the_source() -> No
     )
 
     assert collapsed == [f"[claude, codex] {source}: body too big"]
+
+
+def test_the_identity_of_an_unrecorded_origin_is_the_gates_own_label() -> None:
+    """``None`` is not an identity. Bytes whose origin the staging plan never
+    recorded key on the gate's ``tool:dest`` label — the gate's primary key, and so
+    the finest identity the system possesses, which two distinct findings cannot
+    share. They still *print* as the bare destination, since the tool is already
+    rendered in the ``[...]`` prefix.
+
+    The two wrong answers this replaces: keying every one of them on the absent
+    origin collapsed them into a single anonymous bucket, and keying on the
+    destination alone would still fold two tool-scoped artifacts sharing one.
+    """
+    from installer.core.content_lint import _identity
+
+    recorded = Path("src/user/.agents/skills/foo")
+    assert _identity("claude:skills/foo", recorded) == (str(recorded), str(recorded))
+    assert _identity("claude:skills/foo", None) == ("claude:skills/foo", "skills/foo")
+    # Same destination, different tools: distinct identities, identical rendering.
+    assert _identity("gemini:skills/foo", None) == ("gemini:skills/foo", "skills/foo")
+
+
+def test_two_unattributable_artifacts_sharing_a_destination_stay_two_findings() -> None:
+    """The attributable path already refuses to fold two artifacts at one
+    destination; the unattributable path must refuse for the same reason. The cost
+    is the opposite error — a genuinely shared unrecorded artifact reports once per
+    tool — which is the safe direction for a gate: verbose never hides."""
+    from installer.core.content_lint import _collapse_findings
+
+    sources: dict[str, Path | None] = {"claude:skills/foo": None, "gemini:skills/foo": None}
+    text = "skill body is 2250 tokens, over the 2000-token cap"
+    collapsed = _collapse_findings(
+        [f"claude:skills/foo: {text}", f"gemini:skills/foo: {text}"],
+        sources=sources,
+        tool_values=frozenset({"claude", "gemini"}),
+    )
+
+    assert sorted(collapsed) == [f"[claude] skills/foo: {text}", f"[gemini] skills/foo: {text}"]
+
+
+def test_the_trend_report_folds_a_shared_body_but_not_two_bodies_at_one_destination() -> None:
+    """The success path asks the same identity question as the failure path, so it
+    gets the same answer. Deduplicating on ``(destination, tokens)`` folded two
+    distinct tool-scoped skills that share a destination and happen to weigh the
+    same — under-counting the surface silently, on the run nobody is reading
+    closely."""
+    from installer.core.content_lint import SkillBody, _group_skill_bodies
+    from installer.core.surface_budget import SkillMeasure
+
+    shared = Path("src/user/.agents/skills/foo")
+    measures = [SkillMeasure(label=f"{t}:skills/foo", tokens=100) for t in ("claude", "codex")]
+    folded = _group_skill_bodies(measures, sources={m.label: shared for m in measures})
+    assert folded == [SkillBody(where=str(shared), tokens=100, tools=("claude", "codex"))]
+
+    distinct = _group_skill_bodies(
+        measures,
+        sources={
+            "claude:skills/foo": Path("src/user/.claude/skills/foo"),
+            "codex:skills/foo": Path("src/user/.codex/skills/foo"),
+        },
+    )
+    assert len(distinct) == 2
+
+
+def test_one_source_measuring_two_weights_reports_both() -> None:
+    """A per-tool transform can change a shared body's deployed weight. Grouping on
+    the source alone would report one of the two numbers and hide the other, which
+    is the trend instrument lying about the surface it exists to watch."""
+    from installer.core.content_lint import _group_skill_bodies
+    from installer.core.surface_budget import SkillMeasure
+
+    shared = Path("src/user/.agents/skills/foo")
+    bodies = _group_skill_bodies(
+        [
+            SkillMeasure(label="claude:skills/foo", tokens=100),
+            SkillMeasure(label="gemini:skills/foo", tokens=80),
+        ],
+        sources={"claude:skills/foo": shared, "gemini:skills/foo": shared},
+    )
+
+    assert [(b.tokens, b.tools) for b in bodies] == [(80, ("gemini",)), (100, ("claude",))]
 
 
 def test_a_label_cannot_claim_a_longer_labels_message() -> None:

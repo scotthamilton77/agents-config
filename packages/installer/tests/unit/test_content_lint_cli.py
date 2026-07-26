@@ -75,6 +75,32 @@ def test_record_less_plugin_rule_is_announced_but_exits_zero(
     assert "will not deploy" in out
 
 
+def test_each_unattributable_entry_names_the_destination_it_was_heading_for(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bytes reaching the gate through the override channel carry no recorded
+    origin. Bucketing them all under that absent origin reported every one of them
+    as one anonymous artifact with a merged tool list; keyed on the gate's own
+    label they stay distinct, and each says where it was going instead of nowhere.
+    """
+    from installer.core.content_lint import ContentLintResult, Unadmitted
+
+    result = ContentLintResult(
+        unadmitted=[
+            Unadmitted(source=None, dest=Path("skills/foo"), tools=("claude",), fatal=False),
+            Unadmitted(source=None, dest=Path("skills/bar"), tools=("gemini",), fatal=False),
+        ]
+    )
+    monkeypatch.setattr("installer.content_lint_cli.lint_content", lambda *_a, **_k: result)
+
+    assert main([str(tmp_path)]) == 0
+
+    out = capsys.readouterr().out
+    assert "<merged entry at skills/foo, source unrecorded>" in out
+    assert "<merged entry at skills/bar, source unrecorded>" in out
+    assert "2 artifact(s)" in out
+
+
 def test_missing_installignore_is_a_config_error_not_a_traceback(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

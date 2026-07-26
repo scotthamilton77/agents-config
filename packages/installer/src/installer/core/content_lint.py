@@ -70,27 +70,47 @@ class Unadmitted:
     once per tool, so without grouping the same file reports four times.
     ``fatal`` records whether its location makes the omission a failure.
     ``source`` is ``None`` when the classified bytes arrived through the
-    directory-override channel, which records no origin: the omission is real
-    and still reported, but there is no file to name or to locate in a tree.
+    directory-override channel, which records no origin; ``dest`` then carries
+    the destination so the entry still has a location to print, and is ``None``
+    whenever ``source`` is set.
     """
 
     source: Path | None
+    dest: Path | None
     tools: tuple[str, ...]
     fatal: bool
+
+
+@dataclass(frozen=True, slots=True)
+class SkillBody:
+    """One admitted skill body's measured weight, in repo coordinates.
+
+    ``where`` is the source file when the plan records one and the destination
+    otherwise. ``tools`` names every tool the body was measured for: a shared
+    skill stages into every plan, so ungrouped it reports the same number four
+    times.
+    """
+
+    where: str
+    tokens: int
+    tools: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class ContentLintResult:
     """What the lint found over ``src/``.
 
-    ``surfaces`` and ``skills`` are the gate's own measurements, present whether
-    or not anything breached — they are the reported trend.
+    ``surfaces`` and ``skills`` are the measurements, present whether or not
+    anything breached — they are the reported trend. ``surfaces`` stays per tool
+    because the always-on surface *is* a property of the tool; ``skills`` is
+    regrouped into repo coordinates, like ``violations``, because a skill body
+    is a property of one source file.
     """
 
     violations: list[str] = field(default_factory=list)
     unadmitted: list[Unadmitted] = field(default_factory=list)
     surfaces: list[SurfaceMeasure] = field(default_factory=list)
-    skills: list[SkillMeasure] = field(default_factory=list)
+    skills: list[SkillBody] = field(default_factory=list)
 
     @property
     def fatal_unadmitted(self) -> list[Unadmitted]:
@@ -99,6 +119,41 @@ class ContentLintResult:
     @property
     def ok(self) -> bool:
         return not self.violations and not self.fatal_unadmitted
+
+
+# ---------------------------------------------------------------------------
+# Attribution: the gate reports in deploy coordinates (tool, dest); this module
+# has to report in repo coordinates (the file a reader edits). That transform is
+# the whole difficulty here, so the channels that can break it are enumerated in
+# full rather than handled one at a time — an enumeration is what makes the
+# class closed instead of the next instance patched.
+#
+# Every way bytes are transformed between a source file and what the gate
+# classifies:
+#
+#   1. append-rules merge — the existing side's bytes (and so its front matter)
+#      lead the merge product while ``source_path`` names the incoming side.
+#      ``merged_head`` records the side that was actually read.
+#   2. a carrier merge contributing a directory's entry file — the bytes arrive
+#      through ``dir_overrides``, which is ``dict[Path, dict[Path, bytes]]``:
+#      bytes with no recorded origin.
+#   3. a plugin extension patching a DIR item's entry file — same channel as (2).
+#   4. a plugin extension patching a FILE item — the bytes are replaced in place
+#      and ``source_path`` is retained, so the item stays uniquely identified and
+#      nothing is swallowed; the pointer is merely incomplete. Owned by the
+#      gate-before-merge rework.
+#   5. Gemini's agent front-matter transform — strips ``skills:``/``color:``/
+#      ``memory:`` only, so the ``admission:`` record survives it. Benign.
+#   6. this module's own trend report — the same identity question asked on the
+#      success path, and answered by the same rule (see ``_group_skill_bodies``).
+#
+# Channels (2) and (3) destroyed the origin upstream. Attribution there is not
+# hard, it is impossible: the information does not exist in the plan. So this
+# module never guesses a file for them, and never lets the absence of one make a
+# finding fatal. Restoring the origin means gating each contributor before the
+# merge, which is the rework that will delete ``merged_head`` and everything
+# below that reads it.
+# ---------------------------------------------------------------------------
 
 
 def _classified_source(item: StagedItem, *, overrides: dict[Path, bytes]) -> Path | None:
@@ -135,6 +190,34 @@ def _matching_label(message: str, sources: dict[str, Path | None]) -> str | None
     return max(candidates, key=len) if candidates else None
 
 
+def _identity(label: str, source: Path | None) -> tuple[str, str]:
+    """The grouping key and the printed location for one labelled gate finding.
+
+    This is the one place the deploy→repo coordinate transform is decided, so
+    that findings, record-less artifacts and the trend report cannot answer it
+    three different ways.
+
+    With a recorded source the answer is that file for both: it is the finest
+    identity available and it is what a reader has to edit. Without one
+    (channels 2 and 3 above) the identity is the gate's own ``tool:dest``
+    label — **the finest identity the system possesses**, because that label is
+    the gate's primary key, so two distinct findings can never share it. The
+    printed location drops the tool, which the ``[...]`` prefix already carries.
+
+    Keying the unattributable branch on the destination alone would be the same
+    mistake one level up: two tool-scoped artifacts staging to one destination
+    would still fold into a single finding with a wrong count. Keying on the
+    label instead costs an over-report — a genuinely shared unattributable
+    artifact fans out to one line per tool — in a channel with no occupants
+    today. That is the deliberate direction to be wrong in: a gate that says a
+    thing twice is strictly safer than one that never says it at all.
+    """
+    if source is not None:
+        return str(source), str(source)
+    _tool, _sep, dest = label.partition(":")
+    return label, dest
+
+
 def _collapse_findings(
     violations: list[str], *, sources: dict[str, Path | None], tool_values: frozenset[str]
 ) -> list[str]:
@@ -147,31 +230,28 @@ def _collapse_findings(
     target; the lint reports on one source tree, so it groups. The verdict is
     unchanged either way — only the rendering differs.
 
-    Grouping is by **source artifact**, never by the rendered message, because
+    Grouping is by **artifact identity**, never by the rendered message, because
     two distinct tool-scoped artifacts can share a destination path and a
     measured size — their messages would then be identical after the tool prefix
-    came off, and folding them would report one defect where there are two. The
-    label→source index the caller already holds is the identity; the message is
-    only its rendering. Where identity is available the source path replaces the
-    destination in the output, since that is the file a reader has to edit.
+    came off, and folding them would report one defect where there are two.
+    ``_identity`` decides what that identity is; the message is only its
+    rendering.
 
     A finding with a tool prefix but no artifact behind it (the always-on
     surface, which is a property of the tool) groups on its text. A finding with
     no tool prefix at all (the conflict audit's, which spans artifacts) passes
     through whole.
     """
-    tools_by_finding: dict[tuple[str, str, str], list[str]] = {}
+    # Key is (kind, identity, printed location, text). The location is carried
+    # in the key rather than recomputed at render time because it is a function
+    # of the identity — two entries with one identity cannot want two locations.
+    tools_by_finding: dict[tuple[str, str, str, str], list[str]] = {}
     for message in violations:
         label = _matching_label(message, sources)
         if label is not None:
-            tool, _sep, dest = label.partition(":")
-            # An unattributable entry (bytes from the override channel) still
-            # groups per artifact — the destination is a stable identity even
-            # when the origin file is unknown — and renders as that destination
-            # rather than as a source path the plan cannot supply.
-            source = sources[label]
-            identity = str(source) if source is not None else dest
-            key = (_ARTIFACT, identity, message[len(label) + 1 :].strip())
+            tool, _sep, _dest = label.partition(":")
+            identity, where = _identity(label, sources[label])
+            key = (_ARTIFACT, identity, where, message[len(label) + 1 :].strip())
         else:
             head, _sep, tail = message.partition(":")
             if head not in tool_values or not tail.strip():
@@ -179,19 +259,44 @@ def _collapse_findings(
                 # different kinds must never share a bucket, or the one that
                 # carries no tool is absorbed into the one that does and
                 # disappears from the report.
-                tools_by_finding.setdefault((_WHOLE, "", message), [])
+                tools_by_finding.setdefault((_WHOLE, "", "", message), [])
                 continue
-            tool, key = head, (_SURFACE, "", tail.strip())
+            tool, key = head, (_SURFACE, "", "", tail.strip())
         tools_by_finding.setdefault(key, []).append(tool)
 
     rendered: list[str] = []
-    for (_kind, where, text), tools in tools_by_finding.items():
+    for (_kind, _identity_key, where, text), tools in tools_by_finding.items():
         if not tools:
             rendered.append(text)
             continue
         prefix = f"[{', '.join(sorted(tools))}]"
         rendered.append(f"{prefix} {where}: {text}" if where else f"{prefix} {text}")
     return rendered
+
+
+def _group_skill_bodies(
+    measures: list[SkillMeasure], *, sources: dict[str, Path | None]
+) -> list[SkillBody]:
+    """Fold the gate's per-tool skill measurements into one entry per artifact.
+
+    Same identity rule as the violations, and for the same reason: deduplicating
+    on ``(destination, tokens)`` folds two distinct tool-scoped skills that share
+    a destination and happen to weigh the same, so the trend report under-counts
+    the surface — silently, on the success path, where nobody is looking for it.
+
+    ``tokens`` is part of the key rather than an attribute of the group because a
+    per-tool transform can change one source's deployed weight, and one file
+    reporting two different numbers is precisely the thing worth seeing.
+    """
+    grouped: dict[tuple[str, int], tuple[str, list[str]]] = {}
+    for measure in measures:
+        identity, where = _identity(measure.label, sources.get(measure.label))
+        _where, tools = grouped.setdefault((identity, measure.tokens), (where, []))
+        tools.append(measure.label.partition(":")[0])
+    return [
+        SkillBody(where=where, tokens=tokens, tools=tuple(sorted(set(tools))))
+        for (_identity_key, tokens), (where, tools) in sorted(grouped.items())
+    ]
 
 
 def _is_admitted_only(source: Path, repo_root: Path) -> bool:
@@ -237,13 +342,20 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
 
     gate = run_admission_gate(plans)
 
-    tools_by_source: dict[Path | None, list[str]] = {}
+    # Bucketed on ``_identity``, not on the source path: bucketing on the path
+    # put every unattributable entry into one anonymous ``None`` bucket, so two
+    # record-less overrides at different destinations reported as one artifact
+    # with a wrong tool list.
+    buckets: dict[str, tuple[Path | None, str, list[str]]] = {}
     for label in gate.skipped:
-        tools_by_source.setdefault(sources.get(label), []).append(label.split(":", 1)[0])
+        source = sources.get(label)
+        identity, where = _identity(label, source)
+        buckets.setdefault(identity, (source, where, []))[2].append(label.partition(":")[0])
 
     unadmitted = [
         Unadmitted(
             source=source,
+            dest=None if source is not None else Path(where),
             tools=tuple(sorted(set(tools))),
             # An unattributable entry is never fatal: the admitted-content-only
             # rule is about which tree a FILE lives in, and here the classified
@@ -252,7 +364,7 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
             # the carrier for its contributor's missing record.
             fatal=source is not None and _is_admitted_only(source, repo_root),
         )
-        for source, tools in sorted(tools_by_source.items(), key=lambda kv: str(kv[0]))
+        for _identity_key, (source, where, tools) in sorted(buckets.items())
     ]
 
     return ContentLintResult(
@@ -263,5 +375,5 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
         ),
         unadmitted=unadmitted,
         surfaces=list(gate.surfaces),
-        skills=list(gate.skills),
+        skills=_group_skill_bodies(gate.skills, sources=sources),
     )

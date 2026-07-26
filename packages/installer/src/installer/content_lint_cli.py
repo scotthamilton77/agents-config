@@ -44,12 +44,15 @@ def _report_budgets(result: ContentLintResult) -> None:
             f"  {surface.tool:<10} {surface.tokens:>6} tokens  ({surface.rules} rule(s))\n"
         )
 
-    # A shared skill stages into every tool, so the same body would otherwise
-    # print once per tool. Collapse to the distinct destination + weight pairs.
-    bodies = sorted({(m.label.split(":", 1)[1], m.tokens) for m in result.skills})
+    # Already one entry per artifact, grouped by the lint on the same identity
+    # rule as the violations — a shared skill stages into every tool and would
+    # otherwise print its number once per tool. The tool list stays on the line
+    # because it is the only thing distinguishing two entries whose origin the
+    # staging plan never recorded: those are keyed per tool and so share a
+    # printed location.
     sys.stdout.write(f"content-lint: admitted skill bodies (cap {SKILL_BODY_TOKEN_CAP} tokens)\n")
-    for dest, tokens in bodies:
-        sys.stdout.write(f"  {tokens:>6} tokens  {dest}\n")
+    for body in result.skills:
+        sys.stdout.write(f"  {body.tokens:>6} tokens  {body.where}  [{', '.join(body.tools)}]\n")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -60,9 +63,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = lint_content(repo_root, io=io)
     except (OSError, UnicodeDecodeError) as exc:
-        # An absent or unreadable .installignore. Exclusion policy is
-        # load-bearing, so this is a clean exit 2 rather than a lint that
-        # silently reports on the wrong fileset.
+        # The tree could not be read: an absent or unreadable .installignore,
+        # or an unreadable file under src/. Either way the lint would be
+        # reporting on the wrong fileset, so this is a clean exit 2 naming the
+        # path rather than a falsely clean tree.
         sys.stderr.write(f"content-lint: {exc}\n")
         return 2
     except (UnknownMergeKeyError, CollisionError) as exc:
@@ -78,9 +82,12 @@ def main(argv: list[str] | None = None) -> int:
         stream = sys.stderr if entry.fatal else sys.stdout
         verdict = "carries no admission record" if entry.fatal else "not admitted (no record)"
         # A None source is an entry file supplied through the override channel,
-        # which records no origin. Say that plainly rather than printing "None".
+        # which records no origin. Name the destination it was heading for and
+        # say the origin is unrecorded, rather than printing an anonymous line.
         where = (
-            str(entry.source) if entry.source is not None else "<merged entry, source unrecorded>"
+            str(entry.source)
+            if entry.source is not None
+            else f"<merged entry at {entry.dest}, source unrecorded>"
         )
         stream.write(f"content-lint: {where}: {verdict} [{', '.join(entry.tools)}]\n")
     if result.unadmitted:
