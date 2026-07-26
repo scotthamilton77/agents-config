@@ -403,6 +403,27 @@ def test_abandoning_an_item_that_never_had_a_pr_is_refused() -> None:
     assert envelope["error"]["code"] == "E_NO_OPEN_PR"
 
 
+def test_an_abandon_retry_still_checks_a_pr_reference_that_is_there() -> None:
+    """
+    Given an item already back on its lane, still holding its PR reference
+    When the abandon is re-run naming a different PR
+    Then it is refused rather than reported as already done.
+
+    Skipping the append does not make "success" true of a PR the item was
+    never on. Today's fold records an abandon's closure without interpreting
+    it, so the reference does survive — and this is the path a typo takes
+    once the first abandon has landed.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", parked=False, pr=42, work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["abandon", "it-1", "--pr", "99"], runtime, tracker)
+
+    assert code == 1
+    assert envelope["error"]["code"] == "E_USAGE"
+    assert tracker.mutations == []
+
+
 def test_an_abandon_retry_does_not_demand_a_pr_the_closure_cleared() -> None:
     """
     Given an item already back on its lane, its PR reference gone with the

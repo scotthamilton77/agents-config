@@ -305,20 +305,22 @@ def _plan_redispatch(item: ItemView) -> Plan:
     return Plan(ROWS["redispatch"], item, payload)
 
 
-def _require_current_pr(item: ItemView, pr: int, verb: str) -> None:
-    """The PR named must be the one the item is on.
+def _require_matching_pr(item: ItemView, pr: int) -> None:
+    """The PR named must be the one the item is on, whenever the item still
+    says which that is.
 
     The fold compares an event's PR against nothing, so a typo or a delayed
-    notification for a superseded PR is recorded as fact -- and for `pr-closed`
-    it also tears down the live review cycle. The item's reference is the only
-    thing that says which cycle a closure belongs to.
+    notification for a superseded PR is taken as fact -- and for `pr-closed` it
+    also tears down the live review cycle. The item's reference is the only
+    thing that says which cycle a closure belongs to, and it is worth
+    consulting on the retry path too: skipping the append does not make
+    "success" true of a PR the item was never on.
+
+    Absence is the one reading that is not a mismatch. The closure an abandon
+    records clears the item's reference, so a retry arriving after that has
+    nothing left to compare and must not be refused for it.
     """
-    if item.pr_number is None:
-        raise ExecutorError(
-            ErrorCode.NO_OPEN_PR,
-            f"{verb} records a PR's closure, and item {item.id!r} holds no PR reference",
-        )
-    if item.pr_number != pr:
+    if item.pr_number is not None and item.pr_number != pr:
         raise ExecutorError(
             ErrorCode.USAGE,
             f"item {item.id!r} is on PR {item.pr_number}, not {pr}; "
@@ -326,13 +328,26 @@ def _require_current_pr(item: ItemView, pr: int, verb: str) -> None:
         )
 
 
+def _require_current_pr(item: ItemView, pr: int, verb: str) -> None:
+    """As above, and the reference has to be there: a path that writes a
+    closure needs a PR to name."""
+    if item.pr_number is None:
+        raise ExecutorError(
+            ErrorCode.NO_OPEN_PR,
+            f"{verb} records a PR's closure, and item {item.id!r} holds no PR reference",
+        )
+    _require_matching_pr(item, pr)
+
+
 def _plan_abandon(args: VerbArgs, item: ItemView) -> Plan:
     pr = _require_pr(args, "abandon")
     if not item.parked:
         # The retry path: the enqueue is recorded, so only the facade call is
-        # re-issued. The PR is deliberately not checked here -- the closure the
-        # first run recorded clears the item's reference, so demanding a match
-        # would strand exactly the retry that is converging.
+        # re-issued. The reference is still compared while there is one --
+        # skipping the append does not make "success" true of a PR the item was
+        # never on -- but its absence is not a mismatch, since the closure the
+        # first run recorded is what clears it.
+        _require_matching_pr(item, pr)
         return Plan(ROWS["abandon"], item, None)
     # The appending path writes the closure into the log, where it is the
     # record, so the PR it names has to be the item's own.
