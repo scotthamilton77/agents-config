@@ -1,0 +1,4 @@
+# The graphify knowledge graph is a large, generated, point-in-time artifact.
+# Keep it out of implicit context reads; write traffic into the workspace also
+# invalidates the prompt cache.
+graphify-out/
