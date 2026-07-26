@@ -46,16 +46,24 @@ class ItemView:
 
 @dataclass(frozen=True)
 class RunState:
-    """The folded run: its items, plus the closed-PR ledger.
+    """The folded run: its items, and the ledgers a retry is judged against.
 
-    The ledger is carried because it is the only evidence that a `pr_closed`
-    already applied -- the runtime leaves an item's PR reference in place
-    across a close, so the item alone cannot answer "have I recorded this
-    closure already?"
+    `closures` maps an (item, PR) pair to when its closure was recorded, and
+    `merged_shas` an item to the commit its merge recorded. Both are carried
+    because an item alone cannot answer "have I recorded this already?" -- the
+    runtime leaves a PR reference in place across a close, and a merged item
+    says nothing about which commit merged it.
+
+    `last_item_ts` is when each item was last touched by any event. It is what
+    lets a ledger entry speak for the item's *current* position: the ledger
+    records no outcome, so an item's status stands in for one, and it only
+    stands in while that ledger entry is still the last thing that happened.
     """
 
     items: Mapping[str, ItemView]
-    closed_prs: frozenset[tuple[str, int]]
+    closures: Mapping[tuple[str, int], str]
+    merged_shas: Mapping[str, str]
+    last_item_ts: Mapping[str, str]
 
     def item(self, item_id: str) -> ItemView:
         found = self.items.get(item_id)
@@ -92,18 +100,46 @@ def _item_view(item_id: str, payload: Mapping[str, JsonValue]) -> ItemView:
     )
 
 
-def _closed_prs(entries: JsonValue) -> frozenset[tuple[str, int]]:
+def _closures(entries: JsonValue) -> dict[tuple[str, int], str]:
+    """(item, PR) -> when its closure was recorded, latest wins.
+
+    An entry missing its item, PR or timestamp is dropped: each is needed to
+    decide whether a later `pr-closed` is that entry's retry, and an entry that
+    cannot answer must not be read as one that answers yes.
+    """
     if not isinstance(entries, list):
-        return frozenset()
-    pairs: set[tuple[str, int]] = set()
+        return {}
+    closures: dict[tuple[str, int], str] = {}
     for entry in entries:
         if not isinstance(entry, dict):
             continue
         item_id = _opt_str(entry, "item")
         pr = _opt_int(entry, "pr")
-        if item_id is not None and pr is not None:
-            pairs.add((item_id, pr))
-    return frozenset(pairs)
+        ts = _opt_str(entry, "ts")
+        if item_id is not None and pr is not None and ts is not None:
+            closures[(item_id, pr)] = ts
+    return closures
+
+
+def _merged_shas(entries: JsonValue) -> dict[str, str]:
+    """item -> the commit its merge recorded, latest wins."""
+    if not isinstance(entries, list):
+        return {}
+    shas: dict[str, str] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        item_id = _opt_str(entry, "item")
+        sha = _opt_str(entry, "sha")
+        if item_id is not None and sha is not None:
+            shas[item_id] = sha
+    return shas
+
+
+def _timestamps(payload: JsonValue) -> dict[str, str]:
+    if not isinstance(payload, dict):
+        return {}
+    return {key: value for key, value in payload.items() if isinstance(value, str)}
 
 
 def parse_state(payload: JsonValue) -> RunState:
@@ -130,7 +166,9 @@ def parse_state(payload: JsonValue) -> RunState:
             for item_id, body in items.items()
             if isinstance(body, dict)
         },
-        closed_prs=_closed_prs(payload.get("closed_ledger")),
+        closures=_closures(payload.get("closed_ledger")),
+        merged_shas=_merged_shas(payload.get("merged_ledger")),
+        last_item_ts=_timestamps(payload.get("last_item_ts")),
     )
 
 

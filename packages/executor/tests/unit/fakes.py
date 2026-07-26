@@ -177,10 +177,33 @@ def item(
     )
 
 
-def run_state(*items: ItemView, closed_prs: Sequence[tuple[str, int]] = ()) -> RunState:
+# Synthetic timestamps for the builder below. Only their ordering matters:
+# the rules read "is this ledger entry still the last thing that touched the
+# item", never the wall-clock value.
+_LEDGER_TS = "2026-07-26T00:00:00Z"
+_LATER_TS = "2026-07-26T00:00:01Z"
+
+
+def run_state(
+    *items: ItemView,
+    closures: Sequence[tuple[str, int]] = (),
+    merged_shas: Mapping[str, str] | None = None,
+    touched_since: Sequence[str] = (),
+) -> RunState:
+    """A folded run.
+
+    Each recorded closure is treated as the last thing that touched its item,
+    which is the ordinary case a retry arrives in. Naming an item in
+    `touched_since` models something having happened after -- a start, a
+    reopen -- so a test can state that fact without inventing timestamps.
+    """
+    last_item_ts = {item_id: _LEDGER_TS for item_id, _ in closures}
+    last_item_ts.update({item_id: _LATER_TS for item_id in touched_since})
     return RunState(
         items={view.id: view for view in items},
-        closed_prs=frozenset(closed_prs),
+        closures={(item_id, pr): _LEDGER_TS for item_id, pr in closures},
+        merged_shas=dict(merged_shas or {}),
+        last_item_ts=last_item_ts,
     )
 
 

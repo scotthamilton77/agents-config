@@ -172,13 +172,21 @@ ports.py  →  state.py  →  pairing.py  →  enact.py  →  cli.py
   ignores.** The runtime's validator accepts the extra key and the fold drops
   it until slice B lands; the event is recorded either way, which is what
   makes the two slices independently mergeable.
-- **One PR-cycle case the runtime's snapshot cannot answer.** An item closed
-  to `in-progress` that then goes `waiting-human` sits in a status reachable
-  both by a resume and by an opening, so a genuine reopen there reads as a
-  retry and is not recorded. The snapshot carries closures but no openings,
-  which is what makes the two indistinguishable; the decision layer cannot
-  sharpen a rule the state does not support. The direction is chosen for its
-  failure mode — a skipped append shows up as `event_appended: false` and is
-  recoverable, where appending silently ends a human wait. Closing it properly
-  means the runtime recording openings the way it records closures, which is a
-  fold change and belongs to the runtime, not here.
+- **Two PR-cycle cases the runtime's snapshot cannot answer.** Both come from
+  the same gap: the snapshot records that closures happened, but not that
+  openings did, and not what outcome a closure produced. The decision layer
+  cannot sharpen a rule the state does not support, so each is bounded rather
+  than solved, and each closes properly only in the runtime's fold.
+  - An item closed to `in-progress` that then goes `waiting-human` sits in a
+    status reachable both by a resume and by an opening, so a genuine reopen
+    there reads as a retry and is not recorded. The direction is chosen for
+    its failure mode — a skipped append shows up as `event_appended: false`
+    and is recoverable, where appending silently ends a human wait. An
+    openings ledger would close it.
+  - A `pr-closed` retry is bound to its closure by "nothing has touched the
+    item since", which the runtime's second-granular timestamps defeat when an
+    intervening event lands in the same second (measured, not assumed). The
+    residual is benign: the row writes nothing and calls no tracker verb, so
+    the wrong answer is a success report for an outcome the item is in anyway
+    — no append, no tracker call, no divergence. The ledger recording each
+    closure's `next` would close it.

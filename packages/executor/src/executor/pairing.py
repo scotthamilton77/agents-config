@@ -305,20 +305,45 @@ def _plan_redispatch(item: ItemView) -> Plan:
     return Plan(ROWS["redispatch"], item, payload)
 
 
+def _require_current_pr(item: ItemView, pr: int, verb: str) -> None:
+    """The PR named must be the one the item is on.
+
+    The fold compares an event's PR against nothing, so a typo or a delayed
+    notification for a superseded PR is recorded as fact -- and for `pr-closed`
+    it also tears down the live review cycle. The item's reference is the only
+    thing that says which cycle a closure belongs to.
+    """
+    if item.pr_number is None:
+        raise ExecutorError(
+            ErrorCode.NO_OPEN_PR,
+            f"{verb} records a PR's closure, and item {item.id!r} holds no PR reference",
+        )
+    if item.pr_number != pr:
+        raise ExecutorError(
+            ErrorCode.USAGE,
+            f"item {item.id!r} is on PR {item.pr_number}, not {pr}; "
+            f"recording a closure for a PR the item is not on would name the wrong cycle",
+        )
+
+
 def _plan_abandon(args: VerbArgs, item: ItemView) -> Plan:
-    # `--pr` is checked before the idempotency skip: an abandon whose closure
-    # names no PR is a malformed command, and answering it with "already done"
-    # would hide that.
     pr = _require_pr(args, "abandon")
-    payload: dict[str, JsonValue] | None = None
-    if item.parked:
-        payload = {
-            "item": item.id,
-            "lane": _lane(item, "abandon"),
-            # The single park exit carries the closure, so an abandoned PR is
-            # recorded without granting `pr_closed` a new source state.
-            "closure": {"pr": pr, "reason": args.reason or "abandoned"},
-        }
+    if not item.parked:
+        # The retry path: the enqueue is recorded, so only the facade call is
+        # re-issued. The PR is deliberately not checked here -- the closure the
+        # first run recorded clears the item's reference, so demanding a match
+        # would strand exactly the retry that is converging.
+        return Plan(ROWS["abandon"], item, None)
+    # The appending path writes the closure into the log, where it is the
+    # record, so the PR it names has to be the item's own.
+    _require_current_pr(item, pr, "abandon")
+    payload: dict[str, JsonValue] = {
+        "item": item.id,
+        "lane": _lane(item, "abandon"),
+        # The single park exit carries the closure, so an abandoned PR is
+        # recorded without granting `pr_closed` a new source state.
+        "closure": {"pr": pr, "reason": args.reason or "abandoned"},
+    }
     return Plan(ROWS["abandon"], item, payload)
 
 
@@ -392,8 +417,24 @@ def _closure_applied(
     made. A closure to `parked` is the awkward one -- the runtime leaves the
     item's review status alone and sets the park instead, so the park it
     produced is what the retry is compared against.
+
+    The ledger records no outcome, which is why the item's position stands in
+    for one -- and a position only speaks for this closure while the closure is
+    still the last thing that touched the item. Without that guard an unrelated
+    later transition can leave the item on a status a retry happens to name:
+    close to `queued`, start the item, then ask to close again to
+    `in-progress`, and the request matches a state the closure never produced.
+
+    The runtime's timestamps are second-granular, so an intervening event in
+    the same second still defeats the guard -- measured, not assumed. What is
+    left is benign: this row writes nothing and calls no tracker verb, so a
+    wrongly-idempotent answer produces no append, no tracker call and no
+    divergence, and the outcome it reports is the one the item is actually in.
+    Closing it exactly needs the ledger to record each closure's `next`, which
+    is the runtime's to add.
     """
-    if (item.id, pr) not in state.closed_prs:
+    closure_ts = state.closures.get((item.id, pr))
+    if closure_ts is None or state.last_item_ts.get(item.id) != closure_ts:
         return False
     if next_status == "parked":
         return item.parked and item.park_reason == _park_typing(reason)
@@ -408,17 +449,7 @@ def _plan_pr_closed(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
         raise ExecutorError(ErrorCode.USAGE, "pr-closed requires --reason")
     if _closure_applied(item, state, pr=pr, next_status=args.next_status, reason=args.reason):
         return Plan(ROWS["pr-closed"], item, None)
-    # The fold does not compare the event's PR against the item's own, so a
-    # closure naming an older number tears down the current review cycle and
-    # records a closure for a PR the item is not on -- a delayed notification
-    # for a superseded PR is enough to do it. The item's reference is the only
-    # thing that can say which cycle a closure belongs to.
-    if item.pr_number != pr:
-        raise ExecutorError(
-            ErrorCode.USAGE,
-            f"item {item.id!r} is on PR {item.pr_number}, not {pr}; "
-            f"closing a PR the item is not on would end the wrong cycle",
-        )
+    _require_current_pr(item, pr, "pr-closed")
     _require_appendable(item, _REVIEWABLE, "pr-closed")
     payload: dict[str, JsonValue] = {
         "item": item.id,
@@ -429,13 +460,25 @@ def _plan_pr_closed(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     return Plan(ROWS["pr-closed"], item, payload)
 
 
-def _plan_merged(args: VerbArgs, item: ItemView) -> Plan:
+def _plan_merged(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     if args.sha is None:
         raise ExecutorError(ErrorCode.USAGE, "merged requires --sha")
     if item.status in ("merged", "done"):
         # The retry path: the fact is recorded, so only the tracker close and
         # the trailing sync are re-issued. The PR number is not needed and not
         # demanded -- refusing here would strand a converging retry.
+        #
+        # The commit is checked, though, when the ledger recorded one: "already
+        # merged" is not the same claim as "already merged at this commit", and
+        # answering a different commit with success reports a fact no event
+        # holds. A ledger entry with no commit cannot answer, and an
+        # unanswerable check must not strand the retry, so it does not refuse.
+        recorded = state.merged_shas.get(item.id)
+        if recorded is not None and recorded != args.sha:
+            raise ExecutorError(
+                ErrorCode.USAGE,
+                f"item {item.id!r} is recorded as merged at {recorded!r}, not {args.sha!r}",
+            )
         return Plan(ROWS["merged"], item, None)
     if item.pr_number is None:
         raise ExecutorError(
@@ -473,7 +516,7 @@ def build_plan(verb: str, args: VerbArgs, state: RunState) -> Plan:
     if verb == "pr-closed":
         return _plan_pr_closed(args, item, state)
     if verb == "merged":
-        return _plan_merged(args, item)
+        return _plan_merged(args, item, state)
     if verb == "done":
         return _plan_done(item)
     raise ExecutorError(ErrorCode.USAGE, f"unknown executor verb {verb!r}")

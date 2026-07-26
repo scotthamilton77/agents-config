@@ -30,8 +30,14 @@ _STATE = {
     "closed_ledger": [
         {"item": "it-1", "pr": 41, "reason": "superseded", "ts": "2026-07-25T00:00:00Z"},
         {"item": "it-1", "pr": None, "reason": "no number", "ts": "2026-07-25T00:00:00Z"},
+        {"item": "it-1", "pr": 40, "reason": "no timestamp"},
         "not an object",
     ],
+    "merged_ledger": [
+        {"item": "it-1", "pr": 39, "sha": "9fceb02", "ts": "2026-07-25T00:00:00Z"},
+        {"item": "it-2", "pr": 38, "sha": None, "ts": "2026-07-25T00:00:00Z"},
+    ],
+    "last_item_ts": {"it-1": "2026-07-25T00:00:00Z", "it-2": 17},
 }
 
 
@@ -63,19 +69,23 @@ def test_parse_state_narrows_each_item_to_the_fields_a_pairing_reads() -> None:
     )
 
 
-def test_closed_ledger_becomes_item_pr_pairs_skipping_unusable_entries() -> None:
+def test_the_ledgers_keep_only_entries_that_can_answer_a_retry() -> None:
     """
-    Given a closed ledger holding one usable entry, one with a null PR, and
-    one that is not an object
-    When it is parsed
-    Then only the usable entry becomes a pair.
+    Given ledgers holding one usable entry each, plus entries with a null PR,
+    no timestamp, a null commit, and one that is not an object
+    When they are parsed
+    Then only the usable entries survive, and a non-string timestamp is dropped.
 
-    Pins that an entry that cannot answer "was this PR's closure recorded?"
-    is dropped rather than guessed at — the resulting miss re-appends an
-    event the runtime folds as an anomaly, which is recoverable; a false
-    match silently loses the closure.
+    Every dropped field is one a retry decision needs. An entry that cannot
+    answer "is this already recorded?" must not be read as one answering yes:
+    the resulting miss surfaces as a refusal or a flagged append, both
+    recoverable, where a false match loses the transition silently.
     """
-    assert parse_state(_STATE).closed_prs == frozenset({("it-1", 41)})
+    state = parse_state(_STATE)
+
+    assert state.closures == {("it-1", 41): "2026-07-25T00:00:00Z"}
+    assert state.merged_shas == {"it-1": "9fceb02"}
+    assert state.last_item_ts == {"it-1": "2026-07-25T00:00:00Z"}
 
 
 @pytest.mark.parametrize(

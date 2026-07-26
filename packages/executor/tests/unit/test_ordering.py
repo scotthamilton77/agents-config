@@ -21,7 +21,7 @@ _INTENTS = [
     (
         ["abandon", "it-1", "--pr", "7"],
         "abandon",
-        item("it-1", parked=True, work_id="w-1"),
+        item("it-1", parked=True, pr=7, work_id="w-1"),
     ),
 ]
 
@@ -233,7 +233,7 @@ def test_a_reopened_pr_stays_recognized_as_its_cycle_advances(status: str) -> No
     re-appending from `waiting-human` is the silent-revert case again. The
     reopened cycle has to stay recognizable for as long as the first one does.
     """
-    runtime = FakeRuntime(run_state(item("it-1", status=status, pr=42), closed_prs=[("it-1", 42)]))
+    runtime = FakeRuntime(run_state(item("it-1", status=status, pr=42), closures=[("it-1", 42)]))
 
     code, _ = invoke(["pr-opened", "it-1", "--pr", "42"], runtime, FakeTracker())
 
@@ -273,7 +273,7 @@ def test_reopening_the_same_pr_after_a_recorded_close_is_not_a_duplicate() -> No
     closure is what makes the reopen legible.
     """
     runtime = FakeRuntime(
-        run_state(item("it-1", status="in-progress", pr=42), closed_prs=[("it-1", 42)])
+        run_state(item("it-1", status="in-progress", pr=42), closures=[("it-1", 42)])
     )
 
     invoke(["pr-opened", "it-1", "--pr", "42"], runtime, FakeTracker())
@@ -292,9 +292,7 @@ def test_re_recording_a_closure_already_in_the_ledger_appends_no_duplicate() -> 
     the reviewable statuses, so an item still sitting in one has an open PR
     whatever the ledger remembers of an earlier cycle.
     """
-    runtime = FakeRuntime(
-        run_state(item("it-1", status="queued", pr=42), closed_prs=[("it-1", 42)])
-    )
+    runtime = FakeRuntime(run_state(item("it-1", status="queued", pr=42), closures=[("it-1", 42)]))
 
     code, envelope = invoke(
         ["pr-closed", "it-1", "--pr", "42", "--next", "queued", "--reason", "stale"],
@@ -320,7 +318,7 @@ def test_a_closure_that_parked_the_item_is_recognized_on_retry() -> None:
     runtime = FakeRuntime(
         run_state(
             item("it-1", status="pr-open", pr=42, park_reason="ci-failure"),
-            closed_prs=[("it-1", 42)],
+            closures=[("it-1", 42)],
         )
     )
 
@@ -345,9 +343,7 @@ def test_a_closure_retry_naming_a_different_next_is_not_a_retry() -> None:
     the item is no longer anywhere a closure can be applied from, so claiming
     success would report a state neither plane holds.
     """
-    runtime = FakeRuntime(
-        run_state(item("it-1", status="queued", pr=42), closed_prs=[("it-1", 42)])
-    )
+    runtime = FakeRuntime(run_state(item("it-1", status="queued", pr=42), closures=[("it-1", 42)]))
 
     code, envelope = invoke(
         ["pr-closed", "it-1", "--pr", "42", "--next", "in-progress", "--reason", "stale"],
@@ -371,7 +367,7 @@ def test_a_parked_closure_retry_that_would_type_the_park_differently_is_refused(
     mismatch a direct re-park is refused for.
     """
     runtime = FakeRuntime(
-        run_state(item("it-1", status="pr-open", pr=42, parked=True), closed_prs=[("it-1", 42)])
+        run_state(item("it-1", status="pr-open", pr=42, parked=True), closures=[("it-1", 42)])
     )
 
     code, envelope = invoke(
@@ -382,6 +378,36 @@ def test_a_parked_closure_retry_that_would_type_the_park_differently_is_refused(
 
     assert code == 1
     assert envelope["error"]["code"] == "E_ITEM_PARKED"
+    assert runtime.appended == []
+
+
+def test_a_closure_retry_is_refused_once_something_else_has_touched_the_item() -> None:
+    """
+    Given a closure applied to `queued`, after which the item was started
+    When the same PR is closed again asking for `in-progress`
+    Then it is refused rather than matched against that later position.
+
+    The ledger records no outcome, so the item's position stands in for one —
+    and a position only speaks for this closure while the closure is still the
+    last thing that touched the item. Without that, an unrelated later
+    transition can leave the item on a status a retry happens to name.
+    """
+    runtime = FakeRuntime(
+        run_state(
+            item("it-1", status="in-progress", pr=42),
+            closures=[("it-1", 42)],
+            touched_since=["it-1"],
+        )
+    )
+
+    code, envelope = invoke(
+        ["pr-closed", "it-1", "--pr", "42", "--next", "in-progress", "--reason", "stale"],
+        runtime,
+        FakeTracker(),
+    )
+
+    assert code == 1
+    assert "in-progress" in envelope["error"]["message"]
     assert runtime.appended == []
 
 
@@ -396,9 +422,7 @@ def test_a_second_closure_of_a_reopened_pr_is_recorded() -> None:
     would stay `pr-open` and never learn the second closure's reason or next
     status.
     """
-    runtime = FakeRuntime(
-        run_state(item("it-1", status="pr-open", pr=42), closed_prs=[("it-1", 42)])
-    )
+    runtime = FakeRuntime(run_state(item("it-1", status="pr-open", pr=42), closures=[("it-1", 42)]))
 
     invoke(
         ["pr-closed", "it-1", "--pr", "42", "--next", "queued", "--reason", "second"],
@@ -447,9 +471,7 @@ def test_a_closure_for_a_different_pr_is_still_appended() -> None:
     The ledger match is per (item, PR), not per item: a second PR cycle's
     closure must not be swallowed by the first's.
     """
-    runtime = FakeRuntime(
-        run_state(item("it-1", status="pr-open", pr=43), closed_prs=[("it-1", 42)])
-    )
+    runtime = FakeRuntime(run_state(item("it-1", status="pr-open", pr=43), closures=[("it-1", 42)]))
 
     invoke(
         ["pr-closed", "it-1", "--pr", "43", "--next", "queued", "--reason", "stale"],

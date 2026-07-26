@@ -344,7 +344,7 @@ def test_abandon_carries_the_closure_on_the_single_park_exit() -> None:
     Then `item_enqueued` carries `{pr, reason}` as its closure and the facade
     is told first.
     """
-    runtime = FakeRuntime(run_state(item("it-1", parked=True, work_id="w-1")))
+    runtime = FakeRuntime(run_state(item("it-1", parked=True, pr=42, work_id="w-1")))
     tracker = FakeTracker()
 
     invoke(["abandon", "it-1", "--pr", "42", "--reason", "superseded"], runtime, tracker)
@@ -362,13 +362,117 @@ def test_abandon_carries_the_closure_on_the_single_park_exit() -> None:
     ]
 
 
+def test_abandon_naming_a_pr_the_item_is_not_on_is_refused() -> None:
+    """
+    Given a parked item on PR 7
+    When it is abandoned naming PR 8
+    Then it is refused before the facade is called.
+
+    The closure this writes goes into the log as the record, and the fold
+    compares it against nothing — so a typo or a delayed notification for a
+    superseded PR would be recorded as fact while the command reported
+    success. Tracker-first makes the ordering matter: the refusal has to
+    precede the facade call.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", parked=True, pr=7, work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["abandon", "it-1", "--pr", "8"], runtime, tracker)
+
+    assert code == 1
+    assert envelope["error"]["code"] == "E_USAGE"
+    assert "7" in envelope["error"]["message"]
+    assert runtime.appended == []
+    assert tracker.mutations == []
+
+
+def test_abandoning_an_item_that_never_had_a_pr_is_refused() -> None:
+    """
+    Given parked work holding no PR reference
+    When it is abandoned
+    Then E_NO_OPEN_PR comes back.
+
+    An abandon records a PR's closure, and there is no PR to close. Getting
+    such an item back in play is a redispatch, which records no closure.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", parked=True, work_id="w-1")))
+
+    code, envelope = invoke(["abandon", "it-1", "--pr", "8"], runtime, FakeTracker())
+
+    assert code == 1
+    assert envelope["error"]["code"] == "E_NO_OPEN_PR"
+
+
+def test_an_abandon_retry_does_not_demand_a_pr_the_closure_cleared() -> None:
+    """
+    Given an item already back on its lane, its PR reference gone with the
+    closure that recorded it
+    When the abandon is re-run
+    Then it succeeds, re-issuing only the facade call.
+
+    The append already happened, so demanding a match here would strand
+    exactly the retry that is converging.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", parked=False, work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, _ = invoke(["abandon", "it-1", "--pr", "8"], runtime, tracker)
+
+    assert code == 0
+    assert runtime.appended == []
+    assert tracker.mutations == [("abandon", "w-1")]
+
+
+def test_a_merge_retry_naming_a_different_commit_is_refused() -> None:
+    """
+    Given an item recorded as merged at one commit
+    When the merge is re-run naming another
+    Then it is refused rather than reported as already applied.
+
+    "Already merged" is not the same claim as "already merged at this
+    commit": answering a different commit with success reports a fact no
+    event holds, and re-issues the tracker close behind it.
+    """
+    runtime = FakeRuntime(
+        run_state(
+            item("it-1", status="merged", pr=42, work_id="w-1"), merged_shas={"it-1": "9fceb02"}
+        )
+    )
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["merged", "it-1", "--sha", "badc0de"], runtime, tracker)
+
+    assert code == 1
+    assert "9fceb02" in envelope["error"]["message"]
+    assert tracker.mutations == []
+
+
+def test_a_merge_retry_naming_the_recorded_commit_still_converges() -> None:
+    """
+    Given an item recorded as merged at a commit
+    When the merge is re-run naming that same commit
+    Then it succeeds and the tracker close is re-issued.
+    """
+    runtime = FakeRuntime(
+        run_state(
+            item("it-1", status="merged", pr=42, work_id="w-1"), merged_shas={"it-1": "9fceb02"}
+        )
+    )
+    tracker = FakeTracker()
+
+    code, _ = invoke(["merged", "it-1", "--sha", "9fceb02"], runtime, tracker)
+
+    assert code == 0
+    assert tracker.mutations == [("close", "w-1")]
+
+
 def test_abandon_without_a_reason_records_a_default_closure_note() -> None:
     """
     Given an abandon with no reason
     When it is enacted
     Then the closure still carries a reason.
     """
-    runtime = FakeRuntime(run_state(item("it-1", parked=True)))
+    runtime = FakeRuntime(run_state(item("it-1", parked=True, pr=9)))
 
     invoke(["abandon", "it-1", "--pr", "9"], runtime, FakeTracker())
 
@@ -393,7 +497,7 @@ def test_leaving_the_parking_lot_needs_a_lane_and_refuses_without_one(argv: list
     lane of its own — discovered work parked before it was ever laned has
     nowhere to return to, which is a human's call.
     """
-    runtime = FakeRuntime(run_state(item("it-1", parked=True, lane=None)))
+    runtime = FakeRuntime(run_state(item("it-1", parked=True, pr=3, lane=None)))
     tracker = FakeTracker()
 
     code, envelope = invoke(argv, runtime, tracker)
