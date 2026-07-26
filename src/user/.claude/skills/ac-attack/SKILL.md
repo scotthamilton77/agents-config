@@ -44,9 +44,7 @@ uv run emit_prompts.py --spec /path/to/document.md --out-dir /tmp/attack-documen
 ```
 
 One `<lens>.md` prompt lands per lens, plus `round.json` recording the document, the revision
-attacked, and each lens with its tier and transport. A prompt carries that lens's mandate and no
-other, the exact-JSON output contract, and the whole document in a section the instructions
-declare to be data.
+attacked, and each lens with its tier and transport.
 
 Stdout is `{"emitted": true, "prompts": […], "round": …}` — the lens prompts, then the round
 file, which is metadata and not one of them. A refusal is
@@ -57,9 +55,10 @@ no parent along the way, owner-only, as is every file in it, since a prompt carr
 document.
 
 A revision names content, not history: `sha256:` plus the digest of the document's bytes, or the
-equivalent 40-hex object id, recomputable from the document in front of you. One record picks one
-notation and writes every revision in it — revisions compare as strings, so one content written
-both ways would read as two.
+equivalent 40-hex object id, recomputable from the document in front of you. Write it with no
+surrounding whitespace — `git hash-object` ends its output with a newline, and a revision that
+keeps it reads as a different revision. One record picks one notation and writes every revision
+in it: revisions compare as strings, so one content written both ways would read as two.
 
 ## Proposals
 
