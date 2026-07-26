@@ -504,8 +504,12 @@ def _h_fix_attempted(state: State, evt: RawEvent) -> None:
     the count past the budget keeps climbing and stays an honest record of what
     was attempted.
 
-    An attempt exists only inside a PR cycle, so an OPEN PR gates it. Keyed on
-    the ref like the failure-axis park rule below -- status cannot answer this,
+    An attempt exists only inside a PR cycle, so an open PR with a number of
+    its own gates it -- a ref whose number did not survive the log names no
+    cycle anything can act on, and an attempt charged against it spends a
+    budget nobody can attribute. That is the predicate `_record_closure` also
+    requires. Keyed on the ref like the failure-axis park rule below -- status
+    cannot answer this,
     since `in-progress` is reachable both with an open PR (via resume) and with
     a closed one (via `pr_closed`) -- but, unlike that rule, a closed ref does
     not pass: a park describes a PR that already failed to merge, while an
@@ -517,7 +521,7 @@ def _h_fix_attempted(state: State, evt: RawEvent) -> None:
     if item.status in _TERMINAL_ITEM_STATUSES:
         _anomaly(state, evt, f"fix_attempted illegal from status {item.status!r}")
         return
-    if item.pr is None or item.pr.closed:
+    if item.pr is None or item.pr.number is None or item.pr.closed:
         _anomaly(state, evt, "fix_attempted on an item with no open PR")
         return
     kind = _str(evt, "kind")

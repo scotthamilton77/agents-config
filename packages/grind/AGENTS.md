@@ -240,8 +240,10 @@ must pass before push.
   attempt, so a count past its budget keeps climbing and the condition keeps
   reporting the larger number; refusing, parking, and spending the budget
   belong to the decision layer. Two consequences worth not re-litigating:
-  - *An attempt is gated on an **open** PR, keyed on the ref and not on
-    status.* Status cannot answer it — `in-progress` is reachable both with an
+  - *An attempt is gated on an **open, identifiable** PR, keyed on the ref and
+    not on status.* A ref whose number did not survive the log names no cycle
+    anything can act on, so it does not pass — the same predicate the closure
+    guard requires. Status cannot answer it — `in-progress` is reachable both with an
     open PR (via `item_resumed`) and with a closed one (via `pr_closed`) — so
     `pr_closed` marks `PrRef.closed` and the gate reads that. This is where the
     attempt rule and the failure-axis park rule deliberately diverge despite

@@ -111,6 +111,28 @@ def test_fix_attempted_needs_a_pr_and_reads_the_ref_not_the_status() -> None:
     assert blocked_with_pr.anomalies == []
 
 
+def test_fix_attempted_needs_an_identifiable_pr_not_merely_a_ref() -> None:
+    # A replayed `pr_opened` whose number did not survive leaves a ref with no
+    # number. It names no cycle anything can act on, so charging an attempt
+    # against it would spend a budget nobody can attribute -- and would fire
+    # attempt_budget_spent for a PR that cannot be found. Same predicate the
+    # closure guard requires.
+    state = fold(
+        [
+            seed_event(),
+            event("item_started", item="wgclw.1"),
+            event("pr_opened", item="wgclw.1", pr="not-a-number"),
+            _attempt(),
+        ]
+    )
+
+    item = state.items["wgclw.1"]
+    assert item.pr is not None
+    assert item.pr.number is None
+    assert item.attempts["ci-fix"] == 0
+    assert any(a.type == "fix_attempted" and "no open PR" in a.reason for a in state.anomalies)
+
+
 def test_fix_attempted_after_the_pr_closes_flags_until_a_new_pr_opens() -> None:
     # `pr_closed` leaves the ref behind for the failure-park rule, so "has a PR
     # ref" is not "has an open PR": an attempt in the gap has nothing to fix,
