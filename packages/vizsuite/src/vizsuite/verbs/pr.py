@@ -5,8 +5,9 @@ reconcile against GitHub), build the estate at that head OID — never the
 operator's ``HEAD`` checkout — then materialize the head snapshot from
 `git archive` so scc scores per-file complexity against the committed tree (a
 dirty working copy can never leak in). The load-bearing axis reads
-`graphify-out/graph.json` from the **live working tree** (it is gitignored,
-so it is never in the materialized snapshot), head-guarded by
+`graphify-out/graph.json` from the **live working tree** — the graph is
+untracked and built on demand, so it never rides in the materialized snapshot
+and is absent more often than not — head-guarded by
 `centrality_axis` itself; an absent/stale graph fails soft to an unavailable
 axis, never a crash and never stale-as-fresh, unless the operator explicitly
 opts in via `--allow-stale-graph` (§6.2) — that opt-in scores the stale graph
@@ -87,9 +88,10 @@ def pr(runners: Runners, args: Namespace, repo_root: Path) -> JsonValue:
         shutil.rmtree(snapshot, ignore_errors=True)
 
     # The load-bearing axis reads the LIVE working tree's `graphify-out/graph.json`
-    # (gitignored — never in the materialized snapshot); `centrality_axis` itself
-    # guards staleness against `scope.head_oid` and fails soft to unavailable,
-    # unless `--allow-stale-graph` opted into the labeled-stale path (§6.2).
+    # (untracked and built on demand, so absent is the normal case and it is never in
+    # the materialized snapshot); `centrality_axis` itself guards staleness against
+    # `scope.head_oid` and fails soft to unavailable, unless `--allow-stale-graph`
+    # opted into the labeled-stale path (§6.2).
     graph_path = repo_root / "graphify-out" / "graph.json"
     allow_stale_graph: bool = args.allow_stale_graph
     centrality = centrality_axis(graph_path, scope.head_oid, allow_stale=allow_stale_graph)

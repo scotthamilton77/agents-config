@@ -16,10 +16,9 @@ AGENTS.md
 CLAUDE.md
 GEMINI.md
 README.md
-SESSION-PRIMER-README.md
-# Defensive directory coverage. The current rules-readmes/ dirs live at tool
-# roots (siblings of rules/), which are never staged, so they need no entry —
-# this guards the hypothetical case of a namespace-level rules-readmes/ child.
+# Defensive directory coverage. No rules-readmes/ directory exists today; when
+# one is added it will sit at a tool root (sibling of rules/), which is never
+# staged. This entry guards the hypothetical namespace-level child instead.
 rules-readmes/
 # Test artifacts
 ruff-postedit_test.sh

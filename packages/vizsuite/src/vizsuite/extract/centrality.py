@@ -11,10 +11,12 @@ normalized in-degree over the union of both tiers. `nx.node_link_graph` is
 deliberately never used to build that graph: for this `directed: false`
 payload it returns an undirected `Graph`, which has no `in_degree`.
 
-graphify is an optional dependency: an absent `graphify-out/`, a stale build
-(`built_at_commit != head_oid`), unparseable/torn JSON, or valid JSON of the
-wrong shape (non-object payload, malformed nodes/links) all fail soft to
-`CentralityAxis.unavailable(...)` — never a crash, never stale-as-fresh.
+graphify is an optional dependency, and `graphify-out/` is untracked and built
+on demand — its absence is a normal state, not a misconfiguration. An absent
+`graphify-out/`, a stale build (`built_at_commit != head_oid`),
+unparseable/torn JSON, or valid JSON of the wrong shape (non-object payload,
+malformed nodes/links) all fail soft to `CentralityAxis.unavailable(...)` —
+never a crash, never stale-as-fresh.
 
 A caller may opt in to a labeled-stale path (`allow_stale=True`, spec §6.2):
 a graph whose `built_at_commit` differs from `head_oid` is scored exactly like

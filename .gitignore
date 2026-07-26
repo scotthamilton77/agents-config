@@ -55,3 +55,6 @@ htmlcov/
 
 # backlog-landscape regenerated artifacts (scripts/backlog-landscape/regenerate.sh)
 scripts/backlog-landscape/output/
+
+# graphify knowledge graph — a local, on-demand artifact, never versioned
+graphify-out/

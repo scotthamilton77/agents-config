@@ -1,11 +1,12 @@
-"""events.jsonl I/O: the write-path torn-tail repair, append, and read-back.
+"""Grind-directory I/O: the `events.jsonl` write-path torn-tail repair, append,
+and read-back, plus persisting `state.json` and `dashboard.html`. Every path
+inside a grind directory is built here and nowhere else.
 
-The write-path repair belongs here, not in `grind.log` (spec "Torn tail":
-"the write path repairs before it appends"; `grind.log`'s docstring calls this
-"a later work item" -- this module is that work item). `grind.log` stays the
-read-only, defense-in-depth half: it tolerates an unrepaired torn tail for a
-log read before any write-path call has touched it (e.g. `status` on a
-freshly-crashed grind), but never writes.
+The write-path repair belongs here, not in `grind.log` (spec "Torn tail": "the
+write path repairs before it appends"). `grind.log` stays the read-only,
+defense-in-depth half: it tolerates an unrepaired torn tail for a log read
+before any write-path call has touched it (e.g. `status` on a freshly-crashed
+grind), but never writes.
 """
 
 from __future__ import annotations

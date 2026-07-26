@@ -1,4 +1,8 @@
-# Disposition inventory — archive/src/plugins/ (beads plugin)
+# Disposition inventory — archive/src/plugins/ (beads and graphify plugins)
+
+The beads sections below come from the 2026-07-24 re-admission survey; the graphify
+section at the end was added on 2026-07-26 when that plugin was retired. Both are
+covered by the same standing rule: **archive/ is NOT live.**
 
 Disposition inventory from the 2026-07-24 re-admission survey
 (`SAVEPOINTS/2026-07-24-archive-readmission-survey.md`), judged against the harness-rework
@@ -58,3 +62,20 @@ agents-config-9k9.29; beads git hooks are re-evaluated separately under agents-c
 | `beads/.beads/scripts/bd-record-decision.sh` | Creates a `decision` bead linked discovered-from | Direct bd writes; decision capture is `work create decision` now | D10, D11 |
 | `beads/.claude/commands/implement-bead.md`, `resolve-human-bead.md`, `dep-health-check.md` | Thin slash wrappers | Wrappers for stay-archived skills; the dep-health-check wrapper would follow its skill only if the workcli-verb port ever happens | D11, D16 |
 | *(predecessor of this file)* pre-S3 plugin-authoring guide | Documented `--plugins=` flags and `install.sh` registration | Superseded by live `src/plugins/AGENTS.md` (scan-based discovery, adapters, rules-readmes); content replaced by this inventory | S3 |
+
+## graphify plugin — retired 2026-07-26
+
+The rule was the plugin's only artifact, so archiving it retires the plugin: plugin
+discovery is a scan of `src/plugins/`'s subdirectories, and `graphify/` no longer has one.
+`--plugins=graphify` now raises `UnknownPluginError`, and the plugin tables in `README.md`,
+`docs/guide/`, and `src/plugins/AGENTS.md` were swept in the same change.
+
+| artifact | purpose | disposition & required changes | charter refs |
+|---|---|---|---|
+| `graphify/.agents/rules/graphify.md` | Forbade running `graphify update .` from inside a worktree and committing the result on a feature branch; "keep graphify-out off feature branches" | **Stay archived.** Every clause is vacuous once `graphify-out/` is untracked — there is no diff to flood, nothing to keep off a branch, and no other checkout to break. Carried no `admission:` record, so it deployed nothing while it was live. A rewrite would have to clear `admit-request`, and would fail its always-on test: a constraint that binds only while someone is deliberately building a graph does not belong on every turn of every session. | D16/D20 |
+
+**Residual fact this retirement drops, recorded here rather than re-deployed:** a graph
+built from inside a linked worktree indexes that worktree's absolute paths, so it is
+specific to the checkout that produced it. Under unversioning that graph is untracked and
+dies with the worktree, which is why it no longer warrants a standing rule — but anyone
+wiring an automatic rebuild should build from the main checkout.

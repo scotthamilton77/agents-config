@@ -12,8 +12,84 @@ const net = require("node:net");
 const { spawnSync } = require("node:child_process");
 const path = require("node:path");
 
-const { buildChildEnv, resolveExitCode, EXIT_CONFIG_ERROR } = require("./run.js");
+const {
+  main,
+  validateArgv,
+  buildChildEnv,
+  resolveExitCode,
+  EXIT_CONFIG_ERROR,
+} = require("./run.js");
 const proxy = require("./proxy.js");
+
+/** A minimally valid invocation — every required flag present. */
+const VALID_ARGV = [
+  "--model", "vendor/model",
+  "--effort", "low",
+  "--permission-mode", "dontAsk",
+  "--allowedTools", "Read",
+  "-p", "task",
+];
+
+// ─── validateArgv ──────────────────────────────────────────────────
+
+test("validateArgv returns null when every required flag is present", () => {
+  assert.equal(validateArgv(VALID_ARGV), null);
+});
+
+test("validateArgv names the one flag that is missing, and only it", () => {
+  const message = validateArgv([
+    "--model", "vendor/model",
+    "--permission-mode", "dontAsk",
+    "--allowedTools", "Read",
+  ]);
+  // Anchored on the list itself: the explanatory tail names all four flags.
+  assert.match(message, /missing required flag\(s\): --effort\./);
+});
+
+test("validateArgv names every missing flag, not just the first", () => {
+  const list = validateArgv([]).match(/missing required flag\(s\): ([^.]*)\./)[1];
+  assert.deepEqual(list.split(", "), [
+    "--model",
+    "--effort",
+    "--permission-mode",
+    "--allowedTools",
+  ]);
+});
+
+test("validateArgv accepts the --allowed-tools spelling", () => {
+  const argv = VALID_ARGV.map((a) => (a === "--allowedTools" ? "--allowed-tools" : a));
+  assert.equal(validateArgv(argv), null);
+});
+
+test("validateArgv accepts the --flag=value form", () => {
+  assert.equal(
+    validateArgv([
+      "--model=vendor/model",
+      "--effort=low",
+      "--permission-mode=dontAsk",
+      "--allowedTools=Read",
+    ]),
+    null
+  );
+});
+
+test("validateArgv ignores a flag name embedded inside an argument value", () => {
+  // `--effort` appears in the prompt but was never passed; only argv elements
+  // that themselves start with `--` count as flags.
+  const message = validateArgv([
+    "--model", "vendor/model",
+    "--permission-mode", "dontAsk",
+    "--allowedTools", "Read",
+    "-p", "explain the --effort flag",
+  ]);
+  assert.match(message, /missing required flag\(s\): --effort\./);
+});
+
+test("main() rejects an incomplete invocation with EXIT_CONFIG_ERROR", async () => {
+  // No `claude` spawn and no listener bind is reached on this path, so this
+  // runs safely in-process regardless of what is installed.
+  assert.equal(await main([]), EXIT_CONFIG_ERROR);
+});
 
 // ─── buildChildEnv ─────────────────────────────────────────────────
 
@@ -173,7 +249,7 @@ test("main() reports an error mentioning `claude` when it is not on PATH", () =>
   const runJsPath = path.join(__dirname, "run.js");
   const script = `
     const { main } = require(${JSON.stringify(runJsPath)});
-    main([]).then((code) => { process.exitCode = code; })
+    main(${JSON.stringify(VALID_ARGV)}).then((code) => { process.exitCode = code; })
              .catch((err) => {
                process.stderr.write(err.message + "\\n");
                process.exitCode = 1;
