@@ -37,9 +37,15 @@ _REF_FORMAT = _SEP.join(
         "%(objectname)",
         "%(committerdate:iso-strict)",
         "%(upstream:short)",
+        # The short form, not `%(upstream:track)`. The long one spells the
+        # count out -- `[ahead 2]` -- but it is translated, so parsing it
+        # breaks under a non-English locale. The short one is punctuation
+        # (`=`, `>`, `<`, `<>`) and says nothing about a locale at all.
+        "%(upstream:trackshort)",
         "%(HEAD)",
     ]
 )
+_REF_FIELDS = 7
 _PR_LIMIT = 500
 
 
@@ -64,15 +70,18 @@ def resolve_repo(port: CommandPort, cwd: Path | None) -> tuple[str, str] | None:
     return _first_line(root.out), _first_line(common.out)
 
 
-def resolve_default_branch(port: CommandPort, cwd: Path | None, override: str | None) -> str:
-    """The branch everything else is measured against.
+def resolve_default_branch(port: CommandPort, cwd: Path | None) -> str:
+    """The repository's trunk -- the branch that is never a deletion candidate.
 
-    Explicit override wins; then origin's published HEAD; then a local
-    main/master. A wrong answer here silently mis-classifies every branch, so
-    the fallback chain stops at conventional names rather than guessing from
-    branch order."""
-    if override:
-        return override
+    Discovered, never supplied by the caller. `--base` moves what merges are
+    measured *against*; letting it also name the default branch would hand a
+    caller the ability to strip protection from the real trunk by measuring
+    against something else, and a trunk that is an ancestor of that something
+    else then classifies as merged and sweepable.
+
+    origin's published HEAD first, then a local main/master. A wrong answer
+    here silently mis-classifies every branch, so the fallback chain stops at
+    conventional names rather than guessing from branch order."""
     head = port.git(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], cwd=cwd)
     if head.ok and head.out:
         return _first_line(head.out).removeprefix("refs/remotes/origin/")
@@ -190,13 +199,23 @@ def _count_dirt(port: CommandPort, path: Path) -> tuple[int, int, int] | None:
 
 def read_pull_requests(
     port: CommandPort, cwd: Path | None
-) -> tuple[dict[str, PullRequest], str | None]:
+) -> tuple[dict[str, PullRequest], str | None, str | None]:
     """One gh call for every PR in the repo, indexed by head ref.
 
     On a repo with several PRs per branch the newest wins -- the reopened or
-    superseding PR is the one whose state describes the branch now."""
+    superseding PR is the one whose state describes the branch now.
+
+    Returns the index, the error that cost us PR evidence entirely, and the
+    warning that says the evidence is merely incomplete. They are separate
+    because the consequences are: no PR data at all makes every squash merge
+    invisible, whereas a truncated list only leaves the oldest branches to be
+    judged on git evidence alone."""
     if not port.has_gh():
-        return {}, "gh not on PATH; merge evidence limited to git (squash merges invisible)"
+        return (
+            {},
+            "gh not on PATH; merge evidence limited to git (squash merges invisible)",
+            None,
+        )
     result = port.gh(
         [
             "pr",
@@ -212,13 +231,24 @@ def read_pull_requests(
     )
     if not result.ok:
         detail = result.stderr.strip() or f"exit {result.returncode}"
-        return {}, f"gh pr list failed ({detail}); merge evidence limited to git"
+        return {}, f"gh pr list failed ({detail}); merge evidence limited to git", None
     try:
         payload = json.loads(result.stdout or "[]")
     except json.JSONDecodeError as exc:
-        return {}, f"gh pr list returned unparseable JSON ({exc}); merge evidence limited to git"
+        return (
+            {},
+            f"gh pr list returned unparseable JSON ({exc}); merge evidence limited to git",
+            None,
+        )
     if not isinstance(payload, list):
-        return {}, "gh pr list returned a non-list payload; merge evidence limited to git"
+        return {}, "gh pr list returned a non-list payload; merge evidence limited to git", None
+
+    truncated = (
+        f"only the {_PR_LIMIT} most recently updated pull requests were read; any branch "
+        f"whose PR is older than those is judged on git evidence alone"
+        if len(payload) >= _PR_LIMIT
+        else None
+    )
 
     index: dict[str, PullRequest] = {}
     for entry in payload:
@@ -227,8 +257,15 @@ def read_pull_requests(
         head = str(entry.get("headRefName", ""))
         if not head:
             continue
+        try:
+            number = int(entry.get("number", 0))
+        except (TypeError, ValueError):
+            # A PR number that is not a number is gh telling us something we
+            # do not understand. Skipping the entry costs one branch its PR
+            # evidence; letting int() raise costs the caller the whole report.
+            continue
         pr = PullRequest(
-            number=int(entry.get("number", 0)),
+            number=number,
             state=str(entry.get("state", "")).upper(),
             url=str(entry.get("url", "")),
             updated_at=str(entry.get("updatedAt", "")),
@@ -237,7 +274,7 @@ def read_pull_requests(
         existing = index.get(head)
         if existing is None or pr.updated_at > existing.updated_at:
             index[head] = pr
-    return index, None
+    return index, None, truncated
 
 
 def _merged_set(
@@ -275,10 +312,45 @@ def _count_revs(port: CommandPort, cwd: Path | None, spec: str) -> int | None:
         return None
 
 
+def _unpushed_count(
+    port: CommandPort, cwd: Path | None, *, name: str, upstream: str, track: str
+) -> tuple[int | None, str | None]:
+    """Commits the upstream does not have, or None when that is not known.
+
+    The tracking marker arrives free with the batch ref read and settles the
+    common cases outright: `=` is in sync and `<` is behind-only, and neither
+    has anything waiting to be pushed. Only a branch that is genuinely ahead
+    costs a `rev-list`, which is the one place an exact count can come from.
+
+    An upstream git records but cannot resolve reports as no marker at all --
+    that is `[gone]`, the remote branch having been deleted. Nothing then
+    proves these commits survive anywhere else, so the count is unknown rather
+    than zero."""
+    if not upstream:
+        return None, None
+    if not track:
+        return None, (
+            f"the upstream {upstream} of {name} no longer exists, so nothing "
+            f"proves its commits are pushed; treating them as unpushed"
+        )
+    if ">" not in track:
+        return 0, None
+    count = _count_revs(port, cwd, f"{upstream}..{name}")
+    if count is None:
+        return None, (
+            f"could not count the commits on {name} missing from {upstream}; "
+            f"it will not be treated as fully pushed"
+        )
+    return count, None
+
+
 def _patch_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str) -> bool:
     """True when every commit on the branch already has a patch-id in base --
     the rebase and cherry-pick cases that plain ancestry misses."""
-    result = port.git(["cherry", base_ref, name], cwd=cwd)
+    # `--` because the branch name is repo-derived: `refs/heads/-m` is a
+    # perfectly legal ref that plumbing and remotes can both create, and
+    # without the terminator `git cherry` reads it as a switch and errors.
+    result = port.git(["cherry", base_ref, "--", name], cwd=cwd)
     if not result.ok:
         return False
     lines = [line for line in result.stdout.splitlines() if line.strip()]
@@ -404,9 +476,11 @@ def read_branches(
         if not line.strip():
             continue
         fields = line.split(_SEP)
-        if len(fields) < 6:
+        if len(fields) < _REF_FIELDS:
             continue
-        full, name, head, committed, upstream, head_marker = (f.strip() for f in fields[:6])
+        full, name, head, committed, upstream, track, head_marker = (
+            f.strip() for f in fields[:_REF_FIELDS]
+        )
         if not name or not full:
             continue
 
@@ -435,12 +509,11 @@ def read_branches(
                     f"could not count the commits on {name} missing from {base_ref}; "
                     f"it will not be treated as merged"
                 )
-            unpushed = _count_revs(port, cwd, f"{upstream}..{name}") if upstream else None
-            if upstream and unpushed is None:
-                warnings.append(
-                    f"could not count the commits on {name} missing from {upstream}; "
-                    f"it will not be treated as fully pushed"
-                )
+            unpushed, unpushed_warning = _unpushed_count(
+                port, cwd, name=name, upstream=upstream, track=track
+            )
+            if unpushed_warning:
+                warnings.append(unpushed_warning)
             merged, evidence = _resolve_merge(
                 port,
                 cwd,
@@ -471,6 +544,27 @@ def read_branches(
             )
         )
     return branches, warnings
+
+
+def _worktree_activity(
+    port: CommandPort,
+    cwd: Path | None,
+    worktree: Worktree,
+    activity_by_branch: dict[str, str | None],
+) -> str | None:
+    """When a worktree holds a branch, its age is that branch's age.
+
+    A detached checkout has no branch to inherit from, but it does have a
+    HEAD, and the commit date of that HEAD is the same measurement. Without it
+    a detached worktree has no age at all, which reads downstream as an
+    unknown -- so it can never be called abandoned and stays in the report
+    forever, which is the cruft this tool exists to remove."""
+    if worktree.branch:
+        return activity_by_branch.get(worktree.branch)
+    if worktree.prunable or not worktree.head:
+        return None
+    result = port.git(["show", "-s", "--format=%cI", worktree.head], cwd=cwd)
+    return _first_line(result.out) if result.ok else None
 
 
 def parse_timestamp(value: str | None) -> datetime | None:
@@ -514,7 +608,11 @@ def survey(
         return "not inside a git repository"
     repo_root, common_dir = resolved
 
-    default_branch = resolve_default_branch(port, cwd, base_override)
+    # Two different questions, deliberately answered separately. `--base` says
+    # what to measure merges against; it does not say which branch is the
+    # repository's trunk, and conflating them lets `--base release` demote the
+    # real trunk to an ordinary, deletable branch.
+    default_branch = resolve_default_branch(port, cwd)
     base_ref = base_override or resolve_base_ref(port, cwd, default_branch)
 
     head = port.git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd)
@@ -525,7 +623,9 @@ def survey(
     worktrees, warnings = read_worktrees(port, cwd)
     worktree_by_branch = {w.branch: w.path for w in worktrees if w.branch}
 
-    prs, gh_error = read_pull_requests(port, cwd)
+    prs, gh_error, pr_truncated = read_pull_requests(port, cwd)
+    if pr_truncated:
+        warnings.append(pr_truncated)
     branches, branch_warnings = read_branches(
         port,
         cwd,
@@ -540,7 +640,7 @@ def survey(
     # once the branches have been read, hence the second pass.
     activity_by_branch = {b.name: b.last_activity for b in branches}
     worktrees = [
-        replace(w, last_activity=activity_by_branch.get(w.branch) if w.branch else None)
+        replace(w, last_activity=_worktree_activity(port, cwd, w, activity_by_branch))
         for w in worktrees
     ]
 

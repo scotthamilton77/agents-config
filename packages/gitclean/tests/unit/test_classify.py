@@ -206,6 +206,20 @@ def test_current_branch_is_protected_even_when_merged(now: datetime) -> None:
     assert _one(branch, survey, now=now).disposition is Disposition.PROTECTED
 
 
+def test_the_ref_merges_are_measured_against_is_protected(now: datetime) -> None:
+    """`--base release` points merge evidence at a branch that is not the
+    trunk. Measured against itself `release` is trivially merged, which would
+    otherwise read as proof it is finished with -- and a caller naming a
+    release line to compare against is not asking for it to be deleted."""
+    branch = make_branch("release", merge_evidence=MergeEvidence.ANCESTOR, merged=True)
+    survey = make_survey(base_ref="release", default_branch="main", current_branch="main")
+
+    target = _one(branch, survey, now=now)
+
+    assert target.disposition is Disposition.PROTECTED
+    assert any("measured against" in reason for reason in target.reasons)
+
+
 # -- lifecycle ---------------------------------------------------------------
 
 

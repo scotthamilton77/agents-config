@@ -21,15 +21,28 @@ SEP = "\x1f"
 NOW = datetime(2026, 7, 25, 12, 0, 0, tzinfo=UTC)
 
 
+_AUTO_TRACK = "\x00auto"
+"""Sentinel: the tracking marker git would emit for the given upstream.
+
+A branch with no upstream has no marker, and one that has an upstream is in
+sync unless a test says otherwise -- which is the boring case every builder
+here defaults to. Spelling `track` out on every call would make each ref line
+an assertion about push state even in the tests that are about something
+else."""
+
+
 def ref_line(
     full: str,
     short: str,
     *,
     committed: str = "2026-07-20T00:00:00+00:00",
     upstream: str = "",
+    track: str = _AUTO_TRACK,
     head: str = "",
 ) -> str:
-    return SEP.join([full, short, "a" * 40, committed, upstream, head])
+    if track == _AUTO_TRACK:
+        track = "=" if upstream else ""
+    return SEP.join([full, short, "a" * 40, committed, upstream, track, head])
 
 
 def make_port(
@@ -52,6 +65,9 @@ def make_port(
         "rev-parse --abbrev-ref HEAD": ok("main"),
         "worktree list --porcelain": ok(worktrees),
         "status --porcelain=v1 --untracked-files=normal": ok(""),
+        # A detached worktree has no branch to take its age from, so the survey
+        # dates it from HEAD instead.
+        "show -s --format=%cI": ok("2026-07-20T00:00:00+00:00"),
         "for-each-ref": ok("\n".join(refs or [])),
         "branch --merged": ok(local_merged),
         "branch -r --merged": ok(remote_merged),
@@ -105,16 +121,11 @@ def test_unresolvable_common_dir_gives_up_rather_than_guessing() -> None:
 # -- default branch ----------------------------------------------------------
 
 
-def test_explicit_base_override_wins() -> None:
-    port = ScriptedCommands()
-    assert resolve_default_branch(port, None, "develop") == "develop"
-
-
 def test_default_branch_comes_from_origins_published_head() -> None:
     port = ScriptedCommands(
         git={"symbolic-ref --quiet refs/remotes/origin/HEAD": ok("refs/remotes/origin/trunk")}
     )
-    assert resolve_default_branch(port, None, None) == "trunk"
+    assert resolve_default_branch(port, None) == "trunk"
 
 
 def test_default_branch_falls_back_to_master_when_main_is_absent() -> None:
@@ -125,7 +136,7 @@ def test_default_branch_falls_back_to_master_when_main_is_absent() -> None:
             "show-ref --verify --quiet refs/heads/master": ok(),
         }
     )
-    assert resolve_default_branch(port, None, None) == "master"
+    assert resolve_default_branch(port, None) == "master"
 
 
 def test_default_branch_settles_on_main_when_nothing_answers() -> None:
@@ -135,7 +146,7 @@ def test_default_branch_settles_on_main_when_nothing_answers() -> None:
             "show-ref --verify --quiet refs/heads/": fail(),
         }
     )
-    assert resolve_default_branch(port, None, None) == "main"
+    assert resolve_default_branch(port, None) == "main"
 
 
 def test_base_prefers_the_remote_tracking_tip() -> None:
@@ -278,26 +289,26 @@ def test_missing_gh_is_reported_as_a_limit_on_the_evidence() -> None:
     """Without gh there is no squash-merge signal at all, so this must never
     be swallowed."""
     port = ScriptedCommands(has_gh=False)
-    prs, error = read_pull_requests(port, None)
+    prs, error, _ = read_pull_requests(port, None)
     assert prs == {}
     assert error is not None and "squash" in error
 
 
 def test_a_failing_gh_call_is_reported() -> None:
     port = ScriptedCommands(gh={"pr list": fail("no git remotes found")}, has_gh=True)
-    _, error = read_pull_requests(port, None)
+    _, error, _ = read_pull_requests(port, None)
     assert error is not None and "no git remotes found" in error
 
 
 def test_unparseable_gh_json_is_reported() -> None:
     port = ScriptedCommands(gh={"pr list": ok("{{{not json")}, has_gh=True)
-    _, error = read_pull_requests(port, None)
+    _, error, _ = read_pull_requests(port, None)
     assert error is not None and "unparseable" in error
 
 
 def test_a_non_list_gh_payload_is_reported() -> None:
     port = ScriptedCommands(gh={"pr list": ok('{"unexpected": true}')}, has_gh=True)
-    _, error = read_pull_requests(port, None)
+    _, error, _ = read_pull_requests(port, None)
     assert error is not None and "non-list" in error
 
 
@@ -323,15 +334,79 @@ def test_the_newest_pr_wins_for_a_reused_branch() -> None:
         ]
     )
     port = ScriptedCommands(gh={"pr list": ok(payload)}, has_gh=True)
-    prs, _ = read_pull_requests(port, None)
+    prs, _, _ = read_pull_requests(port, None)
     assert prs["feat/x"].number == 2
 
 
 def test_malformed_pr_entries_are_skipped() -> None:
     payload = json.dumps(["not a dict", {"number": 3, "state": "OPEN", "headRefName": ""}])
     port = ScriptedCommands(gh={"pr list": ok(payload)}, has_gh=True)
-    prs, _ = read_pull_requests(port, None)
+    prs, _, _ = read_pull_requests(port, None)
     assert prs == {}
+
+
+def test_a_pr_number_that_is_not_a_number_costs_one_entry_not_the_report() -> None:
+    """`int()` on whatever gh put there would raise out of the read pass and
+    take the whole survey with it."""
+    payload = json.dumps(
+        [
+            {"number": "not-a-number", "state": "MERGED", "headRefName": "broken"},
+            {
+                "number": 4,
+                "state": "OPEN",
+                "headRefName": "fine",
+                "updatedAt": "2026-07-20T00:00:00Z",
+            },
+        ]
+    )
+    port = ScriptedCommands(gh={"pr list": ok(payload)}, has_gh=True)
+
+    prs, error, _ = read_pull_requests(port, None)
+
+    assert error is None
+    assert "broken" not in prs
+    assert prs["fine"].number == 4
+
+
+def test_a_pr_list_at_the_cap_says_the_evidence_is_incomplete() -> None:
+    """gh was asked for a bounded number of PRs. At the bound there may be more
+    it never returned, and a branch whose PR is among them is judged on git
+    evidence alone -- correct, but weaker than the caller assumes."""
+    payload = json.dumps(
+        [
+            {
+                "number": n,
+                "state": "MERGED",
+                "headRefName": f"feat/{n}",
+                "updatedAt": "2026-07-20T00:00:00Z",
+            }
+            for n in range(500)
+        ]
+    )
+    port = ScriptedCommands(gh={"pr list": ok(payload)}, has_gh=True)
+
+    prs, error, truncated = read_pull_requests(port, None)
+
+    assert error is None
+    assert len(prs) == 500
+    assert truncated is not None
+    assert "git evidence alone" in truncated
+
+
+def test_a_pr_list_below_the_cap_warns_about_nothing() -> None:
+    payload = json.dumps(
+        [
+            {
+                "number": 1,
+                "state": "OPEN",
+                "headRefName": "feat/a",
+                "updatedAt": "2026-07-20T00:00:00Z",
+            }
+        ]
+    )
+    port = ScriptedCommands(gh={"pr list": ok(payload)}, has_gh=True)
+
+    assert read_pull_requests(port, None)[2] is None
 
 
 # -- ref classification ------------------------------------------------------
@@ -362,8 +437,8 @@ def test_remote_refs_are_identified_by_prefix_not_by_a_slash() -> None:
             "origin/main..origin/feat": "1",
         },
         extra={
-            "cherry origin/main team/feat": ok("+ abc"),
-            "cherry origin/main origin/feat": ok("+ abc"),
+            "cherry origin/main -- team/feat": ok("+ abc"),
+            "cherry origin/main -- origin/feat": ok("+ abc"),
             "merge-base origin/main": ok("base1"),
             "rev-parse team/feat^{tree}": ok("tree1"),
             "rev-parse origin/feat^{tree}": ok("tree2"),
@@ -412,7 +487,7 @@ def test_unreadable_refs_yield_no_branches_but_say_so() -> None:
 def test_a_failed_batch_ancestry_check_is_warned_not_swallowed() -> None:
     """Failure here only loses the cheap tier -- the per-branch probes still
     answer -- so it degrades speed, not safety. It is still reported."""
-    port = _tier_port(**{"cherry origin/main feat": ok("- aaa")})
+    port = _tier_port(**{"cherry origin/main -- feat": ok("- aaa")})
     port._git["branch --merged"] = fail("boom")
     result = run(port)
     feat = next(b for b in result.branches if b.name == "feat")
@@ -423,11 +498,11 @@ def test_a_failed_batch_ancestry_check_is_warned_not_swallowed() -> None:
 # -- the merge tiers ---------------------------------------------------------
 
 
-def _tier_port(**extra: CommandResult) -> ScriptedCommands:
+def _tier_port(*, track: str = _AUTO_TRACK, **extra: CommandResult) -> ScriptedCommands:
     return make_port(
         refs=[
             ref_line("refs/heads/main", "main", head="*"),
-            ref_line("refs/heads/feat", "feat", upstream="origin/feat"),
+            ref_line("refs/heads/feat", "feat", upstream="origin/feat", track=track),
         ],
         counts={"origin/main..feat": "2", "origin/feat..feat": "0"},
         extra=extra,
@@ -472,7 +547,7 @@ def test_a_merged_pr_that_predates_the_tip_does_not_prove_the_branch_merged() ->
         prs=[_pr("MERGED", oid="b" * 40)],
         extra={
             "merge-base --is-ancestor": fail("not an ancestor"),
-            "cherry origin/main feat": ok("+ aaa"),
+            "cherry origin/main -- feat": ok("+ aaa"),
             "merge-base origin/main feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
@@ -512,7 +587,7 @@ def test_a_pr_with_no_head_sha_never_covers_a_tip() -> None:
         counts={"origin/main..feat": "2"},
         prs=[_pr("MERGED", oid="")],
         extra={
-            "cherry origin/main feat": ok("+ aaa"),
+            "cherry origin/main -- feat": ok("+ aaa"),
             "merge-base origin/main feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
@@ -535,7 +610,7 @@ def test_the_squash_tier_still_answers_when_a_pr_verdict_is_declined() -> None:
         prs=[_pr("MERGED", oid="b" * 40)],
         extra={
             "merge-base --is-ancestor": fail("not an ancestor"),
-            "cherry origin/main feat": ok("+ aaa"),
+            "cherry origin/main -- feat": ok("+ aaa"),
             "merge-base origin/main feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
@@ -579,7 +654,7 @@ def test_a_discard_decision_does_not_reach_commits_made_after_it() -> None:
         prs=[_pr("CLOSED", number=9, oid="b" * 40)],
         extra={
             "merge-base --is-ancestor": fail("not an ancestor"),
-            "cherry origin/main feat": ok("+ aaa"),
+            "cherry origin/main -- feat": ok("+ aaa"),
             "merge-base origin/main feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
@@ -591,7 +666,7 @@ def test_a_discard_decision_does_not_reach_commits_made_after_it() -> None:
 
 
 def test_patch_equivalence_catches_rebased_and_cherry_picked_work() -> None:
-    port = _tier_port(**{"cherry origin/main feat": ok("- aaa\n- bbb")})
+    port = _tier_port(**{"cherry origin/main -- feat": ok("- aaa\n- bbb")})
     feat = next(b for b in run(port).branches if b.name == "feat")
     assert feat.merged and feat.merge_evidence is MergeEvidence.PATCH_EQUAL
 
@@ -601,7 +676,7 @@ def test_squash_merges_are_caught_by_replaying_the_tree_as_one_commit() -> None:
     with any individual branch commit, and the tip is nobody's ancestor."""
     port = _tier_port(
         **{
-            "cherry origin/main feat": ok("+ aaa\n+ bbb"),
+            "cherry origin/main -- feat": ok("+ aaa\n+ bbb"),
             "merge-base origin/main feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
@@ -615,7 +690,7 @@ def test_squash_merges_are_caught_by_replaying_the_tree_as_one_commit() -> None:
 def test_a_genuinely_unmerged_branch_proves_nothing() -> None:
     port = _tier_port(
         **{
-            "cherry origin/main feat": ok("+ aaa"),
+            "cherry origin/main -- feat": ok("+ aaa"),
             "merge-base origin/main feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
@@ -634,7 +709,7 @@ def test_squash_probe_gives_up_cleanly_when_git_will_not_answer() -> None:
     ):
         port = _tier_port(
             **{
-                "cherry origin/main feat": ok("+ aaa"),
+                "cherry origin/main -- feat": ok("+ aaa"),
                 "merge-base origin/main feat": ok("basesha"),
                 "rev-parse feat^{tree}": ok("treesha"),
                 "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
@@ -651,7 +726,7 @@ def test_an_empty_cherry_result_does_not_count_as_merged() -> None:
     already upstream."""
     port = _tier_port(
         **{
-            "cherry origin/main feat": ok(""),
+            "cherry origin/main -- feat": ok(""),
             "merge-base origin/main feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
@@ -682,6 +757,58 @@ def test_worktree_activity_is_taken_from_the_branch_it_holds() -> None:
     assert result.worktrees[0].last_activity == "2026-07-19T00:00:00+00:00"
 
 
+def test_a_detached_worktree_is_dated_from_its_head() -> None:
+    """With no branch to inherit from, a detached worktree used to have no age
+    at all -- and an unknown age can never be called abandoned, so it stayed in
+    the report permanently. The HEAD commit answers the same question."""
+    port = make_port(
+        refs=[ref_line("refs/heads/main", "main", head="*")],
+        worktrees=(
+            "worktree /repo\nHEAD abc\nbranch refs/heads/main\n"
+            "\n"
+            "worktree /repo/detached\nHEAD deadbeef\ndetached\n"
+        ),
+    )
+    port._git["show -s --format=%cI deadbeef"] = ok("2026-07-01T09:00:00+00:00")
+
+    detached = next(w for w in run(port).worktrees if w.path == "/repo/detached")
+
+    assert detached.branch is None
+    assert detached.last_activity == "2026-07-01T09:00:00+00:00"
+
+
+def test_a_detached_worktree_git_will_not_date_stays_unknown() -> None:
+    port = make_port(
+        refs=[ref_line("refs/heads/main", "main", head="*")],
+        worktrees=(
+            "worktree /repo\nHEAD abc\nbranch refs/heads/main\n"
+            "\n"
+            "worktree /repo/detached\nHEAD deadbeef\ndetached\n"
+        ),
+    )
+    port._git["show -s --format=%cI deadbeef"] = fail("bad object")
+
+    detached = next(w for w in run(port).worktrees if w.path == "/repo/detached")
+
+    assert detached.last_activity is None
+
+
+def test_a_prunable_worktree_is_not_probed_for_a_date() -> None:
+    """Its directory is gone; there is nothing to ask about."""
+    port = make_port(
+        refs=[ref_line("refs/heads/main", "main", head="*")],
+        worktrees=(
+            "worktree /repo\nHEAD abc\nbranch refs/heads/main\n"
+            "\n"
+            "worktree /repo/gone\nHEAD deadbeef\ndetached\nprunable gitdir file removed\n"
+        ),
+    )
+
+    run(port)
+
+    assert not any(call[:2] == ("git", "show") for call in port.transcript)
+
+
 def test_a_detached_head_is_reported_as_no_current_branch() -> None:
     port = make_port(refs=[ref_line("refs/heads/main", "main")])
     port._git["rev-parse --abbrev-ref HEAD"] = ok("HEAD")
@@ -689,14 +816,38 @@ def test_a_detached_head_is_reported_as_no_current_branch() -> None:
 
 
 def test_a_base_override_is_used_verbatim() -> None:
-    port = make_port(refs=[ref_line("refs/heads/develop", "develop", head="*")])
+    port = make_port(
+        refs=[ref_line("refs/heads/develop", "develop", head="*")],
+        counts={"develop..develop": "0"},
+    )
     result = run(port, base_override="develop")
     assert result.base_ref == "develop"
-    assert result.default_branch == "develop"
+
+
+def test_a_base_override_does_not_strip_protection_from_the_real_trunk() -> None:
+    """`--base` says what to measure against, not which branch is the trunk.
+
+    Letting it do both is a way to delete `main`: measure against a branch
+    `main` is an ancestor of, and `main` reads as merged, loses its
+    default-branch protection, and becomes an ordinary sweepable target."""
+    port = make_port(
+        refs=[
+            ref_line("refs/heads/main", "main"),
+            ref_line("refs/heads/release", "release", head="*"),
+        ],
+        local_merged="main",
+        counts={"release..release": "0"},
+    )
+    result = run(port, base_override="release")
+
+    assert result.base_ref == "release"
+    assert result.default_branch == "main"
+    main = next(b for b in result.branches if b.name == "main")
+    assert main.is_default
 
 
 def test_counts_that_are_not_numbers_are_unknown_not_zero() -> None:
-    port = _tier_port(**{"cherry origin/main feat": ok("- aaa")})
+    port = _tier_port(**{"cherry origin/main -- feat": ok("- aaa")})
     port._git["rev-list --count origin/main..feat"] = ok("not-a-number")
     feat = next(b for b in run(port).branches if b.name == "feat")
     assert feat.unmerged_commits is None
@@ -708,7 +859,7 @@ def test_a_failing_rev_list_is_unknown_and_never_proves_a_merge() -> None:
     authorise deleting the very branch it failed on."""
     port = _tier_port(
         **{
-            "cherry origin/main feat": ok("+ aaa"),
+            "cherry origin/main -- feat": ok("+ aaa"),
             "merge-base origin/main feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
@@ -725,12 +876,48 @@ def test_a_failing_rev_list_is_unknown_and_never_proves_a_merge() -> None:
 
 
 def test_a_failing_unpushed_count_is_unknown_and_warned() -> None:
-    port = _tier_port(**{"cherry origin/main feat": ok("- aaa")})
+    port = _tier_port(track=">", **{"cherry origin/main -- feat": ok("- aaa")})
     port._git["rev-list --count origin/feat..feat"] = fail("bad revision")
     result = run(port)
     feat = next(b for b in result.branches if b.name == "feat")
     assert feat.unpushed_commits is None
     assert any("missing from origin/feat" in w for w in result.warnings)
+
+
+def test_a_branch_in_sync_with_its_upstream_costs_no_probe() -> None:
+    """The tracking marker already answered, and the overwhelming majority of
+    branches are in sync -- paying a `rev-list` each to be told zero is the
+    per-branch cost this batching exists to remove."""
+    port = _tier_port(track="=", **{"cherry origin/main -- feat": ok("- aaa")})
+    del port._git["rev-list --count origin/feat..feat"]
+
+    feat = next(b for b in run(port).branches if b.name == "feat")
+
+    assert feat.unpushed_commits == 0
+    assert not any(
+        call[:3] == ("git", "rev-list", "--count") and "origin/feat.." in call[3]
+        for call in port.transcript
+    )
+
+
+def test_a_branch_only_behind_its_upstream_has_nothing_to_push() -> None:
+    port = _tier_port(track="<", **{"cherry origin/main -- feat": ok("- aaa")})
+    del port._git["rev-list --count origin/feat..feat"]
+    assert next(b for b in run(port).branches if b.name == "feat").unpushed_commits == 0
+
+
+def test_an_upstream_that_no_longer_exists_is_unknown_not_pushed() -> None:
+    """`[gone]` -- the remote branch was deleted. Reading that as zero unpushed
+    would claim a copy survives somewhere it does not, which is exactly the
+    claim that lets a branch into the bare sweep."""
+    port = _tier_port(track="", **{"cherry origin/main -- feat": ok("- aaa")})
+    del port._git["rev-list --count origin/feat..feat"]
+
+    result = run(port)
+
+    feat = next(b for b in result.branches if b.name == "feat")
+    assert feat.unpushed_commits is None
+    assert any("no longer exists" in w for w in result.warnings)
 
 
 def test_a_branch_with_no_upstream_has_no_unpushed_count() -> None:
@@ -742,7 +929,7 @@ def test_a_branch_with_no_upstream_has_no_unpushed_count() -> None:
         ],
         counts={"origin/main..solo": "2"},
         extra={
-            "cherry origin/main solo": ok("- aaa"),
+            "cherry origin/main -- solo": ok("- aaa"),
         },
     )
     solo = next(b for b in run(port).branches if b.name == "solo")
@@ -751,7 +938,7 @@ def test_a_branch_with_no_upstream_has_no_unpushed_count() -> None:
 
 
 def test_upstream_is_carried_through_and_unpushed_counted() -> None:
-    port = _tier_port(**{"cherry origin/main feat": ok("- aaa")})
+    port = _tier_port(track=">", **{"cherry origin/main -- feat": ok("- aaa")})
     port._git["rev-list --count origin/feat..feat"] = ok("3")
     feat = next(b for b in run(port).branches if b.name == "feat")
     assert feat.upstream == "origin/feat"

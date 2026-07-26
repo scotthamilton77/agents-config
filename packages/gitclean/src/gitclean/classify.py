@@ -189,6 +189,8 @@ def classify_branch(
 def _protected_reason(branch: Branch, survey_data: Survey) -> str:
     if branch.is_default:
         return f"{branch.name} is the default branch"
+    if branch.name == survey_data.base_ref:
+        return f"{branch.name} is the ref every merge here is measured against"
     return f"{branch.name} is checked out in the current worktree ({survey_data.repo_root})"
 
 
@@ -211,6 +213,12 @@ def _branch_disposition(
     survey_data: Survey,
 ) -> Disposition:
     if branch.is_default:
+        return Disposition.PROTECTED
+    if branch.name == survey_data.base_ref:
+        # Whatever merges are measured against is trivially merged into itself,
+        # which would otherwise read as proof it is finished with. `--base` can
+        # point at a branch that is not the trunk, and a caller naming a
+        # release line to measure against is not asking for it to be swept.
         return Disposition.PROTECTED
     if not branch.is_remote and branch.name == survey_data.current_branch:
         return Disposition.PROTECTED

@@ -169,13 +169,33 @@ class Executor:
 
     # -- delete + verify ----------------------------------------------------
 
-    def _delete_worktree(self, target: Target) -> Deletion:
-        removal = self._port.git(["worktree", "remove", "--force", target.name], cwd=self._cwd)
+    def _delete_worktree(self, target: Target, *, salvaged: bool) -> Deletion:
+        """Remove the worktree, forcing only when an archive exists to fall
+        back on.
+
+        git refuses to remove a worktree holding modified or untracked files.
+        That refusal is the last thing standing between a tree that went dirty
+        *after* the survey read it and its destruction, and passing --force
+        unconditionally spends it -- in a tool whose whole premise is
+        re-surveying so it acts on current state. So --force is passed only
+        where salvage already captured the contents; otherwise git's own check
+        runs, and its complaint surfaces as an anomaly carrying the transcript.
+
+        Ignored files do not trigger that refusal, so the ordinary sweep of a
+        finished worktree full of caches is unaffected."""
+        argv = ["worktree", "remove", *(["--force"] if salvaged else []), "--", target.name]
+        removal = self._port.git(argv, cwd=self._cwd)
         if not removal.ok:
             self._record(
                 "delete",
                 target.id,
-                f"could not remove worktree {target.name}",
+                f"could not remove worktree {target.name}"
+                + (
+                    ""
+                    if salvaged
+                    else "; it holds changes that were not there when it was surveyed, "
+                    "so nothing was archived and nothing was deleted"
+                ),
                 removal.transcript(),
             )
             return _failed(target, "removal command failed")
@@ -213,7 +233,11 @@ class Executor:
         )
 
     def _delete_branch(self, target: Target) -> Deletion:
-        removal = self._port.git(["branch", "-D", target.name], cwd=self._cwd)
+        # `--` because the name is repo-derived, and `refs/heads/-m` is a legal
+        # ref: `git branch` will not create one, but `update-ref` will and a
+        # remote can push one. Without the terminator git reads the name as a
+        # switch and the deletion fails with a usage error nobody can act on.
+        removal = self._port.git(["branch", "-D", "--", target.name], cwd=self._cwd)
         if not removal.ok:
             self._record(
                 "delete", target.id, f"could not delete branch {target.name}", removal.transcript()
@@ -251,16 +275,46 @@ class Executor:
         )
 
     def _delete_remote_branch(self, target: Target) -> Deletion:
+        """Delete the server's ref, but only if the server still holds what we
+        judged.
+
+        Everything decided about a remote branch was decided from
+        `refs/remotes/<remote>/<ref>` -- a local cache, last refreshed at
+        whatever `git fetch` ran most recently. A colleague pushing to that
+        branch an hour ago is invisible here, and a bare `push --delete` would
+        take the ref away regardless, destroying work this run never saw.
+
+        The lease makes the server check for us: the delete is accepted only
+        while the ref still points at the commit the survey judged, and is
+        rejected as stale otherwise."""
         remote, _, ref = target.name.partition("/")
         if not ref:
             self._record("delete", target.id, f"cannot split {target.name} into remote and ref", ())
             return _failed(target, "unparseable remote ref")
-        removal = self._port.git(["push", remote, "--delete", ref], cwd=self._cwd)
+        expected = next(
+            (b.head for b in self._survey.branches if b.is_remote and b.name == target.name),
+            "",
+        )
+        if not expected:
+            self._record(
+                "delete",
+                target.id,
+                f"no surveyed commit for {target.name}, so the server ref cannot be "
+                f"checked against what was judged; refusing to delete it blind",
+                (),
+            )
+            return _failed(target, "no lease value")
+        removal = self._port.git(
+            ["push", f"--force-with-lease={ref}:{expected}", remote, "--delete", "--", ref],
+            cwd=self._cwd,
+        )
         if not removal.ok:
             self._record(
                 "delete",
                 target.id,
-                f"could not delete {ref} on {remote}",
+                f"could not delete {ref} on {remote}; if this was rejected as stale, "
+                f"{remote} has moved past {expected[:8]} since the survey read it -- "
+                f"fetch and re-run so the new commits are judged too",
                 removal.transcript(),
             )
             return _failed(target, "push --delete failed")
@@ -340,6 +394,7 @@ class Executor:
                 )
                 continue
 
+            salvaged = False
             if target.salvage_needed:
                 if salvage_dir is None:
                     self._record(
@@ -355,9 +410,10 @@ class Executor:
                     deletions.append(_failed(target, "salvage failed; deletion skipped"))
                     self._strand(target, stranded)
                     continue
+                salvaged = True
 
             if target.kind is TargetKind.WORKTREE:
-                outcome = self._delete_worktree(target)
+                outcome = self._delete_worktree(target, salvaged=salvaged)
                 if not outcome.deleted:
                     self._strand(target, stranded)
                 deletions.append(outcome)

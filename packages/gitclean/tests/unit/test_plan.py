@@ -73,6 +73,33 @@ def test_remote_branches_need_include_remote() -> None:
     assert [t.name for t in widened.targets] == ["origin/merged"]
 
 
+def test_naming_a_remote_branch_without_include_remote_is_refused_not_ignored() -> None:
+    """Dropping it silently returns a successful, empty plan. The caller reads
+    that as "the ref is gone" and moves on; the server still has it."""
+    targets = (target("remote:origin/merged", kind=TargetKind.REMOTE_BRANCH),)
+
+    result = plan_for(targets, selectors=["origin/merged"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_REMOTE_NOT_ENABLED"
+    assert [t.name for t in result.blocked] == ["origin/merged"]
+    assert "--include-remote" in result.remedy
+
+
+def test_an_automatic_sweep_still_passes_over_remote_branches_quietly() -> None:
+    """Nobody asked for them, so there is nothing to refuse -- the refusal is
+    for a caller who named one and would otherwise be misled."""
+    targets = (
+        target("remote:origin/merged", kind=TargetKind.REMOTE_BRANCH),
+        target("branch:local"),
+    )
+
+    result = plan_for(targets)
+
+    assert isinstance(result, Plan)
+    assert [t.name for t in result.targets] == ["local"]
+
+
 # -- --clean-all -------------------------------------------------------------
 
 

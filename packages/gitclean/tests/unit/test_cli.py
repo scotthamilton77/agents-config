@@ -39,7 +39,7 @@ def merged_branch_port() -> ScriptedCommands:
         ],
         counts={"origin/main..done": "0"},
         extra={
-            "branch -D done": ok(),
+            "branch -D -- done": ok(),
             "for-each-ref --format=%(refname) refs/heads/done": ok(""),
         },
     )
@@ -130,7 +130,7 @@ def test_idle_days_reaches_the_classifier() -> None:
         ],
         counts={"origin/main..old": "2"},
         extra={
-            "cherry origin/main old": ok("+ a"),
+            "cherry origin/main -- old": ok("+ a"),
             "merge-base origin/main old": ok("b"),
             "rev-parse old^{tree}": ok("t"),
             "commit-tree t -p b -m gitclean-probe": ok("s"),
@@ -145,7 +145,7 @@ def test_idle_days_reaches_the_classifier() -> None:
         ],
         counts={"origin/main..old": "2"},
         extra={
-            "cherry origin/main old": ok("+ a"),
+            "cherry origin/main -- old": ok("+ a"),
             "merge-base origin/main old": ok("b"),
             "rev-parse old^{tree}": ok("t"),
             "commit-tree t -p b -m gitclean-probe": ok("s"),
@@ -197,7 +197,7 @@ def test_an_anomaly_exits_three_with_the_transcript() -> None:
         ],
         counts={"origin/main..done": "0"},
         extra={
-            "branch -D done": ok(),
+            "branch -D -- done": ok(),
             "for-each-ref --format=%(refname) refs/heads/done": ok("refs/heads/done"),
         },
     )
@@ -236,7 +236,7 @@ def test_an_explicit_salvage_dir_is_honoured() -> None:
         ],
         counts={"origin/main..wip": "2"},
         extra={
-            "cherry origin/main wip": ok("+ a"),
+            "cherry origin/main -- wip": ok("+ a"),
             "merge-base origin/main wip": ok("b"),
             "rev-parse wip^{tree}": ok("t"),
             "commit-tree t -p b -m gitclean-probe": ok("s"),
@@ -279,7 +279,7 @@ def test_human_output_names_a_failed_deletion() -> None:
         ],
         counts={"origin/main..done": "0"},
         extra={
-            "branch -D done": ok(),
+            "branch -D -- done": ok(),
             "for-each-ref --format=%(refname) refs/heads/done": ok("refs/heads/done"),
         },
     )

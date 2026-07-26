@@ -253,3 +253,23 @@ def test_an_unscripted_archive_call_fails_loudly() -> None:
         port.create_archive(Path("/repo/wt"), Path("/salvage/wt.tar.gz"))
     with pytest.raises(AssertionError, match="archive listing"):
         ScriptedCommands().list_archive(Path("/salvage/wt.tar.gz"))
+
+
+def test_the_longest_matching_key_wins_so_a_shorter_one_cannot_absorb_it() -> None:
+    """Two of gitclean's `for-each-ref` calls share a prefix: the survey's
+    batch read starts with `%(refname)` and so does the post-delete verifier.
+    Matching by longest key is what keeps them apart -- were it first-match or
+    shortest, a test scripting one would silently answer the other, and the
+    verifier would 'confirm' a deletion using the survey's output."""
+    port = ScriptedCommands(
+        git={
+            "for-each-ref --format=%(refname) refs/heads/gone": ok(""),
+            "for-each-ref --format=%(refname)\x1f": ok("survey-batch-output"),
+        }
+    )
+
+    verifier = port.git(["for-each-ref", "--format=%(refname)", "refs/heads/gone"])
+    survey_read = port.git(["for-each-ref", "--format=%(refname)\x1f%(objectname)", "refs/heads"])
+
+    assert verifier.stdout == ""
+    assert survey_read.stdout == "survey-batch-output"

@@ -117,6 +117,21 @@ def build_plan(
         chosen = [t for t in targets if t.disposition is Disposition.SAFE and t.risk is Risk.NONE]
 
     if not include_remote:
+        remotes = [t for t in chosen if t.kind is TargetKind.REMOTE_BRANCH]
+        if remotes and selectors:
+            # Named outright, so silence is the wrong answer. Filtering these
+            # away leaves a successful, empty plan, which reads as "there was
+            # nothing to clean" -- the caller believes the server ref is gone
+            # when it is untouched, and finds out later.
+            names = ", ".join(t.name for t in remotes)
+            return Refusal(
+                code="E_REMOTE_NOT_ENABLED",
+                message=f"remote branch deletion is off by default, so this run "
+                f"cannot delete: {names}",
+                blocked=tuple(remotes),
+                remedy="re-run with --include-remote to delete refs on the server "
+                "(they affect everyone fetching it), or drop these from the selection",
+            )
         chosen = [t for t in chosen if t.kind is not TargetKind.REMOTE_BRANCH]
 
     protected = [t for t in chosen if t.disposition is Disposition.PROTECTED]
