@@ -107,6 +107,19 @@ def build_plan(
             remedy="re-run as `--clean-all --force`, or use bare `--cleanup` for the safe subset",
         )
 
+    if clean_all and not survey_data.default_branch_known:
+        # --clean-all is the one mode that deletes branches the caller never
+        # named, and it decides by exclusion: everything not protected goes.
+        # Protection is by name, so when the trunk cannot be identified no
+        # branch holds it -- and the trunk is swept along with the cruft.
+        return Refusal(
+            code="E_DEFAULT_BRANCH_UNKNOWN",
+            message="cannot identify this repository's default branch, so nothing can be "
+            "protected as the trunk and --clean-all would sweep it with everything else",
+            remedy="publish origin's HEAD (`git remote set-head origin -a`), or delete "
+            "branches by name instead of sweeping by exclusion",
+        )
+
     if selectors:
         chosen, refusal = resolve_selectors(selectors, targets)
         if refusal is not None:

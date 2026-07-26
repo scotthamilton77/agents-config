@@ -243,6 +243,13 @@ class Survey:
     git_common_dir: str
     base_ref: str
     default_branch: str
+    default_branch_known: bool
+    """False when the name above is a guess nothing confirmed.
+
+    Protection is assigned by name, so a guess protects nothing: a repository
+    whose trunk is `trunk` has no protected branch at all, and a mode that
+    sweeps everything unprotected would take the trunk. Modes that delete
+    without the caller naming a target refuse while this is False."""
     current_branch: str | None
     gh_available: bool
     gh_error: str | None
@@ -265,6 +272,7 @@ class Survey:
             "git_common_dir": self.git_common_dir,
             "base_ref": self.base_ref,
             "default_branch": self.default_branch,
+            "default_branch_known": self.default_branch_known,
             "current_branch": self.current_branch,
             "gh_available": self.gh_available,
             "gh_error": self.gh_error,

@@ -26,7 +26,7 @@ from datetime import datetime
 from pathlib import Path
 
 from gitclean.model import Anomaly, Deletion, Plan, SalvageRecord, Survey, Target, TargetKind
-from gitclean.ports import CommandPort
+from gitclean.ports import CommandPort, is_inside
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +89,20 @@ class Executor:
         stash captured only what git already tracked -- and none of them
         captured what is actually at risk, which is the directory."""
         archive = salvage_dir / f"{slug(target.name)}.tar.gz"
+        if is_inside(archive, Path(target.name)):
+            # The archive would live inside the directory about to be removed,
+            # so `worktree remove` deletes the salvage along with the thing it
+            # was saving -- and the run reports a verified salvage and a clean
+            # exit while the only copy goes. Refuse before anything is written.
+            self._record(
+                "salvage",
+                target.id,
+                f"the salvage directory {salvage_dir} is inside {target.name}, so the "
+                f"archive would be deleted along with the worktree it is saving; "
+                f"deletion aborted -- choose a --salvage-dir outside it",
+                (),
+            )
+            return False
         created = self._port.create_archive(Path(target.name), archive)
         if not created.ok:
             self._record(

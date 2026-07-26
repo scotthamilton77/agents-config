@@ -15,9 +15,9 @@ from gitclean.ports import (
     CommandResult,
     ScriptedCommands,
     SubprocessCommands,
-    _inside,
     _staging_path,
     fail,
+    is_inside,
     ok,
 )
 
@@ -217,8 +217,8 @@ def test_tar_never_writes_into_the_directory_it_is_reading(tmp_path: Path) -> No
     nested = _staging_path(source, source / "salvage" / "tree.tar.gz")
     outside = _staging_path(source, tmp_path / "elsewhere" / "tree.tar.gz")
 
-    assert at_root is not None and not _inside(at_root, source)
-    assert nested is not None and not _inside(nested, source)
+    assert at_root is not None and not is_inside(at_root, source)
+    assert nested is not None and not is_inside(nested, source)
     # Already outside, so there is nothing to stage around.
     assert outside is None
 

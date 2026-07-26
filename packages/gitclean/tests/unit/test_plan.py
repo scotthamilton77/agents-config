@@ -103,6 +103,30 @@ def test_an_automatic_sweep_still_passes_over_remote_branches_quietly() -> None:
 # -- --clean-all -------------------------------------------------------------
 
 
+def test_clean_all_is_refused_when_the_trunk_cannot_be_identified() -> None:
+    """--clean-all decides by exclusion: everything not protected goes. But
+    protection is assigned by name, so a repository whose trunk is `trunk` --
+    no published origin/HEAD, no main, no master -- has no protected branch at
+    all, and the sweep takes the trunk along with the cruft."""
+    survey = make_survey(default_branch="main", default_branch_known=False)
+
+    result = plan_for((target("branch:trunk"),), survey=survey, clean_all=True, force=True)
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_DEFAULT_BRANCH_UNKNOWN"
+
+
+def test_a_named_deletion_still_works_without_a_known_trunk() -> None:
+    """The caller named it, so nothing is being decided by exclusion. Refusing
+    here would strand a repository that simply has no origin/HEAD published."""
+    survey = make_survey(default_branch="main", default_branch_known=False)
+
+    result = plan_for((target("branch:feat/x"),), survey=survey, selectors=["feat/x"])
+
+    assert isinstance(result, Plan)
+    assert [t.name for t in result.targets] == ["feat/x"]
+
+
 def test_clean_all_without_force_is_refused() -> None:
     result = plan_for((target("branch:x"),), clean_all=True)
     assert isinstance(result, Refusal)

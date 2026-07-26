@@ -80,6 +80,17 @@ Salvage lands in `<git-common-dir>/gitclean-salvage/<timestamp>/`. Restore a
 branch with `git clone <bundle> -b <branch>`, a worktree with
 `tar -xzf <archive> -C <dir>`.
 
+A `--salvage-dir` inside a worktree being removed is refused before anything is
+written: the archive would be deleted along with the directory it was saving,
+and the run would report a verified salvage while the only copy went. The
+default location is never inside a removable worktree.
+
+`--clean-all` is refused outright when the default branch cannot be identified
+— no published `origin/HEAD`, no `main`, no `master`. It deletes by exclusion,
+protection is assigned by name, and a repository whose trunk is called
+something else would have no protected branch for the sweep to spare. Publish
+it with `git remote set-head origin -a`, or delete by name instead.
+
 ## Trades worth knowing
 
 **Ignored files are reported, not protected.** They are counted per worktree

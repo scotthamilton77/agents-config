@@ -117,6 +117,7 @@ def make_survey(
     current_branch: str | None = "main",
     base_ref: str = "origin/main",
     default_branch: str = "main",
+    default_branch_known: bool = True,
     gh_error: str | None = None,
     warnings: tuple[str, ...] = (),
 ) -> Survey:
@@ -125,6 +126,7 @@ def make_survey(
         git_common_dir="/repo/.git",
         base_ref=base_ref,
         default_branch=default_branch,
+        default_branch_known=default_branch_known,
         current_branch=current_branch,
         gh_available=gh_error is None,
         gh_error=gh_error,

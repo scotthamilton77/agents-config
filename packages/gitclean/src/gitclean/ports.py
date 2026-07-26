@@ -72,7 +72,7 @@ class CommandPort(Protocol):
     def list_archive(self, path: Path) -> CommandResult: ...  # pragma: no cover
 
 
-def _inside(inner: Path, outer: Path) -> bool:
+def is_inside(inner: Path, outer: Path) -> bool:
     try:
         inner.resolve().relative_to(outer.resolve())
     except (ValueError, OSError):
@@ -86,7 +86,7 @@ def _self_exclusion(source: Path, dest: Path) -> list[str]:
     A caller is free to point --salvage-dir inside the very worktree being
     salvaged. The directory is created before tar runs, so without this it is
     captured as an empty directory in the archive of the tree it is saving."""
-    if not _inside(dest.parent, source):
+    if not is_inside(dest.parent, source):
         return []
     relative = dest.parent.resolve().relative_to(source.resolve())
     # A salvage directory one level down is excluded whole; one that *is* the
@@ -108,7 +108,7 @@ def _staging_path(source: Path, dest: Path) -> Path | None:
     nothing, so this is invisible until the suite runs on Linux. Staging
     beside the source directory removes the race rather than tolerating it,
     and stays on the same filesystem so the move into place is a rename."""
-    if not _inside(dest.parent, source):
+    if not is_inside(dest.parent, source):
         return None
     return source.parent / f".{dest.name}.gitclean-partial"
 

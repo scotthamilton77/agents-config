@@ -444,6 +444,44 @@ def test_an_empty_archive_is_not_treated_as_a_successful_capture() -> None:
     assert "git" not in [t[0] for t in port.transcript]
 
 
+def test_a_salvage_dir_inside_the_worktree_aborts_before_anything_is_written() -> None:
+    """The archive would land inside the directory `worktree remove` is about
+    to delete, so the salvage is destroyed the instant it is made -- and the
+    run reports a verified salvage, no anomalies, and exit 0 while the only
+    copy of the work goes. Refused before tar is even invoked."""
+    port = _worktree_salvage_port()
+
+    report = run(
+        port,
+        plan(
+            target(TargetKind.WORKTREE, "/repo/wt", risk=Risk.DATA_LOSS),
+            salvage_dir="/repo/wt/salvage",
+        ),
+    )
+
+    assert not report.ok
+    assert report.salvages == ()
+    assert not report.deletions[0].deleted
+    assert port.archives == []
+    assert "git" not in [call[0] for call in port.transcript]
+    assert "deleted along with the worktree it is saving" in report.anomalies[0].message
+
+
+def test_a_salvage_dir_outside_the_worktree_is_fine() -> None:
+    port = _worktree_salvage_port()
+
+    report = run(
+        port,
+        plan(
+            target(TargetKind.WORKTREE, "/repo/wt", risk=Risk.DATA_LOSS),
+            salvage_dir="/repo/.git/gitclean-salvage",
+        ),
+    )
+
+    assert report.ok
+    assert report.salvages[0].verified
+
+
 def test_the_archive_captures_ignored_files() -> None:
     """A worktree whose only content is a .env used to read clean, be swept at
     Risk.NONE, and not even be captured by salvage if it had been."""

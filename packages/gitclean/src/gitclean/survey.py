@@ -70,8 +70,9 @@ def resolve_repo(port: CommandPort, cwd: Path | None) -> tuple[str, str] | None:
     return _first_line(root.out), _first_line(common.out)
 
 
-def resolve_default_branch(port: CommandPort, cwd: Path | None) -> str:
+def resolve_default_branch(port: CommandPort, cwd: Path | None) -> str | None:
     """The repository's trunk -- the branch that is never a deletion candidate.
+    None when it cannot be determined.
 
     Discovered, never supplied by the caller. `--base` moves what merges are
     measured *against*; letting it also name the default branch would hand a
@@ -79,9 +80,13 @@ def resolve_default_branch(port: CommandPort, cwd: Path | None) -> str:
     against something else, and a trunk that is an ancestor of that something
     else then classifies as merged and sweepable.
 
-    origin's published HEAD first, then a local main/master. A wrong answer
-    here silently mis-classifies every branch, so the fallback chain stops at
-    conventional names rather than guessing from branch order."""
+    origin's published HEAD first, then a local main/master, each verified to
+    exist. Returning the literal `main` when nothing answers used to look
+    harmless -- every merge probe against a ref that is not there fails, so
+    nothing could be proven merged. But protection is assigned by *name*, and
+    a repository whose trunk is `trunk` then has no protected branch at all:
+    `--clean-all` takes everything that is not protected, so the trunk went
+    with it. An unproven guess is not a default branch."""
     head = port.git(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], cwd=cwd)
     if head.ok and head.out:
         return _first_line(head.out).removeprefix("refs/remotes/origin/")
@@ -89,7 +94,7 @@ def resolve_default_branch(port: CommandPort, cwd: Path | None) -> str:
         probe = port.git(["show-ref", "--verify", "--quiet", f"refs/heads/{candidate}"], cwd=cwd)
         if probe.ok:
             return candidate
-    return "main"
+    return None
 
 
 def resolve_base_ref(port: CommandPort, cwd: Path | None, default_branch: str) -> str:
@@ -612,7 +617,11 @@ def survey(
     # what to measure merges against; it does not say which branch is the
     # repository's trunk, and conflating them lets `--base release` demote the
     # real trunk to an ordinary, deletable branch.
-    default_branch = resolve_default_branch(port, cwd)
+    resolved_default = resolve_default_branch(port, cwd)
+    # The name is still needed downstream to compare against, but it is now
+    # known to be a guess -- so it protects nothing it cannot prove, and the
+    # flag travels with the survey for the modes that must refuse.
+    default_branch = resolved_default if resolved_default is not None else "main"
     base_ref = base_override or resolve_base_ref(port, cwd, default_branch)
 
     head = port.git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd)
@@ -644,11 +653,20 @@ def survey(
         for w in worktrees
     ]
 
+    if resolved_default is None:
+        warnings.append(
+            "could not determine this repository's default branch: origin has published no "
+            "HEAD and neither main nor master exists. No branch can be protected as the "
+            "trunk, so --clean-all is refused; pass --base to name what merges are measured "
+            "against, and delete branches by name"
+        )
+
     return Survey(
         repo_root=repo_root,
         git_common_dir=common_dir,
         base_ref=base_ref,
         default_branch=default_branch,
+        default_branch_known=resolved_default is not None,
         current_branch=current,
         gh_available=port.has_gh(),
         gh_error=gh_error,

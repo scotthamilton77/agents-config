@@ -139,14 +139,43 @@ def test_default_branch_falls_back_to_master_when_main_is_absent() -> None:
     assert resolve_default_branch(port, None) == "master"
 
 
-def test_default_branch_settles_on_main_when_nothing_answers() -> None:
+def test_an_unidentifiable_default_branch_is_unknown_not_guessed_as_main() -> None:
+    """Guessing `main` looked harmless -- every probe against a ref that is not
+    there fails, so nothing could be proven merged. But protection is assigned
+    by name, so in a repository whose trunk is `trunk` the guess left no branch
+    protected at all, and `--clean-all` swept the trunk with the cruft."""
     port = ScriptedCommands(
         git={
             "symbolic-ref --quiet refs/remotes/origin/HEAD": fail(),
             "show-ref --verify --quiet refs/heads/": fail(),
         }
     )
-    assert resolve_default_branch(port, None) == "main"
+    assert resolve_default_branch(port, None) is None
+
+
+def test_an_unknown_default_branch_is_reported_on_the_survey() -> None:
+    port = make_port(
+        refs=[
+            ref_line("refs/heads/trunk", "trunk"),
+            ref_line("refs/heads/feature", "feature", head="*"),
+        ],
+        counts={"main..trunk": "3", "main..feature": "1"},
+        extra={
+            "symbolic-ref --quiet refs/remotes/origin/HEAD": fail(),
+            "show-ref --verify --quiet refs/heads/main": fail(),
+            "show-ref --verify --quiet refs/heads/master": fail(),
+            "show-ref --verify --quiet refs/remotes/origin/main": fail(),
+            "cherry main -- trunk": fail(),
+            "cherry main -- feature": fail(),
+            "merge-base main trunk": fail(),
+            "merge-base main feature": fail(),
+        },
+    )
+
+    result = run(port)
+
+    assert result.default_branch_known is False
+    assert any("could not determine" in w for w in result.warnings)
 
 
 def test_base_prefers_the_remote_tracking_tip() -> None:
