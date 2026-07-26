@@ -30,7 +30,7 @@ from grind.model import (
 def _pr_ref_json(pr: PrRef | None) -> JsonValue:
     if pr is None:
         return None
-    return {"number": pr.number, "url": pr.url}
+    return {"number": pr.number, "url": pr.url, "closed": pr.closed}
 
 
 def _item_review_json(review: ItemReview) -> JsonValue:

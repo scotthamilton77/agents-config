@@ -96,13 +96,12 @@ def test_fix_attempted_on_an_absent_item_flags() -> None:
 
 
 def test_fix_attempted_needs_a_pr_and_reads_the_ref_not_the_status() -> None:
-    # An attempt exists only inside a PR cycle, so the check mirrors the
-    # failure-park rule exactly: keyed on the PR ref, which `blocked` legally
-    # holds, never on status.
+    # An attempt exists only inside a PR cycle. Keyed on the PR ref rather than
+    # on status, because `blocked` legally holds an open PR.
     no_pr = fold([seed_event(), event("item_started", item="wgclw.1"), _attempt()])
 
     assert no_pr.items["wgclw.1"].attempts["ci-fix"] == 0
-    assert any(a.type == "fix_attempted" and "no PR" in a.reason for a in no_pr.anomalies)
+    assert any(a.type == "fix_attempted" and "no open PR" in a.reason for a in no_pr.anomalies)
 
     blocked_with_pr = fold(
         [*_to_pr_open(), event("item_blocked", item="wgclw.1", on=["wgclw.2"]), _attempt()]
@@ -110,6 +109,45 @@ def test_fix_attempted_needs_a_pr_and_reads_the_ref_not_the_status() -> None:
 
     assert blocked_with_pr.items["wgclw.1"].attempts["ci-fix"] == 1
     assert blocked_with_pr.anomalies == []
+
+
+def test_fix_attempted_after_the_pr_closes_flags_until_a_new_pr_opens() -> None:
+    # `pr_closed` leaves the ref behind for the failure-park rule, so "has a PR
+    # ref" is not "has an open PR": an attempt in the gap has nothing to fix,
+    # and charging the fresh ledger there would spend the next cycle's budget
+    # before that cycle exists.
+    closed = [
+        *_to_pr_open(),
+        event("pr_closed", item="wgclw.1", pr=7, reason="superseded", next="in-progress"),
+    ]
+    in_the_gap = fold([*closed, _attempt()])
+
+    assert in_the_gap.items["wgclw.1"].attempts["ci-fix"] == 0
+    assert any(a.type == "fix_attempted" and "no open PR" in a.reason for a in in_the_gap.anomalies)
+
+    # ... and the next PR restores it: pr_opened builds a fresh, open ref.
+    recut = fold([*closed, event("pr_opened", item="wgclw.1", pr=8), _attempt()])
+
+    assert recut.items["wgclw.1"].attempts["ci-fix"] == 1
+    assert recut.anomalies == []
+
+
+def test_a_failure_axis_park_still_accepts_the_closed_ref_the_attempt_gate_refuses() -> None:
+    # The two rules read the same field and answer different questions: a park
+    # states that this item's PR did not merge, which stays true after it
+    # closes. Tightening the attempt gate must not tighten this one.
+    state = fold(
+        [
+            *_to_pr_open(),
+            event("pr_closed", item="wgclw.1", pr=7, reason="superseded", next="in-progress"),
+            event("item_parked", item="wgclw.1", reason="ci-failure", note="never went green"),
+        ]
+    )
+
+    parked = state.items["wgclw.1"].parked
+    assert parked is not None
+    assert parked.reason == "ci-failure"
+    assert state.anomalies == []
 
 
 def test_fix_attempted_with_an_unrecognized_kind_flags_rather_than_miscounting() -> None:
@@ -169,15 +207,16 @@ def test_events_inside_the_pr_cycle_leave_the_ledger_unchanged() -> None:
 
     assert after_review.items["wgclw.1"].attempts["ci-fix"] == 1
 
-    # pr_closed leaves the PR ref behind, so the attempt after it is accepted
-    # and counts from the cleared ledger; the next pr_opened does not clear it.
+    # pr_opened starts the next cycle but does not itself clear the ledger, so
+    # an attempt charged under the new PR is the only thing in it.
     reopened = fold(
         [
             *_to_pr_open(),
             _attempt(),
             event("pr_closed", item="wgclw.1", pr=7, reason="superseded", next="in-progress"),
-            _attempt(),
             event("pr_opened", item="wgclw.1", pr=8),
+            _attempt(),
+            event("review_round", item="wgclw.1", kind="codex", round=1, head_sha="b1"),
         ]
     )
 

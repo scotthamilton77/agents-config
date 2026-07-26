@@ -108,6 +108,14 @@ AttentionKind = Literal["waiting-human"]
 class PrRef:
     number: int | None = None
     url: str | None = None
+    # Whether this reference is to a PR that has since closed. `pr_closed`
+    # deliberately leaves the ref behind so a re-queued item can still carry a
+    # failure-axis park describing the PR that did not merge -- which makes
+    # "the item has a PR ref" and "the item has an OPEN PR" two different
+    # questions. Both have callers, so the fold records the answer rather than
+    # letting each of them guess from status (`in-progress` is reachable both
+    # with an open PR, via resume, and with a closed one).
+    closed: bool = False
 
 
 @dataclass

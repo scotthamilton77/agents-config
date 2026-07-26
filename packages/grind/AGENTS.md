@@ -240,9 +240,15 @@ must pass before push.
   attempt, so a count past its budget keeps climbing and the condition keeps
   reporting the larger number; refusing, parking, and spending the budget
   belong to the decision layer. Two consequences worth not re-litigating:
-  - *An attempt is gated on the PR ref, not on status* — the same key and the
-    same post-`pr_closed` permissiveness as a failure-axis park, for the same
-    reason: an attempt is a statement about fixing a PR that has not merged.
+  - *An attempt is gated on an **open** PR, keyed on the ref and not on
+    status.* Status cannot answer it — `in-progress` is reachable both with an
+    open PR (via `item_resumed`) and with a closed one (via `pr_closed`) — so
+    `pr_closed` marks `PrRef.closed` and the gate reads that. This is where the
+    attempt rule and the failure-axis park rule deliberately diverge despite
+    reading the same field: a park states that this item's PR did not merge,
+    which stays true after the PR closes, while an attempt claims to be fixing
+    one that is still open. Hence the ref survives a close for the park's sake
+    and is marked closed for the attempt's.
   - *The ledger's lifetime is one PR cycle.* `pr_closed` clears it (a new PR
     must not inherit spent budget) and `item_enqueued` clears it (leaving the
     parking lot deliberately grants a fresh window). No other event does —

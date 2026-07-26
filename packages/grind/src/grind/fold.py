@@ -470,6 +470,10 @@ def _h_pr_closed(state: State, evt: RawEvent) -> None:
     # fix budget spent on it -- the attempt ledger's lifetime is one PR cycle
     item.round_history = ()
     item.attempts = new_attempt_ledger()
+    # The ref stays for the failure-axis park rule; marking it closed is what
+    # keeps "has a PR ref" from being read as "has an open PR".
+    if item.pr is not None:
+        item.pr.closed = True
     if next_status == "parked":
         # `pr_closed.reason` is a free-text closure note, not the typed park
         # vocabulary -- the two share a field name and not a contract. When it
@@ -490,9 +494,12 @@ def _h_fix_attempted(state: State, evt: RawEvent) -> None:
     the count past the budget keeps climbing and stays an honest record of what
     was attempted.
 
-    An attempt exists only inside a PR cycle, so the PR ref gates it -- the
-    same key, and the same permissiveness after `pr_closed` leaves the ref
-    behind, as the failure-axis park rule below.
+    An attempt exists only inside a PR cycle, so an OPEN PR gates it. Keyed on
+    the ref like the failure-axis park rule below -- status cannot answer this,
+    since `in-progress` is reachable both with an open PR (via resume) and with
+    a closed one (via `pr_closed`) -- but, unlike that rule, a closed ref does
+    not pass: a park describes a PR that already failed to merge, while an
+    attempt claims to be fixing one that is still open.
     """
     item = _active_item(state, evt)
     if item is None:
@@ -500,8 +507,8 @@ def _h_fix_attempted(state: State, evt: RawEvent) -> None:
     if item.status in _TERMINAL_ITEM_STATUSES:
         _anomaly(state, evt, f"fix_attempted illegal from status {item.status!r}")
         return
-    if item.pr is None:
-        _anomaly(state, evt, "fix_attempted on an item with no PR")
+    if item.pr is None or item.pr.closed:
+        _anomaly(state, evt, "fix_attempted on an item with no open PR")
         return
     kind = _str(evt, "kind")
     # Membership narrows the `str` to the key type, as it does for park reasons.
