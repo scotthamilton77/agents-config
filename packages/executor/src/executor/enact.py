@@ -69,14 +69,17 @@ def _tracker_step(session: TrackerSession, plan: Plan, handle: str | None) -> No
     session.apply(verb, handle, reason=plan.park_reason, note=plan.park_note)
 
 
-def _runtime_step(runtime: RuntimePort, plan: Plan) -> None:
+def _runtime_step(runtime: RuntimePort, plan: Plan) -> bool:
+    """Whether an event was actually appended -- not whether the plan intended
+    one. The two differ on the failure path, and the report must say which."""
     if plan.payload is None:
-        return
+        return False
     runtime.append(plan.row.event, plan.payload)
+    return True
 
 
 def _report(
-    plan: Plan, handle: str | None, session: TrackerSession, *, synced: bool
+    plan: Plan, handle: str | None, session: TrackerSession, *, appended: bool, synced: bool
 ) -> dict[str, JsonValue]:
     tracker_verb = plan.row.tracker
     return {
@@ -85,7 +88,7 @@ def _report(
         "item": plan.item.id,
         "tracker_id": handle,
         "event": plan.row.event,
-        "event_appended": plan.appends,
+        "event_appended": appended,
         "tracker_verb": tracker_verb.value if tracker_verb is not None else None,
         "tracker_called": bool(session.mutations),
         "synced": synced,
@@ -95,29 +98,82 @@ def _report(
     }
 
 
+def _sync_failure(
+    plan: Plan,
+    handle: str | None,
+    session: TrackerSession,
+    failure: ExecutorError,
+    *,
+    appended: bool,
+) -> ExecutorError:
+    """The mutations landed; only the sync did not. Re-running the command
+    would repeat them, so the report names the standalone repair instead."""
+    return ExecutorError(
+        failure.code,
+        f"{failure.message} -- the tracker mutations landed; "
+        f"repair by running `{SYNC_REPAIR}`, not by re-running this command",
+        {
+            **_report(plan, handle, session, appended=appended, synced=False),
+            "repair": SYNC_REPAIR,
+        },
+    )
+
+
+def _with_owed_sync(
+    plan: Plan,
+    handle: str | None,
+    session: TrackerSession,
+    failure: ExecutorError,
+    *,
+    appended: bool,
+) -> ExecutorError:
+    """A step failed partway. Any tracker write that already landed still owes
+    this invocation its single sync, so it is issued before the failure is
+    reported -- otherwise a failed append would strand a landed mutation on the
+    local plane until someone happened to retry. A refusal that mutated nothing
+    still syncs nothing.
+
+    The step failure stays the reported cause; a sync that fails on top of it
+    is additional detail, not a replacement for the reason the command failed.
+    """
+    if not session.mutations:
+        return failure
+    synced = True
+    sync_error: str | None = None
+    try:
+        session.flush()
+    except ExecutorError as sync_failure:
+        synced = False
+        sync_error = sync_failure.message
+    data: dict[str, JsonValue] = {
+        **_report(plan, handle, session, appended=appended, synced=synced),
+        **failure.data,
+    }
+    if sync_error is not None:
+        data["sync_error"] = sync_error
+        data["repair"] = SYNC_REPAIR
+    return ExecutorError(failure.code, failure.message, data)
+
+
 def enact(plan: Plan, runtime: RuntimePort, tracker: TrackerPort) -> dict[str, JsonValue]:
     handle = tracker_handle(plan.item)
     session = TrackerSession(tracker)
+    appended = False
 
-    if plan.row.order is Order.TRACKER_FIRST:
-        _tracker_step(session, plan, handle)
-        _runtime_step(runtime, plan)
-    else:
-        _runtime_step(runtime, plan)
-        _tracker_step(session, plan, handle)
+    try:
+        if plan.row.order is Order.TRACKER_FIRST:
+            _tracker_step(session, plan, handle)
+            appended = _runtime_step(runtime, plan)
+        else:
+            appended = _runtime_step(runtime, plan)
+            _tracker_step(session, plan, handle)
+    except ExecutorError as failure:
+        raise _with_owed_sync(plan, handle, session, failure, appended=appended) from failure
 
+    # Flushed outside the block above so a sync failure is never mistaken for a
+    # step failure and re-flushed.
     try:
         synced = session.flush()
     except ExecutorError as failure:
-        # The mutations landed; only the sync did not. Re-running this command
-        # would repeat them, so the report names the repair instead.
-        raise ExecutorError(
-            failure.code,
-            f"{failure.message} -- the tracker mutations landed; "
-            f"repair by running `{SYNC_REPAIR}`, not by re-running this command",
-            {
-                **_report(plan, handle, session, synced=False),
-                "repair": SYNC_REPAIR,
-            },
-        ) from failure
-    return _report(plan, handle, session, synced=synced)
+        raise _sync_failure(plan, handle, session, failure, appended=appended) from failure
+    return _report(plan, handle, session, appended=appended, synced=synced)

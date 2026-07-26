@@ -42,6 +42,10 @@ contract (`ci-failure`, `merge-conflict`, `approval-required`, `bot-declined`,
 `budget-exhausted`); the scheduling axis (`discovered-work`, `later-wave`,
 `deferred`) is runtime-native and reaches the tracker not at all.
 
+A failure reason says this item's PR did not merge, so a failure-axis park on
+an item holding no PR is refused with `E_NO_OPEN_PR` rather than half-enacted.
+A scheduling park makes no such claim and needs no PR.
+
 ## Which side leads
 
 An **intent** — something the executor is about to make true — calls the
@@ -87,15 +91,19 @@ Exit 0 on success, 1 on any typed failure.
 | `E_RUNTIME_ENVELOPE` | yes | the runtime replied with something unparseable |
 | `E_TRACKER_SUBPROCESS` | yes | the facade call failed |
 | `E_SYNC_FAILED` | yes | mutations landed, the sync did not — repair with `work sync` |
-| `E_NO_OPEN_PR` | no | a merge was recorded for an item holding no PR |
+| `E_NO_OPEN_PR` | no | a merge or a failure-axis park named an item holding no PR |
 | `E_ITEM_PARKED` | no | reserved for `attempt` |
 | `E_BUDGET_EXHAUSTED` | no | reserved for `attempt` |
-| `E_USAGE` | no | bad arguments, unknown item, or a park reason on neither axis |
+| `E_USAGE` | no | bad arguments, unknown item, a park reason on neither axis, or a transition the runtime flagged instead of applying |
 | `E_INTERNAL` | no | an unexpected fault, typed rather than thrown |
 
 A failed sync is repaired by running `work sync`, **never** by re-running the
 command — that would repeat the mutations. The error's `data` shows what did
 land.
+
+The sync is owed by the mutation, not by the command succeeding: when a tracker
+write lands and a later step fails, the sync is still issued before the failure
+is reported. A command that mutated nothing syncs nothing.
 
 ## Not here yet
 

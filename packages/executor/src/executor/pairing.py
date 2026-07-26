@@ -201,6 +201,18 @@ def _plan_park(args: VerbArgs, item: ItemView) -> Plan:
     if args.reason is None:
         raise ExecutorError(ErrorCode.USAGE, "park requires --reason")
     axis = park_axis(args.reason)
+    # A failure reason is a statement that this item's PR did not merge, so the
+    # runtime's fold refuses one on an item holding no PR -- keyed on the PR
+    # reference, not on status. Mirroring that refusal here is what keeps the
+    # two planes convergent: without it the tracker park lands, the runtime
+    # records the append as an anomaly and leaves the item unparked, and every
+    # retry repeats the same one-sided result.
+    if axis is Axis.FAILURE and item.pr_number is None:
+        raise ExecutorError(
+            ErrorCode.NO_OPEN_PR,
+            f"failure-axis reason {args.reason!r} says item {item.id!r}'s PR did not merge, "
+            f"and it holds no PR reference",
+        )
     # The reason code is the default note: `item_parked.note` is required, and
     # a park whose note only repeats its typed reason says exactly as much as
     # the reason does.

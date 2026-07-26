@@ -70,6 +70,17 @@ ports.py  →  state.py  →  pairing.py  →  enact.py  →  cli.py
   its suite asserts against that file rather than a transcription. The
   scheduling axis is runtime-native and issues zero tracker writes — the facade
   deliberately has no vocabulary for it.
+- **A refusal the runtime's fold makes is mirrored here, before enacting.**
+  The fold rejects a failure-axis park on an item holding no PR, so
+  `_plan_park` rejects it too. Skipping the mirror does not get the park
+  through: the tracker half lands, the runtime records an anomaly and leaves
+  the item unparked, and every retry reproduces exactly that. When a fold rule
+  can make an append a no-op, check it in `pairing.py`.
+- **`ok: true` from the runtime is not "it applied".** The runtime's policy is
+  accept-and-flag: an event that is well-shaped but illegal from the entity's
+  current state is still written, as `applied: false` plus an anomaly record.
+  `GrindRuntime.append` turns that into a typed failure. Reading only `ok`
+  would let the executor report a pairing it did not enact.
 - **"No tracker handle" is a success value, not an error.** An item whose id
   matches the run-local slug grammar and which carries no work id has no
   tracker handle at all. Every tracker column for it reads *none* and the item
@@ -84,11 +95,15 @@ ports.py  →  state.py  →  pairing.py  →  enact.py  →  cli.py
   runtime already records a transition, the event is not re-appended and the
   tracker side *is* re-issued. That asymmetry is what lets a response-lost
   retry converge instead of duplicating one side.
-- **One invocation, at most one sync, issued last.** `TrackerSession` records a
-  mutation only once its call returned — a write that raised did not land, and
-  counting it would make the flush sync nothing. A refusal syncs nothing at
-  all, and a failed sync is repaired by running `work sync`, never by re-running
-  the command that made the mutations.
+- **One invocation, at most one sync, and the sync is owed by the mutation,
+  not by success.** `TrackerSession` records a mutation only once its call
+  returned — a write that raised did not land, and counting it would make the
+  flush sync nothing. If a later step then fails, the landed write still owes
+  this invocation its sync, so `_with_owed_sync` issues it before reporting the
+  step failure; without that, a failed append strands the write on the local
+  plane until someone happens to retry. A command that mutated nothing syncs
+  nothing. A failed sync is repaired by running `work sync`, never by
+  re-running the command that made the mutations.
 - **Every failure carries a code from the closed set.** `ErrorCode` is the
   contract. `E_USAGE` and `E_INTERNAL` extend the spec's enumeration and are
   documented as such in place; adding a third is a contract change.

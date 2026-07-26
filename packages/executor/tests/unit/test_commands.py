@@ -70,6 +70,50 @@ def test_a_park_without_a_note_defaults_to_its_reason_code() -> None:
     assert runtime.appended[0][1]["note"] == "ci-failure"
 
 
+@pytest.mark.parametrize("reason", FAILURE_REASONS)
+def test_a_failure_axis_park_on_an_item_with_no_pr_is_refused(reason: str) -> None:
+    """
+    Given an item holding no PR reference
+    When a failure-axis park is requested for it
+    Then E_NO_OPEN_PR comes back with zero tracker calls and zero events.
+
+    The runtime's fold refuses this park, so enacting the tracker half would
+    leave the two planes permanently disagreeing: the tracker parked, the
+    runtime holding an anomaly and an unparked item, and every retry
+    reproducing exactly that.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="in-progress", work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["park", "it-1", "--reason", reason], runtime, tracker)
+
+    assert code == 1
+    assert envelope["error"]["code"] == "E_NO_OPEN_PR"
+    assert envelope["error"]["retryable"] is False
+    assert runtime.appended == []
+    assert tracker.mutations == []
+    assert tracker.syncs == 0
+
+
+@pytest.mark.parametrize("reason", SCHEDULING_REASONS)
+def test_a_scheduling_axis_park_needs_no_pr(reason: str) -> None:
+    """
+    Given an item that never had a PR
+    When a scheduling-axis park is requested
+    Then it proceeds.
+
+    The inverse of the refusal above, and the reason the check is keyed on the
+    axis: a sequencing decision makes no claim about a PR, so demanding one
+    would make the whole axis unusable for the work it exists to describe.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="queued")))
+
+    code, _ = invoke(["park", "it-1", "--reason", reason], runtime, FakeTracker())
+
+    assert code == 0
+    assert runtime.event_types == ["item_parked"]
+
+
 @pytest.mark.parametrize("reason", SCHEDULING_REASONS)
 def test_a_scheduling_axis_park_issues_zero_tracker_calls(reason: str) -> None:
     """
@@ -428,6 +472,75 @@ def test_an_invocation_with_no_mutations_issues_no_sync() -> None:
     synced = TrackerSession(tracker).flush()
 
     assert synced is False
+    assert tracker.syncs == 0
+
+
+def test_a_mutation_that_landed_before_a_failed_append_is_still_synced() -> None:
+    """
+    Given a tracker-first row whose tracker write landed and whose runtime
+    append then failed
+    When the envelope is read
+    Then the owed sync was issued anyway, and the reported failure is still
+    the append's.
+
+    The sync is owed by the mutation, not by the command succeeding — without
+    this the write sits unsynced on the local plane until someone happens to
+    retry. The append failure stays the cause; the sync is not a second story.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", work_id="w-1")), fail_on=["item_started"])
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["start", "it-1"], runtime, tracker)
+
+    assert code == 1
+    assert envelope["error"]["code"] == "E_RUNTIME_SUBPROCESS"
+    assert tracker.mutations == [("claim", "w-1")]
+    assert tracker.syncs == 1
+    assert envelope["error"]["data"]["synced"] is True
+    assert envelope["error"]["data"]["tracker_called"] is True
+    assert envelope["error"]["data"]["event_appended"] is False
+
+
+def test_an_owed_sync_that_also_fails_is_reported_under_the_original_cause() -> None:
+    """
+    Given a landed tracker write, a failed append, and a sync that fails too
+    When the envelope is read
+    Then the append failure is still the reported code, with the sync failure
+    and its repair as detail.
+
+    Two things went wrong; the one that stopped the command is the one an
+    operator needs first.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", work_id="w-1")), fail_on=["item_started"])
+    tracker = FakeTracker(fail_on=["sync"])
+
+    _, envelope = invoke(["start", "it-1"], runtime, tracker)
+
+    assert envelope["error"]["code"] == "E_RUNTIME_SUBPROCESS"
+    assert envelope["error"]["data"]["synced"] is False
+    assert envelope["error"]["data"]["repair"] == SYNC_REPAIR
+    assert "scripted sync failure" in envelope["error"]["data"]["sync_error"]
+
+
+def test_a_refusal_that_mutated_nothing_still_syncs_nothing() -> None:
+    """
+    Given a runtime-first row whose append failed before any tracker write
+    When the envelope is read
+    Then no sync was issued.
+
+    The owed-sync rule is owed by a mutation, not by a failure: a command that
+    wrote nothing has nothing to push.
+    """
+    runtime = FakeRuntime(
+        run_state(item("it-1", status="in-review", pr=42, work_id="w-1")),
+        fail_on=["item_merged"],
+    )
+    tracker = FakeTracker()
+
+    code, _ = invoke(["merged", "it-1", "--sha", "deadbee"], runtime, tracker)
+
+    assert code == 1
+    assert tracker.mutations == []
     assert tracker.syncs == 0
 
 

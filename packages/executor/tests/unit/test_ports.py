@@ -78,6 +78,52 @@ def test_append_sends_the_event_type_and_a_json_payload() -> None:
     assert runner.calls == [("grind", "log", "item_started", "--json", '{"item": "it-1"}')]
 
 
+def test_an_event_the_runtime_flags_instead_of_applying_is_a_typed_failure() -> None:
+    """
+    Given the runtime accepting an event it could not apply, reporting
+    `ok: true` with `applied: false`
+    When the port appends it
+    Then a non-retryable failure carries the runtime's own anomaly reason.
+
+    Reading only `ok` would let the executor claim it enacted a pairing the
+    runtime recorded as a flag rather than a transition.
+    """
+    runner = ScriptedRunner(
+        {
+            _LOG: _ok(
+                {
+                    "ok": True,
+                    "applied": False,
+                    "anomaly": {"reason": "item_done illegal from status 'queued'"},
+                }
+            )
+        }
+    )
+
+    with pytest.raises(ExecutorError) as raised:
+        GrindRuntime(runner).append("item_done", {"item": "it-1"})
+
+    assert raised.value.retryable is False
+    assert "item_done illegal from status 'queued'" in raised.value.message
+
+
+def test_a_flagged_event_with_no_readable_anomaly_still_fails_typed() -> None:
+    """
+    Given a flagged event whose anomaly record says nothing usable
+    When the port appends it
+    Then it still fails, naming the event type.
+
+    An unreadable anomaly is a worse reason to report success, not a better
+    one.
+    """
+    runner = ScriptedRunner({_LOG: _ok({"ok": True, "applied": False, "anomaly": None})})
+
+    with pytest.raises(ExecutorError) as raised:
+        GrindRuntime(runner).append("item_done", {"item": "it-1"})
+
+    assert "item_done" in raised.value.message
+
+
 def test_a_stale_check_exits_one_on_an_ok_envelope_and_is_still_a_verdict() -> None:
     """
     Given a stale grind, which the runtime reports as exit 1 over an

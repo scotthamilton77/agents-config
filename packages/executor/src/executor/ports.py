@@ -148,6 +148,16 @@ def _decode(
         ) from None
 
 
+def _anomaly_reason(reply: Mapping[str, JsonValue], fallback: str = "no reason given") -> str:
+    """The runtime's own account of why the event did not apply."""
+    anomaly = reply.get("anomaly")
+    if isinstance(anomaly, dict):
+        reason = anomaly.get("reason")
+        if isinstance(reason, str) and reason != "":
+            return reason
+    return fallback
+
+
 def _number(value: JsonValue) -> float | None:
     # `bool` is an `int` subclass, and `true` is not an age.
     return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
@@ -191,7 +201,22 @@ class GrindRuntime:
         return parse_state(self._call("status", "--full").get("state"))
 
     def append(self, event_type: str, payload: Mapping[str, JsonValue]) -> None:
-        self._call("log", event_type, "--json", json.dumps(dict(payload)))
+        """Append one event, refusing the runtime's accept-and-flag outcome.
+
+        An event that is well-shaped but illegal from the entity's current
+        state is still written, as `ok: true` with `applied: false` and an
+        anomaly record -- the runtime records a flag, not a transition.
+        Reading only `ok` would let the executor report a pairing it did not
+        enact, so the flag becomes a typed failure here. The event is on disk
+        either way; that is what the message says.
+        """
+        reply = self._call("log", event_type, "--json", json.dumps(dict(payload)))
+        if reply.get("applied") is False:
+            raise ExecutorError(
+                ErrorCode.USAGE,
+                f"the runtime recorded {event_type} as an anomaly rather than a transition: "
+                f"{_anomaly_reason(reply)}",
+            )
 
     def staleness(self, max_age: str | None = None) -> StalenessVerdict:
         """`grind check` exits 1 on a stale verdict while emitting `ok: true`.
