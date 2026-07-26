@@ -15,6 +15,8 @@ from gitclean.ports import (
     CommandResult,
     ScriptedCommands,
     SubprocessCommands,
+    _inside,
+    _staging_path,
     fail,
     ok,
 )
@@ -198,6 +200,27 @@ def test_an_archive_written_into_the_root_it_archives_skips_only_itself(tmp_path
     listing = port.list_archive(source / "tree.tar.gz").stdout
     assert "./a.txt" in listing
     assert "./tree.tar.gz" not in listing
+
+
+def test_tar_never_writes_into_the_directory_it_is_reading(tmp_path: Path) -> None:
+    """Excluding the output from the archive's contents is not enough. The
+    directory still changes while tar walks it, and GNU tar exits 1 on
+    `file changed as we read it` -- while BSD tar, which is what ships on
+    macOS, says nothing at all. So the difference is invisible until the suite
+    runs on Linux, and the fix has to be checked as a property rather than as
+    an exit code: wherever the caller asks for the archive, tar writes it
+    somewhere outside the tree it is archiving."""
+    source = tmp_path / "tree"
+    source.mkdir()
+
+    at_root = _staging_path(source, source / "tree.tar.gz")
+    nested = _staging_path(source, source / "salvage" / "tree.tar.gz")
+    outside = _staging_path(source, tmp_path / "elsewhere" / "tree.tar.gz")
+
+    assert at_root is not None and not _inside(at_root, source)
+    assert nested is not None and not _inside(nested, source)
+    # Already outside, so there is nothing to stage around.
+    assert outside is None
 
 
 # -- the fake ----------------------------------------------------------------

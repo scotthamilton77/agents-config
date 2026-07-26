@@ -72,22 +72,45 @@ class CommandPort(Protocol):
     def list_archive(self, path: Path) -> CommandResult: ...  # pragma: no cover
 
 
+def _inside(inner: Path, outer: Path) -> bool:
+    try:
+        inner.resolve().relative_to(outer.resolve())
+    except (ValueError, OSError):
+        return False
+    return True
+
+
 def _self_exclusion(source: Path, dest: Path) -> list[str]:
-    """Keep tar from archiving its own output.
+    """Keep tar from archiving its own output directory.
 
     A caller is free to point --salvage-dir inside the very worktree being
-    salvaged, and archiving a whole directory that contains the growing archive
-    is a race at best. GNU tar notices and warns; BSD tar, which is what ships
-    on macOS, does not."""
-    try:
-        relative = dest.parent.resolve().relative_to(source.resolve())
-    except (ValueError, OSError):
+    salvaged. The directory is created before tar runs, so without this it is
+    captured as an empty directory in the archive of the tree it is saving."""
+    if not _inside(dest.parent, source):
         return []
+    relative = dest.parent.resolve().relative_to(source.resolve())
     # A salvage directory one level down is excluded whole; one that *is* the
     # worktree root cannot be, so only the archive file itself is skipped.
     if str(relative) == ".":
         return [f"--exclude=./{dest.name}"]
     return [f"--exclude=./{relative}"]
+
+
+def _staging_path(source: Path, dest: Path) -> Path | None:
+    """Where to write the archive so tar never writes into what it is reading.
+
+    None when the destination already sits outside the source and tar can
+    write straight to it.
+
+    Excluding the output from the archive's *contents* is not enough: the
+    directory still changes while tar walks it, and GNU tar exits 1 on
+    `file changed as we read it`. BSD tar -- what ships on macOS -- says
+    nothing, so this is invisible until the suite runs on Linux. Staging
+    beside the source directory removes the race rather than tolerating it,
+    and stays on the same filesystem so the move into place is a rename."""
+    if not _inside(dest.parent, source):
+        return None
+    return source.parent / f".{dest.name}.gitclean-partial"
 
 
 class SubprocessCommands:
@@ -148,7 +171,30 @@ class SubprocessCommands:
         the main worktree, would drag in the whole object store."""
         dest.parent.mkdir(parents=True, exist_ok=True)
         excludes = ["--exclude=./.git", *_self_exclusion(source, dest)]
-        return self._run(["tar", "-czf", str(dest), "-C", str(source), *excludes, "."], None)
+        staged = _staging_path(source, dest)
+        written = staged if staged is not None else dest
+
+        result = self._run(["tar", "-czf", str(written), "-C", str(source), *excludes, "."], None)
+
+        if staged is None:
+            return result
+        if not result.ok:
+            staged.unlink(missing_ok=True)
+            return result
+        try:
+            shutil.move(str(staged), str(dest))
+        except OSError as exc:
+            # The archive exists but not where the caller will look for it, so
+            # this is a failed salvage: the deletion it would authorise must
+            # not proceed.
+            staged.unlink(missing_ok=True)
+            return CommandResult(
+                argv=result.argv,
+                returncode=1,
+                stdout=result.stdout,
+                stderr=f"could not move the archive into {dest.parent}: {exc}",
+            )
+        return result
 
     def list_archive(self, path: Path) -> CommandResult:
         return self._run(["tar", "-tzf", str(path)], None)
