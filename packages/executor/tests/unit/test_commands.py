@@ -161,7 +161,8 @@ def test_parking_an_untyped_park_under_a_typed_reason_is_refused() -> None:
     code, envelope = invoke(["park", "it-1", "--reason", "ci-failure"], runtime, FakeTracker())
 
     assert code == 1
-    assert "untyped" in envelope["error"]["message"]
+    assert "already recorded" in envelope["error"]["message"]
+    assert "ci-failure" in envelope["error"]["message"]
 
 
 @pytest.mark.parametrize("status", ["merged", "done"])
@@ -455,7 +456,7 @@ def test_abandon_has_no_idempotent_retry_path_before_that_fold_change() -> None:
     code, envelope = invoke(["abandon", "it-1", "--pr", "8"], runtime, tracker)
 
     assert code == 1
-    assert "nothing to abandon" in envelope["error"]["message"]
+    assert "is not parked" in envelope["error"]["message"]
     assert runtime.appended == []
     assert tracker.mutations == []
     assert tracker.syncs == 0
@@ -478,7 +479,7 @@ def test_abandoning_an_item_that_was_never_parked_is_refused() -> None:
 
     assert code == 1
     assert envelope["error"]["code"] == "E_USAGE"
-    assert "nothing to abandon" in envelope["error"]["message"]
+    assert "is not parked" in envelope["error"]["message"]
     assert runtime.appended == []
     assert tracker.mutations == []
 
@@ -497,7 +498,7 @@ def test_abandoning_an_unparked_item_with_a_live_pr_is_refused() -> None:
     code, envelope = invoke(["abandon", "it-1", "--pr", "8"], runtime, FakeTracker())
 
     assert code == 1
-    assert "nothing to abandon" in envelope["error"]["message"]
+    assert "is not parked" in envelope["error"]["message"]
 
 
 def test_a_merge_retry_naming_a_different_commit_is_refused() -> None:
@@ -719,11 +720,9 @@ def test_merged_on_an_item_holding_no_pr_is_refused_with_no_effect() -> None:
     code, envelope = invoke(["merged", "it-1", "--sha", "deadbee"], runtime, tracker)
 
     assert code == 1
-    assert envelope["error"] == {
-        "code": "E_NO_OPEN_PR",
-        "message": "item 'it-1' holds no PR reference to record as merged",
-        "retryable": False,
-    }
+    assert envelope["error"]["code"] == "E_NO_OPEN_PR"
+    assert envelope["error"]["retryable"] is False
+    assert "holds no PR reference" in envelope["error"]["message"]
     assert runtime.appended == []
     assert tracker.mutations == []
     assert tracker.syncs == 0

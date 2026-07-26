@@ -36,18 +36,21 @@ source digest and forces a reinstall on the next installer run.
 ## Architecture
 
 ```
-ports.py  →  state.py  →  pairing.py  →  enact.py  →  cli.py
-(the only     (parses)     (decides)      (acts)      (envelope)
- subprocess)
+ports.py  →  state.py  →  rules.py  →  pairing.py  →  enact.py  →  cli.py
+(the only     (parses)    (the two     (composes)    (acts)      (envelope)
+ subprocess)               matrices)
 ```
 
 - **`ports.py` is the only module that shells out**, and everything it spawns
   is one of two console scripts. Above it, the whole package takes ports as
   arguments — which is what lets the unit suite run with both faked and neither
   binary present.
-- **`pairing.py` is pure.** It reads a `RunState` and returns a `Plan`; it
-  never touches a port. That is what makes every row's pairing assertable
-  without a fake.
+- **`pairing.py` is pure, and thin.** It reads a `RunState` and returns a
+  `Plan`, never touching a port — which is what makes every row's pairing
+  assertable without a fake. Each builder is the same four steps against
+  `rules.py`: resolve the arguments, pick the row, ask whether the exact
+  command is already recorded, and otherwise check the row's preconditions
+  before building a payload.
 - **Refusals are raised, never returned as a degenerate plan.** A caller that
   forgot to check a flag would otherwise enact half a row.
 
@@ -70,60 +73,104 @@ ports.py  →  state.py  →  pairing.py  →  enact.py  →  cli.py
   its suite asserts against that file rather than a transcription. The
   scheduling axis is runtime-native and issues zero tracker writes — the facade
   deliberately has no vocabulary for it.
-- **The executor refuses what the fold would flag.** Every row mirrors its
-  handler's preconditions in `pairing.py`, before either plane is touched. The
-  executor is the runtime's single writer, so an event it can prove illegal is
-  a caller's mistake, not something that happened: refusing keeps the log a
-  record of transitions rather than of the executor's errors. For the
-  tracker-first rows it is also correctness — they write to the tracker first,
-  so an append the fold would flag leaves the two planes disagreeing with no
-  retry that converges. Two preconditions are easy to miss. **Parked is a flag
-  beside a status, not a status**: a scheduling park leaves the item `queued`,
-  so a status-set check waves a parked item straight through, and the fold
-  treats a parked item as absent for every handler but `item_enqueued`. And
-  the fold does **not** check an event's PR against the item's own, so
-  `pr-closed` does — a delayed notification naming a superseded PR would
-  otherwise tear down the live review cycle.
-  Duplicating the fold's tables is the cost, and `GrindRuntime.append`
-  refusing an `applied: false` reply is the backstop that catches this table
-  drifting from the runtime's.
-- **`abandon`'s retry evidence is a *cleared* PR reference plus a closure for
-  that PR, and nothing weaker.** Only an abandon produces both: S9T1-B7 has the
-  fold clear the reference when it interprets an `item_enqueued` closure, where
-  an ordinary `pr_closed` records its closure and leaves the reference in
-  place. Position, the surviving reference, and ledger membership alone were
-  each tried in review and each matches a state another command produced — an
-  ordinary `pr-closed --next queued` looks identical — and accepting one
-  claims a closure that exists nowhere *and* issues a tracker write for a
-  transition that never happened. Do not reintroduce a weaker proxy. Until B7
-  lands the evidence is unreachable and the command refuses instead; the row is
-  tracker-first, so a failed append leaves the item parked and the ordinary
-  path handles that retry.
-- **An idempotent retry has to be the same command, not just the same verb.**
-  `park` on an already-parked item is a retry only when the recorded reason
-  matches; `pr-closed` only when the recorded *outcome* matches the requested
-  `--next`. A mismatch is a request for something that never happened, so
-  reporting success would claim a transition neither plane made — and it falls
-  through to the precondition checks, which refuse it with the reason. Two
-  traps here: a closure to `parked` leaves the item's review status alone and
-  sets the park instead, so status alone would make such a closure refuse its
-  own retry as parked; and on that path the runtime types the park from the
-  closure's own free text, so the park it produced is what a retry is compared
-  against. What is *not* compared is free text as text — the park note, and a
-  closure reason that types nothing — because a retry may legitimately word it
-  differently.
-- **Idempotency evidence has to survive the transition it is about.** "This
-  is already recorded" cannot be read off the status the transition produced,
-  because the item moves on: an opened PR outlives `pr-open`, and re-appending
-  from `waiting-human` is the worst case, since the fold *accepts* it and
-  drags the item back to `pr-open`, ending a wait only an explicit resume
-  should end. A silent state regression is worse than a flagged one.
-  Symmetrically, the closed-PR ledger cannot carry the evidence alone: it is a
-  set of closures with no counterpart for openings, so a PR closed once looks
-  closed forever. The two rules read the pair — `pr-opened` asks whether the
-  item is sitting where a closure leaves it, `pr-closed` asks for a ledger
-  entry *and* an item no longer where a live PR puts it. Neither half is
-  redundant; each covers the other's blind spot.
+
+## The two matrices
+
+`S9T1-D12` closes the pairing universe over *which* verb maps to which event
+and which tracker call. It answers neither of the two questions each row also
+has to, and both were discovered one cell per review round before being
+enumerated. **`src/executor/rules.py` is the source of truth**; the tables
+below are the orientation, and `tests/unit/test_rules_matrices.py` walks both
+from the table itself.
+
+**Adding a guard means adding a cell, never a check at the call site.** That
+is the whole point of the enumeration — scattered guards are what let the same
+bug arrive eight times wearing different arguments.
+
+### Matrix A — the source-state matrix
+
+Which item states a row may fire from. `parked` is a separate column because
+it is a flag beside a status, not a member of the set: a scheduling park
+leaves an item `queued`, so a status set alone waves a parked item through,
+and the fold treats a parked item as absent for every handler but
+`item_enqueued`.
+
+| row | legal source statuses | parked | also requires |
+|---|---|---|---|
+| `start` | queued | forbidden | — |
+| `park:failure` | queued, in-progress, pr-open, in-review, waiting-human, blocked | forbidden | a PR reference |
+| `park:scheduling` | as above | forbidden | — |
+| `redispatch` | any | **required** | a lane |
+| `abandon` | any | **required** | a PR reference, matching `--pr`, a lane |
+| `pr-opened` | in-progress, waiting-human | forbidden | — |
+| `pr-closed` | pr-open, in-review, waiting-human | forbidden | matching `--pr` |
+| `merged` | pr-open, in-review, waiting-human | forbidden | a PR reference |
+| `done` | merged | forbidden | — |
+
+Two rows in "also requires" have no counterpart in the fold. **The fold
+compares an event's PR against nothing**, so only `PR_MATCHES_ITEM` stops a
+delayed notification for a superseded PR being recorded as fact — and for
+`pr-closed`, tearing down the live review cycle.
+
+Why refuse at all, when the fold would flag it anyway: the executor is the
+runtime's single writer, so an event it can prove illegal is a caller's
+mistake rather than something that happened, and refusing keeps the log a
+record of transitions. For the tracker-first rows it is also correctness —
+they write to the tracker before appending, so an append the fold would flag
+leaves the two planes disagreeing with no retry that converges.
+
+Duplicating the fold's sets is the cost. `GrindRuntime.append` refusing an
+`applied: false` reply is the backstop that catches this table drifting, and
+it names the fold's own reason when it fires.
+
+**Two axes are deliberately absent and must stay absent.** An item absent from
+the fold is refused before a row is chosen, by `RunState.item`. And a
+run-local `disc-<n>` id is **never** a refusal (`S9T1-A6`) — handle routing
+happens in `enact`, and such an item enacts normally with no tracker call and
+an `unpromoted` entry. Both have a walk in the matrix test guarding against a
+later cleanup folding them in.
+
+### Matrix B — the command-identity tuple
+
+Which arguments make a re-invocation *the same command*. `S9T1-D6`'s skip
+fires **only on a full-tuple match** against what the fold records; a partial
+match is a different command, enacted or refused on the merits and never
+silently skipped.
+
+| row | identity | what the fold records of it |
+|---|---|---|
+| `start` | item | in-progress and unparked |
+| `park:*` | item, reason | parked, with the recorded reason |
+| `redispatch` | item | not parked — the whole postcondition |
+| `abandon` | item, pr | a *cleared* PR reference plus a closure for that PR |
+| `pr-opened` | item, pr | the reference, and the item not sitting where a closure leaves it |
+| `pr-closed` | item, pr, next | a ledger entry, the item's position, and nothing having touched it since |
+| `merged` | item, sha | merged/done, with the merged-ledger commit |
+| `done` | item | done and unparked |
+
+What is **not** in an identity is as load-bearing. Free text is compared only
+where the runtime derives something typed from it: the park *note* is never
+compared, nor is a closure reason that types nothing — a retry may legitimately
+word either differently — but on `pr-closed --next parked` the runtime types
+the park from that text, so the park it produces is.
+
+Three traps worth keeping:
+
+- **Evidence has to outlive the transition it is about.** An opened PR
+  outlives `pr-open`, so a status-only check re-appends from `waiting-human` —
+  where the fold *accepts* it and drags the item back, ending a wait only an
+  explicit resume should end. A silent state regression is worse than a
+  flagged one.
+- **A closure to `parked` leaves the review status alone** and sets the park
+  instead, so comparing status would make such a closure refuse its own retry.
+- **`abandon`'s evidence is the cleared reference, and nothing weaker.**
+  Position, the surviving reference and ledger membership alone were each
+  tried and each matches a state another command produces — an ordinary
+  `pr-closed --next queued` looks identical. Until B7 lands the evidence is
+  unreachable and the row refuses instead.
+
+## More rules that are load-bearing, not stylistic
+
 - **`ok: true` from the runtime is not "it applied".** The runtime's policy is
   accept-and-flag: an event that is well-shaped but illegal from the entity's
   current state is still written, as `applied: false` plus an anomaly record.

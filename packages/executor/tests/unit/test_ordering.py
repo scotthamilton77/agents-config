@@ -144,7 +144,12 @@ def test_the_merge_retry_re_issues_only_the_tracker_close_and_sync() -> None:
     Then no second `item_merged` is appended, the close is issued, and one
     sync follows.
     """
-    runtime = FakeRuntime(run_state(item("it-1", status="merged", pr=42, work_id="w-1")))
+    runtime = FakeRuntime(
+        run_state(
+            item("it-1", status="merged", pr=42, work_id="w-1"),
+            merged_shas={"it-1": "deadbee"},
+        )
+    )
     tracker = FakeTracker()
 
     code, _ = invoke(["merged", "it-1", "--sha", "deadbee"], runtime, tracker)
@@ -164,7 +169,9 @@ def test_a_merge_retry_does_not_demand_a_pr_the_fold_no_longer_needs() -> None:
     Refusing here would strand a converging retry on the one path where the
     PR number is not needed.
     """
-    runtime = FakeRuntime(run_state(item("it-1", status="merged", work_id="w-1")))
+    runtime = FakeRuntime(
+        run_state(item("it-1", status="merged", work_id="w-1"), merged_shas={"it-1": "deadbee"})
+    )
 
     code, _ = invoke(["merged", "it-1", "--sha", "deadbee"], runtime, FakeTracker())
 

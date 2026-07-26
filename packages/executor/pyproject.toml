@@ -57,6 +57,7 @@ select = [
 # would hide which port failed and what would repair it.
 "src/executor/envelope.py" = ["TRY003"]
 "src/executor/pairing.py" = ["TRY003"]
+"src/executor/rules.py" = ["TRY003"]
 "src/executor/enact.py" = ["TRY003"]
 "src/executor/state.py" = ["TRY003"]
 "src/executor/cli.py" = ["TRY003"]
