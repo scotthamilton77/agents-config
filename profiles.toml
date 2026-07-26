@@ -34,6 +34,13 @@ include = ["instructions"]
 [profiles.sdlc]
 include = ["skills/**"]
 
-# The beads project kit (PRIME.md -> <project>/.beads/PRIME.md). Project-scoped.
+# The beads project kit. Project-scoped. Its only content — a PRIME.md staged to
+# <project>/.beads/PRIME.md — moved to archive/src/kits/ on 2026-07-26, so this
+# selector matches nothing in this repo's own tree today and a real
+# `--profiles=beads-kit` run against it stages zero files. The profile is kept
+# because the installer's project-scope tests use it as their fixture selector
+# (test_cli_project.py, test_profiles.py) against hermetic repo roots that supply
+# their own kit content. Removing it is an installer-test change, not a
+# profiles.toml edit.
 [profiles.beads-kit]
 include = ["kits/beads/**"]

@@ -16,7 +16,7 @@ Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675
 Local extensions: Claude-specific frontmatter (disable-model-invocation, allowed-tools), !-command working-tree snapshot prelude, 8-section required document structure, redaction constraints
 Last sync: 2026-05-23
 Drift policy: rewrite-and-divorce (project-extended, Claude-specific; do not re-sync from upstream)
-Why Claude-only (lives in src/user/.claude/skills/, not src/user/.agents/skills/): !-command syntax and disable-model-invocation/allowed-tools frontmatter keys are Claude Code conventions; staging into other tools (Codex/Gemini/OpenCode) would yield broken or degraded behavior.
+Placement: Claude-dependent (!-command syntax, disable-model-invocation/allowed-tools) but staged from the shared tree, so it also lands in Codex/Gemini/OpenCode where those keys do nothing. Deliberate and temporary — agents-config-9k9.68 resolves it with per-tool exemption support or by moving this back under src/user/.claude/skills/.
 -->
 
 ## Working-tree snapshot

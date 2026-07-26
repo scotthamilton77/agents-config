@@ -1,4 +1,11 @@
-# The graphify knowledge graph is a large, generated, point-in-time artifact.
-# Keep it out of implicit context reads; write traffic into the workspace also
+# Keep large generated artifacts out of implicit context reads. These are not
+# access barriers — go read them when you have a reason to; they just stop the
+# harness pulling them in on its own. Write traffic into the workspace also
 # invalidates the prompt cache.
+
+# The graphify knowledge graph: large, generated, point-in-time.
 graphify-out/
+
+# The beads database, hooks and backups behind the `work` facade. Addressed
+# through `work`, never read directly.
+.beads/

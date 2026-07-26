@@ -1,20 +1,18 @@
-# `.beads/` — maintenance notes
+# `.beads/`
 
-## `PRIME.md` is the project's `bd prime` output
+Work tracking for this project is addressed through the **`work` CLI**, not
+through `bd`. Run `work --help` for the verb list; every verb returns a JSON
+envelope. `work show agents-config-9k9` is the milestone this repo's harness
+work hangs off.
 
-`bd prime` emits `PRIME.md` **verbatim** for this repo (verified 1:1) — it fully
-replaces bd's built-in prime text *and* suppresses the auto-injected bd-memory
-dump. It loads at **every session start and before each compaction**, so every
-line is a recurring token cost across all future conversations. Keep it ruthlessly
-minimal.
+This directory is the storage and sync layer underneath that facade — a beads
+database, its config, its git hooks, and its backups. It is installed and
+maintained by beads itself. **Do not edit anything in here**, and do not reach
+past `work` into `bd` to change tracker state.
 
-When editing `PRIME.md`:
+`bd` remains the escape hatch for operations the facade cannot express. When
+you use it, record what you needed and why as a note on `agents-config-9k9`, so
+the gap becomes a facade change rather than a habit.
 
-- Add only beads knowledge that is **high-frequency or error/data-loss-preventing**.
-  Deep machinery (molecules, formulas, HEP, claim/close-walk, labels) belongs in
-  skills or `archive/`, not here.
-- Don't reproduce the command catalog — point to `bd --help` / `bd <cmd> --help`.
-- Never tell readers to "run `bd prime` for more" — it's circular; `bd prime` emits
-  this file.
-- Say nothing about which memory system to use. Memory routing lives in the
-  `memory-routing` rule; bd's own memory injection is already suppressed by this override.
+`AGENTS.md` (this file) is the one exception: it is ours, and it exists to say
+the above.

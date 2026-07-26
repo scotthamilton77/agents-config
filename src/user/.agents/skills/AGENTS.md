@@ -4,6 +4,8 @@ Source-of-truth for every skill that gets staged into each detected tool's user-
 
 Staging is gated on admission: a `SKILL.md` without a complete `admission:` record (`prevents` **or** `provides`, plus `cost` and `remove_when`) in its front matter is dropped at deploy and pruned from every tool. Only admitted skills live in this folder; skills awaiting or past admission live under `archive/src/user/**`.
 
+An admission record is necessary but not sufficient — a skill can hold a complete record and still fail a mechanical staging check, in which case it deploys nothing. Before telling anyone a skill is available, list the tool's own config directory and confirm it landed. `writing-skills` is in exactly that state today (it exceeds the file-size limit and carries an `exemption:` key the installer does not yet honour); `agents-config-9k9.68` tracks it.
+
 ## Layout — flat, depth-1 only
 
 Every immediate subdirectory of this folder is exactly one skill. Skills MUST NOT be nested under organizational subfolders.
@@ -68,19 +70,21 @@ Skills built from scratch in-repo do not appear here. This table tracks OSS-deri
 | `writing-unit-tests` | `oss-snapshots/pocock/skills/skills/engineering/tdd/` (amalgamated deltas only) | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 | `verify-checklist` | `oss-snapshots/superpowers/verification-before-completion/` (amalgamated lift only — Iron Law framing, gate function) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | accept-periodic-resync |
 | `bugfix` | `oss-snapshots/superpowers/systematic-debugging/` (selective amalgamation — 3-strike escalation, multi-component boundary instrumentation lifted only) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | selective-amalgamation |
-| `wait-for-pr-comments` | `oss-snapshots/superpowers/receiving-code-review/` (selective amalgamation — pushback discipline lifted into `references/handling-feedback.md`) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | selective-amalgamation |
-| `reply-and-resolve-pr-threads` | `oss-snapshots/superpowers/receiving-code-review/` (selective amalgamation — host SKILL.md cites sibling `wait-for-pr-comments/references/handling-feedback.md` as the canonical pushback-discipline reference; no independent reference file) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | selective-amalgamation |
+| `wait-for-pr-comments` | `oss-snapshots/superpowers/receiving-code-review/` (selective amalgamation — pushback discipline lifted into the skill's own `references/` folder) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | selective-amalgamation |
+| `reply-and-resolve-pr-threads` | `oss-snapshots/superpowers/receiving-code-review/` (selective amalgamation — host SKILL.md cites the sibling `wait-for-pr-comments` reference rather than carrying its own) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | selective-amalgamation |
 
 Update this table whenever a skill is added, replaced, or amalgamated from an OSS source.
 
-### Claude-only OSS-derived skills
+### Claude-dependent OSS-derived skills
 
-Skills whose Claude-specific features (`!`-command syntax, `disable-model-invocation`, `allowed-tools`) preclude shared deployment live under `src/user/.claude/skills/` instead. Their provenance is tracked here for cross-tree discoverability:
+A skill whose Claude-only features (`!`-command syntax, `disable-model-invocation`, `allowed-tools`) would be inert or broken on the other tools belongs under `src/user/.claude/skills/`. Provenance for those is tracked here for cross-tree discoverability:
 
 | Skill | Location | Snapshot path | Upstream | Last sync | Drift policy |
 |-------|----------|---------------|----------|-----------|--------------|
-| `handoff` | `archive/src/user/.claude/skills/handoff/` | `oss-snapshots/pocock/skills/skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
+| `handoff` | `src/user/.agents/skills/handoff/` | `oss-snapshots/pocock/skills/skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
 | `zoom-out` | `archive/src/user/.claude/skills/zoom-out/` | formerly `oss-snapshots/pocock/zoom-out/`, snapshot removed 2026-07-24; upstream no longer ships it | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
+
+`handoff` is the standing exception: it carries Claude-only front matter but sits in the shared tree, so it stages into Codex, Gemini and OpenCode where those keys do nothing. That placement is deliberate and temporary — `agents-config-9k9.68` resolves it, either with per-tool exemption support or by moving the skill back.
 
 ## Common pitfall — extracted helpers must be wired in
 
@@ -95,4 +99,4 @@ catches these cross-file contract gaps that per-line review misses.
 ## Companion folders
 
 - `<repo-root>/oss-snapshots/` — unmodified reference clones of upstream skill catalogs, pinned to specific commits. Each snapshot folder carries its own `AGENTS.md` documenting source repo, commit, and per-skill inventory.
-- `src/user/.claude/skills/` — Claude-specific skills (depth-1 same rule). Skills shared across tools belong here; tool-specific skills belong there.
+- `src/user/.claude/skills/` — skills that depend on Claude-only capabilities (depth-1 same rule). Placement is by capability-dependency: a skill that works on every supported tool belongs in **this** folder; one that needs a Claude-specific capability belongs in **that** one.

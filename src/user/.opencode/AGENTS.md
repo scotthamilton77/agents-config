@@ -21,21 +21,16 @@ resolution.
 ## Skills
 
 OpenCode scans `~/.claude/skills/**/SKILL.md` natively. Shared skills are
-available without duplication. Skills use bare names (e.g. `test-driven-development`)
+available without duplication. Skills use bare names (e.g. `review-verdict`)
 and are installed from this repo's `src/` directory.
 
-## Agents
+## Agents and commands
 
-Shared agents from `src/user/.agents/agents/` are **not** installed to OpenCode
-for now because the frontmatter format differs (OpenCode uses provider-prefixed
-model IDs, `mode:`, `permission:`, etc.). Install OpenCode-specific agents to
-`~/.config/opencode/agents/` manually if needed.
-
-## Commands
-
-Shared commands from `src/user/.claude/commands/` are **not** installed to
-OpenCode. OpenCode commands live in `~/.config/opencode/commands/` and use a
-slightly different frontmatter format.
+This repo ships neither. If it ever does, they will not cross over to OpenCode
+unchanged: OpenCode's agent frontmatter uses provider-prefixed model IDs plus
+`mode:` and `permission:` keys, and its command frontmatter differs again.
+OpenCode-specific ones would be installed by hand to
+`~/.config/opencode/agents/` and `~/.config/opencode/commands/`.
 
 ## Agent warnings
 
