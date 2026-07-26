@@ -1,13 +1,11 @@
-# .critical-paths — INERT. Nothing reads this file.
+# .critical-paths — anticipates future work. Nothing reads this file.
 #
-# It listed the paths that forced the HEAVY tier of a completion gate. The reader
-# (gate_triage.py) and the rule that consumed it are archived, and no replacement
-# is deployed. Retained as the record of which paths were judged load-bearing —
-# still a fair answer to "what here deserves the most scrutiny", but it routes
-# nothing. Thresholds live in project-config.toml's [completion-gate], equally
-# inert. gitignore syntax, anchored to this repo root.
-src/**
-packages/**
-scripts/**
-.github/**
-Makefile
+# The selectors below would force the HEAVY tier of a completion gate. Uncomment
+# them in the change that deploys a tier router; thresholds go in
+# project-config.toml's [completion-gate], commented out for the same reason.
+# gitignore syntax, anchored to this repo root.
+# src/**
+# packages/**
+# scripts/**
+# .github/**
+# Makefile

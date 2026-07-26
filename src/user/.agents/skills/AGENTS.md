@@ -47,44 +47,26 @@ Drift policy: <accept-periodic-resync | rewrite-and-divorce | track-upstream | .
 
 The full unmodified upstream artifacts live under `<repo-root>/oss-snapshots/<snapshot-folder>/`. To inspect drift between an upstream snapshot and a modified deployed copy, `diff` the two trees. When a snapshot is refreshed to a newer upstream commit, bump the commit SHA and `Last sync` date in the deployed skill's header in the same change.
 
-**The provenance keys are audit grep-targets — never rename them.** Drift-audit tooling enumerates resync/lift candidates by grepping the literal keys (`Source: oss-snapshots`, `Drift policy:`). A skill that *amalgamates* — lifts specific patterns rather than resyncing byte-for-byte — keeps the same keys and encodes the amalgam semantics in the `Drift policy:` **value** (`selective-amalgamation`), never in a renamed key like `Amalgamation source:`. A renamed key silently drops the file from every future audit. If a new policy value is needed (e.g. `vendor-pinned`), add it to the enum above rather than inventing an ad-hoc key.
+**Never rename the provenance keys.** `Source: oss-snapshots` and `Drift policy:` are the literal strings a resync sweep greps for. A skill that *amalgamates* — lifts specific patterns rather than resyncing byte-for-byte — keeps the same keys and encodes the amalgam semantics in the `Drift policy:` **value** (`selective-amalgamation`), never in a renamed key like `Amalgamation source:`. If a new policy value is needed (e.g. `vendor-pinned`), add it to the enum above rather than inventing an ad-hoc key.
 
 ## Skill provenance registry
 
-Skills built from scratch in-repo do not appear here. This table tracks OSS-derived or OSS-influenced skills by name, whether they currently live in `src/user/.agents/skills/` or under `archive/src/user/**`. Archived rows are retained deliberately: a skill readmitted later must carry its provenance forward, and the drift-audit grep-targets have to keep resolving. The `Skill` column names an artifact, not a live `src/` path.
-
-| Skill | Snapshot path | Upstream | Last sync | Drift policy |
-|-------|---------------|----------|-----------|--------------|
-| `writing-skills` | `oss-snapshots/superpowers/writing-skills/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-17 | accept-periodic-resync |
-| `writing-skills` | `oss-snapshots/anthropics/skill-creator/` | `anthropics/skills @ f458cee` | 2026-05-17 | accept-periodic-resync |
-| `optimize-my-skill` | `oss-snapshots/anthropics/skill-creator/` | `anthropics/skills @ f458cee` | 2026-05-20 | accept-periodic-resync |
-| `finishing-a-development-branch` | `oss-snapshots/superpowers/finishing-a-development-branch/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
-| `test-driven-development` | `oss-snapshots/superpowers/test-driven-development/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
-| `using-git-worktrees` | `oss-snapshots/superpowers/using-git-worktrees/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
-| `improve-codebase-architecture` | `oss-snapshots/pocock/skills/skills/engineering/improve-codebase-architecture/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended fork) |
-| `grill-with-docs` | `oss-snapshots/pocock/skills/skills/engineering/grill-with-docs/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | local-fork |
-| `grilling` | `oss-snapshots/pocock/skills/skills/productivity/grilling/` | `mattpocock/skills @ e74f0061` | 2026-07-24 | local-fork |
-| `to-spec` | `oss-snapshots/pocock/skills/skills/engineering/to-spec/` | `mattpocock/skills @ e74f0061` | 2026-07-24 | local-fork |
-| `caveman` | repo-owned (upstream removed the skill; detached 2026-07-24) | `mattpocock/skills @ e74f0061` (historical origin) | 2026-05-23 | rewrite-and-divorce |
-| `prototype` | `oss-snapshots/pocock/skills/skills/engineering/prototype/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
-| `writing-unit-tests` | `oss-snapshots/pocock/skills/skills/engineering/tdd/` (amalgamated deltas only) | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
-| `verify-checklist` | `oss-snapshots/superpowers/verification-before-completion/` (amalgamated lift only — Iron Law framing, gate function) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | accept-periodic-resync |
-| `bugfix` | `oss-snapshots/superpowers/systematic-debugging/` (selective amalgamation — 3-strike escalation, multi-component boundary instrumentation lifted only) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | selective-amalgamation |
-| `wait-for-pr-comments` | `oss-snapshots/superpowers/receiving-code-review/` (selective amalgamation — pushback discipline lifted into the skill's own `references/` folder) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | selective-amalgamation |
-| `reply-and-resolve-pr-threads` | `oss-snapshots/superpowers/receiving-code-review/` (selective amalgamation — host SKILL.md cites the sibling `wait-for-pr-comments` reference rather than carrying its own) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | selective-amalgamation |
-
-Update this table whenever a skill is added, replaced, or amalgamated from an OSS source.
-
-### Claude-dependent OSS-derived skills
-
-A skill whose Claude-only features (`!`-command syntax, `disable-model-invocation`, `allowed-tools`) would be inert or broken on the other tools belongs under `src/user/.claude/skills/`. Provenance for those is tracked here for cross-tree discoverability:
+One row per OSS-derived or OSS-influenced skill that is **here now**. Skills built from
+scratch in-repo do not appear. When a skill is retired, delete its row — the SKILL.md
+carries its own provenance header into `archive/`, and git holds the rest.
 
 | Skill | Location | Snapshot path | Upstream | Last sync | Drift policy |
 |-------|----------|---------------|----------|-----------|--------------|
-| `handoff` | `src/user/.agents/skills/handoff/` | `oss-snapshots/pocock/skills/skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
-| `zoom-out` | `archive/src/user/.claude/skills/zoom-out/` | formerly `oss-snapshots/pocock/zoom-out/`, snapshot removed 2026-07-24; upstream no longer ships it | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
+| `writing-skills` | shared | `oss-snapshots/superpowers/writing-skills/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-17 | accept-periodic-resync |
+| `writing-skills` | shared | `oss-snapshots/anthropics/skill-creator/` | `anthropics/skills @ f458cee` | 2026-05-17 | accept-periodic-resync |
+| `grill-with-docs` | shared | `oss-snapshots/pocock/skills/skills/engineering/grill-with-docs/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | local-fork |
+| `grilling` | shared | `oss-snapshots/pocock/skills/skills/productivity/grilling/` | `mattpocock/skills @ e74f0061` | 2026-07-24 | local-fork |
+| `to-spec` | shared | `oss-snapshots/pocock/skills/skills/engineering/to-spec/` | `mattpocock/skills @ e74f0061` | 2026-07-24 | local-fork |
+| `handoff` | shared *(see below)* | `oss-snapshots/pocock/skills/skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
 
-`handoff` is the standing exception: it carries Claude-only front matter but sits in the shared tree, so it stages into Codex, Gemini and OpenCode where those keys do nothing. That placement is deliberate and temporary — `agents-config-9k9.68` resolves it, either with per-tool exemption support or by moving the skill back.
+Update this table whenever a skill is added, replaced, retired, or amalgamated from an OSS source.
+
+`handoff` is the standing exception to the placement rule: it carries Claude-only front matter but sits in the shared tree, so it stages into Codex, Gemini and OpenCode where those keys do nothing. Deliberate and temporary — `agents-config-9k9.68` resolves it, either with per-tool exemption support or by moving the skill back.
 
 ## Common pitfall — extracted helpers must be wired in
 

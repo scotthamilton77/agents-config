@@ -30,7 +30,7 @@ Standing implications while the rework runs:
 This is the whole delivery contract:
 
 1. Enter the work in the tracker via `work` verbs, as a child of `agents-config-9k9`, with an admission record. Installer work also carries the `install` label; nest it under an install epic beneath the owning milestone.
-2. Implement on a worktree branch; never commit to the default branch. Do not run `graphify update` from a worktree — it stamps the worktree path into `.graphify_root`.
+2. Implement on a worktree branch; never commit to the default branch.
 3. Verify mechanically before claiming anything. For `packages/**` that is `make ci` — read the `ci` target in the `Makefile` for its current membership, and note that a single package's gate is not the whole-repo gate. Run it from the root of the tree you are working in: the `Makefile` `cd`s relative to the invoking directory, so a gate run from the main checkout while you are on a worktree branch reports green on code you did not change. Run the gate standalone and read its exit status — never pipe it into a `grep && commit` chain, where the pipeline's status is the grep's and a red gate ships. For prose-only changes, state what you checked and how.
 4. Open a PR and address review to quiescence. Every item gets a disposition in your own inventory; only items that change the code get a reply on the PR. Bookkeeping and meta comments are dispositioned silently — a thread of "no action required" replies is noise the next reader has to wade through.
 5. **Merge only on an explicit human instruction.** `project-config.toml` declares `merge-authorization = "rule-based"`, but no implementation of that policy is deployed and the repository ruleset requires an approving review that no configured reviewer submits — see `agents-config-9k9.23`. Read those sections as inert, never as authorization. The shared hard-lines permit merging under "a configured rule-based policy"; that clause is not satisfied here.
@@ -80,7 +80,7 @@ This project hosts agent configuration under `src/`, which the install script de
   - `src/user/.agents/` — shared content, staged into every active tool: `skills/`, `rules/`, and `USER-CORE.md.template` (the zero-based laws, decision matrix, hard lines, and conventions, D17). See `src/user/.agents/AGENTS.md` for the install model and the name-collision rules.
   - `src/user/.claude/` — Claude-only: `skills/`, `rules/`, `hooks/`, `AGENTS.md.template`, `CLAUDE.md.template`, `settings.json.template`
   - `src/user/.codex/`, `src/user/.gemini/`, `src/user/.opencode/` — per-tool instruction templates; OpenCode additionally carries `opencode.jsonc.template` and gets a flat, dynamically-built instruction file rather than `@` includes
-  - `src/plugins/` — optional plugin content, auto-detected by a directory scan (`codex/` is the only one today; the beads kit moved to `archive/` on 2026-07-26). A plugin's content deploys only when its tool is detected **and** the artifact clears the admission gate.
+  - `src/plugins/` — optional plugin content, auto-detected by a directory scan. A plugin's content deploys only when its tool is detected **and** the artifact clears the admission gate.
   - Each rules directory carries its own `AGENTS.md` stating what currently lives there; read it rather than inferring from the folder's contents.
 - `archive/` — retired content mirroring the live tree's shape (`archive/src/user/**`, `archive/docs/**`). **Historical only — never a behavioural contract.** Read it to recover an idea; do not copy a path back into `src/` without an admission record.
 - `docs/`
@@ -110,5 +110,6 @@ Other notes:
 some past moment — not an index that follows the tree. A graph built before a refactor
 still names the files that refactor deleted, so verify anything it reports against the
 working tree before asserting it. `graphify update .` builds a fresh one in a few seconds
-if you want it — but never from a worktree, which stamps the worktree path into
-`.graphify_root`, and never stage `graphify-out/` into a feature branch.
+if you want it, and running it from a worktree is fine: everything it writes, including
+`.graphify_root`, lands inside that worktree's own `graphify-out/`, which is untracked
+and disappears with the worktree. Never stage `graphify-out/` into a branch.

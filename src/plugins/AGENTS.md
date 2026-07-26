@@ -69,9 +69,3 @@ be discovered, activated, and still install nothing.
 | Plugin | Auto-detect footprint | Adapter | What it installs |
 |--------|----------------------|---------|-----------------|
 | `codex` | `~/.codex/` or `codex` on PATH | generic | Nothing today — its one rule carries no `admission:` record, so the gate drops it |
-
-`beads` was a plugin here until 2026-07-26; its content now lives under
-`archive/src/plugins/beads/`. The specialized `BeadsPlugin` adapter is still
-registered in `registry.py`, but discovery scans this directory and finds no
-`beads`, so the adapter is never constructed. Restoring the plugin is a matter
-of readmitting content, not re-registering the adapter.

@@ -73,54 +73,47 @@ command = ""   # no lint auto-fix for this project
 # commands = ["playwright test"]   # example; uncomment when needed
 
 # ---------------------------------------------------------------------------
-# INERT. Nothing reads the two sections below.
-#
-# They were consumed by merge-guard and wait-for-pr-comments via resolve_policy.py;
-# all three are archived and no replacement is deployed. The values are retained
-# as the record of a prior decision, not as a live policy.
-#
-# THIS IS NOT MERGE AUTHORIZATION. The shared hard-lines permit merging "absent an
-# explicit instruction or a configured rule-based policy" — do not read the
-# merge-authorization key below as satisfying that clause. Merge only on an
-# explicit human instruction. See the delivery contract in AGENTS.md.
-#
-# Revisit: agents-config-9k9.69. Blocked on agents-config-9k9.23 + .28.
+# Review expectations and merge authorization.
 # Schema: docs/architecture/review-merge-policy/design.md
-# ---------------------------------------------------------------------------
-[review-expectations]
-bot-review-expected      = true
-bot-reviewers            = ["Copilot", "copilot-pull-request-reviewer[bot]", "chatgpt-codex-connector[bot]"]  # exact identities, never substrings; Codex = Copilot-equivalent (owner directive 2026-07-17), trigger via "@codex review" comment
-human-approvers-required = 0     # override per bead: review-exit-human-approvers-<n>
-
-[merge-policy]
-# Recorded intent from when merge-guard existed: auto-merge on a clean trusted-bot
-# review. No code evaluates this today.
-merge-authorization = "rule-based"
-merge-rule          = "bot-quiescence"
-
-[merge-policy.approver]
-# Recorded intent: a GitHub-App-attested approving review would satisfy branch
-# protection's required review on an authorized autonomous merge. The runner that
-# would use it is archived, and the repository ruleset still requires an approving
-# review no configured reviewer submits (agents-config-9k9.23).
-# Design: docs/specs/2026-07-11-merge-approver-app-design.md
-type         = "github-app"
-app-id       = 4275336
-key-path-env = "MERGE_GUARD_APPROVER_KEY_PATH"  # PEM path; the owner exports this
-
-# ---------------------------------------------------------------------------
-# INERT. Nothing reads this section.
 #
-# Tier-routing thresholds for a SKIP/SERIAL/HEAVY completion gate. It was read by
-# gate_triage.py and consumed by the completion-gate rule; both are archived and
-# no replacement is deployed. Retained as the record of the chosen thresholds.
-# The companion .critical-paths file is inert for the same reason.
+# Commented-out keys below anticipate future work (agents-config-9k9.69) and are
+# not policy. Uncomment a key only in the change that deploys something reading it.
 # ---------------------------------------------------------------------------
-[completion-gate]
-heavy_min_files      = 8
-heavy_min_loc        = 400
-heavy_min_subsystems = 3
-trivial_max_loc      = 3   # SKIP ceiling; hard-capped at 20 on load
+[merge-policy]
+# The agent merges only on an explicit in-session human instruction.
+merge-authorization = "explicit"
+
+# Anticipates future work: autonomous merge once the selected rule holds. Needs a
+# deployed rule evaluator and an approving review the branch ruleset accepts —
+# neither exists (agents-config-9k9.23, .28, .64).
+# merge-authorization = "rule-based"
+# merge-rule          = "bot-quiescence"
+
+# Anticipates future work: a GitHub-App-attested approving review satisfying branch
+# protection on an authorized autonomous merge.
+# Design: docs/specs/2026-07-11-merge-approver-app-design.md
+# [merge-policy.approver]
+# type         = "github-app"
+# app-id       = 4275336
+# key-path-env = "MERGE_GUARD_APPROVER_KEY_PATH"
+
+# Anticipates future work: which reviews to expect, and how many human approvals a
+# merge needs. Nothing polls for reviews today.
+# [review-expectations]
+# bot-review-expected      = true
+# bot-reviewers            = ["Copilot", "copilot-pull-request-reviewer[bot]", "chatgpt-codex-connector[bot]"]  # exact identities, never substrings
+# human-approvers-required = 0
+
+# ---------------------------------------------------------------------------
+# Anticipates future work: tier-routing thresholds for a SKIP/SERIAL/HEAVY
+# completion gate. No gate reads these, and the companion .critical-paths file
+# selects nothing. Uncomment in the change that deploys a tier router.
+# ---------------------------------------------------------------------------
+# [completion-gate]
+# heavy_min_files      = 8
+# heavy_min_loc        = 400
+# heavy_min_subsystems = 3
+# trivial_max_loc      = 3   # SKIP ceiling; hard-capped at 20 on load
 
 # ---------------------------------------------------------------------------
 # [tracks] / [operating-model] / [extraction] — work-tracker track partition
