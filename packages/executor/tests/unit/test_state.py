@@ -50,9 +50,16 @@ def test_parse_state_narrows_each_item_to_the_fields_a_pairing_reads() -> None:
         work_id="agents-config-9k9.1",
         pr_number=42,
         parked=False,
+        park_reason=None,
     )
     assert state.items["it-2"] == ItemView(
-        id="it-2", status="queued", lane=None, work_id=None, pr_number=None, parked=True
+        id="it-2",
+        status="queued",
+        lane=None,
+        work_id=None,
+        pr_number=None,
+        parked=True,
+        park_reason="deferred",
     )
 
 

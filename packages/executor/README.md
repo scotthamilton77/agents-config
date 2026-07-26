@@ -46,11 +46,18 @@ A failure reason says this item's PR did not merge, so a failure-axis park on
 an item holding no PR is refused with `E_NO_OPEN_PR` rather than half-enacted.
 A scheduling park makes no such claim and needs no PR.
 
-The two tracker-first commands, `start` and `park`, also refuse from any status
-the runtime would not accept the event from — `start` outside `queued`, `park`
-on a merged or done item. They write to the tracker first, so enacting one the
-runtime then rejects would move the tracker against a runtime that does not
-follow, and no retry would converge.
+More generally, **every command refuses what the runtime would refuse** —
+`start` outside `queued`, `park` on a merged or done item, `done` before a
+merge, anything at all on a parked item, and a `pr-closed` naming a PR the item
+is not on. The executor is the runtime's single writer, so a command it can
+prove illegal is a caller's mistake rather than something that happened; the
+log stays a record of transitions. For `start` and `park` it is also
+correctness, since they write to the tracker before appending.
+
+Re-parking an already-parked item under a *different* reason is refused too:
+the parking lot's only exit is a redispatch or an abandon, so there is no
+re-park to enact. The same reason with a differently worded note is the
+ordinary idempotent retry.
 
 ## Which side leads
 

@@ -95,6 +95,75 @@ def test_a_failure_axis_park_on_an_item_with_no_pr_is_refused(reason: str) -> No
     assert tracker.syncs == 0
 
 
+def test_re_parking_under_a_different_reason_is_refused() -> None:
+    """
+    Given an item already parked for one reason
+    When a park is requested naming a different one
+    Then it is refused with nothing appended and nothing mutated.
+
+    There is no re-park transition — the parking lot's one exit is an enqueue
+    — so this cannot be enacted on either plane: the append would flag, and
+    the facade's park is a no-op that keeps the reason it already has.
+    Treating it as a retry would report success for a transition neither
+    plane made, and leave no way to notice the planes disagree.
+    """
+    runtime = FakeRuntime(
+        run_state(item("it-1", status="pr-open", pr=7, park_reason="ci-failure", work_id="w-1"))
+    )
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["park", "it-1", "--reason", "merge-conflict"], runtime, tracker)
+
+    assert code == 1
+    assert envelope["error"]["code"] == "E_ITEM_PARKED"
+    assert "ci-failure" in envelope["error"]["message"]
+    assert runtime.appended == []
+    assert tracker.mutations == []
+
+
+def test_re_parking_under_the_same_reason_with_a_new_note_is_still_a_retry() -> None:
+    """
+    Given an item parked for a reason, re-parked for that same reason with
+    differently worded text
+    When the command runs
+    Then it is the idempotent retry, not a refusal.
+
+    The reason is the typed fact both planes record; the note is free text a
+    retry may legitimately word differently, so matching on it would refuse
+    real retries.
+    """
+    runtime = FakeRuntime(
+        run_state(item("it-1", status="pr-open", pr=7, park_reason="ci-failure", work_id="w-1"))
+    )
+    tracker = FakeTracker()
+
+    code, envelope = invoke(
+        ["park", "it-1", "--reason", "ci-failure", "--note", "reworded"], runtime, tracker
+    )
+
+    assert code == 0
+    assert envelope["data"]["event_appended"] is False
+    assert tracker.mutations == [("park", "w-1", "ci-failure", "reworded")]
+
+
+def test_parking_an_untyped_park_under_a_typed_reason_is_refused() -> None:
+    """
+    Given an item parked without a typed reason, as a closure whose text named
+    no vocabulary member leaves it
+    When a typed park is requested
+    Then it is refused.
+
+    An untyped park is still a park, and typing it after the fact is not a
+    transition either plane has.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="pr-open", pr=7, parked=True)))
+
+    code, envelope = invoke(["park", "it-1", "--reason", "ci-failure"], runtime, FakeTracker())
+
+    assert code == 1
+    assert "untyped" in envelope["error"]["message"]
+
+
 @pytest.mark.parametrize("status", ["merged", "done"])
 def test_a_park_on_a_terminal_item_is_refused_before_the_tracker_is_touched(
     status: str,
@@ -373,6 +442,66 @@ def test_pr_closed_records_the_closure_and_tells_the_tracker_nothing() -> None:
         ("pr_closed", {"item": "it-1", "pr": 42, "next": "queued", "reason": "stale"})
     ]
     assert tracker.mutations == []
+
+
+def test_a_closure_naming_a_pr_the_item_is_not_on_is_refused() -> None:
+    """
+    Given an item on PR 42
+    When a closure is recorded for PR 41
+    Then it is refused with nothing appended.
+
+    The fold does not compare the event's PR against the item's own, so this
+    would tear down the live review cycle and record a closure for a PR the
+    item is not on — a delayed notification for a superseded PR is enough to
+    do it. The item's reference is the only thing that says which cycle a
+    closure belongs to.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="pr-open", pr=42)))
+
+    code, envelope = invoke(
+        ["pr-closed", "it-1", "--pr", "41", "--next", "queued", "--reason", "stale"],
+        runtime,
+        FakeTracker(),
+    )
+
+    assert code == 1
+    assert envelope["error"]["code"] == "E_USAGE"
+    assert "42" in envelope["error"]["message"]
+    assert runtime.appended == []
+
+
+@pytest.mark.parametrize("status", ["queued", "in-progress", "blocked", "merged", "done"])
+def test_a_merge_is_refused_from_any_status_holding_no_live_pr(status: str) -> None:
+    """
+    Given an item whose PR is not live
+    When a merge is recorded
+    Then it is refused or reported as already recorded, never appended.
+
+    `merged`/`done` are the idempotent retry; the rest the runtime would flag.
+    Either way nothing new reaches the log.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status=status, pr=42, work_id="w-1")))
+
+    invoke(["merged", "it-1", "--sha", "deadbee"], runtime, FakeTracker())
+
+    assert runtime.appended == []
+
+
+def test_done_is_refused_before_the_merge_it_tears_down() -> None:
+    """
+    Given an item still in review
+    When teardown is recorded as done
+    Then it is refused with nothing appended.
+
+    `item_done` follows a merge; the runtime accepts it from nowhere else.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="in-review", pr=42)))
+
+    code, envelope = invoke(["done", "it-1"], runtime, FakeTracker())
+
+    assert code == 1
+    assert "in-review" in envelope["error"]["message"]
+    assert runtime.appended == []
 
 
 def test_merged_takes_its_pr_from_the_fold_and_closes_the_tracker_item() -> None:

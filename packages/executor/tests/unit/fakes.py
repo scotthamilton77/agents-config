@@ -158,11 +158,22 @@ def item(
     work_id: str | None = None,
     pr: int | None = None,
     parked: bool = False,
+    park_reason: str | None = None,
 ) -> ItemView:
     """The boring case: a queued, laned, unparked item whose id is its own
-    tracker handle. A test overrides only the field it is about."""
+    tracker handle. A test overrides only the field it is about.
+
+    `park_reason` implies `parked`: an item carrying a reason is parked, and
+    letting a test say otherwise would build a state the fold cannot produce.
+    """
     return ItemView(
-        id=item_id, status=status, lane=lane, work_id=work_id, pr_number=pr, parked=parked
+        id=item_id,
+        status=status,
+        lane=lane,
+        work_id=work_id,
+        pr_number=pr,
+        parked=parked or park_reason is not None,
+        park_reason=park_reason,
     )
 
 

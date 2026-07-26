@@ -192,16 +192,24 @@ def _lane(item: ItemView, verb: str) -> str:
     return item.lane
 
 
-# The fold's source-status preconditions, mirrored for the TRACKER-FIRST rows
-# only. Those rows write to the tracker before appending, so an append the fold
-# would flag leaves the tracker moved and the runtime not — a disagreement no
-# retry converges, since the retry reproduces it. The runtime-first rows need no
-# mirror: their append leads, so a flagged event stops the command before any
-# tracker write. `redispatch`/`abandon` need none either — the fold's
-# precondition there is "is parked", which is the same fact their idempotency
-# check already reads.
+# The fold's source-status preconditions, mirrored per row.
+#
+# The executor is the runtime's single writer, so an event it can prove illegal
+# is a caller's mistake, not something that happened: refusing keeps the log a
+# record of transitions instead of a record of the executor's errors. For the
+# tracker-first rows it is also correctness — they write to the tracker before
+# appending, so an append the fold would flag leaves the two planes disagreeing
+# with no retry that converges.
+#
+# Duplicating the fold's tables is the cost. `GrindRuntime.append` refusing an
+# `applied: false` reply is the backstop that catches this table drifting from
+# the runtime's, and it names the fold's own reason when it fires.
 _STARTABLE = frozenset({"queued"})
 _PARKABLE = frozenset({"queued", "in-progress", "pr-open", "in-review", "waiting-human", "blocked"})
+_PR_OPENABLE = frozenset({"in-progress", "waiting-human"})
+# `pr_closed` and `item_merged` share a source set: both end a live PR.
+_REVIEWABLE = frozenset({"pr-open", "in-review", "waiting-human"})
+_DONEABLE = frozenset({"merged"})
 
 
 def _require_status(item: ItemView, legal: frozenset[str], verb: str) -> None:
@@ -218,8 +226,8 @@ def _require_unparked(item: ItemView, verb: str) -> None:
 
     A parked item keeps whatever status it held, so a status check alone waves
     a parked item straight through. The fold treats a parked item as absent for
-    every handler but `item_enqueued`, which makes this a precondition of the
-    tracker-first rows in its own right.
+    every handler but `item_enqueued`, so this is a precondition of every other
+    row in its own right.
     """
     if item.parked:
         raise ExecutorError(
@@ -229,11 +237,15 @@ def _require_unparked(item: ItemView, verb: str) -> None:
         )
 
 
+def _require_appendable(item: ItemView, legal: frozenset[str], verb: str) -> None:
+    _require_unparked(item, verb)
+    _require_status(item, legal, verb)
+
+
 def _plan_start(item: ItemView) -> Plan:
     if item.status == "in-progress" and not item.parked:
         return Plan(ROWS["start"], item, None)
-    _require_unparked(item, "start")
-    _require_status(item, _STARTABLE, "start")
+    _require_appendable(item, _STARTABLE, "start")
     return Plan(ROWS["start"], item, {"item": item.id})
 
 
@@ -259,6 +271,23 @@ def _plan_park(args: VerbArgs, item: ItemView) -> Plan:
     note = args.note if args.note is not None else args.reason
     row = ROWS["park:failure" if axis is Axis.FAILURE else "park:scheduling"]
     if item.parked:
+        # An already-parked item is a retry only when it is parked for the same
+        # reason. There is no re-park transition -- the parking lot's one exit
+        # is an enqueue -- so a park naming a different reason cannot be
+        # enacted on either plane: the append would flag, and the facade's park
+        # is a no-op that keeps the reason it already has. Reporting success
+        # for it would claim a transition neither plane made.
+        #
+        # The reason is compared and the note is not: the reason is the typed
+        # fact both planes record, while the note is free text a retry may
+        # legitimately word differently.
+        if item.park_reason != args.reason:
+            raise ExecutorError(
+                ErrorCode.ITEM_PARKED,
+                f"item {item.id!r} is already parked as {item.park_reason or 'untyped'!r}; "
+                f"re-parking as {args.reason!r} is not a transition the runtime has -- "
+                f"redispatch or abandon it first",
+            )
         return Plan(row, item, None, park_reason=args.reason, park_note=note)
     # A terminal item is not parkable: finished work has nothing left to park.
     # Reachable through a legitimately one-sided state — a merge whose tracker
@@ -297,9 +326,6 @@ def _plan_abandon(args: VerbArgs, item: ItemView) -> Plan:
 # or parks it. An item holding a PR reference while sitting in one of these has
 # had that PR closed and not reopened since.
 _POST_CLOSURE = frozenset({"in-progress", "queued"})
-# Where a PR is still live -- the only statuses the fold accepts `pr_closed`
-# from, and the ones it moves the item out of.
-_REVIEWABLE = frozenset({"pr-open", "in-review", "waiting-human"})
 
 
 def _closed_out(item: ItemView) -> bool:
@@ -330,7 +356,10 @@ def _plan_pr_opened(args: VerbArgs, item: ItemView) -> Plan:
     # the envelope as `event_appended: false` and is recoverable, where the
     # other direction silently ends a human wait.
     applied = item.pr_number == pr and not _closed_out(item)
-    return Plan(ROWS["pr-opened"], item, None if applied else {"item": item.id, "pr": pr})
+    if applied:
+        return Plan(ROWS["pr-opened"], item, None)
+    _require_appendable(item, _PR_OPENABLE, "pr-opened")
+    return Plan(ROWS["pr-opened"], item, {"item": item.id, "pr": pr})
 
 
 def _plan_pr_closed(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
@@ -344,18 +373,31 @@ def _plan_pr_closed(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     # closed, reopened and closed again would never record its second closure.
     # The item's position alone cannot tell "already closed" from "resumed out
     # of a human wait with the PR still open", which lands at the same status
-    # having never been closed. Together: a closure is already recorded when
-    # the ledger holds one for this PR *and* the item is no longer anywhere a
-    # live PR puts it.
-    applied = (item.id, pr) in state.closed_prs and item.status not in _REVIEWABLE
-    payload: dict[str, JsonValue] | None = None
-    if not applied:
-        payload = {
-            "item": item.id,
-            "pr": pr,
-            "next": args.next_status,
-            "reason": args.reason,
-        }
+    # having never been closed -- and calling that a retry would report success
+    # for a closure neither plane holds. It falls through to the source-status
+    # check below instead, which refuses it. Together: a closure is already
+    # recorded when the ledger holds one for this PR *and* the item is no
+    # longer anywhere a live PR puts it.
+    if (item.id, pr) in state.closed_prs and item.status not in _REVIEWABLE:
+        return Plan(ROWS["pr-closed"], item, None)
+    # The fold does not compare the event's PR against the item's own, so a
+    # closure naming an older number tears down the current review cycle and
+    # records a closure for a PR the item is not on -- a delayed notification
+    # for a superseded PR is enough to do it. The item's reference is the only
+    # thing that can say which cycle a closure belongs to.
+    if item.pr_number != pr:
+        raise ExecutorError(
+            ErrorCode.USAGE,
+            f"item {item.id!r} is on PR {item.pr_number}, not {pr}; "
+            f"closing a PR the item is not on would end the wrong cycle",
+        )
+    _require_appendable(item, _REVIEWABLE, "pr-closed")
+    payload: dict[str, JsonValue] = {
+        "item": item.id,
+        "pr": pr,
+        "next": args.next_status,
+        "reason": args.reason,
+    }
     return Plan(ROWS["pr-closed"], item, payload)
 
 
@@ -372,12 +414,15 @@ def _plan_merged(args: VerbArgs, item: ItemView) -> Plan:
             ErrorCode.NO_OPEN_PR,
             f"item {item.id!r} holds no PR reference to record as merged",
         )
+    _require_appendable(item, _REVIEWABLE, "merged")
     return Plan(ROWS["merged"], item, {"item": item.id, "pr": item.pr_number, "sha": args.sha})
 
 
 def _plan_done(item: ItemView) -> Plan:
-    applied = item.status == "done"
-    return Plan(ROWS["done"], item, None if applied else {"item": item.id})
+    if item.status == "done" and not item.parked:
+        return Plan(ROWS["done"], item, None)
+    _require_appendable(item, _DONEABLE, "done")
+    return Plan(ROWS["done"], item, {"item": item.id})
 
 
 def build_plan(verb: str, args: VerbArgs, state: RunState) -> Plan:

@@ -27,7 +27,13 @@ RUN_LOCAL_SLUG = re.compile(r"^disc-\d+$")
 
 @dataclass(frozen=True)
 class ItemView:
-    """One folded item, narrowed to the fields a pairing decision reads."""
+    """One folded item, narrowed to the fields a pairing decision reads.
+
+    `parked` and `park_reason` are separate because the runtime's park can be
+    untyped: `parked` with `park_reason is None` is an item parked by a closure
+    whose text named no vocabulary member. Reading absence of a reason as
+    absence of a park would put such an item back in play.
+    """
 
     id: str
     status: str
@@ -35,6 +41,7 @@ class ItemView:
     work_id: str | None
     pr_number: int | None
     parked: bool
+    park_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -73,13 +80,15 @@ def _opt_int(payload: Mapping[str, JsonValue], key: str) -> int | None:
 
 def _item_view(item_id: str, payload: Mapping[str, JsonValue]) -> ItemView:
     pr = payload.get("pr")
+    parked = payload.get("parked")
     return ItemView(
         id=item_id,
         status=_opt_str(payload, "status") or "",
         lane=_opt_str(payload, "lane"),
         work_id=_opt_str(payload, "work_id"),
         pr_number=_opt_int(pr, "number") if isinstance(pr, dict) else None,
-        parked=payload.get("parked") is not None,
+        parked=parked is not None,
+        park_reason=_opt_str(parked, "reason") if isinstance(parked, dict) else None,
     )
 
 

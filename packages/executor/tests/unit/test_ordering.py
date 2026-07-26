@@ -83,7 +83,7 @@ def test_re_running_an_intent_after_the_tracker_recovers_converges(
         (["start", "it-1"], item("it-1", status="in-progress", work_id="w-1"), "claim"),
         (
             ["park", "it-1", "--reason", "ci-failure"],
-            item("it-1", status="pr-open", pr=7, parked=True, work_id="w-1"),
+            item("it-1", status="pr-open", pr=7, park_reason="ci-failure", work_id="w-1"),
             "park",
         ),
         (["redispatch", "it-1"], item("it-1", parked=False, work_id="w-1"), "redispatch"),
@@ -207,14 +207,14 @@ def test_an_opened_pr_stays_recognized_after_the_item_moves_on(status: str) -> N
 
 def test_a_different_pr_number_is_always_a_new_opening() -> None:
     """
-    Given an item holding one PR
+    Given an item back in progress, still holding its previous PR reference
     When a different PR is recorded as opened
     Then the event is appended.
 
-    The reference has to match: a second PR on the same item is new work, not
-    a retry of the first.
+    The reference has to match for a retry to be a retry: a second PR on the
+    same item is new work, and a stale reference must not swallow it.
     """
-    runtime = FakeRuntime(run_state(item("it-1", status="pr-open", pr=42)))
+    runtime = FakeRuntime(run_state(item("it-1", status="in-progress", pr=42)))
 
     invoke(["pr-opened", "it-1", "--pr", "43"], runtime, FakeTracker())
 
@@ -241,20 +241,24 @@ def test_a_reopened_pr_stays_recognized_as_its_cycle_advances(status: str) -> No
     assert runtime.appended == []
 
 
-def test_a_pr_opening_is_recorded_again_once_the_item_is_parked_out() -> None:
+def test_a_pr_opening_on_a_parked_item_is_refused() -> None:
     """
     Given an item parked by its PR's closure
     When that PR is recorded as opened again
-    Then the event is appended.
+    Then it is refused with nothing appended.
 
-    Parked is where `pr_closed --next parked` leaves an item, so it counts as
-    closed-out exactly like `in-progress` and `queued` do.
+    Parked is where `pr_closed --next parked` leaves an item, so the opening
+    is not a retry — but neither is it appendable: the fold treats a parked
+    item as absent. Getting the item back in play is a redispatch, and only
+    then can a PR open on it.
     """
     runtime = FakeRuntime(run_state(item("it-1", status="pr-open", pr=42, parked=True)))
 
-    invoke(["pr-opened", "it-1", "--pr", "42"], runtime, FakeTracker())
+    code, envelope = invoke(["pr-opened", "it-1", "--pr", "42"], runtime, FakeTracker())
 
-    assert runtime.event_types == ["pr_opened"]
+    assert code == 1
+    assert envelope["error"]["code"] == "E_ITEM_PARKED"
+    assert runtime.appended == []
 
 
 def test_reopening_the_same_pr_after_a_recorded_close_is_not_a_duplicate() -> None:
@@ -329,26 +333,31 @@ def test_a_second_closure_of_a_reopened_pr_is_recorded() -> None:
     ]
 
 
-def test_a_closure_is_recorded_for_an_item_resumed_with_its_pr_still_open() -> None:
+def test_a_closure_from_a_resumed_item_is_refused_not_reported_as_recorded() -> None:
     """
     Given an item resumed out of a human wait, back in progress with its PR
     still open and never closed
     When that PR is recorded as closed
-    Then the event is appended.
+    Then it is refused with nothing appended.
 
-    The item's position alone cannot answer this: a resume lands at the same
-    status a closure does, having closed nothing. The ledger is what separates
-    them.
+    The item's position alone cannot tell this apart from a landed closure —
+    a resume lands at the same status, having closed nothing — and the ledger
+    is what separates them. The runtime does not accept a closure from
+    `in-progress`, so the honest answer is a refusal: reporting success would
+    claim a closure neither plane holds, and appending would only write an
+    anomaly.
     """
     runtime = FakeRuntime(run_state(item("it-1", status="in-progress", pr=42)))
 
-    invoke(
+    code, envelope = invoke(
         ["pr-closed", "it-1", "--pr", "42", "--next", "queued", "--reason", "stale"],
         runtime,
         FakeTracker(),
     )
 
-    assert runtime.event_types == ["pr_closed"]
+    assert code == 1
+    assert "in-progress" in envelope["error"]["message"]
+    assert runtime.appended == []
 
 
 def test_a_closure_for_a_different_pr_is_still_appended() -> None:

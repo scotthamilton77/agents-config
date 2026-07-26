@@ -70,21 +70,30 @@ ports.py  →  state.py  →  pairing.py  →  enact.py  →  cli.py
   its suite asserts against that file rather than a transcription. The
   scheduling axis is runtime-native and issues zero tracker writes — the facade
   deliberately has no vocabulary for it.
-- **Every fold precondition a tracker-first row depends on is mirrored in
-  `pairing.py`, before either plane is touched.** Those rows write to the
-  tracker first, so an append the fold would flag leaves the tracker moved and
-  the runtime not — a disagreement no retry converges, because the retry
-  reproduces it. Currently mirrored: `start`'s source status, `park`'s
-  parkable-status set, and the fold's rule that a failure-axis reason needs a
-  PR reference. The runtime-first rows need no mirror — their append leads, so
-  a flagged event stops the command before any tracker write — and
-  `redispatch`/`abandon` need none either, since the fold's precondition there
-  ("is parked") is the same fact their idempotency check already reads. Adding
-  a tracker-first row means auditing its fold handler for preconditions —
-  including the one that is not a status. **Parked is a flag beside a status,
-  not a status**: a scheduling park leaves the item `queued`, so a
-  status-set check waves a parked item straight through, and the fold treats a
-  parked item as absent for every handler but `item_enqueued`.
+- **The executor refuses what the fold would flag.** Every row mirrors its
+  handler's preconditions in `pairing.py`, before either plane is touched. The
+  executor is the runtime's single writer, so an event it can prove illegal is
+  a caller's mistake, not something that happened: refusing keeps the log a
+  record of transitions rather than of the executor's errors. For the
+  tracker-first rows it is also correctness — they write to the tracker first,
+  so an append the fold would flag leaves the two planes disagreeing with no
+  retry that converges. Two preconditions are easy to miss. **Parked is a flag
+  beside a status, not a status**: a scheduling park leaves the item `queued`,
+  so a status-set check waves a parked item straight through, and the fold
+  treats a parked item as absent for every handler but `item_enqueued`. And
+  the fold does **not** check an event's PR against the item's own, so
+  `pr-closed` does — a delayed notification naming a superseded PR would
+  otherwise tear down the live review cycle.
+  Duplicating the fold's tables is the cost, and `GrindRuntime.append`
+  refusing an `applied: false` reply is the backstop that catches this table
+  drifting from the runtime's.
+- **An idempotent retry has to be the same command, not just the same verb.**
+  `park` on an already-parked item is a retry only when the recorded reason
+  matches the requested one; a different reason cannot be enacted on either
+  plane (the append flags, and the facade's park is a no-op keeping the reason
+  it has), so reporting success would claim a transition neither plane made.
+  The reason is compared and the note is not: the reason is the typed fact
+  both planes record, the note is free text a retry may word differently.
 - **Idempotency evidence has to survive the transition it is about.** "This
   is already recorded" cannot be read off the status the transition produced,
   because the item moves on: an opened PR outlives `pr-open`, and re-appending
