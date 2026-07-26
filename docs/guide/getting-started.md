@@ -47,7 +47,7 @@ into its own tool.
 | `src/user/.codex/` | `~/.codex/` | Codex instruction file + extensions |
 | `src/user/.gemini/` | `~/.gemini/` | Gemini instruction file + extensions |
 | `src/user/.opencode/` | `~/.config/opencode/` | OpenCode instruction skeleton + settings |
-| `src/plugins/<name>/` | matching tools, when detected | optional plugin rules (beads, graphify, codex) |
+| `src/plugins/<name>/` | matching tools, when detected | optional plugin rules (beads, codex) |
 
 `*.md.template` files install with the `.template` suffix stripped (e.g.
 `AGENTS.md.template` → `AGENTS.md`). Existing files get a diff preview and a

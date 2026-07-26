@@ -54,7 +54,6 @@ gate's tier routing.
 | Plugin | Detected when | Installs |
 |--------|---------------|----------|
 | `beads` | `bd` on PATH or `~/.beads/` exists | bd CLI gotchas + discovered-work rules; routes `~/.beads/` |
-| `graphify` | `~/.graphify/` or `graphify` on PATH | graphify discipline rule |
 | `codex` | `~/.codex/` or `codex` on PATH | Codex routing rule (Claude-only) |
 
 ## Key `settings.json` pieces (Claude)

@@ -80,7 +80,7 @@ This project hosts agent configuration under `src/`, which the install script de
   - `src/user/.agents/` — shared content, staged into every active tool: `skills/`, `rules/`, and `USER-CORE.md.template` (the zero-based laws, decision matrix, hard lines, and conventions, D17). See `src/user/.agents/AGENTS.md` for the install model and the name-collision rules.
   - `src/user/.claude/` — Claude-only: `skills/`, `rules/`, `hooks/`, `AGENTS.md.template`, `CLAUDE.md.template`, `settings.json.template`
   - `src/user/.codex/`, `src/user/.gemini/`, `src/user/.opencode/` — per-tool instruction templates; OpenCode additionally carries `opencode.jsonc.template` and gets a flat, dynamically-built instruction file rather than `@` includes
-  - `src/plugins/` — optional plugin content, auto-detected by a directory scan (`beads/`, `codex/`, `graphify/`). A plugin's content deploys only when its tool is detected **and** the artifact clears the admission gate.
+  - `src/plugins/` — optional plugin content, auto-detected by a directory scan (`beads/`, `codex/`). A plugin's content deploys only when its tool is detected **and** the artifact clears the admission gate.
   - Each rules directory carries its own `AGENTS.md` stating what currently lives there; read it rather than inferring from the folder's contents.
 - `archive/` — retired content mirroring the live tree's shape (`archive/src/user/**`, `archive/docs/**`). **Historical only — never a behavioural contract.** Read it to recover an idea; do not copy a path back into `src/` without an admission record.
 - `docs/`
