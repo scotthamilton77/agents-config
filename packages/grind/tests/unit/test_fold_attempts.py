@@ -129,31 +129,31 @@ def test_fix_attempted_with_an_unrecognized_kind_flags_rather_than_miscounting()
 
 
 def test_pr_closed_resets_the_attempt_ledger() -> None:
-    state = fold(
-        [
-            *_to_pr_open(),
-            _attempt(),
-            _attempt("rebase"),
-            event("pr_closed", item="wgclw.1", pr=7, reason="superseded", next="in-progress"),
-        ]
+    # A new PR must not inherit the spent budget of the one that closed.
+    spent = [*_to_pr_open(), _attempt(), _attempt("rebase")]
+    assert fold(spent).items["wgclw.1"].attempts == {"ci-fix": 1, "rebase": 1}
+
+    closed = fold(
+        [*spent, event("pr_closed", item="wgclw.1", pr=7, reason="superseded", next="in-progress")]
     )
 
-    assert state.items["wgclw.1"].attempts == {"ci-fix": 0, "rebase": 0}
+    assert closed.items["wgclw.1"].attempts == {"ci-fix": 0, "rebase": 0}
 
 
 def test_item_enqueued_resets_the_attempt_ledger() -> None:
-    # Leaving the parking lot deliberately grants a fresh window.
-    state = fold(
-        [
-            *_to_pr_open(),
-            _attempt(),
-            _attempt(),
-            event("item_parked", item="wgclw.1", reason="ci-failure", note="budget spent"),
-            event("item_enqueued", item="wgclw.1", lane="lane-a"),
-        ]
-    )
+    # Leaving the parking lot deliberately grants a fresh window. The park
+    # itself does not clear the ledger -- the counts survive to be read there.
+    parked = [
+        *_to_pr_open(),
+        _attempt(),
+        _attempt(),
+        event("item_parked", item="wgclw.1", reason="ci-failure", note="budget spent"),
+    ]
+    assert fold(parked).items["wgclw.1"].attempts["ci-fix"] == 2
 
-    assert state.items["wgclw.1"].attempts == {"ci-fix": 0, "rebase": 0}
+    enqueued = fold([*parked, event("item_enqueued", item="wgclw.1", lane="lane-a")])
+
+    assert enqueued.items["wgclw.1"].attempts == {"ci-fix": 0, "rebase": 0}
 
 
 def test_events_inside_the_pr_cycle_leave_the_ledger_unchanged() -> None:
