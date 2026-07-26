@@ -293,6 +293,29 @@ def test_a_closure_naming_another_pr_is_flagged_and_not_applied() -> None:
     assert item.status == "queued"
 
 
+def test_a_boolean_closure_pr_does_not_pass_for_pr_one() -> None:
+    # `bool` is an `int` subclass and `True == 1`, so a hand-edited `"pr": true`
+    # would otherwise satisfy both the type check and the match against PR 1 --
+    # writing `pr: true` into the ledger and discarding the live ref.
+    state = fold(
+        [
+            seed_event(),
+            event("item_started", item="wgclw.1"),
+            event("pr_opened", item="wgclw.1", pr=1),
+            event("item_parked", item="wgclw.1", reason="bot-declined", note="no"),
+            event("item_enqueued", item="wgclw.1", lane="lane-a", closure={"pr": True}),
+        ]
+    )
+
+    item = state.items["wgclw.1"]
+    assert state.closed_ledger == []
+    assert item.pr is not None
+    assert item.pr.number == 1
+    assert any(
+        a.type == "item_enqueued" and "closure names PR True" in a.reason for a in state.anomalies
+    )
+
+
 def test_a_closure_on_an_item_holding_no_pr_is_flagged_and_not_applied() -> None:
     state = fold(
         [

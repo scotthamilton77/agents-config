@@ -78,3 +78,34 @@ def test_unknown_event_type_is_tolerated_as_an_anomaly() -> None:
     assert state.items["wgclw.1"].status == "queued"
     assert len(state.anomalies) == 1
     assert "unknown event type" in state.anomalies[0].reason
+
+
+def test_a_boolean_pr_number_is_read_as_no_number_at_all() -> None:
+    # `bool` is an `int` subclass, so a hand-edited or historical log carrying
+    # `"pr": true` would otherwise store `True` as a PR number and put it in
+    # both ledgers. The boundary validator rejects it; the fold, which nothing
+    # replayed passes through that boundary, reads it as unavailable instead.
+    state = fold(
+        [
+            seed_event(),
+            event("item_started", item="wgclw.1"),
+            event("pr_opened", item="wgclw.1", pr=True),
+            event("item_merged", item="wgclw.1", pr=True, sha="abc"),
+        ]
+    )
+
+    item = state.items["wgclw.1"]
+    assert item.pr is not None
+    assert item.pr.number is None
+    assert state.merged_ledger[0].pr is None
+
+    closed = fold(
+        [
+            seed_event(),
+            event("item_started", item="wgclw.1"),
+            event("pr_opened", item="wgclw.1", pr=4),
+            event("pr_closed", item="wgclw.1", pr=True, reason="superseded", next="queued"),
+        ]
+    )
+
+    assert closed.closed_ledger[0].pr is None

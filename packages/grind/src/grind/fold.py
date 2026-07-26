@@ -115,6 +115,20 @@ def _str(evt: RawEvent, key: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _int(evt: RawEvent, key: str) -> int | None:
+    """`_str`'s sibling, and the bool exclusion is the whole point of it.
+
+    `bool` is an `int` subclass in Python, so a JSON `true` otherwise passes as
+    a PR number -- and compares equal to PR 1, which is enough to satisfy a
+    check that the number matches the one the item holds. The boundary
+    validator already excludes it; a hand-edited or historical log reaches this
+    fold without ever passing that boundary, and every `pr` field here feeds
+    either a ledger entry or the ref two rules read.
+    """
+    value = evt.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 def _work_id(payload: RawEvent, item_id: str) -> str | None:
     """The item's external tracker handle, or None when it has no distinct one.
 
@@ -343,8 +357,7 @@ def _h_pr_opened(state: State, evt: RawEvent) -> None:
     if item.status not in ("in-progress", "waiting-human"):
         _anomaly(state, evt, f"pr_opened illegal from status {item.status!r}")
         return
-    pr = evt.get("pr")
-    item.pr = PrRef(number=pr if isinstance(pr, int) else None, url=_str(evt, "url"))
+    item.pr = PrRef(number=_int(evt, "pr"), url=_str(evt, "url"))
     item.status = "pr-open"
 
 
@@ -458,12 +471,9 @@ def _h_pr_closed(state: State, evt: RawEvent) -> None:
     if next_status != "parked" and next_status not in _PR_CLOSED_NEXT:
         _anomaly(state, evt, f"pr_closed has invalid next {next_status!r}")
         return
-    pr = evt.get("pr")
     reason = _str(evt, "reason")
     state.closed_ledger.append(
-        ClosedEntry(
-            item=item.id, pr=pr if isinstance(pr, int) else None, reason=reason, ts=_str(evt, "ts")
-        )
+        ClosedEntry(item=item.id, pr=_int(evt, "pr"), reason=reason, ts=_str(evt, "ts"))
     )
     # the review cycle ends with its PR: a later pr_opened starts a fresh
     # cycle that must not inherit the closed PR's stalemate history, nor the
@@ -597,7 +607,6 @@ def _h_item_merged(state: State, evt: RawEvent) -> None:
     if item.status not in _MERGEABLE:
         _anomaly(state, evt, f"item_merged illegal from status {item.status!r}")
         return
-    pr = evt.get("pr")
     item.status = "merged"
     # A merge ends the PR's life as surely as a close does -- `closed` records
     # "no longer open", and both transitions that reach it must say so or the
@@ -607,7 +616,7 @@ def _h_item_merged(state: State, evt: RawEvent) -> None:
     state.merged_ledger.append(
         MergedEntry(
             item=item.id,
-            pr=pr if isinstance(pr, int) else None,
+            pr=_int(evt, "pr"),
             sha=_str(evt, "sha"),
             ts=_str(evt, "ts"),
         )
@@ -685,10 +694,10 @@ def _record_closure(state: State, item: Item, evt: RawEvent) -> None:
     closure = evt.get("closure")
     if not isinstance(closure, dict):
         return
-    pr = closure.get("pr")
-    if item.pr is None or not isinstance(pr, int) or item.pr.number != pr:
-        held = item.pr.number if item.pr is not None else None
-        _anomaly(state, evt, f"closure names PR {pr!r}, but the item holds {held!r}")
+    pr = _int(closure, "pr")
+    held = item.pr.number if item.pr is not None else None
+    if pr is None or held != pr:
+        _anomaly(state, evt, f"closure names PR {closure.get('pr')!r}, but the item holds {held!r}")
         return
     state.closed_ledger.append(
         ClosedEntry(item=item.id, pr=pr, reason=_str(closure, "reason"), ts=_str(evt, "ts"))

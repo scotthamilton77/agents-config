@@ -264,7 +264,12 @@ must pass before push.
   check that the number is an integer, so a mistyped one would record a
   closure for a PR this item never had *and* discard the live ref the park
   rule and the attempt gate read. A mismatch is accept-and-flag: the closure
-  does not apply, the enqueue still does.
+  does not apply, the enqueue still does. Note what "an integer" has to mean
+  here: `bool` is an `int` subclass and `True == 1`, so a replayed `"pr": true`
+  would satisfy both the type check and the match against PR 1. Every `pr`
+  field in the fold therefore goes through `_int`, which excludes bools — the
+  same exclusion `payloads._is_int` makes at the boundary that replayed events
+  never cross.
 
 ## Tests
 
