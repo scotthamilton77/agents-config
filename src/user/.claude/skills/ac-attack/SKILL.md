@@ -11,8 +11,8 @@ Criteria that read complete rarely are. This skill attacks them: a panel of adve
 reads the document, each naming behaviours its criteria let through, and every proposal comes back
 adjudicated into the criteria or rejected on the record.
 
-Running before the work starts is the point: once code exists, a review can check that the tests
-cover the failure cases the criteria name but cannot invent the ones nobody thought of. Those get
+Running before the work starts is the point: once code exists, a review can check the tests cover
+the failure cases the criteria name, but cannot invent the ones nobody thought of. Those get
 invented here, while adding one is still an edit to a document.
 
 ## Attack lenses
@@ -26,28 +26,30 @@ invented here, while adding one is still an edit to a document.
 Mandates are data in `lenses.json`, each lens's `tier` naming the model capability it needs and
 `transport` the route its prompt goes out on: an `openrouter` lens through the
 `openrouter-claude-subagent` skill, a `codex` lens through the codex command-line tool. When one
-transport is down, run its lenses over the other and say so when reporting the round — the panel
-has lost its vendor diversity, and blind spots correlate within a vendor. One attacker runs per
-lens, alone, exhaustive within it and silent outside: asked for everything, one attacker satisfices,
-returning two holes where a panel returns seven.
+transport is down, run its lenses over the other — the panel has then lost its vendor diversity,
+and blind spots correlate within a vendor. No field records that substitution and the checker
+cannot see it, so state it wherever the round's verdict is reported or it is lost. One attacker runs per lens, alone, exhaustive within
+it and silent outside: asked for everything, one attacker satisfices, returning two holes where a
+panel returns seven.
 
 ## Emitting the prompts
 
 The attacked artifact is the whole document, never an extracted list of criteria: criteria mean
 what the document's definitions and scope say they mean, and an attacker handed the bare list has
-nothing to judge them against, returning a vacuous empty round. From this directory:
+nothing to judge them against, returning a vacuous empty round. Run from this directory, naming
+the document and the output by paths that resolve from here:
 
 ```bash
-uv run emit_prompts.py --spec path/to/document.md --out-dir /tmp/attack
+uv run emit_prompts.py --spec /path/to/document.md --out-dir /tmp/attack-document
 ```
 
 One `<lens>.md` prompt lands per lens, plus `round.json` recording the document, the revision
-attacked, and each lens with its tier and transport. A prompt carries that lens's mandate, the
-requirement to report every hole it can find and to say so explicitly when it finds none, the
-exact-JSON output contract, and then the whole document in a section the instructions declare to be
-data. No other lens's mandate appears, and no house rulebook text.
+attacked, and each lens with its tier and transport. A prompt carries that lens's mandate and no
+other, the exact-JSON output contract, and the whole document in a section the instructions
+declare to be data.
 
-Stdout is `{"emitted": true, "prompts": […]}`; a refusal is
+Stdout is `{"emitted": true, "prompts": […], "round": …}` — the lens prompts, then the round
+file, which is metadata and not one of them. A refusal is
 `{"emitted": false, "errors": [{"code", "message"}]}`, exit 2, every code in `errors.md`. `--spec`
 and `--out-dir` are both required — the output names are fixed, so a round with nowhere named would
 truncate whatever wears them in the directory it ran from. The round creates that one directory and
@@ -56,8 +58,8 @@ document.
 
 A revision names content, not history: `sha256:` plus the digest of the document's bytes, or the
 equivalent 40-hex object id, recomputable from the document in front of you. One record picks one
-notation and writes every revision in it: revisions compare as strings, so the same content in both
-notations would read as two revisions.
+notation and writes every revision in it — revisions compare as strings, so one content written
+both ways would read as two.
 
 ## Proposals
 
@@ -72,11 +74,13 @@ notations would read as two revisions.
 `target_ac` is the criterion attacked, or `"none"` when nothing covers the ground. The test sketch
 is the line between a testable claim and a concern: a starting state, an action, an observable
 outcome, all non-blank — a concern cannot name them. An item leaving one blank is malformed, and is
-dropped rather than adjudicated.
+dropped rather than adjudicated. A lens whose every item is dropped returned nothing usable,
+which is not nothing found: it gets no entry, and the round closes by running it again rather
+than by recording it empty.
 
-Unioning the reports adds an `id` to each proposal, distinct within the round — an attacker sees its
-own lens and not the round, so it cannot pick one. That id is what a disposition names: dropping a
-malformed proposal renumbers positions, and a disposition keyed on position would then adjudicate a
+Unioning the reports adds an `id` to each proposal, distinct within the round — an attacker sees
+its own lens, not the round, so it cannot pick one. That id is what a disposition names: dropping
+a malformed proposal renumbers positions, and a disposition keyed on one would then adjudicate a
 proposal it was never written against.
 
 ## The attack record
@@ -98,28 +102,29 @@ by `attack-record.schema.json`.
 - **Accepted** names the `revision` now carrying the proposal — necessarily a different one, since
   accepting and changing nothing leaves it unadjudicated — and the `covering_ac` in it.
 - **Rejected** states a `rationale`. Out of scope is a judgement, and a judgement gets written down.
-- **Nothing found** is a result, not a degenerate one: every lens reporting empty closes the round.
+- **Nothing found** is a result: every lens reporting empty closes the round.
 
 ## Checking the round
 
 ```bash
-uv run check_record.py path/to/document-ac-attack.json [--spec <path>] [--implementation-started]
+uv run check_record.py /path/to/document-ac-attack.json [--spec <path>] [--implementation-started]
 ```
 
 Stdout is
 `{"clean": …, "complete": …, "errors": [{"code", "id"?, "message"}], "document"?, "revision"?}`,
 keys and errors sorted. `complete` says the round is closed: every lens reported, every proposal
-adjudicated, every acceptance carried into a named revision, and the document still hashing to the
-revision attacked or to one an acceptance names — so the edits an acceptance drives never invalidate
-the round that drove them, while an unrelated later edit does, having faced no attacker. `clean`
+adjudicated, and every acceptance carried into a revision the document still hashes to — or, in a
+round that accepted nothing, the revision attacked. The edits an acceptance drives never
+invalidate the round that drove them; an unrelated later edit does, having faced no attacker. `clean`
 adds that nothing was proposed. `document` and `revision` name the file the verdict was decided
 against and what it hashes to. Exit 0 complete, 1 not, 2 on unusable input. Every code the check
 can return, and what each one means, is in `errors.md`.
 
 `--implementation-started` declares what the invoker observed: the first work item that changes the
 system this document describes has been claimed. Revising the document is not that. The checker
-reads only the record, the document, and that declaration; it consults no tracker, writes nothing,
-and answers the same way every time.
+reads the record, the document, that declaration, and its own lens registry — read live, so a
+record is judged against the lens set in force now and adding a lens reopens rounds that never
+faced it. It consults no tracker, writes nothing, and answers the same way every time.
 
 The record **attests** that the round happened as written; the checker does not verify that it did.
 A revision is a hash and the content it names is not recoverable from it, so an acceptance naming a

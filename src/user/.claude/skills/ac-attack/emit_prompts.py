@@ -23,6 +23,7 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 LENSES_PATH = HERE / "lenses.json"
+REQUIRED_KEYS = ("lens", "mandate", "tier", "transport")
 
 EXIT_OK = 0
 EXIT_REFUSED = 2
@@ -81,12 +82,20 @@ def load_lenses() -> list[dict[str, Any]]:
     a single file and reporting both — the mandate written second is the only one any model reads,
     and nothing downstream shows the loss. A name that is not a bare filename escapes the
     owner-only directory the round just created and lands somewhere it never set permissions on.
+    Every key an entry owes is checked here too, because `tier` and `transport` are read only when
+    the round file is assembled — by then every prompt is on disk, so an entry short one of them
+    would leave a directory of prompts for this document beside a round file naming the last one.
     """
     with LENSES_PATH.open(encoding="utf-8") as handle:
         lenses = json.load(handle)["lenses"]
-    names = [lens["lens"] for lens in lenses]
+    names = [entry["lens"] for entry in lenses if "lens" in entry]
+    incomplete = [f"{entry.get('lens', f'the entry at position {position}')} without its {key}"
+                  for position, entry in enumerate(lenses)
+                  for key in REQUIRED_KEYS if key not in entry]
     if not lenses:
         problem = "declares no lens"
+    elif incomplete:
+        problem = f"declares {', '.join(incomplete)}"
     elif len(set(names)) != len(names):
         problem = "names one lens twice, so one mandate would overwrite the other's prompt"
     elif any(name != Path(name).name or name in ("", ".", "..") for name in names):
@@ -95,8 +104,8 @@ def load_lenses() -> list[dict[str, Any]]:
         return lenses
     raise Refusal(
         "no-lenses",
-        f"the lens registry {problem}; the round would report itself emitted while an attacker "
-        "it declared never ran, which reads as coverage nobody obtained",
+        f"the lens registry {problem}; a round emitted from it would leave an attacker it "
+        "declared unrun, which reads downstream as coverage nobody obtained",
     )
 
 
@@ -147,7 +156,8 @@ def prepare_out_dir(path: str | None) -> Path:
         raise Refusal(
             "no-out-dir",
             "no --out-dir was supplied; the output names are fixed, so a round with nowhere named "
-            "would truncate four files wherever it ran — name the directory the prompts land in",
+            "would truncate whatever wears them in the directory it ran from — name the directory "
+            "the prompts land in",
         )
     out_dir = Path(path)
     if out_dir.is_symlink():
@@ -262,14 +272,12 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
     # the basename is what finds it there — and no local layout travels to a third-party model.
     spec_name = Path(args.spec).name
     ctx = {"spec_path": spec_name, "spec_revision": revision, "document": document}
-    names = [f"{lens['lens']}.md" for lens in lenses] + ["round.json"]
-    for name in names:
-        refuse_unless_plain(out_dir / name)
-    written = []
-    for lens in lenses:
-        path = out_dir / f"{lens['lens']}.md"
+    prompts = [out_dir / f"{lens['lens']}.md" for lens in lenses]
+    round_path = out_dir / "round.json"
+    for path in [*prompts, round_path]:
+        refuse_unless_plain(path)
+    for lens, path in zip(lenses, prompts, strict=True):
         write_private(path, render_prompt(lens, ctx))
-        written.append(str(path))
     round_meta = {
         "spec_path": spec_name, "spec_revision": revision,
         "lenses": [
@@ -277,9 +285,11 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
             for lens in lenses
         ],
     }
-    write_private(out_dir / "round.json", json.dumps(round_meta, indent=2, sort_keys=True) + "\n")
-    written.append(str(out_dir / "round.json"))
-    return {"emitted": True, "prompts": written}
+    write_private(round_path, json.dumps(round_meta, indent=2, sort_keys=True) + "\n")
+    # The round file is metadata, not a prompt: listed among them, a caller fanning the panel out
+    # over `prompts` sends it to a model as an attack, mandateless and with no document to read.
+    return {"emitted": True, "prompts": [str(path) for path in prompts],
+            "round": str(round_path)}
 
 
 def build_parser() -> argparse.ArgumentParser:

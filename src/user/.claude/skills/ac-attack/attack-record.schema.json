@@ -20,7 +20,7 @@
     "spec_path": {
       "type": "string",
       "pattern": "\\S",
-      "description": "The attacked document, which this record is committed beside."
+      "description": "The attacked document, which this record is committed beside. A bare filename: the record's own directory is the only one searched, so a path leading out of it names a document no attacker in the round read."
     },
     "spec_revision": {
       "$ref": "#/$defs/revision",
@@ -55,7 +55,7 @@
     "revision": {
       "type": "string",
       "pattern": "^(sha256:[0-9a-f]{64}|[0-9a-f]{40})$",
-      "description": "Content-addressed revision of the document: sha256: followed by the hex digest of its bytes, or the 40-hex object id of the same content."
+      "description": "Content-addressed revision of the document: sha256: followed by the hex digest of its bytes, or the 40-hex object id of the same content. Written with no surrounding whitespace — git hash-object ends its output with a newline, which the pattern above does not catch and the checker refuses."
     },
     "proposal": {
       "type": "object",

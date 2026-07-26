@@ -336,12 +336,36 @@ class TestStaleness:
         assert codes(result) == {"stale-revision"}
 
     def test_c6_an_edit_an_acceptance_drove_keeps_the_round_current(self, attack, capsys):
-        """S6-C6: inverse — the accounted revisions are the one attacked plus every revision an
-        acceptance names, so incorporating a proposal cannot invalidate its own round."""
+        """S6-C6: inverse — a revision an acceptance names accounts for the document, so
+        incorporating a proposal cannot invalidate the round that drove the incorporation."""
         record = attack.record()
         assert record["spec_revision"] == sha_revision(DOCUMENT)
         assert attack.document.read_text(encoding="utf-8") == REVISED
         assert check(attack, record, capsys)[0] == 0
+
+    def test_c6_a_document_still_at_the_revision_attacked_does_not_close_an_accepting_round(
+            self, attack, capsys):
+        """S6-C6: an acceptance says the document was edited to carry the proposal, so a document
+        still hashing to the revision attacked means that edit was reverted, lost in a rebase, or
+        never made. Closing the round would clear work to start against criteria every accepted
+        proposal is absent from — and this is decided, not attested: the checker holds the
+        document's bytes and can see they are the pre-attack ones."""
+        record = attack.record()
+        attack.write_document(DOCUMENT)
+        assert record["spec_revision"] == sha_revision(DOCUMENT)
+        code, result = check(attack, record, capsys)
+        assert code == 1 and result["complete"] is False
+        assert codes(result) == {"stale-revision"}
+
+    def test_c6_a_round_that_accepted_nothing_stands_at_the_revision_it_attacked(self, attack,
+                                                                                 capsys):
+        """S6-C6: inverse — only an acceptance obliges the document to have moved, so a round that
+        proposed nothing, and one whose every proposal was rejected, close over the document
+        exactly as attacked."""
+        assert check(attack, attack.empty_round(), capsys) == (0, closed(attack, clean=True))
+        record = attack.record()
+        record["dispositions"][0] = {"id": "p1", "disposition": "rejected",
+                                     "rationale": "A1 already covers the unwritable output"}
         attack.write_document(DOCUMENT)
         assert check(attack, record, capsys)[0] == 0
 
@@ -379,19 +403,22 @@ class TestProvenance:
                                                                      capsys):
         """S6-C6: a round checked against a copy handed to --spec answers a different question
         from one checked against the live document — here the same record reads complete against
-        a copy holding the revision it attacked, while the document beside it has moved on. The
-        answer carries the file it read and what that file hashes to, so the substitution is on
-        the record rather than invisible to whoever reads the verdict."""
+        a copy holding the revision its acceptance names, while the document beside it has moved
+        on to text no attacker read. The answer carries the file it read and what that file hashes
+        to, so the substitution is on the record rather than invisible to whoever reads the
+        verdict."""
         code, result = check(attack, attack.record(), capsys)
         assert code == 0
         assert result["document"] == str(attack.document)
         assert result["revision"] == sha_revision(REVISED)
-        stale = tmp_path / "stale.md"
-        stale.write_text(DOCUMENT, encoding="utf-8")
-        code, result = run([str(attack.path), "--spec", str(stale)], capsys)
+        substitute = tmp_path / "substitute.md"
+        substitute.write_text(REVISED, encoding="utf-8")
+        attack.write_document(UNRELATED)
+        assert check(attack, attack.record(), capsys)[0] == 1
+        code, result = run([str(attack.path), "--spec", str(substitute)], capsys)
         assert code == 0
-        assert result["document"] == str(stale)
-        assert result["revision"] == sha_revision(DOCUMENT)
+        assert result["document"] == str(substitute)
+        assert result["revision"] == sha_revision(REVISED)
 
     def test_c6_an_unfinished_round_names_its_document_too(self, attack, capsys):
         """S6-C6: the pair reports what was read, not what was concluded, so a verdict of stale
@@ -428,21 +455,47 @@ class TestProvenance:
 
 
 class TestRevisionNotation:
-    @pytest.mark.parametrize("where", ("attacked", "acceptance", "rejection"))
+    @pytest.mark.parametrize("where", ("attacked", "acceptance"))
     def test_c6_a_record_mixing_the_two_notations_is_refused(self, attack, capsys, where):
         """S6-C6: revisions are compared as strings and a hash cannot be turned back into the
         content it names, so a record mixing the notations could pass an unchanged document off as
         an incorporation — the two strings differ while the content is identical. Every revision
-        in one record is held to one notation instead, wherever in the record it is written."""
+        the adjudication reads is held to one notation instead."""
         record = attack.record()
         if where == "attacked":
             record["spec_revision"] = blob_revision(DOCUMENT)
         else:
-            index = 0 if where == "acceptance" else 1
-            record["dispositions"][index]["revision"] = blob_revision(REVISED)
+            record["dispositions"][0]["revision"] = blob_revision(REVISED)
         code, result = check(attack, record, capsys)
         assert code == 2 and result["complete"] is False
         assert codes(result) == {"mixed-revision-notation"}
+
+    def test_c6_a_revision_left_on_a_rejection_decides_nothing_and_refuses_nothing(self, attack,
+                                                                                   capsys):
+        """S6-C6: only an acceptance's revision is adjudicated, so one left behind on a
+        disposition flipped to rejected is read by nothing. Refusing the record over how it is
+        written would send the reader to debug a field that decides no part of the round."""
+        record = attack.record()
+        record["dispositions"][1]["revision"] = blob_revision(UNRELATED)
+        assert check(attack, record, capsys) == (0, closed(attack))
+
+    @pytest.mark.parametrize("where", ("attacked", "acceptance"))
+    def test_c6_a_revision_carrying_whitespace_is_refused(self, attack, capsys, where):
+        """S6-C6: an agent piping `git hash-object` in gets its trailing newline, and the schema's
+        pattern does not catch it — Python's `$` matches before a newline at the end of a string.
+        The same content then reads as two revisions: an acceptance can name the very revision it
+        attacked, escape the comparison that catches an unincorporated acceptance, and close the
+        round over a document nobody edited."""
+        attack.write_document(DOCUMENT)
+        record = attack.record()
+        record["spec_revision"] = sha_revision(DOCUMENT) + ("\n" if where == "attacked" else "")
+        record["dispositions"][0]["revision"] = sha_revision(DOCUMENT) + (
+            "" if where == "attacked" else "\n")
+        assert checker.schema_errors(record) == []
+        code, result = check(attack, record, capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"untrimmed-revision"}
+        assert "git hash-object" in error_of(result, "untrimmed-revision")["message"]
 
     def test_c6_either_notation_alone_decides_the_round_the_same_way(self, attack, capsys):
         """S6-C6: inverse — a notation is a way of writing a revision, not a different revision,
@@ -689,6 +742,20 @@ class TestUnusableInput:
         code, result = run([path], capsys)
         assert code == 2 and codes(result) == {"spec-unreadable"}
 
+    @pytest.mark.parametrize("named", ("../ledger-export.md", "sub/ledger-export.md", "..",
+                                       "/tmp/ledger-export.md"))
+    def test_c6_a_record_names_its_document_by_bare_filename(self, attack, capsys, named):
+        """S6-C6: the record's own directory is the only one the check reads the document from, and
+        a spec_path that is not a bare filename leads straight back out of it — naming a document
+        this record was not committed beside and no attacker in the round read. Refused rather than
+        resolved, since the round would otherwise close over that text."""
+        record = attack.record()
+        record["spec_path"] = named
+        code, result = check(attack, record, capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"spec-not-a-bare-filename"}
+        assert "document" not in result
+
     def test_c6_spec_given_without_a_document_is_refused_not_ignored(self, attack, capsys):
         """S6-C6: --spec names the document to decide the round against, so an empty one is a
         caller that meant to name a document and did not — a wrapper passing through an unset
@@ -741,6 +808,28 @@ class TestUnusableInput:
         result = json.loads(proc.stdout)
         assert result["complete"] is False
         assert [error["code"] for error in result["errors"]] == ["no-record"]
+
+    @pytest.mark.parametrize("argv", (["--sepc", "doc.md"], ["record.json", "--spec"]))
+    def test_c3_an_unparseable_command_line_answers_in_the_contract(self, tmp_path, argv):
+        """S6-C3: argparse exits by itself on an unknown option, or one given without its value,
+        which would end the run with usage text on stderr and nothing on stdout. A caller parsing
+        stdout must not have to special-case the one failure that predates the parse."""
+        proc = subprocess.run([sys.executable, str(CHECKER_PATH), *argv], capture_output=True,
+                              text=True, check=False, cwd=str(tmp_path))
+        assert proc.returncode == 2
+        assert "Traceback" not in proc.stderr
+        result = json.loads(proc.stdout)
+        assert result["complete"] is False
+        assert [error["code"] for error in result["errors"]] == ["bad-arguments"]
+
+    def test_c3_an_unparseable_command_line_still_answers_the_declaration(self, capsys):
+        """S6-C3: the declaration is read off the argument list rather than off the parse, so work
+        claimed against a round whose command line the check could not even read is still a
+        violation — it fails closed like every other form of it."""
+        code, result = run(["--sepc", "doc.md", "--implementation-started"], capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"bad-arguments", "ordering-violation"}
+        assert "document" not in result
 
     @pytest.mark.parametrize("damaged", ("lenses.json", "attack-record.schema.json"))
     @pytest.mark.parametrize("damage", (None, "{not json"))

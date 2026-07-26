@@ -83,9 +83,10 @@ def read_document(record_path: Path, record: dict, override: str | None) -> tupl
 
     The record is committed beside the document it names, so that directory is the only one
     searched: a same-named file in whatever directory the check happens to run from is not the
-    attacked document, and reading it would check the round against unrelated text. --spec is
-    read for presence, not content — a wrapper passing an unset variable is refused rather than
-    falling back to the document the record names.
+    attacked document, and reading it would check the round against unrelated text. A spec_path
+    that is not a bare filename leads back out of that directory and is refused for the same
+    reason. --spec is read for presence, not content — a wrapper passing an unset variable is
+    refused rather than falling back to the document the record names.
     """
     if override is not None and not override.strip():
         raise RecordError(
@@ -93,7 +94,19 @@ def read_document(record_path: Path, record: dict, override: str | None) -> tupl
             "--spec was given without a document; name the document to check the round against, "
             "or drop the option to read the one the record names",
         )
-    path = Path(override) if override is not None else record_path.parent / record["spec_path"]
+    if override is not None:
+        path = Path(override)
+    else:
+        name = record["spec_path"]
+        if name != Path(name).name or name in ("", ".", ".."):
+            raise RecordError(
+                "spec-not-a-bare-filename",
+                f"the record names its document {name!r}, which is not a bare filename; the "
+                "record is committed beside the document it attacked, so name that document's "
+                "basename — a path leading out of the record's own directory names a document no "
+                "attacker in this round read",
+            )
+        path = record_path.parent / name
     try:
         return path, path.read_bytes()
     except OSError as exc:
@@ -118,19 +131,33 @@ def notation_of(revision: str) -> str:
     return "digest" if revision.startswith("sha256:") else "object id"
 
 
-def require_one_notation(record: dict) -> None:
-    """Refuse a record that writes its revisions in both notations.
+def require_comparable_revisions(record: dict) -> None:
+    """Refuse a record that writes one content as two revision strings.
 
-    Revisions are compared as strings, and the two notations for one content share no characters,
-    so a record mixing them reads the same document as two different revisions. The checker cannot
-    reconcile them either: a revision is a hash, and the content it names is not recoverable from
-    it. Held to one notation, string equality decides revision identity soundly.
+    Revisions are compared as strings, and the checker cannot reconcile two that differ: a revision
+    is a hash, and the content it names is not recoverable from it. So one content written two ways
+    — in both notations, which share no characters, or with the whitespace a tool left on it —
+    reads as two revisions, and an acceptance naming the very revision it attacked passes as an
+    incorporation. Held to one spelling, string equality decides revision identity soundly.
+
+    Only the revisions the adjudication reads are checked. A `revision` left behind on a
+    disposition flipped to rejected decides nothing, and refusing the whole record over it would
+    send the reader to debug a field that does not matter.
     """
     revisions = [record["spec_revision"]] + [
-        entry["revision"] for entry in record["dispositions"] if "revision" in entry
+        entry["revision"] for entry in record["dispositions"]
+        if entry["disposition"] == "accepted"
     ]
-    notations = {notation_of(rev) for rev in revisions}
-    if len(notations) > 1:
+    for revision in revisions:
+        if revision != revision.strip():
+            raise RecordError(
+                "untrimmed-revision",
+                f"the revision {revision!r} carries surrounding whitespace; strip it — "
+                "git hash-object ends its output with a newline, and a revision carrying that "
+                "newline compares unequal to the same revision written without it, so an "
+                "acceptance that changed nothing could pass as an incorporation",
+            )
+    if len({notation_of(revision) for revision in revisions}) > 1:
         raise RecordError(
             "mixed-revision-notation",
             "this record writes revisions in both notations, as a digest and as an object id; "
@@ -182,12 +209,8 @@ def _report_errors(record: dict) -> list[dict[str, Any]]:
         for proposal in record["proposals"]
         if proposal["lens"] not in declared
     ]
-    seen: set[tuple[str, str]] = set()
     for entry in record["lenses"]:
         name, report = entry["lens"], entry["report"]
-        if (name, report) in seen:
-            continue
-        seen.add((name, report))
         if report == "empty" and name in attributed:
             errors.append({
                 "code": "contradicted-empty-report",
@@ -270,12 +293,17 @@ def check(record: dict, document: bytes) -> list[dict[str, Any]]:
     errors = _lens_errors(record) + _report_errors(record)
     disposition_errors, accounted = _disposition_errors(record)
     errors += disposition_errors
-    if not present & (accounted | {record["spec_revision"]}):
+    # An acceptance says the document was edited to carry the proposal, so the revision attacked
+    # accounts for the document only in a round that accepted nothing. Unioning it in regardless
+    # would close a round whose edit was reverted, lost in a rebase, or never made — clearing work
+    # to start against criteria every accepted proposal is absent from.
+    if not present & (accounted or {record["spec_revision"]}):
         errors.append({
             "code": "stale-revision",
-            "message": "the document has changed since the round, into a revision no acceptance "
-                       "accounts for; attack the new revision or re-adjudicate the proposals "
-                       "against it",
+            "message": "the document does not hash to a revision this round accounts for — an "
+                       "acceptance names the revision that carries it, and a round accepting "
+                       "nothing leaves the revision attacked; attack the document as it now "
+                       "stands, or re-adjudicate the proposals against it",
         })
     return errors
 
@@ -349,7 +377,7 @@ def main(argv: list[str]) -> int:
         invalid = schema_errors(record)
         if invalid:
             return report(invalid, started, EXIT_UNUSABLE)
-        require_one_notation(record)
+        require_comparable_revisions(record)
         path, document = read_document(record_path, record, args.spec)
         # The revision goes out in the record's own notation: the reader holds it against
         # spec_revision as a string, and the other notation for it would read as another document.

@@ -31,6 +31,8 @@ Results print `{"clean", "complete", "errors": [{"code", "id"?, "message"}], "do
 | `checker-failure` | Anything else that escaped, reported rather than raised so stdout stays a contract. |
 | `no-spec` | `--spec` was given without a document. |
 | `spec-unreadable` | The document is not where the record says. The record names it relative to its own directory; `--spec` overrides that when it has moved. |
+| `spec-not-a-bare-filename` | The record's `spec_path` reaches out of the record's own directory, or is absolute. A record is committed beside the document it names, so its basename is what finds it; anything else decides the round against a document the record does not sit next to, and resolves only on the machine that wrote it. |
+| `untrimmed-revision` | A revision carries leading or trailing whitespace. `git hash-object` ends its output with a newline, and a revision keeping it compares unequal to the same content written without it — so an acceptance that changed nothing would pass as an incorporation. |
 | `mixed-revision-notation` | The record writes revisions in both notations, so one content would read as two revisions and an acceptance that changed nothing could pass as an incorporation. |
 | `lens-missing` | A declared lens has no report. A lens that errored or returned unreadable output leaves the round unfinished, and an empty proposal list never stands in for a report. |
 | `duplicate-lens` | A lens reports more than once. Coverage is read off one entry per lens. |

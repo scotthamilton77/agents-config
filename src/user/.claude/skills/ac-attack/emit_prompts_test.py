@@ -131,14 +131,16 @@ class TestPromptContent:
     def test_c1_each_lens_gets_its_own_prompt_with_the_contract(self, document, tmp_path, capsys):
         """S6-C1: one single-lens prompt per attack lens, each carrying that lens's mandate and
         the exact proposed-criterion output contract — no extra key, no lost nesting, and
-        nothing emitted beside the prompts and the round file."""
+        nothing emitted beside the prompts and the round file. `prompts` holds the lens prompts
+        and only those: a caller fanning the panel out over it would otherwise send the round
+        file to a model as an attack, mandateless and with no document to read."""
         out_dir = tmp_path / "attack"
         code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
         assert code == 0
         assert result == {
             "emitted": True,
-            "prompts": [str(out_dir / f"{name}.md") for name in LENS_NAMES]
-                       + [str(out_dir / "round.json")],
+            "prompts": [str(out_dir / f"{name}.md") for name in LENS_NAMES],
+            "round": str(out_dir / "round.json"),
         }
         assert sorted(path.name for path in out_dir.iterdir()) == sorted(
             [f"{name}.md" for name in LENS_NAMES] + ["round.json"])
@@ -354,10 +356,27 @@ class TestRefusals:
         assert result["emitted"] is False
         assert [error["code"] for error in result["errors"]] == ["no-spec"]
 
+    @pytest.mark.parametrize("argv", (["--out-dir"], ["--lens", "edge-cases"]))
+    def test_a_command_line_argparse_rejects_answers_in_the_contract(self, document, tmp_path,
+                                                                      argv):
+        """S6-C1: argparse exits by itself on an option given without its value or an option it
+        does not know, which would end the run with usage text on stderr and nothing parsable on
+        stdout — the one refusal a caller cannot read is the one it gets for calling wrong."""
+        proc = subprocess.run(
+            [sys.executable, str(EMITTER_PATH), "--spec", str(document), *argv],
+            capture_output=True, text=True, check=False, cwd=str(tmp_path),
+        )
+        assert proc.returncode == 2
+        assert "Traceback" not in proc.stderr
+        result = json.loads(proc.stdout)
+        assert result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["bad-arguments"]
+        assert [path.name for path in tmp_path.iterdir()] == [document.name]
+
     def test_c1_a_round_naming_no_output_directory_refuses_rather_than_write_where_it_stands(
             self, document, tmp_path):
         """S6-C1: the output names are fixed and predictable, so a round that defaulted to where it
-        was run would truncate four same-named files there, each replaced by the whole document —
+        was run would truncate whatever wears them there, each replaced by the whole document —
         including in the skill's own directory, which is where it is documented to be run from."""
         proc = subprocess.run(
             [sys.executable, str(EMITTER_PATH), "--spec", str(document)],
@@ -409,6 +428,31 @@ class TestRefusals:
         # Nothing written anywhere: not in the round's own directory, not beside it.
         assert not out_dir.exists()
         assert not (tmp_path / "escaped.md").exists()
+
+    @pytest.mark.parametrize("key", ("lens", "mandate", "tier", "transport"))
+    def test_c7_a_registry_entry_short_a_key_is_refused_before_anything_is_written(self, document,
+                                                                                    tmp_path, key):
+        """S6-C7: `tier` and `transport` are read only when the round file is assembled, so an
+        entry missing one would write every prompt first and die on the key afterwards — leaving
+        prompts for this document beside the round file of the last one, which an agent reading
+        the directory rather than the exit status attacks against the wrong revision. The registry
+        is checked whole, before the round writes anything, and the refusal names what is missing
+        so the reader can fix it without reading the emitter."""
+        registry = json.loads(LENSES_PATH.read_text(encoding="utf-8"))
+        del registry["lenses"][1][key]
+        skill = skill_copy(tmp_path, {"lenses.json": json.dumps(registry)})
+        out_dir = tmp_path / "out"
+        proc = subprocess.run(
+            [sys.executable, str(skill / "emit_prompts.py"), "--spec", str(document),
+             "--out-dir", str(out_dir)],
+            capture_output=True, text=True, check=False,
+        )
+        assert proc.returncode == 2
+        assert "Traceback" not in proc.stderr
+        result = json.loads(proc.stdout)
+        assert [error["code"] for error in result["errors"]] == ["no-lenses"]
+        assert key in result["errors"][0]["message"]
+        assert not out_dir.exists()
 
     @pytest.mark.parametrize("damage", (None, "{not json", '{"lenses": "all of them"}'))
     def test_damaged_bundled_data_is_typed_not_a_traceback(self, document, tmp_path, damage):
