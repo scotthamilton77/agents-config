@@ -12,8 +12,8 @@ Refusals print `{"emitted": false, "errors": [{"code", "message"}]}` and exit 2.
 | `no-spec` | No `--spec` given, or the document is missing, unreadable, or empty. |
 | `spec-contains-marker` | The document carries an untrusted-content marker of its own. Fencing it would rewrite the text its revision names, so the round refuses rather than attack something the record cannot name. |
 | `no-lenses` | The lens registry does not yield one attacker per declared lens: it names none, names one twice — a lens's name is its prompt's filename, so the second mandate would overwrite the first — or names one that is not a bare filename, whose prompt would land outside the owner-only directory the round created. Each would report an emitted round while an attacker it declared never ran. |
-| `no-out-dir` | No `--out-dir` given, or it could not be created. The output names are fixed, so a round with nowhere named truncates whatever wears them in the directory it ran from. |
-| `unsafe-output-path` | The out-dir is a link, an output name is held by a link of either kind or by something that is not a plain file, or a parent of the out-dir is missing. Writing would take the whole document somewhere the round never named. |
+| `no-out-dir` | No `--out-dir` given, or it could not be created — including when a parent of it does not exist, since the round creates one directory and no parent along the way. The output names are fixed, so a round with nowhere named truncates whatever wears them in the directory it ran from. |
+| `unsafe-output-path` | The out-dir is a symbolic link, or an output name is held by a link of either kind or by something that is not a plain file. Writing would take the whole document somewhere the round never named. |
 | `bad-arguments` | The command line could not be parsed. |
 | `emitter-failure` | Anything else that escaped, reported rather than raised so stdout stays a contract. |
 

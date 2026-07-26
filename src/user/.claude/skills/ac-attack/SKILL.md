@@ -50,8 +50,9 @@ data. No other lens's mandate appears, and no house rulebook text.
 Stdout is `{"emitted": true, "prompts": […]}`; a refusal is
 `{"emitted": false, "errors": [{"code", "message"}]}`, exit 2, every code in `errors.md`. `--spec`
 and `--out-dir` are both required — the output names are fixed, so a round with nowhere named would
-truncate whatever wears them in the directory it ran from. That one directory is created
-owner-only, as is every file in it, since a prompt carries the whole document.
+truncate whatever wears them in the directory it ran from. The round creates that one directory and
+no parent along the way, owner-only, as is every file in it, since a prompt carries the whole
+document.
 
 A revision names content, not history: `sha256:` plus the digest of the document's bytes, or the
 equivalent 40-hex object id, recomputable from the document in front of you. One record picks one
