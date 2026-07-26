@@ -61,5 +61,4 @@ Each plugin directory follows this layout (all subdirs are optional):
 | Plugin | Auto-detect footprint | Adapter | What it installs |
 |--------|----------------------|---------|-----------------|
 | `beads` | `bd` on PATH or `~/.beads/` exists | specialized (`BeadsPlugin`) | `beads.md` + `discovered-work.md` rules; also routes `~/.beads/` (e.g. formulas/scripts when present) |
-| `graphify` | `~/.graphify/` or `graphify` on PATH | generic | graphify discipline rule (shared) |
 | `codex` | `~/.codex/` or `codex` on PATH | generic | Codex routing rule (Claude-only) |

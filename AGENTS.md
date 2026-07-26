@@ -80,7 +80,7 @@ This project hosts agent configuration under `src/`, which the install script de
   - `src/user/.agents/` — shared content, staged into every active tool: `skills/`, `rules/`, and `USER-CORE.md.template` (the zero-based laws, decision matrix, hard lines, and conventions, D17). See `src/user/.agents/AGENTS.md` for the install model and the name-collision rules.
   - `src/user/.claude/` — Claude-only: `skills/`, `rules/`, `hooks/`, `AGENTS.md.template`, `CLAUDE.md.template`, `settings.json.template`
   - `src/user/.codex/`, `src/user/.gemini/`, `src/user/.opencode/` — per-tool instruction templates; OpenCode additionally carries `opencode.jsonc.template` and gets a flat, dynamically-built instruction file rather than `@` includes
-  - `src/plugins/` — optional plugin content, auto-detected by a directory scan (`beads/`, `codex/`, `graphify/`). A plugin's content deploys only when its tool is detected **and** the artifact clears the admission gate.
+  - `src/plugins/` — optional plugin content, auto-detected by a directory scan (`beads/`, `codex/`). A plugin's content deploys only when its tool is detected **and** the artifact clears the admission gate.
   - Each rules directory carries its own `AGENTS.md` stating what currently lives there; read it rather than inferring from the folder's contents.
 - `archive/` — retired content mirroring the live tree's shape (`archive/src/user/**`, `archive/docs/**`). **Historical only — never a behavioural contract.** Read it to recover an idea; do not copy a path back into `src/` without an admission record.
 - `docs/`
@@ -105,9 +105,8 @@ Other notes:
 
 ## graphify
 
-This project has a graphify knowledge graph at `graphify-out/`, tracked in git.
-
-- **Check its freshness before trusting it.** Compare the mtime of `graphify-out/graph.json` against the files you care about; a stale graph and a current one are indistinguishable at the point of use. The refresh, and the branch conflict it runs into, are owned by `agents-config-9k9.65`.
-- `graphify-out/GRAPH_REPORT.md` carries god nodes and community structure, useful for orienting in an unfamiliar subsystem.
-- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files.
-- Regenerating the graph is not a side task: the deployed graphify rule forbids committing `graphify-out/` from a worktree onto a feature branch, which collides with this repo's "never commit to the default branch". Do not resolve that on your own — it is the open question on `agents-config-9k9.65`.
+`graphify-out/` is untracked and usually absent. When it is there, it is a snapshot
+someone built by hand at some past moment — not an index that follows the tree. A graph
+built before a refactor still names the files that refactor deleted, so verify anything it
+reports against the working tree before asserting it. `graphify update .` builds a fresh
+one in a few seconds if you want it.
