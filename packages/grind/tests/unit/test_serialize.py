@@ -196,6 +196,52 @@ def test_full_state_serializes_round_history():
     ]
 
 
+def test_full_state_reports_whether_a_retained_pr_ref_is_closed():
+    # The ref outlives its PR (the failure-park rule needs it), so the snapshot
+    # has to say which of the two questions -- "has a ref" and "has an open PR"
+    # -- a consumer is getting an answer to.
+    open_pr = [
+        seed_event(),
+        event("item_started", item="wgclw.1"),
+        event("pr_opened", item="wgclw.1", pr=1),
+    ]
+    closed = [
+        *open_pr,
+        event("pr_closed", item="wgclw.1", pr=1, reason="superseded", next="in-progress"),
+    ]
+
+    def pr_of(events):
+        items = full_state_json(fold(events))["items"]
+        assert isinstance(items, dict)
+        return items["wgclw.1"]["pr"]
+
+    merged = [*open_pr, event("item_merged", item="wgclw.1", pr=1, sha="abc")]
+
+    assert pr_of(open_pr)["closed"] is False
+    assert pr_of(closed)["closed"] is True
+    assert pr_of(closed)["number"] == 1
+    # a merge ends the PR's life too -- reporting it as open would tell a
+    # consumer that finished work still has something to fix
+    assert pr_of(merged)["closed"] is True
+
+
+def test_full_state_serializes_the_attempt_ledger():
+    # The decision layer reads its attempt evidence off this surface rather
+    # than counting for itself, so every kind is present with its count.
+    events = [
+        seed_event(),
+        event("item_started", item="wgclw.1"),
+        event("pr_opened", item="wgclw.1", pr=1),
+        event("fix_attempted", item="wgclw.1", kind="ci-fix"),
+    ]
+    state = fold(events)
+
+    items = full_state_json(state)["items"]
+    assert isinstance(items, dict)
+    assert items["wgclw.1"]["attempts"] == {"ci-fix": 1, "rebase": 0}
+    assert items["wgclw.2"]["attempts"] == {"ci-fix": 0, "rebase": 0}
+
+
 def test_full_state_serializes_staleness_ts_maps():
     events = [seed_event(), event("item_started", item="wgclw.1")]
     state = fold(events)

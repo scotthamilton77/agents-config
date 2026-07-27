@@ -304,6 +304,115 @@ def test_review_stalemate_risk_ignores_late_earlier_round_duplicate() -> None:
     assert "review_stalemate_risk" not in _names(result)
 
 
+# -- attempt_budget_spent -------------------------------------------------------
+
+
+def _attempt(kind: str = "ci-fix") -> dict[str, object]:
+    return event("fix_attempted", item="wgclw.1", kind=kind)
+
+
+_NOW = datetime(2026, 7, 19, 0, 5, 0, tzinfo=UTC)
+
+
+def test_attempt_budget_spent_fires_at_the_budget_and_not_one_below() -> None:
+    # Boundary: the default ci-fix budget is 2, so one attempt is not spent and
+    # the second is. The condition carries the evidence -- kind and both
+    # numbers -- so the decision layer never keeps a counter of its own.
+    prefix = [*_to_pr_open(), _attempt()]
+
+    under = conditions(fold(prefix), _NOW)
+    at_budget = conditions(fold([*prefix, _attempt()]), _NOW)
+
+    assert "attempt_budget_spent" not in _names(under)
+    spent = _by_name(at_budget, "attempt_budget_spent")
+    assert spent == [
+        {
+            "condition": "attempt_budget_spent",
+            "item": "wgclw.1",
+            "kind": "ci-fix",
+            "attempts": 2,
+            "budget": 2,
+        }
+    ]
+
+
+def test_attempt_budget_spent_keeps_firing_past_the_budget() -> None:
+    # grind counts and never caps, so an attempt past the budget raises the
+    # reported count rather than changing the fact being reported.
+    state = fold([*_to_pr_open(), _attempt(), _attempt(), _attempt()])
+
+    spent = _by_name(conditions(state, _NOW), "attempt_budget_spent")
+
+    assert [c["attempts"] for c in spent] == [3]
+
+
+def test_attempt_budget_spent_is_per_kind() -> None:
+    # One rebase spends the default rebase budget of 1; one ci-fix does not
+    # spend the ci-fix budget of 2.
+    state = fold([*_to_pr_open(), _attempt("ci-fix"), _attempt("rebase")])
+
+    spent = _by_name(conditions(state, _NOW), "attempt_budget_spent")
+
+    assert [(c["kind"], c["attempts"], c["budget"]) for c in spent] == [("rebase", 1, 1)]
+
+
+def test_attempt_budget_spent_honors_a_caller_seeded_budget() -> None:
+    # The `stalemate_risk_round` precedent: the number is config the caller
+    # seeds, not a constant this package owns.
+    seed = _two_item_lane_seed()
+    seed["config"] = {"ci_fix_budget": 3}
+    events = [seed, event("item_started", item="wgclw.1"), event("pr_opened", item="wgclw.1", pr=1)]
+
+    at_two = conditions(fold([*events, _attempt(), _attempt()]), _NOW)
+    at_three = conditions(fold([*events, _attempt(), _attempt(), _attempt()]), _NOW)
+
+    assert "attempt_budget_spent" not in _names(at_two)
+    assert _by_name(at_three, "attempt_budget_spent")[0]["budget"] == 3
+
+
+def test_a_zero_budget_is_honored_and_spent_before_the_first_attempt() -> None:
+    # Zero is a caller saying "spend nothing on this kind", not garbage config:
+    # restoring the default here would hand the decision layer two attempts its
+    # caller forbade. Negative and boolean values stay garbage and fall back.
+    seed = _two_item_lane_seed()
+    seed["config"] = {"ci_fix_budget": 0}
+    events = [seed, event("item_started", item="wgclw.1"), event("pr_opened", item="wgclw.1", pr=1)]
+
+    spent = _by_name(conditions(fold(events), _NOW), "attempt_budget_spent")
+
+    assert [(c["kind"], c["attempts"], c["budget"]) for c in spent] == [("ci-fix", 0, 0)]
+
+    for garbage in (-1, True, "2", None):
+        seed = _two_item_lane_seed()
+        seed["config"] = {"ci_fix_budget": garbage}
+        state = fold([seed, event("item_started", item="wgclw.1")])
+        assert "attempt_budget_spent" not in _names(conditions(state, _NOW)), garbage
+
+
+def test_attempt_budget_spent_absent_for_parked_and_terminal_items() -> None:
+    # A parked item is out of play and its exit grants a fresh window; a merged
+    # one has nothing left to attempt. Neither is a live budget fact.
+    parked = fold(
+        [
+            *_to_pr_open(),
+            _attempt(),
+            _attempt(),
+            event("item_parked", item="wgclw.1", reason="ci-failure", note="budget spent"),
+        ]
+    )
+    terminal = fold(
+        [
+            *_to_pr_open(),
+            _attempt(),
+            _attempt(),
+            event("item_merged", item="wgclw.1", pr=1, sha="abc"),
+        ]
+    )
+
+    assert "attempt_budget_spent" not in _names(conditions(parked, _NOW))
+    assert "attempt_budget_spent" not in _names(conditions(terminal, _NOW))
+
+
 # -- item_unblocked (transition) ------------------------------------------------
 
 
@@ -464,7 +573,12 @@ def test_condition_names_are_never_imperative() -> None:
     ]
     state = fold(events)
     result = conditions(state, datetime(2026, 7, 19, 0, 5, 0, tzinfo=UTC))
-    all_names = _names(result) | {"item_unblocked"}  # transition condition, named statically
+    # The fixture covers no condition it does not happen to fire, so a name it
+    # cannot reach joins the set explicitly or the lock silently skips it.
+    all_names = _names(result) | {
+        "item_unblocked",  # transition condition, never fired by a level fold
+        "attempt_budget_spent",  # needs a spent budget this fixture never spends
+    }
 
     for name in all_names:
         first_word = re.split(r"[_\s]", name)[0]
