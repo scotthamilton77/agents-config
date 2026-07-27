@@ -348,6 +348,16 @@ outcomes and stay on every path; the verb block is not.
   It fails every verb rather than only `attempt`: a runtime that cannot
   produce its own documented reply shape has not established that any of this
   package's readings of it hold.
+
+  **And ask it of a skip.** Inside the conditions list, an unknown condition
+  *name* is read past — the runtime's vocabulary is free to grow and this
+  parser must not break on an addition — but an entry that is not an object,
+  or that names no condition at all, is **not** an unknown condition. It is
+  one this parser cannot classify, and it could be the very fact it is looking
+  for. Elsewhere in this file a dropped entry fails *closed*: the ledger reads
+  drop what they cannot answer with, and an unanswerable probe then refuses a
+  skip. Here it fails *open*. Which way a drop points is a property of what
+  reads the result, not of the parser, so decide it per read.
 - **Every failure raised after the outside system may have acted carries what
   it may have done.** This is one rule, and four review rounds found it four
   times before it got written down. The runtime appends *before* it replies

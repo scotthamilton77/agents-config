@@ -272,8 +272,15 @@ def _budget_spent(conditions: JsonValue) -> dict[tuple[str, str], BudgetSpent]:
     of this package's readings of it hold. Same standing as the facade protocol
     pin, which refuses before mutating rather than after mis-parsing.
 
-    The same rule one level down: an entry that names this condition and whose
-    fields cannot be read is a fault, never a skipped entry.
+    The same rule applies twice more, one level down. **An unknown condition
+    *name* is read past; an unreadable condition *entry* is not.** Growing the
+    runtime's vocabulary must not break this parser, so a name it does not act
+    on is skipped -- but an entry that is not an object, or that names no
+    condition at all, is not an unknown condition. It is one this parser cannot
+    classify, and it could be the very fact it is looking for: skipping it
+    authorises the attempt on the strength of a reply that said nothing
+    readable. An entry that *is* this condition and whose fields cannot be read
+    is a fault for the same reason.
     """
     if not isinstance(conditions, list):
         raise ExecutorError(
@@ -282,7 +289,12 @@ def _budget_spent(conditions: JsonValue) -> dict[tuple[str, str], BudgetSpent]:
         )
     spent: dict[tuple[str, str], BudgetSpent] = {}
     for entry in conditions:
-        if not isinstance(entry, dict) or entry.get("condition") != BUDGET_SPENT_CONDITION:
+        if not isinstance(entry, dict) or _opt_str(entry, "condition") is None:
+            raise ExecutorError(
+                ErrorCode.RUNTIME_ENVELOPE,
+                f"the runtime reported a condition that names none: {entry!r}",
+            )
+        if entry["condition"] != BUDGET_SPENT_CONDITION:
             continue
         item_id = _opt_str(entry, "item")
         kind = _opt_str(entry, "kind")

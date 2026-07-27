@@ -248,7 +248,7 @@ def test_the_budget_conditions_are_keyed_by_item_and_kind() -> None:
     Then only the budget facts survive, keyed by (item, kind), with the
     runtime's own numbers.
 
-    A condition of another name is read past rather than rejected: the
+    A condition of another *name* is read past rather than rejected: the
     runtime's vocabulary is free to grow, and a decision layer that parsed all
     of it would break on every addition.
     """
@@ -270,7 +270,7 @@ def test_the_budget_conditions_are_keyed_by_item_and_kind() -> None:
                 "attempts": 3,
                 "budget": 1,
             },
-            "not an object",
+            {"condition": "a_condition_from_a_later_runtime", "whatever": [1, 2]},
         ],
     )
 
@@ -278,6 +278,31 @@ def test_the_budget_conditions_are_keyed_by_item_and_kind() -> None:
         ("it-1", "ci-fix"): BudgetSpent("it-1", "ci-fix", 2, 2),
         ("it-1", "rebase"): BudgetSpent("it-1", "rebase", 3, 1),
     }
+
+
+@pytest.mark.parametrize(
+    "entry",
+    ["not an object", None, 7, [], {}, {"item": "it-1", "kind": "ci-fix"}, {"condition": 42}],
+    ids=["string", "null", "number", "list", "empty", "name-absent", "name-not-a-string"],
+)
+def test_a_conditions_entry_that_names_no_condition_is_a_fault(entry: object) -> None:
+    """
+    Given a conditions list holding an entry that is not a readable condition
+    record
+    When it is parsed
+    Then E_RUNTIME_ENVELOPE is raised.
+
+    The distinction this draws is the load-bearing one: an unknown condition
+    *name* is read past, because the runtime's vocabulary is free to grow — but
+    an entry that names none is not an unknown condition, it is one this parser
+    cannot classify, and it could be the very fact it is looking for. Skipping
+    it authorises the attempt on the strength of a reply that said nothing
+    readable, which is the P1 one level up wearing different arguments.
+    """
+    with pytest.raises(ExecutorError) as raised:
+        parse_state({"items": {}}, [entry])  # type: ignore[list-item]
+
+    assert raised.value.code is ErrorCode.RUNTIME_ENVELOPE
 
 
 @pytest.mark.parametrize(
