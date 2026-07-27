@@ -10,6 +10,8 @@
         typecheck-vizsuite cov-vizsuite audit-vizsuite verify-entry-vizsuite \
         ci-grind test-grind lint-grind format-check-grind \
         typecheck-grind cov-grind audit-grind verify-entry-grind \
+        ci-executor test-executor lint-executor format-check-executor \
+        typecheck-executor cov-executor audit-executor verify-entry-executor \
         spec-lint test-skills
 
 INSTALLER := packages/installer
@@ -17,9 +19,10 @@ PRGROOM := packages/prgroom
 WORKCLI := packages/workcli
 VIZSUITE := packages/vizsuite
 GRIND := packages/grind
+EXECUTOR := packages/executor
 
-ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind lint-actions spec-lint \
-    test-skills
+ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind ci-executor lint-actions \
+    spec-lint test-skills
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
               cov-installer audit-installer verify-entry-installer
@@ -172,6 +175,29 @@ audit-grind:
 # grind venv where the entry point is installed is selected.
 verify-entry-grind:
 	uv --project $(GRIND) run grind --help > /dev/null
+
+# ── executor (mirrors the ci-grind block one-for-one; enforced via the
+# top-level `ci:` aggregate). ──
+ci-executor: lint-executor format-check-executor typecheck-executor \
+             cov-executor audit-executor verify-entry-executor
+
+test-executor:
+	cd $(EXECUTOR) && uv run pytest -q
+lint-executor:
+	cd $(EXECUTOR) && uv run ruff check
+format-check-executor:
+	cd $(EXECUTOR) && uv run ruff format --check
+typecheck-executor:
+	cd $(EXECUTOR) && uv run mypy --strict src
+cov-executor:
+	cd $(EXECUTOR) && uv run pytest --cov --cov-report=term-missing
+audit-executor:
+	cd $(EXECUTOR) && uv sync --frozen && uv run pip-audit
+# verify-entry-executor asserts the console-script entry point resolves and
+# the CLI root parses (`executor --help` exits 0). Run via `uv --project` so
+# the executor venv where the entry point is installed is selected.
+verify-entry-executor:
+	uv --project $(EXECUTOR) run executor --help > /dev/null
 
 # ── skills ──
 # Skills under src/ ship their own tests as PEP-723 scripts, run from their own

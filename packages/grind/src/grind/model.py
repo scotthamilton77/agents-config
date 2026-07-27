@@ -75,6 +75,28 @@ PARK_REASONS: dict[ParkReason, tuple[ParkAxis, ParkCategory]] = {
     "deferred": ("scheduling", "human"),
 }
 
+# The kinds of fix attempt an item can spend inside one PR cycle, each with the
+# `config` key holding its budget and that budget's initial value. One table, so
+# the boundary, the fold and the condition cannot disagree about the vocabulary,
+# and a default cannot drift from the key it belongs to.
+#
+# Counts are facts the fold records; a budget is a caller-seeded number a
+# condition compares them against, exactly as `stalemate_risk_round` works.
+# Refusing the next attempt is the decision layer's call -- this package counts
+# and never caps.
+AttemptKind = Literal["ci-fix", "rebase"]
+ATTEMPT_BUDGETS: dict[AttemptKind, tuple[str, int]] = {
+    "ci-fix": ("ci_fix_budget", 2),
+    "rebase": ("rebase_budget", 1),
+}
+
+
+def new_attempt_ledger() -> dict[AttemptKind, int]:
+    """A zeroed per-kind ledger: every kind present, so a consumer reads a
+    count rather than an absence, and clearing one is a single call."""
+    return dict.fromkeys(ATTEMPT_BUDGETS, 0)
+
+
 ObservationLevel = Literal["INFO", "WARN", "ERROR", "LESSON"]
 # The one auto-attention cause `item_resumed` is specified to clear. Other
 # auto-raised entries (anomaly, ERROR observation) carry `kind=None` so resume
@@ -86,6 +108,15 @@ AttentionKind = Literal["waiting-human"]
 class PrRef:
     number: int | None = None
     url: str | None = None
+    # Whether this reference points at a PR that is no longer open -- set by
+    # both transitions that end a PR's life, `pr_closed` and `item_merged`.
+    # `pr_closed` deliberately leaves the ref behind so a re-queued item can
+    # still carry a failure-axis park describing the PR that did not merge,
+    # which makes "the item has a PR ref" and "the item has an OPEN PR" two
+    # different questions. Both have callers, so the fold records the answer
+    # rather than letting each of them guess from status (`in-progress` is
+    # reachable both with an open PR, via resume, and with a closed one).
+    closed: bool = False
 
 
 @dataclass
@@ -154,6 +185,12 @@ class Item:
     review: ItemReview = field(default_factory=ItemReview)
     parked: ParkingEntry | None = None
     discovered: DiscoveredWork | None = None
+    # Fix attempts spent per kind. A count, never a cap: the fold records what
+    # was attempted and a condition compares it against the configured budget.
+    # Its lifetime is one PR cycle -- `pr_closed` clears it (a new PR must not
+    # inherit spent budget) and `item_enqueued` clears it (leaving the parking
+    # lot grants a fresh window); no other event touches it.
+    attempts: dict[AttemptKind, int] = field(default_factory=new_attempt_ledger)
     # (round, head_sha, ts) per distinct round, last-event-wins within a
     # round -- the raw material `conditions()` needs for
     # `review_stalemate_risk`'s "dumb arithmetic" (spec: "the last N distinct
@@ -226,6 +263,10 @@ DEFAULT_CONFIG: dict[str, JsonValue] = {
     "stale_item_after": "45m",
     "stale_lane_after": "30m",
     "stalemate_risk_round": 3,
+    # `ci_fix_budget` and `rebase_budget`, straight from the table that owns
+    # both names and both numbers. A caller seeding `config` overrides them;
+    # nothing in this package enforces either.
+    **dict(ATTEMPT_BUDGETS.values()),
 }
 
 

@@ -25,6 +25,7 @@ from workcli.adapters.bd.runner import BdRunner, SubprocessBdRunner
 from workcli.config import TrackLayerConfig, load_config
 from workcli.envelope import ErrorCode, JsonValue, WorkError, emit_failure, emit_success
 from workcli.lifecycle.nouns import LEAF_NOUNS, Noun
+from workcli.lifecycle.park import DEFAULT_STALE_DAYS
 from workcli.render import render_human
 from workcli.verbs import VERBS, missing_capability
 
@@ -225,7 +226,9 @@ def _add_report_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser
     parked_parser = subparsers.add_parser(
         "parked", help="read-only parked-item staleness report (reports, never acts)"
     )
-    parked_parser.add_argument("--stale-days", type=int, default=7, dest="stale_days")
+    parked_parser.add_argument(
+        "--stale-days", type=int, default=DEFAULT_STALE_DAYS, dest="stale_days"
+    )
 
     groom_parser = subparsers.add_parser(
         "groom", help="Backlog Grooming state: --done records completion, --status reports nag"

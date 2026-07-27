@@ -47,7 +47,7 @@ Without these plugins, several shared workflow rules (`delegation`, `completion-
 **Optional integrations** (each degrades gracefully if absent):
 
 - **`prgroom` CLI** — the `monitor-pr` skill drives it for deterministic PR grooming. It is a standalone package (`packages/prgroom/`) and is **not** installed by the installer; `uv tool install` it from that directory if you want the `monitor-pr` path. The skill-based `wait-for-pr-comments` path works without it.
-- **beads / graphify / codex plugins** (`src/plugins/`) — auto-detected and installed only when their footprint is present (`bd`/`~/.beads/`, `~/.graphify/`, `~/.codex/`). The `codex` plugin's routing rule additionally assumes the [Codex CLI plugin](https://github.com/openai/codex).
+- **beads / codex plugins** (`src/plugins/`) — auto-detected and installed only when their footprint is present (`bd`/`~/.beads/`, `~/.codex/`). The `codex` plugin's routing rule additionally assumes the [Codex CLI plugin](https://github.com/openai/codex).
 
 ## What's Inside
 
@@ -89,7 +89,6 @@ src/
 │   └── .opencode/                  # OpenCode-specific (→ ~/.config/opencode/)
 └── plugins/                        # Optional plugin content (auto-discovered, installed when detected)
     ├── beads/                      # beads plugin: bd CLI gotcha + discovered-work rules
-    ├── graphify/                   # graphify plugin: graphify discipline rule
     └── codex/                      # codex plugin: Codex routing rule (Claude-only)
 ```
 
@@ -229,7 +228,7 @@ Requires `uv` (auto-installs Python ≥3.11 on first run). Use `--dry-run` to pr
 | `--yes`, `-y` | Auto-accept all prompts (suppresses diffs in quiet mode) |
 | `--verbose`, `-v` | Per-file progress (phases, up-to-date, installed, diffs) |
 | `--tools=TOOLS` | Comma-separated tool list (`claude`, `codex`, `gemini`, `opencode`); default auto-detect |
-| `--plugins=PLUGINS` | Comma-separated plugin list (`beads`, `graphify`, `codex`); default auto-detect; pass `--plugins=` to disable all |
+| `--plugins=PLUGINS` | Comma-separated plugin list (`beads`, `codex`); default auto-detect; pass `--plugins=` to disable all |
 | `--prune` | After install, remove orphans (items the install receipt no longer owns) under the managed namespaces, with backup |
 | `--prune-only` | Skip install; only scan + prune orphans (mutually exclusive with `--prune`) |
 | `--dump-stage=DIR` | Debug: materialize the in-memory staging plan to a directory tree instead of installing |

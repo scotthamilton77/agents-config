@@ -49,7 +49,7 @@ def test_profiles_without_project_errors(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     rc = main(
-        ["--profiles=beads-kit", "--yes"],
+        ["--profiles=demo-kit", "--yes"],
         home=tmp_path,
         io=ScriptedIO(interactive=False),
         repo_root=_hermetic_repo(tmp_path),
@@ -60,7 +60,7 @@ def test_profiles_without_project_errors(
 
 def test_project_path_missing_errors(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     rc = main(
-        ["--project", str(tmp_path / "nope"), "--profiles=beads-kit", "--yes"],
+        ["--project", str(tmp_path / "nope"), "--profiles=demo-kit", "--yes"],
         home=tmp_path,
         io=ScriptedIO(interactive=False),
         repo_root=_hermetic_repo(tmp_path),
@@ -70,35 +70,49 @@ def test_project_path_missing_errors(tmp_path: Path, capsys: pytest.CaptureFixtu
 
 
 def _hermetic_repo_with_profiles(tmp_path: Path) -> Path:
-    """``_hermetic_repo`` plus the real ``profiles.toml`` (needed to resolve
-    ``beads-kit``) and the beads kit content the tracer installs."""
+    """``_hermetic_repo`` plus a purpose-built manifest defining one project-scoped
+    kit profile. Deliberately NOT the shipped ``profiles.toml``: these tests exercise
+    project-scope resolution, not the contents of what this repo happens to ship, and
+    coupling them to it makes every profile edit a test failure."""
     repo = _hermetic_repo(tmp_path)
     (repo / "profiles.toml").write_text(
-        (_REPO_ROOT / "profiles.toml").read_text(encoding="utf-8"), encoding="utf-8"
+        "schema = 1\n"
+        "[scopes]\n"
+        '"instructions" = "user"\n'
+        '"settings"     = "user"\n'
+        '"skills/**"    = "user"\n'
+        '"kits/**"      = "project"\n'
+        "\n"
+        "[profiles.full]\n"
+        'include = ["**"]\n'
+        "\n"
+        "[profiles.demo-kit]\n"
+        'include = ["kits/demo/**"]\n',
+        encoding="utf-8",
     )
     return repo
 
 
-def test_project_beads_kit_writes_prime_and_receipt(tmp_path: Path) -> None:
+def test_project_kit_writes_prime_and_receipt(tmp_path: Path) -> None:
     repo = _hermetic_repo_with_profiles(tmp_path)
-    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit = repo / "src" / "kits" / "demo" / ".beads"
     kit.mkdir(parents=True)
-    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    (kit / "PRIME.md").write_bytes(b"kit prime\n")
     project = tmp_path / "proj"
     project.mkdir()
 
     rc = main(
-        ["--project", str(project), "--profiles=beads-kit", "--yes"],
+        ["--project", str(project), "--profiles=demo-kit", "--yes"],
         home=tmp_path,
         io=ScriptedIO(interactive=False),
         repo_root=repo,
     )
 
     assert rc == 0
-    assert (project / ".beads" / "PRIME.md").read_bytes() == b"beads prime\n"
+    assert (project / ".beads" / "PRIME.md").read_bytes() == b"kit prime\n"
     receipt = project / ".agents-config" / "install-receipt.json"
     assert receipt.is_file()
-    assert "kit:beads" in receipt.read_text()
+    assert "kit:demo" in receipt.read_text()
     assert not (tmp_path / ".beads").exists()
 
 
@@ -126,13 +140,13 @@ def test_project_persisted_profiles_resolved_without_explicit_flag(tmp_path: Pat
     """No --profiles, but <project>/project-config.toml persists a selection:
     that selection resolves and installs, exactly as if passed via --profiles."""
     repo = _hermetic_repo_with_profiles(tmp_path)
-    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit = repo / "src" / "kits" / "demo" / ".beads"
     kit.mkdir(parents=True)
-    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    (kit / "PRIME.md").write_bytes(b"kit prime\n")
     project = tmp_path / "proj"
     project.mkdir()
     (project / "project-config.toml").write_text(
-        '[install]\nprofiles = ["beads-kit"]\n', encoding="utf-8"
+        '[install]\nprofiles = ["demo-kit"]\n', encoding="utf-8"
     )
 
     rc = main(
@@ -143,7 +157,7 @@ def test_project_persisted_profiles_resolved_without_explicit_flag(tmp_path: Pat
     )
 
     assert rc == 0
-    assert (project / ".beads" / "PRIME.md").read_bytes() == b"beads prime\n"
+    assert (project / ".beads" / "PRIME.md").read_bytes() == b"kit prime\n"
 
 
 def test_project_persisted_empty_profiles_list_is_not_implicit_full(
@@ -221,7 +235,7 @@ def test_project_profiles_trailing_comma_rejected_cleanly(
     project.mkdir()
 
     rc = main(
-        ["--project", str(project), "--profiles=beads-kit,", "--yes"],
+        ["--project", str(project), "--profiles=demo-kit,", "--yes"],
         home=tmp_path,
         io=ScriptedIO(interactive=False),
         repo_root=repo,
@@ -257,9 +271,9 @@ def test_project_corrupt_receipt_left_untouched_install_proceeds(tmp_path: Path)
     still proceeds, but the receipt is NOT overwritten — overwriting would erase
     the record of previously-installed paths and defeat future --prune."""
     repo = _hermetic_repo_with_profiles(tmp_path)
-    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit = repo / "src" / "kits" / "demo" / ".beads"
     kit.mkdir(parents=True)
-    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    (kit / "PRIME.md").write_bytes(b"kit prime\n")
     project = tmp_path / "proj"
     project.mkdir()
     receipt_path = project / ".agents-config" / "install-receipt.json"
@@ -273,7 +287,7 @@ def test_project_corrupt_receipt_left_untouched_install_proceeds(tmp_path: Path)
                 "entries": [
                     {
                         "path": ".beads/STALE.md",
-                        "owner": "kit:beads",
+                        "owner": "kit:demo",
                         "root": ".beads",
                         "kind": "file",
                         "sha256": None,
@@ -287,14 +301,14 @@ def test_project_corrupt_receipt_left_untouched_install_proceeds(tmp_path: Path)
 
     io = ScriptedIO(interactive=False)
     rc = main(
-        ["--project", str(project), "--profiles=beads-kit", "--yes"],
+        ["--project", str(project), "--profiles=demo-kit", "--yes"],
         home=tmp_path,
         io=io,
         repo_root=repo,
     )
 
     assert rc == 0
-    assert (project / ".beads" / "PRIME.md").read_bytes() == b"beads prime\n"  # install proceeded
+    assert (project / ".beads" / "PRIME.md").read_bytes() == b"kit prime\n"  # install proceeded
     assert receipt_path.read_bytes() == before  # corrupt receipt left byte-for-byte untouched
     assert any("unreadable" in e.message for e in io.transcript)
 
@@ -305,29 +319,29 @@ def test_project_persist_over_malformed_existing_config_exits_cleanly(tmp_path: 
     persistence step. The install still completes, but the persistence failure
     surfaces as a clean exit-1 diagnostic instead of an uncaught traceback."""
     repo = _hermetic_repo_with_profiles(tmp_path)
-    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit = repo / "src" / "kits" / "demo" / ".beads"
     kit.mkdir(parents=True)
-    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    (kit / "PRIME.md").write_bytes(b"kit prime\n")
     project = tmp_path / "proj"
     project.mkdir()
     (project / "project-config.toml").write_text("not = valid = toml", encoding="utf-8")
 
     io = ScriptedIO(interactive=False)
     rc = main(
-        ["--project", str(project), "--profiles=beads-kit", "--yes"],
+        ["--project", str(project), "--profiles=demo-kit", "--yes"],
         home=tmp_path,
         io=io,
         repo_root=repo,
     )
 
     assert rc == 1
-    assert (project / ".beads" / "PRIME.md").read_bytes() == b"beads prime\n"  # install proceeded
+    assert (project / ".beads" / "PRIME.md").read_bytes() == b"kit prime\n"  # install proceeded
     assert any("persisting the profile selection" in e.message for e in io.transcript)
 
 
 def _hermetic_repo_with_project_tool_profile(tmp_path: Path) -> Path:
     """``_hermetic_repo`` plus a hermetic ``profiles.toml`` (independent of the
-    real repo-root one — no beads kit needed) carrying one profile,
+    real repo-root one — no kit content needed) carrying one profile,
     ``proj-skill``, that routes the shared ``skills/foo`` namespace item to
     project scope via an explicit include-entry override. Also seeds a real
     ``skills/foo`` shared skill dir so it stages as a ``DIR`` item for every
@@ -411,9 +425,9 @@ def test_project_kit_selector_scoped_to_user_errors_pre_resolve(
     silently drop the kit ref into the USER scope's counts, discarding its
     identity, so only a pre-resolve check can name the offending selector."""
     repo = _hermetic_repo(tmp_path)
-    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit = repo / "src" / "kits" / "demo" / ".beads"
     kit.mkdir(parents=True)
-    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    (kit / "PRIME.md").write_bytes(b"kit prime\n")
     (repo / "profiles.toml").write_text(
         "schema = 1\n"
         "\n"
@@ -422,7 +436,7 @@ def test_project_kit_selector_scoped_to_user_errors_pre_resolve(
         '"settings" = "user"\n'
         "\n"
         "[profiles.bad-kit-scope]\n"
-        'include = [{select="kits/beads/**", scope="user"}, {select="**", scope="user"}]\n',
+        'include = [{select="kits/demo/**", scope="user"}, {select="**", scope="user"}]\n',
         encoding="utf-8",
     )
     project = tmp_path / "proj"
@@ -437,7 +451,7 @@ def test_project_kit_selector_scoped_to_user_errors_pre_resolve(
 
     assert rc == 2
     err = capsys.readouterr().err
-    assert "kits/beads/**" in err
+    assert "kits/demo/**" in err
     assert not (project / ".beads").exists()
     assert not (tmp_path / ".beads").exists()
 
@@ -465,19 +479,19 @@ def test_user_install_byte_identical_through_resolver(tmp_path: Path) -> None:
 
 
 def test_project_install_persists_profiles_then_bare_rerun_reinstalls(tmp_path: Path) -> None:
-    """A successful ``--project p --profiles=beads-kit`` install writes
+    """A successful ``--project p --profiles=demo-kit`` install writes
     <p>/project-config.toml's [install].profiles; a subsequent BARE
     ``--project p`` (no --profiles) then reads that persisted selection
-    (the read_project_profiles path) and reinstalls beads-kit."""
+    (the read_project_profiles path) and reinstalls demo-kit."""
     repo = _hermetic_repo_with_profiles(tmp_path)
-    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit = repo / "src" / "kits" / "demo" / ".beads"
     kit.mkdir(parents=True)
-    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    (kit / "PRIME.md").write_bytes(b"kit prime\n")
     project = tmp_path / "proj"
     project.mkdir()
 
     rc = main(
-        ["--project", str(project), "--profiles=beads-kit", "--yes"],
+        ["--project", str(project), "--profiles=demo-kit", "--yes"],
         home=tmp_path,
         io=ScriptedIO(interactive=False),
         repo_root=repo,
@@ -487,7 +501,7 @@ def test_project_install_persists_profiles_then_bare_rerun_reinstalls(tmp_path: 
     config_path = project / "project-config.toml"
     assert config_path.is_file()
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    assert data["install"]["profiles"] == ["beads-kit"]
+    assert data["install"]["profiles"] == ["demo-kit"]
 
     (project / ".beads" / "PRIME.md").unlink()
 
@@ -498,21 +512,21 @@ def test_project_install_persists_profiles_then_bare_rerun_reinstalls(tmp_path: 
         repo_root=repo,
     )
     assert rc2 == 0
-    assert (project / ".beads" / "PRIME.md").read_bytes() == b"beads prime\n"
+    assert (project / ".beads" / "PRIME.md").read_bytes() == b"kit prime\n"
 
 
 def test_project_dry_run_writes_no_project_config_or_receipt(tmp_path: Path) -> None:
-    """``--project p --profiles=beads-kit --dry-run`` must not write
+    """``--project p --profiles=demo-kit --dry-run`` must not write
     project-config.toml or the receipt — dry-run is a no-op on disk."""
     repo = _hermetic_repo_with_profiles(tmp_path)
-    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit = repo / "src" / "kits" / "demo" / ".beads"
     kit.mkdir(parents=True)
-    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    (kit / "PRIME.md").write_bytes(b"kit prime\n")
     project = tmp_path / "proj"
     project.mkdir()
 
     rc = main(
-        ["--project", str(project), "--profiles=beads-kit", "--yes", "--dry-run"],
+        ["--project", str(project), "--profiles=demo-kit", "--yes", "--dry-run"],
         home=tmp_path,
         io=ScriptedIO(interactive=False),
         repo_root=repo,
@@ -525,13 +539,13 @@ def test_project_dry_run_writes_no_project_config_or_receipt(tmp_path: Path) -> 
 
 def _hermetic_repo_with_two_kits(tmp_path: Path) -> Path:
     """``_hermetic_repo`` plus a hermetic ``profiles.toml`` carrying two
-    project-scoped kits — ``beads`` and ``other`` — each behind its own
+    project-scoped kits — ``demo`` and ``other`` — each behind its own
     profile, so a run can select one while the other's prior receipt entry
     becomes prunable."""
     repo = _hermetic_repo(tmp_path)
-    beads_kit = repo / "src" / "kits" / "beads" / ".beads"
-    beads_kit.mkdir(parents=True)
-    (beads_kit / "PRIME.md").write_bytes(b"beads prime\n")
+    demo_kit = repo / "src" / "kits" / "demo" / ".beads"
+    demo_kit.mkdir(parents=True)
+    (demo_kit / "PRIME.md").write_bytes(b"kit prime\n")
     other_kit = repo / "src" / "kits" / "other" / ".other"
     other_kit.mkdir(parents=True)
     (other_kit / "OTHER.md").write_bytes(b"other kit\n")
@@ -543,8 +557,8 @@ def _hermetic_repo_with_two_kits(tmp_path: Path) -> Path:
         '"settings" = "user"\n'
         '"kits/**" = "project"\n'
         "\n"
-        "[profiles.beads-kit]\n"
-        'include = ["kits/beads/**"]\n'
+        "[profiles.demo-kit]\n"
+        'include = ["kits/demo/**"]\n'
         "\n"
         "[profiles.other-kit]\n"
         'include = ["kits/other/**"]\n',
@@ -563,18 +577,18 @@ def test_project_prune_keeps_selected_kit_removes_deselected_kit_orphan(
     project.mkdir()
 
     rc = main(
-        ["--project", str(project), "--profiles=beads-kit", "--yes"],
+        ["--project", str(project), "--profiles=demo-kit", "--yes"],
         home=tmp_path,
         io=ScriptedIO(interactive=False),
         repo_root=repo,
     )
     assert rc == 0
     prime = project / ".beads" / "PRIME.md"
-    assert prime.read_bytes() == b"beads prime\n"
+    assert prime.read_bytes() == b"kit prime\n"
 
     # Still selected, --prune: PRIME.md must NOT be deleted.
     rc2 = main(
-        ["--project", str(project), "--profiles=beads-kit", "--yes", "--prune"],
+        ["--project", str(project), "--profiles=demo-kit", "--yes", "--prune"],
         home=tmp_path,
         io=ScriptedIO(interactive=False),
         repo_root=repo,
@@ -582,7 +596,7 @@ def test_project_prune_keeps_selected_kit_removes_deselected_kit_orphan(
     assert rc2 == 0
     assert prime.is_file()
 
-    # Deselect beads-kit in favor of other-kit, --prune: PRIME.md orphaned and removed.
+    # Deselect demo-kit in favor of other-kit, --prune: PRIME.md orphaned and removed.
     rc3 = main(
         ["--project", str(project), "--profiles=other-kit", "--yes", "--prune"],
         home=tmp_path,
@@ -600,19 +614,19 @@ def test_project_prune_keeps_selected_kit_removes_deselected_kit_orphan(
 
 def test_project_install_preserves_other_tables_in_project_config(tmp_path: Path) -> None:
     """A pre-existing project-config.toml with an unrelated [merge-policy]
-    table must keep that table intact after ``--project p --profiles=beads-kit``
+    table must keep that table intact after ``--project p --profiles=demo-kit``
     sets [install].profiles."""
     repo = _hermetic_repo_with_profiles(tmp_path)
-    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit = repo / "src" / "kits" / "demo" / ".beads"
     kit.mkdir(parents=True)
-    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    (kit / "PRIME.md").write_bytes(b"kit prime\n")
     project = tmp_path / "proj"
     project.mkdir()
     config_path = project / "project-config.toml"
     config_path.write_text('[merge-policy]\nmerge-authorization = "explicit"\n', encoding="utf-8")
 
     rc = main(
-        ["--project", str(project), "--profiles=beads-kit", "--yes"],
+        ["--project", str(project), "--profiles=demo-kit", "--yes"],
         home=tmp_path,
         io=ScriptedIO(interactive=False),
         repo_root=repo,
@@ -621,7 +635,7 @@ def test_project_install_preserves_other_tables_in_project_config(tmp_path: Path
     assert rc == 0
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     assert data["merge-policy"] == {"merge-authorization": "explicit"}
-    assert data["install"]["profiles"] == ["beads-kit"]
+    assert data["install"]["profiles"] == ["demo-kit"]
 
 
 def _suggestion_lines(io: ScriptedIO) -> list[str]:
@@ -676,9 +690,9 @@ def test_project_run_never_suggests_even_with_beads_dir_in_cwd(tmp_path: Path) -
     """A --project run prints no suggestion line, even when cwd (a DIFFERENT
     directory than the project target) looks like a project."""
     repo = _hermetic_repo_with_profiles(tmp_path)
-    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit = repo / "src" / "kits" / "demo" / ".beads"
     kit.mkdir(parents=True)
-    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    (kit / "PRIME.md").write_bytes(b"kit prime\n")
     project = tmp_path / "proj"
     project.mkdir()
     cwd = tmp_path / "cwd_looks_like_project"
@@ -686,7 +700,7 @@ def test_project_run_never_suggests_even_with_beads_dir_in_cwd(tmp_path: Path) -
     io = ScriptedIO(interactive=False)
 
     rc = main(
-        ["--project", str(project), "--profiles=beads-kit", "--yes"],
+        ["--project", str(project), "--profiles=demo-kit", "--yes"],
         home=tmp_path,
         io=io,
         repo_root=repo,
@@ -698,21 +712,21 @@ def test_project_run_never_suggests_even_with_beads_dir_in_cwd(tmp_path: Path) -
 
 
 def test_project_dump_stage_lists_kit_refs_and_writes_nothing(tmp_path: Path) -> None:
-    """``--project p --profiles=beads-kit --dump-stage <dir>`` renders the
+    """``--project p --profiles=demo-kit --dump-stage <dir>`` renders the
     resolved PROJECT plan (kit refs listed as ``kit:<name>  <dest_relpath>``)
     and returns 0 WITHOUT installing kit content or writing a receipt — a dump
     is read-only, even under --project."""
     repo = _hermetic_repo_with_profiles(tmp_path)
-    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit = repo / "src" / "kits" / "demo" / ".beads"
     kit.mkdir(parents=True)
-    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    (kit / "PRIME.md").write_bytes(b"kit prime\n")
     project = tmp_path / "proj"
     project.mkdir()
     out = tmp_path / "dump"
     io = ScriptedIO(interactive=False)
 
     rc = main(
-        ["--project", str(project), "--profiles=beads-kit", "--dump-stage", str(out)],
+        ["--project", str(project), "--profiles=demo-kit", "--dump-stage", str(out)],
         home=tmp_path,
         io=io,
         repo_root=repo,
@@ -720,6 +734,6 @@ def test_project_dump_stage_lists_kit_refs_and_writes_nothing(tmp_path: Path) ->
 
     assert rc == 0
     kit_lines = [e.message for e in io.transcript if e.channel == "info" and "kit:" in e.message]
-    assert kit_lines == ["kit:beads  .beads/PRIME.md"]
+    assert kit_lines == ["kit:demo  .beads/PRIME.md"]
     assert not (project / ".beads" / "PRIME.md").exists()
     assert not (project / ".agents-config" / "install-receipt.json").exists()

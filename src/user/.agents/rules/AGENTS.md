@@ -4,4 +4,4 @@ Rules in this directory are installed as always-on constraints for all supported
 
 ## Companion readmes
 
-Longer rationale, incident history, and examples live in `rules-readmes/` under the same base name (e.g. `bash-scripting.md` → `rules-readmes/bash-scripting-readme.md`). Readmes are source-level documentation only — they are not installed. Rule files are self-contained.
+When a rule needs longer rationale, incident history, or examples than belong in the deployed bytes, put them in a sibling `rules-readmes/` directory under the rule's base name plus `-readme` (`<rule>.md` → `rules-readmes/<rule>-readme.md`). Readmes are source-level documentation only — they are not installed, so the rule file must stand alone without one. Neither this directory nor `rules-readmes/` has any contents today; create the readme directory with the first rule that needs it.
