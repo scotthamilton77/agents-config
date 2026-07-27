@@ -102,11 +102,11 @@ def load_lenses() -> list[dict[str, Any]]:
 
     A lens's name is also its prompt's filename, so two lenses sharing one leave the round writing
     a single file and reporting both — the mandate written second is the only one any model reads,
-    and nothing downstream shows the loss. Names are held apart the way the filesystem holds them
-    apart, since a volume that folds case or Unicode form makes one file of two names this check
-    would otherwise pass — which is the very loss it exists to stop. A name that is not a bare
-    filename escapes the
-    owner-only directory the round just created and lands somewhere it never set permissions on.
+    and nothing downstream shows the loss. Names are compared the way the filesystem compares them,
+    since a volume that folds case or Unicode form makes one file of two names this check would
+    otherwise pass, which is the very loss it exists to stop. A name that is not a bare filename
+    escapes the owner-only directory the round just created and lands where it set no permissions.
+
     Every key an entry owes is checked here too, because `tier` and `transport` are read only when
     the round file is assembled — by then every prompt is on disk, so an entry short one of them
     would leave a directory of prompts for this document beside a round file naming the last one.
