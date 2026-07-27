@@ -53,16 +53,19 @@ def test_show_zero_or_multi_track_labels_carry_null() -> None:
 
 
 @pytest.mark.parametrize(
-    ("argv", "prefix"),
+    ("argv", "leading_prefixes", "prefix"),
     [
-        (["list"], ("list",)),
-        (["ready"], ("ready",)),
-        (["search", "T"], ("search",)),
+        (["list"], (), ("list",)),
+        # `ready` reads the parking lot first (the parked_stale block), so its
+        # own listing is the SECOND bd call.
+        (["ready"], (("list",),), ("ready",)),
+        (["search", "T"], (), ("search",)),
     ],
 )
 def test_every_list_shaped_read_verb_carries_track(
-    argv: list[str], prefix: tuple[str, ...]
+    argv: list[str], leading_prefixes: tuple[tuple[str, ...], ...], prefix: tuple[str, ...]
 ) -> None:
+    empty = BdResult(returncode=0, stdout="[]", stderr="")
     step = ScriptedStep(
         prefix,
         BdResult(
@@ -71,7 +74,8 @@ def test_every_list_shaped_read_verb_carries_track(
             stderr="",
         ),
     )
-    exit_code, envelope, _ = run_cli(argv, [step])
+    steps = [ScriptedStep(leading, empty) for leading in leading_prefixes] + [step]
+    exit_code, envelope, _ = run_cli(argv, steps)
     assert exit_code == 0
     data = envelope["data"]
     assert isinstance(data, dict)
