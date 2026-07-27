@@ -20,7 +20,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "1"
+      "const": "2"
     },
     "artifact_class": {
       "type": "string",
@@ -57,13 +57,39 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["lens", "verdict"],
+        "required": ["lens", "verdict", "vendor", "transport", "model"],
         "properties": {
           "lens": {"type": "string", "pattern": "\\S"},
-          "verdict": {"enum": ["clean", "findings"]}
+          "verdict": {"enum": ["clean", "findings"]},
+          "vendor": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Vendor of the model that produced this report. The count of distinct vendors across the lenses is the round's diversity; one distinct vendor means it collapsed."
+          },
+          "transport": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Route the prompt actually went out on — not the route the lens registry declared for it."
+          },
+          "model": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Model that actually produced this report."
+          },
+          "substitution": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["reason"],
+            "properties": {
+              "declared_transport": {"type": "string", "pattern": "\\S"},
+              "declared_model": {"type": "string", "pattern": "\\S"},
+              "reason": {"type": "string", "pattern": "\\S"}
+            },
+            "description": "Present only when this lens ran on something other than what its registry entry declared; names what was declared and why the substitute was used."
+          }
         }
       },
-      "description": "Every lens the artifact class declares, reported individually, green ones included."
+      "description": "Every lens the artifact class declares, reported individually, green ones included, each recording what actually ran it."
     },
     "prior_dispositions": {
       "type": "array",
@@ -102,7 +128,11 @@
           "type": {"enum": ["mechanical", "advisory"]},
           "ac": {"type": "string", "pattern": "\\S"},
           "claim": {"type": "string", "pattern": "\\S"},
-          "evidence": {"type": "string"}
+          "evidence": {"type": "string"},
+          "downgraded_from": {
+            "const": "mechanical",
+            "description": "Present only on an advisory the harvester demoted because the lens marked it mechanical and supplied no evidence."
+          }
         },
         "allOf": [
           {
@@ -111,6 +141,10 @@
               "required": ["evidence"],
               "properties": {"evidence": {"type": "string", "pattern": "\\S"}}
             }
+          },
+          {
+            "if": {"required": ["downgraded_from"]},
+            "then": {"properties": {"type": {"const": "advisory"}}}
           }
         ]
       }

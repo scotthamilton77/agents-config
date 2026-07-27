@@ -101,14 +101,21 @@ def prompts(out_dir: Path) -> dict[str, str]:
 
 def verdict_round1(repo: Repo) -> dict:
     return {
-        "schema_version": "1", "artifact_class": "typed-code", "round": 1,
+        "schema_version": "2", "artifact_class": "typed-code", "round": 1,
         "base_sha": repo.base, "head_sha": repo.head, "claim_id": "claim-7",
         "retained_categories": [], "prior_dispositions": [], "verdict": "findings",
         "lenses": [
-            {"lens": "correctness", "verdict": "findings"},
-            {"lens": "security", "verdict": "findings"},
-            {"lens": "test-adequacy", "verdict": "clean"},
-            {"lens": "simplification-efficiency", "verdict": "clean"},
+            {"lens": "correctness", "verdict": "findings", "vendor": "openai",
+             "transport": "codex", "model": "gpt-5.6-terra"},
+            {"lens": "security", "verdict": "findings", "vendor": "anthropic",
+             "transport": "openrouter", "model": "anthropic/claude-opus-5"},
+            {"lens": "test-adequacy", "verdict": "clean", "vendor": "openai",
+             "transport": "codex", "model": "gpt-5.6-terra"},
+            {"lens": "simplification-efficiency", "verdict": "clean", "vendor": "moonshotai",
+             "transport": "openrouter", "model": "moonshotai/kimi-k3",
+             "substitution": {"declared_transport": "openrouter",
+                              "declared_model": "anthropic/claude-opus-5",
+                              "reason": "declared model timed out; re-dispatched in-round"}},
         ],
         "findings": [
             {"id": "f1", "lens": "correctness", "type": "mechanical", "ac": "C1",
