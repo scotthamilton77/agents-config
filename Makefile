@@ -10,7 +10,7 @@
         typecheck-vizsuite cov-vizsuite audit-vizsuite verify-entry-vizsuite \
         ci-grind test-grind lint-grind format-check-grind \
         typecheck-grind cov-grind audit-grind verify-entry-grind \
-        spec-lint
+        spec-lint test-skills
 
 INSTALLER := packages/installer
 PRGROOM := packages/prgroom
@@ -18,7 +18,8 @@ WORKCLI := packages/workcli
 VIZSUITE := packages/vizsuite
 GRIND := packages/grind
 
-ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind lint-actions spec-lint
+ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind lint-actions spec-lint \
+    test-skills
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
               cov-installer audit-installer verify-entry-installer
@@ -171,3 +172,23 @@ audit-grind:
 # grind venv where the entry point is installed is selected.
 verify-entry-grind:
 	uv --project $(GRIND) run grind --help > /dev/null
+
+# ── skills ──
+# Skills under src/ ship their own tests as PEP-723 scripts, run from their own
+# directory because each resolves the asset it guards relative to itself. The
+# suites are discovered rather than listed: a skill added with tests nobody
+# wired up is gated by nothing, which is the state this target exists to end.
+# Discovery finding zero suites fails the target -- a silent pass over an empty
+# set reads exactly like a green gate.
+test-skills:
+	@set -e; \
+	found=0; \
+	for suite in $$(find src -name '*_test.py' | sort); do \
+	  found=$$((found + 1)); \
+	  echo "── $$suite"; \
+	  ( cd $$(dirname $$suite) && uv run ./$$(basename $$suite) -q ); \
+	done; \
+	if [ $$found -eq 0 ]; then \
+	  echo "test-skills found no suites under src/ -- discovery is broken" >&2; \
+	  exit 1; \
+	fi
