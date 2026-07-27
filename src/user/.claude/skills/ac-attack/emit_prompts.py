@@ -18,6 +18,7 @@ import json
 import os
 import stat
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -75,12 +76,36 @@ class Refusal(Exception):
         return {"code": self.code, "message": self.message}
 
 
+def fold(name: str) -> str:
+    """A lens name as the filesystem holding its prompt will match it.
+
+    Nothing exists yet to ask, so this is the closest a comparison of names gets: the volumes this
+    runs on match without regard to case or to which Unicode form composed a character, and two
+    names held apart here are one file once the prompts land.
+    """
+    return unicodedata.normalize("NFC", name).casefold()
+
+
+def usable(value: Any) -> bool:
+    """Whether a registry field carries something an attacker can be built from.
+
+    Present is not usable. An entry carrying `"mandate": ""` emits an attacker holding no mandate
+    — a lens that cannot do its job while the round reports it ran — and a lens named with only
+    whitespace passes for a filename here while the record schema forbids it, leaving a round that
+    emitted and that nothing can ever close.
+    """
+    return isinstance(value, str) and bool(value.strip())
+
+
 def load_lenses() -> list[dict[str, Any]]:
     """The declared lenses, refused unless each yields one attacker at a name of its own.
 
     A lens's name is also its prompt's filename, so two lenses sharing one leave the round writing
     a single file and reporting both — the mandate written second is the only one any model reads,
-    and nothing downstream shows the loss. A name that is not a bare filename escapes the
+    and nothing downstream shows the loss. Names are held apart the way the filesystem holds them
+    apart, since a volume that folds case or Unicode form makes one file of two names this check
+    would otherwise pass — which is the very loss it exists to stop. A name that is not a bare
+    filename escapes the
     owner-only directory the round just created and lands somewhere it never set permissions on.
     Every key an entry owes is checked here too, because `tier` and `transport` are read only when
     the round file is assembled — by then every prompt is on disk, so an entry short one of them
@@ -88,16 +113,19 @@ def load_lenses() -> list[dict[str, Any]]:
     """
     with LENSES_PATH.open(encoding="utf-8") as handle:
         lenses = json.load(handle)["lenses"]
-    names = [entry["lens"] for entry in lenses if "lens" in entry]
-    incomplete = [f"{entry.get('lens', f'the entry at position {position}')} without its {key}"
-                  for position, entry in enumerate(lenses)
-                  for key in REQUIRED_KEYS if key not in entry]
+    names = [entry["lens"] for entry in lenses if usable(entry.get("lens"))]
+    labels = [entry["lens"] if usable(entry.get("lens")) else f"the entry at position {position}"
+              for position, entry in enumerate(lenses)]
+    unusable = [f"{labels[position]} without a usable {key}"
+                for position, entry in enumerate(lenses)
+                for key in REQUIRED_KEYS if not usable(entry.get(key))]
     if not lenses:
         problem = "declares no lens"
-    elif incomplete:
-        problem = f"declares {', '.join(incomplete)}"
-    elif len(set(names)) != len(names):
-        problem = "names one lens twice, so one mandate would overwrite the other's prompt"
+    elif unusable:
+        problem = f"declares {', '.join(unusable)}"
+    elif len({fold(name) for name in names}) != len(names):
+        problem = ("names one lens twice, matching names the way the filesystem does, so one "
+                   "mandate would overwrite the other's prompt")
     elif any(name != Path(name).name or name in ("", ".", "..") for name in names):
         problem = "names a lens that is not a bare filename, so its prompt would land elsewhere"
     else:
@@ -202,6 +230,37 @@ def refuse_unless_plain(path: Path) -> None:
         )
 
 
+def refuse_if_spec_is_an_output(spec: str, outputs: list[Path]) -> None:
+    """Refuse when the document under attack is the file standing at one of the round's own names.
+
+    A plain file at an output name is ordinary re-emission and is written straight through, and the
+    document is a plain file — so a round given the directory the document sits in truncates the
+    artifact it was asked to attack, replaces it with a prompt about it, and reports the round
+    emitted. Losing the document is the worst thing this round can do.
+
+    Sameness is asked of the filesystem rather than decided on the paths, because the write obeys
+    the filesystem and not the spelling: two names for one file, a name reached through a linked
+    parent, and — on the volumes this runs on, which fold case — `Doc.md` and `doc.md` are all one
+    file that no comparison of paths puts together.
+    """
+    try:
+        document = os.stat(spec)
+    except OSError:  # already read, so this is a race, not a refusal for this check to make
+        return
+    for path in outputs:
+        try:
+            standing = os.stat(path)
+        except OSError:  # nothing wears the name, so the document is not what the write replaces
+            continue
+        if os.path.samestat(document, standing):
+            raise Refusal(
+                "unsafe-output-path",
+                f"the --spec document {spec} is the file standing at the output name {path}, so "
+                "emitting would destroy the document under attack and report the round emitted; "
+                "name an --out-dir that does not hold the document",
+            )
+
+
 def write_private(path: Path, text: str) -> None:
     """Write owner-only, and never through a link swapped in after the name was checked."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
@@ -274,10 +333,13 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
     ctx = {"spec_path": spec_name, "spec_revision": revision, "document": document}
     prompts = [out_dir / f"{lens['lens']}.md" for lens in lenses]
     round_path = out_dir / "round.json"
+    refuse_if_spec_is_an_output(args.spec, [*prompts, round_path])
     for path in [*prompts, round_path]:
         refuse_unless_plain(path)
-    for lens, path in zip(lenses, prompts, strict=True):
-        write_private(path, render_prompt(lens, ctx))
+    # Everything that can fail is done before anything lands: rendering part of a round writes
+    # prompts for this document beside the previous round's file, and an agent reading the
+    # directory rather than the exit status then attacks against a revision nothing there names.
+    rendered = [render_prompt(lens, ctx) for lens in lenses]
     round_meta = {
         "spec_path": spec_name, "spec_revision": revision,
         "lenses": [
@@ -285,7 +347,10 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
             for lens in lenses
         ],
     }
-    write_private(round_path, json.dumps(round_meta, indent=2, sort_keys=True) + "\n")
+    round_text = json.dumps(round_meta, indent=2, sort_keys=True) + "\n"
+    for path, text in zip(prompts, rendered, strict=True):
+        write_private(path, text)
+    write_private(round_path, round_text)
     # The round file is metadata, not a prompt: listed among them, a caller fanning the panel out
     # over `prompts` sends it to a model as an attack, mandateless and with no document to read.
     return {"emitted": True, "prompts": [str(path) for path in prompts],

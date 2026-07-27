@@ -29,6 +29,8 @@ EXIT_COMPLETE = 0
 EXIT_INCOMPLETE = 1
 EXIT_UNUSABLE = 2
 
+DECLARATION = "--implementation-started"
+
 ORDERING_MESSAGE = (
     "this round is unfinished and a work item that changes the system the document describes has "
     "already been claimed; the attack runs before that work, never alongside it"
@@ -49,9 +51,34 @@ class RecordError(Exception):
 
 @lru_cache(maxsize=1)
 def declared_lenses() -> tuple[str, ...]:
-    """The declared lens set. Cached: the file is static for the life of a run."""
+    """The declared lens set, refused unless the emitter would emit a round from it.
+
+    Cached: the file is static for the life of a run. Coverage is read off this set, so it has to
+    be the set the round was dispatched from — a registry the emitter refuses could not have
+    produced the round in hand, and a name declared twice would demand the same lens twice here.
+    Names are compared case-insensitively because a lens's name is its prompt's filename, and two
+    names differing only in case are one file on a case-insensitive volume.
+    """
     with LENSES_PATH.open(encoding="utf-8") as handle:
-        return tuple(lens["lens"] for lens in json.load(handle)["lenses"])
+        lenses = json.load(handle)["lenses"]
+    names = [entry["lens"] for entry in lenses if isinstance(entry.get("lens"), str)]
+    folded = [name.lower() for name in names]
+    if not lenses:
+        problem = "declares no lens"
+    elif len(names) != len(lenses):
+        problem = "declares an entry without its lens name"
+    elif len(set(folded)) != len(folded):
+        problem = "names one lens twice"
+    elif any(name != Path(name).name or name in ("", ".", "..") for name in names):
+        problem = "names a lens that is not a bare filename"
+    else:
+        return tuple(names)
+    raise RecordError(
+        "no-lenses",
+        f"the lens registry {problem}; the emitter refuses to emit a round from a registry like "
+        "this one, so no round in hand came from it, and coverage read off it credits the record "
+        "with attackers that never ran — repair the registry both scripts read",
+    )
 
 
 def read_record(path: Path) -> Any:
@@ -296,14 +323,21 @@ def check(record: dict, document: bytes) -> list[dict[str, Any]]:
     # An acceptance says the document was edited to carry the proposal, so the revision attacked
     # accounts for the document only in a round that accepted nothing. Unioning it in regardless
     # would close a round whose edit was reverted, lost in a rebase, or never made — clearing work
-    # to start against criteria every accepted proposal is absent from.
-    if not present & (accounted or {record["spec_revision"]}):
+    # to start against criteria every accepted proposal is absent from. Containment rather than
+    # intersection for the same reason: the document hashes to one content, so matching just one of
+    # several accepted revisions lets a reverted final edit, or an acceptance carrying a fabricated
+    # revision, ride in on whichever acceptance does match.
+    required = accounted or {record["spec_revision"]}
+    if not required <= present:  # every accepted revision, not merely one
         errors.append({
             "code": "stale-revision",
-            "message": "the document does not hash to a revision this round accounts for — an "
-                       "acceptance names the revision that carries it, and a round accepting "
-                       "nothing leaves the revision attacked; attack the document as it now "
-                       "stands, or re-adjudicate the proposals against it",
+            "message": "the document does not hash to every revision this round accounts for — "
+                       "each acceptance names the revision that carries it, and the document is "
+                       "one content, so a record whose acceptances name several different "
+                       "revisions asks it to be in two states at once; name in every acceptance "
+                       "the revision the document reached once every accepted proposal was in it, "
+                       "and in a round that accepted nothing the revision attacked, or attack the "
+                       "document as it now stands and re-adjudicate against that",
         })
     return errors
 
@@ -329,13 +363,24 @@ def report(errors: list[dict[str, Any]], started: bool, code: int, clean: bool =
     return code
 
 
+def declared(argv: list[str]) -> bool:
+    """Whether the ordering declaration is on a command line the parse rejected.
+
+    Matched by option name, not by the whole argument: `--implementation-started=true` is what an
+    agent writes for a flag it thinks takes a value, argparse rejects it outright because the flag
+    takes none, and reading the argument whole would drop the declaration along with the parse —
+    reporting the malformed command line while the work claimed against the round goes unanswered.
+    """
+    return any(arg.split("=", 1)[0] == DECLARATION for arg in argv)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=True)
     # Optional so that naming no record answers in the JSON contract like every other failure,
     # rather than in argparse's usage text on stderr.
     parser.add_argument("record", nargs="?")
     parser.add_argument("--spec")
-    parser.add_argument("--implementation-started", action="store_true")
+    parser.add_argument(DECLARATION, action="store_true")
     return parser
 
 
@@ -356,7 +401,7 @@ def parse_or_report(argv: list[str]) -> argparse.Namespace | int:
               "message": "the command line could not be parsed; an option was given without its "
                          "value, or an unknown option was passed (argparse wrote the detail to "
                          "stderr)"}],
-            "--implementation-started" in argv, EXIT_UNUSABLE,
+            declared(argv), EXIT_UNUSABLE,
         )
 
 
@@ -365,6 +410,10 @@ def main(argv: list[str]) -> int:
     if isinstance(args, int):
         return args
     started = args.implementation_started
+    # What the run knows about the document, filled in the moment one is opened, so a failure after
+    # that point still answers which file the verdict was reached over — the reading a caller needs
+    # most when the check itself is what broke.
+    read: dict[str, str] | None = None
     try:
         if not args.record:
             raise RecordError(
@@ -385,9 +434,10 @@ def main(argv: list[str]) -> int:
                 "revision": revisions_of(document)[notation_of(record["spec_revision"])]}
         errors = check(record, document)
     except RecordError as exc:
-        return report([exc.as_dict()], started, EXIT_UNUSABLE)
+        return report([exc.as_dict()], started, EXIT_UNUSABLE, read=read)
     except Exception as exc:  # noqa: BLE001 - stdout is a parsed contract; no traceback may escape
-        return report([{"code": "checker-failure", "message": str(exc)}], started, EXIT_UNUSABLE)
+        return report([{"code": "checker-failure", "message": str(exc)}], started, EXIT_UNUSABLE,
+                      read=read)
     if errors:
         return report(errors, started, EXIT_INCOMPLETE, read=read)
     return report([], started, EXIT_COMPLETE, clean=not record["proposals"], read=read)

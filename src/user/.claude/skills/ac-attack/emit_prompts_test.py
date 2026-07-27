@@ -20,6 +20,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,7 @@ EMITTER_PATH = HERE / "emit_prompts.py"
 CHECKER_PATH = HERE / "check_record.py"
 SKILL_PATH = HERE / "SKILL.md"
 ERRORS_PATH = HERE / "errors.md"
+RECORD_PATH = HERE / "record.md"
 LENSES_PATH = HERE / "lenses.json"
 SCHEMA_PATH = HERE / "attack-record.schema.json"
 
@@ -454,6 +456,77 @@ class TestRefusals:
         assert key in result["errors"][0]["message"]
         assert not out_dir.exists()
 
+    @pytest.mark.parametrize("key,value", (("lens", "   "), ("mandate", ""), ("tier", " \n "),
+                                           ("transport", 7), ("mandate", None)))
+    def test_c7_a_registry_value_that_is_present_but_unusable_is_refused(self, document, tmp_path,
+                                                                          key, value):
+        """S6-C7: a key is owed a value an attacker can be built from, not merely a key. A lens
+        carrying a blank mandate emits an attacker holding no mandate — a lens that cannot do its
+        job while the round reports full coverage — and a name of pure whitespace passes for a
+        filename here while the record schema forbids one, leaving a round that emitted and that
+        nothing can ever close. Refused whole, before anything is written."""
+        registry = json.loads(LENSES_PATH.read_text(encoding="utf-8"))
+        registry["lenses"][1][key] = value
+        skill = skill_copy(tmp_path, {"lenses.json": json.dumps(registry)})
+        out_dir = tmp_path / "out"
+        proc = subprocess.run(
+            [sys.executable, str(skill / "emit_prompts.py"), "--spec", str(document),
+             "--out-dir", str(out_dir)],
+            capture_output=True, text=True, check=False,
+        )
+        assert proc.returncode == 2
+        assert "Traceback" not in proc.stderr
+        result = json.loads(proc.stdout)
+        assert [error["code"] for error in result["errors"]] == ["no-lenses"]
+        assert key in result["errors"][0]["message"]
+        assert not out_dir.exists()
+
+    @pytest.mark.parametrize("order", (("NFC", "NFD"), ("NFD", "NFC")))
+    def test_c7_two_lens_names_differing_only_in_unicode_form_are_refused(self, document, tmp_path,
+                                                                           order):
+        """S6-C7: the same loss one fold further out. The volumes these prompts land on match a
+        composed character and its decomposed spelling as one name, so two lenses spelled either
+        way write a single prompt while the round reports both attackers emitted. Nothing exists
+        yet to ask the filesystem about, so the names are folded before they are compared — and
+        refused whichever way round the registry spells them. The spellings are built here rather
+        than typed, because in source text they are the same glyph."""
+        spellings = [unicodedata.normalize(form, "caf\u00e9-holes") for form in order]
+        assert spellings[0] != spellings[1]  # two strings; one filename where these prompts land
+        registry = json.loads(LENSES_PATH.read_text(encoding="utf-8"))
+        registry["lenses"][0]["lens"] = spellings[0]
+        registry["lenses"][1]["lens"] = spellings[1]
+        skill = skill_copy(tmp_path, {"lenses.json": json.dumps(registry)})
+        out_dir = tmp_path / "out"
+        proc = subprocess.run(
+            [sys.executable, str(skill / "emit_prompts.py"), "--spec", str(document),
+             "--out-dir", str(out_dir)],
+            capture_output=True, text=True, check=False,
+        )
+        assert proc.returncode == 2
+        assert "Traceback" not in proc.stderr
+        assert [error["code"] for error in json.loads(proc.stdout)["errors"]] == ["no-lenses"]
+        assert not out_dir.exists()
+
+    def test_c7_two_lens_names_differing_only_in_case_are_refused(self, document, tmp_path):
+        """S6-C7: the prompt filenames are resolved by the filesystem, and this one holds two
+        spellings of a name as one file — so two lenses differing only in case write a single
+        prompt, the second mandate landing on the first, while the round reports both attackers
+        emitted. That is the loss the duplicate check exists to stop, so names are compared the
+        way the volume they land on compares them."""
+        registry = json.loads(LENSES_PATH.read_text(encoding="utf-8"))
+        registry["lenses"][1]["lens"] = LENS_NAMES[0].upper()
+        skill = skill_copy(tmp_path, {"lenses.json": json.dumps(registry)})
+        out_dir = tmp_path / "out"
+        proc = subprocess.run(
+            [sys.executable, str(skill / "emit_prompts.py"), "--spec", str(document),
+             "--out-dir", str(out_dir)],
+            capture_output=True, text=True, check=False,
+        )
+        assert proc.returncode == 2
+        assert "Traceback" not in proc.stderr
+        assert [error["code"] for error in json.loads(proc.stdout)["errors"]] == ["no-lenses"]
+        assert not out_dir.exists()
+
     @pytest.mark.parametrize("damage", (None, "{not json", '{"lenses": "all of them"}'))
     def test_damaged_bundled_data_is_typed_not_a_traceback(self, document, tmp_path, damage):
         """S6-C1: the skill's own data is a dependency like any other — missing or corrupt, it
@@ -579,6 +652,97 @@ class TestOutputSafety:
         assert DOCUMENT in emitted[LENS_NAMES[0]]
         assert stat.S_IMODE(stale.stat().st_mode) == 0o600
 
+    @pytest.mark.parametrize("name", (f"{LENS_NAMES[0]}.md", f"{LENS_NAMES[-1]}.md", "round.json"))
+    def test_c1_the_document_under_attack_is_never_written_over(self, tmp_path, capsys, name):
+        """S6-C1: a plain file at an output name is written straight through as ordinary
+        re-emission, and the document is a plain file — so an out-dir holding it at one of the
+        fixed output names truncates the artifact under attack, replaces it with a prompt about
+        it, and reports the round emitted. Losing the document is the worst outcome available to
+        this round, so it refuses before writing anything at all."""
+        out_dir = tmp_path / "attack"
+        out_dir.mkdir()
+        document = out_dir / name
+        document.write_text(DOCUMENT, encoding="utf-8")
+        code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
+        assert code == 2 and result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["unsafe-output-path"]
+        assert document.read_text(encoding="utf-8") == DOCUMENT
+        assert [path.name for path in out_dir.iterdir()] == [name]
+
+    def test_c1_the_document_is_recognised_through_a_linked_parent(self, tmp_path, capsys):
+        """S6-C1: the document and the output names are compared as the filesystem resolves them,
+        not as the strings they were spelled with — an out-dir reached through a linked parent is
+        the same directory, so the document standing in it is the same file the write truncates."""
+        out_dir = tmp_path / "real" / "attack"
+        out_dir.mkdir(parents=True)
+        document = out_dir / f"{LENS_NAMES[0]}.md"
+        document.write_text(DOCUMENT, encoding="utf-8")
+        (tmp_path / "linked").symlink_to(tmp_path / "real", target_is_directory=True)
+        code, result = run(
+            ["--spec", str(document), "--out-dir", str(tmp_path / "linked" / "attack")], capsys)
+        assert code == 2 and result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["unsafe-output-path"]
+        assert document.read_text(encoding="utf-8") == DOCUMENT
+        assert [path.name for path in out_dir.iterdir()] == [f"{LENS_NAMES[0]}.md"]
+
+    def test_c1_the_document_is_recognised_by_a_relative_path(self, tmp_path, capsys, monkeypatch):
+        """S6-C1: same comparison from the other side — `./doc.md` and `doc.md` name one file, and
+        an out-dir of `.` is the directory the round is standing in."""
+        out_dir = tmp_path / "attack"
+        out_dir.mkdir()
+        document = out_dir / "round.json"
+        document.write_text(DOCUMENT, encoding="utf-8")
+        monkeypatch.chdir(out_dir)
+        code, result = run(["--spec", "./round.json", "--out-dir", "."], capsys)
+        assert code == 2 and result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["unsafe-output-path"]
+        assert document.read_text(encoding="utf-8") == DOCUMENT
+        assert [path.name for path in out_dir.iterdir()] == ["round.json"]
+
+    def test_c1_a_document_at_a_folded_spelling_of_an_output_name_survives(self, tmp_path, capsys):
+        """S6-C1: the write obeys the filesystem, not the spelling. Where the volume folds case,
+        `CRITERIA-HOLES.md` and `criteria-holes.md` are one file, so a document standing at the
+        first is truncated by the write to the second while every comparison of the two paths says
+        they differ — the destructive case survives the guard unless sameness is asked of the
+        filesystem. Where the volume keeps them apart they are two files and the round emits over
+        neither; on both, the document is still there afterwards."""
+        out_dir = tmp_path / "attack"
+        out_dir.mkdir()
+        document = out_dir / f"{LENS_NAMES[0].upper()}.md"
+        document.write_text(DOCUMENT, encoding="utf-8")
+        folded = (out_dir / f"{LENS_NAMES[0]}.md").exists()  # the volume's own answer, asked first
+        code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
+        assert document.read_text(encoding="utf-8") == DOCUMENT
+        assert (code == 2) == folded
+        if folded:
+            assert [error["code"] for error in result["errors"]] == ["unsafe-output-path"]
+
+    def test_c1_a_round_that_cannot_render_every_prompt_writes_none_of_them(self, document,
+                                                                            tmp_path, capsys,
+                                                                            monkeypatch):
+        """S6-C1: every prompt is rendered before any is written, so a lens that cannot be
+        rendered costs the round nothing on disk. Rendered inside the write loop, the failure
+        leaves prompts for this document beside the previous round's `round.json` — and an agent
+        reading the directory rather than the exit status attacks the wrong revision, since the
+        file naming a revision and the prompts carrying a document no longer agree."""
+        out_dir = tmp_path / "attack"
+        out_dir.mkdir()
+        previous = '{"spec_revision": "sha256:' + "0" * 64 + '"}\n'
+        (out_dir / "round.json").write_text(previous, encoding="utf-8")
+        render = emitter.render_prompt
+
+        def render_all_but_the_last(lens, ctx):
+            if lens["lens"] == LENS_NAMES[-1]:
+                raise KeyError("mandate")
+            return render(lens, ctx)
+
+        monkeypatch.setattr(emitter, "render_prompt", render_all_but_the_last)
+        code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
+        assert code == 2 and result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["emitter-failure"]
+        assert [path.name for path in out_dir.iterdir()] == ["round.json"]
+        assert (out_dir / "round.json").read_text(encoding="utf-8") == previous
+
 
 class TestRoundFile:
     def test_c7_round_json_declares_every_lens_with_its_tier_and_transport(self, document,
@@ -633,17 +797,24 @@ class TestRoundFile:
 
 class TestSurface:
     def test_c5_skill_body_within_budget(self):
-        """S6-C5: the skill body stays inside its token budget by a conservative
-        four-characters-per-token proxy."""
-        body = SKILL_PATH.read_text(encoding="utf-8").split("---", 2)[2]
-        assert len(body) <= 8000, len(body)
+        """S6-C5: the skill body stays inside the token budget the deploy gate enforces, counted
+        the way that gate counts it — ceil of UTF-8 bytes over four, against a 2000-token cap.
+
+        Bytes, not characters: an em-dash costs one character and three bytes, so a body written
+        in this house style measures well under a character cap while being over the byte one.
+        The gate refuses the whole deploy on a violation rather than dropping the one skill, so
+        a body that passes here and fails there takes every other artifact down with it.
+        """
+        body = SKILL_PATH.read_text(encoding="utf-8").split("---", 2)[2].encode("utf-8")
+        tokens = -(-len(body) // 4)
+        assert tokens <= 2000, f"{tokens} tokens, {len(body)} bytes"
 
     def test_c5_deployed_surface_carries_no_planning_jargon(self):
         """S6-C5: the deployed files read standalone — no planning identifiers or vocabulary."""
         jargon = re.compile(r"\bD[0-9]|S6-|\bAC[0-9]|\bslice\b|\bcharter\b|\bmilestone\b|9k9",
                             re.IGNORECASE)
-        for path in (SKILL_PATH, ERRORS_PATH, LENSES_PATH, SCHEMA_PATH, EMITTER_PATH,
-                     CHECKER_PATH):
+        for path in (SKILL_PATH, ERRORS_PATH, RECORD_PATH, LENSES_PATH, SCHEMA_PATH,
+                     EMITTER_PATH, CHECKER_PATH):
             hits = [line for line in path.read_text(encoding="utf-8").splitlines()
                     if jargon.search(line)]
             assert not hits, f"{path.name}: {hits}"
@@ -653,8 +824,8 @@ class TestSurface:
         its own directory is a dead reference wherever it is read."""
         outside = re.compile(r"\.\./|~/|\bsrc/user/|\bpackages/|\bdocs/|\barchive/|"
                              r"\.claude/|\.agents/|\.codex/|\.gemini/")
-        for path in (SKILL_PATH, ERRORS_PATH, LENSES_PATH, SCHEMA_PATH, EMITTER_PATH,
-                     CHECKER_PATH):
+        for path in (SKILL_PATH, ERRORS_PATH, RECORD_PATH, LENSES_PATH, SCHEMA_PATH,
+                     EMITTER_PATH, CHECKER_PATH):
             hits = [line for line in path.read_text(encoding="utf-8").splitlines()
                     if outside.search(line)]
             assert not hits, f"{path.name}: {hits}"
@@ -675,8 +846,11 @@ class TestSurface:
                         if (isinstance(key, ast.Constant) and key.value == "code"
                                 and isinstance(value, ast.Constant)):
                             emitted.add(value.value)
+            # Per script, not per file: a code listed only under the other script reads as
+            # documented to a search and as absent to anyone looking it up where it fired.
             documented = ERRORS_PATH.read_text(encoding="utf-8")
-            missing = sorted(code for code in emitted if f"`{code}`" not in documented)
+            section = documented.split(f"## `{path.name}`", 1)[1].split("\n## ", 1)[0]
+            missing = sorted(code for code in emitted if f"`{code}`" not in section)
             assert not missing, f"{path.name}: {missing}"
 
     def test_c5_skill_declares_its_admission_record(self):

@@ -13,7 +13,7 @@ adjudicated into the criteria or rejected on the record.
 
 Running before the work starts is the point: once code exists, a review can check the tests cover
 the failure cases the criteria name, but cannot invent the ones nobody thought of. Those get
-invented here, while adding one is still an edit to a document.
+invented here.
 
 ## Attack lenses
 
@@ -36,7 +36,7 @@ panel returns seven.
 
 The attacked artifact is the whole document, never an extracted list of criteria: criteria mean
 what the document's definitions and scope say they mean, and an attacker handed the bare list has
-nothing to judge them against, returning a vacuous empty round. Run from this directory, naming
+nothing to judge them against. Run from this directory, naming
 the document and the output by paths that resolve from here:
 
 ```bash
@@ -54,54 +54,9 @@ truncate whatever wears them in the directory it ran from. The round creates tha
 no parent along the way, owner-only, as is every file in it, since a prompt carries the whole
 document.
 
-A revision names content, not history: `sha256:` plus the digest of the document's bytes, or the
-equivalent 40-hex object id, recomputable from the document in front of you. Write it with no
-surrounding whitespace — `git hash-object` ends its output with a newline, and a revision that
-keeps it reads as a different revision. One record picks one notation and writes every revision
-in it: revisions compare as strings, so one content written both ways would read as two.
-
-## Proposals
-
-```json
-{"lens": "edge-cases", "target_ac": "A3",
- "hole": "what the criteria let through",
- "proposed_ac": "the new criterion, stated as an observable claim",
- "red_test_sketch": {"given": "input or starting state", "when": "the action",
-                     "expect": "the observable outcome"}}
-```
-
-`target_ac` is the criterion attacked, or `"none"` when nothing covers the ground. The test sketch
-is the line between a testable claim and a concern: a starting state, an action, an observable
-outcome, all non-blank — a concern cannot name them. An item leaving one blank is malformed, and is
-dropped rather than adjudicated. A lens whose every item is dropped returned nothing usable,
-which is not nothing found: it gets no entry, and the round closes by running it again rather
-than by recording it empty.
-
-Unioning the reports adds an `id` to each proposal, distinct within the round — an attacker sees
-its own lens, not the round, so it cannot pick one. That id is what a disposition names: dropping
-a malformed proposal renumbers positions, and a disposition keyed on one would then adjudicate a
-proposal it was never written against.
-
-## The attack record
-
-Committed beside the attacked document as `<document-basename>-ac-attack.json`. Every top-level
-field below is required; the shape, including which disposition fields each verdict needs, is fixed
-by `attack-record.schema.json`.
-
-| Field | Meaning |
-| --- | --- |
-| `schema_version` | `"1"`. |
-| `spec_path` | The attacked document, named relative to this record — they are committed side by side, so its basename. An absolute path resolves only on the machine that wrote it. |
-| `spec_revision` | The revision attacked. |
-| `lenses` | `{"lens", "report": "proposals"\|"empty"}`, one per lens that reported. A silent or errored lens has no entry and the round is unfinished — coverage is read off the record, never inferred from silence. |
-| `proposals` | The union of the reports, each carrying its producing lens and its `id`. Reports are held against them: a lens reporting empty contributes none, one reporting proposals at least one. |
-| `dispositions` | `{"id", "disposition": "accepted"\|"rejected", "rationale"?, "revision"?, "covering_ac"?}`. |
-
-- Every proposal id carries exactly one disposition.
-- **Accepted** names the `revision` now carrying the proposal — necessarily a different one, since
-  accepting and changing nothing leaves it unadjudicated — and the `covering_ac` in it.
-- **Rejected** states a `rationale`. Out of scope is a judgement, and a judgement gets written down.
-- **Nothing found** is a result: every lens reporting empty closes the round.
+Proposals and the record they are written into are described in `record.md`: the shape an attacker
+returns, the `id` a disposition names, and the record committed beside the document as
+`<document-basename>-ac-attack.json`. Its machine-readable form is `attack-record.schema.json`.
 
 ## Checking the round
 
@@ -126,9 +81,10 @@ record is judged against the lens set in force now and adding a lens reopens rou
 faced it. It consults no tracker, writes nothing, and answers the same way every time.
 
 The record **attests** that the round happened as written; the checker does not verify that it did.
-A revision is a hash and the content it names is not recoverable from it, so an acceptance naming a
-revision the document no longer carries cannot be checked against anything, and an author naming
-one that never existed still closes the round. What is enforced is that the account is internally
-whole and that the document in front of the checker is one the record accounts for. The result
-names the file it read, so a round closed against a copy handed to `--spec` is visible as one: read
-that pair as part of the verdict, because a `complete` round over the wrong file evidences nothing.
+It can see the document is at the revision an acceptance names, never that the criterion is in it —
+a hash names content without describing it — so an edit carrying none of the accepted proposals
+closes the round as well as one carrying all of them, and a lens entry claims a report nothing
+shows was made. What is enforced is that the account is internally whole and that the document in
+front of the checker is the one the record accounts for. The result names the file it read, so a
+round closed against a copy handed to `--spec` is visible as one: read that pair as part of the
+verdict, because a `complete` round over the wrong file evidences nothing.

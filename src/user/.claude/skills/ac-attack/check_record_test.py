@@ -116,6 +116,18 @@ def attack(tmp_path) -> Attack:
     return Attack(tmp_path)
 
 
+@pytest.fixture
+def registry(tmp_path, monkeypatch):
+    """Stand a lens registry in place of the shipped one, clearing the cache either side of it."""
+    def use(lenses: Any) -> None:
+        path = tmp_path / "lenses.json"
+        path.write_text(json.dumps({"lenses": lenses}), encoding="utf-8")
+        monkeypatch.setattr(checker, "LENSES_PATH", path)
+        checker.declared_lenses.cache_clear()
+    yield use
+    checker.declared_lenses.cache_clear()
+
+
 def run(args: list[str], capsys) -> tuple[int, dict]:
     code = checker.main(args)
     return code, json.loads(capsys.readouterr().out)
@@ -369,23 +381,27 @@ class TestStaleness:
         attack.write_document(DOCUMENT)
         assert check(attack, record, capsys)[0] == 0
 
-    def test_c6_the_document_may_match_any_revision_an_acceptance_names(self, attack, capsys):
-        """S6-C6: one round can drive more than one edit, so the record accounts for every
-        revision any acceptance names — not merely the latest — and the document reads current
-        against each of them, while a revision no acceptance names is still stale."""
+    def test_c6_the_document_must_match_every_revision_an_acceptance_names(self, attack, capsys):
+        """S6-C6: the document is one content, so a record whose acceptances name two different
+        revisions asks it to be in two states at once — and settling for either one would close
+        the round with the other acceptance's criterion provably absent from the text in front of
+        the checker, whether its revision names a reverted edit or was never a revision at all.
+        An acceptance names the revision the document reached once every accepted proposal was in
+        it, and the round closes once they all do (inverse)."""
         record = attack.record()
         record["dispositions"][1] = {"id": "p2", "disposition": "accepted",
                                      "rationale": "a second real hole",
                                      "revision": sha_revision(FURTHER), "covering_ac": "A3"}
         accepted = {disposition["revision"] for disposition in record["dispositions"]}
         assert accepted == {sha_revision(REVISED), sha_revision(FURTHER)}
-        assert attack.document.read_text(encoding="utf-8") == REVISED
-        assert check(attack, record, capsys)[0] == 0
+        for text in (REVISED, FURTHER, UNRELATED):
+            attack.write_document(text)
+            code, result = check(attack, record, capsys)
+            assert code == 1 and codes(result) == {"stale-revision"}
         attack.write_document(FURTHER)
-        assert check(attack, record, capsys)[0] == 0
-        attack.write_document(UNRELATED)
-        code, result = check(attack, record, capsys)
-        assert code == 1 and codes(result) == {"stale-revision"}
+        for disposition in record["dispositions"]:
+            disposition["revision"] = sha_revision(FURTHER)
+        assert check(attack, record, capsys) == (0, closed(attack))
 
     def test_c6_an_object_id_names_the_same_content_as_its_digest(self, attack, capsys):
         """S6-C6: the revision is content-addressed in either notation, so a record keyed
@@ -439,6 +455,31 @@ class TestProvenance:
         record["dispositions"][0]["revision"] = blob_revision(REVISED)
         code, result = check(attack, record, capsys)
         assert code == 0 and result["revision"] == blob_revision(REVISED)
+
+    def test_c6_a_refusal_reached_after_the_document_was_read_names_it(self, attack, capsys,
+                                                                       registry):
+        """S6-C6: the pair reports the file the run had in hand, not the verdict it reached, so a
+        refusal raised after the document was opened carries it — dropping it there would leave a
+        reader unable to tell a run that never opened a document from one that read this one."""
+        registry([])
+        code, result = check(attack, attack.record(), capsys)
+        assert code == 2 and codes(result) == {"no-lenses"}
+        assert result["document"] == str(attack.document)
+        assert result["revision"] == sha_revision(REVISED)
+
+    def test_c6_an_unexpected_failure_names_the_document_it_had_read(self, attack, capsys,
+                                                                     monkeypatch):
+        """S6-C6: the catch-all knows least about what went wrong and so gives up least of what it
+        does know — anything escaping after the document was hashed is still answered against a
+        named file, in the one shape every other answer takes."""
+        def broken(*_: Any) -> list[dict[str, Any]]:
+            raise RuntimeError("the check itself broke")
+
+        monkeypatch.setattr(checker, "check", broken)
+        code, result = check(attack, attack.record(), capsys)
+        assert code == 2 and codes(result) == {"checker-failure"}
+        assert result["document"] == str(attack.document)
+        assert result["revision"] == sha_revision(REVISED)
 
     @pytest.mark.parametrize("broken", ("no-record", "unreadable", "schema"))
     def test_c6_a_check_that_read_no_document_names_none(self, attack, capsys, broken):
@@ -580,6 +621,37 @@ class TestLensCoverage:
         with proposals or without any, terminates."""
         assert check(attack, attack.record(), capsys)[0] == 0
         assert check(attack, attack.empty_round(), capsys)[0] == 0
+
+
+BAD_REGISTRY = [
+    ([], "declares no lens"),
+    ([{"mandate": "attack it", "tier": "mid", "transport": "codex"}], "without its lens name"),
+    ([{"lens": "edge-cases"}, {"lens": "edge-cases"}], "names one lens twice"),
+    ([{"lens": "edge-cases"}, {"lens": "Edge-Cases"}], "names one lens twice"),
+    ([{"lens": "../edge-cases"}], "not a bare filename"),
+    ([{"lens": ".."}], "not a bare filename"),
+]
+
+
+class TestLensRegistry:
+    @pytest.mark.parametrize(("lenses", "reason"), BAD_REGISTRY)
+    def test_c7_a_registry_the_emitter_would_refuse_closes_no_round(self, attack, capsys, registry,
+                                                                    lenses, reason):
+        """S6-C7: coverage is read off the declared set, so the set has to be the one the round was
+        dispatched from — a registry declaring no lens, an entry without a name, one name twice
+        (two names differing only in case are one prompt file on the volumes this runs on), or a
+        name that is not a bare filename is one the emitter refuses to emit from, so no round in
+        hand came from it and coverage read off it credits attackers that never ran."""
+        registry(lenses)
+        code, result = check(attack, attack.record(), capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"no-lenses"}
+        assert reason in error_of(result, "no-lenses")["message"]
+
+    def test_c7_the_shipped_registry_is_one_the_emitter_would_emit_from(self):
+        """S6-C7: inverse — the registry both scripts read passes the check the emitter applies to
+        it, so the refusal costs the skill as shipped no round at all."""
+        assert list(checker.declared_lenses()) == LENS_NAMES
 
 
 class TestProposalShape:
@@ -830,6 +902,17 @@ class TestUnusableInput:
         assert code == 2 and result["complete"] is False
         assert codes(result) == {"bad-arguments", "ordering-violation"}
         assert "document" not in result
+
+    @pytest.mark.parametrize("argv", (["--implementation-started=true"],
+                                      ["--sepc", "doc.md", "--implementation-started=true"]))
+    def test_c3_the_declaration_is_read_by_option_name_not_by_whole_argument(self, capsys, argv):
+        """S6-C3: the declaration takes no value, so an agent writing one — the spelling every
+        valued option takes — has argparse reject the command line outright. Matching the argument
+        whole would drop the declaration along with the parse, reporting the malformed line while
+        the work claimed against the round goes unanswered."""
+        code, result = run(argv, capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"bad-arguments", "ordering-violation"}
 
     @pytest.mark.parametrize("damaged", ("lenses.json", "attack-record.schema.json"))
     @pytest.mark.parametrize("damage", (None, "{not json"))
