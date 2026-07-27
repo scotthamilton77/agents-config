@@ -160,12 +160,19 @@ def test_a_squash_merged_branch_is_actually_deleted(repo: Path) -> None:
 # -- protection ---------------------------------------------------------------
 
 
-def test_the_default_branch_and_current_checkout_survive_clean_all(repo: Path) -> None:
+def test_the_default_branch_and_the_current_checkout_are_refused_by_name(repo: Path) -> None:
+    """The trunk and the branch you are standing on are not deletable, and
+    --force does not buy them: naming them is refused and both survive."""
     git(repo, "checkout", "-q", "-b", "feat/parked")
     commit(repo, "parked.txt")
 
-    payload = report(repo, "--clean-all", "--force")
+    payload = report(repo, "--cleanup", "main", "feat/parked", "--force")
 
+    assert payload["_exit"] == EXIT_REFUSED
+    refusal = payload["refusal"]
+    assert isinstance(refusal, dict)
+    assert refusal["code"] == "E_PROTECTED"
+    assert {t["name"] for t in refusal["blocked"]} == {"main", "feat/parked"}  # type: ignore[union-attr]
     assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/main") != ""
     assert git(repo, "rev-parse", "--abbrev-ref", "HEAD") == "feat/parked"
     assert find(payload, "branch:main")["disposition"] == Disposition.PROTECTED.value
@@ -265,21 +272,18 @@ def test_a_worktree_that_goes_dirty_after_the_survey_is_left_alone(repo: Path) -
     assert any("--force" in line for line in outcome.anomalies[0].transcript)
 
 
-def test_an_active_worktree_is_swept_only_by_clean_all(repo: Path) -> None:
-    """A bare sweep takes safe-and-none; --clean-all takes everything not
-    protected, which is the whole difference between them and is worth
-    demonstrating against a target that is genuinely live."""
+def test_an_active_worktree_survives_a_bare_sweep(repo: Path) -> None:
+    """A bare sweep takes safe-and-none. A worktree holding work that was never
+    committed is neither, and an automatic run must leave it standing rather
+    than deciding for the person using it."""
     work = _worktree(repo, "wt-live", "feat/live-wt")
     (work / "in-progress.txt").write_text("uncommitted\n", encoding="utf-8")
 
     swept = report(repo, "--cleanup")
+
+    assert swept["_exit"] == EXIT_OK
     assert work.exists()
     assert find(swept, f"worktree:{work}")["disposition"] == Disposition.ACTIVE.value
-
-    payload = report(repo, "--clean-all", "--force")
-
-    assert not work.exists()
-    assert payload["execution"]["salvages"]  # type: ignore[index]
 
 
 # -- salvage round trip -------------------------------------------------------

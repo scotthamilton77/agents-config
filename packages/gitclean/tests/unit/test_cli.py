@@ -56,7 +56,7 @@ def test_a_mode_is_required() -> None:
 
 def test_modes_are_mutually_exclusive() -> None:
     with pytest.raises(SystemExit) as exc:
-        main(["--report", "--clean-all"], port=ScriptedCommands())
+        main(["--report", "--cleanup"], port=ScriptedCommands())
     assert exc.value.code == EXIT_USAGE
 
 
@@ -179,11 +179,11 @@ def test_a_successful_sweep_exits_clean_and_lists_what_went() -> None:
 
 def test_a_refusal_exits_one_and_carries_the_remedy() -> None:
     port = make_port(refs=[ref_line("refs/heads/main", "main", head="*")])
-    code, payload = invoke(["--clean-all"], port)
+    code, payload = invoke(["--cleanup", "main"], port)
     assert code == EXIT_REFUSED
     refusal = payload["refusal"]
     assert isinstance(refusal, dict)
-    assert refusal["code"] == "E_CLEAN_ALL_REQUIRES_FORCE"
+    assert refusal["code"] == "E_PROTECTED"
     assert refusal["remedy"]
 
 
@@ -290,8 +290,8 @@ def test_human_output_names_a_failed_deletion() -> None:
 
 def test_human_refusal_names_the_code_and_the_remedy() -> None:
     port = make_port(refs=[ref_line("refs/heads/main", "main", head="*")])
-    _, text = invoke_human(["--clean-all"], port)
-    assert "REFUSED (E_CLEAN_ALL_REQUIRES_FORCE)" in text
+    _, text = invoke_human(["--cleanup", "main"], port)
+    assert "REFUSED (E_PROTECTED)" in text
     assert "remedy:" in text
 
 

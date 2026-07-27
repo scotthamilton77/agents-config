@@ -143,7 +143,7 @@ def test_an_unidentifiable_default_branch_is_unknown_not_guessed_as_main() -> No
     """Guessing `main` looked harmless -- every probe against a ref that is not
     there fails, so nothing could be proven merged. But protection is assigned
     by name, so in a repository whose trunk is `trunk` the guess left no branch
-    protected at all, and `--clean-all` swept the trunk with the cruft."""
+    protected at all, and the real trunk was as deletable as the cruft."""
     port = ScriptedCommands(
         git={
             "symbolic-ref --quiet refs/remotes/origin/HEAD": fail(),

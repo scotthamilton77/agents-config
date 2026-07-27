@@ -33,7 +33,6 @@ _EPILOG = """\
 modes:
   --report                 survey only; emits the full classified state as JSON
   --cleanup [NAME ...]     delete the safe subset, or exactly the named targets
-  --clean-all              delete everything not protected (requires --force)
 
 verdicts:
   disposition  protected | safe | active | abandoned   -- is this still live work?
@@ -47,7 +46,6 @@ examples:
   gitclean --cleanup --dry-run
   gitclean --cleanup feat/old-thing worktree:/path/to/wt
   gitclean --cleanup --include-remote
-  gitclean --clean-all --force --dry-run
 """
 
 
@@ -67,11 +65,6 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="*",
         metavar="NAME",
         help="delete the safe subset, or exactly the named worktrees/branches",
-    )
-    mode.add_argument(
-        "--clean-all",
-        action="store_true",
-        help="delete every non-protected target; requires --force",
     )
 
     parser.add_argument(
@@ -247,7 +240,7 @@ def main(
     stream = out if out is not None else sys.stdout
     runner: CommandPort = port if port is not None else SubprocessCommands()
     moment = now if now is not None else datetime.now(UTC)
-    mode = "report" if args.report else ("clean-all" if args.clean_all else "cleanup")
+    mode = "report" if args.report else "cleanup"
 
     surveyed = run_survey(runner, cwd=cwd, base_override=args.base)
     if isinstance(surveyed, str):
@@ -269,7 +262,6 @@ def main(
         targets,
         surveyed,
         selectors=list(args.cleanup or []),
-        clean_all=args.clean_all,
         force=args.force,
         include_remote=args.include_remote,
         dry_run=args.dry_run,

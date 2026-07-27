@@ -213,7 +213,10 @@ class Executor:
                 removal.transcript(),
             )
             return _failed(target, "removal command failed")
-        self._port.git(["worktree", "prune"], cwd=self._cwd)
+        # No `worktree prune` here. It clears the administrative records of
+        # every worktree whose directory has gone missing, and those were never
+        # planned targets: the executor acts on what the plan named, and
+        # nothing else. `worktree remove` takes this one's record with it.
         listing = self._port.git(["worktree", "list", "--porcelain"], cwd=self._cwd)
         if not listing.ok:
             # Absence of the worktree in output that was never produced is not
@@ -243,7 +246,7 @@ class Executor:
             name=target.name,
             deleted=True,
             verified=True,
-            detail="worktree removed and pruned",
+            detail="worktree removed",
         )
 
     def _delete_branch(self, target: Target) -> Deletion:
@@ -349,14 +352,16 @@ class Executor:
                 probe.transcript(),
             )
             return _failed(target, "remote ref survived deletion")
-        self._port.git(["remote", "prune", remote], cwd=self._cwd)
+        # No `remote prune` here. It drops every tracking ref under
+        # refs/remotes/<remote> that the server no longer has, which is a
+        # sweep of refs this run never planned and never judged.
         return Deletion(
             target_id=target.id,
             kind=target.kind,
             name=target.name,
             deleted=True,
             verified=True,
-            detail=f"{ref} deleted on {remote} and pruned locally",
+            detail=f"{ref} deleted on {remote}",
         )
 
     def _record(

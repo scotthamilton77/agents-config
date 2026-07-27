@@ -9,7 +9,6 @@ gitclean --report --format human     # the same, readable
 gitclean --cleanup --dry-run         # what a bare sweep would take
 gitclean --cleanup                   # take it
 gitclean --cleanup feat/old wt-name  # exactly these
-gitclean --clean-all --force         # everything not protected, salvaged first
 ```
 
 ## Two verdicts, kept separate
@@ -85,11 +84,10 @@ written: the archive would be deleted along with the directory it was saving,
 and the run would report a verified salvage while the only copy went. The
 default location is never inside a removable worktree.
 
-`--clean-all` is refused outright when the default branch cannot be identified
-— no published `origin/HEAD`, no `main`, no `master`. It deletes by exclusion,
-protection is assigned by name, and a repository whose trunk is called
-something else would have no protected branch for the sweep to spare. Publish
-it with `git remote set-head origin -a`, or delete by name instead.
+A repository whose default branch cannot be identified — no published
+`origin/HEAD`, no `main`, no `master` — has no branch protected as its trunk,
+because protection is assigned by name. That lands in the top-level `warnings`.
+Publish it with `git remote set-head origin -a`.
 
 ## Trades worth knowing
 

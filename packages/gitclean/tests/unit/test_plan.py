@@ -34,7 +34,6 @@ def plan_for(
     *,
     survey=None,  # type: ignore[no-untyped-def]
     selectors: list[str] | None = None,
-    clean_all: bool = False,
     force: bool = False,
     include_remote: bool = False,
 ) -> Plan | Refusal:
@@ -42,7 +41,6 @@ def plan_for(
         targets,
         survey if survey is not None else make_survey(),
         selectors=selectors or [],
-        clean_all=clean_all,
         force=force,
         include_remote=include_remote,
         dry_run=False,
@@ -100,48 +98,19 @@ def test_an_automatic_sweep_still_passes_over_remote_branches_quietly() -> None:
     assert [t.name for t in result.targets] == ["local"]
 
 
-# -- --clean-all -------------------------------------------------------------
-
-
-def test_clean_all_is_refused_when_the_trunk_cannot_be_identified() -> None:
-    """--clean-all decides by exclusion: everything not protected goes. But
-    protection is assigned by name, so a repository whose trunk is `trunk` --
-    no published origin/HEAD, no main, no master -- has no protected branch at
-    all, and the sweep takes the trunk along with the cruft."""
-    survey = make_survey(default_branch="main", default_branch_known=False)
-
-    result = plan_for((target("branch:trunk"),), survey=survey, clean_all=True, force=True)
-
-    assert isinstance(result, Refusal)
-    assert result.code == "E_DEFAULT_BRANCH_UNKNOWN"
+# -- an unidentifiable trunk -------------------------------------------------
 
 
 def test_a_named_deletion_still_works_without_a_known_trunk() -> None:
-    """The caller named it, so nothing is being decided by exclusion. Refusing
-    here would strand a repository that simply has no origin/HEAD published."""
+    """A repository that has simply never published origin/HEAD is still
+    cleanable. The unknown trunk is reported on the survey; it is not a bar to
+    deleting a branch the caller named."""
     survey = make_survey(default_branch="main", default_branch_known=False)
 
     result = plan_for((target("branch:feat/x"),), survey=survey, selectors=["feat/x"])
 
     assert isinstance(result, Plan)
     assert [t.name for t in result.targets] == ["feat/x"]
-
-
-def test_clean_all_without_force_is_refused() -> None:
-    result = plan_for((target("branch:x"),), clean_all=True)
-    assert isinstance(result, Refusal)
-    assert result.code == "E_CLEAN_ALL_REQUIRES_FORCE"
-
-
-def test_clean_all_with_force_takes_everything_unprotected() -> None:
-    targets = (
-        target("branch:merged"),
-        target("branch:abandoned", disposition=Disposition.ABANDONED, risk=Risk.RECOVERABLE),
-        target("branch:main", disposition=Disposition.PROTECTED),
-    )
-    result = plan_for(targets, clean_all=True, force=True)
-    assert isinstance(result, Plan)
-    assert sorted(t.name for t in result.targets) == ["abandoned", "merged"]
 
 
 # -- protection is not overridable -------------------------------------------
@@ -290,6 +259,10 @@ def test_plan_orders_worktrees_then_local_then_remote() -> None:
         target("branch:b"),
         target("worktree:/repo/w", kind=TargetKind.WORKTREE),
     )
-    result = plan_for(targets, clean_all=True, force=True, include_remote=True)
+    result = plan_for(
+        targets,
+        selectors=["remote:origin/z", "branch:b", "worktree:/repo/w"],
+        include_remote=True,
+    )
     assert isinstance(result, Plan)
     assert [t.kind.value for t in result.targets] == ["worktree", "branch", "remote_branch"]

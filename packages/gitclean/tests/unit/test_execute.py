@@ -133,7 +133,6 @@ def test_worktree_removal_is_verified_against_the_listing() -> None:
     port = ScriptedCommands(
         git={
             "worktree remove -- /repo/wt": ok(),
-            "worktree prune": ok(),
             "worktree list --porcelain": ok("worktree /repo\nHEAD abc\n"),
         }
     )
@@ -146,7 +145,6 @@ def test_worktree_still_listed_after_removal_is_an_anomaly() -> None:
     port = ScriptedCommands(
         git={
             "worktree remove -- /repo/wt": ok(),
-            "worktree prune": ok(),
             "worktree list --porcelain": ok("worktree /repo\n\nworktree /repo/wt\n"),
         }
     )
@@ -162,7 +160,6 @@ def test_a_clean_worktree_is_removed_without_forcing() -> None:
     port = ScriptedCommands(
         git={
             "worktree remove -- /repo/wt": ok(),
-            "worktree prune": ok(),
             "worktree list --porcelain": ok("worktree /repo\n"),
         }
     )
@@ -209,13 +206,27 @@ def test_a_salvaged_worktree_is_forced_because_the_content_is_already_archived()
     assert "--force" in removal
 
 
+def test_removing_a_worktree_prunes_nothing() -> None:
+    """`worktree prune` destroys the administrative records of worktrees this
+    run never planned to touch -- outside the plan, unsalvaged, and absent from
+    `skipped`. The executor acts on planned targets only."""
+    port = ScriptedCommands(
+        git={
+            "worktree remove -- /repo/wt": ok(),
+            "worktree list --porcelain": ok("worktree /repo\n"),
+        }
+    )
+    report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
+    assert report.ok
+    assert not any("prune" in call for call in port.transcript)
+
+
 def test_an_unlistable_worktree_check_is_unverified_not_removed() -> None:
     """Absence from output that was never produced is not evidence. Empty
     stdout on a failed command previously read as 'gone'."""
     port = ScriptedCommands(
         git={
             "worktree remove -- /repo/wt": ok(),
-            "worktree prune": ok(),
             "worktree list --porcelain": fail("fatal: not a git repository"),
         }
     )
@@ -247,7 +258,6 @@ def test_remote_deletion_is_confirmed_against_the_server() -> None:
         git={
             "push --force-with-lease": ok(),
             "ls-remote --heads origin feat/x": ok(""),
-            "remote prune origin": ok(),
         }
     )
     report = run(port, plan(target(TargetKind.REMOTE_BRANCH, "origin/feat/x")), _remote_survey())
@@ -263,7 +273,6 @@ def test_the_remote_delete_is_leased_to_the_commit_that_was_judged() -> None:
         git={
             "push --force-with-lease": ok(),
             "ls-remote --heads origin feat/x": ok(""),
-            "remote prune origin": ok(),
         }
     )
     run(port, plan(target(TargetKind.REMOTE_BRANCH, "origin/feat/x")), _remote_survey())
@@ -272,6 +281,20 @@ def test_the_remote_delete_is_leased_to_the_commit_that_was_judged() -> None:
     assert f"--force-with-lease=feat/x:{REMOTE_HEAD}" in push
     # The ref is repo-derived, so it is terminated like every other one.
     assert push[-2:] == ("--", "feat/x")
+
+
+def test_deleting_a_remote_branch_prunes_nothing() -> None:
+    """`remote prune` drops every tracking ref the server no longer has, not
+    just the one that was planned -- refs this run never judged."""
+    port = ScriptedCommands(
+        git={
+            "push --force-with-lease": ok(),
+            "ls-remote --heads origin feat/x": ok(""),
+        }
+    )
+    report = run(port, plan(target(TargetKind.REMOTE_BRANCH, "origin/feat/x")), _remote_survey())
+    assert report.ok
+    assert not any("prune" in call for call in port.transcript)
 
 
 def test_a_remote_branch_the_survey_never_saw_is_not_deleted_blind() -> None:
@@ -389,7 +412,6 @@ def _worktree_salvage_port(
     return ScriptedCommands(
         git={
             "worktree remove --force -- /repo/wt": ok(),
-            "worktree prune": ok(),
             "worktree list --porcelain": ok("worktree /repo\n"),
         },
         archive_create=create if create is not None else ok(),

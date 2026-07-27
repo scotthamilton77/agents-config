@@ -85,8 +85,8 @@ def resolve_default_branch(port: CommandPort, cwd: Path | None) -> str | None:
     harmless -- every merge probe against a ref that is not there fails, so
     nothing could be proven merged. But protection is assigned by *name*, and
     a repository whose trunk is `trunk` then has no protected branch at all:
-    `--clean-all` takes everything that is not protected, so the trunk went
-    with it. An unproven guess is not a default branch."""
+    the real trunk is left indistinguishable from cruft, deletable like any
+    other branch. An unproven guess is not a default branch."""
     head = port.git(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], cwd=cwd)
     if head.ok and head.out:
         return _first_line(head.out).removeprefix("refs/remotes/origin/")
@@ -620,7 +620,7 @@ def survey(
     resolved_default = resolve_default_branch(port, cwd)
     # The name is still needed downstream to compare against, but it is now
     # known to be a guess -- so it protects nothing it cannot prove, and the
-    # flag travels with the survey for the modes that must refuse.
+    # flag travels with the survey so the run can report that it is guessing.
     default_branch = resolved_default if resolved_default is not None else "main"
     base_ref = base_override or resolve_base_ref(port, cwd, default_branch)
 
@@ -656,9 +656,9 @@ def survey(
     if resolved_default is None:
         warnings.append(
             "could not determine this repository's default branch: origin has published no "
-            "HEAD and neither main nor master exists. No branch can be protected as the "
-            "trunk, so --clean-all is refused; pass --base to name what merges are measured "
-            "against, and delete branches by name"
+            "HEAD and neither main nor master exists. No branch is protected as the trunk, "
+            "so publish origin's HEAD (`git remote set-head origin -a`) before deleting "
+            "anything, and pass --base to name what merges are measured against"
         )
 
     return Survey(

@@ -93,39 +93,15 @@ def build_plan(
     survey_data: Survey,
     *,
     selectors: list[str],
-    clean_all: bool,
     force: bool,
     include_remote: bool,
     dry_run: bool,
     salvage_dir: str | None,
 ) -> Plan | Refusal:
-    if clean_all and not force:
-        return Refusal(
-            code="E_CLEAN_ALL_REQUIRES_FORCE",
-            message="--clean-all deletes every non-protected target, including work "
-            "that exists nowhere else",
-            remedy="re-run as `--clean-all --force`, or use bare `--cleanup` for the safe subset",
-        )
-
-    if clean_all and not survey_data.default_branch_known:
-        # --clean-all is the one mode that deletes branches the caller never
-        # named, and it decides by exclusion: everything not protected goes.
-        # Protection is by name, so when the trunk cannot be identified no
-        # branch holds it -- and the trunk is swept along with the cruft.
-        return Refusal(
-            code="E_DEFAULT_BRANCH_UNKNOWN",
-            message="cannot identify this repository's default branch, so nothing can be "
-            "protected as the trunk and --clean-all would sweep it with everything else",
-            remedy="publish origin's HEAD (`git remote set-head origin -a`), or delete "
-            "branches by name instead of sweeping by exclusion",
-        )
-
     if selectors:
         chosen, refusal = resolve_selectors(selectors, targets)
         if refusal is not None:
             return refusal
-    elif clean_all:
-        chosen = [t for t in targets if t.disposition is not Disposition.PROTECTED]
     else:
         chosen = [t for t in targets if t.disposition is Disposition.SAFE and t.risk is Risk.NONE]
 
