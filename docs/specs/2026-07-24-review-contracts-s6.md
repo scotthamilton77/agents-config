@@ -31,7 +31,7 @@ requirements, not lore.
 | Class-specific review contracts | nowhere | No typed-code / spec / skill-prose split; no reviewer prompt asset. Reviewers were prompted ad hoc. |
 | AC-attack round (D3) | nowhere | No pre-implementation attack asset. The S5 spec-contract slice explicitly deferred this to S6. |
 | Bot identity / merge-guard | working | The merge-guard + GitHub App approver machinery exists and is proven on this repo: an App approval counts toward required reviews when the App holds `contents:write` (not merely `pull_requests:write`). Auto-merge additionally needs `MERGE_GUARD_APPROVER_KEY_PATH` set. The plumbing exists; no verdict rides it yet. |
-| prgroom | carved target (S8) | Retains `gh`/`git` clients, config, error taxonomy, escalation typing. The **verdict harvester** and **merge-eligibility evaluation** are S8 deliverables (D13), not built here. `wait-for-pr-comments`, `reply-and-resolve-pr-threads`, `monitor-pr` remain deployed until S8 deletes them (AC5). |
+| prgroom | carved target (S8) | Retains `gh`/`git` clients, config, error taxonomy, escalation typing. The **verdict harvester** and **merge-eligibility evaluation** are S8 deliverables (D13), not built here. `wait-for-pr-comments`, `reply-and-resolve-pr-threads` and `monitor-pr` are already retired — absent from `src/` and from every deploy target, held only under `archive/` — so what remains of AC5 is the prgroom-module half. prgroom's `gh` client still authenticates as the repository owner; converting it is part of the S8 carve, not S6. |
 | completion-gate / quality-gate skills | deployed, contradictory | House-rulebook review text that D8 supersedes as a review *medium*. S6 does not delete them (that is teardown scope elsewhere); it defines the replacement contract they will route into. |
 | Multi-vendor reviewer transport | deployed, un-admitted | The `openrouter-claude-subagent` skill (Claude tree) runs a nested Claude Code harness against any OpenRouter-hosted model through a stream-repair proxy, with a versioned model-routing table and a read-only-default tool gate — the intended transport for non-codex panel lenses. Two defects, both Slice B scope: it predates the admission bar (no `admission:` frontmatter block), and it is broken under the current harness (observed 2026-07-24: the nested process emits mid-conversation tool-change blocks that non-Anthropic models reject with a 400 — the stream-repair proxy must strip or the harness feature must be disabled for nested runs). Until repaired, all panel lenses run serially through the codex CLI — single-vendor, a known diversity concession. |
 
@@ -185,9 +185,14 @@ slice is claimed. This is distinct from and
 runs before the PR verdict.
 
 **Verdicts ride the existing bot identity; the gate fails closed (D9).**
-All machine-posted PR comments and approvals use the GitHub App identity, never
-the human's auth, reusing the proven merge-guard/App-approver plumbing (the App
-must hold `contents:write` for its approval to count). Merge eligibility =
+The **verdict medium** — the posted verdict and the verdict-driven approval it
+authorizes — uses the GitHub App identity, never the human's auth, reusing the
+proven merge-guard/App-approver plumbing (the App must hold `contents:write`
+for its approval to count). That medium is the whole of S6's identity scope.
+Every other machine write this harness makes to GitHub — grooming comments,
+review-thread replies, review requests, pushes — still authenticates as the
+repository owner and still renders as the owner after S6 ships; converting
+those is not S6 work (§4). Merge eligibility =
 CI green + an App-posted terminal-clean verdict whose `head_sha` equals the
 current PR head + App approval. "CI green" has a named observable: every
 check required by the target branch's protection rules reports success for
@@ -397,11 +402,16 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   each fresh head needs a fresh claim. Lookalike text ("ready for review" in a
   commit message or an ordinary comment) never triggers a round, and a push
   absent a canonical claim for its head fires nothing (inverse pair).
-- **S6-D2** Machine-posted PR comments and approvals carry the GitHub App
-  identity; a verdict-driven approval is attributable to the App, never the
-  human auth, and counts toward required reviews only when the App holds
-  `contents:write` (carried from proven repo behavior, reusing the merge-guard /
-  App-approver plumbing — not rebuilt here).
+- **S6-D2** The verdict medium carries the GitHub App identity: a posted
+  verdict, and the verdict-driven approval it authorizes, are attributable to
+  the App and never to the human auth, and that approval counts toward required
+  reviews only when the App holds `contents:write` (carried from proven repo
+  behavior, reusing the merge-guard / App-approver plumbing — not rebuilt
+  here). The criterion reaches the verdict medium and nothing else: non-verdict
+  machine writes remain owner-credentialed after S6 (§4), so satisfying this
+  criterion is not a claim that they were converted, and a reader must not
+  treat any other machine comment on this repository as App-attributable
+  because S6-D2 is met.
 - **S6-D3** Merge eligibility requires CI green + an App-posted terminal-clean
   verdict whose `head_sha` equals the current PR head (Slice A) + App
   approval. A verdict-shaped payload from any non-App identity is not a
@@ -410,13 +420,20 @@ first (B and D consume the schema); B, C, D may then run in parallel.
   ineligible. A missing, stale, non-terminal, or wrongly-provenanced verdict
   blocks the merge (fail-closed). Satisfiable by hand-verification now; names
   the S8 merge-eligibility-evaluation handoff.
-- **S6-D4** A human PR comment is treated as an intervention, and
-  is never fed into the fix loop (D9); machine (App) and human comments are
-  separable on the PR, which is the substrate the S10 interventions-per-PR
-  instrument reads (the number itself is S10, not S6). The escalation routing
-  itself — what state the work item enters and who is notified — is the S9
-  park/escalate wiring; S6's testable surface is only the separability of the
-  two comment classes and the exclusion of human comments from the fix loop.
+- **S6-D4** A human PR comment is treated as an intervention, and is never fed
+  into the fix loop (D9); App-posted comments are separable from every other
+  comment on the PR by their author, which is the substrate the S10
+  interventions-per-PR instrument reads (the number itself is S10, not S6).
+  That separation is **one-sided, and S6 does not close it**: because
+  non-verdict machine writes stay owner-credentialed (S6-D2, §4), a comment an
+  agent authored through the owner's credential is indistinguishable from one
+  the human typed, so the residual population reads as human and an instrument
+  counting it over-reports interventions. S6's testable surface is therefore
+  the separability of App-posted comments and the exclusion of human comments
+  from the fix loop; making the residual population separable is the authorship
+  work named in §4, and S10 must not read this substrate as a clean partition
+  until that lands. The escalation routing itself — what state the work item
+  enters and who is notified — is the S9 park/escalate wiring.
 - **S6-D5** Broken review machinery — reviewer error, no verdict emitted, or an
   unparseable verdict — blocks the merge rather than passing silently
   (fail-closed; dependency-failure case). Satisfiable by hand-verification now
@@ -445,11 +462,19 @@ S6 ships the schema, prompts, and skill assets and defines what the gate must
 check; every gate-shaped AC above is hand-satisfiable now and names the S8
 handoff. The **scaffold-review contract** (S7, D4/D5). **Park semantics and the
 staleness report** (S9 / shipped-S2, D10) — S6 only defines the merge-eligibility
-inputs a parked item keys off, never park state itself. Deletion of
-`wait-for-pr-comments` / `reply-and-resolve-pr-threads` / `monitor-pr` and the
-contradictory completion-gate text (S8, D13/AC5). The **interventions-per-PR
+inputs a parked item keys off, never park state itself. The **prgroom modules**
+behind the already-retired `wait-for-pr-comments` /
+`reply-and-resolve-pr-threads` / `monitor-pr` skills, and the contradictory
+completion-gate text (S8, D13/AC5). **Converting non-verdict machine writes to
+the App identity** — S6 puts the verdict medium on the App and stops there;
+grooming comments, review-thread replies, review requests and pushes continue
+to authenticate as the repository owner, the audit of those paths and the
+options for marking them is `docs/specs/2026-07-25-agent-comment-authorship.md`
+(`agents-config-9k9.42`), and converting prgroom's shared `gh` client is part
+of its S8 carve. The **interventions-per-PR
 number** and **pre-PR cycle-time** instruments (S10, D19) — S6 lands only the
-bot-identity substrate that makes the interventions count separable. The
+bot-identity substrate for the verdict medium, which makes App-posted comments
+separable and leaves the owner-credentialed remainder unpartitioned (S6-D4). The
 **verdict-corpus archive** — the S8 harvester extension that aggregates posted
 verdicts, backlog advisories, and attack records into a locally mineable corpus
 for candidate rules and memories; S6 guarantees only the durable media that
