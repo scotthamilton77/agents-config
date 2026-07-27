@@ -235,8 +235,13 @@ unusable one as "no disagreement" re-opens the divergence outright.
   is skipped and a real write is stranded.
   When it is unknown whether the effect happened, **mark it** — syncing an
   idempotent replay is harmless, stranding a write is not. Mark it *un*happened
-  only where something proves that: a `pr-closed` reason mismatch proves the
+  only where something proves that: a `park` reason mismatch proves the
   facade's replay branch ran, and that branch mints nothing.
+  **A reply that cannot be read at all is the strongest "unknown" there is** —
+  a timeout can land mid-write, a wrapper can truncate the output of a call
+  that finished — so the marker attaches at the decode boundary too, not only
+  to parseable replies. The marker follows the *verb*: reads (`state`,
+  `staleness`) and `sync` claim nothing, because neither writes.
   Adding a raise below the port boundary means asking what the far side may
   already have done.
 - **`ok: true` from the runtime is not "it applied".** The runtime's policy is

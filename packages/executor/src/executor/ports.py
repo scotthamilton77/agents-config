@@ -158,20 +158,28 @@ def _decode(
     *,
     subprocess_code: ErrorCode,
     envelope_code: ErrorCode,
+    effect: str | None = None,
 ) -> JsonValue:
     """Both CLIs promise exactly one JSON envelope on stdout, failures included.
 
     A reply that is not JSON is only an envelope fault when the process
     otherwise succeeded; when it also exited non-zero, the process failure is
     the more useful diagnosis and wins.
+
+    Either way, an unreadable reply says nothing about whether the far side
+    acted -- a timeout can land mid-write, a wrapper can truncate the output of
+    a call that finished. `effect` names the marker for what this verb may have
+    done, and it rides both failures: unknown means marked, because syncing an
+    idempotent replay is harmless and stranding a write is not.
     """
+    marker: dict[str, JsonValue] = {effect: True} if effect is not None else {}
     try:
         return cast("JsonValue", json.loads(result.stdout))
     except json.JSONDecodeError:
         if result.exit_code != 0:
-            raise ExecutorError(subprocess_code, result.transcript(argv)) from None
+            raise ExecutorError(subprocess_code, result.transcript(argv), marker) from None
         raise ExecutorError(
-            envelope_code, f"unparseable reply: {result.transcript(argv)}"
+            envelope_code, f"unparseable reply: {result.transcript(argv)}", marker
         ) from None
 
 
@@ -228,6 +236,7 @@ class GrindRuntime:
             argv,
             subprocess_code=ErrorCode.RUNTIME_SUBPROCESS,
             envelope_code=ErrorCode.RUNTIME_ENVELOPE,
+            effect=EVENT_WAS_WRITTEN if appends else None,
         )
         verdict_exit = (
             stale_exit_is_a_verdict
@@ -310,19 +319,27 @@ class WorkTracker:
     def __init__(self, runner: Runner) -> None:
         self._runner = runner
 
-    def _call(self, argv: Sequence[str], *, code: ErrorCode) -> dict[str, JsonValue]:
+    def _call(
+        self, argv: Sequence[str], *, code: ErrorCode, mutates: bool = True
+    ) -> dict[str, JsonValue]:
         result = self._runner.run(argv)
         # No dedicated code exists for a garbled facade reply (S9T1-D11 gives
         # the tracker side one code), so both faults report as the same
         # retryable transport failure.
-        decoded = _decode(result, argv, subprocess_code=code, envelope_code=code)
+        decoded = _decode(
+            result,
+            argv,
+            subprocess_code=code,
+            envelope_code=code,
+            effect=TRACKER_WRITE_LANDED if mutates else None,
+        )
         # No facade verb carries a verdict in its exit code, so a non-zero exit
         # is a failure whatever the envelope says.
         if not _is_ok_envelope(decoded) or result.exit_code != 0:
             # An `ok: true` envelope means the facade finished its work; a
             # non-zero exit after that is the process failing around a write
             # that landed. Losing that would strand the write unsynced.
-            landed = _is_ok_envelope(decoded)
+            landed = mutates and _is_ok_envelope(decoded)
             raise ExecutorError(
                 code,
                 _envelope_message(decoded, result.transcript(argv)),
@@ -380,4 +397,4 @@ class WorkTracker:
         """A failed sync is its own code: the mutations already landed, and the
         repair is running `work sync` again, never re-running the command that
         made them (S9T1-D9)."""
-        self._call(["work", "sync"], code=ErrorCode.SYNC_FAILED)
+        self._call(["work", "sync"], code=ErrorCode.SYNC_FAILED, mutates=False)

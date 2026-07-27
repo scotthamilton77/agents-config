@@ -450,6 +450,74 @@ def test_a_malformed_applied_flag_on_a_failed_exit_still_marks_the_write() -> No
     assert raised.value.data.get(EVENT_WAS_WRITTEN) is True
 
 
+@pytest.mark.parametrize(
+    "result",
+    [CommandResult(0, "truncated{", ""), CommandResult(127, "", "timed out after 120s")],
+    ids=["truncated-clean-exit", "timeout"],
+)
+def test_an_unreadable_reply_to_an_appending_call_still_marks_the_write(
+    result: CommandResult,
+) -> None:
+    """
+    Given an appending call whose reply cannot be read at all
+    When the port appends
+    Then the failure records that the event may have been written.
+
+    An unreadable reply says nothing about whether the runtime acted — a
+    timeout can land mid-write, a wrapper can truncate the output of a call
+    that finished. Unknown is marked, because reporting a durable event as
+    never appended is the worse error.
+    """
+    runner = ScriptedRunner({_LOG: result})
+
+    with pytest.raises(ExecutorError) as raised:
+        GrindRuntime(runner).append("item_started", {"item": "it-1"})
+
+    assert raised.value.data.get(EVENT_WAS_WRITTEN) is True
+
+
+@pytest.mark.parametrize(
+    "result",
+    [CommandResult(0, "truncated{", ""), CommandResult(127, "", "timed out after 120s")],
+    ids=["truncated-clean-exit", "timeout"],
+)
+def test_an_unreadable_reply_to_a_mutating_verb_still_marks_the_write(
+    result: CommandResult,
+) -> None:
+    """
+    Given a mutating facade call whose reply cannot be read
+    When the port calls it
+    Then the failure records that the write may have landed, so its sync is
+    still owed.
+
+    The tracker half of the same rule, and the more consequential one: an
+    unmarked mutation is a write stranded unsynced on the local plane.
+    """
+    runner = ScriptedRunner({("work", "claim"): result})
+
+    with pytest.raises(ExecutorError) as raised:
+        WorkTracker(runner).claim("w-1")
+
+    assert raised.value.data.get(TRACKER_WRITE_LANDED) is True
+
+
+def test_an_unreadable_sync_reply_claims_no_tracker_write() -> None:
+    """
+    Given a failed `work sync` whose reply cannot be read
+    When the port calls it
+    Then no tracker-write marker rides the failure.
+
+    `sync` pushes writes; it is not one. Marking it would have a failed sync
+    record a mutation that never happened.
+    """
+    runner = ScriptedRunner({("work", "sync"): CommandResult(1, "truncated{", "")})
+
+    with pytest.raises(ExecutorError) as raised:
+        WorkTracker(runner).sync()
+
+    assert TRACKER_WRITE_LANDED not in raised.value.data
+
+
 def test_a_failed_read_never_claims_an_event_was_written() -> None:
     """
     Given a non-appending call that fails
