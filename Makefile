@@ -183,10 +183,14 @@ verify-entry-grind:
 test-skills:
 	@set -e; \
 	found=0; \
-	for suite in $$(find src -name '*_test.py' | sort); do \
+	for suite in $$(find src \( -name '*_test.py' -o -name 'test_*.py' \) | sort); do \
 	  found=$$((found + 1)); \
 	  echo "── $$suite"; \
-	  ( cd $$(dirname $$suite) && uv run ./$$(basename $$suite) -q ); \
+	  out=$$(cd $$(dirname $$suite) && uv run ./$$(basename $$suite)); \
+	  echo "$$out"; \
+	  echo "$$out" | grep -qE '[0-9]+ passed' || { \
+	    echo "$$suite reported no passing tests; a script whose tests never run exits 0 and" >&2; \
+	    echo "reads as a suite that passed" >&2; exit 1; }; \
 	done; \
 	if [ $$found -eq 0 ]; then \
 	  echo "test-skills found no suites under src/ -- discovery is broken" >&2; \

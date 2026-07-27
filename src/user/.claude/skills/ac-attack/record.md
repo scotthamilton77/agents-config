@@ -40,7 +40,10 @@ against, crediting one hole with another's criterion while the round still reads
 Committed beside the attacked document, named for it without its extension: `ledger.md` gets
 `ledger-ac-attack.json`. The check enforces that pair rather than trusting it — the two names are
 all that binds a record to its document, so one standing under another document's name would
-otherwise close a round over a document no attacker in it read. Every top-level field is required.
+otherwise close a round over a document no attacker in it read. Only the last extension comes off,
+so two documents in one directory whose names differ only there — `ledger.md` beside `ledger.txt` —
+want one record name between them, and the second round written takes the first's place with
+nothing to say it did. Rename one before attacking both. Every top-level field is required.
 
 | Field | Meaning |
 | --- | --- |
@@ -59,13 +62,20 @@ otherwise close a round over a document no attacker in it read. Every top-level 
 - **Rejected** states a `rationale`. Out of scope is a judgement, and a judgement gets written down.
 - **Nothing found** is a result: every lens reporting empty closes the round.
 
-A revision names content, not history: `sha256:` plus the digest of the document's bytes, or the
-equivalent 40-hex object id, recomputable from the document in front of you. Take the object id
-with `git hash-object --no-filters`. Without that flag git runs the repository's clean filters
-first, so under a `* text=auto` attribute a document with CRLF endings hashes as though its
+A revision names content, not history, and is recomputable from the document in front of you. One
+record picks one notation and writes every revision in it: revisions compare as strings, so one
+content written both ways would read as two, and the check refuses the record rather than guess
+which was meant.
+
+Which notation is already decided for you. The emitter stamps the revision it attacked as `sha256:`
+plus the digest of the document's bytes, so a record built from `round.json` starts in that
+notation and every acceptance in it is written the same way — `shasum -a 256` prints that digest as
+its first field, as does `sha256sum` where that is the name.
+
+The equivalent 40-hex git object id is the other notation, for a record that uses it throughout.
+Take it with `git hash-object --no-filters`: without that flag git runs the repository's clean
+filters first, so under a `* text=auto` attribute a document with CRLF endings hashes as though its
 endings were LF — a revision naming content the file on disk does not hold, which the check reads
-as a document that moved on and no edit can reconcile. Write it with no surrounding whitespace:
-the command ends its output with a newline, and a revision that keeps it reads as a different
-revision, so an acceptance that changed nothing would pass as an incorporation. One record picks
-one notation and writes every revision in it — revisions compare as strings, so one content
-written both ways would read as two.
+as a document that moved on and no edit can reconcile. Either command ends its output with a
+newline; write the revision without it, since one that keeps it reads as a different revision and
+an acceptance that changed nothing would pass as an incorporation.
