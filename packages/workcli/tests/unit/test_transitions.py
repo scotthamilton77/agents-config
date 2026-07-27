@@ -63,6 +63,7 @@ def test_claim_on_open_unblocked_leaf_sends_claim_and_returns_in_progress():
         steps=[
             ScriptedStep(("show",), _show_result(_item_raw("x.1", status="open"))),
             ScriptedStep(("ready",), _ready_result(_item_raw("x.1", status="open"))),
+            ScriptedStep(("list",), _ready_result()),  # parked_stale: nothing parked
             ScriptedStep(("update",), _OK),
         ]
     )
@@ -70,10 +71,13 @@ def test_claim_on_open_unblocked_leaf_sends_claim_and_returns_in_progress():
     exit_code, envelope, _ = run_cli_with_runner(["claim", "x.1"], runner)
 
     assert exit_code == 0
-    assert envelope["data"] == {"id": "x.1", "status": "in_progress"}
+    assert envelope["data"] == {"id": "x.1", "status": "in_progress", "parked_stale": []}
+    # The parked read sits BETWEEN the guards and the claim -- the mutation is
+    # strictly last, so a failed surfacing leaves the item unclaimed (S9T1-P4).
     assert runner.calls == [
         ("show", "x.1", "--json"),
         ("ready", "--json", "--limit", "0"),
+        ("list", "--json", "--label", "parked", "--limit", "0"),
         ("update", "x.1", "--claim"),
     ]
 
@@ -145,14 +149,19 @@ def test_claim_on_already_in_progress_is_a_noop_with_no_claim_call():
     runner = ScriptedBdRunner(
         steps=[
             ScriptedStep(("show",), _show_result(_item_raw("x.1", status="in_progress"))),
+            ScriptedStep(("list",), _ready_result()),  # parked_stale: still a success envelope
         ]
     )
 
     exit_code, envelope, _ = run_cli_with_runner(["claim", "x.1"], runner)
 
     assert exit_code == 0
-    assert envelope["data"] == {"id": "x.1", "status": "in_progress"}
-    assert runner.calls == [("show", "x.1", "--json")]
+    assert envelope["data"] == {"id": "x.1", "status": "in_progress", "parked_stale": []}
+    assert runner.calls == [
+        ("show", "x.1", "--json"),
+        ("list", "--json", "--label", "parked", "--limit", "0"),
+    ]
+    assert not any(call[:1] == ("update",) for call in runner.calls)
 
 
 def test_claim_on_closed_item_is_not_claimable():

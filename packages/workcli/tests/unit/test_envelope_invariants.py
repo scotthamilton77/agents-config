@@ -175,9 +175,10 @@ VERB_CASES: list[VerbCase] = [
     VerbCase(
         "ready",
         ["ready"],
-        [ScriptedStep(("ready",), _EMPTY_ARRAY)],
+        # the parked_stale block's read precedes `ready`'s own listing
+        [ScriptedStep(("list",), _EMPTY_ARRAY), ScriptedStep(("ready",), _EMPTY_ARRAY)],
         ["ready"],
-        [ScriptedStep(("ready",), _GARBAGE)],
+        [ScriptedStep(("list",), _EMPTY_ARRAY), ScriptedStep(("ready",), _GARBAGE)],
     ),
     VerbCase(
         "dep",
@@ -246,6 +247,7 @@ VERB_CASES: list[VerbCase] = [
         [
             ScriptedStep(("show",), _show_result(_item_raw("c.1", "T", status="open"))),
             ScriptedStep(("ready",), _list_result(_item_raw("c.1", "T", status="open"))),
+            ScriptedStep(("list",), _EMPTY_ARRAY),  # parked_stale, before the claim
             ScriptedStep(("update",), _OK),
         ],
         ["claim", "c.2"],

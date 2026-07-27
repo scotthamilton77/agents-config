@@ -222,6 +222,27 @@ def test_item_enqueued_requires_item_and_lane():
     assert validate_payload("item_enqueued", {"item": "a"}) != []
 
 
+def test_item_enqueued_closure_requires_an_integer_pr():
+    # A closure records which PR was abandoned; one that cannot name a PR would
+    # produce a ledger entry about nothing, so it is a command error here
+    # rather than a half-recorded closure in the log.
+    base = {"item": "a", "lane": "lane-a"}
+    assert validate_payload("item_enqueued", {**base, "closure": {"pr": 7}}) == []
+    assert validate_payload("item_enqueued", {**base, "closure": {"pr": 7, "reason": "r"}}) == []
+    assert validate_payload("item_enqueued", {**base, "closure": {"reason": "r"}}) != []
+    assert validate_payload("item_enqueued", {**base, "closure": {"pr": "7"}}) != []
+    assert validate_payload("item_enqueued", {**base, "closure": {"pr": 7, "reason": 7}}) != []
+    assert validate_payload("item_enqueued", {**base, "closure": "abandoned"}) != []
+
+
+def test_fix_attempted_requires_item_and_a_known_kind():
+    assert validate_payload("fix_attempted", {"item": "a", "kind": "ci-fix"}) == []
+    assert validate_payload("fix_attempted", {"item": "a", "kind": "rebase", "note": "n"}) == []
+    assert validate_payload("fix_attempted", {"item": "a", "kind": "lint-fix"}) != []
+    assert validate_payload("fix_attempted", {"item": "a"}) != []
+    assert validate_payload("fix_attempted", {"kind": "ci-fix"}) != []
+
+
 def test_discovered_work_requires_disposition_specific_fields():
     parked = {
         "item": "disc-1",

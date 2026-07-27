@@ -1,0 +1,22 @@
+{
+  "lenses": [
+    {
+      "lens": "criteria-holes",
+      "mandate": "Name behaviours that satisfy every criterion this document states and are still wrong. Work criterion by criterion: read what it literally demands, build the cheapest implementation that passes it, and say where that implementation betrays what the document is for.",
+      "tier": "frontier",
+      "transport": "codex"
+    },
+    {
+      "lens": "edge-cases",
+      "mandate": "Walk the case taxonomy against the criteria and name the cases none of them tests: the inverse of each stated behaviour, empty and boundary inputs, failure of something the work depends on, repeated and concurrent invocation, and running the same operation twice over. Take each class in turn — a class you skip is a class nobody covers.",
+      "tier": "mid",
+      "transport": "openrouter"
+    },
+    {
+      "lens": "absent-requirements",
+      "mandate": "Name obligations this document takes on that no criterion covers: behaviour its prose promises, its scope claims, or its design implies, with nothing stated that would fail if the behaviour were simply missing. Read what the document commits to, then hold each commitment against the criteria.",
+      "tier": "frontier",
+      "transport": "openrouter"
+    }
+  ]
+}

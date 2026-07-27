@@ -13,6 +13,7 @@ from typing import cast
 
 from workcli.backend import Backend
 from workcli.envelope import JsonValue
+from workcli.lifecycle.park import parked_stale
 from workcli.model import Item, QueryFilters
 from workcli.tracks import derive_track, require_known_track
 
@@ -84,8 +85,19 @@ def list_(backend: Backend, args: Namespace) -> JsonValue:
 
 
 def ready(backend: Backend, args: Namespace) -> JsonValue:
-    """`work ready [--label]` — unbounded by default."""
-    return _serialize_items(backend.ready(args.label))
+    """`work ready [--label]` — unbounded by default, plus the `parked_stale` block.
+
+    The block is always present — an empty list when nothing qualifies,
+    because "no stale parked work" is a reported fact, not a missing field.
+    It rides the default threshold and takes no flag of its own; tuning stays
+    on `work parked --stale-days`. The parked read runs FIRST, matching the
+    order the composed `{parked, ready}` surface reads in — and it is
+    fail-closed, so a `ready` list is never handed out beside a surfacing
+    that quietly failed.
+    """
+    block = parked_stale(backend, args.now(), verb="ready")
+    items = backend.ready(args.label)
+    return {"items": [_serialize_item(item) for item in items], "parked_stale": block}
 
 
 def search(backend: Backend, args: Namespace) -> JsonValue:

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from grind.model import PARK_REASONS, RawEvent
+from grind.model import ATTEMPT_BUDGETS, PARK_REASONS, RawEvent
 
 Validator = Callable[[RawEvent], list[str]]
 
@@ -30,6 +30,10 @@ _PARK_REASONS_HELP = "|".join(PARK_REASONS)
 # the accepted set here is what keeps the axis honest at the boundary.
 _SCHEDULING_REASONS: set[str] = {r for r, (axis, _) in PARK_REASONS.items() if axis == "scheduling"}
 _SCHEDULING_REASONS_HELP = "|".join(r for r in PARK_REASONS if r in _SCHEDULING_REASONS)
+# Same single-source rule as the park vocabulary: the attempt kinds and their
+# error text both derive from `grind.model.ATTEMPT_BUDGETS`.
+_ATTEMPT_KINDS: set[str] = set(ATTEMPT_BUDGETS)
+_ATTEMPT_KINDS_HELP = "|".join(ATTEMPT_BUDGETS)
 _PR_CLOSED_NEXT = {"in-progress", "queued", "parked"}
 _OBSERVATION_LEVELS = {"INFO", "WARN", "ERROR", "LESSON"}
 _WORK_DISPOSITIONS = {"parked", "enqueued"}
@@ -319,12 +323,37 @@ def _validate_item_parked(payload: RawEvent) -> list[str]:
     return errors
 
 
+def _validate_fix_attempted(payload: RawEvent) -> list[str]:
+    errors: list[str] = []
+    _require_str(errors, payload, "item")
+    _require(
+        errors,
+        _is_enum(payload, "kind", _ATTEMPT_KINDS),
+        f"kind must be one of {_ATTEMPT_KINDS_HELP}",
+    )
+    _optional_str(errors, payload, "note")
+    return errors
+
+
 def _validate_item_enqueued(payload: RawEvent) -> list[str]:
     errors: list[str] = []
     _require_str(errors, payload, "item")
     _require_str(errors, payload, "lane")
     if "position" in payload:
         _require(errors, _is_int(payload, "position"), "position must be an integer when present")
+    # `closure` records the abandoned PR whose cycle this exit ends. It is the
+    # only place a PR number reaches this event, so a closure that cannot name
+    # one is malformed rather than merely incomplete -- the ledger entry it
+    # produces would be a closure record of nothing.
+    if "closure" in payload:
+        closure = payload["closure"]
+        if not isinstance(closure, dict):
+            errors.append("closure must be an object when present")
+        else:
+            _require(
+                errors, _is_int(closure, "pr"), "closure.pr is required and must be an integer"
+            )
+            _optional_nested_str(errors, closure, "reason", "closure")
     return errors
 
 
@@ -398,6 +427,7 @@ _VALIDATORS: dict[str, Validator] = {
     "item_merged": _validate_item_merged,
     "item_done": _validate_item_done,
     "item_parked": _validate_item_parked,
+    "fix_attempted": _validate_fix_attempted,
     "item_enqueued": _validate_item_enqueued,
     "discovered_work": _validate_discovered_work,
     "observation": _validate_observation,

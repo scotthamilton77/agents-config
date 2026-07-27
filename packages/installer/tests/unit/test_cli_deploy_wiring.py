@@ -63,7 +63,7 @@ def _hermetic_repo(tmp_path: Path) -> Path:
 
 
 # The registry is open to new entries, so these fixtures derive their queue
-# depths from CLI_PACKAGES rather than hard-coding three. Adding a CLI should
+# depths from CLI_PACKAGES rather than hard-coding a count. Adding a CLI should
 # not mean re-counting scripted pops in four tests.
 def _bin_map(bin_dir: Path) -> dict[str, Path]:
     return {spec.binary: bin_dir / spec.binary for spec in CLI_PACKAGES}
