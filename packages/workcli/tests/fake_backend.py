@@ -274,3 +274,47 @@ class FakeBackend:
 
     def sync(self, pull: bool) -> SyncResult:
         return SyncResult(synced=True, mode="pull" if pull else "push")
+
+
+class ReadOnlyFakeBackend(FakeBackend):
+    """Raises on every mutator: the proof surface for a reads-only claim.
+
+    `work parked` and the `parked_stale` block both promise zero writes. A
+    call-log assertion proves what bd was *asked*; this proves the verb layer
+    cannot write at all -- any mutator reached is a loud failure rather than a
+    line someone has to notice in a log.
+    """
+
+    def _refuse(self, *_args: object, **_kwargs: object) -> None:
+        raise AssertionError("this surface must never mutate the backend")
+
+    def create(self, fields: CreateFields) -> str:
+        self._refuse(fields)
+        raise AssertionError  # unreachable; keeps the signature's return type honest
+
+    def set_fields(self, item_id: str, fields: UpdateFields) -> None:
+        self._refuse(item_id, fields)
+
+    def claim(self, item_id: str) -> None:
+        self._refuse(item_id)
+
+    def set_status(self, item_id: str, status: str) -> None:
+        self._refuse(item_id, status)
+
+    def set_type(self, item_id: str, item_type: str) -> None:
+        self._refuse(item_id, item_type)
+
+    def set_acceptance(self, item_id: str, text: str) -> None:
+        self._refuse(item_id, text)
+
+    def append_note(self, item_id: str, text: str) -> None:
+        self._refuse(item_id, text)
+
+    def close(self, ids: Sequence[str]) -> None:
+        self._refuse(ids)
+
+    def reopen(self, item_id: str) -> None:
+        self._refuse(item_id)
+
+    def label_mutate(self, op: str, item_id: str, labels: Sequence[str]) -> None:
+        self._refuse(op, item_id, labels)

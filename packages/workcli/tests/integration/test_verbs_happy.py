@@ -43,6 +43,9 @@ def test_ready_lists_unblocked(read_only_driver):
     env = read_only_driver(["ready"])
     assert env["ok"] is True
     assert isinstance(env["data"]["items"], list)
+    # The parked_stale block rides every ready envelope; nothing in the
+    # read-only corpus is parked, so it is present and empty (never absent).
+    assert env["data"]["parked_stale"] == []
 
 
 def test_search_finds_seeded(read_only_driver):

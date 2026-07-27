@@ -89,8 +89,8 @@ only their envelope/error-code vocabulary above).
 JSON envelope on stdout, always, exit code mirrors `ok`:
 
 ```json
-{"protocol": "1.3", "ok": true, "data": { ... }, "error": null}
-{"protocol": "1.3", "ok": false, "data": null,
+{"protocol": "1.4", "ok": true, "data": { ... }, "error": null}
+{"protocol": "1.4", "ok": false, "data": null,
  "error": {"code": "E_TYPE_WALL", "message": "blocks: epic may not block task",
            "detail": {"from": "x.1", "to": "y", "dep_type": "blocks"}}}
 ```
@@ -104,6 +104,12 @@ JSON envelope on stdout, always, exit code mirrors `ok`:
   (contract pinned by the 2026-07-15 track-partition design, §4). `create`
   responses MAY carry an optional `warnings: [string]` array (advisory-mode
   track gate).
+- `ready` and `claim` success envelopes carry a read-only `parked_stale` array
+  — the parked items past the default staleness threshold plus any whose age
+  is unreadable, each `{id, title, reason, category, parked_at}` — always
+  present, empty when nothing qualifies, and never bypassable: a verb whose
+  parked read fails errors rather than reporting without it (contract pinned
+  by the 2026-07-25 executor-seam S9 Tier 1 spec, S9T1-D10).
 - Human-readable output is opt-in (`--format human`), for direct human use only:
   it renders the human view to **stderr** while stdout still carries the JSON
   envelope, so the "stdout, always" invariant above holds and consumers MUST
@@ -135,7 +141,7 @@ JSON envelope on stdout, always, exit code mirrors `ok`:
 - Every envelope carries `protocol` (semver `MAJOR.MINOR`). Additive fields bump
   MINOR; any breaking change to envelope or `data` shapes bumps MAJOR.
 - `work --protocol-version` returns a standard success envelope on stdout
-  (`ok: true`, `data: {"protocol": "1.3"}`, exit 0) — no exception to the
+  (`ok: true`, `data: {"protocol": "1.4"}`, exit 0) — no exception to the
   "stdout is always a JSON envelope" invariant (§4). It is the consumer
   handshake at adapter init (prgroom/PDLC pin a major and refuse a mismatch at
   startup rather than mis-parsing mid-run).

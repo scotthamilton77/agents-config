@@ -3,21 +3,23 @@
 Parked = status `blocked` + `parked` label + a timestamped typed marker, one
 facade call; the un-park verbs walk back to `open` with distinct recorded
 intent; `parked` is a read-only staleness report -- the machine never acts
-on a parked item. State-based on `FakeBackend`; `_ReadOnlyFakeBackend` proves
+on a parked item. State-based on `FakeBackend`; `ReadOnlyFakeBackend` proves
 the report's zero-writes contract by raising on every mutator.
+
+The `parked_stale` block over the same reads has its own file
+(`test_parked_stale_block.py`).
 """
 
 from __future__ import annotations
 
 import tomllib
 from argparse import Namespace
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from tests.fake_backend import FakeBackend
+from tests.fake_backend import FakeBackend, ReadOnlyFakeBackend
 from workcli.envelope import ErrorCode, WorkError
 from workcli.lifecycle.park import (
     ABANDONED_MARKER,
@@ -31,7 +33,6 @@ from workcli.lifecycle.park import (
     redispatch,
 )
 from workcli.lifecycle.transitions import claim
-from workcli.model import CreateFields, UpdateFields
 
 _NOW = datetime(2026, 7, 22, 12, 0, 0, tzinfo=UTC)
 _ISO = _NOW.isoformat()
@@ -59,44 +60,6 @@ def _parked_item(backend: FakeBackend, item_id: str, *, parked_at: str, reason: 
         labels=[PARKED_LABEL],
         notes=f"{PARKED_MARKER} {parked_at} {reason}: CI red",
     )
-
-
-class _ReadOnlyFakeBackend(FakeBackend):
-    """Raises on every mutator: the `parked` report reports, never acts."""
-
-    def _refuse(self, *_args: object, **_kwargs: object) -> None:
-        raise AssertionError("parked report must never mutate the backend")
-
-    def create(self, fields: CreateFields) -> str:
-        self._refuse(fields)
-        raise AssertionError  # unreachable; keeps the signature's return type honest
-
-    def set_fields(self, item_id: str, fields: UpdateFields) -> None:
-        self._refuse(item_id, fields)
-
-    def claim(self, item_id: str) -> None:
-        self._refuse(item_id)
-
-    def set_status(self, item_id: str, status: str) -> None:
-        self._refuse(item_id, status)
-
-    def set_type(self, item_id: str, item_type: str) -> None:
-        self._refuse(item_id, item_type)
-
-    def set_acceptance(self, item_id: str, text: str) -> None:
-        self._refuse(item_id, text)
-
-    def append_note(self, item_id: str, text: str) -> None:
-        self._refuse(item_id, text)
-
-    def close(self, ids: Sequence[str]) -> None:
-        self._refuse(ids)
-
-    def reopen(self, item_id: str) -> None:
-        self._refuse(item_id)
-
-    def label_mutate(self, op: str, item_id: str, labels: Sequence[str]) -> None:
-        self._refuse(op, item_id, labels)
 
 
 def test_park_sets_blocked_plus_label_plus_typed_marker():  # S2-B1
@@ -149,7 +112,7 @@ def test_vocabulary_matches_the_shared_park_reason_contract():
 
 
 def test_park_unknown_reason_is_usage_error_before_any_backend_call():  # S2-B2 (inverse)
-    backend = _ReadOnlyFakeBackend()  # any touch -- even a read's mutation -- would raise
+    backend = ReadOnlyFakeBackend()  # any touch -- even a read's mutation -- would raise
 
     with pytest.raises(WorkError) as excinfo:
         park(backend, _park_args("w1", "vibes"))
@@ -249,7 +212,7 @@ def test_abandon_records_its_own_distinct_intent():  # S2-B6
 
 
 def test_parked_report_lists_reason_category_staleness_read_only():  # S2-B7
-    backend = _ReadOnlyFakeBackend()
+    backend = ReadOnlyFakeBackend()
     _parked_item(
         backend,
         "old",
@@ -290,7 +253,7 @@ def test_parked_report_lists_reason_category_staleness_read_only():  # S2-B7
 
 
 def test_parked_report_degrades_an_unparseable_marker_to_nulls():  # S2-B7 (dep failure)
-    backend = _ReadOnlyFakeBackend()
+    backend = ReadOnlyFakeBackend()
     backend.add("w1", status="blocked", labels=[PARKED_LABEL], notes="hand-written note")
 
     data = parked(backend, _parked_args())

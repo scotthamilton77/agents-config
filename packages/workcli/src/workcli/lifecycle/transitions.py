@@ -18,16 +18,28 @@ from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle import is_container
 from workcli.lifecycle.create import finalize_spec_instantiation
 from workcli.lifecycle.nouns import CREATING_SPEC_LABEL, PLANNED_LABEL
-from workcli.lifecycle.park import PARKED_LABEL
+from workcli.lifecycle.park import PARKED_LABEL, parked_stale
+
+
+def _claimed(item_id: str, block: list[JsonValue]) -> JsonValue:
+    return {"id": item_id, "status": "in_progress", "parked_stale": block}
 
 
 def claim(backend: Backend, args: Namespace) -> JsonValue:
-    """`work claim ID` -- uses bd's own atomic `--claim`; detects stale claims."""
+    """`work claim ID` -- uses bd's own atomic `--claim`; detects stale claims.
+
+    Every SUCCESS carries the read-only `parked_stale` block: taking new work
+    is exactly the interaction that must show the stuck work first. A refusal
+    carries no block -- nothing was handed out to price. On the claiming
+    path the block is read STRICTLY BEFORE `backend.claim`, so a failed
+    surfacing leaves the backend untouched: an error envelope can never hide
+    an item this very call already took.
+    """
     item = backend.get(args.id)
     if item.status == "closed":
         raise WorkError(ErrorCode.NOT_CLAIMABLE, f"{args.id}: a closed item cannot be claimed")
     if item.status == "in_progress":
-        return {"id": args.id, "status": "in_progress"}
+        return _claimed(args.id, parked_stale(backend, args.now(), verb="claim"))
     if is_container(item):
         raise WorkError(ErrorCode.NOT_CLAIMABLE, f"{args.id}: container; planned, not claimed")
     if PARKED_LABEL in item.labels:
@@ -43,8 +55,9 @@ def claim(backend: Backend, args: Namespace) -> JsonValue:
     if args.id not in ready_ids:
         raise WorkError(ErrorCode.NOT_CLAIMABLE, f"{args.id}: blocked by an open dependency")
 
+    block = parked_stale(backend, args.now(), verb="claim")
     backend.claim(args.id)
-    return {"id": args.id, "status": "in_progress"}
+    return _claimed(args.id, block)
 
 
 def release(backend: Backend, args: Namespace) -> JsonValue:
