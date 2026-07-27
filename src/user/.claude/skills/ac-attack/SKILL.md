@@ -59,7 +59,9 @@ owner gave it. Every file written is owner-only, since a prompt carries the whol
 Proposals and the record they are written into are described in `record.md`: the shape an attacker
 returns, the `id` a disposition names, and the record committed beside the document as
 `<document>-ac-attack.json`, the document's name without its extension — `ledger.md` gets
-`ledger-ac-attack.json`. Its machine-readable form is `attack-record.schema.json`.
+`ledger-ac-attack.json`, and the check holds the record to that name rather than trusting it, so a
+record copied onto a second document closes nothing. Its machine-readable form is
+`attack-record.schema.json`.
 
 ## Checking the round
 
@@ -80,8 +82,8 @@ can return, and what each one means, is in `errors.md`.
 `--implementation-started` declares what the invoker observed: the first work item that changes the
 system this document describes has been claimed. Revising the document is not that. The checker
 reads the record, the document, that declaration, and its own lens registry — read live, so a
-record is judged against the lens set in force now and adding a lens reopens rounds that never
-faced it. It consults no tracker, writes nothing, and answers the same way every time.
+record is judged against the lens set in force now: adding a lens reopens rounds that never faced
+it, while retiring one leaves the rounds it ran in closed, holding coverage they did obtain. It consults no tracker, writes nothing, and answers the same way every time.
 
 The record **attests** that the round happened as written; the checker does not verify that it did.
 It can see the document is at the revision an acceptance names, never that the criterion is in it —

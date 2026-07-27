@@ -27,13 +27,23 @@ SCHEMA_PATH = HERE / "attack-record.schema.json"
 LENSES_PATH = HERE / "lenses.json"
 REQUIRED_KEYS = ("lens", "mandate", "tier", "transport")
 
+# What the record wears once the document's own extension is dropped.
+RECORD_SUFFIX = "-ac-attack.json"
+
+# The emitter's untrusted-content markers, held again here because the two scripts deploy
+# separately and neither can import the other. Two copies of a constant drift, so a test runs both
+# scripts over one document and holds the verdicts together rather than trusting the copy.
+FENCE_OPEN = "<<<BEGIN UNTRUSTED CONTENT>>>"
+FENCE_CLOSE = "<<<END UNTRUSTED CONTENT>>>"
+
 EXIT_COMPLETE = 0
 EXIT_INCOMPLETE = 1
 EXIT_UNUSABLE = 2
 
 DECLARATION = "--implementation-started"
-# What an agent writes to say the work has not started. The flag takes no value, so argparse
-# rejects the command line either way; what is at stake is only what the answer says back.
+# What an agent writes to say the work has not started, in either spelling a valued option takes.
+# The flag takes no value, so a command line writing one refuses either way — as unparseable, or
+# for want of the record the denial was read as; what is at stake is only what the answer says back.
 NEGATIONS = frozenset({"false", "0", "no", "off"})
 
 ORDERING_MESSAGE = (
@@ -113,15 +123,67 @@ def declared_lenses() -> tuple[str, ...]:
     )
 
 
+def one_value_per_key(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Refuse an object writing one key twice, which JSON otherwise resolves to the last one.
+
+    The record a reader reviews and the record the round is decided from are two documents then:
+    a record carrying `"dispositions"` twice is adjudicated on the second alone while the first is
+    what stands in the text above it, and nothing reports the difference. The schema cannot see it
+    either — the repeat is gone before validation, so the forbidding of unknown properties has
+    nothing left to refuse.
+    """
+    seen: set[str] = set()
+    for key, _ in pairs:
+        if key in seen:
+            raise ValueError(f"the key {key!r} is written twice in one object")
+        seen.add(key)
+    return dict(pairs)
+
+
 def read_record(path: Path) -> Any:
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise RecordError("unreadable", f"cannot read the record {path}: {exc}") from exc
     try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
+        return json.loads(text, object_pairs_hook=one_value_per_key)
+    except ValueError as exc:  # malformed JSON, or one key written twice in an object
         raise RecordError("invalid-json", f"{path} is not valid JSON: {exc}") from exc
+
+
+def require_record_binds_its_document(path: Path, record: dict) -> None:
+    """Refuse a record that does not name, and is not named for, one document beside it.
+
+    The record is committed beside the document it attacked and named for it without the
+    document's extension, and that pair of names is the whole of what binds the two. A `spec_path`
+    leading out of the record's own directory names a document this record was not committed
+    beside and no attacker in the round read. A record standing under another document's name is
+    the same loss from the other end: the document is found beside the record, so a copy of one
+    round's record under a second document's name reads as a closed round over a document no
+    attacker ever saw, and clears work to start against it.
+
+    Both are decided on the record's own basename, since a copy is what changes it, and on
+    `spec_path` whatever document the run is told to read: naming a document to check against moves
+    where the round is read from, never which document this record is a round over.
+    """
+    name = record["spec_path"]
+    if name != Path(name).name or name in ("", ".", ".."):
+        raise RecordError(
+            "spec-not-a-bare-filename",
+            f"the record names its document {name!r}, which is not a bare filename; the record is "
+            "committed beside the document it attacked, so name that document's basename — a "
+            "path leading out of the record's own directory names a document no attacker in this "
+            "round read",
+        )
+    expected = Path(name).stem + RECORD_SUFFIX
+    if path.name != expected:
+        raise RecordError(
+            "record-name-mismatch",
+            f"this record is named {path.name!r} while the round in it is over {name!r}, whose "
+            f"record is named {expected!r}; a record standing under another document's name closes "
+            "a round over a document no attacker in that round read — rename it, or name in "
+            "it the document it actually attacked",
+        )
 
 
 def schema_errors(record: Any) -> list[dict[str, Any]]:
@@ -142,10 +204,9 @@ def read_document(record_path: Path, record: dict, override: str | None) -> tupl
 
     The record is committed beside the document it names, so that directory is the only one
     searched: a same-named file in whatever directory the check happens to run from is not the
-    attacked document, and reading it would check the round against unrelated text. A spec_path
-    that is not a bare filename leads back out of that directory and is refused for the same
-    reason. --spec is read for presence, not content — a wrapper passing an unset variable is
-    refused rather than falling back to the document the record names.
+    attacked document, and reading it would check the round against unrelated text. --spec is read
+    for presence, not content — a wrapper passing an unset variable is refused rather than falling
+    back to the document the record names.
     """
     if override is not None and not override.strip():
         raise RecordError(
@@ -156,16 +217,7 @@ def read_document(record_path: Path, record: dict, override: str | None) -> tupl
     if override is not None:
         path = Path(override)
     else:
-        name = record["spec_path"]
-        if name != Path(name).name or name in ("", ".", ".."):
-            raise RecordError(
-                "spec-not-a-bare-filename",
-                f"the record names its document {name!r}, which is not a bare filename; the "
-                "record is committed beside the document it attacked, so name that document's "
-                "basename — a path leading out of the record's own directory names a document no "
-                "attacker in this round read",
-            )
-        path = record_path.parent / name
+        path = record_path.parent / record["spec_path"]
     try:
         return path, path.read_bytes()
     except OSError as exc:
@@ -177,26 +229,52 @@ def read_document(record_path: Path, record: dict, override: str | None) -> tupl
 
 
 def require_attackable_document(path: Path, document: bytes) -> None:
-    """Refuse a document with nothing in it for an attacker to have read.
+    """Refuse a document the emitter would not have emitted a round over.
 
-    The emitter refuses this same document before a prompt goes out, so no round in hand attacked
-    one — a record closing a round over an empty stub was written by hand, and closing it here
-    clears work to start against criteria nobody wrote. Emptiness is decided over the document as
-    text, which is how the emitter decides it: a document of nothing but a non-breaking space is
-    whitespace to it, and a comparison of bytes would pass it. Bytes that are not text at all
-    stand in for themselves and are not whitespace.
+    Every refusal here is one of the emitter's, and for one reason: a round in hand cannot have
+    come from a document the emitter refuses, so a record closing a round over one was written by
+    hand, and closing it clears work to start against criteria no attacker read.
+
+    Bytes that do not decode are refused rather than repaired, because the emitter hands an
+    attacker the document as text and a document that has none is not what any attacker read.
+    Emptiness is decided over that text for the same reason: a document of nothing but a
+    non-breaking space is whitespace to the emitter, and a comparison of bytes would pass it. A
+    document carrying an untrusted-content marker of its own cannot be fenced without being
+    altered, so the emitter refuses it rather than attack text the recorded revision does not name.
     """
-    if not document.decode("utf-8", "replace").strip():
+    try:
+        text = document.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise RecordError(
+            "no-spec",
+            f"the attacked document {path} is not text: {exc}; the emitter reads the document it "
+            "fences as text and refuses one it cannot, so no attacker in any round read these "
+            "bytes — write the document as UTF-8 and attack it",
+        ) from exc
+    if not text.strip():
         raise RecordError(
             "no-spec",
             f"the attacked document {path} is empty; the emitter refuses to emit a round over a "
             "document like this one, so no round in hand read it, and an empty round proves "
             "nothing — attack the document once it states the criteria it is meant to state",
         )
+    if FENCE_OPEN in text or FENCE_CLOSE in text:
+        raise RecordError(
+            "spec-contains-marker",
+            f"the attacked document {path} carries an untrusted-content marker of its own; the "
+            "emitter refuses it rather than rewrite what it hashed, so no round in hand attacked "
+            "this text — take the marker out of the document and attack the revision that leaves",
+        )
 
 
 def revisions_of(data: bytes) -> dict[str, str]:
-    """This content's revision written in each notation; both name these exact bytes."""
+    """This content's revision written in each notation; both name these exact bytes.
+
+    The object id is the one a git blob of these bytes wears, taken over the bytes as they stand
+    and through no clean filter a repository configures: a revision names the document an attacker
+    read, and what an attacker read is what is on disk. So the object id a record is written from
+    has to be taken the same way, which is what the staleness message says where it is reached.
+    """
     blob = b"blob %d\0" % len(data) + data
     return {
         "digest": "sha256:" + hashlib.sha256(data).hexdigest(),
@@ -218,12 +296,20 @@ def require_comparable_revisions(record: dict) -> None:
     reads as two revisions, and an acceptance naming the very revision it attacked passes as an
     incorporation. Held to one spelling, string equality decides revision identity soundly.
 
-    Only the revisions the adjudication reads are checked. A `revision` left behind on a
-    disposition flipped to rejected decides nothing, and refusing the whole record over it would
-    send the reader to debug a field that does not matter.
+    Only the revisions the adjudication reads are checked: one left behind on a disposition flipped
+    to rejected, one on a disposition naming a proposal the round does not hold, and one on a
+    second disposition for a proposal already adjudicated are all read by nothing. Refusing the
+    whole record over how any of them is written would send the reader to debug a field that
+    decides no part of the round — and it refuses fatally, hiding the error that names the
+    disposition itself.
     """
+    held = {proposal["id"] for proposal in record["proposals"]}
+    adjudicating: dict[str, dict[str, Any]] = {}
+    for entry in record["dispositions"]:
+        if entry["id"] in held:
+            adjudicating.setdefault(entry["id"], entry)
     revisions = [record["spec_revision"]] + [
-        entry["revision"] for entry in record["dispositions"]
+        entry["revision"] for entry in adjudicating.values()
         if entry["disposition"] == "accepted"
     ]
     for revision in revisions:
@@ -245,28 +331,37 @@ def require_comparable_revisions(record: dict) -> None:
 
 
 def _lens_errors(record: dict) -> list[dict[str, Any]]:
-    reported = [entry["lens"] for entry in record["lenses"]]
-    errors = []
-    for name in declared_lenses():
-        count = reported.count(name)
-        if count == 0:
-            errors.append({
-                "code": "lens-missing",
-                "message": f"the {name} lens has no report; a lens that errored or returned "
-                           "unreadable output leaves the round unfinished, and an empty proposal "
-                           "list never stands in for a report",
-            })
-        elif count > 1:
-            errors.append({
-                "code": "duplicate-lens",
-                "message": f"the {name} lens reports {count} times; coverage is read off one "
-                           "entry per lens",
-            })
-    for name in sorted(set(reported) - set(declared_lenses())):
-        errors.append({
-            "code": "unknown-lens",
-            "message": f"{name!r} reported, but it is not one of the declared attack lenses",
-        })
+    """Hold the lenses the record reports against the ones the registry declares.
+
+    Coverage is containment: every declared lens owes a report, and a report beyond them is a lens
+    since retired or renamed — coverage this round obtained and the registry no longer asks for,
+    which is surplus rather than a defect. Refusing it would leave every committed record naming a
+    retired lens permanently unclosable over an attack that did run. A name misspelled is caught
+    all the same, since the lens it was meant to be then has no report of its own.
+
+    Names are matched the way the filesystem matched them when the prompts landed: a name differing
+    only in case or in Unicode form was one prompt file and so one attacker, and holding the two
+    apart here would report a lens missing over a difference the message cannot show the reader.
+    """
+    counted: dict[str, int] = {}
+    spelling: dict[str, str] = {}
+    for entry in record["lenses"]:
+        key = fold(entry["lens"])
+        counted[key] = counted.get(key, 0) + 1
+        spelling.setdefault(key, entry["lens"])
+    errors = [
+        {"code": "duplicate-lens",
+         "message": f"the {spelling[key]} lens reports {count} times; coverage is read off one "
+                    "entry per lens"}
+        for key, count in counted.items() if count > 1
+    ]
+    errors += [
+        {"code": "lens-missing",
+         "message": f"the {name} lens has no report; a lens that errored or returned unreadable "
+                    "output leaves the round unfinished, and an empty proposal list never stands "
+                    "in for a report"}
+        for name in declared_lenses() if fold(name) not in counted
+    ]
     return errors
 
 
@@ -275,27 +370,43 @@ def _report_errors(record: dict) -> list[dict[str, Any]]:
 
     A report and the proposal list are two accounts of the same round, and a record where they
     disagree describes no round at all: it either credits a lens with work it did not report or
-    loses the work it did.
+    loses the work it did. Attribution is matched as coverage is, the way the filesystem matched
+    the prompt names, so a lens and the proposals it produced are held together by whichever of the
+    two spellings each was written in.
+
+    Three ways they disagree, and none of the three implies another: a proposal attributed to a
+    lens the record files no report for traces to no attacker at all; a lens reporting proposals
+    with none attributed to it has lost the ones it made; a lens reporting empty with proposals
+    attributed to it never made them. The first is what catches a misspelled attribution on a lens
+    that produced more than one proposal — the lens keeps the others, so nothing about its report
+    contradicts anything, and the misattributed proposal would otherwise close the round traceable
+    to nothing.
+
+    Attribution is read against the lenses this record reports, never against the registry. A lens
+    since retired reports in the record that ran it and no longer stands in the registry, so
+    reading attribution off the registry would refuse every record holding that attacker's
+    findings — which is the loss coverage is containment to avoid.
     """
-    declared = set(declared_lenses())
-    attributed = {proposal["lens"] for proposal in record["proposals"]}
-    errors = [
-        {"code": "unknown-proposal-lens", "id": proposal["id"],
-         "message": f"proposal {proposal['id']!r} is attributed to {proposal['lens']!r}, which is "
-                    "not one of the declared attack lenses; every proposal carries the lens that "
-                    "produced it"}
+    reported = {fold(entry["lens"]) for entry in record["lenses"]}
+    attributed = {fold(proposal["lens"]) for proposal in record["proposals"]}
+    errors: list[dict[str, Any]] = [
+        {"code": "unreported-proposal-lens", "id": proposal["id"],
+         "message": f"proposal {proposal['id']!r} is attributed to {proposal['lens']!r}, which "
+                    "files no report in this round; a lens that produced a proposal reported, so "
+                    "this one traces to no attacker the record names — correct the attribution, "
+                    "or record the report the lens that made it owes"}
         for proposal in record["proposals"]
-        if proposal["lens"] not in declared
+        if fold(proposal["lens"]) not in reported
     ]
     for entry in record["lenses"]:
         name, report = entry["lens"], entry["report"]
-        if report == "empty" and name in attributed:
+        if report == "empty" and fold(name) in attributed:
             errors.append({
                 "code": "contradicted-empty-report",
                 "message": f"the {name} lens reports empty, yet proposals in this round are "
                            "attributed to it; a report and the proposal list are one account",
             })
-        elif report == "proposals" and name not in attributed:
+        elif report == "proposals" and fold(name) not in attributed:
             errors.append({
                 "code": "contradicted-proposals-report",
                 "message": f"the {name} lens reports proposals, yet none in this round are "
@@ -392,7 +503,11 @@ def check(record: dict, revisions: dict[str, str]) -> list[dict[str, Any]]:
                        "revisions asks it to be in two states at once; name in every acceptance "
                        "the revision the document reached once every accepted proposal was in it, "
                        "and in a round that accepted nothing the revision attacked, or attack the "
-                       "document as it now stands and re-adjudicate against that",
+                       "document as it now stands and re-adjudicate against that. The revision "
+                       "names the document's bytes as they stand on disk: `git hash-object "
+                       "--no-filters` prints the object id this check computes, where the same "
+                       "command without that option runs whatever clean filter the repository "
+                       "configures and prints a different id for a document nothing is wrong with",
         })
     return errors
 
@@ -405,13 +520,19 @@ def report(errors: list[dict[str, Any]], started: bool, code: int, clean: bool =
     against the live document, and that substitution is invisible unless the answer says which
     file it read. A run that opened none omits both keys rather than naming a document it never
     read.
+
+    One finding is printed once. A record repeating a lens entry contradicts its proposal list
+    once per copy, and byte-identical errors distinguish nothing for a reader while inviting them
+    to count two defects where the record holds one.
     """
     if errors and started:
         errors = [*errors, {"code": "ordering-violation", "message": ORDERING_MESSAGE}]
+    distinct = {tuple(sorted(error.items())): error for error in errors}
     result = {
         "clean": clean,
         "complete": code == EXIT_COMPLETE,
-        "errors": sorted(errors, key=lambda err: (err["code"], err.get("id", ""), err["message"])),
+        "errors": sorted(distinct.values(),
+                         key=lambda err: (err["code"], err.get("id", ""), err["message"])),
         **(read or {}),
     }
     print(json.dumps(result, sort_keys=True))
@@ -428,12 +549,19 @@ def declared(argv: list[str]) -> bool:
 
     The value written there is read, though, since `--implementation-started=false` declares that
     the work has not started: the command line fails to parse either way, and answering it with an
-    ordering violation would tell the operator the opposite of what they wrote. A value that is
-    not a recognisable denial reads as a declaration, which is the direction that fails closed.
+    ordering violation would tell the operator the opposite of what they wrote. A denial written
+    after a space is the same denial in the spelling every valued option also takes, and is read
+    the same way; anything else following the flag is left alone, the record's own path above all,
+    so a command line naming the record after the flag still declares. A value that is not a
+    recognisable denial reads as a declaration, which is the direction that fails closed.
     """
-    for arg in argv:
-        name, _, value = arg.partition("=")
-        if name == DECLARATION and value.strip().lower() not in NEGATIONS:
+    for position, arg in enumerate(argv):
+        name, valued, value = arg.partition("=")
+        if name != DECLARATION:
+            continue
+        if not valued:
+            value = argv[position + 1] if position + 1 < len(argv) else ""
+        if value.strip().lower() not in NEGATIONS:
             return True
     return False
 
@@ -490,6 +618,7 @@ def main(argv: list[str]) -> int:
         invalid = schema_errors(record)
         if invalid:
             return report(invalid, started, EXIT_UNUSABLE)
+        require_record_binds_its_document(record_path, record)
         require_comparable_revisions(record)
         path, document = read_document(record_path, record, args.spec)
         revisions = revisions_of(document)

@@ -115,6 +115,19 @@ class Attack:
         path.write_text(json.dumps(record, indent=2), encoding="utf-8")
         return str(path)
 
+    def beside(self, record: Any, folder: str) -> str:
+        """The same round in a directory of its own, record and document named as the check asks.
+
+        A record is bound to the document it names by the name it wears, so several rounds over one
+        document are held apart by their directories rather than by renaming any of them.
+        """
+        room = self.root / folder
+        room.mkdir()
+        (room / self.document.name).write_bytes(self.document.read_bytes())
+        path = room / self.path.name
+        path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        return str(path)
+
 
 @pytest.fixture
 def attack(tmp_path) -> Attack:
@@ -413,6 +426,19 @@ class TestStaleness:
             disposition["revision"] = sha_revision(FURTHER)
         assert check(attack, record, capsys) == (0, closed(attack))
 
+    def test_c6_the_staleness_message_names_the_command_that_reproduces_the_object_id(self, attack,
+                                                                                      capsys):
+        """S6-C6: the object id is taken over the document's bytes as they stand on disk, while the
+        command an agent reaches for to write one down runs whatever clean filter the repository
+        configures first — under a line normalising line endings, the same document then hashes
+        two ways, and the round reads stale with nothing wrong with it. The message names the option
+        that reproduces what the check computed, so the reader repairs the revision rather than the
+        document."""
+        attack.write_document(UNRELATED)
+        code, result = check(attack, attack.record(), capsys)
+        assert code == 1 and codes(result) == {"stale-revision"}
+        assert "git hash-object --no-filters" in error_of(result, "stale-revision")["message"]
+
     def test_c6_an_object_id_names_the_same_content_as_its_digest(self, attack, capsys):
         """S6-C6: the revision is content-addressed in either notation, so a record keyed
         throughout to object ids is checkable against the document itself."""
@@ -505,6 +531,58 @@ class TestProvenance:
         assert "document" not in result and "revision" not in result
 
 
+class TestRecordBinding:
+    def test_c6_a_record_carries_the_name_of_the_document_it_reports_on(self, attack, capsys):
+        """S6-C6: the record is committed beside its document and named for it, and that pair of
+        names is the whole of what binds the two, since the document is looked for beside the
+        record. A record copied under a second document's name then reads as a closed round over a
+        document no attacker in it saw — and the copy is in every other way a record in order, so
+        nothing else in the check has anything to say about it."""
+        assert check(attack, attack.record(), capsys)[0] == 0
+        copied = attack.save(attack.record(), "payments-ac-attack.json")
+        code, result = run([copied], capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"record-name-mismatch"}
+        assert "document" not in result
+
+    def test_c6_naming_a_document_to_check_against_does_not_unbind_the_record(self, attack,
+                                                                              tmp_path, capsys):
+        """S6-C6: --spec moves where the document is read from, never which document the record is
+        a round over — that is written inside the record. A binding a caller could lift by naming
+        a document on the command line would be no binding at all."""
+        substitute = tmp_path / "substitute.md"
+        substitute.write_text(REVISED, encoding="utf-8")
+        copied = attack.save(attack.record(), "payments-ac-attack.json")
+        code, result = run([copied, "--spec", str(substitute)], capsys)
+        assert code == 2 and codes(result) == {"record-name-mismatch"}
+
+    @pytest.mark.parametrize(("document", "named"), (("ledger.md", "ledger-ac-attack.json"),
+                                                     ("NOTES", "NOTES-ac-attack.json"),
+                                                     ("ledger.v2.md", "ledger.v2-ac-attack.json")))
+    def test_c6_the_records_name_is_its_documents_without_the_extension(self, attack, capsys,
+                                                                        document, named):
+        """S6-C6: inverse — the name drops the document's last extension and nothing else, so a
+        document with no extension, and one whose name carries a dot of its own, each have a name
+        their round can be recorded under."""
+        room = attack.root / "round"
+        room.mkdir()
+        (room / document).write_text(REVISED, encoding="utf-8")
+        record = attack.record()
+        record["spec_path"] = document
+        (room / named).write_text(json.dumps(record, indent=2), encoding="utf-8")
+        code, result = run([str(room / named)], capsys)
+        assert code == 0 and result["document"] == str(room / document)
+
+    def test_c6_the_path_the_record_was_reached_by_does_not_decide_its_name(self, attack, capsys):
+        """S6-C6: the binding is read off the record's own basename, which is what copying it under
+        another name changes. The directories above it are how this run was told to reach the
+        record and say nothing about which round it holds, so an absolute path and a roundabout one
+        name the same record."""
+        path = attack.save(attack.record())
+        assert run([path], capsys)[0] == 0
+        assert run([f"{attack.root}/./{attack.path.name}"], capsys)[0] == 0
+
+
 class TestRevisionNotation:
     @pytest.mark.parametrize("where", ("attacked", "acceptance"))
     def test_c6_a_record_mixing_the_two_notations_is_refused(self, attack, capsys, where):
@@ -548,6 +626,23 @@ class TestRevisionNotation:
         assert codes(result) == {"untrimmed-revision"}
         assert "git hash-object" in error_of(result, "untrimmed-revision")["message"]
 
+    @pytest.mark.parametrize("stray", ("a proposal the round does not hold", "one already judged"))
+    def test_c6_an_acceptance_the_adjudication_discards_refuses_nothing(self, attack, capsys,
+                                                                        stray):
+        """S6-C6: an acceptance naming a proposal the round does not hold, and a second acceptance
+        of a proposal already adjudicated, are both read by nothing, so the revision on either
+        decides nothing either. Refusing the record over how one of them is written answers
+        fatally, and hides the error naming the disposition itself — the one the reader has to act
+        on, and the one the notation check is there to keep out of the way of."""
+        record = attack.record()
+        record["dispositions"].append({
+            "id": "p7" if stray.startswith("a proposal") else "p1", "disposition": "accepted",
+            "revision": blob_revision(FURTHER), "covering_ac": "A9"})
+        code, result = check(attack, record, capsys)
+        assert code == 1 and result["complete"] is False
+        assert codes(result) == {"unknown-proposal-id" if stray.startswith("a proposal")
+                                 else "duplicate-disposition"}
+
     def test_c6_either_notation_alone_decides_the_round_the_same_way(self, attack, capsys):
         """S6-C6: inverse — a notation is a way of writing a revision, not a different revision,
         so the same round written wholly in digests and wholly in object ids closes either way,
@@ -573,15 +668,12 @@ class TestLensCoverage:
         assert codes(result) == {"lens-missing"}
         assert "criteria-holes" in result["errors"][0]["message"]
 
-    def test_c7_lens_reports_must_match_the_declared_set_one_for_one(self, attack, capsys):
-        """S6-C7: coverage is a comparison against the declared lens set, so a doubled entry or
-        a lens nobody dispatched is a defect in the record."""
+    def test_c7_a_lens_reporting_twice_is_a_defect_in_the_record(self, attack, capsys):
+        """S6-C7: coverage is read off one entry per lens, so a doubled entry is two accounts of
+        one attacker — and the two may disagree, leaving nothing to read the lens's result off."""
         record = attack.empty_round()
         record["lenses"].append({"lens": "criteria-holes", "report": "empty"})
         assert codes(check(attack, record, capsys)[1]) == {"duplicate-lens"}
-        record = attack.empty_round()
-        record["lenses"].append({"lens": "vibes", "report": "empty"})
-        assert codes(check(attack, record, capsys)[1]) == {"unknown-lens"}
 
     def test_c7_every_proposal_names_its_producing_lens(self, attack, capsys):
         """S6-C7: the record identifies which lens produced each proposal; one that does not is
@@ -591,17 +683,44 @@ class TestLensCoverage:
         code, result = check(attack, record, capsys)
         assert code == 2 and codes(result) == {"schema"}
 
-    def test_c7_a_proposal_cannot_be_attributed_to_an_undeclared_lens(self, attack, capsys):
-        """S6-C7: coverage is read off the declared set, so a proposal credited to a lens nobody
-        dispatched is unattributable — and the lens that did report it is left contributing
-        nothing, which the record also has to answer for."""
+    def test_c7_a_proposal_credited_elsewhere_leaves_its_lens_contributing_nothing(self, attack,
+                                                                                    capsys):
+        """S6-C7: a lens's only proposal credited to a name the record does not report is two
+        losses at once, and the record answers for both — the proposal traces to no attacker, and
+        the lens that made it is left reporting proposals the round holds none of. Either alone
+        refuses the record; a record showing both is told both, since repairing the attribution is
+        one edit and repairing the report is another."""
         record = attack.record()
         record["proposals"][0]["lens"] = "vibes"
         code, result = check(attack, record, capsys)
         assert code == 1
-        assert codes(result) == {"unknown-proposal-lens", "contradicted-proposals-report"}
-        error = error_of(result, "unknown-proposal-lens")
-        assert error["id"] == "p1" and "vibes" in error["message"]
+        assert codes(result) == {"unreported-proposal-lens", "contradicted-proposals-report"}
+        assert "edge-cases" in error_of(result, "contradicted-proposals-report")["message"]
+        assert error_of(result, "unreported-proposal-lens")["id"] == "p1"
+
+    def test_c7_a_proposal_traces_to_a_lens_that_reported_in_this_round(self, attack, capsys):
+        """S6-C7: a lens that produced a proposal reported, so a proposal attributed to a name the
+        record files no report for traces to no attacker at all — nothing in the round says that
+        lens looked, and the proposal is adjudicated as though one had.
+
+        The record here exits 0 without this check, and that is the case it exists for: `edge-cases`
+        produced two proposals and one attribution is misspelled, so the lens keeps the other, its
+        report is contradicted by nothing, and every other lens is self-consistent. The check that
+        holds a report against its proposals cannot see this, and the one that reads coverage sees a
+        lens set that matches. Three attribution checks that look redundant are three directions,
+        and this is the only one watching a proposal whose lens is not in the record at all."""
+        record = attack.record()
+        record["lenses"] = [
+            {"lens": name, "report": "proposals" if name == "edge-cases" else "empty"}
+            for name in LENS_NAMES
+        ]
+        record["proposals"] = [proposal("edge-cases", "A1", "p1"),
+                               proposal("edge_cases", "none", "p2")]
+        code, result = check(attack, record, capsys)
+        assert code == 1 and result["complete"] is False
+        assert codes(result) == {"unreported-proposal-lens"}
+        error = error_of(result, "unreported-proposal-lens")
+        assert error["id"] == "p2" and "edge_cases" in error["message"]
 
     def test_c7_a_lens_reporting_empty_cannot_have_proposals_attributed_to_it(self, attack,
                                                                               capsys):
@@ -631,6 +750,25 @@ class TestLensCoverage:
         with proposals or without any, terminates."""
         assert check(attack, attack.record(), capsys)[0] == 0
         assert check(attack, attack.empty_round(), capsys)[0] == 0
+
+    def test_c7_a_name_differing_only_in_case_is_the_same_lens(self, attack, capsys):
+        """S6-C7: a lens's name is its prompt's filename, and the volumes this runs on match names
+        without regard to case or to Unicode form — so two spellings of one name were one file and
+        one attacker. Held apart, the record would be told a lens is missing while the same name
+        stands in it, a difference the message cannot show the reader."""
+        record = attack.record()
+        for entry in record["lenses"]:
+            if entry["lens"] == "edge-cases":
+                entry["lens"] = "Edge-Cases"
+        assert check(attack, record, capsys) == (0, closed(attack))
+
+    def test_c7_two_spellings_of_one_name_are_one_lens_reporting_twice(self, attack, capsys):
+        """S6-C7: the same matching in the other direction — an entry under each spelling is not
+        two lenses covering the document, it is one lens with two accounts of what it found."""
+        record = attack.record()
+        record["lenses"].append({"lens": "EDGE-CASES", "report": "proposals"})
+        code, result = check(attack, record, capsys)
+        assert code == 1 and codes(result) == {"duplicate-lens"}
 
 
 COMPLETE_ENTRY = {"lens": "edge-cases", "mandate": "walk the taxonomy", "tier": "mid",
@@ -741,6 +879,130 @@ class TestLensRegistry:
         """S6-C7: inverse — over the bundled file itself, not a copy of its contents, both scripts
         take the same lens set off it, so the refusal costs the skill as shipped no round at all."""
         assert list(checker.declared_lenses()) == LENS_NAMES == emitter_lenses()
+
+
+class TestRetiredLens:
+    def test_c7_a_lens_the_registry_no_longer_declares_closes_the_round_it_ran_in(self, attack,
+                                                                                  capsys,
+                                                                                  registry):
+        """S6-C7: coverage is containment — every declared lens owes a report, and a report beyond
+        them is a lens since retired or renamed. That record holds more coverage than the registry
+        now asks for, which is surplus and not a defect; refusing it would leave every committed
+        record naming that lens unclosable for good, over an attack that did run and that no edit
+        to the record can undo."""
+        registry([lens_entry(lens=name) for name in LENS_NAMES if name != "criteria-holes"])
+        assert check(attack, attack.record(), capsys)[0] == 0
+
+    def test_c7_a_proposal_a_retired_lens_produced_is_adjudicated_not_refused(self, attack, capsys,
+                                                                              registry):
+        """S6-C7: the proposals a retired lens contributed are the round's work and the record
+        adjudicates them. This is what fixes the shape of the attribution check: a proposal is held
+        against the lenses this record reports, which include the retired one, and never against the
+        registry, which no longer names it. Read off the registry, the check would refuse every
+        record holding a retired attacker's findings — the loss containment exists to avoid."""
+        registry([lens_entry(lens=name) for name in LENS_NAMES if name != "edge-cases"])
+        record = attack.record()
+        assert record["proposals"][0]["lens"] == "edge-cases"  # attributed to the retired lens
+        assert "edge-cases" in [entry["lens"] for entry in record["lenses"]]
+        assert check(attack, record, capsys) == (0, closed(attack))
+
+    def test_c7_a_lens_added_to_the_registry_still_reopens_the_rounds_it_never_faced(self, attack,
+                                                                                     capsys,
+                                                                                     registry):
+        """S6-C7: containment runs one way. A lens the registry declares and the record does not
+        report is coverage the round never obtained, so the round stays open until that attacker
+        runs — which is what makes adding a lens reopen the rounds that predate it."""
+        registry([lens_entry(lens=name) for name in [*LENS_NAMES, "protocol-drift"]])
+        code, result = check(attack, attack.record(), capsys)
+        assert code == 1 and codes(result) == {"lens-missing"}
+        assert "protocol-drift" in error_of(result, "lens-missing")["message"]
+
+    def test_c7_a_lens_name_misspelled_leaves_the_lens_it_meant_unreported(self, attack, capsys):
+        """S6-C7: containment lets no name through unchecked — a report filed under a name the
+        registry does not declare covers nothing, and the declared lens it was meant to be is
+        missing from the record."""
+        record = attack.empty_round()
+        for entry in record["lenses"]:
+            if entry["lens"] == "edge-cases":
+                entry["lens"] = "edge_cases"
+        code, result = check(attack, record, capsys)
+        assert code == 1 and codes(result) == {"lens-missing"}
+        assert "edge-cases" in error_of(result, "lens-missing")["message"]
+
+
+def refusal_code(load: Any, refusal: type[Exception]) -> str | None:
+    """The code one script refuses a document with, or None where it takes the document.
+
+    Only the typed refusal is caught: a document that makes either script raise something else has
+    it answering `checker-failure` or `emitter-failure` where the other names the defect, which is
+    a difference worth a traceback here rather than a pass.
+    """
+    try:
+        load()
+    except refusal as exc:
+        return exc.code
+    return None
+
+
+# Every shape of document either script decides about, the one a round attacks at the head. Both
+# have to read each the same way: both take it as attackable, or both refuse it with one code. A
+# document that is not there is left out — the checker resolves the path its record names and
+# reports that absence itself, while the emitter is handed the path and refuses for want of a
+# document.
+DOCUMENTS = [
+    ("the document a round attacks", DOCUMENT.encode("utf-8")),
+    ("a document holding nothing", b""),
+    ("a document of whitespace", b" \t\r\n"),
+    # Escaped, since no reader sees one on the page: a non-breaking space is whitespace to a
+    # reader and to `strip`, and is not a byte a comparison of bytes would call empty.
+    ("a document of a non-breaking space", "\u00a0".encode()),
+    ("a document that is not UTF-8 text", "# Café ledger\n".encode("latin-1")),
+    ("a document holding half a surrogate pair", b"# Ledger\n\xed\xa0\x80\n"),
+    ("a document that opens an untrusted section", f"{emitter.FENCE_OPEN}\n{DOCUMENT}".encode()),
+    ("a document that closes one", f"{DOCUMENT}{emitter.FENCE_CLOSE}\n".encode()),
+    ("a document that is nothing but a marker", emitter.FENCE_CLOSE.encode()),
+    ("a document behind a byte-order mark", "\ufeff".encode() + DOCUMENT.encode()),
+    ("a document of a byte-order mark alone", "\ufeff".encode()),
+    ("a document holding a NUL", b"\x00" + DOCUMENT.encode()),
+]
+
+
+class TestDocumentRefusal:
+    @pytest.mark.parametrize(("description", "content"), DOCUMENTS)
+    def test_c6_both_scripts_read_a_document_the_same_way(self, tmp_path, description, content):
+        """S6-C6: the emitter decides which documents a round goes out over, and the checker which
+        a record may close over. A document the emitter refuses dispatched no attacker, so a record
+        closing a round over one was written by hand and closing it clears work to start against
+        criteria nobody attacked — an empty stub, bytes that are not text at all, or a document
+        carrying a fence marker of its own, which cannot be fenced without being rewritten. Held by
+        running both over one file rather than by reading either: they deploy as separate scripts
+        that cannot import each other, so each carries its own copy of the refusal, and
+        hand-maintained agreement between two files is what fails silently."""
+        path = tmp_path / "ledger.md"
+        path.write_bytes(content)
+        emitted = refusal_code(lambda: emitter.read_document(str(path)), emitter.Refusal)
+        checked = refusal_code(
+            lambda: checker.require_attackable_document(path, path.read_bytes()),
+            checker.RecordError,
+        )
+        assert emitted == checked, description
+
+    @pytest.mark.parametrize(("content", "refused"),
+                             ((b"# Caf\xe9 ledger\n\n- A1 The exporter writes.\n", "no-spec"),
+                              (f"{REVISED}{emitter.FENCE_CLOSE}\n".encode(),
+                               "spec-contains-marker")))
+    def test_c6_a_document_no_round_could_have_attacked_closes_none(self, attack, capsys, content,
+                                                                     refused):
+        """S6-C6: the refusal is reached through the whole check and answered in its contract,
+        naming the file it was decided over — a document the emitter would have turned away is not
+        one an attacker read, whatever the record says about it."""
+        attack.document.write_bytes(content)
+        record = attack.empty_round()
+        record["spec_revision"] = "sha256:" + hashlib.sha256(content).hexdigest()
+        code, result = check(attack, record, capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {refused}
+        assert result["document"] == str(attack.document)
 
 
 class TestProposalShape:
@@ -864,6 +1126,22 @@ class TestUnusableInput:
         attack.path.write_text("not json at all", encoding="utf-8")
         code, result = run([str(attack.path)], capsys)
         assert code == 2 and codes(result) == {"invalid-json"}
+
+    def test_c3_a_key_written_twice_is_refused_rather_than_resolved(self, attack, capsys):
+        """S6-C3: JSON keeps the last of a repeated key, so a record carrying `dispositions` twice
+        is adjudicated on the second alone while the first is what stands in the text a reader
+        reviews — the bytes reviewed and the bytes decided over are then two records, and nothing
+        says so. The schema cannot catch it either: the repeat is gone before it validates, so what
+        forbids unknown properties never sees a second one."""
+        record = attack.record()
+        body = json.dumps(record, indent=2)
+        doubled = '{\n  "dispositions": [],' + body[1:]
+        # The last key wins, so the adjudication below reads a record no reader of the file sees.
+        assert json.loads(doubled) == record
+        attack.path.write_text(doubled, encoding="utf-8")
+        code, result = run([str(attack.path)], capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"invalid-json"}
 
     def test_c6_a_record_naming_a_document_that_is_gone_is_reported(self, attack, capsys):
         """S6-C6: staleness is decided against the document, so its absence is reported rather
@@ -1043,6 +1321,43 @@ class TestUnusableInput:
         assert code == 2 and result["complete"] is False
         assert codes(result) == {"bad-arguments"}
 
+    @pytest.mark.parametrize("value", ("false", "FALSE", "0", "no", "off", " false "))
+    def test_c3_a_denial_written_after_the_flag_declares_nothing_either(self, attack, capsys,
+                                                                        value):
+        """S6-C3: `--implementation-started false` is that same denial in the other spelling a
+        valued option takes, and the likelier one to reach for — it needs no reminder that the
+        flag takes no value. Read as the bare flag, the answer would tell the operator that work was
+        claimed against the round, which is the opposite of what they wrote."""
+        code, result = run([attack.save(attack.record()), checker.DECLARATION, value], capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"bad-arguments"}
+
+    def test_c3_the_record_named_after_the_flag_is_not_read_as_a_denial(self, attack, capsys):
+        """S6-C3: only a denial is read out of the argument following the flag, so a command line
+        naming the record there declares as it reads. Swallowing whatever follows would leave work
+        claimed against an open round unanswered — in the one spelling that parses cleanly, where
+        nothing else in the result hints that the declaration was dropped."""
+        attack.write_document(DOCUMENT)
+        record = attack.record()
+        record["dispositions"] = []
+        code, result = run([checker.DECLARATION, attack.save(record)], capsys)
+        assert code == 1 and result["complete"] is False
+        assert codes(result) == {"unadjudicated-proposal", "ordering-violation"}
+
+    def test_c3_one_finding_is_reported_once(self, attack, capsys):
+        """S6-C3: a record repeating a lens entry contradicts its proposal list once per copy, and
+        the two errors are byte-identical — a reader counting findings would see two defects where
+        the record holds one, and the repeat says nothing the first did not."""
+        record = attack.record()
+        entry = next(one for one in record["lenses"] if one["lens"] == "absent-requirements")
+        record["lenses"].append(dict(entry))
+        record["proposals"] = record["proposals"][:1]
+        record["dispositions"] = record["dispositions"][:1]
+        code, result = check(attack, record, capsys)
+        assert code == 1
+        assert codes(result) == {"duplicate-lens", "contradicted-proposals-report"}
+        assert len(result["errors"]) == 2
+
     @pytest.mark.parametrize("damaged", ("lenses.json", "attack-record.schema.json"))
     @pytest.mark.parametrize("damage", (None, "{not json"))
     def test_c3_damaged_bundled_data_is_typed_not_a_traceback(self, attack, tmp_path, damaged,
@@ -1075,12 +1390,12 @@ class TestUnusableInput:
         mixed["dispositions"][0]["revision"] = blob_revision(REVISED)
         (attack.root / "prose.json").write_text("not json at all", encoding="utf-8")
         cases = [
-            (0, attack.save(attack.record(), "closed.json")),
-            (1, attack.save(unfinished, "unfinished.json")),
+            (0, attack.beside(attack.record(), "closed")),
+            (1, attack.beside(unfinished, "unfinished")),
             (2, str(attack.root / "absent.json")),
             (2, str(attack.root / "prose.json")),
-            (2, attack.save(malformed, "malformed.json")),
-            (2, attack.save(mixed, "mixed.json")),
+            (2, attack.beside(malformed, "malformed")),
+            (2, attack.beside(mixed, "mixed")),
         ]
         for expected, target in cases:
             command = [sys.executable, str(CHECKER_PATH), target]
