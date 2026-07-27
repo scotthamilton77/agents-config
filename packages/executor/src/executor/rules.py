@@ -721,10 +721,18 @@ def _check_requirement(rules: RowRules, request: Request, requirement: Requires)
             f"{rules.verb} needs a PR, and item {item.id!r} holds no PR reference",
         )
     if requirement is Requires.OPEN_PR and not item.pr_open:
+        # The two cases read very differently to an operator: one item never
+        # opened a PR, the other holds a reference a closure left behind and
+        # marked closed. Collapsing them would send someone looking for a PR
+        # the state names right there.
+        held = (
+            f"its PR {item.pr_number} is not recorded open"
+            if item.pr_number is not None
+            else f"item {item.id!r} holds no PR reference"
+        )
         raise ExecutorError(
             ErrorCode.NO_OPEN_PR,
-            f"{rules.verb} needs an open PR, and item {item.id!r} holds none "
-            f"(reference: {item.pr_number})",
+            f"{rules.verb} needs an open PR, and {held}",
         )
     if (
         requirement is Requires.PR_MATCHES_ITEM

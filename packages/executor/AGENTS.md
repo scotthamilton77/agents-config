@@ -317,6 +317,14 @@ tell it from a refusal that touched nothing.
 That is also why the exhaustion envelope syncs while every other refusal does
 not. The sync is owed by the mutation, not by success.
 
+**A verb block is a conclusion, and only a conclusion carries one.** `_report`
+folds `Plan.report` in on exactly two paths — the success return and that
+refusal — and never on a step that failed partway. `proceed` is computed
+before the append, so republishing it into the envelope that reports the
+append's failure would authorise precisely what did not happen; the fold does
+not count a flagged attempt either. `event_appended` and `tracker_called` are
+outcomes and stay on every path; the verb block is not.
+
 ## More rules that are load-bearing, not stylistic
 
 - **A degraded value that authorises is a fault, not a default.** The parser

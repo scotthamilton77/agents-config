@@ -114,7 +114,11 @@ PAIRING_TABLE: tuple[PairingRow, ...] = (
     PairingRow("done", "done", "item_done", None, Order.RUNTIME_FIRST),
     # `attempt` is one verb over two rows, chosen by the runtime's
     # `attempt_budget_spent` condition exactly as `park`'s two rows are chosen
-    # by its reason's axis.
+    # by its reason's axis. Both are intents rather than world-facts: an
+    # attempt is declared before it is made, and the exhaustion park is a
+    # decision this layer takes -- so both lead with the tracker, and the
+    # under-budget row's explicit none makes that ordering a no-op the way it
+    # already is for `park:scheduling`.
     PairingRow("attempt:under-budget", "attempt", "fix_attempted", None, Order.TRACKER_FIRST),
     PairingRow(
         "attempt:exhausted", "attempt", "item_parked", TrackerVerb.PARK, Order.TRACKER_FIRST

@@ -15,7 +15,14 @@ from executor.enact import SYNC_REPAIR
 from executor.envelope import JsonValue
 from executor.pairing import ATTEMPT_KINDS
 from executor.state import ItemView
-from tests.unit.fakes import FakeRuntime, FakeTracker, invoke, item, run_state
+from tests.unit.fakes import (
+    FakeRuntime,
+    FakeTracker,
+    FlaggingRuntime,
+    invoke,
+    item,
+    run_state,
+)
 
 _KINDS = tuple(ATTEMPT_KINDS)
 
@@ -191,6 +198,28 @@ def test_a_repeated_attempt_is_a_second_attempt_not_an_idempotent_retry() -> Non
 
     assert code == 0
     assert runtime.event_types == ["fix_attempted", "fix_attempted"]
+
+
+def test_a_failed_append_never_reports_the_attempt_as_proceeding() -> None:
+    """
+    Given an attempt whose event the runtime wrote and then flagged
+    When the error data is read
+    Then it reports the event as appended and carries no `proceed` at all.
+
+    The verb block is the command's *conclusion*, and a step that failed
+    partway concluded nothing. `proceed` was computed before the append, so
+    republishing it into the envelope reporting that append's failure would
+    authorise exactly what did not happen — and the fold does not count a
+    flagged attempt, so the budget was not charged either.
+    """
+    runtime = FlaggingRuntime(run_state(_live()))
+
+    code, envelope = invoke(["attempt", "it-1", "--kind", "ci-fix"], runtime, FakeTracker())
+
+    assert code == 1
+    assert envelope["error"]["data"]["event_appended"] is True
+    assert "proceed" not in envelope["error"]["data"]
+    assert "remaining" not in envelope["error"]["data"]
 
 
 # -- S9T1-C2: at exhaustion, park first and refuse --
