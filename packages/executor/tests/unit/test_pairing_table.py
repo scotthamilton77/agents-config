@@ -11,6 +11,7 @@ import pytest
 from executor.cli import CLI_VERBS
 from executor.envelope import ErrorCode, ExecutorError
 from executor.pairing import (
+    BUDGET_EXHAUSTED,
     EXECUTOR_VERBS,
     FAILURE_REASONS,
     PAIRING_TABLE,
@@ -48,6 +49,8 @@ _EXPECTED_TRACKER: dict[str, tuple[str, TrackerVerb | None, Order]] = {
     "pr-closed": ("pr_closed", None, Order.RUNTIME_FIRST),
     "merged": ("item_merged", TrackerVerb.CLOSE, Order.RUNTIME_FIRST),
     "done": ("item_done", None, Order.RUNTIME_FIRST),
+    "attempt:under-budget": ("fix_attempted", None, Order.TRACKER_FIRST),
+    "attempt:exhausted": ("item_parked", TrackerVerb.PARK, Order.TRACKER_FIRST),
 }
 
 
@@ -66,7 +69,7 @@ def test_every_table_row_is_walked_by_a_test() -> None:
 @pytest.mark.parametrize("row", PAIRING_TABLE, ids=lambda row: row.key)
 def test_each_row_pairs_its_event_with_exactly_its_tracker_action(row: PairingRow) -> None:
     """
-    Given each S9T1-D12 row except the two `attempt` rows (slice C)
+    Given each S9T1-D12 row
     When its pairing is read
     Then it names that row's grind event, that row's tracker verb or the
     table's explicit none, and the side that leads.
@@ -87,17 +90,16 @@ def test_the_cli_exposes_exactly_the_wired_part_of_the_closed_universe() -> None
     assert CLI_VERBS == WIRED_VERBS
 
 
-def test_the_unwired_verbs_are_exactly_attempt_and_next() -> None:
+def test_the_only_unwired_verb_is_next() -> None:
     """
     Given the closed universe
     When the unwired verbs are listed
-    Then they are `attempt` and `next`.
+    Then `next` is the only one.
 
-    `attempt` is the budget-enforcement surface (slice C) and `next` the
-    open-new-work one (slice N). Each lands by deleting its name here, so this
-    assertion is what a later slice updates rather than fights.
+    `next` is the open-new-work surface (slice N). It lands by deleting its
+    name here, so this assertion is what that slice updates rather than fights.
     """
-    assert set(PENDING_VERBS) == {"attempt", "next"}
+    assert set(PENDING_VERBS) == {"next"}
 
 
 def test_the_table_covers_every_wired_verb_that_mutates_anything() -> None:
@@ -168,6 +170,21 @@ def test_every_failure_reason_resolves_to_the_failure_axis(reason: str) -> None:
 @pytest.mark.parametrize("reason", SCHEDULING_REASONS)
 def test_every_scheduling_reason_resolves_to_the_scheduling_axis(reason: str) -> None:
     assert park_axis(reason) is Axis.SCHEDULING
+
+
+def test_the_exhaustion_reason_is_on_the_axis_its_row_declares_a_tracker_verb_for() -> None:
+    """
+    Given the reason an exhausted budget parks under
+    When its axis is resolved
+    Then it is the failure axis.
+
+    S9T1-D12 gives the exhaustion row a `work park --reason` rather than the
+    scheduling axis's none, and that is only correct while the reason it uses
+    is a failure-axis member. Moving it to the other axis would leave the row
+    writing to a facade with no vocabulary for it.
+    """
+    assert park_axis(BUDGET_EXHAUSTED) is Axis.FAILURE
+    assert BUDGET_EXHAUSTED in _contract_reasons()
 
 
 def test_an_unknown_park_reason_is_refused_rather_than_defaulted() -> None:

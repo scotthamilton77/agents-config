@@ -39,11 +39,16 @@ whose id matches the run-local slug grammar is **not** a refusal (`S9T1-A6`):
 handle routing happens in `enact`, and such an item enacts normally with no
 tracker call and an `unpromoted` entry. And an item absent from the fold is
 refused before a row is ever selected, by `RunState.item`.
+
+`ATTEMPT_KINDS` sits alongside the three as the fourth table: the `--kind`
+vocabulary and where each kind's budget number is read from. It answers what a
+budget *is*, never whether one is spent -- that is the runtime's
+`attempt_budget_spent` condition and only ever that (`S9T1-C3`).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
@@ -68,6 +73,71 @@ FAILURE_REASONS: tuple[str, ...] = (
 # these rows issue zero tracker writes rather than a translated one.
 SCHEDULING_REASONS: tuple[str, ...] = ("discovered-work", "later-wave", "deferred")
 
+# The reason an exhausted budget parks under, on both planes (S9T1-D12). A
+# member of the failure axis, which is what makes the exhaustion row's tracker
+# column a `work park --reason` rather than the scheduling axis's none.
+BUDGET_EXHAUSTED = "budget-exhausted"
+
+
+# ---------------------------------------------------------------------------
+# The attempt kinds and where their budgets come from
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AttemptKind:
+    """One `--kind`, and where its budget number is read from.
+
+    The config key and the fallback mirror the runtime's, because the executor
+    has to *report* a budget on the path where no condition fires -- the same
+    standing as Matrix A duplicating the fold's source states, and the same
+    backstop: the two are read from one snapshot of the runtime's own `config`,
+    so they can only disagree if this table drifts from the runtime's.
+
+    The **decision** never reads this number. Whether a budget is spent is the
+    runtime's `attempt_budget_spent` condition and nothing else (S9T1-C3), and
+    that condition carries the numbers the refusal reports.
+    """
+
+    kind: str
+    config_key: str
+    default_budget: int
+
+
+ATTEMPT_KINDS: dict[str, AttemptKind] = {
+    "ci-fix": AttemptKind("ci-fix", "ci_fix_budget", 2),
+    "rebase": AttemptKind("rebase", "rebase_budget", 1),
+}
+
+
+def attempt_kind(kind: str) -> AttemptKind:
+    """The kind a `--kind` names. An unknown one is a refusal, not a default:
+    the runtime's fold flags an unrecognized kind as an anomaly, so guessing
+    would spend an attempt the ledger never records."""
+    found = ATTEMPT_KINDS.get(kind)
+    if found is None:
+        raise ExecutorError(
+            ErrorCode.USAGE,
+            f"unknown attempt kind {kind!r}; expected one of {'|'.join(ATTEMPT_KINDS)}",
+        )
+    return found
+
+
+def attempt_budget(kind: AttemptKind, config: Mapping[str, JsonValue]) -> int:
+    """The caller-seeded budget for a kind, or this table's fallback.
+
+    A seeded `0` is legal and means "spend nothing on this kind", so it is
+    honored rather than read as unset -- restoring a default there would hand
+    back attempts the caller forbade. A negative or non-integer value is not a
+    budget at all and falls back, exactly as the runtime's threshold reader
+    does, so both planes report the same number for the same config.
+    """
+    seeded = config.get(kind.config_key)
+    if isinstance(seeded, int) and not isinstance(seeded, bool) and seeded >= 0:
+        return seeded
+    return kind.default_budget
+
+
 # ---------------------------------------------------------------------------
 # Matrix A vocabulary
 # ---------------------------------------------------------------------------
@@ -79,6 +149,16 @@ PR_OPENABLE = frozenset({"in-progress", "waiting-human"})
 # `pr_closed` and `item_merged` share a source set: both end a live PR.
 REVIEWABLE = frozenset({"pr-open", "in-review", "waiting-human"})
 DONEABLE = frozenset({"merged"})
+# `fix_attempted`'s source set: every status but the two terminal ones. Stated
+# separately from `PARKABLE` rather than aliased to it: the two mirror
+# different fold handlers, which happen to exclude the same statuses today and
+# are each free to change without the other. The status axis only has to keep
+# finished work out, because the fold gates an attempt on an open PR reference
+# instead -- `in-progress` holds one via a resume and `queued` via a park exit,
+# so status alone cannot answer it.
+ATTEMPTABLE = frozenset(
+    {"queued", "in-progress", "pr-open", "in-review", "waiting-human", "blocked"}
+)
 # Where a closure leaves an item, and so where a live PR never does.
 POST_CLOSURE = frozenset({"in-progress", "queued"})
 
@@ -116,11 +196,19 @@ class Requires(StrEnum):
     how `pr-closed` came to accept an invented closure against an item that
     had never opened one. Rows wanting the clearer `E_NO_OPEN_PR` for that
     case pair it with `PR_REFERENCE`, which is why the two stay separate.
+
+    `OPEN_PR` is the strictly stronger form of `PR_REFERENCE` and the two are
+    not interchangeable. A closure leaves the reference behind and marks it
+    closed, which is deliberate: a failure-axis park describes a PR that
+    already failed to merge, so a reference is what it needs, while a fix
+    attempt claims to be fixing one that is still open. Reading a reference as
+    an open PR would charge a budget against a cycle that is over.
     """
 
     LANE = "lane"
     PR_REFERENCE = "pr-reference"
     PR_MATCHES_ITEM = "pr-matches-item"
+    OPEN_PR = "open-pr"
 
 
 @dataclass(frozen=True)
@@ -148,6 +236,7 @@ class Request:
     next_status: str | None = None
     reason: str | None = None
     note: str | None = None
+    kind: str | None = None
 
 
 Identity = tuple[JsonValue, ...]
@@ -236,18 +325,16 @@ def _abandon_identity(request: Request) -> Identity:
 def _abandon_recorded(request: Request) -> Identity | None:
     """A *cleared* PR reference plus a closure for that PR, and nothing weaker.
 
-    Only an abandon produces both: S9T1-B7 has the fold clear the reference
+    Only an abandon produces both: `S9T1-B7` has the fold clear the reference
     when it interprets the closure an `item_enqueued` carries, where an
     ordinary `pr_closed` records its closure and leaves the reference in place.
     Nothing else clears a reference at all.
 
-    Until B7 lands this is unreachable -- today's fold records the closure
-    payload without interpreting it -- so an abandon retry falls through to the
-    `Parked.REQUIRED` refusal. That is the interim `S9T1-A7` gap, and it closes
-    on B7 with no change here. Weaker proxies (being out of the parking lot,
-    the surviving reference, ledger membership alone) each match a state some
-    other command produces; an ordinary `pr-closed --next queued` looks
-    identical.
+    Weaker proxies were each tried and each matches a state some other command
+    produces -- being out of the parking lot, the surviving reference, ledger
+    membership alone -- and an ordinary `pr-closed --next queued` looks
+    identical under every one of them. That is why the conjunction is the
+    evidence and no single half of it is.
     """
     item = request.item
     if item.pr_number is not None or request.pr is None:
@@ -340,6 +427,30 @@ def _merged_recorded(request: Request) -> Identity | None:
 def _done_recorded(request: Request) -> Identity | None:
     item = request.item
     return (item.id,) if item.status == "done" and not item.parked else None
+
+
+def _attempt_identity(request: Request) -> Identity:
+    return (request.item.id, request.kind)
+
+
+def _no_recorded_transition(_request: Request) -> Identity | None:
+    """Both `attempt` rows: the fold records no transition this row could be a
+    retry of, so nothing here ever authorises a skip.
+
+    Under budget, `fix_attempted` folds into a *count*, not a transition. Two
+    identical invocations are two attempts, not one attempt and its retry, and
+    the fold is built to say so -- it counts past the budget and never caps
+    (S9T1-B2). Nothing in the state can tell a response-lost retry from a
+    genuine second attempt, and the pre-charge picks the safe side of that:
+    over-counting spends one more attempt inside a bound that exists for the
+    purpose, where under-counting removes the bound.
+
+    At exhaustion the row's park *is* a transition, but the condition that
+    selects the row is absent for a parked item -- so once the park is on
+    record the row is unreachable and the reachable answer to "already
+    exhausted?" is the under-budget row's parked refusal (S9T1-C5).
+    """
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +573,42 @@ ROW_RULES: dict[str, RowRules] = {
         identity=_item_only,
         recorded=_done_recorded,
     ),
+    "attempt:under-budget": RowRules(
+        key="attempt:under-budget",
+        verb="attempt",
+        legal_states=ATTEMPTABLE,
+        parked=Parked.FORBIDDEN,
+        requires=(Requires.OPEN_PR,),
+        identity_fields=("item", "kind"),
+        identity=_attempt_identity,
+        recorded=_no_recorded_transition,
+        notes=(
+            "The one row whose append is deliberately not idempotent: it charges "
+            "a counter, and charging it twice is what a second attempt means. "
+            "The append is also a pre-charge -- it lands before any fix runs, "
+            "because a crash after this call has already spent the attempt and a "
+            "budget that counted only completed attempts would bound nothing."
+        ),
+    ),
+    "attempt:exhausted": RowRules(
+        key="attempt:exhausted",
+        verb="attempt",
+        legal_states=ATTEMPTABLE,
+        parked=Parked.FORBIDDEN,
+        requires=(Requires.OPEN_PR,),
+        identity_fields=("item", "reason"),
+        identity=_park_identity,
+        recorded=_no_recorded_transition,
+        payload=(PayloadRule("note", lambda request: request.reason or ""),),
+        notes=(
+            "The same refusal edges as the row above, checked before the branch "
+            "matters: a parked item or an item holding no open PR is refused "
+            "with zero events and zero tracker calls whichever side of the "
+            "budget it is on (S9T1-C4). Beyond them this is a failure-axis park, "
+            "so it needs what one needs -- and `OPEN_PR` is strictly stronger "
+            "than the reference `park:failure` asks for."
+        ),
+    ),
 }
 
 
@@ -570,6 +717,20 @@ def _check_requirement(rules: RowRules, request: Request, requirement: Requires)
         raise ExecutorError(
             ErrorCode.NO_OPEN_PR,
             f"{rules.verb} needs a PR, and item {item.id!r} holds no PR reference",
+        )
+    if requirement is Requires.OPEN_PR and not item.pr_open:
+        # The two cases read very differently to an operator: one item never
+        # opened a PR, the other holds a reference a closure left behind and
+        # marked closed. Collapsing them would send someone looking for a PR
+        # the state names right there.
+        held = (
+            f"its PR {item.pr_number} is not recorded open"
+            if item.pr_number is not None
+            else f"item {item.id!r} holds no PR reference"
+        )
+        raise ExecutorError(
+            ErrorCode.NO_OPEN_PR,
+            f"{rules.verb} needs an open PR, and {held}",
         )
     if (
         requirement is Requires.PR_MATCHES_ITEM

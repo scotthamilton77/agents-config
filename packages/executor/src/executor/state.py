@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from executor.envelope import ErrorCode, ExecutorError, JsonValue
 
@@ -24,6 +24,11 @@ from executor.envelope import ErrorCode, ExecutorError, JsonValue
 # tracker item yet (S9T1-D5 case (c)). An id matching this is NEVER sent to the
 # tracker.
 RUN_LOCAL_SLUG = re.compile(r"^disc-\d+$")
+
+# The one runtime condition this package acts on (S9T1-C3). Every other
+# condition name is read past: the runtime's vocabulary is free to grow, and a
+# decision layer that parsed all of it would break on every addition.
+BUDGET_SPENT_CONDITION = "attempt_budget_spent"
 
 
 @dataclass(frozen=True)
@@ -34,6 +39,12 @@ class ItemView:
     untyped: `parked` with `park_reason is None` is an item parked by a closure
     whose text named no vocabulary member. Reading absence of a reason as
     absence of a park would put such an item back in play.
+
+    `pr_number` and `pr_open` are separate for the same kind of reason. A
+    closure leaves the reference behind and marks it closed, so a reference is
+    evidence a PR cycle happened, not that one is live -- and the two fold
+    rules want different halves: a failure-axis park needs a reference (the PR
+    that failed to merge), while a fix attempt needs a live one.
     """
 
     id: str
@@ -43,11 +54,34 @@ class ItemView:
     pr_number: int | None
     parked: bool
     park_reason: str | None = None
+    pr_open: bool = False
+    # The runtime's per-kind fix-attempt counts (S9T1-B6). Read to *report* a
+    # count, never to decide one: whether the budget is spent is the runtime's
+    # condition and nothing else (S9T1-C3), so a count this parser could not
+    # read costs a wrong number in a report and can authorise nothing.
+    attempts: Mapping[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class BudgetSpent:
+    """One `attempt_budget_spent` condition, exactly as the runtime reported it.
+
+    S9T1-C3: exhaustion has one definition and it is the runtime's. The
+    executor keeps no counter and recomputes no threshold -- this record's
+    presence *is* the refusal, and its two numbers are the ones the refusal
+    reports, so the report can never disagree with the fact it acted on.
+    """
+
+    item: str
+    kind: str
+    attempts: int
+    budget: int
 
 
 @dataclass(frozen=True)
 class RunState:
-    """The folded run: its items, and the ledgers a retry is judged against.
+    """The folded run: its items, the ledgers a retry is judged against, and the
+    conditions the runtime reported over the same snapshot.
 
     `closures` maps an (item, PR) pair to when its closure was recorded, and
     `merged_shas` an item to the commit its merge recorded. Both are carried
@@ -59,12 +93,23 @@ class RunState:
     lets a ledger entry speak for the item's *current* position: the ledger
     records no outcome, so an item's status stands in for one, and it only
     stands in while that ledger entry is still the last thing that happened.
+
+    `budget_spent` and `config` come from the *same* `status --full` reply as
+    the items, which is what keeps a budget decision self-consistent: the
+    condition the runtime computed and the config it computed it from are one
+    snapshot, never two reads that could straddle an append.
+
+    Every field is required, `budget_spent` above all: an empty default would
+    be a value meaning "the runtime said nothing about budgets", and a state
+    built without one would silently report every item under budget.
     """
 
     items: Mapping[str, ItemView]
     closures: Mapping[tuple[str, int], str]
     merged_shas: Mapping[str, str]
     last_item_ts: Mapping[str, str]
+    budget_spent: Mapping[tuple[str, str], BudgetSpent]
+    config: Mapping[str, JsonValue]
 
     def item(self, item_id: str) -> ItemView:
         found = self.items.get(item_id)
@@ -125,6 +170,38 @@ def _work_id(item_id: str, payload: Mapping[str, JsonValue]) -> str | None:
     )
 
 
+def _pr_open(pr: JsonValue) -> bool:
+    """A numbered reference the runtime states is *not* closed, and nothing
+    weaker.
+
+    `closed` is the field whose degraded reading authorises: an attempt claims
+    to be fixing a PR that is still open, so anything short of an explicit
+    `false` -- absent, null, mistyped, or `true` -- is not evidence of one and
+    must not admit the attempt. Unlike `parked` and `work_id` this fails
+    closed by *value* rather than by raising: a reference whose openness cannot
+    be read is exactly the "no open PR" the rows reading it refuse for
+    (S9T1-C4), and raising here would take down every other verb over a field
+    only these two rows consult.
+    """
+    if not isinstance(pr, dict) or _opt_int(pr, "number") is None:
+        return False
+    return pr.get("closed") is False
+
+
+def _attempts(payload: JsonValue) -> dict[str, int]:
+    """The per-kind counts, keeping only entries that are actually counts.
+
+    `bool` is an `int` subclass, so `true` would otherwise read as one attempt.
+    """
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        kind: count
+        for kind, count in payload.items()
+        if isinstance(count, int) and not isinstance(count, bool)
+    }
+
+
 def _item_view(item_id: str, payload: Mapping[str, JsonValue]) -> ItemView:
     pr = payload.get("pr")
     parked = _parked(item_id, payload)
@@ -136,6 +213,8 @@ def _item_view(item_id: str, payload: Mapping[str, JsonValue]) -> ItemView:
         pr_number=_opt_int(pr, "number") if isinstance(pr, dict) else None,
         parked=parked is not None,
         park_reason=_opt_str(parked, "reason") if parked is not None else None,
+        pr_open=_pr_open(pr),
+        attempts=_attempts(payload.get("attempts")),
     )
 
 
@@ -181,12 +260,71 @@ def _timestamps(payload: JsonValue) -> dict[str, str]:
     return {key: value for key, value in payload.items() if isinstance(value, str)}
 
 
-def parse_state(payload: JsonValue) -> RunState:
-    """`grind status --full`'s `state` object -> `RunState`.
+def _budget_spent(conditions: JsonValue) -> dict[tuple[str, str], BudgetSpent]:
+    """The `attempt_budget_spent` conditions, keyed by (item, kind).
+
+    Anything but a list is a fault, absent and null included. The runtime
+    computes conditions on every `status` reply and already has an encoding for
+    "none currently true" -- the empty list -- so a reply that omits the block
+    or nulls it is not reporting an absence, it is a reply this package cannot
+    read. Treating it as "no budget spent" would hand a corrupt or incompatible
+    runtime the power to switch enforcement off silently, which is the whole
+    mechanism `attempt` exists to be.
+
+    It fails every verb rather than only `attempt`, on purpose: a runtime that
+    cannot produce its own documented reply shape has not established that any
+    of this package's readings of it hold. Same standing as the facade protocol
+    pin, which refuses before mutating rather than after mis-parsing.
+
+    The same rule applies twice more, one level down. **An unknown condition
+    *name* is read past; an unreadable condition *entry* is not.** Growing the
+    runtime's vocabulary must not break this parser, so a name it does not act
+    on is skipped -- but an entry that is not an object, or that names no
+    condition at all, is not an unknown condition. It is one this parser cannot
+    classify, and it could be the very fact it is looking for: skipping it
+    authorises the attempt on the strength of a reply that said nothing
+    readable. An entry that *is* this condition and whose fields cannot be read
+    is a fault for the same reason.
+    """
+    if not isinstance(conditions, list):
+        raise ExecutorError(
+            ErrorCode.RUNTIME_ENVELOPE,
+            f"the runtime reported no readable conditions block: {conditions!r}",
+        )
+    spent: dict[tuple[str, str], BudgetSpent] = {}
+    for entry in conditions:
+        if not isinstance(entry, dict) or _opt_str(entry, "condition") is None:
+            raise ExecutorError(
+                ErrorCode.RUNTIME_ENVELOPE,
+                f"the runtime reported a condition that names none: {entry!r}",
+            )
+        if entry["condition"] != BUDGET_SPENT_CONDITION:
+            continue
+        item_id = _opt_str(entry, "item")
+        kind = _opt_str(entry, "kind")
+        attempts = _opt_int(entry, "attempts")
+        budget = _opt_int(entry, "budget")
+        if item_id is None or kind is None or attempts is None or budget is None:
+            raise ExecutorError(
+                ErrorCode.RUNTIME_ENVELOPE,
+                f"the runtime reported an unreadable {BUDGET_SPENT_CONDITION} condition: {entry!r}",
+            )
+        spent[(item_id, kind)] = BudgetSpent(item_id, kind, attempts, budget)
+    return spent
+
+
+def parse_state(payload: JsonValue, conditions: JsonValue) -> RunState:
+    """`grind status --full`'s `state` object and `conditions` list -> `RunState`.
 
     A reply that is not an object, or whose `items` is not an object, is an
     unparseable runtime envelope rather than an empty run: reporting "no items"
     for a garbled reply would let every verb refuse with the wrong reason.
+
+    `conditions` is a second top-level key of the same reply rather than part
+    of `state` -- the runtime recomputes conditions from the fold and never
+    persists them -- so it arrives here as its own argument. It is required
+    with no default: a default would be a value meaning "the runtime said
+    nothing about budgets", and there is no such reading (see `_budget_spent`).
     """
     if not isinstance(payload, dict):
         raise ExecutorError(
@@ -199,6 +337,7 @@ def parse_state(payload: JsonValue) -> RunState:
             ErrorCode.RUNTIME_ENVELOPE,
             "runtime state carries no items object",
         )
+    config = payload.get("config")
     return RunState(
         items={
             item_id: _item_view(item_id, body)
@@ -208,6 +347,8 @@ def parse_state(payload: JsonValue) -> RunState:
         closures=_closures(payload.get("closed_ledger")),
         merged_shas=_merged_shas(payload.get("merged_ledger")),
         last_item_ts=_timestamps(payload.get("last_item_ts")),
+        budget_spent=_budget_spent(conditions),
+        config=dict(config) if isinstance(config, dict) else {},
     )
 
 

@@ -283,7 +283,14 @@ class GrindRuntime:
         return decoded
 
     def state(self) -> RunState:
-        return parse_state(self._call("status", "--full").get("state"))
+        """The fold and the conditions computed over it, from one reply.
+
+        `status --full` carries both, and taking them from the same call is
+        what makes a budget decision self-consistent: two reads could straddle
+        an append and pair a count with a condition computed before it.
+        """
+        reply = self._call("status", "--full")
+        return parse_state(reply.get("state"), reply.get("conditions"))
 
     def append(self, event_type: str, payload: Mapping[str, JsonValue]) -> None:
         """Append one event, refusing the runtime's accept-and-flag outcome.

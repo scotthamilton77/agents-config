@@ -24,6 +24,8 @@ from enum import StrEnum
 
 from executor.envelope import ErrorCode, ExecutorError, JsonValue
 from executor.rules import (
+    ATTEMPT_KINDS,
+    BUDGET_EXHAUSTED,
     FAILURE_REASONS,
     ROW_RULES,
     SCHEDULING_REASONS,
@@ -31,11 +33,15 @@ from executor.rules import (
     RowRules,
     already_recorded,
     apply_payload_rules,
+    attempt_budget,
+    attempt_kind,
     check_preconditions,
 )
-from executor.state import ItemView, RunState
+from executor.state import BudgetSpent, ItemView, RunState
 
 __all__ = [
+    "ATTEMPT_KINDS",
+    "BUDGET_EXHAUSTED",
     "EXECUTOR_VERBS",
     "FAILURE_REASONS",
     "PAIRING_TABLE",
@@ -106,6 +112,17 @@ PAIRING_TABLE: tuple[PairingRow, ...] = (
     PairingRow("pr-closed", "pr-closed", "pr_closed", None, Order.RUNTIME_FIRST),
     PairingRow("merged", "merged", "item_merged", TrackerVerb.CLOSE, Order.RUNTIME_FIRST),
     PairingRow("done", "done", "item_done", None, Order.RUNTIME_FIRST),
+    # `attempt` is one verb over two rows, chosen by the runtime's
+    # `attempt_budget_spent` condition exactly as `park`'s two rows are chosen
+    # by its reason's axis. Both are intents rather than world-facts: an
+    # attempt is declared before it is made, and the exhaustion park is a
+    # decision this layer takes -- so both lead with the tracker, and the
+    # under-budget row's explicit none makes that ordering a no-op the way it
+    # already is for `park:scheduling`.
+    PairingRow("attempt:under-budget", "attempt", "fix_attempted", None, Order.TRACKER_FIRST),
+    PairingRow(
+        "attempt:exhausted", "attempt", "item_parked", TrackerVerb.PARK, Order.TRACKER_FIRST
+    ),
 )
 
 ROWS: dict[str, PairingRow] = {row.key: row for row in PAIRING_TABLE}
@@ -125,11 +142,11 @@ EXECUTOR_VERBS: tuple[str, ...] = (
     "next",
 )
 
-# Verbs inside the closed universe that this slice does not wire: `attempt` is
-# the budget-enforcement decision surface and `next` the open-new-work one.
-# Each lands by deleting its name from here and adding its rows/parser, so the
-# totality test measures the gap instead of ignoring it.
-PENDING_VERBS: frozenset[str] = frozenset({"attempt", "next"})
+# Verbs inside the closed universe that no slice has wired yet: `next` is the
+# open-new-work decision surface. It lands by deleting its name from here and
+# adding its parser, so the totality test measures the gap instead of ignoring
+# it.
+PENDING_VERBS: frozenset[str] = frozenset({"next"})
 
 # The table closes the executor's *mutation* surface, so a verb that only
 # reads has no row in it and must not be looked for there. `next` composes two
@@ -163,6 +180,7 @@ class VerbArgs:
     pr: int | None = None
     sha: str | None = None
     next_status: str | None = None
+    kind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -175,6 +193,15 @@ class Plan:
     still reports success. The tracker side is re-issued regardless -- the
     facade verbs are idempotent, and a response-lost retry has to be able to
     converge the side that did not land.
+
+    `report` is the verb-specific block the envelope carries beside the
+    enactment report -- `attempt`'s counts (S9T1-D11) are the only one today.
+
+    `refusal` is a typed failure the plan carries *through* its enactment: the
+    exhaustion row parks the item and then refuses the attempt (S9T1-C2), so
+    the refusal has to survive a successful enactment rather than pre-empt it.
+    It lives on the plan, and `enact` raises it, so a caller reaching the
+    pairing layer directly cannot enact the park and miss the refusal.
     """
 
     row: PairingRow
@@ -182,6 +209,8 @@ class Plan:
     payload: dict[str, JsonValue] | None
     park_reason: str | None = None
     park_note: str | None = None
+    report: dict[str, JsonValue] | None = None
+    refusal: ExecutorError | None = None
 
     @property
     def appends(self) -> bool:
@@ -303,6 +332,74 @@ def _plan_done(item: ItemView, state: RunState) -> Plan:
     return Plan(row, item, {"item": item.id})
 
 
+def _plan_exhausted(spent: BudgetSpent, item: ItemView, state: RunState) -> Plan:
+    """The refusal that parks first (S9T1-C2).
+
+    Takes the condition itself rather than looking it up again: the numbers
+    reported are the runtime's, never recomputed here, and reporting one it
+    did not decide on would let the report and the fact disagree.
+    """
+    rules, row = ROW_RULES["attempt:exhausted"], ROWS["attempt:exhausted"]
+    # `_resolve`'s skip is statically False here: the row declares no recorded
+    # transition (Matrix B), which the matrix suite walks.
+    request, _ = _resolve(
+        rules, Request(item=item, state=state, kind=spent.kind, reason=BUDGET_EXHAUSTED)
+    )
+    note = request.note or BUDGET_EXHAUSTED
+    return Plan(
+        row,
+        item,
+        {"item": item.id, "reason": BUDGET_EXHAUSTED, "note": note},
+        park_reason=BUDGET_EXHAUSTED,
+        park_note=note,
+        report={
+            "kind": spent.kind,
+            "attempts": spent.attempts,
+            "budget": spent.budget,
+            "proceed": False,
+        },
+        refusal=ExecutorError(
+            ErrorCode.BUDGET_EXHAUSTED,
+            f"the {spent.kind} budget for item {item.id!r} is spent "
+            f"({spent.attempts} of {spent.budget}); it is parked as {BUDGET_EXHAUSTED}",
+        ),
+    )
+
+
+def _plan_attempt(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
+    """One verb, two rows, chosen by the runtime's condition and nothing else.
+
+    S9T1-C3: `attempt_budget_spent` is the single definition of exhaustion.
+    This layer keeps no counter, compares no threshold, and reads the counts
+    only to report them.
+    """
+    kind = attempt_kind(str(_require(args.kind, "attempt", "--kind")))
+    spent = state.budget_spent.get((item.id, kind.kind))
+    if spent is not None:
+        return _plan_exhausted(spent, item, state)
+
+    rules, row = ROW_RULES["attempt:under-budget"], ROWS["attempt:under-budget"]
+    # Same static-False skip as above, and here it is also what the row means:
+    # a repeat is a second attempt, not a retry.
+    _resolve(rules, Request(item=item, state=state, kind=kind.kind))
+    budget = attempt_budget(kind, state.config)
+    # The ledger as this command leaves it, not as it found it: the append is a
+    # pre-charge, so by the time the caller reads this the attempt is spent.
+    charged = item.attempts.get(kind.kind, 0) + 1
+    return Plan(
+        row,
+        item,
+        {"item": item.id, "kind": kind.kind},
+        report={
+            "kind": kind.kind,
+            "attempts": charged,
+            "budget": budget,
+            "remaining": budget - charged,
+            "proceed": True,
+        },
+    )
+
+
 def build_plan(verb: str, args: VerbArgs, state: RunState) -> Plan:
     """Resolve one executor verb against the folded state into a `Plan`.
 
@@ -326,4 +423,6 @@ def build_plan(verb: str, args: VerbArgs, state: RunState) -> Plan:
         return _plan_merged(args, item, state)
     if verb == "done":
         return _plan_done(item, state)
+    if verb == "attempt":
+        return _plan_attempt(args, item, state)
     raise ExecutorError(ErrorCode.USAGE, f"unknown executor verb {verb!r}")

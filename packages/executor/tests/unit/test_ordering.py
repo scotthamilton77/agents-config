@@ -78,21 +78,30 @@ def test_re_running_an_intent_after_the_tracker_recovers_converges(
 
 
 @pytest.mark.parametrize(
-    ("argv", "view", "tracker_verb"),
+    ("argv", "view", "state_kwargs", "tracker_verb"),
     [
-        (["start", "it-1"], item("it-1", status="in-progress", work_id="w-1"), "claim"),
+        (["start", "it-1"], item("it-1", status="in-progress", work_id="w-1"), {}, "claim"),
         (
             ["park", "it-1", "--reason", "ci-failure"],
             item("it-1", status="pr-open", pr=7, park_reason="ci-failure", work_id="w-1"),
+            {},
             "park",
         ),
-        (["redispatch", "it-1"], item("it-1", parked=False, work_id="w-1"), "redispatch"),
-        (["done", "it-1"], item("it-1", status="done"), None),
+        (["redispatch", "it-1"], item("it-1", parked=False, work_id="w-1"), {}, "redispatch"),
+        (
+            # The one row whose evidence needs a ledger: a *cleared* PR
+            # reference plus the closure for that PR.
+            ["abandon", "it-1", "--pr", "8"],
+            item("it-1", status="queued", work_id="w-1"),
+            {"closures": [("it-1", 8)]},
+            "abandon",
+        ),
+        (["done", "it-1"], item("it-1", status="done"), {}, None),
     ],
-    ids=["start", "park", "redispatch", "done"],
+    ids=["start", "park", "redispatch", "abandon", "done"],
 )
 def test_a_transition_the_runtime_already_records_appends_no_duplicate(
-    argv: list[str], view: ItemView, tracker_verb: str | None
+    argv: list[str], view: ItemView, state_kwargs: dict[str, object], tracker_verb: str | None
 ) -> None:
     """
     Given a response-lost retry — the runtime already records the transition
@@ -100,11 +109,13 @@ def test_a_transition_the_runtime_already_records_appends_no_duplicate(
     Then no second event is appended and success is still reported, with the
     tracker side re-issued so a half-landed pair converges.
 
-    `abandon` is absent deliberately: it is the one row whose "already done"
-    the fold cannot express, and it refuses instead (see
-    `test_abandon_has_no_idempotent_retry_path`).
+    `abandon` is the one row whose "already done" the fold expresses only as a
+    conjunction — a cleared PR reference *and* a closure for that PR, which
+    S9T1-B7 made reachable. Every weaker half of it is also true of what an
+    ordinary `pr-closed --next queued` leaves behind, which is the inverse
+    pinned by `test_a_surviving_pr_reference_is_not_an_abandon_retry`.
     """
-    runtime = FakeRuntime(run_state(view))
+    runtime = FakeRuntime(run_state(view, **state_kwargs))  # type: ignore[arg-type]
     tracker = FakeTracker()
 
     code, envelope = invoke(argv, runtime, tracker)

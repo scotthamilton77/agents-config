@@ -12,6 +12,7 @@ executor pr-opened it-1 --pr 412
 executor pr-closed it-1 --pr 412 --next queued --reason superseded
 executor merged it-1 --sha 9fceb02
 executor done it-1
+executor attempt it-1 --kind ci-fix                        # charge one fix attempt
 ```
 
 `--dir` selects the grind directory; without it the runtime resolves its own.
@@ -32,6 +33,8 @@ an omission.
 | `pr-closed <id> --pr N --next S --reason T` | `pr_closed` | — |
 | `merged <id> --sha SHA` | `item_merged` | `work close` |
 | `done <id>` | `item_done` | — |
+| `attempt <id> --kind K`, under budget | `fix_attempted` | — |
+| `attempt <id> --kind K`, at exhaustion | `item_parked` (`budget-exhausted`) | `work park --reason budget-exhausted` |
 
 `merged` takes its PR number from the fold, never from an argument: closed
 means merged, and the executor must not be able to close against a PR the
@@ -58,6 +61,31 @@ Re-parking an already-parked item under a *different* reason is refused too:
 the parking lot's only exit is a redispatch or an abandon, so there is no
 re-park to enact. The same reason with a differently worded note is the
 ordinary idempotent retry.
+
+## Attempt budgets
+
+`executor attempt` is where a caller declares a fix attempt **before making
+it**. Under budget it appends `fix_attempted` and reports
+`{kind, attempts, budget, remaining, proceed: true}`. The append is a
+pre-charge: a crash after the call has already spent the attempt, and a budget
+that counted only completed attempts would bound nothing. Two identical
+`attempt` calls are therefore two attempts, not a command and its retry.
+
+At exhaustion it refuses. `work park --reason budget-exhausted` runs first,
+`item_parked` is appended second, and the envelope is a non-retryable
+`E_BUDGET_EXHAUSTED` carrying the kind and both counts — plus what the park
+landed, since this is the one refusal that mutates. A second `attempt` after
+that park is refused as parked, mutating nothing.
+
+**The runtime decides exhaustion, not this package.** The refusal fires on
+grind's `attempt_budget_spent` condition; the executor keeps no counter of its
+own. Budgets themselves are caller config seeded into the runtime
+(`ci_fix_budget`, default 2; `rebase_budget`, default 1), and a seeded `0` is
+legal — "spend nothing on this kind".
+
+An attempt exists only inside a live PR cycle, so an item holding no open PR is
+refused with `E_NO_OPEN_PR`. A reference a closure left behind does not count:
+the runtime marks it closed, and that flag is what this checks.
 
 ## Which side leads
 
@@ -106,7 +134,7 @@ Exit 0 on success, 1 on any typed failure.
 | `E_SYNC_FAILED` | yes | mutations landed, the sync did not — repair with `work sync` |
 | `E_NO_OPEN_PR` | no | a row needing a PR named an item holding none |
 | `E_ITEM_PARKED` | no | a row that is not legal on a parked item named one |
-| `E_BUDGET_EXHAUSTED` | no | reserved for `attempt` |
+| `E_BUDGET_EXHAUSTED` | no | `attempt` refused; its `data` carries `kind`, `attempts` and `budget` |
 | `E_USAGE` | no | bad arguments, unknown item, a park reason on neither axis, or a transition the runtime flagged instead of applying |
 | `E_INTERNAL` | no | an unexpected fault, typed rather than thrown |
 
@@ -120,9 +148,9 @@ is reported. A command that mutated nothing syncs nothing.
 
 ## Not here yet
 
-`attempt` (budget enforcement) and `next` (open-new-work surfacing) are named
-in the verb universe and unwired. There is no dispatch loop: this package
-answers what a verb pairs with, not when to run it.
+`next` (open-new-work surfacing) is named in the verb universe and unwired.
+There is no dispatch loop: this package answers what a verb pairs with, not
+when to run it.
 
 ## Development
 
