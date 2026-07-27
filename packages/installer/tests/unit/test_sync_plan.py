@@ -312,6 +312,34 @@ def test_dir_item_with_dev_artifacts_is_idempotent_on_second_run(tmp_path: Path)
     assert not (home / "skills-backup").exists()
 
 
+def test_dir_item_excludes_the_prefix_test_naming_the_gate_also_discovers(tmp_path: Path) -> None:
+    """
+    Given a DIR item carrying a suite named ``test_*.py`` — the second pattern
+    the repo gate's skill-suite discovery accepts — beside a JSON fixture whose
+    name starts the same way
+    When sync_plan materialises it
+    Then the suite is excluded and the fixture still deploys. The two patterns
+    must agree: a file the gate executes as a repo-side suite must not be a
+    file the installer ships, or a suite is both run here and deployed
+    downstream. The ``test_`` prefix is scoped to ``.py`` so a shipped fixture
+    is not collateral.
+    """
+    src = tmp_path / "src_skill"
+    src.mkdir()
+    (src / "SKILL.md").write_bytes(b"skill\n")
+    (src / "test_checker.py").write_bytes(b"suite\n")
+    (src / "test_data.json").write_bytes(b"{}\n")
+    home = tmp_path / "home"
+    plan = StagingPlan(items={Path("skills/s"): _dir_item(Path("skills/s"), src)}, tool=Tool.CLAUDE)
+
+    sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
+
+    dest = home / "skills" / "s"
+    assert not (dest / "test_checker.py").exists()
+    assert (dest / "test_data.json").read_bytes() == b"{}\n"
+    assert (dest / "SKILL.md").read_bytes() == b"skill\n"
+
+
 def test_dir_overrides_are_overlaid_and_win_on_collision(tmp_path: Path) -> None:
     """
     Given a DIR item plus dir_overrides carrying a new file and one colliding

@@ -382,22 +382,30 @@ def _install_file(
 
 # Dev-only artifacts that must never reach an install even though they live
 # inside a DIR item's own source tree (a skill directory, most visibly):
-# repo-side test suites — this repo's house convention names them
-# ``*_test.py`` / ``*_test.js``, at any depth under the item (e.g. a skill's
-# ``scripts/`` subdir) — and Python/pytest/ruff caches. ``.installignore``
+# repo-side test suites at any depth under the item (e.g. a skill's
+# ``scripts/`` subdir) and Python/pytest/ruff caches. ``.installignore``
 # only reaches the DIRECT CHILDREN of a staged namespace dir (see its header);
 # a skill directory is staged as a single DIR item and its interior is never
 # walked against that manifest, so this is the one place nested content is
 # filtered before ``shutil.copytree`` would otherwise copy it byte-for-byte.
+#
+# The Python patterns mirror the repo gate's suite discovery (``*_test.py`` or
+# ``test_*.py``) deliberately: a file the gate runs as a repo-side suite must
+# not be a file the installer ships. Widening one without the other lets a
+# suite be both executed here and deployed downstream.
 _DEV_ARTIFACT_DIRNAMES = frozenset({"__pycache__", ".pytest_cache", ".ruff_cache"})
 _DEV_ARTIFACT_SUFFIXES = ("_test.py", "_test.js", ".pyc")
 
 
 def _is_dev_artifact_name(name: str) -> bool:
     """Whether ``name`` (a bare basename, no path) is a dev-only artifact that
-    must not deploy: a cache directory, or a test-suite file under this repo's
-    ``*_test.py`` / ``*_test.js`` naming convention."""
-    return name in _DEV_ARTIFACT_DIRNAMES or name.endswith(_DEV_ARTIFACT_SUFFIXES)
+    must not deploy: a cache directory, or a test suite named ``*_test.py``,
+    ``test_*.py`` or ``*_test.js``. The ``test_`` prefix counts only on ``.py``,
+    so a fixture like ``test_data.json`` a skill legitimately ships still
+    deploys."""
+    if name in _DEV_ARTIFACT_DIRNAMES or name.endswith(_DEV_ARTIFACT_SUFFIXES):
+        return True
+    return name.startswith("test_") and name.endswith(".py")
 
 
 def _ignore_dev_artifacts(directory: str, names: list[str]) -> set[str]:  # noqa: ARG001  # shutil.copytree ignore callback signature
