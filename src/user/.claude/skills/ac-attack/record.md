@@ -32,8 +32,8 @@ against, crediting one hole with another's criterion while the round still reads
 
 ## The record
 
-Committed beside the attacked document as `<document-basename>-ac-attack.json`. Every top-level
-field is required.
+Committed beside the attacked document, named for it without its extension: `ledger.md` gets
+`ledger-ac-attack.json`. Every top-level field is required.
 
 | Field | Meaning |
 | --- | --- |

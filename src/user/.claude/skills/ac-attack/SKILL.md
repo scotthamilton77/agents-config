@@ -50,13 +50,14 @@ Stdout is `{"emitted": true, "prompts": […], "round": …}` — the lens promp
 file, which is metadata and not one of them. A refusal is
 `{"emitted": false, "errors": [{"code", "message"}]}`, exit 2, every code in `errors.md`. `--spec`
 and `--out-dir` are both required — the output names are fixed, so a round with nowhere named would
-truncate whatever wears them in the directory it ran from. The round creates that one directory and
-no parent along the way, owner-only, as is every file in it, since a prompt carries the whole
-document.
+truncate whatever wears them in the directory it ran from. A directory the round creates is
+owner-only and it creates no parent along the way; one already there keeps the permissions its
+owner gave it. Every file written is owner-only, since a prompt carries the whole document.
 
 Proposals and the record they are written into are described in `record.md`: the shape an attacker
 returns, the `id` a disposition names, and the record committed beside the document as
-`<document-basename>-ac-attack.json`. Its machine-readable form is `attack-record.schema.json`.
+`<document>-ac-attack.json`, the document's name without its extension — `ledger.md` gets
+`ledger-ac-attack.json`. Its machine-readable form is `attack-record.schema.json`.
 
 ## Checking the round
 

@@ -853,6 +853,14 @@ class TestSurface:
             missing = sorted(code for code in emitted if f"`{code}`" not in section)
             assert not missing, f"{path.name}: {missing}"
 
+    def test_c5_the_lens_table_names_the_registry_the_scripts_read(self):
+        """S6-C5: SKILL.md's table introduces the lenses while both scripts read `lenses.json`
+        live, so a lens added to one and not the other leaves the prose describing a panel that
+        does not run — or omitting an attacker that does."""
+        table = SKILL_PATH.read_text(encoding="utf-8")
+        rows = re.findall(r"^\| `([^`]+)` \|", table, re.MULTILINE)
+        assert sorted(rows) == sorted(LENS_NAMES), f"table {sorted(rows)} vs registry {LENS_NAMES}"
+
     def test_c5_skill_declares_its_admission_record(self):
         """S6-C5: the deployed skill carries the record the install gate requires."""
         front = SKILL_PATH.read_text(encoding="utf-8").split("---", 2)[1]

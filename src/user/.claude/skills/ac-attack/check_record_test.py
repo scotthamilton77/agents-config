@@ -25,6 +25,7 @@ import pytest
 
 HERE = Path(__file__).resolve().parent
 CHECKER_PATH = HERE / "check_record.py"
+EMITTER_PATH = HERE / "emit_prompts.py"
 LENSES_PATH = HERE / "lenses.json"
 SCHEMA_PATH = HERE / "attack-record.schema.json"
 
@@ -34,15 +35,19 @@ FURTHER = REVISED + "- A3 Re-running the exporter over the same ledger changes n
 UNRELATED = REVISED + "\n## Out of scope\n\nCurrency conversion.\n"
 
 
-def _load_checker():
-    spec = importlib.util.spec_from_file_location("check_record", CHECKER_PATH)
+def _load(path: Path):
+    spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-checker = _load_checker()
+checker = _load(CHECKER_PATH)
+# The emitter is here to be run, not described: the two scripts deploy and run independently and
+# cannot import each other, so what keeps their registry checks identical is a test that loads both
+# and holds one loader's verdict against the other's.
+emitter = _load(EMITTER_PATH)
 LENS_NAMES = [lens["lens"] for lens in json.loads(LENSES_PATH.read_text(encoding="utf-8"))["lenses"]]
 
 
@@ -118,11 +123,16 @@ def attack(tmp_path) -> Attack:
 
 @pytest.fixture
 def registry(tmp_path, monkeypatch):
-    """Stand a lens registry in place of the shipped one, clearing the cache either side of it."""
+    """Stand one lens registry in place of the shipped one for both scripts.
+
+    Each script reads its own module-level path, so pointing both at a single file is what makes
+    the two loaders answerable to the same registry. The checker's cache is cleared either side.
+    """
     def use(lenses: Any) -> None:
         path = tmp_path / "lenses.json"
         path.write_text(json.dumps({"lenses": lenses}), encoding="utf-8")
         monkeypatch.setattr(checker, "LENSES_PATH", path)
+        monkeypatch.setattr(emitter, "LENSES_PATH", path)
         checker.declared_lenses.cache_clear()
     yield use
     checker.declared_lenses.cache_clear()
@@ -318,7 +328,7 @@ class TestOrdering:
             elif isinstance(node, ast.ImportFrom):
                 imported.add("." * node.level + (node.module or "").split(".")[0])
         assert imported == {"__future__", "argparse", "functools", "hashlib", "json", "sys",
-                            "pathlib", "typing", "jsonschema"}
+                            "pathlib", "typing", "unicodedata", "jsonschema"}
         assert '# dependencies = ["jsonschema>=4"]' in source
         called = {node.func.id for node in ast.walk(tree)
                   if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
@@ -623,14 +633,79 @@ class TestLensCoverage:
         assert check(attack, attack.empty_round(), capsys)[0] == 0
 
 
+COMPLETE_ENTRY = {"lens": "edge-cases", "mandate": "walk the taxonomy", "tier": "mid",
+                  "transport": "openrouter"}
+
+
+def lens_entry(**damage: Any) -> dict[str, Any]:
+    """A registry entry both scripts accept, carrying one row's damage and nothing else.
+
+    Every case has to isolate the field it names: an entry damaged twice over is refused for the
+    first defect either script happens to look for, which is agreement neither one was tested for.
+    """
+    return {key: value for key, value in {**COMPLETE_ENTRY, **damage}.items() if value is not DELETE}
+
+
+# Every way a registry can be damaged, and the shipped one at the head. The two scripts have to
+# read each of these the same way: both take the lens set off it, or both refuse it.
+REGISTRIES = [
+    ("the shipped lens set", [lens_entry(lens=name) for name in LENS_NAMES]),
+    ("no lens at all", []),
+    ("an entry without its lens name", [lens_entry(lens=DELETE)]),
+    ("a lens named with nothing", [lens_entry(lens="")]),
+    ("a lens named with whitespace", [lens_entry(lens=" \t ")]),
+    ("a lens name that climbs out of the round's directory", [lens_entry(lens="../edge-cases")]),
+    ("a lens named for a directory", [lens_entry(lens="..")]),
+    ("a lens name that is not a string", [lens_entry(lens=7)]),
+    ("two lenses differing only in case", [lens_entry(), lens_entry(lens="Edge-Cases")]),
+    # Escaped rather than written out: one composed character against the same character
+    # written as a letter and a combining accent, which no reader tells apart on the page —
+    # and one prompt file is what the filesystem makes of the pair.
+    ("two lenses differing only in Unicode form",
+     [lens_entry(lens="caf\u00e9-cases"), lens_entry(lens="cafe\u0301-cases")]),
+    ("a lens with no mandate", [lens_entry(mandate=DELETE)]),
+    ("a lens whose mandate is blank", [lens_entry(mandate="")]),
+    ("a lens whose mandate is whitespace", [lens_entry(mandate="  ")]),
+    ("a lens whose mandate is not a string", [lens_entry(mandate=42)]),
+    ("a lens with no tier", [lens_entry(tier=DELETE)]),
+    ("a lens whose tier is blank", [lens_entry(tier=" ")]),
+    ("a lens with no transport", [lens_entry(transport=DELETE)]),
+    ("a lens whose transport is not a string", [lens_entry(transport=["codex"])]),
+]
+
 BAD_REGISTRY = [
     ([], "declares no lens"),
-    ([{"mandate": "attack it", "tier": "mid", "transport": "codex"}], "without its lens name"),
-    ([{"lens": "edge-cases"}, {"lens": "edge-cases"}], "names one lens twice"),
-    ([{"lens": "edge-cases"}, {"lens": "Edge-Cases"}], "names one lens twice"),
-    ([{"lens": "../edge-cases"}], "not a bare filename"),
-    ([{"lens": ".."}], "not a bare filename"),
+    ([lens_entry(lens=DELETE)], "the entry at position 0 without a usable lens"),
+    ([lens_entry(lens="  ")], "the entry at position 0 without a usable lens"),
+    ([lens_entry(mandate="")], "edge-cases without a usable mandate"),
+    ([lens_entry(tier=DELETE)], "edge-cases without a usable tier"),
+    ([lens_entry(transport=DELETE)], "edge-cases without a usable transport"),
+    ([lens_entry(), lens_entry()], "names one lens twice"),
+    ([lens_entry(), lens_entry(lens="Edge-Cases")], "names one lens twice"),
+    ([lens_entry(lens="../edge-cases")], "not a bare filename"),
+    ([lens_entry(lens="..")], "not a bare filename"),
 ]
+
+
+def read_registry(load: Any, refusal: type[Exception]) -> list[str] | None:
+    """The lens names one script's loader takes off the registry, or None where it refuses it.
+
+    Only the typed refusal is caught: a registry that makes either script raise something else has
+    it answering `checker-failure` or `emitter-failure` where the other names the defect, which is
+    a difference worth a traceback here rather than a pass.
+    """
+    try:
+        return load()
+    except refusal:
+        return None
+
+
+def checker_lenses() -> list[str]:
+    return list(checker.declared_lenses())
+
+
+def emitter_lenses() -> list[str]:
+    return [entry["lens"] for entry in emitter.load_lenses()]
 
 
 class TestLensRegistry:
@@ -638,20 +713,34 @@ class TestLensRegistry:
     def test_c7_a_registry_the_emitter_would_refuse_closes_no_round(self, attack, capsys, registry,
                                                                     lenses, reason):
         """S6-C7: coverage is read off the declared set, so the set has to be the one the round was
-        dispatched from — a registry declaring no lens, an entry without a name, one name twice
-        (two names differing only in case are one prompt file on the volumes this runs on), or a
-        name that is not a bare filename is one the emitter refuses to emit from, so no round in
-        hand came from it and coverage read off it credits attackers that never ran."""
+        dispatched from — a registry declaring no lens, an entry short a key it owes or holding it
+        blank, one name twice (two names differing only in case are one prompt file on the volumes
+        this runs on), or a name that is not a bare filename is one the emitter refuses to emit
+        from, so no round in hand came from it and coverage read off it credits attackers that
+        never ran. The refusal names the entry at fault, since a registry is repaired entry by
+        entry."""
         registry(lenses)
         code, result = check(attack, attack.record(), capsys)
         assert code == 2 and result["complete"] is False
         assert codes(result) == {"no-lenses"}
         assert reason in error_of(result, "no-lenses")["message"]
 
+    @pytest.mark.parametrize(("description", "lenses"), REGISTRIES)
+    def test_c7_both_scripts_read_a_registry_the_same_way(self, registry, description, lenses):
+        """S6-C7: the emitter decides which registries dispatch a round and the checker credits
+        coverage off the same file, so a registry one accepts and the other refuses is either a
+        round nothing can close or — the dangerous direction — a lens counted as an attacker that
+        ran when no prompt for it was ever emitted. Held by running both loaders over one registry
+        rather than by reading either: they deploy as separate scripts that cannot import each
+        other, and hand-maintained agreement between two files is exactly what fails silently."""
+        registry(lenses)
+        assert read_registry(checker_lenses, checker.RecordError) == read_registry(
+            emitter_lenses, emitter.Refusal), description
+
     def test_c7_the_shipped_registry_is_one_the_emitter_would_emit_from(self):
-        """S6-C7: inverse — the registry both scripts read passes the check the emitter applies to
-        it, so the refusal costs the skill as shipped no round at all."""
-        assert list(checker.declared_lenses()) == LENS_NAMES
+        """S6-C7: inverse — over the bundled file itself, not a copy of its contents, both scripts
+        take the same lens set off it, so the refusal costs the skill as shipped no round at all."""
+        assert list(checker.declared_lenses()) == LENS_NAMES == emitter_lenses()
 
 
 class TestProposalShape:
@@ -838,6 +927,30 @@ class TestUnusableInput:
             assert code == 2 and codes(result) == {"no-spec"}
             assert "document" not in result
 
+    # The last is a non-breaking space, escaped because a reader cannot see one otherwise.
+    @pytest.mark.parametrize("blank", ("", "   \n\t\n", "\u00a0"))
+    def test_c6_a_document_with_nothing_in_it_closes_no_round(self, attack, capsys, blank):
+        """S6-C6: the emitter refuses to emit over a document with nothing in it, so no round in
+        hand attacked one — a record closing a round over an empty stub was written by hand, and
+        closing it here clears work to start against criteria nobody wrote. Both scripts are run
+        over the one file, since what has to hold is that they refuse the same document and not
+        merely that each refuses something; emptiness is judged as text in both, so a document of
+        nothing but a non-breaking space is empty to both. The refusal names the file it read, and
+        a document that states anything at all is attacked and closed (inverse)."""
+        record = attack.empty_round()
+        record["spec_revision"] = attack.write_document(blank)
+        with pytest.raises(emitter.Refusal) as refused:
+            emitter.read_document(str(attack.document))
+        assert refused.value.code == "no-spec"
+        code, result = check(attack, record, capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"no-spec"}
+        assert result["document"] == str(attack.document)
+        assert result["revision"] == sha_revision(blank)
+        record["spec_revision"] = attack.write_document(blank + DOCUMENT)
+        assert emitter.read_document(str(attack.document))[0] == blank + DOCUMENT
+        assert check(attack, record, capsys) == (0, closed(attack, clean=True))
+
     def test_c3_output_is_deterministic_and_sorted(self, attack, capsys):
         """S6-C3: two runs over the same broken record print byte-identical JSON, so the result
         can be diffed and stored."""
@@ -904,15 +1017,31 @@ class TestUnusableInput:
         assert "document" not in result
 
     @pytest.mark.parametrize("argv", (["--implementation-started=true"],
+                                      ["--implementation-started=yes"],
+                                      ["--implementation-started=maybe"],
+                                      ["--implementation-started="],
                                       ["--sepc", "doc.md", "--implementation-started=true"]))
     def test_c3_the_declaration_is_read_by_option_name_not_by_whole_argument(self, capsys, argv):
         """S6-C3: the declaration takes no value, so an agent writing one — the spelling every
         valued option takes — has argparse reject the command line outright. Matching the argument
         whole would drop the declaration along with the parse, reporting the malformed line while
-        the work claimed against the round goes unanswered."""
+        the work claimed against the round goes unanswered. Anything written there that is not a
+        denial declares, an unreadable value included, since that direction fails closed."""
         code, result = run(argv, capsys)
         assert code == 2 and result["complete"] is False
         assert codes(result) == {"bad-arguments", "ordering-violation"}
+
+    @pytest.mark.parametrize("value", ("false", "FALSE", "0", "no", "off", " false "))
+    def test_c3_a_declaration_written_as_a_denial_declares_nothing(self, attack, capsys, value):
+        """S6-C3: `--implementation-started=false` says the work has not started. The flag takes no
+        value, so argparse rejects the command line whichever way that argument is read and the run
+        refuses either way — what is at stake is the answer, and decorating the refusal with an
+        ordering violation tells the operator that work was claimed against the round, which is the
+        opposite of what they wrote."""
+        code, result = run([attack.save(attack.record()), f"--implementation-started={value}"],
+                           capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"bad-arguments"}
 
     @pytest.mark.parametrize("damaged", ("lenses.json", "attack-record.schema.json"))
     @pytest.mark.parametrize("damage", (None, "{not json"))

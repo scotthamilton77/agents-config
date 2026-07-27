@@ -17,6 +17,7 @@ import argparse
 import hashlib
 import json
 import sys
+import unicodedata
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -24,12 +25,16 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 SCHEMA_PATH = HERE / "attack-record.schema.json"
 LENSES_PATH = HERE / "lenses.json"
+REQUIRED_KEYS = ("lens", "mandate", "tier", "transport")
 
 EXIT_COMPLETE = 0
 EXIT_INCOMPLETE = 1
 EXIT_UNUSABLE = 2
 
 DECLARATION = "--implementation-started"
+# What an agent writes to say the work has not started. The flag takes no value, so argparse
+# rejects the command line either way; what is at stake is only what the answer says back.
+NEGATIONS = frozenset({"false", "0", "no", "off"})
 
 ORDERING_MESSAGE = (
     "this round is unfinished and a work item that changes the system the document describes has "
@@ -49,6 +54,26 @@ class RecordError(Exception):
         return {"code": self.code, "message": self.message}
 
 
+def fold(name: str) -> str:
+    """A lens name as the filesystem holding its prompt matches it — the emitter's comparison.
+
+    The volumes this runs on match without regard to case or to which Unicode form composed a
+    character, so two names held apart by anything less are one prompt file once a round lands.
+    """
+    return unicodedata.normalize("NFC", name).casefold()
+
+
+def usable(value: Any) -> bool:
+    """Whether a registry field carries something an attacker can be built from — the emitter's.
+
+    Present is not usable. An entry carrying `"mandate": ""` is one the emitter refuses outright,
+    so a registry holding it dispatched nothing; and a lens named with only whitespace passes for
+    a name to demand a report for, while the record schema forbids any record from carrying it —
+    the round is then unclosable by any record, and no error names the entry that made it so.
+    """
+    return isinstance(value, str) and bool(value.strip())
+
+
 @lru_cache(maxsize=1)
 def declared_lenses() -> tuple[str, ...]:
     """The declared lens set, refused unless the emitter would emit a round from it.
@@ -56,19 +81,26 @@ def declared_lenses() -> tuple[str, ...]:
     Cached: the file is static for the life of a run. Coverage is read off this set, so it has to
     be the set the round was dispatched from — a registry the emitter refuses could not have
     produced the round in hand, and a name declared twice would demand the same lens twice here.
-    Names are compared case-insensitively because a lens's name is its prompt's filename, and two
-    names differing only in case are one file on a case-insensitive volume.
+
+    Every key an entry owes is held to the same test, though only the name is read here: the
+    question this answers is whether a round could have come from this registry at all, and an
+    entry without a usable mandate, tier or transport is one the emitter refuses to emit from —
+    leaving a lens that no round could dispatch counted here as an attacker that ran.
     """
     with LENSES_PATH.open(encoding="utf-8") as handle:
         lenses = json.load(handle)["lenses"]
-    names = [entry["lens"] for entry in lenses if isinstance(entry.get("lens"), str)]
-    folded = [name.lower() for name in names]
+    names = [entry["lens"] for entry in lenses if usable(entry.get("lens"))]
+    labels = [entry["lens"] if usable(entry.get("lens")) else f"the entry at position {position}"
+              for position, entry in enumerate(lenses)]
+    unusable = [f"{labels[position]} without a usable {key}"
+                for position, entry in enumerate(lenses)
+                for key in REQUIRED_KEYS if not usable(entry.get(key))]
     if not lenses:
         problem = "declares no lens"
-    elif len(names) != len(lenses):
-        problem = "declares an entry without its lens name"
-    elif len(set(folded)) != len(folded):
-        problem = "names one lens twice"
+    elif unusable:
+        problem = f"declares {', '.join(unusable)}"
+    elif len({fold(name) for name in names}) != len(names):
+        problem = "names one lens twice, matching names the way the filesystem does"
     elif any(name != Path(name).name or name in ("", ".", "..") for name in names):
         problem = "names a lens that is not a bare filename"
     else:
@@ -142,6 +174,25 @@ def read_document(record_path: Path, record: dict, override: str | None) -> tupl
             f"cannot read the attacked document {path}: {exc}; the record names it relative to "
             "its own directory, and --spec overrides that when the document has moved",
         ) from exc
+
+
+def require_attackable_document(path: Path, document: bytes) -> None:
+    """Refuse a document with nothing in it for an attacker to have read.
+
+    The emitter refuses this same document before a prompt goes out, so no round in hand attacked
+    one — a record closing a round over an empty stub was written by hand, and closing it here
+    clears work to start against criteria nobody wrote. Emptiness is decided over the document as
+    text, which is how the emitter decides it: a document of nothing but a non-breaking space is
+    whitespace to it, and a comparison of bytes would pass it. Bytes that are not text at all
+    stand in for themselves and are not whitespace.
+    """
+    if not document.decode("utf-8", "replace").strip():
+        raise RecordError(
+            "no-spec",
+            f"the attacked document {path} is empty; the emitter refuses to emit a round over a "
+            "document like this one, so no round in hand read it, and an empty round proves "
+            "nothing — attack the document once it states the criteria it is meant to state",
+        )
 
 
 def revisions_of(data: bytes) -> dict[str, str]:
@@ -314,9 +365,13 @@ def _disposition_errors(record: dict) -> tuple[list[dict[str, Any]], set[str]]:
     return errors, accounted
 
 
-def check(record: dict, document: bytes) -> list[dict[str, Any]]:
-    """Everything wrong with this round, as a pure function of the record and the document."""
-    present = set(revisions_of(document).values())
+def check(record: dict, revisions: dict[str, str]) -> list[dict[str, Any]]:
+    """Everything wrong with this round, as a pure function of the record and the document.
+
+    The document arrives as the revisions its bytes hash to, since a revision is the whole of what
+    the round is decided against and the run has them in hand already.
+    """
+    present = set(revisions.values())
     errors = _lens_errors(record) + _report_errors(record)
     disposition_errors, accounted = _disposition_errors(record)
     errors += disposition_errors
@@ -370,8 +425,17 @@ def declared(argv: list[str]) -> bool:
     agent writes for a flag it thinks takes a value, argparse rejects it outright because the flag
     takes none, and reading the argument whole would drop the declaration along with the parse —
     reporting the malformed command line while the work claimed against the round goes unanswered.
+
+    The value written there is read, though, since `--implementation-started=false` declares that
+    the work has not started: the command line fails to parse either way, and answering it with an
+    ordering violation would tell the operator the opposite of what they wrote. A value that is
+    not a recognisable denial reads as a declaration, which is the direction that fails closed.
     """
-    return any(arg.split("=", 1)[0] == DECLARATION for arg in argv)
+    for arg in argv:
+        name, _, value = arg.partition("=")
+        if name == DECLARATION and value.strip().lower() not in NEGATIONS:
+            return True
+    return False
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -428,11 +492,12 @@ def main(argv: list[str]) -> int:
             return report(invalid, started, EXIT_UNUSABLE)
         require_comparable_revisions(record)
         path, document = read_document(record_path, record, args.spec)
+        revisions = revisions_of(document)
         # The revision goes out in the record's own notation: the reader holds it against
         # spec_revision as a string, and the other notation for it would read as another document.
-        read = {"document": str(path),
-                "revision": revisions_of(document)[notation_of(record["spec_revision"])]}
-        errors = check(record, document)
+        read = {"document": str(path), "revision": revisions[notation_of(record["spec_revision"])]}
+        require_attackable_document(path, document)  # after `read`, so the refusal names the file
+        errors = check(record, revisions)
     except RecordError as exc:
         return report([exc.as_dict()], started, EXIT_UNUSABLE, read=read)
     except Exception as exc:  # noqa: BLE001 - stdout is a parsed contract; no traceback may escape
