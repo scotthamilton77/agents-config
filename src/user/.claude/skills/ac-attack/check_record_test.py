@@ -531,6 +531,22 @@ class TestProvenance:
         assert "document" not in result and "revision" not in result
 
 
+def round_named(attack: Attack, document: str, named: str) -> tuple[str, Path]:
+    """One round in a directory of its own, the document and the record wearing the names asked.
+
+    The pair of names is what the binding is decided on, so a case naming either one differently
+    needs a directory where nothing else answers to it.
+    """
+    room = attack.root / "round"
+    room.mkdir()
+    document_path = room / document
+    document_path.write_text(REVISED, encoding="utf-8")
+    record = attack.record()
+    record["spec_path"] = document
+    (room / named).write_text(json.dumps(record, indent=2), encoding="utf-8")
+    return str(room / named), document_path
+
+
 class TestRecordBinding:
     def test_c6_a_record_carries_the_name_of_the_document_it_reports_on(self, attack, capsys):
         """S6-C6: the record is committed beside its document and named for it, and that pair of
@@ -564,14 +580,28 @@ class TestRecordBinding:
         """S6-C6: inverse — the name drops the document's last extension and nothing else, so a
         document with no extension, and one whose name carries a dot of its own, each have a name
         their round can be recorded under."""
-        room = attack.root / "round"
-        room.mkdir()
-        (room / document).write_text(REVISED, encoding="utf-8")
-        record = attack.record()
-        record["spec_path"] = document
-        (room / named).write_text(json.dumps(record, indent=2), encoding="utf-8")
-        code, result = run([str(room / named)], capsys)
-        assert code == 0 and result["document"] == str(room / document)
+        record_path, document_path = round_named(attack, document, named)
+        code, result = run([record_path], capsys)
+        assert code == 0 and result["document"] == str(document_path)
+
+    @pytest.mark.parametrize(("document", "named"),
+                             (("ledger-export.md", "Ledger-Export-ac-attack.json"),
+                              # Escaped: one composed character against the same character
+                              # written as a letter and a combining accent, which no reader
+                              # tells apart on the page.
+                              ("caf\u00e9-ledger.md",
+                               "cafe\u0301-ledger-ac-attack.json")))
+    def test_c6_the_two_names_are_matched_as_the_filesystem_matches_them(self, attack, capsys,
+                                                                         document, named):
+        """S6-C6: the pair of names is what binds a record to its document, and it is matched the
+        way every other name in this round is — as the volumes this runs on match them, without
+        regard to case or to which Unicode form composed a character. Held apart by anything less,
+        a record and the document beside it are one document and one round that the check calls a
+        mismatch, refusing a round that genuinely closed. The name differing here is the record's
+        own, since that is the side the check reads off the path it was handed."""
+        record_path, document_path = round_named(attack, document, named)
+        code, result = run([record_path], capsys)
+        assert code == 0 and result["document"] == str(document_path)
 
     def test_c6_the_path_the_record_was_reached_by_does_not_decide_its_name(self, attack, capsys):
         """S6-C6: the binding is read off the record's own basename, which is what copying it under
@@ -783,6 +813,47 @@ class TestLensCoverage:
                 entry["lens"] = "Edge-Cases"
         assert check(attack, record, capsys) == (0, closed(attack))
 
+    def test_c7_a_lens_the_registry_spells_differently_is_the_lens_that_reported(self, attack,
+                                                                                 capsys, registry):
+        """S6-C7: coverage is the declared set held against the record's reports, and that is the
+        third side of the same matching — a registry naming a lens in another spelling than the
+        record filed its report under is asking for the prompt file that ran. Held apart, the round
+        would be told a lens is missing while that lens's report stands in the record, and no edit
+        to the record could ever close it."""
+        registry([lens_entry(lens="Edge-Cases" if name == "edge-cases" else name)
+                  for name in LENS_NAMES])
+        assert check(attack, attack.record(), capsys) == (0, closed(attack))
+
+    def test_c7_a_proposal_attributed_in_the_other_spelling_traces_to_the_lens_that_made_it(
+            self, attack, capsys):
+        """S6-C7: the same matching read off the proposal rather than off the report. An
+        attribution differing from the lens's own entry in case alone names the prompt file that
+        ran, so the proposal traces to the attacker that produced it and that attacker is not left
+        reporting proposals the round holds none of. Held apart, one spelling would be answered as
+        two losses at once, neither of them real — and the report side of this matching is guarded
+        elsewhere, so nothing but the attribution differs here."""
+        record = attack.record()
+        assert record["proposals"][0]["lens"] == "edge-cases"
+        record["proposals"][0]["lens"] = "Edge-Cases"
+        assert check(attack, record, capsys) == (0, closed(attack))
+
+    def test_c7_a_lens_reporting_empty_is_contradicted_in_either_spelling(self, attack, capsys):
+        """S6-C7: the contradiction between a report and the proposal list is decided over that
+        same matching. A lens whose entry says it found nothing, credited with a proposal under
+        another spelling of its name, is one attacker with two accounts of what it found — and
+        matched literally the record would close instead, with a proposal adjudicated as the work
+        of a lens that reports having made none."""
+        record = attack.record()
+        for entry in record["lenses"]:
+            if entry["lens"] == "criteria-holes":
+                entry["lens"] = "Criteria-Holes"
+        record["proposals"].append(proposal("criteria-holes", "A1", "p3"))
+        record["dispositions"].append({"id": "p3", "disposition": "rejected",
+                                       "rationale": "already covered by A2"})
+        code, result = check(attack, record, capsys)
+        assert code == 1 and codes(result) == {"contradicted-empty-report"}
+        assert "Criteria-Holes" in result["errors"][0]["message"]
+
     def test_c7_two_spellings_of_one_name_are_one_lens_reporting_twice(self, attack, capsys):
         """S6-C7: the same matching in the other direction — an entry under each spelling is not
         two lenses covering the document, it is one lens with two accounts of what it found."""
@@ -984,6 +1055,7 @@ DOCUMENTS = [
     ("a document that is nothing but a marker", emitter.FENCE_CLOSE.encode()),
     ("a document behind a byte-order mark", "\ufeff".encode() + DOCUMENT.encode()),
     ("a document of a byte-order mark alone", "\ufeff".encode()),
+    ("a document of a byte-order mark behind whitespace", " \ufeff\n".encode()),
     ("a document holding a NUL", b"\x00" + DOCUMENT.encode()),
 ]
 
@@ -1226,16 +1298,20 @@ class TestUnusableInput:
             assert code == 2 and codes(result) == {"no-spec"}
             assert "document" not in result
 
-    # The last is a non-breaking space, escaped because a reader cannot see one otherwise.
-    @pytest.mark.parametrize("blank", ("", "   \n\t\n", "\u00a0"))
+    # The last two are escaped because a reader sees neither on the page: a non-breaking space,
+    # and a byte-order mark, which is whitespace to nobody and which `strip` does not remove.
+    @pytest.mark.parametrize("blank", ("", "   \n\t\n", "\u00a0", "\ufeff"))
     def test_c6_a_document_with_nothing_in_it_closes_no_round(self, attack, capsys, blank):
         """S6-C6: the emitter refuses to emit over a document with nothing in it, so no round in
         hand attacked one — a record closing a round over an empty stub was written by hand, and
         closing it here clears work to start against criteria nobody wrote. Both scripts are run
         over the one file, since what has to hold is that they refuse the same document and not
         merely that each refuses something; emptiness is judged as text in both, so a document of
-        nothing but a non-breaking space is empty to both. The refusal names the file it read, and
-        a document that states anything at all is attacked and closed (inverse)."""
+        nothing but a non-breaking space is empty to both, and one of nothing but a byte-order mark
+        is too — `strip` leaves that one standing, and a document nobody can read a criterion out
+        of is what both scripts are deciding about. The refusal names the file it read, and a
+        document that states anything at all, behind a mark or not, is attacked and closed
+        (inverse)."""
         record = attack.empty_round()
         record["spec_revision"] = attack.write_document(blank)
         with pytest.raises(emitter.Refusal) as refused:
@@ -1355,15 +1431,42 @@ class TestUnusableInput:
 
     def test_c3_the_record_named_after_the_flag_is_not_read_as_a_denial(self, attack, capsys):
         """S6-C3: only a denial is read out of the argument following the flag, so a command line
-        naming the record there declares as it reads. Swallowing whatever follows would leave work
-        claimed against an open round unanswered — in the one spelling that parses cleanly, where
-        nothing else in the result hints that the declaration was dropped."""
+        naming the record there declares as it reads. This is the spelling that parses cleanly, and
+        the argument after the flag is read on that path too — swallowing whatever follows would
+        leave work claimed against an open round unanswered, with nothing else in the result to
+        hint that the declaration was dropped."""
         attack.write_document(DOCUMENT)
         record = attack.record()
         record["dispositions"] = []
         code, result = run([checker.DECLARATION, attack.save(record)], capsys)
         assert code == 1 and result["complete"] is False
         assert codes(result) == {"unadjudicated-proposal", "ordering-violation"}
+
+    @pytest.mark.parametrize("value", ("false", "FALSE", "0", "no", "off", " false "))
+    def test_c3_a_denial_declares_nothing_where_the_command_line_parses_too(self, attack, capsys,
+                                                                            monkeypatch, value):
+        """S6-C3: the record is optional, so `--implementation-started false` is a command line
+        that parses — argparse binds the denial to the record and leaves the flag standing. Read
+        off the flag alone, the answer would tell an operator who denied the claim that work was
+        claimed against the round, which is the inverse of what they wrote and the one direction no
+        reading of a denial may take. The run refuses for want of the record the denial was read
+        as, and says nothing about work claimed."""
+        monkeypatch.chdir(attack.root)
+        code, result = run([checker.DECLARATION, value], capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"unreadable"}
+
+    def test_c3_an_abbreviated_declaration_is_refused_rather_than_read_short(self, attack, capsys):
+        """S6-C3: argparse takes any unambiguous prefix of an option name unless told not to, while
+        the declaration is read by its full name — so a command line spelling it short would parse
+        as a claim that reading cannot see, and an unfinished round would be answered as though
+        nobody had claimed the work. The parse and that reading are held to one vocabulary, which
+        leaves the short spelling refused outright rather than read as either answer."""
+        record = attack.record()
+        record["dispositions"] = []
+        code, result = run([attack.save(record), "--implementation-st"], capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"bad-arguments"}
 
     def test_c3_one_finding_is_reported_once(self, attack, capsys):
         """S6-C3: a record repeating a lens entry contradicts its proposal list once per copy, and

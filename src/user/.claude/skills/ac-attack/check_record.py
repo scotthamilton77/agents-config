@@ -36,6 +36,10 @@ RECORD_SUFFIX = "-ac-attack.json"
 FENCE_OPEN = "<<<BEGIN UNTRUSTED CONTENT>>>"
 FENCE_CLOSE = "<<<END UNTRUSTED CONTENT>>>"
 
+# A byte-order mark at the head of a document and a zero-width no-break space anywhere else, and
+# `strip` removes neither. Escaped rather than written out, since no reader sees one on the page.
+BOM = "\ufeff"
+
 EXIT_COMPLETE = 0
 EXIT_INCOMPLETE = 1
 EXIT_UNUSABLE = 2
@@ -165,6 +169,13 @@ def require_record_binds_its_document(path: Path, record: dict) -> None:
     Both are decided on the record's own basename, since a copy is what changes it, and on
     `spec_path` whatever document the run is told to read: naming a document to check against moves
     where the round is read from, never which document this record is a round over.
+
+    The pair is matched the way the filesystem matched it when the two were committed, as every
+    other name in this round is: on the volumes this runs on a record and a document held apart by
+    case or Unicode form alone are one pair, and a round that genuinely closed would be refused
+    over a difference the message cannot show the reader. On a volume that does hold them apart
+    this admits a pair it need not, which is the cheaper error — the two names still have to
+    correspond, so a record copied under another document's name is refused as before.
     """
     name = record["spec_path"]
     if name != Path(name).name or name in ("", ".", ".."):
@@ -176,7 +187,7 @@ def require_record_binds_its_document(path: Path, record: dict) -> None:
             "round read",
         )
     expected = Path(name).stem + RECORD_SUFFIX
-    if path.name != expected:
+    if fold(path.name) != fold(expected):
         raise RecordError(
             "record-name-mismatch",
             f"this record is named {path.name!r} while the round in it is over {name!r}, whose "
@@ -231,16 +242,23 @@ def read_document(record_path: Path, record: dict, override: str | None) -> tupl
 def require_attackable_document(path: Path, document: bytes) -> None:
     """Refuse a document the emitter would not have emitted a round over.
 
-    Every refusal here is one of the emitter's, and for one reason: a round in hand cannot have
-    come from a document the emitter refuses, so a record closing a round over one was written by
-    hand, and closing it clears work to start against criteria no attacker read.
+    Every refusal here is one of the emitter's, and the emitter's is where a document like this one
+    is kept out of a round: it is what never dispatches an attacker. This mirrors that refusal
+    where the document on disk is the revision the round attacked — a round that accepted nothing
+    — and there it says no attacker read this text, so a record closing a round over it was written
+    by hand and closing it clears work to start against criteria nobody attacked. A round claiming
+    an acceptance edited the document afterwards by construction, so what is read here is the
+    post-edit content rather than what any attacker saw; the revision attacked is a hash, and the
+    content it names cannot be recovered from it to be held to the same test.
 
     Bytes that do not decode are refused rather than repaired, because the emitter hands an
     attacker the document as text and a document that has none is not what any attacker read.
     Emptiness is decided over that text for the same reason: a document of nothing but a
     non-breaking space is whitespace to the emitter, and a comparison of bytes would pass it. A
-    document carrying an untrusted-content marker of its own cannot be fenced without being
-    altered, so the emitter refuses it rather than attack text the recorded revision does not name.
+    byte-order mark comes out before that test, since `strip` leaves it standing and a document of
+    nothing else states nothing. A document carrying an untrusted-content marker of its own cannot
+    be fenced without being altered, so the emitter refuses it rather than attack text the recorded
+    revision does not name.
     """
     try:
         text = document.decode("utf-8")
@@ -251,7 +269,7 @@ def require_attackable_document(path: Path, document: bytes) -> None:
             "fences as text and refuses one it cannot, so no attacker in any round read these "
             "bytes — write the document as UTF-8 and attack it",
         ) from exc
-    if not text.strip():
+    if not text.replace(BOM, "").strip():
         raise RecordError(
             "no-spec",
             f"the attacked document {path} is empty; the emitter refuses to emit a round over a "
@@ -540,7 +558,11 @@ def report(errors: list[dict[str, Any]], started: bool, code: int, clean: bool =
 
 
 def declared(argv: list[str]) -> bool:
-    """Whether the ordering declaration is on a command line the parse rejected.
+    """Whether this command line claims the implementation has started.
+
+    Read off the argument list, which every run has, rather than off the parse, which a malformed
+    command line does not survive: work claimed against a round the check could not even read is
+    still work claimed, and the same reading then decides both paths.
 
     Matched by option name, not by the whole argument: `--implementation-started=true` is what an
     agent writes for a flag it thinks takes a value, argparse rejects it outright because the flag
@@ -548,12 +570,12 @@ def declared(argv: list[str]) -> bool:
     reporting the malformed command line while the work claimed against the round goes unanswered.
 
     The value written there is read, though, since `--implementation-started=false` declares that
-    the work has not started: the command line fails to parse either way, and answering it with an
-    ordering violation would tell the operator the opposite of what they wrote. A denial written
-    after a space is the same denial in the spelling every valued option also takes, and is read
-    the same way; anything else following the flag is left alone, the record's own path above all,
-    so a command line naming the record after the flag still declares. A value that is not a
-    recognisable denial reads as a declaration, which is the direction that fails closed.
+    the work has not started, and answering it with an ordering violation would tell the operator
+    the opposite of what they wrote. A denial written after a space is the same denial in the
+    spelling every valued option also takes, and is read the same way; anything else following the
+    flag is left alone, the record's own path above all, so a command line naming the record after
+    the flag still declares. A value that is not a recognisable denial reads as a declaration,
+    which is the direction that fails closed.
     """
     for position, arg in enumerate(argv):
         name, valued, value = arg.partition("=")
@@ -567,7 +589,11 @@ def declared(argv: list[str]) -> bool:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(add_help=True)
+    # No abbreviating an option name: argparse otherwise takes any unambiguous prefix of one, while
+    # the declaration is read by its full name — so a short spelling would parse as a claim that
+    # the reading above cannot see, and the answer would report a round with the claim dropped.
+    # Refusing the short spelling outright leaves the parse and that reading one vocabulary.
+    parser = argparse.ArgumentParser(add_help=True, allow_abbrev=False)
     # Optional so that naming no record answers in the JSON contract like every other failure,
     # rather than in argparse's usage text on stderr.
     parser.add_argument("record", nargs="?")
@@ -601,7 +627,13 @@ def main(argv: list[str]) -> int:
     args = parse_or_report(argv)
     if isinstance(args, int):
         return args
-    started = args.implementation_started
+    # The denial is read wherever the declaration is, not only where the parse rejected it: the
+    # record is optional, so `--implementation-started false` parses — argparse binds the denial
+    # to the record and leaves the flag standing — and reading the flag alone would answer an
+    # operator who denied the claim with the very violation they denied. Argparse is the authority on
+    # what the arguments are, since normalising the denial away before the parse would hand the run
+    # a command line nobody wrote; what is decided here is only what the answer says about them.
+    started = args.implementation_started and declared(argv)
     # What the run knows about the document, filled in the moment one is opened, so a failure after
     # that point still answers which file the verdict was reached over — the reading a caller needs
     # most when the check itself is what broke.

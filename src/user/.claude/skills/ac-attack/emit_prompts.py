@@ -32,6 +32,10 @@ EXIT_REFUSED = 2
 FENCE_OPEN = "<<<BEGIN UNTRUSTED CONTENT>>>"
 FENCE_CLOSE = "<<<END UNTRUSTED CONTENT>>>"
 
+# A byte-order mark at the head of a document and a zero-width no-break space anywhere else, and
+# `strip` removes neither. Escaped rather than written out, since no reader sees one on the page.
+BOM = "\ufeff"
+
 EXHAUSTIVENESS = (
     "Report every hole of this lens findable this round; a withheld proposal is a defect in the "
     "attack. Be exhaustive in depth within this lens and never step outside it: another attacker "
@@ -157,11 +161,15 @@ def read_document(path: str | None) -> tuple[str, str]:
         text = data.decode("utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise Refusal("no-spec", f"cannot read the --spec document {path}: {exc}") from exc
-    if not text.strip():
+    # A document of nothing but marks and whitespace carries no criterion, and `strip` alone
+    # leaves the marks: attackers would go out over a document that says nothing, and the round
+    # they filed would close. A document that merely opens with one still emits, unaltered.
+    if not text.replace(BOM, "").strip():
         raise Refusal(
             "no-spec",
-            f"the --spec document {path} is empty; an attacker given nothing to read reports "
-            "nothing, and an empty round proves nothing",
+            f"the --spec document {path} is empty — whitespace and byte-order marks aside, it "
+            "holds nothing to attack; an attacker given nothing to read reports nothing, and an "
+            "empty round proves nothing",
         )
     if FENCE_OPEN in text or FENCE_CLOSE in text:
         raise Refusal(
@@ -348,6 +356,14 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
         ],
     }
     round_text = json.dumps(round_meta, indent=2, sort_keys=True) + "\n"
+    # The round file is written after the last prompt, so a write that fails partway — the disk
+    # filling, say — leaves a directory without one, and a directory without one holds no round.
+    # A previous round's file goes first for the same reason: re-emitting into a directory a round
+    # already used is ordinary, and a stale file left standing over half this round's prompts is
+    # the case the signal misses, a directory that reads as a round and names a revision nothing in
+    # it carries. It is the file the successful write replaces anyway, at a name this round owns,
+    # already refused unless a plain file of its own, and already refused if it is the document.
+    round_path.unlink(missing_ok=True)
     for path, text in zip(prompts, rendered, strict=True):
         write_private(path, text)
     write_private(round_path, round_text)

@@ -86,6 +86,22 @@ def emit(document: Path, out_dir: Path, capsys) -> dict[str, str]:
     return prompts(out_dir)
 
 
+def fail_on_the_last_prompt(monkeypatch) -> None:
+    """The emitter with the last prompt's write failing: the disk filling mid-round.
+
+    The only failure that can leave anything on disk, since every refusal is decided and every
+    prompt rendered before the first write.
+    """
+    write = emitter.write_private
+
+    def failing(path: Path, text: str) -> None:
+        if path.name == f"{LENS_NAMES[-1]}.md":
+            raise OSError("no space left on device")
+        write(path, text)
+
+    monkeypatch.setattr(emitter, "write_private", failing)
+
+
 def contract_of(text: str) -> dict:
     """The completion contract a prompt hands its attacker, parsed back out of the prompt."""
     return json.loads(text.split("```json\n", 1)[1].split("\n```", 1)[0])
@@ -329,13 +345,40 @@ class TestRefusals:
                            capsys)
         assert code == 2 and result["errors"][0]["code"] == "no-spec"
 
-    def test_c1_an_empty_document_is_refused(self, tmp_path, capsys):
+    @pytest.mark.parametrize(
+        ("description", "content"),
+        # The marks are escaped, since no reader sees one on the page: a byte-order mark is not
+        # whitespace, so `strip` alone keeps it and a document of nothing else reads as content.
+        (("a document of whitespace", "   \n\n"),
+         ("a document of a byte-order mark alone", "\ufeff"),
+         ("a document of a byte-order mark and whitespace", "\ufeff\n\n   \n"),
+         ("a document of whitespace around a byte-order mark", "  \n\ufeff  \n")),
+    )
+    def test_c1_an_empty_document_is_refused(self, tmp_path, capsys, description, content):
         """S6-C1: an attacker handed nothing to read reports nothing; that empty round would be
-        vacuous rather than clean, so it is never emitted."""
+        vacuous rather than clean, so it is never emitted. A byte-order mark is nothing to read
+        either, and it is the one an editor writes unasked — a document holding one and no
+        criterion would otherwise send every attacker out over text that says nothing, and the
+        round that came back would close."""
         blank = tmp_path / "blank.md"
-        blank.write_text("   \n\n", encoding="utf-8")
+        blank.write_text(content, encoding="utf-8")
         code, result = run(["--spec", str(blank), "--out-dir", str(tmp_path / "a")], capsys)
-        assert code == 2 and result["errors"][0]["code"] == "no-spec"
+        assert code == 2 and result["errors"][0]["code"] == "no-spec", description
+        assert not (tmp_path / "a").exists(), description
+
+    def test_c1_a_document_behind_a_byte_order_mark_is_attacked_not_refused(self, tmp_path,
+                                                                             capsys):
+        """S6-C1: inverse — a mark in front of a perfectly good document is what several editors
+        write, so only a document holding nothing else is empty. It is part of the bytes the
+        revision names, so it travels into the prompt as it stands rather than being tidied away
+        into a document the record could not name."""
+        marked = tmp_path / "ledger-export.md"
+        marked.write_text("\ufeff" + DOCUMENT, encoding="utf-8")
+        out_dir = tmp_path / "attack"
+        emitted = emit(marked, out_dir, capsys)
+        assert all("\ufeff" + DOCUMENT in text for text in emitted.values())
+        meta = json.loads((out_dir / "round.json").read_text(encoding="utf-8"))
+        assert meta["spec_revision"] == "sha256:" + hashlib.sha256(marked.read_bytes()).hexdigest()
 
     def test_a_refusal_exits_cleanly_from_the_command_line(self, tmp_path):
         """S6-C1: a refusal is typed JSON on stdout with exit 2, never a traceback."""
@@ -742,6 +785,41 @@ class TestOutputSafety:
         assert [error["code"] for error in result["errors"]] == ["emitter-failure"]
         assert [path.name for path in out_dir.iterdir()] == ["round.json"]
         assert (out_dir / "round.json").read_text(encoding="utf-8") == previous
+
+    def test_c1_a_write_that_fails_partway_leaves_no_round_file(self, document, tmp_path, capsys,
+                                                                 monkeypatch):
+        """S6-C1: a write that fails partway is the one failure that leaves anything behind, so
+        `round.json` goes after the last prompt: what it leaves is a directory without one, and a
+        directory without one holds no round. Written first, the same failure leaves a round file
+        standing over prompts that are not the round it describes, and an agent reading the
+        directory rather than the exit status dispatches the panel over it."""
+        out_dir = tmp_path / "attack"
+        fail_on_the_last_prompt(monkeypatch)
+        code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
+        assert code == 2 and result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["emitter-failure"]
+        # The round did get partway, or the ordering is not what failed here.
+        assert (out_dir / f"{LENS_NAMES[0]}.md").exists()
+        assert not (out_dir / "round.json").exists()
+
+    def test_c1_a_previous_round_file_does_not_outlive_a_partial_write(self, document, tmp_path,
+                                                                        capsys, monkeypatch):
+        """S6-C1: re-emitting into a directory a round already used is ordinary, and that
+        directory's round file is already there — so the same partial write leaves the previous
+        round's file standing beside prompts for this document, which is exactly the directory
+        that reads as a round and names a revision nothing in it carries. Ordering alone cannot
+        reach a file the round did not write, so the previous one goes before the first prompt
+        lands: it is the file a successful round replaces anyway."""
+        out_dir = tmp_path / "attack"
+        out_dir.mkdir()
+        previous = '{"spec_revision": "sha256:' + "0" * 64 + '"}\n'
+        (out_dir / "round.json").write_text(previous, encoding="utf-8")
+        fail_on_the_last_prompt(monkeypatch)
+        code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
+        assert code == 2 and result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["emitter-failure"]
+        assert (out_dir / f"{LENS_NAMES[0]}.md").exists()
+        assert not (out_dir / "round.json").exists()
 
 
 class TestRoundFile:
