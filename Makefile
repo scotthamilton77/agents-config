@@ -12,7 +12,7 @@
         typecheck-grind cov-grind audit-grind verify-entry-grind \
         ci-executor test-executor lint-executor format-check-executor \
         typecheck-executor cov-executor audit-executor verify-entry-executor \
-        spec-lint
+        spec-lint test-skills
 
 INSTALLER := packages/installer
 PRGROOM := packages/prgroom
@@ -21,7 +21,8 @@ VIZSUITE := packages/vizsuite
 GRIND := packages/grind
 EXECUTOR := packages/executor
 
-ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind ci-executor lint-actions spec-lint
+ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind ci-executor lint-actions \
+    spec-lint test-skills
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
               cov-installer audit-installer verify-entry-installer
@@ -197,3 +198,31 @@ audit-executor:
 # the executor venv where the entry point is installed is selected.
 verify-entry-executor:
 	uv --project $(EXECUTOR) run executor --help > /dev/null
+
+# ── skills ──
+# Skills under src/ ship their own tests as PEP-723 scripts, run from their own
+# directory because each resolves the asset it guards relative to itself. The
+# suites are discovered rather than listed: a skill added with tests nobody
+# wired up is gated by nothing, which is the state this target exists to end.
+# Discovery finding zero suites fails the target -- a silent pass over an empty
+# set reads exactly like a green gate.
+test-skills:
+	@set -e; \
+	log=$$(mktemp); \
+	trap 'rm -f "$$log"' EXIT; \
+	found=0; \
+	for suite in $$(find src \( -name '*_test.py' -o -name 'test_*.py' \) | sort); do \
+	  found=$$((found + 1)); \
+	  echo "── $$suite"; \
+	  ok=0; \
+	  ( cd $$(dirname $$suite) && uv run ./$$(basename $$suite) ) > "$$log" 2>&1 || ok=1; \
+	  cat "$$log"; \
+	  [ $$ok -eq 0 ] || { echo "$$suite exited non-zero" >&2; exit 1; }; \
+	  grep -qE '^[0-9]+ passed' "$$log" || { \
+	    echo "$$suite reported no clean pass: a suite whose tests never run exits 0, and a" >&2; \
+	    echo "summary that names failures first is not a pass however it exited" >&2; exit 1; }; \
+	done; \
+	if [ $$found -eq 0 ]; then \
+	  echo "test-skills found no suites under src/ -- discovery is broken" >&2; \
+	  exit 1; \
+	fi
