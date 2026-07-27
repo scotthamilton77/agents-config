@@ -37,7 +37,7 @@ from executor.rules import (
     attempt_kind,
     check_preconditions,
 )
-from executor.state import ItemView, RunState
+from executor.state import BudgetSpent, ItemView, RunState
 
 __all__ = [
     "ATTEMPT_KINDS",
@@ -332,19 +332,18 @@ def _plan_done(item: ItemView, state: RunState) -> Plan:
     return Plan(row, item, {"item": item.id})
 
 
-def _plan_exhausted(kind: str, item: ItemView, state: RunState) -> Plan:
+def _plan_exhausted(spent: BudgetSpent, item: ItemView, state: RunState) -> Plan:
     """The refusal that parks first (S9T1-C2).
 
-    The numbers come from the condition, never recomputed here: the runtime
-    decided this item's budget was spent, and reporting a number it did not
-    decide on would let the report and the fact disagree.
+    Takes the condition itself rather than looking it up again: the numbers
+    reported are the runtime's, never recomputed here, and reporting one it
+    did not decide on would let the report and the fact disagree.
     """
-    spent = state.budget_spent[(item.id, kind)]
     rules, row = ROW_RULES["attempt:exhausted"], ROWS["attempt:exhausted"]
     # `_resolve`'s skip is statically False here: the row declares no recorded
     # transition (Matrix B), which the matrix suite walks.
     request, _ = _resolve(
-        rules, Request(item=item, state=state, kind=kind, reason=BUDGET_EXHAUSTED)
+        rules, Request(item=item, state=state, kind=spent.kind, reason=BUDGET_EXHAUSTED)
     )
     note = request.note or BUDGET_EXHAUSTED
     return Plan(
@@ -375,8 +374,9 @@ def _plan_attempt(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     only to report them.
     """
     kind = attempt_kind(str(_require(args.kind, "attempt", "--kind")))
-    if (item.id, kind.kind) in state.budget_spent:
-        return _plan_exhausted(kind.kind, item, state)
+    spent = state.budget_spent.get((item.id, kind.kind))
+    if spent is not None:
+        return _plan_exhausted(spent, item, state)
 
     rules, row = ROW_RULES["attempt:under-budget"], ROWS["attempt:under-budget"]
     # Same static-False skip as above, and here it is also what the row means:
