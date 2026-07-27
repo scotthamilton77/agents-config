@@ -50,9 +50,20 @@ _STALE_EXIT = 1
 
 @dataclass(frozen=True)
 class CommandResult:
+    """One subprocess outcome.
+
+    `launched` is whether a child process actually started, and it is
+    load-bearing rather than diagnostic: a failure *before* exec -- a missing
+    binary, no execute permission -- proves the far side did nothing, which is
+    the evidence that lets an effect marker be withheld instead of assumed. A
+    timeout is `launched=True`: the process ran and may have written before it
+    was killed. Exit code alone cannot tell those apart, since both report 127.
+    """
+
     exit_code: int
     stdout: str
     stderr: str
+    launched: bool = True
 
     def transcript(self, argv: Sequence[str]) -> str:
         """argv, exit code and both streams -- what an operator needs to
@@ -79,8 +90,9 @@ class SubprocessRunner:
                 list(argv), capture_output=True, text=True, timeout=_TIMEOUT_S, check=False
             )
         except FileNotFoundError as exc:
-            return CommandResult(_NOT_FOUND, "", f"not found: {exc}")
+            return CommandResult(_NOT_FOUND, "", f"not found: {exc}", launched=False)
         except subprocess.TimeoutExpired:
+            # The process ran, so it may have written before it was killed.
             return CommandResult(_NOT_FOUND, "", f"timed out after {_TIMEOUT_S}s")
         except OSError as exc:
             # A resolved binary can still fail to launch -- no execute
@@ -88,7 +100,7 @@ class SubprocessRunner:
             # Those are transport problems, and letting one escape would have
             # the CLI reduce it to a non-retryable internal error, hiding the
             # actionable reason.
-            return CommandResult(_NOT_FOUND, "", f"cannot launch: {exc}")
+            return CommandResult(_NOT_FOUND, "", f"cannot launch: {exc}", launched=False)
         return CommandResult(proc.returncode, proc.stdout or "", proc.stderr or "")
 
 
@@ -171,8 +183,12 @@ def _decode(
     a call that finished. `effect` names the marker for what this verb may have
     done, and it rides both failures: unknown means marked, because syncing an
     idempotent replay is harmless and stranding a write is not.
+
+    A call that never launched is the exception, and the only one: no child
+    process ran, so nothing can have happened. That is proof, not an unknown,
+    and the marker is withheld.
     """
-    marker: dict[str, JsonValue] = {effect: True} if effect is not None else {}
+    marker: dict[str, JsonValue] = {effect: True} if effect is not None and result.launched else {}
     try:
         return cast("JsonValue", json.loads(result.stdout))
     except json.JSONDecodeError:

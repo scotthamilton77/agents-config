@@ -501,6 +501,35 @@ def test_an_unreadable_reply_to_a_mutating_verb_still_marks_the_write(
     assert raised.value.data.get(TRACKER_WRITE_LANDED) is True
 
 
+@pytest.mark.parametrize(
+    ("argv", "call"),
+    [
+        (_LOG, lambda rt: GrindRuntime(rt).append("item_started", {"item": "it-1"})),
+        (("work", "claim"), lambda rt: WorkTracker(rt).claim("w-1")),
+    ],
+    ids=["append", "mutate"],
+)
+def test_a_call_that_never_launched_claims_no_effect(
+    argv: tuple[str, ...], call: Callable[[ScriptedRunner], object]
+) -> None:
+    """
+    Given a binary that could not be launched at all
+    When the port calls it
+    Then no effect marker rides the failure.
+
+    A launch failure is the one case that *proves* the far side did nothing —
+    no child process ran. Marking it would report a durable append that never
+    happened, and would have the tracker record a mutation and push a sync for
+    a call that never left the executor.
+    """
+    runner = ScriptedRunner({argv: CommandResult(127, "", "not found: grind", launched=False)})
+
+    with pytest.raises(ExecutorError) as raised:
+        call(runner)
+
+    assert raised.value.data == {}
+
+
 def test_an_unreadable_sync_reply_claims_no_tracker_write() -> None:
     """
     Given a failed `work sync` whose reply cannot be read

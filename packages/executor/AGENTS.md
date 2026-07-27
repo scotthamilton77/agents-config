@@ -240,8 +240,13 @@ unusable one as "no disagreement" re-opens the divergence outright.
   **A reply that cannot be read at all is the strongest "unknown" there is** —
   a timeout can land mid-write, a wrapper can truncate the output of a call
   that finished — so the marker attaches at the decode boundary too, not only
-  to parseable replies. The marker follows the *verb*: reads (`state`,
-  `staleness`) and `sync` claim nothing, because neither writes.
+  to parseable replies. The one exception is a call that never launched:
+  `CommandResult.launched` is `False` only for a failure before exec, which
+  *proves* no child process ran, and the marker is withheld. A timeout is
+  `launched=True`, since the process ran; exit code alone cannot tell the two
+  apart, which is why that flag exists at all.
+  The marker follows the *verb*: reads (`state`, `staleness`) and `sync` claim
+  nothing, because neither writes.
   Adding a raise below the port boundary means asking what the far side may
   already have done.
 - **`ok: true` from the runtime is not "it applied".** The runtime's policy is
