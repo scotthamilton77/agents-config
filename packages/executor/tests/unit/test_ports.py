@@ -46,7 +46,13 @@ def _facade(answers: dict[tuple[str, ...], CommandResult]) -> ScriptedRunner:
 
 
 def _state_reply() -> CommandResult:
-    return _ok({"ok": True, "state": {"items": {"it-1": {"status": "queued", "lane": "lane-a"}}}})
+    return _ok(
+        {
+            "ok": True,
+            "state": {"items": {"it-1": {"status": "queued", "lane": "lane-a"}}},
+            "conditions": [],
+        }
+    )
 
 
 def test_state_reads_the_full_fold_and_passes_the_directory_through() -> None:

@@ -329,13 +329,25 @@ outcomes and stay on every path; the verb block is not.
 
 - **A degraded value that authorises is a fault, not a default.** The parser
   degrades a wrong-typed field to `None` and the decision above fails closed —
-  a missing PR reference refuses, a missing lane refuses. Three fields invert
+  a missing PR reference refuses, a missing lane refuses. Four reads invert
   that and so refuse instead: `parked` (a malformed one makes an unparked item
   look parked, waving `redispatch`/`abandon` into a tracker-first mutation),
   `work_id` (falling back to the item id sends a tracker write named by a
-  fallback), and the facade's park reply (no reason means no evidence of
-  agreement). Before adding a lenient read, ask which way its degraded value
-  points.
+  fallback), the facade's park reply (no reason means no evidence of
+  agreement), and the runtime's whole **`conditions` block** (absent or null
+  reads as "no budget spent", which switches enforcement off). Before adding a
+  lenient read, ask which way its degraded value points.
+
+  **Ask it of an absence too, not only of a wrong type.** The `conditions`
+  case is the one that got past a first pass: absent looked like a benign
+  "nothing to report" until the question was put the other way round — the
+  runtime already encodes that as the empty list, so absent can only be a
+  reply this package cannot read. `parse_state` takes `conditions` as a
+  **required** argument for that reason; a default would be a value meaning
+  "the runtime said nothing about budgets", and there is no such reading.
+  It fails every verb rather than only `attempt`: a runtime that cannot
+  produce its own documented reply shape has not established that any of this
+  package's readings of it hold.
 - **Every failure raised after the outside system may have acted carries what
   it may have done.** This is one rule, and four review rounds found it four
   times before it got written down. The runtime appends *before* it replies

@@ -259,22 +259,26 @@ def _timestamps(payload: JsonValue) -> dict[str, str]:
 def _budget_spent(conditions: JsonValue) -> dict[tuple[str, str], BudgetSpent]:
     """The `attempt_budget_spent` conditions, keyed by (item, kind).
 
-    Absent or null is an empty map: the runtime is the one source of this fact,
-    so a reply reporting no conditions reports no exhaustion. A `conditions`
-    value that is present and *not* a list is a fault instead -- a reply
-    claiming to carry conditions in a shape nothing can read says nothing about
-    whether a budget is spent, and reading that as "not spent" would let a
-    corrupt reply authorise the attempt the condition exists to refuse.
+    Anything but a list is a fault, absent and null included. The runtime
+    computes conditions on every `status` reply and already has an encoding for
+    "none currently true" -- the empty list -- so a reply that omits the block
+    or nulls it is not reporting an absence, it is a reply this package cannot
+    read. Treating it as "no budget spent" would hand a corrupt or incompatible
+    runtime the power to switch enforcement off silently, which is the whole
+    mechanism `attempt` exists to be.
+
+    It fails every verb rather than only `attempt`, on purpose: a runtime that
+    cannot produce its own documented reply shape has not established that any
+    of this package's readings of it hold. Same standing as the facade protocol
+    pin, which refuses before mutating rather than after mis-parsing.
 
     The same rule one level down: an entry that names this condition and whose
     fields cannot be read is a fault, never a skipped entry.
     """
-    if conditions is None:
-        return {}
     if not isinstance(conditions, list):
         raise ExecutorError(
             ErrorCode.RUNTIME_ENVELOPE,
-            f"runtime conditions are not a list: {conditions!r}",
+            f"the runtime reported no readable conditions block: {conditions!r}",
         )
     spent: dict[tuple[str, str], BudgetSpent] = {}
     for entry in conditions:
@@ -293,7 +297,7 @@ def _budget_spent(conditions: JsonValue) -> dict[tuple[str, str], BudgetSpent]:
     return spent
 
 
-def parse_state(payload: JsonValue, conditions: JsonValue = None) -> RunState:
+def parse_state(payload: JsonValue, conditions: JsonValue) -> RunState:
     """`grind status --full`'s `state` object and `conditions` list -> `RunState`.
 
     A reply that is not an object, or whose `items` is not an object, is an
@@ -302,7 +306,9 @@ def parse_state(payload: JsonValue, conditions: JsonValue = None) -> RunState:
 
     `conditions` is a second top-level key of the same reply rather than part
     of `state` -- the runtime recomputes conditions from the fold and never
-    persists them -- so it arrives here as its own argument.
+    persists them -- so it arrives here as its own argument. It is required
+    with no default: a default would be a value meaning "the runtime said
+    nothing about budgets", and there is no such reading (see `_budget_spent`).
     """
     if not isinstance(payload, dict):
         raise ExecutorError(

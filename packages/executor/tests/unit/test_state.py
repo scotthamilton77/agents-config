@@ -53,7 +53,7 @@ def test_parse_state_narrows_each_item_to_the_fields_a_pairing_reads() -> None:
     The `bogus` attempt entry is dropped: a count that is not a number cannot
     be reported as one.
     """
-    state = parse_state(_STATE)
+    state = parse_state(_STATE, [])
 
     assert state.items["it-1"] == ItemView(
         id="it-1",
@@ -88,7 +88,7 @@ def test_the_config_the_conditions_were_computed_from_rides_the_same_parse() -> 
     The budget a proceeding attempt reports is read from here, so it has to
     come from the same snapshot as the condition that let it proceed.
     """
-    assert parse_state(_STATE).config == {"ci_fix_budget": 2, "rebase_budget": 1}
+    assert parse_state(_STATE, []).config == {"ci_fix_budget": 2, "rebase_budget": 1}
 
 
 @pytest.mark.parametrize(
@@ -103,7 +103,7 @@ def test_a_config_that_is_not_an_object_degrades_to_an_empty_one(config: object)
     Nothing decides on the config: an unreadable one costs the documented
     fallback budget in a report, and the decision stays the condition's.
     """
-    state = parse_state({"items": {}, "config": config})
+    state = parse_state({"items": {}, "config": config}, [])
 
     assert state.config == {}
 
@@ -146,7 +146,7 @@ def test_only_an_explicit_closed_false_on_a_numbered_ref_reads_as_an_open_pr(
     null, mistyped — is not evidence of one. `0` is called out because it is
     falsey without being `false`.
     """
-    state = parse_state({"items": {"it-1": {"pr": pr}}})
+    state = parse_state({"items": {"it-1": {"pr": pr}}}, [])
 
     assert state.items["it-1"].pr_open is expected
 
@@ -163,7 +163,7 @@ def test_the_ledgers_keep_only_entries_that_can_answer_a_retry() -> None:
     the resulting miss surfaces as a refusal or a flagged append, both
     recoverable, where a false match loses the transition silently.
     """
-    state = parse_state(_STATE)
+    state = parse_state(_STATE, [])
 
     assert state.closures == {("it-1", 41): "2026-07-25T00:00:00Z"}
     assert state.merged_shas == {"it-1": "9fceb02"}
@@ -185,7 +185,7 @@ def test_a_reply_without_a_usable_items_object_is_an_envelope_fault(payload: obj
     verb would then refuse with the wrong reason.
     """
     with pytest.raises(ExecutorError) as raised:
-        parse_state(payload)  # type: ignore[arg-type]
+        parse_state(payload, [])  # type: ignore[arg-type]
 
     assert raised.value.code is ErrorCode.RUNTIME_ENVELOPE
 
@@ -204,7 +204,7 @@ def test_a_malformed_parked_value_is_an_envelope_fault(parked: object) -> None:
     authorises is a corrupt reply, not a degraded value.
     """
     with pytest.raises(ExecutorError) as raised:
-        parse_state({"items": {"it-1": {"parked": parked}}})
+        parse_state({"items": {"it-1": {"parked": parked}}}, [])
 
     assert raised.value.code is ErrorCode.RUNTIME_ENVELOPE
 
@@ -222,7 +222,7 @@ def test_a_malformed_work_id_is_an_envelope_fault(work_id: object) -> None:
     fallback on the strength of a reply that named no trustworthy handle.
     """
     with pytest.raises(ExecutorError) as raised:
-        parse_state({"items": {"it-1": {"work_id": work_id}}})
+        parse_state({"items": {"it-1": {"work_id": work_id}}}, [])
 
     assert raised.value.code is ErrorCode.RUNTIME_ENVELOPE
 
@@ -236,7 +236,7 @@ def test_a_boolean_pr_number_is_not_a_pr_number() -> None:
     `bool` is an `int` subclass, so a naive isinstance check would record
     `true` as PR 1.
     """
-    state = parse_state({"items": {"it-1": {"pr": {"number": True}}}})
+    state = parse_state({"items": {"it-1": {"pr": {"number": True}}}}, [])
 
     assert state.items["it-1"].pr_number is None
 
@@ -313,16 +313,22 @@ def test_an_unreadable_budget_condition_is_a_fault_not_a_dropped_entry(entry: ob
     assert raised.value.code is ErrorCode.RUNTIME_ENVELOPE
 
 
-@pytest.mark.parametrize("conditions", ["[]", 7, {}], ids=["string", "number", "object"])
+@pytest.mark.parametrize(
+    "conditions", [None, "[]", 7, {}], ids=["absent-or-null", "string", "number", "object"]
+)
 def test_a_conditions_block_that_is_not_a_list_is_a_fault(conditions: object) -> None:
     """
-    Given a reply whose conditions block is present and not a list
+    Given a reply whose conditions block is anything but a list
     When it is parsed
     Then E_RUNTIME_ENVELOPE is raised.
 
-    A reply claiming to carry conditions in a shape nothing can read says
-    nothing about whether a budget is spent, and reading that as "not spent"
-    is the same degraded authorisation one entry down.
+    Absent and null are in here, not exempt from it. The runtime computes
+    conditions on every `status` reply and already encodes "none currently
+    true" as the empty list, so a reply that omits the block or nulls it is
+    not reporting an absence — it is a reply this package cannot read.
+    Treating it as "no budget spent" would let a corrupt or incompatible
+    runtime switch enforcement off silently, which is the whole mechanism
+    `attempt` is.
     """
     with pytest.raises(ExecutorError) as raised:
         parse_state({"items": {}}, conditions)  # type: ignore[arg-type]
@@ -330,16 +336,15 @@ def test_a_conditions_block_that_is_not_a_list_is_a_fault(conditions: object) ->
     assert raised.value.code is ErrorCode.RUNTIME_ENVELOPE
 
 
-def test_a_reply_reporting_no_conditions_reports_no_exhaustion() -> None:
+def test_an_empty_conditions_list_is_the_reading_that_reports_no_exhaustion() -> None:
     """
-    Given a reply with no conditions block at all
+    Given a reply carrying an empty conditions list
     When it is parsed
     Then no budget is spent.
 
-    The empty boundary, and the inverse of the fault above: the runtime is the
-    one source of this fact, so a reply reporting none reports no exhaustion.
+    The empty boundary, and the inverse of the fault above: this is the one
+    shape that legitimately says "nothing is currently true".
     """
-    assert parse_state({"items": {}}).budget_spent == {}
     assert parse_state({"items": {}}, []).budget_spent == {}
 
 
