@@ -208,15 +208,19 @@ verify-entry-executor:
 # set reads exactly like a green gate.
 test-skills:
 	@set -e; \
+	log=$$(mktemp); \
+	trap 'rm -f "$$log"' EXIT; \
 	found=0; \
 	for suite in $$(find src \( -name '*_test.py' -o -name 'test_*.py' \) | sort); do \
 	  found=$$((found + 1)); \
 	  echo "── $$suite"; \
-	  out=$$(cd $$(dirname $$suite) && uv run ./$$(basename $$suite)); \
-	  echo "$$out"; \
-	  echo "$$out" | grep -qE '[0-9]+ passed' || { \
-	    echo "$$suite reported no passing tests; a script whose tests never run exits 0 and" >&2; \
-	    echo "reads as a suite that passed" >&2; exit 1; }; \
+	  ok=0; \
+	  ( cd $$(dirname $$suite) && uv run ./$$(basename $$suite) ) > "$$log" 2>&1 || ok=1; \
+	  cat "$$log"; \
+	  [ $$ok -eq 0 ] || { echo "$$suite exited non-zero" >&2; exit 1; }; \
+	  grep -qE '^[0-9]+ passed' "$$log" || { \
+	    echo "$$suite reported no clean pass: a suite whose tests never run exits 0, and a" >&2; \
+	    echo "summary that names failures first is not a pass however it exited" >&2; exit 1; }; \
 	done; \
 	if [ $$found -eq 0 ]; then \
 	  echo "test-skills found no suites under src/ -- discovery is broken" >&2; \
