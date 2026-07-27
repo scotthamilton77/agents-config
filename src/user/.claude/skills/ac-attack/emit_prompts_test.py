@@ -862,10 +862,18 @@ class TestSurface:
         assert sorted(rows) == sorted(LENS_NAMES), f"table {sorted(rows)} vs registry {LENS_NAMES}"
 
     def test_c5_skill_declares_its_admission_record(self):
-        """S6-C5: the deployed skill carries the record the install gate requires."""
+        """S6-C5: the install gate drops a skill whose record is absent, and equally one whose
+        record is present and blank — a dropped skill deploys nothing while its source sits in
+        the tree looking installed, and nothing downstream says so. So every field is held to
+        carrying content, not merely to appearing; the worth field is either of the two the gate
+        accepts, since one of them is what it asks for."""
         front = SKILL_PATH.read_text(encoding="utf-8").split("---", 2)[1]
-        for key in ("name:", "description:", "admission:", "prevents:", "cost:", "remove_when:"):
-            assert key in front
+        def stated(key: str) -> bool:
+            return bool(re.search(rf"^\s*{key}: *\S", front, re.MULTILINE))
+        for key in ("name", "description", "cost", "remove_when"):
+            assert stated(key), f"{key} is absent or blank"
+        assert re.search(r"^admission:", front, re.MULTILINE), "no admission block"
+        assert stated("prevents") or stated("provides"), "the record states no worth"
 
 
 if __name__ == "__main__":
