@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from executor.envelope import ExecutorError, JsonValue
+from executor.envelope import ErrorCode, ExecutorError, JsonValue
 from executor.pairing import Order, Plan, TrackerVerb
 from executor.ports import EVENT_WAS_WRITTEN, RuntimePort, TrackerPort
 from executor.state import tracker_handle
@@ -45,7 +45,23 @@ class TrackerSession:
             # A failure-axis reason crosses untranslated -- there is no mapping
             # table anywhere in this package, only the axis test that decided
             # this row belongs to the tracker at all.
-            self.port.park(handle, reason=reason or "", note=note or "")
+            #
+            # The facade's reply is checked, not discarded. `work park` on an
+            # already-parked item reports the EXISTING stint and mints nothing,
+            # so a retry naming a different reason -- the shape a tracker-first
+            # invocation leaves behind when its append failed -- would append
+            # the new reason to the runtime while the tracker kept the old one.
+            # Neither plane could then detect it: each is internally
+            # consistent, and no retry converges them. Raising before the
+            # mutation is recorded is what keeps this a clean refusal with
+            # nothing written and no sync owed.
+            recorded = self.port.park(handle, reason=reason or "", note=note or "")
+            if recorded is not None and recorded != reason:
+                raise ExecutorError(
+                    ErrorCode.ITEM_PARKED,
+                    f"the tracker already has {handle!r} parked as {recorded!r}, "
+                    f"not {reason!r}; redispatch or abandon it before parking it again",
+                )
         elif verb is TrackerVerb.REDISPATCH:
             self.port.redispatch(handle)
         elif verb is TrackerVerb.ABANDON:

@@ -156,6 +156,55 @@ def test_a_failure_axis_park_on_an_item_with_no_pr_is_refused(reason: str) -> No
     assert tracker.syncs == 0
 
 
+def test_a_park_the_tracker_already_holds_under_another_reason_is_refused() -> None:
+    """
+    Given a tracker already parked as `ci-failure` while the runtime park is
+    missing — what a tracker-first invocation leaves when its append failed
+    When the park is retried naming a different reason
+    Then it is refused and nothing is appended.
+
+    `work park` on an already-parked item reports the *existing* stint and
+    mints nothing. Taking that reply as the requested mutation would append
+    `merge-conflict` to the runtime while the tracker kept `ci-failure` —
+    and neither plane could detect it, since each is internally consistent.
+    No retry converges that, which is exactly what S9T1-A7's "status, label
+    and grind agreement" and S9T1-D6's single-failed-call bound rule out.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="pr-open", pr=7, work_id="w-1")))
+    tracker = FakeTracker(parked_as="ci-failure")
+
+    code, envelope = invoke(["park", "it-1", "--reason", "merge-conflict"], runtime, tracker)
+
+    assert code == 1
+    assert envelope["error"]["code"] == "E_ITEM_PARKED"
+    assert "ci-failure" in envelope["error"]["message"]
+    assert runtime.appended == []
+    # The facade was asked and answered; it minted nothing, so nothing is owed
+    # a sync either.
+    assert tracker.verbs == ["park"]
+    assert tracker.syncs == 0
+
+
+def test_a_park_the_tracker_already_holds_under_the_same_reason_proceeds() -> None:
+    """
+    Given a tracker parked as `ci-failure` and a runtime park still missing
+    When the park is retried with that same reason
+    Then the runtime append lands, converging the two planes.
+
+    The inverse, and the reason this is a comparison rather than a blanket
+    refusal: re-running the *same* command is exactly how a half-landed
+    tracker-first pair is meant to converge.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="pr-open", pr=7, work_id="w-1")))
+    tracker = FakeTracker(parked_as="ci-failure")
+
+    code, _ = invoke(["park", "it-1", "--reason", "ci-failure"], runtime, tracker)
+
+    assert code == 0
+    assert runtime.event_types == ["item_parked"]
+    assert tracker.syncs == 1
+
+
 def test_re_parking_under_a_different_reason_is_refused() -> None:
     """
     Given an item already parked for one reason

@@ -86,8 +86,12 @@ class FakeTracker:
     how a retry test models a facade that came back.
     """
 
-    def __init__(self, *, fail_on: Sequence[str] = ()) -> None:
+    def __init__(self, *, fail_on: Sequence[str] = (), parked_as: str | None = None) -> None:
         self.fail_on = set(fail_on)
+        # What `work park` already has on record. The facade reports the
+        # EXISTING stint on a replay and mints nothing, so a fake that always
+        # echoed the request back could not model the divergence that costs.
+        self.parked_as = parked_as
         self.mutations: list[tuple[str, ...]] = []
         self.syncs = 0
         LIVE_TRACKERS.append(self)
@@ -100,8 +104,9 @@ class FakeTracker:
     def claim(self, handle: str) -> None:
         self._record("claim", handle)
 
-    def park(self, handle: str, *, reason: str, note: str) -> None:
+    def park(self, handle: str, *, reason: str, note: str) -> str | None:
         self._record("park", handle, reason, note)
+        return self.parked_as if self.parked_as is not None else reason
 
     def redispatch(self, handle: str) -> None:
         self._record("redispatch", handle)

@@ -117,7 +117,7 @@ class TrackerPort(Protocol):
 
     def claim(self, handle: str) -> None: ...  # pragma: no cover
 
-    def park(self, handle: str, *, reason: str, note: str) -> None: ...  # pragma: no cover
+    def park(self, handle: str, *, reason: str, note: str) -> str | None: ...  # pragma: no cover
 
     def redispatch(self, handle: str) -> None: ...  # pragma: no cover
 
@@ -290,7 +290,7 @@ class WorkTracker:
     def __init__(self, runner: Runner) -> None:
         self._runner = runner
 
-    def _call(self, argv: Sequence[str], *, code: ErrorCode) -> None:
+    def _call(self, argv: Sequence[str], *, code: ErrorCode) -> dict[str, JsonValue]:
         result = self._runner.run(argv)
         # No dedicated code exists for a garbled facade reply (S9T1-D11 gives
         # the tracker side one code), so both faults report as the same
@@ -300,15 +300,28 @@ class WorkTracker:
         # is a failure whatever the envelope says.
         if not _is_ok_envelope(decoded) or result.exit_code != 0:
             raise ExecutorError(code, _envelope_message(decoded, result.transcript(argv)))
+        return decoded
 
     def claim(self, handle: str) -> None:
         self._call(["work", "claim", handle], code=ErrorCode.TRACKER_SUBPROCESS)
 
-    def park(self, handle: str, *, reason: str, note: str) -> None:
-        self._call(
+    def park(self, handle: str, *, reason: str, note: str) -> str | None:
+        """Returns the reason the facade has on record, which is not always
+        the one asked for.
+
+        `work park` on an already-parked item is an idempotent replay: it
+        reports the *existing* stint and mints nothing. Discarding that reply
+        would let the executor append the newly requested reason to the
+        runtime while the tracker keeps the old one -- a divergence no retry
+        closes, since each plane then reports itself consistent.
+        """
+        reply = self._call(
             ["work", "park", handle, "--reason", reason, "--note", note],
             code=ErrorCode.TRACKER_SUBPROCESS,
         )
+        data = reply.get("data")
+        recorded = data.get("reason") if isinstance(data, dict) else None
+        return recorded if isinstance(recorded, str) and recorded != "" else None
 
     def redispatch(self, handle: str) -> None:
         self._call(["work", "redispatch", handle], code=ErrorCode.TRACKER_SUBPROCESS)

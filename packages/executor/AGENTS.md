@@ -74,14 +74,14 @@ ports.py  →  state.py  →  rules.py  →  pairing.py  →  enact.py  →  cli
   scheduling axis is runtime-native and issues zero tracker writes — the facade
   deliberately has no vocabulary for it.
 
-## The two matrices
+## The three matrices
 
 `S9T1-D12` closes the pairing universe over *which* verb maps to which event
-and which tracker call. It answers neither of the two questions each row also
-has to, and both were discovered one cell per review round before being
+and which tracker call. It answers none of the three questions each row also
+has to, and every one was discovered a cell per review round before being
 enumerated. **`src/executor/rules.py` is the source of truth**; the tables
-below are the orientation, and `tests/unit/test_rules_matrices.py` walks both
-from the table itself.
+below are the orientation, and `tests/unit/test_rules_matrices.py` walks all
+three from the table itself.
 
 **Adding a guard means adding a cell, never a check at the call site.** That
 is the whole point of the enumeration — scattered guards are what let the same
@@ -174,6 +174,40 @@ Three traps worth keeping:
   tried and each matches a state another command produces — an ordinary
   `pr-closed --next queued` looks identical. Until B7 lands the evidence is
   unreachable and the row refuses instead.
+
+### Matrix C — the payload rules
+
+Which fields the fold requires **non-empty** in the event a row appends, and
+what an empty one becomes. Same standing as the source states: a payload the
+fold rejects is a precondition, and on a tracker-first row it is the one that
+can diverge the planes — an empty park note parks the tracker and only then
+has the append refused.
+
+| row | field | an empty value becomes |
+|---|---|---|
+| `park:*` | `note` | the reason code |
+| `abandon` | `reason` (the closure's) | `abandoned` |
+| `pr-closed` | `reason` | a refusal |
+| `merged` | `sha` | a refusal |
+
+Whether a field has a default is per row and documented, not a house style: a
+park note has a natural stand-in and a merge commit does not. A default that
+itself computes to empty is a **table bug** and fails loudly, and the set of
+fields a rule may fill is closed — a rule quietly writing to the wrong field
+would produce an event that passes every other check.
+
+### One agreement check that is not a matrix
+
+Matrix A and C are about what the *runtime's* fold will accept, and can both
+be decided before either plane is touched. The tracker has one rule that
+cannot: `work park` on an already-parked item reports the **existing** stint
+and mints nothing. So `TrackerSession` compares the reason the facade returns
+against the one asked for, and refuses before recording the mutation — with
+nothing written and no sync owed. Discarding that reply would append the new
+reason to the runtime while the tracker kept the old one, and **neither plane
+could detect it**, since each stays internally consistent. Never let a facade
+reply go unread on the assumption that a successful call means the requested
+mutation.
 
 ## More rules that are load-bearing, not stylistic
 

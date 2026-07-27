@@ -30,6 +30,7 @@ from executor.rules import (
     Request,
     RowRules,
     already_recorded,
+    apply_payload_rules,
     check_preconditions,
 )
 from executor.state import ItemView, RunState
@@ -193,19 +194,24 @@ def _require(value: int | str | None, verb: str, flag: str) -> int | str:
     return value
 
 
-def _resolved(rules: RowRules, request: Request) -> bool:
-    """The shared middle of every builder: skip when the exact command is on
-    record, otherwise prove the row may fire from here."""
+def _resolve(rules: RowRules, request: Request) -> tuple[Request, bool]:
+    """The shared middle of every builder.
+
+    Matrix C first, since a defaulted field can be part of the identity; then
+    Matrix B's "is this exact command already recorded"; then Matrix A's
+    preconditions. Returns the normalized request and whether to skip.
+    """
+    request = apply_payload_rules(rules, request)
     if already_recorded(rules, request):
-        return True
+        return request, True
     check_preconditions(rules, request)
-    return False
+    return request, False
 
 
 def _plan_start(item: ItemView, state: RunState) -> Plan:
     rules, row = ROW_RULES["start"], ROWS["start"]
-    request = Request(item=item, state=state)
-    if _resolved(rules, request):
+    _, skip = _resolve(rules, Request(item=item, state=state))
+    if skip:
         return Plan(row, item, None)
     return Plan(row, item, {"item": item.id})
 
@@ -213,17 +219,13 @@ def _plan_start(item: ItemView, state: RunState) -> Plan:
 def _plan_park(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     reason = str(_require(args.reason, "park", "--reason"))
     axis = park_axis(reason)
-    # The reason code is the default note: `item_parked.note` is required, and
-    # a park whose note only repeats its typed reason says exactly as much as
-    # the reason does. An *empty* note takes the default too, rather than being
-    # passed through: the fold rejects an empty note, and this row is
-    # tracker-first, so passing one would park the tracker and then have the
-    # append refused, with the retry repeating it rather than converging.
-    note = args.note or reason
     key = "park:failure" if axis is Axis.FAILURE else "park:scheduling"
     rules, row = ROW_RULES[key], ROWS[key]
-    request = Request(item=item, state=state, reason=reason, note=note)
-    if _resolved(rules, request):
+    # Matrix C fills the note: `item_parked.note` is required, and a park whose
+    # note only repeats its typed reason says exactly as much as the reason.
+    request, skip = _resolve(rules, Request(item=item, state=state, reason=reason, note=args.note))
+    note = request.note or reason
+    if skip:
         return Plan(row, item, None, park_reason=reason, park_note=note)
     payload: dict[str, JsonValue] = {"item": item.id, "reason": reason, "note": note}
     return Plan(row, item, payload, park_reason=reason, park_note=note)
@@ -231,8 +233,8 @@ def _plan_park(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
 
 def _plan_redispatch(item: ItemView, state: RunState) -> Plan:
     rules, row = ROW_RULES["redispatch"], ROWS["redispatch"]
-    request = Request(item=item, state=state)
-    if _resolved(rules, request):
+    _, skip = _resolve(rules, Request(item=item, state=state))
+    if skip:
         return Plan(row, item, None)
     return Plan(row, item, {"item": item.id, "lane": item.lane})
 
@@ -240,15 +242,15 @@ def _plan_redispatch(item: ItemView, state: RunState) -> Plan:
 def _plan_abandon(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     pr = int(_require(args.pr, "abandon", "--pr"))
     rules, row = ROW_RULES["abandon"], ROWS["abandon"]
-    request = Request(item=item, state=state, pr=pr, reason=args.reason)
-    if _resolved(rules, request):
+    request, skip = _resolve(rules, Request(item=item, state=state, pr=pr, reason=args.reason))
+    if skip:
         return Plan(row, item, None)
     payload: dict[str, JsonValue] = {
         "item": item.id,
         "lane": item.lane,
         # The single park exit carries the closure, so an abandoned PR is
         # recorded without granting `pr_closed` a new source state.
-        "closure": {"pr": pr, "reason": args.reason or "abandoned"},
+        "closure": {"pr": pr, "reason": request.reason},
     }
     return Plan(row, item, payload)
 
@@ -256,8 +258,8 @@ def _plan_abandon(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
 def _plan_pr_opened(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     pr = int(_require(args.pr, "pr-opened", "--pr"))
     rules, row = ROW_RULES["pr-opened"], ROWS["pr-opened"]
-    request = Request(item=item, state=state, pr=pr)
-    if _resolved(rules, request):
+    _, skip = _resolve(rules, Request(item=item, state=state, pr=pr))
+    if skip:
         return Plan(row, item, None)
     return Plan(row, item, {"item": item.id, "pr": pr})
 
@@ -267,14 +269,16 @@ def _plan_pr_closed(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     next_status = str(_require(args.next_status, "pr-closed", "--next"))
     reason = str(_require(args.reason, "pr-closed", "--reason"))
     rules, row = ROW_RULES["pr-closed"], ROWS["pr-closed"]
-    request = Request(item=item, state=state, pr=pr, next_status=next_status, reason=reason)
-    if _resolved(rules, request):
+    request, skip = _resolve(
+        rules, Request(item=item, state=state, pr=pr, next_status=next_status, reason=reason)
+    )
+    if skip:
         return Plan(row, item, None)
     payload: dict[str, JsonValue] = {
         "item": item.id,
         "pr": pr,
         "next": next_status,
-        "reason": reason,
+        "reason": request.reason,
     }
     return Plan(row, item, payload)
 
@@ -282,8 +286,8 @@ def _plan_pr_closed(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
 def _plan_merged(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     sha = str(_require(args.sha, "merged", "--sha"))
     rules, row = ROW_RULES["merged"], ROWS["merged"]
-    request = Request(item=item, state=state, sha=sha)
-    if _resolved(rules, request):
+    _, skip = _resolve(rules, Request(item=item, state=state, sha=sha))
+    if skip:
         return Plan(row, item, None)
     # The PR comes from the fold, never from an argument: closed means merged,
     # and the executor must not be able to close against a PR the runtime never
@@ -293,8 +297,8 @@ def _plan_merged(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
 
 def _plan_done(item: ItemView, state: RunState) -> Plan:
     rules, row = ROW_RULES["done"], ROWS["done"]
-    request = Request(item=item, state=state)
-    if _resolved(rules, request):
+    _, skip = _resolve(rules, Request(item=item, state=state))
+    if skip:
         return Plan(row, item, None)
     return Plan(row, item, {"item": item.id})
 

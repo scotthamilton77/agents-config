@@ -1,8 +1,9 @@
-"""The two matrices every S9T1-D12 row is decided by.
+"""The three matrices every S9T1-D12 row is decided by.
 
 `S9T1-D12` closes the pairing universe over *which* verb maps to which event
-and which tracker call. It says nothing about two further questions each row
-has to answer, and both were discovered one cell at a time under review:
+and which tracker call. It says nothing about three further questions each row
+has to answer, every one of which was discovered a cell at a time under
+review:
 
 **Matrix A -- the source-state matrix.** Which item states a row may legally
 fire from, and the typed refusal for each state it may not. The executor is the
@@ -21,7 +22,14 @@ the merits, never silently skipped. Answering "already done" to a re-invocation
 carrying a different PR, outcome, commit or park reason claims a transition
 neither plane made.
 
-Both matrices duplicate facts the runtime's fold owns, which is the cost of
+**Matrix C -- the payload rules.** Which fields the fold requires non-empty in
+the event a row appends, and what an empty one becomes -- the row's documented
+default, or a refusal. Same standing as the source states: a payload the fold
+rejects is a precondition, and on a tracker-first row it is the one that can
+diverge the planes, since an empty park note parks the tracker and only then
+has the append refused.
+
+All three matrices duplicate facts the runtime's fold owns, which is the cost of
 being able to refuse before enacting. `GrindRuntime.append` refusing an
 `applied: false` reply is the backstop that catches this file drifting from the
 fold, and it names the fold's own reason when it fires.
@@ -36,7 +44,7 @@ refused before a row is ever selected, by `RunState.item`.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
 from executor.envelope import ErrorCode, ExecutorError, JsonValue
@@ -113,6 +121,20 @@ class Requires(StrEnum):
 
 
 @dataclass(frozen=True)
+class PayloadRule:
+    """One Matrix C cell: a `VerbArgs` field the fold requires non-empty.
+
+    `default` supplies the value an empty or absent one takes, computed from
+    the rest of the request; `None` means an empty value is a refusal. The
+    difference is per row and documented, not a house style -- a park note has
+    a natural stand-in (its reason code) while a merge commit does not.
+    """
+
+    field: str
+    default: Callable[[Request], str] | None = None
+
+
+@dataclass(frozen=True)
 class Request:
     """One resolved command: the item it names and the arguments it carries."""
 
@@ -146,6 +168,7 @@ class RowRules:
     identity_fields: tuple[str, ...]
     identity: Callable[[Request], Identity]
     recorded: Callable[[Request], Identity | None]
+    payload: tuple[PayloadRule, ...] = ()
     notes: str = field(default="")
 
 
@@ -331,6 +354,7 @@ ROW_RULES: dict[str, RowRules] = {
         identity_fields=("item", "reason"),
         identity=_park_identity,
         recorded=_park_recorded,
+        payload=(PayloadRule("note", lambda request: request.reason or ""),),
         notes=(
             "A failure reason states this item's PR did not merge, so the fold "
             "refuses one on an item holding no PR -- keyed on the reference, not "
@@ -347,6 +371,7 @@ ROW_RULES: dict[str, RowRules] = {
         identity_fields=("item", "reason"),
         identity=_park_identity,
         recorded=_park_recorded,
+        payload=(PayloadRule("note", lambda request: request.reason or ""),),
         notes="A sequencing decision makes no claim about a PR and needs none.",
     ),
     "redispatch": RowRules(
@@ -368,6 +393,7 @@ ROW_RULES: dict[str, RowRules] = {
         identity_fields=("item", "pr"),
         identity=_abandon_identity,
         recorded=_abandon_recorded,
+        payload=(PayloadRule("reason", lambda _request: "abandoned"),),
         notes=(
             "The closure this writes goes into the log as the record, so the PR "
             "it names has to be the item's own."
@@ -396,6 +422,7 @@ ROW_RULES: dict[str, RowRules] = {
         identity_fields=("item", "pr", "next"),
         identity=_pr_closed_identity,
         recorded=_pr_closed_recorded,
+        payload=(PayloadRule("reason"),),
         notes=(
             "`reason` is outside the identity as text, but it is inside it on the "
             "`parked` path, where the runtime types the park from it."
@@ -410,6 +437,7 @@ ROW_RULES: dict[str, RowRules] = {
         identity_fields=("item", "sha"),
         identity=_merged_identity,
         recorded=_merged_recorded,
+        payload=(PayloadRule("sha"),),
         notes="The PR comes from the fold, never from an argument, so it cannot mismatch.",
     ),
     "done": RowRules(
@@ -432,6 +460,50 @@ ROW_RULES: dict[str, RowRules] = {
 
 def _render(fields: tuple[str, ...], identity: Identity) -> str:
     return ", ".join(f"{name}={value!r}" for name, value in zip(fields, identity, strict=False))
+
+
+def _filled(request: Request, field_name: str, value: str) -> Request:
+    """`replace` with a dynamic field name defeats the type checker, so the
+    fields Matrix C may fill are named here -- which also keeps that a closed
+    set rather than anything a rule feels like reaching for."""
+    if field_name == "note":
+        return replace(request, note=value)
+    if field_name == "reason":
+        return replace(request, reason=value)
+    if field_name == "sha":
+        return replace(request, sha=value)
+    raise ExecutorError(ErrorCode.INTERNAL, f"no payload rule may fill {field_name!r}")
+
+
+def apply_payload_rules(rules: RowRules, request: Request) -> Request:
+    """Apply Matrix C, returning the request with defaults filled in.
+
+    Runs before identity is computed, because a defaulted field can be part of
+    it. A field the fold requires non-empty and this row gives no default is a
+    refusal here rather than an append the fold rejects -- which on a
+    tracker-first row would have parked the tracker first.
+    """
+    resolved = request
+    for rule in rules.payload:
+        if getattr(resolved, rule.field):
+            continue
+        if rule.default is None:
+            raise ExecutorError(
+                ErrorCode.USAGE,
+                f"{rules.verb} requires a non-empty --{rule.field}",
+            )
+        filled = rule.default(resolved)
+        if not filled:
+            # A default computed from another field can itself come back empty.
+            # Appending that would hand the fold exactly the payload this axis
+            # exists to keep away from it, so the table is at fault, not the
+            # caller.
+            raise ExecutorError(
+                ErrorCode.INTERNAL,
+                f"the {rules.key!r} default for {rule.field!r} produced an empty value",
+            )
+        resolved = _filled(resolved, rule.field, filled)
+    return resolved
 
 
 def already_recorded(rules: RowRules, request: Request) -> bool:

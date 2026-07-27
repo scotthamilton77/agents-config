@@ -127,6 +127,24 @@ def test_a_malformed_parked_value_is_an_envelope_fault(parked: object) -> None:
     assert raised.value.code is ErrorCode.RUNTIME_ENVELOPE
 
 
+@pytest.mark.parametrize("work_id", [42, True, "", [], {}], ids=repr)
+def test_a_malformed_work_id_is_an_envelope_fault(work_id: object) -> None:
+    """
+    Given an item whose `work_id` is neither null nor a non-empty string
+    When it is parsed
+    Then E_RUNTIME_ENVELOPE is raised.
+
+    The other field whose degraded reading authorises rather than refuses:
+    falling back to `None` makes the handle resolve to the runtime's item id,
+    so the executor would claim, park or close a tracker item named by that
+    fallback on the strength of a reply that named no trustworthy handle.
+    """
+    with pytest.raises(ExecutorError) as raised:
+        parse_state({"items": {"it-1": {"work_id": work_id}}})
+
+    assert raised.value.code is ErrorCode.RUNTIME_ENVELOPE
+
+
 def test_a_boolean_pr_number_is_not_a_pr_number() -> None:
     """
     Given an item whose PR number decoded as `true`

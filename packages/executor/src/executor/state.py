@@ -107,6 +107,24 @@ def _parked(item_id: str, payload: Mapping[str, JsonValue]) -> Mapping[str, Json
     )
 
 
+def _work_id(item_id: str, payload: Mapping[str, JsonValue]) -> str | None:
+    """`work_id` is the other field that may not degrade.
+
+    Degrading a malformed one to `None` makes `tracker_handle` fall back to
+    the runtime's item id, so the executor would claim, park or close a
+    tracker item named by that fallback on the strength of a reply that named
+    no trustworthy handle. Like `parked`, the degraded reading authorises a
+    mutation rather than refusing one.
+    """
+    work_id = payload.get("work_id")
+    if work_id is None or (isinstance(work_id, str) and work_id != ""):
+        return work_id
+    raise ExecutorError(
+        ErrorCode.RUNTIME_ENVELOPE,
+        f"item {item_id!r} carries a malformed `work_id` value: {work_id!r}",
+    )
+
+
 def _item_view(item_id: str, payload: Mapping[str, JsonValue]) -> ItemView:
     pr = payload.get("pr")
     parked = _parked(item_id, payload)
@@ -114,7 +132,7 @@ def _item_view(item_id: str, payload: Mapping[str, JsonValue]) -> ItemView:
         id=item_id,
         status=_opt_str(payload, "status") or "",
         lane=_opt_str(payload, "lane"),
-        work_id=_opt_str(payload, "work_id"),
+        work_id=_work_id(item_id, payload),
         pr_number=_opt_int(pr, "number") if isinstance(pr, dict) else None,
         parked=parked is not None,
         park_reason=_opt_str(parked, "reason") if parked is not None else None,

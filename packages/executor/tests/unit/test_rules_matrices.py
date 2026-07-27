@@ -19,10 +19,14 @@ import pytest
 from executor.envelope import ExecutorError
 from executor.pairing import PAIRING_TABLE
 from executor.rules import (
+    ANY_STATE,
     ROW_RULES,
     Parked,
+    PayloadRule,
     Request,
     Requires,
+    RowRules,
+    apply_payload_rules,
     check_preconditions,
 )
 from tests.unit.fakes import FakeRuntime, FakeTracker, invoke, item, run_state
@@ -293,6 +297,90 @@ def test_a_partial_identity_match_is_never_silently_skipped(key: str, variant: l
     assert not skipped, f"{variant} was skipped as a retry of {_RECORDED[key][1]}"
     if code == 0:
         assert envelope["data"]["event_appended"] is True
+
+
+# -- Matrix C: the payload rules --
+
+
+@pytest.mark.parametrize("key", sorted(ROW_RULES), ids=sorted(ROW_RULES))
+def test_matrix_c_fills_or_refuses_every_field_it_declares(key: str) -> None:
+    """
+    Given each row's declared payload rules
+    When the field arrives empty
+    Then it takes the row's default, or the row refuses when it has none.
+
+    The fold's payload requirements are preconditions like its source states,
+    and on a tracker-first row they are the ones that can diverge the planes:
+    an empty park note parks the tracker and then has the append refused.
+    """
+    rules = ROW_RULES[key]
+    view = item("it-1", pr=42)
+
+    for rule in rules.payload:
+        # Empty only the field under rule; the rest stay as the pipeline would
+        # have them, since a default may be computed from one of them.
+        fields = {"reason": "ci-failure", "note": "why", "sha": "9fceb02"}
+        fields[rule.field] = ""
+        request = Request(item=view, state=run_state(view), pr=42, next_status="queued", **fields)
+        if rule.default is None:
+            with pytest.raises(ExecutorError):
+                apply_payload_rules(rules, request)
+        else:
+            resolved = apply_payload_rules(rules, request)
+            assert getattr(resolved, rule.field), f"{key}.{rule.field} left empty"
+
+
+def test_matrix_c_refuses_a_default_that_produces_an_empty_value() -> None:
+    """
+    Given a payload rule whose default computes to nothing
+    When it is applied
+    Then it fails loudly rather than filling in the empty value.
+
+    A default computed from another field can come back empty, and appending
+    that would hand the fold exactly the payload this axis exists to keep
+    away from it.
+    """
+    view = item("it-1")
+    rules = RowRules(
+        key="x",
+        verb="x",
+        legal_states=ANY_STATE,
+        parked=Parked.FORBIDDEN,
+        requires=(),
+        identity_fields=("item",),
+        identity=lambda request: (request.item.id,),
+        recorded=lambda _request: None,
+        payload=(PayloadRule("note", lambda request: request.reason or ""),),
+    )
+
+    with pytest.raises(ExecutorError):
+        apply_payload_rules(rules, Request(item=view, state=run_state(view)))
+
+
+def test_matrix_c_only_fills_fields_it_is_allowed_to() -> None:
+    """
+    Given a payload rule naming a field outside the fillable set
+    When it is applied
+    Then it fails loudly rather than filling something else.
+
+    The set is closed on purpose: a rule quietly writing to the wrong field
+    would produce an event that passes every other check.
+    """
+    view = item("it-1")
+    rules = RowRules(
+        key="x",
+        verb="x",
+        legal_states=ANY_STATE,
+        parked=Parked.FORBIDDEN,
+        requires=(),
+        identity_fields=("item",),
+        identity=lambda request: (request.item.id,),
+        recorded=lambda _request: None,
+        payload=(PayloadRule("next_status", lambda _request: "queued"),),
+    )
+
+    with pytest.raises(ExecutorError):
+        apply_payload_rules(rules, Request(item=view, state=run_state(view)))
 
 
 # -- The axis that is never a refusal --
