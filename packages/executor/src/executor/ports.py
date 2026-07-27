@@ -208,7 +208,9 @@ class GrindRuntime:
             argv.extend(["--dir", self._grind_dir])
         return argv
 
-    def _call(self, *args: str, stale_exit_is_a_verdict: bool = False) -> dict[str, JsonValue]:
+    def _call(
+        self, *args: str, stale_exit_is_a_verdict: bool = False, appends: bool = False
+    ) -> dict[str, JsonValue]:
         """Run one runtime command and return its `ok: true` envelope.
 
         A non-zero exit is a failure everywhere except one exact combination:
@@ -235,15 +237,15 @@ class GrindRuntime:
         )
         failed = not _is_ok_envelope(decoded) or (result.exit_code != 0 and not verdict_exit)
         if failed:
-            # A reply that proves the event applied, followed by a failed exit
-            # -- a wrapper dying after the runtime wrote -- is still a failure,
-            # but the write is durable. Losing that here would have the report
+            # The runtime appends before it replies, so an `ok: true` reply
+            # from an appending verb means the event is on disk whatever
+            # happened next -- a wrapper dying, an unreadable `applied`. The
+            # failure stands; losing the write would have the report
             # contradict the event log, which is what the marker exists for.
-            written = isinstance(decoded, dict) and decoded.get("applied") is True
             raise ExecutorError(
                 ErrorCode.RUNTIME_SUBPROCESS,
                 _envelope_message(decoded, result.transcript(argv)),
-                {EVENT_WAS_WRITTEN: True} if written else {},
+                {EVENT_WAS_WRITTEN: True} if appends and _is_ok_envelope(decoded) else {},
             )
         assert isinstance(decoded, dict)  # noqa: S101  # proven by _is_ok_envelope above
         return decoded
@@ -261,7 +263,7 @@ class GrindRuntime:
         enact, so the flag becomes a typed failure here. The event is on disk
         either way; that is what the message says.
         """
-        reply = self._call("log", event_type, "--json", json.dumps(dict(payload)))
+        reply = self._call("log", event_type, "--json", json.dumps(dict(payload)), appends=True)
         applied = reply.get("applied")
         if applied is True:
             return
@@ -274,10 +276,13 @@ class GrindRuntime:
             )
         # Absent or mistyped: an incompatible or corrupt runtime. Treating
         # "not false" as applied would report a transition on no evidence at
-        # all, which is the failure this check exists to prevent.
+        # all, which is the failure this check exists to prevent. The event is
+        # still on disk -- the runtime appended before replying -- so the
+        # refusal says so.
         raise ExecutorError(
             ErrorCode.RUNTIME_ENVELOPE,
             f"the runtime's reply to {event_type} carries no usable `applied` flag: {applied!r}",
+            {EVENT_WAS_WRITTEN: True},
         )
 
     def staleness(self, max_age: str | None = None) -> StalenessVerdict:
@@ -349,9 +354,16 @@ class WorkTracker:
             # and treating that as agreement would re-open the divergence this
             # check exists to close. Same rule as the parser's: a degraded
             # value that authorises is a fault, not a default.
+            #
+            # It also means no evidence of WHICH branch ran, and the minting
+            # one writes before it replies. Marking the write as landed syncs
+            # an idempotent replay at worst; not marking it strands a real
+            # park. (Contrast the different-reason refusal, where the reason
+            # itself proves the replay branch ran and minted nothing.)
             raise ExecutorError(
                 ErrorCode.TRACKER_SUBPROCESS,
                 f"the facade's park reply for {handle!r} carries no usable reason: {recorded!r}",
+                {TRACKER_WRITE_LANDED: True},
             )
         return recorded
 

@@ -14,6 +14,7 @@ import pytest
 from executor.envelope import ErrorCode, ExecutorError
 from executor.ports import (
     EVENT_WAS_WRITTEN,
+    TRACKER_WRITE_LANDED,
     CommandResult,
     GrindRuntime,
     RuntimePort,
@@ -136,6 +137,10 @@ def test_an_append_reply_without_a_usable_applied_flag_is_an_envelope_fault(
         GrindRuntime(runner).append("item_started", {"item": "it-1"})
 
     assert raised.value.code is ErrorCode.RUNTIME_ENVELOPE
+    # The runtime appends before it replies, so the event is on disk whatever
+    # the flag says. Refusing to claim it *applied* is not the same as
+    # claiming it was never written.
+    assert raised.value.data.get(EVENT_WAS_WRITTEN) is True
 
 
 def test_a_binary_that_cannot_be_launched_is_a_failed_result() -> None:
@@ -400,6 +405,11 @@ def test_a_park_reply_without_a_usable_reason_is_a_tracker_failure(data: object)
         WorkTracker(runner).park("w-1", reason="ci-failure", note="red")
 
     assert raised.value.code is ErrorCode.TRACKER_SUBPROCESS
+    # An unusable reason is also no evidence of which branch ran, and the
+    # minting one writes before replying — so the write is assumed landed and
+    # gets its sync. Syncing an idempotent replay is harmless; stranding a
+    # real park is not.
+    assert raised.value.data.get(TRACKER_WRITE_LANDED) is True
 
 
 def test_a_durable_append_followed_by_a_failed_exit_keeps_the_written_marker() -> None:
@@ -420,6 +430,41 @@ def test_a_durable_append_followed_by_a_failed_exit_keeps_the_written_marker() -
 
     assert raised.value.code is ErrorCode.RUNTIME_SUBPROCESS
     assert raised.value.data.get(EVENT_WAS_WRITTEN) is True
+
+
+def test_a_malformed_applied_flag_on_a_failed_exit_still_marks_the_write() -> None:
+    """
+    Given an appending call whose reply is `ok: true` with an unreadable
+    `applied`, followed by a non-zero exit
+    When the port appends
+    Then the failure still records that the event was written.
+
+    Two faults at once, and neither unwrites the event: the runtime appends
+    before it replies.
+    """
+    runner = ScriptedRunner({_LOG: _ok({"ok": True, "applied": "maybe"}, 1)})
+
+    with pytest.raises(ExecutorError) as raised:
+        GrindRuntime(runner).append("item_started", {"item": "it-1"})
+
+    assert raised.value.data.get(EVENT_WAS_WRITTEN) is True
+
+
+def test_a_failed_read_never_claims_an_event_was_written() -> None:
+    """
+    Given a non-appending call that fails
+    When the port calls it
+    Then no written-event marker rides the failure.
+
+    `state` and `staleness` append nothing, so an `ok: true` reply from either
+    proves no write. The marker follows the verb, not the envelope.
+    """
+    runner = ScriptedRunner({_STATUS: _ok({"ok": True, "state": {"items": {}}}, 1)})
+
+    with pytest.raises(ExecutorError) as raised:
+        GrindRuntime(runner).state()
+
+    assert EVENT_WAS_WRITTEN not in raised.value.data
 
 
 def test_a_failed_exit_with_no_proof_of_a_write_carries_no_marker() -> None:

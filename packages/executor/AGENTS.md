@@ -224,10 +224,21 @@ unusable one as "no disagreement" re-opens the divergence outright.
   fallback), and the facade's park reply (no reason means no evidence of
   agreement). Before adding a lenient read, ask which way its degraded value
   points.
-- **Evidence of a durable write survives the failure that follows it.** A
-  `grind log` reply proving `applied: true` followed by a non-zero exit is
-  still a failure, but the write happened, so the marker rides the error.
-  Losing it makes the report contradict the event log.
+- **Every failure raised after the outside system may have acted carries what
+  it may have done.** This is one rule, and four review rounds found it four
+  times before it got written down. The runtime appends *before* it replies
+  and the facade writes *before* it replies, so an `ok: true` reply from an
+  appending or mutating verb means the effect is durable however the call ends
+  after that — a wrapper dying, an unreadable `applied`, a park reply naming
+  no reason. `EVENT_WAS_WRITTEN` and `TRACKER_WRITE_LANDED` are how a refusal
+  says so; without them the report contradicts the event log, or the owed sync
+  is skipped and a real write is stranded.
+  When it is unknown whether the effect happened, **mark it** — syncing an
+  idempotent replay is harmless, stranding a write is not. Mark it *un*happened
+  only where something proves that: a `pr-closed` reason mismatch proves the
+  facade's replay branch ran, and that branch mints nothing.
+  Adding a raise below the port boundary means asking what the far side may
+  already have done.
 - **`ok: true` from the runtime is not "it applied".** The runtime's policy is
   accept-and-flag: an event that is well-shaped but illegal from the entity's
   current state is still written, as `applied: false` plus an anomaly record.
