@@ -20,24 +20,26 @@ def _package(tmp_path: Path) -> Path:
     return pkg
 
 
-def test_registry_is_exactly_workcli_prgroom_grind_and_gitclean() -> None:
+def test_registry_is_exactly_workcli_prgroom_and_grind() -> None:
     """
     Given the shipped registry
     When CLI_PACKAGES is consulted
-    Then it contains exactly workcli->work, prgroom->prgroom,
-    grind->grind, and gitclean->gitclean, and RETIRED_CLIS is empty.
+    Then it contains exactly workcli->work, prgroom->prgroom and
+    grind->grind, and RETIRED_CLIS is empty.
 
     Pins the closed registry; pdlc/holding-place/vizsuite must NOT
-    auto-deploy.
+    auto-deploy. Neither must gitclean: it is gated by `make ci` and
+    developed in-tree, but a tool that deletes worktrees and branches
+    does not go on PATH until its risk model is reworked.
     """
-    assert [s.name for s in CLI_PACKAGES] == ["workcli", "prgroom", "grind", "gitclean"]
+    assert [s.name for s in CLI_PACKAGES] == ["workcli", "prgroom", "grind"]
     by_name = {s.name: s for s in CLI_PACKAGES}
     assert by_name["workcli"] == CliSpec(
         "workcli", "packages/workcli", "work", ("--protocol-version",)
     )
     assert by_name["prgroom"] == CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",))
     assert by_name["grind"] == CliSpec("grind", "packages/grind", "grind", ("--help",))
-    assert by_name["gitclean"] == CliSpec("gitclean", "packages/gitclean", "gitclean", ("--help",))
+    assert "gitclean" not in by_name
     assert RETIRED_CLIS == ()
 
 
