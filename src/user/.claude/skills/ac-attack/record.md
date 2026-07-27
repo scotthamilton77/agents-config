@@ -24,6 +24,11 @@ entry, and the round closes by running that lens again rather than by recording 
 it empty would claim it looked and found nothing, which is a different result and one the gate
 reads as coverage obtained.
 
+Two lenses naming one hole contribute two proposals. The union is of the reports, not of the
+holes: folding one into the other leaves a lens reporting proposals with none attributed to it,
+which reads as a report the record lost. Adjudicate the pair together and reject the second
+against the first if that is the judgement — a rejection is a result and costs one rationale.
+
 Unioning the reports adds an `id` to each proposal, distinct within the round — an attacker sees
 its own lens and not the round, so it cannot pick one that is distinct across the union. That id is
 what a disposition names. Dropping a malformed proposal is what makes it necessary: positions
@@ -33,7 +38,9 @@ against, crediting one hole with another's criterion while the round still reads
 ## The record
 
 Committed beside the attacked document, named for it without its extension: `ledger.md` gets
-`ledger-ac-attack.json`. Every top-level field is required.
+`ledger-ac-attack.json`. The check enforces that pair rather than trusting it — the two names are
+all that binds a record to its document, so one standing under another document's name would
+otherwise close a round over a document no attacker in it read. Every top-level field is required.
 
 | Field | Meaning |
 | --- | --- |
@@ -53,8 +60,12 @@ Committed beside the attacked document, named for it without its extension: `led
 - **Nothing found** is a result: every lens reporting empty closes the round.
 
 A revision names content, not history: `sha256:` plus the digest of the document's bytes, or the
-equivalent 40-hex object id, recomputable from the document in front of you. Write it with no
-surrounding whitespace — `git hash-object` ends its output with a newline, and a revision that
-keeps it reads as a different revision, so an acceptance that changed nothing would pass as an
-incorporation. One record picks one notation and writes every revision in it: revisions compare as
-strings, so one content written both ways would read as two.
+equivalent 40-hex object id, recomputable from the document in front of you. Take the object id
+with `git hash-object --no-filters`. Without that flag git runs the repository's clean filters
+first, so under a `* text=auto` attribute a document with CRLF endings hashes as though its
+endings were LF — a revision naming content the file on disk does not hold, which the check reads
+as a document that moved on and no edit can reconcile. Write it with no surrounding whitespace:
+the command ends its output with a newline, and a revision that keeps it reads as a different
+revision, so an acceptance that changed nothing would pass as an incorporation. One record picks
+one notation and writes every revision in it — revisions compare as strings, so one content
+written both ways would read as two.

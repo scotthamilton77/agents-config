@@ -118,7 +118,7 @@
         },
         "revision": {
           "$ref": "#/$defs/revision",
-          "description": "Revision of the document that carries an accepted proposal. Required on an acceptance, and different from the revision attacked."
+          "description": "Revision of the document that carries an accepted proposal. Required on an acceptance, different from the revision attacked, and the same on every acceptance in the record: the document reached one state once all of them were in it, so per-acceptance revisions name states it was never in and the check refuses the round."
         },
         "covering_ac": {
           "type": "string",

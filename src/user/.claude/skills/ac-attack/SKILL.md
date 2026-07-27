@@ -44,7 +44,9 @@ uv run emit_prompts.py --spec /path/to/document.md --out-dir /tmp/attack-documen
 ```
 
 One `<lens>.md` prompt lands per lens, plus `round.json` recording the document, the revision
-attacked, and each lens with its tier and transport.
+attacked, and each lens with its tier and transport. Dispatch the lenses `round.json` names, not
+the files the directory holds: one reused across rounds keeps prompts this round did not write,
+and for a document it is not attacking.
 
 Stdout is `{"emitted": true, "prompts": […], "round": …}` — the lens prompts, then the round
 file, which is metadata and not one of them. A refusal is

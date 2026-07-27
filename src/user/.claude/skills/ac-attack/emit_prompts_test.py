@@ -830,9 +830,11 @@ class TestSurface:
                     if outside.search(line)]
             assert not hits, f"{path.name}: {hits}"
 
-    def test_c5_every_error_code_the_scripts_emit_is_documented(self):
+    def test_c5_the_documented_codes_are_the_codes_the_scripts_emit(self):
         """S6-C5: a code a caller can receive and cannot look up is an undocumented contract, and
-        the drift is silent — the scripts are the source, so the docs are held against them."""
+        a code documented after the script stopped emitting it is a promise nothing keeps — a
+        reader diagnoses against a row that can no longer fire. Both directions drift silently, so
+        the table is held to being the emitted set exactly, not merely to covering it."""
         for path in (EMITTER_PATH, CHECKER_PATH):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             emitted = set()
@@ -850,8 +852,13 @@ class TestSurface:
             # documented to a search and as absent to anyone looking it up where it fired.
             documented = ERRORS_PATH.read_text(encoding="utf-8")
             section = documented.split(f"## `{path.name}`", 1)[1].split("\n## ", 1)[0]
-            missing = sorted(code for code in emitted if f"`{code}`" not in section)
-            assert not missing, f"{path.name}: {missing}"
+            # Only the row's own first cell counts as documenting a code. A row's prose cites
+            # codes it contrasts itself with, and reading those as documented would let a code
+            # nothing describes pass on someone else's mention of it.
+            rows = re.findall(r"^\| `([a-z-]+)`(?: / `([a-z-]+)`)? \|", section, re.MULTILINE)
+            listed = {code for row in rows for code in row if code}
+            assert listed == emitted, (f"{path.name}: undocumented {sorted(emitted - listed)}, "
+                                       f"documented but never emitted {sorted(listed - emitted)}")
 
     def test_c5_the_lens_table_names_the_registry_the_scripts_read(self):
         """S6-C5: SKILL.md's table introduces the lenses while both scripts read `lenses.json`
