@@ -250,6 +250,31 @@ def test_a_nonzero_exit_from_the_facade_is_a_failure_whatever_it_says() -> None:
     assert raised.value.code is ErrorCode.TRACKER_SUBPROCESS
 
 
+@pytest.mark.parametrize(
+    ("exit_code", "stale"),
+    [(1, False), (2, True), (127, True), (2, False)],
+    ids=["exit-1-contradicting-verdict", "exit-2", "exit-127", "exit-2-not-stale"],
+)
+def test_only_the_documented_stale_exit_is_tolerated(exit_code: int, stale: bool) -> None:
+    """
+    Given a staleness probe exiting non-zero in any way the contract does not
+    describe
+    When the port calls it
+    Then it is a subprocess failure.
+
+    The quirk is exactly `grind check` exiting 1 *and* reporting stale. A
+    wrapper exiting 2 or 127 around a valid envelope is a transport failure,
+    and an exit 1 contradicting `stale: false` is incoherent — tolerating
+    either would report a healthy verdict for a run nobody probed.
+    """
+    runner = ScriptedRunner({_CHECK: _ok({"ok": True, "stale": stale, "age_s": 1}, exit_code)})
+
+    with pytest.raises(ExecutorError) as raised:
+        GrindRuntime(runner).staleness()
+
+    assert raised.value.code is ErrorCode.RUNTIME_SUBPROCESS
+
+
 def test_a_healthy_check_reports_not_stale() -> None:
     """
     Given a fresh grind

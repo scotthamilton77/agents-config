@@ -34,6 +34,9 @@ _TIMEOUT_S = 120
 # missing binary is reported as a failed call rather than as an exception
 # escaping the port.
 _NOT_FOUND = 127
+# The one exit code that carries a verdict rather than an outcome: `grind
+# check` exits 1 on a stale grind while emitting `ok: true`.
+_STALE_EXIT = 1
 
 
 @dataclass(frozen=True)
@@ -196,14 +199,16 @@ class GrindRuntime:
             argv.extend(["--dir", self._grind_dir])
         return argv
 
-    def _call(self, *args: str, verdict_in_exit_code: bool = False) -> dict[str, JsonValue]:
+    def _call(self, *args: str, stale_exit_is_a_verdict: bool = False) -> dict[str, JsonValue]:
         """Run one runtime command and return its `ok: true` envelope.
 
-        A non-zero exit is a failure everywhere except the one verb whose exit
-        code carries a verdict rather than an outcome (S9T1-A3 scopes that to
-        `grind check`). Ignoring the exit code generally would let a wrapper
-        or post-command failure read as success, and the executor would go on
-        to enact the other side of the pairing.
+        A non-zero exit is a failure everywhere except one exact combination:
+        `grind check` exiting 1 *and* reporting `stale: true`, which is the
+        documented quirk S9T1-A3 names. Anything wider would swallow real
+        failures -- a wrapper exiting 2 or 127 around a valid envelope, or an
+        exit 1 contradicting a `stale: false` verdict -- and for a
+        tracker-first row the executor would go on to enact the other side of
+        the pairing.
         """
         argv = self._argv(*args)
         result = self._runner.run(argv)
@@ -213,9 +218,13 @@ class GrindRuntime:
             subprocess_code=ErrorCode.RUNTIME_SUBPROCESS,
             envelope_code=ErrorCode.RUNTIME_ENVELOPE,
         )
-        failed = not _is_ok_envelope(decoded) or (
-            result.exit_code != 0 and not verdict_in_exit_code
+        verdict_exit = (
+            stale_exit_is_a_verdict
+            and result.exit_code == _STALE_EXIT
+            and isinstance(decoded, dict)
+            and decoded.get("stale") is True
         )
+        failed = not _is_ok_envelope(decoded) or (result.exit_code != 0 and not verdict_exit)
         if failed:
             raise ExecutorError(
                 ErrorCode.RUNTIME_SUBPROCESS,
@@ -264,7 +273,7 @@ class GrindRuntime:
         a stale grind cannot surface here as a crashed subprocess.
         """
         args = ("check",) if max_age is None else ("check", "--max-age", max_age)
-        decoded = self._call(*args, verdict_in_exit_code=True)
+        decoded = self._call(*args, stale_exit_is_a_verdict=True)
         ts = decoded.get("last_event_ts")
         return StalenessVerdict(
             stale=decoded.get("stale") is True,
