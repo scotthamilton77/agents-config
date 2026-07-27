@@ -52,6 +52,67 @@ def test_a_failure_axis_park_crosses_untranslated(reason: str) -> None:
     ]
 
 
+def test_an_empty_park_note_takes_the_default_rather_than_being_passed_through() -> None:
+    """
+    Given a park whose note is the empty string
+    When it is enacted
+    Then the reason code is the note on both sides.
+
+    The fold rejects an empty note, and this row is tracker-first — passing
+    one through would park the tracker, have the append refused, and leave
+    every retry repeating that rather than converging.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="pr-open", pr=7, work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, _ = invoke(["park", "it-1", "--reason", "ci-failure", "--note", ""], runtime, tracker)
+
+    assert code == 0
+    assert tracker.mutations == [("park", "w-1", "ci-failure", "ci-failure")]
+    assert runtime.appended == [
+        ("item_parked", {"item": "it-1", "reason": "ci-failure", "note": "ci-failure"})
+    ]
+
+
+def test_a_flagged_append_on_a_tracker_free_row_still_reports_it_as_appended() -> None:
+    """
+    Given a row that calls no tracker verb, whose event the runtime wrote and
+    then flagged
+    When the envelope is read
+    Then it reports the event as appended and carries no private marker.
+
+    The no-sync path is the one the tracker-free rows always take, so a marker
+    consumed only on the owed-sync path would leak into the public contract
+    for exactly those rows.
+    """
+    runtime = FlaggingRuntime(run_state(item("it-1", status="in-progress", work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["pr-opened", "it-1", "--pr", "42"], runtime, tracker)
+
+    assert code == 1
+    assert envelope["error"]["data"]["event_appended"] is True
+    assert envelope["error"]["data"]["tracker_called"] is False
+    assert "_event_was_written" not in envelope["error"]["data"]
+    assert tracker.mutations == []
+
+
+def test_a_refusal_that_touched_neither_plane_carries_no_report() -> None:
+    """
+    Given a refusal reached before either plane moved
+    When the envelope is read
+    Then the error carries no data block.
+
+    A report describes what happened; nothing did. Attaching one to every
+    refusal would make an empty report indistinguishable from a real one.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="in-review")))
+
+    _, envelope = invoke(["done", "it-1"], runtime, FakeTracker())
+
+    assert "data" not in envelope["error"]
+
+
 def test_a_park_without_a_note_defaults_to_its_reason_code() -> None:
     """
     Given a park with no note

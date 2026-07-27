@@ -215,8 +215,11 @@ def _plan_park(args: VerbArgs, item: ItemView, state: RunState) -> Plan:
     axis = park_axis(reason)
     # The reason code is the default note: `item_parked.note` is required, and
     # a park whose note only repeats its typed reason says exactly as much as
-    # the reason does.
-    note = args.note if args.note is not None else reason
+    # the reason does. An *empty* note takes the default too, rather than being
+    # passed through: the fold rejects an empty note, and this row is
+    # tracker-first, so passing one would park the tracker and then have the
+    # append refused, with the retry repeating it rather than converging.
+    note = args.note or reason
     key = "park:failure" if axis is Axis.FAILURE else "park:scheduling"
     rules, row = ROW_RULES[key], ROWS[key]
     request = Request(item=item, state=state, reason=reason, note=note)

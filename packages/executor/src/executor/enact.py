@@ -136,8 +136,21 @@ def _with_owed_sync(
     The step failure stays the reported cause; a sync that fails on top of it
     is additional detail, not a replacement for the reason the command failed.
     """
+    # The marker is the port/enact seam's, never the envelope's, so it is
+    # stripped on every path out of here -- including the ones that owe no
+    # sync, which the tracker-free rows always take.
+    detail = {key: value for key, value in failure.data.items() if key != EVENT_WAS_WRITTEN}
     if not session.mutations:
-        return failure
+        if not appended:
+            # Neither plane moved: the reason is the whole story.
+            return ExecutorError(failure.code, failure.message, detail)
+        # A tracker-free row whose event was written and then flagged. Nothing
+        # is owed a sync, but the report still has to say the log holds it.
+        return ExecutorError(
+            failure.code,
+            failure.message,
+            {**_report(plan, handle, session, appended=True, synced=False), **detail},
+        )
     synced = True
     sync_error: str | None = None
     try:
@@ -147,8 +160,7 @@ def _with_owed_sync(
         sync_error = sync_failure.message
     data: dict[str, JsonValue] = {
         **_report(plan, handle, session, appended=appended, synced=synced),
-        # The port/enact marker is consumed above, not republished.
-        **{key: value for key, value in failure.data.items() if key != EVENT_WAS_WRITTEN},
+        **detail,
     }
     if sync_error is not None:
         data["sync_error"] = sync_error
