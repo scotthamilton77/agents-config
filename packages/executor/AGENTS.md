@@ -218,8 +218,9 @@ Three traps worth keeping:
 - **`abandon`'s evidence is the cleared reference, and nothing weaker.**
   Position, the surviving reference and ledger membership alone were each
   tried and each matches a state another command produces — an ordinary
-  `pr-closed --next queued` looks identical. Until B7 lands the evidence is
-  unreachable and the row refuses instead.
+  `pr-closed --next queued` looks identical under every one of them. The
+  evidence is the *conjunction*: a cleared reference **and** a closure for
+  that PR, which only `S9T1-B7`'s fold produces.
 
 ### Matrix C — the payload rules
 
@@ -447,10 +448,6 @@ outcomes and stay on every path; the verb block is not.
   answers "what does verb X pair with"; it does not decide when to run X.
 - **`next` is unwired** (slice N). It is in `EXECUTOR_VERBS` and in
   `PENDING_VERBS`, so the closed universe is already stated.
-- **`abandon` emits an `item_enqueued` closure the current runtime fold
-  ignores.** The runtime's validator accepts the extra key and the fold drops
-  it until slice B lands; the event is recorded either way, which is what
-  makes the two slices independently mergeable.
 - **Two PR-cycle cases the runtime's snapshot cannot answer.** Both come from
   the same gap: the snapshot records that closures happened, but not that
   openings did, and not what outcome a closure produced. The decision layer

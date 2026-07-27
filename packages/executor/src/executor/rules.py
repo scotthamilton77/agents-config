@@ -325,18 +325,16 @@ def _abandon_identity(request: Request) -> Identity:
 def _abandon_recorded(request: Request) -> Identity | None:
     """A *cleared* PR reference plus a closure for that PR, and nothing weaker.
 
-    Only an abandon produces both: S9T1-B7 has the fold clear the reference
+    Only an abandon produces both: `S9T1-B7` has the fold clear the reference
     when it interprets the closure an `item_enqueued` carries, where an
     ordinary `pr_closed` records its closure and leaves the reference in place.
     Nothing else clears a reference at all.
 
-    Until B7 lands this is unreachable -- today's fold records the closure
-    payload without interpreting it -- so an abandon retry falls through to the
-    `Parked.REQUIRED` refusal. That is the interim `S9T1-A7` gap, and it closes
-    on B7 with no change here. Weaker proxies (being out of the parking lot,
-    the surviving reference, ledger membership alone) each match a state some
-    other command produces; an ordinary `pr-closed --next queued` looks
-    identical.
+    Weaker proxies were each tried and each matches a state some other command
+    produces -- being out of the parking lot, the surviving reference, ledger
+    membership alone -- and an ordinary `pr-closed --next queued` looks
+    identical under every one of them. That is why the conjunction is the
+    evidence and no single half of it is.
     """
     item = request.item
     if item.pr_number is not None or request.pr is None:
