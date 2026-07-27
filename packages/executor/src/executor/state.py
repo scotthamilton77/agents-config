@@ -98,14 +98,18 @@ class RunState:
     the items, which is what keeps a budget decision self-consistent: the
     condition the runtime computed and the config it computed it from are one
     snapshot, never two reads that could straddle an append.
+
+    Every field is required, `budget_spent` above all: an empty default would
+    be a value meaning "the runtime said nothing about budgets", and a state
+    built without one would silently report every item under budget.
     """
 
     items: Mapping[str, ItemView]
     closures: Mapping[tuple[str, int], str]
     merged_shas: Mapping[str, str]
     last_item_ts: Mapping[str, str]
-    budget_spent: Mapping[tuple[str, str], BudgetSpent] = field(default_factory=dict)
-    config: Mapping[str, JsonValue] = field(default_factory=dict)
+    budget_spent: Mapping[tuple[str, str], BudgetSpent]
+    config: Mapping[str, JsonValue]
 
     def item(self, item_id: str) -> ItemView:
         found = self.items.get(item_id)
