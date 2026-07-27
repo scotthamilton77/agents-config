@@ -380,17 +380,52 @@ def _install_file(
         )
 
 
+# Dev-only artifacts that must never reach an install even though they live
+# inside a DIR item's own source tree (a skill directory, most visibly):
+# repo-side test suites — this repo's house convention names them
+# ``*_test.py`` / ``*_test.js``, at any depth under the item (e.g. a skill's
+# ``scripts/`` subdir) — and Python/pytest/ruff caches. ``.installignore``
+# only reaches the DIRECT CHILDREN of a staged namespace dir (see its header);
+# a skill directory is staged as a single DIR item and its interior is never
+# walked against that manifest, so this is the one place nested content is
+# filtered before ``shutil.copytree`` would otherwise copy it byte-for-byte.
+_DEV_ARTIFACT_DIRNAMES = frozenset({"__pycache__", ".pytest_cache", ".ruff_cache"})
+_DEV_ARTIFACT_SUFFIXES = ("_test.py", "_test.js", ".pyc")
+
+
+def _is_dev_artifact_name(name: str) -> bool:
+    """Whether ``name`` (a bare basename, no path) is a dev-only artifact that
+    must not deploy: a cache directory, or a test-suite file under this repo's
+    ``*_test.py`` / ``*_test.js`` naming convention."""
+    return name in _DEV_ARTIFACT_DIRNAMES or name.endswith(_DEV_ARTIFACT_SUFFIXES)
+
+
+def _ignore_dev_artifacts(directory: str, names: list[str]) -> set[str]:  # noqa: ARG001  # shutil.copytree ignore callback signature
+    """``shutil.copytree`` ``ignore=`` callback: called once per directory in the
+    tree being copied — so it reaches every depth, not just the DIR item's top —
+    dropping dev-only artifacts before they are copied. See
+    `_is_dev_artifact_name`."""
+    return {name for name in names if _is_dev_artifact_name(name)}
+
+
 def _dir_is_unchanged(dest: Path, source_path: Path, overrides: Mapping[Path, bytes]) -> bool:
     """Whether re-materialising ``dest`` from ``source_path`` + ``overrides`` would
     leave its contents byte-identical — the directory idempotency check.
 
     The expected file map is the source tree with ``overrides`` overlaid (override
     wins on a name collision — dump-time semantics), compared against the actual
-    dest tree. Bytes are read through symlinks to match ``copytree``'s
-    dereferencing; only files participate, so empty dirs are ignored — matching
-    the golden-master differ."""
+    dest tree. Dev-only artifacts (`_is_dev_artifact_name`) are excluded from the
+    expected map at every depth, matching what `_install_dir`'s filtered
+    ``copytree`` actually places at dest — without this, a skill carrying a test
+    file would never compare equal and every re-install would back up and
+    re-copy for no real change. Bytes are read through symlinks to match
+    ``copytree``'s dereferencing; only files participate, so empty dirs are
+    ignored — matching the golden-master differ."""
     expected = {
-        p.relative_to(source_path): p.read_bytes() for p in source_path.rglob("*") if p.is_file()
+        p.relative_to(source_path): p.read_bytes()
+        for p in source_path.rglob("*")
+        if p.is_file()
+        and not any(_is_dev_artifact_name(part) for part in p.relative_to(source_path).parts)
     }
     expected.update(overrides)
     actual = {p.relative_to(dest): p.read_bytes() for p in dest.rglob("*") if p.is_file()}
@@ -430,7 +465,11 @@ def _install_dir(
     so a ``dry_run`` surfaces the same error a real run would and an unsafe
     override never lands after a backup/replace has begun. Symlinks in the source
     tree are dereferenced by ``copytree`` (its default) — a behavioural choice
-    flagged for the golden-master parity pass."""
+    flagged for the golden-master parity pass. The copy filters dev-only
+    artifacts at every depth (`_ignore_dev_artifacts`) — a DIR item's source
+    tree is not otherwise checked against ``.installignore`` past its top
+    (that manifest matches only a namespace dir's direct children), so an
+    unfiltered copy would ship a skill's own test suite and caches."""
     if not source_path.is_dir():
         raise ValueError(f"DIR item source is not a directory: {source_path}")  # noqa: TRY003  # single call-site; subclass not justified
     if dest.exists() and not dest.is_dir():
@@ -460,7 +499,7 @@ def _install_dir(
         if dest_exists:
             _back_up(dest, timestamp, counters)
             shutil.rmtree(dest)
-        shutil.copytree(source_path, dest)
+        shutil.copytree(source_path, dest, ignore=_ignore_dev_artifacts)
         for inner, inner_content in overrides.items():
             inner_dest = dest / inner
             _ensure_parent_dir(inner_dest, dry_run=dry_run)

@@ -20,5 +20,12 @@ README.md
 # one is added it will sit at a tool root (sibling of rules/), which is never
 # staged. This entry guards the hypothetical namespace-level child instead.
 rules-readmes/
-# Test artifacts
+# Confirmed live leaker, not defensive coverage — but only because THIS ONE
+# sits at the depth this manifest reaches (ruff-postedit_test.sh is a direct
+# child of the hooks/ namespace dir). This is not class coverage for test
+# artifacts in general: a skill's own test suite lives inside a DIR item's
+# interior (e.g. skills/<name>/*_test.py, or deeper under
+# skills/<name>/scripts/) and this manifest never walks that far. Those are
+# excluded by a separate mechanism, the directory-copy filter in the Python
+# installer's sync path, which applies at every depth.
 ruff-postedit_test.sh

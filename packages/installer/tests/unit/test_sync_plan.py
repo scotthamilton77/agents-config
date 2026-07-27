@@ -237,6 +237,81 @@ def test_dir_item_materializes_its_source_tree(tmp_path: Path) -> None:
     assert counters.created == 1
 
 
+def test_dir_item_excludes_nested_test_files_and_caches(tmp_path: Path) -> None:
+    """
+    Given a DIR item's source tree carrying a top-level test file
+    (``emit_prompts_test.py``), one nested a level deeper under a ``scripts/``
+    subdir (``proxy_test.js``), and Python/pytest/ruff cache artifacts
+    When sync_plan materialises it
+    Then none of the dev-only artifacts reach dest at any depth, while the
+    real skill files land untouched. This is the regression this fix closes:
+    an unfiltered ``copytree`` shipped a skill's own test suite and caches
+    wholesale (agents-config-9k9.77) — ``.installignore`` cannot catch these,
+    since its grammar matches only a namespace dir's direct children, and a
+    skill directory is staged as a single DIR item whose interior it never
+    walks.
+    """
+    src = tmp_path / "src_skill"
+    (src / "scripts").mkdir(parents=True)
+    (src / "__pycache__").mkdir()
+    (src / ".pytest_cache").mkdir()
+    (src / ".ruff_cache").mkdir()
+    (src / "SKILL.md").write_bytes(b"skill\n")
+    (src / "emit_prompts.py").write_bytes(b"prod\n")
+    (src / "emit_prompts_test.py").write_bytes(b"test\n")
+    (src / "scripts" / "proxy_test.js").write_bytes(b"test-js\n")
+    (src / "__pycache__" / "emit_prompts.cpython-312.pyc").write_bytes(b"cache\n")
+    (src / ".pytest_cache" / "CACHEDIR.TAG").write_bytes(b"tag\n")
+    (src / ".ruff_cache" / "cache_file").write_bytes(b"ruff\n")
+    home = tmp_path / "home"
+    plan = StagingPlan(
+        items={Path("skills/myskill"): _dir_item(Path("skills/myskill"), src)}, tool=Tool.CLAUDE
+    )
+
+    sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
+
+    dest = home / "skills" / "myskill"
+    assert (dest / "SKILL.md").read_bytes() == b"skill\n"
+    assert (dest / "emit_prompts.py").read_bytes() == b"prod\n"
+    assert not (dest / "emit_prompts_test.py").exists()
+    assert not (dest / "scripts" / "proxy_test.js").exists()
+    assert not (dest / "__pycache__").exists()
+    assert not (dest / ".pytest_cache").exists()
+    assert not (dest / ".ruff_cache").exists()
+
+
+def test_dir_item_with_dev_artifacts_is_idempotent_on_second_run(tmp_path: Path) -> None:
+    """
+    Given a DIR item's source tree carrying a nested test file alongside real
+    content, already materialised by a prior run
+    When sync_plan re-runs into the same dest
+    Then the dir is recognised as unchanged and skipped. The dev-artifact
+    filter `_dir_is_unchanged` applies to its expected-file map must match
+    what `_install_dir`'s filtered ``copytree`` actually wrote, or the
+    source's test file (never present at dest) would look like a permanent
+    diff and force a spurious backup + re-copy on every install.
+    """
+    src = tmp_path / "src_skill"
+    src.mkdir()
+    (src / "SKILL.md").write_bytes(b"skill\n")
+    (src / "emit_prompts_test.py").write_bytes(b"test\n")
+    home = tmp_path / "home"
+    plan = StagingPlan(items={Path("skills/s"): _dir_item(Path("skills/s"), src)}, tool=Tool.CLAUDE)
+
+    first = sync_plan(
+        _IdentityAdapter(), plan, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_FIXED_TS
+    )
+    assert first.created == 1
+
+    second = sync_plan(
+        _IdentityAdapter(), plan, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_FIXED_TS
+    )
+
+    assert second.skipped == 1
+    assert (second.created, second.updated, second.backed_up) == (0, 0, 0)
+    assert not (home / "skills-backup").exists()
+
+
 def test_dir_overrides_are_overlaid_and_win_on_collision(tmp_path: Path) -> None:
     """
     Given a DIR item plus dir_overrides carrying a new file and one colliding
