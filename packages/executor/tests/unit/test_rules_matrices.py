@@ -156,6 +156,7 @@ def test_matrix_a_enforces_each_non_status_requirement(key: str) -> None:
             "it-1",
             status=legal_status,
             pr=overrides.get("pr_number", 42),  # type: ignore[arg-type]
+            pr_closed=overrides.get("pr_closed", False),  # type: ignore[arg-type]
             lane=overrides.get("lane", "lane-a"),  # type: ignore[arg-type]
             parked=parked,
         )
@@ -167,10 +168,28 @@ def test_matrix_a_enforces_each_non_status_requirement(key: str) -> None:
         Requires.LANE: {"lane": None},
         Requires.PR_REFERENCE: {"pr_number": None},
         Requires.PR_MATCHES_ITEM: {"pr_number": 99},
+        # The violation that distinguishes it from PR_REFERENCE: a closure
+        # leaves the reference behind, so the reference alone still passes.
+        Requires.OPEN_PR: {"pr_closed": True},
     }
     for requirement in rules.requires:
         with pytest.raises(ExecutorError):
             check_preconditions(rules, _request(**violations[requirement]))
+
+
+def test_every_requirement_in_the_vocabulary_has_a_row_using_it() -> None:
+    """
+    Given the non-status requirement vocabulary
+    When it is matched against the rows
+    Then every member is declared by at least one row.
+
+    A requirement nothing declares is a check nothing runs — dead vocabulary
+    that reads as coverage. `Requires` is enumerated to be walked, so an
+    unused member means either a row lost its cell or the member should go.
+    """
+    declared = {requirement for rules in ROW_RULES.values() for requirement in rules.requires}
+
+    assert declared == set(Requires)
 
 
 # -- Matrix B: the command-identity tuple --
@@ -232,22 +251,89 @@ _RECORDED: dict[str, tuple[object, list[str], list[list[str]]]] = {
     ),
 }
 
+# The rows that declare no recorded transition at all, and why. Stated as a
+# second set rather than as a missing fixture: "this row has no idempotent
+# skip" is a decision the table makes, and a row that simply lacked a fixture
+# would be indistinguishable from one whose fixture nobody wrote.
+_NO_IDEMPOTENT_SKIP: dict[str, str] = {
+    "attempt:under-budget": (
+        "`fix_attempted` folds into a count, not a transition: a repeat is a "
+        "second attempt, and the fold counts past the budget rather than capping"
+    ),
+    "attempt:exhausted": (
+        "the condition that selects the row is absent for a parked item, so its "
+        "park is never on record while the row is selectable"
+    ),
+}
+
 
 def _recorded_runtime(key: str) -> FakeRuntime:
     view, state_kwargs = _RECORDED[key][0]  # type: ignore[misc]
     return FakeRuntime(run_state(view, **state_kwargs))  # type: ignore[arg-type]
 
 
-def test_every_row_has_a_recorded_fixture() -> None:
+def test_every_row_is_either_given_a_recorded_fixture_or_declared_skipless() -> None:
     """
     Given the matrices
-    When the identity fixtures are matched against them
-    Then every row has one.
+    When the identity fixtures and the skipless rows are matched against them
+    Then between them they account for every row exactly once.
 
     A row added without a fixture would leave its idempotency untested, which
-    is the gap that produced eight of this PR's review findings.
+    is the gap that produced eight of slice A's review findings — and a row
+    that has no skip has to say so rather than look like an oversight.
     """
-    assert set(_RECORDED) == set(ROW_RULES)
+    assert set(_RECORDED).isdisjoint(_NO_IDEMPOTENT_SKIP)
+    assert set(_RECORDED) | set(_NO_IDEMPOTENT_SKIP) == set(ROW_RULES)
+
+
+@pytest.mark.parametrize("status", _STATUSES)
+@pytest.mark.parametrize("parked", [False, True], ids=["unparked", "parked"])
+@pytest.mark.parametrize("key", sorted(_NO_IDEMPOTENT_SKIP), ids=sorted(_NO_IDEMPOTENT_SKIP))
+def test_a_skipless_row_finds_no_recorded_transition_in_any_state(
+    key: str, parked: bool, status: str
+) -> None:
+    """
+    Given a row that declares no recorded transition
+    When every state is probed for one
+    Then none is found, in any of them.
+
+    Walked over the whole grid rather than asserted once: the claim is that
+    *nothing* authorises a skip on these rows, and a single-state assertion
+    would pass on a probe that answers in some other state.
+    """
+    rules = ROW_RULES[key]
+    view = item("it-1", status=status, pr=42, parked=parked, work_id="w-1")
+    request = Request(
+        item=view, state=run_state(view), pr=42, kind="ci-fix", reason="budget-exhausted"
+    )
+
+    assert rules.recorded(request) is None
+
+
+@pytest.mark.parametrize("key", sorted(ROW_RULES), ids=sorted(ROW_RULES))
+def test_each_identity_tuple_has_one_value_per_field_it_names(key: str) -> None:
+    """
+    Given each row's identity function and the fields it declares
+    When an identity is computed
+    Then it carries exactly one value per declared field.
+
+    `identity_fields` is what a refusal message renders the tuple against, so
+    a mismatch would silently drop or misalign a field in the one message that
+    tells a caller which command the fold actually holds.
+    """
+    rules = ROW_RULES[key]
+    view = item("it-1", status="pr-open", pr=42, work_id="w-1")
+    request = Request(
+        item=view,
+        state=run_state(view),
+        pr=42,
+        sha="9fceb02",
+        next_status="queued",
+        reason="ci-failure",
+        kind="ci-fix",
+    )
+
+    assert len(rules.identity(request)) == len(rules.identity_fields)
 
 
 @pytest.mark.parametrize("key", sorted(_RECORDED), ids=sorted(_RECORDED))

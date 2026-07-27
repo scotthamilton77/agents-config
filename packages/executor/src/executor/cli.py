@@ -26,7 +26,13 @@ from typing import NoReturn, TextIO
 
 from executor.enact import enact
 from executor.envelope import ErrorCode, ExecutorError, emit_failure, emit_success
-from executor.pairing import FAILURE_REASONS, SCHEDULING_REASONS, VerbArgs, build_plan
+from executor.pairing import (
+    ATTEMPT_KINDS,
+    FAILURE_REASONS,
+    SCHEDULING_REASONS,
+    VerbArgs,
+    build_plan,
+)
 from executor.ports import GrindRuntime, RuntimePort, SubprocessRunner, TrackerPort, WorkTracker
 
 # `pr_closed.next` is the runtime's own vocabulary; the parser refuses anything
@@ -90,10 +96,16 @@ def _configure_done(parser: ArgumentParser) -> None:
     _item(parser)
 
 
+def _configure_attempt(parser: ArgumentParser) -> None:
+    _item(parser)
+    parser.add_argument(
+        "--kind", required=True, choices=tuple(ATTEMPT_KINDS), help="the fix being attempted"
+    )
+
+
 # The parser is built FROM this mapping, so the CLI surface and the enumeration
 # it is checked against are one list, not two that can drift. A slice that
-# wires `attempt` or `next` adds its entry here and drops the name from
-# `PENDING_VERBS`.
+# wires `next` adds its entry here and drops the name from `PENDING_VERBS`.
 _VERB_PARSERS: dict[str, tuple[str, Callable[[ArgumentParser], None]]] = {
     "start": ("claim the item and record it started", _configure_start),
     "park": ("park the item with a typed reason", _configure_park),
@@ -103,6 +115,7 @@ _VERB_PARSERS: dict[str, tuple[str, Callable[[ArgumentParser], None]]] = {
     "pr-closed": ("record that the item's PR closed", _configure_pr_closed),
     "merged": ("record the merge and close the tracker item", _configure_merged),
     "done": ("record post-merge teardown as complete", _configure_done),
+    "attempt": ("charge one fix attempt against the item's budget", _configure_attempt),
 }
 
 CLI_VERBS: tuple[str, ...] = tuple(_VERB_PARSERS)
@@ -132,6 +145,7 @@ def _verb_args(args: Namespace) -> VerbArgs:
         pr=getattr(args, "pr", None),
         sha=getattr(args, "sha", None),
         next_status=getattr(args, "next_status", None),
+        kind=getattr(args, "kind", None),
     )
 
 

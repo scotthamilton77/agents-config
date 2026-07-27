@@ -113,6 +113,9 @@ def _report(
 ) -> dict[str, JsonValue]:
     tracker_verb = plan.row.tracker
     return {
+        # The verb-specific block first, so the enactment's own fields win a
+        # name collision -- what the command did is not a row's to restate.
+        **(plan.report or {}),
         "verb": plan.row.verb,
         "row": plan.row.key,
         "item": plan.item.id,
@@ -228,4 +231,13 @@ def enact(plan: Plan, runtime: RuntimePort, tracker: TrackerPort) -> dict[str, J
         synced = session.flush()
     except ExecutorError as failure:
         raise _sync_failure(plan, handle, session, failure, appended=appended) from failure
-    return _report(plan, handle, session, appended=appended, synced=synced)
+    report = _report(plan, handle, session, appended=appended, synced=synced)
+    if plan.refusal is not None:
+        # A refusal the plan carries through its enactment rather than instead
+        # of it (S9T1-C2): the exhaustion row parks the item on both planes and
+        # only then refuses the attempt. It is raised here, not at the CLI, so
+        # a dispatcher calling `enact` directly cannot enact the park and read
+        # the result as a proceed. The full report rides the error because a
+        # refusal that mutated has to say what landed and whether it synced.
+        raise ExecutorError(plan.refusal.code, plan.refusal.message, report)
+    return report

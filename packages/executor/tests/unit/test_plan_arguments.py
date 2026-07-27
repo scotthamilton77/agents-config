@@ -27,6 +27,7 @@ _STATE = run_state(item("it-1", status="pr-open", pr=7))
         ("pr-closed", VerbArgs(item="it-1", pr=7, reason="stale"), "--next"),
         ("pr-closed", VerbArgs(item="it-1", pr=7, next_status="queued"), "--reason"),
         ("merged", VerbArgs(item="it-1"), "--sha"),
+        ("attempt", VerbArgs(item="it-1"), "--kind"),
     ],
     ids=[
         "park-reason",
@@ -36,6 +37,7 @@ _STATE = run_state(item("it-1", status="pr-open", pr=7))
         "pr-closed-next",
         "pr-closed-reason",
         "merged-sha",
+        "attempt-kind",
     ],
 )
 def test_a_row_missing_a_required_argument_is_refused_by_name(
@@ -51,6 +53,25 @@ def test_a_row_missing_a_required_argument_is_refused_by_name(
 
     assert raised.value.code is ErrorCode.USAGE
     assert missing in raised.value.message
+
+
+def test_an_attempt_kind_outside_the_vocabulary_is_refused_by_this_layer() -> None:
+    """
+    Given a `--kind` no attempt table entry names
+    When the plan is built
+    Then E_USAGE names it and lists the legal kinds.
+
+    argparse's `choices` catches this for the CLI, but the parser is one
+    caller: the runtime's fold flags an unrecognized kind as an anomaly, so a
+    dispatcher reaching past argparse must not be able to spend an attempt the
+    ledger never records.
+    """
+    with pytest.raises(ExecutorError) as raised:
+        build_plan("attempt", VerbArgs(item="it-1", kind="reroll"), _STATE)
+
+    assert raised.value.code is ErrorCode.USAGE
+    assert "reroll" in raised.value.message
+    assert "ci-fix" in raised.value.message
 
 
 def test_a_verb_the_table_does_not_hold_is_refused() -> None:

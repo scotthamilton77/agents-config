@@ -22,7 +22,7 @@ from executor.ports import (
     StalenessVerdict,
     TrackerPort,
 )
-from executor.state import ItemView, RunState
+from executor.state import BudgetSpent, ItemView, RunState
 
 # Every FakeTracker built during a test, so conftest can inspect the whole
 # suite's tracker traffic rather than each test remembering to.
@@ -180,14 +180,22 @@ def item(
     lane: str | None = "lane-a",
     work_id: str | None = None,
     pr: int | None = None,
+    pr_closed: bool = False,
     parked: bool = False,
     park_reason: str | None = None,
+    attempts: Mapping[str, int] | None = None,
 ) -> ItemView:
     """The boring case: a queued, laned, unparked item whose id is its own
     tracker handle. A test overrides only the field it is about.
 
     `park_reason` implies `parked`: an item carrying a reason is parked, and
     letting a test say otherwise would build a state the fold cannot produce.
+
+    A `pr` is open unless the test says otherwise, mirroring the runtime: a
+    reference appears when a PR opens and is marked closed later, so the
+    boring case for an item holding one is a live cycle. `pr_closed` without a
+    `pr` is not a state the fold produces and leaves the item simply without
+    a reference.
     """
     return ItemView(
         id=item_id,
@@ -197,6 +205,8 @@ def item(
         pr_number=pr,
         parked=parked or park_reason is not None,
         park_reason=park_reason,
+        pr_open=pr is not None and not pr_closed,
+        attempts=dict(attempts or {}),
     )
 
 
@@ -212,13 +222,21 @@ def run_state(
     closures: Sequence[tuple[str, int]] = (),
     merged_shas: Mapping[str, str] | None = None,
     touched_since: Sequence[str] = (),
+    spent: Sequence[tuple[str, str, int, int]] = (),
+    config: Mapping[str, JsonValue] | None = None,
 ) -> RunState:
-    """A folded run.
+    """A folded run, plus the conditions the runtime reported over it.
 
     Each recorded closure is treated as the last thing that touched its item,
     which is the ordinary case a retry arrives in. Naming an item in
     `touched_since` models something having happened after -- a start, a
     reopen -- so a test can state that fact without inventing timestamps.
+
+    `spent` is `(item, kind, attempts, budget)` per `attempt_budget_spent`
+    condition the runtime reported. It is stated rather than derived on
+    purpose: the executor's whole contract here is that the runtime decides
+    exhaustion, so a fake that recomputed the condition would test the
+    recomputation instead of the honoring.
     """
     last_item_ts = {item_id: _LEDGER_TS for item_id, _ in closures}
     last_item_ts.update({item_id: _LATER_TS for item_id in touched_since})
@@ -227,6 +245,11 @@ def run_state(
         closures={(item_id, pr): _LEDGER_TS for item_id, pr in closures},
         merged_shas=dict(merged_shas or {}),
         last_item_ts=last_item_ts,
+        budget_spent={
+            (item_id, kind): BudgetSpent(item_id, kind, attempts, budget)
+            for item_id, kind, attempts, budget in spent
+        },
+        config=dict(config or {}),
     )
 
 
