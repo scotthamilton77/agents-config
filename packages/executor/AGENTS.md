@@ -147,7 +147,7 @@ silently skipped.
 |---|---|---|
 | `start` | item | in-progress and unparked |
 | `park:*` | item, reason | parked, with the recorded reason |
-| `redispatch` | item | not parked — the whole postcondition |
+| `redispatch` | item | not parked, **and** still where the enqueue left it |
 | `abandon` | item, pr | a *cleared* PR reference plus a closure for that PR |
 | `pr-opened` | item, pr | the reference, and the item not sitting where a closure leaves it |
 | `pr-closed` | item, pr, next | a ledger entry, the item's position, and nothing having touched it since |
@@ -195,6 +195,13 @@ park note has a natural stand-in and a merge commit does not. A default that
 itself computes to empty is a **table bug** and fails loudly, and the set of
 fields a rule may fill is closed — a rule quietly writing to the wrong field
 would produce an event that passes every other check.
+
+**The tracker is pinned before it is mutated.** `WorkTracker` performs the
+facade's documented consumer handshake — `work --protocol-version`, major
+pinned — once per adapter, before any verb. For a mutating consumer the timing
+is the point: checking a reply is too late, because an incompatible facade may
+already have acted. An unreadable version is refused alongside a mismatched
+one; an unverified handshake is no handshake.
 
 ### One agreement check that is not a matrix
 

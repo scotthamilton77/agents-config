@@ -85,6 +85,9 @@ POST_CLOSURE = frozenset({"in-progress", "queued"})
 # `item_enqueued` is the one handler that gates on parkedness instead of
 # status, so its rows constrain no status at all.
 ANY_STATE: frozenset[str] = frozenset()
+# Where an enqueue leaves an item: `queued`, or `blocked` when it re-enters
+# play with unresolved blocker edges.
+ENQUEUED = frozenset({"queued", "blocked"})
 
 
 class Parked(StrEnum):
@@ -212,9 +215,18 @@ def _park_recorded(request: Request) -> Identity | None:
 
 
 def _enqueued_recorded(request: Request) -> Identity | None:
-    """A redispatch's whole postcondition is that the item is back in play, so
-    being out of the parking lot *is* the recorded fact."""
-    return None if request.item.parked else (request.item.id,)
+    """Back in play *and* still where the enqueue left it.
+
+    "Not parked" alone is also true of every state the item reaches
+    afterwards, so a delayed duplicate would be read as a retry: the append is
+    suppressed but the tracker verb is deliberately re-issued, and `work
+    redispatch` refuses an item it has already moved on from -- turning a
+    completed command into a transport failure and an unnecessary sync.
+    """
+    item = request.item
+    if item.parked or item.status not in ENQUEUED:
+        return None
+    return (item.id,)
 
 
 def _abandon_identity(request: Request) -> Identity:

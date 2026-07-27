@@ -43,6 +43,13 @@ _TIMEOUT_S = 120
 # missing binary is reported as a failed call rather than as an exception
 # escaping the port.
 _NOT_FOUND = 127
+
+# The facade's envelope protocol this executor is written against. Its README
+# asks a consumer to pin the MAJOR component at adapter init and refuse a
+# mismatch rather than risk mis-parsing mid-run -- and for a mutating consumer
+# the timing is the point: checking a reply is too late, because an
+# incompatible facade may already have acted.
+_TRACKER_PROTOCOL_MAJOR = "1"
 # The one exit code that carries a verdict rather than an outcome: `grind
 # check` exits 1 on a stale grind while emitting `ok: true`.
 _STALE_EXIT = 1
@@ -334,6 +341,33 @@ class WorkTracker:
 
     def __init__(self, runner: Runner) -> None:
         self._runner = runner
+        self._protocol_pinned = False
+
+    def _pin_protocol(self) -> None:
+        """The consumer handshake, once per adapter and before any verb.
+
+        Deferred to the first call rather than done in `__init__` so building
+        the adapter shells out to nothing; it still lands before anything can
+        mutate, which is the requirement.
+        """
+        if self._protocol_pinned:
+            return
+        reply = self._call(
+            ["work", "--protocol-version"], code=ErrorCode.TRACKER_SUBPROCESS, mutates=False
+        )
+        data = reply.get("data")
+        version = data.get("protocol") if isinstance(data, dict) else None
+        major = version.split(".")[0] if isinstance(version, str) and version != "" else None
+        if major != _TRACKER_PROTOCOL_MAJOR:
+            # Unreadable and mismatched land together on purpose: neither
+            # establishes that the facade speaks a protocol this executor can
+            # mutate through, and an unverified handshake is no handshake.
+            raise ExecutorError(
+                ErrorCode.USAGE,
+                f"the `work` on PATH speaks envelope protocol {version!r}; "
+                f"this executor requires major {_TRACKER_PROTOCOL_MAJOR}",
+            )
+        self._protocol_pinned = True
 
     def _call(
         self, argv: Sequence[str], *, code: ErrorCode, mutates: bool = True
@@ -367,6 +401,7 @@ class WorkTracker:
         return decoded
 
     def claim(self, handle: str) -> None:
+        self._pin_protocol()
         self._call(["work", "claim", handle], code=ErrorCode.TRACKER_SUBPROCESS)
 
     def park(self, handle: str, *, reason: str, note: str) -> str:
@@ -379,6 +414,7 @@ class WorkTracker:
         runtime while the tracker keeps the old one -- a divergence no retry
         closes, since each plane then reports itself consistent.
         """
+        self._pin_protocol()
         reply = self._call(
             ["work", "park", handle, "--reason", reason, "--note", note],
             code=ErrorCode.TRACKER_SUBPROCESS,
@@ -404,16 +440,20 @@ class WorkTracker:
         return recorded
 
     def redispatch(self, handle: str) -> None:
+        self._pin_protocol()
         self._call(["work", "redispatch", handle], code=ErrorCode.TRACKER_SUBPROCESS)
 
     def abandon(self, handle: str) -> None:
+        self._pin_protocol()
         self._call(["work", "abandon", handle], code=ErrorCode.TRACKER_SUBPROCESS)
 
     def close(self, handle: str) -> None:
+        self._pin_protocol()
         self._call(["work", "close", handle], code=ErrorCode.TRACKER_SUBPROCESS)
 
     def sync(self) -> None:
         """A failed sync is its own code: the mutations already landed, and the
         repair is running `work sync` again, never re-running the command that
         made them (S9T1-D9)."""
+        self._pin_protocol()
         self._call(["work", "sync"], code=ErrorCode.SYNC_FAILED, mutates=False)

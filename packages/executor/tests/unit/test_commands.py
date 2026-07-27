@@ -429,6 +429,50 @@ def test_a_scheduling_axis_park_issues_zero_tracker_calls(reason: str) -> None:
     assert envelope["data"]["tracker_verb"] is None
 
 
+def test_a_redispatch_is_refused_once_the_item_has_moved_on() -> None:
+    """
+    Given an item redispatched and then started
+    When a delayed duplicate redispatch arrives
+    Then it is refused rather than treated as a retry.
+
+    "Not parked" is also true of every state the item reaches afterwards. Read
+    as a retry, the append is suppressed but the tracker verb is still
+    re-issued — and the facade refuses an item it has already moved on from,
+    turning a completed command into a transport failure plus a needless sync.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="in-progress", work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["redispatch", "it-1"], runtime, tracker)
+
+    assert code == 1
+    assert "is not parked" in envelope["error"]["message"]
+    assert runtime.appended == []
+    assert tracker.mutations == []
+    assert tracker.syncs == 0
+
+
+@pytest.mark.parametrize("status", ["queued", "blocked"])
+def test_a_redispatch_retry_is_still_recognized_where_the_enqueue_left_it(status: str) -> None:
+    """
+    Given an item sitting where an enqueue leaves it
+    When the redispatch is re-run
+    Then it is the idempotent retry.
+
+    The inverse, and the reason this is a narrowing rather than a removal: a
+    response-lost redispatch has to converge, and `item_enqueued` leaves the
+    item `queued`, or `blocked` when it re-enters with unresolved edges.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status=status, work_id="w-1")))
+    tracker = FakeTracker()
+
+    code, envelope = invoke(["redispatch", "it-1"], runtime, tracker)
+
+    assert code == 0
+    assert envelope["data"]["event_appended"] is False
+    assert tracker.verbs == ["redispatch"]
+
+
 def test_redispatch_returns_a_parked_item_to_its_lane() -> None:
     """
     Given a parked item

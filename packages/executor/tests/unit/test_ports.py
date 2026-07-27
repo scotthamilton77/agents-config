@@ -33,6 +33,18 @@ def _ok(payload: object, exit_code: int = 0) -> CommandResult:
     return CommandResult(exit_code, json.dumps(payload), "")
 
 
+_HANDSHAKE = ("work", "--protocol-version")
+
+
+def _facade(answers: dict[tuple[str, ...], CommandResult]) -> ScriptedRunner:
+    """A facade runner that answers the consumer handshake as well.
+
+    Every `WorkTracker` verb pins the protocol first, so a runner without this
+    would fail on the handshake rather than on the behaviour under test.
+    """
+    return ScriptedRunner({_HANDSHAKE: _ok({"ok": True, "data": {"protocol": "1.3"}}), **answers})
+
+
 def _state_reply() -> CommandResult:
     return _ok({"ok": True, "state": {"items": {"it-1": {"status": "queued", "lane": "lane-a"}}}})
 
@@ -248,7 +260,7 @@ def test_a_nonzero_exit_from_the_facade_is_a_failure_whatever_it_says() -> None:
     No facade verb carries a verdict in its exit code, so the tolerance never
     applies on this side at all.
     """
-    runner = ScriptedRunner({("work", "claim"): _ok({"protocol": "1", "ok": True}, 1)})
+    runner = _facade({("work", "claim"): _ok({"protocol": "1", "ok": True}, 1)})
 
     with pytest.raises(ExecutorError) as raised:
         WorkTracker(runner).claim("w-1")
@@ -374,13 +386,14 @@ def test_each_tracker_verb_maps_to_its_facade_invocation(
     Pins the facade argv: the executor addresses the tracker only through
     `work`, and a park's reason reaches `--reason` unchanged.
     """
-    runner = ScriptedRunner(
+    runner = _facade(
         {argv[:2]: _ok({"protocol": "1", "ok": True, "data": {"reason": "ci-failure"}})}
     )
 
     call(WorkTracker(runner))
 
-    assert runner.calls == [argv]
+    # The handshake comes first, once, and then the verb.
+    assert runner.calls == [_HANDSHAKE, argv]
 
 
 @pytest.mark.parametrize(
@@ -399,7 +412,7 @@ def test_a_park_reply_without_a_usable_reason_is_a_tracker_failure(data: object)
     the check exists to close — the same rule the parser applies to `parked`
     and `work_id`: a degraded value that authorises is a fault, not a default.
     """
-    runner = ScriptedRunner({("work", "park"): _ok({"ok": True, "data": data})})
+    runner = _facade({("work", "park"): _ok({"ok": True, "data": data})})
 
     with pytest.raises(ExecutorError) as raised:
         WorkTracker(runner).park("w-1", reason="ci-failure", note="red")
@@ -493,7 +506,7 @@ def test_an_unreadable_reply_to_a_mutating_verb_still_marks_the_write(
     The tracker half of the same rule, and the more consequential one: an
     unmarked mutation is a write stranded unsynced on the local plane.
     """
-    runner = ScriptedRunner({("work", "claim"): result})
+    runner = _facade({("work", "claim"): result})
 
     with pytest.raises(ExecutorError) as raised:
         WorkTracker(runner).claim("w-1")
@@ -522,7 +535,7 @@ def test_a_call_that_never_launched_claims_no_effect(
     happened, and would have the tracker record a mutation and push a sync for
     a call that never left the executor.
     """
-    runner = ScriptedRunner({argv: CommandResult(127, "", "not found: grind", launched=False)})
+    runner = _facade({argv: CommandResult(127, "", "not found: grind", launched=False)})
 
     with pytest.raises(ExecutorError) as raised:
         call(runner)
@@ -539,7 +552,7 @@ def test_an_unreadable_sync_reply_claims_no_tracker_write() -> None:
     `sync` pushes writes; it is not one. Marking it would have a failed sync
     record a mutation that never happened.
     """
-    runner = ScriptedRunner({("work", "sync"): CommandResult(1, "truncated{", "")})
+    runner = _facade({("work", "sync"): CommandResult(1, "truncated{", "")})
 
     with pytest.raises(ExecutorError) as raised:
         WorkTracker(runner).sync()
@@ -593,7 +606,7 @@ def test_a_partially_applied_facade_failure_still_owes_its_sync() -> None:
     later step leaves an earlier write applied and still reports `ok: false`.
     An unmarked mutation is a write stranded unsynced on the local plane.
     """
-    runner = ScriptedRunner(
+    runner = _facade(
         {("work", "park"): _ok({"ok": False, "error": {"message": "label failed"}}, 1)}
     )
 
@@ -603,13 +616,70 @@ def test_a_partially_applied_facade_failure_still_owes_its_sync() -> None:
     assert raised.value.data.get(TRACKER_WRITE_LANDED) is True
 
 
+@pytest.mark.parametrize(
+    "version",
+    ["2.0", "0.9", "", None, 1, "x.1"],
+    ids=["major-2", "major-0", "empty", "null", "int", "unparseable"],
+)
+def test_a_facade_speaking_another_protocol_major_is_refused_before_any_verb(
+    version: object,
+) -> None:
+    """
+    Given a `work` on PATH whose envelope protocol is not this executor's
+    When any verb is called
+    Then it is refused, and the verb never runs.
+
+    The facade's README asks a consumer to pin the major at adapter init. For
+    a *mutating* consumer the timing is the whole point: checking a reply is
+    too late, because an incompatible facade may already have acted. An
+    unreadable version is refused with a mismatched one — an unverified
+    handshake is no handshake.
+    """
+    runner = ScriptedRunner(
+        {
+            _HANDSHAKE: _ok({"ok": True, "data": {"protocol": version}}),
+            ("work", "claim"): _ok({"ok": True, "data": None}),
+        }
+    )
+
+    with pytest.raises(ExecutorError) as raised:
+        WorkTracker(runner).claim("w-1")
+
+    assert raised.value.code is ErrorCode.USAGE
+    assert raised.value.retryable is False
+    assert runner.calls == [_HANDSHAKE]
+
+
+def test_the_handshake_runs_once_per_adapter() -> None:
+    """
+    Given several verbs on one adapter
+    When they are called
+    Then the protocol is pinned once, not per verb.
+
+    "Once at adapter init" is the facade's wording; deferring it to the first
+    call keeps construction free of subprocesses without weakening it.
+    """
+    runner = _facade(
+        {
+            ("work", "claim"): _ok({"ok": True, "data": None}),
+            ("work", "close"): _ok({"ok": True, "data": None}),
+        }
+    )
+    tracker = WorkTracker(runner)
+
+    tracker.claim("w-1")
+    tracker.close("w-2")
+
+    assert runner.calls.count(_HANDSHAKE) == 1
+
+
 def test_a_failed_tracker_call_is_a_retryable_transport_failure() -> None:
     """
     Given the facade refusing a claim
     When the port calls it
     Then E_TRACKER_SUBPROCESS is raised carrying the facade's message.
     """
-    runner = ScriptedRunner(
+    runner = _facade(
         {("work", "claim"): _ok({"ok": False, "error": {"message": "not claimable"}}, 1)}
     )
 
@@ -643,7 +713,7 @@ def test_a_refusal_carrying_no_readable_message_falls_back_to_the_transcript(
     An empty message is the one thing an operator cannot act on; the
     transcript is always available, so it is what fills the gap.
     """
-    runner = ScriptedRunner({("work", "claim"): _ok(reply, 1)})
+    runner = _facade({("work", "claim"): _ok(reply, 1)})
 
     with pytest.raises(ExecutorError) as raised:
         WorkTracker(runner).claim("w-1")
@@ -682,7 +752,7 @@ def test_a_failed_sync_gets_its_own_code() -> None:
     The distinction is load-bearing: a failed sync leaves the mutations
     applied, so its repair is different from a failed mutation's.
     """
-    runner = ScriptedRunner({("work", "sync"): CommandResult(1, "", "dolt push rejected")})
+    runner = _facade({("work", "sync"): CommandResult(1, "", "dolt push rejected")})
 
     with pytest.raises(ExecutorError) as raised:
         WorkTracker(runner).sync()
