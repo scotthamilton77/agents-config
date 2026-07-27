@@ -29,6 +29,15 @@ from executor.state import RunState, parse_state
 # the envelope under this name.
 EVENT_WAS_WRITTEN = "_event_was_written"
 
+# The same idea on the tracker side: the facade completed its write and
+# forwarded an `ok: true` envelope, and only then did the process fail. The
+# write is durable, so it still owes this invocation its sync.
+TRACKER_WRITE_LANDED = "_tracker_write_landed"
+
+# Both are internal to the port/enact seam and are stripped before the
+# envelope; neither ever reaches a consumer under these names.
+INTERNAL_MARKERS = frozenset({EVENT_WAS_WRITTEN, TRACKER_WRITE_LANDED})
+
 _TIMEOUT_S = 120
 # The exit code a shell reports for "command not found"; reused here so a
 # missing binary is reported as a failed call rather than as an exception
@@ -305,7 +314,15 @@ class WorkTracker:
         # No facade verb carries a verdict in its exit code, so a non-zero exit
         # is a failure whatever the envelope says.
         if not _is_ok_envelope(decoded) or result.exit_code != 0:
-            raise ExecutorError(code, _envelope_message(decoded, result.transcript(argv)))
+            # An `ok: true` envelope means the facade finished its work; a
+            # non-zero exit after that is the process failing around a write
+            # that landed. Losing that would strand the write unsynced.
+            landed = _is_ok_envelope(decoded)
+            raise ExecutorError(
+                code,
+                _envelope_message(decoded, result.transcript(argv)),
+                {TRACKER_WRITE_LANDED: True} if landed else {},
+            )
         return decoded
 
     def claim(self, handle: str) -> None:

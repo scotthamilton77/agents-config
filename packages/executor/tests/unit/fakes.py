@@ -16,6 +16,7 @@ from executor.cli import main
 from executor.envelope import ErrorCode, ExecutorError, JsonValue
 from executor.ports import (
     EVENT_WAS_WRITTEN,
+    TRACKER_WRITE_LANDED,
     CommandResult,
     RuntimePort,
     StalenessVerdict,
@@ -82,12 +83,21 @@ class FlaggingRuntime(FakeRuntime):
 class FakeTracker:
     """Records every mutation as `(verb, *args)` and counts syncs.
 
-    `fail_on` names verbs whose call raises; `recover()` clears them, which is
-    how a retry test models a facade that came back.
+    `fail_on` names verbs whose call raises before writing; `recover()` clears
+    them, which is how a retry test models a facade that came back.
+    `fail_after_write` names verbs that write and *then* fail -- a wrapper
+    dying around a completed call, whose write is durable.
     """
 
-    def __init__(self, *, fail_on: Sequence[str] = (), parked_as: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        fail_on: Sequence[str] = (),
+        fail_after_write: Sequence[str] = (),
+        parked_as: str | None = None,
+    ) -> None:
         self.fail_on = set(fail_on)
+        self.fail_after_write = set(fail_after_write)
         # What `work park` already has on record. The facade reports the
         # EXISTING stint on a replay and mints nothing, so a fake that always
         # echoed the request back could not model the divergence that costs.
@@ -100,6 +110,14 @@ class FakeTracker:
         if verb in self.fail_on:
             raise ExecutorError(ErrorCode.TRACKER_SUBPROCESS, f"scripted tracker failure on {verb}")
         self.mutations.append((verb, *args))
+        if verb in self.fail_after_write:
+            # The facade wrote and the process then failed -- the shape a
+            # wrapper dying around a completed call leaves behind.
+            raise ExecutorError(
+                ErrorCode.TRACKER_SUBPROCESS,
+                f"scripted post-write failure on {verb}",
+                {TRACKER_WRITE_LANDED: True},
+            )
 
     def claim(self, handle: str) -> None:
         self._record("claim", handle)

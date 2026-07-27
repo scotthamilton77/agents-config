@@ -19,7 +19,13 @@ from dataclasses import dataclass, field
 
 from executor.envelope import ErrorCode, ExecutorError, JsonValue
 from executor.pairing import Order, Plan, TrackerVerb
-from executor.ports import EVENT_WAS_WRITTEN, RuntimePort, TrackerPort
+from executor.ports import (
+    EVENT_WAS_WRITTEN,
+    INTERNAL_MARKERS,
+    TRACKER_WRITE_LANDED,
+    RuntimePort,
+    TrackerPort,
+)
 from executor.state import tracker_handle
 
 SYNC_REPAIR = "work sync"
@@ -39,36 +45,44 @@ class TrackerSession:
     def apply(
         self, verb: TrackerVerb, handle: str, *, reason: str | None = None, note: str | None = None
     ) -> None:
+        try:
+            recorded = self._dispatch(verb, handle, reason, note)
+        except ExecutorError as failure:
+            if failure.data.get(TRACKER_WRITE_LANDED) is True:
+                # The write landed and the process then failed. Recording it
+                # is what makes `_with_owed_sync` flush rather than strand it.
+                self.mutations.append(f"{verb.value}:{handle}")
+            raise
+        if verb is TrackerVerb.PARK and recorded != reason:
+            # Only the facade's idempotent-replay branch can return a
+            # different reason, and that branch mints nothing -- so this
+            # refusal owes no sync, and the mutation is deliberately not
+            # recorded.
+            raise ExecutorError(
+                ErrorCode.ITEM_PARKED,
+                f"the tracker already has {handle!r} parked as {recorded!r}, "
+                f"not {reason!r}; redispatch or abandon it before parking it again",
+            )
+        self.mutations.append(f"{verb.value}:{handle}")
+
+    def _dispatch(
+        self, verb: TrackerVerb, handle: str, reason: str | None, note: str | None
+    ) -> str | None:
         if verb is TrackerVerb.CLAIM:
             self.port.claim(handle)
         elif verb is TrackerVerb.PARK:
             # A failure-axis reason crosses untranslated -- there is no mapping
             # table anywhere in this package, only the axis test that decided
-            # this row belongs to the tracker at all.
-            #
-            # The facade's reply is checked, not discarded. `work park` on an
-            # already-parked item reports the EXISTING stint and mints nothing,
-            # so a retry naming a different reason -- the shape a tracker-first
-            # invocation leaves behind when its append failed -- would append
-            # the new reason to the runtime while the tracker kept the old one.
-            # Neither plane could then detect it: each is internally
-            # consistent, and no retry converges them. Raising before the
-            # mutation is recorded is what keeps this a clean refusal with
-            # nothing written and no sync owed.
-            recorded = self.port.park(handle, reason=reason or "", note=note or "")
-            if recorded != reason:
-                raise ExecutorError(
-                    ErrorCode.ITEM_PARKED,
-                    f"the tracker already has {handle!r} parked as {recorded!r}, "
-                    f"not {reason!r}; redispatch or abandon it before parking it again",
-                )
+            # this row belongs to the tracker at all. The facade's reply is
+            # read, not discarded; `apply` compares it.
+            return self.port.park(handle, reason=reason or "", note=note or "")
         elif verb is TrackerVerb.REDISPATCH:
             self.port.redispatch(handle)
         elif verb is TrackerVerb.ABANDON:
             self.port.abandon(handle)
         else:
             self.port.close(handle)
-        self.mutations.append(f"{verb.value}:{handle}")
+        return None
 
     def flush(self) -> bool:
         """One sync when anything was written, none when nothing was."""
@@ -152,10 +166,10 @@ def _with_owed_sync(
     The step failure stays the reported cause; a sync that fails on top of it
     is additional detail, not a replacement for the reason the command failed.
     """
-    # The marker is the port/enact seam's, never the envelope's, so it is
+    # The markers are the port/enact seam's, never the envelope's, so they are
     # stripped on every path out of here -- including the ones that owe no
     # sync, which the tracker-free rows always take.
-    detail = {key: value for key, value in failure.data.items() if key != EVENT_WAS_WRITTEN}
+    detail = {key: value for key, value in failure.data.items() if key not in INTERNAL_MARKERS}
     if not session.mutations:
         if not appended:
             # Neither plane moved: the reason is the whole story.

@@ -1031,6 +1031,49 @@ def test_an_invocation_with_no_mutations_issues_no_sync() -> None:
     assert tracker.syncs == 0
 
 
+def test_a_tracker_write_that_landed_before_a_failed_exit_is_still_synced() -> None:
+    """
+    Given a facade call that completed and whose process then failed
+    When the envelope is read
+    Then the write was synced anyway and the failure still reported.
+
+    An `ok: true` envelope means the facade finished its work; a non-zero exit
+    after that is the process failing around a write that landed. Treating it
+    as "no mutation" would strand that write unsynced on the local plane.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", work_id="w-1")))
+    tracker = FakeTracker(fail_after_write=["claim"])
+
+    code, envelope = invoke(["start", "it-1"], runtime, tracker)
+
+    assert code == 1
+    assert tracker.syncs == 1
+    assert envelope["error"]["data"]["tracker_called"] is True
+    assert envelope["error"]["data"]["synced"] is True
+    assert runtime.appended == []
+    assert "_tracker_write_landed" not in envelope["error"]["data"]
+
+
+def test_a_park_mismatch_owes_no_sync_because_the_facade_minted_nothing() -> None:
+    """
+    Given a park refused for naming a different reason than the tracker holds
+    When the envelope is read
+    Then no sync was issued.
+
+    Only the facade's idempotent-replay branch can return a different reason,
+    and that branch mints nothing — its mint branch returns the reason it was
+    asked for. So this refusal has no write to push, and recording a mutation
+    for it would sync an empty change.
+    """
+    runtime = FakeRuntime(run_state(item("it-1", status="pr-open", pr=7, work_id="w-1")))
+    tracker = FakeTracker(parked_as="ci-failure")
+
+    code, _ = invoke(["park", "it-1", "--reason", "merge-conflict"], runtime, tracker)
+
+    assert code == 1
+    assert tracker.syncs == 0
+
+
 def test_a_mutation_that_landed_before_a_failed_append_is_still_synced() -> None:
     """
     Given a tracker-first row whose tracker write landed and whose runtime
