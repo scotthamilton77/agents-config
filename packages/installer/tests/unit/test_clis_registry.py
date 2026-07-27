@@ -28,7 +28,9 @@ def test_registry_is_exactly_workcli_prgroom_grind_and_executor() -> None:
     and executor->executor, and RETIRED_CLIS is empty.
 
     Pins the closed registry; pdlc/holding-place/vizsuite must NOT
-    auto-deploy.
+    auto-deploy. Neither must gitclean: it is gated by `make ci` and
+    developed in-tree, but a tool that deletes worktrees and branches
+    does not go on PATH until its risk model is reworked.
     """
     assert [s.name for s in CLI_PACKAGES] == ["workcli", "prgroom", "grind", "executor"]
     by_name = {s.name: s for s in CLI_PACKAGES}
@@ -38,6 +40,7 @@ def test_registry_is_exactly_workcli_prgroom_grind_and_executor() -> None:
     assert by_name["prgroom"] == CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",))
     assert by_name["grind"] == CliSpec("grind", "packages/grind", "grind", ("--help",))
     assert by_name["executor"] == CliSpec("executor", "packages/executor", "executor", ("--help",))
+    assert "gitclean" not in by_name
     assert RETIRED_CLIS == ()
 
 
