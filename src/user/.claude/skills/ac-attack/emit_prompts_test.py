@@ -747,18 +747,62 @@ class TestOutputSafety:
         `CRITERIA-HOLES.md` and `criteria-holes.md` are one file, so a document standing at the
         first is truncated by the write to the second while every comparison of the two paths says
         they differ — the destructive case survives the guard unless sameness is asked of the
-        filesystem. Where the volume keeps them apart they are two files and the round emits over
-        neither; on both, the document is still there afterwards."""
+        filesystem. Where the volume keeps them apart they are two files, and the round refuses on
+        the other side of the same question: a name it does not write, standing in the directory it
+        is about to fill. On both, the document is untouched and nothing is written beside it."""
         out_dir = tmp_path / "attack"
         out_dir.mkdir()
         document = out_dir / f"{LENS_NAMES[0].upper()}.md"
         document.write_text(DOCUMENT, encoding="utf-8")
-        folded = (out_dir / f"{LENS_NAMES[0]}.md").exists()  # the volume's own answer, asked first
         code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
         assert document.read_text(encoding="utf-8") == DOCUMENT
-        assert (code == 2) == folded
-        if folded:
-            assert [error["code"] for error in result["errors"]] == ["unsafe-output-path"]
+        assert code == 2 and result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["unsafe-output-path"]
+        assert [path.name for path in out_dir.iterdir()] == [f"{LENS_NAMES[0].upper()}.md"]
+
+    @pytest.mark.parametrize("leftover", ("retired-lens.md", "notes.txt", "reports/"))
+    def test_c1_a_directory_holding_what_this_round_does_not_write_is_refused(self, document,
+                                                                               tmp_path, capsys,
+                                                                               leftover):
+        """S6-C1: a reused directory keeps whatever the previous round left at a name this one does
+        not write — a prompt for a lens since retired, or one carrying another document. The
+        prompts are what a caller listing the directory dispatches, so that stale attacker goes out
+        with this round's, and the report it returns is written into this round's record. Coverage
+        downstream is containment, so a lens the round never declared reads there as surplus rather
+        than as an attack on text this round never touched, and the record closes carrying it.
+
+        The account is what the round writes, not what looks like a prompt: which files a caller
+        treats as one is the thing the round cannot know. So it refuses whole — and deletes
+        nothing, since a name it does not write is not its to remove."""
+        out_dir = tmp_path / "attack"
+        out_dir.mkdir()
+        previous = '{"spec_revision": "sha256:' + "0" * 64 + '"}\n'
+        (out_dir / "round.json").write_text(previous, encoding="utf-8")
+        if leftover.endswith("/"):
+            (out_dir / leftover.rstrip("/")).mkdir()
+        else:
+            (out_dir / leftover).write_text("a round over another document\n", encoding="utf-8")
+        code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
+        assert code == 2 and result["emitted"] is False
+        assert [error["code"] for error in result["errors"]] == ["unsafe-output-path"]
+        assert leftover.rstrip("/") in result["errors"][0]["message"]
+        assert sorted(path.name for path in out_dir.iterdir()) == sorted(
+            ["round.json", leftover.rstrip("/")])
+        # The previous round's file is deleted on the way to a successful emission, and this round
+        # never got there: a refusal that took it with it would destroy what it refused to replace.
+        assert (out_dir / "round.json").read_text(encoding="utf-8") == previous
+
+    def test_c1_re_emitting_into_the_directory_a_round_wrote_is_ordinary(self, document, tmp_path,
+                                                                          capsys):
+        """S6-C1: inverse — every name a round leaves behind is one the next round writes again, so
+        a directory a round already used is fully accounted for and re-emission into it replaces
+        what is there. A check that refused this would refuse the case it is written to allow."""
+        out_dir = tmp_path / "attack"
+        first = emit(document, out_dir, capsys)
+        second = emit(document, out_dir, capsys)
+        assert first == second
+        assert sorted(path.name for path in out_dir.iterdir()) == sorted(
+            [*(f"{name}.md" for name in LENS_NAMES), "round.json"])
 
     def test_c1_a_round_that_cannot_render_every_prompt_writes_none_of_them(self, document,
                                                                             tmp_path, capsys,

@@ -269,6 +269,58 @@ def refuse_if_spec_is_an_output(spec: str, outputs: list[Path]) -> None:
             )
 
 
+def refuse_unless_only_this_rounds(out_dir: Path, outputs: list[Path]) -> None:
+    """Refuse an output directory holding anything this round does not write itself.
+
+    Re-emitting into a directory a round already used is ordinary, and whatever the previous round
+    left at a name this one writes is replaced. What it left at any other name stays: a prompt for
+    a lens since retired, or one carrying a document this round is not attacking. Those are what a
+    caller dispatching the files the directory holds — rather than the lenses the round file names
+    — sends, and the report the stale attacker returns is written into this round's record. Lens
+    coverage downstream is containment, so a record reporting a lens the round never declared reads
+    as surplus coverage rather than as an attack on other text, and the round closes over it.
+
+    Nothing is deleted. A name this round does not write is not this round's to remove, and what
+    else a directory holds cannot be known from here; refusing costs the invoker a directory to
+    name and leaves what is there for whoever put it there. Nor is the account narrowed to prompts:
+    which files a caller treats as one is exactly what the round cannot know, so what it can
+    account for is what it writes.
+
+    Sameness is asked of the filesystem rather than decided on the names, because the write obeys
+    the filesystem: where the volume folds case, `CRITERIA-HOLES.md` is the file the write to
+    `criteria-holes.md` replaces, and where it does not, it is a second file this round leaves
+    standing.
+    """
+    try:
+        entries = sorted(out_dir.iterdir())
+    except OSError as exc:
+        raise Refusal(
+            "unsafe-output-path",
+            f"cannot read the output directory {out_dir} to see what it already holds: {exc}; a "
+            "round cannot account for a directory it cannot list",
+        ) from exc
+    standing = []
+    for path in outputs:
+        try:
+            standing.append(os.lstat(path))
+        except OSError:  # nothing wears the name, so nothing there is this round's yet
+            continue
+    for entry in entries:
+        try:
+            info = os.lstat(entry)
+        except OSError:  # gone since the directory was listed, so not there to be dispatched
+            continue
+        if any(os.path.samestat(info, other) for other in standing):
+            continue
+        raise Refusal(
+            "unsafe-output-path",
+            f"the output directory {out_dir} holds {entry.name}, which this round does not write; "
+            "dispatched alongside the prompts it does write, that file attacks a document this "
+            "round is not attacking, and the report it returns is recorded as coverage of this "
+            "one — name a directory of this round's own, or clear this one first",
+        )
+
+
 def write_private(path: Path, text: str) -> None:
     """Write owner-only, and never through a link swapped in after the name was checked."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
@@ -341,9 +393,11 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
     ctx = {"spec_path": spec_name, "spec_revision": revision, "document": document}
     prompts = [out_dir / f"{lens['lens']}.md" for lens in lenses]
     round_path = out_dir / "round.json"
-    refuse_if_spec_is_an_output(args.spec, [*prompts, round_path])
-    for path in [*prompts, round_path]:
+    outputs = [*prompts, round_path]
+    refuse_if_spec_is_an_output(args.spec, outputs)
+    for path in outputs:
         refuse_unless_plain(path)
+    refuse_unless_only_this_rounds(out_dir, outputs)
     # Everything that can fail is done before anything lands: rendering part of a round writes
     # prompts for this document beside the previous round's file, and an agent reading the
     # directory rather than the exit status then attacks against a revision nothing there names.

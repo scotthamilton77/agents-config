@@ -531,6 +531,22 @@ class TestProvenance:
         assert "document" not in result and "revision" not in result
 
 
+def folds(root: Path, written: str, sought: str) -> bool:
+    """Whether the volume under root reaches a file written under one spelling by the other.
+
+    Asked of the volume with a probe of the test's own, and asked where the case runs rather than
+    where the suite was written: the same pair of names is one document on a volume that folds the
+    difference and two documents on one that does not, so the binding is right on both only if the
+    check asks the volume too. A case asserting the check's own answer back would pass on either
+    volume while exercising neither, which is the one shape of this test worth nothing.
+    """
+    probe = root / written
+    probe.write_bytes(b"")
+    found = (root / sought).exists()
+    probe.unlink()
+    return found
+
+
 def round_named(attack: Attack, document: str, named: str) -> tuple[str, Path]:
     """One round in a directory of its own, the document and the record wearing the names asked.
 
@@ -584,24 +600,77 @@ class TestRecordBinding:
         code, result = run([record_path], capsys)
         assert code == 0 and result["document"] == str(document_path)
 
-    @pytest.mark.parametrize(("document", "named"),
-                             (("ledger-export.md", "Ledger-Export-ac-attack.json"),
+    @pytest.mark.parametrize(("document", "named", "probe"),
+                             (("ledger-export.md", "Ledger-Export-ac-attack.json",
+                               ("probe-name", "PROBE-NAME")),
                               # Escaped: one composed character against the same character
                               # written as a letter and a combining accent, which no reader
                               # tells apart on the page.
-                              ("caf\u00e9-ledger.md",
-                               "cafe\u0301-ledger-ac-attack.json")))
-    def test_c6_the_two_names_are_matched_as_the_filesystem_matches_them(self, attack, capsys,
-                                                                         document, named):
-        """S6-C6: the pair of names is what binds a record to its document, and it is matched the
-        way every other name in this round is — as the volumes this runs on match them, without
-        regard to case or to which Unicode form composed a character. Held apart by anything less,
-        a record and the document beside it are one document and one round that the check calls a
-        mismatch, refusing a round that genuinely closed. The name differing here is the record's
-        own, since that is the side the check reads off the path it was handed."""
+                              ("caf\u00e9-ledger.md", "cafe\u0301-ledger-ac-attack.json",
+                               ("caf\u00e9-probe", "cafe\u0301-probe"))))
+    def test_c6_the_volume_decides_whether_two_spellings_are_one_pair_of_names(self, attack,
+                                                                               capsys, document,
+                                                                               named, probe):
+        """S6-C6: the pair of names is what binds a record to its document, and which two spellings
+        are one pair is the volume's answer rather than a comparison's. Where it folds case, or the
+        Unicode form a character was composed in, a record and the document beside it differing by
+        no more are one document and one round, and calling that a mismatch refuses a round that
+        genuinely closed. Where it folds neither, those same spellings are two names reaching two
+        files, and binding them closes a round over a document nobody attacked. The name differing
+        here is the record's own, since that is the side the check reads off the path it was
+        handed."""
         record_path, document_path = round_named(attack, document, named)
         code, result = run([record_path], capsys)
-        assert code == 0 and result["document"] == str(document_path)
+        if folds(attack.root, *probe):
+            assert code == 0 and result["document"] == str(document_path)
+        else:
+            assert code == 2 and codes(result) == {"record-name-mismatch"}
+
+    def test_c6_a_document_the_volume_holds_apart_from_the_records_name_closes_no_round(
+            self, attack, capsys):
+        """S6-C6: the fail-open that answer closes. Where `Ledger.md` and `ledger.md` are two
+        files, a record named `ledger-ac-attack.json` whose round is over `Ledger.md` checks out
+        against the document it names while standing under the other one's name — and an agent
+        asking whether `ledger.md` has been attacked looks for exactly that record, is told the
+        round closed, and starts work against criteria no attacker read. Where the volume folds the
+        two they are one document and one record, so the round is bound and closes: the second
+        document cannot be written there at all, which is what makes folding right on that volume
+        and wrong on the other."""
+        room = attack.root / "round"
+        room.mkdir()
+        (room / "Ledger.md").write_text(REVISED, encoding="utf-8")
+        record = attack.record()
+        record["spec_path"] = "Ledger.md"
+        path = room / "ledger-ac-attack.json"
+        path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        if folds(attack.root, "probe-name", "PROBE-NAME"):
+            assert run([str(path)], capsys) == (0, {
+                "clean": False, "complete": True, "errors": [],
+                "document": str(room / "Ledger.md"), "revision": sha_revision(REVISED)})
+            return
+        (room / "ledger.md").write_text(UNRELATED, encoding="utf-8")  # a document nobody attacked
+        code, result = run([str(path)], capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"record-name-mismatch"}
+
+    @pytest.mark.parametrize("named", ("ledger-export.md ", "ledger-export.md\n",
+                                       " ledger-export.md"))
+    def test_c6_a_document_named_with_whitespace_around_it_closes_no_round(self, attack, capsys,
+                                                                           named):
+        """S6-C6: everything after the last dot is the extension, so `ledger-export.md ` drops to
+        the stem `ledger-export` — a spec_path carrying trailing whitespace passes for a bare
+        filename, derives the record name the document beside it already wears, and closes the
+        round over whatever file that spelling opens instead. Each of these names a file that is
+        there, since whitespace is a character a filesystem keeps. Refused on the whitespace itself
+        and on either side of the name: what a reader is left to compare is two spellings that
+        differ nowhere on the page and open two files on disk."""
+        (attack.root / named).write_text(REVISED, encoding="utf-8")
+        record = attack.record()
+        record["spec_path"] = named
+        code, result = check(attack, record, capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"untrimmed-spec-path"}
+        assert "document" not in result
 
     def test_c6_the_path_the_record_was_reached_by_does_not_decide_its_name(self, attack, capsys):
         """S6-C6: the binding is read off the record's own basename, which is what copying it under
@@ -1070,12 +1139,14 @@ class TestDocumentRefusal:
         carrying a fence marker of its own, which cannot be fenced without being rewritten. Held by
         running both over one file rather than by reading either: they deploy as separate scripts
         that cannot import each other, so each carries its own copy of the refusal, and
-        hand-maintained agreement between two files is what fails silently."""
+        hand-maintained agreement between two files is what fails silently. Asked of the checker
+        where the document in front of it is the revision attacked, which is the scope its mirror
+        of the emitter's refusal binds in."""
         path = tmp_path / "ledger.md"
         path.write_bytes(content)
         emitted = refusal_code(lambda: emitter.read_document(str(path)), emitter.Refusal)
         checked = refusal_code(
-            lambda: checker.require_attackable_document(path, path.read_bytes()),
+            lambda: checker.require_attackable_document(path, path.read_bytes(), attacked=True),
             checker.RecordError,
         )
         assert emitted == checked, description
@@ -1095,6 +1166,47 @@ class TestDocumentRefusal:
         code, result = check(attack, record, capsys)
         assert code == 2 and result["complete"] is False
         assert codes(result) == {refused}
+        assert result["document"] == str(attack.document)
+
+    def test_c6_a_criterion_that_quotes_the_marker_closes_the_round_that_accepted_it(self, attack,
+                                                                                     capsys):
+        """S6-C6: the marker refusal mirrors the emitter's, and the emitter decides about the text
+        it is about to fence — so the mirror says something only where the document in front of the
+        check is the revision attacked. An acceptance moves the document on by construction, and a
+        criterion accepted into it may quote the marker; judged over that text the round that drove
+        the edit is refused, and refused for good, since the emitter will not attack that document
+        again and no edit short of rewording the criterion reconciles it. What the attacked revision
+        held is not recoverable from a hash, so the check says nothing about it rather than the
+        wrong thing. The same document with the round that attacked it in hand is refused as before
+        (inverse), which is the case the mirror is for."""
+        carried = f"{REVISED}- A4 The exporter rejects a line reading {emitter.FENCE_OPEN}.\n"
+        record = attack.record()
+        record["dispositions"][0]["revision"] = attack.write_document(carried)
+        code, result = check(attack, record, capsys)
+        assert code == 0 and result["revision"] == sha_revision(carried)
+        attacked = attack.empty_round()
+        attacked["spec_revision"] = sha_revision(carried)
+        code, result = check(attack, attacked, capsys)
+        assert code == 2 and codes(result) == {"spec-contains-marker"}
+
+    @pytest.mark.parametrize(("description", "content"),
+                             (("a document holding nothing", b""),
+                              ("a document that is not UTF-8 text", "# Café\n".encode("latin-1"))))
+    def test_c6_a_document_stating_nothing_closes_no_round_whatever_the_round_did(self, attack,
+                                                                                  capsys,
+                                                                                  description,
+                                                                                  content):
+        """S6-C6: only the marker refusal narrows to the revision attacked. A document that states
+        nothing now, or that is not text now, carries no criterion for an accepted proposal to have
+        landed in — so the refusal costs a round nothing wherever it is judged, while dropping it in
+        an accepting round would close one over a document there is nothing left to attack. No
+        incorporation empties a document or takes its text out of UTF-8, which is what makes the
+        marker the one case an acceptance can legitimately produce."""
+        record = attack.record()
+        attack.document.write_bytes(content)
+        record["dispositions"][0]["revision"] = "sha256:" + hashlib.sha256(content).hexdigest()
+        code, result = check(attack, record, capsys)
+        assert code == 2 and codes(result) == {"no-spec"}, description
         assert result["document"] == str(attack.document)
 
 
@@ -1157,6 +1269,15 @@ BAD_ENVELOPE = [
     ("attacker", "whoever ran the round"),
 ]
 
+# Every object the record declares, and the one place in it a field lands that the contract does
+# not declare. The envelope is covered by BAD_ENVELOPE above, which carries the same case.
+NESTED_OBJECTS = [
+    ("a lens's report", lambda record: record["lenses"][0]),
+    ("a proposal", lambda record: record["proposals"][0]),
+    ("a proposal's red test sketch", lambda record: record["proposals"][0]["red_test_sketch"]),
+    ("a disposition", lambda record: record["dispositions"][0]),
+]
+
 # The fields each verdict needs to be an adjudication at all: an acceptance names where the
 # proposal landed, a rejection why it did not.
 BAD_DISPOSITION = [
@@ -1197,6 +1318,23 @@ class TestRecordShape:
         code, result = check(attack, record, capsys)
         assert code == 2 and codes(result) == {"schema"}
         assert field in result["errors"][0]["message"]
+
+    @pytest.mark.parametrize(("where", "inside"), NESTED_OBJECTS)
+    def test_c3_no_object_in_the_record_carries_a_field_the_contract_leaves_undeclared(
+            self, attack, capsys, where, inside):
+        """S6-C3: every object in the record is closed, not only the envelope. A field the contract
+        does not declare is one nothing reads, so a proposal marked `waived`, a disposition carrying
+        a second verdict under a name of its own, or a sketch with a fourth part reads to a reviewer
+        as something the round accounted for while the check decides without it — and the record a
+        reviewer reads and the record the round is decided from are two documents again. Each of
+        the four is pinned on its own: they are separate declarations in the contract and one can be
+        relaxed while the rest stand."""
+        record = attack.record()
+        inside(record)["attacker"] = "whoever ran the round"
+        code, result = check(attack, record, capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"schema"}, where
+        assert "attacker" in result["errors"][0]["message"], where
 
     def test_c3_the_declared_envelope_is_the_whole_record(self, attack, capsys):
         """S6-C3: inverse — those six fields, correctly shaped, are a record and nothing more is

@@ -89,10 +89,10 @@ The record **attests** that the round happened as written; the checker does not 
 It can see the document is at the revision an acceptance names, never that the criterion is in it —
 a hash names content without describing it — so an edit carrying none of the accepted proposals
 closes the round as well as one carrying all of them, and a lens entry claims a report nothing
-shows was made. For the same reason it reads the document as it now stands, which is the revision
-attacked only in a round that accepted nothing: what the document held when the attackers read it
-is gone, so the refusals the emitter makes before a round exists are where a document too empty or
-too marked-up to attack is stopped. What is enforced is that the account is internally whole and
+shows was made. For the same reason it reads the document as it now stands: what that
+document held when the attackers read it is gone, so a refusal only the attacked revision could
+have earned is asked only where the document still is that revision. The emitter's refusals, made
+before a round exists, are where an unattackable document is stopped. What is enforced is that the account is internally whole and
 that the document in front of the checker is the one the record accounts for. The result names the file it read, so a
 round closed against a copy handed to `--spec` is visible as one: read that pair as part of the
 verdict, because a `complete` round over the wrong file evidences nothing.
