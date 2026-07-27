@@ -104,7 +104,7 @@ class FakeTracker:
     def claim(self, handle: str) -> None:
         self._record("claim", handle)
 
-    def park(self, handle: str, *, reason: str, note: str) -> str | None:
+    def park(self, handle: str, *, reason: str, note: str) -> str:
         self._record("park", handle, reason, note)
         return self.parked_as if self.parked_as is not None else reason
 

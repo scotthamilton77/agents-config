@@ -209,8 +209,25 @@ could detect it**, since each stays internally consistent. Never let a facade
 reply go unread on the assumption that a successful call means the requested
 mutation.
 
+A park reply carrying no usable reason is a **failure**, not agreement — the
+reply is the only evidence of which reason the tracker holds, so reading an
+unusable one as "no disagreement" re-opens the divergence outright.
+
 ## More rules that are load-bearing, not stylistic
 
+- **A degraded value that authorises is a fault, not a default.** The parser
+  degrades a wrong-typed field to `None` and the decision above fails closed —
+  a missing PR reference refuses, a missing lane refuses. Three fields invert
+  that and so refuse instead: `parked` (a malformed one makes an unparked item
+  look parked, waving `redispatch`/`abandon` into a tracker-first mutation),
+  `work_id` (falling back to the item id sends a tracker write named by a
+  fallback), and the facade's park reply (no reason means no evidence of
+  agreement). Before adding a lenient read, ask which way its degraded value
+  points.
+- **Evidence of a durable write survives the failure that follows it.** A
+  `grind log` reply proving `applied: true` followed by a non-zero exit is
+  still a failure, but the write happened, so the marker rides the error.
+  Losing it makes the report contradict the event log.
 - **`ok: true` from the runtime is not "it applied".** The runtime's policy is
   accept-and-flag: an event that is well-shaped but illegal from the entity's
   current state is still written, as `applied: false` plus an anomaly record.

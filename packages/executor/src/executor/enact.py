@@ -56,7 +56,7 @@ class TrackerSession:
             # mutation is recorded is what keeps this a clean refusal with
             # nothing written and no sync owed.
             recorded = self.port.park(handle, reason=reason or "", note=note or "")
-            if recorded is not None and recorded != reason:
+            if recorded != reason:
                 raise ExecutorError(
                     ErrorCode.ITEM_PARKED,
                     f"the tracker already has {handle!r} parked as {recorded!r}, "

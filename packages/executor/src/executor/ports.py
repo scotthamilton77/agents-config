@@ -117,7 +117,7 @@ class TrackerPort(Protocol):
 
     def claim(self, handle: str) -> None: ...  # pragma: no cover
 
-    def park(self, handle: str, *, reason: str, note: str) -> str | None: ...  # pragma: no cover
+    def park(self, handle: str, *, reason: str, note: str) -> str: ...  # pragma: no cover
 
     def redispatch(self, handle: str) -> None: ...  # pragma: no cover
 
@@ -226,9 +226,15 @@ class GrindRuntime:
         )
         failed = not _is_ok_envelope(decoded) or (result.exit_code != 0 and not verdict_exit)
         if failed:
+            # A reply that proves the event applied, followed by a failed exit
+            # -- a wrapper dying after the runtime wrote -- is still a failure,
+            # but the write is durable. Losing that here would have the report
+            # contradict the event log, which is what the marker exists for.
+            written = isinstance(decoded, dict) and decoded.get("applied") is True
             raise ExecutorError(
                 ErrorCode.RUNTIME_SUBPROCESS,
                 _envelope_message(decoded, result.transcript(argv)),
+                {EVENT_WAS_WRITTEN: True} if written else {},
             )
         assert isinstance(decoded, dict)  # noqa: S101  # proven by _is_ok_envelope above
         return decoded
@@ -305,7 +311,7 @@ class WorkTracker:
     def claim(self, handle: str) -> None:
         self._call(["work", "claim", handle], code=ErrorCode.TRACKER_SUBPROCESS)
 
-    def park(self, handle: str, *, reason: str, note: str) -> str | None:
+    def park(self, handle: str, *, reason: str, note: str) -> str:
         """Returns the reason the facade has on record, which is not always
         the one asked for.
 
@@ -321,7 +327,16 @@ class WorkTracker:
         )
         data = reply.get("data")
         recorded = data.get("reason") if isinstance(data, dict) else None
-        return recorded if isinstance(recorded, str) and recorded != "" else None
+        if not isinstance(recorded, str) or recorded == "":
+            # No reason means no evidence of which reason the tracker holds,
+            # and treating that as agreement would re-open the divergence this
+            # check exists to close. Same rule as the parser's: a degraded
+            # value that authorises is a fault, not a default.
+            raise ExecutorError(
+                ErrorCode.TRACKER_SUBPROCESS,
+                f"the facade's park reply for {handle!r} carries no usable reason: {recorded!r}",
+            )
+        return recorded
 
     def redispatch(self, handle: str) -> None:
         self._call(["work", "redispatch", handle], code=ErrorCode.TRACKER_SUBPROCESS)

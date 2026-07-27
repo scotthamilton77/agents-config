@@ -13,6 +13,7 @@ import pytest
 
 from executor.envelope import ErrorCode, ExecutorError
 from executor.ports import (
+    EVENT_WAS_WRITTEN,
     CommandResult,
     GrindRuntime,
     RuntimePort,
@@ -368,11 +369,74 @@ def test_each_tracker_verb_maps_to_its_facade_invocation(
     Pins the facade argv: the executor addresses the tracker only through
     `work`, and a park's reason reaches `--reason` unchanged.
     """
-    runner = ScriptedRunner({argv[:2]: _ok({"protocol": "1", "ok": True, "data": None})})
+    runner = ScriptedRunner(
+        {argv[:2]: _ok({"protocol": "1", "ok": True, "data": {"reason": "ci-failure"}})}
+    )
 
     call(WorkTracker(runner))
 
     assert runner.calls == [argv]
+
+
+@pytest.mark.parametrize(
+    "data",
+    [None, {}, {"reason": None}, {"reason": ""}, {"reason": 7}, "not an object"],
+    ids=["null", "empty", "null-reason", "empty-reason", "int-reason", "not-an-object"],
+)
+def test_a_park_reply_without_a_usable_reason_is_a_tracker_failure(data: object) -> None:
+    """
+    Given a successful park whose reply carries no usable reason
+    When the port calls it
+    Then it fails rather than reporting agreement.
+
+    The reply is the only evidence of which reason the tracker holds. Reading
+    an unusable one as "no disagreement" would re-open exactly the divergence
+    the check exists to close — the same rule the parser applies to `parked`
+    and `work_id`: a degraded value that authorises is a fault, not a default.
+    """
+    runner = ScriptedRunner({("work", "park"): _ok({"ok": True, "data": data})})
+
+    with pytest.raises(ExecutorError) as raised:
+        WorkTracker(runner).park("w-1", reason="ci-failure", note="red")
+
+    assert raised.value.code is ErrorCode.TRACKER_SUBPROCESS
+
+
+def test_a_durable_append_followed_by_a_failed_exit_keeps_the_written_marker() -> None:
+    """
+    Given a `grind log` reply proving the event applied, followed by a
+    non-zero exit
+    When the port appends
+    Then it fails, but records that the write is durable.
+
+    A wrapper dying after the runtime wrote is still a failure — losing the
+    write would have the report contradict the event log, which is the one
+    thing the marker exists to prevent.
+    """
+    runner = ScriptedRunner({_LOG: _ok({"ok": True, "applied": True}, 1)})
+
+    with pytest.raises(ExecutorError) as raised:
+        GrindRuntime(runner).append("item_started", {"item": "it-1"})
+
+    assert raised.value.code is ErrorCode.RUNTIME_SUBPROCESS
+    assert raised.value.data.get(EVENT_WAS_WRITTEN) is True
+
+
+def test_a_failed_exit_with_no_proof_of_a_write_carries_no_marker() -> None:
+    """
+    Given a runtime call that failed without proving anything applied
+    When the port calls it
+    Then no written-event marker rides the failure.
+
+    The inverse: the marker is evidence, so it must not be attached on the
+    strength of a call merely having been attempted.
+    """
+    runner = ScriptedRunner({_LOG: _ok({"ok": False, "error": {"message": "nope"}}, 1)})
+
+    with pytest.raises(ExecutorError) as raised:
+        GrindRuntime(runner).append("item_started", {"item": "it-1"})
+
+    assert EVENT_WAS_WRITTEN not in raised.value.data
 
 
 def test_a_failed_tracker_call_is_a_retryable_transport_failure() -> None:
