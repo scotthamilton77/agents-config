@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 
 from grind.model import (
+    ATTEMPT_BUDGETS,
     PARK_REASONS,
     AnomalyRecord,
     AttentionEntry,
@@ -30,6 +31,7 @@ from grind.model import (
     PrRef,
     RawEvent,
     State,
+    new_attempt_ledger,
 )
 
 # The pre-charter park vocabulary, which lived on a field named `kind`. Three
@@ -90,9 +92,10 @@ def _typed_park_reason(state: State, evt: RawEvent) -> ParkReason | None:
     return reason
 
 
-# Statuses `merged`/`done` resolve any blocker edge pointing at that item
-# (spec: "an edge resolves only when its target reaches merged/done").
-_TERMINAL_RESOLVING = {"merged", "done"}
+# The two terminal item statuses. An item that reached either resolves any
+# blocker edge pointing at it (spec: "an edge resolves only when its target
+# reaches merged/done"), and has no work left to attempt.
+_TERMINAL_ITEM_STATUSES = {"merged", "done"}
 
 Handler = Callable[[State, RawEvent], None]
 
@@ -110,6 +113,20 @@ def _handler(event_type: str) -> Callable[[Handler], Handler]:
 def _str(evt: RawEvent, key: str) -> str | None:
     value = evt.get(key)
     return value if isinstance(value, str) else None
+
+
+def _int(evt: RawEvent, key: str) -> int | None:
+    """`_str`'s sibling, and the bool exclusion is the whole point of it.
+
+    `bool` is an `int` subclass in Python, so a JSON `true` otherwise passes as
+    a PR number -- and compares equal to PR 1, which is enough to satisfy a
+    check that the number matches the one the item holds. The boundary
+    validator already excludes it; a hand-edited or historical log reaches this
+    fold without ever passing that boundary, and every `pr` field here feeds
+    either a ledger entry or the ref two rules read.
+    """
+    value = evt.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _work_id(payload: RawEvent, item_id: str) -> str | None:
@@ -281,7 +298,7 @@ def _unresolved_edges(state: State, item: Item) -> tuple[str, ...]:
         target
         for target in item.blocked_on
         if (target_item := state.items.get(target)) is None
-        or target_item.status not in _TERMINAL_RESOLVING
+        or target_item.status not in _TERMINAL_ITEM_STATUSES
     )
 
 
@@ -340,8 +357,7 @@ def _h_pr_opened(state: State, evt: RawEvent) -> None:
     if item.status not in ("in-progress", "waiting-human"):
         _anomaly(state, evt, f"pr_opened illegal from status {item.status!r}")
         return
-    pr = evt.get("pr")
-    item.pr = PrRef(number=pr if isinstance(pr, int) else None, url=_str(evt, "url"))
+    item.pr = PrRef(number=_int(evt, "pr"), url=_str(evt, "url"))
     item.status = "pr-open"
 
 
@@ -455,16 +471,19 @@ def _h_pr_closed(state: State, evt: RawEvent) -> None:
     if next_status != "parked" and next_status not in _PR_CLOSED_NEXT:
         _anomaly(state, evt, f"pr_closed has invalid next {next_status!r}")
         return
-    pr = evt.get("pr")
     reason = _str(evt, "reason")
     state.closed_ledger.append(
-        ClosedEntry(
-            item=item.id, pr=pr if isinstance(pr, int) else None, reason=reason, ts=_str(evt, "ts")
-        )
+        ClosedEntry(item=item.id, pr=_int(evt, "pr"), reason=reason, ts=_str(evt, "ts"))
     )
     # the review cycle ends with its PR: a later pr_opened starts a fresh
-    # cycle that must not inherit the closed PR's stalemate history
+    # cycle that must not inherit the closed PR's stalemate history, nor the
+    # fix budget spent on it -- the attempt ledger's lifetime is one PR cycle
     item.round_history = ()
+    item.attempts = new_attempt_ledger()
+    # The ref stays for the failure-axis park rule; marking it closed is what
+    # keeps "has a PR ref" from being read as "has an open PR".
+    if item.pr is not None:
+        item.pr.closed = True
     if next_status == "parked":
         # `pr_closed.reason` is a free-text closure note, not the typed park
         # vocabulary -- the two share a field name and not a contract. When it
@@ -474,6 +493,43 @@ def _h_pr_closed(state: State, evt: RawEvent) -> None:
         _park_item(state, item, reason=_park_reason(evt), note=reason)
     else:
         item.status = next_status  # type: ignore[assignment]  # validated above
+
+
+@_handler("fix_attempted")
+def _h_fix_attempted(state: State, evt: RawEvent) -> None:
+    """Count one fix attempt against the item's ledger, and only ever count it.
+
+    Whether the budget is spent is a condition's report and whether to refuse
+    the next attempt is the decision layer's call; this handler never caps, so
+    the count past the budget keeps climbing and stays an honest record of what
+    was attempted.
+
+    An attempt exists only inside a PR cycle, so an open PR with a number of
+    its own gates it -- a ref whose number did not survive the log names no
+    cycle anything can act on, and an attempt charged against it spends a
+    budget nobody can attribute. That is the predicate `_record_closure` also
+    requires. Keyed on the ref like the failure-axis park rule below -- status
+    cannot answer this,
+    since `in-progress` is reachable both with an open PR (via resume) and with
+    a closed one (via `pr_closed`) -- but, unlike that rule, a closed ref does
+    not pass: a park describes a PR that already failed to merge, while an
+    attempt claims to be fixing one that is still open.
+    """
+    item = _active_item(state, evt)
+    if item is None:
+        return
+    if item.status in _TERMINAL_ITEM_STATUSES:
+        _anomaly(state, evt, f"fix_attempted illegal from status {item.status!r}")
+        return
+    if item.pr is None or item.pr.number is None or item.pr.closed:
+        _anomaly(state, evt, "fix_attempted on an item with no open PR")
+        return
+    kind = _str(evt, "kind")
+    # Membership narrows the `str` to the key type, as it does for park reasons.
+    if kind is None or kind not in ATTEMPT_BUDGETS:
+        _anomaly(state, evt, f"unrecognized attempt kind {kind!r}")
+        return
+    item.attempts[kind] = item.attempts.get(kind, 0) + 1
 
 
 # Statuses from which recording/replacing blocker edges is legal. A currently
@@ -555,12 +611,16 @@ def _h_item_merged(state: State, evt: RawEvent) -> None:
     if item.status not in _MERGEABLE:
         _anomaly(state, evt, f"item_merged illegal from status {item.status!r}")
         return
-    pr = evt.get("pr")
     item.status = "merged"
+    # A merge ends the PR's life as surely as a close does -- `closed` records
+    # "no longer open", and both transitions that reach it must say so or the
+    # retained ref reports a merged PR as still open.
+    if item.pr is not None:
+        item.pr.closed = True
     state.merged_ledger.append(
         MergedEntry(
             item=item.id,
-            pr=pr if isinstance(pr, int) else None,
+            pr=_int(evt, "pr"),
             sha=_str(evt, "sha"),
             ts=_str(evt, "ts"),
         )
@@ -617,6 +677,39 @@ def _h_item_parked(state: State, evt: RawEvent) -> None:
     _park_item(state, item, reason=reason, note=_str(evt, "note"))
 
 
+def _record_closure(state: State, item: Item, evt: RawEvent) -> None:
+    """`item_enqueued.closure` -- the abandoned PR whose cycle this exit ends.
+
+    The parking lot keeps its single exit: an abandoned item re-enters play
+    exactly as any other does, and the closure only adds what abandonment
+    means on top of that -- the ledger entry recording which PR closed and why,
+    and dropping the PR ref (with the review history belonging to it) so the
+    next cycle starts clean. `pr_closed` gains no new source state from this.
+
+    The PR named must be the one the item actually holds. The boundary can
+    only check that `--pr` is an integer, so a mistyped number arrives
+    well-formed and would otherwise write a closure record for a PR this item
+    never had *and* discard the live ref two other rules read (the failure-axis
+    park, and the attempt gate). Accept-and-flag applies as it does to a
+    failure-axis park on an item with no PR: the mismatch is recorded, the
+    closure is not applied, and the enqueue itself still proceeds -- losing the
+    item's exit from the parking lot would be a second harm.
+    """
+    closure = evt.get("closure")
+    if not isinstance(closure, dict):
+        return
+    pr = _int(closure, "pr")
+    held = item.pr.number if item.pr is not None else None
+    if pr is None or held != pr:
+        _anomaly(state, evt, f"closure names PR {closure.get('pr')!r}, but the item holds {held!r}")
+        return
+    state.closed_ledger.append(
+        ClosedEntry(item=item.id, pr=pr, reason=_str(closure, "reason"), ts=_str(evt, "ts"))
+    )
+    item.pr = None
+    item.round_history = ()
+
+
 @_handler("item_enqueued")
 def _h_item_enqueued(state: State, evt: RawEvent) -> None:
     item_id = _str(evt, "item")
@@ -629,6 +722,10 @@ def _h_item_enqueued(state: State, evt: RawEvent) -> None:
         return
     item.parked = None
     item.lane = lane.id
+    # Leaving the parking lot deliberately grants a fresh fix budget: whatever
+    # was spent belonged to the cycle that ended in the park.
+    item.attempts = new_attempt_ledger()
+    _record_closure(state, item, evt)
     # Queued is the baseline; blocked is derived, never asserted -- an item
     # re-entering play with unresolved blocker edges surfaces as blocked.
     item.status = "queued"

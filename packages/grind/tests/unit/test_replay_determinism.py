@@ -29,9 +29,20 @@ _EVENTS = [
         verdict="findings",
         findings=[{"severity": "low", "summary": "nit", "disposition": "wont-fix"}],
     ),
+    event("fix_attempted", item="wgclw.1", kind="ci-fix", note="rerun the flaky job"),
+    event("fix_attempted", item="wgclw.1", kind="rebase"),
     event("item_merged", item="wgclw.1", pr=7, sha="a1"),
     event("item_done", item="wgclw.1"),
+    event("item_started", item="wgclw.2"),
+    event("pr_opened", item="wgclw.2", pr=8),
     event("item_blocked", item="wgclw.2", on=["does-not-exist"]),
+    event("item_parked", item="wgclw.2", reason="ci-failure", note="budget spent"),
+    event(
+        "item_enqueued",
+        item="wgclw.2",
+        lane="lane-a",
+        closure={"pr": 8, "reason": "abandoned, starting over"},
+    ),
     event("observation", level="WARN", message="watch this repo's flaky CI"),
 ]
 
