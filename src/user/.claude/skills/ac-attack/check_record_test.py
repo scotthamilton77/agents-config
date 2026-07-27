@@ -584,6 +584,27 @@ class TestRecordBinding:
 
 
 class TestRevisionNotation:
+    def test_c6_the_object_id_is_the_one_git_prints(self, tmp_path):
+        """S6-C6: the object-id notation is a claim about what `git hash-object --no-filters`
+        produces, and a record is written from that command's output — so the formula is pinned to
+        git itself and not to a second copy of the formula. Recomputing the blob header in the test
+        would move with the production one: a wrong header (a space for the NUL, a missing length,
+        `commit` for `blob`) would pass every test in this suite while rejecting every real record
+        as stale. Also pinned: `--no-filters` is the reproducing command, since the plain form runs
+        whatever clean filter the repository configures and prints another id for a document
+        nothing is wrong with."""
+        def run(*args: str) -> str:
+            return subprocess.run(["git", "-C", str(tmp_path), *args],
+                                  capture_output=True, text=True, check=True).stdout
+
+        run("init", "-q")
+        (tmp_path / ".gitattributes").write_text("* text=auto\n", encoding="utf-8")
+        document = tmp_path / "ledger.md"
+        document.write_bytes(b"# Ledger\r\n\r\n- A1: it exports.\r\n")  # CRLF: the filter's input
+        computed = checker.revisions_of(document.read_bytes())["object id"]
+        assert computed == run("hash-object", "--no-filters", "ledger.md").strip()
+        assert computed != run("hash-object", "ledger.md").strip(), "the clean filter did not fire"
+
     @pytest.mark.parametrize("where", ("attacked", "acceptance"))
     def test_c6_a_record_mixing_the_two_notations_is_refused(self, attack, capsys, where):
         """S6-C6: revisions are compared as strings and a hash cannot be turned back into the
