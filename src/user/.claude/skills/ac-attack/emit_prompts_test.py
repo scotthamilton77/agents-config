@@ -321,6 +321,62 @@ class TestRevision:
             assert "Path: ledger-export.md\n" in text
             assert str(tmp_path) not in text
 
+    @pytest.mark.parametrize(
+        ("code", "name"),
+        # The characters that render as nothing are escaped rather than typed, since a reader sees
+        # none of them on the page — which is the whole of what makes such a name unspellable.
+        (("untrimmed-spec-path", "ledger.md "),
+         ("untrimmed-spec-path", " ledger.md"),
+         ("untrimmed-spec-path", "ledger.md\n"),
+         ("untrimmed-spec-path", "ledger.md\u00a0"),
+         ("invisible-spec-path", "ledger.md\u200b"),
+         ("invisible-spec-path", "\ufeffledger.md"),
+         ("invisible-spec-path", "ledger\u200dexport.md"),
+         ("invisible-spec-path", "ledger.m\u200bd")),
+    )
+    def test_c6_a_document_whose_name_no_record_could_close_is_refused(self, tmp_path, capsys,
+                                                                        code, name):
+        """S6-C6: the record is committed beside the document and named from its basename, and the
+        check that closes a round refuses a record naming its document by a spelling a reader
+        cannot see the whole of. So `ledger.md ` emits a round whose record claims the name the
+        document `ledger.md` beside it already owns, and no filename can ever close it — a round
+        that ran, cost every model in the panel, and closes nowhere.
+
+        Refused in the two classes the check refuses and under the codes it uses, so one name is
+        diagnosed the same way on both sides: whitespace around the name, which `strip` decides,
+        and a character rendering as nothing anywhere in it, which `strip` leaves standing.
+        Anywhere, since one written inside the extension comes off with the extension when the
+        record's own name is derived. Refused before an attacker goes out, and before a directory
+        is created to hold one."""
+        document = tmp_path / name
+        document.write_text(DOCUMENT, encoding="utf-8")
+        out_dir = tmp_path / "attack"
+        exit_code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
+        assert exit_code == 2 and result["emitted"] is False, name
+        assert [error["code"] for error in result["errors"]] == [code], name
+        # Quoted and escaped in the message, since the name is one no reader can see the shape of.
+        assert repr(name) in result["errors"][0]["message"], name
+        assert not out_dir.exists(), name
+
+    @pytest.mark.parametrize("name", ("台帳-エクスポート.md",
+                                      "café-ledger.md", "ledger export.md"))
+    def test_c6_a_document_named_outside_ascii_is_attacked_not_refused(self, tmp_path, capsys,
+                                                                        name):
+        """S6-C6: inverse — what is refused is a character that renders as nothing, never an
+        unfamiliar one. Every letter, mark and digit of every script renders, so a document named
+        in Japanese or with an accented character is named legibly and is attacked like any other
+        — as is one with a space inside its name, which is not whitespace around it. The name
+        reaches the record as it stands, since that spelling is what finds the document beside
+        it."""
+        document = tmp_path / name
+        document.write_text(DOCUMENT, encoding="utf-8")
+        out_dir = tmp_path / "attack"
+        emitted = emit(document, out_dir, capsys)
+        assert sorted(emitted) == sorted(LENS_NAMES)
+        meta = json.loads((out_dir / "round.json").read_text(encoding="utf-8"))
+        assert meta["spec_path"] == name
+        assert all(f"Path: {name}\n" in text for text in emitted.values())
+
     def test_c6_editing_the_document_changes_the_revision(self, document, tmp_path, capsys):
         """S6-C6: revisions are content-addressed, so any edit produces a different one and a
         record keyed to the old one is detectably stale."""
@@ -760,37 +816,93 @@ class TestOutputSafety:
         assert [error["code"] for error in result["errors"]] == ["unsafe-output-path"]
         assert [path.name for path in out_dir.iterdir()] == [f"{LENS_NAMES[0].upper()}.md"]
 
-    @pytest.mark.parametrize("leftover", ("retired-lens.md", "notes.txt", "reports/"))
-    def test_c1_a_directory_holding_what_this_round_does_not_write_is_refused(self, document,
-                                                                               tmp_path, capsys,
-                                                                               leftover):
+    def test_c1_a_directory_holding_a_prompt_this_round_does_not_write_is_refused(self, document,
+                                                                                   tmp_path,
+                                                                                   capsys):
         """S6-C1: a reused directory keeps whatever the previous round left at a name this one does
-        not write — a prompt for a lens since retired, or one carrying another document. The
-        prompts are what a caller listing the directory dispatches, so that stale attacker goes out
-        with this round's, and the report it returns is written into this round's record. Coverage
-        downstream is containment, so a lens the round never declared reads there as surplus rather
-        than as an attack on text this round never touched, and the record closes carrying it.
+        not write — a prompt for a lens since retired, or one carrying another document. A caller
+        listing the directory rather than dispatching the lenses the round file names sends that
+        stale attacker out with this round's, and the report it returns is written into this
+        round's record. Coverage downstream is containment, so a lens the round never declared
+        reads there as surplus rather than as an attack on text this round never touched, and the
+        record closes carrying it.
 
-        The account is what the round writes, not what looks like a prompt: which files a caller
-        treats as one is the thing the round cannot know. So it refuses whole — and deletes
-        nothing, since a name it does not write is not its to remove."""
+        Every unaccounted name is named in the one refusal: found one at a time, a directory
+        holding several costs a refused run apiece to learn of. Each is quoted, since a name whose
+        edges are spaces is a different file from the one that prints without them.
+
+        The remedy is a directory of the round's own. Telling the invoker to clear this one would
+        be telling them to delete files the round has just said are not its to touch, on a
+        directory that may hold their work — and it deletes nothing itself, the previous round's
+        file included. It is decided before anything is written, too: a directory this round had
+        already filled with prompts reads exactly like a round that emitted."""
         out_dir = tmp_path / "attack"
         out_dir.mkdir()
         previous = '{"spec_revision": "sha256:' + "0" * 64 + '"}\n'
         (out_dir / "round.json").write_text(previous, encoding="utf-8")
-        if leftover.endswith("/"):
-            (out_dir / leftover.rstrip("/")).mkdir()
-        else:
-            (out_dir / leftover).write_text("a round over another document\n", encoding="utf-8")
+        leftovers = ["retired-lens.md", " spaced .md"]
+        for name in leftovers:
+            (out_dir / name).write_text("a round over another document\n", encoding="utf-8")
         code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
         assert code == 2 and result["emitted"] is False
         assert [error["code"] for error in result["errors"]] == ["unsafe-output-path"]
-        assert leftover.rstrip("/") in result["errors"][0]["message"]
+        message = result["errors"][0]["message"]
+        for name in leftovers:
+            assert repr(name) in message, message
+        assert "--out-dir of its own" in message
+        assert not re.search(r"\bclear\b|\bdelete\b", message), message
         assert sorted(path.name for path in out_dir.iterdir()) == sorted(
-            ["round.json", leftover.rstrip("/")])
+            ["round.json", *leftovers])
         # The previous round's file is deleted on the way to a successful emission, and this round
         # never got there: a refusal that took it with it would destroy what it refused to replace.
         assert (out_dir / "round.json").read_text(encoding="utf-8") == previous
+
+    @pytest.mark.parametrize("leftover", (".DS_Store", "notes.txt", "reports/",
+                                          ".criteria-holes.md.swp", "criteria-holes.md~"))
+    def test_c1_a_directory_holding_what_nothing_dispatches_still_emits(self, document, tmp_path,
+                                                                         capsys, leftover):
+        """S6-C1: inverse — what the round refuses to be dispatched alongside is a prompt, and a
+        prompt is what a caller's glob matches. A file browser leaves one of these on any directory
+        anyone has opened, an editor leaves another, and an operator's own notes and saved reports
+        sit beside them; none of them ever reaches a model, so a round refusing them would refuse
+        the re-emission it is written to allow — and would do it on the directories operators
+        actually use. They are left exactly as they were found."""
+        out_dir = tmp_path / "attack"
+        out_dir.mkdir()
+        kept = out_dir / leftover.rstrip("/")
+        if leftover.endswith("/"):
+            kept.mkdir()
+        else:
+            kept.write_text("not the round's to write\n", encoding="utf-8")
+        assert sorted(emit(document, out_dir, capsys)) == sorted(LENS_NAMES)
+        assert (out_dir / "round.json").exists()
+        assert kept.exists()
+        if not leftover.endswith("/"):
+            assert kept.read_text(encoding="utf-8") == "not the round's to write\n"
+
+    def test_c1_a_folded_spelling_of_a_prompt_name_is_this_rounds_own_file(self, document,
+                                                                            tmp_path, capsys):
+        """S6-C1: the account is settled with the filesystem, not with the names. Where the volume
+        folds case, the file standing at `CRITERIA-HOLES.md` is the one the write to
+        `criteria-holes.md` replaces — this round's own prompt, under the spelling that was already
+        there — and a round comparing names would refuse the re-emission the check exists to allow,
+        on a directory it wrote itself. Where the volume keeps the two apart they are two files,
+        and the same question answers the other way: a dispatchable prompt this round does not
+        write, which is what it refuses."""
+        out_dir = tmp_path / "attack"
+        out_dir.mkdir()
+        folded = out_dir / f"{LENS_NAMES[0].upper()}.md"
+        folded.write_text("a previous round\n", encoding="utf-8")
+        one_file = (out_dir / f"{LENS_NAMES[0]}.md").exists()  # this volume folds the pair
+        code, result = run(["--spec", str(document), "--out-dir", str(out_dir)], capsys)
+        if one_file:
+            assert code == 0 and result["emitted"] is True
+            written = folded.read_text(encoding="utf-8")
+            assert "a previous round" not in written and DOCUMENT in written
+        else:
+            assert code == 2 and result["emitted"] is False
+            assert [error["code"] for error in result["errors"]] == ["unsafe-output-path"]
+            assert folded.read_text(encoding="utf-8") == "a previous round\n"
 
     def test_c1_re_emitting_into_the_directory_a_round_wrote_is_ordinary(self, document, tmp_path,
                                                                           capsys):

@@ -15,6 +15,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -672,6 +673,63 @@ class TestRecordBinding:
         assert codes(result) == {"untrimmed-spec-path"}
         assert "document" not in result
 
+    # Escaped, since a reader sees none of them on the page: a zero-width space, a word joiner and
+    # a byte-order mark, each of which `str.isspace` calls no whitespace and `strip` leaves where
+    # it stands. Every one is written into the extension, which is the position the derived name
+    # drops.
+    @pytest.mark.parametrize("named", ("ledger.md\u200b", "ledger.\u2060md", "ledger.md\ufeff"))
+    def test_c6_a_document_named_with_a_character_nothing_renders_closes_no_round(self, attack,
+                                                                                   capsys, named):
+        """S6-C6: `strip` takes surrounding whitespace off a name and leaves a zero-width character
+        standing, so a name carrying one passes for a bare filename written plainly — and everything
+        after the last dot is the extension, so the character comes off with it and the record's own
+        name is derived as though the name were the legible one. The round then closes over a file
+        that the document `ledger.md` beside it is not, while standing under exactly the name an
+        agent asking whether `ledger.md` has been attacked looks up. The two spellings differ
+        nowhere a reader can see, which is why the refusal is on the character rather than on
+        anything a reader could be asked to compare."""
+        room = attack.root / "round"
+        room.mkdir()
+        (room / named).write_text(REVISED, encoding="utf-8")
+        (room / "ledger.md").write_text(UNRELATED, encoding="utf-8")  # a document nobody attacked
+        record = attack.record()
+        record["spec_path"] = named
+        path = room / "ledger-ac-attack.json"
+        path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        code, result = run([str(path)], capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"invisible-spec-path"}
+        assert "document" not in result
+
+    @pytest.mark.parametrize(("document", "named"),
+                             (("台帳エクスポート.md", "台帳エクスポート-ac-attack.json"),
+                              ("caf\u00e9-ledger.md", "caf\u00e9-ledger-ac-attack.json"),
+                              ("ledger export.md", "ledger export-ac-attack.json")))
+    def test_c6_a_document_named_in_characters_a_reader_sees_closes_its_round(self, attack, capsys,
+                                                                              document, named):
+        """S6-C6: inverse — what is refused is a character that renders as nothing, not a character
+        outside ASCII. A document named in Japanese, one named with an accented character, and one
+        whose name carries an ordinary space are each legible on the page: the name a reader sees
+        is the name the record derives its own from, so the round binds and closes."""
+        record_path, document_path = round_named(attack, document, named)
+        code, result = run([record_path], capsys)
+        assert code == 0 and result["document"] == str(document_path)
+
+    @pytest.mark.parametrize("named", (" ../ledger-export.md", "sub/ledger-export.md ",
+                                       "/tmp/ledger-export.md\u200b"))
+    def test_c6_a_name_leaving_the_directory_is_answered_before_how_it_is_written(self, attack,
+                                                                                  capsys, named):
+        """S6-C6: a spec_path wrong in more than one way is answered with the defect that survives
+        repairing the others. Whitespace or a zero-width character taken out of these leaves a
+        record still naming a document it was not committed beside, so reporting the way it is
+        written would send the reader to repair the cosmetic half and collect the same refusal a
+        second time — with the path defect never named."""
+        record = attack.record()
+        record["spec_path"] = named
+        code, result = check(attack, record, capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"spec-not-a-bare-filename"}
+
     def test_c6_the_path_the_record_was_reached_by_does_not_decide_its_name(self, attack, capsys):
         """S6-C6: the binding is read off the record's own basename, which is what copying it under
         another name changes. The directories above it are how this run was told to reach the
@@ -680,6 +738,68 @@ class TestRecordBinding:
         path = attack.save(attack.record())
         assert run([path], capsys)[0] == 0
         assert run([f"{attack.root}/./{attack.path.name}"], capsys)[0] == 0
+
+
+def named_pair(root: Path) -> tuple[Path, Path]:
+    """A record's own name and the name derived from its document, in directories of their own.
+
+    `one_file` reads the two basenames and asks the volume about the files they reach, so a pair
+    held in two directories is the pair it faces. It is also the only such pair that is two real
+    files on either kind of volume: where the volume folds the two spellings, one directory holds
+    one of them and no case in one directory can put a second file at the derived name — which is
+    what leaves the comparison unfalsifiable there through the whole check.
+    """
+    held, sought = root / "held", root / "sought"
+    held.mkdir()
+    sought.mkdir()
+    return held / "ledger-ac-attack.json", sought / "Ledger-ac-attack.json"
+
+
+class TestDerivedName:
+    def test_c6_a_second_file_at_the_derived_name_is_not_this_record(self, tmp_path):
+        """S6-C6: a reader asks whether a document has been attacked by looking the derived name up
+        beside it, so the binding holds only where that name reaches this record — not merely where
+        something answers to it. A second file standing there is a second record, whatever it holds:
+        the round a reader finds under that name is not the round in this file, and the same bytes
+        under two names are two records over two documents."""
+        held, sought = named_pair(tmp_path)
+        held.write_text("{}", encoding="utf-8")
+        sought.write_text("{}", encoding="utf-8")  # the same bytes, and a second file
+        assert checker.fold(held.name) == checker.fold(sought.name)
+        assert checker.one_file(held, sought) is False
+
+    def test_c6_a_link_at_the_derived_name_is_not_this_record(self, tmp_path):
+        """S6-C6: two directory entries for one file are two names a lookup reaches, not one name
+        spelled twice — the volume kept the spellings apart, and a tree copied with its links
+        preserved stands one at the derived name. Read off the inode alone the link answers as this
+        record, and the case-sensitive fail-open reopens over any such tree."""
+        held, sought = named_pair(tmp_path)
+        held.write_text("{}", encoding="utf-8")
+        os.link(held, sought)
+        assert held.lstat().st_ino == sought.lstat().st_ino
+        assert checker.one_file(held, sought) is False
+
+    @pytest.mark.parametrize("standing", ("a record of another round", "a link to this record"))
+    def test_c6_what_stands_at_the_derived_name_decides_the_binding(self, attack, capsys, standing):
+        """S6-C6: the same question through the whole check. Where `Ledger.md` and `ledger.md` are
+        two files, a record named `ledger-ac-attack.json` over `Ledger.md` binds only if the derived
+        name reaches this very record — and a second record or a link to this one answers to that
+        name without being it, closing a round that an agent asking about `ledger.md` reads as an
+        answer about its own document. Where the volume folds the two spellings the derived name is
+        this record, nothing else can be written there, and the round binds and closes (inverse)."""
+        path, document = round_named(attack, "Ledger.md", "ledger-ac-attack.json")
+        derived = Path(path).parent / "Ledger-ac-attack.json"
+        if folds(attack.root, "probe-name", "PROBE-NAME"):
+            code, result = run([path], capsys)
+            assert code == 0 and result["document"] == str(document)
+            return
+        if standing == "a link to this record":
+            os.link(path, derived)
+        else:
+            derived.write_bytes(Path(path).read_bytes())
+        code, result = run([path], capsys)
+        assert code == 2 and result["complete"] is False
+        assert codes(result) == {"record-name-mismatch"}
 
 
 class TestRevisionNotation:
@@ -1139,14 +1259,14 @@ class TestDocumentRefusal:
         carrying a fence marker of its own, which cannot be fenced without being rewritten. Held by
         running both over one file rather than by reading either: they deploy as separate scripts
         that cannot import each other, so each carries its own copy of the refusal, and
-        hand-maintained agreement between two files is what fails silently. Asked of the checker
-        where the document in front of it is the revision attacked, which is the scope its mirror
-        of the emitter's refusal binds in."""
+        hand-maintained agreement between two files is what fails silently. Each script decides
+        about the bytes in front of it and about nothing else, so the two are answerable to one
+        another over any document either is handed."""
         path = tmp_path / "ledger.md"
         path.write_bytes(content)
         emitted = refusal_code(lambda: emitter.read_document(str(path)), emitter.Refusal)
         checked = refusal_code(
-            lambda: checker.require_attackable_document(path, path.read_bytes(), attacked=True),
+            lambda: checker.require_attackable_document(path, path.read_bytes()),
             checker.RecordError,
         )
         assert emitted == checked, description
@@ -1168,22 +1288,28 @@ class TestDocumentRefusal:
         assert codes(result) == {refused}
         assert result["document"] == str(attack.document)
 
-    def test_c6_a_criterion_that_quotes_the_marker_closes_the_round_that_accepted_it(self, attack,
-                                                                                     capsys):
-        """S6-C6: the marker refusal mirrors the emitter's, and the emitter decides about the text
-        it is about to fence — so the mirror says something only where the document in front of the
-        check is the revision attacked. An acceptance moves the document on by construction, and a
-        criterion accepted into it may quote the marker; judged over that text the round that drove
-        the edit is refused, and refused for good, since the emitter will not attack that document
-        again and no edit short of rewording the criterion reconciles it. What the attacked revision
-        held is not recoverable from a hash, so the check says nothing about it rather than the
-        wrong thing. The same document with the round that attacked it in hand is refused as before
-        (inverse), which is the case the mirror is for."""
+    def test_c6_a_marker_in_the_document_closes_the_round_whatever_revision_the_record_names(
+            self, attack, capsys):
+        """S6-C6: the refusal is not asked under whether the document still hashes to the revision
+        attacked. That field is the record's own writing, so a fabricated revision — a hash naming
+        no content anywhere — switches the refusal off from inside the record, and the round below
+        is in every other way in order: its acceptance names the document as it stands, so nothing
+        else in the check has anything to say about it and it closes complete over a document the
+        emitter refuses to dispatch a single attacker at. The exemption would cover the forger on
+        the same terms as the round it was meant for, and it buys nothing: the emitter turns this
+        document away whatever revision it stands at, so a criterion that quotes the marker leaves
+        it unattackable until it is reworded, and refusing here is what says so."""
         carried = f"{REVISED}- A4 The exporter rejects a line reading {emitter.FENCE_OPEN}.\n"
         record = attack.record()
         record["dispositions"][0]["revision"] = attack.write_document(carried)
         code, result = check(attack, record, capsys)
-        assert code == 0 and result["revision"] == sha_revision(carried)
+        assert code == 2 and codes(result) == {"spec-contains-marker"}
+        assert result["document"] == str(attack.document)
+        forged = attack.record()
+        forged["spec_revision"] = "sha256:" + "0" * 64  # a revision naming no content anywhere
+        forged["dispositions"][0]["revision"] = sha_revision(carried)
+        code, result = check(attack, forged, capsys)
+        assert code == 2 and codes(result) == {"spec-contains-marker"}
         attacked = attack.empty_round()
         attacked["spec_revision"] = sha_revision(carried)
         code, result = check(attack, attacked, capsys)
@@ -1196,18 +1322,61 @@ class TestDocumentRefusal:
                                                                                   capsys,
                                                                                   description,
                                                                                   content):
-        """S6-C6: only the marker refusal narrows to the revision attacked. A document that states
-        nothing now, or that is not text now, carries no criterion for an accepted proposal to have
-        landed in — so the refusal costs a round nothing wherever it is judged, while dropping it in
-        an accepting round would close one over a document there is nothing left to attack. No
-        incorporation empties a document or takes its text out of UTF-8, which is what makes the
-        marker the one case an acceptance can legitimately produce."""
+        """S6-C6: an acceptance moves the document on, and the refusals are judged over the bytes
+        that move it on rather than over the revision attacked. A document that states nothing now,
+        or that is not text now, carries no criterion for an accepted proposal to have landed in, so
+        a round reading the acceptance as its excuse would close over a document there is nothing
+        left to attack — and every one of these refusals is one the emitter raises over the same
+        bytes, so the round it would close is one no further attacker can be dispatched at."""
         record = attack.record()
         attack.document.write_bytes(content)
         record["dispositions"][0]["revision"] = "sha256:" + hashlib.sha256(content).hexdigest()
         code, result = check(attack, record, capsys)
         assert code == 2 and codes(result) == {"no-spec"}, description
         assert result["document"] == str(attack.document)
+
+
+# Every shape of name either script decides about, a name written plainly at the head. Both hold
+# their own copy of what renders as nothing, so both have to read each of these the same way: both
+# take the name, or both refuse it with one code. Bare names only — a path reaching out of the
+# record's directory is the check's question alone, since --spec names a document wherever it is.
+NAMES = [
+    ("a name written plainly", "ledger.md"),
+    ("a name written in Japanese", "台帳エクスポート.md"),
+    ("a name carrying an accented character", "caf\u00e9-ledger.md"),
+    ("a name carrying an ordinary space", "ledger export.md"),
+    ("a name with a space after it", "ledger.md "),
+    ("a name with a space before it", " ledger.md"),
+    # Escaped, since a reader sees none of these on the page.
+    ("a name carrying a zero-width space in the extension", "ledger.md\u200b"),
+    ("a name carrying a byte-order mark", "ledger.md\ufeff"),
+    ("a name carrying a word joiner", "ledger.\u2060md"),
+    ("a name carrying a zero-width joiner", "ledger\u200d.md"),
+    ("a name carrying a tab", "ledger\t.md"),
+    ("a name carrying a zero-width space and a space after it", "ledger.md\u200b "),
+    ("a name carrying an unassigned codepoint", "ledger\u0378.md"),
+]
+
+
+class TestNameRefusal:
+    @pytest.mark.parametrize(("description", "name"), NAMES)
+    def test_c6_both_scripts_read_a_documents_name_the_same_way(self, tmp_path, description, name):
+        """S6-C6: the emitter decides which documents a round goes out over and the checker which a
+        record may close over, and a name is read on both sides — the record is named from it, so a
+        name one script takes and the other refuses is a round that costs every model in the panel
+        and closes nowhere, or a record closing over a document no attacker was dispatched at. Each
+        holds its own copy of which characters render as nothing and its own order of refusing, so
+        the two are held together by running both over one name rather than by reading either: they
+        deploy as separate scripts that cannot import each other, and hand-maintained agreement
+        between two files is what fails silently. A name outside ASCII is not thereby illegible, and
+        neither script refuses one."""
+        emitted = refusal_code(lambda: emitter.document_name(name), emitter.Refusal)
+        checked = refusal_code(
+            lambda: checker.require_record_binds_its_document(
+                tmp_path / (Path(name).stem + checker.RECORD_SUFFIX), {"spec_path": name}),
+            checker.RecordError,
+        )
+        assert emitted == checked, description
 
 
 class TestProposalShape:

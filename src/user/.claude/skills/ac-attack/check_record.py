@@ -8,7 +8,10 @@
 Usage: uv run check_record.py <record.json> [--spec <path>] [--implementation-started]
 
 Prints a JSON result to stdout. Exit 0 complete, 1 not complete, 2 unusable input.
-Read-only and deterministic: the same inputs always produce byte-identical output.
+Read-only, and deterministic over one tree: the same inputs always produce byte-identical output.
+The tree is one of those inputs, since whether two spellings of a name reach one file is the
+volume's answer and this reads it rather than deciding it — so the same bytes on a volume that
+matches names another way can be answered another way.
 """
 
 from __future__ import annotations
@@ -39,6 +42,13 @@ FENCE_CLOSE = "<<<END UNTRUSTED CONTENT>>>"
 # A byte-order mark at the head of a document and a zero-width no-break space anywhere else, and
 # `strip` removes neither. Escaped rather than written out, since no reader sees one on the page.
 BOM = "\ufeff"
+
+# What a character renders as is read off its Unicode category: a control, a format character such
+# as a zero-width space or a byte-order mark, a surrogate, a private-use or unassigned codepoint,
+# and the line and paragraph separators are the ones that render as nothing. Every letter, mark and
+# digit of every script is outside this set, so a document named in Japanese or with an accented
+# character is named legibly and passes.
+INVISIBLE = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})
 
 EXIT_COMPLETE = 0
 EXIT_INCOMPLETE = 1
@@ -75,6 +85,17 @@ def fold(name: str) -> str:
     character, so two names held apart by anything less are one prompt file once a round lands.
     """
     return unicodedata.normalize("NFC", name).casefold()
+
+
+def invisible(name: str) -> str | None:
+    """The first character of `name` that renders as nothing, or None where a reader sees them all.
+
+    `strip` decides what surrounds a name by `str.isspace`, which a zero-width space and a
+    byte-order mark are not — so a name carrying one passes for the name it renders as while
+    opening another file, and one written into the extension comes off with the extension when the
+    record's own name is derived from it.
+    """
+    return next((char for char in name if unicodedata.category(char) in INVISIBLE), None)
 
 
 def usable(value: Any) -> bool:
@@ -170,6 +191,15 @@ def one_file(path: Path, other: Path) -> bool:
     `lstat`, which reads the name itself: a link standing at one of them is that link and not the
     file it points at, so two names are one file here only where the directory reaches one file
     through both.
+
+    One file under two spellings of one name is one directory entry, so a file wearing a second one
+    is a file two names reach: the volume held the spellings apart and something was linked at the
+    derived name, which a tree copied with its links preserved is enough to do. A lookup for that
+    name then reaches this record's content without this record ever having been named for that
+    document, which is the whole of the fail-open the volume is asked about. All the count says is
+    that a second entry exists somewhere, so a record whose own file is linked elsewhere is refused
+    too where its name differs from the derived one — a rename, against a round closed over a
+    document nobody attacked. The emitter reads the same count over the paths it writes.
     """
     if path.name == other.name:
         return True
@@ -179,7 +209,9 @@ def one_file(path: Path, other: Path) -> bool:
         held, sought = path.lstat(), other.lstat()
     except OSError:  # nothing wears the derived name, so no lookup for it reaches this record
         return False
-    return (held.st_dev, held.st_ino) == (sought.st_dev, sought.st_ino)
+    if (held.st_dev, held.st_ino) != (sought.st_dev, sought.st_ino):
+        return False
+    return held.st_nlink == 1
 
 
 def require_record_binds_its_document(path: Path, record: dict) -> None:
@@ -199,12 +231,25 @@ def require_record_binds_its_document(path: Path, record: dict) -> None:
 
     Whether the derived name and the record's own are one name is the volume's to answer, since a
     reader reaches this record by looking that derived name up beside the document, and what the
-    lookup reaches is what the volume says it reaches. A name written with whitespace around it is
-    refused before any of that: the whitespace is nowhere a reader can see while the two spellings
-    open different files, and `ledger.md ` drops to the stem `ledger`, which derives the record name
-    the document `ledger.md` beside it already owns.
+    lookup reaches is what the volume says it reaches. A name a reader cannot read off the page is
+    refused before any of that: `ledger.md ` and `ledger.md` followed by a zero-width space each
+    drop to the stem `ledger`, which derives the record name the document `ledger.md` beside it
+    already owns, while opening a file that document is not.
+
+    Where the name is wrong in more than one way, the defect that survives repairing the others is
+    the one reported: a `spec_path` reaching out of the record's own directory still names a
+    document this record was not committed beside once every invisible character is out of it, so
+    that is answered first and the reader is not sent round the same refusal twice.
     """
     name = record["spec_path"]
+    if name != Path(name).name or name in ("", ".", ".."):
+        raise RecordError(
+            "spec-not-a-bare-filename",
+            f"the record names its document {name!r}, which is not a bare filename; the record is "
+            "committed beside the document it attacked, so name that document's basename — a "
+            "path leading out of the record's own directory names a document no attacker in this "
+            "round read",
+        )
     if name != name.strip():
         raise RecordError(
             "untrimmed-spec-path",
@@ -214,13 +259,16 @@ def require_record_binds_its_document(path: Path, record: dict) -> None:
             "record stands under the trimmed document's name while closing a round over a file "
             "that document is not",
         )
-    if name != Path(name).name or name in ("", ".", ".."):
+    hidden = invisible(name)
+    if hidden is not None:
         raise RecordError(
-            "spec-not-a-bare-filename",
-            f"the record names its document {name!r}, which is not a bare filename; the record is "
-            "committed beside the document it attacked, so name that document's basename — a "
-            "path leading out of the record's own directory names a document no attacker in this "
-            "round read",
+            "invisible-spec-path",
+            f"the record names its document {name!r}, which carries U+{ord(hidden):04X}, a "
+            "character that renders as nothing and that `strip` leaves standing; the name a reader "
+            "sees on the page and the file that spelling opens are two documents then, and one "
+            "standing in the extension comes off with it when the record's own name is derived — "
+            "so this record stands under the legible document's name while closing a round over a "
+            "file that document is not",
         )
     expected = Path(name).stem + RECORD_SUFFIX
     if not one_file(path, path.parent / expected):
@@ -275,7 +323,7 @@ def read_document(record_path: Path, record: dict, override: str | None) -> tupl
         ) from exc
 
 
-def require_attackable_document(path: Path, document: bytes, *, attacked: bool) -> None:
+def require_attackable_document(path: Path, document: bytes) -> None:
     """Refuse a document the emitter would not have emitted a round over.
 
     Every refusal here is one of the emitter's, and the emitter's is where a document like this one
@@ -287,18 +335,16 @@ def require_attackable_document(path: Path, document: bytes, *, attacked: bool) 
     Emptiness is decided over that text for the same reason: a document of nothing but a
     non-breaking space is whitespace to the emitter, and a comparison of bytes would pass it. A
     byte-order mark comes out before that test, since `strip` leaves it standing and a document of
-    nothing else states nothing. Neither depends on which revision is on disk: a document that
-    states nothing now carries no criterion for an acceptance to land in, whatever the round did,
-    and no incorporation empties a document or takes its text out of UTF-8.
+    nothing else states nothing.
 
-    The marker refusal is the one that does, so `attacked` — the document on disk being the revision
-    this round attacked — is what it is asked under. A document carrying an untrusted-content marker
-    of its own cannot be fenced without being altered, so the emitter refuses it rather than attack
-    text the recorded revision does not name; where the bytes in hand are the ones attacked, that
-    says no attacker read them. Where an acceptance moved the document on, they are not, and a
-    criterion accepted into it may quote the marker the emitter refuses — the revision attacked is a
-    hash, so what it named cannot be recovered to be held to the same test, and refusing here would
-    close no round over that document ever again, over text every attacker in it read without.
+    None of the three is asked under whether the document still hashes to the revision attacked.
+    `spec_revision` is written by the record's author, so a revision naming no content anywhere
+    switches off any refusal conditioned on it — the exemption meant for a document an acceptance
+    moved on covers a hand-written record on identical terms, and the round closes over text no
+    attacker read. Refusing outright costs a legitimate round nothing it has not already lost: the
+    emitter turns away a document carrying a marker of its own whatever revision it stands at, so
+    no further round can be emitted over that document either, and a criterion accepted into it
+    that quotes the marker leaves the document unattackable until it is reworded.
     """
     try:
         text = document.decode("utf-8")
@@ -316,7 +362,7 @@ def require_attackable_document(path: Path, document: bytes, *, attacked: bool) 
             "document like this one, so no round in hand read it, and an empty round proves "
             "nothing — attack the document once it states the criteria it is meant to state",
         )
-    if attacked and (FENCE_OPEN in text or FENCE_CLOSE in text):
+    if FENCE_OPEN in text or FENCE_CLOSE in text:
         raise RecordError(
             "spec-contains-marker",
             f"the attacked document {path} carries an untrusted-content marker of its own; the "
@@ -701,12 +747,8 @@ def main(argv: list[str]) -> int:
         # The revision goes out in the record's own notation: the reader holds it against
         # spec_revision as a string, and the other notation for it would read as another document.
         read = {"document": str(path), "revision": revisions[notation_of(record["spec_revision"])]}
-        # After `read`, so the refusal names the file. The document is the revision attacked when it
-        # hashes to it, which is what the emitter's refusal is mirrored under — decided here from
-        # the bytes in hand rather than from the dispositions, since a round whose acceptance never
-        # landed reads as accepting while the document in front of the check is the one attacked.
-        require_attackable_document(path, document,
-                                    attacked=record["spec_revision"] in set(revisions.values()))
+        # After `read`, so the refusal names the file it was decided over.
+        require_attackable_document(path, document)
         errors = check(record, revisions)
     except RecordError as exc:
         return report([exc.as_dict()], started, EXIT_UNUSABLE, read=read)

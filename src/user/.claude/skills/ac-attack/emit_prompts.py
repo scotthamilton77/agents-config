@@ -36,6 +36,13 @@ FENCE_CLOSE = "<<<END UNTRUSTED CONTENT>>>"
 # `strip` removes neither. Escaped rather than written out, since no reader sees one on the page.
 BOM = "\ufeff"
 
+# What a character renders as is read off its Unicode category: a control, a format character such
+# as a zero-width space or a byte-order mark, a surrogate, a private-use or unassigned codepoint,
+# and the line and paragraph separators are the ones that render as nothing. Every letter, mark and
+# digit of every script is outside this set, so a document named in Japanese or with an accented
+# character is named legibly and is attacked.
+INVISIBLE = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})
+
 EXHAUSTIVENESS = (
     "Report every hole of this lens findable this round; a withheld proposal is a defect in the "
     "attack. Be exhaustive in depth within this lens and never step outside it: another attacker "
@@ -88,6 +95,17 @@ def fold(name: str) -> str:
     names held apart here are one file once the prompts land.
     """
     return unicodedata.normalize("NFC", name).casefold()
+
+
+def invisible(name: str) -> str | None:
+    """The first character of `name` that renders as nothing, or None where a reader sees them all.
+
+    `strip` decides what surrounds a name by `str.isspace`, which a zero-width space and a
+    byte-order mark are not — so a name carrying one passes for the name it renders as while
+    opening another file. Anywhere in the name, not only at its edges: one written into the
+    extension comes off with the extension when the round's record is named from the stem.
+    """
+    return next((char for char in name if unicodedata.category(char) in INVISIBLE), None)
 
 
 def usable(value: Any) -> bool:
@@ -181,6 +199,42 @@ def read_document(path: str | None) -> tuple[str, str]:
     return text, "sha256:" + hashlib.sha256(data).hexdigest()
 
 
+def document_name(spec: str) -> str:
+    """The basename the round records, refused unless a reader can spell it back.
+
+    The record this round leads to is committed beside the document and named from this basename,
+    so a name whose spelling on the page is not the spelling that opens the file is one the check
+    that closes a round refuses on sight: `ledger.md ` derives the record name the document
+    `ledger.md` beside it already owns, and a character rendering as nothing inside the extension
+    comes off with it. Both are refused before an attacker goes out, since the alternative is a
+    round that ran, cost every model in the panel, and closes nowhere. Renaming the document is
+    the whole of the fix. The two are asked in the order the check asks them, so a name carrying
+    both is diagnosed the same way on either side.
+    """
+    name = Path(spec).name
+    if name != name.strip():
+        raise Refusal(
+            "untrimmed-spec-path",
+            f"the --spec document is named {name!r}, which carries surrounding whitespace; the "
+            "name a reader sees on the page and the file that spelling opens are two documents "
+            "then, and this round's record is named from it with the whitespace dropped — so an "
+            "attack costing every model in the panel would come back to a record standing under "
+            "another document's name, which nothing can close; rename the document first",
+        )
+    hidden = invisible(name)
+    if hidden is not None:
+        raise Refusal(
+            "invisible-spec-path",
+            f"the --spec document is named {name!r}, which carries U+{ord(hidden):04X}, a "
+            "character that renders as nothing and that `strip` leaves standing; the name a "
+            "reader sees on the page and the file that spelling opens are two documents then, and "
+            "one standing in the extension comes off with it when this round's record is named — "
+            "so an attack costing every model in the panel would come back to a record nothing "
+            "can close; rename the document first",
+        )
+    return name
+
+
 def prepare_out_dir(path: str | None) -> Path:
     """Return the directory the round writes into, created owner-only when it is the round's own.
 
@@ -269,27 +323,35 @@ def refuse_if_spec_is_an_output(spec: str, outputs: list[Path]) -> None:
             )
 
 
-def refuse_unless_only_this_rounds(out_dir: Path, outputs: list[Path]) -> None:
-    """Refuse an output directory holding anything this round does not write itself.
+def refuse_unless_every_prompt_is_this_rounds(out_dir: Path, prompts: list[Path]) -> None:
+    """Refuse an output directory holding a prompt this round does not write itself.
 
     Re-emitting into a directory a round already used is ordinary, and whatever the previous round
     left at a name this one writes is replaced. What it left at any other name stays: a prompt for
     a lens since retired, or one carrying a document this round is not attacking. Those are what a
-    caller dispatching the files the directory holds — rather than the lenses the round file names
-    — sends, and the report the stale attacker returns is written into this round's record. Lens
-    coverage downstream is containment, so a record reporting a lens the round never declared reads
-    as surplus coverage rather than as an attack on other text, and the round closes over it.
+    caller dispatching the files the directory holds — rather than the lenses the round file names,
+    which is what it is told to dispatch — sends, and the report the stale attacker returns is
+    written into this round's record. Lens coverage downstream is containment, so a record
+    reporting a lens the round never declared reads as surplus coverage rather than as an attack on
+    other text, and the round closes over it. This is the backstop for the caller who dispatches
+    the directory anyway, not the mechanism.
+
+    Only what such a caller sends is refused, which is what its glob matches: the prompts are
+    `<lens>.md`, so a Markdown name is dispatchable and nothing else in the directory is. A saved
+    report, an editor's swapfile, the file a file browser drops on a directory it opened — none of
+    them ever reach a model, and a round refusing them would refuse the re-emission it is written
+    to allow. One Markdown file is what it cannot tell from another, so notes kept here under a
+    `.md` name are refused with the stale prompts; keep them under any other name.
 
     Nothing is deleted. A name this round does not write is not this round's to remove, and what
     else a directory holds cannot be known from here; refusing costs the invoker a directory to
-    name and leaves what is there for whoever put it there. Nor is the account narrowed to prompts:
-    which files a caller treats as one is exactly what the round cannot know, so what it can
-    account for is what it writes.
+    name and leaves what is there for whoever put it there. Every unaccounted name goes into the
+    one refusal, since a directory holding several would otherwise cost a run apiece to learn of.
 
     Sameness is asked of the filesystem rather than decided on the names, because the write obeys
     the filesystem: where the volume folds case, `CRITERIA-HOLES.md` is the file the write to
-    `criteria-holes.md` replaces, and where it does not, it is a second file this round leaves
-    standing.
+    `criteria-holes.md` replaces — this round's own prompt, under the spelling already there — and
+    where it does not, it is a second file this round leaves standing.
     """
     try:
         entries = sorted(out_dir.iterdir())
@@ -300,24 +362,31 @@ def refuse_unless_only_this_rounds(out_dir: Path, outputs: list[Path]) -> None:
             "round cannot account for a directory it cannot list",
         ) from exc
     standing = []
-    for path in outputs:
+    for path in prompts:
         try:
             standing.append(os.lstat(path))
         except OSError:  # nothing wears the name, so nothing there is this round's yet
             continue
+    unaccounted = []
     for entry in entries:
+        if entry.suffix.casefold() != ".md":  # nothing dispatches it, so it is not this round's
+            continue
         try:
             info = os.lstat(entry)
         except OSError:  # gone since the directory was listed, so not there to be dispatched
             continue
-        if any(os.path.samestat(info, other) for other in standing):
-            continue
+        if not any(os.path.samestat(info, other) for other in standing):
+            unaccounted.append(entry.name)
+    if unaccounted:
+        # Quoted, since a name whose edges are spaces prints as one a reader would call clean.
+        held = ", ".join(repr(name) for name in unaccounted)
         raise Refusal(
             "unsafe-output-path",
-            f"the output directory {out_dir} holds {entry.name}, which this round does not write; "
-            "dispatched alongside the prompts it does write, that file attacks a document this "
-            "round is not attacking, and the report it returns is recorded as coverage of this "
-            "one — name a directory of this round's own, or clear this one first",
+            f"the output directory {out_dir} holds {held}, which this round does not write; "
+            "dispatched alongside the prompts it does write, such a file attacks a "
+            "document this round is not attacking, and the report it returns is recorded as "
+            "coverage of this one — give this round an --out-dir of its own, or move what is "
+            "already there somewhere no round will dispatch it",
         )
 
 
@@ -385,11 +454,12 @@ def render_prompt(lens: dict, ctx: dict) -> str:
 
 def emit(args: argparse.Namespace) -> dict[str, Any]:
     document, revision = read_document(args.spec)
-    lenses = load_lenses()
-    out_dir = prepare_out_dir(args.out_dir)
     # The record is committed beside the document and resolves this against its own directory, so
     # the basename is what finds it there — and no local layout travels to a third-party model.
-    spec_name = Path(args.spec).name
+    # Asked before the output directory exists, so a name no record could close costs nothing.
+    spec_name = document_name(args.spec)
+    lenses = load_lenses()
+    out_dir = prepare_out_dir(args.out_dir)
     ctx = {"spec_path": spec_name, "spec_revision": revision, "document": document}
     prompts = [out_dir / f"{lens['lens']}.md" for lens in lenses]
     round_path = out_dir / "round.json"
@@ -397,7 +467,7 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
     refuse_if_spec_is_an_output(args.spec, outputs)
     for path in outputs:
         refuse_unless_plain(path)
-    refuse_unless_only_this_rounds(out_dir, outputs)
+    refuse_unless_every_prompt_is_this_rounds(out_dir, prompts)
     # Everything that can fail is done before anything lands: rendering part of a round writes
     # prompts for this document beside the previous round's file, and an agent reading the
     # directory rather than the exit status then attacks against a revision nothing there names.

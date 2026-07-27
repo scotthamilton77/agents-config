@@ -45,8 +45,9 @@ uv run emit_prompts.py --spec /path/to/document.md --out-dir /tmp/attack-documen
 
 One `<lens>.md` prompt lands per lens, plus `round.json` recording the document, the revision
 attacked, and each lens with its tier and transport. Dispatch the lenses `round.json` names, not
-the files the directory holds: one reused across rounds keeps prompts this round did not write,
-and for a document it is not attacking.
+the files the directory holds — the round file is what says which prompts are this round's. A
+round refuses an out-dir holding a Markdown file it does not write, which catches the
+reused directory for the caller who dispatches it anyway, and catches only Markdown.
 
 Stdout is `{"emitted": true, "prompts": […], "round": …}` — the lens prompts, then the round
 file, which is metadata and not one of them. A refusal is
@@ -83,7 +84,7 @@ can return, and what each one means, is in `errors.md`.
 system this document describes has been claimed. Revising the document is not that. The checker
 reads the record, the document, that declaration, and its own lens registry — read live, so a
 record is judged against the lens set in force now: adding a lens reopens rounds that never faced
-it, while retiring one leaves the rounds it ran in closed, holding coverage they did obtain. It consults no tracker, writes nothing, and answers the same way every time.
+it, while retiring one leaves the rounds it ran in closed, holding coverage they did obtain. It consults no tracker and writes nothing, and over one tree it answers the same way every time — the volume's own answer about whether two spellings are one name is part of what it reads, so a tree copied onto a volume that folds differently is different input.
 
 The record **attests** that the round happened as written; the checker does not verify that it did.
 It can see the document is at the revision an acceptance names, never that the criterion is in it —
