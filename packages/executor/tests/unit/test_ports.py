@@ -564,21 +564,43 @@ def test_a_failed_read_never_claims_an_event_was_written() -> None:
     assert EVENT_WAS_WRITTEN not in raised.value.data
 
 
-def test_a_failed_exit_with_no_proof_of_a_write_carries_no_marker() -> None:
+def test_a_readable_failure_envelope_is_no_proof_that_nothing_was_written() -> None:
     """
-    Given a runtime call that failed without proving anything applied
-    When the port calls it
-    Then no written-event marker rides the failure.
+    Given an appending call that failed with a well-formed error envelope
+    When the port appends
+    Then the failure still records that the event may have been written.
 
-    The inverse: the marker is evidence, so it must not be attached on the
-    strength of a call merely having been attempted.
+    The runtime appends the event *before* it folds, persists and renders, and
+    its catch-all turns a failure in any of those into exactly this envelope —
+    with the event already durable in the log. A readable failure proves only
+    that something went wrong, never that nothing happened.
     """
-    runner = ScriptedRunner({_LOG: _ok({"ok": False, "error": {"message": "nope"}}, 1)})
+    runner = ScriptedRunner({_LOG: _ok({"ok": False, "error": {"message": "internal error"}}, 1)})
 
     with pytest.raises(ExecutorError) as raised:
         GrindRuntime(runner).append("item_started", {"item": "it-1"})
 
-    assert EVENT_WAS_WRITTEN not in raised.value.data
+    assert raised.value.data.get(EVENT_WAS_WRITTEN) is True
+
+
+def test_a_partially_applied_facade_failure_still_owes_its_sync() -> None:
+    """
+    Given a mutating facade call that failed with a well-formed error envelope
+    When the port calls it
+    Then the failure records that a write may have landed.
+
+    `work park` writes status, label and note in sequence, so a failure in a
+    later step leaves an earlier write applied and still reports `ok: false`.
+    An unmarked mutation is a write stranded unsynced on the local plane.
+    """
+    runner = ScriptedRunner(
+        {("work", "park"): _ok({"ok": False, "error": {"message": "label failed"}}, 1)}
+    )
+
+    with pytest.raises(ExecutorError) as raised:
+        WorkTracker(runner).park("w-1", reason="ci-failure", note="red")
+
+    assert raised.value.data.get(TRACKER_WRITE_LANDED) is True
 
 
 def test_a_failed_tracker_call_is_a_retryable_transport_failure() -> None:

@@ -235,8 +235,17 @@ unusable one as "no disagreement" re-opens the divergence outright.
   is skipped and a real write is stranded.
   When it is unknown whether the effect happened, **mark it** — syncing an
   idempotent replay is harmless, stranding a write is not. Mark it *un*happened
-  only where something proves that: a `park` reason mismatch proves the
-  facade's replay branch ran, and that branch mints nothing.
+  only where something proves that, and **a well-formed `ok: false` is not
+  proof**: the runtime appends before it folds, persists and renders, so its
+  catch-all reports a failure over an event already on disk; the facade's park
+  writes status, label and note in sequence, so a later step failing leaves an
+  earlier write applied. Both report a readable error envelope. The two things
+  that *do* prove it are never having launched, and a `park` reason mismatch —
+  the differing reason itself proves the facade's replay branch ran, and that
+  branch mints nothing.
+  In an *error* envelope, therefore, `event_appended: true` means **may have
+  been written — treat the log as authoritative**. Over-claiming costs a log
+  check; under-claiming costs a duplicate append or a stranded write.
   **A reply that cannot be read at all is the strongest "unknown" there is** —
   a timeout can land mid-write, a wrapper can truncate the output of a call
   that finished — so the marker attaches at the decode boundary too, not only

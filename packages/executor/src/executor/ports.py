@@ -262,15 +262,15 @@ class GrindRuntime:
         )
         failed = not _is_ok_envelope(decoded) or (result.exit_code != 0 and not verdict_exit)
         if failed:
-            # The runtime appends before it replies, so an `ok: true` reply
-            # from an appending verb means the event is on disk whatever
-            # happened next -- a wrapper dying, an unreadable `applied`. The
-            # failure stands; losing the write would have the report
-            # contradict the event log, which is what the marker exists for.
+            # The runtime appends the event before it folds, persists and
+            # renders, and its catch-all turns a failure in any of those into a
+            # well-formed `ok: false` -- with the event already on disk. So a
+            # readable failure envelope is no proof that nothing was written;
+            # only never having launched is. The failure stands either way.
             raise ExecutorError(
                 ErrorCode.RUNTIME_SUBPROCESS,
                 _envelope_message(decoded, result.transcript(argv)),
-                {EVENT_WAS_WRITTEN: True} if appends and _is_ok_envelope(decoded) else {},
+                {EVENT_WAS_WRITTEN: True} if appends and result.launched else {},
             )
         assert isinstance(decoded, dict)  # noqa: S101  # proven by _is_ok_envelope above
         return decoded
@@ -355,11 +355,14 @@ class WorkTracker:
             # An `ok: true` envelope means the facade finished its work; a
             # non-zero exit after that is the process failing around a write
             # that landed. Losing that would strand the write unsynced.
-            landed = mutates and _is_ok_envelope(decoded)
+            # Same on this side, and more consequential: the facade's park
+            # writes status, label and note in sequence, so a failure in a
+            # later step leaves an earlier write applied and still reports
+            # `ok: false`. An unmarked mutation is a write stranded unsynced.
             raise ExecutorError(
                 code,
                 _envelope_message(decoded, result.transcript(argv)),
-                {TRACKER_WRITE_LANDED: True} if landed else {},
+                {TRACKER_WRITE_LANDED: True} if mutates and result.launched else {},
             )
         return decoded
 
