@@ -284,6 +284,17 @@ def classify_worktree(
     reasons: list[str] = [
         f"holds {worktree.branch} at {short}" if worktree.branch else f"detached HEAD at {short}"
     ]
+    if worktree.branch is None and worktree.last_activity:
+        # Said out loud because the number is not what its name suggests. A
+        # detached checkout has no branch to date it from, so the date is the
+        # commit's -- and a worktree created a minute ago at a two-year-old tag
+        # reads as two years idle. Nothing decides anything on it any more, but
+        # a reader who saw only the date would draw the conclusion the old
+        # lifecycle verdict used to draw for them.
+        reasons.append(
+            f"dated {worktree.last_activity[:10]} from the commit it holds, "
+            f"which is not when this checkout was made or last touched"
+        )
     if worktree.is_main:
         reasons.append("the repository's main worktree")
     if worktree.locked:

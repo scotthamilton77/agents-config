@@ -297,6 +297,39 @@ def test_a_detached_worktree_holding_an_orphan_commit_is_never_swept() -> None:
     assert "detached HEAD" in " ".join(target.reasons)
 
 
+def test_a_detached_worktree_says_its_date_came_from_the_commit() -> None:
+    """A detached checkout has no branch to date it from, so the date on its
+    row is the commit's. A worktree made this morning at a two-year-old tag
+    therefore reads as two years idle.
+
+    Nothing decides anything on that number now -- the lifecycle verdict that
+    used to call it abandoned is gone -- but a reader who saw only the date
+    would draw the same conclusion by hand, so the row says what was
+    measured."""
+    survey = make_survey(
+        branches=(make_branch("main", head="a" * 40, is_default=True),),
+        worktrees=(
+            make_worktree(
+                "/repo/wt", head="0" * 40, branch=None, last_activity="2024-01-01T00:00:00+00:00"
+            ),
+        ),
+    )
+    reasons = " ".join(next(t for t in classify(survey) if t.id == "worktree:/repo/wt").reasons)
+    assert "dated 2024-01-01 from the commit it holds" in reasons
+    assert "not when this checkout was made" in reasons
+
+
+def test_a_worktree_on_a_branch_does_not_disclaim_its_date() -> None:
+    """The disclaimer is for the case that earns it. A worktree holding a
+    branch is dated from that branch, which is what the field claims."""
+    survey = make_survey(
+        branches=(make_branch("main", head="a" * 40, is_default=True),),
+        worktrees=(make_worktree("/repo/wt", head="0" * 40, branch="feat/thing"),),
+    )
+    reasons = " ".join(next(t for t in classify(survey) if t.id == "worktree:/repo/wt").reasons)
+    assert "from the commit it holds" not in reasons
+
+
 def test_a_detached_worktree_on_a_merged_commit_is_swept() -> None:
     """The unification cuts both ways: a detached checkout of a commit some
     merged branch also names is proven merged like anything else."""
