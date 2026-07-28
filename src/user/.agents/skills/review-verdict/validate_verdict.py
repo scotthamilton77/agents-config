@@ -80,9 +80,35 @@ def _duplicate_id_errors(document: Any) -> list[dict[str, str]]:
     return errors
 
 
+def _duplicate_lens_errors(document: Any) -> list[dict[str, str]]:
+    """One entry per lens, always. A re-dispatched lens reports once, not once per attempt."""
+    if not isinstance(document, dict):
+        return []
+    lenses = document.get("lenses")
+    if not isinstance(lenses, list):
+        return []
+    seen: set[str] = set()
+    errors: list[dict[str, str]] = []
+    for index, entry in enumerate(lenses):
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("lens")
+        if not isinstance(name, str):
+            continue
+        if name in seen:
+            errors.append({
+                "code": "duplicate-lens",
+                "path": f"/lenses/{index}/lens",
+                "message": f"lens {name!r} reports more than once; a lens has exactly one entry",
+            })
+        seen.add(name)
+    return errors
+
+
 def validate_document(document: Any) -> dict[str, Any]:
     """Validate an already-parsed document. Deterministic for identical input."""
-    errors = _schema_errors(document) + _duplicate_id_errors(document)
+    errors = (_schema_errors(document) + _duplicate_id_errors(document)
+              + _duplicate_lens_errors(document))
     if not errors:
         return {"valid": True}
     errors.sort(key=lambda err: (err["path"], err["code"], err["message"]))

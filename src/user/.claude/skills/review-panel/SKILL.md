@@ -30,7 +30,9 @@ carry a `skill` field naming a skill the reviewer must apply; the mandate then o
 lens, and the named skill supplies the depth.
 
 Each panel mixes model tiers — hard-reasoning lenses on frontier models, mechanical walks on
-mid-tier — and spans two vendors, because blind spots correlate inside a vendor.
+mid-tier — and spans two vendors, because blind spots correlate inside a vendor. A lens's declared
+`transport` is that diversity claim, not a routing guarantee: when it is down the lens runs on
+whatever is up, and the verdict records what actually ran it (`harvest.md`).
 
 Most lenses re-read the whole artifact every round. A lens marked `diff` reviews only the change
 since the head it last judged, and only when it returned green that round; anything judging
@@ -100,11 +102,14 @@ text does either.
 
 Collect one report per lens, then build the envelope the review-verdict skill defines: `lenses`
 gets one entry per lens the class declares, green ones included, so coverage is read off the
-artifact and never inferred from an empty findings list. A lens whose reviewer errored or returned
-unparseable output has no entry, and the round is incomplete — fail closed.
+artifact and never inferred from an empty findings list. Each entry records the vendor, transport
+and model that *actually* produced the report, never the route `contracts.json` declared for it.
 `findings` is the union across lenses; `prior_dispositions` is the ledger from `round.json`.
 Terminal-clean means a complete round with zero mechanical findings across every lens.
 
-Non-codex lenses run through the `openrouter-claude-subagent` skill. When that transport is
-unavailable, run every lens serially through the codex command-line tool instead, and note in the
-round that the panel lost its vendor diversity.
+A lens whose reviewer errored, timed out, or returned output no tolerant read can parse may be
+re-dispatched inside the same round, on a substitute route when its own is down; its single entry
+then carries the substitution and the reason. Still without a report, it has no entry and the
+round is incomplete — fail closed. `harvest.md` holds the rest: how tolerantly to read a report,
+what to do with a mechanical finding carrying no evidence, and the vendor-collapse count to make
+before the verdict is written.
