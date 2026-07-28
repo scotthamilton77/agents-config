@@ -1,31 +1,59 @@
 # .installignore — source files excluded from the install fileset.
 #
-# Consumed by BOTH installers (scripts/install.sh and packages/installer) at the
-# staging step, on the DIRECT CHILDREN of each staged namespace subdir, BEFORE
-# any .template suffix is stripped.
+# Consumed by the Python installer (packages/installer) at the staging step.
+# scripts/install.sh is a thin exec stub that delegates to the Python
+# installer and never reads this file itself — there is no bash grammar to
+# keep in parity with.
 #
-# Grammar (simple subset; identical in bash and Python): one entry per line;
-# '#' comment lines and blank lines are ignored; an exact basename matches a
-# FILE; a trailing-'/' name matches a DIRECTORY. No globs, no '**', no negation,
-# no anchoring.
+# Grammar: one pattern per line; '#' comment lines and blank lines are
+# ignored.
 #
-# The real tool-root instruction files are *.md.template and are NOT matched by
-# these bare basenames. Live leaker today: rules/AGENTS.md. The other entries are
-# class coverage (defensive; see the design spec's audit table).
-AGENTS.md
-CLAUDE.md
-GEMINI.md
-README.md
+# - A trailing '/' marks a DIRECTORY pattern (matched against directory names
+#   only); without it, the pattern is a FILE pattern (matched against file
+#   basenames only). Excluding a directory prunes its whole subtree — nothing
+#   beneath it needs its own entry.
+# - A leading '/' ANCHORS the pattern to the direct children of a staged
+#   namespace subdirectory (skills/, rules/, agents/, commands/, hooks/).
+#   Without a leading '/', the pattern matches at ANY depth, including inside
+#   a DIR item's own interior (e.g. a skill's nested scripts/ subdir) — depth
+#   an anchored pattern can never reach, since a skill directory stages as one
+#   DIR item and its contents are never walked against an anchored entry.
+# - '*', '?' and '[...]' make the pattern a glob, matched with
+#   fnmatch.fnmatchcase against a single path component (case-sensitive). A
+#   name with none of those characters matches exactly.
+# - A '/' anywhere other than the leading or trailing position is a parse
+#   error. No '**', no negation.
+#
+# Anchoring is explicit, not inferred from glob-ness: if unanchored were the
+# only mode, /README.md would reach arbitrary depth and a skill that later
+# ships references/README.md would silently stop deploying it.
+#
+# The real tool-root instruction files are *.md.template and are NOT matched
+# by these bare basenames. Live leaker today: rules/AGENTS.md. The other
+# anchored entries are class coverage (defensive; see the design spec's audit
+# table) except where noted.
+/AGENTS.md
+/CLAUDE.md
+/GEMINI.md
+/README.md
 # Defensive directory coverage. No rules-readmes/ directory exists today; when
 # one is added it will sit at a tool root (sibling of rules/), which is never
 # staged. This entry guards the hypothetical namespace-level child instead.
-rules-readmes/
+/rules-readmes/
 # Confirmed live leaker, not defensive coverage — but only because THIS ONE
-# sits at the depth this manifest reaches (ruff-postedit_test.sh is a direct
-# child of the hooks/ namespace dir). This is not class coverage for test
-# artifacts in general: a skill's own test suite lives inside a DIR item's
-# interior (e.g. skills/<name>/*_test.py, or deeper under
-# skills/<name>/scripts/) and this manifest never walks that far. Those are
-# excluded by a separate mechanism, the directory-copy filter in the Python
-# installer's sync path, which applies at every depth.
-ruff-postedit_test.sh
+# sits at the depth an anchored pattern reaches (ruff-postedit_test.sh is a
+# direct child of the hooks/ namespace dir).
+/ruff-postedit_test.sh
+# Dev-only artifacts that must never deploy, at ANY depth — including inside a
+# DIR item's own interior (a skill's scripts/ subdir, most visibly). The
+# Python patterns mirror the repo gate's suite discovery (*_test.py or
+# test_*.py) deliberately: a file the gate runs as a repo-side suite must not
+# be a file the installer ships. Widening one without the other lets a suite
+# be both executed here and deployed downstream.
+*_test.py
+test_*.py
+*_test.js
+*.pyc
+__pycache__/
+.pytest_cache/
+.ruff_cache/

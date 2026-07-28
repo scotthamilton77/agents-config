@@ -16,24 +16,32 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from installer.core.backup import back_up, new_timestamp, valid_timestamp
 from installer.core.consent import require_consent
 from installer.core.hashing import sha256_file
+from installer.core.installignore import InstallIgnore
 from installer.core.merge.strategies.json_union import merge_settings_bytes
 from installer.core.model import Counters, FileKind, InstallOutcome, Outcome
 from installer.core.paths import is_safe_relpath
 from installer.core.staging import classify_file
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
-    from pathlib import Path
+    from collections.abc import Callable, Iterable, Mapping
 
     from installer.core.io_port import IOPort
     from installer.core.model import StagingPlan
     from installer.plugins.base import PluginRoute
     from installer.tools.base import ToolAdapter
+
+# Shared empty-manifest default: sync_plan/_install_dir callers that don't
+# care about exclusion (most unit tests, and any future caller that hasn't
+# loaded a real .installignore) get "exclude nothing" rather than a mutable
+# default evaluated at import time (ruff B008) or the caller having to
+# construct one itself.
+_EMPTY_IGNORE = InstallIgnore()
 
 
 def _effective_content(content: bytes, old: bytes | None, *, kind: FileKind) -> bytes:
@@ -163,6 +171,7 @@ def sync_plan(
     auto_yes: bool = False,
     timestamp: str | None = None,
     outcomes: list[InstallOutcome] | None = None,
+    ignore: InstallIgnore = _EMPTY_IGNORE,
 ) -> Counters:
     """Walk a ``StagingPlan`` and install every item under the adapter's dest root.
 
@@ -193,6 +202,13 @@ def sync_plan(
     per-item prompt, so it hard-fails before any write rather than silently
     overwriting. ``auto_yes`` auto-accepts every changed-item prompt (still backing
     up first); ``dry_run`` previews without prompting.
+
+    ``ignore`` (defaults to an empty manifest — exclude nothing) is forwarded to
+    every DIR item's materialisation: a DIR item's source tree is staged as one
+    opaque unit (its interior is never walked against ``.installignore`` at the
+    staging step), so `_install_dir` re-applies ``ignore`` at every depth of that
+    tree — the only place a nested exclusion (e.g. a skill's own test suite) is
+    enforced.
     """
     require_consent(io, dry_run=dry_run, auto_yes=auto_yes)
     counters = Counters()
@@ -207,6 +223,7 @@ def sync_plan(
                 dest,
                 item.source_path,
                 plan.dir_overrides.get(item.dest_relpath, {}),
+                ignore=ignore,
                 io=io,
                 dry_run=dry_run,
                 auto_yes=auto_yes,
@@ -380,60 +397,76 @@ def _install_file(
         )
 
 
-# Dev-only artifacts that must never reach an install even though they live
-# inside a DIR item's own source tree (a skill directory, most visibly):
-# repo-side test suites at any depth under the item (e.g. a skill's
-# ``scripts/`` subdir) and Python/pytest/ruff caches. ``.installignore``
-# only reaches the DIRECT CHILDREN of a staged namespace dir (see its header);
-# a skill directory is staged as a single DIR item and its interior is never
-# walked against that manifest, so this is the one place nested content is
-# filtered before ``shutil.copytree`` would otherwise copy it byte-for-byte.
-#
-# The Python patterns mirror the repo gate's suite discovery (``*_test.py`` or
-# ``test_*.py``) deliberately: a file the gate runs as a repo-side suite must
-# not be a file the installer ships. Widening one without the other lets a
-# suite be both executed here and deployed downstream.
-_DEV_ARTIFACT_DIRNAMES = frozenset({"__pycache__", ".pytest_cache", ".ruff_cache"})
-_DEV_ARTIFACT_SUFFIXES = ("_test.py", "_test.js", ".pyc")
+# A DIR item's source tree is staged as a single opaque unit: ``.installignore``
+# only reaches the DIRECT CHILDREN of a staged namespace dir (an anchored
+# pattern's whole scope), so a skill directory's interior — its own test suite,
+# nested a level or more under e.g. ``scripts/`` — is never walked against an
+# anchored entry at the staging step. An unanchored ``.installignore`` pattern
+# (no leading ``/``) is the one exclusion vocabulary that reaches that interior,
+# applied here at copy time (`_copytree_ignore`) and at idempotency-check time
+# (`_dir_is_unchanged`), both against the SAME ``InstallIgnore`` the caller
+# loaded — this module defines no exclusion patterns of its own.
 
 
-def _is_dev_artifact_name(name: str) -> bool:
-    """Whether ``name`` (a bare basename, no path) is a dev-only artifact that
-    must not deploy: a cache directory, or a test suite named ``*_test.py``,
-    ``test_*.py`` or ``*_test.js``. The ``test_`` prefix counts only on ``.py``,
-    so a fixture like ``test_data.json`` a skill legitimately ships still
-    deploys."""
-    if name in _DEV_ARTIFACT_DIRNAMES or name.endswith(_DEV_ARTIFACT_SUFFIXES):
-        return True
-    return name.startswith("test_") and name.endswith(".py")
+def _copytree_ignore(ignore: InstallIgnore) -> Callable[[str, list[str]], set[str]]:
+    """Build a ``shutil.copytree`` ``ignore=`` callback from ``ignore``.
+
+    Called once per directory in the tree being copied, so it reaches every
+    depth, not just the DIR item's top; every candidate is a nested (non-root)
+    name, so only unanchored patterns are eligible (``at_root=False``).
+    ``copytree`` does not recurse into a directory this callback names, so an
+    excluded directory prunes its whole subtree for free — no separate
+    subtree-pruning logic is needed here.
+    """
+
+    def _callback(directory: str, names: list[str]) -> set[str]:
+        base = Path(directory)
+        return {
+            name
+            for name in names
+            if ignore.excludes(name, is_dir=(base / name).is_dir(), at_root=False)
+        }
+
+    return _callback
 
 
-def _ignore_dev_artifacts(directory: str, names: list[str]) -> set[str]:  # noqa: ARG001  # shutil.copytree ignore callback signature
-    """``shutil.copytree`` ``ignore=`` callback: called once per directory in the
-    tree being copied — so it reaches every depth, not just the DIR item's top —
-    dropping dev-only artifacts before they are copied. See
-    `_is_dev_artifact_name`."""
-    return {name for name in names if _is_dev_artifact_name(name)}
+def _nested_path_is_excluded(rel: Path, ignore: InstallIgnore) -> bool:
+    """Whether any component of ``rel`` (a DIR item-relative file path) would be
+    pruned by ``ignore`` at nested (non-anchored) scope.
+
+    Mirrors what `_copytree_ignore` prunes during the real copy: every path
+    component up to (not including) the file itself is tested as a directory
+    name, the file's own basename as a file name. Needed because
+    ``Path.rglob`` — unlike ``copytree`` — does not stop descending into a
+    directory a caller has decided to exclude, so `_dir_is_unchanged`'s
+    expected-file walk must re-derive the same pruning from scratch.
+    """
+    parts = rel.parts
+    last = len(parts) - 1
+    return any(
+        ignore.excludes(part, is_dir=(i != last), at_root=False) for i, part in enumerate(parts)
+    )
 
 
-def _dir_is_unchanged(dest: Path, source_path: Path, overrides: Mapping[Path, bytes]) -> bool:
+def _dir_is_unchanged(
+    dest: Path, source_path: Path, overrides: Mapping[Path, bytes], ignore: InstallIgnore
+) -> bool:
     """Whether re-materialising ``dest`` from ``source_path`` + ``overrides`` would
     leave its contents byte-identical — the directory idempotency check.
 
     The expected file map is the source tree with ``overrides`` overlaid (override
     wins on a name collision — dump-time semantics), compared against the actual
-    dest tree. Dev-only artifacts (`_is_dev_artifact_name`) are excluded from the
-    expected map at every depth, matching what `_install_dir`'s filtered
-    ``copytree`` actually places at dest — without this, a skill carrying a test
-    file would never compare equal and every re-install would back up and
-    re-copy for no real change. Bytes are read through symlinks to match
-    ``copytree``'s dereferencing; only files participate, so empty dirs are
-    ignored — matching the golden-master differ."""
+    dest tree. Files ``ignore`` excludes at nested scope (`_nested_path_is_excluded`)
+    are dropped from the expected map at every depth, matching what
+    `_install_dir`'s filtered ``copytree`` actually places at dest — without
+    this, a skill carrying a test file would never compare equal and every
+    re-install would back up and re-copy for no real change. Bytes are read
+    through symlinks to match ``copytree``'s dereferencing; only files
+    participate, so empty dirs are ignored — matching the golden-master differ."""
     expected = {
         p.relative_to(source_path): p.read_bytes()
         for p in source_path.rglob("*")
-        if p.is_file()
-        and not any(_is_dev_artifact_name(part) for part in p.relative_to(source_path).parts)
+        if p.is_file() and not _nested_path_is_excluded(p.relative_to(source_path), ignore)
     }
     expected.update(overrides)
     actual = {p.relative_to(dest): p.read_bytes() for p in dest.rglob("*") if p.is_file()}
@@ -445,6 +478,7 @@ def _install_dir(
     source_path: Path,
     overrides: Mapping[Path, bytes],
     *,
+    ignore: InstallIgnore,
     io: IOPort,
     dry_run: bool,
     auto_yes: bool,
@@ -473,10 +507,10 @@ def _install_dir(
     so a ``dry_run`` surfaces the same error a real run would and an unsafe
     override never lands after a backup/replace has begun. Symlinks in the source
     tree are dereferenced by ``copytree`` (its default) — a behavioural choice
-    flagged for the golden-master parity pass. The copy filters dev-only
-    artifacts at every depth (`_ignore_dev_artifacts`) — a DIR item's source
-    tree is not otherwise checked against ``.installignore`` past its top
-    (that manifest matches only a namespace dir's direct children), so an
+    flagged for the golden-master parity pass. The copy filters every unanchored
+    ``ignore`` pattern at every depth (`_copytree_ignore`) — a DIR item's source
+    tree is not otherwise checked against ``.installignore`` past its top (an
+    anchored pattern matches only a namespace dir's direct children), so an
     unfiltered copy would ship a skill's own test suite and caches."""
     if not source_path.is_dir():
         raise ValueError(f"DIR item source is not a directory: {source_path}")  # noqa: TRY003  # single call-site; subclass not justified
@@ -486,7 +520,7 @@ def _install_dir(
         if not is_safe_relpath(inner):
             raise ValueError(f"dir override relpath escapes the dir: {inner}")  # noqa: TRY003  # single call-site; subclass not justified
     dest_exists = dest.exists()
-    if dest_exists and _dir_is_unchanged(dest, source_path, overrides):
+    if dest_exists and _dir_is_unchanged(dest, source_path, overrides, ignore):
         io.ok(f"{dest} is up to date", verbose=True)
         counters.skipped += 1
         if outcomes is not None:
@@ -507,7 +541,7 @@ def _install_dir(
         if dest_exists:
             _back_up(dest, timestamp, counters)
             shutil.rmtree(dest)
-        shutil.copytree(source_path, dest, ignore=_ignore_dev_artifacts)
+        shutil.copytree(source_path, dest, ignore=_copytree_ignore(ignore))
         for inner, inner_content in overrides.items():
             inner_dest = dest / inner
             _ensure_parent_dir(inner_dest, dry_run=dry_run)
