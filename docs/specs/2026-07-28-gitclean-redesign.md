@@ -187,3 +187,27 @@ this slice passes.
   complexity this design is built to preserve.
 - **Interactive authorisation UI.** The contract is report-then-name-targets. A prompt
   loop is a later question, not a blocker.
+
+## Continuations
+
+Minted at merge, not before. The order is the slice order in §5 — each depends on the
+one above it.
+
+- chore: reachability oracle in the gitclean test harness — snapshot reachable commits
+  before every mutating test and assert nothing reachable became unreachable unless it
+  sits in a salvage proven by restore, plus the same assertion over a property-based
+  harness generating random topologies — AC: **GCR-A12**.
+- feat: collapse the two-verdict model to merge-proof-or-report — remove the `Risk` enum,
+  `_branch_risk`, worktree risk assignment, derived lifecycle verdicts and the refusal
+  ladder; retire closed-unmerged PR as a deletion authority; leave the merge-evidence
+  tiers untouched — AC: **GCR-A1**, **GCR-A2**, **GCR-A3**.
+- bugfix: make the report true — verified default-branch resolution, true untracked and
+  ignored file counts, and a `prunable` worktree reported unknown rather than clean;
+  every failed probe renders as a stated unknown on its own row — AC: **GCR-A4**,
+  **GCR-A5**, **GCR-A6**.
+- feat: executor without re-adjudication — exclude the invoking worktree from every plan,
+  require an explicit name for any remote deletion, prove retained salvage by restoring
+  it, and terminate every repo-derived argument through one constructor — AC: **GCR-A7**,
+  **GCR-A8**, **GCR-A9**, **GCR-A10**, **GCR-A11**.
+- chore: disposition every finding in the revised list with a named test or a written
+  reason it cannot occur in this design; gates re-admission — AC: **GCR-A13**.
