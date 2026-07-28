@@ -1,30 +1,23 @@
 """Pure: turns classified targets plus the caller's intent into a Plan or a Refusal.
 
-Every refusal names the blocked targets, not just the flag that would silence
-it. A refusal that reads only "pass --force" teaches the reader to pass
---force; a refusal that lists *which* three branches carry unpushed commits
-lets them drop those three and proceed safely, which is nearly always the
-better move.
+A bare sweep takes exactly the targets classification marked ``sweepable`` and
+nothing else. A named target is not re-adjudicated at all: naming it is the
+authorisation, and re-deriving safety underneath the caller is how a tool ends
+up arguing with the person using it. git's own refusals still stand where
+nothing overrides them, and they carry better information than a re-derivation
+would -- git knows what its working tree holds right now.
 
-``Disposition.PROTECTED`` is not overridable by --force. --force exists to
-accept data loss the caller understands; it is not a way to delete the branch
-you are standing on, which git would reject anyway.
+So the refusals left here are few, and each answers something the caller could
+not have answered themselves: a name matching nothing, a name matching two
+things, a branch git will reject because a worktree still holds it, and the
+directory this process is standing in.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from gitclean.model import (
-    Disposition,
-    Plan,
-    Refusal,
-    Risk,
-    Skipped,
-    Survey,
-    Target,
-    TargetKind,
-)
+from gitclean.model import Plan, Refusal, Skipped, Survey, Target, TargetKind
 
 
 def _selector_candidates(target: Target) -> set[str]:
@@ -73,6 +66,16 @@ def _ordered(targets: list[Target]) -> tuple[Target, ...]:
     return tuple(sorted(targets, key=lambda t: (_ORDER[t.kind], t.name)))
 
 
+def _invoking_worktree(chosen: list[Target], survey_data: Survey) -> list[Target]:
+    """The directory this process is running in, if the caller named it.
+
+    Removing it deletes the working directory out from under the run: every
+    later git call in the same process fails against a path that is no longer
+    there, and the failures read as unrelated problems."""
+    root = Path(survey_data.repo_root)
+    return [t for t in chosen if t.kind is TargetKind.WORKTREE and Path(t.name) == root]
+
+
 def _occupancy_blockers(chosen: list[Target], survey_data: Survey) -> list[tuple[Target, str]]:
     """Branch targets whose holding worktree is not also being removed."""
     chosen_ids = {t.id for t in chosen}
@@ -93,8 +96,6 @@ def build_plan(
     survey_data: Survey,
     *,
     selectors: list[str],
-    force: bool,
-    include_remote: bool,
     dry_run: bool,
     salvage_dir: str | None,
 ) -> Plan | Refusal:
@@ -102,42 +103,24 @@ def build_plan(
         chosen, refusal = resolve_selectors(selectors, targets)
         if refusal is not None:
             return refusal
-    else:
-        chosen = [t for t in targets if t.disposition is Disposition.SAFE and t.risk is Risk.NONE]
-
-    if not include_remote:
-        remotes = [t for t in chosen if t.kind is TargetKind.REMOTE_BRANCH]
-        if remotes and selectors:
-            # Named outright, so silence is the wrong answer. Filtering these
-            # away leaves a successful, empty plan, which reads as "there was
-            # nothing to clean" -- the caller believes the server ref is gone
-            # when it is untouched, and finds out later.
-            names = ", ".join(t.name for t in remotes)
+        invoking = _invoking_worktree(chosen, survey_data)
+        if invoking:
             return Refusal(
-                code="E_REMOTE_NOT_ENABLED",
-                message=f"remote branch deletion is off by default, so this run "
-                f"cannot delete: {names}",
-                blocked=tuple(remotes),
-                remedy="re-run with --include-remote to delete refs on the server "
-                "(they affect everyone fetching it), or drop these from the selection",
+                code="E_INVOKING_WORKTREE",
+                message=f"this run is executing inside {survey_data.repo_root}, so removing "
+                f"it would delete the process's own working directory",
+                blocked=tuple(invoking),
+                remedy="run gitclean from another worktree, or from the main checkout, "
+                "and name this one from there",
             )
-        chosen = [t for t in chosen if t.kind is not TargetKind.REMOTE_BRANCH]
-
-    protected = [t for t in chosen if t.disposition is Disposition.PROTECTED]
-    if protected:
-        names = ", ".join(t.name for t in protected)
-        return Refusal(
-            code="E_PROTECTED",
-            message=f"refusing to delete protected target(s): {names}",
-            blocked=tuple(protected),
-            remedy="protected targets are never deletable; --force does not apply. "
-            "Switch away from the branch, unlock the worktree, or drop it from the selection",
-        )
+    else:
+        chosen = [t for t in targets if t.sweepable]
 
     occupancy = _occupancy_blockers(chosen, survey_data)
     if occupancy and selectors:
-        # Named explicitly: the caller believes this is deletable and is
-        # wrong, so say so rather than silently doing less than they asked.
+        # Named explicitly: the caller believes this is deletable and git is
+        # about to disagree, so say so rather than silently doing less than
+        # they asked for.
         detail = "; ".join(f"{t.name} is checked out at {path}" for t, path in occupancy)
         return Refusal(
             code="E_BRANCH_IN_USE",
@@ -148,7 +131,7 @@ def build_plan(
     skipped: list[Skipped] = []
     if occupancy:
         # Swept automatically: one occupied branch must not block cleaning
-        # everything else that is genuinely safe. Skip it; `skipped` carries
+        # everything else that is provably merged. Skip it; `skipped` carries
         # the omission so a clean-looking run never hides what it left behind.
         blocked_ids = {t.id for t, _ in occupancy}
         chosen = [t for t in chosen if t.id not in blocked_ids]
@@ -161,20 +144,15 @@ def build_plan(
             for t, path in occupancy
         )
 
-    risky = [t for t in chosen if t.risk is not Risk.NONE]
-    if risky and not force:
-        lines = "; ".join(f"{t.name} ({t.risk.value})" for t in risky)
-        return Refusal(
-            code="E_DATA_LOSS",
-            message=f"refusing: these would destroy work that exists nowhere else -- {lines}",
-            blocked=tuple(risky),
-            remedy="drop these from the selection to clean the rest, or re-run with --force "
-            "(which bundles the content to the salvage directory before deleting)",
-        )
-
     return Plan(
         targets=_ordered(chosen),
-        salvage_dir=salvage_dir if any(t.salvage_needed for t in chosen) else None,
+        # Salvage is retained only where no reflog exists, which is the server.
+        # A local branch deleted with `-D` leaves its commits in the reflog for
+        # the configured expiry, and bundling them as well bought disk usage
+        # and a restore route nobody took.
+        salvage_dir=(
+            salvage_dir if any(t.kind is TargetKind.REMOTE_BRANCH for t in chosen) else None
+        ),
         dry_run=dry_run,
         skipped=tuple(skipped),
     )
