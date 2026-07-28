@@ -129,6 +129,20 @@ def _summary(targets: tuple[Target, ...]) -> dict[str, object]:
     }
 
 
+def _planned_ids(payload: dict[str, object]) -> frozenset[str]:
+    """The targets this run acts on, which is not the same set as the ones a
+    bare sweep would have taken."""
+    plan = payload.get("plan")
+    if not isinstance(plan, dict):
+        return frozenset()
+    targets = plan.get("targets")
+    if not isinstance(targets, list):
+        return frozenset()
+    return frozenset(
+        str(t["id"]) for t in targets if isinstance(t, dict) and isinstance(t.get("id"), str)
+    )
+
+
 def _render_human(payload: dict[str, object], out: TextIO) -> None:
     repo = payload.get("repo")
     if isinstance(repo, dict):
@@ -140,13 +154,21 @@ def _render_human(payload: dict[str, object], out: TextIO) -> None:
         for warning in warnings:
             print(f"WARN:  {warning}", file=out)
 
+    # `sweepable` answers "would an unattended run take this", which stops
+    # being the interesting question the moment a caller names something.
+    # Rendering `not swept: no merge proof` six lines above `ok -- deleted`
+    # for the same target reads as a contradiction, and the reader has to
+    # know which field wins to resolve it. The plan is what was acted on, so
+    # the plan is what the row reports.
+    planned = _planned_ids(payload)
     targets = payload.get("targets")
     if isinstance(targets, list) and targets:
         print("", file=out)
         for entry in targets:
             if not isinstance(entry, dict):
                 continue
-            mark = "sweep" if entry.get("sweepable") else "hold "
+            named = entry.get("id") in planned
+            mark = "NAMED" if named else ("sweep" if entry.get("sweepable") else "hold ")
             print(
                 f"  [{mark}] [{entry.get('merge_evidence'):<18}] {entry.get('id')}",
                 file=out,
@@ -155,7 +177,9 @@ def _render_human(payload: dict[str, object], out: TextIO) -> None:
             if isinstance(reasons, list):
                 for reason in reasons:
                     print(f"      - {reason}", file=out)
-            if entry.get("withheld"):
+            if named:
+                print("      named on the command line: this run acts on it", file=out)
+            elif entry.get("withheld"):
                 print(f"      not swept: {entry.get('withheld')}", file=out)
 
     summary = payload.get("summary")

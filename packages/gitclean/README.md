@@ -76,6 +76,14 @@ Without `gh` on PATH there is no squash signal at all. That is reported in
   survey read it. Overriding them would mean re-implementing every one of those
   checks in Python. A person who has read git's complaint and still wants the
   tree gone runs one `git worktree remove --force` themselves.
+- **A removal that would strand a commit is declined.** git's refusals cover
+  *uncommitted* content and know nothing about a commit made inside a worktree
+  on no branch: that tree is clean, so git removes it without complaint, and
+  the administrative record it deletes is the only thing holding that commit —
+  the per-worktree reflog goes with it. So before removing a worktree the tool
+  asks git whether any ref contains the commit, and declines when none does,
+  naming the commit and how to keep it. Naming a target authorises deleting a
+  checkout; it should not quietly spend a commit.
 - **Salvage is kept only where there is no reflog** — a ref on the server.
   It becomes a verified `git bundle` before the delete, and a bundle that will
   not verify aborts that deletion. A local branch needs none: `branch -D`

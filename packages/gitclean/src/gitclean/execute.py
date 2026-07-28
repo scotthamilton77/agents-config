@@ -203,6 +203,34 @@ class Executor:
 
     # -- delete + verify ----------------------------------------------------
 
+    def _commit_only_this_worktree_holds(self, target: Target) -> str:
+        """The commit that removing this worktree would strand, or "".
+
+        git's refusals are the safety story for a named worktree, and they have
+        exactly one gap: they know about *uncommitted* content and nothing
+        about a commit made inside the worktree on no branch. That tree is
+        clean, so git removes it without complaint -- and the commit's only
+        reachability goes with it, because the administrative record being
+        deleted is what held HEAD, and the per-worktree reflog dies in the same
+        step. No ref, no reflog, no undo.
+
+        So the question git cannot answer is asked of git directly: does any
+        ref contain this commit? Not "does it look abandoned", not "is the
+        tree clean" -- reachability, which is the thing that actually decides
+        whether deleting is recoverable. A worktree on a branch answers yes
+        through that branch and is unaffected.
+
+        A probe that does not answer is treated as a stranding. The cost of
+        being wrong that way is a worktree someone removes by hand; the cost
+        of being wrong the other way is the commit."""
+        head = next((w.head for w in self._survey.worktrees if w.path == target.name), "")
+        if not head:
+            return ""
+        refs = self._port.git(
+            git_argv("for-each-ref", "--count=1", f"--contains={head}"), cwd=self._cwd
+        )
+        return "" if refs.ok and refs.out else head
+
     def _delete_worktree(self, target: Target) -> Deletion:
         """Remove the worktree and let git's own interlocks stand.
 
@@ -218,7 +246,22 @@ class Executor:
         command and costs this tool nothing it can get wrong.
 
         Ignored files do not trigger the refusal, so removing a finished
-        worktree full of caches is unaffected."""
+        worktree full of caches is unaffected.
+
+        There is one thing git's refusals do not cover, and it is added below
+        rather than assumed away."""
+        stranded = self._commit_only_this_worktree_holds(target)
+        if stranded:
+            self._record(
+                "delete",
+                target.id,
+                f"removing {target.name} would strand commit {stranded[:8]}, which no ref "
+                f"contains; nothing was deleted. Keep it with "
+                f"`git branch <name> {stranded[:8]}` and re-run, or discard it deliberately "
+                f"with `git worktree remove --force {target.name}`",
+                (),
+            )
+            return _failed(target, f"would strand commit {stranded[:8]}")
         removal = self._port.git(git_argv("worktree", "remove", name=target.name), cwd=self._cwd)
         if not removal.ok:
             self._record(

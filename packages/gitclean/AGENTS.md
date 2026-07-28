@@ -75,6 +75,17 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   safety underneath the caller, and do not add a flag for them to pass. git's
   own refusals still stand, and they carry better information than a
   re-derivation would.
+- **With one exception, and know why it is there.** git's refusals cover
+  uncommitted content; they say nothing about a commit made inside a worktree
+  on no branch. That tree is clean, git removes it happily, and the record it
+  deletes is what held the commit — the per-worktree reflog dies with it, so
+  there is no undo. Before removing a worktree the executor asks git whether
+  any ref contains that commit and declines when none does. This is the one
+  place a named target is refused on reachability grounds, and it is not a
+  precedent for re-deriving anything else: it exists because "the reflog is
+  the undo" — the argument that retired salvage everywhere else — is simply
+  false here. Do not generalise it, and do not remove it without replacing
+  the guarantee.
 - **Never add a merge check that relies on ancestry alone.** `git branch
   --merged` is wrong in both directions under squash merges. New evidence goes
   in as a tier in `_resolve_merge` with its own `MergeEvidence` member, so the

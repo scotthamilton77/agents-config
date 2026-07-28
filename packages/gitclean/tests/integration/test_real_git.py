@@ -346,6 +346,46 @@ def test_a_worktree_holding_uncommitted_work_survives_a_bare_sweep(repo: Path) -
     assert "1 untracked file(s)" in str(target["withheld"])
 
 
+def test_naming_a_detached_worktree_will_not_strand_the_commit_it_holds(repo: Path) -> None:
+    """The gap in "git's own refusals are enough".
+
+    They cover uncommitted content. They say nothing about a commit made
+    inside the worktree on no branch: that tree is clean, git removes it
+    without complaint, and the record it deletes is the only thing that held
+    HEAD -- the per-worktree reflog goes with it. No ref, no reflog, no undo.
+
+    Naming a target is an authorisation to delete a checkout, and it was
+    silently spending a commit. The run declines and says which commit and
+    how to keep it, which is the difference between authorising and being
+    told afterwards."""
+    work = repo.parent / "wt-orphan"
+    git(repo, "worktree", "add", "-q", "--detach", str(work))
+    only = commit(work, "only.txt", "the only copy\n")
+
+    with reachability_guard(repo):
+        payload = report(repo, "--cleanup", f"worktree:{work}")
+
+    assert payload["_exit"] == EXIT_ANOMALY
+    assert work.exists()
+    assert git(repo, "for-each-ref", "--count=1", f"--contains={only}") == ""
+    said = str(payload["execution"]["anomalies"])  # type: ignore[index]
+    assert only[:8] in said and "git branch" in said
+
+
+def test_naming_a_worktree_whose_commit_a_branch_holds_still_removes_it(repo: Path) -> None:
+    """The refusal is about reachability, not about being detached. A commit
+    some branch contains survives the removal, so the removal proceeds --
+    otherwise the check would block the ordinary case it exists to permit."""
+    work = _worktree(repo, "wt-kept", "feat/kept")
+    commit(work, "kept.txt")
+
+    with reachability_guard(repo):
+        payload = report(repo, "--cleanup", f"worktree:{work}")
+
+    assert payload["_exit"] == EXIT_OK
+    assert not work.exists()
+
+
 def test_the_worktree_the_run_executes_in_is_never_deleted(repo: Path) -> None:
     """Removing it deletes the process's own working directory, and every git
     call after that fails against a path that is no longer there -- failures
