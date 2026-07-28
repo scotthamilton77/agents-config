@@ -38,16 +38,28 @@ SHA_A = "a" * 40
 SHA_B = "b" * 40
 
 
+def lens_entry(name: str = "correctness", **overrides: Any) -> dict[str, Any]:
+    entry = {
+        "lens": name,
+        "verdict": "clean",
+        "vendor": "anthropic",
+        "transport": "openrouter",
+        "model": "anthropic/claude-opus-5",
+    }
+    entry.update(overrides)
+    return entry
+
+
 def valid_verdict() -> dict[str, Any]:
     return {
-        "schema_version": "1",
+        "schema_version": "2",
         "artifact_class": "python-package",
         "round": 1,
         "base_sha": SHA_A,
         "head_sha": SHA_B,
         "claim_id": "claim-1",
         "retained_categories": [],
-        "lenses": [{"lens": "correctness", "verdict": "clean"}],
+        "lenses": [lens_entry()],
         "prior_dispositions": [],
         "verdict": "clean",
         "findings": [],
@@ -286,6 +298,100 @@ class TestValidatorBehaviour:
             )
             assert proc.returncode == expected, proc.stderr
             assert json.loads(proc.stdout)["valid"] is (expected == 0)
+
+
+class TestWhatActuallyRanTheLens:
+    """A lens entry records what ran it, so a later reader is not left with the invoker's memory."""
+
+    def test_version_one_envelope_is_rejected(self):
+        """The lens entry gained required fields, so a v1 verdict is not a v2 verdict."""
+        doc = valid_verdict()
+        doc["schema_version"] = "1"
+        assert not is_valid(doc)
+
+    @pytest.mark.parametrize("field", ["vendor", "transport", "model"])
+    def test_lens_entry_without_run_record_is_rejected(self, field):
+        """Omitting what ran the lens is not a way to avoid declaring it."""
+        entry = lens_entry()
+        del entry[field]
+        doc = valid_verdict()
+        doc["lenses"] = [entry]
+        assert not is_valid(doc)
+
+    @pytest.mark.parametrize("field", ["vendor", "transport", "model"])
+    def test_blank_run_record_is_rejected(self, field):
+        """Whitespace is not a declaration; the blank-string escape is closed on every field."""
+        doc = valid_verdict()
+        doc["lenses"] = [lens_entry(**{field: "   "})]
+        assert not is_valid(doc)
+
+    def test_substitution_records_what_was_declared_and_why(self):
+        """A lens re-dispatched onto a substitute stays inside the round, with the swap on record."""
+        doc = valid_verdict()
+        doc["lenses"] = [lens_entry(
+            transport="openrouter", model="openai/gpt-5.6-sol", vendor="openai",
+            substitution={"declared_transport": "codex", "declared_model": "gpt-5.6-terra",
+                          "reason": "codex credential expired; 401 from the provider"},
+        )]
+        assert is_valid(doc)
+
+    def test_substitution_without_a_reason_is_rejected(self):
+        """An unexplained swap is the thing this field exists to stop."""
+        doc = valid_verdict()
+        doc["lenses"] = [lens_entry(substitution={"declared_transport": "codex"})]
+        assert not is_valid(doc)
+
+    def test_blank_substitution_reason_is_rejected(self):
+        doc = valid_verdict()
+        doc["lenses"] = [lens_entry(substitution={"reason": "  "})]
+        assert not is_valid(doc)
+
+    def test_one_vendor_across_the_panel_still_validates(self):
+        """Collapse is an observation the reader derives, never a schema error that stalls a round."""
+        doc = valid_verdict()
+        doc["lenses"] = [
+            lens_entry("correctness", vendor="openai", model="openai/gpt-5.6-sol"),
+            lens_entry("security", vendor="openai", model="openai/gpt-5.6-terra"),
+        ]
+        assert is_valid(doc)
+
+    def test_a_lens_reporting_twice_is_rejected(self):
+        """Re-dispatch produces one entry. Two attempts reported as two lenses inflates coverage."""
+        doc = valid_verdict()
+        doc["lenses"] = [lens_entry("correctness"), lens_entry("correctness", transport="codex")]
+        assert not is_valid(doc)
+        assert "duplicate-lens" in codes(doc)
+
+    def test_distinct_lenses_are_not_duplicates(self):
+        doc = valid_verdict()
+        doc["lenses"] = [lens_entry("correctness"), lens_entry("security")]
+        assert is_valid(doc)
+
+
+class TestUnevidencedMechanicalDowngrade:
+    """The harvester demotes a mechanical finding with no evidence; the demotion stays visible."""
+
+    def test_downgraded_advisory_validates(self):
+        doc = valid_verdict()
+        doc["verdict"] = "findings"
+        doc["findings"] = [{"id": "f1", "lens": "correctness", "type": "advisory",
+                            "ac": "A1", "claim": "the reader mishandles an empty file",
+                            "downgraded_from": "mechanical"}]
+        assert is_valid(doc)
+
+    def test_downgraded_marker_on_a_mechanical_finding_is_rejected(self):
+        """A finding cannot claim it was demoted and still block."""
+        doc = valid_verdict()
+        doc["verdict"] = "findings"
+        doc["findings"] = [{**mechanical_finding(), "downgraded_from": "mechanical"}]
+        assert not is_valid(doc)
+
+    def test_downgraded_marker_is_a_closed_value(self):
+        doc = valid_verdict()
+        doc["verdict"] = "findings"
+        doc["findings"] = [{"id": "f1", "lens": "correctness", "type": "advisory",
+                            "ac": "A1", "claim": "c", "downgraded_from": "advisory"}]
+        assert not is_valid(doc)
 
 
 if __name__ == "__main__":
