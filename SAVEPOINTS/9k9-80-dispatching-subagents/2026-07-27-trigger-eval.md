@@ -57,10 +57,19 @@ and started stealing `review-verdict`'s own query:
 | q13 — "is that normal or is my process broken" | `dispatching-subagents` | **3/3** |
 | q10 — "the round verdict json isnt validating" | `review-verdict` | **3/3**, unmoved |
 
+The exclusion clause did the work in **both** directions, which is more than it was written for.
+Judges cited it as the discriminator when routing q5 *away* from `review-verdict`, and again when
+routing q10 *to* it — one noted the clause "further isolates the match." A sentence saying what a
+skill is not for turns out to help its neighbour trigger, not just itself.
+
 ## Honest limits
 
 - Round 1 ran at 1 replicate per query; only the contested queries got 3. A one-pass green is
   weaker evidence than it looks, which is exactly how q5 nearly shipped as a clean sweep.
+- **q5 is fixed, not uncontested.** It routes correctly 3/3, but two judges rate that high
+  confidence and one still rates it medium, calling the two descriptions "a genuine competition."
+  Treat q5 as the canary: if `review-verdict`'s description is ever widened toward loop-level
+  language, re-run this set before shipping it.
 - Judges were a mid-tier model reading a description list, not the routing path a live session
   uses. It tests the description against its real competitors, which is the part that fails.
 - The body was not pressure-tested. Its rules come from an eight-round production run where each
