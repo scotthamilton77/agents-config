@@ -10,7 +10,7 @@ import ast
 from datetime import UTC, datetime
 from pathlib import Path
 
-from conftest import make_branch, make_survey
+from conftest import make_branch, make_survey, make_worktree
 
 from gitclean import execute
 from gitclean.execute import SALVAGE_PREFIX, Executor, default_salvage_dir, git_argv, slug
@@ -234,6 +234,73 @@ def test_an_unlistable_worktree_check_is_unverified_not_removed() -> None:
     assert not report.ok
     assert not report.deletions[0].deleted
     assert report.deletions[0].detail == "deletion unverified"
+
+
+def test_a_reachability_probe_that_will_not_answer_declines_the_removal() -> None:
+    """The one place a named target is refused on reachability grounds, and the
+    refusal has to hold when the probe itself fails.
+
+    git's interlocks cover uncommitted content and say nothing about a commit
+    made in this tree on no branch: the tree is clean, git removes it happily,
+    and the per-worktree reflog that held the commit dies with the record. So
+    an unanswered probe is read as a stranding. Being wrong that way costs a
+    worktree someone removes by hand; being wrong the other way costs the
+    commit.
+
+    The removal is scripted to succeed, so nothing but the guard stops it."""
+    head = "a" * 40
+    port = ScriptedCommands(
+        git={
+            "rev-parse HEAD": ok(head),
+            f"for-each-ref --count=1 --contains={head}": fail("fatal: bad object"),
+            "worktree remove -- /repo/wt": ok(),
+            "worktree list --porcelain": ok("worktree /repo\n"),
+        }
+    )
+    report = run(
+        port,
+        plan(target(TargetKind.WORKTREE, "/repo/wt")),
+        make_survey(worktrees=(make_worktree("/repo/wt", head=head, branch=None),)),
+    )
+
+    assert not report.ok
+    assert not report.deletions[0].deleted
+    assert head[:8] in report.deletions[0].detail
+    assert report.anomalies[0].stage == "delete"
+    assert "would strand" in report.anomalies[0].message
+    # The refusal is a claim about what git said, so it travels with what git
+    # said. A reader cannot re-derive the probe from the prose.
+    assert "for-each-ref" in "\n".join(report.anomalies[0].transcript)
+    assert not any(call[:3] == ("git", "worktree", "remove") for call in port.transcript)
+
+
+def test_a_commit_made_since_the_survey_is_not_stranded_by_the_removal() -> None:
+    """The survey is a snapshot; the deletion happens after it. An agent
+    committing in that tree in between leaves the recorded commit sitting on a
+    branch -- where it answers "contained" -- and the new one held only by the
+    record this call is about to delete.
+
+    So asking about the surveyed commit is not a weaker check, it is the wrong
+    one: it clears in exactly the case it exists to refuse."""
+    surveyed, made_since = "a" * 40, "b" * 40
+    port = ScriptedCommands(
+        git={
+            "rev-parse HEAD": ok(made_since),
+            f"for-each-ref --count=1 --contains={surveyed}": ok("refs/heads/keeps-it"),
+            f"for-each-ref --count=1 --contains={made_since}": ok(""),
+            "worktree remove -- /repo/wt": ok(),
+            "worktree list --porcelain": ok("worktree /repo\n"),
+        }
+    )
+    report = run(
+        port,
+        plan(target(TargetKind.WORKTREE, "/repo/wt")),
+        make_survey(worktrees=(make_worktree("/repo/wt", head=surveyed, branch=None),)),
+    )
+
+    assert not report.ok
+    assert made_since[:8] in report.deletions[0].detail
+    assert not any(call[:3] == ("git", "worktree", "remove") for call in port.transcript)
 
 
 # -- remote branch -----------------------------------------------------------

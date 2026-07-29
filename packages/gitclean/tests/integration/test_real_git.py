@@ -525,11 +525,19 @@ def test_a_salvaged_server_ref_restores_by_the_command_the_tool_printed(
 def test_the_salvage_ref_does_not_outlive_the_run(repo: Path, tmp_path: Path) -> None:
     """Bundling needs a ref under refs/heads to bundle, and one left behind
     would surface in the next report as a branch nobody created."""
-    _with_remote(repo, tmp_path)
+    bare = _with_remote(repo, tmp_path)
     _push_only_copy(repo, "feat/temp")
 
     before = git(repo, "for-each-ref", "--format=%(refname)", "refs/heads")
-    payload = report(repo, "--cleanup", "origin/feat/temp")
+    # The server is what this run deletes from, so the server is what the
+    # oracle watches. The commit leaves the bare repository deliberately, and
+    # the bundle is the only thing entitled to excuse that -- proven by a real
+    # restore, not by the run's own say-so.
+    with reachability_guard(bare) as guard:
+        payload = report(repo, "--cleanup", "origin/feat/temp")
+        salvages = payload["execution"]["salvages"]  # type: ignore[index]
+        assert len(salvages) == 1, payload["execution"]
+        guard.proven_by_bundle(Path(str(salvages[0]["path"])))
 
     assert payload["_exit"] == EXIT_OK
     assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads") == before
@@ -542,11 +550,15 @@ def test_an_unrelated_sibling_ref_is_not_read_as_the_deletion_having_failed(
     on the same server answers a question about `feat/x`. The deletion git
     performed then reports as a verification failure, and the run exits
     nonzero over work that went exactly as asked."""
-    _with_remote(repo, tmp_path)
+    bare = _with_remote(repo, tmp_path)
     only = _push_only_copy(repo, "feat/x")
     git(repo, "push", "-q", "origin", f"{only}:refs/heads/a/feat/x")
 
-    payload = report(repo, "--cleanup", "origin/feat/x")
+    # No exemption: the sibling ref is what keeps the commit reachable, so the
+    # oracle passing here is the assertion that deleting one of two refs to a
+    # commit costs nothing.
+    with reachability_guard(bare):
+        payload = report(repo, "--cleanup", "origin/feat/x")
 
     assert payload["_exit"] == EXIT_OK, anomaly_lines(payload)
     assert payload["execution"]["deletions"][0]["verified"] is True  # type: ignore[index]

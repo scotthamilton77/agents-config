@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from gitclean.model import Branch, MergeEvidence, PullRequest, Survey, Worktree
@@ -483,10 +482,10 @@ def _resolve_merge(
         # must visibly fall through instead of quietly satisfying it.
         return True, MergeEvidence.ANCESTOR
     if pr is not None and pr.state == "CLOSED" and _pr_covers_tip(port, cwd, pr, head):
-        # Not merged -- but a human closed the PR, which is an explicit
-        # decision to abandon the branch. classify turns that into SAFE, so it
-        # is gated on containment too: "drop this" applies to what was in the
-        # PR, not to commits that arrived afterwards.
+        # Not merged, and this tier authorises nothing: a closed PR says
+        # someone stopped wanting the change, never that its commits exist
+        # anywhere else. It is gated on containment so the report speaks about
+        # what was in the PR rather than about commits that arrived afterwards.
         return False, MergeEvidence.PR_CLOSED_UNMERGED
     if _patch_equal(port, cwd, base_ref, name):
         return True, MergeEvidence.PATCH_EQUAL
@@ -615,35 +614,6 @@ def _worktree_activity(
         return None
     result = port.git(["show", "-s", "--format=%cI", worktree.head], cwd=cwd)
     return _first_line(result.out) if result.ok else None
-
-
-def parse_timestamp(value: str | None) -> datetime | None:
-    """An aware datetime, or None when the value cannot be read.
-
-    The two clocks gitclean reads do NOT agree on format: git's
-    `committerdate:iso-strict` carries the committer's local UTC offset
-    (`...T09:00:00-05:00`) while gh always emits UTC (`...T12:00:00Z`).
-    Comparing those as strings is wrong in the direction that costs work --
-    lexically `-05:00` sorts before `Z`, so a commit made AFTER a PR closed
-    can read as before it. Every comparison goes through here so both sides
-    are real instants."""
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
-
-
-def idle_since(last_activity: str | None, now: datetime, window: timedelta) -> bool:
-    """True when the timestamp is older than the window. An unparseable or
-    missing timestamp is NOT idle -- an unknown age must never be evidence for
-    deletion."""
-    parsed = parse_timestamp(last_activity)
-    if parsed is None:
-        return False
-    return (now - parsed) > window
 
 
 def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:

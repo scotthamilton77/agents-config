@@ -203,8 +203,27 @@ class Executor:
 
     # -- delete + verify ----------------------------------------------------
 
-    def _commit_only_this_worktree_holds(self, target: Target) -> str:
-        """The commit that removing this worktree would strand, or "".
+    def _head_now(self, target: Target, surveyed: str) -> str:
+        """What the worktree holds at this moment, not when the survey read it.
+
+        Every other guard on this path is git's own, taken as the deletion
+        happens, because that is the only moment that describes the disk. This
+        one is ours, so it is taken then too. A commit made in that tree after
+        the survey ran is held by the record about to be deleted and by nothing
+        else -- while the commit it replaced, the one the survey recorded, is
+        sitting safely on some branch and answers the containment question
+        yes. Asking about the stale commit is therefore not a smaller check,
+        it is the wrong check, and it clears exactly when it should refuse.
+
+        If git will not say, the surveyed commit is the better of the two
+        remaining answers: stale evidence still refuses far more often than no
+        evidence does."""
+        live = self._port.git(git_argv("rev-parse", "HEAD"), cwd=Path(target.name))
+        return live.out if live.ok and live.out else surveyed
+
+    def _commit_only_this_worktree_holds(self, target: Target) -> tuple[str, tuple[str, ...]]:
+        """The commit that removing this worktree would strand, or "", with the
+        transcript of whatever git said when asked.
 
         git's refusals are the safety story for a named worktree, and they have
         exactly one gap: they know about *uncommitted* content and nothing
@@ -223,13 +242,16 @@ class Executor:
         A probe that does not answer is treated as a stranding. The cost of
         being wrong that way is a worktree someone removes by hand; the cost
         of being wrong the other way is the commit."""
-        head = next((w.head for w in self._survey.worktrees if w.path == target.name), "")
+        surveyed = next((w for w in self._survey.worktrees if w.path == target.name), None)
+        if surveyed is None:
+            return "", ()
+        head = self._head_now(target, surveyed.head)
         if not head:
-            return ""
+            return "", ()
         refs = self._port.git(
             git_argv("for-each-ref", "--count=1", f"--contains={head}"), cwd=self._cwd
         )
-        return "" if refs.ok and refs.out else head
+        return ("", refs.transcript()) if refs.ok and refs.out else (head, refs.transcript())
 
     def _delete_worktree(self, target: Target) -> Deletion:
         """Remove the worktree and let git's own interlocks stand.
@@ -250,7 +272,7 @@ class Executor:
 
         There is one thing git's refusals do not cover, and it is added below
         rather than assumed away."""
-        stranded = self._commit_only_this_worktree_holds(target)
+        stranded, probe = self._commit_only_this_worktree_holds(target)
         if stranded:
             self._record(
                 "delete",
@@ -259,7 +281,7 @@ class Executor:
                 f"contains; nothing was deleted. Keep it with "
                 f"`git branch <name> {stranded[:8]}` and re-run, or discard it deliberately "
                 f"with `git worktree remove --force {target.name}`",
-                (),
+                probe,
             )
             return _failed(target, f"would strand commit {stranded[:8]}")
         removal = self._port.git(git_argv("worktree", "remove", name=target.name), cwd=self._cwd)

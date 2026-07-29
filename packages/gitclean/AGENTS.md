@@ -80,7 +80,15 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   on no branch. That tree is clean, git removes it happily, and the record it
   deletes is what held the commit — the per-worktree reflog dies with it, so
   there is no undo. Before removing a worktree the executor asks git whether
-  any ref contains that commit and declines when none does. This is the one
+  any ref contains that commit and declines when none does. **It asks about
+  the commit the tree holds now, re-read as the deletion happens, not the one
+  the survey recorded.** Every other guard on that path is git's own and is
+  taken at that moment; this one is ours, so it is taken then too. A commit
+  made in the tree after the survey ran is held by the record about to be
+  deleted and by nothing else, while the commit it replaced sits on a branch
+  and answers "contained" — so asking about the surveyed commit is not a
+  weaker check, it is the wrong one, and it clears in the exact case it exists
+  to refuse. This is the one
   place a named target is refused on reachability grounds, and it is not a
   precedent for re-deriving anything else: it exists because "the reflog is
   the undo" — the argument that retired salvage everywhere else — is simply
@@ -124,10 +132,10 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   each one still is afterwards, so a run that strands a commit nobody thought
   to write a test about fails a test that never mentions it. Exempt a commit
   only by naming it or by restoring the salvage that holds it; loosening the
-  guard to make a suite green is how the last three rounds shipped. Two
-  server-ref tests still run outside it — `test_the_salvage_ref_does_not_outlive_the_run`
-  and `test_an_unrelated_sibling_ref_is_not_read_as_the_deletion_having_failed`.
-  That is a gap to close, not a precedent to copy.
+  guard to make a suite green is how the last three rounds shipped. A test that
+  deletes from the server guards the **bare** repository rather than the
+  working clone: `push --delete` is what the run performs, and the server is
+  what loses the ref.
 - **The guard only covers the topologies the matrix names.** It is a property
   check, but it runs on the shapes in `test_a_sweep_strands_only_the_commits_it_proved_redundant`,
   and every one of those but a single named branch drives a *bare* sweep. A

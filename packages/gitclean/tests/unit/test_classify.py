@@ -54,6 +54,23 @@ def test_pr_merged_evidence_is_recorded_in_reasons() -> None:
     assert any("pr_merged" in reason for reason in _one(branch).reasons)
 
 
+def test_every_tier_that_counts_as_proof_authorises_a_sweep() -> None:
+    """Four tiers prove a merge, and each one on its own is enough. Asserting
+    the set rather than a member is what stops a tier quietly dropping out of
+    it: a sweep that stopped honouring patch equality would still pass a suite
+    that only ever asked about the squash case."""
+    for evidence in (
+        MergeEvidence.PR_MERGED,
+        MergeEvidence.ANCESTOR,
+        MergeEvidence.PATCH_EQUAL,
+        MergeEvidence.SQUASH_EQUAL,
+    ):
+        target = _one(make_branch(head=ELSEWHERE, merge_evidence=evidence))
+        assert target.sweepable, f"{evidence.value} did not authorise a sweep"
+        assert target.withheld is None
+        assert target.merge_proven
+
+
 def test_a_merged_pr_that_does_not_cover_the_tip_stays_out_of_the_sweep() -> None:
     """The survey declined the PR verdict (evidence is NONE) but the merged PR
     is still attached. Reading state instead of evidence is what deleted

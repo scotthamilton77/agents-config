@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from gitclean.model import MergeEvidence, Survey
 from gitclean.ports import CommandResult, ScriptedCommands, SubprocessCommands, fail, ok
 from gitclean.survey import (
     _count_dirt,
-    idle_since,
     read_pull_requests,
     read_worktrees,
     resolve_base_ref,
@@ -20,7 +18,6 @@ from gitclean.survey import (
 )
 
 SEP = "\x1f"
-NOW = datetime(2026, 7, 25, 12, 0, 0, tzinfo=UTC)
 
 
 _AUTO_TRACK = "\x00auto"
@@ -1058,23 +1055,3 @@ def test_upstream_is_carried_through_and_unpushed_counted() -> None:
     feat = next(b for b in run(port).branches if b.name == "feat")
     assert feat.upstream == "origin/feat"
     assert feat.unpushed_commits == 3
-
-
-# -- idle window -------------------------------------------------------------
-
-
-def test_idle_since_measures_against_the_window() -> None:
-    window = timedelta(days=14)
-    assert idle_since("2026-07-01T00:00:00+00:00", NOW, window)
-    assert not idle_since("2026-07-24T00:00:00+00:00", NOW, window)
-
-
-def test_an_unknown_timestamp_is_never_evidence_for_deletion() -> None:
-    window = timedelta(days=14)
-    assert not idle_since(None, NOW, window)
-    assert not idle_since("", NOW, window)
-    assert not idle_since("last tuesday", NOW, window)
-
-
-def test_a_naive_timestamp_is_read_as_utc_rather_than_rejected() -> None:
-    assert idle_since("2026-01-01T00:00:00", NOW, timedelta(days=14))

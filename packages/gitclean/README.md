@@ -81,8 +81,11 @@ Without `gh` on PATH there is no squash signal at all. That is reported in
   on no branch: that tree is clean, so git removes it without complaint, and
   the administrative record it deletes is the only thing holding that commit —
   the per-worktree reflog goes with it. So before removing a worktree the tool
-  asks git whether any ref contains the commit, and declines when none does,
-  naming the commit and how to keep it. Naming a target authorises deleting a
+  asks git whether any ref contains the commit that tree holds *now* — re-read
+  as the deletion happens, not taken from the survey — and declines when none
+  does, naming the commit and how to keep it. A commit made in that tree since
+  the survey ran is exactly the one at risk, and the surveyed commit it
+  replaced would have answered for it. Naming a target authorises deleting a
   checkout; it should not quietly spend a commit.
 - **Salvage is kept only where there is no reflog** — a ref on the server.
   It becomes a verified `git bundle` before the delete, and a bundle that will
