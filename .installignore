@@ -29,9 +29,10 @@
 # ships references/README.md would silently stop deploying it.
 #
 # The real tool-root instruction files are *.md.template and are NOT matched
-# by these bare basenames. Live leaker today: rules/AGENTS.md. The other
-# anchored entries are class coverage (defensive; see the design spec's audit
-# table) except where noted.
+# by these bare basenames. Live leakers today: AGENTS.md as a direct child of
+# rules/ and of skills/, in both the shared and the Claude trees -- three files,
+# not one. CLAUDE.md, GEMINI.md and README.md match nothing at namespace level
+# today and are class coverage (defensive; see the design spec's audit table).
 /AGENTS.md
 /CLAUDE.md
 /GEMINI.md
