@@ -41,6 +41,7 @@ CLI_PACKAGES: tuple[CliSpec, ...] = (
     CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",)),
     CliSpec("grind", "packages/grind", "grind", ("--help",)),
     CliSpec("executor", "packages/executor", "executor", ("--help",)),
+    CliSpec("gitclean", "packages/gitclean", "gitclean", ("--help",)),
 )
 
 RETIRED_CLIS: tuple[str, ...] = ()
