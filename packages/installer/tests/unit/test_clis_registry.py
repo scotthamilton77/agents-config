@@ -20,19 +20,27 @@ def _package(tmp_path: Path) -> Path:
     return pkg
 
 
-def test_registry_is_exactly_workcli_prgroom_grind_and_executor() -> None:
+def test_registry_is_exactly_workcli_prgroom_grind_executor_and_gitclean() -> None:
     """
     Given the shipped registry
     When CLI_PACKAGES is consulted
     Then it contains exactly workcli->work, prgroom->prgroom, grind->grind,
-    and executor->executor, and RETIRED_CLIS is empty.
+    executor->executor and gitclean->gitclean, and RETIRED_CLIS is empty.
 
     Pins the closed registry; pdlc/holding-place/vizsuite must NOT
-    auto-deploy. Neither must gitclean: it is gated by `make ci` and
-    developed in-tree, but a tool that deletes worktrees and branches
-    does not go on PATH until its risk model is reworked.
+    auto-deploy. Being gated by `make ci` is not what earns a place here —
+    vizsuite is gated and stays off. gitclean was withheld while it decided
+    what was safe to delete; it now decides only whether a merge is proven,
+    and everything else it reports with the measurement that stopped it.
+    A caller who names a target authorizes that deletion outright.
     """
-    assert [s.name for s in CLI_PACKAGES] == ["workcli", "prgroom", "grind", "executor"]
+    assert [s.name for s in CLI_PACKAGES] == [
+        "workcli",
+        "prgroom",
+        "grind",
+        "executor",
+        "gitclean",
+    ]
     by_name = {s.name: s for s in CLI_PACKAGES}
     assert by_name["workcli"] == CliSpec(
         "workcli", "packages/workcli", "work", ("--protocol-version",)
@@ -40,7 +48,7 @@ def test_registry_is_exactly_workcli_prgroom_grind_and_executor() -> None:
     assert by_name["prgroom"] == CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",))
     assert by_name["grind"] == CliSpec("grind", "packages/grind", "grind", ("--help",))
     assert by_name["executor"] == CliSpec("executor", "packages/executor", "executor", ("--help",))
-    assert "gitclean" not in by_name
+    assert by_name["gitclean"] == CliSpec("gitclean", "packages/gitclean", "gitclean", ("--help",))
     assert RETIRED_CLIS == ()
 
 
