@@ -436,11 +436,15 @@ def _unaccounted_dirs(repo_root: Path, *, staged: dict[Path, frozenset[str]]) ->
     """Directories under ``src/`` that staging never reads and ``UNGATED_ROOTS``
     does not exempt, repo-relative.
 
-    Three ways a directory is accounted for, checked in this order:
+    Three ways a directory is accounted for. The first is tested first and that
+    ordering is load-bearing; the other two only ever agree, since both end the
+    enquiry the same way.
 
     1. it is a root staging reads out of, or holds one — descend, because the
        gap may be deeper. ``src/user`` holds staging roots without being one;
-       so does a plugin directory.
+       so does a plugin directory. Tested first because descending is the only
+       outcome that can still find something, so a directory that qualifies here
+       must not be closed out by either rule below.
     2. its parent is such a root and its name is one of the namespaces read out
        of that root — accounted, and *not* descended into, because a namespace
        stages whole. This is what keeps a skill's own ``scripts/`` interior from
