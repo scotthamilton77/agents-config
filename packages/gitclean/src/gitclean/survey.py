@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from gitclean.model import Branch, MergeEvidence, PullRequest, Survey, Worktree
@@ -70,41 +69,61 @@ def resolve_repo(port: CommandPort, cwd: Path | None) -> tuple[str, str] | None:
     return _first_line(root.out), _first_line(common.out)
 
 
-def resolve_default_branch(port: CommandPort, cwd: Path | None) -> str | None:
-    """The repository's trunk -- the branch that is never a deletion candidate.
-    None when it cannot be determined.
+def _ref_exists(port: CommandPort, cwd: Path | None, ref: str) -> bool:
+    return port.git(["show-ref", "--verify", "--quiet", ref], cwd=cwd).ok
 
-    Discovered, never supplied by the caller. `--base` moves what merges are
-    measured *against*; letting it also name the default branch would hand a
-    caller the ability to strip protection from the real trunk by measuring
-    against something else, and a trunk that is an ancestor of that something
-    else then classifies as merged and sweepable.
 
-    origin's published HEAD first, then a local main/master, each verified to
-    exist. Returning the literal `main` when nothing answers used to look
-    harmless -- every merge probe against a ref that is not there fails, so
+def resolve_default_branch(port: CommandPort, cwd: Path | None) -> tuple[str | None, str | None]:
+    """The repository's trunk -- the branch that is never a deletion candidate
+    -- and, when nothing answered, the warning that says which tier declined.
+
+    Discovered, never supplied by the caller. A caller who could name what
+    merges are measured against could measure against something the real trunk
+    is an ancestor of, and the trunk would then classify as merged and
+    sweepable -- so the question is asked of the repository, and only of the
+    repository.
+
+    origin's published HEAD first, then a local main/master -- **each verified
+    to resolve**. Returning the literal `main` when nothing answers used to
+    look harmless: every merge probe against a ref that is not there fails, so
     nothing could be proven merged. But protection is assigned by *name*, and
     a repository whose trunk is `trunk` then has no protected branch at all:
     the real trunk is left indistinguishable from cruft, deletable like any
-    other branch. An unproven guess is not a default branch."""
+    other branch.
+
+    The published-HEAD tier is the one most likely to be stale -- a dangling
+    `origin/HEAD -> origin/master` is the standard leftover after a
+    server-side rename -- and taking it on trust was worse than guessing,
+    because the guess was then recorded as knowledge and suppressed the
+    warning that would have said no branch is protected. An unproven name is
+    not a default branch, whichever tier produced it."""
     head = port.git(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], cwd=cwd)
-    if head.ok and head.out:
-        return _first_line(head.out).removeprefix("refs/remotes/origin/")
+    published = _first_line(head.out).removeprefix("refs/remotes/origin/") if head.ok else ""
+    if published and _ref_exists(port, cwd, f"refs/remotes/origin/{published}"):
+        return published, None
     for candidate in ("main", "master"):
-        probe = port.git(["show-ref", "--verify", "--quiet", f"refs/heads/{candidate}"], cwd=cwd)
-        if probe.ok:
-            return candidate
-    return None
+        if _ref_exists(port, cwd, f"refs/heads/{candidate}"):
+            return candidate, None
+    detail = (
+        f"origin publishes HEAD as origin/{published}, which no longer exists"
+        if published
+        else "origin has published no HEAD"
+    )
+    return None, (
+        f"could not determine this repository's default branch: {detail}, and neither main "
+        f"nor master exists. Nothing here can be told apart from the trunk, so nothing will "
+        f"be swept; publish origin's HEAD (`git remote set-head origin -a`) and re-run, or "
+        f"delete what you want gone by naming it"
+    )
 
 
 def resolve_base_ref(port: CommandPort, cwd: Path | None, default_branch: str) -> str:
     """Prefer the remote-tracking tip: it is what a PR actually merged into,
     and a stale local checkout of the default branch would under-report
     merges."""
-    remote = port.git(
-        ["show-ref", "--verify", "--quiet", f"refs/remotes/origin/{default_branch}"], cwd=cwd
-    )
-    return f"origin/{default_branch}" if remote.ok else default_branch
+    if _ref_exists(port, cwd, f"refs/remotes/origin/{default_branch}"):
+        return f"origin/{default_branch}"
+    return default_branch
 
 
 def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree], list[str]]:
@@ -140,10 +159,19 @@ def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree],
         branch = branch_ref.removeprefix("refs/heads/") if branch_ref else None
         prunable = "prunable" in block
         if prunable:
-            # The directory is gone by definition, so there is nothing to hold
-            # uncommitted work and nothing to stat. Probing would fail and
-            # report an unknown that is in fact perfectly well known.
-            dirt: tuple[int, int, int] | None = (0, 0, 0)
+            # NOT "the directory is gone, so there is nothing to stat". git
+            # says prunable whenever the path is merely UNREACHABLE -- moved
+            # aside, or on a volume that is not mounted right now -- and the
+            # tree, with its .env and its afternoon of uncommitted work, is
+            # sitting intact wherever it went. Asserting (0, 0, 0) here was
+            # the one place an unknown was manufactured into the answer that
+            # authorises deletion. Nothing can be probed and nothing is known.
+            dirt: tuple[int, int, int] | None = None
+            warnings.append(
+                f"git reports the worktree at {path} as prunable, which means only that its "
+                f"path is unreachable from here -- the tree may still exist, holding work "
+                f"nothing has copied; its contents are unknown"
+            )
         else:
             dirt = _count_dirt(port, Path(path))
             if dirt is None:
@@ -176,14 +204,26 @@ def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree],
 
 
 def _count_dirt(port: CommandPort, path: Path) -> tuple[int, int, int] | None:
-    """(tracked-modified, untracked, ignored) counts, or None when git would
-    not answer -- an unstatable tree is unknown, not clean.
+    """(tracked-modified, untracked, ignored) FILE counts, or None when git
+    would not answer -- an unstatable tree is unknown, not clean.
 
     ``--ignored`` buys visibility, not a verdict. What it finds in practice is
     build detritus, so the caller reports the count rather than acting on it --
-    see ``Worktree.ignored_file_count`` for the trade that settles."""
+    see ``Worktree.ignored_file_count`` for the trade that settles.
+
+    The flag pair is what makes these file counts rather than line counts, and
+    both halves are load-bearing. Under ``--untracked-files=normal`` git
+    collapses an untracked directory to a single line, so `node_modules/` is
+    disclosed as one file when it is forty thousand -- the report understating
+    what a deletion removes by orders of magnitude, in the one place the
+    ignored-files trade is surfaced before an irreversible sweep. ``=all``
+    expands that. Ignored content additionally needs ``traditional``: under
+    ``matching`` any directory matching an ignore pattern re-collapses to its
+    own line whatever the untracked mode says, and only ``traditional`` defers
+    to ``=all``. Measured on a 2.5 GB checkout the pair costs ~0.15s against
+    ~0.02s, and returns 47,620 ignored files where the old pair returned 90."""
     status = port.git(
-        ["status", "--porcelain=v1", "--untracked-files=normal", "--ignored=matching"], cwd=path
+        ["status", "--porcelain=v1", "--untracked-files=all", "--ignored=traditional"], cwd=path
     )
     if not status.ok:
         return None
@@ -375,11 +415,25 @@ def _squash_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str)
     up with what a squash merge actually produced.
 
     `commit-tree` writes a loose object. It is unreachable and gc collects it;
-    nothing in the repo's refs is touched."""
-    base = port.git(["merge-base", base_ref, name], cwd=cwd)
+    nothing in the repo's refs is touched.
+
+    A name beginning with `-` -- `refs/heads/-m` is a legal ref that
+    `update-ref` or a remote push can create -- is otherwise read by git as a
+    switch. `--` genuinely terminates `merge-base`'s option parsing, so it is
+    applied unconditionally, matching every other probe in this module.
+    `rev-parse` has no terminator that survives here: both `--` and
+    `--end-of-options` are echoed back as a literal output line rather than
+    consumed, so the tree lookup instead names the branch by its full ref path
+    when the short name would otherwise be misread -- a path never begins with
+    `-`. That substitution is conditional, not unconditional like the one
+    above: a remote-tracking branch's short name always carries its remote
+    first (`origin/feat`, never bare `feat`) and already resolves correctly,
+    while `refs/heads/` would be the wrong prefix for it."""
+    base = port.git(["merge-base", base_ref, "--", name], cwd=cwd)
     if not base.ok or not base.out:
         return False
-    tree = port.git(["rev-parse", f"{name}^{{tree}}"], cwd=cwd)
+    ref = f"refs/heads/{name}" if name.startswith("-") else name
+    tree = port.git(["rev-parse", f"{ref}^{{tree}}"], cwd=cwd)
     if not tree.ok or not tree.out:
         return False
     synthetic = port.git(
@@ -442,10 +496,10 @@ def _resolve_merge(
         # must visibly fall through instead of quietly satisfying it.
         return True, MergeEvidence.ANCESTOR
     if pr is not None and pr.state == "CLOSED" and _pr_covers_tip(port, cwd, pr, head):
-        # Not merged -- but a human closed the PR, which is an explicit
-        # decision to abandon the branch. classify turns that into SAFE, so it
-        # is gated on containment too: "drop this" applies to what was in the
-        # PR, not to commits that arrived afterwards.
+        # Not merged, and this tier authorises nothing: a closed PR says
+        # someone stopped wanting the change, never that its commits exist
+        # anywhere else. It is gated on containment so the report speaks about
+        # what was in the PR rather than about commits that arrived afterwards.
         return False, MergeEvidence.PR_CLOSED_UNMERGED
     if _patch_equal(port, cwd, base_ref, name):
         return True, MergeEvidence.PATCH_EQUAL
@@ -500,35 +554,38 @@ def read_branches(
             continue
 
         is_default = not is_remote and name == default_branch
+        # A PR keyed by the trunk's name targets it rather than proposing it,
+        # so it says nothing about whether the trunk is finished with.
         pr = None if is_default else prs.get(short)
-        if is_default:
-            # The default branch is surveyed only as the base; it is never a
-            # deletion candidate, and probing it against itself is noise.
-            unmerged: int | None = 0
-            unpushed: int | None = 0
-            merged, evidence = True, MergeEvidence.ANCESTOR
-        else:
-            unmerged = _count_revs(port, cwd, f"{base_ref}..{name}")
-            if unmerged is None:
-                warnings.append(
-                    f"could not count the commits on {name} missing from {base_ref}; "
-                    f"it will not be treated as merged"
-                )
-            unpushed, unpushed_warning = _unpushed_count(
-                port, cwd, name=name, upstream=upstream, track=track
+        # The trunk is measured like every other branch. It used to be handed
+        # zeroes and a merge verdict on the reasoning that probing it against
+        # itself is noise, but both halves of that were wrong: the counts are
+        # the most useful ones in the report -- `origin/main..main` is the
+        # commits on the trunk that have not been pushed -- and asserting a
+        # measurement nobody took is the exact habit that made this tool
+        # dangerous. Nothing needs the shortcut: the trunk is kept out of the
+        # sweep by identity, not by carrying a manufactured verdict.
+        unmerged = _count_revs(port, cwd, f"{base_ref}..{name}")
+        if unmerged is None:
+            warnings.append(
+                f"could not count the commits on {name} missing from {base_ref}; "
+                f"it will not be treated as merged"
             )
-            if unpushed_warning:
-                warnings.append(unpushed_warning)
-            merged, evidence = _resolve_merge(
-                port,
-                cwd,
-                base_ref,
-                name,
-                pr=pr,
-                head=head,
-                ancestor_merged=name in (remote_merged if is_remote else local_merged),
-                unmerged_commits=unmerged,
-            )
+        unpushed, unpushed_warning = _unpushed_count(
+            port, cwd, name=name, upstream=upstream, track=track
+        )
+        if unpushed_warning:
+            warnings.append(unpushed_warning)
+        merged, evidence = _resolve_merge(
+            port,
+            cwd,
+            base_ref,
+            name,
+            pr=pr,
+            head=head,
+            ancestor_merged=name in (remote_merged if is_remote else local_merged),
+            unmerged_commits=unmerged,
+        )
 
         branches.append(
             Branch(
@@ -557,13 +614,14 @@ def _worktree_activity(
     worktree: Worktree,
     activity_by_branch: dict[str, str | None],
 ) -> str | None:
-    """When a worktree holds a branch, its age is that branch's age.
+    """The commit date of what this worktree holds -- its branch's tip, or its
+    detached HEAD.
 
-    A detached checkout has no branch to inherit from, but it does have a
-    HEAD, and the commit date of that HEAD is the same measurement. Without it
-    a detached worktree has no age at all, which reads downstream as an
-    unknown -- so it can never be called abandoned and stays in the report
-    forever, which is the cruft this tool exists to remove."""
+    It dates the *commit*, not the checkout, and the two come apart: a worktree
+    created ten seconds ago at a two-year-old tag reports a two-year-old
+    timestamp. Nothing judges on it, which is why the discrepancy is tolerable
+    -- it is a fact for a reader, and no rule reads it. If anything ever does,
+    this is the wrong measurement for it."""
     if worktree.branch:
         return activity_by_branch.get(worktree.branch)
     if worktree.prunable or not worktree.head:
@@ -572,57 +630,19 @@ def _worktree_activity(
     return _first_line(result.out) if result.ok else None
 
 
-def parse_timestamp(value: str | None) -> datetime | None:
-    """An aware datetime, or None when the value cannot be read.
-
-    The two clocks gitclean reads do NOT agree on format: git's
-    `committerdate:iso-strict` carries the committer's local UTC offset
-    (`...T09:00:00-05:00`) while gh always emits UTC (`...T12:00:00Z`).
-    Comparing those as strings is wrong in the direction that costs work --
-    lexically `-05:00` sorts before `Z`, so a commit made AFTER a PR closed
-    can read as before it. Every comparison goes through here so both sides
-    are real instants."""
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
-
-
-def idle_since(last_activity: str | None, now: datetime, window: timedelta) -> bool:
-    """True when the timestamp is older than the window. An unparseable or
-    missing timestamp is NOT idle -- an unknown age must never be evidence for
-    deletion."""
-    parsed = parse_timestamp(last_activity)
-    if parsed is None:
-        return False
-    return (now - parsed) > window
-
-
-def survey(
-    port: CommandPort,
-    *,
-    cwd: Path | None = None,
-    base_override: str | None = None,
-) -> Survey | str:
+def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
     """Full read pass. Returns the Survey, or a message when cwd is not a repo."""
     resolved = resolve_repo(port, cwd)
     if resolved is None:
         return "not inside a git repository"
     repo_root, common_dir = resolved
 
-    # Two different questions, deliberately answered separately. `--base` says
-    # what to measure merges against; it does not say which branch is the
-    # repository's trunk, and conflating them lets `--base release` demote the
-    # real trunk to an ordinary, deletable branch.
-    resolved_default = resolve_default_branch(port, cwd)
+    resolved_default, default_branch_warning = resolve_default_branch(port, cwd)
     # The name is still needed downstream to compare against, but it is now
     # known to be a guess -- so it protects nothing it cannot prove, and the
     # flag travels with the survey so the run can report that it is guessing.
     default_branch = resolved_default if resolved_default is not None else "main"
-    base_ref = base_override or resolve_base_ref(port, cwd, default_branch)
+    base_ref = resolve_base_ref(port, cwd, default_branch)
 
     head = port.git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd)
     current = _first_line(head.out) if head.ok else None
@@ -653,13 +673,8 @@ def survey(
         for w in worktrees
     ]
 
-    if resolved_default is None:
-        warnings.append(
-            "could not determine this repository's default branch: origin has published no "
-            "HEAD and neither main nor master exists. No branch is protected as the trunk, "
-            "so publish origin's HEAD (`git remote set-head origin -a`) before deleting "
-            "anything, and pass --base to name what merges are measured against"
-        )
+    if default_branch_warning is not None:
+        warnings.append(default_branch_warning)
 
     return Survey(
         repo_root=repo_root,

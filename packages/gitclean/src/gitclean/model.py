@@ -1,25 +1,27 @@
-"""Domain model: what gitclean surveys, how it judges, and what it emits.
+"""Domain model: what gitclean measures, and the one thing it concludes.
 
-Two verdicts, deliberately orthogonal, because collapsing them is what makes
-hand-rolled cleanup dangerous:
+There is a single conclusion in here, and its narrowness is the safety
+property. ``Target.merge_evidence`` records how -- or whether -- a merge was
+proven, and ``Target.sweepable`` says whether that proof plus a handful of
+measured facts lets an unattended sweep take the target. Everything else is
+measurement: commit dates, file counts, upstream state, PR number and state.
+No lifecycle verdict is derived from any of it. "Abandoned" is a claim about
+whether a person still wants the work, and nothing in a repository measures
+that.
 
-``Disposition`` answers *is this still live work?* -- a lifecycle question,
-answered from PR state, worktree occupancy, and idle time.
+Proving *deleting this is safe* is a total function over every repository
+state that exists -- detached HEADs, prunable records, unmounted volumes, refs
+named ``-m`` -- and a gap in it costs somebody's work. Proving *this is merged*
+is partial: an unproven target simply appears in the report with ``withheld``
+saying what stopped it, and a human who wants it gone names it. A gap there
+costs a leftover branch.
 
-``Risk`` answers *would deleting this destroy the only copy?* -- a data
-question, answered from what content exists where. A branch can be abandoned
-(nobody will finish it) and still carry the only copy of its commits; a branch
-can be active and carry no risk at all because everything is pushed.
-
-Cleanup keys on both: the default sweep takes only ``SAFE`` + ``NONE``, and
-``Risk`` is what ``--force`` overrides -- never ``Disposition.PROTECTED``.
-
-A third commitment runs through the field types: **every fact read from git is
+A second commitment runs through the field types: **every fact read from git is
 optional, and ``None`` means "the probe did not answer".** It does not mean
 zero, clean, or absent. A tool that deletes things must be able to say "I do
 not know", because the alternative -- defaulting an unanswered question to the
 value that authorises deletion -- turns every transient git failure into data
-loss. Classification treats ``None`` as the conservative answer, never the
+loss. Judgement treats ``None`` as the conservative answer, never the
 convenient one.
 """
 
@@ -27,38 +29,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-
-
-class Disposition(StrEnum):
-    """Lifecycle verdict for one deletable target."""
-
-    PROTECTED = "protected"
-    """Never deletable, with or without --force: the default branch, the
-    branch currently checked out, the main worktree, or a locked worktree."""
-
-    SAFE = "safe"
-    """Merge is proven, or a PR closed it unmerged: nothing is waiting on it."""
-
-    ACTIVE = "active"
-    """An open PR, or a live worktree, or activity inside the idle window."""
-
-    ABANDONED = "abandoned"
-    """No PR, no merge evidence, idle past the window. Reported for a human
-    decision -- never swept by a bare --cleanup."""
-
-
-class Risk(StrEnum):
-    """Data-loss verdict for one deletable target."""
-
-    NONE = "none"
-    """Deleting destroys no content that does not exist elsewhere."""
-
-    RECOVERABLE = "recoverable"
-    """Unique content, but a copy survives the deletion -- e.g. a local branch
-    fully pushed to its upstream. Restorable without the salvage bundle."""
-
-    DATA_LOSS = "data_loss"
-    """The only copy. Refused without --force; salvaged before deletion."""
 
 
 class TargetKind(StrEnum):
@@ -77,8 +47,10 @@ class MergeEvidence(StrEnum):
     the only signal that survives a squash merge intact."""
 
     PR_CLOSED_UNMERGED = "pr_closed_unmerged"
-    """gh reports the PR was closed without merging: explicit human
-    abandonment of the branch, which makes it sweepable."""
+    """gh reports the PR was closed without merging. A reported fact and
+    nothing more: the commits are still only here, so this authorises no
+    deletion. Reading it as one deleted branches whose PR was closed while the
+    work continued on them."""
 
     ANCESTOR = "ancestor"
     """Reachable from the base tip. True merges only."""
@@ -137,14 +109,13 @@ class Worktree:
 
     Ignored content is overwhelmingly build detritus -- caches, virtualenvs,
     coverage files -- that regenerates for free. Treating it as work at risk
-    would make almost every finished worktree require --force, replacing an
+    would keep almost every finished worktree out of the sweep, replacing an
     automatic cleanup with a manual triage, which costs far more than it saves.
 
-    The accepted trade: a bare sweep of an already-merged worktree deletes its
+    The accepted trade: a sweep of an already-merged worktree deletes its
     ignored files too, so a `.env` living only there goes with it. The count is
     surfaced in the report and in the target's reasons so that consequence is
-    visible before anyone runs cleanup, and a --force salvage archives ignored
-    files along with everything else."""
+    visible before anyone runs cleanup."""
     last_activity: str | None
 
     def as_json(self) -> dict[str, object]:
@@ -209,29 +180,43 @@ class Branch:
 
 @dataclass(frozen=True, slots=True)
 class Target:
-    """One deletable thing, with both verdicts and the reasoning behind them."""
+    """One deletable thing: what was measured about it, and whether an
+    unattended sweep may take it."""
 
     id: str
     """Stable selector: `worktree:<path>`, `branch:<name>`, `remote:<r>/<ref>`."""
     kind: TargetKind
     name: str
-    disposition: Disposition
-    risk: Risk
+    merge_evidence: MergeEvidence
+    merge_proven: bool
+    """True when the evidence is one of the tiers that actually prove a merge.
+
+    Reported, not acted on: ``sweepable`` is what the sweep reads. This is the
+    same question collapsed to one field for a caller filtering the envelope,
+    and keeping it beside the tier rather than folded into it lets a reported
+    fact -- a PR closed without merging -- travel without authorising
+    anything."""
+    sweepable: bool
+    """True when a bare `--cleanup` may take this unattended."""
+    withheld: str | None
+    """When not sweepable, the measured reason, in the prose a reader would use
+    to check it. Never a claim about whether anyone still wants the work."""
     reasons: tuple[str, ...]
-    """Why this disposition and risk, in reader-facing prose. The audit trail."""
+    """Everything measured about this target, in reader-facing prose. The audit
+    trail, and it stands whether or not the target is sweepable."""
     last_activity: str | None
-    salvage_needed: bool
 
     def as_json(self) -> dict[str, object]:
         return {
             "id": self.id,
             "kind": self.kind.value,
             "name": self.name,
-            "disposition": self.disposition.value,
-            "risk": self.risk.value,
+            "merge_evidence": self.merge_evidence.value,
+            "merge_proven": self.merge_proven,
+            "sweepable": self.sweepable,
+            "withheld": self.withheld,
             "reasons": list(self.reasons),
             "last_activity": self.last_activity,
-            "salvage_needed": self.salvage_needed,
         }
 
 
@@ -246,10 +231,9 @@ class Survey:
     default_branch_known: bool
     """False when the name above is a guess nothing confirmed.
 
-    Protection is assigned by name, so a guess protects nothing: a repository
-    whose trunk is `trunk` has no protected branch at all, and a mode that
-    sweeps everything unprotected would take the trunk. Modes that delete
-    without the caller naming a target refuse while this is False."""
+    A run that cannot resolve the trunk cannot tell it apart from cruft, so
+    while this is False nothing is swept unattended. Naming a target still
+    works: the caller knows what they are pointing at."""
     current_branch: str | None
     gh_available: bool
     gh_error: str | None
@@ -353,10 +337,14 @@ class Deletion:
 
 @dataclass(frozen=True, slots=True)
 class Skipped:
-    """A target the automatic sweep dropped, and why.
+    """A target the sweep selected and then dropped, and why.
 
-    An automatic sweep that quietly does less than the caller assumes reads as
-    "everything was cleaned" when it was not. Every omission is named here."""
+    Distinct from ``Target.withheld``, which says why a target never entered
+    the sweep at all. This is the narrower case: the target qualified, and
+    something about the rest of the plan pushed it back out -- a branch whose
+    holding worktree is not also going. A run that quietly does less than the
+    caller assumes reads as "everything was cleaned" when it was not, so every
+    such omission is named here."""
 
     target_id: str
     name: str
@@ -388,9 +376,11 @@ class Plan:
 class Refusal:
     """A refusal to proceed, and exactly what would let the caller proceed.
 
-    ``remedy`` names the flag, but a refusal is a finding, not a formality:
-    the blocked targets are listed so the caller can drop them from the
-    selection instead of reaching for --force."""
+    Refusals are few and narrow, because a named target is an authorisation
+    rather than a proposal. What is left answers something the caller could not
+    have answered themselves -- a name matching nothing, a name matching two
+    things, a deletion git itself will reject. ``blocked`` lists the targets so
+    they can be dropped from the selection rather than argued with."""
 
     code: str
     message: str

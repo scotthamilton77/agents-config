@@ -17,9 +17,9 @@ from pathlib import Path
 from typing import TextIO
 
 from gitclean import get_version
-from gitclean.classify import DEFAULT_IDLE_DAYS, classify
+from gitclean.classify import classify
 from gitclean.execute import ExecutionReport, Executor, default_salvage_dir
-from gitclean.model import Disposition, Plan, Refusal, Risk, Survey, Target
+from gitclean.model import MergeEvidence, Plan, Refusal, Survey, Target
 from gitclean.plan import build_plan
 from gitclean.ports import CommandPort, SubprocessCommands
 from gitclean.survey import survey as run_survey
@@ -31,21 +31,24 @@ EXIT_ANOMALY = 3
 
 _EPILOG = """\
 modes:
-  --report                 survey only; emits the full classified state as JSON
-  --cleanup [NAME ...]     delete the safe subset, or exactly the named targets
+  --report                 survey only; emits the full measured state as JSON
+  --cleanup [NAME ...]     sweep what is provably merged, or delete exactly the named targets
 
-verdicts:
-  disposition  protected | safe | active | abandoned   -- is this still live work?
-  risk         none | recoverable | data_loss          -- would deleting destroy the only copy?
+what a bare --cleanup takes:
+  a target whose merge_evidence is pr_merged, ancestor, patch_equal or squash_equal,
+  that is not the trunk or the ref merges are measured against, that is not a server
+  ref, that is not the worktree this run is executing in, and -- for a worktree --
+  whose working tree git reported clean. Everything else is reported with `withheld`
+  saying which of those was not met.
 
-  A bare --cleanup takes only disposition=safe AND risk=none. --force overrides
-  risk (salvaging first); it never overrides protected.
+naming a target deletes it. Nothing is re-derived, no flag is demanded, and git's
+own refusals -- a checked-out branch, a dirty or locked worktree -- stand as they are.
 
 examples:
   gitclean --report --format human
   gitclean --cleanup --dry-run
   gitclean --cleanup feat/old-thing worktree:/path/to/wt
-  gitclean --cleanup --include-remote
+  gitclean --cleanup origin/feat/old-thing
 """
 
 
@@ -68,30 +71,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--force",
-        action="store_true",
-        help="accept data loss: salvage to a bundle first, then delete. Never overrides protected.",
-    )
-    parser.add_argument(
         "--dry-run", action="store_true", help="resolve and report the plan without executing it"
     )
     parser.add_argument(
-        "--include-remote",
-        action="store_true",
-        help="allow deleting remote branches (off by default: remote deletions affect others)",
+        "--salvage-dir",
+        metavar="DIR",
+        help="where a remote ref is bundled before it is deleted from the server",
     )
-    parser.add_argument(
-        "--idle-days",
-        type=int,
-        default=DEFAULT_IDLE_DAYS,
-        metavar="N",
-        help="idle window before an unmerged branch counts as abandoned "
-        f"(default {DEFAULT_IDLE_DAYS})",
-    )
-    parser.add_argument(
-        "--base", metavar="REF", help="branch to measure merges against (default: origin's HEAD)"
-    )
-    parser.add_argument("--salvage-dir", metavar="DIR", help="where --force writes bundles")
     parser.add_argument(
         "--format", choices=("json", "human"), default="json", help="output format (default json)"
     )
@@ -130,19 +116,31 @@ def _envelope(
 
 
 def _summary(targets: tuple[Target, ...]) -> dict[str, object]:
-    by_disposition: dict[str, int] = {d.value: 0 for d in Disposition}
-    by_risk: dict[str, int] = {r.value: 0 for r in Risk}
+    """Counts only. The evidence breakdown is the one distribution worth having
+    at a glance: it says how much of this repository the tool can account for,
+    and every tier in it is a claim a reader can go and check."""
+    by_evidence: dict[str, int] = {e.value: 0 for e in MergeEvidence}
     for target in targets:
-        by_disposition[target.disposition.value] += 1
-        by_risk[target.risk.value] += 1
+        by_evidence[target.merge_evidence.value] += 1
     return {
         "total": len(targets),
-        "by_disposition": by_disposition,
-        "by_risk": by_risk,
-        "sweepable_now": sum(
-            1 for t in targets if t.disposition is Disposition.SAFE and t.risk is Risk.NONE
-        ),
+        "sweepable_now": sum(1 for t in targets if t.sweepable),
+        "by_merge_evidence": by_evidence,
     }
+
+
+def _planned_ids(payload: dict[str, object]) -> frozenset[str]:
+    """The targets this run acts on, which is not the same set as the ones a
+    bare sweep would have taken."""
+    plan = payload.get("plan")
+    if not isinstance(plan, dict):
+        return frozenset()
+    targets = plan.get("targets")
+    if not isinstance(targets, list):
+        return frozenset()
+    return frozenset(
+        str(t["id"]) for t in targets if isinstance(t, dict) and isinstance(t.get("id"), str)
+    )
 
 
 def _render_human(payload: dict[str, object], out: TextIO) -> None:
@@ -156,20 +154,33 @@ def _render_human(payload: dict[str, object], out: TextIO) -> None:
         for warning in warnings:
             print(f"WARN:  {warning}", file=out)
 
+    # `sweepable` answers "would an unattended run take this", which stops
+    # being the interesting question the moment a caller names something.
+    # Rendering `not swept: no merge proof` six lines above `ok -- deleted`
+    # for the same target reads as a contradiction, and the reader has to
+    # know which field wins to resolve it. The plan is what was acted on, so
+    # the plan is what the row reports.
+    planned = _planned_ids(payload)
     targets = payload.get("targets")
     if isinstance(targets, list) and targets:
         print("", file=out)
         for entry in targets:
             if not isinstance(entry, dict):
                 continue
+            named = entry.get("id") in planned
+            mark = "NAMED" if named else ("sweep" if entry.get("sweepable") else "hold ")
             print(
-                f"  [{entry.get('disposition'):<9}] [{entry.get('risk'):<11}] {entry.get('id')}",
+                f"  [{mark}] [{entry.get('merge_evidence'):<18}] {entry.get('id')}",
                 file=out,
             )
             reasons = entry.get("reasons")
             if isinstance(reasons, list):
                 for reason in reasons:
                     print(f"      - {reason}", file=out)
+            if named:
+                print("      named on the command line: this run acts on it", file=out)
+            elif entry.get("withheld"):
+                print(f"      not swept: {entry.get('withheld')}", file=out)
 
     summary = payload.get("summary")
     if isinstance(summary, dict):
@@ -242,12 +253,12 @@ def main(
     moment = now if now is not None else datetime.now(UTC)
     mode = "report" if args.report else "cleanup"
 
-    surveyed = run_survey(runner, cwd=cwd, base_override=args.base)
+    surveyed = run_survey(runner, cwd=cwd)
     if isinstance(surveyed, str):
         _emit(_envelope(mode, ok=False, error=surveyed), args.format, stream)
         return EXIT_USAGE
 
-    targets = classify(surveyed, now=moment, idle_days=args.idle_days)
+    targets = classify(surveyed)
 
     if args.report:
         _emit(
@@ -262,8 +273,6 @@ def main(
         targets,
         surveyed,
         selectors=list(args.cleanup or []),
-        force=args.force,
-        include_remote=args.include_remote,
         dry_run=args.dry_run,
         salvage_dir=salvage_dir,
     )

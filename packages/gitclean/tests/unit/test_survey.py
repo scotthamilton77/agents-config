@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from gitclean.model import MergeEvidence, Survey
-from gitclean.ports import CommandResult, ScriptedCommands, fail, ok
+from gitclean.ports import CommandResult, ScriptedCommands, SubprocessCommands, fail, ok
 from gitclean.survey import (
-    idle_since,
+    _count_dirt,
     read_pull_requests,
     read_worktrees,
     resolve_base_ref,
@@ -18,7 +18,6 @@ from gitclean.survey import (
 )
 
 SEP = "\x1f"
-NOW = datetime(2026, 7, 25, 12, 0, 0, tzinfo=UTC)
 
 
 _AUTO_TRACK = "\x00auto"
@@ -64,13 +63,17 @@ def make_port(
         "show-ref --verify --quiet refs/remotes/origin/main": ok(),
         "rev-parse --abbrev-ref HEAD": ok("main"),
         "worktree list --porcelain": ok(worktrees),
-        "status --porcelain=v1 --untracked-files=normal": ok(""),
+        "status --porcelain=v1": ok(""),
         # A detached worktree has no branch to take its age from, so the survey
         # dates it from HEAD instead.
         "show -s --format=%cI": ok("2026-07-20T00:00:00+00:00"),
         "for-each-ref": ok("\n".join(refs or [])),
         "branch --merged": ok(local_merged),
         "branch -r --merged": ok(remote_merged),
+        # The trunk is probed like any other branch, so its own count is part
+        # of the boring case. A test that cares what it says overrides it
+        # through `counts`, which is applied after this table.
+        "rev-list --count origin/main..main": ok("0"),
     }
     for spec, value in (counts or {}).items():
         table[f"rev-list --count {spec}"] = ok(value)
@@ -123,9 +126,12 @@ def test_unresolvable_common_dir_gives_up_rather_than_guessing() -> None:
 
 def test_default_branch_comes_from_origins_published_head() -> None:
     port = ScriptedCommands(
-        git={"symbolic-ref --quiet refs/remotes/origin/HEAD": ok("refs/remotes/origin/trunk")}
+        git={
+            "symbolic-ref --quiet refs/remotes/origin/HEAD": ok("refs/remotes/origin/trunk"),
+            "show-ref --verify --quiet refs/remotes/origin/trunk": ok(),
+        }
     )
-    assert resolve_default_branch(port, None) == "trunk"
+    assert resolve_default_branch(port, None) == ("trunk", None)
 
 
 def test_default_branch_falls_back_to_master_when_main_is_absent() -> None:
@@ -136,7 +142,7 @@ def test_default_branch_falls_back_to_master_when_main_is_absent() -> None:
             "show-ref --verify --quiet refs/heads/master": ok(),
         }
     )
-    assert resolve_default_branch(port, None) == "master"
+    assert resolve_default_branch(port, None) == ("master", None)
 
 
 def test_an_unidentifiable_default_branch_is_unknown_not_guessed_as_main() -> None:
@@ -150,7 +156,65 @@ def test_an_unidentifiable_default_branch_is_unknown_not_guessed_as_main() -> No
             "show-ref --verify --quiet refs/heads/": fail(),
         }
     )
-    assert resolve_default_branch(port, None) is None
+    name, warning = resolve_default_branch(port, None)
+    assert name is None
+    assert warning is not None and "origin has published no HEAD" in warning
+
+
+def test_a_dangling_origin_head_is_not_a_default_branch() -> None:
+    """The tier most likely to be stale was the one tier never verified.
+
+    A server-side default-branch rename leaves `origin/HEAD -> origin/master`
+    behind with no `origin/master` for it to point at. Trusting it names a
+    trunk that exists nowhere -- and because the guess was then recorded as
+    knowledge, it also suppressed the warning that would have said no branch is
+    protected as the trunk."""
+    port = ScriptedCommands(
+        git={
+            "symbolic-ref --quiet refs/remotes/origin/HEAD": ok("refs/remotes/origin/master"),
+            "show-ref --verify --quiet refs/remotes/origin/master": fail(),
+            "show-ref --verify --quiet refs/heads/main": fail(),
+            "show-ref --verify --quiet refs/heads/master": fail(),
+        }
+    )
+    name, warning = resolve_default_branch(port, None)
+    assert name is None
+    assert warning is not None and "origin/master" in warning
+
+
+def test_a_dangling_origin_head_still_falls_through_to_a_local_trunk() -> None:
+    """Declining the stale pointer must not cost the answer a lower tier can
+    still verify."""
+    port = ScriptedCommands(
+        git={
+            "symbolic-ref --quiet refs/remotes/origin/HEAD": ok("refs/remotes/origin/master"),
+            "show-ref --verify --quiet refs/remotes/origin/master": fail(),
+            "show-ref --verify --quiet refs/heads/main": ok(),
+        }
+    )
+    assert resolve_default_branch(port, None) == ("main", None)
+
+
+def test_a_dangling_origin_head_leaves_the_trunk_unknown_on_the_report() -> None:
+    """The consequence the survey has to carry: `default_branch_known` False,
+    so nothing downstream reads the guess as a protected name."""
+    port = make_port(
+        refs=[ref_line("refs/heads/trunk", "trunk", head="*")],
+        counts={"origin/main..trunk": "3"},
+        extra={
+            "symbolic-ref --quiet refs/remotes/origin/HEAD": ok("refs/remotes/origin/master"),
+            "show-ref --verify --quiet refs/remotes/origin/master": fail(),
+            "show-ref --verify --quiet refs/heads/main": fail(),
+            "show-ref --verify --quiet refs/heads/master": fail(),
+            "cherry origin/main -- trunk": fail(),
+            "merge-base origin/main -- trunk": fail(),
+        },
+    )
+
+    result = run(port)
+
+    assert result.default_branch_known is False
+    assert any("origin/master" in w for w in result.warnings)
 
 
 def test_an_unknown_default_branch_is_reported_on_the_survey() -> None:
@@ -167,8 +231,8 @@ def test_an_unknown_default_branch_is_reported_on_the_survey() -> None:
             "show-ref --verify --quiet refs/remotes/origin/main": fail(),
             "cherry main -- trunk": fail(),
             "cherry main -- feature": fail(),
-            "merge-base main trunk": fail(),
-            "merge-base main feature": fail(),
+            "merge-base main -- trunk": fail(),
+            "merge-base main -- feature": fail(),
         },
     )
 
@@ -202,22 +266,24 @@ def test_worktree_porcelain_blocks_are_parsed() -> None:
                 "\n"
                 "worktree /repo/gone\nHEAD ccc\ndetached\nprunable gitdir file removed\n"
             ),
-            "status --porcelain=v1 --untracked-files=normal": ok(""),
+            "status --porcelain=v1": ok(""),
         }
     )
     worktrees, warnings = read_worktrees(port, None)
-    assert warnings == []
     assert [w.path for w in worktrees] == ["/repo", "/repo/wt", "/repo/gone"]
     assert worktrees[0].is_main and worktrees[0].branch == "main"
     assert worktrees[1].locked
     assert worktrees[2].prunable and worktrees[2].branch is None
+    # The only warning parsing produces here: an unreachable tree whose
+    # contents nothing can measure.
+    assert [w for w in warnings if "/repo/gone" not in w] == []
 
 
 def test_a_worktree_block_without_a_path_is_warned_not_dropped_silently() -> None:
     port = ScriptedCommands(
         git={
             "worktree list --porcelain": ok("HEAD aaa\nbranch refs/heads/x\n"),
-            "status --porcelain=v1 --untracked-files=normal": ok(""),
+            "status --porcelain=v1": ok(""),
         }
     )
     worktrees, warnings = read_worktrees(port, None)
@@ -229,9 +295,7 @@ def test_modified_untracked_and_ignored_files_are_counted_separately() -> None:
     port = ScriptedCommands(
         git={
             "worktree list --porcelain": ok("worktree /repo\n"),
-            "status --porcelain=v1 --untracked-files=normal": ok(
-                " M a.txt\nA  b.txt\n?? c.txt\n?? d.txt\n!! .env\n"
-            ),
+            "status --porcelain=v1": ok(" M a.txt\nA  b.txt\n?? c.txt\n?? d.txt\n!! .env\n"),
         }
     )
     worktrees, _ = read_worktrees(port, None)
@@ -249,9 +313,7 @@ def test_ignored_files_are_counted_but_do_not_make_a_worktree_dirty() -> None:
     port = ScriptedCommands(
         git={
             "worktree list --porcelain": ok("worktree /repo\n"),
-            "status --porcelain=v1 --untracked-files=normal": ok(
-                "!! .venv/\n!! __pycache__/\n!! .env\n"
-            ),
+            "status --porcelain=v1": ok("!! .venv/\n!! __pycache__/\n!! .env\n"),
         }
     )
     worktrees, _ = read_worktrees(port, None)
@@ -259,18 +321,51 @@ def test_ignored_files_are_counted_but_do_not_make_a_worktree_dirty() -> None:
     assert worktrees[0].dirty is False
 
 
-def test_the_dirt_probe_asks_git_about_ignored_files() -> None:
+def test_the_dirt_probe_counts_files_rather_than_status_lines() -> None:
     """Counted for the report even though it does not drive the verdict: a
-    reader deciding whether to sweep needs to know what goes with it."""
+    reader deciding whether to sweep needs to know what goes with it -- and a
+    count is only that disclosure if it counts files.
+
+    `--untracked-files=normal` collapses a whole untracked directory to one
+    line, so 40,000 files under `node_modules/` disclose as 1. `=all` expands
+    it. Ignored content needs BOTH flags: under `--ignored=matching` any
+    directory matching an ignore pattern re-collapses to its one line whatever
+    the untracked mode says, and only `traditional` defers to `=all`."""
     port = ScriptedCommands(
         git={
             "worktree list --porcelain": ok("worktree /repo\n"),
-            "status --porcelain=v1 --untracked-files=normal": ok(""),
+            "status --porcelain=v1": ok(""),
         }
     )
     read_worktrees(port, None)
     status_call = next(t for t in port.transcript if t[1] == "status")
-    assert "--ignored=matching" in status_call
+    assert "--untracked-files=all" in status_call
+    assert "--ignored=traditional" in status_call
+
+
+def test_a_real_ignored_directory_is_counted_file_by_file(tmp_path: Path) -> None:
+    """The one claim in this file that scripted output cannot make.
+
+    Every other dirt test asserts what the parser does with bytes a fixture
+    handed it, which is exactly how the collapsed-directory bug survived: the
+    fixtures spelled one line per file because their author assumed git did.
+    This asks real git."""
+    port = SubprocessCommands()
+    port.git(["init", "-q", "."], cwd=tmp_path)
+    (tmp_path / ".gitignore").write_text("cache/\n*.log\n", encoding="utf-8")
+    port.git(["add", ".gitignore"], cwd=tmp_path)
+    port.git(
+        ["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "init"],
+        cwd=tmp_path,
+    )
+    for directory in ("cache", "untracked"):
+        (tmp_path / directory).mkdir()
+        for index in range(500):
+            (tmp_path / directory / f"f{index}.txt").write_text("x", encoding="utf-8")
+    (tmp_path / "debug.log").write_text("x", encoding="utf-8")
+    (tmp_path / "loose.txt").write_text("x", encoding="utf-8")
+
+    assert _count_dirt(port, tmp_path) == (0, 501, 501)
 
 
 def test_a_worktree_git_cannot_stat_is_unknown_not_clean() -> None:
@@ -280,7 +375,7 @@ def test_a_worktree_git_cannot_stat_is_unknown_not_clean() -> None:
     port = ScriptedCommands(
         git={
             "worktree list --porcelain": ok("worktree /repo/opaque\n"),
-            "status --porcelain=v1 --untracked-files=normal": fail("no such directory"),
+            "status --porcelain=v1": fail("no such directory"),
         }
     )
     worktrees, warnings = read_worktrees(port, None)
@@ -290,17 +385,29 @@ def test_a_worktree_git_cannot_stat_is_unknown_not_clean() -> None:
     assert any("could not read the working-tree status" in w for w in warnings)
 
 
-def test_a_prunable_worktree_is_not_probed_for_dirt() -> None:
-    """Its directory is gone by definition, so a failed stat there is an
-    expected fact, not an unknown -- probing would manufacture a warning."""
+def test_a_prunable_worktree_is_unknown_dirt_not_clean() -> None:
+    """`prunable` was read as "the directory is gone, so there is nothing to
+    stat" and its dirt asserted (0, 0, 0). git says prunable whenever the path
+    is merely UNREACHABLE -- a tree moved aside, or on an unmounted volume,
+    reports prunable while `.env` and an afternoon of uncommitted work sit
+    intact inside it. Nothing here can be probed and nothing here is known, so
+    the dirt is unknown and the path is named."""
     port = ScriptedCommands(
         git={
-            "worktree list --porcelain": ok("worktree /repo/gone\nprunable gitdir file removed\n"),
+            "worktree list --porcelain": ok(
+                "worktree /repo/moved\nHEAD ccc\ndetached\n"
+                "prunable gitdir file points to non-existent location\n"
+            ),
         }
     )
     worktrees, warnings = read_worktrees(port, None)
-    assert worktrees[0].dirty is False
-    assert warnings == []
+    assert worktrees[0].dirty is None
+    assert worktrees[0].dirty_file_count is None
+    assert worktrees[0].untracked_file_count is None
+    assert worktrees[0].ignored_file_count is None
+    assert any("/repo/moved" in w for w in warnings)
+    # Still not probed: git has already said the path is unreachable, so the
+    # probe would fail and say less than the warning above already does.
     assert "status" not in [t[1] for t in port.transcript]
 
 
@@ -491,13 +598,6 @@ def test_the_remote_copy_of_the_default_branch_is_not_a_candidate() -> None:
     assert [b.name for b in run(port).branches] == ["main"]
 
 
-def test_the_default_branch_is_surveyed_without_probing_itself() -> None:
-    port = make_port(refs=[ref_line("refs/heads/main", "main", head="*")])
-    main = run(port).branches[0]
-    assert main.is_default and main.merged
-    assert "rev-list" not in [t[1] for t in port.transcript]
-
-
 def test_short_ref_lines_are_skipped() -> None:
     port = make_port(refs=["not-enough-fields", ""])
     assert run(port).branches == ()
@@ -577,7 +677,7 @@ def test_a_merged_pr_that_predates_the_tip_does_not_prove_the_branch_merged() ->
         extra={
             "merge-base --is-ancestor": fail("not an ancestor"),
             "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok("+ synthsha"),
@@ -617,7 +717,7 @@ def test_a_pr_with_no_head_sha_never_covers_a_tip() -> None:
         prs=[_pr("MERGED", oid="")],
         extra={
             "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok("+ synthsha"),
@@ -640,7 +740,7 @@ def test_the_squash_tier_still_answers_when_a_pr_verdict_is_declined() -> None:
         extra={
             "merge-base --is-ancestor": fail("not an ancestor"),
             "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok("- synthsha"),
@@ -684,7 +784,7 @@ def test_a_discard_decision_does_not_reach_commits_made_after_it() -> None:
         extra={
             "merge-base --is-ancestor": fail("not an ancestor"),
             "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok("+ synthsha"),
@@ -706,7 +806,7 @@ def test_squash_merges_are_caught_by_replaying_the_tree_as_one_commit() -> None:
     port = _tier_port(
         **{
             "cherry origin/main -- feat": ok("+ aaa\n+ bbb"),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok("- synthsha"),
@@ -716,11 +816,39 @@ def test_squash_merges_are_caught_by_replaying_the_tree_as_one_commit() -> None:
     assert feat.merged and feat.merge_evidence is MergeEvidence.SQUASH_EQUAL
 
 
+def test_the_squash_probe_terminates_argv_for_a_branch_named_like_an_option() -> None:
+    """`refs/heads/-m` is a legal ref that `update-ref` or a remote push can
+    create, and it reaches this tier the same way `feat` does above: ancestry
+    and patch-id both miss. `merge-base` accepts `--`, so the branch name is
+    terminated the same way as every other probe; `rev-parse` does not accept
+    a terminator here, so the tree lookup instead resolves through the
+    branch's full ref path, which never begins with `-`. Scripting only the
+    corrected argv means a regression -- the bare name reappearing in either
+    call -- fails with `ScriptedCommands has no answer for`, not a wrong
+    verdict."""
+    port = make_port(
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/heads/-m", "-m"),
+        ],
+        counts={"origin/main..-m": "2"},
+        extra={
+            "cherry origin/main -- -m": ok("+ aaa\n+ bbb"),
+            "merge-base origin/main -- -m": ok("basesha"),
+            "rev-parse refs/heads/-m^{tree}": ok("treesha"),
+            "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
+            "cherry origin/main synthsha": ok("- synthsha"),
+        },
+    )
+    branch = next(b for b in run(port).branches if b.name == "-m")
+    assert branch.merged and branch.merge_evidence is MergeEvidence.SQUASH_EQUAL
+
+
 def test_a_genuinely_unmerged_branch_proves_nothing() -> None:
     port = _tier_port(
         **{
             "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok("+ synthsha"),
@@ -732,14 +860,14 @@ def test_a_genuinely_unmerged_branch_proves_nothing() -> None:
 
 def test_squash_probe_gives_up_cleanly_when_git_will_not_answer() -> None:
     for broken in (
-        {"merge-base origin/main feat": fail("no merge base")},
+        {"merge-base origin/main -- feat": fail("no merge base")},
         {"rev-parse feat^{tree}": fail("bad object")},
         {"commit-tree": fail("cannot write")},
     ):
         port = _tier_port(
             **{
                 "cherry origin/main -- feat": ok("+ aaa"),
-                "merge-base origin/main feat": ok("basesha"),
+                "merge-base origin/main -- feat": ok("basesha"),
                 "rev-parse feat^{tree}": ok("treesha"),
                 "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
                 "cherry origin/main synthsha": ok("+ x"),
@@ -756,7 +884,7 @@ def test_an_empty_cherry_result_does_not_count_as_merged() -> None:
     port = _tier_port(
         **{
             "cherry origin/main -- feat": ok(""),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok(""),
@@ -844,35 +972,18 @@ def test_a_detached_head_is_reported_as_no_current_branch() -> None:
     assert run(port).current_branch is None
 
 
-def test_a_base_override_is_used_verbatim() -> None:
-    port = make_port(
-        refs=[ref_line("refs/heads/develop", "develop", head="*")],
-        counts={"develop..develop": "0"},
-    )
-    result = run(port, base_override="develop")
-    assert result.base_ref == "develop"
+def test_the_trunk_is_measured_rather_than_assumed() -> None:
+    """The trunk used to be handed zeroes and a merge verdict unprobed.
 
+    Its counts are the most useful ones in the report -- commits sitting on
+    the local trunk that were never pushed are exactly what someone about to
+    clean up wants to see -- and a row asserting a measurement nobody took is
+    the habit that made this tool dangerous."""
+    port = make_port(refs=[ref_line("refs/heads/main", "main", head="*")])
+    main = next(b for b in run(port).branches if b.name == "main")
 
-def test_a_base_override_does_not_strip_protection_from_the_real_trunk() -> None:
-    """`--base` says what to measure against, not which branch is the trunk.
-
-    Letting it do both is a way to delete `main`: measure against a branch
-    `main` is an ancestor of, and `main` reads as merged, loses its
-    default-branch protection, and becomes an ordinary sweepable target."""
-    port = make_port(
-        refs=[
-            ref_line("refs/heads/main", "main"),
-            ref_line("refs/heads/release", "release", head="*"),
-        ],
-        local_merged="main",
-        counts={"release..release": "0"},
-    )
-    result = run(port, base_override="release")
-
-    assert result.base_ref == "release"
-    assert result.default_branch == "main"
-    main = next(b for b in result.branches if b.name == "main")
     assert main.is_default
+    assert ("git", "rev-list", "--count", "origin/main..main") in port.transcript
 
 
 def test_counts_that_are_not_numbers_are_unknown_not_zero() -> None:
@@ -889,7 +1000,7 @@ def test_a_failing_rev_list_is_unknown_and_never_proves_a_merge() -> None:
     port = _tier_port(
         **{
             "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok("+ synthsha"),
@@ -972,23 +1083,3 @@ def test_upstream_is_carried_through_and_unpushed_counted() -> None:
     feat = next(b for b in run(port).branches if b.name == "feat")
     assert feat.upstream == "origin/feat"
     assert feat.unpushed_commits == 3
-
-
-# -- idle window -------------------------------------------------------------
-
-
-def test_idle_since_measures_against_the_window() -> None:
-    window = timedelta(days=14)
-    assert idle_since("2026-07-01T00:00:00+00:00", NOW, window)
-    assert not idle_since("2026-07-24T00:00:00+00:00", NOW, window)
-
-
-def test_an_unknown_timestamp_is_never_evidence_for_deletion() -> None:
-    window = timedelta(days=14)
-    assert not idle_since(None, NOW, window)
-    assert not idle_since("", NOW, window)
-    assert not idle_since("last tuesday", NOW, window)
-
-
-def test_a_naive_timestamp_is_read_as_utc_rather_than_rejected() -> None:
-    assert idle_since("2026-01-01T00:00:00", NOW, timedelta(days=14))
