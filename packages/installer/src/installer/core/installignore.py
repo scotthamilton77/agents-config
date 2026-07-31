@@ -63,10 +63,23 @@ class InstallIgnore:
         excluded.
 
         ``is_dir`` selects file-pattern vs directory-pattern candidates.
-        ``at_root`` is True only when ``name`` is a direct child of a staged
-        namespace subdirectory — the sole scope an anchored (leading-``/``)
-        pattern reaches. An unanchored pattern matches regardless of
-        ``at_root``, since "any depth" includes the root.
+        ``at_root`` marks the scopes an anchored (leading-``/``) pattern reaches.
+        An unanchored pattern matches regardless of it, since "any depth"
+        includes the root.
+
+        Two callers pass it True, for the two things this manifest declares:
+
+        - ``stage_namespace``, for a direct child of a staged namespace dir. The
+          pruning role — the pattern keeps matching source out of the deploy.
+        - ``content_lint``'s accounting walk, for a direct child of a staged
+          *root*. The declaring role — the pattern says an unread directory is
+          source-side on purpose rather than content nobody wired up. Staging
+          never reads at that depth, so there is nothing there to prune; before
+          that gate existed there was also nothing there to answer, which is why
+          this contract once named only the first scope.
+
+        The two do not overlap: the lint stops at a namespace and never descends,
+        so it never asks at the depth staging asks about, and vice versa.
         """
         return any(
             p.is_dir == is_dir and (at_root or not p.anchored) and p.matches(name)

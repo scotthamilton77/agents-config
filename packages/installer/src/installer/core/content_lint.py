@@ -41,10 +41,20 @@ for Claude, is content that deploys nowhere and that this check reports.
 **Where the walk stops.** A namespace stages whole, so the walk stops at one and
 does not descend. Everything below that line — files *and* directories — is
 outside this check: a skill's own ``scripts/`` interior is not measured here, and
-should not be, or every skill would report. Asking the question below that line
-is not merely undesirable but unavailable, because the plan records no origin for
-several staging channels (see the attribution note below); built anyway, it
-reports directories that *are* read as if they were not.
+should not be, or every skill would report. That reason is sufficient on its own.
+A second one bars the obvious way of going deeper: the plan records no origin for
+several staging channels (see the attribution note below), so per-file accounting
+built on it reports directories that *are* read as if they were not.
+
+**The standing residual.** ``_staged_dirs`` is a hand-maintained model of what
+reads ``src/``. The readers are ``build_plan``'s phases, ``overlay_plugins``,
+each plugin's ``routes``, and ``stage_kits`` for the project fork — and no single
+place enumerates them, so a new staging channel has to be added here too or this
+gate reports the content it stages. That fails *closed*: the gate calls working
+content unaccounted, loudly, the first time anyone lands it. Survivable in a way
+the fail-open it replaced was not, which is why the enumeration is worth wanting
+and not worth blocking on. No test closes it, because no test knows about a
+channel nobody has written yet.
 
 Two report classes, mirroring the gate's own three-valued verdict:
 
@@ -515,24 +525,21 @@ def _unaccounted_dirs(
 
     Anything else is unaccounted, reported at the shallowest such directory.
 
-    Branch 4 reaches further than ``InstallIgnore.excludes`` documents, and does
-    so deliberately. That contract says ``at_root`` is true only for a direct
-    child of a staged *namespace* dir; this walk passes it for a direct child of
-    a staged *root*, a scope the contract excludes — and the walk never descends
-    into a namespace, so it can never satisfy the documented condition. The
-    manifest itself is the authority for widening it: its ``/rules-readmes/``
-    entry carries the comment "when one is added it will sit at a tool root
-    (sibling of rules/), which is never staged", so the anchored pattern was
-    written for exactly the scope its own contract disclaims. Following the
-    manifest's stated intent rather than its stated scope is the choice here; the
-    two disagree, and that disagreement is worth fixing at the manifest.
+    Branch 4 passes ``at_root`` for a direct child of a staged *root*, which is
+    the declaring scope ``InstallIgnore.excludes`` now names — a second scope,
+    disjoint from the pruning one ``stage_namespace`` uses, added to that
+    contract and to the manifest's own header by this gate's arrival. It is not
+    an approximation of the pruning scope: the walk stops at a namespace, so it
+    never asks where staging asks. Calling it approximate would invite someone to
+    tighten it, and tightening it fails the build on the layout
+    ``src/plugins/AGENTS.md`` documents.
 
-    The cost of the widening: a directory-pattern name means "source-side only"
-    everywhere the walk looks, not just where the manifest anchors it. Adding a
-    pattern therefore silences that name at every staged root, which is a third
-    exemption channel alongside ``UNGATED_ROOTS`` and the parked-plugin
-    convention — visible in the manifest, but carrying no reason and no
-    retirement condition of its own.
+    The cost, stated in the manifest too: a directory pattern silences that name
+    wherever this walk looks, not only where staging would have pruned it. That
+    makes ``.installignore`` a silencing channel — one of five, with the staged
+    roots, the namespace names, ``UNGATED_ROOTS`` and ``BUILD_DIRS`` — and the
+    only one editable by someone thinking about deploys rather than about this
+    gate. Nothing here bounds what a pattern may silence.
 
     ``BUILD_DIRS`` is read from ``content_tests`` rather than restated. Failing
     the build over a directory the sibling gate refuses to walk would be the two
@@ -650,8 +657,9 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
     violations.extend(
         f"{path}: staging never reads this directory, so nothing inside it is measured "
         "against the admission bar or the surface budget — and nothing inside it "
-        "deploys. Stage it, move it out of src/, or add it to UNGATED_ROOTS with the "
-        "reason it is exempt"
+        "deploys. Wire it into staging; or, if it is source-side on purpose, declare "
+        "it — a directory pattern in .installignore for a name that is always "
+        "source-side, or UNGATED_ROOTS for this one path with the reason it is exempt"
         for path in _unaccounted_dirs(
             repo_root,
             staged=_staged_dirs(repo_root, plugins_root=plugins_root, plugins=plugins),

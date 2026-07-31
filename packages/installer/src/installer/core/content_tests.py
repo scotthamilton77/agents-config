@@ -40,9 +40,14 @@ The divergence is bounded from the other side, but only down to a depth:
 — a namespace — and fails on anything above that line it cannot account for.
 Below that line it stops, so a skill's own interior is this module's alone. The
 residual is therefore everything inside a staged namespace, directories as well
-as files, which is where ``.installignore`` does its work: what it prunes from
-the deployed fileset still runs here, because whether a suite should run says
-nothing about whether it should ship.
+as files.
+
+``.installignore`` sits on both sides of that line and this module honours
+neither half. Below the line it prunes, keeping matching source out of the
+deployed fileset; above it, it declares a directory source-side so
+``content_lint`` does not report it. What it prunes still runs here either way,
+because whether a suite should run says nothing about whether it should ship —
+which is why ``BUILD_DIRS``, not that manifest, is what both gates share.
 
 Execution is I/O, so it routes through the ``SuiteRunner`` port — the real
 implementation shells out, and tests inject a fake rather than spawning
