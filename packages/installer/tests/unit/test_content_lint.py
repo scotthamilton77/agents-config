@@ -629,3 +629,49 @@ def test_an_exemption_naming_a_missing_directory_is_a_violation(tmp_path: Path) 
     assert not result.ok
     assert [v for v in result.violations if v.startswith("src/longgone:")]
     assert [v for v in result.violations if "no such directory exists" in v]
+
+
+def test_a_plugins_bespoke_routes_are_accounted(tmp_path: Path) -> None:
+    """Routes are a third staging channel, and the one a map built from the tool overlay
+    cannot see: BeadsPlugin sends .beads/formulas and .beads/scripts to ~/.beads/, outside
+    every tool tree. Missing them did not under-report, it inverted the claim — the gate
+    called correctly-wired content "content that deploys nowhere" and offered three
+    remedies that would each break it. Uses the beads name deliberately: it is the one
+    entry in the specialized-adapter registry, and every other plugin fixture here is
+    generic, whose routes() is empty and so exercises none of this.
+    """
+    repo = _repo(tmp_path, plugin_rules={"beads/beads.md": _RECORD + "body\n"})
+    beads = repo / "src" / "plugins" / "beads" / ".beads"
+    (beads / "formulas").mkdir(parents=True)
+    (beads / "scripts").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_a_directory_beside_a_route_that_no_route_names_is_a_violation(tmp_path: Path) -> None:
+    """Accounting for a route's own source must not bless its siblings. .beads is reached
+    because routes point into it, not because it is wholly covered — the same distinction
+    between "a root is on the path" and "staging reads this" that the tool trees answer."""
+    repo = _repo(tmp_path, plugin_rules={"beads/beads.md": _RECORD + "body\n"})
+    beads = repo / "src" / "plugins" / "beads" / ".beads"
+    (beads / "formulas").mkdir(parents=True)
+    (beads / "notaroute").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith("src/plugins/beads/.beads/notaroute:")]
+
+
+def test_a_build_directory_is_not_reported(tmp_path: Path) -> None:
+    """content-tests refuses to walk these; content-lint must not fail the build over one.
+    Two gates disagreeing about what is out of scope is the defect class both exist to
+    close, so the set is read from content_tests rather than restated here."""
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    (repo / "src" / "user" / ".claude" / "node_modules").mkdir(parents=True)
+    (repo / "src" / "user" / ".agents" / ".venv").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []

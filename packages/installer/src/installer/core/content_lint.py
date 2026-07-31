@@ -69,6 +69,7 @@ from typing import TYPE_CHECKING
 
 from installer.core import namespaces
 from installer.core.admission import DIR_RECORD_FILE
+from installer.core.content_tests import BUILD_DIRS
 from installer.core.deploy_gate import item_label, run_admission_gate
 from installer.core.installignore import InstallIgnore, load_installignore
 from installer.core.orchestrator import stage_and_transform
@@ -87,6 +88,13 @@ if TYPE_CHECKING:
 # The subtree the repo declares to be admitted content only, so a record-less
 # artifact under it is a mistake rather than a tracked exception.
 ADMITTED_ONLY_SUBTREE = Path("src") / "user"
+
+# Handed to ``PluginAdapter.routes`` when this module inspects a plugin's route
+# sources. Only ``dest_dir`` joins ``home`` — ``source_dir`` joins the plugin's
+# ``source_path``, per the ``PluginRoute`` contract — so nothing here depends on
+# the value, and a sentinel keeps the lint's answer independent of the machine
+# running it. Never touched: no path built from it is opened.
+_ROUTE_PROBE_HOME = Path("/nonexistent-home-route-inspection-only")
 
 # Directories under ``src/`` that hold deployable content this gate deliberately
 # does not judge, mapped to why. Empty, and an empty register is the useful
@@ -444,6 +452,16 @@ def _staged_dirs(
                 for ns in namespaces.PLUGIN_TOOL_SCOPED
                 if adapter.should_install_namespace(ns, "tool")
             )
+        # Routes are the third staging channel, and the one a map built from the
+        # tool overlay alone cannot see: a specialized adapter places content
+        # outside every tool tree, as beads does by sending .beads/formulas and
+        # .beads/scripts to ~/.beads/. Missing them does not merely under-report,
+        # it inverts the claim — the gate calls content that deploys correctly
+        # "content that deploys nowhere" and offers three remedies that would
+        # each break it.
+        for route in plugin.routes(_ROUTE_PROBE_HOME):
+            source = route.source_dir
+            staged[source.parent] = staged.get(source.parent, frozenset()) | {source.name}
     return staged
 
 
@@ -497,12 +515,29 @@ def _unaccounted_dirs(
 
     Anything else is unaccounted, reported at the shallowest such directory.
 
-    ``at_root`` is passed as "this child's parent is a staged root", which is the
-    closest analogue the walk has to the manifest's own notion of anchoring
-    (a direct child of a staged *namespace* dir). The walk never descends into an
-    accounted namespace, so it cannot reach the manifest's exact scope; this is
-    an approximation, chosen because the alternative is ignoring anchored
-    directory patterns entirely and firing on the layout the repo documents.
+    Branch 4 reaches further than ``InstallIgnore.excludes`` documents, and does
+    so deliberately. That contract says ``at_root`` is true only for a direct
+    child of a staged *namespace* dir; this walk passes it for a direct child of
+    a staged *root*, a scope the contract excludes — and the walk never descends
+    into a namespace, so it can never satisfy the documented condition. The
+    manifest itself is the authority for widening it: its ``/rules-readmes/``
+    entry carries the comment "when one is added it will sit at a tool root
+    (sibling of rules/), which is never staged", so the anchored pattern was
+    written for exactly the scope its own contract disclaims. Following the
+    manifest's stated intent rather than its stated scope is the choice here; the
+    two disagree, and that disagreement is worth fixing at the manifest.
+
+    The cost of the widening: a directory-pattern name means "source-side only"
+    everywhere the walk looks, not just where the manifest anchors it. Adding a
+    pattern therefore silences that name at every staged root, which is a third
+    exemption channel alongside ``UNGATED_ROOTS`` and the parked-plugin
+    convention — visible in the manifest, but carrying no reason and no
+    retirement condition of its own.
+
+    ``BUILD_DIRS`` is read from ``content_tests`` rather than restated. Failing
+    the build over a directory the sibling gate refuses to walk would be the two
+    gates disagreeing about what is out of scope, which is the defect class both
+    were built to close.
 
     Symlinked directories are skipped. Not for termination — descent requires a
     staged key strictly at or below the child, and staged keys are finite and
@@ -532,8 +567,10 @@ def _unaccounted_dirs(
             # first to judge the names below it, the second to find the roots.
             if any(root.is_relative_to(child) for root in staged):
                 pending.append(child)
-            elif (read_from_here is not None and child.name in read_from_here) or ignore.excludes(
-                child.name, is_dir=True, at_root=read_from_here is not None
+            elif (
+                (read_from_here is not None and child.name in read_from_here)
+                or child.name in BUILD_DIRS
+                or ignore.excludes(child.name, is_dir=True, at_root=read_from_here is not None)
             ):
                 continue
             else:

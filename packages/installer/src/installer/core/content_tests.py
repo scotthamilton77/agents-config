@@ -114,7 +114,13 @@ RUNNERS: dict[str, Runner] = {
 
 # Directory names never descended into: build output and caches, which can hold
 # vendored files matching the suite-name patterns.
-_SKIP_DIRS = frozenset({"node_modules", "__pycache__", ".venv"})
+#
+# Public because ``content_lint`` reads it too. That gate reports a directory
+# under ``src/`` staging never reads, and without this it would fail the build
+# over a directory this one refuses to even walk — the two gates disagreeing
+# about what is out of scope, which is the defect class they were both built to
+# close. One definition, so they cannot drift.
+BUILD_DIRS = frozenset({"node_modules", "__pycache__", ".venv"})
 
 _TEST_SUFFIX = "_test"
 _TEST_PREFIX = "test_"
@@ -258,7 +264,7 @@ def _walk(src_root: Path) -> list[Path]:
             continue
         # Matched against the path BELOW src_root: a checkout that happens to
         # live under a directory named .venv must not silently skip the tree.
-        if _SKIP_DIRS.intersection(path.relative_to(src_root).parts):
+        if BUILD_DIRS.intersection(path.relative_to(src_root).parts):
             continue
         out.append(path)
     return out
