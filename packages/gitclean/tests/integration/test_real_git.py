@@ -682,6 +682,48 @@ def test_a_branch_named_like_an_option_is_swept_not_misread(repo: Path) -> None:
     assert "-m" in [d["name"] for d in payload["execution"]["deletions"]]  # type: ignore[index]
 
 
+def test_a_squash_merged_branch_named_like_an_option_is_proven(repo: Path) -> None:
+    """The one case the test above does not cover: an ancestor or patch-id
+    merge never reaches the squash tier at all, and that tier's own `git`
+    calls used to lose the argv terminator that protects every other probe
+    here. Two commits are used deliberately, as in
+    `test_a_real_squash_merge_is_detected` -- with one, patch-id equivalence
+    would settle it before the squash tier ran, and this would prove nothing
+    about its argv."""
+    git(repo, "checkout", "-q", "-b", "feat/opt-squash")
+    first = commit(repo, "one.txt")
+    second = commit(repo, "two.txt")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--squash", "feat/opt-squash")
+    git(repo, "commit", "-q", "-m", "squashed feat/opt-squash")
+    head = git(repo, "rev-parse", "refs/heads/feat/opt-squash")
+    git(repo, "branch", "-D", "feat/opt-squash")
+    git(repo, "update-ref", "refs/heads/-m", head)
+
+    assert "-m" not in git(repo, "branch", "--merged", "main")
+
+    with reachability_guard(repo) as guard:
+        surveyed = report(repo, "--report")
+        payload = report(repo, "--cleanup")
+        # A squash rewrites the work into one new commit on main, so these two
+        # are stranded by design -- that is what the sweep exists to remove.
+        guard.expect_unreachable(first, second)
+
+    branches = surveyed["repo"]
+    assert isinstance(branches, dict)
+    dashed = next(b for b in branches["branches"] if b["name"] == "-m")
+    assert dashed["merge_evidence"] == "squash_equal"
+
+    listed = find(surveyed, "branch:-m")
+    assert listed["name"] == "-m"
+    assert listed["merge_proven"] is True
+    assert listed["sweepable"] is True
+
+    assert payload["_exit"] == EXIT_OK
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/-m") == ""
+    assert "-m" in [d["name"] for d in payload["execution"]["deletions"]]  # type: ignore[index]
+
+
 def test_a_branch_named_like_an_option_is_selectable_by_id(repo: Path) -> None:
     """Naming it directly cannot go through the bare name -- argparse claims
     `-m` as a flag before gitclean sees it. The `id` form is the way in, which
