@@ -581,3 +581,36 @@ def test_a_symlink_cycle_under_src_does_not_hang_the_walk(tmp_path: Path) -> Non
     result = _lint(repo)  # must return at all; the assertion is that we get here
 
     assert not [v for v in result.violations if "loop" in v or "back" in v]
+
+
+def test_a_directory_installignore_declares_unstaged_is_not_reported(tmp_path: Path) -> None:
+    """The repo already has a register of deliberately-unstaged source, and this check
+    has to read it. `rules-readmes/` is in `.installignore` AND documented in the plugin
+    layout table as source-only-not-installed; without this branch the gate fails a
+    contributor for following the documentation, and the remedies it offers are all
+    wrong. Staging never reads these — silence is the correct verdict, not an oversight.
+    """
+    repo = _repo(
+        tmp_path,
+        skills={"tidy": _RECORD + "body\n"},
+        plugin_rules={"graphify/graphify.md": _RECORD + "body\n"},
+    )
+    (repo / "src" / "user" / ".claude" / "rules-readmes").mkdir(parents=True)
+    (repo / "src" / "plugins" / "graphify" / ".agents" / "rules-readmes").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_a_plugin_scope_no_overlay_reads_is_a_violation(tmp_path: Path) -> None:
+    """A plugin contributes through .agents and one dir per known tool, and nothing
+    else inside it is ever opened. A `docs/` directory there deploys nowhere, so it is
+    reported — the deliberate call being that plugin repo-side material declares itself
+    through .installignore or the register rather than by sitting somewhere unread."""
+    repo = _repo(tmp_path, plugin_rules={"graphify/graphify.md": _RECORD + "body\n"})
+    (repo / "src" / "plugins" / "graphify" / "docs").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith("src/plugins/graphify/docs:")]

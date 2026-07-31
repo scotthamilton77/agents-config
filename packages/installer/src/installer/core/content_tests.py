@@ -35,12 +35,14 @@ on the staged tree instead. The two are not meant to converge: whether a shipped
 script has a passing suite is a property of the source file, while the admission
 bar and the surface budget are properties of what deploys.
 
-The divergence is bounded at directory granularity from the other side —
-``content_lint`` fails on a *directory* under ``src/`` that staging never reads.
-It is not bounded at file granularity: a file this module walks and that
-``.installignore`` excludes from the deployed fileset is, correctly, measured by
-no admission bar, and nothing distinguishes that case from a file staging failed
-to read for a worse reason.
+The divergence is bounded from the other side, but only down to a depth:
+``content_lint`` walks ``src/`` until it reaches a directory staging reads whole
+— a namespace — and fails on anything above that line it cannot account for.
+Below that line it stops, so a skill's own interior is this module's alone. The
+residual is therefore everything inside a staged namespace, directories as well
+as files, which is where ``.installignore`` does its work: what it prunes from
+the deployed fileset still runs here, because whether a suite should run says
+nothing about whether it should ship.
 
 Execution is I/O, so it routes through the ``SuiteRunner`` port — the real
 implementation shells out, and tests inject a fake rather than spawning

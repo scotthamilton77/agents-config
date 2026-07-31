@@ -56,8 +56,8 @@ spec-lint:
 
 # content-lint stages the real src/ tree for every tool and plugin and runs the
 # deploy-time admission gate over it — the check ci-installer cannot make,
-# because its fixtures are synthetic. It also fails on a directory under src/
-# that staging never reads — content that deploys nowhere and is measured by
+# because its fixtures are synthetic. It also fails on a directory staging never
+# reads and nothing declares — content that deploys nowhere and is measured by
 # nothing. Repo-root invocation (no `cd`) so it resolves src/ and
 # .installignore; `uv --project` selects the installer venv. It writes nothing
 # and never invokes the installer.

@@ -27,19 +27,24 @@ what *deploys*, and only staging knows what that is.
 That difference is legitimate. What is not is leaving it unbounded — a directory
 ``src/`` grows that staging never reads is content measured by nothing, silently,
 on a green build, which is the fail-open this module exists to close one
-directory up. So every directory under ``src/`` must be accounted for: read by
-staging (``_staged_dirs``), or named in ``UNGATED_ROOTS`` with the reason it is
-exempt. One in neither is a violation. See ``_unaccounted_dirs``.
+directory up. So the walk in ``_unaccounted_dirs`` descends from ``src/`` and
+demands an account of every directory it meets: read by staging
+(``_staged_dirs``), declared unstaged by ``.installignore``, or exempt by
+``UNGATED_ROOTS``. One with none of the three is a violation.
 
 The accounting is per *directory staging opens*, not per root. A tool root is
 not a blanket amnesty for its subtree: staging reads only the namespaces an
 adapter declares, and three of the four adapters declare none — so
 ``src/user/.codex/skills/``, a path that looks exactly like the one that works
-for Claude, is content that deploys nowhere and that this check reports. It does
-not extend to individual files. A file staging skipped inside a namespace it did
-read is invisible here, because the plan records no origin for several staging
-channels (see the attribution note below), so asking the question per file would
-report directories that are read as if they were not.
+for Claude, is content that deploys nowhere and that this check reports.
+
+**Where the walk stops.** A namespace stages whole, so the walk stops at one and
+does not descend. Everything below that line — files *and* directories — is
+outside this check: a skill's own ``scripts/`` interior is not measured here, and
+should not be, or every skill would report. Asking the question below that line
+is not merely undesirable but unavailable, because the plan records no origin for
+several staging channels (see the attribution note below); built anyway, it
+reports directories that *are* read as if they were not.
 
 Two report classes, mirroring the gate's own three-valued verdict:
 
@@ -65,7 +70,7 @@ from typing import TYPE_CHECKING
 from installer.core import namespaces
 from installer.core.admission import DIR_RECORD_FILE
 from installer.core.deploy_gate import item_label, run_admission_gate
-from installer.core.installignore import load_installignore
+from installer.core.installignore import InstallIgnore, load_installignore
 from installer.core.orchestrator import stage_and_transform
 from installer.core.staging import shared_source_dir
 from installer.core.surface_budget import SkillMeasure, SurfaceMeasure
@@ -379,36 +384,37 @@ def _staged_dirs(
     opens. That is a likelier mistake than inventing a fifth tool tree, and it
     needs no registry edit to make.
 
-    Every root and every set here is read from the object that decides it —
-    ``staging.shared_source_dir``, each adapter's ``source_dir``, ``namespaces``,
-    the discovered plugins — so registering a fifth tool, moving the shared tree,
-    or changing what an existing tool stages moves this with nobody editing it.
-    The one path stated rather than derived is ``plugins_root``, which the caller
-    owns and passes in so this module holds a single copy of it.
+    Union or per-tool is decided by how many readers the directory has, not by
+    convenience. A shared tree has four — the question is "did *any* tool read
+    here", so it unions. A tool's own tree has one, and so does a plugin's
+    ``.<tool>/`` tree, which ``overlay_plugins`` reads with that tool's adapter
+    alone; unioning either would assert coverage at a level above the reader that
+    decides it, which is the mistake this whole function exists to undo.
 
-    The shared set is the union across tools rather than any one tool's view: a
-    namespace one adapter declines is still read if another takes it, and this
-    answers "did staging read here at all", not "did every tool want it".
+    ``plugins`` must be the *complete* discovery of ``plugins_root``. The plugins
+    root is accounted for by partition — discovered names on one side, everything
+    ``is_plugin_dir`` rejects on the other — so a caller passing a subset would
+    have real plugins reported as unaccounted. Asking ``is_plugin_dir`` rather
+    than restating its rule is what keeps that partition exact, and what makes a
+    directory ``discover`` rejects for some *future* third reason report rather
+    than slip through.
+
+    Derived, not restated: ``staging.shared_source_dir``, each adapter's
+    ``source_dir``, ``namespaces`` filtered through ``should_install_namespace``,
+    ``known_tools``, the discovered plugins. Three paths are stated instead —
+    ``plugins_root``, which the caller owns and passes in, and a plugin's
+    ``.agents``/``.<tool>`` scope names, which mirror ``overlay.py`` rather than
+    being read from it. A third plugin scope added there would leave this stale.
     """
     shared = frozenset(
         ns
         for ns in namespaces.SHARED
         if any(get_adapter(tool).should_install_namespace(ns, "shared") for tool in known_tools())
     )
-    plugin_scoped = frozenset(
-        ns
-        for ns in namespaces.PLUGIN_TOOL_SCOPED
-        if any(get_adapter(tool).should_install_namespace(ns, "tool") for tool in known_tools())
-    )
     # A plugin contributes through its .agents tree and one dir per known tool
     # (overlay.py); nothing else inside a plugin directory is ever opened.
     plugin_scopes = frozenset({".agents"} | {f".{tool.value}" for tool in known_tools()})
 
-    # Every child of the plugins root is either discovered as a plugin or skipped
-    # on purpose — ``discover`` takes each directory that is not `.`/`_`-prefixed,
-    # and a prefixed one is a parked plugin rather than an oversight. There is no
-    # third case, so both count as accounted; asking ``is_plugin_dir`` rather than
-    # restating its rule is what keeps that true if the convention changes.
     plugin_children = frozenset(
         child.name
         for child in (plugins_root.iterdir() if plugins_root.is_dir() else ())
@@ -428,37 +434,60 @@ def _staged_dirs(
         staged[plugin.source_path] = plugin_scopes
         staged[plugin.source_path / ".agents"] = shared
         for tool in known_tools():
-            staged[plugin.source_path / f".{tool.value}"] = plugin_scoped
+            adapter = get_adapter(tool)
+            staged[plugin.source_path / f".{tool.value}"] = frozenset(
+                ns
+                for ns in namespaces.PLUGIN_TOOL_SCOPED
+                if adapter.should_install_namespace(ns, "tool")
+            )
     return staged
 
 
-def _unaccounted_dirs(repo_root: Path, *, staged: dict[Path, frozenset[str]]) -> list[Path]:
-    """Directories under ``src/`` that staging never reads and ``UNGATED_ROOTS``
-    does not exempt, repo-relative.
+def _unaccounted_dirs(
+    repo_root: Path, *, staged: dict[Path, frozenset[str]], ignore: InstallIgnore
+) -> list[Path]:
+    """Directories under ``src/`` that nothing accounts for, repo-relative.
 
-    Three ways a directory is accounted for. The first is tested first and that
-    ordering is load-bearing; the other two only ever agree, since both end the
-    enquiry the same way.
+    Staging not reading a directory is two different facts wearing one face. It
+    can mean nobody wired the directory up — the defect this reports — or it can
+    mean the repo decided the directory is source-side only, which is a decision
+    already taken and not a finding. Reporting the second is how a gate teaches
+    people to ignore it, so the declared cases are enumerated rather than
+    rediscovered:
 
-    1. it is a root staging reads out of, or holds one — descend, because the
+    1. ``UNGATED_ROOTS`` exempts it. Checked first, so an exemption means the
+       same thing wherever the directory sits — a subtree declared out of scope
+       is out of scope even when a staging root sits inside it. Any later test
+       would make containment silently defeat the register.
+    2. it is a root staging reads out of, or holds one — descend, because the
        gap may be deeper. ``src/user`` holds staging roots without being one;
-       so does a plugin directory. Tested first because descending is the only
-       outcome that can still find something, so a directory that qualifies here
-       must not be closed out by either rule below.
-    2. its parent is such a root and its name is one of the namespaces read out
+       so does a plugin directory.
+    3. its parent is such a root and its name is one of the namespaces read out
        of that root — accounted, and *not* descended into, because a namespace
        stages whole. This is what keeps a skill's own ``scripts/`` interior from
        reporting as unread content.
-    3. ``UNGATED_ROOTS`` exempts it.
+    4. ``.installignore`` excludes it by a directory pattern. This is the repo's
+       existing register of deliberately-unstaged source, and ``rules-readmes/``
+       is in it *and* documented in the plugin layout — so without this branch
+       the gate fails a contributor for following the documentation.
 
     Anything else is unaccounted, reported at the shallowest such directory.
 
-    Symlinked directories are skipped rather than followed or reported: a
-    symlink cycle under ``src/`` would otherwise make this walk non-terminating,
-    and hanging the gate is a worse failure than not measuring a link nobody has
-    yet created. Files are not checked either — a stray file beside ``src/user``
-    is a different defect with a different remedy, and a gate that reports
-    everything reports nothing.
+    ``at_root`` is passed as "this child's parent is a staged root", which is the
+    closest analogue the walk has to the manifest's own notion of anchoring
+    (a direct child of a staged *namespace* dir). The walk never descends into an
+    accounted namespace, so it cannot reach the manifest's exact scope; this is
+    an approximation, chosen because the alternative is ignoring anchored
+    directory patterns entirely and firing on the layout the repo documents.
+
+    Symlinked directories are skipped. Not for termination — descent requires a
+    staged key strictly at or below the child, and staged keys are finite and
+    fixed-depth, so the walk is bounded whatever is on disk — but because a
+    symlink is a pointer rather than content: its target is walked on its own
+    account if it lives under ``src/``, and reported once rather than once per
+    name pointing at it. Files are not checked either; a stray file beside
+    ``src/user`` is a different defect with a different remedy, and a gate that
+    reports everything reports nothing.
     """
     src_root = repo_root / "src"
     if not src_root.is_dir():
@@ -471,15 +500,17 @@ def _unaccounted_dirs(repo_root: Path, *, staged: dict[Path, frozenset[str]]) ->
         read_from_here = staged.get(current)
         for child in sorted(p for p in current.iterdir() if p.is_dir() and not p.is_symlink()):
             relative = child.relative_to(repo_root)
+            if relative in UNGATED_ROOTS:
+                continue
             # One test, not two: a root is trivially relative to itself, so this
             # covers "child IS a root staging reads" and "child merely holds one"
             # in a single predicate. Both descend, for different reasons — the
             # first to judge the names below it, the second to find the roots.
             if any(root.is_relative_to(child) for root in staged):
                 pending.append(child)
-            elif (
-                read_from_here is not None and child.name in read_from_here
-            ) or relative in UNGATED_ROOTS:
+            elif (read_from_here is not None and child.name in read_from_here) or ignore.excludes(
+                child.name, is_dir=True, at_root=read_from_here is not None
+            ):
                 continue
             else:
                 unaccounted.append(relative)
@@ -563,6 +594,7 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
         for path in _unaccounted_dirs(
             repo_root,
             staged=_staged_dirs(repo_root, plugins_root=plugins_root, plugins=plugins),
+            ignore=ignore,
         )
     )
 
