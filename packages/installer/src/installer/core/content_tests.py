@@ -33,10 +33,14 @@ says nothing about whether they should run. Anything under ``src/`` runs.
 That is why this gate's fileset is wider than ``content_lint``'s, which reports
 on the staged tree instead. The two are not meant to converge: whether a shipped
 script has a passing suite is a property of the source file, while the admission
-bar and the surface budget are properties of what deploys. The divergence is
-bounded from the other side — ``content_lint`` fails on a directory under
-``src/`` its staging never reaches, so a tree this module walks and that one
-cannot see is a build failure rather than a silent gap.
+bar and the surface budget are properties of what deploys.
+
+The divergence is bounded at directory granularity from the other side —
+``content_lint`` fails on a *directory* under ``src/`` that staging never reads.
+It is not bounded at file granularity: a file this module walks and that
+``.installignore`` excludes from the deployed fileset is, correctly, measured by
+no admission bar, and nothing distinguishes that case from a file staging failed
+to read for a worse reason.
 
 Execution is I/O, so it routes through the ``SuiteRunner`` port — the real
 implementation shells out, and tests inject a fake rather than spawning

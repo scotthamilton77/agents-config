@@ -8,6 +8,8 @@ artifact as fatal or merely reportable according to which subtree it sits in.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from installer.core.content_lint import UNGATED_ROOTS, lint_content
@@ -52,6 +54,22 @@ def _repo(
 
 def _lint(repo_root: Path):  # ContentLintResult; inferred at every call site
     return lint_content(repo_root, io=ScriptedIO())
+
+
+@contextmanager
+def _exemption(entries: dict[Path, str]) -> Iterator[None]:
+    """Run the lint with ``entries`` added to the exemption register.
+
+    The register ships empty, so the mechanism has no live occupant to exercise it
+    against. Patching one in is how it stays tested without the repo carrying a
+    standing exemption granted for the sake of testing that exemptions work.
+    """
+    UNGATED_ROOTS.update(entries)
+    try:
+        yield
+    finally:
+        for key in entries:
+            UNGATED_ROOTS.pop(key, None)
 
 
 def test_clean_tree_passes_and_still_reports_its_numbers(tmp_path: Path) -> None:
@@ -286,19 +304,58 @@ def test_a_directory_no_staging_root_reaches_is_a_violation(tmp_path: Path) -> N
     assert result.skills  # the staged content is still measured and reported
 
 
-def test_an_ungated_root_is_exempt_rather_than_unaccounted(tmp_path: Path) -> None:
-    """src/kits holds real content the --project fork stages, and that fork returns
-    before the admission gate ever runs. Reporting it as unmeasured would be true but
-    useless: there is no bar to measure a kit against, and a gate whose only finding
-    is one nobody can act on is a gate people learn to run with a failing exit code.
+def test_the_exemption_register_is_empty() -> None:
+    """Which directories are exempt from the admission bar is a decision, and this is
+    where it is on the record. Empty is the useful state: an exemption is a judgement
+    about a body of content, so it belongs to whoever can see that content rather than
+    to whoever anticipated it. Widening this must arrive as a reviewed diff."""
+    assert UNGATED_ROOTS == {}
+
+
+def test_an_exempt_directory_is_not_reported_as_unaccounted(tmp_path: Path) -> None:
+    """The mechanism, separately from the membership. A directory nothing stages but
+    that the register names is a decision already taken, and re-reporting it every run
+    would train a reader to skip the one finding that is not a decision already taken.
     """
     repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
-    # The membership is pinned, not just the mechanism: which directories are
-    # exempt from the admission bar is the decision, and widening it silently is
-    # the failure this whole check exists to make impossible.
-    assert set(UNGATED_ROOTS) == {Path("src") / "kits"}
-    for root in UNGATED_ROOTS:
-        (repo / root / "beads" / ".beads").mkdir(parents=True)
+    exempt = Path("src") / "someday"
+    (repo / exempt / "content").mkdir(parents=True)
+    with _exemption({exempt: "because the test says so"}):
+        result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_a_namespace_no_adapter_stages_is_a_violation(tmp_path: Path) -> None:
+    """The likeliest instance of this defect, and the one root-level accounting misses.
+
+    Codex, Gemini and OpenCode declare no tool-scoped namespaces at all, so a skill
+    placed at src/user/.codex/skills/ — a path that looks exactly like the one that
+    works for Claude — deploys nowhere and is weighed by nothing. It needs no new tool
+    and no registry edit, only a plausible guess, which makes it likelier than the
+    unknown-tool-tree case and invisible to a check that stops at the root.
+    """
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    (repo / "src" / "user" / ".codex" / "skills" / "orphan").mkdir(parents=True)
+    (repo / "src" / "user" / ".agents" / "commands" / "orphan").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith("src/user/.codex/skills:")]
+    # 'commands' is deliberately absent from the shared namespaces (shared content
+    # is tool-agnostic; commands are a tool-scoped concept), so the shared tree has
+    # the same hole as a tool tree and must answer to the same rule.
+    assert [v for v in result.violations if v.startswith("src/user/.agents/commands:")]
+
+
+def test_a_namespace_interior_is_not_reported(tmp_path: Path) -> None:
+    """A namespace stages whole — a skill directory is one DIR item, interior and all.
+    Descending past it would report every skill's own scripts/ subdirectory as unread
+    content, and a gate that fires on a valid tree is one the next contributor deletes.
+    """
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    (repo / "src" / "user" / ".agents" / "skills" / "tidy" / "scripts").mkdir(parents=True)
     result = _lint(repo)
 
     assert result.ok
@@ -485,3 +542,27 @@ def test_an_overridden_entry_file_is_not_attributed_or_made_fatal() -> None:
     # An unrelated carried file leaves attribution intact — only the entry file
     # displaces the record source.
     assert _classified_source(carrier, overrides={Path("other.md"): b"x"}) == carrier.source_path
+
+
+def test_a_parked_plugin_directory_is_not_reported(tmp_path: Path) -> None:
+    """`discover` skips `.`/`_`-prefixed directories under src/plugins by documented
+    convention, so one of them is a plugin deliberately parked, not a directory nobody
+    noticed. Reporting it would make the gate fire on a valid tree, and a gate that
+    cries wolf is one the next contributor deletes along with the real check."""
+    repo = _repo(tmp_path, plugin_rules={"graphify/graphify.md": _RECORD + "body\n"})
+    (repo / "src" / "plugins" / "_parked" / ".agents" / "rules").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert result.violations == []
+
+
+def test_a_plugin_namespace_no_tool_overlays_is_a_violation(tmp_path: Path) -> None:
+    """Plugin interiors answer to the same rule as the user tree: the overlay reads
+    only PLUGIN_TOOL_SCOPED out of a plugin's tool dir, so a `hooks` directory there
+    deploys nowhere. Stopping the descent at the plugin root would bless it."""
+    repo = _repo(tmp_path, plugin_rules={"graphify/graphify.md": _RECORD + "body\n"})
+    (repo / "src" / "plugins" / "graphify" / ".claude" / "hooks").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith("src/plugins/graphify/.claude/hooks:")]
