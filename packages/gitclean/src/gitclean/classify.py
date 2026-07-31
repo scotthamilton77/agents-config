@@ -79,7 +79,12 @@ def _uncovered_pr_reason(branch: Branch) -> tuple[str, ...]:
     Suppressed when a lower tier proved the merge anyway: the PR verdict was
     declined, but the branch *is* merged, and a coverage complaint next to
     `merge proven by squash_equal` reads as a contradiction rather than an
-    explanation."""
+    explanation.
+
+    A tip git would not place gets its own sentence. Both outcomes decline the
+    PR tier, but only one of them compared the two commits, and reporting the
+    comparison that never happened points the reader at a difference between
+    SHAs that nothing established."""
     pr = branch.pr
     if pr is None or pr.state not in {"MERGED", "CLOSED"}:
         return ()
@@ -87,10 +92,35 @@ def _uncovered_pr_reason(branch: Branch) -> tuple[str, ...]:
     if branch.merged or branch.merge_evidence in honoured or not pr.head_oid:
         return ()
     verb = "merged" if pr.state == "MERGED" else "closed"
+    if branch.pr_covers_tip is None:
+        return (
+            f"git would not say whether PR #{pr.number}'s head at {pr.head_oid[:8]} contains "
+            f"this branch's tip {branch.head[:8]}; whether that decision covers what is here "
+            f"is unknown",
+        )
     return (
         f"PR #{pr.number} was {verb} at {pr.head_oid[:8]}, which does not contain "
         f"this branch's tip {branch.head[:8]}; that decision does not cover what is here",
     )
+
+
+def missing_pr_evidence(survey_data: Survey, *, proven: bool, saw_pr: bool) -> tuple[str, ...]:
+    """Said on the row of anything the PR read could not speak for.
+
+    ``gh_error`` and ``pr_evidence_gap`` are repository-wide, and a reader
+    scanning rows cannot tell that the tier which sees squash merges never ran
+    for this one: the row shows evidence `none`, which is also what four
+    tiers running and finding nothing looks like.
+
+    Suppressed once something else proved the merge, where the gap changed no
+    outcome and the sentence would only compete with the proof beside it."""
+    if proven:
+        return ()
+    if survey_data.gh_error:
+        return (f"no pull-request evidence was read for this commit -- {survey_data.gh_error}",)
+    if survey_data.pr_evidence_gap and not saw_pr:
+        return (f"a pull request for this may not have been read -- {survey_data.pr_evidence_gap}",)
+    return ()
 
 
 def trunk(survey_data: Survey) -> tuple[frozenset[str], frozenset[str]]:
@@ -192,6 +222,7 @@ def classify_branch(
     if branch.pr is not None and branch.pr.state == "OPEN":
         reasons.append(f"PR #{branch.pr.number} is open")
     reasons.extend(_uncovered_pr_reason(branch))
+    reasons.extend(missing_pr_evidence(survey_data, proven=proven, saw_pr=branch.pr is not None))
     if branch.checked_out_at:
         reasons.append(f"checked out at {branch.checked_out_at}")
     if branch.unmerged_commits:
@@ -202,6 +233,7 @@ def classify_branch(
         elif branch.unpushed_commits:
             reasons.append(f"{branch.unpushed_commits} commit(s) not on {branch.upstream}")
     reasons.extend(unanswered_probes(branch, survey_data.base_ref))
+    reasons.extend(branch.probe_failures)
 
     withheld = withheld_reason(
         ref=branch.name,
@@ -301,6 +333,14 @@ def classify_worktree(
         reasons.append("locked; git refuses to remove it until it is unlocked")
     if evidence in MERGE_PROOF:
         reasons.append(f"the commit it holds is merged, proven by {evidence.value}")
+    if not survey_data.branches_known:
+        reasons.append(
+            "no ref could be read in this repository, so nothing could have proved the commit "
+            "it holds merged"
+        )
+    reasons.extend(missing_pr_evidence(survey_data, proven=evidence in MERGE_PROOF, saw_pr=False))
+    if worktree.last_activity is None:
+        reasons.append("no commit timestamp; this worktree's age is unknown")
     if dirt is not None:
         reasons.append(dirt)
     # Named on every worktree that carries any, sweepable or not: ignored
@@ -310,6 +350,14 @@ def classify_worktree(
         reasons.append(
             f"{worktree.ignored_file_count} ignored file(s) would be deleted with it "
             f"(caches and virtualenvs regenerate; a .env living only here would not)"
+        )
+    elif worktree.ignored_file_count is None:
+        # A count nobody took renders exactly like a measured zero -- as
+        # silence -- and the reader is then told nothing about what a sweep of
+        # this tree would take with it.
+        reasons.append(
+            "how many ignored files would be deleted with it was not measured; a .env living "
+            "only here would go unannounced"
         )
 
     withheld = withheld_reason(

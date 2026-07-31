@@ -242,15 +242,66 @@ def test_an_unknown_default_branch_is_reported_on_the_survey() -> None:
     assert any("could not determine" in w for w in result.warnings)
 
 
+def test_a_ref_probe_that_errors_is_not_read_as_a_missing_trunk() -> None:
+    """`show-ref` exits 1 for a ref that is not there and 128 when it could not
+    look. Collapsing the two told the reader that neither main nor master
+    exists on the strength of a probe that never ran, which sends them to
+    create a branch they already have."""
+    port = ScriptedCommands(
+        git={
+            "symbolic-ref --quiet refs/remotes/origin/HEAD": fail(),
+            "show-ref --verify --quiet refs/heads/main": fail("fatal: bad repository", code=128),
+            "show-ref --verify --quiet refs/heads/master": fail(),
+        }
+    )
+
+    name, warning = resolve_default_branch(port, None)
+
+    assert name is None
+    assert warning is not None
+    assert "would not say whether refs/heads/main exists" in warning
+    assert "neither main nor master exists" not in warning
+
+
+def test_an_unreadable_published_head_is_not_reported_as_an_unpublished_one() -> None:
+    """`symbolic-ref --quiet` exits 1 when origin has published no HEAD; any
+    other exit is git declining to answer, and telling someone to publish a
+    HEAD they may already have published is the wrong instruction."""
+    port = ScriptedCommands(
+        git={
+            "symbolic-ref --quiet refs/remotes/origin/HEAD": fail("fatal: bad", code=128),
+            "show-ref --verify --quiet refs/heads/": fail(),
+        }
+    )
+
+    name, warning = resolve_default_branch(port, None)
+
+    assert name is None
+    assert warning is not None and "published HEAD could not be read" in warning
+
+
 def test_base_prefers_the_remote_tracking_tip() -> None:
     """A stale local default branch would under-report merges."""
     port = ScriptedCommands(git={"show-ref --verify --quiet refs/remotes/origin/main": ok()})
-    assert resolve_base_ref(port, None, "main") == "origin/main"
+    assert resolve_base_ref(port, None, "main") == ("origin/main", None)
 
 
 def test_base_falls_back_to_the_local_branch_without_a_remote() -> None:
     port = ScriptedCommands(git={"show-ref --verify --quiet refs/remotes/origin/main": fail()})
-    assert resolve_base_ref(port, None, "main") == "main"
+    assert resolve_base_ref(port, None, "main") == ("main", None)
+
+
+def test_an_unreadable_remote_tip_falls_back_to_the_local_branch_and_says_so() -> None:
+    """The same fallback, for a different reason: git errored rather than
+    reporting the ref absent. Every merge in the report is then measured
+    against a ref that may be behind the remote, which is only safe to read if
+    it is said."""
+    port = ScriptedCommands(
+        git={"show-ref --verify --quiet refs/remotes/origin/main": fail("bad object", code=128)}
+    )
+    base, warning = resolve_base_ref(port, None, "main")
+    assert base == "main"
+    assert warning is not None and "would not say whether origin/main exists" in warning
 
 
 # -- worktree parsing --------------------------------------------------------
@@ -497,11 +548,24 @@ def test_a_pr_number_that_is_not_a_number_costs_one_entry_not_the_report() -> No
     )
     port = ScriptedCommands(gh={"pr list": ok(payload)}, has_gh=True)
 
-    prs, error, _ = read_pull_requests(port, None)
+    prs, error, gap = read_pull_requests(port, None)
 
     assert error is None
     assert "broken" not in prs
     assert prs["fine"].number == 4
+    # Dropping it quietly leaves `broken` looking like a branch that never had
+    # a PR, which is the one shape a squash merge hides behind.
+    assert gap is not None and "1 of the 2 pull requests" in gap
+
+
+def test_pr_entries_gh_describes_in_other_terms_are_counted_not_swallowed() -> None:
+    payload = json.dumps(["not-an-object", {"number": 2, "headRefName": ""}])
+    port = ScriptedCommands(gh={"pr list": ok(payload)}, has_gh=True)
+
+    prs, error, gap = read_pull_requests(port, None)
+
+    assert prs == {} and error is None
+    assert gap is not None and "2 of the 2 pull requests" in gap
 
 
 def test_a_pr_list_at_the_cap_says_the_evidence_is_incomplete() -> None:
@@ -611,6 +675,13 @@ def test_unreadable_refs_yield_no_branches_but_say_so() -> None:
     result = run(port)
     assert result.branches == ()
     assert any("could not list refs" in w for w in result.warnings)
+    # An empty branch list is also what a repository holding nothing but its
+    # trunk produces, and every worktree row is judged against these refs.
+    assert result.branches_known is False
+
+
+def test_refs_that_were_read_are_recorded_as_read() -> None:
+    assert run(make_port(refs=[ref_line("refs/heads/main", "main", head="*")])).branches_known
 
 
 def test_a_failed_batch_ancestry_check_is_warned_not_swallowed() -> None:
@@ -858,11 +929,16 @@ def test_a_genuinely_unmerged_branch_proves_nothing() -> None:
     assert not feat.merged and feat.merge_evidence is MergeEvidence.NONE
 
 
-def test_squash_probe_gives_up_cleanly_when_git_will_not_answer() -> None:
+def test_a_squash_probe_that_stops_part_way_is_unknown_at_every_step() -> None:
+    """Four commands make this tier, and a chain that stopped part-way proves
+    nothing either way. Each step spells its own argv out: the fake matches on
+    the longest key, so a short one is shadowed by the answer it meant to
+    replace and the case goes untested while the suite stays green."""
     for broken in (
-        {"merge-base origin/main -- feat": fail("no merge base")},
-        {"rev-parse feat^{tree}": fail("bad object")},
-        {"commit-tree": fail("cannot write")},
+        {"merge-base origin/main -- feat": fail("bad object", code=128)},
+        {"rev-parse feat^{tree}": fail("bad object", code=128)},
+        {"commit-tree treesha -p basesha -m gitclean-probe": fail("cannot write", code=128)},
+        {"cherry origin/main synthsha": fail("bad revision", code=128)},
     ):
         port = _tier_port(
             **{
@@ -876,6 +952,7 @@ def test_squash_probe_gives_up_cleanly_when_git_will_not_answer() -> None:
         )
         feat = next(b for b in run(port).branches if b.name == "feat")
         assert feat.merge_evidence is MergeEvidence.NONE
+        assert any("squash-equivalence probe" in failure for failure in feat.probe_failures)
 
 
 def test_an_empty_cherry_result_does_not_count_as_merged() -> None:
@@ -892,6 +969,187 @@ def test_an_empty_cherry_result_does_not_count_as_merged() -> None:
     )
     feat = next(b for b in run(port).branches if b.name == "feat")
     assert not feat.merged
+
+
+# -- probes that did not answer ----------------------------------------------
+
+
+def test_an_errored_patch_probe_is_an_unknown_not_a_negative() -> None:
+    """`git cherry` has no exit code meaning "not equivalent", so a non-zero
+    exit is a question that went unasked. Recording it as a negative left the
+    row reading `evidence: none`, which is also what every tier running and
+    finding nothing looks like."""
+    port = _tier_port(
+        **{
+            "cherry origin/main -- feat": fail("fatal: bad revision", code=128),
+            "merge-base origin/main -- feat": ok("basesha"),
+            "rev-parse feat^{tree}": ok("treesha"),
+            "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
+            "cherry origin/main synthsha": ok("+ synthsha"),
+        }
+    )
+
+    result = run(port)
+
+    feat = next(b for b in result.branches if b.name == "feat")
+    assert feat.merge_evidence is MergeEvidence.NONE
+    assert any("patch-id probe" in failure for failure in feat.probe_failures)
+    assert any("feat: the patch-id probe" in w for w in result.warnings)
+
+
+def test_an_errored_squash_probe_is_an_unknown_not_a_negative() -> None:
+    """The squash tier is the only one that sees a squash merge, so a row that
+    does not say it went unasked reads as a branch nobody merged."""
+    port = _tier_port(
+        **{
+            "cherry origin/main -- feat": ok("+ aaa"),
+            "merge-base origin/main -- feat": fail("fatal: bad object", code=128),
+        }
+    )
+
+    result = run(port)
+
+    feat = next(b for b in result.branches if b.name == "feat")
+    assert feat.merge_evidence is MergeEvidence.NONE
+    assert any("squash-equivalence probe" in failure for failure in feat.probe_failures)
+    assert not any("patch-id probe" in failure for failure in feat.probe_failures)
+
+
+def test_histories_with_no_merge_base_are_answered_rather_than_unknown() -> None:
+    """`merge-base` exits 1 to say these share no commit. That is git
+    answering: there is no base to replay a tree onto, so there is no squash
+    merge to find, and calling it an unknown would cry wolf on every unrelated
+    history in the repository."""
+    port = _tier_port(
+        **{
+            "cherry origin/main -- feat": ok("+ aaa"),
+            "merge-base origin/main -- feat": fail(code=1),
+        }
+    )
+
+    feat = next(b for b in run(port).branches if b.name == "feat")
+
+    assert feat.merge_evidence is MergeEvidence.NONE
+    assert feat.probe_failures == ()
+
+
+def test_a_containment_check_git_cannot_answer_is_unknown_not_uncovered() -> None:
+    """The merged commit is frequently absent locally once the remote branch is
+    gone, and `merge-base --is-ancestor` then errors rather than answering no.
+    Both outcomes decline the PR tier; only one of them compared the commits."""
+    port = make_port(
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/heads/feat", "feat"),
+        ],
+        counts={"origin/main..feat": "2"},
+        prs=[_pr("MERGED", oid="b" * 40)],
+        extra={
+            "merge-base --is-ancestor": fail("fatal: Not a valid object name", code=128),
+            "cherry origin/main -- feat": ok("+ aaa"),
+            "merge-base origin/main -- feat": ok("basesha"),
+            "rev-parse feat^{tree}": ok("treesha"),
+            "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
+            "cherry origin/main synthsha": ok("+ synthsha"),
+        },
+    )
+
+    feat = next(b for b in run(port).branches if b.name == "feat")
+
+    assert feat.pr_covers_tip is None
+    assert not feat.merged
+
+
+def test_a_containment_check_git_answers_no_to_is_recorded_as_no() -> None:
+    port = make_port(
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/heads/feat", "feat"),
+        ],
+        counts={"origin/main..feat": "2"},
+        prs=[_pr("MERGED", oid="b" * 40)],
+        extra={
+            "merge-base --is-ancestor": fail("", code=1),
+            "cherry origin/main -- feat": ok("+ aaa"),
+            "merge-base origin/main -- feat": ok("basesha"),
+            "rev-parse feat^{tree}": ok("treesha"),
+            "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
+            "cherry origin/main synthsha": ok("+ synthsha"),
+        },
+    )
+
+    assert next(b for b in run(port).branches if b.name == "feat").pr_covers_tip is False
+
+
+def test_an_unreadable_head_is_not_reported_as_a_detached_checkout() -> None:
+    """`current_branch` is None for a detached HEAD, so a failed read arrives
+    looking like a measurement of one."""
+    port = make_port(refs=[ref_line("refs/heads/main", "main")])
+    port._git["rev-parse --abbrev-ref HEAD"] = fail("fatal: bad revision", code=128)
+
+    result = run(port)
+
+    assert result.current_branch is None
+    assert any("could not read which branch this checkout is on" in w for w in result.warnings)
+
+
+def test_an_unreadable_remote_tip_is_reported_on_the_assembled_survey() -> None:
+    """Every merge verdict in the report was then measured against a local ref
+    that may be behind the remote, which under-reports merges quietly unless
+    the survey carries it."""
+    port = make_port(
+        refs=[ref_line("refs/heads/main", "main", head="*")],
+        counts={"main..main": "0"},
+    )
+    port._git["symbolic-ref --quiet refs/remotes/origin/HEAD"] = fail()
+    port._git["show-ref --verify --quiet refs/heads/main"] = ok()
+    port._git["show-ref --verify --quiet refs/remotes/origin/main"] = fail("bad", code=128)
+
+    result = run(port)
+
+    assert result.base_ref == "main"
+    assert any("measured against the local main" in w for w in result.warnings)
+
+
+def test_a_pull_request_gh_described_oddly_leaves_the_survey_saying_so() -> None:
+    port = make_port(
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/heads/feat", "feat"),
+        ],
+        counts={"origin/main..feat": "2"},
+        prs=[
+            {
+                "number": "not-a-number",
+                "state": "MERGED",
+                "headRefName": "feat",
+                "url": "u",
+                "updatedAt": "2026-07-01T00:00:00Z",
+            }
+        ],
+        extra={
+            "cherry origin/main -- feat": ok("+ aaa"),
+            "merge-base origin/main -- feat": ok("basesha"),
+            "rev-parse feat^{tree}": ok("treesha"),
+            "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
+            "cherry origin/main synthsha": ok("+ synthsha"),
+        },
+    )
+
+    result = run(port)
+
+    assert result.pr_evidence_gap is not None
+    assert any("could not be read and were left out" in w for w in result.warnings)
+
+
+def test_an_unreadable_commit_date_leaves_the_worktree_age_unknown() -> None:
+    port = make_port(
+        refs=[ref_line("refs/heads/main", "main", head="*")],
+        worktrees="worktree /repo\nHEAD abc\ndetached\n",
+    )
+    port._git["show -s --format=%cI"] = fail("fatal: bad object", code=128)
+
+    assert run(port).worktrees[0].last_activity is None
 
 
 def test_the_batch_merged_list_short_circuits_the_per_branch_probes() -> None:
