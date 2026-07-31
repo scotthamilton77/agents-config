@@ -10,6 +10,10 @@ import pytest
 
 from installer.content_tests_cli import main
 
+# A passing shell suite has to print the tally the .sh runner looks for; "exit 0"
+# alone is the silent-pass case, which this gate fails on purpose.
+_CLEAN_SH = 'echo "PASS=1 FAIL=0"\n'
+
 
 def _repo(tmp_path: Path, files: dict[str, str]) -> Path:
     for relpath, text in files.items():
@@ -22,7 +26,7 @@ def _repo(tmp_path: Path, files: dict[str, str]) -> Path:
 def test_passing_suite_exits_zero_and_is_listed(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    repo = _repo(tmp_path, {"skills/a/probe.sh": "", "skills/a/probe_test.sh": "exit 0\n"})
+    repo = _repo(tmp_path, {"skills/a/probe.sh": "", "skills/a/probe_test.sh": _CLEAN_SH})
 
     assert main([str(repo)]) == 0
 
@@ -60,13 +64,29 @@ def test_script_without_a_suite_exits_one(
     assert "lonely.js" in capsys.readouterr().err
 
 
-def test_empty_tree_exits_zero_but_says_it_found_nothing(
+def test_a_suite_that_exits_zero_without_passing_is_reported_as_such(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Zero suites is a legitimate state, but it must be stated — an empty pass and
-    a pass over real suites read identically otherwise."""
-    assert main([str(tmp_path)]) == 0
-    assert "no test suites found" in capsys.readouterr().out
+    """The operator has to be told which of the two failures they hit. "FAILED (exit
+    0)" is a contradiction that sends someone hunting for a crash; naming the missing
+    marker sends them to the suite that never ran."""
+    repo = _repo(tmp_path, {"skills/a/probe.sh": "", "skills/a/probe_test.sh": "exit 0\n"})
+
+    assert main([str(repo)]) == 1
+
+    out = capsys.readouterr().out
+    assert "exit 0" not in out
+    assert "without reporting a clean pass" in out
+
+
+def test_empty_discovery_fails_because_a_run_that_executed_nothing_proves_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An empty walk and a broken walk are the same silence, and the pairing check
+    cannot tell them apart — it raises nothing when it sees nothing. Reporting
+    success here is the gate certifying a tree it never looked at."""
+    assert main([str(tmp_path)]) == 1
+    assert "no test suites found" in capsys.readouterr().err
 
 
 def test_module_is_runnable_as_python_dash_m(
@@ -74,6 +94,7 @@ def test_module_is_runnable_as_python_dash_m(
 ) -> None:
     """``python -m installer.content_tests_cli`` is the make-target invocation shape;
     pins the ``__main__`` guard."""
+    _repo(tmp_path, {"skills/a/probe.sh": "", "skills/a/probe_test.sh": _CLEAN_SH})
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.argv", ["content-tests"])
     with pytest.raises(SystemExit) as exc_info:

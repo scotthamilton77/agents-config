@@ -2,7 +2,8 @@
 
 Runnable as ``python -m installer.content_tests_cli [REPO_ROOT]`` (default:
 cwd). Discovers every test suite under ``REPO_ROOT/src``, runs each one, and
-exits 1 if any suite failed or any shipped script has no suite.
+exits 1 if any suite failed, any shipped script has no suite, or discovery
+turned up no suites at all.
 
 Passing suites print one line each. A failing suite prints its full output —
 the point of running it is to see why it went red.
@@ -41,11 +42,19 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"content-tests: {violation}\n")
 
     if not suites:
-        sys.stdout.write(f"content-tests: no test suites found under {src_root}\n")
+        # An empty walk and a broken one produce the same silence, and the
+        # pairing check does not backstop it: a walk that returns nothing raises
+        # no pairing violations either. A gate that executed nothing has proved
+        # nothing, so it does not get to report success.
+        sys.stderr.write(
+            f"content-tests: no test suites found under {src_root} — discovery is "
+            "broken, or nothing under src/ ships tests\n"
+        )
+        return 1
 
     results = run_suites(suites, runner=SubprocessRunner())
     for result in results:
-        status = "ok" if result.ok else f"FAILED (exit {result.returncode})"
+        status = "ok" if result.ok else f"FAILED ({result.failure})"
         sys.stdout.write(f"content-tests: {status}  {result.suite.path}\n")
         if not result.ok:
             # Flush first: the failing suite's output goes to stderr, and an
