@@ -15,7 +15,8 @@ Source: authored 2026-07-31, replacing dispatching-subagents (archived).
 
 A subagent inherits none of your context, your conversation, or your intent. The brief is
 the entire interface. Write it as a specification, not a script: define what must be true
-when the work is done, and leave how to the agent — it is closer to the code than you are.
+when the work is done, and leave how to the agent — once dispatched, it is closer to the
+ground truth than you are.
 
 ## What a brief carries
 
@@ -31,6 +32,11 @@ docs. Give the working root and every file path **absolute** — a relative path
 agent anchor on the wrong tree and split its work across two. If you don't know the
 agent's working root, tell it to resolve its own and echo the resolved path back.
 
+When the task involves investigation or reasoning, label your own conclusions as claims,
+and instruct the agent to be suspicious of them: *treat the assertions in this brief as
+hypotheses — confirm or disprove them by your own investigation before building on them.*
+An agent that inherits your diagnosis as fact will faithfully extend your mistake.
+
 **3. Constraints and boundaries.** What must still be true when it is done — behaviour
 that must not regress, interfaces that must not change. Ownership: which files are the
 agent's, what is off-limits, and what to do at the boundary (stop and report, not edit).
@@ -43,23 +49,34 @@ failed first, for a fix), gates that exit zero, artifacts that exist. Criteria a
 "step 4: add a test." An agent given steps performs them; an agent given criteria
 verifies them.
 
-**5. Reporting contract.** Say what the report must contain — root cause, files changed,
-evidence per criterion, anything left undone. Then command delivery twice: name a file
+**5. Reporting contract.** Say what the report must contain — evidence per criterion,
+what was changed or produced, conclusions reached and how they were verified, anything
+left undone or uncertain. Then command delivery twice: name a file
 path the agent *writes* the report to, and separately instruct — *send this report as
 your final message; do not end your turn without it.* A "report back with…" list
 describes an artifact and commands no action; agents finish, go idle, and deliver
 nothing while holding a good report. Code survives that; judgement does not.
 
-Close every brief with a stop clause: *if this brief is ambiguous, self-contradictory, or
-rests on a premise the code does not support, stop and report rather than guessing —
-assume there may be an error in my framing.* Briefs that demand "all suites green" while
-forbidding the only edit that greens them are the normal case, not an exotic one.
+**Fail-fast cases.** Beyond the report on completion, name the task-specific conditions
+under which the agent must stop *mid-execution* and come back for clarification or help —
+through agent messaging if available, otherwise as a partial report through the same
+reporting contract. Enumerate the ones this task can actually hit: the root cause traces
+outside its ownership boundary, a needed resource or permission is missing, the next step
+is destructive or irreversible, a criterion turns out unreachable as stated, the evidence
+contradicts the brief's premise, or the scope is growing past what was dispatched.
+Stopping early with a clear question is a success mode; pushing through on a guess is not.
+
+Close every brief with a general stop clause: *if this brief is ambiguous,
+self-contradictory, or rests on a premise the evidence does not support, stop and report
+rather than guessing — assume there may be an error in my framing.* Briefs that demand
+"all suites green" while forbidding the only edit that greens them are the normal case,
+not an exotic one.
 
 ## Altitude: outcomes, not mechanisms
 
 The dispatcher's most expensive failure is a brief that smuggles in its own wrong theory
 of the fix. The boundary: **diagnosis is a noun phrase; mechanism is a verb phrase about
-the code.** State what is true and what must become true, then stop at the verb.
+the solution.** State what is true and what must become true, then stop at the verb.
 
 > ✅ "Cache keys are built from endpoint plus params, so two tenants issuing the same
 > query collide on one entry. No tenant may read another's; same-tenant caching must
@@ -77,6 +94,8 @@ prescribe a deletion plainly, and say it is the one place you are prescribing.
 Objective: <the outcome — one or two sentences>
 
 Context: <symptom + repro, prior findings, decisions made>
+Treat the assertions above as hypotheses — confirm or disprove them by your own
+investigation before building on them.
 Working root: <absolute path>. All paths below are absolute.
 
 Constraints: <what must not regress; interfaces held stable>
@@ -88,17 +107,22 @@ Acceptance criteria:
 - <condition>
 
 Report: write your report to <absolute path>, covering <contents: evidence per
-criterion, files changed, anything left undone>. Then send the full report as your
-final message — do not end your turn without it.
+criterion, what changed or was produced, anything left undone>. Then send the full
+report as your final message — do not end your turn without it.
 
-If any part of this brief is ambiguous, contradicts the code, or blocks its own
-criteria, stop and report instead of proceeding. Assume there may be an error in
-my framing.
+Stop mid-task and come back for guidance — partial report, same path — if:
+- <task-specific fail-fast case, e.g. the cause traces outside your boundary>
+- <task-specific fail-fast case, e.g. a needed resource or permission is missing>
+
+If any part of this brief is ambiguous, contradicted by what you find, or blocks
+its own criteria, stop and report instead of proceeding. Assume there may be an
+error in my framing.
 ```
 
 ## Red flags
 
-- An imperative verb about the code, and the fix is not a deletion.
+- An imperative verb about the solution, and the change is not a deletion.
+- A brief whose assertions the agent is never told to verify.
 - Criteria that read as numbered steps.
 - "Report back with…" and no command to send anything.
 - A relative path in a brief bound for another working tree.
