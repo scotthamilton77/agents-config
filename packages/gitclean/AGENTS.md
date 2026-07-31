@@ -19,9 +19,10 @@ It runs, in order: `ruff check`, `ruff format --check`, `mypy --strict src`,
 hand-pick a subset — the linter and the formatter are orthogonal. Faster inner
 loop: `make test-gitclean`.
 
-This package is in the installer's `CLI_PACKAGES` registry, so it deploys onto
-PATH via `uv tool install`. A change to `pyproject.toml` or `src/**` shifts the
-source digest and forces a reinstall on the next installer run.
+This package is **not** in the installer's `CLI_PACKAGES` registry and nothing
+installs it onto PATH — being inside `make ci` does not deploy a package. Run it
+from a checkout. Do not add it to that registry without an explicit decision to
+ship it.
 
 ## Architecture
 
@@ -44,31 +45,69 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
 
 ## Rules that are load-bearing, not stylistic
 
-- **`Disposition` and `Risk` stay orthogonal.** Lifecycle and data-loss are
-  different questions with different overrides. `--force` overrides `Risk`
-  only; nothing overrides `Disposition.PROTECTED`.
+- **The tool proves "this is merged", never "deleting this is safe."** The
+  second is a total function over every repository state that exists, and three
+  review rounds each found another state it did not cover. The first is
+  partial: an unproven target appears in the report and a human names it. Any
+  change that widens what a bare sweep takes must widen it through merge
+  evidence, not around it.
+- **No verdict is derived from a proxy.** Age measures commits, not intent. A
+  clean working tree measures files, not consent. If you find yourself adding a
+  field that names a lifecycle state — abandoned, active, stale — the answer is
+  to report the measurement and let the reader conclude.
+- **The six sweep conditions are six boolean checks in one function.** They
+  live in `withheld_reason`, they return the prose that goes in the report, and
+  they stay that shape. A strategy class or rule registry expressing them would
+  be this package's failure mode returning: every defect it has shipped came
+  from cleverness, none from the checks being written out plainly.
 - **A probe that did not answer is `None`, and `None` never authorises a
   deletion.** Every count read from git is optional; `None` means "unknown",
   not zero, clean, or absent. Defaulting an unanswered question to the
-  convenient value turns each transient git failure into data loss, so
-  unknowns produce the conservative verdict plus a reason naming the probe
-  that went quiet. If you add a read, add its `None` path with it.
+  convenient value turns each transient git failure into data loss, so unknowns
+  render as a stated unknown on that target's own row. If you add a read, add
+  its `None` path with it.
 - **Do not spend a check that git is already making for you.** `worktree
-  remove` without `--force`, and `push --force-with-lease`, are the last
-  guards against state that changed after the survey. Pass `--force` only
-  where a verified salvage already holds the content.
+  remove` without `--force`, and `push --force-with-lease`, are the last guards
+  against state that changed after the survey. There is no `--force` in this
+  CLI and adding one means re-implementing, in Python, what git has just read
+  off the disk.
+- **A named target is an authorisation, not a proposal.** Do not re-derive
+  safety underneath the caller, and do not add a flag for them to pass. git's
+  own refusals still stand, and they carry better information than a
+  re-derivation would.
+- **With one exception, and know why it is there.** git's refusals cover
+  uncommitted content; they say nothing about a commit made inside a worktree
+  on no branch. That tree is clean, git removes it happily, and the record it
+  deletes is what held the commit — the per-worktree reflog dies with it, so
+  there is no undo. Before removing a worktree the executor asks git whether
+  any ref contains that commit and declines when none does. **It asks about
+  the commit the tree holds now, re-read as the deletion happens, not the one
+  the survey recorded.** Every other guard on that path is git's own and is
+  taken at that moment; this one is ours, so it is taken then too. A commit
+  made in the tree after the survey ran is held by the record about to be
+  deleted and by nothing else, while the commit it replaced sits on a branch
+  and answers "contained" — so asking about the surveyed commit is not a
+  weaker check, it is the wrong one, and it clears in the exact case it exists
+  to refuse. This is the one
+  place a named target is refused on reachability grounds, and it is not a
+  precedent for re-deriving anything else: it exists because "the reflog is
+  the undo" — the argument that retired salvage everywhere else — is simply
+  false here. Do not generalise it, and do not remove it without replacing
+  the guarantee.
 - **Never add a merge check that relies on ancestry alone.** `git branch
   --merged` is wrong in both directions under squash merges. New evidence goes
   in as a tier in `_resolve_merge` with its own `MergeEvidence` member, so the
-  report can say *why* a deletion was called safe.
-- **Salvage must be verified before the deletion it authorises.** If
-  `git bundle verify` fails, the target is left alone.
+  report can say *why* a deletion was called merged.
+- **Salvage exists only where there is no reflog** — a ref on the server — and
+  must be verified before the deletion it authorises. If `git bundle verify`
+  fails, the target is left alone.
 - **Verify every deletion by re-asking git.** Exit codes are claims.
 - **Anomalies carry `CommandResult.transcript()`.** An agent reading the output
   must be able to remediate without re-running anything. Never summarise a
   failure into prose that drops the argv.
-- **Never drop a target silently.** Anything the automatic sweep omits goes in
-  `Plan.skipped` with a reason.
+- **Never drop a target silently.** A target the sweep selected and then
+  dropped goes in `Plan.skipped`; one that never entered the sweep carries its
+  own `Target.withheld`.
 
 ## Tests
 
@@ -78,10 +117,28 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   raises** — a benign default would let a test pass while production asks git
   something the test never anticipated. Do not add a fallback.
 - The builders in `tests/unit/conftest.py` default to the boring case; a test
-  should state only the fact it is about.
+  should state only the fact it is about. They also build every ref at the same
+  commit, which is what lets a worktree pick up its branch's evidence for free
+  — and what makes a fixture containing the trunk mark that shared commit as
+  the trunk's. A test about anything else gives its refs distinct `head`s.
 - **`tests/integration/` runs the CLI over real repositories, and is inside the
   gate.** Scripted answers pin the code to beliefs about git's output; these
   build throwaway repos and check the claims that are about git itself — a real
-  squash merge, a real dirty worktree, a salvage that unpacks. They stay
-  hermetic: tmp directories, `gh` forced off, no network. Anything genuinely
-  needing `gh` would belong outside the gate, and nothing does yet.
+  squash merge, a real dirty worktree, a real refusal. They stay hermetic: tmp
+  directories, `gh` forced off, no network. Anything genuinely needing `gh`
+  would belong outside the gate, and nothing does yet.
+- **A mutating test belongs inside `reachability_guard`.** It snapshots the
+  commits reachable from a ref or a worktree HEAD before the run and demands
+  each one still is afterwards, so a run that strands a commit nobody thought
+  to write a test about fails a test that never mentions it. Exempt a commit
+  only by naming it or by restoring the salvage that holds it; loosening the
+  guard to make a suite green is how the last three rounds shipped. A test that
+  deletes from the server guards the **bare** repository rather than the
+  working clone: `push --delete` is what the run performs, and the server is
+  what loses the ref.
+- **The guard only covers the topologies the matrix names.** It is a property
+  check, but it runs on the shapes in `test_a_sweep_strands_only_the_commits_it_proved_redundant`,
+  and every one of those but a single named branch drives a *bare* sweep. A
+  deletion reached by naming a target is barely represented, so a defect on the
+  named path can pass the whole suite. Adding a row is cheap; assuming one
+  exists is how a shape goes unmeasured.
