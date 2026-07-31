@@ -675,3 +675,28 @@ def test_a_build_directory_is_not_reported(tmp_path: Path) -> None:
 
     assert result.ok
     assert result.violations == []
+
+
+def test_every_specialized_adapters_routes_are_accounted(tmp_path: Path) -> None:
+    """The completeness check, generalised over the registry rather than over beads.
+
+    Three review rounds each found the same shape: a staging channel the accounting map
+    did not model, reported as content that deploys nowhere. Naming beads pins the one
+    that exists; iterating _SPECIALIZED pins the next one, so adding an adapter with
+    bespoke routes cannot silently reintroduce the defect — the fixture builds whatever
+    routes that adapter declares and fails if the map does not reach them.
+    """
+    from installer.plugins.registry import _SPECIALIZED
+
+    assert _SPECIALIZED, "no specialized adapters: this test would be vacuously green"
+
+    for name, factory in _SPECIALIZED.items():
+        root = tmp_path / name
+        root.mkdir()
+        repo = _repo(root, plugin_rules={f"{name}/{name}.md": _RECORD + "body\n"})
+        source_path = repo / "src" / "plugins" / name
+        for route in factory(name, source_path).routes(Path("/nonexistent-home")):
+            route.source_dir.mkdir(parents=True, exist_ok=True)
+        result = _lint(repo)
+
+        assert result.violations == [], f"{name}: {result.violations}"
