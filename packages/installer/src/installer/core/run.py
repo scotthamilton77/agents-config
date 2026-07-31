@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 from installer.core.clis import MIN_UV_VERSION, cli_source_digest
 from installer.core.consent import require_consent
+from installer.core.installignore import InstallIgnore
 from installer.core.model import Counters, InstallOutcome, Outcome, Tool
 from installer.core.prune_flow import run_prune
 from installer.core.prune_hash import is_safe_to_prune, partition_file_orphans
@@ -49,6 +50,13 @@ if TYPE_CHECKING:
     from installer.core.model import StagingPlan
     from installer.plugins.base import PluginAdapter
     from installer.tools.base import ToolAdapter
+
+
+# Shared empty-manifest default for install_pipeline, mirroring sync.py's
+# _EMPTY_IGNORE: callers that don't pass a real loaded manifest (most unit
+# tests) get "exclude nothing" rather than a mutable default evaluated at
+# import time (ruff B008).
+_EMPTY_IGNORE = InstallIgnore()
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,6 +264,7 @@ def install_pipeline(
     auto_yes: bool = False,
     timestamp: str | None = None,
     outcomes_by_tool: dict[str, list[InstallOutcome]] | None = None,
+    ignore: InstallIgnore = _EMPTY_IGNORE,
 ) -> dict[str, Counters]:
     """Walk each adapter's ``StagingPlan`` to disk via ``sync_plan``, per tool.
 
@@ -283,6 +292,10 @@ def install_pipeline(
     feeds ``record_receipt``, whose contract is "what happened on disk", and a
     dry run writes nothing. Each tool key is still populated — with an empty list
     on a dry run — so callers see every adapter's key, never a phantom WRITTEN.
+
+    ``ignore`` (defaults to an empty manifest — exclude nothing) is forwarded
+    verbatim into every ``sync_plan`` call, so a DIR item's nested exclusions
+    apply uniformly across tools.
     """
     collect = outcomes_by_tool is not None and not dry_run
     result: dict[str, Counters] = {}
@@ -297,6 +310,7 @@ def install_pipeline(
             auto_yes=auto_yes,
             timestamp=timestamp,
             outcomes=tool_outcomes,
+            ignore=ignore,
         )
         if outcomes_by_tool is not None:
             outcomes_by_tool[adapter.name] = tool_outcomes if tool_outcomes is not None else []

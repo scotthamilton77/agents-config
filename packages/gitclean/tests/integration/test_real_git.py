@@ -544,6 +544,63 @@ def test_the_salvage_ref_does_not_outlive_the_run(repo: Path, tmp_path: Path) ->
     assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads") == before
 
 
+def _shallow_clone(bare: Path, into: Path) -> Path:
+    """A depth-1 clone -- what a CI checkout is, and the cheapest repository
+    whose history stops at a boundary `git bundle create` will pack right past.
+
+    `--no-single-branch` so the feature ref is fetched too: a clone holding
+    only the default branch has nothing to salvage."""
+    result = SubprocessCommands().git(
+        ["clone", "-q", "--depth", "1", "--no-single-branch", f"file://{bare}", str(into)]
+    )
+    assert result.ok, result.stderr
+    return into
+
+
+def test_a_bundle_that_will_not_restore_does_not_authorise_the_deletion(
+    repo: Path, tmp_path: Path
+) -> None:
+    """The salvage has to survive being used, not just being inspected.
+
+    `git bundle verify` asks whether the archive applies to *the repository it
+    is run in*, which is the one that already holds every object. In a shallow
+    clone that question gets a clean yes -- the bundle is reported okay, with a
+    complete history -- while `git clone` of the same file dies with `remote
+    did not send all necessary objects` and leaves no directory behind. The
+    boundary commit's parent is packed by neither: it is grafted away locally
+    and absent from the archive.
+
+    So the weaker check passes on a bundle that restores nothing, and it was
+    the check standing in front of the one deletion with no undo. Here the
+    restore is attempted for real, it fails, and the server keeps its ref."""
+    bare = _with_remote(repo, tmp_path)
+    only = _push_only_copy(repo, "feat/gone")
+    shallow = _shallow_clone(bare, tmp_path / "shallow")
+
+    # No exemption: nothing may leave the server, because nothing can bring it
+    # back.
+    with reachability_guard(bare):
+        payload = report(shallow, "--cleanup", "origin/feat/gone")
+
+    assert payload["_exit"] == EXIT_ANOMALY
+    assert "refs/heads/feat/gone" in git(bare, "for-each-ref", "--format=%(refname)")
+    assert only in git(bare, "rev-list", "--all").split()
+
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert execution["salvages"] == [], "an unrestorable bundle is not a verified salvage"
+    assert execution["deletions"][0]["deleted"] is False  # type: ignore[index]
+
+    salvage = next(Path(str(execution["salvage_dir"])).glob("*.bundle"))
+    weaker = SubprocessCommands().git(["bundle", "verify", str(salvage)], cwd=shallow)
+    assert weaker.ok, "the reproduction needs the check this replaced to still pass"
+
+    anomaly = execution["anomalies"][0]  # type: ignore[index]
+    assert anomaly["stage"] == "salvage"
+    assert "restore" in anomaly["message"]
+    assert any("clone" in line for line in anomaly["transcript"])
+
+
 def test_an_unrelated_sibling_ref_is_not_read_as_the_deletion_having_failed(
     repo: Path, tmp_path: Path
 ) -> None:
@@ -672,6 +729,48 @@ def test_a_branch_named_like_an_option_is_swept_not_misread(repo: Path) -> None:
     with reachability_guard(repo):
         surveyed = report(repo, "--report")
         payload = report(repo, "--cleanup")
+
+    listed = find(surveyed, "branch:-m")
+    assert listed["name"] == "-m"
+    assert listed["merge_proven"] is True
+    assert listed["sweepable"] is True
+
+    assert payload["_exit"] == EXIT_OK
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/-m") == ""
+    assert "-m" in [d["name"] for d in payload["execution"]["deletions"]]  # type: ignore[index]
+
+
+def test_a_squash_merged_branch_named_like_an_option_is_proven(repo: Path) -> None:
+    """The one case the test above does not cover: an ancestor or patch-id
+    merge never reaches the squash tier at all, and that tier's own `git`
+    calls used to lose the argv terminator that protects every other probe
+    here. Two commits are used deliberately, as in
+    `test_a_real_squash_merge_is_detected` -- with one, patch-id equivalence
+    would settle it before the squash tier ran, and this would prove nothing
+    about its argv."""
+    git(repo, "checkout", "-q", "-b", "feat/opt-squash")
+    first = commit(repo, "one.txt")
+    second = commit(repo, "two.txt")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--squash", "feat/opt-squash")
+    git(repo, "commit", "-q", "-m", "squashed feat/opt-squash")
+    head = git(repo, "rev-parse", "refs/heads/feat/opt-squash")
+    git(repo, "branch", "-D", "feat/opt-squash")
+    git(repo, "update-ref", "refs/heads/-m", head)
+
+    assert "-m" not in git(repo, "branch", "--merged", "main")
+
+    with reachability_guard(repo) as guard:
+        surveyed = report(repo, "--report")
+        payload = report(repo, "--cleanup")
+        # A squash rewrites the work into one new commit on main, so these two
+        # are stranded by design -- that is what the sweep exists to remove.
+        guard.expect_unreachable(first, second)
+
+    branches = surveyed["repo"]
+    assert isinstance(branches, dict)
+    dashed = next(b for b in branches["branches"] if b["name"] == "-m")
+    assert dashed["merge_evidence"] == "squash_equal"
 
     listed = find(surveyed, "branch:-m")
     assert listed["name"] == "-m"

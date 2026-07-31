@@ -403,6 +403,90 @@ def test_each_tracker_verb_maps_to_its_facade_invocation(
 
 
 @pytest.mark.parametrize(
+    ("call", "argv"),
+    [
+        (lambda t: t.parked(), ("work", "parked")),
+        (lambda t: t.parked(stale_days=30), ("work", "parked", "--stale-days", "30")),
+        (lambda t: t.ready(), ("work", "ready")),
+    ],
+    ids=["parked", "parked-stale-days", "ready"],
+)
+def test_each_facade_read_maps_to_its_invocation(
+    call: Callable[[WorkTracker], object], argv: tuple[str, ...]
+) -> None:
+    """
+    Given the two reads `next` composes
+    When each is called
+    Then the facade is invoked with that verb, and `--stale-days` appears only
+    when the caller supplied one.
+
+    S9T1-N4: the threshold crosses verbatim and its default stays the
+    facade's, which is only true while an omitted flag stays omitted rather
+    than being filled in with a number chosen here.
+    """
+    runner = _facade({argv[:2]: _ok({"ok": True, "data": {"items": []}})})
+
+    call(WorkTracker(runner))
+
+    assert runner.calls == [_HANDSHAKE, argv]
+
+
+@pytest.mark.parametrize(
+    ("verb", "call"),
+    [("parked", lambda t: t.parked()), ("ready", lambda t: t.ready())],
+    ids=["parked", "ready"],
+)
+@pytest.mark.parametrize(
+    "data",
+    [None, {}, {"items": None}, {"items": {}}, {"items": "nothing"}, "not an object"],
+    ids=["null", "empty", "null-items", "object-items", "string-items", "not-an-object"],
+)
+def test_a_facade_read_without_a_usable_item_list_fails_rather_than_reading_empty(
+    verb: str, call: Callable[[WorkTracker], object], data: object
+) -> None:
+    """
+    Given a successful read whose reply carries no usable item list
+    When the port calls it
+    Then it fails instead of answering with an empty list.
+
+    An empty list is a conclusion a caller acts on: no parked work to review,
+    or no work to pull. Reading an unparseable reply as either would let a
+    broken facade exempt every parked item from the surfacing D10 requires.
+    Same rule as the park reply's — a degraded value that authorises is a
+    fault, not a default.
+    """
+    runner = _facade({("work", verb): _ok({"ok": True, "data": data})})
+
+    with pytest.raises(ExecutorError) as raised:
+        call(WorkTracker(runner))
+
+    assert raised.value.code is ErrorCode.TRACKER_SUBPROCESS
+    assert verb in raised.value.message
+
+
+@pytest.mark.parametrize(
+    ("verb", "call"),
+    [("parked", lambda t: t.parked()), ("ready", lambda t: t.ready())],
+    ids=["parked", "ready"],
+)
+def test_a_facade_read_returns_the_rows_it_was_given(
+    verb: str, call: Callable[[WorkTracker], object]
+) -> None:
+    """
+    Given a read whose rows carry fields this package never names
+    When the port answers
+    Then the rows cross unchanged.
+
+    The facade owns the row shape. A port that projected it to known fields
+    would silently drop whatever the facade added next.
+    """
+    rows = [{"id": "wg-1", "stale": True, "a-field-added-later": 7}]
+    runner = _facade({("work", verb): _ok({"ok": True, "data": {"items": rows}})})
+
+    assert call(WorkTracker(runner)) == rows
+
+
+@pytest.mark.parametrize(
     "data",
     [None, {}, {"reason": None}, {"reason": ""}, {"reason": 7}, "not an object"],
     ids=["null", "empty", "null-reason", "empty-reason", "int-reason", "not-an-object"],

@@ -6,10 +6,13 @@ Three commitments shape this module:
 server. A local branch deleted with `-D` leaves its commits in the reflog for
 git's configured expiry, and a worktree is removed by git itself, which refuses
 while the tree holds anything uncommitted. Where salvage does run, it precedes
-the deletion and a bundle that will not verify aborts it. Verifying is the
-weaker half: a bundle of a remote-tracking ref verifies cleanly and clones back
-an empty repository, so what the archive has to be is one the restore command
-printed beside it actually opens.
+the deletion, and what earns the deletion is a restore rather than an
+inspection: the bundle is cloned into an empty directory and the commit about
+to be deleted has to come back out of it. `git bundle verify` is the weaker
+question -- it asks whether the archive applies to the repository holding every
+object already, and answers yes for bundles that clone back empty and for
+bundles that will not clone at all. A salvage that does not restore is reported
+as an anomaly, recorded as no salvage, and aborts its deletion.
 
 **Every deletion is verified by re-asking git.** A zero exit code is a claim,
 not a fact -- `git push --delete` in particular can exit 0 against a ref the
@@ -126,11 +129,11 @@ class Executor:
 
         What is bundled is a branch this run makes and then removes, not the
         remote-tracking ref itself. A bundle of `refs/remotes/<remote>/<name>`
-        holds no head: `git bundle verify` passes on it and `git clone` of it
-        produces an empty repository, so the archive that authorised the
-        deletion turns out to hold nothing anyone can take back. `git branch`
-        refuses a name already in use, which stops the scratch ref from trading
-        the server's copy for somebody else's work.
+        holds no head, and clones back an empty repository -- the restore check
+        catches that, and building the archive out of a real branch means it
+        never has to. `git branch` refuses a name already in use, which stops
+        the scratch ref from trading the server's copy for somebody else's
+        work.
 
         Bundling the full history rather than `base..branch` costs disk and
         buys a bundle that clones standalone -- the right trade when the
@@ -168,7 +171,24 @@ class Executor:
                 )
 
     def _bundle(self, target: Target, bundle: Path, branch: str) -> bool:
-        """Write the archive and record the route back out of it."""
+        """Write the archive, take it back out again, and record the route.
+
+        The commit is read before the archive is written, because the claim
+        being made is about a particular commit rather than about a file: an
+        archive that opens without holding what the deletion takes is worth
+        exactly as much as one that does not open."""
+        tip = self._port.git(
+            git_argv("rev-parse", "--verify", name=f"refs/heads/{branch}"), cwd=self._cwd
+        )
+        if not tip.ok or not tip.out:
+            self._record(
+                "salvage",
+                target.id,
+                f"could not read the commit copied out of {target.name}, so a restore has "
+                f"nothing to be checked against; deletion aborted",
+                tip.transcript(),
+            )
+            return False
         written = self._port.git(
             git_argv("bundle", "create", str(bundle), name=f"refs/heads/{branch}"), cwd=self._cwd
         )
@@ -177,14 +197,7 @@ class Executor:
                 "salvage", target.id, f"bundle of {target.name} failed", written.transcript()
             )
             return False
-        verified = self._port.git(git_argv("bundle", "verify", str(bundle)), cwd=self._cwd)
-        if not verified.ok:
-            self._record(
-                "salvage",
-                target.id,
-                f"bundle written for {target.name} did not verify; deletion aborted",
-                verified.transcript(),
-            )
+        if not self._restores(target, bundle, tip.out):
             return False
         self._salvages.append(
             SalvageRecord(
@@ -199,6 +212,59 @@ class Executor:
                 f"{shlex.quote(str(bundle))} -b {shlex.quote(branch)}",
             )
         )
+        return True
+
+    def _restores(self, target: Target, bundle: Path, tip: str) -> bool:
+        """Open the archive somewhere empty and look for the commit in it.
+
+        `git bundle verify` answers a question about the repository it runs in
+        -- whether the archive would apply *here* -- and here is the one place
+        holding every object already. A shallow clone is the case that makes
+        the difference plain: the boundary commit's parent is grafted away
+        locally and packed by nothing, so verify reports a complete history for
+        a file `git clone` then refuses with `remote did not send all necessary
+        objects`. That answer stood in front of the only deletion with no undo.
+
+        So the archive is used rather than inspected. Cloning is what performs
+        the connectivity check -- unbundling into a fresh repository does not,
+        and reports success on exactly the bundle that will not clone -- and
+        `--bare` skips materialising a working tree, which is the only part of
+        a restore that proves nothing. The commit is then looked for under a
+        ref, because an object present but reachable from nothing is not a
+        restore either.
+
+        The cost is unpacking the branch's history a second time, and it is
+        charged once per server ref actually being deleted. The alternative is
+        a report claiming a safety net nobody has pulled on."""
+        with self._port.scratch_dir() as scratch:
+            restored = scratch / "restored"
+            cloned = self._port.git(
+                git_argv("clone", "--bare", "--quiet", str(bundle), str(restored)), cwd=self._cwd
+            )
+            if not cloned.ok:
+                self._record(
+                    "salvage",
+                    target.id,
+                    f"the bundle written for {target.name} does not restore, so it is not a "
+                    f"safety net and buys no deletion; nothing was deleted. If this "
+                    f"repository is a shallow clone, its history stops at a boundary the "
+                    f"bundle cannot pack past -- `git fetch --unshallow` and re-run",
+                    cloned.transcript(),
+                )
+                return False
+            held = self._port.git(
+                git_argv("for-each-ref", "--count=1", f"--contains={tip}"), cwd=restored
+            )
+            if not held.ok or not held.out:
+                self._record(
+                    "salvage",
+                    target.id,
+                    f"the bundle written for {target.name} restored, but {tip[:8]} -- the "
+                    f"commit the deletion would take -- is reachable from no ref in the "
+                    f"restored copy; deletion aborted",
+                    held.transcript(),
+                )
+                return False
         return True
 
     # -- delete + verify ----------------------------------------------------

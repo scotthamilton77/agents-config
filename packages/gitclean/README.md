@@ -87,10 +87,19 @@ Without `gh` on PATH there is no squash signal at all. That is reported in
   the survey ran is exactly the one at risk, and the surveyed commit it
   replaced would have answered for it. Naming a target authorises deleting a
   checkout; it should not quietly spend a commit.
-- **Salvage is kept only where there is no reflog** — a ref on the server.
-  It becomes a verified `git bundle` before the delete, and a bundle that will
-  not verify aborts that deletion. A local branch needs none: `branch -D`
-  leaves its commits in the reflog for git's configured expiry.
+- **Salvage is kept only where there is no reflog** — a ref on the server. It
+  becomes a `git bundle` before the delete, and what earns the delete is a
+  restore, not an inspection: the bundle is cloned into an empty directory and
+  the commit about to be deleted has to come back out of it. `git bundle
+  verify` is not that check — it asks whether the archive applies to the
+  repository that already holds every object, and says yes both to a bundle
+  that clones back empty and, in a shallow clone, to one `git clone` refuses
+  outright with `remote did not send all necessary objects`. A salvage that
+  does not restore is reported as an anomaly with the transcript, recorded as
+  no salvage at all, and aborts its deletion. The cost is unpacking that
+  branch's history once more per server ref actually deleted. A local branch
+  needs none of this: `branch -D` leaves its commits in the reflog for git's
+  configured expiry.
 - **Remote deletes are leased.** Every verdict about a remote branch comes from
   your local `refs/remotes` cache. The delete carries `--force-with-lease`, so
   if the server moved since your last fetch it is rejected rather than taking
@@ -130,17 +139,17 @@ synthesising the equivalent single commit with `git commit-tree` and asking
 gc` collects it. Suppressing it in report mode would make `--report` and
 `--cleanup` disagree about what is merged, which is worse than a stray blob.
 
-**A branch whose name begins with `-` is deleted correctly, but proven merged
-only some of the way.** `git branch` will not create such a ref, but `git
-update-ref` will and a remote can push one. Every deletion terminates its argv,
-so git reads the name as a name — a `-m` branch that ancestry or patch-id
-proves merged is swept, and one named outright is deleted and its server copy
-bundled. The squash tier is the gap: it asks `merge-base` and `rev-parse` for
-the branch without a terminator, git rejects the name as a switch, and the
-probe gives up. A squash-merged `-m` therefore reads as unproven and stays in
-the report — the safe direction, and the wrong answer. Naming one on the
-command line is a separate matter, because the argument parser claims `-m` as a
-flag first: select it by its `id`, `gitclean --cleanup branch:-m`.
+**A branch whose name begins with `-` is deleted correctly, and proven merged
+by every tier, including squash.** `git branch` will not create such a ref,
+but `git update-ref` will and a remote can push one. Every deletion terminates
+its argv, so git reads the name as a name. Merge evidence does the same, with
+one adjustment: `merge-base` accepts a `--` terminator, but `rev-parse` does
+not — it echoes one back as a literal output line instead of consuming it — so
+the squash tier's tree lookup instead names the branch by its full ref path,
+which never begins with `-`. A squash-merged `-m` is proven and swept the same
+as any other name. Naming one on the command line is a separate matter,
+because the argument parser claims `-m` as a flag first: select it by its
+`id`, `gitclean --cleanup branch:-m`.
 
 ## Exit codes
 

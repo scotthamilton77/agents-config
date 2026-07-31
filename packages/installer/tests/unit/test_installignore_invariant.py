@@ -14,6 +14,7 @@ from pathlib import Path
 from installer.core.installignore import load_installignore
 from installer.core.model import Tool
 from installer.core.staging import build_plan
+from installer.core.sync import _nested_path_is_excluded
 from installer.tools.registry import get_adapter
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -44,3 +45,36 @@ def test_known_dead_docs_are_never_staged() -> None:
                 assert parts[-2] not in _NAMESPACE_DIRS, (
                     f"namespace dead-doc {dest} leaked into {tool} plan"
                 )
+
+
+def test_marker_docs_are_excluded_at_every_depth_not_just_the_namespace_level() -> None:
+    """The three marker names must stay UNANCHORED in the real manifest.
+
+    Staging sees only a namespace dir's direct children; a skill stages as one
+    DIR item whose interior the copy walks separately. An anchored marker entry
+    would therefore leave ``skills/<skill>/AGENTS.md`` deploying — and in this
+    repo a skill's own AGENTS.md is guidance for whoever maintains its scripts,
+    so it would ship to every install carrying repo-internal vocabulary.
+
+    This pins the manifest's policy, not the matcher's mechanism (that is
+    test_installignore.py's job): re-anchoring any of the three turns it red."""
+    ignore = load_installignore(_REPO_ROOT / ".installignore")
+
+    for marker in sorted(_MARKER_BASENAMES):
+        for rel in (Path(f"some-skill/{marker}"), Path(f"some-skill/references/{marker}")):
+            assert _nested_path_is_excluded(rel, ignore), (
+                f"{rel} would deploy — {marker} is anchored in .installignore and must not be"
+            )
+
+
+def test_readme_stays_anchored_so_a_skill_can_ship_one() -> None:
+    """README.md is the deliberate exception to the rule above.
+
+    Unlike the marker names it is genuinely ambiguous — a skill's own
+    references/README.md may be content it means to ship — so it stays anchored
+    to the namespace level. Unanchoring it would silently stop deploying that
+    file, which is the failure mode the anchoring rule exists to prevent."""
+    ignore = load_installignore(_REPO_ROOT / ".installignore")
+
+    assert not _nested_path_is_excluded(Path("some-skill/references/README.md"), ignore)
+    assert ignore.excludes("README.md", is_dir=False, at_root=True)

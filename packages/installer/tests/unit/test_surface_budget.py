@@ -7,6 +7,8 @@ from installer.core.surface_budget import (
     SKILL_BODY_TOKEN_CAP,
     always_on_violations,
     approx_tokens,
+    measure_always_on,
+    measure_skill_bodies,
     skill_body_violations,
 )
 
@@ -54,3 +56,30 @@ def test_skill_body_over_cap_is_named() -> None:
 
 def test_no_skills_no_violations() -> None:
     assert skill_body_violations([]) == []
+
+
+def test_measurement_carries_the_rule_count_beside_the_token_total() -> None:
+    """Tokens and rule count move for different reasons — rising tokens against a
+    flat rule count is one rule bloating, both rising is the surface accreting. A
+    reader watching for drift needs to tell those apart."""
+    measure = measure_always_on(tool="claude", instruction=b"x" * 8, rules=[b"y" * 4, b"z" * 4])
+    assert (measure.tool, measure.tokens, measure.rules) == ("claude", 4, 2)
+
+
+def test_the_violation_verdict_is_the_measurement_it_reports() -> None:
+    """The two callers must never disagree about what the surface weighs: the lint
+    reports headroom from the same number the gate fails on."""
+    over = b"x" * (ALWAYS_ON_TOKEN_CAP * 4 + 1)
+    measure = measure_always_on(tool="claude", instruction=over, rules=[])
+    violations = always_on_violations(tool="claude", instruction=over, rules=[])
+    assert str(measure.tokens) in violations[0]
+
+
+def test_skill_bodies_are_measured_whether_or_not_they_breach() -> None:
+    """Every admitted body is weighed, not only the over-cap ones — an under-cap
+    body that has doubled is the signal the trend report exists to show."""
+    measures = measure_skill_bodies([("claude:skills/small", "y" * 8), ("claude:skills/big", "x")])
+    assert [(m.label, m.tokens) for m in measures] == [
+        ("claude:skills/small", 2),
+        ("claude:skills/big", 1),
+    ]
