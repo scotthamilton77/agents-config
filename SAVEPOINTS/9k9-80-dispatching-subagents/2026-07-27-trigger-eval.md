@@ -72,6 +72,6 @@ skill is not for turns out to help its neighbour trigger, not just itself.
   language, re-run this set before shipping it.
 - Judges were a mid-tier model reading a description list, not the routing path a live session
   uses. It tests the description against its real competitors, which is the part that fails.
-- The body was not pressure-tested. Its rules come from an eight-round production run where each
-  was violated at least once and the cost was recorded; that run is the baseline this skill was
-  written against.
+- The body was not tested here — only the description. It was tested separately afterwards, and
+  the rewrite that followed is recorded in `2026-07-31-body-test.md`. The description survived that
+  rewrite unchanged, so the results above still hold.
