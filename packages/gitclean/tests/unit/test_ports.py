@@ -107,6 +107,27 @@ def test_write_text_creates_missing_parents(tmp_path: Path) -> None:
     assert target.read_text() == "x"
 
 
+def test_a_scratch_directory_is_empty_while_it_lasts_and_gone_afterwards() -> None:
+    """A restore has to land somewhere holding nothing -- a directory with the
+    objects already in it answers yes to every bundle. And it must not outlive
+    the check: one salvage per server ref would otherwise leave a full copy of
+    each branch's history on disk."""
+    with SubprocessCommands().scratch_dir() as scratch:
+        assert scratch.is_dir()
+        assert not list(scratch.iterdir())
+        seen = scratch
+    assert not seen.exists()
+
+
+def test_the_fake_hands_out_a_fixed_scratch_path_and_creates_nothing() -> None:
+    """The path is what a scripted answer has to name, so it cannot vary per
+    run -- and the fake touches no filesystem to produce it."""
+    port = ScriptedCommands()
+    with port.scratch_dir() as scratch:
+        assert scratch == Path("/scratch")
+        assert not scratch.exists()
+
+
 # -- the fake ----------------------------------------------------------------
 
 

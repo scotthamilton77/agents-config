@@ -543,6 +543,63 @@ def test_the_salvage_ref_does_not_outlive_the_run(repo: Path, tmp_path: Path) ->
     assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads") == before
 
 
+def _shallow_clone(bare: Path, into: Path) -> Path:
+    """A depth-1 clone -- what a CI checkout is, and the cheapest repository
+    whose history stops at a boundary `git bundle create` will pack right past.
+
+    `--no-single-branch` so the feature ref is fetched too: a clone holding
+    only the default branch has nothing to salvage."""
+    result = SubprocessCommands().git(
+        ["clone", "-q", "--depth", "1", "--no-single-branch", f"file://{bare}", str(into)]
+    )
+    assert result.ok, result.stderr
+    return into
+
+
+def test_a_bundle_that_will_not_restore_does_not_authorise_the_deletion(
+    repo: Path, tmp_path: Path
+) -> None:
+    """The salvage has to survive being used, not just being inspected.
+
+    `git bundle verify` asks whether the archive applies to *the repository it
+    is run in*, which is the one that already holds every object. In a shallow
+    clone that question gets a clean yes -- the bundle is reported okay, with a
+    complete history -- while `git clone` of the same file dies with `remote
+    did not send all necessary objects` and leaves no directory behind. The
+    boundary commit's parent is packed by neither: it is grafted away locally
+    and absent from the archive.
+
+    So the weaker check passes on a bundle that restores nothing, and it was
+    the check standing in front of the one deletion with no undo. Here the
+    restore is attempted for real, it fails, and the server keeps its ref."""
+    bare = _with_remote(repo, tmp_path)
+    only = _push_only_copy(repo, "feat/gone")
+    shallow = _shallow_clone(bare, tmp_path / "shallow")
+
+    # No exemption: nothing may leave the server, because nothing can bring it
+    # back.
+    with reachability_guard(bare):
+        payload = report(shallow, "--cleanup", "origin/feat/gone")
+
+    assert payload["_exit"] == EXIT_ANOMALY
+    assert "refs/heads/feat/gone" in git(bare, "for-each-ref", "--format=%(refname)")
+    assert only in git(bare, "rev-list", "--all").split()
+
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert execution["salvages"] == [], "an unrestorable bundle is not a verified salvage"
+    assert execution["deletions"][0]["deleted"] is False  # type: ignore[index]
+
+    salvage = next(Path(str(execution["salvage_dir"])).glob("*.bundle"))
+    weaker = SubprocessCommands().git(["bundle", "verify", str(salvage)], cwd=shallow)
+    assert weaker.ok, "the reproduction needs the check this replaced to still pass"
+
+    anomaly = execution["anomalies"][0]  # type: ignore[index]
+    assert anomaly["stage"] == "salvage"
+    assert "restore" in anomaly["message"]
+    assert any("clone" in line for line in anomaly["transcript"])
+
+
 def test_an_unrelated_sibling_ref_is_not_read_as_the_deletion_having_failed(
     repo: Path, tmp_path: Path
 ) -> None:

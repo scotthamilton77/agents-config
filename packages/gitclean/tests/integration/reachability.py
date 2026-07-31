@@ -81,13 +81,19 @@ class Exemptions:
         The exemption is the restore, not the claim: a bundle that clones back
         empty -- which is what a bundle holding only a remote-tracking ref does
         -- proves nothing, and the commits it was supposed to hold stay counted
-        as lost."""
+        as lost. A bundle that will not clone at all proves less than that, and
+        one that clones back nothing is reported here rather than three lines
+        later as commits nobody can account for."""
         with tempfile.TemporaryDirectory(prefix="gitclean-restore-") as scratch:
             clone = Path(scratch) / "restored"
             result = SubprocessCommands().git(["clone", "-q", str(bundle), str(clone)])
             if not result.ok:
                 raise AssertionError(f"salvage {bundle} did not clone back\n{result.stderr}")
-            self.restored |= set(_git(clone, "rev-list", "--all").split())
+            came_back = set(_git(clone, "rev-list", "--all").split())
+            assert came_back, (
+                f"salvage {bundle} cloned back an empty repository, so it excuses nothing"
+            )
+            self.restored |= came_back
 
 
 @contextmanager
