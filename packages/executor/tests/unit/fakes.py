@@ -87,6 +87,11 @@ class FakeTracker:
     them, which is how a retry test models a facade that came back.
     `fail_after_write` names verbs that write and *then* fail -- a wrapper
     dying around a completed call, whose write is durable.
+
+    Reads are recorded in their own log. Keeping the two apart is what lets a
+    test assert that a read-only command left `mutations` empty *and* that its
+    reads happened in the order the contract pins -- one list could show
+    neither without the reader knowing which entries were writes.
     """
 
     def __init__(
@@ -95,6 +100,8 @@ class FakeTracker:
         fail_on: Sequence[str] = (),
         fail_after_write: Sequence[str] = (),
         parked_as: str | None = None,
+        parked_rows: Sequence[JsonValue] = (),
+        ready_rows: Sequence[JsonValue] = (),
     ) -> None:
         self.fail_on = set(fail_on)
         self.fail_after_write = set(fail_after_write)
@@ -102,9 +109,20 @@ class FakeTracker:
         # EXISTING stint on a replay and mints nothing, so a fake that always
         # echoed the request back could not model the divergence that costs.
         self.parked_as = parked_as
+        # What the two facade reads answer with. Served as given: the executor
+        # passes the facade's rows through, so a fake that reshaped them would
+        # hide a transformation creeping in above.
+        self.parked_rows = list(parked_rows)
+        self.ready_rows = list(ready_rows)
         self.mutations: list[tuple[str, ...]] = []
+        self.reads: list[tuple[str, ...]] = []
         self.syncs = 0
         LIVE_TRACKERS.append(self)
+
+    def _read(self, verb: str, *args: str) -> None:
+        if verb in self.fail_on:
+            raise ExecutorError(ErrorCode.TRACKER_SUBPROCESS, f"scripted tracker failure on {verb}")
+        self.reads.append((verb, *args))
 
     def _record(self, verb: str, *args: str) -> None:
         if verb in self.fail_on:
@@ -134,6 +152,18 @@ class FakeTracker:
 
     def close(self, handle: str) -> None:
         self._record("close", handle)
+
+    def parked(self, *, stale_days: int | None = None) -> list[JsonValue]:
+        # The threshold is recorded as it arrived, absence included: "no
+        # `--stale-days`" is the case S9T1-N4 is about, and a fake that
+        # defaulted it to a number could not tell that case from a caller
+        # passing the facade's own default explicitly.
+        self._read("parked", *(() if stale_days is None else (str(stale_days),)))
+        return list(self.parked_rows)
+
+    def ready(self) -> list[JsonValue]:
+        self._read("ready")
+        return list(self.ready_rows)
 
     def sync(self) -> None:
         if "sync" in self.fail_on:

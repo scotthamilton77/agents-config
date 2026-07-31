@@ -136,11 +136,15 @@ class RuntimePort(Protocol):
 
 @runtime_checkable
 class TrackerPort(Protocol):
-    """The facade verbs the S9T1-D12 table names, plus `sync`.
+    """The facade verbs the S9T1-D12 table names, plus `sync` and two reads.
 
     Every argument is a tracker handle, never a run-local slug -- routing
     happens above this port, so a port implementation never has to know the
     difference.
+
+    `parked` and `ready` appear in no pairing row and are not meant to: the
+    table closes the *mutation* surface, and these two write nothing. They are
+    what `executor next` composes (S9T1-D10).
     """
 
     def claim(self, handle: str) -> None: ...  # pragma: no cover
@@ -154,6 +158,10 @@ class TrackerPort(Protocol):
     def close(self, handle: str) -> None: ...  # pragma: no cover
 
     def sync(self) -> None: ...  # pragma: no cover
+
+    def parked(self, *, stale_days: int | None = None) -> list[JsonValue]: ...  # pragma: no cover
+
+    def ready(self) -> list[JsonValue]: ...  # pragma: no cover
 
 
 def _is_ok_envelope(decoded: JsonValue) -> TypeGuard[dict[str, JsonValue]]:
@@ -341,6 +349,30 @@ class GrindRuntime:
         )
 
 
+def _item_list(reply: Mapping[str, JsonValue], verb: str) -> list[JsonValue]:
+    """The `data.items` array both facade reads answer with.
+
+    A missing or mistyped array is a failure, never an empty list. Both reads
+    feed the open-new-work surfacing, where "nothing parked" and "nothing
+    ready" are conclusions a caller acts on: reading an unparseable reply as
+    either would exempt every parked item from being surfaced, or report an
+    empty queue over a facade that answered something else entirely. Same rule
+    as the park reply's -- a degraded value that authorises is a fault.
+
+    The rows themselves cross untouched. The facade owns their shape, the
+    staleness flags on them, and the threshold behind those flags (S2-D4);
+    re-deriving any of it here would put a second definition in the tree.
+    """
+    data = reply.get("data")
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        raise ExecutorError(
+            ErrorCode.TRACKER_SUBPROCESS,
+            f"the facade's `{verb}` reply carries no usable item list: {items!r}",
+        )
+    return items
+
+
 class WorkTracker:
     """`TrackerPort` over the `work` console script -- the only tracker
     interface this package has. The backend behind the facade is the facade's
@@ -464,3 +496,33 @@ class WorkTracker:
         made them (S9T1-D9)."""
         self._pin_protocol()
         self._call(["work", "sync"], code=ErrorCode.SYNC_FAILED, mutates=False)
+
+    def parked(self, *, stale_days: int | None = None) -> list[JsonValue]:
+        """The parked-work staleness report, rows and stale flags as given.
+
+        `stale_days` reaches `--stale-days` verbatim, and omitting it omits the
+        flag rather than passing a number this package chose: the threshold has
+        one definition and it is the facade's default (S2-D4, S9T1-N4). A
+        second copy here would drift the moment either side is tuned.
+        """
+        argv = ["work", "parked"]
+        if stale_days is not None:
+            argv.extend(["--stale-days", str(stale_days)])
+        self._pin_protocol()
+        return _item_list(
+            self._call(argv, code=ErrorCode.TRACKER_SUBPROCESS, mutates=False), "work parked"
+        )
+
+    def ready(self) -> list[JsonValue]:
+        """The ready queue.
+
+        The reply's own `parked_stale` block is deliberately dropped: the one
+        caller of this read (`executor next`) already carries the *full* parked
+        report beside it, and the block is the narrower view of the same items
+        for callers that never reach the executor (S9T1-D10).
+        """
+        self._pin_protocol()
+        return _item_list(
+            self._call(["work", "ready"], code=ErrorCode.TRACKER_SUBPROCESS, mutates=False),
+            "work ready",
+        )

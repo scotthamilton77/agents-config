@@ -2,11 +2,17 @@
 
 Three commitments shape this module:
 
-**Salvage precedes deletion, and a salvage that cannot be verified aborts the
-deletion.** An archive nobody opened is not a safety net. A branch is bundled
-and the bundle verified; a worktree is archived and the archive read back and
-found non-empty. If either check does not pass, the target is left alone and
-the failure is reported.
+**Salvage is retained only where no reflog exists**, which is a ref on the
+server. A local branch deleted with `-D` leaves its commits in the reflog for
+git's configured expiry, and a worktree is removed by git itself, which refuses
+while the tree holds anything uncommitted. Where salvage does run, it precedes
+the deletion, and what earns the deletion is a restore rather than an
+inspection: the bundle is cloned into an empty directory and the commit about
+to be deleted has to come back out of it. `git bundle verify` is the weaker
+question -- it asks whether the archive applies to the repository holding every
+object already, and answers yes for bundles that clone back empty and for
+bundles that will not clone at all. A salvage that does not restore is reported
+as an anomaly, recorded as no salvage, and aborts its deletion.
 
 **Every deletion is verified by re-asking git.** A zero exit code is a claim,
 not a fact -- `git push --delete` in particular can exit 0 against a ref the
@@ -21,12 +27,18 @@ streams of the surprising command travel with the finding.
 from __future__ import annotations
 
 import hashlib
+import shlex
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from gitclean.model import Anomaly, Deletion, Plan, SalvageRecord, Survey, Target, TargetKind
-from gitclean.ports import CommandPort, is_inside
+from gitclean.ports import CommandPort
+
+SALVAGE_PREFIX = "gitclean-salvage"
+"""Where the scratch branch a bundle is taken from lives. Namespaced so the
+name a human would have used stays theirs, and so a ref left behind by an
+interrupted run says plainly what made it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +59,36 @@ class ExecutionReport:
     @property
     def ok(self) -> bool:
         return not self.anomalies
+
+
+def git_argv(*command: str, name: str | None = None) -> list[str]:
+    """The only place a name out of the repository is put into a git argv.
+
+    A repo-derived name can be spelled exactly like an option. `refs/heads/-m`
+    is a legal ref -- `git branch` will not create one, but `update-ref` will
+    and a remote can push one -- and `git branch -D -m` is a rename, not a
+    deletion. Two spellings survive that, and which one applies is a property
+    of the name rather than of the caller, so it is decided here:
+
+    - a full `refs/...` path, which no git command parses as an option, and
+    - the `--` terminator, for names that have to stay short.
+
+    Both exist because `bundle create` hands its arguments to rev-list, where
+    `--` introduces a pathspec: terminating there yields `Refusing to create
+    empty bundle` rather than protection. `branch -D` is the mirror image --
+    it rejects a full ref path and takes only the short name -- so neither
+    spelling covers every call site and neither can be the single rule.
+
+    Passing through one constructor is what makes that impossible to forget: a
+    new call site has nowhere else to put the name. Commands carrying no
+    repo-derived name come through here too, so the rule is "every git call in
+    this module", which a test can check -- rather than "every git call that a
+    reader judged to carry a name", which is the judgement that missed two."""
+    if name is None:
+        return list(command)
+    if name.startswith("refs/"):
+        return [*command, name]
+    return [*command, "--", name]
 
 
 def slug(name: str) -> str:
@@ -80,136 +122,241 @@ class Executor:
 
     # -- salvage ------------------------------------------------------------
 
-    def _salvage_worktree(self, target: Target, salvage_dir: Path) -> bool:
-        """Archive the whole tree as it stands, then prove the archive readable.
+    def _salvage_remote_branch(self, target: Target, salvage_dir: Path) -> bool:
+        """Bundle a server ref before deleting it. The one place salvage is
+        still earned: `push --delete` is irreversible for everyone fetching and
+        the server keeps no reflog, so there is no undo to fall back on.
 
-        One tar replaces what used to be a stash, a temporary ref, a bundle and
-        a file-by-file copy. Each of those had its own way of losing content --
-        the copy followed symlinks and could not see ignored files, and the
-        stash captured only what git already tracked -- and none of them
-        captured what is actually at risk, which is the directory."""
-        archive = salvage_dir / f"{slug(target.name)}.tar.gz"
-        if is_inside(archive, Path(target.name)):
-            # The archive would live inside the directory about to be removed,
-            # so `worktree remove` deletes the salvage along with the thing it
-            # was saving -- and the run reports a verified salvage and a clean
-            # exit while the only copy goes. Refuse before anything is written.
-            self._record(
-                "salvage",
-                target.id,
-                f"the salvage directory {salvage_dir} is inside {target.name}, so the "
-                f"archive would be deleted along with the worktree it is saving; "
-                f"deletion aborted -- choose a --salvage-dir outside it",
-                (),
-            )
-            return False
-        created = self._port.create_archive(Path(target.name), archive)
-        if not created.ok:
-            self._record(
-                "salvage",
-                target.id,
-                f"could not archive {target.name}; deletion aborted",
-                created.transcript(),
-            )
-            return False
+        What is bundled is a branch this run makes and then removes, not the
+        remote-tracking ref itself. A bundle of `refs/remotes/<remote>/<name>`
+        holds no head, and clones back an empty repository -- the restore check
+        catches that, and building the archive out of a real branch means it
+        never has to. `git branch` refuses a name already in use, which stops
+        the scratch ref from trading the server's copy for somebody else's
+        work.
 
-        listing = self._port.list_archive(archive)
-        if not listing.ok:
-            self._record(
-                "salvage",
-                target.id,
-                f"archive written for {target.name} could not be read back; deletion aborted",
-                listing.transcript(),
-            )
-            return False
-        entries = [line for line in listing.stdout.splitlines() if line.strip() not in ("", "./")]
-        if not entries:
-            # tar happily writes an archive of nothing and reads it back
-            # without complaint, so a clean exit code is not proof of capture.
-            self._record(
-                "salvage",
-                target.id,
-                f"archive of {target.name} is empty; nothing was captured, so nothing is deleted",
-                listing.transcript(),
-            )
-            return False
-
-        self._salvages.append(
-            SalvageRecord(
-                target_id=target.id,
-                kind="worktree",
-                path=str(archive),
-                verified=True,
-                detail=f"{len(entries)} entries; restore with: tar -xzf {archive} -C <dir>",
-            )
-        )
-        return True
-
-    def _salvage_branch(self, target: Target, salvage_dir: Path) -> bool:
-        """Bundle the whole branch. Bundling the full history rather than
-        `base..branch` costs disk and buys a bundle that clones standalone --
-        the right trade when the alternative is unrecoverable work."""
+        Bundling the full history rather than `base..branch` costs disk and
+        buys a bundle that clones standalone -- the right trade when the
+        alternative is unrecoverable work."""
         ref = target.name
         bundle = salvage_dir / f"{slug(ref)}.bundle"
+        branch = f"{SALVAGE_PREFIX}/{slug(ref)}"
         self._port.write_text(salvage_dir / ".gitclean-keep", "")
-        created = self._port.git(["bundle", "create", str(bundle), ref], cwd=self._cwd)
-        if not created.ok:
-            self._record("salvage", target.id, f"bundle of {ref} failed", created.transcript())
-            return False
-        verified = self._port.git(["bundle", "verify", str(bundle)], cwd=self._cwd)
-        if not verified.ok:
+
+        copied = self._port.git(
+            git_argv("branch", "--no-track", branch, name=f"refs/remotes/{ref}"), cwd=self._cwd
+        )
+        if not copied.ok:
             self._record(
                 "salvage",
                 target.id,
-                f"bundle written for {ref} did not verify; deletion aborted",
-                verified.transcript(),
+                f"could not take a local copy of {ref} to bundle; deletion aborted",
+                copied.transcript(),
             )
+            return False
+        try:
+            return self._bundle(target, bundle, branch)
+        finally:
+            # Unconditional: a scratch branch left behind is a branch nobody
+            # created showing up in the next report, and on the failure paths
+            # it is the deletion's abort that leaves it there.
+            discarded = self._port.git(git_argv("branch", "-D", name=branch), cwd=self._cwd)
+            if not discarded.ok:
+                self._record(
+                    "salvage",
+                    target.id,
+                    f"the scratch branch {branch} this run created could not be removed; "
+                    f"it holds the same commits as the bundle and is safe to delete",
+                    discarded.transcript(),
+                )
+
+    def _bundle(self, target: Target, bundle: Path, branch: str) -> bool:
+        """Write the archive, take it back out again, and record the route.
+
+        The commit is read before the archive is written, because the claim
+        being made is about a particular commit rather than about a file: an
+        archive that opens without holding what the deletion takes is worth
+        exactly as much as one that does not open."""
+        tip = self._port.git(
+            git_argv("rev-parse", "--verify", name=f"refs/heads/{branch}"), cwd=self._cwd
+        )
+        if not tip.ok or not tip.out:
+            self._record(
+                "salvage",
+                target.id,
+                f"could not read the commit copied out of {target.name}, so a restore has "
+                f"nothing to be checked against; deletion aborted",
+                tip.transcript(),
+            )
+            return False
+        written = self._port.git(
+            git_argv("bundle", "create", str(bundle), name=f"refs/heads/{branch}"), cwd=self._cwd
+        )
+        if not written.ok:
+            self._record(
+                "salvage", target.id, f"bundle of {target.name} failed", written.transcript()
+            )
+            return False
+        if not self._restores(target, bundle, tip.out):
             return False
         self._salvages.append(
             SalvageRecord(
                 target_id=target.id,
-                kind="branch",
+                kind="remote_branch",
                 path=str(bundle),
                 verified=True,
-                detail=f"restore with: git clone {bundle} -b {ref.split('/')[-1]}",
+                # Quoted because it is meant to be run, not read: a repository
+                # path with a space in it would otherwise print a command that
+                # restores the wrong thing or nothing at all.
+                detail="restore with: git clone "
+                f"{shlex.quote(str(bundle))} -b {shlex.quote(branch)}",
             )
         )
         return True
 
-    def _salvage(self, target: Target, salvage_dir: Path) -> bool:
-        if target.kind is TargetKind.WORKTREE:
-            return self._salvage_worktree(target, salvage_dir)
-        return self._salvage_branch(target, salvage_dir)
+    def _restores(self, target: Target, bundle: Path, tip: str) -> bool:
+        """Open the archive somewhere empty and look for the commit in it.
+
+        `git bundle verify` answers a question about the repository it runs in
+        -- whether the archive would apply *here* -- and here is the one place
+        holding every object already. A shallow clone is the case that makes
+        the difference plain: the boundary commit's parent is grafted away
+        locally and packed by nothing, so verify reports a complete history for
+        a file `git clone` then refuses with `remote did not send all necessary
+        objects`. That answer stood in front of the only deletion with no undo.
+
+        So the archive is used rather than inspected. Cloning is what performs
+        the connectivity check -- unbundling into a fresh repository does not,
+        and reports success on exactly the bundle that will not clone -- and
+        `--bare` skips materialising a working tree, which is the only part of
+        a restore that proves nothing. The commit is then looked for under a
+        ref, because an object present but reachable from nothing is not a
+        restore either.
+
+        The cost is unpacking the branch's history a second time, and it is
+        charged once per server ref actually being deleted. The alternative is
+        a report claiming a safety net nobody has pulled on."""
+        with self._port.scratch_dir() as scratch:
+            restored = scratch / "restored"
+            cloned = self._port.git(
+                git_argv("clone", "--bare", "--quiet", str(bundle), str(restored)), cwd=self._cwd
+            )
+            if not cloned.ok:
+                self._record(
+                    "salvage",
+                    target.id,
+                    f"the bundle written for {target.name} does not restore, so it is not a "
+                    f"safety net and buys no deletion; nothing was deleted. If this "
+                    f"repository is a shallow clone, its history stops at a boundary the "
+                    f"bundle cannot pack past -- `git fetch --unshallow` and re-run",
+                    cloned.transcript(),
+                )
+                return False
+            held = self._port.git(
+                git_argv("for-each-ref", "--count=1", f"--contains={tip}"), cwd=restored
+            )
+            if not held.ok or not held.out:
+                self._record(
+                    "salvage",
+                    target.id,
+                    f"the bundle written for {target.name} restored, but {tip[:8]} -- the "
+                    f"commit the deletion would take -- is reachable from no ref in the "
+                    f"restored copy; deletion aborted",
+                    held.transcript(),
+                )
+                return False
+        return True
 
     # -- delete + verify ----------------------------------------------------
 
-    def _delete_worktree(self, target: Target, *, salvaged: bool) -> Deletion:
-        """Remove the worktree, forcing only when an archive exists to fall
-        back on.
+    def _head_now(self, target: Target, surveyed: str) -> str:
+        """What the worktree holds at this moment, not when the survey read it.
 
-        git refuses to remove a worktree holding modified or untracked files.
-        That refusal is the last thing standing between a tree that went dirty
-        *after* the survey read it and its destruction, and passing --force
-        unconditionally spends it -- in a tool whose whole premise is
-        re-surveying so it acts on current state. So --force is passed only
-        where salvage already captured the contents; otherwise git's own check
-        runs, and its complaint surfaces as an anomaly carrying the transcript.
+        Every other guard on this path is git's own, taken as the deletion
+        happens, because that is the only moment that describes the disk. This
+        one is ours, so it is taken then too. A commit made in that tree after
+        the survey ran is held by the record about to be deleted and by nothing
+        else -- while the commit it replaced, the one the survey recorded, is
+        sitting safely on some branch and answers the containment question
+        yes. Asking about the stale commit is therefore not a smaller check,
+        it is the wrong check, and it clears exactly when it should refuse.
 
-        Ignored files do not trigger that refusal, so the ordinary sweep of a
-        finished worktree full of caches is unaffected."""
-        argv = ["worktree", "remove", *(["--force"] if salvaged else []), "--", target.name]
-        removal = self._port.git(argv, cwd=self._cwd)
+        If git will not say, the surveyed commit is the better of the two
+        remaining answers: stale evidence still refuses far more often than no
+        evidence does."""
+        live = self._port.git(git_argv("rev-parse", "HEAD"), cwd=Path(target.name))
+        return live.out if live.ok and live.out else surveyed
+
+    def _commit_only_this_worktree_holds(self, target: Target) -> tuple[str, tuple[str, ...]]:
+        """The commit that removing this worktree would strand, or "", with the
+        transcript of whatever git said when asked.
+
+        git's refusals are the safety story for a named worktree, and they have
+        exactly one gap: they know about *uncommitted* content and nothing
+        about a commit made inside the worktree on no branch. That tree is
+        clean, so git removes it without complaint -- and the commit's only
+        reachability goes with it, because the administrative record being
+        deleted is what held HEAD, and the per-worktree reflog dies in the same
+        step. No ref, no reflog, no undo.
+
+        So the question git cannot answer is asked of git directly: does any
+        ref contain this commit? Not "does it look abandoned", not "is the
+        tree clean" -- reachability, which is the thing that actually decides
+        whether deleting is recoverable. A worktree on a branch answers yes
+        through that branch and is unaffected.
+
+        A probe that does not answer is treated as a stranding. The cost of
+        being wrong that way is a worktree someone removes by hand; the cost
+        of being wrong the other way is the commit."""
+        surveyed = next((w for w in self._survey.worktrees if w.path == target.name), None)
+        if surveyed is None:
+            return "", ()
+        head = self._head_now(target, surveyed.head)
+        if not head:
+            return "", ()
+        refs = self._port.git(
+            git_argv("for-each-ref", "--count=1", f"--contains={head}"), cwd=self._cwd
+        )
+        return ("", refs.transcript()) if refs.ok and refs.out else (head, refs.transcript())
+
+    def _delete_worktree(self, target: Target) -> Deletion:
+        """Remove the worktree and let git's own interlocks stand.
+
+        No --force, ever. git refuses to remove a worktree holding modified or
+        untracked files, or one that is locked, or the main working tree, and
+        each refusal knows something this process does not: what that directory
+        holds right now, rather than when the survey read it. Overriding them
+        would mean re-implementing every one of those checks here, in a
+        language that cannot see the filesystem the way git just did.
+
+        A caller who has read git's complaint and still wants the tree gone can
+        run one `git worktree remove --force` themselves. That costs them a
+        command and costs this tool nothing it can get wrong.
+
+        Ignored files do not trigger the refusal, so removing a finished
+        worktree full of caches is unaffected.
+
+        There is one thing git's refusals do not cover, and it is added below
+        rather than assumed away."""
+        stranded, probe = self._commit_only_this_worktree_holds(target)
+        if stranded:
+            self._record(
+                "delete",
+                target.id,
+                f"removing {target.name} would strand commit {stranded[:8]}, which no ref "
+                f"contains; nothing was deleted. Keep it with "
+                f"`git branch <name> {stranded[:8]}` and re-run, or discard it deliberately "
+                f"with `git worktree remove --force {target.name}`",
+                probe,
+            )
+            return _failed(target, f"would strand commit {stranded[:8]}")
+        removal = self._port.git(git_argv("worktree", "remove", name=target.name), cwd=self._cwd)
         if not removal.ok:
             self._record(
                 "delete",
                 target.id,
-                f"could not remove worktree {target.name}"
-                + (
-                    ""
-                    if salvaged
-                    else "; it holds changes that were not there when it was surveyed, "
-                    "so nothing was archived and nothing was deleted"
-                ),
+                f"git refused to remove worktree {target.name}; its own message is in the "
+                f"transcript below, and nothing was deleted",
                 removal.transcript(),
             )
             return _failed(target, "removal command failed")
@@ -217,7 +364,7 @@ class Executor:
         # every worktree whose directory has gone missing, and those were never
         # planned targets: the executor acts on what the plan named, and
         # nothing else. `worktree remove` takes this one's record with it.
-        listing = self._port.git(["worktree", "list", "--porcelain"], cwd=self._cwd)
+        listing = self._port.git(git_argv("worktree", "list", "--porcelain"), cwd=self._cwd)
         if not listing.ok:
             # Absence of the worktree in output that was never produced is not
             # evidence of anything. Unverified is its own outcome, distinct
@@ -250,11 +397,7 @@ class Executor:
         )
 
     def _delete_branch(self, target: Target) -> Deletion:
-        # `--` because the name is repo-derived, and `refs/heads/-m` is a legal
-        # ref: `git branch` will not create one, but `update-ref` will and a
-        # remote can push one. Without the terminator git reads the name as a
-        # switch and the deletion fails with a usage error nobody can act on.
-        removal = self._port.git(["branch", "-D", "--", target.name], cwd=self._cwd)
+        removal = self._port.git(git_argv("branch", "-D", name=target.name), cwd=self._cwd)
         if not removal.ok:
             self._record(
                 "delete", target.id, f"could not delete branch {target.name}", removal.transcript()
@@ -265,7 +408,9 @@ class Executor:
         # "broken" are the same signal. `for-each-ref` exits 0 either way and
         # answers in stdout, which separates them.
         ref = f"refs/heads/{target.name}"
-        probe = self._port.git(["for-each-ref", "--format=%(refname)", ref], cwd=self._cwd)
+        probe = self._port.git(
+            git_argv("for-each-ref", "--format=%(refname)", name=ref), cwd=self._cwd
+        )
         if not probe.ok:
             self._record(
                 "verify",
@@ -322,7 +467,7 @@ class Executor:
             )
             return _failed(target, "no lease value")
         removal = self._port.git(
-            ["push", f"--force-with-lease={ref}:{expected}", remote, "--delete", "--", ref],
+            git_argv("push", f"--force-with-lease={ref}:{expected}", remote, "--delete", name=ref),
             cwd=self._cwd,
         )
         if not removal.ok:
@@ -335,7 +480,10 @@ class Executor:
                 removal.transcript(),
             )
             return _failed(target, "push --delete failed")
-        probe = self._port.git(["ls-remote", "--heads", remote, ref], cwd=self._cwd)
+        ref_path = f"refs/heads/{ref}"
+        probe = self._port.git(
+            git_argv("ls-remote", "--heads", remote, name=ref_path), cwd=self._cwd
+        )
         if not probe.ok:
             self._record(
                 "verify",
@@ -344,7 +492,12 @@ class Executor:
                 probe.transcript(),
             )
             return _failed(target, "deletion unverified")
-        if probe.out:
+        # `ls-remote` takes a pattern, and it matches on path-component
+        # boundaries: an unrelated `a/feat/x` on the same server answers a
+        # question asked about `feat/x`. Reading that as survival turns a
+        # deletion git performed into a reported failure, so the refname column
+        # settles it -- the same exact comparison the local path makes.
+        if any(line.split("\t")[-1].strip() == ref_path for line in probe.stdout.splitlines()):
             self._record(
                 "verify",
                 target.id,
@@ -399,6 +552,10 @@ class Executor:
                     )
                     continue
 
+            # A server ref is the only thing here with no undo behind it, so it
+            # is the only thing that is bundled first.
+            salvage_first = target.kind is TargetKind.REMOTE_BRANCH
+
             if plan.dry_run:
                 deletions.append(
                     Deletion(
@@ -408,13 +565,12 @@ class Executor:
                         deleted=False,
                         verified=False,
                         detail="dry run: would delete"
-                        + (" after salvage" if target.salvage_needed else ""),
+                        + (" after salvage" if salvage_first else ""),
                     )
                 )
                 continue
 
-            salvaged = False
-            if target.salvage_needed:
+            if salvage_first:
                 if salvage_dir is None:
                     self._record(
                         "salvage",
@@ -423,16 +579,13 @@ class Executor:
                         (),
                     )
                     deletions.append(_failed(target, "no salvage directory"))
-                    self._strand(target, stranded)
                     continue
-                if not self._salvage(target, salvage_dir):
+                if not self._salvage_remote_branch(target, salvage_dir):
                     deletions.append(_failed(target, "salvage failed; deletion skipped"))
-                    self._strand(target, stranded)
                     continue
-                salvaged = True
 
             if target.kind is TargetKind.WORKTREE:
-                outcome = self._delete_worktree(target, salvaged=salvaged)
+                outcome = self._delete_worktree(target)
                 if not outcome.deleted:
                     self._strand(target, stranded)
                 deletions.append(outcome)

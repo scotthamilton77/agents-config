@@ -1,37 +1,46 @@
 # gitclean
 
-Surveys the current repository's worktrees and branches, classifies what is
-deletable, and deletes only what it can prove is safe.
+Surveys the current repository's worktrees and branches, sweeps what it can
+prove is merged, and reports everything else with the measurement that stopped
+it.
 
 ```bash
 gitclean --report                    # JSON state; changes nothing
 gitclean --report --format human     # the same, readable
 gitclean --cleanup --dry-run         # what a bare sweep would take
 gitclean --cleanup                   # take it
-gitclean --cleanup feat/old wt-name  # exactly these
+gitclean --cleanup feat/old wt-name  # delete exactly these
 ```
 
-## Two verdicts, kept separate
+## One question, asked six ways
 
-Each deletable target carries both. Collapsing them is what makes hand-rolled
-cleanup dangerous — a branch can be abandoned and still hold the only copy of
-its commits, and a branch can be active while carrying no risk at all.
+`git branch -d` refuses a squash-merged branch, so a `-d`-only cleanup never
+cleans anything in a squash-merge workflow. Real merge evidence is required,
+and acting on it means `git branch -D` — which owns every deletion decision
+outright. So the tool answers the narrowest question that still gets the job
+done: **is this provably merged?** It never asks whether anyone still wants the
+work, because nothing in a repository measures that.
 
-| `disposition` | is this still live work? |
-|---|---|
-| `protected` | the default branch, the checked-out branch, the main worktree, a locked worktree. Never deletable — `--force` does not apply. |
-| `safe` | merge proven, or a PR closed it unmerged. |
-| `active` | an open PR, a dirty worktree, or activity inside the idle window. |
-| `abandoned` | no PR, no merge evidence, idle past the window. Reported for a human decision; never swept automatically. |
+A bare `--cleanup` takes a target only when all six hold. The first one that
+does not is what lands in the target's `withheld` field.
 
-| `risk` | would deleting destroy the only copy? |
-|---|---|
-| `none` | the content survives elsewhere. |
-| `recoverable` | unique content; the reflog is the fallback. |
-| `data_loss` | uncommitted work, or a remote ref the server keeps no reflog for. |
+| # | question | answered from |
+|---|---|---|
+| 1 | is the merge proven? | `merge_evidence` is `pr_merged`, `ancestor`, `patch_equal` or `squash_equal` |
+| 2 | is the default branch verified? | `origin/HEAD` or a local `main`/`master` that resolves |
+| 3 | is this the trunk? | the default branch, the ref merges are measured against, and either one's counterpart across the remote boundary — by name *and* by commit |
+| 4 | is the working tree empty? | a measured zero from `git status`; unknown and `prunable` are not zero |
+| 5 | is this a server ref? | server refs are deleted only when named |
+| 6 | is this the directory we are running in? | resolved at survey time |
 
-A bare `--cleanup` takes only `safe` **and** `none`. `--force` overrides `risk`
-— salvaging first — and never overrides `protected`.
+A worktree is judged on **the commit it holds** — its branch's tip when it has
+a branch, its detached HEAD when it does not. A commit no ref proves merged has
+no proof, whether or not a branch names it.
+
+Naming a target deletes it. Nothing is re-derived, no flag is demanded, and the
+reflog is the undo for a local branch. Two things still stop a named deletion:
+the worktree this process is running in, and git itself — a checked-out branch,
+a dirty or locked worktree. Those refusals arrive verbatim, with the transcript.
 
 ## How a merge gets proven
 
@@ -41,13 +50,19 @@ forever, and it says nothing about a PR closed without merging. Evidence is
 resolved in tiers, cheapest conclusive answer first, and the tier that fired is
 recorded on the branch:
 
-| `merge_evidence` | how |
-|---|---|
-| `pr_merged` | gh reports a merged PR. The only signal that survives a squash merge intact. |
-| `pr_closed_unmerged` | a human closed it without merging — a discard decision, which expires if commits land after the close. |
-| `ancestor` | reachable from the base tip. |
-| `patch_equal` | every commit's patch-id is already in base (rebase, cherry-pick). |
-| `squash_equal` | the branch's tree, replayed as one commit on the merge base, has a patch-id in base. |
+| `merge_evidence` | how | proof? |
+|---|---|---|
+| `pr_merged` | gh reports a merged PR whose head contains this tip. The only signal that survives a squash merge intact. | yes |
+| `ancestor` | reachable from the base tip. | yes |
+| `patch_equal` | every commit's patch-id is already in base (rebase, cherry-pick). | yes |
+| `squash_equal` | the branch's tree, replayed as one commit on the merge base, has a patch-id in base. | yes |
+| `pr_closed_unmerged` | a human closed the PR without merging. | **no** — reported only |
+| `none` | nothing proved a merge. Not the same as "not merged": see `repo.gh_error`. | no |
+
+A closed PR says someone stopped wanting the change. It says nothing about
+whether the commits exist anywhere else, and they do not — they are still only
+on that branch. It is the most useful line in the row for a person deciding
+what to name, and it authorises nothing.
 
 Without `gh` on PATH there is no squash signal at all. That is reported in
 `repo.gh_error`, never swallowed.
@@ -55,50 +70,68 @@ Without `gh` on PATH there is no squash signal at all. That is reported in
 ## Safety
 
 - **Cleanup re-surveys before acting.** The report you read may be stale.
-- **`--force` salvages before deleting.** A branch becomes a verified
-  `git bundle`; a worktree becomes a `tar` archive of the whole directory —
-  symlinks kept as symlinks, ignored files included. A salvage that cannot be
-  read back **aborts that deletion**.
-- **A worktree is force-removed only when its archive exists.** git refuses to
-  remove a worktree holding modified or untracked files, and that refusal is
-  what catches a tree that changed after the survey read it. Nothing that was
-  not archived is forced past.
+- **No `--force` anywhere.** git refuses to remove a worktree holding modified
+  or untracked files, a locked worktree, or the main working tree, and each
+  refusal knows what that directory holds *right now* rather than when the
+  survey read it. Overriding them would mean re-implementing every one of those
+  checks in Python. A person who has read git's complaint and still wants the
+  tree gone runs one `git worktree remove --force` themselves.
+- **A removal that would strand a commit is declined.** git's refusals cover
+  *uncommitted* content and know nothing about a commit made inside a worktree
+  on no branch: that tree is clean, so git removes it without complaint, and
+  the administrative record it deletes is the only thing holding that commit —
+  the per-worktree reflog goes with it. So before removing a worktree the tool
+  asks git whether any ref contains the commit that tree holds *now* — re-read
+  as the deletion happens, not taken from the survey — and declines when none
+  does, naming the commit and how to keep it. A commit made in that tree since
+  the survey ran is exactly the one at risk, and the surveyed commit it
+  replaced would have answered for it. Naming a target authorises deleting a
+  checkout; it should not quietly spend a commit.
+- **Salvage is kept only where there is no reflog** — a ref on the server. It
+  becomes a `git bundle` before the delete, and what earns the delete is a
+  restore, not an inspection: the bundle is cloned into an empty directory and
+  the commit about to be deleted has to come back out of it. `git bundle
+  verify` is not that check — it asks whether the archive applies to the
+  repository that already holds every object, and says yes both to a bundle
+  that clones back empty and, in a shallow clone, to one `git clone` refuses
+  outright with `remote did not send all necessary objects`. A salvage that
+  does not restore is reported as an anomaly with the transcript, recorded as
+  no salvage at all, and aborts its deletion. The cost is unpacking that
+  branch's history once more per server ref actually deleted. A local branch
+  needs none of this: `branch -D` leaves its commits in the reflog for git's
+  configured expiry.
 - **Remote deletes are leased.** Every verdict about a remote branch comes from
-  your local `refs/remotes` cache. The delete carries
-  `--force-with-lease`, so if the server moved since your last fetch it is
-  rejected rather than taking commits nobody surveyed.
+  your local `refs/remotes` cache. The delete carries `--force-with-lease`, so
+  if the server moved since your last fetch it is rejected rather than taking
+  commits nobody surveyed.
 - **Every deletion is verified by re-asking git.** A zero exit code is a claim,
   not a fact. A ref that survives becomes an anomaly, not a success line.
 - **Anomalies carry the transcript** — argv, exit code, both streams — so a
   reader can remediate without re-running anything.
-- **Omissions are named.** An automatic sweep that skips a target reports it
-  under `plan.skipped`, and anything a probe could not answer lands in the
-  top-level `warnings`.
-
-Salvage lands in `<git-common-dir>/gitclean-salvage/<timestamp>/`. Restore a
-branch with `git clone <bundle> -b <branch>`, a worktree with
-`tar -xzf <archive> -C <dir>`.
-
-A `--salvage-dir` inside a worktree being removed is refused before anything is
-written: the archive would be deleted along with the directory it was saving,
-and the run would report a verified salvage while the only copy went. The
-default location is never inside a removable worktree.
+- **Omissions are named.** A target the sweep selected and then dropped is
+  reported under `plan.skipped`; a target that never entered the sweep carries
+  its own `withheld`; anything a probe could not answer lands in the top-level
+  `warnings`.
 
 A repository whose default branch cannot be identified — no published
-`origin/HEAD`, no `main`, no `master` — has no branch protected as its trunk,
-because protection is assigned by name. That lands in the top-level `warnings`.
-Publish it with `git remote set-head origin -a`.
+`origin/HEAD`, no `main`, no `master` — sweeps nothing at all, because the run
+cannot tell the trunk from cruft. Naming targets still works. Publish it with
+`git remote set-head origin -a`.
 
 ## Trades worth knowing
 
 **Ignored files are reported, not protected.** They are counted per worktree
-and named in its `reasons`, but they do not make it `data_loss`. In practice
-ignored content is build detritus — caches, virtualenvs, coverage data — and
-treating it as work at risk made most finished worktrees require `--force`,
-which replaces an automatic cleanup with a manual triage. The accepted cost: a
-bare sweep of an **already-merged** worktree deletes a `.env` that lives only
-there. The count appears in the report before you run cleanup, and `--force`
-archives ignored files along with everything else.
+and named in its `reasons`, but they do not keep it out of the sweep. In
+practice ignored content is build detritus — caches, virtualenvs, coverage data
+— and treating it as work at risk would put a manual triage in front of every
+cleanup. The accepted cost: sweeping an **already-merged** worktree deletes a
+`.env` that lives only there. The count appears in the report first.
+
+**A branch parked exactly on the trunk's commit is left alone.** The trunk is
+matched by commit as well as by name, because `main` and `origin/main` are
+different strings for the same thing. The cost is an occasional branch nobody
+swept; the alternative is deleting the trunk, which merge evidence alone would
+authorise — `main` is an ancestor of `origin/main`.
 
 **`--report` writes one loose object.** Proving a squash merge means
 synthesising the equivalent single commit with `git commit-tree` and asking
@@ -106,11 +139,17 @@ synthesising the equivalent single commit with `git commit-tree` and asking
 gc` collects it. Suppressing it in report mode would make `--report` and
 `--cleanup` disagree about what is merged, which is worse than a stray blob.
 
-**A branch whose name begins with `-` is swept, but cannot be named directly.**
-`git branch` will not create such a ref, but `git update-ref` will and a remote
-can push one; deletions terminate their argv so git reads it as a name. Naming
-one on the command line is a different matter — the argument parser claims
-`-m` as a flag first — so select it by its `id`: `gitclean --cleanup branch:-m`.
+**A branch whose name begins with `-` is deleted correctly, and proven merged
+by every tier, including squash.** `git branch` will not create such a ref,
+but `git update-ref` will and a remote can push one. Every deletion terminates
+its argv, so git reads the name as a name. Merge evidence does the same, with
+one adjustment: `merge-base` accepts a `--` terminator, but `rev-parse` does
+not — it echoes one back as a literal output line instead of consuming it — so
+the squash tier's tree lookup instead names the branch by its full ref path,
+which never begins with `-`. A squash-merged `-m` is proven and swept the same
+as any other name. Naming one on the command line is a separate matter,
+because the argument parser claims `-m` as a flag first: select it by its
+`id`, `gitclean --cleanup branch:-m`.
 
 ## Exit codes
 
@@ -124,13 +163,9 @@ one on the command line is a different matter — the argument parser claims
 ## Scope
 
 The current repository only: the cwd's repo, its linked worktrees, and its
-local and remote branches. Remote deletions require `--include-remote` —
-they affect other people's fetches, open PRs, and CI refs — and naming a
-remote branch without that flag is refused rather than quietly dropped.
-
-`--base` changes what merges are measured against; it does not change which
-branch is the repository's trunk. Both the trunk and whatever you measure
-against are `protected`.
+local and remote branches. What merges are measured against is discovered, not
+supplied — a caller who could point it elsewhere could measure the trunk
+against something that contains it and hand it to the sweep.
 
 ## Development
 
