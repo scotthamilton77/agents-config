@@ -1,9 +1,11 @@
 """Discovery and execution of the test suites shipped under ``src/``.
 
-Pins the two anti-drift decisions: an unrunnable suite is a failure rather than
-a skip (a silently-skipped suite is the failure this module prevents), and a
+Pins the three anti-drift decisions: an unrunnable suite is a failure rather
+than a skip (a silently-skipped suite is the failure this module prevents), a
 shipped script without a paired suite is a failure (so adding code to a skill
-requires adding tests, rather than requiring someone to notice none arrived).
+requires adding tests, rather than requiring someone to notice none arrived),
+and a suite that exits 0 without reporting a clean pass is a failure (so an
+empty or swallowed run cannot read as a green one).
 """
 
 from __future__ import annotations
@@ -21,6 +23,10 @@ from installer.core.content_tests import (
     run_suites,
 )
 
+# What a clean node:test run prints under the pinned TAP reporter. The fixtures
+# below are all .js, so this is what a passing fake has to emit.
+_CLEAN_JS = "# pass 1\n"
+
 
 class _RecordingRunner:
     """Records what it was asked to run and returns a scripted exit code."""
@@ -32,7 +38,7 @@ class _RecordingRunner:
     def run(self, suite: Suite) -> SuiteResult:
         self.ran.append(suite.path)
         code = self.codes.get(suite.path.name, 0)
-        return SuiteResult(suite=suite, returncode=code, output=f"output of {suite.path.name}")
+        return SuiteResult(suite=suite, returncode=code, output=_CLEAN_JS)
 
 
 def _src(tmp_path: Path, files: dict[str, str]) -> Path:
@@ -50,7 +56,7 @@ def test_suite_is_discovered_and_matched_to_its_runner(tmp_path: Path) -> None:
 
     assert violations == []
     assert [s.path.name for s in suites] == ["run_test.js"]
-    assert suites[0].argv == RUNNERS[".js"]
+    assert suites[0].runner is RUNNERS[".js"]
 
 
 def test_shipped_script_without_a_suite_is_a_violation(tmp_path: Path) -> None:
@@ -177,7 +183,7 @@ def test_subprocess_runner_launches_the_suite_from_its_own_directory(tmp_path: P
         {
             "skills/a/fixture.txt": "present\n",
             "skills/a/probe.sh": "",
-            "skills/a/probe_test.sh": "test -f fixture.txt && echo found\n",
+            "skills/a/probe_test.sh": 'test -f fixture.txt && echo found\necho "PASS=1 FAIL=0"\n',
         },
     )
     suites, _violations = discover_suites(src)
@@ -217,6 +223,71 @@ def test_partial_output_from_a_killed_suite_survives_whatever_form_it_arrives_in
     assert _decode("partial\n") == "partial\n"
     assert _decode(b"partial\n") == "partial\n"
     assert _decode(b"cut \xff here") == "cut � here"
+
+
+def _result(suffix: str, output: str, returncode: int = 0) -> SuiteResult:
+    suite = Suite(path=Path(f"probe_test{suffix}"), runner=RUNNERS[suffix])
+    return SuiteResult(suite=suite, returncode=returncode, output=output)
+
+
+@pytest.mark.parametrize(
+    ("suffix", "output"),
+    [
+        (".py", "......                          [100%]\n55 passed in 0.42s\n"),
+        (".js", "# tests 13\n# suites 0\n# pass 13\n# fail 0\n"),
+        (".sh", "----\nPASS=16 FAIL=0\n"),
+    ],
+)
+def test_a_real_clean_run_of_each_runner_is_recognised(suffix: str, output: str) -> None:
+    """The marker patterns are only worth anything if they match what these
+    runners actually print. Each string here is captured verbatim from a shipped
+    suite, so a runner whose argv changes out from under its pattern — a swapped
+    node reporter, pytest losing ``-q`` — turns this red instead of turning the
+    whole gate into a rubber stamp that matches nothing and fails everything."""
+    assert _result(suffix, output).ok
+
+
+@pytest.mark.parametrize(
+    ("suffix", "output"),
+    [
+        (".js", "# tests 0\n# pass 0\n# fail 0\n"),
+        (".sh", "PASS=0 FAIL=0\n"),
+    ],
+)
+def test_a_suite_that_ran_no_tests_is_a_failure(suffix: str, output: str) -> None:
+    """The marker alone is not enough: a suite whose cases all failed to register
+    still prints one, with a count of zero. Exit code cannot see this — node and
+    bash both exit 0 for it — so the count is what separates a suite that passed
+    from a suite that did nothing."""
+    result = _result(suffix, output)
+
+    assert not result.ok
+    assert result.failure == "exited 0 having run no tests"
+
+
+def test_a_suite_that_swallowed_its_frameworks_verdict_is_a_failure() -> None:
+    """A PEP 723 suite that calls ``pytest.main`` and drops the return value exits
+    0 with its failures printed above. Judging it by exit code alone reports the
+    red suite as green, which is the failure mode this gate was built to stop."""
+    result = _result(".py", "F....\n1 failed, 54 passed in 0.42s\n")
+
+    assert not result.ok
+    assert "without reporting a clean pass" in str(result.failure)
+
+
+def test_a_suite_that_exits_zero_silently_is_a_failure(tmp_path: Path) -> None:
+    """The end-to-end shape of the hole: a shell suite whose body never ran — a
+    guard clause returned early, a `set -e` fired in a subshell — exits 0 with no
+    tally. It is indistinguishable from a passing suite by every signal except
+    the marker."""
+    src = _src(tmp_path, {"skills/a/probe.sh": "", "skills/a/probe_test.sh": "exit 0\n"})
+    suites, _violations = discover_suites(src)
+
+    result = SubprocessRunner().run(suites[0])
+
+    assert result.returncode == 0
+    assert not result.ok
+    assert "PASS=" in str(result.failure)
 
 
 def test_subprocess_runner_reports_a_failing_suites_exit_and_output(tmp_path: Path) -> None:
