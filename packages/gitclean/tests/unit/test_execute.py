@@ -15,7 +15,7 @@ from conftest import make_branch, make_survey, make_worktree
 from gitclean import execute
 from gitclean.execute import SALVAGE_PREFIX, Executor, default_salvage_dir, git_argv, slug
 from gitclean.model import MergeEvidence, Plan, Target, TargetKind
-from gitclean.ports import ScriptedCommands, fail, ok
+from gitclean.ports import CommandResult, ScriptedCommands, fail, ok
 
 
 def target(kind: TargetKind, name: str) -> Target:
@@ -322,15 +322,30 @@ def _remote_survey(name: str = "origin/feat/x"):  # type: ignore[no-untyped-def]
     )
 
 
+def _salvage_calls(bundle: str) -> dict[str, CommandResult]:
+    """Every git question one whole salvage asks, answered the way a real one
+    answers them -- including the restore.
+
+    A script that stopped at `bundle create` would leave the run aborting on an
+    unproven archive while the test claimed to be about the push."""
+    return {
+        "branch --no-track": ok(),
+        f"branch -D -- {SALVAGE_PREFIX}": ok(),
+        f"rev-parse --verify refs/heads/{SALVAGE_PREFIX}": ok(REMOTE_HEAD),
+        f"bundle create {bundle}": ok(),
+        f"clone --bare --quiet {bundle}": ok(),
+        f"for-each-ref --count=1 --contains={REMOTE_HEAD}": ok(
+            f"{REMOTE_HEAD} commit\trefs/heads/{SALVAGE_PREFIX}/x"
+        ),
+    }
+
+
 def _remote_port(**overrides: object) -> ScriptedCommands:
     """Every server deletion is bundled first, so every one of these scripts
     the bundle. A test that omitted it would be exercising the salvage-failure
     path while claiming to be about the push."""
-    table = {
-        "branch --no-track": ok(),
-        f"branch -D -- {SALVAGE_PREFIX}": ok(),
-        f"bundle create {FEAT_BUNDLE}": ok(),
-        f"bundle verify {FEAT_BUNDLE}": ok(),
+    table: dict[str, CommandResult] = {
+        **_salvage_calls(FEAT_BUNDLE),
         "push --force-with-lease": ok(),
         "ls-remote": ok(""),
     }
@@ -381,14 +396,7 @@ def test_a_remote_target_naming_no_remote_is_never_pushed_to() -> None:
     """`refs/remotes/bare` is a legal ref layout with no remote in it, so a
     target can reach the delete carrying nothing to push to. There is no
     guessing a remote here: the run says what it cannot parse and stops."""
-    port = _remote_port(
-        **{
-            "branch --no-track": ok(),
-            f"branch -D -- {SALVAGE_PREFIX}": ok(),
-            f"bundle create /salvage/{slug('bare')}.bundle": ok(),
-            f"bundle verify /salvage/{slug('bare')}.bundle": ok(),
-        }
-    )
+    port = _remote_port(**_salvage_calls(f"/salvage/{slug('bare')}.bundle"))  # type: ignore[arg-type]
     report = run(port, plan(target(TargetKind.REMOTE_BRANCH, "bare")), _remote_survey("bare"))
 
     assert not report.ok
@@ -460,11 +468,8 @@ WIP_BUNDLE = f"/salvage/{slug(REMOTE)}.bundle"
 
 
 def _remote_salvage_port(**overrides: object) -> ScriptedCommands:
-    table = {
-        "branch --no-track": ok(),
-        f"branch -D -- {SALVAGE_PREFIX}": ok(),
-        f"bundle create {WIP_BUNDLE}": ok(),
-        f"bundle verify {WIP_BUNDLE}": ok(),
+    table: dict[str, CommandResult] = {
+        **_salvage_calls(WIP_BUNDLE),
         "push --force-with-lease": ok(),
         "ls-remote": ok(""),
     }
@@ -481,6 +486,9 @@ def test_a_server_ref_is_bundled_before_it_is_deleted() -> None:
     assert report.ok
     verbs = [t[1] for t in port.transcript]
     assert verbs.index("bundle") < verbs.index("push")
+    # And the restore too: an archive nobody opened is not what the report
+    # calls verified.
+    assert verbs.index("clone") < verbs.index("push")
     assert report.salvages[0].verified
 
 
@@ -510,13 +518,15 @@ def test_the_bundle_is_taken_from_a_branch_this_run_makes_and_removes() -> None:
     assert report.ok
 
     scratch = f"{SALVAGE_PREFIX}/{slug(REMOTE)}"
-    verbs = [call for call in port.transcript if call[1] in {"branch", "bundle", "push"}]
-    assert verbs == [
+    assert port.transcript == [
         ("git", "branch", "--no-track", scratch, f"refs/remotes/{REMOTE}"),
+        ("git", "rev-parse", "--verify", f"refs/heads/{scratch}"),
         ("git", "bundle", "create", WIP_BUNDLE, f"refs/heads/{scratch}"),
-        ("git", "bundle", "verify", WIP_BUNDLE),
+        ("git", "clone", "--bare", "--quiet", WIP_BUNDLE, "/scratch/restored"),
+        ("git", "for-each-ref", "--count=1", f"--contains={REMOTE_HEAD}"),
         ("git", "branch", "-D", "--", scratch),
         ("git", "push", f"--force-with-lease=wip:{REMOTE_HEAD}", "origin", "--delete", "--", "wip"),
+        ("git", "ls-remote", "--heads", "origin", "refs/heads/wip"),
     ]
     assert report.salvages[0].detail == f"restore with: git clone {WIP_BUNDLE} -b {scratch}"
 
@@ -543,13 +553,64 @@ def test_a_bundle_that_fails_to_write_aborts_the_deletion() -> None:
     assert "salvage failed" in report.deletions[0].detail
 
 
-def test_a_bundle_that_does_not_verify_aborts_the_deletion() -> None:
-    """An unverified bundle is not a safety net, so it does not buy a deletion."""
-    port = _remote_salvage_port(**{f"bundle verify {WIP_BUNDLE}": fail("corrupt")})
+def test_a_bundle_that_will_not_open_aborts_the_deletion() -> None:
+    """An archive nobody can open is not a safety net, so it buys no deletion.
+
+    `git bundle verify` is what used to answer this, and it answers about the
+    repository it runs in -- the one holding every object already. It reports a
+    complete history for a bundle `git clone` refuses, which is how a report
+    came to say verified in front of a deletion with no undo."""
+    port = _remote_salvage_port(
+        **{f"clone --bare --quiet {WIP_BUNDLE}": fail("remote did not send all necessary objects")}
+    )
     report = run(port, plan(target(TargetKind.REMOTE_BRANCH, REMOTE)), _remote_survey(REMOTE))
     assert not report.ok
-    assert "did not verify" in report.anomalies[0].message
+    assert "does not restore" in report.anomalies[0].message
+    assert any("clone" in line for line in report.anomalies[0].transcript)
+    assert report.salvages == ()
     assert "push" not in [t[1] for t in port.transcript]
+
+
+def test_a_restore_that_does_not_hold_the_commit_aborts_the_deletion() -> None:
+    """Opening is not restoring. A bundle of a remote-tracking ref clones back
+    an empty repository, so the archive exists, the clone succeeds, and the
+    commit the deletion takes is in none of it."""
+    port = _remote_salvage_port(
+        **{f"for-each-ref --count=1 --contains={REMOTE_HEAD}": fail("error: no such commit")}
+    )
+    report = run(port, plan(target(TargetKind.REMOTE_BRANCH, REMOTE)), _remote_survey(REMOTE))
+    assert not report.ok
+    assert REMOTE_HEAD[:8] in report.anomalies[0].message
+    assert report.salvages == ()
+    assert "push" not in [t[1] for t in port.transcript]
+
+
+def test_a_restore_whose_probe_answers_nothing_aborts_the_deletion() -> None:
+    """`for-each-ref` exits 0 with no output when no ref contains the commit,
+    which is the same news as the probe failing and must not read as a yes."""
+    port = _remote_salvage_port(**{f"for-each-ref --count=1 --contains={REMOTE_HEAD}": ok("")})
+    report = run(port, plan(target(TargetKind.REMOTE_BRANCH, REMOTE)), _remote_survey(REMOTE))
+    assert not report.ok
+    assert "reachable from no ref" in report.anomalies[0].message
+    assert report.salvages == ()
+    assert "push" not in [t[1] for t in port.transcript]
+
+
+def test_an_unreadable_scratch_tip_aborts_before_anything_is_bundled() -> None:
+    """The claim is about a commit, not about a file. With no commit to look
+    for, a restore has nothing it could be checked against."""
+    port = _remote_salvage_port(
+        **{
+            f"rev-parse --verify refs/heads/{SALVAGE_PREFIX}": fail(
+                "fatal: needed a single revision"
+            )
+        }
+    )
+    report = run(port, plan(target(TargetKind.REMOTE_BRANCH, REMOTE)), _remote_survey(REMOTE))
+    assert not report.ok
+    assert "nothing to be checked against" in report.anomalies[0].message
+    assert report.salvages == ()
+    assert "bundle" not in [t[1] for t in port.transcript]
 
 
 def test_missing_salvage_directory_aborts_rather_than_deleting_unprotected() -> None:

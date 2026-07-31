@@ -11,5 +11,10 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+      # content-tests runs the node:test suites the skills ship; pin the runtime
+      # rather than relying on whatever the runner image happens to preinstall.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - run: uv python install 3.11
       - run: make ci

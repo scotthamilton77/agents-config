@@ -9,9 +9,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from installer.core.deploy_gate import run_admission_gate
+from installer.core.deploy_gate import item_label, run_admission_gate
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
-from installer.core.surface_budget import ALWAYS_ON_TOKEN_CAP, SKILL_BODY_TOKEN_CAP
+from installer.core.surface_budget import (
+    ALWAYS_ON_TOKEN_CAP,
+    SKILL_BODY_TOKEN_CAP,
+    approx_tokens,
+)
 
 _COMPLETE = b"---\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\nbody\n"
 
@@ -253,3 +257,42 @@ def test_patched_entry_bytes_are_the_ones_gated_and_sanitized(tmp_path: Path) ->
     assert result.skipped == []  # source file has no record; the patched bytes do
     overrides = result.plans[Tool.CLAUDE].dir_overrides[Path("skills/patched")]
     assert overrides[Path("SKILL.md")] == b"body\n"
+
+
+def test_gate_returns_the_budget_numbers_it_measured() -> None:
+    """The gate weighs every tool and every admitted body on its way to a verdict.
+    Returning those numbers is what lets the repo-side lint report headroom without
+    a second, driftable measurement of its own."""
+    plans = {Tool.CLAUDE: _plan(_instruction(b"x" * 8), _rule("a.md", _COMPLETE))}
+    result = run_admission_gate(plans)
+
+    assert result.ok
+    assert [(s.tool, s.rules) for s in result.surfaces] == [("claude", 1)]
+    assert result.surfaces[0].tokens == approx_tokens(b"x" * 8) + approx_tokens(b"body\n")
+
+
+def test_admitted_skill_bodies_are_measured_after_sanitization() -> None:
+    """The budget weighs what a reader loads, so the reported body excludes the
+    governance front matter the gate strips."""
+    skill = StagedItem(
+        source_path=Path("/src/skills/tidy"),
+        dest_relpath=Path("skills") / "tidy",
+        kind=FileKind.NAMESPACED_MD,
+        namespace="skills",
+        provenance=Provenance(kind="tool", name="claude"),
+        content=_COMPLETE,
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), skill)})
+
+    assert [(m.label, m.tokens) for m in result.skills] == [
+        ("claude:skills/tidy", approx_tokens("body\n"))
+    ]
+
+
+def test_item_label_is_the_join_key_the_gate_reports_under() -> None:
+    """A caller holding the pre-gate plans joins skipped labels back to their source
+    file through this one construction; two spellings of it would rot silently."""
+    plans = {Tool.CLAUDE: _plan(_instruction(b"laws"), _rule("a.md", b"# no fm\n"))}
+    result = run_admission_gate(plans)
+
+    assert result.skipped == [item_label(Tool.CLAUDE, Path("rules/a.md"))]

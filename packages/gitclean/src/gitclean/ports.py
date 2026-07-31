@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from collections.abc import Sequence
+import tempfile
+from collections.abc import Iterator, Sequence
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -67,50 +69,7 @@ class CommandPort(Protocol):
 
     def write_text(self, path: Path, content: str) -> None: ...  # pragma: no cover
 
-    def create_archive(self, source: Path, dest: Path) -> CommandResult: ...  # pragma: no cover
-
-    def list_archive(self, path: Path) -> CommandResult: ...  # pragma: no cover
-
-
-def is_inside(inner: Path, outer: Path) -> bool:
-    try:
-        inner.resolve().relative_to(outer.resolve())
-    except (ValueError, OSError):
-        return False
-    return True
-
-
-def _self_exclusion(source: Path, dest: Path) -> list[str]:
-    """Keep tar from archiving its own output directory.
-
-    A caller is free to point --salvage-dir inside the very worktree being
-    salvaged. The directory is created before tar runs, so without this it is
-    captured as an empty directory in the archive of the tree it is saving."""
-    if not is_inside(dest.parent, source):
-        return []
-    relative = dest.parent.resolve().relative_to(source.resolve())
-    # A salvage directory one level down is excluded whole; one that *is* the
-    # worktree root cannot be, so only the archive file itself is skipped.
-    if str(relative) == ".":
-        return [f"--exclude=./{dest.name}"]
-    return [f"--exclude=./{relative}"]
-
-
-def _staging_path(source: Path, dest: Path) -> Path | None:
-    """Where to write the archive so tar never writes into what it is reading.
-
-    None when the destination already sits outside the source and tar can
-    write straight to it.
-
-    Excluding the output from the archive's *contents* is not enough: the
-    directory still changes while tar walks it, and GNU tar exits 1 on
-    `file changed as we read it`. BSD tar -- what ships on macOS -- says
-    nothing, so this is invisible until the suite runs on Linux. Staging
-    beside the source directory removes the race rather than tolerating it,
-    and stays on the same filesystem so the move into place is a rename."""
-    if not is_inside(dest.parent, source):
-        return None
-    return source.parent / f".{dest.name}.gitclean-partial"
+    def scratch_dir(self) -> AbstractContextManager[Path]: ...  # pragma: no cover
 
 
 class SubprocessCommands:
@@ -159,45 +118,22 @@ class SubprocessCommands:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 
-    def create_archive(self, source: Path, dest: Path) -> CommandResult:
-        """Archive a whole directory, symlinks kept AS symlinks.
+    @contextmanager
+    def scratch_dir(self) -> Iterator[Path]:
+        """Somewhere to unpack a bundle into, gone again by the time this
+        returns.
 
-        tar rather than a file-by-file copy for three reasons that each cost
-        work when got wrong: `shutil.copy2` follows symlinks by default, so an
-        untracked link to ~/.ssh/id_rsa would copy the key's bytes into the
-        salvage directory; it crashes outright on a dangling link; and a copy
-        driven by `git ls-files` cannot see ignored files, which is where a
-        .env lives. `.git` is excluded because it is reconstructible and, in
-        the main worktree, would drag in the whole object store."""
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        excludes = ["--exclude=./.git", *_self_exclusion(source, dest)]
-        staged = _staging_path(source, dest)
-        written = staged if staged is not None else dest
+        Asking whether an archive restores means restoring it, and the answer
+        is only worth having if the restore lands somewhere empty -- a repository
+        that already holds the objects answers yes for the wrong reason. It
+        cannot go beside the bundle either: the salvage directory is what a
+        person is told to look in, and a restore is not part of the salvage.
 
-        result = self._run(["tar", "-czf", str(written), "-C", str(source), *excludes, "."], None)
-
-        if staged is None:
-            return result
-        if not result.ok:
-            staged.unlink(missing_ok=True)
-            return result
-        try:
-            shutil.move(str(staged), str(dest))
-        except OSError as exc:
-            # The archive exists but not where the caller will look for it, so
-            # this is a failed salvage: the deletion it would authorise must
-            # not proceed.
-            staged.unlink(missing_ok=True)
-            return CommandResult(
-                argv=result.argv,
-                returncode=1,
-                stdout=result.stdout,
-                stderr=f"could not move the archive into {dest.parent}: {exc}",
-            )
-        return result
-
-    def list_archive(self, path: Path) -> CommandResult:
-        return self._run(["tar", "-tzf", str(path)], None)
+        The directory is removed on the way out, including when the restore
+        failed. What that costs is the failed attempt's evidence, and the
+        transcript already carries it."""
+        with tempfile.TemporaryDirectory(prefix="gitclean-restore-") as scratch:
+            yield Path(scratch)
 
 
 class ScriptedCommands:
@@ -210,6 +146,10 @@ class ScriptedCommands:
     test never anticipated -- the exact failure this fake exists to prevent.
     """
 
+    scratch = Path("/scratch")
+    """Where a restore is told to unpack. Fixed, so the argv the restore probe
+    builds is one a test can script."""
+
     def __init__(
         self,
         *,
@@ -217,20 +157,12 @@ class ScriptedCommands:
         gh: dict[str, CommandResult | list[CommandResult]] | None = None,
         has_gh: bool = True,
         files: dict[str, str] | None = None,
-        archive_create: CommandResult | None = None,
-        archive_list: CommandResult | None = None,
     ) -> None:
         self._git = dict(git or {})
         self._gh = dict(gh or {})
         self._has_gh = has_gh
         self.files: dict[str, str] = dict(files or {})
         self.transcript: list[tuple[str, ...]] = []
-        # Same discipline as the command tables: an unscripted archive call
-        # raises rather than defaulting, because a salvage that silently
-        # "succeeded" in a test is the failure this fake exists to catch.
-        self._archive_create = archive_create
-        self._archive_list = archive_list
-        self.archives: list[tuple[str, str]] = []
 
     @staticmethod
     def _match(
@@ -287,18 +219,13 @@ class ScriptedCommands:
     def write_text(self, path: Path, content: str) -> None:
         self.files[str(path)] = content
 
-    def create_archive(self, source: Path, dest: Path) -> CommandResult:
-        self.transcript.append(("tar", "-czf", str(dest), "-C", str(source)))
-        self.archives.append((str(source), str(dest)))
-        if self._archive_create is None:
-            raise AssertionError(f"ScriptedCommands has no archive answer for: {source} -> {dest}")
-        return self._archive_create
+    @contextmanager
+    def scratch_dir(self) -> Iterator[Path]:
+        """A fixed path, so the argv of a restore is one a test can script.
 
-    def list_archive(self, path: Path) -> CommandResult:
-        self.transcript.append(("tar", "-tzf", str(path)))
-        if self._archive_list is None:
-            raise AssertionError(f"ScriptedCommands has no archive listing for: {path}")
-        return self._archive_list
+        Nothing is created: the fake answers git's questions and must not touch
+        the filesystem to do it."""
+        yield self.scratch
 
 
 def ok(stdout: str = "", *, stderr: str = "") -> CommandResult:

@@ -58,6 +58,7 @@ from installer.tools.registry import UnknownToolError, get_adapter, known_tools
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
+    from installer.core.installignore import InstallIgnore
     from installer.core.io_port import IOPort
     from installer.core.model import StagingPlan, Tool
     from installer.plugins.base import PluginAdapter
@@ -299,7 +300,12 @@ def _run(
     # from inside `_run_project` instead of falling through to the user dump.
     if args.project is not None:
         return _run_project(
-            args, plans=plans, project_root=args.project, repo_root=resolved_repo_root, io=io
+            args,
+            plans=plans,
+            project_root=args.project,
+            repo_root=resolved_repo_root,
+            io=io,
+            ignore=ignore,
         )
 
     if cli_deploy is None:
@@ -426,6 +432,7 @@ def _run(
                             dry_run=args.dry_run,
                             auto_yes=config.auto_yes,
                             outcomes_by_tool=tool_outcomes,
+                            ignore=ignore,
                         ),
                     )
                     # Plugin routes (e.g. beads' ~/.beads/formulas + scripts) land
@@ -562,6 +569,7 @@ def _run_project(
     project_root: Path,
     repo_root: Path,
     io: IOPort,
+    ignore: InstallIgnore,
 ) -> int:
     """The project-scoped tail: resolve, validate, and install project content.
 
@@ -744,6 +752,7 @@ def _run_project(
                             dry_run=args.dry_run,
                             auto_yes=args.yes,
                             outcomes_by_tool=tool_outcomes,
+                            ignore=ignore,
                         ),
                     )
                     _merge_into(

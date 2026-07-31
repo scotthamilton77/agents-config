@@ -122,7 +122,17 @@ class StagedItem:
     disjoint file set into a shared skill/agent dir) while keeping plugin-vs-
     plugin directory collisions fatal. The overlay clears it after a merge so
     a second plugin colliding on the same dir is a true plugin-plugin collision
-    (fatal)."""
+    (fatal).
+
+    `merged_head` is set only on an item synthesised by a content-combining
+    merge (today: the rule append-merge), and names the source whose bytes lead
+    the merged content. The synthesised item takes `source_path` from the
+    *incoming* side while the *existing* side's bytes go first, so for anything
+    reading the head of the content — front matter, most obviously —
+    `source_path` names the wrong file. A reader that needs to attribute
+    leading content to its origin must consult this instead. `None` means the
+    item is not a merge product and `source_path` is authoritative.
+    """
 
     source_path: Path
     dest_relpath: Path
@@ -132,6 +142,7 @@ class StagedItem:
     content: bytes | None = None
     executable: bool = False
     shared_carrier: bool = False
+    merged_head: Path | None = None
 
 
 @dataclass(slots=True)

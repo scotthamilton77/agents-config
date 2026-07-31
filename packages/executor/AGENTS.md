@@ -63,10 +63,24 @@ ports.py  →  state.py  →  rules.py  →  pairing.py  →  enact.py  →  cli
   reading the fold for an item's lane or PR is not a mutation.
 - **The CLI surface is closed and the gap is named.** `EXECUTOR_VERBS` is the
   contract's verb universe; `PENDING_VERBS` names the ones no slice has wired
-  yet. The parser is built *from* `_VERB_PARSERS`, so there is one list, not
-  two that drift. Wiring a pending verb means adding its parser entry and
-  deleting its name from `PENDING_VERBS` — the totality test measures the gap
-  rather than ignoring it.
+  yet, and is currently empty. The parser is built *from* `_VERB_PARSERS`, so
+  there is one list, not two that drift. Wiring a pending verb means adding its
+  parser entry and deleting its name from `PENDING_VERBS` — the totality test
+  measures the gap rather than ignoring it.
+- **Dispatch is two-way, and the split is the mutation boundary.** A verb with
+  a pairing row reads the fold, builds a `Plan` and enacts it. A read-only verb
+  (`READ_ONLY_VERBS`, `next` today) is dispatched through `cli.py`'s
+  `_READ_ONLY_HANDLERS` and touches the runtime port not at all — it has no row
+  to enact, and a fold read it does not need would make it fail on a machine
+  whose grind run merely does not exist. The two dispatches partition the verb
+  universe, and the totality suite asserts exactly that: every verb is either a
+  row or a handler, never both, never neither.
+- **`next` composes the facade; it does not reimplement it.** The parked rows,
+  their `stale` flags and the threshold behind them are all the facade's
+  (S2-D4). `--stale-days` crosses verbatim, and omitting it omits the flag —
+  a default here would be the tree's second copy of the threshold. The reply's
+  own `parked_stale` block is dropped, since `next` already carries the wider
+  report beside the ready list.
 - **The runtime counts and decides; this package enacts.** Whether a budget is
   spent is the runtime's `attempt_budget_spent` condition and nothing else
   (`S9T1-C3`). This package keeps no counter, and its own arithmetic never
@@ -446,8 +460,8 @@ outcomes and stay on every path; the verb block is not.
 
 - **No dispatch loop.** Nothing calls these pieces in sequence yet. This layer
   answers "what does verb X pair with"; it does not decide when to run X.
-- **`next` is unwired** (slice N). It is in `EXECUTOR_VERBS` and in
-  `PENDING_VERBS`, so the closed universe is already stated.
+  `next` reports what could be picked up; choosing among it is the Tier-2
+  dispatcher's job.
 - **Two PR-cycle cases the runtime's snapshot cannot answer.** Both come from
   the same gap: the snapshot records that closures happened, but not that
   openings did, and not what outcome a closure produced. The decision layer

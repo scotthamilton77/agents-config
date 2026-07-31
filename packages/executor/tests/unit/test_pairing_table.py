@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from executor.cli import CLI_VERBS
+from executor.cli import _READ_ONLY_HANDLERS, CLI_VERBS
 from executor.envelope import ErrorCode, ExecutorError
 from executor.pairing import (
     BUDGET_EXHAUSTED,
@@ -90,16 +90,41 @@ def test_the_cli_exposes_exactly_the_wired_part_of_the_closed_universe() -> None
     assert CLI_VERBS == WIRED_VERBS
 
 
-def test_the_only_unwired_verb_is_next() -> None:
+def test_no_verb_in_the_closed_universe_is_left_unwired() -> None:
     """
     Given the closed universe
     When the unwired verbs are listed
-    Then `next` is the only one.
+    Then there are none, and the CLI exposes the universe entire.
 
-    `next` is the open-new-work surface (slice N). It lands by deleting its
-    name here, so this assertion is what that slice updates rather than fights.
+    The gap `PENDING_VERBS` measures is now empty, which is the strongest
+    reading of the test above rather than a weaker one: `CLI_VERBS ==
+    EXECUTOR_VERBS - PENDING_VERBS` with nothing subtracted says the parser
+    carries every verb the contract names and no other. The second assertion
+    is what keeps this from being the same claim twice — it fails if a future
+    slice re-declares a gap without wiring it.
     """
-    assert set(PENDING_VERBS) == {"next"}
+    assert set(PENDING_VERBS) == set()
+    assert set(WIRED_VERBS) == set(EXECUTOR_VERBS)
+
+
+def test_each_verb_is_reached_by_exactly_one_of_the_two_dispatches() -> None:
+    """
+    Given the CLI's two dispatch paths
+    When each wired verb is looked for in them
+    Then the read-only handlers are exactly the read-only verbs, and no verb
+    is both read-only and a pairing row.
+
+    Completes the totality claim the test above starts. With `PENDING_VERBS`
+    empty, "every verb is wired" only means every verb has a parser; a verb
+    could still parse and then reach neither a plan nor a handler. The
+    mutating half is covered by the row/verb test below, so pinning the
+    read-only half and the disjointness closes the partition.
+    """
+    row_verbs = {row.verb for row in PAIRING_TABLE}
+
+    assert set(_READ_ONLY_HANDLERS) == set(READ_ONLY_VERBS)
+    assert row_verbs & set(READ_ONLY_VERBS) == set()
+    assert row_verbs | set(READ_ONLY_VERBS) == set(CLI_VERBS)
 
 
 def test_the_table_covers_every_wired_verb_that_mutates_anything() -> None:

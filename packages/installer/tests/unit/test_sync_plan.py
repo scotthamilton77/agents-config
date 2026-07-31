@@ -20,11 +20,27 @@ from pathlib import Path
 import pytest
 
 from installer.core.consent import ConsentRequiredError
+from installer.core.installignore import InstallIgnore, load_installignore
 from installer.core.io_port import IOPort, ScriptedIO, TranscriptEntry
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
 from installer.core.sync import sync_plan
 
 _FIXED_TS = "20260613-120000"
+
+# The same unanchored dev-artifact patterns the real .installignore ships,
+# reproduced here so these tests exercise `_install_dir`'s nested-exclusion
+# filter without depending on the repo's actual manifest file — a change to
+# the real manifest's wording must not break these, only a change to what it
+# excludes should.
+_DEV_ARTIFACT_PATTERNS = (
+    "*_test.py\ntest_*.py\n*_test.js\n*.pyc\n__pycache__/\n.pytest_cache/\n.ruff_cache/\n"
+)
+
+
+def _dev_artifact_ignore(tmp_path: Path) -> InstallIgnore:
+    manifest = tmp_path / "dev-artifacts.installignore"
+    manifest.write_text(_DEV_ARTIFACT_PATTERNS, encoding="utf-8")
+    return load_installignore(manifest)
 
 
 class _IdentityAdapter:
@@ -235,6 +251,215 @@ def test_dir_item_materializes_its_source_tree(tmp_path: Path) -> None:
     assert (home / "skills" / "myskill" / "SKILL.md").read_bytes() == b"skill\n"
     assert (home / "skills" / "myskill" / "sub" / "x.md").read_bytes() == b"nested\n"
     assert counters.created == 1
+
+
+def test_dir_item_excludes_nested_test_files_and_caches(tmp_path: Path) -> None:
+    """
+    Given a DIR item's source tree carrying a top-level test file
+    (``emit_prompts_test.py``), one nested a level deeper under a ``scripts/``
+    subdir (``proxy_test.js``), and Python/pytest/ruff cache artifacts, and an
+    ``ignore`` manifest carrying the matching UNANCHORED patterns
+    When sync_plan materialises it
+    Then none of the dev-only artifacts reach dest at any depth, while the
+    real skill files land untouched. This is the regression this fix closes:
+    an unfiltered ``copytree`` shipped a skill's own test suite and caches
+    wholesale (agents-config-9k9.77) — an ANCHORED ``.installignore`` pattern
+    cannot catch these (a skill directory is staged as a single DIR item whose
+    interior an anchored pattern never walks), but an unanchored pattern
+    reaches every depth, including this one.
+    """
+    src = tmp_path / "src_skill"
+    (src / "scripts").mkdir(parents=True)
+    (src / "__pycache__").mkdir()
+    (src / ".pytest_cache").mkdir()
+    (src / ".ruff_cache").mkdir()
+    (src / "SKILL.md").write_bytes(b"skill\n")
+    (src / "emit_prompts.py").write_bytes(b"prod\n")
+    (src / "emit_prompts_test.py").write_bytes(b"test\n")
+    (src / "scripts" / "proxy_test.js").write_bytes(b"test-js\n")
+    (src / "__pycache__" / "emit_prompts.cpython-312.pyc").write_bytes(b"cache\n")
+    (src / ".pytest_cache" / "CACHEDIR.TAG").write_bytes(b"tag\n")
+    (src / ".ruff_cache" / "cache_file").write_bytes(b"ruff\n")
+    home = tmp_path / "home"
+    plan = StagingPlan(
+        items={Path("skills/myskill"): _dir_item(Path("skills/myskill"), src)}, tool=Tool.CLAUDE
+    )
+
+    sync_plan(
+        _IdentityAdapter(),
+        plan,
+        home=home,
+        io=ScriptedIO(),
+        timestamp=_FIXED_TS,
+        ignore=_dev_artifact_ignore(tmp_path),
+    )
+
+    dest = home / "skills" / "myskill"
+    assert (dest / "SKILL.md").read_bytes() == b"skill\n"
+    assert (dest / "emit_prompts.py").read_bytes() == b"prod\n"
+    assert not (dest / "emit_prompts_test.py").exists()
+    assert not (dest / "scripts" / "proxy_test.js").exists()
+    assert not (dest / "__pycache__").exists()
+    assert not (dest / ".pytest_cache").exists()
+    assert not (dest / ".ruff_cache").exists()
+
+
+def test_dir_item_with_dev_artifacts_is_idempotent_on_second_run(tmp_path: Path) -> None:
+    """
+    Given a DIR item's source tree carrying a nested test file alongside real
+    content, already materialised by a prior run with an ``ignore`` manifest
+    excluding it
+    When sync_plan re-runs (same ``ignore``) into the same dest
+    Then the dir is recognised as unchanged and skipped. The exclusion filter
+    `_dir_is_unchanged` applies to its expected-file map must match what
+    `_install_dir`'s filtered ``copytree`` actually wrote, or the source's
+    test file (never present at dest) would look like a permanent diff and
+    force a spurious backup + re-copy on every install.
+    """
+    src = tmp_path / "src_skill"
+    src.mkdir()
+    (src / "SKILL.md").write_bytes(b"skill\n")
+    (src / "emit_prompts_test.py").write_bytes(b"test\n")
+    home = tmp_path / "home"
+    plan = StagingPlan(items={Path("skills/s"): _dir_item(Path("skills/s"), src)}, tool=Tool.CLAUDE)
+    ignore = _dev_artifact_ignore(tmp_path)
+
+    first = sync_plan(
+        _IdentityAdapter(),
+        plan,
+        home=home,
+        io=ScriptedIO(),
+        auto_yes=True,
+        timestamp=_FIXED_TS,
+        ignore=ignore,
+    )
+    assert first.created == 1
+
+    second = sync_plan(
+        _IdentityAdapter(),
+        plan,
+        home=home,
+        io=ScriptedIO(),
+        auto_yes=True,
+        timestamp=_FIXED_TS,
+        ignore=ignore,
+    )
+
+    assert second.skipped == 1
+    assert (second.created, second.updated, second.backed_up) == (0, 0, 0)
+    assert not (home / "skills-backup").exists()
+
+
+def test_dir_item_excludes_the_prefix_test_naming_the_gate_also_discovers(tmp_path: Path) -> None:
+    """
+    Given a DIR item carrying a suite named ``test_*.py`` — the second pattern
+    the repo gate's skill-suite discovery accepts — beside a JSON fixture whose
+    name starts the same way, and an ``ignore`` manifest carrying both
+    unanchored patterns
+    When sync_plan materialises it
+    Then the suite is excluded and the fixture still deploys. The two patterns
+    must agree: a file the gate executes as a repo-side suite must not be a
+    file the installer ships, or a suite is both run here and deployed
+    downstream. The ``test_`` prefix is scoped to ``.py`` so a shipped fixture
+    is not collateral.
+    """
+    src = tmp_path / "src_skill"
+    src.mkdir()
+    (src / "SKILL.md").write_bytes(b"skill\n")
+    (src / "test_checker.py").write_bytes(b"suite\n")
+    (src / "test_data.json").write_bytes(b"{}\n")
+    home = tmp_path / "home"
+    plan = StagingPlan(items={Path("skills/s"): _dir_item(Path("skills/s"), src)}, tool=Tool.CLAUDE)
+
+    sync_plan(
+        _IdentityAdapter(),
+        plan,
+        home=home,
+        io=ScriptedIO(),
+        timestamp=_FIXED_TS,
+        ignore=_dev_artifact_ignore(tmp_path),
+    )
+
+    dest = home / "skills" / "s"
+    assert not (dest / "test_checker.py").exists()
+    assert (dest / "test_data.json").read_bytes() == b"{}\n"
+    assert (dest / "SKILL.md").read_bytes() == b"skill\n"
+
+
+def test_excluded_directory_prunes_its_whole_subtree(tmp_path: Path) -> None:
+    """
+    Given a DIR item whose source tree carries an excluded directory
+    (``__pycache__/``) holding a file that would NOT itself match any file
+    pattern (a plain ``.txt``, not ``.pyc``)
+    When sync_plan materialises it
+    Then the whole directory is pruned anyway — excluding a directory excludes
+    everything beneath it, not just the entries that happen to match a file
+    pattern too. Both the real copy (`_copytree_ignore`, via ``copytree``'s
+    own non-recursion into an ignored dir) and the idempotency check
+    (`_dir_is_unchanged`, via `_nested_path_is_excluded` walking every path
+    component) must agree on this or a second run would see the untouched
+    source file as a permanent diff.
+    """
+    src = tmp_path / "src_skill"
+    (src / "__pycache__").mkdir(parents=True)
+    (src / "SKILL.md").write_bytes(b"skill\n")
+    (src / "__pycache__" / "not_a_cache_file.txt").write_bytes(b"stray\n")
+    home = tmp_path / "home"
+    plan = StagingPlan(items={Path("skills/s"): _dir_item(Path("skills/s"), src)}, tool=Tool.CLAUDE)
+    ignore = _dev_artifact_ignore(tmp_path)
+
+    first = sync_plan(
+        _IdentityAdapter(),
+        plan,
+        home=home,
+        io=ScriptedIO(),
+        auto_yes=True,
+        timestamp=_FIXED_TS,
+        ignore=ignore,
+    )
+    assert not (home / "skills" / "s" / "__pycache__").exists()
+
+    second = sync_plan(
+        _IdentityAdapter(),
+        plan,
+        home=home,
+        io=ScriptedIO(),
+        auto_yes=True,
+        timestamp=_FIXED_TS,
+        ignore=ignore,
+    )
+
+    assert first.created == 1
+    assert second.skipped == 1  # pruned subtree must not read as a permanent diff
+
+
+def test_anchored_pattern_does_not_reach_a_dir_items_interior(tmp_path: Path) -> None:
+    """
+    Given an ``ignore`` manifest carrying only the ANCHORED pattern
+    ``/README.md``, and a DIR item's source tree carrying a nested
+    ``references/README.md``
+    When sync_plan materialises it
+    Then the nested file survives. An anchored pattern's whole scope is the
+    direct children of a staged namespace subdirectory; a DIR item's interior
+    is never that scope, so an anchored entry must never prune anything
+    inside it — the anchoring rule exists precisely so a skill can ship its
+    own ``references/README.md`` without the top-level dead-doc exclusion
+    silently swallowing it.
+    """
+    manifest = tmp_path / "anchored.installignore"
+    manifest.write_text("/README.md\n", encoding="utf-8")
+    ignore = load_installignore(manifest)
+    src = tmp_path / "src_skill"
+    (src / "references").mkdir(parents=True)
+    (src / "references" / "README.md").write_bytes(b"nested\n")
+    home = tmp_path / "home"
+    plan = StagingPlan(items={Path("skills/s"): _dir_item(Path("skills/s"), src)}, tool=Tool.CLAUDE)
+
+    sync_plan(
+        _IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp=_FIXED_TS, ignore=ignore
+    )
+
+    assert (home / "skills" / "s" / "references" / "README.md").read_bytes() == b"nested\n"
 
 
 def test_dir_overrides_are_overlaid_and_win_on_collision(tmp_path: Path) -> None:
