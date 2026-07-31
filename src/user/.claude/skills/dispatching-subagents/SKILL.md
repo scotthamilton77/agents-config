@@ -1,6 +1,6 @@
 ---
 name: dispatching-subagents
-description: Use when handing work to a subagent. Apply whenever you are about to write a brief for delegated work, split a task across agents, or choose which substrate — a native subagent or workflow, an OpenRouter-hosted model, Codex — should run a delegated task; and whenever a delegated agent built the wrong thing, went idle without delivering its report, or argued with a brief. Not for running rounds of adversarial review over a change (the review-panel skill owns rounds and re-review) and not for validating a round's verdict artifact.
+description: Use when handing work to a subagent. Apply whenever you are about to write a brief for delegated work, split a task across agents, or choose which substrate — a native subagent or workflow, an OpenRouter-hosted model, Codex — should run a delegated task; and whenever a delegated agent built the wrong thing, went idle without delivering its report, or argued with a brief.
 admission:
   prevents: Delegated work that costs more than it saves — briefs that encode the dispatcher's wrong mechanism into the agent's implementation, contradictory briefs implemented instead of challenged, finished judgement lost to a delivery step that silently failed, and dispatches routed to a frontier model out of habit because no substrate comparison was ever made.
   cost: Every dispatch carries a constraints-and-ownership section, a refusal clause and a report path.
@@ -8,24 +8,14 @@ admission:
 ---
 
 <!--
-Source: authored 2026-07-27; body rewritten 2026-07-31 against a two-arm test of three dispatch
-scenarios, then rescoped the same day on user instruction: review-loop content (running rounds,
-refutation carrying, stopping) removed — loops are orchestration, not dispatch craft, and the
-enforceable half of that doctrine already lives in the review-panel / review-verdict contracts
-(disposition ledger, terminal-clean). Scope is set by that test, not by intuition — baseline agents
-unaided already choose sound agent counts, batch splits, barrier placement and model tiers, so all
-of that is omitted deliberately. Model and effort selection lives in the delegation rule, not here.
-Placement: Claude-dependent (subagent orchestration, workflow fan-out), so it lives in the Claude
-tree rather than the shared one.
-Not run through admit-request: added on explicit user instruction, the same path the delegation
-rule took; the record above is authored, not gate-issued.
+Source: authored 2026-07-27.
 -->
 
 A dispatch fails in two ways: the brief smuggles in the dispatcher's assumptions, or it gives the
 agent's answer nowhere to land. Everything here guards one of those two.
 
 Nothing here covers how many agents to use, how to batch the work, or where to put a barrier. Your
-own judgement is reliable on those. It is not reliable on what follows.
+own judgement is reliable on those.
 
 ## Writing a dispatch
 
