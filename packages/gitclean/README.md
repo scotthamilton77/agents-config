@@ -55,7 +55,7 @@ recorded on the branch:
 | `pr_merged` | gh reports a merged PR whose head contains this tip. The only signal that survives a squash merge intact. | yes |
 | `ancestor` | reachable from the base tip. | yes |
 | `patch_equal` | every commit's patch-id is already in base (rebase, cherry-pick). | yes |
-| `squash_equal` | the branch's tree, replayed as one commit on the merge base, has a patch-id in base. | yes |
+| `squash_equal` | the branch's tree, replayed as one commit on the merge base, has a patch-id in base. Silent when the branch ends on the tree it started from — see below. | yes |
 | `pr_closed_unmerged` | a human closed the PR without merging. | **no** — reported only |
 | `none` | nothing proved a merge. Not the same as "not merged": see `repo.gh_error`, and the row's own `reasons` for a tier that errored rather than answering. | no |
 
@@ -63,6 +63,15 @@ A closed PR says someone stopped wanting the change. It says nothing about
 whether the commits exist anywhere else, and they do not — they are still only
 on that branch. It is the most useful line in the row for a person deciding
 what to name, and it authorises nothing.
+
+**A branch that ends on the tree it began from proves nothing here, by
+construction.** Work added and then taken off again leaves the tip's tree equal
+to the merge base's, so the commit this tier synthesises would carry an empty
+diff — and every empty diff has the same patch-id as every other. Base need
+only have picked up one empty commit since the fork, which is what a build
+retrigger leaves, for `git cherry` to call that a match. So the tier stops
+before it asks. The cost is a no-op branch nobody sweeps; the alternative is
+deleting a branch whose commits are the only copy of the work they hold.
 
 Without `gh` on PATH there is no squash signal at all. That is reported in
 `repo.gh_error`, never swallowed.

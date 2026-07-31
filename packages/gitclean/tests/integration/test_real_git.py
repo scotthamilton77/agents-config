@@ -1184,14 +1184,6 @@ def _main_worktree_seen_from_a_linked_one(repo: Path) -> Topology:
         pytest.param(
             _branch_whose_work_was_backed_out,
             id="branch-whose-work-was-backed-out-on-itself",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="a branch whose tip tree is its merge base's tree makes the squash "
-                "probe synthesise a commit with an empty diff, and an empty diff shares its "
-                "patch id with every other empty diff -- so any empty commit base picked up "
-                "after the fork reads as proof, and a bare sweep deletes the only copy of "
-                "the work the branch backed out",
-            ),
         ),
         pytest.param(_unmerged_with_remote, id="unmerged-branch-with-remote-copy"),
         pytest.param(_detached_orphan_worktree, id="detached-worktree-holding-an-orphan-commit"),
