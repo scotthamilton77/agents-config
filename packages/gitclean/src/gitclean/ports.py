@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from collections.abc import Sequence
+import tempfile
+from collections.abc import Iterator, Sequence
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -66,6 +68,8 @@ class CommandPort(Protocol):
     def has_gh(self) -> bool: ...  # pragma: no cover
 
     def write_text(self, path: Path, content: str) -> None: ...  # pragma: no cover
+
+    def scratch_dir(self) -> AbstractContextManager[Path]: ...  # pragma: no cover
 
     def create_archive(self, source: Path, dest: Path) -> CommandResult: ...  # pragma: no cover
 
@@ -159,6 +163,23 @@ class SubprocessCommands:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 
+    @contextmanager
+    def scratch_dir(self) -> Iterator[Path]:
+        """Somewhere to unpack a bundle into, gone again by the time this
+        returns.
+
+        Asking whether an archive restores means restoring it, and the answer
+        is only worth having if the restore lands somewhere empty -- a repository
+        that already holds the objects answers yes for the wrong reason. It
+        cannot go beside the bundle either: the salvage directory is what a
+        person is told to look in, and a restore is not part of the salvage.
+
+        The directory is removed on the way out, including when the restore
+        failed. What that costs is the failed attempt's evidence, and the
+        transcript already carries it."""
+        with tempfile.TemporaryDirectory(prefix="gitclean-restore-") as scratch:
+            yield Path(scratch)
+
     def create_archive(self, source: Path, dest: Path) -> CommandResult:
         """Archive a whole directory, symlinks kept AS symlinks.
 
@@ -209,6 +230,10 @@ class ScriptedCommands:
     instead would let a test go green while production asks git something the
     test never anticipated -- the exact failure this fake exists to prevent.
     """
+
+    scratch = Path("/scratch")
+    """Where a restore is told to unpack. Fixed, so the argv the restore probe
+    builds is one a test can script."""
 
     def __init__(
         self,
@@ -286,6 +311,14 @@ class ScriptedCommands:
 
     def write_text(self, path: Path, content: str) -> None:
         self.files[str(path)] = content
+
+    @contextmanager
+    def scratch_dir(self) -> Iterator[Path]:
+        """A fixed path, so the argv of a restore is one a test can script.
+
+        Nothing is created: the fake answers git's questions and must not touch
+        the filesystem to do it."""
+        yield self.scratch
 
     def create_archive(self, source: Path, dest: Path) -> CommandResult:
         self.transcript.append(("tar", "-czf", str(dest), "-C", str(source)))

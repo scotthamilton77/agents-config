@@ -99,8 +99,15 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   in as a tier in `_resolve_merge` with its own `MergeEvidence` member, so the
   report can say *why* a deletion was called merged.
 - **Salvage exists only where there is no reflog** — a ref on the server — and
-  must be verified before the deletion it authorises. If `git bundle verify`
-  fails, the target is left alone.
+  the deletion it authorises is earned by a restore, not by an inspection. The
+  bundle is cloned into an empty scratch directory and the commit about to be
+  deleted has to be reachable from a ref in what comes out. `git bundle verify`
+  is not that check and never was: it asks whether the archive applies to the
+  repository that already holds every object, so it passes on a bundle that
+  clones back empty and, in a shallow clone, on one `git clone` refuses. A
+  salvage that does not restore is an anomaly carrying the transcript, is
+  recorded as no salvage, and leaves the target alone. Unbundling is not a
+  substitute — it reports success on exactly the bundle that will not clone.
 - **Verify every deletion by re-asking git.** Exit codes are claims.
 - **Anomalies carry `CommandResult.transcript()`.** An agent reading the output
   must be able to remediate without re-running anything. Never summarise a

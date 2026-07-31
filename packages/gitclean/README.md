@@ -87,10 +87,19 @@ Without `gh` on PATH there is no squash signal at all. That is reported in
   the survey ran is exactly the one at risk, and the surveyed commit it
   replaced would have answered for it. Naming a target authorises deleting a
   checkout; it should not quietly spend a commit.
-- **Salvage is kept only where there is no reflog** — a ref on the server.
-  It becomes a verified `git bundle` before the delete, and a bundle that will
-  not verify aborts that deletion. A local branch needs none: `branch -D`
-  leaves its commits in the reflog for git's configured expiry.
+- **Salvage is kept only where there is no reflog** — a ref on the server. It
+  becomes a `git bundle` before the delete, and what earns the delete is a
+  restore, not an inspection: the bundle is cloned into an empty directory and
+  the commit about to be deleted has to come back out of it. `git bundle
+  verify` is not that check — it asks whether the archive applies to the
+  repository that already holds every object, and says yes both to a bundle
+  that clones back empty and, in a shallow clone, to one `git clone` refuses
+  outright with `remote did not send all necessary objects`. A salvage that
+  does not restore is reported as an anomaly with the transcript, recorded as
+  no salvage at all, and aborts its deletion. The cost is unpacking that
+  branch's history once more per server ref actually deleted. A local branch
+  needs none of this: `branch -D` leaves its commits in the reflog for git's
+  configured expiry.
 - **Remote deletes are leased.** Every verdict about a remote branch comes from
   your local `refs/remotes` cache. The delete carries `--force-with-lease`, so
   if the server moved since your last fetch it is rejected rather than taking
