@@ -207,7 +207,7 @@ def test_a_dangling_origin_head_leaves_the_trunk_unknown_on_the_report() -> None
             "show-ref --verify --quiet refs/heads/main": fail(),
             "show-ref --verify --quiet refs/heads/master": fail(),
             "cherry origin/main -- trunk": fail(),
-            "merge-base origin/main trunk": fail(),
+            "merge-base origin/main -- trunk": fail(),
         },
     )
 
@@ -231,8 +231,8 @@ def test_an_unknown_default_branch_is_reported_on_the_survey() -> None:
             "show-ref --verify --quiet refs/remotes/origin/main": fail(),
             "cherry main -- trunk": fail(),
             "cherry main -- feature": fail(),
-            "merge-base main trunk": fail(),
-            "merge-base main feature": fail(),
+            "merge-base main -- trunk": fail(),
+            "merge-base main -- feature": fail(),
         },
     )
 
@@ -677,7 +677,7 @@ def test_a_merged_pr_that_predates_the_tip_does_not_prove_the_branch_merged() ->
         extra={
             "merge-base --is-ancestor": fail("not an ancestor"),
             "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok("+ synthsha"),
@@ -717,7 +717,7 @@ def test_a_pr_with_no_head_sha_never_covers_a_tip() -> None:
         prs=[_pr("MERGED", oid="")],
         extra={
             "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok("+ synthsha"),
@@ -740,7 +740,7 @@ def test_the_squash_tier_still_answers_when_a_pr_verdict_is_declined() -> None:
         extra={
             "merge-base --is-ancestor": fail("not an ancestor"),
             "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok("- synthsha"),
@@ -784,7 +784,7 @@ def test_a_discard_decision_does_not_reach_commits_made_after_it() -> None:
         extra={
             "merge-base --is-ancestor": fail("not an ancestor"),
             "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok("+ synthsha"),
@@ -806,7 +806,7 @@ def test_squash_merges_are_caught_by_replaying_the_tree_as_one_commit() -> None:
     port = _tier_port(
         **{
             "cherry origin/main -- feat": ok("+ aaa\n+ bbb"),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok("- synthsha"),
@@ -816,11 +816,39 @@ def test_squash_merges_are_caught_by_replaying_the_tree_as_one_commit() -> None:
     assert feat.merged and feat.merge_evidence is MergeEvidence.SQUASH_EQUAL
 
 
+def test_the_squash_probe_terminates_argv_for_a_branch_named_like_an_option() -> None:
+    """`refs/heads/-m` is a legal ref that `update-ref` or a remote push can
+    create, and it reaches this tier the same way `feat` does above: ancestry
+    and patch-id both miss. `merge-base` accepts `--`, so the branch name is
+    terminated the same way as every other probe; `rev-parse` does not accept
+    a terminator here, so the tree lookup instead resolves through the
+    branch's full ref path, which never begins with `-`. Scripting only the
+    corrected argv means a regression -- the bare name reappearing in either
+    call -- fails with `ScriptedCommands has no answer for`, not a wrong
+    verdict."""
+    port = make_port(
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/heads/-m", "-m"),
+        ],
+        counts={"origin/main..-m": "2"},
+        extra={
+            "cherry origin/main -- -m": ok("+ aaa\n+ bbb"),
+            "merge-base origin/main -- -m": ok("basesha"),
+            "rev-parse refs/heads/-m^{tree}": ok("treesha"),
+            "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
+            "cherry origin/main synthsha": ok("- synthsha"),
+        },
+    )
+    branch = next(b for b in run(port).branches if b.name == "-m")
+    assert branch.merged and branch.merge_evidence is MergeEvidence.SQUASH_EQUAL
+
+
 def test_a_genuinely_unmerged_branch_proves_nothing() -> None:
     port = _tier_port(
         **{
             "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok("+ synthsha"),
@@ -832,14 +860,14 @@ def test_a_genuinely_unmerged_branch_proves_nothing() -> None:
 
 def test_squash_probe_gives_up_cleanly_when_git_will_not_answer() -> None:
     for broken in (
-        {"merge-base origin/main feat": fail("no merge base")},
+        {"merge-base origin/main -- feat": fail("no merge base")},
         {"rev-parse feat^{tree}": fail("bad object")},
         {"commit-tree": fail("cannot write")},
     ):
         port = _tier_port(
             **{
                 "cherry origin/main -- feat": ok("+ aaa"),
-                "merge-base origin/main feat": ok("basesha"),
+                "merge-base origin/main -- feat": ok("basesha"),
                 "rev-parse feat^{tree}": ok("treesha"),
                 "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
                 "cherry origin/main synthsha": ok("+ x"),
@@ -856,7 +884,7 @@ def test_an_empty_cherry_result_does_not_count_as_merged() -> None:
     port = _tier_port(
         **{
             "cherry origin/main -- feat": ok(""),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok(""),
@@ -972,7 +1000,7 @@ def test_a_failing_rev_list_is_unknown_and_never_proves_a_merge() -> None:
     port = _tier_port(
         **{
             "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main feat": ok("basesha"),
+            "merge-base origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
             "cherry origin/main synthsha": ok("+ synthsha"),

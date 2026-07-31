@@ -415,11 +415,25 @@ def _squash_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str)
     up with what a squash merge actually produced.
 
     `commit-tree` writes a loose object. It is unreachable and gc collects it;
-    nothing in the repo's refs is touched."""
-    base = port.git(["merge-base", base_ref, name], cwd=cwd)
+    nothing in the repo's refs is touched.
+
+    A name beginning with `-` -- `refs/heads/-m` is a legal ref that
+    `update-ref` or a remote push can create -- is otherwise read by git as a
+    switch. `--` genuinely terminates `merge-base`'s option parsing, so it is
+    applied unconditionally, matching every other probe in this module.
+    `rev-parse` has no terminator that survives here: both `--` and
+    `--end-of-options` are echoed back as a literal output line rather than
+    consumed, so the tree lookup instead names the branch by its full ref path
+    when the short name would otherwise be misread -- a path never begins with
+    `-`. That substitution is conditional, not unconditional like the one
+    above: a remote-tracking branch's short name always carries its remote
+    first (`origin/feat`, never bare `feat`) and already resolves correctly,
+    while `refs/heads/` would be the wrong prefix for it."""
+    base = port.git(["merge-base", base_ref, "--", name], cwd=cwd)
     if not base.ok or not base.out:
         return False
-    tree = port.git(["rev-parse", f"{name}^{{tree}}"], cwd=cwd)
+    ref = f"refs/heads/{name}" if name.startswith("-") else name
+    tree = port.git(["rev-parse", f"{ref}^{{tree}}"], cwd=cwd)
     if not tree.ok or not tree.out:
         return False
     synthetic = port.git(
