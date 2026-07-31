@@ -230,6 +230,49 @@ must pass before push.
   `pr_closed` leaves the ref behind, so a re-queued item still passes — the
   check is deliberately permissive there rather than risking a false rejection.
 
+- **The attempt ledger counts and never caps.** `fix_attempted` folds a
+  per-kind count onto `Item.attempts`; `ci_fix_budget`/`rebase_budget` are
+  `config` numbers the `attempt_budget_spent` condition compares those counts
+  against — the same caller-seeded-threshold shape as `stalemate_risk_round`,
+  and the same tolerance for garbage config, with one difference: a budget of
+  `0` is honored (the caller spends nothing on that kind) where a stalemate
+  window of `0` rounds is meaningless and falls back. Nothing here refuses an
+  attempt, so a count past its budget keeps climbing and the condition keeps
+  reporting the larger number; refusing, parking, and spending the budget
+  belong to the decision layer. Two consequences worth not re-litigating:
+  - *An attempt is gated on an **open, identifiable** PR, keyed on the ref and
+    not on status.* A ref whose number did not survive the log names no cycle
+    anything can act on, so it does not pass — the same predicate the closure
+    guard requires. Status cannot answer it — `in-progress` is reachable both with an
+    open PR (via `item_resumed`) and with a closed one (via `pr_closed`) — so
+    `pr_closed` marks `PrRef.closed` and the gate reads that. This is where the
+    attempt rule and the failure-axis park rule deliberately diverge despite
+    reading the same field: a park states that this item's PR did not merge,
+    which stays true after the PR closes, while an attempt claims to be fixing
+    one that is still open. Hence the ref survives a close for the park's sake
+    and is marked closed for the attempt's.
+  - *The ledger's lifetime is one PR cycle.* `pr_closed` clears it (a new PR
+    must not inherit spent budget) and `item_enqueued` clears it (leaving the
+    parking lot deliberately grants a fresh window). No other event does —
+    parking itself does not, so the count survives to be read at the park.
+- **`item_enqueued.closure` records an abandoned PR on the lot's one exit.**
+  Abandonment ends a PR cycle from inside the parking lot, and the alternative
+  — letting `pr_closed` fire on a parked item — would give that event a new
+  source state and a second exit from the lot. The optional `closure` payload
+  instead adds the closed-ledger entry and drops the PR ref (with the review
+  history belonging to it) as the item re-enters play; without it the ref
+  survives, which is what makes a plain re-enqueue resume the same PR. The
+  closure must name the PR the item actually holds — the boundary can only
+  check that the number is an integer, so a mistyped one would record a
+  closure for a PR this item never had *and* discard the live ref the park
+  rule and the attempt gate read. A mismatch is accept-and-flag: the closure
+  does not apply, the enqueue still does. Note what "an integer" has to mean
+  here: `bool` is an `int` subclass and `True == 1`, so a replayed `"pr": true`
+  would satisfy both the type check and the match against PR 1. Every `pr`
+  field in the fold therefore goes through `_int`, which excludes bools — the
+  same exclusion `payloads._is_int` makes at the boundary that replayed events
+  never cross.
+
 ## Tests
 
 - Behavioural, not tautological — each test pins a coded transition-table

@@ -10,16 +10,28 @@
         typecheck-vizsuite cov-vizsuite audit-vizsuite verify-entry-vizsuite \
         ci-grind test-grind lint-grind format-check-grind \
         typecheck-grind cov-grind audit-grind verify-entry-grind \
-        spec-lint content-lint content-tests
+        ci-gitclean test-gitclean lint-gitclean format-check-gitclean \
+        typecheck-gitclean cov-gitclean audit-gitclean verify-entry-gitclean \
+        ci-executor test-executor lint-executor format-check-executor \
+        typecheck-executor cov-executor audit-executor verify-entry-executor \
+        spec-lint test-skills content-lint content-tests
 
 INSTALLER := packages/installer
 PRGROOM := packages/prgroom
 WORKCLI := packages/workcli
 VIZSUITE := packages/vizsuite
 GRIND := packages/grind
+GITCLEAN := packages/gitclean
+EXECUTOR := packages/executor
 
-ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind lint-actions spec-lint \
-    content-lint content-tests
+# test-skills and content-tests overlap: both run suites under src/. Kept
+# together deliberately and temporarily, because neither is a superset of the
+# other today — test-skills finds Python suites only but asserts each reports a
+# clean pass, while content-tests covers .py/.js/.sh and additionally requires
+# every shipped script to have a suite. Dropping either loses a real check. See
+# the reconciliation work item; the intended end state is one gate.
+ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind ci-gitclean ci-executor \
+    lint-actions spec-lint test-skills content-lint content-tests
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
               cov-installer audit-installer verify-entry-installer
@@ -185,3 +197,77 @@ audit-grind:
 # grind venv where the entry point is installed is selected.
 verify-entry-grind:
 	uv --project $(GRIND) run grind --help > /dev/null
+
+# ── gitclean (mirrors the ci-grind block one-for-one; enforced via the
+# top-level `ci:` aggregate). ──
+ci-gitclean: lint-gitclean format-check-gitclean typecheck-gitclean \
+             cov-gitclean audit-gitclean verify-entry-gitclean
+
+test-gitclean:
+	cd $(GITCLEAN) && uv run pytest -q
+lint-gitclean:
+	cd $(GITCLEAN) && uv run ruff check
+format-check-gitclean:
+	cd $(GITCLEAN) && uv run ruff format --check
+typecheck-gitclean:
+	cd $(GITCLEAN) && uv run mypy --strict src
+cov-gitclean:
+	cd $(GITCLEAN) && uv run pytest --cov --cov-report=term-missing
+audit-gitclean:
+	cd $(GITCLEAN) && uv sync --frozen && uv run pip-audit
+# verify-entry-gitclean asserts the console-script entry point resolves and the
+# CLI root parses (`gitclean --help` exits 0). Run via `uv --project` so the
+# gitclean venv where the entry point is installed is selected.
+verify-entry-gitclean:
+	uv --project $(GITCLEAN) run gitclean --help > /dev/null
+
+# ── executor (mirrors the ci-grind block one-for-one; enforced via the
+# top-level `ci:` aggregate). ──
+ci-executor: lint-executor format-check-executor typecheck-executor \
+             cov-executor audit-executor verify-entry-executor
+
+test-executor:
+	cd $(EXECUTOR) && uv run pytest -q
+lint-executor:
+	cd $(EXECUTOR) && uv run ruff check
+format-check-executor:
+	cd $(EXECUTOR) && uv run ruff format --check
+typecheck-executor:
+	cd $(EXECUTOR) && uv run mypy --strict src
+cov-executor:
+	cd $(EXECUTOR) && uv run pytest --cov --cov-report=term-missing
+audit-executor:
+	cd $(EXECUTOR) && uv sync --frozen && uv run pip-audit
+# verify-entry-executor asserts the console-script entry point resolves and
+# the CLI root parses (`executor --help` exits 0). Run via `uv --project` so
+# the executor venv where the entry point is installed is selected.
+verify-entry-executor:
+	uv --project $(EXECUTOR) run executor --help > /dev/null
+
+# ── skills ──
+# Skills under src/ ship their own tests as PEP-723 scripts, run from their own
+# directory because each resolves the asset it guards relative to itself. The
+# suites are discovered rather than listed: a skill added with tests nobody
+# wired up is gated by nothing, which is the state this target exists to end.
+# Discovery finding zero suites fails the target -- a silent pass over an empty
+# set reads exactly like a green gate.
+test-skills:
+	@set -e; \
+	log=$$(mktemp); \
+	trap 'rm -f "$$log"' EXIT; \
+	found=0; \
+	for suite in $$(find src \( -name '*_test.py' -o -name 'test_*.py' \) | sort); do \
+	  found=$$((found + 1)); \
+	  echo "── $$suite"; \
+	  ok=0; \
+	  ( cd $$(dirname $$suite) && uv run ./$$(basename $$suite) ) > "$$log" 2>&1 || ok=1; \
+	  cat "$$log"; \
+	  [ $$ok -eq 0 ] || { echo "$$suite exited non-zero" >&2; exit 1; }; \
+	  grep -qE '^[0-9]+ passed' "$$log" || { \
+	    echo "$$suite reported no clean pass: a suite whose tests never run exits 0, and a" >&2; \
+	    echo "summary that names failures first is not a pass however it exited" >&2; exit 1; }; \
+	done; \
+	if [ $$found -eq 0 ]; then \
+	  echo "test-skills found no suites under src/ -- discovery is broken" >&2; \
+	  exit 1; \
+	fi

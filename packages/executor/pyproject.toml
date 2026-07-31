@@ -1,0 +1,85 @@
+[project]
+name = "executor"
+version = "0.1.0"
+description = "executor — the decision layer pairing grind events with work tracker verbs."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+executor = "executor.cli:entry"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/executor"]
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-xdist",
+  "pytest-cov",
+  "ruff",
+  "mypy",
+  "pip-audit",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+  "E", "W", "F",
+  "I",
+  "B",
+  "UP",
+  "SIM",
+  "S",
+  "RET", "ARG", "PTH",
+  "TRY",
+  "RUF",
+  "N",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# S101: pytest's `assert` is the standard assertion mechanism. TRY003: a fake
+# that fails loudly must name what the script did not cover, in the failure
+# itself -- that is the whole diagnostic.
+"tests/**" = ["S101", "TRY003"]
+# S603/S607: the ONLY module that shells out. argv is always a fixed list with
+# no shell; `grind`/`work` are resolved from PATH deliberately (the deployed
+# console scripts), never pinned to an absolute path.
+"src/executor/ports.py" = ["S603", "S607", "TRY003"]
+# TRY003: an ExecutorError's message IS the envelope's `message` field, read by
+# an operator deciding whether to retry. Routing it through a message-builder
+# would hide which port failed and what would repair it.
+"src/executor/envelope.py" = ["TRY003"]
+"src/executor/pairing.py" = ["TRY003"]
+"src/executor/rules.py" = ["TRY003"]
+"src/executor/enact.py" = ["TRY003"]
+"src/executor/state.py" = ["TRY003"]
+"src/executor/cli.py" = ["TRY003"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+
+[tool.mypy]
+strict = true
+warn_unreachable = true
+disallow_any_decorated = true
+enable_error_code = ["redundant-expr", "truthy-bool", "possibly-undefined"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/executor"]
+
+[tool.coverage.report]
+fail_under = 90
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "@overload"]
+show_missing = true
+skip_covered = true
