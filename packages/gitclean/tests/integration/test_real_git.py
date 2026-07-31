@@ -210,7 +210,11 @@ def test_a_squash_merged_branch_is_actually_deleted(repo: Path) -> None:
 
 def _with_remote(repo: Path, tmp_path: Path) -> Path:
     bare = tmp_path / "origin.git"
-    SubprocessCommands().git(["init", "-q", "--bare", str(bare)])
+    # `-b main` rather than letting the machine decide: a bare repo's HEAD comes
+    # from `init.defaultBranch`, so on a host that never set it HEAD names a
+    # `master` this fixture then never creates. Publishing it is what
+    # `remote set-head -a` reads, and it fails outright with no branch there.
+    SubprocessCommands().git(["init", "-q", "--bare", "-b", "main", str(bare)])
     git(repo, "remote", "add", "origin", str(bare))
     git(repo, "push", "-q", "-u", "origin", "main")
     return bare
