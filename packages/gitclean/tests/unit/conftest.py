@@ -4,6 +4,13 @@ Every builder defaults to the boring case -- a clean, pushed, unmerged local
 branch -- so each test states only the one fact it is about. A test that reads
 `make_branch(merged=True)` is a test about merge handling; one that spells out
 eleven fields is a test about nothing in particular.
+
+One default is worth knowing before it surprises you: every branch and worktree
+is built at the same commit. That is what makes a worktree pick up its branch's
+merge evidence for free, and it also means a survey containing the trunk marks
+that shared commit as the trunk's, which keeps everything else out of the
+sweep. A test about anything but the trunk gives its branches distinct `head`
+values.
 """
 
 from __future__ import annotations
@@ -47,6 +54,7 @@ def make_pr(
 def make_branch(
     name: str = "feat/thing",
     *,
+    head: str = "0" * 40,
     is_remote: bool = False,
     remote: str | None = None,
     last_activity: str | None = _UNSET,
@@ -64,7 +72,7 @@ def make_branch(
         name=name,
         is_remote=is_remote,
         remote=remote,
-        head="0" * 40,
+        head=head,
         last_activity=iso(1) if last_activity == _UNSET else last_activity,
         upstream=upstream,
         is_default=is_default,
@@ -81,6 +89,7 @@ def make_branch(
 def make_worktree(
     path: str = "/repo/wt",
     *,
+    head: str = "0" * 40,
     branch: str | None = "feat/thing",
     is_main: bool = False,
     locked: bool = False,
@@ -94,11 +103,20 @@ def make_worktree(
     # itself unknown -- the state a test reaches by passing None explicitly.
     # Ignored files are counted but excluded from `dirty`, mirroring survey.
     counts = (dirty_file_count, untracked_file_count, ignored_file_count)
+    if prunable:
+        # Not a convenience. git reports prunable when the recorded path is
+        # merely unreachable, so the survey never runs `status` against it and
+        # records no counts at all. A fixture that left them at zero would
+        # describe a worktree the survey cannot produce -- and would hide a
+        # reason string rendering "None modified file(s)" as though something
+        # had been measured.
+        counts = (None, None, None)
+    dirty_file_count, untracked_file_count, ignored_file_count = counts
     unknown = any(c is None for c in counts)
     return Worktree(
         path=path,
         branch=branch,
-        head="0" * 40,
+        head=head,
         is_main=is_main,
         locked=locked,
         prunable=prunable,
