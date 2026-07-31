@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import shlex
 from collections.abc import Callable, Sequence
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from io import StringIO
@@ -209,7 +210,11 @@ def test_a_squash_merged_branch_is_actually_deleted(repo: Path) -> None:
 
 def _with_remote(repo: Path, tmp_path: Path) -> Path:
     bare = tmp_path / "origin.git"
-    SubprocessCommands().git(["init", "-q", "--bare", str(bare)])
+    # `-b main` rather than letting the machine decide: a bare repo's HEAD comes
+    # from `init.defaultBranch`, so on a host that never set it HEAD names a
+    # `master` this fixture then never creates. Publishing it is what
+    # `remote set-head -a` reads, and it fails outright with no branch there.
+    SubprocessCommands().git(["init", "-q", "--bare", "-b", "main", str(bare)])
     git(repo, "remote", "add", "origin", str(bare))
     git(repo, "push", "-q", "-u", "origin", "main")
     return bare
@@ -824,12 +829,35 @@ class Topology:
     ``deletes`` is what stops a case passing vacuously: a run that swept
     nothing would satisfy any reachability assertion. ``discards`` is the
     commits the deletion is allowed to strand, and it is empty everywhere
-    except the squash case -- everywhere else a stranded commit is work lost.
+    except the shapes that rewrote the work under new hashes -- everywhere else
+    a stranded commit is work lost.
+
+    The rest describe shapes the first six rows had no way to say:
+
+    - ``survives`` names refs that must still resolve afterwards. A row whose
+      point is what the sweep declined to take proves nothing through
+      ``deletes`` alone, and one that takes nothing at all would otherwise
+      assert nothing whatever.
+    - ``also_guard`` is the other repositories this run can reach. A server is
+      a separate object store, and a ref deleted there is still held by this
+      one's tracking cache -- so the local oracle would watch the deletion and
+      report no loss.
+    - ``run_from`` is the directory the CLI runs in. It decides which worktree
+      answers the invoking-worktree question, which decides whether the main
+      checkout is a candidate at all.
+    - ``exit_code`` is what the run is expected to report. A shape where git
+      refuses part of the plan is not a failure of the sweep -- the refusal is
+      the safety story -- but it is an anomaly, and the row says so rather than
+      the matrix assuming every sweep ends clean.
     """
 
     selectors: tuple[str, ...]
     deletes: frozenset[str]
     discards: tuple[str, ...] = ()
+    survives: tuple[str, ...] = ()
+    also_guard: tuple[Path, ...] = ()
+    run_from: Path | None = None
+    exit_code: int = EXIT_OK
 
 
 def _squash_merged(repo: Path) -> Topology:
@@ -867,12 +895,15 @@ def _unmerged_with_remote(repo: Path) -> Topology:
     return Topology(("branch:feat/pushed",), frozenset({"feat/pushed"}))
 
 
-def _merged_branch_beside(repo: Path, name: str) -> None:
+def _merged_branch_beside(repo: Path, name: str, trunk: str = "main") -> None:
     """Something the sweep is entitled to take, so a case about what it leaves
-    alone cannot pass by sweeping nothing at all."""
+    alone cannot pass by sweeping nothing at all.
+
+    ``trunk`` is a parameter because a repository's trunk is not always called
+    main, and the row that says so still needs something merged into it."""
     git(repo, "checkout", "-q", "-b", name)
     commit(repo, f"{name.replace('/', '-')}.txt")
-    git(repo, "checkout", "-q", "main")
+    git(repo, "checkout", "-q", trunk)
     git(repo, "merge", "-q", "--no-ff", "-m", f"merge {name}", name)
 
 
@@ -924,15 +955,259 @@ def _moved_aside_merged_worktree(repo: Path) -> Topology:
     return Topology((), frozenset({"feat/beside-held"}))
 
 
+def _patch_equal_branch(repo: Path) -> Topology:
+    """Cherry-picked onto a trunk that had moved on -- the tier between plain
+    ancestry and the squash probe, and the one no row reached.
+
+    The commit on main is a copy under a different hash, so the originals go
+    the way squashed ones do. Main needs a commit of its own first: replayed
+    onto the same parent with the same tree, the copies would be the same
+    objects, ancestry would settle it, and the shape would collapse into a
+    row that already exists."""
+    git(repo, "checkout", "-q", "-b", "feat/picked")
+    first = commit(repo, "c-one.txt")
+    second = commit(repo, "c-two.txt")
+    git(repo, "checkout", "-q", "main")
+    commit(repo, "meanwhile.txt")
+    git(repo, "cherry-pick", first, second)
+    return Topology((), frozenset({"feat/picked"}), (first, second))
+
+
+def _branch_whose_work_was_backed_out(repo: Path) -> Topology:
+    """Work added on a branch and taken off again on the same branch, while
+    base acquired an empty commit.
+
+    Nothing about this branch was ever merged: base has never held the file,
+    and the two commits are the only copy of it. The tree at the tip is the
+    merge base's tree though, so the squash probe synthesises a commit with an
+    empty diff -- and an empty diff has the same patch id as every other empty
+    diff, so `git cherry` finds it "already in base" the moment base carries an
+    empty commit of its own. Without that commit on base the same branch is
+    reported unproven and left alone, which is what says the evidence is about
+    the empty commit rather than about this branch.
+
+    An empty commit on the trunk is what a build retrigger leaves behind, so
+    the run this shape describes is an ordinary one."""
+    git(repo, "checkout", "-q", "-b", "feat/backed-out")
+    commit(repo, "secret.txt", "the only copy of an afternoon\n")
+    git(repo, "rm", "-q", "--", "secret.txt")
+    git(repo, "commit", "-q", "-m", "back it out for now")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "commit", "-q", "--allow-empty", "-m", "chore: retrigger the build")
+    return Topology((), frozenset(), survives=("refs/heads/feat/backed-out",))
+
+
+def _clean_merged_worktree(repo: Path) -> Topology:
+    """A finished worktree and the branch it holds, both provably merged, the
+    tree holding nothing that is not committed.
+
+    This is what the sweep is for, and every other worktree row is about a
+    removal being declined -- so without it the matrix never watches a worktree
+    actually come out, and a run that stranded something on the way would have
+    no row to fail."""
+    path = _worktree(repo, "wt-finished", "feat/finished")
+    commit(path, "finished.txt")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feat/finished", "feat/finished")
+    return Topology((), frozenset({str(path), "feat/finished"}))
+
+
+def _detached_worktree_at_a_merged_tip(repo: Path) -> Topology:
+    """The control for the orphan rows: the same detached checkout, this time
+    at a commit a merged branch names. Nothing is at risk, so a run that
+    declined this one would be refusing the ordinary case the reachability
+    check exists to permit."""
+    _merged_branch_beside(repo, "feat/tip")
+    path = repo.parent / "wt-detached"
+    git(repo, "worktree", "add", "-q", "--detach", str(path), "feat/tip")
+    return Topology((), frozenset({str(path), "feat/tip"}))
+
+
+def _worktree_holding_an_edited_file(repo: Path) -> Topology:
+    """Merged, so the commit question is settled, and a *tracked* file has been
+    edited since -- the half of dirt the untracked case does not cover.
+
+    The edit is in no commit, no reflog and no remote, so the tree stands. Its
+    branch cannot go either while a worktree holds it, which is the one shape
+    here where a bare sweep finishes clean having deliberately left something
+    behind."""
+    _merged_branch_beside(repo, "feat/beside-edited")
+    path = _worktree(repo, "wt-edited", "feat/edited")
+    commit(path, "edited.txt")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feat/edited", "feat/edited")
+    (path / "README.md").write_text("edited, never committed\n", encoding="utf-8")
+    return Topology((), frozenset({"feat/beside-edited"}), survives=("refs/heads/feat/edited",))
+
+
+def _worktree_holding_a_stash(repo: Path) -> Topology:
+    """A merged worktree whose only uncommitted work has been stashed.
+
+    `git status` calls that tree clean -- a stash is not a working-tree change
+    -- so the dirt question waves it through and the tree comes out. What keeps
+    that from costing anything is that the stash belongs to the repository
+    rather than to the worktree: its ref outlives the removal, and so do the
+    commits under it. The row is here because "the tree looks empty" is the
+    reading that stranded an orphan commit once already."""
+    path = _worktree(repo, "wt-stashed", "feat/stashed")
+    commit(path, "stashed.txt")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feat/stashed", "feat/stashed")
+    (path / "stashed.txt").write_text("an afternoon, set aside\n", encoding="utf-8")
+    git(path, "stash", "push", "-q", "-m", "set aside")
+    return Topology((), frozenset({str(path), "feat/stashed"}))
+
+
+def _locked_merged_worktree(repo: Path) -> Topology:
+    """A locked worktree, on a merged branch, with a clean tree.
+
+    Every one of the six questions waves it through -- a lock is recorded as a
+    reason and is not dirt -- so git's own refusal is the whole of what is
+    left, and it holds: the tree stands, the branch it occupies stands with it,
+    and the run reports an anomaly rather than a success line. Nothing is lost,
+    and the row exists to say that the report is what carries the news."""
+    _merged_branch_beside(repo, "feat/beside-locked")
+    path = _worktree(repo, "wt-locked", "feat/locked")
+    commit(path, "locked.txt")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feat/locked", "feat/locked")
+    git(repo, "worktree", "lock", str(path))
+    return Topology(
+        (),
+        frozenset({"feat/beside-locked"}),
+        survives=("refs/heads/feat/locked",),
+        exit_code=EXIT_ANOMALY,
+    )
+
+
+def _branch_parked_on_the_trunk_tip(repo: Path) -> Topology:
+    """A branch cut from the trunk and never committed to.
+
+    Ancestry proves it merged -- there is nothing on it to be unmerged -- and
+    its name is not the trunk's, so matching the trunk by commit is the only
+    thing holding it back. Deleting it would cost nothing this repository can
+    measure, which is exactly why nothing but that rule refuses."""
+    _merged_branch_beside(repo, "feat/beside-parked")
+    git(repo, "branch", "feat/parked")
+    return Topology((), frozenset({"feat/beside-parked"}), survives=("refs/heads/feat/parked",))
+
+
+def _trunk_named_master(repo: Path) -> Topology:
+    """No remote, and a trunk called master rather than main -- the resolution
+    tier that answers when nothing is published. If it stopped answering, the
+    trunk would read as an ordinary merged branch and a bare sweep would take
+    the repository's whole history with it."""
+    git(repo, "branch", "-m", "main", "master")
+    _merged_branch_beside(repo, "feat/on-master", trunk="master")
+    return Topology((), frozenset({"feat/on-master"}), survives=("refs/heads/master",))
+
+
+def _trunk_across_the_remote_boundary(repo: Path) -> Topology:
+    """A squash-merged branch that was also pushed, in a repository whose trunk
+    origin publishes.
+
+    Three claims at once: the local branch is taken, the server's copy of it is
+    not, and neither `main` nor `origin/main` is mistaken for cruft. The squash
+    is what makes the server worth guarding in its own right -- its
+    refs/heads/feat holds the only copy of those commits, this repository's
+    tracking ref answers for them locally, and a local oracle would therefore
+    watch that ref be deleted and report nothing lost."""
+    bare = _with_remote(repo, repo.parent)
+    git(repo, "remote", "set-head", "origin", "-a")
+    git(repo, "checkout", "-q", "-b", "feat/pushed")
+    commit(repo, "r-one.txt")
+    commit(repo, "r-two.txt")
+    git(repo, "push", "-q", "-u", "origin", "feat/pushed")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--squash", "feat/pushed")
+    git(repo, "commit", "-q", "-m", "squashed feat/pushed")
+    git(repo, "push", "-q", "origin", "main")
+    git(repo, "fetch", "-q", "origin")
+    return Topology(
+        (),
+        frozenset({"feat/pushed"}),
+        survives=("refs/heads/main", "refs/remotes/origin/feat/pushed"),
+        also_guard=(bare,),
+    )
+
+
+def _no_resolvable_default_branch(repo: Path) -> Topology:
+    """A trunk called neither main nor master, with no remote publishing one.
+
+    Nothing here can be told apart from the trunk, so nothing is swept -- and
+    the branch that is genuinely merged into it stays too, which is what makes
+    this a measurement rather than an empty run. The reason a reader sees on
+    each row is the first question's, not the trunk one's: every probe is
+    measured against a ref that does not resolve, so nothing gets as far as
+    being proven merged."""
+    _merged_branch_beside(repo, "dev")
+    git(repo, "branch", "-m", "main", "trunk")
+    return Topology((), frozenset(), survives=("refs/heads/trunk", "refs/heads/dev"))
+
+
+def _unmerged_worktree(repo: Path) -> Topology:
+    """The ordinary working worktree: clean, on a branch carrying commits of
+    its own. A clean tree says the files are committed and nothing more, so the
+    first question stops the tree and its branch together -- the shape a sweep
+    meets most often, and the one it must never take."""
+    _merged_branch_beside(repo, "feat/beside-live")
+    path = _worktree(repo, "wt-live", "feat/live")
+    commit(path, "live.txt")
+    return Topology((), frozenset({"feat/beside-live"}), survives=("refs/heads/feat/live",))
+
+
+def _main_worktree_seen_from_a_linked_one(repo: Path) -> Topology:
+    """The run executing somewhere other than the main checkout, which is how a
+    worktree-per-task workflow uses it.
+
+    The invoking-worktree question then answers for the linked tree, and the
+    main checkout -- parked on a branch that is merged, with a clean tree --
+    clears all six. git refuses to remove a main working tree, and that refusal
+    is the whole of what stands between a bare sweep and the directory the
+    repository lives in."""
+    _merged_branch_beside(repo, "feat/beside-main")
+    _merged_branch_beside(repo, "feat/parked-main")
+    git(repo, "checkout", "-q", "feat/parked-main")
+    path = _worktree(repo, "wt-running", "feat/running")
+    commit(path, "running.txt")
+    return Topology(
+        (),
+        frozenset({"feat/beside-main"}),
+        survives=("refs/heads/feat/parked-main",),
+        run_from=path,
+        exit_code=EXIT_ANOMALY,
+    )
+
+
 @pytest.mark.parametrize(
     "build",
     [
         pytest.param(_squash_merged, id="squash-merged-branch"),
         pytest.param(_truly_merged, id="truly-merged-branch"),
+        pytest.param(_patch_equal_branch, id="cherry-picked-branch"),
+        pytest.param(
+            _branch_whose_work_was_backed_out,
+            id="branch-whose-work-was-backed-out-on-itself",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="a branch whose tip tree is its merge base's tree makes the squash "
+                "probe synthesise a commit with an empty diff, and an empty diff shares its "
+                "patch id with every other empty diff -- so any empty commit base picked up "
+                "after the fork reads as proof, and a bare sweep deletes the only copy of "
+                "the work the branch backed out",
+            ),
+        ),
         pytest.param(_unmerged_with_remote, id="unmerged-branch-with-remote-copy"),
         pytest.param(_detached_orphan_worktree, id="detached-worktree-holding-an-orphan-commit"),
         pytest.param(_moved_aside_orphan_worktree, id="moved-aside-detached-worktree"),
         pytest.param(_moved_aside_merged_worktree, id="moved-aside-worktree-on-a-merged-branch"),
+        pytest.param(_clean_merged_worktree, id="clean-worktree-on-a-merged-branch"),
+        pytest.param(_detached_worktree_at_a_merged_tip, id="detached-worktree-at-a-merged-tip"),
+        pytest.param(_worktree_holding_an_edited_file, id="worktree-holding-an-edited-file"),
+        pytest.param(_worktree_holding_a_stash, id="worktree-holding-a-stash"),
+        pytest.param(_locked_merged_worktree, id="locked-worktree-on-a-merged-branch"),
+        pytest.param(_unmerged_worktree, id="clean-worktree-on-an-unmerged-branch"),
+        pytest.param(_branch_parked_on_the_trunk_tip, id="branch-parked-on-the-trunk-tip"),
+        pytest.param(_trunk_named_master, id="trunk-named-master"),
+        pytest.param(_trunk_across_the_remote_boundary, id="trunk-across-the-remote-boundary"),
+        pytest.param(_no_resolvable_default_branch, id="no-resolvable-default-branch"),
+        pytest.param(_main_worktree_seen_from_a_linked_one, id="main-worktree-from-a-linked-one"),
     ],
 )
 def test_a_sweep_strands_only_the_commits_it_proved_redundant(
@@ -942,16 +1217,25 @@ def test_a_sweep_strands_only_the_commits_it_proved_redundant(
 
     Each row is a topology a reviewer had to imagine before anyone could write
     a test about it. The guard needs nobody to imagine the consequence: it
-    reads the commit graph before and after and says what the run cost."""
+    reads the commit graph before and after and says what the run cost.
+
+    Every row drives a bare sweep but one, and that one is named in its own
+    builder: a sweep is the run with no per-target authorisation behind it, so
+    it is where the shapes nobody enumerated do their damage."""
     topology = build(repo)
 
-    with reachability_guard(repo) as guard:
-        payload = report(repo, "--cleanup", *topology.selectors)
+    with ExitStack() as guards:
+        guard = guards.enter_context(reachability_guard(repo))
+        for elsewhere in topology.also_guard:
+            guards.enter_context(reachability_guard(elsewhere))
+        payload = report(topology.run_from or repo, "--cleanup", *topology.selectors)
         guard.expect_unreachable(*topology.discards)
 
-    assert payload["_exit"] == EXIT_OK
+    assert payload["_exit"] == topology.exit_code, anomaly_lines(payload)
     deletions = payload["execution"]["deletions"]  # type: ignore[index]
     assert {d["name"] for d in deletions if d["deleted"]} == topology.deletes
+    for ref in topology.survives:
+        assert git(repo, "for-each-ref", "--format=%(refname)", ref) == ref
 
 
 # -- the port itself ----------------------------------------------------------
