@@ -135,7 +135,7 @@ def stage_namespace(
 
     items: list[StagedItem] = []
     for entry in sorted(src_dir.iterdir()):
-        if ignore.excludes(entry.name, is_dir=entry.is_dir()):
+        if ignore.excludes(entry.name, is_dir=entry.is_dir(), at_root=True):
             continue
         kind = classify_file(entry, namespace)
         dest_name = strip_template_suffix(Path(entry.name))
