@@ -1,3 +1,18 @@
+---
+admission:
+  provides: The task-profile-to-model routing table for Codex delegation, and the mandate to reach Codex through the companion plugin runtime rather than the raw `codex` binary.
+  cost: Always-on rule in every session where the Codex plugin is detected; the model table needs a refresh whenever OpenAI reprices, renames, or retires a model.
+  remove_when: The Codex plugin ships its own routing guidance in its deployed surface, or Codex delegation is retired.
+---
+
+<!--
+Source: authored with the codex plugin scaffolding; admitted 2026-07-31 on explicit user
+instruction as the Codex leg of the delegation routing layer — the delegation rule seeds substrate
+choice, and each substrate's own rule or skill carries its "when".
+Not run through admit-request: admitted on explicit user instruction; the record above is authored,
+not gate-issued.
+-->
+
 # Codex Routing
 
 When delegating to Codex, always go through the Claude Code Codex plugin — never the raw `codex` binary.

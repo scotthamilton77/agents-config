@@ -68,4 +68,4 @@ be discovered, activated, and still install nothing.
 
 | Plugin | Auto-detect footprint | Adapter | What it installs |
 |--------|----------------------|---------|-----------------|
-| `codex` | `~/.codex/` or `codex` on PATH | generic | Nothing today — its one rule carries no `admission:` record, so the gate drops it |
+| `codex` | `~/.codex/` or `codex` on PATH | generic | `codex-routing.md` — the Codex model routing table and companion-runtime invocation contract (admitted, appends into `~/.claude/rules/`) |

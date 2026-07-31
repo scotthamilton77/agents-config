@@ -1,30 +1,28 @@
 ---
 name: dispatching-subagents
-description: Use when handing work to a subagent or running repeated rounds of adversarial review over a change. Apply whenever you are about to write a brief for delegated work, split a task across agents, dispatch a fix and re-review it, or decide whether to run another round or stop — and whenever a delegated agent built the wrong thing, went idle without delivering its report, argued with a brief, a review re-raises findings already settled, or rounds keep finding defects and you cannot tell whether the change or your own earlier fixes are producing them. Not for validating a single round's verdict artifact.
+description: Use when handing work to a subagent. Apply whenever you are about to write a brief for delegated work, split a task across agents, or choose which substrate — a native subagent or workflow, an OpenRouter-hosted model, Codex — should run a delegated task; and whenever a delegated agent built the wrong thing, went idle without delivering its report, or argued with a brief. Not for running rounds of adversarial review over a change (the review-panel skill owns rounds and re-review) and not for validating a round's verdict artifact.
 admission:
-  prevents: Delegated work that costs more than it saves — briefs that encode the dispatcher's wrong mechanism into the agent's implementation, contradictory briefs implemented instead of challenged, finished judgement lost to a delivery step that silently failed, and review loops that stop on a round number while severity is still climbing.
-  cost: Every dispatch carries a constraints-and-ownership section, a refusal clause and a report path; every review round carries a refutation list and an origin tag per finding.
-  remove_when: A run of delegated fixes shows no defect traceable to a prescribed mechanism, no report lost to an idle notification, and two loops in a row terminate on a measured stop signal rather than a judgement call.
+  prevents: Delegated work that costs more than it saves — briefs that encode the dispatcher's wrong mechanism into the agent's implementation, contradictory briefs implemented instead of challenged, finished judgement lost to a delivery step that silently failed, and dispatches routed to a frontier model out of habit because no substrate comparison was ever made.
+  cost: Every dispatch carries a constraints-and-ownership section, a refusal clause and a report path.
+  remove_when: A run of delegated fixes shows no defect traceable to a prescribed mechanism and no report lost to an idle notification.
 ---
 
 <!--
 Source: authored 2026-07-27; body rewritten 2026-07-31 against a two-arm test of three dispatch
-scenarios. Scope is set by that test, not by intuition — baseline agents unaided already choose
-sound agent counts, batch splits, barrier placement and model tiers, so all of that is omitted
-deliberately. Model and effort selection lives in the delegation rule, not here.
+scenarios, then rescoped the same day on user instruction: review-loop content (running rounds,
+refutation carrying, stopping) removed — loops are orchestration, not dispatch craft, and the
+enforceable half of that doctrine already lives in the review-panel / review-verdict contracts
+(disposition ledger, terminal-clean). Scope is set by that test, not by intuition — baseline agents
+unaided already choose sound agent counts, batch splits, barrier placement and model tiers, so all
+of that is omitted deliberately. Model and effort selection lives in the delegation rule, not here.
 Placement: Claude-dependent (subagent orchestration, workflow fan-out), so it lives in the Claude
 tree rather than the shared one.
 Not run through admit-request: added on explicit user instruction, the same path the delegation
 rule took; the record above is authored, not gate-issued.
 -->
 
-Delegation fails in two unrelated ways. A single dispatch fails because the brief smuggled in the
-dispatcher's assumptions, or gave the agent's answer nowhere to land. A loop of dispatches fails
-because nobody fixed the stop condition before fatigue supplied one.
-
-**Writing one dispatch?** The first two sections are the whole skill for you. Stop there.
-**Running rounds over one artifact?** Read on — a loop is dispatches plus a termination rule, and
-the termination rule is the half that gets improvised.
+A dispatch fails in two ways: the brief smuggles in the dispatcher's assumptions, or it gives the
+agent's answer nowhere to land. Everything here guards one of those two.
 
 Nothing here covers how many agents to use, how to batch the work, or where to put a barrier. Your
 own judgement is reliable on those. It is not reliable on what follows.
@@ -76,54 +74,20 @@ and the reasoning was wrong.
 Watch for `add`, `wrap`, `gate`, `move`, `fold`, `use X here`. **The one exception is removal** —
 prescribe a deletion, and say plainly that it is the one place you are prescribing.
 
-## Running rounds
+## Choosing the substrate
 
-**Fix the threat model and restate it every round**, or each round re-argues what counts as a
-threat and reviewers file work already ruled out.
+The native Agent tool is the default. Prefer a workflow over hand-assembled dispatches when stages
+chain or the return is structured and numerous — a captured return value cannot be silently dropped
+by an idle agent. Two substrates run a dispatch on other vendors' weights, and each states when it
+earns its keep in its own frontmatter or rule:
 
-**Carry a refutation list forward.** Every round's brief lists what previous rounds refuted and
-why. Highest-leverage instruction in the loop; it is what stops round-over-round churn.
-
-**Tag every finding by origin — pre-existing, or induced by round N of this loop — from round
-one.** Invented late it yields a handful of data points; specified early it draws a curve. You
-cannot read the stop table without it.
-
-**Prefer a workflow over hand-assembled dispatches when stages chain or the return is structured
-and numerous** — a captured return value cannot be silently dropped by an idle agent. A single
-parallel fan-out over disjoint files does not need one; reach for a workflow when you would
-otherwise be collating by hand across rounds.
-
-## Stopping
-
-Raw finding count is the wrong instrument. It stays flat while the loop is still productive,
-because every round finds something real, so "findings dried up" never arrives — an unaided
-stopping rule reliably invents a round cap instead, which is the thing to resist.
-
-**Read this off the current round's serious findings only.** Minor findings never gate the stop;
-they are the noise the count-based instinct latches onto. Earlier rounds' tags are history, not
-input. If you cannot tell whether a finding is serious, it is. If the serious ones are untagged you
-cannot read the table, and that is the answer: run the round.
-
-| Serious findings this round | The next round |
-| --- | --- |
-| None | Stop — provided this round was itself scoped to the newest diff. If it was not, run that one first. |
-| Any induced by a recent round | Scope it to the newest diff. Guards written to close a fail-open are the least-reviewed code in the tree, including the ones you endorsed in writing. |
-| All pre-existing | Keep the sweep broad. The artifact still has depth. |
-
-The table sets *what the next round looks like*, not merely whether to run one — which is why a
-mixed round needs no tie-break. One induced serious finding decides the scope. The newest diff is
-everything that changed since the previous round, not only the parts you consider risky.
+- **`openrouter-claude-subagent`** — a nested claude on an OpenRouter-hosted model, for work that
+  does not need a frontier model and for opinions that must not share one vendor's blind spots.
+- **The Codex plugin** — work routed to an OpenAI model through the Codex companion runtime; its
+  routing rule carries the model table and the invocation contract.
 
 ## Red flags
-
-Writing a dispatch:
 
 - You are about to write an imperative verb about the code, and the fix is not a deletion.
 - The brief tells the agent what to report and never tells it to send anything.
 - An agent went idle and you are about to re-run its work rather than read its file.
-
-Running a loop:
-
-- You are ending it because you have done enough rounds, because the budget ran out, or because the
-  count stopped rising. Those are the same failure wearing three hats — none is a stop signal.
-- A finding you already refuted is back, and no round brief lists the refutation.
