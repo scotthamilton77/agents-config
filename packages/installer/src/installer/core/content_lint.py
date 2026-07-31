@@ -100,15 +100,19 @@ ADMITTED_ONLY_SUBTREE = Path("src") / "user"
 # dict. Claiming more than that for it would be the same overstatement this
 # module now exists to prevent.
 #
+# An entry naming a directory that is not in the tree is itself a violation
+# (``_stale_exemptions``). That is the retirement condition a bare exemption
+# otherwise lacks: it fails silent, because an exemption matching nothing simply
+# never fires, so without the check a stale entry is found only by someone
+# reading this file.
+#
 # The worked example, should it come back: ``src/kits`` held project-scoped kit
 # content until it was archived. ``cli._run_project`` stages it and returns
 # before ``run_admission_gate`` is ever called, so no kit has ever been measured.
 # That fact alone is not a reason — "the gate does not reach here" describes the
 # gap rather than justifying it. The reason that would carry is a property of
 # kits themselves: ``stage_kits`` mirrors arbitrary files with no namespace
-# concept, so a kit contains no gated artifact class for the bar to judge. Even
-# then the entry needs the condition that would retire it, which is what every
-# other governance record in this repo carries and what a bare exemption cannot.
+# concept, so a kit contains no gated artifact class for the bar to judge.
 UNGATED_ROOTS: dict[Path, str] = {}
 
 # Finding kinds, used only as the first element of a grouping key so that two
@@ -443,6 +447,26 @@ def _staged_dirs(
     return staged
 
 
+def _stale_exemptions(repo_root: Path) -> list[str]:
+    """Register entries naming a directory that is not there.
+
+    An exemption is a judgement about a body of content, so an entry with no
+    content behind it has outlived whatever justified it — and it fails silent,
+    since an exemption that matches nothing simply never fires. That is the
+    mechanism that let ``src/kits`` sit in the register after the directory was
+    archived: the instance was caught by a human reading the code, which is
+    precisely the check that does not run on every build. Retiring the entry
+    without retiring the mechanism would leave the next one to be found the
+    same way.
+    """
+    return sorted(
+        f"{path}: exempted by UNGATED_ROOTS, but no such directory exists — an exemption "
+        "outliving its content is a standing authorisation for whatever lands there next"
+        for path in UNGATED_ROOTS
+        if not (repo_root / path).is_dir()
+    )
+
+
 def _unaccounted_dirs(
     repo_root: Path, *, staged: dict[Path, frozenset[str]], ignore: InstallIgnore
 ) -> list[Path]:
@@ -597,6 +621,7 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
             ignore=ignore,
         )
     )
+    violations.extend(_stale_exemptions(repo_root))
 
     return ContentLintResult(
         violations=violations,

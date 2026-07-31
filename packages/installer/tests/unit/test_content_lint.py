@@ -614,3 +614,18 @@ def test_a_plugin_scope_no_overlay_reads_is_a_violation(tmp_path: Path) -> None:
 
     assert not result.ok
     assert [v for v in result.violations if v.startswith("src/plugins/graphify/docs:")]
+
+
+def test_an_exemption_naming_a_missing_directory_is_a_violation(tmp_path: Path) -> None:
+    """The register fails silent: an exemption matching nothing simply never fires, so a
+    stale entry is found only by someone reading the file. That is how src/kits stayed
+    exempt after it was archived — caught by a human, which is the check that does not
+    run on every build. Retiring the entry without this leaves the mechanism intact.
+    """
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    with _exemption({Path("src") / "longgone": "reason that outlived its content"}):
+        result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith("src/longgone:")]
+    assert [v for v in result.violations if "no such directory exists" in v]
