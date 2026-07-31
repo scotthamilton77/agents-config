@@ -168,6 +168,86 @@ def test_a_branch_with_no_timestamp_says_so_without_drawing_a_conclusion() -> No
     assert not any("abandon" in reason for reason in target.reasons)
 
 
+def test_a_containment_check_that_did_not_answer_is_not_reported_as_a_mismatch() -> None:
+    """git could not place the two commits, which is routine once the remote
+    branch is gone. Printing the mismatch sentence points the reader at a
+    difference between SHAs that no probe established."""
+    branch = make_branch(
+        merge_evidence=MergeEvidence.NONE,
+        pr=make_pr(number=9, state="MERGED", head_oid="b" * 40),
+        pr_covers_tip=None,
+    )
+    reasons = " ".join(_one(branch).reasons)
+    assert "would not say whether PR #9's head" in reasons
+    assert "does not cover what is here" not in reasons
+
+
+def test_a_merge_probe_that_errored_is_named_on_the_branchs_own_row() -> None:
+    """`evidence: none` is the same value whether every tier ran and none fired
+    or two of them errored, and only one of those is a measurement."""
+    branch = make_branch(
+        head=ELSEWHERE,
+        probe_failures=("the squash-equivalence probe against origin/main errored",),
+    )
+    assert any("squash-equivalence probe" in r for r in _one(branch).reasons)
+
+
+def test_a_branch_with_no_pr_evidence_says_so_rather_than_only_the_envelope() -> None:
+    """`repo.gh_error` is one line at the top of the report for a whole list of
+    rows. A reader scanning rows cannot tell that the only tier which sees a
+    squash merge never ran for this one."""
+    survey = make_survey(gh_error="gh not on PATH; merge evidence limited to git")
+    branch = make_branch(head=ELSEWHERE, merge_evidence=MergeEvidence.NONE)
+    assert any("no pull-request evidence was read" in r for r in _one(branch, survey).reasons)
+
+
+def test_a_branch_already_proven_merged_does_not_complain_about_pr_evidence() -> None:
+    """The gap changed no outcome here, and the sentence would only compete
+    with the proof beside it."""
+    survey = make_survey(gh_error="gh not on PATH; merge evidence limited to git")
+    branch = make_branch(head=ELSEWHERE, merge_evidence=MergeEvidence.SQUASH_EQUAL)
+    assert not any("no pull-request evidence" in r for r in _one(branch, survey).reasons)
+
+
+def test_a_branch_the_pr_list_may_not_have_reached_says_so() -> None:
+    """A truncated list leaves a branch with no PR sitting beside a branch that
+    genuinely never had one, and nothing in the index says which is which."""
+    survey = make_survey(pr_evidence_gap="only the 500 most recently updated PRs were read")
+    branch = make_branch(head=ELSEWHERE, merge_evidence=MergeEvidence.NONE)
+    assert any("may not have been read" in r for r in _one(branch, survey).reasons)
+
+
+def test_a_branch_whose_pr_was_read_says_nothing_about_the_gap() -> None:
+    survey = make_survey(pr_evidence_gap="only the 500 most recently updated PRs were read")
+    branch = make_branch(head=ELSEWHERE, pr=make_pr(number=3, state="OPEN"))
+    assert not any("may not have been read" in r for r in _one(branch, survey).reasons)
+
+
+def test_a_worktree_says_when_no_ref_was_read_to_judge_its_commit_against() -> None:
+    """With the ref read itself failed, nothing *could* have proved the commit
+    this worktree holds merged -- which is a different statement from four
+    tiers running and proving nothing."""
+    survey = make_survey(branches_known=False)
+    reasons = _wt(make_worktree(head=ELSEWHERE, branch=None), survey).reasons
+    assert any("no ref could be read" in r for r in reasons)
+
+
+def test_an_unmeasured_ignored_count_is_stated_rather_than_left_as_silence() -> None:
+    """Zero ignored files and an unreadable tree both render as no line at all,
+    and the ignored count is the only warning a reader gets that a sweep takes
+    a .env living nowhere else with it."""
+    target = _wt(make_worktree(head=ELSEWHERE, branch=None, ignored_file_count=None))
+    assert any("was not measured" in r for r in target.reasons)
+    assert "None" not in " ".join(target.reasons)
+
+
+def test_a_worktree_with_no_timestamp_says_its_age_is_unknown() -> None:
+    """Branches said this and worktrees did not, so a `show` that failed left
+    the row silent."""
+    target = _wt(make_worktree(head=ELSEWHERE, branch=None, last_activity=None))
+    assert any("age is unknown" in r for r in target.reasons)
+
+
 def test_an_open_pr_is_named_on_the_row() -> None:
     """It is the single most useful fact for a person deciding what to name,
     and it is a fact -- unlike the verdict that used to be computed from it."""

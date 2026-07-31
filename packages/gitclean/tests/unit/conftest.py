@@ -67,7 +67,13 @@ def make_branch(
     merged: bool = False,
     merge_evidence: MergeEvidence = MergeEvidence.NONE,
     pr: PullRequest | None = None,
+    pr_covers_tip: bool | str | None = _UNSET,
+    probe_failures: tuple[str, ...] = (),
 ) -> Branch:
+    # A PR built against this branch covers its tip, and one built at another
+    # commit does not -- which is git answering, not declining to. A test about
+    # the containment probe failing passes None and means it.
+    covers = (pr is not None and pr.head_oid == head) if pr_covers_tip == _UNSET else pr_covers_tip
     return Branch(
         name=name,
         is_remote=is_remote,
@@ -83,6 +89,8 @@ def make_branch(
         merged=merged,
         merge_evidence=merge_evidence,
         pr=pr,
+        pr_covers_tip=covers,
+        probe_failures=probe_failures,
     )
 
 
@@ -137,6 +145,8 @@ def make_survey(
     default_branch: str = "main",
     default_branch_known: bool = True,
     gh_error: str | None = None,
+    pr_evidence_gap: str | None = None,
+    branches_known: bool = True,
     warnings: tuple[str, ...] = (),
 ) -> Survey:
     return Survey(
@@ -148,8 +158,10 @@ def make_survey(
         current_branch=current_branch,
         gh_available=gh_error is None,
         gh_error=gh_error,
+        pr_evidence_gap=pr_evidence_gap,
         worktrees=worktrees,
         branches=branches,
+        branches_known=branches_known,
         warnings=warnings,
     )
 

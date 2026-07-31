@@ -158,6 +158,22 @@ class Branch:
     merged: bool
     merge_evidence: MergeEvidence
     pr: PullRequest | None
+    pr_covers_tip: bool | None
+    """Whether what the PR decided accounts for this tip. None when no PR was
+    read, or when git would not place the two commits relative to each other --
+    which is routine, since the merged commit is frequently absent locally once
+    the remote branch is gone. False is git answering "no"; None is git not
+    answering, and a report that prints the first sentence for the second case
+    states a comparison nobody made."""
+    probe_failures: tuple[str, ...]
+    """The merge probes that errored instead of answering, in reader-facing
+    prose.
+
+    A tier that could not run leaves ``merge_evidence`` at ``none``, which
+    reads as "nothing proved a merge" -- true, but indistinguishable from
+    "every tier ran and none of them fired". These say which question went
+    unasked, and they travel on the branch so the answer lands on its own row
+    rather than only in the survey's warnings."""
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -175,6 +191,8 @@ class Branch:
             "merged": self.merged,
             "merge_evidence": self.merge_evidence.value,
             "pr": self.pr.as_json() if self.pr else None,
+            "pr_covers_tip": self.pr_covers_tip,
+            "probe_failures": list(self.probe_failures),
         }
 
 
@@ -240,8 +258,24 @@ class Survey:
     """Populated when gh is present but the PR query failed. A survey with no
     PR data downgrades every merge verdict to git-only evidence, which cannot
     see squash merges -- so this is reported, never swallowed."""
+    pr_evidence_gap: str | None
+    """Populated when PR data was read but is known to be short of complete --
+    a truncated list, an entry gh described in terms this does not parse.
+
+    Distinct from ``gh_error``, which means there is no PR data at all. This
+    one says the index answers for some branches and not others, and nothing
+    in it identifies which, so every branch it could not speak for says so on
+    its own row."""
     worktrees: tuple[Worktree, ...]
     branches: tuple[Branch, ...]
+    branches_known: bool
+    """False when the ref read itself failed.
+
+    ``branches`` is then empty, and an empty list of refs is also what a
+    repository with nothing but a trunk produces. The difference matters to
+    every worktree row: with no refs read, nothing *could* have proved the
+    commit a worktree holds merged, and the row has to say that rather than
+    report an absence of proof as though the question had been asked."""
     warnings: tuple[str, ...] = ()
     """Every probe that did not answer, in reader-facing prose.
 
@@ -260,9 +294,11 @@ class Survey:
             "current_branch": self.current_branch,
             "gh_available": self.gh_available,
             "gh_error": self.gh_error,
+            "pr_evidence_gap": self.pr_evidence_gap,
             "warnings": list(self.warnings),
             "worktrees": [w.as_json() for w in self.worktrees],
             "branches": [b.as_json() for b in self.branches],
+            "branches_known": self.branches_known,
         }
 
     def all_warnings(self) -> tuple[str, ...]:

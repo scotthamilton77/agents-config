@@ -152,6 +152,55 @@ def test_the_summary_counts_the_evidence_and_the_sweepable_subset() -> None:
     assert "by_risk" not in summary
 
 
+def half_measured_port() -> ScriptedCommands:
+    """Two worktrees, one statted and one git would not answer for."""
+    port = make_port(
+        refs=[
+            ref_at("refs/heads/main", "main", "a" * 40, head="*"),
+            ref_at("refs/heads/done", "done", "d" * 40),
+        ],
+        worktrees=(
+            f"worktree /repo\nHEAD {'a' * 40}\nbranch refs/heads/main\n"
+            f"\n"
+            f"worktree /repo/wt\nHEAD {'d' * 40}\nbranch refs/heads/done\n"
+        ),
+        counts={"origin/main..done": "0"},
+    )
+    port._git["status --porcelain=v1"] = [ok(""), fail("fatal: cannot open", code=128)]
+    return port
+
+
+def test_an_unanswered_probe_reads_differently_from_a_measured_zero() -> None:
+    """A caller parsing the envelope gets null where a count was never taken,
+    and the row that count belongs to says so in prose. Silence would render
+    the unreadable tree exactly like the empty one."""
+    _, payload = invoke(["--report"], half_measured_port())
+
+    repo = payload["repo"]
+    assert isinstance(repo, dict)
+    worktrees = repo["worktrees"]
+    assert isinstance(worktrees, list)
+    assert worktrees[0]["ignored_file_count"] == 0
+    assert worktrees[1]["ignored_file_count"] is None
+
+    targets = payload["targets"]
+    assert isinstance(targets, list)
+    row = next(t for t in targets if t["id"] == "worktree:/repo/wt")
+    assert any("was not measured" in reason for reason in row["reasons"])
+    assert "unknown" in row["withheld"]
+
+
+def test_the_human_report_states_the_unknown_on_the_row_it_belongs_to() -> None:
+    """The top-level warning says a tree could not be read; the row is where a
+    reader deciding what to name is looking."""
+    _, text = invoke_human(["--report"], half_measured_port())
+
+    assert "could not read the working-tree status of /repo/wt" in text
+    body = text.split("worktree:/repo/wt", 1)[1]
+    assert "could not read this tree's status" in body
+    assert "was not measured" in body
+
+
 def test_a_degraded_gh_read_is_surfaced_in_the_report() -> None:
     port = make_port(refs=[ref_line("refs/heads/main", "main", head="*")], has_gh=False)
     _, payload = invoke(["--report"], port)

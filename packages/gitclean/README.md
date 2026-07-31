@@ -57,7 +57,7 @@ recorded on the branch:
 | `patch_equal` | every commit's patch-id is already in base (rebase, cherry-pick). | yes |
 | `squash_equal` | the branch's tree, replayed as one commit on the merge base, has a patch-id in base. | yes |
 | `pr_closed_unmerged` | a human closed the PR without merging. | **no** — reported only |
-| `none` | nothing proved a merge. Not the same as "not merged": see `repo.gh_error`. | no |
+| `none` | nothing proved a merge. Not the same as "not merged": see `repo.gh_error`, and the row's own `reasons` for a tier that errored rather than answering. | no |
 
 A closed PR says someone stopped wanting the change. It says nothing about
 whether the commits exist anywhere else, and they do not — they are still only
@@ -101,8 +101,13 @@ Without `gh` on PATH there is no squash signal at all. That is reported in
   reader can remediate without re-running anything.
 - **Omissions are named.** A target the sweep selected and then dropped is
   reported under `plan.skipped`; a target that never entered the sweep carries
-  its own `withheld`; anything a probe could not answer lands in the top-level
-  `warnings`.
+  its own `withheld`.
+- **A question git did not answer is stated on the row it concerns.** Counts
+  come back `null` rather than `0`, and the target's `reasons` say which probe
+  went unasked — a tier that errored, a working tree that would not stat, a PR
+  list that came back short. The top-level `warnings` still collect them, but a
+  reader deciding what to name is looking at the row, and there "not measured"
+  has to read differently from "measured zero".
 
 A repository whose default branch cannot be identified — no published
 `origin/HEAD`, no `main`, no `master` — sweeps nothing at all, because the run

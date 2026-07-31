@@ -69,8 +69,17 @@ def resolve_repo(port: CommandPort, cwd: Path | None) -> tuple[str, str] | None:
     return _first_line(root.out), _first_line(common.out)
 
 
-def _ref_exists(port: CommandPort, cwd: Path | None, ref: str) -> bool:
-    return port.git(["show-ref", "--verify", "--quiet", ref], cwd=cwd).ok
+def _ref_exists(port: CommandPort, cwd: Path | None, ref: str) -> bool | None:
+    """Whether the ref resolves, or None when git would not say.
+
+    `show-ref --verify --quiet` exits 1 for a ref that is not there and 128
+    when it could not look -- an unreadable ref store, a repository it will not
+    open. Reading both as "not there" is how the report comes to state that the
+    trunk no longer exists when nothing ever checked."""
+    result = port.git(["show-ref", "--verify", "--quiet", ref], cwd=cwd)
+    if result.ok:
+        return True
+    return False if result.returncode == 1 else None
 
 
 def resolve_default_branch(port: CommandPort, cwd: Path | None) -> tuple[str | None, str | None]:
@@ -96,34 +105,67 @@ def resolve_default_branch(port: CommandPort, cwd: Path | None) -> tuple[str | N
     server-side rename -- and taking it on trust was worse than guessing,
     because the guess was then recorded as knowledge and suppressed the
     warning that would have said no branch is protected. An unproven name is
-    not a default branch, whichever tier produced it."""
+    not a default branch, whichever tier produced it.
+
+    A tier git errored on is reported as unread rather than as absent. The
+    verdict is the same either way -- an unverified name is not a trunk -- but
+    the sentence is not, and telling someone their `main` does not exist when
+    the probe never answered sends them to fix the wrong thing."""
     head = port.git(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], cwd=cwd)
     published = _first_line(head.out).removeprefix("refs/remotes/origin/") if head.ok else ""
-    if published and _ref_exists(port, cwd, f"refs/remotes/origin/{published}"):
-        return published, None
-    for candidate in ("main", "master"):
-        if _ref_exists(port, cwd, f"refs/heads/{candidate}"):
-            return candidate, None
-    detail = (
-        f"origin publishes HEAD as origin/{published}, which no longer exists"
-        if published
-        else "origin has published no HEAD"
-    )
+    candidates = [(published, f"refs/remotes/origin/{published}")] if published else []
+    candidates += [(name, f"refs/heads/{name}") for name in ("main", "master")]
+    unread: list[str] = []
+    for name, ref in candidates:
+        state = _ref_exists(port, cwd, ref)
+        if state:
+            return name, None
+        if state is None:
+            unread.append(ref)
+
+    if unread:
+        detail = f"git would not say whether {' or '.join(unread)} exists, so no tier was ruled out"
+    elif published:
+        detail = (
+            f"origin publishes HEAD as origin/{published}, which no longer exists, and neither "
+            f"main nor master exists"
+        )
+    elif head.ok or head.returncode == 1:
+        detail = "origin has published no HEAD, and neither main nor master exists"
+    else:
+        detail = (
+            f"origin's published HEAD could not be read (exit {head.returncode}), and neither "
+            f"main nor master exists"
+        )
     return None, (
-        f"could not determine this repository's default branch: {detail}, and neither main "
-        f"nor master exists. Nothing here can be told apart from the trunk, so nothing will "
-        f"be swept; publish origin's HEAD (`git remote set-head origin -a`) and re-run, or "
-        f"delete what you want gone by naming it"
+        f"could not determine this repository's default branch: {detail}. Nothing here can be "
+        f"told apart from the trunk, so nothing will be swept; publish origin's HEAD "
+        f"(`git remote set-head origin -a`) and re-run, or delete what you want gone by "
+        f"naming it"
     )
 
 
-def resolve_base_ref(port: CommandPort, cwd: Path | None, default_branch: str) -> str:
-    """Prefer the remote-tracking tip: it is what a PR actually merged into,
-    and a stale local checkout of the default branch would under-report
-    merges."""
-    if _ref_exists(port, cwd, f"refs/remotes/origin/{default_branch}"):
-        return f"origin/{default_branch}"
-    return default_branch
+def resolve_base_ref(
+    port: CommandPort, cwd: Path | None, default_branch: str
+) -> tuple[str, str | None]:
+    """What merges are measured against, plus the warning when the preferred
+    ref could not be read.
+
+    Prefer the remote-tracking tip: it is what a PR actually merged into, and a
+    stale local checkout of the default branch would under-report merges. The
+    local fallback is correct when the remote-tracking ref is genuinely absent
+    and merely quiet when the probe errored -- so the second case says so, and
+    every merge verdict in the report is then known to have been measured
+    against a ref that may be behind."""
+    state = _ref_exists(port, cwd, f"refs/remotes/origin/{default_branch}")
+    if state:
+        return f"origin/{default_branch}", None
+    if state is None:
+        return default_branch, (
+            f"git would not say whether origin/{default_branch} exists, so merges here are "
+            f"measured against the local {default_branch}, which may be behind the remote"
+        )
+    return default_branch, None
 
 
 def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree], list[str]]:
@@ -253,8 +295,13 @@ def read_pull_requests(
     Returns the index, the error that cost us PR evidence entirely, and the
     warning that says the evidence is merely incomplete. They are separate
     because the consequences are: no PR data at all makes every squash merge
-    invisible, whereas a truncated list only leaves the oldest branches to be
-    judged on git evidence alone."""
+    invisible, whereas an incomplete list only leaves some branches to be
+    judged on git evidence alone.
+
+    Incomplete covers two things -- the list was cut off at the limit, or an
+    entry came back in terms this cannot read. Both leave a branch with no PR
+    beside a branch that genuinely has none, which is why the count of what was
+    dropped travels rather than being swallowed by the `continue`."""
     if not port.has_gh():
         return (
             {},
@@ -288,19 +335,24 @@ def read_pull_requests(
     if not isinstance(payload, list):
         return {}, "gh pr list returned a non-list payload; merge evidence limited to git", None
 
-    truncated = (
-        f"only the {_PR_LIMIT} most recently updated pull requests were read; any branch "
-        f"whose PR is older than those is judged on git evidence alone"
+    gaps = (
+        [
+            f"only the {_PR_LIMIT} most recently updated pull requests were read; any branch "
+            f"whose PR is older than those is judged on git evidence alone"
+        ]
         if len(payload) >= _PR_LIMIT
-        else None
+        else []
     )
 
+    unreadable = 0
     index: dict[str, PullRequest] = {}
     for entry in payload:
         if not isinstance(entry, dict):
+            unreadable += 1
             continue
         head = str(entry.get("headRefName", ""))
         if not head:
+            unreadable += 1
             continue
         try:
             number = int(entry.get("number", 0))
@@ -308,6 +360,7 @@ def read_pull_requests(
             # A PR number that is not a number is gh telling us something we
             # do not understand. Skipping the entry costs one branch its PR
             # evidence; letting int() raise costs the caller the whole report.
+            unreadable += 1
             continue
         pr = PullRequest(
             number=number,
@@ -319,7 +372,12 @@ def read_pull_requests(
         existing = index.get(head)
         if existing is None or pr.updated_at > existing.updated_at:
             index[head] = pr
-    return index, None, truncated
+    if unreadable:
+        gaps.append(
+            f"{unreadable} of the {len(payload)} pull requests gh listed could not be read and "
+            f"were left out; a branch of theirs is judged on git evidence alone"
+        )
+    return index, None, "; ".join(gaps) if gaps else None
 
 
 def _merged_set(
@@ -389,24 +447,28 @@ def _unpushed_count(
     return count, None
 
 
-def _patch_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str) -> bool:
+def _patch_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str) -> bool | None:
     """True when every commit on the branch already has a patch-id in base --
-    the rebase and cherry-pick cases that plain ancestry misses."""
+    the rebase and cherry-pick cases that plain ancestry misses. None when the
+    probe errored: `git cherry` has no exit code meaning "no", so a non-zero
+    exit is always a question that went unanswered rather than an answer of
+    not-equivalent."""
     # `--` because the branch name is repo-derived: `refs/heads/-m` is a
     # perfectly legal ref that plumbing and remotes can both create, and
     # without the terminator `git cherry` reads it as a switch and errors.
     result = port.git(["cherry", base_ref, "--", name], cwd=cwd)
     if not result.ok:
-        return False
+        return None
     lines = [line for line in result.stdout.splitlines() if line.strip()]
     if not lines:
         return False
     return all(line.startswith("-") for line in lines)
 
 
-def _squash_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str) -> bool:
+def _squash_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str) -> bool | None:
     """True when the branch's whole tree, replayed as ONE commit on the merge
-    base, has a patch-id already in base.
+    base, has a patch-id already in base. None when one of the four steps
+    errored, since a chain that stopped part-way proves nothing either way.
 
     This is the squash-merge case, and nothing cheaper detects it: the squashed
     commit on base shares no patch-id with any individual branch commit, and
@@ -417,25 +479,29 @@ def _squash_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str)
     `commit-tree` writes a loose object. It is unreachable and gc collects it;
     nothing in the repo's refs is touched."""
     base = port.git(["merge-base", base_ref, name], cwd=cwd)
-    if not base.ok or not base.out:
+    if base.returncode == 1:
+        # git's own answer, not a failed read: these histories share no commit,
+        # so there is no base to replay the tree onto and no squash to find.
         return False
+    if not base.ok or not base.out:
+        return None
     tree = port.git(["rev-parse", f"{name}^{{tree}}"], cwd=cwd)
     if not tree.ok or not tree.out:
-        return False
+        return None
     synthetic = port.git(
         ["commit-tree", _first_line(tree.out), "-p", _first_line(base.out), "-m", "gitclean-probe"],
         cwd=cwd,
     )
     if not synthetic.ok or not synthetic.out:
-        return False
+        return None
     cherry = port.git(["cherry", base_ref, _first_line(synthetic.out)], cwd=cwd)
     if not cherry.ok:
-        return False
+        return None
     lines = [line for line in cherry.stdout.splitlines() if line.strip()]
     return bool(lines) and all(line.startswith("-") for line in lines)
 
 
-def _pr_covers_tip(port: CommandPort, cwd: Path | None, pr: PullRequest, head: str) -> bool:
+def _pr_covers_tip(port: CommandPort, cwd: Path | None, pr: PullRequest, head: str) -> bool | None:
     """True when what the PR decided demonstrably accounts for this tip.
 
     A PR's state describes the commit it had at its head, not every commit the
@@ -448,12 +514,21 @@ def _pr_covers_tip(port: CommandPort, cwd: Path | None, pr: PullRequest, head: s
     does not mean the branch moved on. A tip *ahead of* or divergent from it is
     not covered, and neither is one git cannot place -- the merged commit is
     frequently absent locally once the remote branch is gone, and an
-    unanswerable question falls through to the tiers that read content."""
+    unanswerable question falls through to the tiers that read content.
+
+    Falling through is the same for both, which is why the two used to share an
+    answer. The report is not: False is git saying the merged head does not
+    contain this tip, and None is git never having compared them. Printing the
+    first for the second asserts a comparison of two commits as the reason a
+    branch was held back, when one of them was not even here to compare."""
     if not pr.head_oid or not head:
-        return False
+        return None
     if pr.head_oid == head:
         return True
-    return port.git(["merge-base", "--is-ancestor", head, pr.head_oid], cwd=cwd).ok
+    result = port.git(["merge-base", "--is-ancestor", head, pr.head_oid], cwd=cwd)
+    if result.ok:
+        return True
+    return False if result.returncode == 1 else None
 
 
 def _resolve_merge(
@@ -466,32 +541,57 @@ def _resolve_merge(
     head: str,
     ancestor_merged: bool,
     unmerged_commits: int | None,
-) -> tuple[bool, MergeEvidence]:
-    """Tiered merge proof, cheapest conclusive answer first.
+) -> tuple[bool, MergeEvidence, bool | None, tuple[str, ...]]:
+    """Tiered merge proof, cheapest conclusive answer first: whether the branch
+    is merged, the tier that said so, whether the PR covered the tip, and the
+    probes that errored on the way.
 
     Both PR tiers are gated on containment. Falling through costs only speed:
     the ancestry, patch-id and squash tiers below re-derive the answer from
-    what is actually in the repository, which is the stronger evidence anyway."""
-    if pr is not None and pr.state == "MERGED" and _pr_covers_tip(port, cwd, pr, head):
-        return True, MergeEvidence.PR_MERGED
+    what is actually in the repository, which is the stronger evidence anyway.
+
+    The last two returns exist because falling through is not self-describing.
+    ``MergeEvidence.NONE`` is the same value whether four tiers ran and none
+    fired or two of them errored, and only one of those is a measurement."""
+    covers_tip: bool | None = None
+    failures: list[str] = []
+    if pr is not None and pr.state == "MERGED":
+        covers_tip = _pr_covers_tip(port, cwd, pr, head)
+        if covers_tip:
+            return True, MergeEvidence.PR_MERGED, covers_tip, ()
     if ancestor_merged:
-        return True, MergeEvidence.ANCESTOR
+        return True, MergeEvidence.ANCESTOR, covers_tip, ()
     if unmerged_commits is not None and unmerged_commits == 0:
         # Spelled out rather than folded into `unmerged_commits == 0`: this
         # tier turns a count into proof of a merge, so an unanswered count
         # must visibly fall through instead of quietly satisfying it.
-        return True, MergeEvidence.ANCESTOR
-    if pr is not None and pr.state == "CLOSED" and _pr_covers_tip(port, cwd, pr, head):
-        # Not merged, and this tier authorises nothing: a closed PR says
-        # someone stopped wanting the change, never that its commits exist
-        # anywhere else. It is gated on containment so the report speaks about
-        # what was in the PR rather than about commits that arrived afterwards.
-        return False, MergeEvidence.PR_CLOSED_UNMERGED
-    if _patch_equal(port, cwd, base_ref, name):
-        return True, MergeEvidence.PATCH_EQUAL
-    if _squash_equal(port, cwd, base_ref, name):
-        return True, MergeEvidence.SQUASH_EQUAL
-    return False, MergeEvidence.NONE
+        return True, MergeEvidence.ANCESTOR, covers_tip, ()
+    if pr is not None and pr.state == "CLOSED":
+        covers_tip = _pr_covers_tip(port, cwd, pr, head)
+        if covers_tip:
+            # Not merged, and this tier authorises nothing: a closed PR says
+            # someone stopped wanting the change, never that its commits exist
+            # anywhere else. It is gated on containment so the report speaks
+            # about what was in the PR rather than about commits that arrived
+            # afterwards.
+            return False, MergeEvidence.PR_CLOSED_UNMERGED, covers_tip, ()
+    patch = _patch_equal(port, cwd, base_ref, name)
+    if patch:
+        return True, MergeEvidence.PATCH_EQUAL, covers_tip, ()
+    if patch is None:
+        failures.append(
+            f"the patch-id probe against {base_ref} errored, so a rebased or cherry-picked "
+            f"merge would not have been seen"
+        )
+    squash = _squash_equal(port, cwd, base_ref, name)
+    if squash:
+        return True, MergeEvidence.SQUASH_EQUAL, covers_tip, tuple(failures)
+    if squash is None:
+        failures.append(
+            f"the squash-equivalence probe against {base_ref} errored, so a squash merge "
+            f"would not have been seen"
+        )
+    return False, MergeEvidence.NONE, covers_tip, tuple(failures)
 
 
 def read_branches(
@@ -502,15 +602,24 @@ def read_branches(
     default_branch: str,
     prs: dict[str, PullRequest],
     worktree_by_branch: dict[str, str],
-) -> tuple[list[Branch], list[str]]:
+) -> tuple[list[Branch], list[str], bool]:
+    """The branches, the warnings, and whether the ref read answered at all.
+
+    The last one is not derivable from an empty branch list, and a worktree row
+    needs it: with no refs read there was nothing a commit could have been
+    proven merged against."""
     result = port.git(
         ["for-each-ref", f"--format={_REF_FORMAT}", "refs/heads", "refs/remotes"], cwd=cwd
     )
     if not result.ok:
-        return [], [
-            f"could not list refs (exit {result.returncode}); "
-            f"no branch was surveyed, so this report describes worktrees only"
-        ]
+        return (
+            [],
+            [
+                f"could not list refs (exit {result.returncode}); "
+                f"no branch was surveyed, so this report describes worktrees only"
+            ],
+            False,
+        )
 
     local_merged, local_warning = _merged_set(port, cwd, base_ref, remote=False)
     remote_merged, remote_warning = _merged_set(port, cwd, base_ref, remote=True)
@@ -562,7 +671,7 @@ def read_branches(
         )
         if unpushed_warning:
             warnings.append(unpushed_warning)
-        merged, evidence = _resolve_merge(
+        merged, evidence, covers_tip, probe_failures = _resolve_merge(
             port,
             cwd,
             base_ref,
@@ -572,6 +681,7 @@ def read_branches(
             ancestor_merged=name in (remote_merged if is_remote else local_merged),
             unmerged_commits=unmerged,
         )
+        warnings.extend(f"{name}: {failure}" for failure in probe_failures)
 
         branches.append(
             Branch(
@@ -589,9 +699,11 @@ def read_branches(
                 merged=merged,
                 merge_evidence=evidence,
                 pr=pr,
+                pr_covers_tip=covers_tip,
+                probe_failures=probe_failures,
             )
         )
-    return branches, warnings
+    return branches, warnings, True
 
 
 def _worktree_activity(
@@ -628,20 +740,34 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
     # known to be a guess -- so it protects nothing it cannot prove, and the
     # flag travels with the survey so the run can report that it is guessing.
     default_branch = resolved_default if resolved_default is not None else "main"
-    base_ref = resolve_base_ref(port, cwd, default_branch)
+    base_ref, base_ref_warning = resolve_base_ref(port, cwd, default_branch)
 
     head = port.git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd)
     current = _first_line(head.out) if head.ok else None
     if current == "HEAD":
         current = None
+    # `None` is also what a detached HEAD reports, so a failed read has to say
+    # so out loud or it arrives as a measurement of a checkout on no branch.
+    current_warning = (
+        None
+        if head.ok
+        else (
+            f"could not read which branch this checkout is on (exit {head.returncode}); "
+            f"the current branch is reported as unknown, not as a detached HEAD"
+        )
+    )
 
     worktrees, warnings = read_worktrees(port, cwd)
+    if base_ref_warning is not None:
+        warnings.append(base_ref_warning)
+    if current_warning is not None:
+        warnings.append(current_warning)
     worktree_by_branch = {w.branch: w.path for w in worktrees if w.branch}
 
-    prs, gh_error, pr_truncated = read_pull_requests(port, cwd)
-    if pr_truncated:
-        warnings.append(pr_truncated)
-    branches, branch_warnings = read_branches(
+    prs, gh_error, pr_evidence_gap = read_pull_requests(port, cwd)
+    if pr_evidence_gap:
+        warnings.append(pr_evidence_gap)
+    branches, branch_warnings, branches_known = read_branches(
         port,
         cwd,
         base_ref=base_ref,
@@ -671,7 +797,9 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         current_branch=current,
         gh_available=port.has_gh(),
         gh_error=gh_error,
+        pr_evidence_gap=pr_evidence_gap,
         worktrees=tuple(worktrees),
         branches=tuple(branches),
+        branches_known=branches_known,
         warnings=tuple(warnings),
     )
