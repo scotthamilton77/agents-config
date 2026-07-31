@@ -142,11 +142,12 @@ EXECUTOR_VERBS: tuple[str, ...] = (
     "next",
 )
 
-# Verbs inside the closed universe that no slice has wired yet: `next` is the
-# open-new-work decision surface. It lands by deleting its name from here and
-# adding its parser, so the totality test measures the gap instead of ignoring
-# it.
-PENDING_VERBS: frozenset[str] = frozenset({"next"})
+# Verbs inside the closed universe that no slice has wired yet. Empty: every
+# verb the contract names is now reachable from the CLI. The set stays as the
+# place a future gap is declared -- the totality test measures it rather than
+# ignoring it, and an empty measurement is the strongest reading of that test,
+# not a vacuous one.
+PENDING_VERBS: frozenset[str] = frozenset()
 
 # The table closes the executor's *mutation* surface, so a verb that only
 # reads has no row in it and must not be looked for there. `next` composes two
