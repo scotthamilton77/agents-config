@@ -1,0 +1,105 @@
+---
+name: instructing-subagents
+description: Use when writing the prompt for any delegated agent — a subagent, a workflow stage, a background worker, or a nested harness. Apply whenever you are about to hand work to an agent, split a task across agents, or draft a brief, spec, or dispatch for delegated work; and whenever a delegated agent built the wrong thing, returned noise, went idle without delivering its report, or argued with its brief.
+admission:
+  prevents: Delegated work that returns noise or loses its result — briefs missing an objective, constraints, acceptance criteria, or a commanded report delivery; briefs that prescribe the orchestrator's implementation instead of the outcome; and finished judgement lost to an agent that went idle holding a good report.
+  cost: One skill body loaded at dispatch time; each brief carries a criteria section and a reporting contract.
+  remove_when: A run of dispatches shows well-formed briefs — criteria, boundaries, delivered reports — written without loading this skill.
+---
+
+<!--
+Source: authored 2026-07-31, replacing dispatching-subagents (archived).
+-->
+
+# Instructing Subagents
+
+A subagent inherits none of your context, your conversation, or your intent. The brief is
+the entire interface. Write it as a specification, not a script: define what must be true
+when the work is done, and leave how to the agent — it is closer to the code than you are.
+
+## What a brief carries
+
+Five parts, in this order. Write freely within each; the structure is the contract.
+
+**1. Objective.** The outcome, in a sentence or two: what is true when the agent finishes
+that is not true now. If you cannot state this without describing implementation steps,
+you have not finished thinking about the task — do that first.
+
+**2. Context.** Only what the agent cannot cheaply discover: the observed symptom and
+repro, prior findings, decisions already made and why, pointers to the relevant files or
+docs. Give the working root and every file path **absolute** — a relative path lets the
+agent anchor on the wrong tree and split its work across two. If you don't know the
+agent's working root, tell it to resolve its own and echo the resolved path back.
+
+**3. Constraints and boundaries.** What must still be true when it is done — behaviour
+that must not regress, interfaces that must not change. Ownership: which files are the
+agent's, what is off-limits, and what to do at the boundary (stop and report, not edit).
+Name the verification gate and how to read it: run it standalone and report its exit
+status, never inferred from partial output.
+
+**4. Acceptance criteria.** The checks that make "done" mechanical: tests that pass (and
+failed first, for a fix), gates that exit zero, artifacts that exist. Criteria are
+*conditions*, not steps — "a test reproduces the mangling and passes after the fix," not
+"step 4: add a test." An agent given steps performs them; an agent given criteria
+verifies them.
+
+**5. Reporting contract.** Say what the report must contain — root cause, files changed,
+evidence per criterion, anything left undone. Then command delivery twice: name a file
+path the agent *writes* the report to, and separately instruct — *send this report as
+your final message; do not end your turn without it.* A "report back with…" list
+describes an artifact and commands no action; agents finish, go idle, and deliver
+nothing while holding a good report. Code survives that; judgement does not.
+
+Close every brief with a stop clause: *if this brief is ambiguous, self-contradictory, or
+rests on a premise the code does not support, stop and report rather than guessing —
+assume there may be an error in my framing.* Briefs that demand "all suites green" while
+forbidding the only edit that greens them are the normal case, not an exotic one.
+
+## Altitude: outcomes, not mechanisms
+
+The dispatcher's most expensive failure is a brief that smuggles in its own wrong theory
+of the fix. The boundary: **diagnosis is a noun phrase; mechanism is a verb phrase about
+the code.** State what is true and what must become true, then stop at the verb.
+
+> ✅ "Cache keys are built from endpoint plus params, so two tenants issuing the same
+> query collide on one entry. No tenant may read another's; same-tenant caching must
+> keep working."
+> ❌ "…so add the tenant id to the key."
+
+Even hedged suggestions ("could be a missing `encoding=` on the write") anchor the
+investigation on your guess. Put that energy into constraints and criteria instead.
+Watch for `add`, `wrap`, `gate`, `move`, `use X here`. The one exception is removal —
+prescribe a deletion plainly, and say it is the one place you are prescribing.
+
+## Skeleton
+
+```
+Objective: <the outcome — one or two sentences>
+
+Context: <symptom + repro, prior findings, decisions made>
+Working root: <absolute path>. All paths below are absolute.
+
+Constraints: <what must not regress; interfaces held stable>
+Yours to change: <paths>. Off-limits: <paths> — at the boundary, stop and report.
+Gate: run `<gate>` standalone from <root>; report its exit status.
+
+Acceptance criteria:
+- <condition, mechanically checkable>
+- <condition>
+
+Report: write your report to <absolute path>, covering <contents: evidence per
+criterion, files changed, anything left undone>. Then send the full report as your
+final message — do not end your turn without it.
+
+If any part of this brief is ambiguous, contradicts the code, or blocks its own
+criteria, stop and report instead of proceeding. Assume there may be an error in
+my framing.
+```
+
+## Red flags
+
+- An imperative verb about the code, and the fix is not a deletion.
+- Criteria that read as numbered steps.
+- "Report back with…" and no command to send anything.
+- A relative path in a brief bound for another working tree.
+- An agent went idle and you are about to re-run its work instead of reading its file.
