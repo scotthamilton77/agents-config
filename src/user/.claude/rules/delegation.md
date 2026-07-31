@@ -41,6 +41,6 @@ have verified it. Keep every agent on task, and own what ships.
 
 <instructions-to-subagents>
 A subagent inherits none of your intent, and a vague dispatch returns noise you have to
-redo yourself. Read the `dispatching-subagents` skill before you dispatch: it holds what
-a brief must carry, what it must never prescribe, and how to choose the substrate.
+redo yourself. Read the `instructing-subagents` skill before you dispatch: it holds what
+a brief must carry, what it must never prescribe, and how the agent reports back.
 </instructions-to-subagents>
