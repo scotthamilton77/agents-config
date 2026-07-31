@@ -30,6 +30,14 @@ Discovery walks the filesystem rather than the staging plan on purpose:
 ``.installignore`` keeps test artifacts out of the *deployed* fileset, which
 says nothing about whether they should run. Anything under ``src/`` runs.
 
+That is why this gate's fileset is wider than ``content_lint``'s, which reports
+on the staged tree instead. The two are not meant to converge: whether a shipped
+script has a passing suite is a property of the source file, while the admission
+bar and the surface budget are properties of what deploys. The divergence is
+bounded from the other side — ``content_lint`` fails on a directory under
+``src/`` its staging never reaches, so a tree this module walks and that one
+cannot see is a build failure rather than a silent gap.
+
 Execution is I/O, so it routes through the ``SuiteRunner`` port — the real
 implementation shells out, and tests inject a fake rather than spawning
 processes.

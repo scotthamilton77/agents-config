@@ -56,9 +56,11 @@ spec-lint:
 
 # content-lint stages the real src/ tree for every tool and plugin and runs the
 # deploy-time admission gate over it — the check ci-installer cannot make,
-# because its fixtures are synthetic. Repo-root invocation (no `cd`) so it
-# resolves src/ and .installignore; `uv --project` selects the installer venv.
-# It writes nothing and never invokes the installer.
+# because its fixtures are synthetic. It also fails on a directory under src/
+# that its staging never reaches, so content-tests cannot walk a tree this gate
+# cannot see. Repo-root invocation (no `cd`) so it resolves src/ and
+# .installignore; `uv --project` selects the installer venv. It writes nothing
+# and never invokes the installer.
 content-lint:
 	uv --project $(INSTALLER) run python -m installer.content_lint_cli .
 

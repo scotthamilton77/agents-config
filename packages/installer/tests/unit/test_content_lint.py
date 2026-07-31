@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from installer.core.content_lint import lint_content
+from installer.core.content_lint import UNGATED_ROOTS, lint_content
 from installer.core.io_port import ScriptedIO
 from installer.core.surface_budget import SKILL_BODY_TOKEN_CAP
 from installer.tools.registry import known_tools
@@ -266,6 +266,57 @@ def test_always_on_breach_groups_on_its_text_having_no_artifact_behind_it() -> N
     )
 
     assert collapsed == [f"[claude, codex] {text}"]
+
+
+def test_a_directory_no_staging_root_reaches_is_a_violation(tmp_path: Path) -> None:
+    """The whole gate is scoped to what staging reaches, so a directory it does not
+    reach is content measured by nothing — and it arrives silently, on a green build.
+
+    Asserted alongside the trend numbers because the two reports are independent: an
+    unaccounted directory says nothing about the content that WAS staged, and a run
+    that answered only one of the two questions would be reporting half a verdict.
+    """
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    (repo / "src" / "newthing" / "nested").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith("src/newthing:")]
+    assert not [v for v in result.violations if "nested" in v]  # shallowest only
+    assert result.skills  # the staged content is still measured and reported
+
+
+def test_an_ungated_root_is_exempt_rather_than_unaccounted(tmp_path: Path) -> None:
+    """src/kits holds real content the --project fork stages, and that fork returns
+    before the admission gate ever runs. Reporting it as unmeasured would be true but
+    useless: there is no bar to measure a kit against, and a gate whose only finding
+    is one nobody can act on is a gate people learn to run with a failing exit code.
+    """
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    # The membership is pinned, not just the mechanism: which directories are
+    # exempt from the admission bar is the decision, and widening it silently is
+    # the failure this whole check exists to make impossible.
+    assert set(UNGATED_ROOTS) == {Path("src") / "kits"}
+    for root in UNGATED_ROOTS:
+        (repo / root / "beads" / ".beads").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_a_tool_tree_the_registry_does_not_know_is_caught_one_level_down(
+    tmp_path: Path,
+) -> None:
+    """src/user holds staging roots without being one, so the check descends into it.
+    Stopping at the top level would pass a src/user/.newtool that no adapter reads —
+    the same defect as an unstaged src/newthing, one directory deeper."""
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    (repo / "src" / "user" / ".newtool" / "rules").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith("src/user/.newtool:")]
 
 
 def test_malformed_record_is_a_violation(tmp_path: Path) -> None:
