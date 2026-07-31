@@ -27,7 +27,7 @@ gated (the always-on budget is a user-home concept).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -41,7 +41,14 @@ from installer.core.admission import (
 from installer.core.conflict_audit import conflict_violations
 from installer.core.frontmatter import split_frontmatter
 from installer.core.sanitize import sanitize_text
-from installer.core.surface_budget import always_on_violations, skill_body_violations
+from installer.core.surface_budget import (
+    SkillMeasure,
+    SurfaceMeasure,
+    always_on_violations,
+    measure_always_on,
+    measure_skill_bodies,
+    skill_body_violations,
+)
 
 if TYPE_CHECKING:
     from installer.core.model import StagedItem, StagingPlan, Tool
@@ -49,6 +56,17 @@ if TYPE_CHECKING:
 # The always-on instruction file each tool deploys (Claude/Codex/OpenCode emit
 # AGENTS.md; Gemini emits GEMINI.md). Used to weigh the surface budget.
 _INSTRUCTION_DESTS = (Path("AGENTS.md"), Path("GEMINI.md"))
+
+
+def item_label(tool: Tool, dest: Path) -> str:
+    """The gate's stable name for one staged artifact.
+
+    Every ``skipped`` entry, ``violations`` message, and measurement label is
+    keyed this way, so a caller holding the pre-gate plans can join the gate's
+    findings back to the ``StagedItem`` (and thus the source file) they came
+    from. Sharing the one construction is what keeps that join from rotting.
+    """
+    return f"{tool.value}:{dest}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,11 +77,18 @@ class GateResult:
     the record-less artifacts dropped (reported, not fatal). ``violations`` are
     the fatal breaches (malformed records, budget over-cap, claim conflicts);
     non-empty means the deploy must abort.
+
+    ``surfaces`` and ``skills`` carry the budget numbers the gate measured on
+    the way to those violations — every tool and every admitted skill, whether
+    or not it breached. The gate computes them regardless; returning them lets
+    a caller report headroom as a trend instead of only reporting the cliff.
     """
 
     plans: dict[Tool, StagingPlan]
     skipped: list[str]
     violations: list[str]
+    surfaces: list[SurfaceMeasure] = field(default_factory=list)
+    skills: list[SkillMeasure] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -115,7 +140,7 @@ def run_admission_gate(plans: dict[Tool, StagingPlan]) -> GateResult:
             if not is_gated(item):
                 kept[dest] = item
                 continue
-            label = f"{tool.value}:{dest}"
+            label = item_label(tool, dest)
             overrides = plan.dir_overrides.get(dest, {})
             text = _entry_text(item, overrides)
             verdict = classify(item, text=text)
@@ -149,16 +174,27 @@ def run_admission_gate(plans: dict[Tool, StagingPlan]) -> GateResult:
             kept_overrides.setdefault(dest, {})[Path(DIR_RECORD_FILE)] = entry
         filtered[tool] = replace(plan, items=kept, dir_overrides=kept_overrides)
 
+    surfaces: list[SurfaceMeasure] = []
     for tool, plan in filtered.items():
         rule_bytes = [
             it.content
             for it in plan.items.values()
             if it.namespace == "rules" and it.content is not None
         ]
+        instruction = _instruction_bytes(plan)
+        surfaces.append(
+            measure_always_on(tool=tool.value, instruction=instruction, rules=rule_bytes)
+        )
         violations += always_on_violations(
-            tool=tool.value, instruction=_instruction_bytes(plan), rules=rule_bytes
+            tool=tool.value, instruction=instruction, rules=rule_bytes
         )
     violations += skill_body_violations(skill_bodies)
     violations += conflict_violations(claims_by_artifact)
 
-    return GateResult(plans=filtered, skipped=skipped, violations=violations)
+    return GateResult(
+        plans=filtered,
+        skipped=skipped,
+        violations=violations,
+        surfaces=surfaces,
+        skills=measure_skill_bodies(skill_bodies),
+    )

@@ -14,7 +14,7 @@
         typecheck-gitclean cov-gitclean audit-gitclean verify-entry-gitclean \
         ci-executor test-executor lint-executor format-check-executor \
         typecheck-executor cov-executor audit-executor verify-entry-executor \
-        spec-lint test-skills
+        spec-lint test-skills content-lint content-tests
 
 INSTALLER := packages/installer
 PRGROOM := packages/prgroom
@@ -24,8 +24,14 @@ GRIND := packages/grind
 GITCLEAN := packages/gitclean
 EXECUTOR := packages/executor
 
+# test-skills and content-tests overlap: both run suites under src/. Kept
+# together deliberately and temporarily, because neither is a superset of the
+# other today — test-skills finds Python suites only but asserts each reports a
+# clean pass, while content-tests covers .py/.js/.sh and additionally requires
+# every shipped script to have a suite. Dropping either loses a real check. See
+# the reconciliation work item; the intended end state is one gate.
 ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind ci-gitclean ci-executor \
-    lint-actions spec-lint test-skills
+    lint-actions spec-lint test-skills content-lint content-tests
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
               cov-installer audit-installer verify-entry-installer
@@ -53,6 +59,19 @@ audit-installer:
 # The `uv --project` flag selects the installer venv (AC4, S5-D5/S5-B6).
 spec-lint:
 	uv --project $(INSTALLER) run python -m installer.spec_lint_cli .
+
+# content-lint stages the real src/ tree for every tool and plugin and runs the
+# deploy-time admission gate over it — the check ci-installer cannot make,
+# because its fixtures are synthetic. Repo-root invocation (no `cd`) so it
+# resolves src/ and .installignore; `uv --project` selects the installer venv.
+# It writes nothing and never invokes the installer.
+content-lint:
+	uv --project $(INSTALLER) run python -m installer.content_lint_cli .
+
+# content-tests runs the test suites the skills and hooks ship. Needs `node` and
+# `uv` on PATH: the suites are node:test and PEP 723 scripts respectively.
+content-tests:
+	uv --project $(INSTALLER) run python -m installer.content_tests_cli .
 
 # lint-actions and verify-entry-installer run from the repo root (no `cd`) so
 # they can resolve .github/workflows/ and scripts/ respectively. The
