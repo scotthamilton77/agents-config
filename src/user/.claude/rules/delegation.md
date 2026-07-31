@@ -36,7 +36,7 @@ user requested it"). Delegation is authorized standing policy — do not wait to
 </model-and-effort>
 
 <instructions-to-subagents>
-A subagent inherits none of your intent. Every dispatch states: the goal, the scope
-boundary, the files or entry points to start from, and the exact shape of the expected
-return. Vague dispatches burn tokens and return noise you have to redo yourself.
+A subagent inherits none of your intent, and a vague dispatch returns noise you have to
+redo yourself. Read the `dispatching-subagents` skill before you dispatch: it holds what
+a brief must carry, what it must never prescribe, and how to run and stop a review loop.
 </instructions-to-subagents>
