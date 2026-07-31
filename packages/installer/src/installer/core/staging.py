@@ -25,6 +25,17 @@ from installer.core.merge.registry import default_registry
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
 
 
+def shared_source_dir(repo_root: Path) -> Path:
+    """The tool-agnostic tree staged into every tool (Phases 1-2).
+
+    Public because the repo-side content lint has to know which directories
+    staging opens in order to report the ones it never does. A second copy of
+    this path there would be wrong in both directions if this one ever moved:
+    the lint would report the new root as unread and silently bless the old.
+    """
+    return repo_root / "src" / "user" / ".agents"
+
+
 def strip_template_suffix(path: Path) -> Path:
     """Strip .template if it is the final suffix; return path unchanged otherwise.
 
@@ -208,7 +219,7 @@ def build_plan(
     merge_registry = registry if registry is not None else default_registry()
     plan = StagingPlan(items={}, tool=Tool(adapter.name))
     prov = Provenance(kind="tool", name=adapter.name)
-    shared_root = repo_root / "src" / "user" / ".agents"
+    shared_root = shared_source_dir(repo_root)
     tool_root = adapter.source_dir(repo_root)
 
     for item in stage_templates(shared_root, provenance=prov):  # Phase 1

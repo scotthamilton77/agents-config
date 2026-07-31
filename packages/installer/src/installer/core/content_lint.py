@@ -67,6 +67,7 @@ from installer.core.admission import DIR_RECORD_FILE
 from installer.core.deploy_gate import item_label, run_admission_gate
 from installer.core.installignore import load_installignore
 from installer.core.orchestrator import stage_and_transform
+from installer.core.staging import shared_source_dir
 from installer.core.surface_budget import SkillMeasure, SurfaceMeasure
 from installer.plugins.registry import discover, is_plugin_dir
 from installer.tools.registry import get_adapter, known_tools
@@ -378,10 +379,12 @@ def _staged_dirs(
     opens. That is a likelier mistake than inventing a fifth tool tree, and it
     needs no registry edit to make.
 
-    Every set here is read from the object that decides it — ``namespaces``, the
-    adapters, the discovered plugins — so registering a fifth tool, or changing
-    what an existing one stages, moves this without an edit. Only the two roots
-    the caller already owns arrive as arguments.
+    Every root and every set here is read from the object that decides it —
+    ``staging.shared_source_dir``, each adapter's ``source_dir``, ``namespaces``,
+    the discovered plugins — so registering a fifth tool, moving the shared tree,
+    or changing what an existing tool stages moves this with nobody editing it.
+    The one path stated rather than derived is ``plugins_root``, which the caller
+    owns and passes in so this module holds a single copy of it.
 
     The shared set is the union across tools rather than any one tool's view: a
     namespace one adapter declines is still read if another takes it, and this
@@ -413,7 +416,7 @@ def _staged_dirs(
     ) | frozenset(plugin.source_path.name for plugin in plugins)
 
     staged: dict[Path, frozenset[str]] = {
-        repo_root / "src" / "user" / ".agents": shared,
+        shared_source_dir(repo_root): shared,
         plugins_root: plugin_children,
     }
     for tool in known_tools():
@@ -464,7 +467,11 @@ def _unaccounted_dirs(repo_root: Path, *, staged: dict[Path, frozenset[str]]) ->
         read_from_here = staged.get(current)
         for child in sorted(p for p in current.iterdir() if p.is_dir() and not p.is_symlink()):
             relative = child.relative_to(repo_root)
-            if child in staged or any(root.is_relative_to(child) for root in staged):
+            # One test, not two: a root is trivially relative to itself, so this
+            # covers "child IS a root staging reads" and "child merely holds one"
+            # in a single predicate. Both descend, for different reasons — the
+            # first to judge the names below it, the second to find the roots.
+            if any(root.is_relative_to(child) for root in staged):
                 pending.append(child)
             elif (
                 read_from_here is not None and child.name in read_from_here

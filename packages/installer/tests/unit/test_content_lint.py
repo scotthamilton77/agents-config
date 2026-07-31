@@ -566,3 +566,18 @@ def test_a_plugin_namespace_no_tool_overlays_is_a_violation(tmp_path: Path) -> N
 
     assert not result.ok
     assert [v for v in result.violations if v.startswith("src/plugins/graphify/.claude/hooks:")]
+
+
+def test_a_symlink_cycle_under_src_does_not_hang_the_walk(tmp_path: Path) -> None:
+    """Termination is provable from the current code — descent requires a staging root
+    strictly below the child, which bounds depth — but nothing pinned it. A later
+    rewrite into rglob or recursion would reintroduce the loop with every other test
+    still green, and a gate that hangs is worse than one that misses a directory.
+    """
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    (repo / "src" / "loop").symlink_to(repo / "src", target_is_directory=True)
+    (repo / "src" / "user" / "back").symlink_to(repo / "src", target_is_directory=True)
+
+    result = _lint(repo)  # must return at all; the assertion is that we get here
+
+    assert not [v for v in result.violations if "loop" in v or "back" in v]
