@@ -13,9 +13,11 @@ executor pr-closed it-1 --pr 412 --next queued --reason superseded
 executor merged it-1 --sha 9fceb02
 executor done it-1
 executor attempt it-1 --kind ci-fix                        # charge one fix attempt
+executor next [--stale-days 30]                            # parked work, then ready work
 ```
 
 `--dir` selects the grind directory; without it the runtime resolves its own.
+`next` reads no grind directory at all.
 
 ## The pairing table
 
@@ -61,6 +63,33 @@ Re-parking an already-parked item under a *different* reason is refused too:
 the parking lot's only exit is a redispatch or an abandon, so there is no
 re-park to enact. The same reason with a differently worded note is the
 ordinary idempotent retry.
+
+## Opening new work
+
+`executor next` is the one command with no row in that table, because it
+mutates nothing. It reads the parked-work report, then the ready queue, and
+answers with both:
+
+```json
+{"parked": [{"id": "wg-1", "reason": "merge-conflict", "parked_at": "...", "stale": true}],
+ "ready":  [{"id": "wg-7", "status": "open", "...": "..."}]}
+```
+
+The order is the contract. Reviewing stuck work is the price of pulling new
+work, so a parked report that fails takes the whole command down with it — the
+ready queue is not even read, let alone reported. A caller never receives new
+work beside a surfacing that quietly failed.
+
+Both keys are always present; `"parked": []` means nothing is parked, and that
+is a reported fact rather than a missing field.
+
+`--stale-days` is forwarded to the report untouched, and omitting it forwards
+nothing: the threshold has exactly one definition and it is the facade's. This
+package neither holds a default nor recomputes a `stale` flag.
+
+No event is appended, no tracker verb is enacted, and therefore no sync is
+issued. The command also reads no grind state, so it works on a machine with
+no run at all.
 
 ## Attempt budgets
 
@@ -148,7 +177,6 @@ is reported. A command that mutated nothing syncs nothing.
 
 ## Not here yet
 
-`next` (open-new-work surfacing) is named in the verb universe and unwired.
 There is no dispatch loop: this package answers what a verb pairs with, not
 when to run it.
 

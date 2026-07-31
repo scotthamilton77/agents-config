@@ -139,17 +139,17 @@ synthesising the equivalent single commit with `git commit-tree` and asking
 gc` collects it. Suppressing it in report mode would make `--report` and
 `--cleanup` disagree about what is merged, which is worse than a stray blob.
 
-**A branch whose name begins with `-` is deleted correctly, but proven merged
-only some of the way.** `git branch` will not create such a ref, but `git
-update-ref` will and a remote can push one. Every deletion terminates its argv,
-so git reads the name as a name — a `-m` branch that ancestry or patch-id
-proves merged is swept, and one named outright is deleted and its server copy
-bundled. The squash tier is the gap: it asks `merge-base` and `rev-parse` for
-the branch without a terminator, git rejects the name as a switch, and the
-probe gives up. A squash-merged `-m` therefore reads as unproven and stays in
-the report — the safe direction, and the wrong answer. Naming one on the
-command line is a separate matter, because the argument parser claims `-m` as a
-flag first: select it by its `id`, `gitclean --cleanup branch:-m`.
+**A branch whose name begins with `-` is deleted correctly, and proven merged
+by every tier, including squash.** `git branch` will not create such a ref,
+but `git update-ref` will and a remote can push one. Every deletion terminates
+its argv, so git reads the name as a name. Merge evidence does the same, with
+one adjustment: `merge-base` accepts a `--` terminator, but `rev-parse` does
+not — it echoes one back as a literal output line instead of consuming it — so
+the squash tier's tree lookup instead names the branch by its full ref path,
+which never begins with `-`. A squash-merged `-m` is proven and swept the same
+as any other name. Naming one on the command line is a separate matter,
+because the argument parser claims `-m` as a flag first: select it by its
+`id`, `gitclean --cleanup branch:-m`.
 
 ## Exit codes
 

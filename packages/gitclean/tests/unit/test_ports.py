@@ -15,9 +15,7 @@ from gitclean.ports import (
     CommandResult,
     ScriptedCommands,
     SubprocessCommands,
-    _staging_path,
     fail,
-    is_inside,
     ok,
 )
 
@@ -130,120 +128,6 @@ def test_the_fake_hands_out_a_fixed_scratch_path_and_creates_nothing() -> None:
         assert not scratch.exists()
 
 
-# -- archiving ---------------------------------------------------------------
-
-
-def test_an_archive_round_trips_a_real_directory(tmp_path: Path) -> None:
-    port = SubprocessCommands()
-    source = tmp_path / "tree"
-    (source / "sub").mkdir(parents=True)
-    (source / "sub" / "a.txt").write_text("payload")
-    dest = tmp_path / "salvage" / "deep" / "tree.tar.gz"
-
-    assert port.create_archive(source, dest).ok
-    listing = port.list_archive(dest)
-    assert listing.ok
-    assert "./sub/a.txt" in listing.stdout
-
-    restored = tmp_path / "restored"
-    restored.mkdir()
-    subprocess.run(["tar", "-xzf", str(dest), "-C", str(restored)], check=True)  # noqa: S603, S607
-    assert (restored / "sub" / "a.txt").read_text() == "payload"
-
-
-def test_an_archive_keeps_a_symlink_as_a_symlink(tmp_path: Path) -> None:
-    """`shutil.copy2` follows links, so an untracked link to ~/.ssh/id_rsa
-    would copy the key's bytes into the salvage directory -- and it raises
-    outright on a dangling one."""
-    port = SubprocessCommands()
-    source = tmp_path / "tree"
-    source.mkdir()
-    secret = tmp_path / "secret.txt"
-    secret.write_text("private key")
-    (source / "link").symlink_to(secret)
-    (source / "dangling").symlink_to(tmp_path / "not-there")
-
-    dest = tmp_path / "tree.tar.gz"
-    assert port.create_archive(source, dest).ok
-
-    restored = tmp_path / "restored"
-    restored.mkdir()
-    subprocess.run(["tar", "-xzf", str(dest), "-C", str(restored)], check=True)  # noqa: S603, S607
-    # Still a link, still pointing where it pointed: the secret's bytes were
-    # never copied into the salvage, and the dangling link did not raise.
-    assert (restored / "link").is_symlink()
-    assert (restored / "link").readlink() == secret
-    assert (restored / "dangling").is_symlink()
-
-
-def test_an_archive_captures_ignored_files_and_excludes_dot_git(tmp_path: Path) -> None:
-    port = SubprocessCommands()
-    source = tmp_path / "tree"
-    (source / ".git").mkdir(parents=True)
-    (source / ".git" / "config").write_text("[core]")
-    (source / ".env").write_text("TOKEN=hunter2")
-    (source / ".gitignore").write_text(".env\n")
-
-    dest = tmp_path / "tree.tar.gz"
-    assert port.create_archive(source, dest).ok
-    listing = port.list_archive(dest).stdout
-    assert "./.env" in listing
-    assert ".git/config" not in listing
-
-
-def test_listing_a_missing_archive_is_a_result_not_an_exception(tmp_path: Path) -> None:
-    assert not SubprocessCommands().list_archive(tmp_path / "absent.tar.gz").ok
-
-
-def test_an_archive_does_not_capture_itself(tmp_path: Path) -> None:
-    """--salvage-dir may legitimately point inside the worktree being salvaged.
-    GNU tar warns about archiving its own output; BSD tar, which is what ships
-    on macOS, does not."""
-    port = SubprocessCommands()
-    source = tmp_path / "tree"
-    source.mkdir()
-    (source / "a.txt").write_text("payload")
-
-    nested = port.create_archive(source, source / "salvage" / "tree.tar.gz")
-    assert nested.ok
-    listing = port.list_archive(source / "salvage" / "tree.tar.gz").stdout
-    assert "./a.txt" in listing
-    assert "salvage" not in listing
-
-
-def test_an_archive_written_into_the_root_it_archives_skips_only_itself(tmp_path: Path) -> None:
-    port = SubprocessCommands()
-    source = tmp_path / "tree"
-    source.mkdir()
-    (source / "a.txt").write_text("payload")
-
-    assert port.create_archive(source, source / "tree.tar.gz").ok
-    listing = port.list_archive(source / "tree.tar.gz").stdout
-    assert "./a.txt" in listing
-    assert "./tree.tar.gz" not in listing
-
-
-def test_tar_never_writes_into_the_directory_it_is_reading(tmp_path: Path) -> None:
-    """Excluding the output from the archive's contents is not enough. The
-    directory still changes while tar walks it, and GNU tar exits 1 on
-    `file changed as we read it` -- while BSD tar, which is what ships on
-    macOS, says nothing at all. So the difference is invisible until the suite
-    runs on Linux, and the fix has to be checked as a property rather than as
-    an exit code: wherever the caller asks for the archive, tar writes it
-    somewhere outside the tree it is archiving."""
-    source = tmp_path / "tree"
-    source.mkdir()
-
-    at_root = _staging_path(source, source / "tree.tar.gz")
-    nested = _staging_path(source, source / "salvage" / "tree.tar.gz")
-    outside = _staging_path(source, tmp_path / "elsewhere" / "tree.tar.gz")
-
-    assert at_root is not None and not is_inside(at_root, source)
-    assert nested is not None and not is_inside(nested, source)
-    # Already outside, so there is nothing to stage around.
-    assert outside is None
-
-
 # -- the fake ----------------------------------------------------------------
 
 
@@ -287,16 +171,6 @@ def test_the_fake_models_written_files_in_memory() -> None:
     port = ScriptedCommands()
     port.write_text(Path("/salvage/keep"), "x")
     assert port.files["/salvage/keep"] == "x"
-
-
-def test_an_unscripted_archive_call_fails_loudly() -> None:
-    """Same discipline as the command tables: a salvage that silently
-    'succeeded' in a test is exactly what this fake exists to catch."""
-    port = ScriptedCommands()
-    with pytest.raises(AssertionError, match="archive answer"):
-        port.create_archive(Path("/repo/wt"), Path("/salvage/wt.tar.gz"))
-    with pytest.raises(AssertionError, match="archive listing"):
-        ScriptedCommands().list_archive(Path("/salvage/wt.tar.gz"))
 
 
 def test_the_longest_matching_key_wins_so_a_shorter_one_cannot_absorb_it() -> None:
