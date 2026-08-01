@@ -294,6 +294,13 @@ class Survey:
     every worktree row: with no refs read, nothing *could* have proved the
     commit a worktree holds merged, and the row has to say that rather than
     report an absence of proof as though the question had been asked."""
+    worktrees_known: bool = True
+    """False when `worktree list` itself failed.
+
+    ``worktrees`` is then empty, and so is the list for a repository whose only
+    working tree could not be described. The distinction matters to exactly one
+    caller: naming a worktree that is not in the list means it is gone only if
+    the list could have held it."""
     not_offered: tuple[NotOffered, ...] = ()
     """Refs that exist and are deliberately absent from ``branches``.
 
@@ -323,6 +330,7 @@ class Survey:
             "worktrees": [w.as_json() for w in self.worktrees],
             "branches": [b.as_json() for b in self.branches],
             "branches_known": self.branches_known,
+            "worktrees_known": self.worktrees_known,
             "not_offered": [n.as_json() for n in self.not_offered],
         }
 

@@ -90,10 +90,14 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   same discipline as `None` never authorising a deletion, applied to the other
   end: before reporting that a named thing is already gone, check that the look
   was capable of finding it. Three ways it is not, and all three arrive looking
-  identical to a name that matches nothing — the ref read failed so *every*
-  branch is missing; the name is a ref deliberately kept out of the target list,
-  which is why `Survey.not_offered` records those rather than dropping them; or
-  the remote is not advertising a ref it still holds. The first two refuse. The
+  identical to a name that matches nothing — the listing that would have held it
+  failed, which is what `branches_known` and `worktrees_known` are for; the name
+  is a ref deliberately kept out of the target list, which is why
+  `Survey.not_offered` records those rather than dropping them; or the remote is
+  not advertising a ref it still holds. The first two refuse, and the first is
+  asked *per selector kind*: a `worktree:` name is answered by the worktree
+  listing alone, so a failed ref read must not block it, and a bare name needs
+  both because it could have been either. The
   third cannot be distinguished by any question `ls-remote` can ask, so the row
   states what was measured — the remote does not advertise it — instead of the
   conclusion, and the cost lands as a deletion not made rather than as a lie.

@@ -147,6 +147,7 @@ def make_survey(
     gh_error: str | None = None,
     pr_evidence_gap: str | None = None,
     branches_known: bool = True,
+    worktrees_known: bool = True,
     not_offered: tuple[NotOffered, ...] = (),
     warnings: tuple[str, ...] = (),
 ) -> Survey:
@@ -163,6 +164,7 @@ def make_survey(
         worktrees=worktrees,
         branches=branches,
         branches_known=branches_known,
+        worktrees_known=worktrees_known,
         not_offered=not_offered,
         warnings=warnings,
     )

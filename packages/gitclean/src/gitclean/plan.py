@@ -68,6 +68,28 @@ def _not_offered(selector: str, survey_data: Survey) -> NotOffered | None:
     )
 
 
+def _lists_that_could_not_answer(selector: str, survey_data: Survey) -> list[str]:
+    """Of the listings that could have contained this name, which did not run.
+
+    Keyed on the selector's own prefix, which is the same `worktree:`/`branch:`
+    /`remote:` convention the ids use. A caller who spelled out the kind has
+    told us which listing is the relevant one, and a failure in the other is
+    then genuinely none of this selector's business -- refusing on it would
+    block the commonest cleanup there is, a worktree already removed, over a
+    ref read that had nothing to do with it.
+
+    A bare name could be either, so it needs both. Being unable to say which
+    kind was meant is not a reason to trust one of them."""
+    worktree_only = selector.startswith("worktree:")
+    ref_only = selector.startswith(("branch:", "remote:"))
+    unread: list[str] = []
+    if not ref_only and not survey_data.worktrees_known:
+        unread.append("no worktree could be listed")
+    if not worktree_only and not survey_data.branches_known:
+        unread.append("no ref could be read")
+    return unread
+
+
 def resolve_selectors(
     selectors: list[str], targets: tuple[Target, ...], survey_data: Survey
 ) -> tuple[list[Target], list[Absent], Refusal | None]:
@@ -78,8 +100,8 @@ def resolve_selectors(
     thing, and there are two ways it was not -- both of which reach here
     looking exactly like a name that matches nothing:
 
-    - the ref read failed, so every branch is missing from a list that is
-      empty for that reason rather than because the repository is
+    - the listing that would have held it failed, so it is missing from a list
+      that is empty for that reason rather than because the repository is
     - the name is a ref this tool deliberately does not offer as a target
 
     In neither case is "there is nothing to delete" a fact anybody measured,
@@ -110,17 +132,18 @@ def resolve_selectors(
                         "nothing in this run touched it",
                     ),
                 )
-            if not survey_data.branches_known:
+            unread = _lists_that_could_not_answer(selector, survey_data)
+            if unread:
                 return (
                     [],
                     [],
                     Refusal(
                         code="E_SURVEY_INCOMPLETE",
-                        message=f"no ref could be read in this repository, so nothing matched "
-                        f"{selector!r} and nothing can be concluded from that -- the branch "
-                        f"may be sitting right there",
-                        remedy="fix what stopped `git for-each-ref` (the warnings say what "
-                        "it was) and re-run; nothing was deleted",
+                        message=f"nothing matched {selector!r}, and nothing follows from that "
+                        f"here: {' and '.join(unread)}, so what would have matched was never "
+                        f"listed -- it may be sitting right there",
+                        remedy="fix what stopped the listing (the warnings say what it was) "
+                        "and re-run; nothing was deleted",
                     ),
                 )
             absent.append(

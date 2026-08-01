@@ -196,6 +196,44 @@ def test_a_miss_is_not_absence_when_no_ref_could_be_read() -> None:
     assert result.remedy
 
 
+def test_a_worktree_miss_is_not_absence_when_no_worktree_could_be_listed() -> None:
+    """The same defect as the ref read, on the other listing. `worktrees` is
+    empty because `worktree list` failed, and a repository whose trees could
+    not be described has not been shown to lack the one that was named."""
+    survey = make_survey(worktrees_known=False)
+
+    result = plan_for((), survey=survey, selectors=["worktree:/repo/wt"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_SURVEY_INCOMPLETE"
+    assert "no worktree could be listed" in result.message
+
+
+def test_a_failed_ref_read_does_not_block_naming_an_absent_worktree() -> None:
+    """The commonest cleanup there is -- a worktree already removed, named
+    after the fact -- and the worktree listing answered. Refusing it over a ref
+    read that has nothing to do with this selector would take the tool's whole
+    reason for accepting an absent name and give it back."""
+    survey = make_survey(branches_known=False, worktrees_known=True)
+
+    result = plan_for((), survey=survey, selectors=["worktree:/repo/wt"])
+
+    assert isinstance(result, Plan)
+    assert [a.selector for a in result.absent] == ["worktree:/repo/wt"]
+
+
+def test_a_bare_name_needs_both_listings_because_it_could_be_either() -> None:
+    """Being unable to say which kind was meant is not a reason to trust
+    whichever one happened to answer."""
+    survey = make_survey(branches_known=False, worktrees_known=True)
+
+    result = plan_for((), survey=survey, selectors=["ambiguous"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_SURVEY_INCOMPLETE"
+    assert "no ref could be read" in result.message
+
+
 def test_a_ref_this_tool_declines_to_offer_is_not_reported_as_gone() -> None:
     """The server's copy of the trunk exists and is deliberately kept out of
     the target list. "Nothing matched" is therefore true and "it is already

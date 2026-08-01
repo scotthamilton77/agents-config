@@ -168,13 +168,17 @@ def resolve_base_ref(
     return default_branch, None
 
 
-def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree], list[str]]:
+def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree], list[str], bool]:
     """Parse `worktree list --porcelain` and stat each tree for dirt.
 
-    Returns the worktrees plus any parse warnings."""
+    Returns the worktrees, any parse warnings, and whether the listing answered
+    at all. The last is not derivable from an empty list -- a repository with
+    only its main working tree produces one entry, but a listing that failed
+    produces none, and "no worktree is there" is a conclusion only one of those
+    supports."""
     result = port.git(["worktree", "list", "--porcelain"], cwd=cwd)
     if not result.ok:
-        return [], [f"could not list worktrees (exit {result.returncode})"]
+        return [], [f"could not list worktrees (exit {result.returncode})"], False
 
     blocks: list[dict[str, str]] = []
     current: dict[str, str] = {}
@@ -242,7 +246,7 @@ def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree],
                 last_activity=None,
             )
         )
-    return worktrees, warnings
+    return worktrees, warnings, True
 
 
 def _count_dirt(port: CommandPort, path: Path) -> tuple[int, int, int] | None:
@@ -809,7 +813,7 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         )
     )
 
-    worktrees, warnings = read_worktrees(port, cwd)
+    worktrees, warnings, worktrees_known = read_worktrees(port, cwd)
     if base_ref_warning is not None:
         warnings.append(base_ref_warning)
     if current_warning is not None:
@@ -853,6 +857,7 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         worktrees=tuple(worktrees),
         branches=tuple(branches),
         branches_known=branches_known,
+        worktrees_known=worktrees_known,
         not_offered=tuple(not_offered),
         warnings=tuple(warnings),
     )
