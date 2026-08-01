@@ -68,4 +68,4 @@ be discovered, activated, and still install nothing.
 
 | Plugin | Auto-detect footprint | Adapter | What it installs |
 |--------|----------------------|---------|-----------------|
-| `codex` | `~/.codex/` or `codex` on PATH | generic | `codex-routing.md` — the Codex model routing table and companion-runtime invocation contract (admitted, appends into `~/.claude/rules/`) |
+| `codex` | `~/.codex/` or `codex` on PATH | generic | `delegating-to-codex` — the task-profile-to-model routing table for a Codex run (admitted, installs into `~/.claude/skills/`) |
