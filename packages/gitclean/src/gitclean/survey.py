@@ -467,8 +467,10 @@ def _patch_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str) 
 
 def _squash_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str) -> bool | None:
     """True when the branch's whole tree, replayed as ONE commit on the merge
-    base, has a patch-id already in base. None when one of the four steps
-    errored, since a chain that stopped part-way proves nothing either way.
+    base, has a patch-id already in base. False when there is nothing to replay
+    because the branch ends on the tree it began from. None when one of the
+    steps errored, since a chain that stopped part-way proves nothing either
+    way.
 
     This is the squash-merge case, and nothing cheaper detects it: the squashed
     commit on base shares no patch-id with any individual branch commit, and
@@ -502,6 +504,18 @@ def _squash_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str)
     tree = port.git(["rev-parse", f"{ref}^{{tree}}"], cwd=cwd)
     if not tree.ok or not tree.out:
         return None
+    base_tree = port.git(["rev-parse", f"{_first_line(base.out)}^{{tree}}"], cwd=cwd)
+    if not base_tree.ok or not base_tree.out:
+        return None
+    if _first_line(base_tree.out) == _first_line(tree.out):
+        # The branch ends on the tree it started from -- work added and taken
+        # off again -- so the commit synthesised below carries an empty diff,
+        # and every empty diff has the same patch id as every other. `cherry`
+        # would match it against any empty commit base picked up after the
+        # fork, and a build retrigger leaves exactly one of those. The tier
+        # would then report a squash nobody performed, against a branch whose
+        # commits are the only copy of the work they hold.
+        return False
     synthetic = port.git(
         ["commit-tree", _first_line(tree.out), "-p", _first_line(base.out), "-m", "gitclean-probe"],
         cwd=cwd,

@@ -74,6 +74,12 @@ def make_port(
         # of the boring case. A test that cares what it says overrides it
         # through `counts`, which is applied after this table.
         "rev-list --count origin/main..main": ok("0"),
+        # The merge base's tree, which the squash tier compares against the
+        # branch tip's. Deliberately unlike the "treesha" those tests give the
+        # tip: the boring branch changed something, so there is a diff to
+        # replay. A test about a branch that ends where it started says so by
+        # overriding this to match.
+        "rev-parse basesha^{tree}": ok("basetreesha"),
     }
     for spec, value in (counts or {}).items():
         table[f"rev-list --count {spec}"] = ok(value)
@@ -640,6 +646,7 @@ def test_remote_refs_are_identified_by_prefix_not_by_a_slash() -> None:
             "cherry origin/main -- team/feat": ok("+ abc"),
             "cherry origin/main -- origin/feat": ok("+ abc"),
             "merge-base origin/main": ok("base1"),
+            "rev-parse base1^{tree}": ok("basetree1"),
             "rev-parse team/feat^{tree}": ok("tree1"),
             "rev-parse origin/feat^{tree}": ok("tree2"),
             "commit-tree": ok("synth"),
@@ -885,6 +892,32 @@ def test_squash_merges_are_caught_by_replaying_the_tree_as_one_commit() -> None:
     )
     feat = next(b for b in run(port).branches if b.name == "feat")
     assert feat.merged and feat.merge_evidence is MergeEvidence.SQUASH_EQUAL
+
+
+def test_a_branch_ending_on_the_tree_it_started_from_proves_nothing() -> None:
+    """Work added and taken off again leaves the tip tree equal to the merge
+    base's, so the synthesised commit's diff is empty -- and every empty diff
+    carries the same patch id. `cherry` is scripted here to answer as it does
+    against a base holding one empty commit, which one build retrigger leaves:
+    it says the patch is already upstream. It is not, and neither is the work,
+    which lives only on the commits this branch holds. The tier has to stop
+    before asking a question whose answer it cannot use."""
+    port = _tier_port(
+        **{
+            "cherry origin/main -- feat": ok("+ aaa\n+ bbb"),
+            "merge-base origin/main -- feat": ok("basesha"),
+            "rev-parse feat^{tree}": ok("sametree"),
+            "rev-parse basesha^{tree}": ok("sametree"),
+            "cherry origin/main synthsha": ok("- synthsha"),
+        }
+    )
+    feat = next(b for b in run(port).branches if b.name == "feat")
+
+    assert not feat.merged
+    assert feat.merge_evidence is MergeEvidence.NONE
+    assert not any(call[1] == "commit-tree" for call in port.transcript), (
+        "no commit should be synthesised once the diff is known to be empty"
+    )
 
 
 def test_the_squash_probe_terminates_argv_for_a_branch_named_like_an_option() -> None:
