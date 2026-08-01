@@ -147,10 +147,38 @@ def test_another_worktree_is_not_mistaken_for_the_invoking_one() -> None:
 # -- selector resolution -----------------------------------------------------
 
 
-def test_unknown_selector_is_refused() -> None:
+def test_a_selector_matching_nothing_is_a_job_already_done() -> None:
+    """The caller asked for that thing to be gone. It is gone. Refusing there
+    reports a completed job as a failure, and an agent told it failed retries,
+    reaches for raw git, or escalates -- all worse than the no-op it should
+    have been handed."""
     result = plan_for((target("branch:x"),), selectors=["nope"])
-    assert isinstance(result, Refusal)
-    assert result.code == "E_UNKNOWN_TARGET"
+    assert isinstance(result, Plan)
+    assert result.targets == ()
+    assert [a.selector for a in result.absent] == ["nope"]
+
+
+def test_a_selector_matching_nothing_states_both_readings() -> None:
+    """Nothing here can tell a branch deleted a minute ago from a name with a
+    letter wrong -- the repository answers identically -- so the note commits
+    to neither and points at the list that would settle it."""
+    result = plan_for((target("branch:x"),), selectors=["nope"])
+    assert isinstance(result, Plan)
+    note = result.absent[0].note
+    assert "already gone" in note
+    assert "the name is wrong" in note
+    assert "--report" in note
+
+
+def test_one_absent_name_does_not_abort_the_names_beside_it() -> None:
+    """This is the whole cost of the old refusal. Selector refusals are
+    plan-level, so a single name that had already been dealt with stopped every
+    other deletion the caller asked for in the same breath."""
+    targets = (target("branch:x"), target("branch:y"))
+    result = plan_for(targets, selectors=["x", "gone-already", "y"])
+    assert isinstance(result, Plan)
+    assert [t.id for t in result.targets] == ["branch:x", "branch:y"]
+    assert [a.selector for a in result.absent] == ["gone-already"]
 
 
 def test_ambiguous_bare_name_is_refused_with_the_candidates() -> None:
@@ -192,9 +220,27 @@ def test_repeated_selector_is_not_planned_twice() -> None:
 
 def test_resolve_selectors_returns_targets_in_request_order() -> None:
     targets = (target("branch:a"), target("branch:b"))
-    resolved, refusal = resolve_selectors(["b", "a"], targets)
+    resolved, absent, refusal = resolve_selectors(["b", "a"], targets)
     assert refusal is None
+    assert absent == []
     assert [t.name for t in resolved] == ["b", "a"]
+
+
+def test_ambiguity_still_refuses_and_carries_nothing_forward() -> None:
+    """A miss is a job done; ambiguity is a question. Two real things match and
+    picking one destroys the other, so this is the refusal that stays -- and it
+    resolves no selector beside it, because the caller is about to re-issue the
+    whole command with a precise name."""
+    targets = (
+        target("branch:feat/x"),
+        target("remote:origin/feat/x", kind=TargetKind.REMOTE_BRANCH),
+        target("branch:other"),
+    )
+    resolved, absent, refusal = resolve_selectors(["other", "feat/x", "nope"], targets)
+    assert refusal is not None
+    assert refusal.code == "E_AMBIGUOUS_TARGET"
+    assert resolved == []
+    assert absent == []
 
 
 # -- worktree occupancy ------------------------------------------------------

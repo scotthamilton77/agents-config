@@ -19,10 +19,10 @@ It runs, in order: `ruff check`, `ruff format --check`, `mypy --strict src`,
 hand-pick a subset — the linter and the formatter are orthogonal. Faster inner
 loop: `make test-gitclean`.
 
-This package is **not** in the installer's `CLI_PACKAGES` registry and nothing
-installs it onto PATH — being inside `make ci` does not deploy a package. Run it
-from a checkout. Do not add it to that registry without an explicit decision to
-ship it.
+This package **is** in the installer's `CLI_PACKAGES` registry and installs onto
+PATH as `gitclean`. Being inside `make ci` is not what earns that — `vizsuite`
+is gated and stays off — so a change here reaches a deployed tool, and the
+`clean-up-git` skill drives it.
 
 ## Architecture
 
@@ -75,6 +75,17 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   safety underneath the caller, and do not add a flag for them to pass. git's
   own refusals still stand, and they carry better information than a
   re-derivation would.
+- **A job already done is a success.** When the state the caller asked for
+  already holds, that is neither a refusal nor an anomaly: a name matching
+  nothing lands in `Plan.absent`, and a server ref the remote no longer has
+  becomes a `Deletion` with `already_absent`. Both exit 0. The cost of getting
+  this wrong is not cosmetic — a caller told a finished job failed retries,
+  hand-rolls raw git, or escalates, and every one of those is worse than the
+  no-op it should have been handed. Two rules keep it honest: `deleted` stays
+  false, because only a true there is evidence the tool acted; and the state is
+  measured before anything is spent on reaching it, which is why the server is
+  asked about a ref *before* its history is bundled rather than after the push
+  is rejected.
 - **With one exception, and know why it is there.** git's refusals cover
   uncommitted content; they say nothing about a commit made inside a worktree
   on no branch. That tree is clean, git removes it happily, and the record it

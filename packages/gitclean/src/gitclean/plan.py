@@ -8,16 +8,22 @@ nothing overrides them, and they carry better information than a re-derivation
 would -- git knows what its working tree holds right now.
 
 So the refusals left here are few, and each answers something the caller could
-not have answered themselves: a name matching nothing, a name matching two
-things, a branch git will reject because a worktree still holds it, and the
-directory this process is standing in.
+not have answered themselves: a name matching two things, a branch git will
+reject because a worktree still holds it, and the directory this process is
+standing in.
+
+A name matching *nothing* used to be a fourth, and was wrong. The caller asked
+for that thing to be gone; it is gone. Refusing there reports a completed job
+as a failure -- and because a selector refusal aborts the whole plan, one name
+that had already been dealt with stopped every other deletion the caller asked
+for.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from gitclean.model import Plan, Refusal, Skipped, Survey, Target, TargetKind
+from gitclean.model import Absent, Plan, Refusal, Skipped, Survey, Target, TargetKind
 
 
 def _selector_candidates(target: Target) -> set[str]:
@@ -32,28 +38,47 @@ def _selector_candidates(target: Target) -> set[str]:
 
 def resolve_selectors(
     selectors: list[str], targets: tuple[Target, ...]
-) -> tuple[list[Target], Refusal | None]:
-    """Map caller-supplied names onto targets, refusing on miss or ambiguity."""
+) -> tuple[list[Target], list[Absent], Refusal | None]:
+    """Map caller-supplied names onto targets.
+
+    A miss is recorded and the remaining selectors are still resolved; only
+    ambiguity refuses, because there the tool would have to guess which of two
+    real things to destroy.
+
+    The note deliberately states both readings. Nothing here can distinguish a
+    worktree removed thirty seconds ago from a name with a letter wrong -- the
+    repository answers identically -- so asserting either one would be a claim
+    the tool cannot support.
+    """
     resolved: list[Target] = []
+    absent: list[Absent] = []
     for selector in selectors:
         matches = [t for t in targets if selector in _selector_candidates(t)]
         if not matches:
-            return [], Refusal(
-                code="E_UNKNOWN_TARGET",
-                message=f"no worktree or branch matches {selector!r}",
-                remedy="run `gitclean --report` and select by the `id` field",
+            absent.append(
+                Absent(
+                    selector=selector,
+                    note=f"no worktree or branch matches {selector!r}, so there is nothing "
+                    f"to delete -- it was already gone before this run, or the name is "
+                    f"wrong. `gitclean --report` lists every `id` that exists",
+                )
             )
+            continue
         if len(matches) > 1:
             ids = ", ".join(t.id for t in matches)
-            return [], Refusal(
-                code="E_AMBIGUOUS_TARGET",
-                message=f"{selector!r} matches more than one target: {ids}",
-                blocked=tuple(matches),
-                remedy="re-run naming the exact `id`",
+            return (
+                [],
+                [],
+                Refusal(
+                    code="E_AMBIGUOUS_TARGET",
+                    message=f"{selector!r} matches more than one target: {ids}",
+                    blocked=tuple(matches),
+                    remedy="re-run naming the exact `id`",
+                ),
             )
         if matches[0] not in resolved:
             resolved.append(matches[0])
-    return resolved, None
+    return resolved, absent, None
 
 
 _ORDER = {TargetKind.WORKTREE: 0, TargetKind.BRANCH: 1, TargetKind.REMOTE_BRANCH: 2}
@@ -99,8 +124,9 @@ def build_plan(
     dry_run: bool,
     salvage_dir: str | None,
 ) -> Plan | Refusal:
+    absent: list[Absent] = []
     if selectors:
-        chosen, refusal = resolve_selectors(selectors, targets)
+        chosen, absent, refusal = resolve_selectors(selectors, targets)
         if refusal is not None:
             return refusal
         invoking = _invoking_worktree(chosen, survey_data)
@@ -155,4 +181,5 @@ def build_plan(
         ),
         dry_run=dry_run,
         skipped=tuple(skipped),
+        absent=tuple(absent),
     )

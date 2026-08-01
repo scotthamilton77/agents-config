@@ -57,12 +57,24 @@ def test_dry_run_issues_no_commands() -> None:
 
 
 def test_dry_run_announces_the_salvage_step_for_a_server_ref() -> None:
-    port = ScriptedCommands()
+    port = ScriptedCommands(git={"ls-remote": ok(f"{REMOTE_HEAD}\trefs/heads/wip")})
     report = run(
         port,
         plan(target(TargetKind.REMOTE_BRANCH, "origin/wip"), dry_run=True),
     )
     assert "after salvage" in report.deletions[0].detail
+
+
+def test_a_dry_run_does_not_promise_to_delete_a_ref_the_server_lost() -> None:
+    """The preview exists to be believed before the real run, so it asks the
+    same question the real run does. Announcing `would delete` for a ref that
+    is not there sends a caller to a cleanup with nothing in it."""
+    port = ScriptedCommands(git={"ls-remote": ok("")})
+    report = run(port, plan(target(TargetKind.REMOTE_BRANCH, "origin/wip"), dry_run=True))
+
+    assert report.ok
+    assert report.deletions[0].already_absent
+    assert "would delete" not in report.deletions[0].detail
 
 
 def test_dry_run_announces_no_salvage_for_a_local_branch() -> None:
@@ -343,14 +355,20 @@ def _salvage_calls(bundle: str) -> dict[str, CommandResult]:
 def _remote_port(**overrides: object) -> ScriptedCommands:
     """Every server deletion is bundled first, so every one of these scripts
     the bundle. A test that omitted it would be exercising the salvage-failure
-    path while claiming to be about the push."""
-    table: dict[str, CommandResult] = {
+    path while claiming to be about the push.
+
+    `ls-remote` is asked twice with two different answers, and that is a fact
+    about the domain rather than about call order: the deletion in between is
+    what changes what the server has. One answer for both would make a liar of
+    one of them -- say `ok("")` throughout and the run finds the ref already
+    gone and never pushes at all."""
+    table: dict[str, CommandResult | list[CommandResult]] = {
         **_salvage_calls(FEAT_BUNDLE),
         "push --force-with-lease": ok(),
-        "ls-remote": ok(""),
+        "ls-remote": [ok(f"{REMOTE_HEAD}\trefs/heads/feat/x"), ok("")],
     }
     table.update(overrides)  # type: ignore[arg-type]
-    return ScriptedCommands(git=table)  # type: ignore[arg-type]
+    return ScriptedCommands(git=table)
 
 
 def test_remote_deletion_is_confirmed_against_the_server() -> None:
@@ -437,7 +455,14 @@ def test_a_sibling_ref_on_the_server_is_not_read_as_the_target_surviving() -> No
     unrelated `a/feat/x` answers a question about `feat/x`. Reading that as the
     target having survived turns a deletion git performed into a reported
     failure, and the exit code says the run went wrong."""
-    port = _remote_port(**{"ls-remote": ok("dbfd823\trefs/heads/a/feat/x")})
+    port = _remote_port(
+        **{
+            "ls-remote": [
+                ok(f"{REMOTE_HEAD}\trefs/heads/feat/x"),
+                ok("dbfd823\trefs/heads/a/feat/x"),
+            ]
+        }
+    )
     report = run(port, plan(target(TargetKind.REMOTE_BRANCH, "origin/feat/x")), _remote_survey())
     assert report.ok
     assert report.deletions[0].verified
@@ -468,13 +493,14 @@ WIP_BUNDLE = f"/salvage/{slug(REMOTE)}.bundle"
 
 
 def _remote_salvage_port(**overrides: object) -> ScriptedCommands:
-    table: dict[str, CommandResult] = {
+    table: dict[str, CommandResult | list[CommandResult]] = {
         **_salvage_calls(WIP_BUNDLE),
         "push --force-with-lease": ok(),
-        "ls-remote": ok(""),
+        # Present, then gone. See _remote_port for why one answer will not do.
+        "ls-remote": [ok(f"{REMOTE_HEAD}\trefs/heads/wip"), ok("")],
     }
     table.update(overrides)  # type: ignore[arg-type]
-    return ScriptedCommands(git=table)  # type: ignore[arg-type]
+    return ScriptedCommands(git=table)
 
 
 def test_a_server_ref_is_bundled_before_it_is_deleted() -> None:
@@ -490,6 +516,55 @@ def test_a_server_ref_is_bundled_before_it_is_deleted() -> None:
     # calls verified.
     assert verbs.index("clone") < verbs.index("push")
     assert report.salvages[0].verified
+
+
+def test_a_server_ref_the_forge_already_deleted_costs_nothing() -> None:
+    """A forge that drops the branch when its PR merges is the common setup,
+    and the stale tracking ref it leaves behind is the only reason this target
+    is in the plan at all. Found from the rejected push instead, the same fact
+    costs an archive of the whole history, written for a ref that was never
+    there to lose, and lands as an anomaly over a job already finished."""
+    port = _remote_salvage_port(**{"ls-remote": ok("")})
+    report = run(port, plan(target(TargetKind.REMOTE_BRANCH, REMOTE)), _remote_survey(REMOTE))
+
+    assert report.ok
+    assert report.deletions[0].already_absent
+    assert report.salvages == ()
+    # One read-only question and nothing else: no scratch branch, no bundle,
+    # no clone, no push.
+    assert [call[1] for call in port.transcript] == ["ls-remote"]
+
+
+def test_an_already_absent_ref_is_not_evidence_the_run_did_something() -> None:
+    """`deleted` is the field that says the tool acted, and a caller counting
+    what a cleanup achieved must not be handed work it never did."""
+    port = _remote_salvage_port(**{"ls-remote": ok("")})
+    report = run(port, plan(target(TargetKind.REMOTE_BRANCH, REMOTE)), _remote_survey(REMOTE))
+
+    assert not report.deletions[0].deleted
+    assert report.deletions[0].verified
+
+
+def test_an_already_absent_ref_says_which_stale_ref_conjured_it() -> None:
+    """The target exists because refs/remotes still names it, so the row that
+    reports nothing to do should say where the phantom came from -- otherwise
+    the next report shows it again and reads as a cleanup that did not work."""
+    port = _remote_salvage_port(**{"ls-remote": ok("")})
+    report = run(port, plan(target(TargetKind.REMOTE_BRANCH, REMOTE)), _remote_survey(REMOTE))
+
+    assert "fetch --prune origin" in report.deletions[0].detail
+
+
+def test_a_probe_that_will_not_answer_never_claims_the_ref_is_gone() -> None:
+    """Not knowing whether the server still has it is not evidence that it
+    does not. The ordinary route runs, which is the one keeping a lease in
+    front of the delete -- and being wrong this way costs a bundle, while being
+    wrong the other way skips a deletion the caller asked for."""
+    port = _remote_salvage_port(**{"ls-remote": fail("could not read from remote")})
+    report = run(port, plan(target(TargetKind.REMOTE_BRANCH, REMOTE)), _remote_survey(REMOTE))
+
+    assert not any(d.already_absent for d in report.deletions)
+    assert "push" in [call[1] for call in port.transcript]
 
 
 def test_a_local_branch_is_not_bundled() -> None:
@@ -519,6 +594,9 @@ def test_the_bundle_is_taken_from_a_branch_this_run_makes_and_removes() -> None:
 
     scratch = f"{SALVAGE_PREFIX}/{slug(REMOTE)}"
     assert port.transcript == [
+        # The server is asked first, and nothing above is spent until it says
+        # the ref is there to lose.
+        ("git", "ls-remote", "--heads", "origin", "refs/heads/wip"),
         ("git", "branch", "--no-track", scratch, f"refs/remotes/{REMOTE}"),
         ("git", "rev-parse", "--verify", f"refs/heads/{scratch}"),
         ("git", "bundle", "create", WIP_BUNDLE, f"refs/heads/{scratch}"),
@@ -614,14 +692,20 @@ def test_an_unreadable_scratch_tip_aborts_before_anything_is_bundled() -> None:
 
 
 def test_missing_salvage_directory_aborts_rather_than_deleting_unprotected() -> None:
-    port = ScriptedCommands()
+    """The assertion is that nothing was *changed*, which is narrower than the
+    `transcript == []` it replaces and is the claim the test was always about.
+    One read-only question now precedes the abort: whether the server still has
+    the ref. It has to, and in that order -- a ref the server no longer holds
+    needs no bundle, so refusing it for want of somewhere to put one would be
+    an error raised about a job that does not exist."""
+    port = ScriptedCommands(git={"ls-remote": ok(f"{REMOTE_HEAD}\trefs/heads/wip")})
     report = run(
         port,
         plan(target(TargetKind.REMOTE_BRANCH, REMOTE), salvage_dir=None),
         _remote_survey(REMOTE),
     )
     assert not report.ok
-    assert port.transcript == []
+    assert [call[1] for call in port.transcript] == ["ls-remote"]
 
 
 # -- cascade -----------------------------------------------------------------

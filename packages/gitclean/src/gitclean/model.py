@@ -357,8 +357,23 @@ class Deletion:
     kind: TargetKind
     name: str
     deleted: bool
+    """Whether **this run** performed the deletion. Not whether the thing is
+    gone: a target that was already absent is gone and this is False, because
+    only a True here is evidence the tool did something."""
     verified: bool
     detail: str
+    already_absent: bool = False
+    """The end state was reached before this run started.
+
+    Deleting is not a state change the caller wanted for its own sake -- they
+    wanted the thing gone, and it is. Reporting that as a failure teaches a
+    caller to retry, to reach for raw git, or to escalate, all of which are
+    worse than the no-op they should have been told about.
+
+    It stays a separate field rather than folding into ``deleted`` because the
+    two carry different evidence. ``deleted`` says the tool acted; this says it
+    found no work. A run of nothing but these did nothing at all, which a
+    reader should be able to see at a glance."""
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -368,6 +383,7 @@ class Deletion:
             "deleted": self.deleted,
             "verified": self.verified,
             "detail": self.detail,
+            "already_absent": self.already_absent,
         }
 
 
@@ -391,6 +407,27 @@ class Skipped:
 
 
 @dataclass(frozen=True, slots=True)
+class Absent:
+    """A name the caller gave that matches nothing in the repository.
+
+    This is not a refusal, because the caller asked for a state -- that thing,
+    gone -- and the repository is already in it. It is also not silence: the
+    tool genuinely cannot tell a target somebody removed a moment ago from a
+    name they mistyped, since both match nothing, so it reports what it looked
+    for and lets the reader recognise their own typo.
+
+    Carrying the selector rather than a target is not an omission. There is no
+    target to carry, and inventing an id for something that was never surveyed
+    would put a row in the output that no other field could speak about."""
+
+    selector: str
+    note: str
+
+    def as_json(self) -> dict[str, object]:
+        return {"selector": self.selector, "note": self.note}
+
+
+@dataclass(frozen=True, slots=True)
 class Plan:
     """A resolved intention to delete, ordered so dependants go first."""
 
@@ -398,6 +435,9 @@ class Plan:
     salvage_dir: str | None
     dry_run: bool
     skipped: tuple[Skipped, ...] = field(default_factory=tuple)
+    absent: tuple[Absent, ...] = field(default_factory=tuple)
+    """Names that resolved to nothing. A plan holding only these is a plan to
+    do nothing, which is a valid plan and not an error."""
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -405,6 +445,7 @@ class Plan:
             "salvage_dir": self.salvage_dir,
             "dry_run": self.dry_run,
             "skipped": [s.as_json() for s in self.skipped],
+            "absent": [a.as_json() for a in self.absent],
         }
 
 
@@ -414,9 +455,13 @@ class Refusal:
 
     Refusals are few and narrow, because a named target is an authorisation
     rather than a proposal. What is left answers something the caller could not
-    have answered themselves -- a name matching nothing, a name matching two
-    things, a deletion git itself will reject. ``blocked`` lists the targets so
-    they can be dropped from the selection rather than argued with."""
+    have answered themselves -- a name matching two things, a deletion git
+    itself will reject. ``blocked`` lists the targets so they can be dropped
+    from the selection rather than argued with.
+
+    A name matching *nothing* is not among them. It asks for a state that
+    already holds, which is a job already done rather than a job refused; see
+    ``Absent``."""
 
     code: str
     message: str
