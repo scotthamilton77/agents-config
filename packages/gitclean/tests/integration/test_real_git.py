@@ -527,6 +527,41 @@ def test_a_salvaged_server_ref_restores_by_the_command_the_tool_printed(
     assert git(clone, "cat-file", "-p", f"{only}:feat-gone.txt") == "the only copy"
 
 
+def test_a_server_ref_the_remote_already_dropped_costs_no_bundle(
+    repo: Path, tmp_path: Path
+) -> None:
+    """What a forge that deletes a branch when its PR merges leaves behind: a
+    tracking ref under refs/remotes naming a branch the server no longer has.
+    That stale ref is the only reason the target is in the plan at all.
+
+    The ref is dropped *inside the bare repository*, which is what a forge
+    tidying up after a merge does and is the only way to reach this state:
+    `push --delete` from the clone updates the tracking ref on the way out, so
+    the clone would know. Deleting it server-side leaves
+    `refs/remotes/origin/feat/vanished` behind untouched, which is the input
+    this is about, and the assertion below is there because a setup that
+    quietly cleaned the cache would test nothing.
+
+    The salvage list is what matters. Learning the ref is gone from a rejected
+    push means learning it after bundling the branch's entire history for
+    something that was never there to lose."""
+    bare = _with_remote(repo, tmp_path)
+    _push_only_copy(repo, "feat/vanished")
+    git(bare, "update-ref", "-d", "refs/heads/feat/vanished")
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/remotes/origin/feat/vanished")
+
+    payload = report(repo, "--cleanup", "origin/feat/vanished")
+
+    assert payload["_exit"] == EXIT_OK
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert execution["anomalies"] == []
+    assert execution["salvages"] == []
+    deletion = execution["deletions"][0]
+    assert deletion["already_absent"] is True
+    assert deletion["deleted"] is False
+
+
 def test_the_salvage_ref_does_not_outlive_the_run(repo: Path, tmp_path: Path) -> None:
     """Bundling needs a ref under refs/heads to bundle, and one left behind
     would surface in the next report as a branch nobody created."""
