@@ -301,6 +301,17 @@ class Survey:
     working tree could not be described. The distinction matters to exactly one
     caller: naming a worktree that is not in the list means it is gone only if
     the list could have held it."""
+    dropped_refs: int = 0
+    """Ref rows `for-each-ref` produced that could not be parsed.
+
+    Distinct from ``branches_known``, which says the command ran. A listing can
+    run and still not describe everything it listed, and the difference is
+    invisible downstream: a dropped row is a ref whose existence went
+    unrecorded, so "nothing matched that name" and "that name is not in this
+    repository" stop being the same statement."""
+    dropped_worktrees: int = 0
+    """Worktree blocks the listing produced that could not be parsed. Same
+    distinction as ``dropped_refs``, on the other listing."""
     not_offered: tuple[NotOffered, ...] = ()
     """Refs that exist and are deliberately absent from ``branches``.
 
@@ -331,6 +342,8 @@ class Survey:
             "branches": [b.as_json() for b in self.branches],
             "branches_known": self.branches_known,
             "worktrees_known": self.worktrees_known,
+            "dropped_refs": self.dropped_refs,
+            "dropped_worktrees": self.dropped_worktrees,
             "not_offered": [n.as_json() for n in self.not_offered],
         }
 

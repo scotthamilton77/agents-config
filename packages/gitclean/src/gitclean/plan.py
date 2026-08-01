@@ -71,22 +71,36 @@ def _not_offered(selector: str, survey_data: Survey) -> NotOffered | None:
 def _lists_that_could_not_answer(selector: str, survey_data: Survey) -> list[str]:
     """Of the listings that could have contained this name, which did not run.
 
-    Keyed on the selector's own prefix, which is the same `worktree:`/`branch:`
-    /`remote:` convention the ids use. A caller who spelled out the kind has
-    told us which listing is the relevant one, and a failure in the other is
-    then genuinely none of this selector's business -- refusing on it would
-    block the commonest cleanup there is, a worktree already removed, over a
-    ref read that had nothing to do with it.
+    Keyed on what the selector's own spelling can denote. The `worktree:` /
+    `branch:` / `remote:` prefixes are the convention the ids use, and a caller
+    who spelled out the kind has said which listing is the relevant one -- a
+    failure in the other is then none of this selector's business, and refusing
+    on it would block the commonest cleanup there is, a worktree already
+    removed, over a ref read that had nothing to do with it. An absolute path
+    says the same thing without the prefix: git will not create a ref whose
+    short name begins with a slash, so nothing but a worktree can be meant.
 
-    A bare name could be either, so it needs both. Being unable to say which
-    kind was meant is not a reason to trust one of them."""
-    worktree_only = selector.startswith("worktree:")
+    A bare name could be either -- a branch, or a worktree's basename -- so it
+    needs both. Being unable to say which kind was meant is not a reason to
+    trust whichever one happened to answer.
+
+    "Could not answer" covers a listing that did not run *and* one that ran
+    without describing everything it listed. A row nobody could parse is a
+    thing whose existence went unrecorded, which is the same hole as never
+    having looked."""
+    worktree_only = selector.startswith("worktree:") or selector.startswith("/")
     ref_only = selector.startswith(("branch:", "remote:"))
     unread: list[str] = []
-    if not ref_only and not survey_data.worktrees_known:
-        unread.append("no worktree could be listed")
-    if not worktree_only and not survey_data.branches_known:
-        unread.append("no ref could be read")
+    if not ref_only:
+        if not survey_data.worktrees_known:
+            unread.append("no worktree could be listed")
+        elif survey_data.dropped_worktrees:
+            unread.append(f"{survey_data.dropped_worktrees} worktree block(s) went unparsed")
+    if not worktree_only:
+        if not survey_data.branches_known:
+            unread.append("no ref could be read")
+        elif survey_data.dropped_refs:
+            unread.append(f"{survey_data.dropped_refs} ref row(s) went unparsed")
     return unread
 
 

@@ -222,6 +222,53 @@ def test_a_failed_ref_read_does_not_block_naming_an_absent_worktree() -> None:
     assert [a.selector for a in result.absent] == ["worktree:/repo/wt"]
 
 
+def test_a_listing_that_ran_but_dropped_a_row_has_not_answered() -> None:
+    """`branches_known` says the command exited 0, which is a smaller claim
+    than describing everything it listed. A row nobody could parse is a ref
+    whose existence went unrecorded, and that is the same hole as never having
+    looked -- so it must not turn into "already gone"."""
+    survey = make_survey(branches_known=True, dropped_refs=1)
+
+    result = plan_for((), survey=survey, selectors=["branch:feat/x"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_SURVEY_INCOMPLETE"
+    assert "1 ref row(s) went unparsed" in result.message
+
+
+def test_a_dropped_worktree_block_is_the_same_hole_on_the_other_listing() -> None:
+    survey = make_survey(worktrees_known=True, dropped_worktrees=2)
+
+    result = plan_for((), survey=survey, selectors=["worktree:/repo/wt"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_SURVEY_INCOMPLETE"
+    assert "2 worktree block(s) went unparsed" in result.message
+
+
+def test_a_dropped_ref_row_does_not_block_naming_a_worktree() -> None:
+    """The counts are read per listing, like the flags beside them. A ref row
+    nobody could parse says nothing about the worktree listing."""
+    survey = make_survey(dropped_refs=1)
+
+    result = plan_for((), survey=survey, selectors=["worktree:/repo/wt"])
+
+    assert isinstance(result, Plan)
+    assert [a.selector for a in result.absent] == ["worktree:/repo/wt"]
+
+
+def test_an_absolute_path_is_a_worktree_without_needing_the_prefix() -> None:
+    """git will not create a ref whose short name begins with a slash, so an
+    absolute path can only mean a worktree -- and the worktree listing is the
+    only one that has to have answered for it."""
+    survey = make_survey(branches_known=False, worktrees_known=True)
+
+    result = plan_for((), survey=survey, selectors=["/repo/wt"])
+
+    assert isinstance(result, Plan)
+    assert [a.selector for a in result.absent] == ["/repo/wt"]
+
+
 def test_a_bare_name_needs_both_listings_because_it_could_be_either() -> None:
     """Being unable to say which kind was meant is not a reason to trust
     whichever one happened to answer."""

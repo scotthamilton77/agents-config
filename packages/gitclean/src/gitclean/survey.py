@@ -168,7 +168,9 @@ def resolve_base_ref(
     return default_branch, None
 
 
-def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree], list[str], bool]:
+def read_worktrees(
+    port: CommandPort, cwd: Path | None
+) -> tuple[list[Worktree], list[str], bool, int]:
     """Parse `worktree list --porcelain` and stat each tree for dirt.
 
     Returns the worktrees, any parse warnings, and whether the listing answered
@@ -178,7 +180,7 @@ def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree],
     supports."""
     result = port.git(["worktree", "list", "--porcelain"], cwd=cwd)
     if not result.ok:
-        return [], [f"could not list worktrees (exit {result.returncode})"], False
+        return [], [f"could not list worktrees (exit {result.returncode})"], False, 0
 
     blocks: list[dict[str, str]] = []
     current: dict[str, str] = {}
@@ -196,10 +198,15 @@ def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree],
 
     worktrees: list[Worktree] = []
     warnings: list[str] = []
+    dropped_blocks = 0
     for index, block in enumerate(blocks):
         path = block.get("worktree", "")
         if not path:
+            # Counted as well as warned: a block nobody could read is a
+            # worktree whose existence went unrecorded, which a later
+            # "nothing matched" must not be allowed to call absence.
             warnings.append(f"worktree block {index} had no path; skipped")
+            dropped_blocks += 1
             continue
         branch_ref = block.get("branch")
         branch = branch_ref.removeprefix("refs/heads/") if branch_ref else None
@@ -246,7 +253,7 @@ def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree],
                 last_activity=None,
             )
         )
-    return worktrees, warnings, True
+    return worktrees, warnings, True, dropped_blocks
 
 
 def _count_dirt(port: CommandPort, path: Path) -> tuple[int, int, int] | None:
@@ -634,7 +641,7 @@ def read_branches(
     default_branch: str,
     prs: dict[str, PullRequest],
     worktree_by_branch: dict[str, str],
-) -> tuple[list[Branch], list[str], bool, list[NotOffered]]:
+) -> tuple[list[Branch], list[str], bool, list[NotOffered], int]:
     """The branches, the warnings, whether the ref read answered at all, and
     the refs deliberately left out of the first list.
 
@@ -657,6 +664,7 @@ def read_branches(
             ],
             False,
             [],
+            0,
         )
 
     local_merged, local_warning = _merged_set(port, cwd, base_ref, remote=False)
@@ -665,16 +673,22 @@ def read_branches(
 
     branches: list[Branch] = []
     not_offered: list[NotOffered] = []
+    dropped = 0
     for line in result.stdout.splitlines():
         if not line.strip():
             continue
         fields = line.split(_SEP)
         if len(fields) < _REF_FIELDS:
+            # Counted, not swallowed. A row nobody could parse is a ref whose
+            # existence went unrecorded, and a later "nothing matched that
+            # name" cannot tell that apart from the ref not being there.
+            dropped += 1
             continue
         full, name, head, committed, upstream, track, head_marker = (
             f.strip() for f in fields[:_REF_FIELDS]
         )
         if not name or not full:
+            dropped += 1
             continue
 
         is_remote = full.startswith("refs/remotes/")
@@ -759,7 +773,12 @@ def read_branches(
                 probe_failures=probe_failures,
             )
         )
-    return branches, warnings, True, not_offered
+    if dropped:
+        warnings.append(
+            f"{dropped} ref row(s) could not be parsed and are missing from this report; "
+            f"a name that matches nothing may be one of them"
+        )
+    return branches, warnings, True, not_offered, dropped
 
 
 def _worktree_activity(
@@ -813,7 +832,7 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         )
     )
 
-    worktrees, warnings, worktrees_known = read_worktrees(port, cwd)
+    worktrees, warnings, worktrees_known, dropped_worktrees = read_worktrees(port, cwd)
     if base_ref_warning is not None:
         warnings.append(base_ref_warning)
     if current_warning is not None:
@@ -823,7 +842,7 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
     prs, gh_error, pr_evidence_gap = read_pull_requests(port, cwd)
     if pr_evidence_gap:
         warnings.append(pr_evidence_gap)
-    branches, branch_warnings, branches_known, not_offered = read_branches(
+    branches, branch_warnings, branches_known, not_offered, dropped_refs = read_branches(
         port,
         cwd,
         base_ref=base_ref,
@@ -858,6 +877,8 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         branches=tuple(branches),
         branches_known=branches_known,
         worktrees_known=worktrees_known,
+        dropped_refs=dropped_refs,
+        dropped_worktrees=dropped_worktrees,
         not_offered=tuple(not_offered),
         warnings=tuple(warnings),
     )

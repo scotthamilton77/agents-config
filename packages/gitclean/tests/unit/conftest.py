@@ -148,6 +148,8 @@ def make_survey(
     pr_evidence_gap: str | None = None,
     branches_known: bool = True,
     worktrees_known: bool = True,
+    dropped_refs: int = 0,
+    dropped_worktrees: int = 0,
     not_offered: tuple[NotOffered, ...] = (),
     warnings: tuple[str, ...] = (),
 ) -> Survey:
@@ -165,6 +167,8 @@ def make_survey(
         branches=branches,
         branches_known=branches_known,
         worktrees_known=worktrees_known,
+        dropped_refs=dropped_refs,
+        dropped_worktrees=dropped_worktrees,
         not_offered=not_offered,
         warnings=warnings,
     )
