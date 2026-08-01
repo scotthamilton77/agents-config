@@ -25,6 +25,17 @@ class UnknownPluginError(ValueError):
         self.valid = valid
 
 
+def is_plugin_dir(entry: Path) -> bool:
+    """Whether ``discover`` treats ``entry`` as a plugin directory.
+
+    Public because the repo-side content lint has to tell a directory nobody
+    reads from one deliberately parked out of the way: a `.`/`_` prefix is an
+    opt-out, not an oversight, and a gate that reported it would be firing on a
+    valid tree. One definition, so the two callers cannot disagree about it.
+    """
+    return entry.is_dir() and not entry.name.startswith((".", "_"))
+
+
 def discover(
     plugins_root: Path,
     *,
@@ -44,7 +55,7 @@ def discover(
     discovered: dict[str, PluginAdapter] = {}
     for entry in sorted(plugins_root.iterdir()):
         name = entry.name
-        if not entry.is_dir() or name.startswith((".", "_")):
+        if not is_plugin_dir(entry):
             continue
         factory: Callable[[str, Path], PluginAdapter] = specialized.get(name, GenericPluginAdapter)
         discovered[name] = factory(name, entry)

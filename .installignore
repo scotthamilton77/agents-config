@@ -1,6 +1,20 @@
-# .installignore — source files excluded from the install fileset.
+# .installignore — source under src/ that does not ship.
 #
-# Consumed by the Python installer (packages/installer) at the staging step.
+# TWO readers, and an edit here moves both.
+#
+# 1. The Python installer (packages/installer), at the staging step. This is the
+#    pruning role the file was written for: a pattern here keeps matching source
+#    out of the deployed fileset.
+# 2. `make content-lint`, as the register of *deliberately* unstaged source. That
+#    gate reports a directory staging never reads, because such a directory is
+#    normally content nobody wired up. A directory pattern here says the opposite
+#    — this one is source-side on purpose — so the gate stays quiet about it.
+#
+# The consequence worth knowing before you add a line: a directory pattern can
+# only ever SILENCE content-lint, and it does so wherever the gate looks, not
+# only where staging would have pruned. Adding one for a deploy reason therefore
+# narrows what the gate measures, so say which of the two roles you mean.
+#
 # scripts/install.sh is a thin exec stub that delegates to the Python
 # installer and never reads this file itself — there is no bash grammar to
 # keep in parity with.
@@ -47,9 +61,12 @@ GEMINI.md
 # ship. Nothing legitimate matches it at depth today, so this is the cautious
 # side of a real judgement call rather than a live exclusion.
 /README.md
-# Defensive directory coverage. No rules-readmes/ directory exists today; when
-# one is added it will sit at a tool root (sibling of rules/), which is never
-# staged. This entry guards the hypothetical namespace-level child instead.
+# Source-only rationale docs, per the plugin layout table in src/plugins/AGENTS.md.
+# Two locations, and this one entry now declares both. At a namespace child it
+# prunes: staging would otherwise ship it. At a tool root it declares: staging
+# never read there, so nothing needed pruning — but content-lint now reports an
+# unread directory as a defect, and without a declaration it would fail the build
+# for whoever follows that layout table.
 /rules-readmes/
 # Confirmed live leaker, not defensive coverage — but only because THIS ONE
 # sits at the depth an anchored pattern reaches (ruff-postedit_test.sh is a

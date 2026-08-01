@@ -30,6 +30,25 @@ Discovery walks the filesystem rather than the staging plan on purpose:
 ``.installignore`` keeps test artifacts out of the *deployed* fileset, which
 says nothing about whether they should run. Anything under ``src/`` runs.
 
+That is why this gate's fileset is wider than ``content_lint``'s, which reports
+on the staged tree instead. The two are not meant to converge: whether a shipped
+script has a passing suite is a property of the source file, while the admission
+bar and the surface budget are properties of what deploys.
+
+The divergence is bounded from the other side, but only down to a depth:
+``content_lint`` walks ``src/`` until it reaches a directory staging reads whole
+— a namespace — and fails on anything above that line it cannot account for.
+Below that line it stops, so a skill's own interior is this module's alone. The
+residual is therefore everything inside a staged namespace, directories as well
+as files.
+
+``.installignore`` sits on both sides of that line and this module honours
+neither half. Below the line it prunes, keeping matching source out of the
+deployed fileset; above it, it declares a directory source-side so
+``content_lint`` does not report it. What it prunes still runs here either way,
+because whether a suite should run says nothing about whether it should ship —
+which is why ``BUILD_DIRS``, not that manifest, is what both gates share.
+
 Execution is I/O, so it routes through the ``SuiteRunner`` port — the real
 implementation shells out, and tests inject a fake rather than spawning
 processes.
@@ -100,7 +119,13 @@ RUNNERS: dict[str, Runner] = {
 
 # Directory names never descended into: build output and caches, which can hold
 # vendored files matching the suite-name patterns.
-_SKIP_DIRS = frozenset({"node_modules", "__pycache__", ".venv"})
+#
+# Public because ``content_lint`` reads it too. That gate reports a directory
+# under ``src/`` staging never reads, and without this it would fail the build
+# over a directory this one refuses to even walk — the two gates disagreeing
+# about what is out of scope, which is the defect class they were both built to
+# close. One definition, so they cannot drift.
+BUILD_DIRS = frozenset({"node_modules", "__pycache__", ".venv"})
 
 _TEST_SUFFIX = "_test"
 _TEST_PREFIX = "test_"
@@ -244,7 +269,7 @@ def _walk(src_root: Path) -> list[Path]:
             continue
         # Matched against the path BELOW src_root: a checkout that happens to
         # live under a directory named .venv must not silently skip the tree.
-        if _SKIP_DIRS.intersection(path.relative_to(src_root).parts):
+        if BUILD_DIRS.intersection(path.relative_to(src_root).parts):
             continue
         out.append(path)
     return out

@@ -18,6 +18,44 @@ Staging every tool with every plugin rather than whatever the current machine
 has installed is deliberate: the question the lint answers is "is this content
 deployable at all", which must not depend on the CI runner's home directory.
 
+**The fileset is the staged tree, not ``src/``.** The sibling gate
+``content_tests`` walks ``src/`` wholesale, and the two differ because their
+subjects do: whether a shipped script has a passing suite is a property of the
+source file, while the admission bar and the surface budget are properties of
+what *deploys*, and only staging knows what that is.
+
+That difference is legitimate. What is not is leaving it unbounded — a directory
+``src/`` grows that staging never reads is content measured by nothing, silently,
+on a green build, which is the fail-open this module exists to close one
+directory up. So the walk in ``_unaccounted_dirs`` descends from ``src/`` and
+demands an account of every directory it meets: read by staging
+(``_staged_dirs``), declared unstaged by ``.installignore``, or exempt by
+``UNGATED_ROOTS``. One with none of the three is a violation.
+
+The accounting is per *directory staging opens*, not per root. A tool root is
+not a blanket amnesty for its subtree: staging reads only the namespaces an
+adapter declares, and three of the four adapters declare none — so
+``src/user/.codex/skills/``, a path that looks exactly like the one that works
+for Claude, is content that deploys nowhere and that this check reports.
+
+**Where the walk stops.** A namespace stages whole, so the walk stops at one and
+does not descend. Everything below that line — files *and* directories — is
+outside this check: a skill's own ``scripts/`` interior is not measured here, and
+should not be, or every skill would report. That reason is sufficient on its own.
+A second one bars the obvious way of going deeper: the plan records no origin for
+several staging channels (see the attribution note below), so per-file accounting
+built on it reports directories that *are* read as if they were not.
+
+**The standing residual.** ``_staged_dirs`` is a hand-maintained model of what
+reads ``src/``. The readers are ``build_plan``'s phases, ``overlay_plugins``,
+each plugin's ``routes``, and ``stage_kits`` for the project fork — and no single
+place enumerates them, so a new staging channel has to be added here too or this
+gate reports the content it stages. That fails *closed*: the gate calls working
+content unaccounted, loudly, the first time anyone lands it. Survivable in a way
+the fail-open it replaced was not, which is why the enumeration is worth wanting
+and not worth blocking on. No test closes it, because no test knows about a
+channel nobody has written yet.
+
 Two report classes, mirroring the gate's own three-valued verdict:
 
 - **violations** — a malformed record, an over-cap skill body, an over-cap
@@ -39,21 +77,61 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from installer.core import namespaces
 from installer.core.admission import DIR_RECORD_FILE
+from installer.core.content_tests import BUILD_DIRS
 from installer.core.deploy_gate import item_label, run_admission_gate
-from installer.core.installignore import load_installignore
+from installer.core.installignore import InstallIgnore, load_installignore
 from installer.core.orchestrator import stage_and_transform
+from installer.core.staging import shared_source_dir
 from installer.core.surface_budget import SkillMeasure, SurfaceMeasure
-from installer.plugins.registry import discover
-from installer.tools.registry import known_tools
+from installer.plugins.registry import discover, is_plugin_dir
+from installer.tools.registry import get_adapter, known_tools
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from installer.core.io_port import IOPort
     from installer.core.model import StagedItem
+    from installer.plugins.base import PluginAdapter
 
 # The subtree the repo declares to be admitted content only, so a record-less
 # artifact under it is a mistake rather than a tracked exception.
 ADMITTED_ONLY_SUBTREE = Path("src") / "user"
+
+# Handed to ``PluginAdapter.routes`` when this module inspects a plugin's route
+# sources. Only ``dest_dir`` joins ``home`` — ``source_dir`` joins the plugin's
+# ``source_path``, per the ``PluginRoute`` contract — so nothing here depends on
+# the value, and a sentinel keeps the lint's answer independent of the machine
+# running it. Never touched: no path built from it is opened.
+_ROUTE_PROBE_HOME = Path("/nonexistent-home-route-inspection-only")
+
+# Directories under ``src/`` that hold deployable content this gate deliberately
+# does not judge, mapped to why. Empty, and an empty register is the useful
+# state: an exemption is a judgement about a body of content, so it belongs to
+# whoever can see that content, not to whoever anticipated it.
+#
+# What an entry costs is *visibility*, not justification — nothing reads the
+# reason at runtime, and no check measures it. What raises the cost is that the
+# membership is pinned by a test, so an exemption arrives as a reviewable diff
+# saying "the exemption set changed" rather than as one more line in a config
+# dict. Claiming more than that for it would be the same overstatement this
+# module now exists to prevent.
+#
+# An entry naming a directory that is not in the tree is itself a violation
+# (``_stale_exemptions``). That is the retirement condition a bare exemption
+# otherwise lacks: it fails silent, because an exemption matching nothing simply
+# never fires, so without the check a stale entry is found only by someone
+# reading this file.
+#
+# The worked example, should it come back: ``src/kits`` held project-scoped kit
+# content until it was archived. ``cli._run_project`` stages it and returns
+# before ``run_admission_gate`` is ever called, so no kit has ever been measured.
+# That fact alone is not a reason — "the gate does not reach here" describes the
+# gap rather than justifying it. The reason that would carry is a property of
+# kits themselves: ``stage_kits`` mirrors arbitrary files with no namespace
+# concept, so a kit contains no gated artifact class for the bar to judge.
+UNGATED_ROOTS: dict[Path, str] = {}
 
 # Finding kinds, used only as the first element of a grouping key so that two
 # findings of different kinds can never land in one bucket.
@@ -313,9 +391,204 @@ def _is_admitted_only(source: Path, repo_root: Path) -> bool:
     return relative.is_relative_to(ADMITTED_ONLY_SUBTREE)
 
 
+def _staged_dirs(
+    repo_root: Path, *, plugins_root: Path, plugins: Sequence[PluginAdapter]
+) -> dict[Path, frozenset[str]]:
+    """Every directory staging reads out of, mapped to the child directory names
+    it reads from it.
+
+    A root is not a blanket amnesty for its subtree, which is the distinction
+    that makes this worth computing. ``stage_namespace`` is called once per
+    *named* namespace, so a tool root yields only the namespaces its adapter
+    declares — and Codex, Gemini and OpenCode declare none at all. Treating a
+    tool root as wholly covered would bless ``src/user/.codex/skills/``, a path
+    that looks exactly like the one that works for Claude and that staging never
+    opens. That is a likelier mistake than inventing a fifth tool tree, and it
+    needs no registry edit to make.
+
+    Union or per-tool is decided by how many readers the directory has, not by
+    convenience. A shared tree has four — the question is "did *any* tool read
+    here", so it unions. A tool's own tree has one, and so does a plugin's
+    ``.<tool>/`` tree, which ``overlay_plugins`` reads with that tool's adapter
+    alone; unioning either would assert coverage at a level above the reader that
+    decides it, which is the mistake this whole function exists to undo.
+
+    ``plugins`` must be the *complete* discovery of ``plugins_root``. The plugins
+    root is accounted for by partition — discovered names on one side, everything
+    ``is_plugin_dir`` rejects on the other — so a caller passing a subset would
+    have real plugins reported as unaccounted. Asking ``is_plugin_dir`` rather
+    than restating its rule is what keeps that partition exact, and what makes a
+    directory ``discover`` rejects for some *future* third reason report rather
+    than slip through.
+
+    Derived, not restated: ``staging.shared_source_dir``, each adapter's
+    ``source_dir``, ``namespaces`` filtered through ``should_install_namespace``,
+    ``known_tools``, the discovered plugins. Three paths are stated instead —
+    ``plugins_root``, which the caller owns and passes in, and a plugin's
+    ``.agents``/``.<tool>`` scope names, which mirror ``overlay.py`` rather than
+    being read from it. A third plugin scope added there would leave this stale.
+    """
+    shared = frozenset(
+        ns
+        for ns in namespaces.SHARED
+        if any(get_adapter(tool).should_install_namespace(ns, "shared") for tool in known_tools())
+    )
+    # A plugin contributes through its .agents tree and one dir per known tool
+    # (overlay.py); nothing else inside a plugin directory is ever opened.
+    plugin_scopes = frozenset({".agents"} | {f".{tool.value}" for tool in known_tools()})
+
+    plugin_children = frozenset(
+        child.name
+        for child in (plugins_root.iterdir() if plugins_root.is_dir() else ())
+        if child.is_dir() and not is_plugin_dir(child)
+    ) | frozenset(plugin.source_path.name for plugin in plugins)
+
+    staged: dict[Path, frozenset[str]] = {
+        shared_source_dir(repo_root): shared,
+        plugins_root: plugin_children,
+    }
+    for tool in known_tools():
+        adapter = get_adapter(tool)
+        staged[adapter.source_dir(repo_root)] = frozenset(
+            ns for ns in adapter.scoped_namespaces() if adapter.should_install_namespace(ns, "tool")
+        )
+    for plugin in plugins:
+        staged[plugin.source_path] = plugin_scopes
+        staged[plugin.source_path / ".agents"] = shared
+        for tool in known_tools():
+            adapter = get_adapter(tool)
+            staged[plugin.source_path / f".{tool.value}"] = frozenset(
+                ns
+                for ns in namespaces.PLUGIN_TOOL_SCOPED
+                if adapter.should_install_namespace(ns, "tool")
+            )
+        # Routes are the third staging channel, and the one a map built from the
+        # tool overlay alone cannot see: a specialized adapter places content
+        # outside every tool tree, as beads does by sending .beads/formulas and
+        # .beads/scripts to ~/.beads/. Missing them does not merely under-report,
+        # it inverts the claim — the gate calls content that deploys correctly
+        # "content that deploys nowhere" and offers three remedies that would
+        # each break it.
+        for route in plugin.routes(_ROUTE_PROBE_HOME):
+            source = route.source_dir
+            staged[source.parent] = staged.get(source.parent, frozenset()) | {source.name}
+    return staged
+
+
+def _stale_exemptions(repo_root: Path) -> list[str]:
+    """Register entries naming a directory that is not there.
+
+    An exemption is a judgement about a body of content, so an entry with no
+    content behind it has outlived whatever justified it — and it fails silent,
+    since an exemption that matches nothing simply never fires. That is the
+    mechanism that let ``src/kits`` sit in the register after the directory was
+    archived: the instance was caught by a human reading the code, which is
+    precisely the check that does not run on every build. Retiring the entry
+    without retiring the mechanism would leave the next one to be found the
+    same way.
+    """
+    return sorted(
+        f"{path}: exempted by UNGATED_ROOTS, but no such directory exists — an exemption "
+        "outliving its content is a standing authorisation for whatever lands there next"
+        for path in UNGATED_ROOTS
+        if not (repo_root / path).is_dir()
+    )
+
+
+def _unaccounted_dirs(
+    repo_root: Path, *, staged: dict[Path, frozenset[str]], ignore: InstallIgnore
+) -> list[Path]:
+    """Directories under ``src/`` that nothing accounts for, repo-relative.
+
+    Staging not reading a directory is two different facts wearing one face. It
+    can mean nobody wired the directory up — the defect this reports — or it can
+    mean the repo decided the directory is source-side only, which is a decision
+    already taken and not a finding. Reporting the second is how a gate teaches
+    people to ignore it, so the declared cases are enumerated rather than
+    rediscovered:
+
+    1. ``UNGATED_ROOTS`` exempts it. Checked first, so an exemption means the
+       same thing wherever the directory sits — a subtree declared out of scope
+       is out of scope even when a staging root sits inside it. Any later test
+       would make containment silently defeat the register.
+    2. it is a root staging reads out of, or holds one — descend, because the
+       gap may be deeper. ``src/user`` holds staging roots without being one;
+       so does a plugin directory.
+    3. its parent is such a root and its name is one of the namespaces read out
+       of that root — accounted, and *not* descended into, because a namespace
+       stages whole. This is what keeps a skill's own ``scripts/`` interior from
+       reporting as unread content.
+    4. ``.installignore`` excludes it by a directory pattern. This is the repo's
+       existing register of deliberately-unstaged source, and ``rules-readmes/``
+       is in it *and* documented in the plugin layout — so without this branch
+       the gate fails a contributor for following the documentation.
+
+    Anything else is unaccounted, reported at the shallowest such directory.
+
+    Branch 4 passes ``at_root`` for a direct child of a staged *root*, which is
+    the declaring scope ``InstallIgnore.excludes`` now names — a second scope,
+    disjoint from the pruning one ``stage_namespace`` uses, added to that
+    contract and to the manifest's own header by this gate's arrival. It is not
+    an approximation of the pruning scope: the walk stops at a namespace, so it
+    never asks where staging asks. Calling it approximate would invite someone to
+    tighten it, and tightening it fails the build on the layout
+    ``src/plugins/AGENTS.md`` documents.
+
+    The cost, stated in the manifest too: a directory pattern silences that name
+    wherever this walk looks, not only where staging would have pruned it. That
+    makes ``.installignore`` a silencing channel — one of five, with the staged
+    roots, the namespace names, ``UNGATED_ROOTS`` and ``BUILD_DIRS`` — and the
+    only one editable by someone thinking about deploys rather than about this
+    gate. Nothing here bounds what a pattern may silence.
+
+    ``BUILD_DIRS`` is read from ``content_tests`` rather than restated. Failing
+    the build over a directory the sibling gate refuses to walk would be the two
+    gates disagreeing about what is out of scope, which is the defect class both
+    were built to close.
+
+    Symlinked directories are skipped. Not for termination — descent requires a
+    staged key strictly at or below the child, and staged keys are finite and
+    fixed-depth, so the walk is bounded whatever is on disk — but because a
+    symlink is a pointer rather than content: its target is walked on its own
+    account if it lives under ``src/``, and reported once rather than once per
+    name pointing at it. Files are not checked either; a stray file beside
+    ``src/user`` is a different defect with a different remedy, and a gate that
+    reports everything reports nothing.
+    """
+    src_root = repo_root / "src"
+    if not src_root.is_dir():
+        return []
+
+    unaccounted: list[Path] = []
+    pending = [src_root]
+    while pending:
+        current = pending.pop()
+        read_from_here = staged.get(current)
+        for child in sorted(p for p in current.iterdir() if p.is_dir() and not p.is_symlink()):
+            relative = child.relative_to(repo_root)
+            if relative in UNGATED_ROOTS:
+                continue
+            # One test, not two: a root is trivially relative to itself, so this
+            # covers "child IS a root staging reads" and "child merely holds one"
+            # in a single predicate. Both descend, for different reasons — the
+            # first to judge the names below it, the second to find the roots.
+            if any(root.is_relative_to(child) for root in staged):
+                pending.append(child)
+            elif (
+                (read_from_here is not None and child.name in read_from_here)
+                or child.name in BUILD_DIRS
+                or ignore.excludes(child.name, is_dir=True, at_root=read_from_here is not None)
+            ):
+                continue
+            else:
+                unaccounted.append(relative)
+    return sorted(unaccounted)
+
+
 def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
-    """Stage ``repo_root``'s ``src/`` for every tool and plugin, then run the
-    deploy gate over it and report what it found.
+    """Stage ``repo_root``'s ``src/`` for every tool and plugin, run the deploy
+    gate over it, and report what it found — plus any directory under ``src/``
+    that staging never reached, which is content the gate could not have judged.
 
     ``io`` receives whatever staging itself emits (e.g. a last-wins merge
     warning); the lint's own findings are returned as data and rendered at the
@@ -324,7 +597,13 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
     the caller surfaces, not something to swallow into a clean result.
     """
     ignore = load_installignore(repo_root / ".installignore")
-    plugins = tuple(discover(repo_root / "src" / "plugins").values())
+    # Stated once. ``_staged_dirs`` takes it as an argument rather than restating
+    # it, so the directory this gate discovers plugins from and the directory it
+    # considers accounted for cannot drift apart. The env override
+    # ``config.resolve_plugins_root`` honours is deliberately not consulted: this
+    # gate lints the repo's own tree, not whatever a machine points the installer at.
+    plugins_root = repo_root / "src" / "plugins"
+    plugins = tuple(discover(plugins_root).values())
     plans = stage_and_transform(
         known_tools(), repo_root=repo_root, io=io, ignore=ignore, plugins=plugins
     )
@@ -367,12 +646,30 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
         for _identity_key, (source, where, tools) in sorted(buckets.items())
     ]
 
+    violations = _collapse_findings(
+        gate.violations,
+        sources=sources,
+        tool_values=frozenset(tool.value for tool in known_tools()),
+    )
+    # Appended after the gate's own findings, and never in place of them: an
+    # unaccounted directory says nothing about the content that WAS staged, so
+    # both reports have to survive the same run.
+    violations.extend(
+        f"{path}: staging never reads this directory, so nothing inside it is measured "
+        "against the admission bar or the surface budget — and nothing inside it "
+        "deploys. Wire it into staging; or, if it is source-side on purpose, declare "
+        "it — a directory pattern in .installignore for a name that is always "
+        "source-side, or UNGATED_ROOTS for this one path with the reason it is exempt"
+        for path in _unaccounted_dirs(
+            repo_root,
+            staged=_staged_dirs(repo_root, plugins_root=plugins_root, plugins=plugins),
+            ignore=ignore,
+        )
+    )
+    violations.extend(_stale_exemptions(repo_root))
+
     return ContentLintResult(
-        violations=_collapse_findings(
-            gate.violations,
-            sources=sources,
-            tool_values=frozenset(tool.value for tool in known_tools()),
-        ),
+        violations=violations,
         unadmitted=unadmitted,
         surfaces=list(gate.surfaces),
         skills=_group_skill_bodies(gate.skills, sources=sources),

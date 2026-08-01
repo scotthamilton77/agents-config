@@ -8,9 +8,11 @@ artifact as fatal or merely reportable according to which subtree it sits in.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
-from installer.core.content_lint import lint_content
+from installer.core.content_lint import UNGATED_ROOTS, lint_content
 from installer.core.io_port import ScriptedIO
 from installer.core.surface_budget import SKILL_BODY_TOKEN_CAP
 from installer.tools.registry import known_tools
@@ -52,6 +54,22 @@ def _repo(
 
 def _lint(repo_root: Path):  # ContentLintResult; inferred at every call site
     return lint_content(repo_root, io=ScriptedIO())
+
+
+@contextmanager
+def _exemption(entries: dict[Path, str]) -> Iterator[None]:
+    """Run the lint with ``entries`` added to the exemption register.
+
+    The register ships empty, so the mechanism has no live occupant to exercise it
+    against. Patching one in is how it stays tested without the repo carrying a
+    standing exemption granted for the sake of testing that exemptions work.
+    """
+    UNGATED_ROOTS.update(entries)
+    try:
+        yield
+    finally:
+        for key in entries:
+            UNGATED_ROOTS.pop(key, None)
 
 
 def test_clean_tree_passes_and_still_reports_its_numbers(tmp_path: Path) -> None:
@@ -268,6 +286,96 @@ def test_always_on_breach_groups_on_its_text_having_no_artifact_behind_it() -> N
     assert collapsed == [f"[claude, codex] {text}"]
 
 
+def test_a_directory_no_staging_root_reaches_is_a_violation(tmp_path: Path) -> None:
+    """The whole gate is scoped to what staging reaches, so a directory it does not
+    reach is content measured by nothing — and it arrives silently, on a green build.
+
+    Asserted alongside the trend numbers because the two reports are independent: an
+    unaccounted directory says nothing about the content that WAS staged, and a run
+    that answered only one of the two questions would be reporting half a verdict.
+    """
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    (repo / "src" / "newthing" / "nested").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith("src/newthing:")]
+    assert not [v for v in result.violations if "nested" in v]  # shallowest only
+    assert result.skills  # the staged content is still measured and reported
+
+
+def test_the_exemption_register_is_empty() -> None:
+    """Which directories are exempt from the admission bar is a decision, and this is
+    where it is on the record. Empty is the useful state: an exemption is a judgement
+    about a body of content, so it belongs to whoever can see that content rather than
+    to whoever anticipated it. Widening this must arrive as a reviewed diff."""
+    assert UNGATED_ROOTS == {}
+
+
+def test_an_exempt_directory_is_not_reported_as_unaccounted(tmp_path: Path) -> None:
+    """The mechanism, separately from the membership. A directory nothing stages but
+    that the register names is a decision already taken, and re-reporting it every run
+    would train a reader to skip the one finding that is not a decision already taken.
+    """
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    exempt = Path("src") / "someday"
+    (repo / exempt / "content").mkdir(parents=True)
+    with _exemption({exempt: "because the test says so"}):
+        result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_a_namespace_no_adapter_stages_is_a_violation(tmp_path: Path) -> None:
+    """The likeliest instance of this defect, and the one root-level accounting misses.
+
+    Codex, Gemini and OpenCode declare no tool-scoped namespaces at all, so a skill
+    placed at src/user/.codex/skills/ — a path that looks exactly like the one that
+    works for Claude — deploys nowhere and is weighed by nothing. It needs no new tool
+    and no registry edit, only a plausible guess, which makes it likelier than the
+    unknown-tool-tree case and invisible to a check that stops at the root.
+    """
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    (repo / "src" / "user" / ".codex" / "skills" / "orphan").mkdir(parents=True)
+    (repo / "src" / "user" / ".agents" / "commands" / "orphan").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith("src/user/.codex/skills:")]
+    # 'commands' is deliberately absent from the shared namespaces (shared content
+    # is tool-agnostic; commands are a tool-scoped concept), so the shared tree has
+    # the same hole as a tool tree and must answer to the same rule.
+    assert [v for v in result.violations if v.startswith("src/user/.agents/commands:")]
+
+
+def test_a_namespace_interior_is_not_reported(tmp_path: Path) -> None:
+    """A namespace stages whole — a skill directory is one DIR item, interior and all.
+    Descending past it would report every skill's own scripts/ subdirectory as unread
+    content, and a gate that fires on a valid tree is one the next contributor deletes.
+    """
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    (repo / "src" / "user" / ".agents" / "skills" / "tidy" / "scripts").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_a_tool_tree_the_registry_does_not_know_is_caught_one_level_down(
+    tmp_path: Path,
+) -> None:
+    """src/user holds staging roots without being one, so the check descends into it.
+    Stopping at the top level would pass a src/user/.newtool that no adapter reads —
+    the same defect as an unstaged src/newthing, one directory deeper."""
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    (repo / "src" / "user" / ".newtool" / "rules").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith("src/user/.newtool:")]
+
+
 def test_malformed_record_is_a_violation(tmp_path: Path) -> None:
     """A record stating both worth fields aborts a deploy; the lint must fail on it
     here rather than leaving it to be discovered at install time."""
@@ -434,3 +542,161 @@ def test_an_overridden_entry_file_is_not_attributed_or_made_fatal() -> None:
     # An unrelated carried file leaves attribution intact — only the entry file
     # displaces the record source.
     assert _classified_source(carrier, overrides={Path("other.md"): b"x"}) == carrier.source_path
+
+
+def test_a_parked_plugin_directory_is_not_reported(tmp_path: Path) -> None:
+    """`discover` skips `.`/`_`-prefixed directories under src/plugins by documented
+    convention, so one of them is a plugin deliberately parked, not a directory nobody
+    noticed. Reporting it would make the gate fire on a valid tree, and a gate that
+    cries wolf is one the next contributor deletes along with the real check."""
+    repo = _repo(tmp_path, plugin_rules={"graphify/graphify.md": _RECORD + "body\n"})
+    (repo / "src" / "plugins" / "_parked" / ".agents" / "rules").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert result.violations == []
+
+
+def test_a_plugin_namespace_no_tool_overlays_is_a_violation(tmp_path: Path) -> None:
+    """Plugin interiors answer to the same rule as the user tree: the overlay reads
+    only PLUGIN_TOOL_SCOPED out of a plugin's tool dir, so a `hooks` directory there
+    deploys nowhere. Stopping the descent at the plugin root would bless it."""
+    repo = _repo(tmp_path, plugin_rules={"graphify/graphify.md": _RECORD + "body\n"})
+    (repo / "src" / "plugins" / "graphify" / ".claude" / "hooks").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith("src/plugins/graphify/.claude/hooks:")]
+
+
+def test_a_symlink_cycle_under_src_does_not_hang_the_walk(tmp_path: Path) -> None:
+    """Termination is provable from the current code — descent requires a staging root
+    strictly below the child, which bounds depth — but nothing pinned it. A later
+    rewrite into rglob or recursion would reintroduce the loop with every other test
+    still green, and a gate that hangs is worse than one that misses a directory.
+    """
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    (repo / "src" / "loop").symlink_to(repo / "src", target_is_directory=True)
+    (repo / "src" / "user" / "back").symlink_to(repo / "src", target_is_directory=True)
+
+    result = _lint(repo)  # must return at all; the assertion is that we get here
+
+    assert not [v for v in result.violations if "loop" in v or "back" in v]
+
+
+def test_a_directory_installignore_declares_unstaged_is_not_reported(tmp_path: Path) -> None:
+    """The repo already has a register of deliberately-unstaged source, and this check
+    has to read it. `rules-readmes/` is in `.installignore` AND documented in the plugin
+    layout table as source-only-not-installed; without this branch the gate fails a
+    contributor for following the documentation, and the remedies it offers are all
+    wrong. Staging never reads these — silence is the correct verdict, not an oversight.
+    """
+    repo = _repo(
+        tmp_path,
+        skills={"tidy": _RECORD + "body\n"},
+        plugin_rules={"graphify/graphify.md": _RECORD + "body\n"},
+    )
+    (repo / "src" / "user" / ".claude" / "rules-readmes").mkdir(parents=True)
+    (repo / "src" / "plugins" / "graphify" / ".agents" / "rules-readmes").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_a_plugin_scope_no_overlay_reads_is_a_violation(tmp_path: Path) -> None:
+    """A plugin contributes through .agents and one dir per known tool, and nothing
+    else inside it is ever opened. A `docs/` directory there deploys nowhere, so it is
+    reported — the deliberate call being that plugin repo-side material declares itself
+    through .installignore or the register rather than by sitting somewhere unread."""
+    repo = _repo(tmp_path, plugin_rules={"graphify/graphify.md": _RECORD + "body\n"})
+    (repo / "src" / "plugins" / "graphify" / "docs").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith("src/plugins/graphify/docs:")]
+
+
+def test_an_exemption_naming_a_missing_directory_is_a_violation(tmp_path: Path) -> None:
+    """The register fails silent: an exemption matching nothing simply never fires, so a
+    stale entry is found only by someone reading the file. That is how src/kits stayed
+    exempt after it was archived — caught by a human, which is the check that does not
+    run on every build. Retiring the entry without this leaves the mechanism intact.
+    """
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    with _exemption({Path("src") / "longgone": "reason that outlived its content"}):
+        result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith("src/longgone:")]
+    assert [v for v in result.violations if "no such directory exists" in v]
+
+
+def test_a_plugins_bespoke_routes_are_accounted(tmp_path: Path) -> None:
+    """Routes are a third staging channel, and the one a map built from the tool overlay
+    cannot see: BeadsPlugin sends .beads/formulas and .beads/scripts to ~/.beads/, outside
+    every tool tree. Missing them did not under-report, it inverted the claim — the gate
+    called correctly-wired content "content that deploys nowhere" and offered three
+    remedies that would each break it. Uses the beads name deliberately: it is the one
+    entry in the specialized-adapter registry, and every other plugin fixture here is
+    generic, whose routes() is empty and so exercises none of this.
+    """
+    repo = _repo(tmp_path, plugin_rules={"beads/beads.md": _RECORD + "body\n"})
+    beads = repo / "src" / "plugins" / "beads" / ".beads"
+    (beads / "formulas").mkdir(parents=True)
+    (beads / "scripts").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_a_directory_beside_a_route_that_no_route_names_is_a_violation(tmp_path: Path) -> None:
+    """Accounting for a route's own source must not bless its siblings. .beads is reached
+    because routes point into it, not because it is wholly covered — the same distinction
+    between "a root is on the path" and "staging reads this" that the tool trees answer."""
+    repo = _repo(tmp_path, plugin_rules={"beads/beads.md": _RECORD + "body\n"})
+    beads = repo / "src" / "plugins" / "beads" / ".beads"
+    (beads / "formulas").mkdir(parents=True)
+    (beads / "notaroute").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if v.startswith("src/plugins/beads/.beads/notaroute:")]
+
+
+def test_a_build_directory_is_not_reported(tmp_path: Path) -> None:
+    """content-tests refuses to walk these; content-lint must not fail the build over one.
+    Two gates disagreeing about what is out of scope is the defect class both exist to
+    close, so the set is read from content_tests rather than restated here."""
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    (repo / "src" / "user" / ".claude" / "node_modules").mkdir(parents=True)
+    (repo / "src" / "user" / ".agents" / ".venv").mkdir(parents=True)
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_every_specialized_adapters_routes_are_accounted(tmp_path: Path) -> None:
+    """The completeness check, generalised over the registry rather than over beads.
+
+    Three review rounds each found the same shape: a staging channel the accounting map
+    did not model, reported as content that deploys nowhere. Naming beads pins the one
+    that exists; iterating _SPECIALIZED pins the next one, so adding an adapter with
+    bespoke routes cannot silently reintroduce the defect — the fixture builds whatever
+    routes that adapter declares and fails if the map does not reach them.
+    """
+    from installer.plugins.registry import _SPECIALIZED
+
+    assert _SPECIALIZED, "no specialized adapters: this test would be vacuously green"
+
+    for name, factory in _SPECIALIZED.items():
+        root = tmp_path / name
+        root.mkdir()
+        repo = _repo(root, plugin_rules={f"{name}/{name}.md": _RECORD + "body\n"})
+        source_path = repo / "src" / "plugins" / name
+        for route in factory(name, source_path).routes(Path("/nonexistent-home")):
+            route.source_dir.mkdir(parents=True, exist_ok=True)
+        result = _lint(repo)
+
+        assert result.violations == [], f"{name}: {result.violations}"
