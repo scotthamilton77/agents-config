@@ -1,0 +1,23 @@
+[
+  {"query": "can you hand this flaky test investigation off to codex, I'm out of ideas on it", "should_trigger": true},
+  {"query": "get a second opinion from codex on this migration plan before I merge it", "should_trigger": true},
+  {"query": "this is a big cross-subsystem refactor and I want codex to take a pass at it — which model should it be on?", "should_trigger": true},
+  {"query": "have codex review the diff on this branch", "should_trigger": true},
+  {"query": "the review-panel skill says to run a cross-model lens on this, use codex for that lens", "should_trigger": true},
+  {"query": "you're clearly stuck on this one. rescue it with codex.", "should_trigger": true},
+  {"query": "delegate this bug investigation to codex instead of doing it yourself", "should_trigger": true},
+  {"query": "spin up codex to triage these 40 files, cheapest tier is fine, i just want a shortlist", "should_trigger": true},
+  {"query": "i want a codex pass on the security implications here before the final pre-merge review", "should_trigger": true},
+  {"query": "farm the boring per-file review out to codex and just give me the summary at the end", "should_trigger": true},
+
+  {"query": "delegate this refactor to a cheap model via openrouter, kimi or glm probably", "should_trigger": false},
+  {"query": "can you launch the gemini CLI to double-check this output", "should_trigger": false},
+  {"query": "whats the actual difference between gpt-5.6-sol and gpt-5.6-terra, just curious, dont run anything", "should_trigger": false},
+  {"query": "can you dispatch three parallel subagents to review different files in packages/installer", "should_trigger": false},
+  {"query": "run /codex:review on this PR", "should_trigger": false},
+  {"query": "fork yourself and go research how the beads schema handles dependency cycles", "should_trigger": false},
+  {"query": "my codex CLI auth expired again, how do i re-login", "should_trigger": false},
+  {"query": "write me a subagent brief for the worker thats going to do the workcli migration", "should_trigger": false},
+  {"query": "is openai's codex actually any good compared to claude for big refactors? genuine question", "should_trigger": false},
+  {"query": "use sonnet with high effort for this subagent instead of opus, its mechanical work", "should_trigger": false}
+]
