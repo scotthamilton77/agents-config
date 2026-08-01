@@ -477,7 +477,16 @@ class Executor:
         A probe that does not answer returns ``None`` and the normal route
         runs. Not knowing whether the ref is there is not evidence that it is
         not, and the ordinary route already copes with a server that will not
-        talk."""
+        talk.
+
+        What the row claims is what was measured -- that the remote does not
+        advertise the ref -- rather than the conclusion drawn from it. The two
+        come apart: a server configured with `uploadpack.hideRefs` holds refs
+        it does not advertise, so an empty answer is very good evidence of
+        absence and not proof of it. Stating the measurement keeps the row true
+        on such a server, where the cost is a deletion this run declines to
+        make; the tracking ref survives, the next report shows the target
+        again, and naming it after a fetch still works."""
         remote, _, ref = target.name.partition("/")
         if not ref:
             # Unparseable, and _delete_remote_branch is where that is reported.
@@ -491,9 +500,9 @@ class Executor:
             name=target.name,
             deleted=False,
             verified=True,
-            detail=f"{ref} is already gone from {remote}; nothing to delete. The tracking "
-            f"ref refs/remotes/{target.name} is stale -- `git fetch --prune {remote}` "
-            f"clears it",
+            detail=f"{remote} does not advertise refs/heads/{ref}, so there is nothing there "
+            f"to delete. The tracking ref refs/remotes/{target.name} is what put this in "
+            f"the plan -- `git fetch --prune {remote}` clears it",
             already_absent=True,
         )
 

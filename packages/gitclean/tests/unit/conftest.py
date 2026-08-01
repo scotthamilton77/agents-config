@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from gitclean.model import Branch, MergeEvidence, PullRequest, Survey, Worktree
+from gitclean.model import Branch, MergeEvidence, NotOffered, PullRequest, Survey, Worktree
 
 NOW = datetime(2026, 7, 25, 12, 0, 0, tzinfo=UTC)
 
@@ -147,6 +147,7 @@ def make_survey(
     gh_error: str | None = None,
     pr_evidence_gap: str | None = None,
     branches_known: bool = True,
+    not_offered: tuple[NotOffered, ...] = (),
     warnings: tuple[str, ...] = (),
 ) -> Survey:
     return Survey(
@@ -162,6 +163,7 @@ def make_survey(
         worktrees=worktrees,
         branches=branches,
         branches_known=branches_known,
+        not_offered=not_offered,
         warnings=warnings,
     )
 

@@ -239,6 +239,24 @@ class Target:
 
 
 @dataclass(frozen=True, slots=True)
+class NotOffered:
+    """A ref the survey read and deliberately did not turn into a target.
+
+    Recorded rather than merely skipped, because "absent from the target list"
+    and "absent from the repository" are different facts and only one of them
+    authorises telling a caller there is nothing to delete. Without this the
+    two are indistinguishable downstream, and naming a ref gitclean does not
+    offer would be answered "it is already gone" about a ref that is right
+    there."""
+
+    name: str
+    reason: str
+
+    def as_json(self) -> dict[str, object]:
+        return {"name": self.name, "reason": self.reason}
+
+
+@dataclass(frozen=True, slots=True)
 class Survey:
     """Everything read from git and gh in one pass, before any judgement."""
 
@@ -276,6 +294,12 @@ class Survey:
     every worktree row: with no refs read, nothing *could* have proved the
     commit a worktree holds merged, and the row has to say that rather than
     report an absence of proof as though the question had been asked."""
+    not_offered: tuple[NotOffered, ...] = ()
+    """Refs that exist and are deliberately absent from ``branches``.
+
+    Recorded where the decision is made rather than re-derived later: a second
+    place working out which names those were is a second place to get it
+    wrong, and the two would drift the first time an exclusion changed."""
     warnings: tuple[str, ...] = ()
     """Every probe that did not answer, in reader-facing prose.
 
@@ -299,6 +323,7 @@ class Survey:
             "worktrees": [w.as_json() for w in self.worktrees],
             "branches": [b.as_json() for b in self.branches],
             "branches_known": self.branches_known,
+            "not_offered": [n.as_json() for n in self.not_offered],
         }
 
     def all_warnings(self) -> tuple[str, ...]:

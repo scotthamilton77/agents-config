@@ -328,6 +328,41 @@ def test_an_explicit_salvage_dir_is_honoured() -> None:
     assert plan["salvage_dir"] == "/var/salvage/keep"
 
 
+def test_a_miss_with_no_refs_read_exits_refused_not_clean() -> None:
+    """Exit 0 here would report a branch as gone on the strength of a list that
+    failed to load. The caller is entitled to know the difference between "it
+    is not there" and "I could not look"."""
+    port = make_port(extra={"for-each-ref": fail("fatal: bad object"), "branch -D -- done": ok()})
+
+    code, payload = invoke(["--cleanup", "done"], port)
+
+    assert code == EXIT_REFUSED
+    refusal = payload["refusal"]
+    assert isinstance(refusal, dict)
+    assert refusal["code"] == "E_SURVEY_INCOMPLETE"
+    assert not any(call[:3] == ("git", "branch", "-D") for call in port.transcript)
+
+
+def test_naming_the_servers_copy_of_the_trunk_exits_refused() -> None:
+    """It is on the server and gitclean keeps it out of the target list, so a
+    miss says nothing about whether it exists. Exit 0 with `already gone` would
+    be a false report about a ref sitting right there."""
+    port = make_port(
+        refs=[
+            ref_at("refs/heads/main", "main", "a" * 40, head="*"),
+            ref_at("refs/remotes/origin/main", "origin/main", "a" * 40),
+        ]
+    )
+
+    code, payload = invoke(["--cleanup", "origin/main"], port)
+
+    assert code == EXIT_REFUSED
+    refusal = payload["refusal"]
+    assert isinstance(refusal, dict)
+    assert refusal["code"] == "E_NOT_A_TARGET"
+    assert refusal["remedy"]
+
+
 def _absent_remote_port() -> ScriptedCommands:
     """The tracking ref is here and the server's copy is not, which is what a
     forge that deletes merged branches leaves behind."""

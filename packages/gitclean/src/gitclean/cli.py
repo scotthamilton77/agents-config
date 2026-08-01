@@ -44,11 +44,17 @@ what a bare --cleanup takes:
 naming a target deletes it. Nothing is re-derived, no flag is demanded, and git's
 own refusals -- a checked-out branch, a dirty or locked worktree -- stand as they are.
 
-a name that matches nothing is not an error. The state you asked for already holds, so
-it lands in `plan.absent` with a note and the other named targets are still deleted.
-A server ref the remote no longer has settles the same way, as `already_absent`, without
-writing a salvage bundle for something that is not there to lose. Neither is reported as
-work done: `deleted` stays false, because only a true there means the tool acted.
+a name that matches nothing is not an error, once nothing-matched actually means gone.
+It lands in `plan.absent` with a note and the other named targets are still deleted. A
+server ref the remote no longer advertises settles the same way, as `already_absent`,
+without writing a salvage bundle for something that is not there to lose. Neither is
+reported as work done: `deleted` stays false, because only a true there means the tool
+acted.
+
+it refuses instead where nothing-matched proves nothing -- when no ref could be read at
+all, and when the name is a ref this tool does not offer as a target, such as the
+server's copy of the trunk. Both of those look identical to an absent name and neither
+one is, so saying "already gone" about them would be a false report.
 
 examples:
   gitclean --report --format human

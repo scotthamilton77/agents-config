@@ -86,6 +86,19 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   measured before anything is spent on reaching it, which is why the server is
   asked about a ref *before* its history is bundled rather than after the push
   is rejected.
+- **Absence is a measurement, and "I did not find it" is not one.** This is the
+  same discipline as `None` never authorising a deletion, applied to the other
+  end: before reporting that a named thing is already gone, check that the look
+  was capable of finding it. Three ways it is not, and all three arrive looking
+  identical to a name that matches nothing — the ref read failed so *every*
+  branch is missing; the name is a ref deliberately kept out of the target list,
+  which is why `Survey.not_offered` records those rather than dropping them; or
+  the remote is not advertising a ref it still holds. The first two refuse. The
+  third cannot be distinguished by any question `ls-remote` can ask, so the row
+  states what was measured — the remote does not advertise it — instead of the
+  conclusion, and the cost lands as a deletion not made rather than as a lie.
+  Adding an exclusion to `read_branches` without adding its `NotOffered` record
+  reintroduces this defect silently.
 - **With one exception, and know why it is there.** git's refusals cover
   uncommitted content; they say nothing about a commit made inside a worktree
   on no branch. That tree is clean, git removes it happily, and the record it

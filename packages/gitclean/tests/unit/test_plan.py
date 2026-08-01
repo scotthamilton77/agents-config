@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from conftest import make_branch, make_survey
 
-from gitclean.model import MergeEvidence, Plan, Refusal, Target, TargetKind
+from gitclean.model import MergeEvidence, NotOffered, Plan, Refusal, Target, TargetKind
 from gitclean.plan import build_plan, resolve_selectors
 
 
@@ -181,6 +181,51 @@ def test_one_absent_name_does_not_abort_the_names_beside_it() -> None:
     assert [a.selector for a in result.absent] == ["gone-already"]
 
 
+def test_a_miss_is_not_absence_when_no_ref_could_be_read() -> None:
+    """`branches` is empty here because `for-each-ref` failed, not because the
+    repository has none -- and the list alone cannot tell those apart. Calling
+    it absence would tell a caller their branch is gone while it sits
+    untouched, which is the one thing this tool must never say."""
+    survey = make_survey(branches_known=False)
+
+    result = plan_for((), survey=survey, selectors=["feat/x"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_SURVEY_INCOMPLETE"
+    assert "feat/x" in result.message
+    assert result.remedy
+
+
+def test_a_ref_this_tool_declines_to_offer_is_not_reported_as_gone() -> None:
+    """The server's copy of the trunk exists and is deliberately kept out of
+    the target list. "Nothing matched" is therefore true and "it is already
+    gone" is false, and only the second is a thing to tell somebody."""
+    survey = make_survey(
+        not_offered=(NotOffered(name="origin/main", reason="the server's copy of the trunk"),)
+    )
+
+    result = plan_for((target("branch:x"),), survey=survey, selectors=["origin/main"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_NOT_A_TARGET"
+    assert "origin/main" in result.message
+    assert "the server's copy of the trunk" in result.message
+
+
+def test_the_local_trunk_is_not_confused_with_the_servers_copy_of_it() -> None:
+    """A short-name fallback in the not-offered lookup would match `main`
+    against the recorded `origin/main` and refuse to delete a different ref
+    that is a legal thing to name."""
+    survey = make_survey(
+        not_offered=(NotOffered(name="origin/main", reason="the server's copy of the trunk"),)
+    )
+
+    result = plan_for((target("branch:main", sweepable=False),), survey=survey, selectors=["main"])
+
+    assert isinstance(result, Plan)
+    assert [t.name for t in result.targets] == ["main"]
+
+
 def test_ambiguous_bare_name_is_refused_with_the_candidates() -> None:
     """`feat/x` names both the local branch and origin's copy. Guessing which
     one the caller meant is how the wrong ref gets deleted."""
@@ -220,7 +265,7 @@ def test_repeated_selector_is_not_planned_twice() -> None:
 
 def test_resolve_selectors_returns_targets_in_request_order() -> None:
     targets = (target("branch:a"), target("branch:b"))
-    resolved, absent, refusal = resolve_selectors(["b", "a"], targets)
+    resolved, absent, refusal = resolve_selectors(["b", "a"], targets, make_survey())
     assert refusal is None
     assert absent == []
     assert [t.name for t in resolved] == ["b", "a"]
@@ -236,7 +281,9 @@ def test_ambiguity_still_refuses_and_carries_nothing_forward() -> None:
         target("remote:origin/feat/x", kind=TargetKind.REMOTE_BRANCH),
         target("branch:other"),
     )
-    resolved, absent, refusal = resolve_selectors(["other", "feat/x", "nope"], targets)
+    resolved, absent, refusal = resolve_selectors(
+        ["other", "feat/x", "nope"], targets, make_survey()
+    )
     assert refusal is not None
     assert refusal.code == "E_AMBIGUOUS_TARGET"
     assert resolved == []

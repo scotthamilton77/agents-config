@@ -12,18 +12,36 @@ not have answered themselves: a name matching two things, a branch git will
 reject because a worktree still holds it, and the directory this process is
 standing in.
 
-A name matching *nothing* used to be a fourth, and was wrong. The caller asked
-for that thing to be gone; it is gone. Refusing there reports a completed job
-as a failure -- and because a selector refusal aborts the whole plan, one name
-that had already been dealt with stopped every other deletion the caller asked
-for.
+A name matching *nothing* used to be one of them, and was wrong. The caller
+asked for that thing to be gone; it is gone. Refusing there reports a completed
+job as a failure -- and because a selector refusal aborts the whole plan, one
+name that had already been dealt with stopped every other deletion the caller
+asked for.
+
+What replaced it is narrower than "a miss is fine", because a miss has three
+causes and only one of them is absence. The list can also be empty because the
+ref read failed, or missing a name because this tool does not offer that ref as
+a target -- and in both the branch is sitting right there. Those two refuse,
+and the refusal codes say which, because the alternative is telling somebody
+their branch is gone while it is not. Concluding absence from a list that was
+never able to answer is the same mistake as reading an unanswered probe as a
+clean working tree.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from gitclean.model import Absent, Plan, Refusal, Skipped, Survey, Target, TargetKind
+from gitclean.model import (
+    Absent,
+    NotOffered,
+    Plan,
+    Refusal,
+    Skipped,
+    Survey,
+    Target,
+    TargetKind,
+)
 
 
 def _selector_candidates(target: Target) -> set[str]:
@@ -36,25 +54,75 @@ def _selector_candidates(target: Target) -> set[str]:
     return names
 
 
+def _not_offered(selector: str, survey_data: Survey) -> NotOffered | None:
+    """A ref that exists and that gitclean deliberately does not target.
+
+    Matched on the full `<remote>/<ref>` spelling only. A bare-short fallback
+    looks helpful and is a trap: `main` would match the recorded `origin/main`
+    and refuse to delete the *local* trunk, a different ref that is a perfectly
+    legal thing to name. This is only ever consulted once nothing matched, so
+    the narrow comparison costs nothing real."""
+    return next(
+        (e for e in survey_data.not_offered if selector in {e.name, f"remote:{e.name}"}),
+        None,
+    )
+
+
 def resolve_selectors(
-    selectors: list[str], targets: tuple[Target, ...]
+    selectors: list[str], targets: tuple[Target, ...], survey_data: Survey
 ) -> tuple[list[Target], list[Absent], Refusal | None]:
     """Map caller-supplied names onto targets.
 
-    A miss is recorded and the remaining selectors are still resolved; only
-    ambiguity refuses, because there the tool would have to guess which of two
-    real things to destroy.
+    A miss is recorded and the remaining selectors are still resolved. But a
+    miss only *means* absence when the survey was in a position to see the
+    thing, and there are two ways it was not -- both of which reach here
+    looking exactly like a name that matches nothing:
 
-    The note deliberately states both readings. Nothing here can distinguish a
-    worktree removed thirty seconds ago from a name with a letter wrong -- the
-    repository answers identically -- so asserting either one would be a claim
-    the tool cannot support.
+    - the ref read failed, so every branch is missing from a list that is
+      empty for that reason rather than because the repository is
+    - the name is a ref this tool deliberately does not offer as a target
+
+    In neither case is "there is nothing to delete" a fact anybody measured,
+    and saying it would leave a caller believing a deletion happened. Both
+    refuse instead, which is what the tool does whenever the honest answer is
+    that it cannot say.
+
+    Where the survey *did* answer, the note states both remaining readings.
+    Nothing here can distinguish a worktree removed thirty seconds ago from a
+    name with a letter wrong -- the repository answers identically -- so
+    asserting either one would be a claim the tool cannot support.
     """
     resolved: list[Target] = []
     absent: list[Absent] = []
     for selector in selectors:
         matches = [t for t in targets if selector in _selector_candidates(t)]
         if not matches:
+            excluded = _not_offered(selector, survey_data)
+            if excluded is not None:
+                return (
+                    [],
+                    [],
+                    Refusal(
+                        code="E_NOT_A_TARGET",
+                        message=f"{excluded.name} exists but is not something gitclean "
+                        f"deletes: {excluded.reason}",
+                        remedy="use git directly if that is genuinely what you want; "
+                        "nothing in this run touched it",
+                    ),
+                )
+            if not survey_data.branches_known:
+                return (
+                    [],
+                    [],
+                    Refusal(
+                        code="E_SURVEY_INCOMPLETE",
+                        message=f"no ref could be read in this repository, so nothing matched "
+                        f"{selector!r} and nothing can be concluded from that -- the branch "
+                        f"may be sitting right there",
+                        remedy="fix what stopped `git for-each-ref` (the warnings say what "
+                        "it was) and re-run; nothing was deleted",
+                    ),
+                )
             absent.append(
                 Absent(
                     selector=selector,
@@ -126,7 +194,7 @@ def build_plan(
 ) -> Plan | Refusal:
     absent: list[Absent] = []
     if selectors:
-        chosen, absent, refusal = resolve_selectors(selectors, targets)
+        chosen, absent, refusal = resolve_selectors(selectors, targets, survey_data)
         if refusal is not None:
             return refusal
         invoking = _invoking_worktree(chosen, survey_data)

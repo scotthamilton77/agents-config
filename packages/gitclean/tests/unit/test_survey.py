@@ -631,6 +631,30 @@ def test_origins_symbolic_head_is_not_offered_as_a_branch() -> None:
     assert "origin" not in names
 
 
+def test_a_ref_left_out_of_the_targets_is_recorded_rather_than_dropped() -> None:
+    """Skipping it silently makes "not a target" and "not in the repository"
+    the same fact downstream, and only one of them lets a caller be told there
+    is nothing to delete.
+
+    The symbolic HEAD is recorded under a spelling somebody might actually
+    type. git shortens the ref to a bare `origin`, which nobody would."""
+    port = make_port(
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/HEAD", "origin"),
+            ref_line("refs/remotes/origin/main", "origin/main"),
+        ]
+    )
+
+    surveyed = run(port)
+
+    recorded = {n.name: n.reason for n in surveyed.not_offered}
+    assert set(recorded) == {"origin/HEAD", "origin/main"}
+    assert "symbolic HEAD" in recorded["origin/HEAD"]
+    assert "trunk" in recorded["origin/main"]
+    assert "origin/main" not in [b.name for b in surveyed.branches]
+
+
 def test_remote_refs_are_identified_by_prefix_not_by_a_slash() -> None:
     port = make_port(
         refs=[

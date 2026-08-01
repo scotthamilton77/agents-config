@@ -20,7 +20,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
-from gitclean.model import Branch, MergeEvidence, PullRequest, Survey, Worktree
+from gitclean.model import Branch, MergeEvidence, NotOffered, PullRequest, Survey, Worktree
 from gitclean.ports import CommandPort
 
 _SEP = "\x1f"
@@ -630,12 +630,17 @@ def read_branches(
     default_branch: str,
     prs: dict[str, PullRequest],
     worktree_by_branch: dict[str, str],
-) -> tuple[list[Branch], list[str], bool]:
-    """The branches, the warnings, and whether the ref read answered at all.
+) -> tuple[list[Branch], list[str], bool, list[NotOffered]]:
+    """The branches, the warnings, whether the ref read answered at all, and
+    the refs deliberately left out of the first list.
 
-    The last one is not derivable from an empty branch list, and a worktree row
+    The third is not derivable from an empty branch list, and a worktree row
     needs it: with no refs read there was nothing a commit could have been
-    proven merged against."""
+    proven merged against.
+
+    The fourth exists because "not a target" and "not in the repository" are
+    different facts that a bare absence from ``branches`` cannot tell apart --
+    and only one of them lets a caller be told there is nothing to delete."""
     result = port.git(
         ["for-each-ref", f"--format={_REF_FORMAT}", "refs/heads", "refs/remotes"], cwd=cwd
     )
@@ -647,6 +652,7 @@ def read_branches(
                 f"no branch was surveyed, so this report describes worktrees only"
             ],
             False,
+            [],
         )
 
     local_merged, local_warning = _merged_set(port, cwd, base_ref, remote=False)
@@ -654,6 +660,7 @@ def read_branches(
     warnings = [w for w in (local_warning, remote_warning) if w]
 
     branches: list[Branch] = []
+    not_offered: list[NotOffered] = []
     for line in result.stdout.splitlines():
         if not line.strip():
             continue
@@ -669,11 +676,28 @@ def read_branches(
         is_remote = full.startswith("refs/remotes/")
         if is_remote and full.endswith("/HEAD"):
             # The remote's symbolic HEAD is a pointer, not a branch.
+            not_offered.append(
+                NotOffered(
+                    # Recorded from the full path rather than `name`: git
+                    # shortens refs/remotes/origin/HEAD to a bare `origin`,
+                    # which is not a spelling anybody would type at this tool.
+                    name=full.removeprefix("refs/remotes/"),
+                    reason="the remote's symbolic HEAD, which points at a branch rather than "
+                    "being one; delete the branch it names instead",
+                )
+            )
             continue
         remote = name.split("/", 1)[0] if is_remote and "/" in name else None
         short = name.split("/", 1)[1] if is_remote and remote else name
 
         if is_remote and short == default_branch:
+            not_offered.append(
+                NotOffered(
+                    name=name,
+                    reason=f"the server's copy of the trunk ({default_branch}); gitclean does "
+                    f"not offer it for deletion, and git will do it if you truly mean to",
+                )
+            )
             continue
 
         is_default = not is_remote and name == default_branch
@@ -731,7 +755,7 @@ def read_branches(
                 probe_failures=probe_failures,
             )
         )
-    return branches, warnings, True
+    return branches, warnings, True, not_offered
 
 
 def _worktree_activity(
@@ -795,7 +819,7 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
     prs, gh_error, pr_evidence_gap = read_pull_requests(port, cwd)
     if pr_evidence_gap:
         warnings.append(pr_evidence_gap)
-    branches, branch_warnings, branches_known = read_branches(
+    branches, branch_warnings, branches_known, not_offered = read_branches(
         port,
         cwd,
         base_ref=base_ref,
@@ -829,5 +853,6 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         worktrees=tuple(worktrees),
         branches=tuple(branches),
         branches_known=branches_known,
+        not_offered=tuple(not_offered),
         warnings=tuple(warnings),
     )
