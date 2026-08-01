@@ -8,12 +8,7 @@ admission:
 ---
 
 <!--
-Source: authored 2026-08-01, replacing the codex-routing rule, which failed
-re-admission as a rule — conditional delegation guidance charged to every
-session whether or not Codex was ever reached for. Content is narrowed to what
-the Codex plugin's own deployed surface does not already say; the invocation
-recipe and flag contract were dropped because that surface states them, and
-stated them differently.
+Source: authored 2026-08-01.
 -->
 
 # Delegating to Codex
