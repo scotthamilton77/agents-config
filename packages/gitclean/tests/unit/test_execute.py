@@ -372,10 +372,15 @@ def _remote_port(**overrides: object) -> ScriptedCommands:
 
 
 def test_remote_deletion_is_confirmed_against_the_server() -> None:
+    """`deleted` is asserted alongside `verified` because a target that was
+    already absent satisfies `ok` and `verified` too. Without this line the
+    test passes on a fixture whose server never had the ref, which is a
+    different code path than the one it is named for."""
     port = _remote_port()
     report = run(port, plan(target(TargetKind.REMOTE_BRANCH, "origin/feat/x")), _remote_survey())
     assert report.ok
     assert report.deletions[0].verified
+    assert report.deletions[0].deleted
 
 
 def test_the_remote_delete_is_leased_to_the_commit_that_was_judged() -> None:
