@@ -363,6 +363,67 @@ def test_naming_the_servers_copy_of_the_trunk_exits_refused() -> None:
     assert refusal["remedy"]
 
 
+def _unsplittable_remote_port() -> ScriptedCommands:
+    """A server ref present in the listing and unsplittable, because the read
+    that says where a remote's name ends did not answer."""
+    return make_port(
+        refs=[
+            ref_at("refs/heads/main", "main", "a" * 40, head="*"),
+            ref_at("refs/remotes/origin/feat/x", "origin/feat/x", "b" * 40),
+        ],
+        extra={"remote": fail("fatal: bad config line 3")},
+    )
+
+
+def test_naming_an_unsplittable_server_ref_by_its_short_name_exits_refused() -> None:
+    """The bare name a remote knows a branch by is a spelling this tool offers
+    for selecting one -- and for a ref it could not split, that name is exactly
+    what it failed to recover. So the selector matches nothing, while the
+    branch may be alive on the server.
+
+    A miss means absence only where the survey was in a position to see the
+    thing under the name being used. Here it was not, and the same rule that
+    refuses a miss against a ref listing that never ran has to answer for a
+    listing that ran and could not spell what it read."""
+    port = _unsplittable_remote_port()
+
+    code, payload = invoke(["--cleanup", "feat/x"], port)
+
+    assert code == EXIT_REFUSED
+    refusal = payload["refusal"]
+    assert isinstance(refusal, dict)
+    assert refusal["code"] == "E_SURVEY_INCOMPLETE"
+    assert "could not be split" in str(refusal["message"])
+    assert not any(call[:2] == ("git", "push") for call in port.transcript)
+
+
+def test_the_full_spelling_of_an_unsplittable_server_ref_still_refuses_by_name() -> None:
+    """The other door to the same target, unmoved. It is recorded in
+    `not_offered` under the full spelling git gave, so this path answers with
+    the measurement that stopped the split rather than with the survey's
+    general incompleteness -- a better sentence, and the reason both doors are
+    checked rather than one."""
+    port = _unsplittable_remote_port()
+
+    code, payload = invoke(["--cleanup", "origin/feat/x"], port)
+
+    assert code == EXIT_REFUSED
+    refusal = payload["refusal"]
+    assert isinstance(refusal, dict)
+    assert refusal["code"] == "E_NOT_A_TARGET"
+    assert "remote list could not be read" in str(refusal["message"])
+
+
+def test_an_unsplittable_server_ref_is_counted_on_the_survey() -> None:
+    """The count travels rather than being re-derived from `not_offered`,
+    which holds refs left out for reasons that say nothing about spelling."""
+    _, payload = invoke(["--report"], _unsplittable_remote_port())
+    repo = payload["repo"]
+    assert isinstance(repo, dict)
+    assert repo["unsplit_refs"] == 1
+    assert repo["remotes_known"] is False
+
+
 def _absent_remote_port() -> ScriptedCommands:
     """The tracking ref is here and the server's copy is not, which is what a
     forge that deletes merged branches leaves behind."""

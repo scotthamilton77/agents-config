@@ -288,6 +288,44 @@ def test_a_bare_name_needs_both_listings_because_it_could_be_either() -> None:
     assert "no ref could be read" in result.message
 
 
+def test_a_ref_that_could_not_be_split_stops_a_miss_meaning_absence() -> None:
+    """A server ref recorded only as `<remote>/<ref>`, because telling the two
+    halves apart is what failed. Every other spelling of it -- including the
+    bare one this tool offers for selecting a server ref -- matches nothing,
+    and nothing is what a name that was never there matches too."""
+    survey = make_survey(unsplit_refs=1)
+
+    result = plan_for((target("branch:x"),), survey=survey, selectors=["feat/x"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_SURVEY_INCOMPLETE"
+    assert "could not be split" in result.message
+
+
+def test_a_local_branch_selector_is_not_refused_over_a_server_ref() -> None:
+    """`branch:` says a local branch outright, and local refs were read and
+    split without trouble. Refusing this over a server ref nobody was talking
+    about trades a false absence for a false refusal, which is not a trade --
+    both are the tool answering a question it was not asked."""
+    survey = make_survey(unsplit_refs=1)
+
+    result = plan_for((target("branch:x"),), survey=survey, selectors=["branch:gone"])
+
+    assert isinstance(result, Plan)
+    assert [a.selector for a in result.absent] == ["branch:gone"]
+
+
+def test_a_worktree_selector_is_not_refused_over_a_server_ref() -> None:
+    """Same boundary from the other side: a path can only mean a worktree, and
+    the worktree listing had nothing to do with splitting a ref."""
+    survey = make_survey(unsplit_refs=1)
+
+    result = plan_for((target("branch:x"),), survey=survey, selectors=["/repo/wt"])
+
+    assert isinstance(result, Plan)
+    assert [a.selector for a in result.absent] == ["/repo/wt"]
+
+
 def test_a_ref_this_tool_declines_to_offer_is_not_reported_as_gone() -> None:
     """The server's copy of the trunk exists and is deliberately kept out of
     the target list. "Nothing matched" is therefore true and "it is already

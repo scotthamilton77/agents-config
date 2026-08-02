@@ -132,15 +132,18 @@ def trunk(survey_data: Survey) -> tuple[frozenset[str], frozenset[str]]:
     counterpart -- the local trunk is an ancestor of the published one, which is
     a merge proof by the first question's own definition.
 
-    These are **full ref paths**, and that is the whole of what makes the
-    counterpart safe to name. The trunk used to be a set of caller-facing
-    strings, which meant `origin/main` stood for the server's copy -- and also,
-    silently, for a local branch of that name, a perfectly legal ref that is not
-    the trunk and that its owner is entitled to delete. Building the counterpart
-    by joining the remote to the branch name is the same operation the survey
-    refuses to invert, and it is sound in this direction: composing a path from
-    two known pieces cannot go wrong the way splitting one string into two
-    guesses can.
+    These are **full ref paths**, because a caller-facing name is not an
+    identity. `origin/main` spells the server's copy of the trunk, and it
+    equally spells a local branch of that name -- a legal ref, not the trunk,
+    and one its owner is entitled to delete. A set of those strings holds both
+    and cannot tell them apart, so it protects the second one too and says `this
+    is the trunk` about it in the field a reader checks immediately before
+    deleting something. Ref paths distinguish them; nothing else does.
+
+    Composing the counterpart by joining a configured remote to the branch name
+    is the same operation the survey refuses to invert, and it is sound in this
+    direction: building a path out of two known pieces cannot go wrong the way
+    splitting one string into two guesses can.
 
     The ref merges are measured against needs no entry of its own: it is the
     default branch either locally or on `origin`, so it is already here

@@ -90,12 +90,23 @@ def _lists_that_could_not_answer(selector: str, survey_data: Survey) -> list[str
     needs both. Being unable to say which kind was meant is not a reason to
     trust whichever one happened to answer.
 
-    "Could not answer" covers a listing that did not run *and* one that ran
-    without describing everything it listed. A row nobody could parse is a
-    thing whose existence went unrecorded, which is the same hole as never
-    having looked."""
+    "Could not answer" covers a listing that did not run, one that ran without
+    describing everything it listed, *and* one that described a ref under a
+    spelling this selector cannot be compared against. A row nobody could
+    parse is a thing whose existence went unrecorded, which is the same hole as
+    never having looked -- and so is a server ref recorded only as
+    `<remote>/<ref>` because the two halves could not be told apart. The tool
+    offers the bare name a remote knows a branch by as a way to select it, and
+    for those refs that name is precisely what could not be recovered, so it
+    matches nothing here while the branch may be alive on the server.
+
+    That last one is asked of every selector but `branch:`, which says a local
+    branch outright. Local refs were read and split fine; a miss there is a
+    real miss, and refusing it over a remote ref nobody was talking about
+    trades a false absence for a false refusal."""
     worktree_only = selector.startswith("worktree:") or selector.startswith("/")
     ref_only = selector.startswith(("branch:", "remote:"))
+    local_only = selector.startswith("branch:")
     unread: list[str] = []
     if not ref_only:
         if not survey_data.worktrees_known:
@@ -107,6 +118,11 @@ def _lists_that_could_not_answer(selector: str, survey_data: Survey) -> list[str
             unread.append("no ref could be read")
         elif survey_data.dropped_refs:
             unread.append(f"{survey_data.dropped_refs} ref row(s) went unparsed")
+        if not local_only and survey_data.unsplit_refs:
+            unread.append(
+                f"{survey_data.unsplit_refs} server ref(s) could not be split into a remote and "
+                f"a branch name, so the shorter name you would know one by was never recovered"
+            )
     return unread
 
 

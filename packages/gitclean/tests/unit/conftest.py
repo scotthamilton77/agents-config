@@ -163,6 +163,7 @@ def make_survey(
     worktrees_known: bool = True,
     dropped_refs: int = 0,
     dropped_worktrees: int = 0,
+    unsplit_refs: int = 0,
     # The boring case is a repository with one remote called origin, which is
     # what `base_ref` above already assumes. A test about a remote whose name
     # contains a slash, or about a repository with none, says so here.
@@ -187,6 +188,7 @@ def make_survey(
         worktrees_known=worktrees_known,
         dropped_refs=dropped_refs,
         dropped_worktrees=dropped_worktrees,
+        unsplit_refs=unsplit_refs,
         remotes=remotes,
         remotes_known=remotes_known,
         not_offered=not_offered,

@@ -833,9 +833,10 @@ def read_branches(
     prs: dict[str, PullRequest],
     worktree_by_branch: dict[str, str],
     remotes: tuple[str, ...] | None,
-) -> tuple[list[Branch], list[str], bool, list[NotOffered], int]:
-    """The branches, the warnings, whether the ref read answered at all, and
-    the refs deliberately left out of the first list.
+) -> tuple[list[Branch], list[str], bool, list[NotOffered], int, int]:
+    """The branches, the warnings, whether the ref read answered at all, the
+    refs deliberately left out of the first list, and two counts of what this
+    read could not fully account for.
 
     The third is not derivable from an empty branch list, and a worktree row
     needs it: with no refs read there was nothing a commit could have been
@@ -843,7 +844,11 @@ def read_branches(
 
     The fourth exists because "not a target" and "not in the repository" are
     different facts that a bare absence from ``branches`` cannot tell apart --
-    and only one of them lets a caller be told there is nothing to delete."""
+    and only one of them lets a caller be told there is nothing to delete.
+
+    The counts are rows nobody could parse and refs nobody could split. Both
+    travel because both leave a spelling a caller might use matching nothing,
+    and a miss that means nothing must never settle as absence."""
     result = port.git(
         ["for-each-ref", f"--format={_REF_FORMAT}", "refs/heads", "refs/remotes"], cwd=cwd
     )
@@ -857,6 +862,7 @@ def read_branches(
             False,
             [],
             0,
+            0,
         )
 
     local_merged, local_warning = _merged_set(port, cwd, base_ref, remote=False)
@@ -866,6 +872,7 @@ def read_branches(
     branches: list[Branch] = []
     not_offered: list[NotOffered] = []
     dropped = 0
+    unsplit = 0
     for line in result.stdout.splitlines():
         if not line.strip():
             continue
@@ -907,11 +914,14 @@ def read_branches(
             if isinstance(split, str):
                 # Unsplittable, so nothing can be issued against it -- but it
                 # is sitting right there, and a caller who names it must not be
-                # told it is already gone. NotOffered is what keeps those two
-                # answers apart.
+                # told it is already gone. NotOffered keeps those two answers
+                # apart for the full `<remote>/<ref>` spelling; the count keeps
+                # them apart for every other one, since the spelling this could
+                # not recover is the one a caller is most likely to use.
                 not_offered.append(
                     NotOffered(name=full.removeprefix("refs/remotes/"), reason=split)
                 )
+                unsplit += 1
                 continue
             remote, ref_name = split
             name = full.removeprefix("refs/remotes/")
@@ -1005,7 +1015,13 @@ def read_branches(
             f"{dropped} ref row(s) could not be parsed and are missing from this report; "
             f"a name that matches nothing may be one of them"
         )
-    return branches, warnings, True, not_offered, dropped
+    if unsplit:
+        warnings.append(
+            f"{unsplit} ref(s) under refs/remotes/ could not be split into a remote and a "
+            f"branch name; they are listed under the full spelling git gave, and the shorter "
+            f"name a remote would know them by could not be recovered"
+        )
+    return branches, warnings, True, not_offered, dropped, unsplit
 
 
 def _worktree_activity(
@@ -1072,7 +1088,7 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
     remotes, remotes_warning = read_remotes(port, cwd)
     if remotes_warning is not None:
         warnings.append(remotes_warning)
-    branches, branch_warnings, branches_known, not_offered, dropped_refs = read_branches(
+    read = read_branches(
         port,
         cwd,
         base_ref=base_ref,
@@ -1081,6 +1097,7 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         worktree_by_branch=worktree_by_branch,
         remotes=remotes,
     )
+    branches, branch_warnings, branches_known, not_offered, dropped_refs, unsplit_refs = read
     warnings.extend(branch_warnings)
 
     # A worktree's age is the age of the branch it holds; that is only known
@@ -1110,6 +1127,7 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         worktrees_known=worktrees_known,
         dropped_refs=dropped_refs,
         dropped_worktrees=dropped_worktrees,
+        unsplit_refs=unsplit_refs,
         remotes=remotes or (),
         remotes_known=remotes is not None,
         not_offered=tuple(not_offered),

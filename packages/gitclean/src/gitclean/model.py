@@ -364,6 +364,19 @@ class Survey:
     dropped_worktrees: int = 0
     """Worktree blocks the listing produced that could not be parsed. Same
     distinction as ``dropped_refs``, on the other listing."""
+    unsplit_refs: int = 0
+    """Refs under `refs/remotes/` the listing read and could not split into a
+    remote and a branch name.
+
+    Distinct from ``dropped_refs``, which counts rows nobody could parse: these
+    parsed, and are recorded in ``not_offered`` under the full
+    `<remote>/<ref>` spelling git gave. What is missing is the *other* spelling
+    -- the bare name the remote knows the branch by -- because recovering it is
+    exactly what failed. So a caller naming one of these that way matches
+    nothing, and a miss that means nothing must not be read as absence. This is
+    the measurement that says so, and it is the same fact ``branches_known``
+    carries for the listing as a whole: a question that went unanswered, kept
+    where the code deciding what a miss means can see it."""
     remotes: tuple[str, ...] = ()
     """The configured remotes, exactly as `git remote` named them.
 
@@ -411,6 +424,7 @@ class Survey:
             "worktrees_known": self.worktrees_known,
             "dropped_refs": self.dropped_refs,
             "dropped_worktrees": self.dropped_worktrees,
+            "unsplit_refs": self.unsplit_refs,
             "remotes": list(self.remotes),
             "remotes_known": self.remotes_known,
             "not_offered": [n.as_json() for n in self.not_offered],
