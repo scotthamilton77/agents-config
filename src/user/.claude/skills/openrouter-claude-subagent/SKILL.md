@@ -1,6 +1,6 @@
 ---
 name: openrouter-claude-subagent
-description: Use when launching a run on an OpenRouter-hosted model — the route is settled and what is needed now is the launch command, the tool grant, the model identifier and its price. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, GPT), or when another skill sends a dispatch here. Not for deciding whether to leave Claude in the first place, and not for Codex or Gemini CLI.
+description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, GPT), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, and not for Codex or Gemini CLI.
 admission:
   provides: A nested Claude Code harness whose model traffic is repointed at a non-Anthropic model, plus the stream repair that makes the reply actually arrive — so a task runs on another vendor's weights while keeping this harness's tool loop, permission system, and file editing.
   cost: A local proxy process for the life of each nested run, and an OpenRouter API key the user must supply and pay against. Node must be installed, and the model routing table needs a refresh whenever OpenRouter reprices or retires a model.
