@@ -48,12 +48,15 @@ share a timestamp and are one thing with two or three parts. It is also a
 correctness fact — git refuses to delete a branch its worktree still holds — so
 a reader choosing one has to see the others.
 
-Pair them from the envelope's own relationship fields, never by re-parsing a
-name. Remote names may contain slashes, so splitting one silently mis-keys the
-row — and the failure looks like a fact, because a lookup that misses returns
-nothing, and nothing reads as "never pushed" about a branch that exists
-precisely because it was pushed. **Where a counterpart cannot be identified,
-the row says so. It does not say there isn't one.**
+Pair them from the fields the report already states, never by re-parsing a
+name. A worktree names the branch it holds, and a branch names the worktree
+holding it and the upstream it tracks; those three are the pairing, and each
+appears verbatim in the JSON. Splitting a name instead silently mis-keys the
+row, because remote names may contain slashes — and the failure then looks like
+a fact, since a lookup that misses returns nothing, and nothing reads as "never
+pushed" about a branch that exists precisely because it was pushed. **Where a
+counterpart cannot be identified, the row says so. It does not say there isn't
+one.**
 
 **Order by last activity, oldest first.** Not by kind, not by evidence tier. It
 is the ordering that needs no explanation — but a timestamp is a commit date,
