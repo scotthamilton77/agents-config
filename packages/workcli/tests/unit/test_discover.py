@@ -595,6 +595,37 @@ def test_priority_only_failure_still_returns_triage_incomplete_alone() -> None:
     assert exc_info.value.detail["field"] == "priority"
 
 
+def test_placement_usage_precedes_the_noun_priority_aggregate() -> None:
+    """Placement (pure arg-shape, E_USAGE) must still fire before the
+    noun/priority aggregate, exactly as it fired before --priority alone --
+    the aggregate must not move a pure well-formedness check behind it.
+    """
+    backend = _backend_with_epic_anchor()
+    args = _args(anchor=None, orphan=False, priority="P9")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.USAGE
+    assert "anchor" in exc_info.value.message and "orphan" in exc_info.value.message
+
+
+def test_scope_precedes_the_noun_priority_aggregate() -> None:
+    """The exact session reported: bad --scope with bad --priority together
+    must still surface the scope rejection, not the priority one -- scope
+    fired before priority before the aggregate existed, and introducing the
+    aggregate must not change that relative order.
+    """
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(scope="sideways", priority="P9")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.TRIAGE_INCOMPLETE
+    assert exc_info.value.detail["field"] == "scope"
+
+
 def test_malformed_noun_and_priority_together_via_cli_one_envelope() -> None:
     """Same double-failure, driven through the CLI exactly as the friction was
     observed -- top-level code is `E_TRIAGE_INCOMPLETE` (see the unit-level

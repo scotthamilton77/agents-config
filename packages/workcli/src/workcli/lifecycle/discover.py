@@ -306,9 +306,14 @@ def discover(backend: Backend, args: Namespace) -> JsonValue:
     is enforced by the `REQUIRED_CAPABILITY` registration in
     `verbs/__init__.py`, ahead of this handler ever running.
     """
-    noun, priority = _validate_noun_and_priority(args)
+    # Precedence restored to match the pre-aggregate order: placement-usage
+    # (pure arg-shape) before scope (semantic), before the noun/priority
+    # aggregate (semantic/mixed) -- introducing the aggregate must not change
+    # when placement or scope fire relative to it; it only bundles noun in
+    # alongside priority's own original slot.
     _validate_placement_usage(args)
     scope, hatch = _parse_scope(args.scope)
+    noun, priority = _validate_noun_and_priority(args)
     scope_why = _require_rationale(args.scope_why, "scope_why", "--scope-why")
     priority_why = _require_rationale(args.priority_why, "priority_why", "--priority-why")
     if args.orphan:
