@@ -20,6 +20,30 @@ class Noun(StrEnum):
 # structural container.
 LEAF_NOUNS: tuple[Noun, ...] = (Noun.SPIKE, Noun.CHORE, Noun.DECISION, Noun.FEAT, Noun.BUGFIX)
 
+# First-guess synonyms accepted in place of a canonical noun value. 'bug'
+# names the thing discovered; 'bugfix' (the canonical noun) names the
+# remedy -- every other noun already names the thing, so 'bug' is the one
+# people reach for and get wrong. Resolving it here, once, keeps every
+# consumer's stored value byte-identical to the canonical noun regardless of
+# which spelling the caller used.
+NOUN_ALIASES: dict[str, Noun] = {"bug": Noun.BUGFIX}
+
+
+def resolve_noun(value: str) -> Noun | None:
+    """Resolve `value` to its canonical `Noun`, accepting `NOUN_ALIASES` too.
+
+    Returns `None` when `value` is neither a canonical noun value nor a
+    known alias -- callers turn that into a typed usage error naming the
+    valid choices.
+    """
+    alias = NOUN_ALIASES.get(value)
+    if alias is not None:
+        return alias
+    try:
+        return Noun(value)
+    except ValueError:
+        return None
+
 
 @dataclass(frozen=True)
 class NounTemplate:

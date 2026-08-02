@@ -475,6 +475,204 @@ def test_container_noun_is_usage_error_via_cli(noun: str) -> None:
     assert envelope["error"]["code"] == str(ErrorCode.USAGE)  # type: ignore[index]
 
 
+# --- 9k9.99: accepted argument-shape aliases (--noun 'bug', bare --priority) ---
+# and single-pass reporting when both --noun and --priority are malformed.
+
+
+def test_noun_alias_bug_resolves_to_canonical_bugfix_template() -> None:
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(noun="bug")
+
+    data = discover(backend, args)
+
+    assert isinstance(data, dict)
+    new_id = data["item"]["id"]  # type: ignore[index]
+    assert isinstance(new_id, str)
+    assert backend.get(new_id).type == "bug"
+    assert "shape-bugfix" in backend.labels(new_id)
+
+
+def test_bare_priority_normalizes_to_canonical_p_notation() -> None:
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(priority="2")
+
+    data = discover(backend, args)
+
+    assert isinstance(data, dict)
+    assert data["triage"]["priority"] == "P2"  # type: ignore[index]
+    new_id = data["item"]["id"]  # type: ignore[index]
+    assert isinstance(new_id, str)
+    assert backend.get(new_id).priority == "P2"
+    assert "- Priority: P2 — reason" in backend.get(new_id).description
+
+
+def test_alias_and_canonical_forms_produce_byte_identical_stored_records() -> None:
+    backend_alias = _backend_with_epic_anchor()
+    backend_canon = _backend_with_epic_anchor()
+
+    data_alias = discover(backend_alias, _out_of_scope_args(noun="bug", priority="2"))
+    data_canon = discover(backend_canon, _out_of_scope_args(noun="bugfix", priority="P2"))
+
+    assert isinstance(data_alias, dict)
+    assert isinstance(data_canon, dict)
+    id_alias = data_alias["item"]["id"]  # type: ignore[index]
+    id_canon = data_canon["item"]["id"]  # type: ignore[index]
+    assert isinstance(id_alias, str)
+    assert isinstance(id_canon, str)
+    item_alias = backend_alias.get(id_alias)
+    item_canon = backend_canon.get(id_canon)
+
+    assert item_alias.type == item_canon.type
+    assert item_alias.priority == item_canon.priority
+    assert item_alias.description == item_canon.description
+    assert set(backend_alias.labels(id_alias)) == set(backend_canon.labels(id_canon))
+
+
+def test_unknown_noun_alone_raises_single_field_usage_error() -> None:
+    """A single bad --noun still raises its own (non-combined) error unchanged."""
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(noun="widget")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.USAGE
+    assert exc_info.value.detail["field"] == "noun"
+    assert "widget" in exc_info.value.message
+    assert backend.ids() == ["epic-1", "src-1"]
+
+
+def test_malformed_noun_and_priority_together_are_both_reported_from_one_call() -> None:
+    """The observed friction: two rejections used to cost two round-trips.
+
+    Neither 'widget' (not a noun or a known alias) nor 'P9' (out of P0-P4,
+    even after bare-digit normalization) is individually acceptable, and
+    both must be named from this single invocation.
+    """
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(noun="widget", priority="P9")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.USAGE
+    assert "widget" in exc_info.value.message
+    assert "P0" in exc_info.value.message and "P4" in exc_info.value.message
+    errors = exc_info.value.detail["errors"]
+    assert isinstance(errors, list)
+    fields = {entry["field"] for entry in errors}  # type: ignore[union-attr]
+    assert fields == {"noun", "priority"}
+    assert backend.ids() == ["epic-1", "src-1"]
+
+
+def test_malformed_noun_and_priority_together_via_cli_one_envelope() -> None:
+    """Same double-failure, driven through the CLI exactly as the friction was observed."""
+    exit_code, envelope, _ = run_cli(
+        [
+            "discover",
+            "--noun",
+            "widget",
+            "--title",
+            "T",
+            "--anchor",
+            "epic-1",
+            "--anchor-why",
+            "x",
+            "--discovered-from",
+            "src-1",
+            "--scope",
+            "out-of-scope",
+            "--scope-why",
+            "x",
+            "--priority",
+            "P9",
+            "--priority-why",
+            "x",
+        ],
+        steps=[],
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.USAGE)
+    detail = error["detail"]
+    assert isinstance(detail, dict)
+    errors = detail["errors"]
+    assert isinstance(errors, list)
+    fields = {entry["field"] for entry in errors}  # type: ignore[union-attr]
+    assert fields == {"noun", "priority"}
+
+
+def test_previously_rejected_shapes_now_succeed_via_cli() -> None:
+    """The exact observed session: --noun bug and --priority 2 together succeed."""
+
+    def _show_result(item_id: str, issue_type: str) -> BdResult:
+        return BdResult(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {
+                        "id": item_id,
+                        "title": "t",
+                        "issue_type": issue_type,
+                        "status": "open",
+                        "priority": 2,
+                        "labels": [],
+                    }
+                ]
+            ),
+            stderr="",
+        )
+
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(("show", "src-1", "--json"), _show_result("src-1", "task")),
+            ScriptedStep(("show", "epic-1", "--json"), _show_result("epic-1", "epic")),
+            ScriptedStep(("search",), BdResult(returncode=0, stdout=json.dumps([]), stderr="")),
+            ScriptedStep(
+                ("create",),
+                BdResult(returncode=0, stdout=json.dumps({"id": "new-1"}), stderr=""),
+            ),
+            ScriptedStep(("dep", "add"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("show", "new-1", "--json"), _show_result("new-1", "bug")),
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        [
+            "discover",
+            "--noun",
+            "bug",
+            "--title",
+            "New discovery",
+            "--anchor",
+            "epic-1",
+            "--anchor-why",
+            "best fit",
+            "--discovered-from",
+            "src-1",
+            "--scope",
+            "out-of-scope",
+            "--scope-why",
+            "found it",
+            "--priority",
+            "2",
+            "--priority-why",
+            "hurts overnight",
+        ],
+        runner,
+        config_loader=_not_found_config_loader,
+    )
+
+    assert exit_code == 0
+    assert envelope["ok"] is True
+    create_index = next(i for i, call in enumerate(runner.calls) if call[0] == "create")
+    create_call = runner.calls[create_index]
+    assert "--type" in create_call and "bug" in create_call
+    assert "--priority" in create_call and "P2" in create_call
+
+
 # --- AC12: every invocation emits exactly one parseable envelope ---
 
 
