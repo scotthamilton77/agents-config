@@ -669,7 +669,7 @@ def test_a_worktree_path_holding_a_newline_is_recorded_whole() -> None:
 
 
 def test_a_git_without_nul_framing_drops_what_it_could_not_account_for() -> None:
-    """`-z` landed in git 2.36. Older git gets the line-based read, where the
+    """A git that declines `-z` gets the line-based read, where the
     only evidence that a path was cut short is the fragment arriving as a key
     the format does not have. That block is dropped rather than recorded under
     a truncated path -- a name that then matches nothing, about a worktree

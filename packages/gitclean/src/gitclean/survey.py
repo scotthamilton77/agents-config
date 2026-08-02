@@ -35,8 +35,9 @@ _SEP = "\x1f"
 # well. It is the shortest spelling that resolves back to this ref and no
 # other -- git lengthens it the moment a shorter one would be ambiguous -- so
 # it is exactly what a probe should hand to git, and exactly what should never
-# be parsed for structure. `\x1f` and the newline are both safe as separators:
-# git rejects every ASCII control character in a refname.
+# be parsed for structure. `\x1f` and the newline are both safe as separators
+# here, and that is measured rather than assumed: `git check-ref-format`
+# rejects a refname containing either one.
 _REF_FORMAT = _SEP.join(
     [
         "%(refname)",
@@ -241,9 +242,13 @@ def split_remote_ref(full: str, remotes: tuple[str, ...] | None) -> tuple[str, s
 _WORKTREE_ATTRIBUTES = frozenset(
     {"worktree", "bare", "HEAD", "branch", "detached", "locked", "prunable"}
 )
-"""Every key `worktree list --porcelain` emits, as of the last git that needed
-the fallback parser below. It is a closed set there and nowhere else -- see
-``_parse_worktrees``."""
+"""The attributes `git worktree list --porcelain` documents.
+
+Read only by the fallback parser below, and read there as "keys this recognises"
+rather than as "keys git has". A key outside this set means the block said
+something that was not recorded, whether that is a path fragment or an
+attribute a git somewhere has and this does not -- and both settle the same
+way, as a block dropped rather than one recorded wrongly."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,12 +284,16 @@ def _parse_worktrees(records: list[str], *, framed: bool) -> tuple[list[dict[str
     of them read as a stray key.
 
     That stray key is the only evidence available in the unframed case, and it
-    is nearly enough: the attribute names are a closed set on any git old
-    enough to lack `-z`, so a key outside it means this block described
+    is nearly enough: a key this does not recognise means the block said
     something that was not recorded. The block is dropped rather than kept
     under a path that may be a prefix of the real one -- a truncated path is a
     name that matches nothing while the tree is sitting there, which is the
     answer this package exists not to give.
+
+    A lock reason may hold a newline too, and needs no rule of its own: git
+    quotes it here (`locked "reason\\nwhy"`) and leaves it raw only under `-z`,
+    where a newline cannot end a record anyway. Documented behaviour in both
+    directions, so it is read rather than guarded against.
 
     What it does not catch, and cannot: a path whose text after the newline
     begins with an attribute name -- `.../we\\nbare` -- reads as a well-formed
@@ -323,12 +332,17 @@ def list_worktrees(port: CommandPort, cwd: Path | None) -> WorktreeListing:
     A worktree path may contain a newline, and the porcelain format does not
     escape one -- it is emitted raw, so a line-based reader records a truncated
     path and counts nothing as missing. `-z` frames every record with a NUL
-    instead, which no path can contain, and git has offered it since 2.36.
+    instead, which no path can contain. This is not an inference about the
+    format: git documents `-z` as existing for exactly this, "to parse the
+    output when a worktree path contains a newline character", and recommends
+    combining it with `--porcelain`.
 
-    Older git gets the line-based read, with the parser refusing to record a
-    block whose keys say it lost something. What must not happen is either
-    reading: a truncated path taken for a whole one, or a listing described as
-    complete when it is not."""
+    Whether the running git offers it is a question rather than an assumption,
+    so it is asked rather than predicted from a version. A git that declines
+    gets the line-based read, with the parser refusing to record a block whose
+    keys say it lost something. What must not happen is either reading: a
+    truncated path taken for a whole one, or a listing described as complete
+    when it is not."""
     framed = port.git(["worktree", "list", "--porcelain", "-z"], cwd=cwd)
     if framed.ok:
         blocks, dropped = _parse_worktrees(framed.stdout.split("\0"), framed=True)
