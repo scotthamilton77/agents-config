@@ -113,8 +113,9 @@ def _combined_error(errors: list[WorkError]) -> WorkError:
     `message` and `detail.errors` preserve every folded failure's own
     message and code verbatim. The top-level `code` is `E_TRIAGE_INCOMPLETE`
     if any folded failure is triage-semantic, `E_USAGE` only when every
-    folded failure is pure arg-shape -- keeping the top level greppable for
-    a triage rejection, per the discover spec's design decision 6.
+    folded failure is pure arg-shape -- so a caller grepping the top level
+    for a triage rejection still finds one when an unrelated arg-shape
+    mistake co-occurs in the same call.
     """
     detail: dict[str, JsonValue] = {
         "errors": cast(

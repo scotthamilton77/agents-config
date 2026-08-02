@@ -314,6 +314,34 @@ def test_manifest_row_out_of_scope_and_remaining_work_false() -> None:
     assert data["remaining_work"] is False
 
 
+def test_success_payload_matches_the_complete_data_shape_exactly() -> None:
+    """The whole `data` payload for a successful discover, not a subset --
+    catches a field dropped, renamed, or added that a narrower assertion
+    would miss."""
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args()
+
+    data = discover(backend, args)
+
+    assert isinstance(data, dict)
+    new_id = data["item"]["id"]  # type: ignore[index]
+    assert isinstance(new_id, str)
+    assert data == {
+        "item": {"id": new_id, "title": "New discovery", "track": None},
+        "edges": {"parent": "epic-1", "discovered_from": "src-1"},
+        "triage": {"scope": "out-of-scope", "priority": "P2", "anchor": "epic-1"},
+        "manifest_row": {
+            "item": "New discovery",
+            "scope": "out-of-scope",
+            "lands_in": "epic-1",
+            "tracked_item": new_id,
+            "priority_why": "P2 — reason",
+        },
+        "remaining_work": False,
+        "warnings": [],
+    }
+
+
 def test_manifest_row_in_scope_deferred_lands_in_parent_and_remaining_work_true() -> None:
     backend = _backend_with_epic_anchor()
     args = _args(
@@ -493,18 +521,20 @@ def test_noun_alias_bug_resolves_to_canonical_bugfix_template() -> None:
     assert "shape-bugfix" in backend.labels(new_id)
 
 
-def test_bare_priority_normalizes_to_canonical_p_notation() -> None:
+@pytest.mark.parametrize("digit", ["0", "1", "2", "3", "4"])
+def test_bare_priority_normalizes_to_canonical_p_notation(digit: str) -> None:
     backend = _backend_with_epic_anchor()
-    args = _out_of_scope_args(priority="2")
+    args = _out_of_scope_args(priority=digit)
+    expected = f"P{digit}"
 
     data = discover(backend, args)
 
     assert isinstance(data, dict)
-    assert data["triage"]["priority"] == "P2"  # type: ignore[index]
+    assert data["triage"]["priority"] == expected  # type: ignore[index]
     new_id = data["item"]["id"]  # type: ignore[index]
     assert isinstance(new_id, str)
-    assert backend.get(new_id).priority == "P2"
-    assert "- Priority: P2 — reason" in backend.get(new_id).description
+    assert backend.get(new_id).priority == expected
+    assert f"- Priority: {expected} — reason" in backend.get(new_id).description
 
 
 def test_alias_and_canonical_forms_produce_byte_identical_stored_records() -> None:
@@ -553,9 +583,8 @@ def test_malformed_noun_and_priority_together_are_both_reported_from_one_call() 
     """Neither 'widget' (not a noun or a known alias) nor 'P9' (out of
     P0-P4, even after bare-digit normalization) is individually acceptable;
     both are named from this single invocation. The top-level code is
-    `E_TRIAGE_INCOMPLETE` (per discover spec design decision 6: a greppable
-    triage-rejection signal), even though the noun failure alone is
-    `E_USAGE`.
+    `E_TRIAGE_INCOMPLETE`, so a caller grepping for a triage rejection
+    still finds one, even though the noun failure alone is `E_USAGE`.
     """
     backend = _backend_with_epic_anchor()
     args = _out_of_scope_args(noun="widget", priority="P9")
@@ -676,6 +705,34 @@ def test_scope_precedes_the_noun_priority_aggregate_for_a_bad_noun() -> None:
 
     assert exc_info.value.code is ErrorCode.TRIAGE_INCOMPLETE
     assert exc_info.value.detail["field"] == "scope"
+
+
+def test_placement_usage_both_shape_precedes_the_noun_priority_aggregate() -> None:
+    """The 'both' placement shape (--anchor and --orphan together) must also
+    fire before the noun/priority aggregate -- the existing placement
+    precedence tests above only cover the 'neither' shape.
+    """
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(orphan=True, escalation_why="none fits", priority="P9")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.USAGE
+    assert "anchor" in exc_info.value.message and "orphan" in exc_info.value.message
+
+
+def test_placement_usage_both_shape_precedes_the_noun_priority_aggregate_for_a_bad_noun() -> None:
+    """Same 'both' placement shape proof as above, exercising the noun side
+    of the aggregate."""
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(orphan=True, escalation_why="none fits", noun="widget")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.USAGE
+    assert "anchor" in exc_info.value.message and "orphan" in exc_info.value.message
 
 
 def test_malformed_noun_and_priority_together_via_cli_one_envelope() -> None:
