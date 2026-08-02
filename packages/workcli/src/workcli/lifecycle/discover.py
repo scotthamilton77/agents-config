@@ -115,6 +115,16 @@ def _combined_error(errors: list[WorkError]) -> WorkError:
     single-field failure used to report is lost -- the caller just learns
     about every bad field from one invocation instead of one round-trip per
     field.
+
+    The top-level `code` is `E_TRIAGE_INCOMPLETE` if any folded failure is
+    triage-semantic, `E_USAGE` only when every folded failure is pure
+    arg-shape. Per the discover spec's own design decision 6, the separate
+    `E_TRIAGE_INCOMPLETE` code exists so a consumer can grep the top level
+    for "triage rejected" -- collapsing to `E_USAGE` whenever a second,
+    unrelated arg-shape mistake happens to co-occur would make that signal
+    *quieter* exactly when the caller made an additional mistake, which is
+    backwards. `detail.errors` still carries every individual error's own
+    code either way, so nothing is lost by this choice.
     """
     detail: dict[str, JsonValue] = {
         "errors": cast(
@@ -130,7 +140,12 @@ def _combined_error(errors: list[WorkError]) -> WorkError:
         )
     }
     message = "; ".join(f"{error.detail.get('field', '?')}: {error.message}" for error in errors)
-    return WorkError(ErrorCode.USAGE, message, detail)
+    code = (
+        ErrorCode.TRIAGE_INCOMPLETE
+        if any(error.code is ErrorCode.TRIAGE_INCOMPLETE for error in errors)
+        else ErrorCode.USAGE
+    )
+    return WorkError(code, message, detail)
 
 
 def _validate_noun_and_priority(args: Namespace) -> tuple[Noun, str]:

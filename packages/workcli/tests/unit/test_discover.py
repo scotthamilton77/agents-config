@@ -547,7 +547,13 @@ def test_malformed_noun_and_priority_together_are_both_reported_from_one_call() 
 
     Neither 'widget' (not a noun or a known alias) nor 'P9' (out of P0-P4,
     even after bare-digit normalization) is individually acceptable, and
-    both must be named from this single invocation.
+    both must be named from this single invocation. The top-level code is
+    `E_TRIAGE_INCOMPLETE`, not `E_USAGE`: --priority is a triage-semantic
+    failure, and per the discover spec's design decision 6 that must stay
+    greppable at the top level even when an unrelated arg-shape mistake
+    (the bad --noun) co-occurs in the same call -- collapsing to `E_USAGE`
+    would make the triage signal disappear exactly when the caller made an
+    additional mistake.
     """
     backend = _backend_with_epic_anchor()
     args = _out_of_scope_args(noun="widget", priority="P9")
@@ -555,18 +561,44 @@ def test_malformed_noun_and_priority_together_are_both_reported_from_one_call() 
     with pytest.raises(WorkError) as exc_info:
         discover(backend, args)
 
-    assert exc_info.value.code is ErrorCode.USAGE
+    assert exc_info.value.code is ErrorCode.TRIAGE_INCOMPLETE
     assert "widget" in exc_info.value.message
     assert "P0" in exc_info.value.message and "P4" in exc_info.value.message
     errors = exc_info.value.detail["errors"]
     assert isinstance(errors, list)
     fields = {entry["field"] for entry in errors}  # type: ignore[union-attr]
     assert fields == {"noun", "priority"}
+    # Every individual field's own code still survives in detail.errors,
+    # even though the top-level code is the folded one above.
+    codes_by_field = {entry["field"]: entry["code"] for entry in errors}  # type: ignore[union-attr]
+    assert codes_by_field == {
+        "noun": str(ErrorCode.USAGE),
+        "priority": str(ErrorCode.TRIAGE_INCOMPLETE),
+    }
     assert backend.ids() == ["epic-1", "src-1"]
 
 
+def test_priority_only_failure_still_returns_triage_incomplete_alone() -> None:
+    """Pins that the single-field code path is untouched by the combined-error
+    fix: a triage-semantic failure alone must keep returning exactly the
+    `E_TRIAGE_INCOMPLETE` it always did (see
+    `test_invalid_priority_names_field_and_accepted_range`, unedited) -- this
+    is the invariant the top-level-code fix above exists to protect.
+    """
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(priority="P9")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.TRIAGE_INCOMPLETE
+    assert exc_info.value.detail["field"] == "priority"
+
+
 def test_malformed_noun_and_priority_together_via_cli_one_envelope() -> None:
-    """Same double-failure, driven through the CLI exactly as the friction was observed."""
+    """Same double-failure, driven through the CLI exactly as the friction was
+    observed -- top-level code is `E_TRIAGE_INCOMPLETE` (see the unit-level
+    test's docstring above for why)."""
     exit_code, envelope, _ = run_cli(
         [
             "discover",
@@ -595,7 +627,7 @@ def test_malformed_noun_and_priority_together_via_cli_one_envelope() -> None:
     assert exit_code == 1
     error = envelope["error"]
     assert isinstance(error, dict)
-    assert error["code"] == str(ErrorCode.USAGE)
+    assert error["code"] == str(ErrorCode.TRIAGE_INCOMPLETE)
     detail = error["detail"]
     assert isinstance(detail, dict)
     errors = detail["errors"]
