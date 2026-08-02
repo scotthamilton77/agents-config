@@ -11,6 +11,7 @@ matching `test_dep_type_wall.py`/`test_capabilities.py`.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from argparse import Namespace
 from io import StringIO
@@ -18,7 +19,7 @@ from io import StringIO
 import pytest
 
 from tests.conftest import run_cli, run_cli_with_runner
-from tests.fake_backend import FakeBackend
+from tests.fake_backend import FakeBackend, ReadOnlyFakeBackend
 from tests.fakes import ScriptedBdRunner, ScriptedStep
 from workcli import cli as cli_module
 from workcli.adapters.bd.runner import BdResult
@@ -441,10 +442,10 @@ def test_post_create_track_read_failure_surfaces_created_id_for_replay() -> None
     assert exc_info.value.detail["created_id"] not in ("epic-1", "src-1")
 
 
-# --- AC11: --noun spec/epic -> E_USAGE (leaf nouns only, argparse choices) ---
+# --- AC11: --noun outside the leaf set -> E_USAGE (leaf nouns only) ---
 
 
-@pytest.mark.parametrize("noun", ["spec", "epic"])
+@pytest.mark.parametrize("noun", ["spec", "epic", "milestone"])
 def test_container_noun_is_usage_error_via_cli(noun: str) -> None:
     exit_code, envelope, _ = run_cli(
         [
@@ -475,8 +476,8 @@ def test_container_noun_is_usage_error_via_cli(noun: str) -> None:
     assert envelope["error"]["code"] == str(ErrorCode.USAGE)  # type: ignore[index]
 
 
-# --- 9k9.99: accepted argument-shape aliases (--noun 'bug', bare --priority) ---
-# and single-pass reporting when both --noun and --priority are malformed.
+# --- accepted argument-shape aliases (--noun 'bug', bare --priority), and
+# single-pass reporting when both --noun and --priority are malformed. ---
 
 
 def test_noun_alias_bug_resolves_to_canonical_bugfix_template() -> None:
@@ -522,14 +523,18 @@ def test_alias_and_canonical_forms_produce_byte_identical_stored_records() -> No
     item_alias = backend_alias.get(id_alias)
     item_canon = backend_canon.get(id_canon)
 
-    assert item_alias.type == item_canon.type
-    assert item_alias.priority == item_canon.priority
-    assert item_alias.description == item_canon.description
-    assert set(backend_alias.labels(id_alias)) == set(backend_canon.labels(id_canon))
+    # Byte-identical field for field -- title, type, status, priority,
+    # labels, parent, description, notes, children, and dep edges -- except
+    # each backend's own assigned id.
+    assert dataclasses.replace(item_alias, id="") == dataclasses.replace(item_canon, id="")
+    # The discovered-from provenance edge, named explicitly.
+    assert item_alias.deps == item_canon.deps
 
 
 def test_unknown_noun_alone_raises_single_field_usage_error() -> None:
-    """A single bad --noun still raises its own (non-combined) error unchanged."""
+    """A single bad --noun still raises its own (non-combined) error unchanged:
+    the exact code, message, and detail, not just a fragment of any of them --
+    AC5 pins full error identity, not "close enough"."""
     backend = _backend_with_epic_anchor()
     args = _out_of_scope_args(noun="widget")
 
@@ -537,23 +542,20 @@ def test_unknown_noun_alone_raises_single_field_usage_error() -> None:
         discover(backend, args)
 
     assert exc_info.value.code is ErrorCode.USAGE
-    assert exc_info.value.detail["field"] == "noun"
-    assert "widget" in exc_info.value.message
+    assert exc_info.value.message == (
+        "invalid choice: 'widget' (choose from spike, chore, decision, feat, bugfix)"
+    )
+    assert exc_info.value.detail == {"field": "noun"}
     assert backend.ids() == ["epic-1", "src-1"]
 
 
 def test_malformed_noun_and_priority_together_are_both_reported_from_one_call() -> None:
-    """The observed friction: two rejections used to cost two round-trips.
-
-    Neither 'widget' (not a noun or a known alias) nor 'P9' (out of P0-P4,
-    even after bare-digit normalization) is individually acceptable, and
-    both must be named from this single invocation. The top-level code is
-    `E_TRIAGE_INCOMPLETE`, not `E_USAGE`: --priority is a triage-semantic
-    failure, and per the discover spec's design decision 6 that must stay
-    greppable at the top level even when an unrelated arg-shape mistake
-    (the bad --noun) co-occurs in the same call -- collapsing to `E_USAGE`
-    would make the triage signal disappear exactly when the caller made an
-    additional mistake.
+    """Neither 'widget' (not a noun or a known alias) nor 'P9' (out of
+    P0-P4, even after bare-digit normalization) is individually acceptable;
+    both are named from this single invocation. The top-level code is
+    `E_TRIAGE_INCOMPLETE` (per discover spec design decision 6: a greppable
+    triage-rejection signal), even though the noun failure alone is
+    `E_USAGE`.
     """
     backend = _backend_with_epic_anchor()
     args = _out_of_scope_args(noun="widget", priority="P9")
@@ -578,12 +580,35 @@ def test_malformed_noun_and_priority_together_are_both_reported_from_one_call() 
     assert backend.ids() == ["epic-1", "src-1"]
 
 
+def test_unknown_noun_alone_touches_no_backend_mutation() -> None:
+    """`ReadOnlyFakeBackend` raises on every mutator, so a malformed --noun
+    reaching `create_noun` fails loudly here. The backend is left empty --
+    noun validation runs before any read too, so nothing needs seeding.
+    """
+    backend = ReadOnlyFakeBackend()
+    args = _out_of_scope_args(noun="widget")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.USAGE
+
+
+def test_malformed_noun_and_priority_together_touches_no_backend_mutation() -> None:
+    """Same mechanical proof as above, for the combined-failure path."""
+    backend = ReadOnlyFakeBackend()
+    args = _out_of_scope_args(noun="widget", priority="P9")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.TRIAGE_INCOMPLETE
+
+
 def test_priority_only_failure_still_returns_triage_incomplete_alone() -> None:
-    """Pins that the single-field code path is untouched by the combined-error
-    fix: a triage-semantic failure alone must keep returning exactly the
-    `E_TRIAGE_INCOMPLETE` it always did (see
-    `test_invalid_priority_names_field_and_accepted_range`, unedited) -- this
-    is the invariant the top-level-code fix above exists to protect.
+    """A triage-semantic failure alone returns `E_TRIAGE_INCOMPLETE` with its
+    own field and message -- matches
+    `test_invalid_priority_names_field_and_accepted_range` field for field.
     """
     backend = _backend_with_epic_anchor()
     args = _out_of_scope_args(priority="P9")
@@ -592,13 +617,14 @@ def test_priority_only_failure_still_returns_triage_incomplete_alone() -> None:
         discover(backend, args)
 
     assert exc_info.value.code is ErrorCode.TRIAGE_INCOMPLETE
-    assert exc_info.value.detail["field"] == "priority"
+    assert exc_info.value.message == "priority must be one of P0-P4, got 'P9'"
+    assert exc_info.value.detail == {"field": "priority"}
 
 
 def test_placement_usage_precedes_the_noun_priority_aggregate() -> None:
-    """Placement (pure arg-shape, E_USAGE) must still fire before the
-    noun/priority aggregate, exactly as it fired before --priority alone --
-    the aggregate must not move a pure well-formedness check behind it.
+    """Placement (pure arg-shape, `E_USAGE`) fires before the noun/priority
+    aggregate: the aggregate must never move a pure well-formedness check
+    behind it.
     """
     backend = _backend_with_epic_anchor()
     args = _args(anchor=None, orphan=False, priority="P9")
@@ -611,10 +637,8 @@ def test_placement_usage_precedes_the_noun_priority_aggregate() -> None:
 
 
 def test_scope_precedes_the_noun_priority_aggregate() -> None:
-    """The exact session reported: bad --scope with bad --priority together
-    must still surface the scope rejection, not the priority one -- scope
-    fired before priority before the aggregate existed, and introducing the
-    aggregate must not change that relative order.
+    """Bad --scope with bad --priority together surfaces the scope
+    rejection, not the priority one: scope fires before the aggregate.
     """
     backend = _backend_with_epic_anchor()
     args = _out_of_scope_args(scope="sideways", priority="P9")
@@ -626,10 +650,38 @@ def test_scope_precedes_the_noun_priority_aggregate() -> None:
     assert exc_info.value.detail["field"] == "scope"
 
 
+def test_placement_usage_precedes_the_noun_priority_aggregate_for_a_bad_noun() -> None:
+    """Same precedence proof as the bad-priority case above, exercising the
+    noun side of the aggregate instead: the whole aggregate sits behind
+    placement and scope, not just --priority's side of it.
+    """
+    backend = _backend_with_epic_anchor()
+    args = _args(anchor=None, orphan=False, noun="widget")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.USAGE
+    assert "anchor" in exc_info.value.message and "orphan" in exc_info.value.message
+
+
+def test_scope_precedes_the_noun_priority_aggregate_for_a_bad_noun() -> None:
+    """Same precedence proof as the bad-priority case above, but exercising
+    the noun side of the aggregate."""
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(scope="sideways", noun="widget")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.TRIAGE_INCOMPLETE
+    assert exc_info.value.detail["field"] == "scope"
+
+
 def test_malformed_noun_and_priority_together_via_cli_one_envelope() -> None:
-    """Same double-failure, driven through the CLI exactly as the friction was
-    observed -- top-level code is `E_TRIAGE_INCOMPLETE` (see the unit-level
-    test's docstring above for why)."""
+    """Same double-failure, driven through the CLI -- top-level code is
+    `E_TRIAGE_INCOMPLETE` (see the unit-level test's docstring above for
+    why)."""
     exit_code, envelope, _ = run_cli(
         [
             "discover",
@@ -668,7 +720,7 @@ def test_malformed_noun_and_priority_together_via_cli_one_envelope() -> None:
 
 
 def test_previously_rejected_shapes_now_succeed_via_cli() -> None:
-    """The exact observed session: --noun bug and --priority 2 together succeed."""
+    """--noun bug and --priority 2 together succeed, driven through the CLI."""
 
     def _show_result(item_id: str, issue_type: str) -> BdResult:
         return BdResult(

@@ -110,21 +110,11 @@ def _validate_noun(value: str) -> Noun:
 def _combined_error(errors: list[WorkError]) -> WorkError:
     """Fold 2+ independent field failures into one well-formed error.
 
-    Each field's own message (still naming its valid choices/vocabulary) is
-    preserved verbatim in both `message` and `detail.errors`, so nothing a
-    single-field failure used to report is lost -- the caller just learns
-    about every bad field from one invocation instead of one round-trip per
-    field.
-
-    The top-level `code` is `E_TRIAGE_INCOMPLETE` if any folded failure is
-    triage-semantic, `E_USAGE` only when every folded failure is pure
-    arg-shape. Per the discover spec's own design decision 6, the separate
-    `E_TRIAGE_INCOMPLETE` code exists so a consumer can grep the top level
-    for "triage rejected" -- collapsing to `E_USAGE` whenever a second,
-    unrelated arg-shape mistake happens to co-occur would make that signal
-    *quieter* exactly when the caller made an additional mistake, which is
-    backwards. `detail.errors` still carries every individual error's own
-    code either way, so nothing is lost by this choice.
+    `message` and `detail.errors` preserve every folded failure's own
+    message and code verbatim. The top-level `code` is `E_TRIAGE_INCOMPLETE`
+    if any folded failure is triage-semantic, `E_USAGE` only when every
+    folded failure is pure arg-shape -- keeping the top level greppable for
+    a triage rejection, per the discover spec's design decision 6.
     """
     detail: dict[str, JsonValue] = {
         "errors": cast(
@@ -151,13 +141,10 @@ def _combined_error(errors: list[WorkError]) -> WorkError:
 def _validate_noun_and_priority(args: Namespace) -> tuple[Noun, str]:
     """Validate --noun and --priority together, in one pass.
 
-    Both were previously validated by mechanisms that each raised on the
-    first failure -- argparse's own `choices=` for --noun (which never even
-    reached this module) and this module's own `_validate_priority` -- so a
-    caller who got both wrong learned about only one per invocation. Neither
-    check raises until both have run; a single-field failure still raises
-    that field's own error unchanged (preserving the existing contract), and
-    only a two-field failure changes shape, via `_combined_error`.
+    Both validators run before either is allowed to raise, so a caller with
+    both fields wrong learns about both from one invocation. A single-field
+    failure still raises that field's own error unchanged; two failures fold
+    into one via `_combined_error`.
     """
     noun_result: Noun | WorkError
     try:
@@ -306,11 +293,9 @@ def discover(backend: Backend, args: Namespace) -> JsonValue:
     is enforced by the `REQUIRED_CAPABILITY` registration in
     `verbs/__init__.py`, ahead of this handler ever running.
     """
-    # Precedence restored to match the pre-aggregate order: placement-usage
-    # (pure arg-shape) before scope (semantic), before the noun/priority
-    # aggregate (semantic/mixed) -- introducing the aggregate must not change
-    # when placement or scope fire relative to it; it only bundles noun in
-    # alongside priority's own original slot.
+    # Placement (pure arg-shape) is validated before scope (semantic),
+    # before the noun/priority aggregate -- keep this order: the aggregate
+    # must never fire ahead of placement or scope.
     _validate_placement_usage(args)
     scope, hatch = _parse_scope(args.scope)
     noun, priority = _validate_noun_and_priority(args)

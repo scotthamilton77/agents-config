@@ -20,12 +20,10 @@ class Noun(StrEnum):
 # structural container.
 LEAF_NOUNS: tuple[Noun, ...] = (Noun.SPIKE, Noun.CHORE, Noun.DECISION, Noun.FEAT, Noun.BUGFIX)
 
-# First-guess synonyms accepted in place of a canonical noun value. 'bug'
-# names the thing discovered; 'bugfix' (the canonical noun) names the
-# remedy -- every other noun already names the thing, so 'bug' is the one
-# people reach for and get wrong. Resolving it here, once, keeps every
-# consumer's stored value byte-identical to the canonical noun regardless of
-# which spelling the caller used.
+# Synonyms accepted in place of a canonical noun value. 'bug' names the
+# thing discovered; 'bugfix' (the canonical noun) names the remedy.
+# Resolved here, once, so every consumer's stored value is byte-identical
+# to the canonical noun regardless of which spelling the caller used.
 NOUN_ALIASES: dict[str, Noun] = {"bug": Noun.BUGFIX}
 
 
