@@ -19,9 +19,22 @@ Commands should be lean and delegating: parse the user's intent, extract `$ARGUM
 
 ## File Format
 
-Plain markdown. No frontmatter.
+Markdown with YAML front matter. The front matter is not optional: the deploy
+gate treats `commands` as a gated namespace, and **a command carrying no
+`admission:` record is silently dropped** — it stages, it lints, and it simply
+never lands in the tool's config directory. A malformed record is worse: it
+aborts the whole deploy.
 
 ```markdown
+---
+description: One line, shown to the user in the command list. This is the only
+  part that costs anything until someone types the command.
+admission:
+  provides: <the capability this supplies>   # or `prevents:`, never both
+  cost: <what it costs, and on which surface>
+  remove_when: <the observation that would retire it>
+---
+
 # Command Name
 
 Brief one-line description of what this command does.
@@ -38,7 +51,7 @@ Invoke the relevant skill or dispatch the relevant agent.
 Summarize what was done.
 ```
 
-`$ARGUMENTS` is a placeholder that receives everything the user typed after the slash command name. Example: `/optimize-my-skill writing-unit-tests` → `$ARGUMENTS = "writing-unit-tests"`.
+`$ARGUMENTS` is a placeholder that receives everything the user typed after the slash command name. Example: `/clean-up-git packages/` → `$ARGUMENTS = "packages/"`.
 
 ---
 
