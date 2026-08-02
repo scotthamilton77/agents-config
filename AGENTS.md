@@ -118,8 +118,11 @@ and disappears with the worktree. Never stage `graphify-out/` into a branch.
 
 ## Communication Style
 
-In conversations with the user, keep your responses concise and don't over-explain; let 
-the user ask for more detail rather than offering it proactively. BLUF - bottom line up 
-front.  Don't assume the user will recognize work by work-id, document sections by section
+Keep responses focused, brief, and concise. Keep disclaimers and caveats short, and spend 
+most of the response on the main answer. When asked to explain something, give a high-level 
+summary unless an in-depth explanation is specifically requested. BLUF - bottom line up 
+front.  
+
+Don't assume the user will recognize work by work-id, document sections by section
 number, etc.  The user needs help connecting dots sometimes, so it's ok to use short
 reminders, e.g. `xjc2.4 (auth feature epic)`.
