@@ -1,6 +1,6 @@
 ---
 admission:
-  provides: Standing authorization to delegate to subagents and workflows without being asked each time, the boundary between orchestrator work and delegated work, the model/effort floor, and a consult gate before spawning a Fable subagent.
+  provides: Standing authorization to delegate to subagents and workflows without being asked each time, the boundary between orchestrator work and delegated work, the pointer to the delegate-selection skill, and a consult gate before spawning a Fable subagent.
   cost: Always-on rule loaded into every Claude Code session; biases toward spawning subagents, spending dispatch overhead on work the main loop could have done inline.
   remove_when: The harness stops shipping a built-in prohibition on unrequested delegation, and unaided sessions hold the orchestrator/delegated boundary without being told.
 ---
@@ -48,7 +48,7 @@ what ships.
   skill. The user not naming a vendor is not a reason to stay native.
 - Match model to the job: cheap tiers for mechanical work, top tiers for judgment.
 - When your own judgment is strained, a dispatch upward is legitimate: consult an
-  advisor agent on a stronger model or higher effort than your own.
+  advisor agent on a stronger model than your own.
 - **Never spawn a subagent with Fable as the model without first consulting the user.**
 </routing>
 

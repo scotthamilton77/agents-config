@@ -41,7 +41,8 @@ the user's account. Those are the gates. Who reads the code is your judgement.
 
 When the answer is native, the Agent tool is the substrate and `model` is the whole
 capability lever on it — the Agent tool accepts no effort parameter, so do not write a
-dispatch or a brief that assumes one.
+dispatch or a brief that assumes one. Effort exists on Workflow `agent()` calls and in
+an agent definition's own front matter; if you need that lever, those are where it is.
 
 ## Where to go
 
@@ -54,7 +55,7 @@ exists fails at dispatch or silently routes somewhere you did not intend.
 |---|---|
 | OpenAI models, via that vendor's own runtime | The Codex delegation skill — **present only when the Codex plugin is installed**. Check your skill list; if it is absent, that route does not exist in this session. |
 | Everything else — other vendors, cheaper tiers, a specific named model | The OpenRouter subagent skill, which runs this same harness against another vendor's weights. |
-| A stronger or higher-effort perspective on Claude | The Agent tool. Legitimate when your own judgement is strained, but it is depth, not independence. |
+| A stronger perspective on Claude | The Agent tool, on a stronger model. Legitimate when your own judgement is strained, but it is depth, not independence. |
 
 If the route you want is absent, say so and offer the one that is present. Do not
 substitute a same-vendor delegate and describe it as a second opinion.
