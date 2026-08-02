@@ -31,7 +31,9 @@ into `~/.claude/` (Claude is always an active tool; never auto-detected away).
   and stage into `~/.claude/rules/` at install time. Both are empty today —
   the record-less rules moved to `archive/src/user/**`. Keep files scoped and
   single-purpose.
-- Everything in `skills/` and `rules/` is subject to the admission gate: no
+- `commands/*.md` — one flat file per command; a tool-scoped namespace with no
+  shared variant, so Claude is the only tree that carries one.
+- Everything in `commands/`, `skills/` and `rules/` is subject to the admission gate: no
   `admission:` record in front matter means the installer drops it and prunes
   any deployed copy. Adding a file here without a record ships nothing.
 

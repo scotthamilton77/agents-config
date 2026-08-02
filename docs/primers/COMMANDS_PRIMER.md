@@ -21,9 +21,11 @@ Commands should be lean and delegating: parse the user's intent, extract `$ARGUM
 
 Markdown with YAML front matter. The front matter is not optional: the deploy
 gate treats `commands` as a gated namespace, and **a command carrying no
-`admission:` record is silently dropped** — it stages, it lints, and it simply
-never lands in the tool's config directory. A malformed record is worse: it
-aborts the whole deploy.
+`admission:` record is dropped at deploy** — it stages, and then simply never
+lands in the tool's config directory. In this repository `content-lint` catches
+it first and fails, because a record-less artifact under the user tree is fatal
+there; where that gate does not run, the drop is silent. A malformed record is
+worse in both places: it aborts the whole deploy.
 
 ```markdown
 ---

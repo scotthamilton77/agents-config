@@ -38,5 +38,5 @@ deletion on the strength of a survey that never happened.
 
 So: survey everything you mention, relay each withheld target **with the reason
 given**, and say plainly when something was not measured. Naming a target to
-`gitclean` skips every safety check by design, which makes it the user's
+`gitclean` skips the checks a bare sweep applies, which makes it the user's
 decision to make and never yours to make for them.

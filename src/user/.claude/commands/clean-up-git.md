@@ -15,9 +15,11 @@ in between.
 or a fragment of either. Empty shows everything.
 
 > Naming something here does **not** authorize deleting it. `gitclean` treats a
-> named target as the caller's decision and skips every safety check, so the
-> authorization only ever comes from step 4. Say this back to the user if they
-> appear to have meant otherwise.
+> named target as the caller's decision and skips the checks a bare sweep
+> applies. It still refuses an ambiguous name, a branch a worktree holds, and
+> the worktree the run is standing in — but the authorization itself only ever
+> comes from step 4. Say this back to the user if they appear to have meant
+> otherwise.
 
 If `gitclean` is not on PATH, say so and stop.
 
@@ -101,9 +103,11 @@ unknown — because the file that does not regenerate is exactly the one nobody
 will miss until it is gone.
 
 **Distinguish "nothing on it yet" from "finished".** A worktree branched an hour
-ago onto the trunk tip is *provably merged* and a bare sweep takes it, while
-nothing on disk says an agent is working there. Both are true; only one is a
-reason to delete.
+ago sits on the trunk tip, so `gitclean` withholds it — it cannot tell deleting
+that from deleting the trunk. The withheld reason therefore talks about the
+trunk, which is not what the reader needs to know: nothing on disk says whether
+an agent is working there. Say "nothing on it yet" rather than "finished", and
+never present a withheld row as one a sweep would have taken.
 
 **Relay every `withheld` reason as given**, and report `plan.skipped` — a sweep
 that quietly did less than asked reads as success. If `repo.gh_error` is set,

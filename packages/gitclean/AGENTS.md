@@ -21,8 +21,9 @@ loop: `make test-gitclean`.
 
 This package **is** in the installer's `CLI_PACKAGES` registry and installs onto
 PATH as `gitclean`. Being inside `make ci` is not what earns that — `vizsuite`
-is gated and stays off — so a change here reaches a deployed tool, and the
-`clean-up-git` skill drives it.
+is gated and stays off — so a change here reaches a deployed tool, driven by the
+`/clean-up-git` command interactively and named to agents by the
+`post-merge-cleanup` skill.
 
 ## Architecture
 
