@@ -450,6 +450,21 @@ def test_a_worktree_that_goes_dirty_after_the_survey_is_left_alone(repo: Path) -
 
 
 # -- the pairing a reader groups rows by --------------------------------------
+#
+# The values worth crossing this with are the ones a naive recovery divides on.
+# Two are exercised below -- a worktree path containing the separator a reason
+# sentence uses, and a remote whose own name contains the slash in
+# `<remote>/<ref>`. Two are deliberately absent:
+#
+# - a branch name containing a space, because git will not make one. `git branch
+#   'feat with space'` is refused as an invalid ref name, so no repository can
+#   present the value and a test would be asserting against git's own rules.
+# - a newline in a worktree path, which git accepts and emits raw. It is absent
+#   for a different reason: `read_worktrees` parses that listing line by line, so
+#   the path is already truncated at the newline by the time anything pairs it.
+#   The two rows then agree with each other about a path that does not exist,
+#   and a test here would pin the truncation rather than the relation. It belongs
+#   with the fix to that parse, not with this.
 
 
 def test_the_pairing_holds_for_a_path_no_sentence_can_be_split_on(
@@ -510,6 +525,45 @@ def test_a_branch_tracking_a_ref_this_tool_will_not_target_still_names_it(
         "id": None,
         "known": True,
     }
+
+
+def test_the_pairing_holds_when_the_remote_s_own_name_holds_a_slash(
+    repo: Path, tmp_path: Path
+) -> None:
+    """The other delimiter, and the one a name is genuinely allowed to contain.
+
+    `git remote add team/origin <url>` is accepted, so the slash in
+    `<remote>/<ref>` is not a boundary anything can be split at: recovering the
+    server copy of `feat/slashed` by cutting `team/origin/feat/slashed` at the
+    first slash asks after a remote called `team` and a ref that is not there.
+
+    Nothing here splits it. The upstream a branch records and the short name
+    the server ref carries are compared whole, so the row is keyed by the name
+    git printed rather than by a guess about where it divides."""
+    bare = tmp_path / "server.git"
+    SubprocessCommands().git(["init", "-q", "--bare", "-b", "main", str(bare)])
+    git(repo, "remote", "add", "team/origin", str(bare))
+    git(repo, "push", "-q", "-u", "team/origin", "main")
+    git(repo, "checkout", "-q", "-b", "feat/slashed")
+    commit(repo, "slashed.txt")
+    git(repo, "push", "-q", "-u", "team/origin", "feat/slashed")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "fetch", "-q", "team/origin")
+
+    with reachability_guard(repo):
+        payload = report(repo)
+
+    pairing = find(payload, "branch:feat/slashed")["pairing"]
+    assert isinstance(pairing, dict)
+    assert pairing["upstream"] == {
+        "name": "team/origin/feat/slashed",
+        "id": "remote:team/origin/feat/slashed",
+        "known": True,
+    }
+    # And the id is a row rather than a string that resembles one: a pairing
+    # that names a counterpart nothing in the report describes is the state
+    # `id: null` exists to report, so a non-null one has to resolve.
+    assert find(payload, "remote:team/origin/feat/slashed")["name"] == "team/origin/feat/slashed"
 
 
 def test_a_detached_worktree_says_it_holds_no_branch_rather_than_saying_nothing(
