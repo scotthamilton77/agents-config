@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from conftest import make_branch, make_survey, make_worktree
+from test_survey import porcelain
 
 from gitclean import execute
 from gitclean.execute import SALVAGE_PREFIX, Executor, default_salvage_dir, git_argv, slug
@@ -159,7 +160,7 @@ def test_worktree_removal_is_verified_against_the_listing() -> None:
     port = ScriptedCommands(
         git={
             "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok("worktree /repo\nHEAD abc\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\nHEAD abc\n")),
         }
     )
     report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
@@ -171,12 +172,52 @@ def test_worktree_still_listed_after_removal_is_an_anomaly() -> None:
     port = ScriptedCommands(
         git={
             "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok("worktree /repo\n\nworktree /repo/wt\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\n\nworktree /repo/wt\n")),
         }
     )
     report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
     assert not report.ok
     assert report.anomalies[0].stage == "verify"
+
+
+def test_a_worktree_whose_path_holds_a_newline_is_verified_against_the_whole_path() -> None:
+    """The removal reported success and the worktree is still listed, which is
+    the case this verification exists for. Split the listing on newlines and
+    the path being looked for spans two lines, so the survivor matches nothing
+    and the run reports the deletion verified -- git's own output disproving
+    the claim, unread."""
+    path = "/repo/we\nird"
+    port = ScriptedCommands(
+        git={
+            f"worktree remove -- {path}": ok(),
+            "worktree list --porcelain": ok(
+                porcelain("worktree /repo\n\n") + f"worktree {path}\0\0"
+            ),
+        }
+    )
+    report = run(port, plan(target(TargetKind.WORKTREE, path)))
+
+    assert not report.ok
+    assert report.anomalies[0].stage == "verify"
+    assert not report.deletions[0].deleted
+
+
+def test_a_worktree_listing_that_lost_a_record_cannot_verify_a_removal() -> None:
+    """On a git with no NUL framing, a block whose keys say a path was cut
+    short is dropped -- so the worktree just removed may be exactly the one
+    missing from the listing. Absence from a listing that lost something is not
+    evidence, the same way absence from one that never ran is not."""
+    port = ScriptedCommands(
+        git={
+            "worktree remove -- /repo/wt": ok(),
+            "worktree list --porcelain -z": fail("error: unknown switch `z'", code=129),
+            "worktree list --porcelain": ok("worktree /repo\n\nworktree /repo/we\nird\n"),
+        }
+    )
+    report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
+
+    assert not report.ok
+    assert report.deletions[0].detail == "deletion unverified"
 
 
 def test_a_worktree_is_never_removed_with_force() -> None:
@@ -188,7 +229,7 @@ def test_a_worktree_is_never_removed_with_force() -> None:
     port = ScriptedCommands(
         git={
             "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok("worktree /repo\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
         }
     )
     run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
@@ -232,7 +273,7 @@ def test_removing_a_worktree_prunes_nothing() -> None:
     port = ScriptedCommands(
         git={
             "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok("worktree /repo\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
         }
     )
     report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
@@ -273,7 +314,7 @@ def test_a_reachability_probe_that_will_not_answer_declines_the_removal() -> Non
             "rev-parse HEAD": ok(head),
             f"for-each-ref --count=1 --contains={head}": fail("fatal: bad object"),
             "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok("worktree /repo\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
         }
     )
     report = run(
@@ -308,7 +349,7 @@ def test_a_commit_made_since_the_survey_is_not_stranded_by_the_removal() -> None
             f"for-each-ref --count=1 --contains={surveyed}": ok("refs/heads/keeps-it"),
             f"for-each-ref --count=1 --contains={made_since}": ok(""),
             "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok("worktree /repo\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
         }
     )
     report = run(

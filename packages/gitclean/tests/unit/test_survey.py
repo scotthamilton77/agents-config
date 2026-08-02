@@ -30,6 +30,17 @@ an assertion about push state even in the tests that are about something
 else."""
 
 
+def porcelain(text: str) -> str:
+    """A worktree listing framed the way git frames it under `-z`.
+
+    The survey asks for that framing because a worktree path may contain a
+    newline and the porcelain format emits it raw. The fixtures stay written
+    with newlines, which is how anyone reads them; only the framing changes,
+    and a record separator is a record separator either way. A fixture about a
+    path that actually contains a newline says so by not coming through here."""
+    return text.replace("\n", "\0")
+
+
 def ref_line(
     full: str,
     short: str,
@@ -67,7 +78,7 @@ def make_port(
         "symbolic-ref --quiet refs/remotes/origin/HEAD": ok("refs/remotes/origin/main"),
         "show-ref --verify --quiet refs/remotes/origin/main": ok(),
         "rev-parse --abbrev-ref HEAD": ok("main"),
-        "worktree list --porcelain": ok(worktrees),
+        "worktree list --porcelain": ok(porcelain(worktrees)),
         "status --porcelain=v1": ok(""),
         # A detached worktree has no branch to take its age from, so the survey
         # dates it from HEAD instead.
@@ -322,11 +333,13 @@ def test_worktree_porcelain_blocks_are_parsed() -> None:
     port = ScriptedCommands(
         git={
             "worktree list --porcelain": ok(
-                "worktree /repo\nHEAD aaa\nbranch refs/heads/main\n"
-                "\n"
-                "worktree /repo/wt\nHEAD bbb\nbranch refs/heads/feat\nlocked\n"
-                "\n"
-                "worktree /repo/gone\nHEAD ccc\ndetached\nprunable gitdir file removed\n"
+                porcelain(
+                    "worktree /repo\nHEAD aaa\nbranch refs/heads/main\n"
+                    "\n"
+                    "worktree /repo/wt\nHEAD bbb\nbranch refs/heads/feat\nlocked\n"
+                    "\n"
+                    "worktree /repo/gone\nHEAD ccc\ndetached\nprunable gitdir file removed\n"
+                )
             ),
             "status --porcelain=v1": ok(""),
         }
@@ -344,7 +357,7 @@ def test_worktree_porcelain_blocks_are_parsed() -> None:
 def test_a_worktree_block_without_a_path_is_warned_not_dropped_silently() -> None:
     port = ScriptedCommands(
         git={
-            "worktree list --porcelain": ok("HEAD aaa\nbranch refs/heads/x\n"),
+            "worktree list --porcelain": ok(porcelain("HEAD aaa\nbranch refs/heads/x\n")),
             "status --porcelain=v1": ok(""),
         }
     )
@@ -356,7 +369,7 @@ def test_a_worktree_block_without_a_path_is_warned_not_dropped_silently() -> Non
 def test_modified_untracked_and_ignored_files_are_counted_separately() -> None:
     port = ScriptedCommands(
         git={
-            "worktree list --porcelain": ok("worktree /repo\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
             "status --porcelain=v1": ok(" M a.txt\nA  b.txt\n?? c.txt\n?? d.txt\n!! .env\n"),
         }
     )
@@ -374,7 +387,7 @@ def test_ignored_files_are_counted_but_do_not_make_a_worktree_dirty() -> None:
     counted so the report can name it, and the count drives nothing."""
     port = ScriptedCommands(
         git={
-            "worktree list --porcelain": ok("worktree /repo\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
             "status --porcelain=v1": ok("!! .venv/\n!! __pycache__/\n!! .env\n"),
         }
     )
@@ -395,7 +408,7 @@ def test_the_dirt_probe_counts_files_rather_than_status_lines() -> None:
     the untracked mode says, and only `traditional` defers to `=all`."""
     port = ScriptedCommands(
         git={
-            "worktree list --porcelain": ok("worktree /repo\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
             "status --porcelain=v1": ok(""),
         }
     )
@@ -436,7 +449,7 @@ def test_a_worktree_git_cannot_stat_is_unknown_not_clean() -> None:
     Risk.NONE with no salvage."""
     port = ScriptedCommands(
         git={
-            "worktree list --porcelain": ok("worktree /repo/opaque\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo/opaque\n")),
             "status --porcelain=v1": fail("no such directory"),
         }
     )
@@ -457,8 +470,10 @@ def test_a_prunable_worktree_is_unknown_dirt_not_clean() -> None:
     port = ScriptedCommands(
         git={
             "worktree list --porcelain": ok(
-                "worktree /repo/moved\nHEAD ccc\ndetached\n"
-                "prunable gitdir file points to non-existent location\n"
+                porcelain(
+                    "worktree /repo/moved\nHEAD ccc\ndetached\n"
+                    "prunable gitdir file points to non-existent location\n"
+                )
             ),
         }
     )
@@ -634,6 +649,59 @@ def test_origins_symbolic_head_is_not_offered_as_a_branch() -> None:
     )
     names = [b.name for b in run(port).branches]
     assert "origin" not in names
+
+
+def test_a_worktree_path_holding_a_newline_is_recorded_whole() -> None:
+    """`worktree list --porcelain` emits a newline in a path raw -- it escapes
+    nothing -- so a line-based reader records `/repo/we` and reads `ird` as a
+    stray key. `-z` frames each record with a NUL, which a path cannot
+    contain."""
+    port = make_port(worktrees="worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n")
+    port._git["worktree list --porcelain"] = ok(
+        porcelain("worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n")
+        + "worktree /repo/we\nird\0HEAD bbb\0branch refs/heads/wt\0\0"
+    )
+
+    surveyed = run(port)
+
+    assert [w.path for w in surveyed.worktrees] == ["/repo", "/repo/we\nird"]
+    assert surveyed.dropped_worktrees == 0
+
+
+def test_a_git_without_nul_framing_drops_what_it_could_not_account_for() -> None:
+    """`-z` landed in git 2.36. Older git gets the line-based read, where the
+    only evidence that a path was cut short is the fragment arriving as a key
+    the format does not have. That block is dropped rather than recorded under
+    a truncated path -- a name that then matches nothing, about a worktree
+    sitting right there."""
+    port = make_port()
+    port._git["worktree list --porcelain -z"] = fail("error: unknown switch `z'", code=129)
+    port._git["worktree list --porcelain"] = ok(
+        "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\nworktree /repo/we\nird\nHEAD bbb\n"
+    )
+
+    surveyed = run(port)
+
+    assert [w.path for w in surveyed.worktrees] == ["/repo"]
+    assert surveyed.worktrees_known is True
+    assert surveyed.dropped_worktrees == 1
+    assert any("NUL framing" in w for w in surveyed.all_warnings())
+
+
+def test_an_old_git_still_lists_ordinary_worktrees() -> None:
+    """The fallback is a fallback, not a refusal: with no newline anywhere,
+    every key is one the format has and nothing is dropped."""
+    port = make_port()
+    port._git["worktree list --porcelain -z"] = fail("error: unknown switch `z'", code=129)
+    port._git["worktree list --porcelain"] = ok(
+        "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n"
+        "worktree /repo/wt\nHEAD bbb\nbranch refs/heads/feat\n"
+    )
+
+    surveyed = run(port)
+
+    assert [w.path for w in surveyed.worktrees] == ["/repo", "/repo/wt"]
+    assert surveyed.dropped_worktrees == 0
 
 
 def test_a_failed_worktree_listing_is_recorded_as_unread_not_as_empty() -> None:

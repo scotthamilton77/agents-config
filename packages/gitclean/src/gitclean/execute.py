@@ -38,6 +38,7 @@ from pathlib import Path
 
 from gitclean.model import Anomaly, Deletion, Plan, SalvageRecord, Survey, Target, TargetKind
 from gitclean.ports import CommandPort
+from gitclean.survey import list_worktrees
 
 SALVAGE_PREFIX = "gitclean-salvage"
 """Where the scratch branch a bundle is taken from lives. Namespaced so the
@@ -368,27 +369,28 @@ class Executor:
         # every worktree whose directory has gone missing, and those were never
         # planned targets: the executor acts on what the plan named, and
         # nothing else. `worktree remove` takes this one's record with it.
-        listing = self._port.git(git_argv("worktree", "list", "--porcelain"), cwd=self._cwd)
-        if not listing.ok:
-            # Absence of the worktree in output that was never produced is not
-            # evidence of anything. Unverified is its own outcome, distinct
-            # from verified-gone.
+        # The same framed read the survey uses, because the comparison here is
+        # against a whole path: a listing split on newlines answers "not there"
+        # for a worktree whose path contains one, which is the removal
+        # reporting itself successful by failing to spell what it looked for.
+        listing = list_worktrees(self._port, self._cwd)
+        if not listing.ok or listing.dropped:
+            # Absence of the worktree in output that was never produced -- or
+            # that lost a record on the way -- is not evidence of anything.
+            # Unverified is its own outcome, distinct from verified-gone.
             self._record(
                 "verify",
                 target.id,
                 f"could not confirm {target.name} is gone; the removal reported success",
-                listing.transcript(),
+                listing.result.transcript(),
             )
             return _failed(target, "deletion unverified")
-        still_there = any(
-            line.strip() == f"worktree {target.name}" for line in listing.stdout.splitlines()
-        )
-        if still_there:
+        if listing.holds(target.name):
             self._record(
                 "verify",
                 target.id,
                 f"worktree {target.name} still appears in `git worktree list` after removal",
-                listing.transcript(),
+                listing.result.transcript(),
             )
             return _failed(target, "still present after removal")
         return Deletion(

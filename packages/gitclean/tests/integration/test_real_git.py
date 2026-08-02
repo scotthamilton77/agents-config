@@ -289,6 +289,41 @@ def _worktree(repo: Path, name: str, branch: str) -> Path:
     return path
 
 
+def test_a_worktree_whose_path_holds_a_newline_is_surveyed_and_removed_whole(
+    repo: Path, tmp_path: Path
+) -> None:
+    """A path may contain a newline, and `worktree list --porcelain` emits it
+    raw rather than escaping it -- verified here against git rather than
+    against a belief about git.
+
+    Split that listing on newlines and the worktree is recorded under a path
+    cut short at the newline, with nothing counted as lost. Naming the real
+    path then matches nothing, and the run says there is nothing to delete
+    about a tree that is sitting there."""
+    path = tmp_path / "wt\nnewline"
+    git(repo, "worktree", "add", "-q", str(path), "-b", "feat/odd")
+    listing = git(repo, "worktree", "list", "--porcelain")
+    assert f"worktree {path}" in listing  # git escapes nothing; the newline is raw
+
+    surveyed = report(repo)
+    repository = surveyed["repo"]
+    assert isinstance(repository, dict)
+    assert str(path) in [w["path"] for w in repository["worktrees"]]
+    assert repository["dropped_worktrees"] == 0
+
+    with reachability_guard(repo):
+        payload = report(repo, "--cleanup", str(path))
+
+    assert payload["_exit"] == EXIT_OK, anomaly_lines(payload)
+    plan = payload["plan"]
+    assert isinstance(plan, dict)
+    assert plan["absent"] == []
+    deletion = payload["execution"]["deletions"][0]  # type: ignore[index]
+    assert (deletion["deleted"], deletion["verified"]) == (True, True)
+    assert not path.exists()
+    assert str(path) not in git(repo, "worktree", "list", "--porcelain")
+
+
 def test_a_dirty_worktree_named_outright_is_left_to_git_to_refuse(repo: Path) -> None:
     """No flag here turns git's dirt check off, and adding one would mean
     re-implementing in Python what git has just read off the disk. The refusal
@@ -761,13 +796,15 @@ def test_a_local_branch_spelled_like_a_remote_ref_is_a_target_of_its_own(
     payload = report(repo)
     surveyed = payload["repo"]
     assert isinstance(surveyed, dict)
+    # The server's copy is still recognised as the trunk's, which needs the
+    # remote's name to have stopped in the right place.
+    excluded = {n["name"]: str(n["reason"]) for n in surveyed["not_offered"]}
+    assert "trunk" in excluded["origin/main"]
+    # And it is told apart from the local branch by ref, not by the string the
+    # two of them share.
     local = next(b for b in surveyed["branches"] if b["ref"] == "refs/heads/origin/main")
     assert local["name"] == "origin/main"
     assert local["is_remote"] is False
-    # The server's copy is told apart from it by ref, not by the string they
-    # share, and is still recognised as the trunk's.
-    excluded = {n["name"]: str(n["reason"]) for n in surveyed["not_offered"]}
-    assert "trunk" in excluded["origin/main"]
 
     target = find(payload, "branch:origin/main")
     assert "trunk" not in str(target["withheld"] or "")

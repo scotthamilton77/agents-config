@@ -17,11 +17,11 @@ residue nothing cheaper could resolve.
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from gitclean.model import Branch, MergeEvidence, NotOffered, PullRequest, Survey, Worktree
-from gitclean.ports import CommandPort
+from gitclean.ports import CommandPort, CommandResult
 
 _SEP = "\x1f"
 # The FULL refname leads deliberately, and everything the survey *records*
@@ -238,6 +238,117 @@ def split_remote_ref(full: str, remotes: tuple[str, ...] | None) -> tuple[str, s
     )
 
 
+_WORKTREE_ATTRIBUTES = frozenset(
+    {"worktree", "bare", "HEAD", "branch", "detached", "locked", "prunable"}
+)
+"""Every key `worktree list --porcelain` emits, as of the last git that needed
+the fallback parser below. It is a closed set there and nowhere else -- see
+``_parse_worktrees``."""
+
+
+@dataclass(frozen=True, slots=True)
+class WorktreeListing:
+    """git's own account of the worktrees, framed so a path survives it whole.
+
+    Kept as one type because two callers need the same listing and the framing
+    rule must not be written twice: the survey builds targets from it, and the
+    executor re-asks it to confirm a removal. A rule about how to read git's
+    output that exists in two places is a rule that will disagree with itself."""
+
+    blocks: tuple[dict[str, str], ...]
+    warnings: tuple[str, ...]
+    dropped: int
+    result: CommandResult
+    """The command actually used, for the transcript an anomaly carries."""
+
+    @property
+    def ok(self) -> bool:
+        return self.result.ok
+
+    def holds(self, path: str) -> bool:
+        return any(block.get("worktree") == path for block in self.blocks)
+
+
+def _parse_worktrees(records: list[str], *, framed: bool) -> tuple[list[dict[str, str]], int]:
+    """Records into blocks, and the count of blocks that lost something.
+
+    ``framed`` says the records came from `-z`, where a record boundary is a
+    NUL and a path is therefore whole whatever it contains. Without it the
+    boundary is a newline, which a path is allowed to contain and which git
+    does not escape -- so a path holding one arrives as two records, the second
+    of them read as a stray key.
+
+    That stray key is the only evidence available in the unframed case, and it
+    is nearly enough: the attribute names are a closed set on any git old
+    enough to lack `-z`, so a key outside it means this block described
+    something that was not recorded. The block is dropped rather than kept
+    under a path that may be a prefix of the real one -- a truncated path is a
+    name that matches nothing while the tree is sitting there, which is the
+    answer this package exists not to give.
+
+    What it does not catch, and cannot: a path whose text after the newline
+    begins with an attribute name -- `.../we\\nbare` -- reads as a well-formed
+    block. Nothing in the unframed output distinguishes that from the real
+    thing, which is why `-z` is asked for first rather than treated as a
+    nicety, and why this parser runs only where git cannot provide it."""
+    blocks: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    lost = False
+    dropped = 0
+    for record in records:
+        if not record:
+            if current:
+                if lost:
+                    dropped += 1
+                else:
+                    blocks.append(current)
+                current = {}
+                lost = False
+            continue
+        key, _, value = record.partition(" ")
+        if not framed and key not in _WORKTREE_ATTRIBUTES:
+            lost = True
+        current[key] = value
+    if current:
+        if lost:
+            dropped += 1
+        else:
+            blocks.append(current)
+    return blocks, dropped
+
+
+def list_worktrees(port: CommandPort, cwd: Path | None) -> WorktreeListing:
+    """`worktree list --porcelain`, asked with NUL framing where git has it.
+
+    A worktree path may contain a newline, and the porcelain format does not
+    escape one -- it is emitted raw, so a line-based reader records a truncated
+    path and counts nothing as missing. `-z` frames every record with a NUL
+    instead, which no path can contain, and git has offered it since 2.36.
+
+    Older git gets the line-based read, with the parser refusing to record a
+    block whose keys say it lost something. What must not happen is either
+    reading: a truncated path taken for a whole one, or a listing described as
+    complete when it is not."""
+    framed = port.git(["worktree", "list", "--porcelain", "-z"], cwd=cwd)
+    if framed.ok:
+        blocks, dropped = _parse_worktrees(framed.stdout.split("\0"), framed=True)
+        return WorktreeListing(tuple(blocks), (), dropped, framed)
+    plain = port.git(["worktree", "list", "--porcelain"], cwd=cwd)
+    if not plain.ok:
+        return WorktreeListing((), (), 0, plain)
+    blocks, dropped = _parse_worktrees(plain.stdout.splitlines(), framed=False)
+    warnings = (
+        [
+            f"this git would not list worktrees with NUL framing (exit {framed.returncode}), so "
+            f"{dropped} listed worktree(s) whose records this could not account for were left "
+            f"out rather than recorded under a path that may be cut short at a newline"
+        ]
+        if dropped
+        else []
+    )
+    return WorktreeListing(tuple(blocks), tuple(warnings), dropped, plain)
+
+
 def read_worktrees(
     port: CommandPort, cwd: Path | None
 ) -> tuple[list[Worktree], list[str], bool, int]:
@@ -248,28 +359,14 @@ def read_worktrees(
     only its main working tree produces one entry, but a listing that failed
     produces none, and "no worktree is there" is a conclusion only one of those
     supports."""
-    result = port.git(["worktree", "list", "--porcelain"], cwd=cwd)
-    if not result.ok:
-        return [], [f"could not list worktrees (exit {result.returncode})"], False, 0
-
-    blocks: list[dict[str, str]] = []
-    current: dict[str, str] = {}
-    for raw in result.stdout.splitlines():
-        line = raw.strip()
-        if not line:
-            if current:
-                blocks.append(current)
-                current = {}
-            continue
-        key, _, value = line.partition(" ")
-        current[key] = value
-    if current:
-        blocks.append(current)
+    listing = list_worktrees(port, cwd)
+    if not listing.ok:
+        return [], [f"could not list worktrees (exit {listing.result.returncode})"], False, 0
 
     worktrees: list[Worktree] = []
-    warnings: list[str] = []
-    dropped_blocks = 0
-    for index, block in enumerate(blocks):
+    warnings: list[str] = list(listing.warnings)
+    dropped_blocks = listing.dropped
+    for index, block in enumerate(listing.blocks):
         path = block.get("worktree", "")
         if not path:
             # Counted as well as warned: a block nobody could read is a
