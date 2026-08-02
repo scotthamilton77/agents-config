@@ -18,10 +18,12 @@ The end state worth reaching:
 
 ## Reaching it
 
-`gitclean --report` measures all three in one call and answers the only question
-that decides a deletion: **is this provably merged?** `gitclean --cleanup` then
-takes the subset it proved, and re-asks git whether each deletion actually
-happened rather than trusting an exit code.
+`gitclean --report` measures all three in one call and answers the question
+nothing else answers reliably: **is this provably merged?** Proof is necessary
+and not sufficient. A bare `gitclean --cleanup` takes what it proved *and* what
+clears its other measured checks, so a merged branch a worktree still holds, or
+one whose tree is dirty, is reported with the reason rather than swept. Each
+deletion it does make is verified by re-asking git, not by trusting an exit code.
 
 Reach for it. It is easy not to — it is a CLI on PATH, not a git subcommand, so
 nothing in a git session suggests it exists. If it is not installed, say so

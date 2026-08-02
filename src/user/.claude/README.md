@@ -5,12 +5,14 @@ by default.
 
 ## What lives here
 
-- `commands/` — Slash commands. Plain markdown; `$ARGUMENTS` is substituted at
-  runtime. Empty today: every command was record-less and moved to
-  `archive/src/user/.claude/commands/`.
-- `rules/` — Claude-specific workflow rules. Empty today: every rule was
-  record-less and moved to `archive/src/user/.claude/rules/`. Readmission
-  requires an admission record.
+- `commands/` — Slash commands, one flat markdown file each; `$ARGUMENTS` is
+  substituted at runtime. Front matter carrying a complete `admission:` record
+  is required, not optional: without one the installer drops the file and
+  `content-lint` fails the build, so a command written as bare markdown ships
+  nothing.
+- `rules/` — Claude-specific workflow rules, under that same gate. Each rules
+  directory carries its own `AGENTS.md` saying what is currently in it; read
+  that rather than counting files here.
 - `AGENTS.md.template` — Top-level instruction file that pulls in the shared
   personas and session-primer, and `CLAUDE-EXTENSIONS.md`. Does not yet pull
   in the shared zero-based `AGENTS.md.template` survivor — see that file's

@@ -23,10 +23,10 @@ or a fragment of either. Empty shows everything.
 
 If `gitclean` is not on PATH, say so and stop.
 
-**MUST NOT** substitute `git branch --merged`, `git log`, branch names, or commit
-dates. Under a squash-merge workflow ancestry is wrong in both directions — it
-hides merged branches forever *and* reports live work as merged. That failure is
-the reason the tool exists.
+**MUST NOT** decide what is merged from `git branch --merged`, `git log`, branch
+names, or commit dates. Under a squash-merge workflow ancestry is wrong in both
+directions — it hides merged branches forever *and* reports live work as merged.
+That failure is the reason the tool exists.
 
 **MUST NOT** run `git branch -D`, `git worktree remove`, or `git push --delete`.
 `gitclean` re-asks git whether each deletion happened; raw git hands you its own
@@ -34,8 +34,12 @@ exit code and nothing else.
 
 ## 1 — Survey and arrange
 
-`gitclean --report --format json` changes nothing. Build everything below from
-that one envelope; do not re-derive any of it with raw git.
+`gitclean --report --format json` changes nothing. The survey comes from that one
+envelope — what exists, what is proven, what is withheld and why, and what each
+deletion would cost — and none of that is re-derived with raw git. Step 2 goes to
+the repository for something the envelope does not carry: what an unproven
+candidate actually contains. That is reading, not adjudicating. Nothing found
+there revises what the report proved or withheld.
 
 **Drop the trunk from the candidates.** The default branch and the worktree
 holding it are never junk. `gitclean` withholds them, but the reason it prints
@@ -118,10 +122,15 @@ trunk, which is not what the reader needs to know: nothing on disk says whether
 an agent is working there. Say "nothing on it yet" rather than "finished", and
 never present a withheld row as one a sweep would have taken.
 
-**Relay every `withheld` reason as given**, and report `plan.skipped` — a sweep
-that quietly did less than asked reads as success. If `repo.gh_error` is set,
-merge evidence was git-only and squash merges were invisible to it; say so
-before presenting anything as safe.
+**Relay every `withheld` reason as given.** The trunk is the one exception, and
+only because step 1 already dropped it from the candidates: its withhold says it
+is the trunk, which is not news. Everything else is relayed verbatim — including
+a withhold that names something wrong with the repository rather than with the
+target — because a summarized withhold is how a real refusal disappears.
+
+Report `plan.skipped` too — a sweep that quietly did less than asked reads as
+success. If `repo.gh_error` is set, merge evidence was git-only and squash merges
+were invisible to it; say so before presenting anything as safe.
 
 ## 4 — Ratify, then act
 
