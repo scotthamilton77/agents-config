@@ -363,6 +363,66 @@ def test_naming_the_servers_copy_of_the_trunk_exits_refused() -> None:
     assert refusal["remedy"]
 
 
+def _colliding_names_port(*, remote_list: str | None = "origin\n") -> ScriptedCommands:
+    """`feat/x` locally and origin's copy of it, so one name reaches two refs.
+
+    `remote_list=None` fails the read that says where a remote's name ends,
+    which is the whole difference between the two runs below."""
+    port = make_port(
+        refs=[
+            ref_at("refs/heads/main", "main", "a" * 40, head="*"),
+            ref_at("refs/heads/feat/x", "feat/x", "b" * 40),
+            ref_at("refs/remotes/origin/feat/x", "origin/feat/x", "b" * 40),
+        ],
+        counts={"origin/main..feat/x": "0", "origin/main..origin/feat/x": "0"},
+        extra={
+            "branch -D -- feat/x": ok(),
+            "for-each-ref --format=%(refname) refs/heads/feat/x": ok(""),
+        },
+    )
+    if remote_list is None:
+        port._git["remote"] = fail("fatal: bad config line 3")
+    return port
+
+
+def test_a_name_reaching_two_refs_is_refused_whether_or_not_the_split_answered() -> None:
+    """The defect this pins ran the wrong way round: the probe that FAILED made
+    the tool more willing to delete.
+
+    Read the remote list and origin's copy of `feat/x` is a target whose bare
+    alias is `feat/x`, so the name reaches two things and is refused. Fail that
+    read and the same ref never becomes a target, the name reaches one thing,
+    and the local branch goes. Same repository, same command, and the only
+    difference is a question git declined to answer."""
+    answered = _colliding_names_port()
+    code, payload = invoke(["--cleanup", "feat/x"], answered)
+    assert code == EXIT_REFUSED
+    assert payload["refusal"]["code"] == "E_AMBIGUOUS_TARGET"  # type: ignore[index]
+
+    unanswered = _colliding_names_port(remote_list=None)
+    code, payload = invoke(["--cleanup", "feat/x"], unanswered)
+
+    assert code == EXIT_REFUSED
+    refusal = payload["refusal"]
+    assert isinstance(refusal, dict)
+    assert refusal["code"] == "E_AMBIGUOUS_TARGET"
+    assert not any(call[:3] == ("git", "branch", "-D") for call in unanswered.transcript)
+
+
+def test_the_id_remedy_deletes_the_branch_the_caller_meant() -> None:
+    """A refusal whose remedy does not work is a wall. `branch:feat/x` says
+    which kind is meant, and no server ref answers to that spelling however it
+    splits -- so the deletion the caller asked for still happens."""
+    port = _colliding_names_port(remote_list=None)
+
+    code, payload = invoke(["--cleanup", "branch:feat/x"], port)
+
+    assert code == EXIT_OK, payload["execution"]
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert [d["name"] for d in execution["deletions"] if d["deleted"]] == ["feat/x"]
+
+
 def _unframed_worktree_port() -> ScriptedCommands:
     """A git with no NUL framing, listing a worktree at `/repo/we<LF>bare`.
 

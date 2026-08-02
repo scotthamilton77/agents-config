@@ -629,10 +629,8 @@ class Executor:
 
         for target in plan.targets:
             if target.kind is TargetKind.BRANCH:
-                holder = next(
-                    (b.checked_out_at for b in self._survey.branches if b.name == target.name),
-                    None,
-                )
+                surveyed = self._survey.local_branch(target.name)
+                holder = surveyed.checked_out_at if surveyed else None
                 if holder and holder in stranded:
                     deletions.append(
                         _failed(target, f"skipped: its worktree {holder} was not removed")

@@ -963,7 +963,7 @@ def read_branches(
                 # them apart for every other one, since the spelling this could
                 # not recover is the one a caller is most likely to use.
                 not_offered.append(
-                    NotOffered(name=full.removeprefix("refs/remotes/"), reason=split)
+                    NotOffered(name=full.removeprefix("refs/remotes/"), reason=split, unsplit=True)
                 )
                 unsplit += 1
                 continue

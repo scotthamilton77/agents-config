@@ -303,9 +303,19 @@ class NotOffered:
 
     name: str
     reason: str
+    unsplit: bool = False
+    """True when what kept this ref out was that its remote and its branch
+    name could not be told apart.
+
+    The other exclusions know what they excluded: a symbolic HEAD, the server's
+    copy of the trunk. This one does not -- ``name`` is the whole path under
+    `refs/remotes/`, and where the remote's name stops inside it is the
+    unanswered question. So this is the only entry whose *other* spellings are
+    unknown, which is what makes it able to collide with a selector that
+    matched something else."""
 
     def as_json(self) -> dict[str, object]:
-        return {"name": self.name, "reason": self.reason}
+        return {"name": self.name, "reason": self.reason, "unsplit": self.unsplit}
 
 
 @dataclass(frozen=True, slots=True)
@@ -444,6 +454,23 @@ class Survey:
             "remotes_known": self.remotes_known,
             "not_offered": [n.as_json() for n in self.not_offered],
         }
+
+    def local_branch(self, name: str) -> Branch | None:
+        """The local branch of this name, if the survey read one.
+
+        Filtered on ``is_remote`` rather than trusting the name to pick out one
+        ref, because ``Branch.name`` is the short name for a local branch and
+        `<remote>/<ref>` for a server one, and those collide: a local branch
+        called `origin/feat` and origin's copy of `feat` are both `origin/feat`.
+        Which of them an unfiltered search finds is then decided by the order
+        git happened to list refs in, and a deletion is not a thing to settle
+        on listing order.
+
+        One place rather than three, because the question -- which branch does
+        this name mean -- is asked wherever a branch target has to be matched
+        back to what was surveyed, and a rule written out three times is a rule
+        that will be right twice."""
+        return next((b for b in self.branches if not b.is_remote and b.name == name), None)
 
     def all_warnings(self) -> tuple[str, ...]:
         """Every degradation in one list, gh included.

@@ -74,6 +74,40 @@ def _not_offered(selector: str, survey_data: Survey) -> NotOffered | None:
     )
 
 
+def _unsplit_this_could_name(selector: str, survey_data: Survey) -> NotOffered | None:
+    """A ref whose remote and branch name could not be told apart, and which
+    this selector might have been naming.
+
+    The doubt is per-selector, and that is decidable rather than a guess. A
+    remote-tracking ref is `refs/remotes/<remote>/<branch>`, and the two halves
+    are joined by a slash -- so whichever remote the path belongs to, the branch
+    name is one of the suffixes beginning after one of those slashes. Which one
+    is exactly what went unanswered, so every one of them is possible, and the
+    true name is certainly among them. A selector outside that set could not
+    have been naming this ref however it splits.
+
+    Run-wide doubt would be the other option and it is worse than it sounds: a
+    tracking ref outliving `git remote remove` makes every ref under that
+    prefix unsplittable, and a tool that then refuses every name in the
+    repository has traded a deletion hazard for being unusable.
+
+    Not asked of a selector that has already said it means something else. A
+    `branch:` names a local ref, and `worktree:` or a path names a worktree;
+    neither can be a server ref under any splitting."""
+    if selector.startswith(("branch:", "worktree:", "/")):
+        return None
+    for entry in survey_data.not_offered:
+        if not entry.unsplit:
+            continue
+        candidates = {entry.name, f"remote:{entry.name}"}
+        candidates.update(
+            entry.name.split("/", cut)[-1] for cut in range(1, entry.name.count("/") + 1)
+        )
+        if selector in candidates:
+            return entry
+    return None
+
+
 def _lists_that_could_not_answer(selector: str, survey_data: Survey) -> list[str]:
     """Of the listings that could have contained this name, which did not run.
 
@@ -106,7 +140,6 @@ def _lists_that_could_not_answer(selector: str, survey_data: Survey) -> list[str
     trades a false absence for a false refusal."""
     worktree_only = selector.startswith("worktree:") or selector.startswith("/")
     ref_only = selector.startswith(("branch:", "remote:"))
-    local_only = selector.startswith("branch:")
     unread: list[str] = []
     if not ref_only:
         if not survey_data.worktrees_known:
@@ -130,10 +163,11 @@ def _lists_that_could_not_answer(selector: str, survey_data: Survey) -> list[str
             unread.append("no ref could be read")
         elif survey_data.dropped_refs:
             unread.append(f"{survey_data.dropped_refs} ref row(s) went unparsed")
-        if not local_only and survey_data.unsplit_refs:
+        unsplit = _unsplit_this_could_name(selector, survey_data)
+        if unsplit is not None:
             unread.append(
-                f"{survey_data.unsplit_refs} server ref(s) could not be split into a remote and "
-                f"a branch name, so the shorter name you would know one by was never recovered"
+                f"the server ref recorded as {unsplit.name} could not be split into a remote and "
+                f"a branch name, and one of the ways it may split is the name you gave"
             )
     return unread
 
@@ -215,6 +249,27 @@ def resolve_selectors(
                     remedy="re-run naming the exact `id`",
                 ),
             )
+        # Matching something is not the same as matching everything that could
+        # have matched. A ref whose remote and branch name could not be told
+        # apart never became a target, so it cannot appear above -- and one of
+        # the ways it may split is this very name. Had the split succeeded, the
+        # count here would have been two and this would already be refused, so
+        # taking the single match would let a probe that failed decide what
+        # gets deleted. That is the one thing an unanswered probe must never do.
+        rival = _unsplit_this_could_name(selector, survey_data)
+        if rival is not None:
+            return (
+                [],
+                [],
+                Refusal(
+                    code="E_AMBIGUOUS_TARGET",
+                    message=f"{selector!r} matches {matches[0].id}, and may also be the server "
+                    f"ref recorded as {rival.name}, which could not be split into a remote and "
+                    f"a branch name: {rival.reason}",
+                    blocked=tuple(matches),
+                    remedy="re-run naming the exact `id`, which says which of the two you mean",
+                ),
+            )
         if matches[0] not in resolved:
             resolved.append(matches[0])
     return resolved, absent, None
@@ -247,9 +302,8 @@ def _occupancy_blockers(chosen: list[Target], survey_data: Survey) -> list[tuple
     for target in chosen:
         if target.kind is not TargetKind.BRANCH:
             continue
-        holder = next(
-            (b.checked_out_at for b in survey_data.branches if b.name == target.name), None
-        )
+        surveyed = survey_data.local_branch(target.name)
+        holder = surveyed.checked_out_at if surveyed else None
         if holder and f"worktree:{holder}" not in chosen_ids:
             blockers.append((target, holder))
     return blockers
