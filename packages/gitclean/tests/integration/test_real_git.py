@@ -770,6 +770,66 @@ def test_a_remote_whose_name_holds_a_slash_is_never_split_at_the_wrong_one(
     assert git(decoy, "for-each-ref", "--format=%(refname)") == ""
 
 
+@pytest.mark.parametrize(
+    ("remote", "discovered"),
+    [("origin", True), ("team", False), ("team/origin", False)],
+)
+def test_a_trunk_published_only_by_a_remote_not_called_origin_stops_the_sweep(
+    repo: Path, tmp_path: Path, remote: str, discovered: bool
+) -> None:
+    """Discovery asks `refs/remotes/origin/HEAD` and then a local main/master,
+    so a trunk published only through a differently-named remote is found by no
+    tier. What matters is which way that fails, and it fails closed twice over:
+    no trunk is verified, and the ref merges would be measured against does not
+    resolve either, so nothing can reach merge proof in the first place. The
+    branch below is genuinely merged -- the setup insists on it -- and is still
+    left alone.
+
+    The remote's name is the only thing varying, and the slash in it changes
+    nothing: `team` and `team/origin` behave identically, because the tier that
+    declines is the one asking for `origin` by name rather than any split of a
+    path. The `origin` row is the control that keeps the other two from passing
+    vacuously -- same shape, same merged branch, and there the sweep does take
+    it."""
+    bare = tmp_path / "server.git"
+    SubprocessCommands().git(["init", "-q", "--bare", "-b", "trunk", str(bare)])
+    git(repo, "branch", "-m", "main", "trunk")
+    git(repo, "remote", "add", remote, str(bare))
+    git(repo, "push", "-q", "-u", remote, "trunk")
+    git(repo, "checkout", "-q", "-b", "feat")
+    commit(repo, "feat.txt")
+    git(repo, "checkout", "-q", "trunk")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feat", "feat")
+    git(repo, "push", "-q", remote, "trunk")
+    git(repo, "fetch", "-q", remote)
+    git(repo, "remote", "set-head", remote, "-a")
+    # Raises unless feat really is merged: without this the withholding below
+    # could be the ordinary no-merge-proof answer rather than the trunk one.
+    git(repo, "merge-base", "--is-ancestor", "feat", "trunk")
+
+    with reachability_guard(repo):
+        payload = report(repo, "--cleanup")
+
+    repo_block = payload["repo"]
+    assert isinstance(repo_block, dict)
+    assert repo_block["default_branch_known"] is discovered
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    swept = {d["target_id"] for d in execution["deletions"] if d["deleted"]}
+
+    if discovered:
+        assert repo_block["default_branch"] == "trunk"
+        assert swept == {"branch:feat"}
+        return
+
+    # Nothing was taken, and the trunk this repository actually has is still
+    # here under a name no tier recognised.
+    assert swept == set()
+    assert find(payload, "branch:feat")["sweepable"] is False
+    for ref in ("refs/heads/trunk", "refs/heads/feat"):
+        assert git(repo, "for-each-ref", "--format=%(refname)", ref) != ""
+
+
 def test_a_local_branch_spelled_like_a_remote_ref_is_a_target_of_its_own(
     repo: Path, tmp_path: Path
 ) -> None:
