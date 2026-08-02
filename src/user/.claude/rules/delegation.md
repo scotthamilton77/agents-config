@@ -43,13 +43,10 @@ what ships.
 </mandate>
 
 <routing>
-- The native Agent tool and Workflow are the default substrate. Alternatives exist —
-  other vendors, cheaper models, other harnesses — and each states when to use it in
-  its own skill or rule description. Read those before choosing.
-- Match model and effort to the job — cheap tiers for mechanical work, top tiers for
-  judgment. Sonnet and Opus: prefer `high` or `xhigh` effort for anything requiring
-  any amount of reasoning or judgment; reserve `low`/`medium` for genuinely
-  mechanical stages.
+- The native Agent tool and Workflow are the default substrate. Before delegating to
+  anything else — another vendor, another harness — read the `choosing-a-delegate`
+  skill. The user not naming a vendor is not a reason to stay native.
+- Match model to the job: cheap tiers for mechanical work, top tiers for judgment.
 - When your own judgment is strained, a dispatch upward is legitimate: consult an
   advisor agent on a stronger model or higher effort than your own.
 - **Never spawn a subagent with Fable as the model without first consulting the user.**
@@ -57,6 +54,5 @@ what ships.
 
 <instructions-to-subagents>
 A subagent inherits none of your intent, and a vague dispatch returns noise you have to
-redo yourself. Read the `instructing-subagents` skill before you dispatch: it holds what
-a brief must carry, what it must never prescribe, and how the agent reports back.
+redo yourself. Read the `instructing-subagents` skill before you dispatch.
 </instructions-to-subagents>
