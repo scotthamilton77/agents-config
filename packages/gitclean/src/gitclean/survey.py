@@ -20,7 +20,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
-from gitclean.model import Branch, MergeEvidence, PullRequest, Survey, Worktree
+from gitclean.model import Branch, MergeEvidence, NotOffered, PullRequest, Survey, Worktree
 from gitclean.ports import CommandPort
 
 _SEP = "\x1f"
@@ -168,13 +168,19 @@ def resolve_base_ref(
     return default_branch, None
 
 
-def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree], list[str]]:
+def read_worktrees(
+    port: CommandPort, cwd: Path | None
+) -> tuple[list[Worktree], list[str], bool, int]:
     """Parse `worktree list --porcelain` and stat each tree for dirt.
 
-    Returns the worktrees plus any parse warnings."""
+    Returns the worktrees, any parse warnings, and whether the listing answered
+    at all. The last is not derivable from an empty list -- a repository with
+    only its main working tree produces one entry, but a listing that failed
+    produces none, and "no worktree is there" is a conclusion only one of those
+    supports."""
     result = port.git(["worktree", "list", "--porcelain"], cwd=cwd)
     if not result.ok:
-        return [], [f"could not list worktrees (exit {result.returncode})"]
+        return [], [f"could not list worktrees (exit {result.returncode})"], False, 0
 
     blocks: list[dict[str, str]] = []
     current: dict[str, str] = {}
@@ -192,10 +198,15 @@ def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree],
 
     worktrees: list[Worktree] = []
     warnings: list[str] = []
+    dropped_blocks = 0
     for index, block in enumerate(blocks):
         path = block.get("worktree", "")
         if not path:
+            # Counted as well as warned: a block nobody could read is a
+            # worktree whose existence went unrecorded, which a later
+            # "nothing matched" must not be allowed to call absence.
             warnings.append(f"worktree block {index} had no path; skipped")
+            dropped_blocks += 1
             continue
         branch_ref = block.get("branch")
         branch = branch_ref.removeprefix("refs/heads/") if branch_ref else None
@@ -242,7 +253,7 @@ def read_worktrees(port: CommandPort, cwd: Path | None) -> tuple[list[Worktree],
                 last_activity=None,
             )
         )
-    return worktrees, warnings
+    return worktrees, warnings, True, dropped_blocks
 
 
 def _count_dirt(port: CommandPort, path: Path) -> tuple[int, int, int] | None:
@@ -630,12 +641,17 @@ def read_branches(
     default_branch: str,
     prs: dict[str, PullRequest],
     worktree_by_branch: dict[str, str],
-) -> tuple[list[Branch], list[str], bool]:
-    """The branches, the warnings, and whether the ref read answered at all.
+) -> tuple[list[Branch], list[str], bool, list[NotOffered], int]:
+    """The branches, the warnings, whether the ref read answered at all, and
+    the refs deliberately left out of the first list.
 
-    The last one is not derivable from an empty branch list, and a worktree row
+    The third is not derivable from an empty branch list, and a worktree row
     needs it: with no refs read there was nothing a commit could have been
-    proven merged against."""
+    proven merged against.
+
+    The fourth exists because "not a target" and "not in the repository" are
+    different facts that a bare absence from ``branches`` cannot tell apart --
+    and only one of them lets a caller be told there is nothing to delete."""
     result = port.git(
         ["for-each-ref", f"--format={_REF_FORMAT}", "refs/heads", "refs/remotes"], cwd=cwd
     )
@@ -647,6 +663,8 @@ def read_branches(
                 f"no branch was surveyed, so this report describes worktrees only"
             ],
             False,
+            [],
+            0,
         )
 
     local_merged, local_warning = _merged_set(port, cwd, base_ref, remote=False)
@@ -654,26 +672,50 @@ def read_branches(
     warnings = [w for w in (local_warning, remote_warning) if w]
 
     branches: list[Branch] = []
+    not_offered: list[NotOffered] = []
+    dropped = 0
     for line in result.stdout.splitlines():
         if not line.strip():
             continue
         fields = line.split(_SEP)
         if len(fields) < _REF_FIELDS:
+            # Counted, not swallowed. A row nobody could parse is a ref whose
+            # existence went unrecorded, and a later "nothing matched that
+            # name" cannot tell that apart from the ref not being there.
+            dropped += 1
             continue
         full, name, head, committed, upstream, track, head_marker = (
             f.strip() for f in fields[:_REF_FIELDS]
         )
         if not name or not full:
+            dropped += 1
             continue
 
         is_remote = full.startswith("refs/remotes/")
         if is_remote and full.endswith("/HEAD"):
             # The remote's symbolic HEAD is a pointer, not a branch.
+            not_offered.append(
+                NotOffered(
+                    # Recorded from the full path rather than `name`: git
+                    # shortens refs/remotes/origin/HEAD to a bare `origin`,
+                    # which is not a spelling anybody would type at this tool.
+                    name=full.removeprefix("refs/remotes/"),
+                    reason="the remote's symbolic HEAD, which points at a branch rather than "
+                    "being one; delete the branch it names instead",
+                )
+            )
             continue
         remote = name.split("/", 1)[0] if is_remote and "/" in name else None
         short = name.split("/", 1)[1] if is_remote and remote else name
 
         if is_remote and short == default_branch:
+            not_offered.append(
+                NotOffered(
+                    name=name,
+                    reason=f"the server's copy of the trunk ({default_branch}); gitclean does "
+                    f"not offer it for deletion, and git will do it if you truly mean to",
+                )
+            )
             continue
 
         is_default = not is_remote and name == default_branch
@@ -731,7 +773,12 @@ def read_branches(
                 probe_failures=probe_failures,
             )
         )
-    return branches, warnings, True
+    if dropped:
+        warnings.append(
+            f"{dropped} ref row(s) could not be parsed and are missing from this report; "
+            f"a name that matches nothing may be one of them"
+        )
+    return branches, warnings, True, not_offered, dropped
 
 
 def _worktree_activity(
@@ -785,7 +832,7 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         )
     )
 
-    worktrees, warnings = read_worktrees(port, cwd)
+    worktrees, warnings, worktrees_known, dropped_worktrees = read_worktrees(port, cwd)
     if base_ref_warning is not None:
         warnings.append(base_ref_warning)
     if current_warning is not None:
@@ -795,7 +842,7 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
     prs, gh_error, pr_evidence_gap = read_pull_requests(port, cwd)
     if pr_evidence_gap:
         warnings.append(pr_evidence_gap)
-    branches, branch_warnings, branches_known = read_branches(
+    branches, branch_warnings, branches_known, not_offered, dropped_refs = read_branches(
         port,
         cwd,
         base_ref=base_ref,
@@ -829,5 +876,9 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         worktrees=tuple(worktrees),
         branches=tuple(branches),
         branches_known=branches_known,
+        worktrees_known=worktrees_known,
+        dropped_refs=dropped_refs,
+        dropped_worktrees=dropped_worktrees,
+        not_offered=tuple(not_offered),
         warnings=tuple(warnings),
     )

@@ -8,7 +8,11 @@ git's configured expiry, and a worktree is removed by git itself, which refuses
 while the tree holds anything uncommitted. Where salvage does run, it precedes
 the deletion, and what earns the deletion is a restore rather than an
 inspection: the bundle is cloned into an empty directory and the commit about
-to be deleted has to come back out of it. `git bundle verify` is the weaker
+to be deleted has to come back out of it. It is also spent only on a ref the
+server still has -- that question is asked before the bundle is written rather
+than discovered from a rejected push afterwards, so a branch the forge deleted
+when its PR merged settles as a no-op instead of as an anomaly with an archive
+of the whole history behind it. `git bundle verify` is the weaker
 question -- it asks whether the archive applies to the repository holding every
 object already, and answers yes for bundles that clone back empty and for
 bundles that will not clone at all. A salvage that does not restore is reported
@@ -436,6 +440,72 @@ class Executor:
             detail="local ref deleted",
         )
 
+    def _remote_ref_present(
+        self, remote: str, ref_path: str
+    ) -> tuple[bool | None, tuple[str, ...]]:
+        """Does the server still hold this ref? ``None`` when it would not say.
+
+        `ls-remote` takes a pattern and matches it on path-component
+        boundaries, so an unrelated `a/feat/x` answers a question asked about
+        `feat/x`. The refname column settles it -- the same exact comparison
+        the local path makes."""
+        probe = self._port.git(
+            git_argv("ls-remote", "--heads", remote, name=ref_path), cwd=self._cwd
+        )
+        if not probe.ok:
+            return None, probe.transcript()
+        present = any(
+            line.split("\t")[-1].strip() == ref_path for line in probe.stdout.splitlines()
+        )
+        return present, probe.transcript()
+
+    def _remote_already_gone(self, target: Target) -> Deletion | None:
+        """Ask the server before spending anything on the ref.
+
+        Everything known about a remote branch here was read from
+        `refs/remotes/<remote>/<ref>` -- a local cache a fetch refreshes and
+        nothing invalidates. On a forge that deletes a branch when its PR
+        merges, which is the common configuration, that cache routinely names
+        refs the server dropped weeks ago. So "the server no longer has it" is
+        the ordinary path for this kind of target, not a corner case.
+
+        Discovered afterwards, that arrives as a rejected push: an anomaly, a
+        nonzero exit, and a bundle of the branch's whole history written first
+        for a ref that was never there to lose. Discovered first, it costs one
+        `ls-remote` and settles the target having spent nothing.
+
+        A probe that does not answer returns ``None`` and the normal route
+        runs. Not knowing whether the ref is there is not evidence that it is
+        not, and the ordinary route already copes with a server that will not
+        talk.
+
+        What the row claims is what was measured -- that the remote does not
+        advertise the ref -- rather than the conclusion drawn from it. The two
+        come apart: a server configured with `uploadpack.hideRefs` holds refs
+        it does not advertise, so an empty answer is very good evidence of
+        absence and not proof of it. Stating the measurement keeps the row true
+        on such a server, where the cost is a deletion this run declines to
+        make; the tracking ref survives, the next report shows the target
+        again, and naming it after a fetch still works."""
+        remote, _, ref = target.name.partition("/")
+        if not ref:
+            # Unparseable, and _delete_remote_branch is where that is reported.
+            return None
+        present, _ = self._remote_ref_present(remote, f"refs/heads/{ref}")
+        if present is not False:
+            return None
+        return Deletion(
+            target_id=target.id,
+            kind=target.kind,
+            name=target.name,
+            deleted=False,
+            verified=True,
+            detail=f"{remote} does not advertise refs/heads/{ref}, so there is nothing there "
+            f"to delete. The tracking ref refs/remotes/{target.name} is what put this in "
+            f"the plan -- `git fetch --prune {remote}` clears it",
+            already_absent=True,
+        )
+
     def _delete_remote_branch(self, target: Target) -> Deletion:
         """Delete the server's ref, but only if the server still holds what we
         judged.
@@ -480,29 +550,21 @@ class Executor:
                 removal.transcript(),
             )
             return _failed(target, "push --delete failed")
-        ref_path = f"refs/heads/{ref}"
-        probe = self._port.git(
-            git_argv("ls-remote", "--heads", remote, name=ref_path), cwd=self._cwd
-        )
-        if not probe.ok:
+        present, transcript = self._remote_ref_present(remote, f"refs/heads/{ref}")
+        if present is None:
             self._record(
                 "verify",
                 target.id,
                 f"could not confirm {ref} is gone from {remote}; the delete reported success",
-                probe.transcript(),
+                transcript,
             )
             return _failed(target, "deletion unverified")
-        # `ls-remote` takes a pattern, and it matches on path-component
-        # boundaries: an unrelated `a/feat/x` on the same server answers a
-        # question asked about `feat/x`. Reading that as survival turns a
-        # deletion git performed into a reported failure, so the refname column
-        # settles it -- the same exact comparison the local path makes.
-        if any(line.split("\t")[-1].strip() == ref_path for line in probe.stdout.splitlines()):
+        if present:
             self._record(
                 "verify",
                 target.id,
                 f"{ref} still exists on {remote} after `git push --delete` reported success",
-                probe.transcript(),
+                transcript,
             )
             return _failed(target, "remote ref survived deletion")
         # No `remote prune` here. It drops every tracking ref under
@@ -556,6 +618,16 @@ class Executor:
             # is the only thing that is bundled first.
             salvage_first = target.kind is TargetKind.REMOTE_BRANCH
 
+            if salvage_first:
+                # Asked ahead of the dry-run branch as well. A preview that
+                # promises to delete a ref the server does not have is the same
+                # false report, in the mode whose whole job is to be trusted
+                # before the real one runs.
+                settled = self._remote_already_gone(target)
+                if settled is not None:
+                    deletions.append(settled)
+                    continue
+
             if plan.dry_run:
                 deletions.append(
                     Deletion(
@@ -586,7 +658,11 @@ class Executor:
 
             if target.kind is TargetKind.WORKTREE:
                 outcome = self._delete_worktree(target)
-                if not outcome.deleted:
+                # What blocks a branch is its worktree still being on disk.
+                # `deleted` alone answers a narrower question -- whether this
+                # run did the removing -- and a tree that was already gone
+                # holds nothing.
+                if not outcome.deleted and not outcome.already_absent:
                     self._strand(target, stranded)
                 deletions.append(outcome)
             elif target.kind is TargetKind.BRANCH:

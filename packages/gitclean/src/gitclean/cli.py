@@ -44,6 +44,18 @@ what a bare --cleanup takes:
 naming a target deletes it. Nothing is re-derived, no flag is demanded, and git's
 own refusals -- a checked-out branch, a dirty or locked worktree -- stand as they are.
 
+a name that matches nothing is not an error, once nothing-matched actually means gone.
+It lands in `plan.absent` with a note and the other named targets are still deleted. A
+server ref the remote no longer advertises settles the same way, as `already_absent`,
+without writing a salvage bundle for something that is not there to lose. Neither is
+reported as work done: `deleted` stays false, because only a true there means the tool
+acted.
+
+it refuses instead where nothing-matched proves nothing -- when no ref could be read at
+all, and when the name is a ref this tool does not offer as a target, such as the
+server's copy of the trunk. Both of those look identical to an absent name and neither
+one is, so saying "already gone" about them would be a false report.
+
 examples:
   gitclean --report --format human
   gitclean --cleanup --dry-run
@@ -143,6 +155,17 @@ def _planned_ids(payload: dict[str, object]) -> frozenset[str]:
     )
 
 
+def _deletion_mark(entry: dict[str, object], *, dry: bool) -> str:
+    """`gone` outranks `plan`: a target that is already absent is a settled
+    fact rather than something a later run would still get to, and a preview
+    saying `plan` for it would be promising work that does not exist."""
+    if entry.get("already_absent"):
+        return "gone"
+    if dry:
+        return "plan"
+    return "ok  " if entry.get("verified") else "FAIL"
+
+
 def _render_human(payload: dict[str, object], out: TextIO) -> None:
     repo = payload.get("repo")
     if isinstance(repo, dict):
@@ -207,6 +230,16 @@ def _render_human(payload: dict[str, object], out: TextIO) -> None:
             for entry in skipped:
                 if isinstance(entry, dict):
                     print(f"  SKIPPED {entry.get('name')} -- {entry.get('reason')}", file=out)
+        # Printed rather than passed over in silence. The run did what was
+        # asked, so it is not a failure -- but a name that matched nothing is
+        # also how a typo looks, and the reader is the only one who can tell
+        # the two apart.
+        absent = plan.get("absent")
+        if isinstance(absent, list) and absent:
+            print("", file=out)
+            for entry in absent:
+                if isinstance(entry, dict):
+                    print(f"  ABSENT  {entry.get('selector')} -- {entry.get('note')}", file=out)
 
     execution = payload.get("execution")
     if isinstance(execution, dict):
@@ -215,7 +248,7 @@ def _render_human(payload: dict[str, object], out: TextIO) -> None:
         if isinstance(deletions, list):
             for entry in deletions:
                 if isinstance(entry, dict):
-                    mark = "plan" if dry else ("ok  " if entry.get("verified") else "FAIL")
+                    mark = _deletion_mark(entry, dry=dry)
                     print(f"  {mark} {entry.get('name')} -- {entry.get('detail')}", file=out)
         if execution.get("salvage_dir"):
             print(f"  salvage: {execution.get('salvage_dir')}", file=out)
