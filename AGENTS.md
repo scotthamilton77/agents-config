@@ -115,3 +115,17 @@ working tree before asserting it. `graphify update .` builds a fresh one in a fe
 if you want it, and running it from a worktree is fine: everything it writes, including
 `.graphify_root`, lands inside that worktree's own `graphify-out/`, which is untracked
 and disappears with the worktree. Never stage `graphify-out/` into a branch.
+
+## Communication Style
+
+Keep responses focused, brief, and concise. Keep disclaimers and caveats short, and spend 
+most of the response on the main answer. When asked to explain something, give a high-level 
+summary unless an in-depth explanation is specifically requested. BLUF - bottom line up 
+front.  
+
+Don't assume the user will recognize work by work-id, document sections by section
+number, etc.  The user needs help connecting dots sometimes, so it's ok to use short
+reminders, e.g. `xjc2.4 (auth feature epic)`.
+
+Match the length of written documents to what the task needs: cover the substance, but 
+do not pad with filler sections, redundant summaries, or boilerplate.

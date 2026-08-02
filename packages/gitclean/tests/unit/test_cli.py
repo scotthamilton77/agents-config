@@ -296,6 +296,10 @@ def _remote_port() -> ScriptedCommands:
             ref_at("refs/remotes/origin/feat/x", "origin/feat/x", "f" * 40),
         ],
         counts={"origin/main..origin/feat/x": "0"},
+        # The server still has it. Every route to deleting a server ref asks
+        # that first, dry runs included, so a fixture that left it unscripted
+        # would only ever exercise the already-gone path.
+        extra={"ls-remote": ok(f"{'f' * 40}\trefs/heads/feat/x")},
     )
 
 
@@ -324,7 +328,110 @@ def test_an_explicit_salvage_dir_is_honoured() -> None:
     assert plan["salvage_dir"] == "/var/salvage/keep"
 
 
+def test_a_miss_with_no_refs_read_exits_refused_not_clean() -> None:
+    """Exit 0 here would report a branch as gone on the strength of a list that
+    failed to load. The caller is entitled to know the difference between "it
+    is not there" and "I could not look"."""
+    port = make_port(extra={"for-each-ref": fail("fatal: bad object"), "branch -D -- done": ok()})
+
+    code, payload = invoke(["--cleanup", "done"], port)
+
+    assert code == EXIT_REFUSED
+    refusal = payload["refusal"]
+    assert isinstance(refusal, dict)
+    assert refusal["code"] == "E_SURVEY_INCOMPLETE"
+    assert not any(call[:3] == ("git", "branch", "-D") for call in port.transcript)
+
+
+def test_naming_the_servers_copy_of_the_trunk_exits_refused() -> None:
+    """It is on the server and gitclean keeps it out of the target list, so a
+    miss says nothing about whether it exists. Exit 0 with `already gone` would
+    be a false report about a ref sitting right there."""
+    port = make_port(
+        refs=[
+            ref_at("refs/heads/main", "main", "a" * 40, head="*"),
+            ref_at("refs/remotes/origin/main", "origin/main", "a" * 40),
+        ]
+    )
+
+    code, payload = invoke(["--cleanup", "origin/main"], port)
+
+    assert code == EXIT_REFUSED
+    refusal = payload["refusal"]
+    assert isinstance(refusal, dict)
+    assert refusal["code"] == "E_NOT_A_TARGET"
+    assert refusal["remedy"]
+
+
+def _absent_remote_port() -> ScriptedCommands:
+    """The tracking ref is here and the server's copy is not, which is what a
+    forge that deletes merged branches leaves behind."""
+    return make_port(
+        refs=[
+            ref_at("refs/heads/main", "main", "a" * 40, head="*"),
+            ref_at("refs/remotes/origin/feat/x", "origin/feat/x", "f" * 40),
+        ],
+        counts={"origin/main..origin/feat/x": "0"},
+        extra={"ls-remote": ok("")},
+    )
+
+
+def test_naming_something_already_gone_is_a_clean_exit() -> None:
+    """Exit 1 here is the failure that matters: an agent that correctly leaves
+    a worktree before cleaning it up, then names it, is told the run refused
+    and reaches for raw git or escalates over a job already done."""
+    code, payload = invoke(["--cleanup", "not-a-thing"], merged_branch_port())
+    assert code == EXIT_OK
+    assert payload["refusal"] is None
+    plan = payload["plan"]
+    assert isinstance(plan, dict)
+    assert [a["selector"] for a in plan["absent"]] == ["not-a-thing"]
+
+
+def test_an_absent_name_does_not_take_the_names_beside_it_down() -> None:
+    """A selector refusal is plan-level, so before this the one name that had
+    already been dealt with aborted every other deletion in the command."""
+    code, payload = invoke(["--cleanup", "done", "not-a-thing"], merged_branch_port())
+    assert code == EXIT_OK
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert [d["name"] for d in execution["deletions"]] == ["done"]
+    assert execution["deletions"][0]["deleted"] is True
+
+
+def test_a_server_ref_already_gone_exits_clean_rather_than_anomalous() -> None:
+    """Exit 3 says something is wrong and needs reading. Spending it on the
+    ordinary outcome of a forge that tidies up after itself teaches a reader to
+    skip the code that was supposed to stop them."""
+    code, payload = invoke(["--cleanup", "origin/feat/x"], _absent_remote_port())
+    assert code == EXIT_OK
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert execution["anomalies"] == []
+    assert execution["deletions"][0]["already_absent"] is True
+
+
 # -- human rendering ---------------------------------------------------------
+
+
+def test_human_output_names_what_it_could_not_find() -> None:
+    """Not an error, and not silence either. A name matching nothing is also
+    exactly what a typo looks like from in here, and the reader is the only one
+    who can tell the two apart -- so the name goes on the page for them."""
+    code, text = invoke_human(["--cleanup", "not-a-thing"], merged_branch_port())
+    assert code == EXIT_OK
+    assert "ABSENT" in text
+    assert "not-a-thing" in text
+
+
+def test_human_output_does_not_mark_an_already_gone_ref_as_deleted() -> None:
+    """`ok` is the mark for a deletion this run performed and verified. Reusing
+    it here would put a cleanup that did nothing and one that did the work on
+    the same line."""
+    code, text = invoke_human(["--cleanup", "origin/feat/x"], _absent_remote_port())
+    assert code == EXIT_OK
+    assert "gone origin/feat/x" in text
+    assert "ok   origin/feat/x" not in text
 
 
 def test_human_report_marks_the_sweepable_rows_and_shows_the_evidence() -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from conftest import make_branch, make_survey
 
-from gitclean.model import MergeEvidence, Plan, Refusal, Target, TargetKind
+from gitclean.model import MergeEvidence, NotOffered, Plan, Refusal, Target, TargetKind
 from gitclean.plan import build_plan, resolve_selectors
 
 
@@ -147,10 +147,168 @@ def test_another_worktree_is_not_mistaken_for_the_invoking_one() -> None:
 # -- selector resolution -----------------------------------------------------
 
 
-def test_unknown_selector_is_refused() -> None:
+def test_a_selector_matching_nothing_is_a_job_already_done() -> None:
+    """The caller asked for that thing to be gone. It is gone. Refusing there
+    reports a completed job as a failure, and an agent told it failed retries,
+    reaches for raw git, or escalates -- all worse than the no-op it should
+    have been handed."""
     result = plan_for((target("branch:x"),), selectors=["nope"])
+    assert isinstance(result, Plan)
+    assert result.targets == ()
+    assert [a.selector for a in result.absent] == ["nope"]
+
+
+def test_a_selector_matching_nothing_states_both_readings() -> None:
+    """Nothing here can tell a branch deleted a minute ago from a name with a
+    letter wrong -- the repository answers identically -- so the note commits
+    to neither and points at the list that would settle it."""
+    result = plan_for((target("branch:x"),), selectors=["nope"])
+    assert isinstance(result, Plan)
+    note = result.absent[0].note
+    assert "already gone" in note
+    assert "the name is wrong" in note
+    assert "--report" in note
+
+
+def test_one_absent_name_does_not_abort_the_names_beside_it() -> None:
+    """This is the whole cost of the old refusal. Selector refusals are
+    plan-level, so a single name that had already been dealt with stopped every
+    other deletion the caller asked for in the same breath."""
+    targets = (target("branch:x"), target("branch:y"))
+    result = plan_for(targets, selectors=["x", "gone-already", "y"])
+    assert isinstance(result, Plan)
+    assert [t.id for t in result.targets] == ["branch:x", "branch:y"]
+    assert [a.selector for a in result.absent] == ["gone-already"]
+
+
+def test_a_miss_is_not_absence_when_no_ref_could_be_read() -> None:
+    """`branches` is empty here because `for-each-ref` failed, not because the
+    repository has none -- and the list alone cannot tell those apart. Calling
+    it absence would tell a caller their branch is gone while it sits
+    untouched, which is the one thing this tool must never say."""
+    survey = make_survey(branches_known=False)
+
+    result = plan_for((), survey=survey, selectors=["feat/x"])
+
     assert isinstance(result, Refusal)
-    assert result.code == "E_UNKNOWN_TARGET"
+    assert result.code == "E_SURVEY_INCOMPLETE"
+    assert "feat/x" in result.message
+    assert result.remedy
+
+
+def test_a_worktree_miss_is_not_absence_when_no_worktree_could_be_listed() -> None:
+    """The same defect as the ref read, on the other listing. `worktrees` is
+    empty because `worktree list` failed, and a repository whose trees could
+    not be described has not been shown to lack the one that was named."""
+    survey = make_survey(worktrees_known=False)
+
+    result = plan_for((), survey=survey, selectors=["worktree:/repo/wt"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_SURVEY_INCOMPLETE"
+    assert "no worktree could be listed" in result.message
+
+
+def test_a_failed_ref_read_does_not_block_naming_an_absent_worktree() -> None:
+    """The commonest cleanup there is -- a worktree already removed, named
+    after the fact -- and the worktree listing answered. Refusing it over a ref
+    read that has nothing to do with this selector would take the tool's whole
+    reason for accepting an absent name and give it back."""
+    survey = make_survey(branches_known=False, worktrees_known=True)
+
+    result = plan_for((), survey=survey, selectors=["worktree:/repo/wt"])
+
+    assert isinstance(result, Plan)
+    assert [a.selector for a in result.absent] == ["worktree:/repo/wt"]
+
+
+def test_a_listing_that_ran_but_dropped_a_row_has_not_answered() -> None:
+    """`branches_known` says the command exited 0, which is a smaller claim
+    than describing everything it listed. A row nobody could parse is a ref
+    whose existence went unrecorded, and that is the same hole as never having
+    looked -- so it must not turn into "already gone"."""
+    survey = make_survey(branches_known=True, dropped_refs=1)
+
+    result = plan_for((), survey=survey, selectors=["branch:feat/x"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_SURVEY_INCOMPLETE"
+    assert "1 ref row(s) went unparsed" in result.message
+
+
+def test_a_dropped_worktree_block_is_the_same_hole_on_the_other_listing() -> None:
+    survey = make_survey(worktrees_known=True, dropped_worktrees=2)
+
+    result = plan_for((), survey=survey, selectors=["worktree:/repo/wt"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_SURVEY_INCOMPLETE"
+    assert "2 worktree block(s) went unparsed" in result.message
+
+
+def test_a_dropped_ref_row_does_not_block_naming_a_worktree() -> None:
+    """The counts are read per listing, like the flags beside them. A ref row
+    nobody could parse says nothing about the worktree listing."""
+    survey = make_survey(dropped_refs=1)
+
+    result = plan_for((), survey=survey, selectors=["worktree:/repo/wt"])
+
+    assert isinstance(result, Plan)
+    assert [a.selector for a in result.absent] == ["worktree:/repo/wt"]
+
+
+def test_an_absolute_path_is_a_worktree_without_needing_the_prefix() -> None:
+    """git will not create a ref whose short name begins with a slash, so an
+    absolute path can only mean a worktree -- and the worktree listing is the
+    only one that has to have answered for it."""
+    survey = make_survey(branches_known=False, worktrees_known=True)
+
+    result = plan_for((), survey=survey, selectors=["/repo/wt"])
+
+    assert isinstance(result, Plan)
+    assert [a.selector for a in result.absent] == ["/repo/wt"]
+
+
+def test_a_bare_name_needs_both_listings_because_it_could_be_either() -> None:
+    """Being unable to say which kind was meant is not a reason to trust
+    whichever one happened to answer."""
+    survey = make_survey(branches_known=False, worktrees_known=True)
+
+    result = plan_for((), survey=survey, selectors=["ambiguous"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_SURVEY_INCOMPLETE"
+    assert "no ref could be read" in result.message
+
+
+def test_a_ref_this_tool_declines_to_offer_is_not_reported_as_gone() -> None:
+    """The server's copy of the trunk exists and is deliberately kept out of
+    the target list. "Nothing matched" is therefore true and "it is already
+    gone" is false, and only the second is a thing to tell somebody."""
+    survey = make_survey(
+        not_offered=(NotOffered(name="origin/main", reason="the server's copy of the trunk"),)
+    )
+
+    result = plan_for((target("branch:x"),), survey=survey, selectors=["origin/main"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_NOT_A_TARGET"
+    assert "origin/main" in result.message
+    assert "the server's copy of the trunk" in result.message
+
+
+def test_the_local_trunk_is_not_confused_with_the_servers_copy_of_it() -> None:
+    """A short-name fallback in the not-offered lookup would match `main`
+    against the recorded `origin/main` and refuse to delete a different ref
+    that is a legal thing to name."""
+    survey = make_survey(
+        not_offered=(NotOffered(name="origin/main", reason="the server's copy of the trunk"),)
+    )
+
+    result = plan_for((target("branch:main", sweepable=False),), survey=survey, selectors=["main"])
+
+    assert isinstance(result, Plan)
+    assert [t.name for t in result.targets] == ["main"]
 
 
 def test_ambiguous_bare_name_is_refused_with_the_candidates() -> None:
@@ -192,9 +350,29 @@ def test_repeated_selector_is_not_planned_twice() -> None:
 
 def test_resolve_selectors_returns_targets_in_request_order() -> None:
     targets = (target("branch:a"), target("branch:b"))
-    resolved, refusal = resolve_selectors(["b", "a"], targets)
+    resolved, absent, refusal = resolve_selectors(["b", "a"], targets, make_survey())
     assert refusal is None
+    assert absent == []
     assert [t.name for t in resolved] == ["b", "a"]
+
+
+def test_ambiguity_still_refuses_and_carries_nothing_forward() -> None:
+    """A miss is a job done; ambiguity is a question. Two real things match and
+    picking one destroys the other, so this is the refusal that stays -- and it
+    resolves no selector beside it, because the caller is about to re-issue the
+    whole command with a precise name."""
+    targets = (
+        target("branch:feat/x"),
+        target("remote:origin/feat/x", kind=TargetKind.REMOTE_BRANCH),
+        target("branch:other"),
+    )
+    resolved, absent, refusal = resolve_selectors(
+        ["other", "feat/x", "nope"], targets, make_survey()
+    )
+    assert refusal is not None
+    assert refusal.code == "E_AMBIGUOUS_TARGET"
+    assert resolved == []
+    assert absent == []
 
 
 # -- worktree occupancy ------------------------------------------------------

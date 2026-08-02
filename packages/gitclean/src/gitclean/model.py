@@ -239,6 +239,24 @@ class Target:
 
 
 @dataclass(frozen=True, slots=True)
+class NotOffered:
+    """A ref the survey read and deliberately did not turn into a target.
+
+    Recorded rather than merely skipped, because "absent from the target list"
+    and "absent from the repository" are different facts and only one of them
+    authorises telling a caller there is nothing to delete. Without this the
+    two are indistinguishable downstream, and naming a ref gitclean does not
+    offer would be answered "it is already gone" about a ref that is right
+    there."""
+
+    name: str
+    reason: str
+
+    def as_json(self) -> dict[str, object]:
+        return {"name": self.name, "reason": self.reason}
+
+
+@dataclass(frozen=True, slots=True)
 class Survey:
     """Everything read from git and gh in one pass, before any judgement."""
 
@@ -276,6 +294,30 @@ class Survey:
     every worktree row: with no refs read, nothing *could* have proved the
     commit a worktree holds merged, and the row has to say that rather than
     report an absence of proof as though the question had been asked."""
+    worktrees_known: bool = True
+    """False when `worktree list` itself failed.
+
+    ``worktrees`` is then empty, and so is the list for a repository whose only
+    working tree could not be described. The distinction matters to exactly one
+    caller: naming a worktree that is not in the list means it is gone only if
+    the list could have held it."""
+    dropped_refs: int = 0
+    """Ref rows `for-each-ref` produced that could not be parsed.
+
+    Distinct from ``branches_known``, which says the command ran. A listing can
+    run and still not describe everything it listed, and the difference is
+    invisible downstream: a dropped row is a ref whose existence went
+    unrecorded, so "nothing matched that name" and "that name is not in this
+    repository" stop being the same statement."""
+    dropped_worktrees: int = 0
+    """Worktree blocks the listing produced that could not be parsed. Same
+    distinction as ``dropped_refs``, on the other listing."""
+    not_offered: tuple[NotOffered, ...] = ()
+    """Refs that exist and are deliberately absent from ``branches``.
+
+    Recorded where the decision is made rather than re-derived later: a second
+    place working out which names those were is a second place to get it
+    wrong, and the two would drift the first time an exclusion changed."""
     warnings: tuple[str, ...] = ()
     """Every probe that did not answer, in reader-facing prose.
 
@@ -299,6 +341,10 @@ class Survey:
             "worktrees": [w.as_json() for w in self.worktrees],
             "branches": [b.as_json() for b in self.branches],
             "branches_known": self.branches_known,
+            "worktrees_known": self.worktrees_known,
+            "dropped_refs": self.dropped_refs,
+            "dropped_worktrees": self.dropped_worktrees,
+            "not_offered": [n.as_json() for n in self.not_offered],
         }
 
     def all_warnings(self) -> tuple[str, ...]:
@@ -357,8 +403,29 @@ class Deletion:
     kind: TargetKind
     name: str
     deleted: bool
+    """Whether **this run** performed the deletion. Not whether the thing is
+    gone: a target that was already absent is gone and this is False, because
+    only a True here is evidence the tool did something."""
     verified: bool
+    """The end state was confirmed by asking git, rather than inferred from an
+    exit code. It does **not** mean a deletion happened -- an already-absent
+    target is verified too, because the server was asked and answered.
+
+    So this is the wrong field to count a cleanup's work by; ``deleted`` is the
+    one that says the tool acted. The pair is only ever read together."""
     detail: str
+    already_absent: bool = False
+    """The end state was reached before this run started.
+
+    Deleting is not a state change the caller wanted for its own sake -- they
+    wanted the thing gone, and it is. Reporting that as a failure teaches a
+    caller to retry, to reach for raw git, or to escalate, all of which are
+    worse than the no-op they should have been told about.
+
+    It stays a separate field rather than folding into ``deleted`` because the
+    two carry different evidence. ``deleted`` says the tool acted; this says it
+    found no work. A run of nothing but these did nothing at all, which a
+    reader should be able to see at a glance."""
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -368,6 +435,7 @@ class Deletion:
             "deleted": self.deleted,
             "verified": self.verified,
             "detail": self.detail,
+            "already_absent": self.already_absent,
         }
 
 
@@ -391,6 +459,27 @@ class Skipped:
 
 
 @dataclass(frozen=True, slots=True)
+class Absent:
+    """A name the caller gave that matches nothing in the repository.
+
+    This is not a refusal, because the caller asked for a state -- that thing,
+    gone -- and the repository is already in it. It is also not silence: the
+    tool genuinely cannot tell a target somebody removed a moment ago from a
+    name they mistyped, since both match nothing, so it reports what it looked
+    for and lets the reader recognise their own typo.
+
+    Carrying the selector rather than a target is not an omission. There is no
+    target to carry, and inventing an id for something that was never surveyed
+    would put a row in the output that no other field could speak about."""
+
+    selector: str
+    note: str
+
+    def as_json(self) -> dict[str, object]:
+        return {"selector": self.selector, "note": self.note}
+
+
+@dataclass(frozen=True, slots=True)
 class Plan:
     """A resolved intention to delete, ordered so dependants go first."""
 
@@ -398,6 +487,9 @@ class Plan:
     salvage_dir: str | None
     dry_run: bool
     skipped: tuple[Skipped, ...] = field(default_factory=tuple)
+    absent: tuple[Absent, ...] = field(default_factory=tuple)
+    """Names that resolved to nothing. A plan holding only these is a plan to
+    do nothing, which is a valid plan and not an error."""
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -405,6 +497,7 @@ class Plan:
             "salvage_dir": self.salvage_dir,
             "dry_run": self.dry_run,
             "skipped": [s.as_json() for s in self.skipped],
+            "absent": [a.as_json() for a in self.absent],
         }
 
 
@@ -414,9 +507,13 @@ class Refusal:
 
     Refusals are few and narrow, because a named target is an authorisation
     rather than a proposal. What is left answers something the caller could not
-    have answered themselves -- a name matching nothing, a name matching two
-    things, a deletion git itself will reject. ``blocked`` lists the targets so
-    they can be dropped from the selection rather than argued with."""
+    have answered themselves -- a name matching two things, a deletion git
+    itself will reject. ``blocked`` lists the targets so they can be dropped
+    from the selection rather than argued with.
+
+    A name matching *nothing* is not among them. It asks for a state that
+    already holds, which is a job already done rather than a job refused; see
+    ``Absent``."""
 
     code: str
     message: str

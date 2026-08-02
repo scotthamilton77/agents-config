@@ -527,6 +527,41 @@ def test_a_salvaged_server_ref_restores_by_the_command_the_tool_printed(
     assert git(clone, "cat-file", "-p", f"{only}:feat-gone.txt") == "the only copy"
 
 
+def test_a_server_ref_the_remote_already_dropped_costs_no_bundle(
+    repo: Path, tmp_path: Path
+) -> None:
+    """What a forge that deletes a branch when its PR merges leaves behind: a
+    tracking ref under refs/remotes naming a branch the server no longer has.
+    That stale ref is the only reason the target is in the plan at all.
+
+    The ref is dropped *inside the bare repository*, which is what a forge
+    tidying up after a merge does and is the only way to reach this state:
+    `push --delete` from the clone updates the tracking ref on the way out, so
+    the clone would know. Deleting it server-side leaves
+    `refs/remotes/origin/feat/vanished` behind untouched, which is the input
+    this is about, and the assertion below is there because a setup that
+    quietly cleaned the cache would test nothing.
+
+    The salvage list is what matters. Learning the ref is gone from a rejected
+    push means learning it after bundling the branch's entire history for
+    something that was never there to lose."""
+    bare = _with_remote(repo, tmp_path)
+    _push_only_copy(repo, "feat/vanished")
+    git(bare, "update-ref", "-d", "refs/heads/feat/vanished")
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/remotes/origin/feat/vanished")
+
+    payload = report(repo, "--cleanup", "origin/feat/vanished")
+
+    assert payload["_exit"] == EXIT_OK
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert execution["anomalies"] == []
+    assert execution["salvages"] == []
+    deletion = execution["deletions"][0]
+    assert deletion["already_absent"] is True
+    assert deletion["deleted"] is False
+
+
 def test_the_salvage_ref_does_not_outlive_the_run(repo: Path, tmp_path: Path) -> None:
     """Bundling needs a ref under refs/heads to bundle, and one left behind
     would surface in the next report as a branch nobody created."""
@@ -786,10 +821,51 @@ def test_a_squash_merged_branch_named_like_an_option_is_proven(repo: Path) -> No
     assert "-m" in [d["name"] for d in payload["execution"]["deletions"]]  # type: ignore[index]
 
 
+def test_a_name_nothing_matches_is_clean_and_does_not_stop_the_rest(repo: Path) -> None:
+    """Both halves matter. Exit 0 because the state the caller asked for holds,
+    and `feat/done` actually gone because the absent name did not take the
+    command down with it -- a selector refusal was plan-level, so one name
+    already dealt with aborted every deletion beside it."""
+    _merged_branch_beside(repo, "feat/done")
+
+    with reachability_guard(repo):
+        payload = report(repo, "--cleanup", "feat/done", "feat/never-existed")
+
+    assert payload["_exit"] == EXIT_OK
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/feat/done") == ""
+    plan = payload["plan"]
+    assert isinstance(plan, dict)
+    assert [a["selector"] for a in plan["absent"]] == ["feat/never-existed"]
+
+
+def test_the_post_merge_sequence_an_agent_performs_cleans_up(repo: Path, tmp_path: Path) -> None:
+    """The scenario this behaviour exists for, end to end.
+
+    Leaving the worktree before cleaning it is the *correct* order -- git will
+    not delete a branch a worktree still holds, and whatever owns that tree
+    usually removes it on the way out. Doing it right is what made the worktree
+    name match nothing, and the refusal that produced was plan-level: the
+    branch survived, and the run said it failed."""
+    work = tmp_path / "wt"
+    git(repo, "worktree", "add", "-q", "-b", "feat/shipped", str(work))
+    commit(work, "shipped.txt")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feat/shipped", "feat/shipped")
+    git(repo, "worktree", "remove", str(work))
+
+    with reachability_guard(repo):
+        payload = report(repo, "--cleanup", f"worktree:{work}", "feat/shipped")
+
+    assert payload["_exit"] == EXIT_OK
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/feat/shipped") == ""
+    plan = payload["plan"]
+    assert isinstance(plan, dict)
+    assert [a["selector"] for a in plan["absent"]] == [f"worktree:{work}"]
+
+
 def test_a_branch_named_like_an_option_is_selectable_by_id(repo: Path) -> None:
     """Naming it directly cannot go through the bare name -- argparse claims
     `-m` as a flag before gitclean sees it. The `id` form is the way in, which
-    is what the unknown-target refusal already tells the reader to use."""
+    is what a name matching nothing points the reader back to."""
     head = git(repo, "rev-parse", "HEAD")
     git(repo, "update-ref", "refs/heads/-m", head)
 
