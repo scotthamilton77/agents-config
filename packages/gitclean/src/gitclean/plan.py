@@ -113,6 +113,18 @@ def _lists_that_could_not_answer(selector: str, survey_data: Survey) -> list[str
             unread.append("no worktree could be listed")
         elif survey_data.dropped_worktrees:
             unread.append(f"{survey_data.dropped_worktrees} worktree block(s) went unparsed")
+        elif not survey_data.worktrees_framed:
+            # Not "a path was truncated" -- nobody can say that. The listing
+            # cannot prove it named every path, and a name matching nothing is
+            # only absence when the look was capable of finding it. Asked of the
+            # listing rather than of the selector, because a selector with no
+            # newline in it proves nothing: a worktree at `/a/we<LF>ird/final`
+            # is recorded as `/a/we`, and `final` is a perfectly newline-free
+            # name for the thing that is still on disk.
+            unread.append(
+                "the worktree listing could not be framed so a path containing a newline stays "
+                "whole, so it cannot show that every worktree it holds was named in full"
+            )
     if not worktree_only:
         if not survey_data.branches_known:
             unread.append("no ref could be read")

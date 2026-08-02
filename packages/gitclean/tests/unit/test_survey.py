@@ -344,7 +344,7 @@ def test_worktree_porcelain_blocks_are_parsed() -> None:
             "status --porcelain=v1": ok(""),
         }
     )
-    worktrees, warnings, _known, _dropped = read_worktrees(port, None)
+    worktrees, warnings, _known, _dropped, _framed = read_worktrees(port, None)
     assert [w.path for w in worktrees] == ["/repo", "/repo/wt", "/repo/gone"]
     assert worktrees[0].is_main and worktrees[0].branch == "main"
     assert worktrees[1].locked
@@ -361,7 +361,7 @@ def test_a_worktree_block_without_a_path_is_warned_not_dropped_silently() -> Non
             "status --porcelain=v1": ok(""),
         }
     )
-    worktrees, warnings, _known, _dropped = read_worktrees(port, None)
+    worktrees, warnings, _known, _dropped, _framed = read_worktrees(port, None)
     assert worktrees == []
     assert warnings and "no path" in warnings[0]
 
@@ -373,7 +373,7 @@ def test_modified_untracked_and_ignored_files_are_counted_separately() -> None:
             "status --porcelain=v1": ok(" M a.txt\nA  b.txt\n?? c.txt\n?? d.txt\n!! .env\n"),
         }
     )
-    worktrees, _, _known, _dropped = read_worktrees(port, None)
+    worktrees, _, _known, _dropped, _framed = read_worktrees(port, None)
     assert worktrees[0].dirty_file_count == 2
     assert worktrees[0].untracked_file_count == 2
     assert worktrees[0].ignored_file_count == 1
@@ -391,7 +391,7 @@ def test_ignored_files_are_counted_but_do_not_make_a_worktree_dirty() -> None:
             "status --porcelain=v1": ok("!! .venv/\n!! __pycache__/\n!! .env\n"),
         }
     )
-    worktrees, _, _known, _dropped = read_worktrees(port, None)
+    worktrees, _, _known, _dropped, _framed = read_worktrees(port, None)
     assert worktrees[0].ignored_file_count == 3
     assert worktrees[0].dirty is False
 
@@ -453,7 +453,7 @@ def test_a_worktree_git_cannot_stat_is_unknown_not_clean() -> None:
             "status --porcelain=v1": fail("no such directory"),
         }
     )
-    worktrees, warnings, _known, _dropped = read_worktrees(port, None)
+    worktrees, warnings, _known, _dropped, _framed = read_worktrees(port, None)
     assert worktrees[0].dirty is None
     assert worktrees[0].dirty_file_count is None
     assert worktrees[0].untracked_file_count is None
@@ -477,7 +477,7 @@ def test_a_prunable_worktree_is_unknown_dirt_not_clean() -> None:
             ),
         }
     )
-    worktrees, warnings, _known, _dropped = read_worktrees(port, None)
+    worktrees, warnings, _known, _dropped, _framed = read_worktrees(port, None)
     assert worktrees[0].dirty is None
     assert worktrees[0].dirty_file_count is None
     assert worktrees[0].untracked_file_count is None
@@ -490,7 +490,7 @@ def test_a_prunable_worktree_is_unknown_dirt_not_clean() -> None:
 
 def test_unlistable_worktrees_are_reported() -> None:
     port = ScriptedCommands(git={"worktree list --porcelain": fail("boom")})
-    worktrees, warnings, _known, _dropped = read_worktrees(port, None)
+    worktrees, warnings, _known, _dropped, _framed = read_worktrees(port, None)
     assert worktrees == []
     assert warnings
 

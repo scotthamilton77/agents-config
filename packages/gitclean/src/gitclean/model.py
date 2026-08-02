@@ -364,6 +364,20 @@ class Survey:
     dropped_worktrees: int = 0
     """Worktree blocks the listing produced that could not be parsed. Same
     distinction as ``dropped_refs``, on the other listing."""
+    worktrees_framed: bool = True
+    """False when the worktree listing came back without the framing that keeps
+    a path whole.
+
+    Weaker than ``worktrees_known`` and stronger than nothing: the listing ran
+    and described worktrees, and it cannot prove it named every path. A path
+    containing a newline arrives as two records there, and while most such
+    truncations announce themselves -- counted in ``dropped_worktrees`` -- one
+    whose text after the newline begins with an attribute name reads as a
+    perfectly well-formed block.
+
+    So this says exactly one thing, and it is the one conclusion the listing
+    can no longer support: that something missing from it is missing from the
+    repository. Every positive match still means what it always did."""
     unsplit_refs: int = 0
     """Refs under `refs/remotes/` the listing read and could not split into a
     remote and a branch name.
@@ -424,6 +438,7 @@ class Survey:
             "worktrees_known": self.worktrees_known,
             "dropped_refs": self.dropped_refs,
             "dropped_worktrees": self.dropped_worktrees,
+            "worktrees_framed": self.worktrees_framed,
             "unsplit_refs": self.unsplit_refs,
             "remotes": list(self.remotes),
             "remotes_known": self.remotes_known,

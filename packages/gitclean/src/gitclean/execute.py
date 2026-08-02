@@ -374,10 +374,17 @@ class Executor:
         # for a worktree whose path contains one, which is the removal
         # reporting itself successful by failing to spell what it looked for.
         listing = list_worktrees(self._port, self._cwd)
-        if not listing.ok or listing.dropped:
+        if not listing.ok or listing.dropped or not listing.can_place(target.name):
             # Absence of the worktree in output that was never produced -- or
-            # that lost a record on the way -- is not evidence of anything.
-            # Unverified is its own outcome, distinct from verified-gone.
+            # that lost a record on the way, or that cannot show it named this
+            # path in full -- is not evidence of anything. Unverified is its own
+            # outcome, distinct from verified-gone.
+            #
+            # `can_place` rather than the listing's framing outright: the path
+            # in question is known here, and one with no newline in it cannot be
+            # the truncated record. Refusing to confirm every removal on a git
+            # without `-z` would turn each of them into an anomaly and buy
+            # nothing.
             self._record(
                 "verify",
                 target.id,

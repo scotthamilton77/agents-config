@@ -265,6 +265,16 @@ class WorktreeListing:
     dropped: int
     result: CommandResult
     """The command actually used, for the transcript an anomaly carries."""
+    framed: bool = True
+    """Whether the records came back NUL-framed, so a path is whole whatever it
+    contains.
+
+    False says this listing cannot prove it recorded every path -- not that it
+    got one wrong. ``dropped`` counts the truncations that announced
+    themselves; the ones that do not are the reason this flag exists, and the
+    only honest thing to do with them is to stop concluding *absence* from a
+    listing that may be a prefix of the truth. What a positive match means is
+    unchanged."""
 
     @property
     def ok(self) -> bool:
@@ -272,6 +282,23 @@ class WorktreeListing:
 
     def holds(self, path: str) -> bool:
         return any(block.get("worktree") == path for block in self.blocks)
+
+    def can_place(self, path: str) -> bool:
+        """Whether *this* path's absence from the listing means anything.
+
+        A truncation only ever shortens a path at a newline, and it only
+        corrupts the block it happens inside -- records are grouped by the empty
+        record between them, so a fragment lands among its own worktree's
+        attributes and nowhere else. A path with no newline in it therefore
+        cannot be the truncated one, and no other worktree's truncation can hide
+        it, so a framed listing and an unframed one answer alike about it.
+
+        This is narrower than the rule the survey applies to a *selector*, and
+        deliberately: there the string came from a caller and may be a shorter
+        name -- a basename, say -- for a path whose newline is further up, so a
+        selector with no newline in it proves nothing. Here the whole path is in
+        hand."""
+        return self.framed or "\n" not in path
 
 
 def _parse_worktrees(records: list[str], *, framed: bool) -> tuple[list[dict[str, str]], int]:
@@ -342,40 +369,57 @@ def list_worktrees(port: CommandPort, cwd: Path | None) -> WorktreeListing:
     gets the line-based read, with the parser refusing to record a block whose
     keys say it lost something. What must not happen is either reading: a
     truncated path taken for a whole one, or a listing described as complete
-    when it is not."""
+    when it is not.
+
+    Which is why the fallback also travels as ``framed=False``. Dropping the
+    blocks that announce their truncation is not the same as catching them all
+    -- a path whose text after the newline begins with an attribute name reads
+    as a well-formed block -- so the listing itself is marked as unable to prove
+    it recorded every path. That costs nothing where `-z` answers, and where it
+    does not it withholds one conclusion: that something absent from this
+    listing is absent from the repository."""
     framed = port.git(["worktree", "list", "--porcelain", "-z"], cwd=cwd)
     if framed.ok:
         blocks, dropped = _parse_worktrees(framed.stdout.split("\0"), framed=True)
         return WorktreeListing(tuple(blocks), (), dropped, framed)
     plain = port.git(["worktree", "list", "--porcelain"], cwd=cwd)
     if not plain.ok:
-        return WorktreeListing((), (), 0, plain)
+        return WorktreeListing((), (), 0, plain, framed=False)
     blocks, dropped = _parse_worktrees(plain.stdout.splitlines(), framed=False)
-    warnings = (
-        [
-            f"this git would not list worktrees with NUL framing (exit {framed.returncode}), so "
+    warnings = [
+        f"this git would not list worktrees with NUL framing (exit {framed.returncode}), so a "
+        f"worktree path containing a newline cannot be told from two records; a name matching "
+        f"nothing here is not evidence that what it names is gone"
+    ]
+    if dropped:
+        warnings.append(
             f"{dropped} listed worktree(s) whose records this could not account for were left "
             f"out rather than recorded under a path that may be cut short at a newline"
-        ]
-        if dropped
-        else []
-    )
-    return WorktreeListing(tuple(blocks), tuple(warnings), dropped, plain)
+        )
+    return WorktreeListing(tuple(blocks), tuple(warnings), dropped, plain, framed=False)
 
 
 def read_worktrees(
     port: CommandPort, cwd: Path | None
-) -> tuple[list[Worktree], list[str], bool, int]:
+) -> tuple[list[Worktree], list[str], bool, int, bool]:
     """Parse `worktree list --porcelain` and stat each tree for dirt.
 
-    Returns the worktrees, any parse warnings, and whether the listing answered
-    at all. The last is not derivable from an empty list -- a repository with
-    only its main working tree produces one entry, but a listing that failed
-    produces none, and "no worktree is there" is a conclusion only one of those
-    supports."""
+    Returns the worktrees, any parse warnings, whether the listing answered at
+    all, how many blocks it lost, and whether its paths came back framed. The
+    third is not derivable from an empty list -- a repository with only its main
+    working tree produces one entry, but a listing that failed produces none,
+    and "no worktree is there" is a conclusion only one of those supports. The
+    last is the weaker cousin of that: the listing answered, and still cannot
+    prove it named every path."""
     listing = list_worktrees(port, cwd)
     if not listing.ok:
-        return [], [f"could not list worktrees (exit {listing.result.returncode})"], False, 0
+        return (
+            [],
+            [f"could not list worktrees (exit {listing.result.returncode})"],
+            False,
+            0,
+            listing.framed,
+        )
 
     worktrees: list[Worktree] = []
     warnings: list[str] = list(listing.warnings)
@@ -434,7 +478,7 @@ def read_worktrees(
                 last_activity=None,
             )
         )
-    return worktrees, warnings, True, dropped_blocks
+    return worktrees, warnings, True, dropped_blocks, listing.framed
 
 
 def _count_dirt(port: CommandPort, path: Path) -> tuple[int, int, int] | None:
@@ -1075,7 +1119,9 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         )
     )
 
-    worktrees, warnings, worktrees_known, dropped_worktrees = read_worktrees(port, cwd)
+    worktrees, warnings, worktrees_known, dropped_worktrees, worktrees_framed = read_worktrees(
+        port, cwd
+    )
     if base_ref_warning is not None:
         warnings.append(base_ref_warning)
     if current_warning is not None:
@@ -1127,6 +1173,7 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         worktrees_known=worktrees_known,
         dropped_refs=dropped_refs,
         dropped_worktrees=dropped_worktrees,
+        worktrees_framed=worktrees_framed,
         unsplit_refs=unsplit_refs,
         remotes=remotes or (),
         remotes_known=remotes is not None,

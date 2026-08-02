@@ -220,6 +220,44 @@ def test_a_worktree_listing_that_lost_a_record_cannot_verify_a_removal() -> None
     assert report.deletions[0].detail == "deletion unverified"
 
 
+def test_an_unframed_listing_cannot_confirm_a_newline_path_is_gone() -> None:
+    """`worktree remove` reported success, and the listing that would show a
+    survivor cannot spell this path. Absence from it is not evidence, the same
+    way absence from a listing that lost a record is not."""
+    path = "/repo/we\nbare"
+    port = ScriptedCommands(
+        git={
+            f"worktree remove -- {path}": ok(),
+            "worktree list --porcelain -z": fail("error: unknown switch `z'", code=129),
+            "worktree list --porcelain": ok("worktree /repo\n"),
+        }
+    )
+    report = run(port, plan(target(TargetKind.WORKTREE, path)))
+
+    assert not report.ok
+    assert report.deletions[0].detail == "deletion unverified"
+
+
+def test_an_unframed_listing_still_confirms_an_ordinary_path_is_gone() -> None:
+    """The narrowing that keeps the rule affordable. A truncation shortens a
+    path at a newline and corrupts only the block it falls inside -- records are
+    grouped by the empty record between them -- so a path with no newline in it
+    cannot be the truncated one and cannot be hidden by another's truncation.
+    Refusing to confirm every removal on a git without `-z` would make an
+    anomaly of each one and buy nothing."""
+    port = ScriptedCommands(
+        git={
+            "worktree remove -- /repo/wt": ok(),
+            "worktree list --porcelain -z": fail("error: unknown switch `z'", code=129),
+            "worktree list --porcelain": ok("worktree /repo\n\nworktree /repo/we\nbare\n"),
+        }
+    )
+    report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
+
+    assert report.ok
+    assert report.deletions[0].verified is True
+
+
 def test_a_worktree_is_never_removed_with_force() -> None:
     """Not on a sweep, not when the caller names it. --force is what turns
     git's own checks off -- the dirt check, the lock, the main working tree --

@@ -363,6 +363,81 @@ def test_naming_the_servers_copy_of_the_trunk_exits_refused() -> None:
     assert refusal["remedy"]
 
 
+def _unframed_worktree_port() -> ScriptedCommands:
+    """A git with no NUL framing, listing a worktree at `/repo/we<LF>bare`.
+
+    The text after the newline is `bare`, an attribute the format has, so the
+    block parses as well-formed: the path is recorded cut short at `/repo/we`
+    and nothing counts as dropped. This is the truncation that does not
+    announce itself, and it is why the listing rather than the block is what
+    carries the doubt."""
+    port = make_port(refs=[ref_at("refs/heads/main", "main", "a" * 40, head="*")])
+    port._git["worktree list --porcelain -z"] = fail("error: unknown switch `z'", code=129)
+    port._git["worktree list --porcelain"] = ok(
+        "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n"
+        "worktree /repo/we\nbare\nHEAD bbb\nbranch refs/heads/odd\n"
+    )
+    return port
+
+
+def test_a_miss_against_an_unframed_worktree_listing_exits_refused() -> None:
+    """The worktree is on disk and the listing names a prefix of its path, so
+    the real path matches nothing -- exactly what a worktree removed last week
+    also matches. Only one of those is absence, and this listing cannot say
+    which, so it does not get to conclude either."""
+    port = _unframed_worktree_port()
+
+    code, payload = invoke(["--cleanup", "/repo/we\nbare"], port)
+
+    assert code == EXIT_REFUSED
+    refusal = payload["refusal"]
+    assert isinstance(refusal, dict)
+    assert refusal["code"] == "E_SURVEY_INCOMPLETE"
+    assert "newline" in str(refusal["message"])
+    repo = payload["repo"]
+    assert isinstance(repo, dict)
+    # The point of the fixture: nothing announced itself, so the count that
+    # already guards this cannot be what catches it.
+    assert repo["dropped_worktrees"] == 0
+    assert repo["worktrees_framed"] is False
+
+
+def test_a_worktree_that_does_match_is_unaffected_by_the_unframed_listing() -> None:
+    """Only the absence conclusion is withheld. A name the listing does answer
+    for resolves and is acted on exactly as it would be with framing."""
+    port = _unframed_worktree_port()
+    port._git["worktree remove -- /repo/we"] = ok()
+    port._git["rev-parse HEAD"] = ok("b" * 40)
+    port._git["for-each-ref --count=1 --contains"] = ok("refs/heads/odd")
+    # The survey reads the listing, then the verifier reads it again after the
+    # removal -- so the second answer is the one without it.
+    port._git["worktree list --porcelain"] = [
+        port._git["worktree list --porcelain"],
+        ok("worktree /repo\nHEAD abc\nbranch refs/heads/main\n"),
+    ]
+
+    code, payload = invoke(["--cleanup", "worktree:/repo/we"], port)
+
+    assert code == EXIT_OK, payload["execution"]
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert execution["deletions"][0]["deleted"] is True
+    assert any(call[:3] == ("git", "worktree", "remove") for call in port.transcript)
+
+
+def test_a_framed_listing_costs_a_miss_nothing() -> None:
+    """The whole price is paid by the git that cannot frame. Where `-z`
+    answers, a name matching nothing still settles as a job already done."""
+    port = make_port(refs=[ref_at("refs/heads/main", "main", "a" * 40, head="*")])
+
+    code, payload = invoke(["--cleanup", "/repo/gone"], port)
+
+    assert code == EXIT_OK
+    plan = payload["plan"]
+    assert isinstance(plan, dict)
+    assert [a["selector"] for a in plan["absent"]] == ["/repo/gone"]
+
+
 def _unsplittable_remote_port() -> ScriptedCommands:
     """A server ref present in the listing and unsplittable, because the read
     that says where a remote's name ends did not answer."""
