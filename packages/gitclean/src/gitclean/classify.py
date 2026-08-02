@@ -124,28 +124,38 @@ def missing_pr_evidence(survey_data: Survey, *, proven: bool, saw_pr: bool) -> t
 
 
 def trunk(survey_data: Survey) -> tuple[frozenset[str], frozenset[str]]:
-    """The ref names and the commits a sweep must never take: the default
-    branch, whatever merges are measured against, and each one's counterpart
-    across the remote boundary.
+    """The refs and the commits a sweep must never take: the default branch and
+    its counterpart on every configured remote.
 
-    Both halves are load-bearing. Names alone miss that counterpart -- `main`
-    and `origin/main` are different strings for the same trunk, and the local
-    one is an ancestor of the published one, which is a merge proof by the
-    first question's own definition. Commits alone miss a trunk whose ref
-    resolved but whose tip no surveyed branch happens to repeat.
+    Both halves are load-bearing. Refs alone miss a trunk whose ref resolved but
+    whose tip no surveyed branch happens to repeat; commits alone miss the
+    counterpart -- the local trunk is an ancestor of the published one, which is
+    a merge proof by the first question's own definition.
+
+    These are **full ref paths**, and that is the whole of what makes the
+    counterpart safe to name. The trunk used to be a set of caller-facing
+    strings, which meant `origin/main` stood for the server's copy -- and also,
+    silently, for a local branch of that name, a perfectly legal ref that is not
+    the trunk and that its owner is entitled to delete. Building the counterpart
+    by joining the remote to the branch name is the same operation the survey
+    refuses to invert, and it is sound in this direction: composing a path from
+    two known pieces cannot go wrong the way splitting one string into two
+    guesses can.
+
+    The ref merges are measured against needs no entry of its own: it is the
+    default branch either locally or on `origin`, so it is already here
+    whenever `origin` is a configured remote -- and when it is not, the survey
+    could not say which remote its path belongs to and never offered it.
 
     Matching a commit costs the occasional branch parked exactly on the trunk
     tip: it stays in the report instead of being swept. That is the direction
     to be wrong in."""
-    remotes = {b.remote for b in survey_data.branches if b.remote}
-    names: set[str] = set()
-    for candidate in (survey_data.default_branch, survey_data.base_ref):
-        prefix, _, rest = candidate.partition("/")
-        local = rest if prefix in remotes and rest else candidate
-        names.add(local)
-        names.update(f"{remote}/{local}" for remote in remotes)
-    commits = {b.head for b in survey_data.branches if b.name in names and b.head}
-    return frozenset(names), frozenset(commits)
+    refs = {f"refs/heads/{survey_data.default_branch}"}
+    refs.update(
+        f"refs/remotes/{remote}/{survey_data.default_branch}" for remote in survey_data.remotes
+    )
+    commits = {b.head for b in survey_data.branches if b.ref in refs and b.head}
+    return frozenset(refs), frozenset(commits)
 
 
 def withheld_reason(
@@ -167,11 +177,15 @@ def withheld_reason(
     how specific the answer is: a branch nothing proved merged is told that,
     rather than told the repository has no verified trunk.
 
-    ``ref`` is the branch under judgement -- None for a detached worktree --
-    and ``commit`` is what it actually points at. A worktree is judged on the
-    commit it holds whether or not a branch names that commit, so a detached
-    checkout needs no rule of its own: an orphan commit has no merge proof, and
-    the first question stops it for the same reason it stops any other."""
+    ``ref`` is the **full path** of the ref under judgement -- None for a
+    detached worktree -- and ``commit`` is what it actually points at. Full
+    paths, because this is where the trunk is recognised and a caller-facing
+    name is not an identity: `origin/main` names the server's trunk and a local
+    branch somebody made, and only one of those is the trunk. A worktree is
+    judged on the commit it holds whether or not a branch names that commit, so
+    a detached checkout needs no rule of its own: an orphan commit has no merge
+    proof, and the first question stops it for the same reason it stops any
+    other."""
     if evidence not in MERGE_PROOF:
         return f"no merge proof for this commit (evidence: {evidence.value})"
     if not default_branch_known:
@@ -236,7 +250,7 @@ def classify_branch(
     reasons.extend(branch.probe_failures)
 
     withheld = withheld_reason(
-        ref=branch.name,
+        ref=branch.ref,
         commit=branch.head,
         evidence=branch.merge_evidence,
         dirt=None,
@@ -256,6 +270,12 @@ def classify_branch(
         withheld=withheld,
         reasons=tuple(reasons),
         last_activity=branch.last_activity,
+        # Carried forward rather than recovered from `name` downstream. The
+        # survey is where the configured remote list was in hand, so it is the
+        # only place the split could be made honestly; everything after this
+        # would be guessing at a slash.
+        remote=branch.remote if branch.is_remote else None,
+        ref_name=branch.ref_name if branch.is_remote else None,
     )
 
 
@@ -361,7 +381,9 @@ def classify_worktree(
         )
 
     withheld = withheld_reason(
-        ref=worktree.branch,
+        # A worktree only ever holds a local branch, so composing its path is
+        # exact -- the direction that cannot go wrong.
+        ref=None if worktree.branch is None else f"refs/heads/{worktree.branch}",
         commit=worktree.head,
         evidence=evidence,
         dirt=dirt,

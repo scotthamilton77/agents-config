@@ -137,9 +137,42 @@ class Worktree:
 @dataclass(frozen=True, slots=True)
 class Branch:
     name: str
-    """Short name for a local branch (`feat/x`); `<remote>/<ref>` for a remote."""
+    """Short name for a local branch (`feat/x`); `<remote>/<ref>` for a remote.
+
+    What a caller types and what the report prints. Recovered from ``ref`` by
+    stripping the namespace it lives in, never from git's shortened form --
+    see ``probe_ref`` for why those are different strings."""
+    ref: str
+    """The full refname: `refs/heads/feat/x`, `refs/remotes/origin/feat/x`.
+
+    The only spelling that denotes exactly one ref in exactly one repository,
+    so it is what identity is decided on -- is this the trunk, is this the ref
+    a worktree holds. Every other name here is derived from it."""
+    probe_ref: str
+    """The spelling handed to git when a probe needs to name this ref.
+
+    git's own `%(refname:short)`, which is the shortest form that resolves back
+    to this ref and nothing else -- git lengthens it precisely when a shorter
+    one would be ambiguous, so `refs/remotes/origin/main` is `remotes/origin/main`
+    in a repository that also has a local branch called `origin/main`.
+
+    That guarantee is about *resolution* and nothing else. The same string is
+    an unreliable decomposition: nothing in it says where the remote's name
+    ends, which is why ``remote`` and ``ref_name`` are recovered from ``ref``
+    and never from here."""
+    ref_name: str
+    """The name the ref carries inside its own namespace: `feat/x` for both
+    `refs/heads/feat/x` and `refs/remotes/origin/feat/x`.
+
+    For a remote branch this is what the *server* calls the branch, which is
+    what a pull request is keyed by and what `push --delete` has to be given."""
     is_remote: bool
     remote: str | None
+    """Which remote a remote-tracking ref belongs to, taken from the configured
+    remote list rather than from the first slash. Remote names may contain
+    slashes -- `git remote add team/origin` is accepted -- so the slash is a
+    delimiter the name is allowed to contain, and splitting on it names a
+    remote that does not exist. None for a local branch."""
     head: str
     last_activity: str | None
     upstream: str | None
@@ -178,6 +211,9 @@ class Branch:
     def as_json(self) -> dict[str, object]:
         return {
             "name": self.name,
+            "ref": self.ref,
+            "probe_ref": self.probe_ref,
+            "ref_name": self.ref_name,
             "is_remote": self.is_remote,
             "remote": self.remote,
             "head": self.head,
@@ -223,12 +259,28 @@ class Target:
     """Everything measured about this target, in reader-facing prose. The audit
     trail, and it stands whether or not the target is sweepable."""
     last_activity: str | None
+    remote: str | None = None
+    """Which remote a server ref lives on. None for anything else.
+
+    Carried rather than re-derived from ``name``, because ``name`` is
+    `<remote>/<ref>` and the boundary between the two halves is not something
+    the string encodes: a remote may be called `team/origin`, and the first
+    slash then names `team`, which is not a remote at all. What makes that
+    dangerous rather than merely wrong is that git accepts a *path* wherever it
+    expects a remote, so a sibling directory that happens to be a repository
+    answers the probe -- with a clean, empty, entirely unrelated answer."""
+    ref_name: str | None = None
+    """What the server calls this branch, for a server ref. None for anything
+    else. The other half of the decomposition above, and what
+    `push --delete` and `ls-remote` are given."""
 
     def as_json(self) -> dict[str, object]:
         return {
             "id": self.id,
             "kind": self.kind.value,
             "name": self.name,
+            "remote": self.remote,
+            "ref_name": self.ref_name,
             "merge_evidence": self.merge_evidence.value,
             "merge_proven": self.merge_proven,
             "sweepable": self.sweepable,
@@ -312,6 +364,21 @@ class Survey:
     dropped_worktrees: int = 0
     """Worktree blocks the listing produced that could not be parsed. Same
     distinction as ``dropped_refs``, on the other listing."""
+    remotes: tuple[str, ...] = ()
+    """The configured remotes, exactly as `git remote` named them.
+
+    This is the only thing that says where a remote's name stops inside
+    `refs/remotes/team/origin/feat/x`, because a remote name is allowed to
+    contain a slash and the ref path does not mark the boundary. A ref under
+    `refs/remotes/` that no entry here accounts for -- or that two of them
+    could -- cannot be split at all, and is recorded in ``not_offered`` rather
+    than guessed at."""
+    remotes_known: bool = True
+    """False when `git remote` itself failed.
+
+    ``remotes`` is then empty, and so is the tuple for a repository that has no
+    remote configured. Only one of those is a measurement, and the difference
+    decides whether an unsplittable server ref is odd or expected."""
     not_offered: tuple[NotOffered, ...] = ()
     """Refs that exist and are deliberately absent from ``branches``.
 
@@ -344,6 +411,8 @@ class Survey:
             "worktrees_known": self.worktrees_known,
             "dropped_refs": self.dropped_refs,
             "dropped_worktrees": self.dropped_worktrees,
+            "remotes": list(self.remotes),
+            "remotes_known": self.remotes_known,
             "not_offered": [n.as_json() for n in self.not_offered],
         }
 

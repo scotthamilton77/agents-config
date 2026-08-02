@@ -45,12 +45,18 @@ from gitclean.model import (
 
 
 def _selector_candidates(target: Target) -> set[str]:
-    """Every string a caller may reasonably use to name this target."""
+    """Every string a caller may reasonably use to name this target.
+
+    The bare-branch alias for a server ref is the name the *remote* knows it
+    by, carried down from the survey. Recovering it here by dropping everything
+    before the first slash would put `origin/feat/x` in this set for a ref on a
+    remote called `team/origin` -- a spelling that names nothing, offered to a
+    caller as though it named their branch."""
     names = {target.id, target.name}
     if target.kind is TargetKind.WORKTREE:
         names.add(Path(target.name).name)
-    if target.kind is TargetKind.REMOTE_BRANCH and "/" in target.name:
-        names.add(target.name.split("/", 1)[1])
+    if target.kind is TargetKind.REMOTE_BRANCH and target.ref_name:
+        names.add(target.ref_name)
     return names
 
 

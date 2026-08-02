@@ -664,6 +664,124 @@ def test_an_unrelated_sibling_ref_is_not_read_as_the_deletion_having_failed(
     assert "\trefs/heads/feat/x" not in remaining
 
 
+# -- names recovered from framing, not from a delimiter ------------------------
+
+
+def test_a_remote_whose_name_holds_a_slash_is_never_split_at_the_wrong_one(
+    repo: Path, tmp_path: Path
+) -> None:
+    """`git remote add team/origin <url>` is accepted, so the slash in
+    `<remote>/<ref>` is a delimiter the remote's own name is allowed to
+    contain. Splitting at the first one yields the remote `team`.
+
+    That is not merely wrong, it is quiet: git takes a *path* wherever it
+    expects a remote, so a sibling directory called `team` that happens to be a
+    repository answers the pre-delete probe -- successfully, with an empty ref
+    list, about a repository nobody named. An empty answer there means the
+    branch is already gone, so the run would report a live branch as nothing to
+    do and exit clean. The decoy below is that directory, sitting exactly where
+    the broken split reaches."""
+    bare = tmp_path / "server.git"
+    SubprocessCommands().git(["init", "-q", "--bare", "-b", "main", str(bare)])
+    git(repo, "remote", "add", "team/origin", str(bare))
+    git(repo, "push", "-q", "-u", "team/origin", "main")
+    git(repo, "checkout", "-q", "-b", "feat/gone")
+    only = commit(repo, "feat-gone.txt", "the only copy\n")
+    git(repo, "push", "-q", "-u", "team/origin", "feat/gone")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "fetch", "-q", "team/origin")
+
+    # The trap: a repository at the path `ls-remote team ...` would open,
+    # holding nothing, which is what makes its answer look like absence.
+    decoy = repo / "team"
+    SubprocessCommands().git(["init", "-q", "--bare", "-b", "main", str(decoy)])
+
+    surveyed = report(repo)
+    branches = surveyed["repo"]
+    assert isinstance(branches, dict)
+    feat = next(b for b in branches["branches"] if b["name"] == "team/origin/feat/gone")
+    assert feat["remote"] == "team/origin"
+    assert feat["ref_name"] == "feat/gone"
+    # The server's copy of the trunk is recognised as such: recovering the ref
+    # name needs the remote's name to end in the right place.
+    excluded = {n["name"]: str(n["reason"]) for n in branches["not_offered"]}
+    assert "trunk" in excluded["team/origin/main"]
+
+    port = Recording()
+    with reachability_guard(bare) as guard:
+        out = StringIO()
+        code = main(
+            ["--cleanup", "team/origin/feat/gone"],
+            port=port,
+            cwd=repo,
+            now=datetime.now(UTC),
+            out=out,
+        )
+        payload = json.loads(out.getvalue())
+        guard.proven_by_bundle(Path(str(payload["execution"]["salvages"][0]["path"])))
+
+    assert code == EXIT_OK
+    deletion = payload["execution"]["deletions"][0]
+    # The defect's signature: `already_absent` on a branch the server holds.
+    assert deletion["already_absent"] is False
+    assert deletion["deleted"] is True
+    assert "feat/gone" not in git(repo, "ls-remote", "--heads", "team/origin")
+    assert only not in git(bare, "rev-list", "--all").split()
+
+    # Every remote git was given is the configured name, never its first
+    # component -- and the decoy was never opened.
+    named = [call[call.index("--heads") + 1] for call in port.transcript if "--heads" in call]
+    assert named and set(named) == {"team/origin"}
+    assert git(decoy, "for-each-ref", "--format=%(refname)") == ""
+
+
+def test_a_local_branch_spelled_like_a_remote_ref_is_a_target_of_its_own(
+    repo: Path, tmp_path: Path
+) -> None:
+    """`origin/main` is a legal local branch, and creating one changes what git
+    shortens the *server's* trunk to: `%(refname:short)` gives
+    `remotes/origin/main`, because `origin/main` no longer denotes it.
+
+    Reading a remote's name out of that string yields the remote `remotes`, and
+    the trunk exclusion -- which compares the remainder against `main` -- stops
+    firing for the server's own trunk. The local branch meanwhile has to stay
+    what it is: a separate ref, with its own id, that a caller can delete
+    without the report telling them it is the trunk."""
+    _with_remote(repo, tmp_path)
+    git(repo, "checkout", "-q", "-b", "origin/main")
+    stray = commit(repo, "stray.txt")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--squash", "origin/main")
+    git(repo, "commit", "-q", "-m", "squashed the stray branch")
+
+    assert git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads/origin/main") == (
+        "heads/origin/main"
+    )
+
+    payload = report(repo)
+    surveyed = payload["repo"]
+    assert isinstance(surveyed, dict)
+    local = next(b for b in surveyed["branches"] if b["ref"] == "refs/heads/origin/main")
+    assert local["name"] == "origin/main"
+    assert local["is_remote"] is False
+    # The server's copy is told apart from it by ref, not by the string they
+    # share, and is still recognised as the trunk's.
+    excluded = {n["name"]: str(n["reason"]) for n in surveyed["not_offered"]}
+    assert "trunk" in excluded["origin/main"]
+
+    target = find(payload, "branch:origin/main")
+    assert "trunk" not in str(target["withheld"] or "")
+
+    with reachability_guard(repo) as guard:
+        deleted = report(repo, "--cleanup", "branch:origin/main")
+        guard.expect_unreachable(stray)
+
+    assert deleted["_exit"] == EXIT_OK, anomaly_lines(deleted)
+    assert deleted["execution"]["deletions"][0]["deleted"] is True  # type: ignore[index]
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/origin/main") == ""
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/remotes/origin/main") != ""
+
+
 @pytest.mark.parametrize(
     "flags",
     [

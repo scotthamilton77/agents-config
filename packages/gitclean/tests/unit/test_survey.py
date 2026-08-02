@@ -55,9 +55,14 @@ def make_port(
     extra: dict[str, CommandResult] | None = None,
     has_gh: bool = True,
     gh_result: CommandResult | None = None,
+    remotes: str = "origin\n",
 ) -> ScriptedCommands:
     table: dict[str, CommandResult] = {
         "rev-parse --show-toplevel": ok("/repo"),
+        # Asked of every survey: it is the only thing that says where a
+        # remote's name stops inside a path under refs/remotes/, so the boring
+        # case has to answer it too.
+        "remote": ok(remotes),
         "rev-parse --path-format=absolute --git-common-dir": ok("/repo/.git"),
         "symbolic-ref --quiet refs/remotes/origin/HEAD": ok("refs/remotes/origin/main"),
         "show-ref --verify --quiet refs/remotes/origin/main": ok(),
@@ -695,6 +700,140 @@ def test_a_ref_left_out_of_the_targets_is_recorded_rather_than_dropped() -> None
     assert "symbolic HEAD" in recorded["origin/HEAD"]
     assert "trunk" in recorded["origin/main"]
     assert "origin/main" not in [b.name for b in surveyed.branches]
+
+
+def test_a_remote_name_containing_a_slash_is_taken_whole() -> None:
+    """`git remote add team/origin <url>` is accepted, so the slash between a
+    remote and its branch is a delimiter the remote's own name may contain.
+    The configured remote list is the only thing that says where one ends."""
+    port = make_port(
+        remotes="team/origin\n",
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/team/origin/feat/x", "team/origin/feat/x"),
+        ],
+        counts={"origin/main..team/origin/feat/x": "0"},
+    )
+
+    surveyed = run(port)
+    feat = next(b for b in surveyed.branches if b.is_remote)
+
+    assert (feat.remote, feat.ref_name) == ("team/origin", "feat/x")
+    assert feat.ref == "refs/remotes/team/origin/feat/x"
+    assert surveyed.remotes == ("team/origin",)
+
+
+def test_the_servers_trunk_is_recognised_under_a_slash_named_remote() -> None:
+    """The exclusion compares the ref's own name against the default branch,
+    so it only fires if the remote's name stopped in the right place. Splitting
+    at the first slash leaves `origin/main`, which is not `main`, and the
+    server's copy of the trunk becomes a deletion candidate."""
+    port = make_port(
+        remotes="team/origin\n",
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/team/origin/main", "team/origin/main"),
+        ],
+    )
+
+    surveyed = run(port)
+
+    recorded = {n.name: n.reason for n in surveyed.not_offered}
+    assert "trunk" in recorded["team/origin/main"]
+    assert not [b for b in surveyed.branches if b.is_remote]
+
+
+def test_a_local_branch_colliding_with_a_remote_ref_keeps_its_own_name() -> None:
+    """With a local branch literally called `origin/main`, git stops shortening
+    the server's trunk to `origin/main` at all -- it becomes
+    `remotes/origin/main`, and the local one becomes `heads/origin/main`.
+
+    Reading a name out of either yields something nobody has: the remote
+    `remotes`, or a local branch called `heads/origin/main`. Both names come
+    from the ref path instead, and the two refs stay distinct."""
+    port = make_port(
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/heads/origin/main", "heads/origin/main"),
+            ref_line("refs/remotes/origin/main", "remotes/origin/main"),
+        ],
+        counts={"origin/main..heads/origin/main": "0"},
+    )
+
+    surveyed = run(port)
+    local = next(b for b in surveyed.branches if b.ref == "refs/heads/origin/main")
+
+    assert local.name == "origin/main"
+    assert local.is_remote is False
+    # The probe spelling is git's own, because `origin/main` in an argv now
+    # resolves to this branch rather than to the server's copy of the trunk.
+    assert local.probe_ref == "heads/origin/main"
+    # And the server's copy is still recognised as the trunk's, which is the
+    # half the first-slash split silently stopped doing.
+    assert "trunk" in {n.name: n.reason for n in surveyed.not_offered}["origin/main"]
+
+
+def test_a_server_ref_no_configured_remote_accounts_for_is_not_offered() -> None:
+    """A tracking ref outliving its remote. Nothing says which part of the path
+    is a remote's name, so nothing can be issued against it -- and it is right
+    there, so a caller who names it must not be told it is already gone."""
+    port = make_port(
+        remotes="upstream\n",
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/feat/x", "origin/feat/x"),
+        ],
+    )
+
+    surveyed = run(port)
+
+    assert not [b for b in surveyed.branches if b.is_remote]
+    assert (
+        "no configured remote accounts"
+        in {n.name: n.reason for n in surveyed.not_offered}["origin/feat/x"]
+    )
+
+
+def test_a_ref_two_remotes_could_own_is_reported_rather_than_guessed() -> None:
+    """With both `team` and `team/origin` configured, `refs/remotes/team/origin/x`
+    is a branch called `origin/x` on one of them or `x` on the other, and the
+    path does not say which. Picking one issues a deletion against a repository
+    nobody asked about."""
+    port = make_port(
+        remotes="team\nteam/origin\n",
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/team/origin/x", "team/origin/x"),
+        ],
+    )
+
+    surveyed = run(port)
+
+    assert not [b for b in surveyed.branches if b.is_remote]
+    reason = {n.name: n.reason for n in surveyed.not_offered}["team/origin/x"]
+    assert "team, team/origin" in reason
+
+
+def test_an_unreadable_remote_list_leaves_every_server_ref_unoffered() -> None:
+    """The question that decides where a remote's name ends is one probe like
+    any other, and an unanswered probe authorises nothing. Every ref under
+    refs/remotes/ then stays in the report as unsplittable rather than being
+    split on a guess."""
+    port = make_port(
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/feat/x", "origin/feat/x"),
+        ],
+        extra={"remote": fail("fatal: bad config line 3")},
+    )
+
+    surveyed = run(port)
+
+    assert surveyed.remotes_known is False
+    assert surveyed.remotes == ()
+    assert not [b for b in surveyed.branches if b.is_remote]
+    assert any("remote list" in w for w in surveyed.all_warnings())
+    assert "could not be read" in {n.name: n.reason for n in surveyed.not_offered}["origin/feat/x"]
 
 
 def test_remote_refs_are_identified_by_prefix_not_by_a_slash() -> None:

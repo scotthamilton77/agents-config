@@ -14,8 +14,13 @@ def target(
     kind: TargetKind = TargetKind.BRANCH,
     name: str | None = None,
     sweepable: bool = True,
+    remote: str = "origin",
 ) -> Target:
     resolved = name if name is not None else ident.split(":", 1)[1]
+    # The remote a server ref lives on, which only the survey can recover. Most
+    # fixtures here are on `origin`, and the builder says so rather than leaving
+    # the plan to work it out from a slash.
+    on_remote = kind is TargetKind.REMOTE_BRANCH and resolved.startswith(f"{remote}/")
     return Target(
         id=ident,
         kind=kind,
@@ -26,6 +31,8 @@ def target(
         withheld=None if sweepable else "no merge proof for this commit (evidence: none)",
         reasons=(),
         last_activity=None,
+        remote=remote if on_remote else None,
+        ref_name=resolved.removeprefix(f"{remote}/") if on_remote else None,
     )
 
 
@@ -332,6 +339,26 @@ def test_exact_id_disambiguates() -> None:
     result = plan_for(targets, selectors=["branch:feat/x"])
     assert isinstance(result, Plan)
     assert [t.id for t in result.targets] == ["branch:feat/x"]
+
+
+def test_a_server_refs_bare_alias_is_the_name_the_remote_knows() -> None:
+    """The convenience spelling for `team/origin/feat/x` is `feat/x`, because
+    that is what the server calls the branch. Dropping everything before the
+    first slash offers `origin/feat/x` instead -- a name nothing in the
+    repository has, handed to a caller as though it were theirs."""
+    targets = (
+        target(
+            "remote:team/origin/feat/x",
+            kind=TargetKind.REMOTE_BRANCH,
+            remote="team/origin",
+        ),
+    )
+
+    assert isinstance(plan_for(targets, selectors=["feat/x"]), Plan)
+    result = plan_for(targets, selectors=["origin/feat/x"])
+    assert isinstance(result, Plan)
+    assert result.targets == ()
+    assert [a.selector for a in result.absent] == ["origin/feat/x"]
 
 
 def test_worktree_selectable_by_basename() -> None:

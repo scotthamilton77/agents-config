@@ -24,11 +24,19 @@ from gitclean.model import Branch, MergeEvidence, NotOffered, PullRequest, Surve
 from gitclean.ports import CommandPort
 
 _SEP = "\x1f"
-# The FULL refname leads deliberately. Short names are ambiguous in exactly the
+# The FULL refname leads deliberately, and everything the survey *records*
+# about a ref is recovered from it. Short names are ambiguous in exactly the
 # place it matters: git shortens `refs/remotes/origin/HEAD` to `origin` -- no
 # slash, no HEAD suffix -- so a short-name filter reads the remote's symbolic
 # HEAD as a local branch literally named `origin` and offers it for deletion.
 # `refs/remotes/` as a prefix answers local-vs-remote with no guessing.
+#
+# The short form is kept all the same, because it answers a different question
+# well. It is the shortest spelling that resolves back to this ref and no
+# other -- git lengthens it the moment a shorter one would be ambiguous -- so
+# it is exactly what a probe should hand to git, and exactly what should never
+# be parsed for structure. `\x1f` and the newline are both safe as separators:
+# git rejects every ASCII control character in a refname.
 _REF_FORMAT = _SEP.join(
     [
         "%(refname)",
@@ -166,6 +174,68 @@ def resolve_base_ref(
             f"measured against the local {default_branch}, which may be behind the remote"
         )
     return default_branch, None
+
+
+def read_remotes(port: CommandPort, cwd: Path | None) -> tuple[tuple[str, ...] | None, str | None]:
+    """The configured remotes, or None when git would not list them.
+
+    This is the one question that says where a remote's name stops inside a
+    path under `refs/remotes/`. Remote names may contain slashes -- `git remote
+    add team/origin <url>` is accepted -- so the ref path alone does not mark
+    the boundary, and the first slash is a guess dressed up as a parse.
+
+    None rather than an empty tuple when the read failed, because "this
+    repository has no remotes" and "nobody could say" send a server ref in
+    opposite directions: the first makes an unsplittable `refs/remotes/...`
+    genuinely odd, the second makes every one of them unsplittable through no
+    fault of its own. Neither is deleted either way; only the sentence differs.
+
+    `git remote` is line-framed and that is safe here, unlike everywhere else
+    in this module: git refuses to create a remote whose name holds a newline,
+    and refuses to read a config key containing one, so no name it prints can
+    span two lines."""
+    result = port.git(["remote"], cwd=cwd)
+    if not result.ok:
+        return None, (
+            f"could not read this repository's remote list (exit {result.returncode}); no ref "
+            f"under refs/remotes/ can be split into a remote and a branch name, so none of them "
+            f"is offered for deletion"
+        )
+    return tuple(line.strip() for line in result.stdout.splitlines() if line.strip()), None
+
+
+def split_remote_ref(full: str, remotes: tuple[str, ...] | None) -> tuple[str, str] | str:
+    """(remote, branch name) for a ref under `refs/remotes/`, or the
+    measurement that stopped the split.
+
+    The remote's name is matched against the ones git says are configured
+    rather than taken to be everything before the first slash. Both failure
+    modes are real and neither is guessable: a path no configured remote
+    accounts for -- a tracking ref left behind by `git remote remove` -- and a
+    path two of them could account for, which is what having both `team` and
+    `team/origin` produces. A caller who wants either gone can still use git;
+    what this must not do is pick one and issue a deletion against it."""
+    rest = full.removeprefix("refs/remotes/")
+    if remotes is None:
+        return (
+            f"the configured remote list could not be read, so which part of {full} names a "
+            f"remote and which part names the branch on it is unknown"
+        )
+    matches = [r for r in remotes if rest.startswith(f"{r}/")]
+    if len(matches) == 1:
+        remote = matches[0]
+        return remote, rest[len(remote) + 1 :]
+    if not matches:
+        return (
+            f"no configured remote accounts for {full}, so nothing says which part of it names "
+            f"a remote; a tracking ref outliving its remote looks exactly like this"
+        )
+    named = ", ".join(sorted(matches))
+    return (
+        f"{full} could be a branch on any of these configured remotes: {named} -- the ref path "
+        f"does not say which, and a deletion issued against the wrong one is a deletion on a "
+        f"repository nobody asked about"
+    )
 
 
 def read_worktrees(
@@ -427,7 +497,7 @@ def _count_revs(port: CommandPort, cwd: Path | None, spec: str) -> int | None:
 
 
 def _unpushed_count(
-    port: CommandPort, cwd: Path | None, *, name: str, upstream: str, track: str
+    port: CommandPort, cwd: Path | None, *, name: str, spec: str, upstream: str, track: str
 ) -> tuple[int | None, str | None]:
     """Commits the upstream does not have, or None when that is not known.
 
@@ -439,7 +509,12 @@ def _unpushed_count(
     An upstream git records but cannot resolve reports as no marker at all --
     that is `[gone]`, the remote branch having been deleted. Nothing then
     proves these commits survive anywhere else, so the count is unknown rather
-    than zero."""
+    than zero.
+
+    ``name`` is what a reader is told and ``spec`` is what git is asked. They
+    are the same string in every ordinary repository and come apart in the one
+    that made this distinction necessary, so the two roles are separate
+    parameters rather than one value used for both."""
     if not upstream:
         return None, None
     if not track:
@@ -449,7 +524,7 @@ def _unpushed_count(
         )
     if ">" not in track:
         return 0, None
-    count = _count_revs(port, cwd, f"{upstream}..{name}")
+    count = _count_revs(port, cwd, f"{upstream}..{spec}")
     if count is None:
         return None, (
             f"could not count the commits on {name} missing from {upstream}; "
@@ -585,6 +660,11 @@ def _resolve_merge(
     is merged, the tier that said so, whether the PR covered the tip, and the
     probes that errored on the way.
 
+    ``name`` goes into an argv, so it must be a spelling that denotes this ref
+    and no other -- git's own `%(refname:short)`, which is exactly that. The
+    caller-facing name is not: `origin/main` is a legal local branch, and a
+    probe spelled that way would measure it instead of the server's copy.
+
     Both PR tiers are gated on containment. Falling through costs only speed:
     the ancestry, patch-id and squash tiers below re-derive the answer from
     what is actually in the repository, which is the stronger evidence anyway.
@@ -641,6 +721,7 @@ def read_branches(
     default_branch: str,
     prs: dict[str, PullRequest],
     worktree_by_branch: dict[str, str],
+    remotes: tuple[str, ...] | None,
 ) -> tuple[list[Branch], list[str], bool, list[NotOffered], int]:
     """The branches, the warnings, whether the ref read answered at all, and
     the refs deliberately left out of the first list.
@@ -684,10 +765,10 @@ def read_branches(
             # name" cannot tell that apart from the ref not being there.
             dropped += 1
             continue
-        full, name, head, committed, upstream, track, head_marker = (
+        full, probe_ref, head, committed, upstream, track, head_marker = (
             f.strip() for f in fields[:_REF_FIELDS]
         )
-        if not name or not full:
+        if not probe_ref or not full:
             dropped += 1
             continue
 
@@ -696,8 +777,8 @@ def read_branches(
             # The remote's symbolic HEAD is a pointer, not a branch.
             not_offered.append(
                 NotOffered(
-                    # Recorded from the full path rather than `name`: git
-                    # shortens refs/remotes/origin/HEAD to a bare `origin`,
+                    # Recorded from the full path rather than the short form:
+                    # git shortens refs/remotes/origin/HEAD to a bare `origin`,
                     # which is not a spelling anybody would type at this tool.
                     name=full.removeprefix("refs/remotes/"),
                     reason="the remote's symbolic HEAD, which points at a branch rather than "
@@ -705,10 +786,29 @@ def read_branches(
                 )
             )
             continue
-        remote = name.split("/", 1)[0] if is_remote and "/" in name else None
-        short = name.split("/", 1)[1] if is_remote and remote else name
 
-        if is_remote and short == default_branch:
+        if is_remote:
+            # The whole of the decomposition, and it is done from the full path
+            # against the configured remote list. Nothing here reads the short
+            # form: it is what git would let you *type*, which is a different
+            # question from where the remote's name ends.
+            split = split_remote_ref(full, remotes)
+            if isinstance(split, str):
+                # Unsplittable, so nothing can be issued against it -- but it
+                # is sitting right there, and a caller who names it must not be
+                # told it is already gone. NotOffered is what keeps those two
+                # answers apart.
+                not_offered.append(
+                    NotOffered(name=full.removeprefix("refs/remotes/"), reason=split)
+                )
+                continue
+            remote, ref_name = split
+            name = full.removeprefix("refs/remotes/")
+        else:
+            remote, ref_name = None, full.removeprefix("refs/heads/")
+            name = ref_name
+
+        if is_remote and ref_name == default_branch:
             not_offered.append(
                 NotOffered(
                     name=name,
@@ -720,8 +820,10 @@ def read_branches(
 
         is_default = not is_remote and name == default_branch
         # A PR keyed by the trunk's name targets it rather than proposing it,
-        # so it says nothing about whether the trunk is finished with.
-        pr = None if is_default else prs.get(short)
+        # so it says nothing about whether the trunk is finished with. Keyed by
+        # what the *server* calls the branch, which for a remote-tracking ref
+        # is the half of the path the remote's name does not account for.
+        pr = None if is_default else prs.get(ref_name)
         # The trunk is measured like every other branch. It used to be handed
         # zeroes and a merge verdict on the reasoning that probing it against
         # itself is noise, but both halves of that were wrong: the counts are
@@ -730,14 +832,22 @@ def read_branches(
         # measurement nobody took is the exact habit that made this tool
         # dangerous. Nothing needs the shortcut: the trunk is kept out of the
         # sweep by identity, not by carrying a manufactured verdict.
-        unmerged = _count_revs(port, cwd, f"{base_ref}..{name}")
+        #
+        # From here down every string handed to git is `probe_ref` and every
+        # string shown to a reader is `name`. They are the same in any
+        # repository that has not been arranged to make them differ, and the
+        # separation is what makes the arranged one measure the right ref: a
+        # probe spelled `origin/main` resolves to the *local* branch of that
+        # name when one exists, so the report would carry the local branch's
+        # history under the server ref's row.
+        unmerged = _count_revs(port, cwd, f"{base_ref}..{probe_ref}")
         if unmerged is None:
             warnings.append(
                 f"could not count the commits on {name} missing from {base_ref}; "
                 f"it will not be treated as merged"
             )
         unpushed, unpushed_warning = _unpushed_count(
-            port, cwd, name=name, upstream=upstream, track=track
+            port, cwd, name=name, spec=probe_ref, upstream=upstream, track=track
         )
         if unpushed_warning:
             warnings.append(unpushed_warning)
@@ -745,10 +855,13 @@ def read_branches(
             port,
             cwd,
             base_ref,
-            name,
+            probe_ref,
             pr=pr,
             head=head,
-            ancestor_merged=name in (remote_merged if is_remote else local_merged),
+            # Both sides of this comparison are git's own short form, produced
+            # by the same shortening on the same repository, so equal strings
+            # are the same ref and different strings are not.
+            ancestor_merged=probe_ref in (remote_merged if is_remote else local_merged),
             unmerged_commits=unmerged,
         )
         warnings.extend(f"{name}: {failure}" for failure in probe_failures)
@@ -756,6 +869,9 @@ def read_branches(
         branches.append(
             Branch(
                 name=name,
+                ref=full,
+                probe_ref=probe_ref,
+                ref_name=ref_name,
                 is_remote=is_remote,
                 remote=remote,
                 head=head,
@@ -842,6 +958,9 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
     prs, gh_error, pr_evidence_gap = read_pull_requests(port, cwd)
     if pr_evidence_gap:
         warnings.append(pr_evidence_gap)
+    remotes, remotes_warning = read_remotes(port, cwd)
+    if remotes_warning is not None:
+        warnings.append(remotes_warning)
     branches, branch_warnings, branches_known, not_offered, dropped_refs = read_branches(
         port,
         cwd,
@@ -849,6 +968,7 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         default_branch=default_branch,
         prs=prs,
         worktree_by_branch=worktree_by_branch,
+        remotes=remotes,
     )
     warnings.extend(branch_warnings)
 
@@ -879,6 +999,8 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         worktrees_known=worktrees_known,
         dropped_refs=dropped_refs,
         dropped_worktrees=dropped_worktrees,
+        remotes=remotes or (),
+        remotes_known=remotes is not None,
         not_offered=tuple(not_offered),
         warnings=tuple(warnings),
     )

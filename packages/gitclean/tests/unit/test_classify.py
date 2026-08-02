@@ -294,17 +294,59 @@ def test_the_local_trunk_is_never_swept_even_though_it_is_an_ancestor() -> None:
     assert "trunk" in (target.withheld or "")
 
 
-def test_the_remote_counterpart_of_the_trunk_is_matched_by_name_not_by_string() -> None:
+def test_the_remote_counterpart_of_the_trunk_is_matched_by_ref_not_by_string() -> None:
     """`main` and `origin/main` are different strings for the same trunk.
     Comparing the caller-facing name against `base_ref` never matched, which is
-    how the local trunk stayed sweepable."""
+    how the local trunk stayed sweepable.
+
+    Both are held as full ref paths. A caller-facing name is not an identity:
+    `origin/main` also spells a local branch somebody is entitled to delete,
+    and the two are only the same string, never the same ref."""
     survey = make_survey(
         branches=(make_branch("main", head="a" * 40, is_default=True),),
         base_ref="origin/main",
         default_branch="main",
     )
     names, _ = trunk(survey)
-    assert {"main", "origin/main"} <= names
+    assert {"refs/heads/main", "refs/remotes/origin/main"} <= names
+    assert "refs/heads/origin/main" not in names
+
+
+def test_a_local_branch_spelled_like_the_trunks_remote_ref_is_not_the_trunk() -> None:
+    """`origin/main` is a legal local branch. Held as a string, the trunk
+    covers it too, and its owner is told `this is the trunk` about a ref that
+    is nothing of the sort -- a false sentence in the field a reader checks
+    before deleting anything.
+
+    The server's copy is still the trunk, and the difference between the two is
+    the only thing that says so: they share a caller-facing name and have
+    different ref paths."""
+    survey = make_survey(
+        branches=(
+            make_branch("main", head="a" * 40, is_default=True),
+            make_branch(
+                "origin/main",
+                ref="refs/heads/origin/main",
+                probe_ref="heads/origin/main",
+                head=ELSEWHERE,
+                merge_evidence=MergeEvidence.SQUASH_EQUAL,
+            ),
+        )
+    )
+    targets = {t.id: t for t in classify(survey)}
+
+    assert "trunk" not in (targets["branch:origin/main"].withheld or "")
+    assert targets["branch:origin/main"].sweepable
+    assert "refs/remotes/origin/main" in trunk(survey)[0]
+
+
+def test_a_slash_named_remotes_copy_of_the_trunk_is_still_the_trunk() -> None:
+    """The counterpart is composed from the configured remote and the default
+    branch, which is the direction that cannot go wrong -- unlike recovering
+    the remote's name by splitting the path it produced."""
+    survey = make_survey(remotes=("team/origin",), default_branch="main")
+
+    assert "refs/remotes/team/origin/main" in trunk(survey)[0]
 
 
 def test_a_branch_sitting_on_the_trunk_commit_is_left_for_a_human() -> None:

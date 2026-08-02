@@ -18,12 +18,17 @@ from gitclean.model import MergeEvidence, Plan, Target, TargetKind
 from gitclean.ports import CommandResult, ScriptedCommands, fail, ok
 
 
-def target(kind: TargetKind, name: str) -> Target:
+def target(kind: TargetKind, name: str, *, remote: str | None = "origin") -> Target:
     prefix = {
         TargetKind.WORKTREE: "worktree",
         TargetKind.BRANCH: "branch",
         TargetKind.REMOTE_BRANCH: "remote",
     }[kind]
+    # Which remote a server ref lives on is something only the survey can say,
+    # having had the configured remote list in hand. The fixture states it here
+    # instead, and a target the survey could not split is built by giving a
+    # name this remote does not account for.
+    on_remote = kind is TargetKind.REMOTE_BRANCH and remote and name.startswith(f"{remote}/")
     return Target(
         id=f"{prefix}:{name}",
         kind=kind,
@@ -34,6 +39,8 @@ def target(kind: TargetKind, name: str) -> Target:
         withheld=None,
         reasons=(),
         last_activity=None,
+        remote=remote if on_remote else None,
+        ref_name=name[len(remote) + 1 :] if on_remote and remote else None,
     )
 
 
@@ -418,13 +425,19 @@ def test_a_remote_branch_the_survey_never_saw_is_not_deleted_blind() -> None:
 def test_a_remote_target_naming_no_remote_is_never_pushed_to() -> None:
     """`refs/remotes/bare` is a legal ref layout with no remote in it, so a
     target can reach the delete carrying nothing to push to. There is no
-    guessing a remote here: the run says what it cannot parse and stops."""
+    guessing a remote here: the run says what it cannot parse and stops.
+
+    Which remote a ref belongs to is decided once, in the survey, against the
+    configured remote list. By the time a target is here that answer either
+    travelled with it or does not exist, and re-deriving it from the first
+    slash is the thing this refuses to do -- git takes a path where it expects
+    a remote, so the guess reaches a repository nobody named."""
     port = _remote_port(**_salvage_calls(f"/salvage/{slug('bare')}.bundle"))  # type: ignore[arg-type]
     report = run(port, plan(target(TargetKind.REMOTE_BRANCH, "bare")), _remote_survey("bare"))
 
     assert not report.ok
     assert "push" not in [call[1] for call in port.transcript]
-    assert "cannot split bare" in report.anomalies[0].message
+    assert "without a remote and a branch name" in report.anomalies[0].message
 
 
 def test_a_rejected_lease_is_reported_as_the_server_having_moved() -> None:
@@ -446,6 +459,20 @@ def test_the_survival_probe_asks_the_server_for_the_exact_ref() -> None:
 
     probe = next(call for call in port.transcript if call[1] == "ls-remote")
     assert probe[-1] == "refs/heads/feat/x"
+
+
+def test_the_server_is_named_by_its_whole_remote_name() -> None:
+    """A remote may be called `team/origin`, and git accepts a *path* wherever
+    it expects a remote -- so `team`, the first component, reaches a sibling
+    directory that happens to be a repository and answers about it instead. The
+    answer is empty and well-formed, which here means `already gone`."""
+    port = _remote_port(**{"ls-remote": ok("")})
+    settled = plan(target(TargetKind.REMOTE_BRANCH, "team/origin/feat/x", remote="team/origin"))
+    run(port, settled, _remote_survey("team/origin/feat/x"))
+
+    probe = next(call for call in port.transcript if call[1] == "ls-remote")
+    assert probe[3] == "team/origin"
+    assert "team" not in probe[3:]
 
 
 def test_remote_ref_surviving_a_successful_push_delete_is_an_anomaly() -> None:

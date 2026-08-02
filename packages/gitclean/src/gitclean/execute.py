@@ -448,7 +448,14 @@ class Executor:
         `ls-remote` takes a pattern and matches it on path-component
         boundaries, so an unrelated `a/feat/x` answers a question asked about
         `feat/x`. The refname column settles it -- the same exact comparison
-        the local path makes."""
+        the local path makes.
+
+        ``remote`` has to be a name git itself listed as configured, and the
+        reason is that git accepts a *path* in this position: given `team`
+        rather than the real `team/origin`, a sibling directory of that name
+        that happens to be a repository is opened instead, and answers. The
+        answer is well-formed, empty and about somebody else entirely -- and an
+        empty answer here means the branch is already gone."""
         probe = self._port.git(
             git_argv("ls-remote", "--heads", remote, name=ref_path), cwd=self._cwd
         )
@@ -487,9 +494,12 @@ class Executor:
         on such a server, where the cost is a deletion this run declines to
         make; the tracking ref survives, the next report shows the target
         again, and naming it after a fetch still works."""
-        remote, _, ref = target.name.partition("/")
-        if not ref:
-            # Unparseable, and _delete_remote_branch is where that is reported.
+        remote, ref = target.remote, target.ref_name
+        if not remote or not ref:
+            # Undecomposed, and _delete_remote_branch is where that is
+            # reported. Splitting the name here to get on with it is the whole
+            # defect: the half-guessed remote is what turns a live branch into
+            # a clean "already gone".
             return None
         present, _ = self._remote_ref_present(remote, f"refs/heads/{ref}")
         if present is not False:
@@ -519,10 +529,16 @@ class Executor:
         The lease makes the server check for us: the delete is accepted only
         while the ref still points at the commit the survey judged, and is
         rejected as stale otherwise."""
-        remote, _, ref = target.name.partition("/")
-        if not ref:
-            self._record("delete", target.id, f"cannot split {target.name} into remote and ref", ())
-            return _failed(target, "unparseable remote ref")
+        remote, ref = target.remote, target.ref_name
+        if not remote or not ref:
+            self._record(
+                "delete",
+                target.id,
+                f"{target.name} reached the executor without a remote and a branch name, which "
+                f"only the survey can tell apart; nothing was deleted",
+                (),
+            )
+            return _failed(target, "undecomposed remote ref")
         expected = next(
             (b.head for b in self._survey.branches if b.is_remote and b.name == target.name),
             "",
