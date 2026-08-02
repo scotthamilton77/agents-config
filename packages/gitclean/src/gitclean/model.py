@@ -197,6 +197,46 @@ class Branch:
 
 
 @dataclass(frozen=True, slots=True)
+class Counterpart:
+    """One of the other parts of the thing a target belongs to.
+
+    A worktree, the branch it holds and that branch's copy on the server are
+    one thing with two or three parts, and git enforces it: a branch cannot be
+    deleted while a worktree holds it. So a reader deciding about one part has
+    to see the others -- which makes the relation a fact this report owes them,
+    not something to be recovered afterwards from a reason sentence. Recovering
+    it meant splitting prose on a delimiter the paths it separates are allowed
+    to contain, and a mis-keyed row does not announce itself: the lookup misses,
+    the miss returns nothing, and nothing reads as an absence somebody measured.
+
+    Three states, and they are three different answers:
+
+    - ``known`` false -- nothing established this. ``name`` and ``id`` are None,
+      and whether a counterpart exists is simply not known.
+    - ``known`` true with ``name`` None -- established: there is none.
+    - ``known`` true with ``name`` set -- there is one, named. ``id`` is the row
+      it appears as in this report, or None when the report holds no row for it,
+      which is a counterpart that exists and was not offered as a target.
+    """
+
+    relation: str
+    """What this is to the target carrying it: ``branch``, ``worktree`` or
+    ``upstream``. Only the relations that can apply to that target's kind are
+    present, so a server ref carries none -- nothing checks it out, and it joins
+    its group by being named as some local branch's upstream."""
+    name: str | None
+    """The counterpart's own path or ref, verbatim. This is what a row shows a
+    reader, and it is stated even when no target carries it."""
+    id: str | None
+    """The `Target.id` of the row for it, or None when this report has none.
+    Follow it to find the counterpart; never build it by joining strings."""
+    known: bool
+
+    def as_json(self) -> dict[str, object]:
+        return {"name": self.name, "id": self.id, "known": self.known}
+
+
+@dataclass(frozen=True, slots=True)
 class Target:
     """One deletable thing: what was measured about it, and whether an
     unattended sweep may take it."""
@@ -223,12 +263,19 @@ class Target:
     """Everything measured about this target, in reader-facing prose. The audit
     trail, and it stands whether or not the target is sweepable."""
     last_activity: str | None
+    pairing: tuple[Counterpart, ...] = ()
+    """The other parts of the thing this target belongs to, keyed by relation in
+    the JSON. Structured because ``reasons`` already says the same in prose, and
+    prose is the wrong place to read it from: the sentence is for a person, and
+    a consumer that parses it back out is splitting on a delimiter the names
+    themselves may contain."""
 
     def as_json(self) -> dict[str, object]:
         return {
             "id": self.id,
             "kind": self.kind.value,
             "name": self.name,
+            "pairing": {c.relation: c.as_json() for c in self.pairing},
             "merge_evidence": self.merge_evidence.value,
             "merge_proven": self.merge_proven,
             "sweepable": self.sweepable,

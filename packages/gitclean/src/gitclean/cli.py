@@ -41,6 +41,15 @@ what a bare --cleanup takes:
   whose working tree git reported clean. Everything else is reported with `withheld`
   saying which of those was not met.
 
+each target row carries `pairing`: the other parts of the thing it belongs to, keyed
+by relation. A worktree names the `branch` it holds; a local branch names the
+`worktree` holding it and its `upstream` on the server; a server ref names nothing,
+and joins a group by being some branch's upstream. Every entry is {name, id, known}:
+`known` false is unestablished, a null `name` under a true `known` is a measured
+none, and a `name` with a null `id` is a counterpart this report has no row for.
+Group rows by following `id`; never build one by joining strings, and never recover
+a pairing by splitting a name or a reason sentence.
+
 naming a target deletes it. Nothing is re-derived, no flag is demanded, and git's
 own refusals -- a checked-out branch, a dirty or locked worktree -- stand as they are.
 
@@ -166,6 +175,33 @@ def _deletion_mark(entry: dict[str, object], *, dry: bool) -> str:
     return "ok  " if entry.get("verified") else "FAIL"
 
 
+def _pairing_lines(entry: dict[str, object]) -> list[str]:
+    """One line per counterpart worth saying out loud.
+
+    A relation nothing established is printed, because that is the whole point
+    of carrying it: unread and none render identically as silence, and only one
+    of them means the reader has seen everything that would go with a deletion.
+    A measured none is not printed -- the reasons already say `no upstream:
+    never pushed`, and repeating it here would push the interesting lines down
+    the screen."""
+    pairing = entry.get("pairing")
+    if not isinstance(pairing, dict):
+        return []
+    lines: list[str] = []
+    for relation, counterpart in pairing.items():
+        if not isinstance(counterpart, dict):
+            continue
+        if not counterpart.get("known"):
+            lines.append(f"{relation}: not established -- unknown, not none")
+            continue
+        name = counterpart.get("name")
+        if name is None:
+            continue
+        ident = counterpart.get("id")
+        lines.append(f"{relation}: {name}" + (f" [{ident}]" if ident else " -- no row here"))
+    return lines
+
+
 def _render_human(payload: dict[str, object], out: TextIO) -> None:
     repo = payload.get("repo")
     if isinstance(repo, dict):
@@ -196,6 +232,8 @@ def _render_human(payload: dict[str, object], out: TextIO) -> None:
                 f"  [{mark}] [{entry.get('merge_evidence'):<18}] {entry.get('id')}",
                 file=out,
             )
+            for line in _pairing_lines(entry):
+                print(f"      + {line}", file=out)
             reasons = entry.get("reasons")
             if isinstance(reasons, list):
                 for reason in reasons:

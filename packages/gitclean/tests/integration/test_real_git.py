@@ -449,6 +449,86 @@ def test_a_worktree_that_goes_dirty_after_the_survey_is_left_alone(repo: Path) -
     assert any("--force" in line for line in outcome.anomalies[0].transcript)
 
 
+# -- the pairing a reader groups rows by --------------------------------------
+
+
+def test_the_pairing_holds_for_a_path_no_sentence_can_be_split_on(
+    repo: Path, tmp_path: Path
+) -> None:
+    """Why the pairing is a field and not a sentence.
+
+    `checked out at /a/b at rest` contains two ` at `s, and the only reader
+    that recovers the path is one that never split it. A directory named this
+    way is unusual; a directory whose name contains a word this tool happens to
+    use in a reason is not, and the row it mis-keys reports the wrong worktree
+    while looking exactly like a measurement.
+
+    Real git, because the point is what git accepts as a path and as a ref."""
+    _with_remote(repo, tmp_path)
+    work = repo.parent / "wt at rest"
+    git(repo, "worktree", "add", "-q", str(work), "-b", "feat/paired")
+    commit(work, "paired.txt")
+    git(work, "push", "-q", "-u", "origin", "feat/paired")
+
+    with reachability_guard(repo):  # a report changes nothing
+        payload = report(repo)
+
+    branch = find(payload, "branch:feat/paired")
+    assert branch["pairing"] == {
+        "worktree": {"name": str(work), "id": f"worktree:{work}", "known": True},
+        "upstream": {
+            "name": "origin/feat/paired",
+            "id": "remote:origin/feat/paired",
+            "known": True,
+        },
+    }
+    assert find(payload, f"worktree:{work}")["pairing"] == {
+        "branch": {"name": "feat/paired", "id": "branch:feat/paired", "known": True}
+    }
+    assert find(payload, "remote:origin/feat/paired")["pairing"] == {}
+
+    # The route the field replaces, run against the same row: the reason names
+    # the path and gives a splitter no way to tell where it ends.
+    prose = next(r for r in branch["reasons"] if str(r).startswith("checked out at"))
+    assert str(prose).split(" at ")[1] != str(work)
+
+
+def test_a_branch_tracking_a_ref_this_tool_will_not_target_still_names_it(
+    repo: Path, tmp_path: Path
+) -> None:
+    """`main` tracks `origin/main`, and the server's copy of the trunk is
+    deliberately not offered as a target. So the upstream is named with no row
+    to follow -- which is a third answer, and dropping the name to reach one of
+    the other two would report the trunk as never pushed."""
+    _with_remote(repo, tmp_path)
+
+    with reachability_guard(repo):
+        payload = report(repo)
+
+    assert find(payload, "branch:main")["pairing"]["upstream"] == {
+        "name": "origin/main",
+        "id": None,
+        "known": True,
+    }
+
+
+def test_a_detached_worktree_says_it_holds_no_branch_rather_than_saying_nothing(
+    repo: Path,
+) -> None:
+    """git's listing answers this outright, so the row carries a measured none
+    -- distinguishable from a branch that went unread, which is the whole
+    reason the entry carries `known` as well as a name."""
+    work = repo.parent / "wt-loose"
+    git(repo, "worktree", "add", "-q", "--detach", str(work))
+
+    with reachability_guard(repo):
+        payload = report(repo)
+
+    assert find(payload, f"worktree:{work}")["pairing"] == {
+        "branch": {"name": None, "id": None, "known": True}
+    }
+
+
 # -- remote deletion ----------------------------------------------------------
 
 

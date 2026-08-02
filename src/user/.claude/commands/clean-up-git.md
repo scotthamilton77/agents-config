@@ -48,15 +48,21 @@ share a timestamp and are one thing with two or three parts. It is also a
 correctness fact — git refuses to delete a branch its worktree still holds — so
 a reader choosing one has to see the others.
 
-Pair them from the fields the report already states, never by re-parsing a
-name. A worktree names the branch it holds, and a branch names the worktree
-holding it and the upstream it tracks; those three are the pairing, and each
-appears verbatim in the JSON. Splitting a name instead silently mis-keys the
-row, because remote names may contain slashes — and the failure then looks like
-a fact, since a lookup that misses returns nothing, and nothing reads as "never
-pushed" about a branch that exists precisely because it was pushed. **Where a
-counterpart cannot be identified, the row says so. It does not say there isn't
-one.**
+Pair them from `pairing` on each target row — never by splitting a name, and
+never out of a reason sentence. A worktree names the `branch` it holds; a branch
+names the `worktree` holding it and its `upstream` on the server; a server ref
+names nothing, and joins a group when a branch names it as that upstream. Follow
+`id` to the counterpart's row, and show the reader `name`. Splitting instead
+silently mis-keys the row, because a path or a ref may contain whatever you split
+on — and the failure then looks like a fact, since a lookup that misses returns
+nothing, and nothing reads as "never pushed" about a branch that exists precisely
+because it was pushed.
+
+Each entry answers one of three ways, and they are not interchangeable: `known`
+false is unestablished, a null `name` is a measured none, and a `name` with no
+`id` is a counterpart this report has no row for — which is what a server copy
+deleted after merging looks like. **Where a counterpart cannot be identified, the
+row says so. It does not say there isn't one.**
 
 **Order by last activity, oldest first.** Not by kind, not by evidence tier. It
 is the ordering that needs no explanation — but a timestamp is a commit date,
