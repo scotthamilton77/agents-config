@@ -126,3 +126,6 @@ front.
 Don't assume the user will recognize work by work-id, document sections by section
 number, etc.  The user needs help connecting dots sometimes, so it's ok to use short
 reminders, e.g. `xjc2.4 (auth feature epic)`.
+
+Match the length of written documents to what the task needs: cover the substance, but 
+do not pad with filler sections, redundant summaries, or boilerplate.
