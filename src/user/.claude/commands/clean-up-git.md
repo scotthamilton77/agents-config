@@ -46,6 +46,13 @@ share a timestamp and are one thing with two or three parts. It is also a
 correctness fact — git refuses to delete a branch its worktree still holds — so
 a reader choosing one has to see the others.
 
+Pair them using the fields the envelope already gives you — `checked_out_at`,
+`upstream`, `remote` — and never by splitting a name on `/`. Remote names may
+contain slashes, so a split silently mis-keys the row, and the failure looks
+like a fact: a lookup that misses returns nothing, and nothing reads as "never
+pushed" for a branch that exists precisely because it was. **A spend line you
+cannot source from a field is not a spend line — omit it.**
+
 **Order by last activity, oldest first.** Not by kind, not by evidence tier. Age
 is the strongest signal of abandonment and the only ordering needing no
 explanation.
