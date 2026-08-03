@@ -160,6 +160,124 @@ function stripDeferredTools(body) {
   return body;
 }
 
+// ─── Model gate ────────────────────────────────────────────────────
+
+// A nested run can start further runs of its own, and each one picks its own
+// model. Every one of those bills this proxy's account and answers in this
+// run's name, so a run that silently switches models spends money nobody
+// approved and swaps out the point of view it was launched to provide.
+//
+// Two independent checks close that. The pin refuses any model but the one
+// this run was launched with. The denylist refuses a small set of models
+// outright, whatever the pin says, because they are served properly by other
+// transports and have no business arriving here at all.
+
+/** Model families this transport never carries, matched as slug prefixes.
+ *  Claude models run natively in the harness that launches these runs, and the
+ *  large GPT tiers have their own vendor transport; reaching either one from
+ *  here means something upstream misrouted. A literal list is the point — it
+ *  needs revisiting when the model roster moves, and a clever pattern would
+ *  hide that. */
+const DENIED_MODEL_PREFIXES = ["claude", "gpt-5.5", "gpt-5.6"];
+
+/** Prefixes above whose `-mini` variants stay reachable: they are cheap enough
+ *  to be worth having, and are not what the denial is protecting against.
+ *  `claude` is absent on purpose — no Claude model belongs on this transport. */
+const MINI_EXEMPT_PREFIXES = ["gpt-5.5", "gpt-5.6"];
+
+/** Reduce a routing id to its bare model slug. Ids arrive as `vendor/slug`,
+ *  sometimes with an OpenRouter `:variant` suffix, and the vendor prefix must
+ *  not be a way to walk past the denylist. */
+function modelSlug(model) {
+  if (typeof model !== "string") return "";
+  const slug = model.trim().toLowerCase().split("/").pop();
+  return slug.split(":")[0];
+}
+
+/** True when this model is refused outright, pin or no pin. */
+function isDeniedModel(model) {
+  const slug = modelSlug(model);
+  if (!slug) return false;
+  const matched = DENIED_MODEL_PREFIXES.find((p) => slug.startsWith(p));
+  if (!matched) return false;
+  if (!MINI_EXEMPT_PREFIXES.includes(matched)) return true;
+  return !slug.split("-").includes("mini");
+}
+
+/** The gate applies to completion requests only — those are the requests that
+ *  generate, bill, and speak in this run's voice. Counting tokens does none of
+ *  the three, so it is measured and forwarded like any other metadata call. */
+function isCompletionPath(pathname) {
+  return pathname.replace(/^\/api\//, "/").replace(/\/+$/, "") === "/v1/messages";
+}
+
+/** Advisory carried by a refusal. It is the only channel back to whatever
+ *  asked for the wrong model — the caller sees an API error and nothing else —
+ *  so it has to say what to do instead, not just what went wrong. */
+function pinAdvice(requested, pinned) {
+  return (
+    `This run is pinned to ${pinned}, and the request asked for ${requested}. ` +
+    "Every model reached from inside this run bills the same account and answers in this " +
+    "run's name, so switching models spends against a budget nobody approved and replaces " +
+    "the point of view this run exists to provide. Either carry on in your own context, or " +
+    `delegate with the model field left out — the work then runs on ${pinned} and the point ` +
+    "of view survives. If an agent type names a model of its own that does not resolve to " +
+    `${pinned}, its requests are refused the same way.`
+  );
+}
+
+function deniedAdvice(requested, pinned) {
+  return (
+    `${requested} is not reachable over this transport, by design and not by accident: Claude ` +
+    "models run natively in the harness that launched this run, and the large GPT tiers run " +
+    "through their own vendor transport. Nothing here can route to it. " +
+    (pinned ? `This run is pinned to ${pinned}. ` : "") +
+    "Carry on in your own context, or delegate with the model field left out so the work runs " +
+    "on the same model this run does."
+  );
+}
+
+/** Adjudicate one completion request.
+ *  @param {*} model The `model` field as it appeared in the body; `undefined`
+ *    when the body carried none, which is not a model switch and not refused.
+ *  @param {string|null} pinnedModel The model this run was launched with.
+ *  @returns {{decision: "forward"|"deny-pin"|"deny-denylist", message?: string}} */
+function screenModel(model, pinnedModel) {
+  if (isDeniedModel(model)) {
+    return { decision: "deny-denylist", message: deniedAdvice(String(model), pinnedModel) };
+  }
+  if (!pinnedModel) return { decision: "forward" };
+  if (model === undefined || model === null) return { decision: "forward" };
+  // Exact match, deliberately: anything else is a switch, and a near-miss that
+  // fails loudly costs one recoverable error while a near-miss that passes
+  // costs money quietly.
+  if (model === pinnedModel) return { decision: "forward" };
+  return { decision: "deny-pin", message: pinAdvice(describeModel(model), pinnedModel) };
+}
+
+/** Render a model field for the ledger and for advisory text, distinguishing
+ *  "the body named no model" from "the body named an empty one" — the second
+ *  is a refusal and the first is not. */
+function describeModel(model) {
+  if (model === undefined || model === null) return "none";
+  if (model === "") return "(empty)";
+  return String(model);
+}
+
+/** Anthropic-shaped refusal. The client renders the message verbatim as an API
+ *  error, which is what carries the advisory back to the caller. */
+function refuse(clientRes, message) {
+  const body = JSON.stringify({
+    type: "error",
+    error: { type: "permission_error", message },
+  });
+  clientRes.writeHead(403, {
+    "Content-Type": "application/json",
+    "Content-Length": Buffer.byteLength(body),
+  });
+  clientRes.end(body);
+}
+
 // ─── SSE stream processor ──────────────────────────────────────────
 
 /**
@@ -364,7 +482,7 @@ function createSSEFixer(res, log = defaultLog) {
 
 // ─── HTTP proxy ────────────────────────────────────────────────────
 
-function proxyRequest(clientReq, clientRes, log) {
+function proxyRequest(clientReq, clientRes, log, pinnedModel = null) {
   // The request target must not be able to choose the upstream host. In
   // absolute-form (RFC 9112 §3.2.2) `new URL(target, base)` ignores the base
   // entirely, so `GET http://elsewhere/x` would send this request — carrying
@@ -413,13 +531,12 @@ function proxyRequest(clientReq, clientRes, log) {
   const wantSSE = isStreamingRequest(clientReq.headers);
   const proto = targetUrl.protocol === "https:" ? https : http;
 
-  const proxyReq = proto.request({
-    hostname: targetUrl.hostname,
-    port: targetUrl.port || (targetUrl.protocol === "https:" ? 443 : 80),
-    path: targetUrl.pathname + targetUrl.search,
-    method: clientReq.method,
-    headers,
-  }, (proxyRes) => {
+  // Nothing is dialed until the body has been read and adjudicated. A refused
+  // request must not open an upstream connection at all: the whole point of
+  // the gate is that a disallowed model costs nothing.
+  let proxyReq = null;
+
+  function handleUpstreamResponse(proxyRes) {
     const sse = isSSEResponse(proxyRes.headers);
     const resHeaders = { ...proxyRes.headers };
 
@@ -477,12 +594,43 @@ function proxyRequest(clientReq, clientRes, log) {
       if (!clientRes.headersSent) clientRes.writeHead(502, { "Content-Type": "text/plain" });
       clientRes.end("Bad Gateway: upstream response error");
     });
-  });
+  }
+
+  /** Open the upstream connection and send the adjudicated body. */
+  function dialUpstream(body) {
+    proxyReq = proto.request({
+      hostname: targetUrl.hostname,
+      port: targetUrl.port || (targetUrl.protocol === "https:" ? 443 : 80),
+      path: targetUrl.pathname + targetUrl.search,
+      method: clientReq.method,
+      headers,
+    }, handleUpstreamResponse);
+
+    proxyReq.on("error", (err) => {
+      log(`upstream request error: ${err.message}`);
+      if (!clientRes.headersSent) clientRes.writeHead(502, { "Content-Type": "text/plain" });
+      clientRes.end(`Bad Gateway: ${err.message}`);
+    });
+
+    // Streaming responses need a far longer idle deadline than request/response
+    // traffic, but not an unlimited one: `wantSSE` comes from a client-supplied
+    // Accept header, so disabling the timeout outright would let any local
+    // sender park upstream connections and file descriptors indefinitely.
+    proxyReq.setTimeout(wantSSE ? SSE_IDLE_TIMEOUT_MS : 60000, () => {
+      log("upstream request timeout");
+      proxyReq.destroy();
+    });
+
+    proxyReq.setHeader("Content-Length", Buffer.byteLength(body));
+    proxyReq.write(body);
+    proxyReq.end();
+  }
 
   // Buffer the request body so mixed-content user messages can be split
-  // before forwarding (see splitMixedMessages). Buffering is why the size is
-  // capped: without a ceiling any local sender could exhaust memory and take
-  // the launcher down with the proxy.
+  // before forwarding (see splitMixedMessages), and so the model it names can
+  // be read before anything is dialed. Buffering is why the size is capped:
+  // without a ceiling any local sender could exhaust memory and take the
+  // launcher down with the proxy.
   const chunks = [];
   let bodyBytes = 0;
   let bodyTooLarge = false;
@@ -493,7 +641,6 @@ function proxyRequest(clientReq, clientRes, log) {
       bodyTooLarge = true;
       log(`refused: request body exceeds ${MAX_REQUEST_BODY_BYTES} bytes`);
       chunks.length = 0;
-      proxyReq.destroy();
       if (!clientRes.headersSent) {
         clientRes.writeHead(413, { "Content-Type": "text/plain" });
         clientRes.end("Payload Too Large");
@@ -506,37 +653,40 @@ function proxyRequest(clientReq, clientRes, log) {
     if (bodyTooLarge) return;
     const raw = Buffer.concat(chunks).toString();
     let body = raw;
+    // `undefined` here means the body named no model at all, which is not a
+    // model switch — a non-JSON body leaves it that way too.
+    let model;
     try {
       const obj = JSON.parse(raw);
+      model = obj.model;
       if (obj.messages || obj.tools) {
         if (obj.messages) splitMixedMessages(obj.messages);
         if (!isAnthropicModel(obj.model)) stripDeferredTools(obj);
         body = JSON.stringify(obj);
       }
     } catch { /* pass non-JSON bodies through unmodified */ }
-    proxyReq.setHeader("Content-Length", Buffer.byteLength(body));
-    proxyReq.write(body);
-    proxyReq.end();
+
+    if (isCompletionPath(targetUrl.pathname)) {
+      const verdict = screenModel(model, pinnedModel);
+      // One line, one write: this ledger is the record a later billing
+      // question gets read against, and an interleaved half-line is no record.
+      log(
+        `model-ledger ${clientReq.method} ${targetUrl.pathname} ` +
+        `model=${describeModel(model)} decision=${verdict.decision}`
+      );
+      if (verdict.decision !== "forward") {
+        clientReq.resume();
+        refuse(clientRes, verdict.message);
+        return;
+      }
+    }
+
+    dialUpstream(body);
   });
 
   clientReq.on("error", (err) => {
     log(`client request error: ${err.message}`);
-    proxyReq.destroy();
-  });
-
-  proxyReq.on("error", (err) => {
-    log(`upstream request error: ${err.message}`);
-    if (!clientRes.headersSent) clientRes.writeHead(502, { "Content-Type": "text/plain" });
-    clientRes.end(`Bad Gateway: ${err.message}`);
-  });
-
-  // Streaming responses need a far longer idle deadline than request/response
-  // traffic, but not an unlimited one: `wantSSE` comes from a client-supplied
-  // Accept header, so disabling the timeout outright would let any local
-  // sender park upstream connections and file descriptors indefinitely.
-  proxyReq.setTimeout(wantSSE ? SSE_IDLE_TIMEOUT_MS : 60000, () => {
-    log("upstream request timeout");
-    proxyReq.destroy();
+    if (proxyReq) proxyReq.destroy();
   });
 }
 
@@ -552,16 +702,19 @@ function proxyRequest(clientReq, clientRes, log) {
  *   random port and checking it first is a TOCTOU race.
  * @param {string} [opts.host] Interface to bind. Loopback only by default.
  * @param {(msg: string) => void} [opts.log] Log sink; defaults to stderr.
+ * @param {string|null} [opts.pinnedModel] The one model completion requests
+ *   may name. Left unset the pin is off and only the denylist applies, which
+ *   is the right shape for a proxy started outside a launched run.
  * @returns {Promise<{ port: number, close: () => Promise<void> }>}
  */
-function start({ port = 0, host = "127.0.0.1", log = defaultLog } = {}) {
+function start({ port = 0, host = "127.0.0.1", log = defaultLog, pinnedModel = null } = {}) {
   // The parse guard in proxyRequest covers the one throw we know about. This
   // covers the ones we don't: because the proxy shares a process with the
   // launcher, an unhandled throw here would kill the running claude child
   // too. A failed request must never be able to end the session.
   const server = http.createServer((req, res) => {
     try {
-      proxyRequest(req, res, log);
+      proxyRequest(req, res, log, pinnedModel);
     } catch (err) {
       log(`request handler error: ${err.message}`);
       if (!res.headersSent) res.writeHead(500, { "Content-Type": "text/plain" });
@@ -588,7 +741,14 @@ function start({ port = 0, host = "127.0.0.1", log = defaultLog } = {}) {
 
 module.exports = {
   start,
+  // The launcher refuses a denied model before it binds a listener, so it
+  // shares this proxy's list rather than keeping a second one in step.
+  isDeniedModel,
   // Exported for tests.
+  screenModel,
+  isCompletionPath,
+  modelSlug,
+  describeModel,
   createSSEFixer,
   splitMixedMessages,
   stripDeferredTools,

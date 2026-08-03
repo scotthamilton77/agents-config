@@ -96,23 +96,23 @@ test("main() rejects an incomplete invocation with EXIT_CONFIG_ERROR", async () 
 test("buildChildEnv throws mentioning OPENROUTER_API_KEY when absent", () => {
   const parentEnv = { HOME: "/home/u" };
   assert.throws(
-    () => buildChildEnv(parentEnv, "http://127.0.0.1:1"),
+    () => buildChildEnv(parentEnv, "http://127.0.0.1:1", "vendor/model"),
     /OPENROUTER_API_KEY/
   );
 });
 
 test("buildChildEnv sets ANTHROPIC_BASE_URL to the passed proxy URL", () => {
-  const env = buildChildEnv({ OPENROUTER_API_KEY: "sk-or-1" }, "http://127.0.0.1:9999");
+  const env = buildChildEnv({ OPENROUTER_API_KEY: "sk-or-1" }, "http://127.0.0.1:9999", "vendor/model");
   assert.equal(env.ANTHROPIC_BASE_URL, "http://127.0.0.1:9999");
 });
 
 test("buildChildEnv sets ANTHROPIC_AUTH_TOKEN to the OpenRouter key", () => {
-  const env = buildChildEnv({ OPENROUTER_API_KEY: "sk-or-1" }, "http://127.0.0.1:1");
+  const env = buildChildEnv({ OPENROUTER_API_KEY: "sk-or-1" }, "http://127.0.0.1:1", "vendor/model");
   assert.equal(env.ANTHROPIC_AUTH_TOKEN, "sk-or-1");
 });
 
 test("buildChildEnv sets ANTHROPIC_API_KEY to present-and-empty, not absent", () => {
-  const env = buildChildEnv({ OPENROUTER_API_KEY: "sk-or-1" }, "http://127.0.0.1:1");
+  const env = buildChildEnv({ OPENROUTER_API_KEY: "sk-or-1" }, "http://127.0.0.1:1", "vendor/model");
   assert.ok("ANTHROPIC_API_KEY" in env, "ANTHROPIC_API_KEY must be present");
   assert.equal(env.ANTHROPIC_API_KEY, "");
 });
@@ -122,14 +122,15 @@ test("buildChildEnv overrides an inherited real ANTHROPIC_API_KEY to empty", () 
     OPENROUTER_API_KEY: "sk-or-1",
     ANTHROPIC_API_KEY: "sk-ant-real-and-billable",
   };
-  const env = buildChildEnv(parentEnv, "http://127.0.0.1:1");
+  const env = buildChildEnv(parentEnv, "http://127.0.0.1:1", "vendor/model");
   assert.equal(env.ANTHROPIC_API_KEY, "");
 });
 
 test("buildChildEnv defaults CLAUDE_CONFIG_DIR to <HOME>/.claude_openrouter", () => {
   const env = buildChildEnv(
     { OPENROUTER_API_KEY: "sk-or-1", HOME: "/home/u" },
-    "http://127.0.0.1:1"
+    "http://127.0.0.1:1",
+    "vendor/model"
   );
   assert.equal(env.CLAUDE_CONFIG_DIR, path.join("/home/u", ".claude_openrouter"));
 });
@@ -141,7 +142,8 @@ test("buildChildEnv honors CLAUDE_CONFIG_DIR_OPENROUTER override", () => {
       HOME: "/home/u",
       CLAUDE_CONFIG_DIR_OPENROUTER: "/custom/dir",
     },
-    "http://127.0.0.1:1"
+    "http://127.0.0.1:1",
+    "vendor/model"
   );
   assert.equal(env.CLAUDE_CONFIG_DIR, "/custom/dir");
 });
@@ -149,7 +151,8 @@ test("buildChildEnv honors CLAUDE_CONFIG_DIR_OPENROUTER override", () => {
 test("buildChildEnv passes through unrelated parent env vars", () => {
   const env = buildChildEnv(
     { OPENROUTER_API_KEY: "sk-or-1", PATH: "/usr/bin:/bin" },
-    "http://127.0.0.1:1"
+    "http://127.0.0.1:1",
+    "vendor/model"
   );
   assert.equal(env.PATH, "/usr/bin:/bin");
 });
@@ -157,7 +160,7 @@ test("buildChildEnv passes through unrelated parent env vars", () => {
 test("buildChildEnv does not mutate the passed-in parentEnv object", () => {
   const parentEnv = { OPENROUTER_API_KEY: "sk-or-1", HOME: "/home/u" };
   const snapshot = { ...parentEnv };
-  buildChildEnv(parentEnv, "http://127.0.0.1:1");
+  buildChildEnv(parentEnv, "http://127.0.0.1:1", "vendor/model");
   assert.deepEqual(parentEnv, snapshot);
 });
 
@@ -272,4 +275,140 @@ test("no proxy listener survives after main()'s not-on-PATH failure path", (t) =
   // via spawnSync's bounded wait. Asserting anything further here would be
   // vacuous.
   t.skip("not observable from outside the child process; see the preceding PATH test");
+});
+
+// ─── resolveModel ──────────────────────────────────────────────────
+//
+// The run is pinned to one model, so the launcher has to know which one
+// before it starts anything. Everything here is about refusing to guess.
+
+const { resolveModel } = require("./run.js");
+
+test("resolveModel reads the model from the --flag value form", () => {
+  assert.deepEqual(resolveModel(VALID_ARGV), { model: "vendor/model" });
+});
+
+test("resolveModel reads the model from the --flag=value form", () => {
+  assert.deepEqual(resolveModel(["--model=vendor/other", "-p", "task"]), { model: "vendor/other" });
+});
+
+test("resolveModel refuses --model with no value rather than pinning the next flag", () => {
+  const result = resolveModel(["--model", "--effort", "low"]);
+  assert.match(result.error, /--model was given no value/);
+});
+
+test("resolveModel refuses an empty --model=", () => {
+  assert.match(resolveModel(["--model=", "-p", "task"]).error, /--model was given no value/);
+});
+
+test("resolveModel refuses a whitespace-only model name", () => {
+  assert.match(resolveModel(["--model", "   ", "-p", "task"]).error, /--model was given no value/);
+});
+
+test("resolveModel accepts the same model named twice", () => {
+  assert.deepEqual(
+    resolveModel(["--model", "vendor/model", "--model", "vendor/model"]),
+    { model: "vendor/model" },
+  );
+});
+
+// A prompt is task text from somewhere else, and argv is flat, so a prompt
+// that happens to start with `--model` is indistinguishable from a second
+// flag. Refusing is the safe read of that: pinning the wrong model is how the
+// spend leaks in the first place.
+test("resolveModel refuses two different models instead of choosing one", () => {
+  const result = resolveModel(["--model", "vendor/model", "-p", "--model", "anthropic/claude-opus-5"]);
+  assert.match(result.error, /more than one value/);
+  assert.match(result.error, /vendor\/model/);
+});
+
+// ─── buildChildEnv: the model pin ──────────────────────────────────
+
+test("buildChildEnv points every model alias at the model the run was launched with", () => {
+  const env = buildChildEnv({ OPENROUTER_API_KEY: "sk-or-1" }, "http://127.0.0.1:1", "moonshotai/kimi-k3");
+  assert.equal(env.ANTHROPIC_DEFAULT_OPUS_MODEL, "moonshotai/kimi-k3");
+  assert.equal(env.ANTHROPIC_DEFAULT_SONNET_MODEL, "moonshotai/kimi-k3");
+  assert.equal(env.ANTHROPIC_DEFAULT_HAIKU_MODEL, "moonshotai/kimi-k3");
+  assert.equal(env.ANTHROPIC_DEFAULT_FABLE_MODEL, "moonshotai/kimi-k3");
+});
+
+test("buildChildEnv overrides alias redirects inherited from the parent", () => {
+  const env = buildChildEnv(
+    {
+      OPENROUTER_API_KEY: "sk-or-1",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "anthropic/claude-sonnet-5",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "anthropic/claude-opus-5",
+    },
+    "http://127.0.0.1:1",
+    "moonshotai/kimi-k3",
+  );
+  assert.equal(env.ANTHROPIC_DEFAULT_SONNET_MODEL, "moonshotai/kimi-k3");
+  assert.equal(env.ANTHROPIC_DEFAULT_OPUS_MODEL, "moonshotai/kimi-k3");
+});
+
+test("buildChildEnv switches off the background traffic the cheap alias would bill", () => {
+  const env = buildChildEnv({ OPENROUTER_API_KEY: "sk-or-1" }, "http://127.0.0.1:1", "vendor/model");
+  assert.equal(env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, "1");
+});
+
+test("buildChildEnv refuses to build an environment with no model to pin", () => {
+  assert.throws(
+    () => buildChildEnv({ OPENROUTER_API_KEY: "sk-or-1" }, "http://127.0.0.1:1", ""),
+    /model this run is pinned to/,
+  );
+});
+
+// ─── main(): refusals that cost nothing ────────────────────────────
+//
+// A bad invocation must not bind a listener. `proxy.start` is stubbed to
+// throw rather than to record, so a regression that reaches it fails the test
+// loudly instead of leaking a live socket into the rest of the suite.
+
+/** Run `main(argv)` with the proxy rigged to explode if it is ever started. */
+async function mainWithoutProxy(argv) {
+  const realStart = proxy.start;
+  proxy.start = async () => {
+    throw new Error("proxy.start was reached: this invocation should have been refused first");
+  };
+  try {
+    return await main(argv);
+  } finally {
+    proxy.start = realStart;
+  }
+}
+
+test("main() refuses an empty --model before the proxy binds anything", async () => {
+  const code = await mainWithoutProxy([
+    "--model=", "--effort", "low", "--permission-mode", "dontAsk",
+    "--allowedTools", "Read", "-p", "task",
+  ]);
+  assert.equal(code, EXIT_CONFIG_ERROR);
+});
+
+test("main() refuses a denied model before the proxy binds anything", async () => {
+  const code = await mainWithoutProxy([
+    "--model", "anthropic/claude-opus-5", "--effort", "low", "--permission-mode", "dontAsk",
+    "--allowedTools", "Read", "-p", "task",
+  ]);
+  assert.equal(code, EXIT_CONFIG_ERROR);
+});
+
+test("main() refuses a denied model named without its vendor prefix too", async () => {
+  const code = await mainWithoutProxy([
+    "--model", "gpt-5.6-sol", "--effort", "low", "--permission-mode", "dontAsk",
+    "--allowedTools", "Read", "-p", "task",
+  ]);
+  assert.equal(code, EXIT_CONFIG_ERROR);
+});
+
+test("main() still accepts the -mini tiers the denylist exempts", async () => {
+  // Reaching proxy.start is the pass condition here — the stub throwing is
+  // proof the model cleared both refusals, and it costs no listener.
+  await assert.rejects(
+    mainWithoutProxy([
+      "--model", "openai/gpt-5.6-mini", "--effort", "low", "--permission-mode", "dontAsk",
+      "--allowedTools", "Read", "-p", "task",
+    ]),
+    /proxy\.start was reached/,
+  );
 });
