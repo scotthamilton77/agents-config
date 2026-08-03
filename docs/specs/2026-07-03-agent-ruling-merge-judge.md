@@ -266,7 +266,7 @@ pre-judge gates, then the backend, then collapses:
    piping the bespoke merge-worthiness prompt on stdin:
 
    ```bash
-   node "$CODEX_HOME/scripts/codex-companion.mjs" task \
+   node "$CODEX_PLUGIN_ROOT/scripts/codex-companion.mjs" task \
      --json -m "<judge-model>" --effort "<judge-effort>" < merge_judge_prompt.md
    ```
 
