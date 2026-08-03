@@ -66,12 +66,11 @@ switch, not a boolean, so there is no way to spell "off" except by unsetting it.
 
 Every completion request leaves one line on stderr naming the method, path,
 model, and decision (`forward`, `deny-pin`, or `deny-denylist`). When a bill
-looks wrong later, that ledger is the record to read — the alternative is
-digging through transcripts, which is how the leak this pin exists to close
-went unnoticed for a day.
+looks wrong later, that ledger is the record to read.
 
-Counting tokens is not a completion: it neither generates nor speaks, so it is
-forwarded ungated and unledgered.
+The gate applies to requests that generate a reply. A request that only
+measures a payload — counting its tokens — is forwarded without being checked
+or logged, since nothing is produced and nothing is billed.
 
 ## Why in-process, on a kernel-assigned port
 
