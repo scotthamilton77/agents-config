@@ -215,8 +215,11 @@ function isCompletionPath(pathname) {
  *  asked for the wrong model — the caller sees an API error and nothing else —
  *  so it has to say what to do instead, not just what went wrong. */
 function pinAdvice(requested, pinned) {
+  const asked = requested === "none"
+    ? "the request named no model at all"
+    : `the request asked for ${requested}`;
   return (
-    `This run is pinned to ${pinned}, and the request asked for ${requested}. ` +
+    `This run is pinned to ${pinned}, and ${asked}. ` +
     "Every model reached from inside this run bills the same account and answers in this " +
     "run's name, so switching models spends against a budget nobody approved and replaces " +
     "the point of view this run exists to provide. Either carry on in your own context, or " +
@@ -239,7 +242,7 @@ function deniedAdvice(requested, pinned) {
 
 /** Adjudicate one completion request.
  *  @param {*} model The `model` field as it appeared in the body; `undefined`
- *    when the body carried none, which is not a model switch and not refused.
+ *    when the body carried none, or when the body did not parse as JSON.
  *  @param {string|null} pinnedModel The model this run was launched with.
  *  @returns {{decision: "forward"|"deny-pin"|"deny-denylist", message?: string}} */
 function screenModel(model, pinnedModel) {
@@ -247,21 +250,27 @@ function screenModel(model, pinnedModel) {
     return { decision: "deny-denylist", message: deniedAdvice(String(model), pinnedModel) };
   }
   if (!pinnedModel) return { decision: "forward" };
-  if (model === undefined || model === null) return { decision: "forward" };
-  // Exact match, deliberately: anything else is a switch, and a near-miss that
-  // fails loudly costs one recoverable error while a near-miss that passes
-  // costs money quietly.
+  // Exact match or nothing. A near-miss that fails loudly costs one
+  // recoverable error; a near-miss that passes costs money quietly. A body
+  // naming no model at all is refused on the same rule and for the same
+  // reason: it has not switched models, but it has handed the choice of model
+  // to whatever is upstream, which is the same loss of control by a quieter
+  // route. No real client sends one — every completion observed under a live
+  // run named its model.
   if (model === pinnedModel) return { decision: "forward" };
   return { decision: "deny-pin", message: pinAdvice(describeModel(model), pinnedModel) };
 }
 
 /** Render a model field for the ledger and for advisory text, distinguishing
- *  "the body named no model" from "the body named an empty one" — the second
- *  is a refusal and the first is not. */
+ *  "the body named no model" from "the body named an empty one". */
 function describeModel(model) {
   if (model === undefined || model === null) return "none";
   if (model === "") return "(empty)";
-  return String(model);
+  // A model id is a routing token, not prose. Flattening whitespace stops a
+  // value carrying a newline from forging a second ledger line, and the length
+  // cap stops one from burying the real lines; the ledger is only evidence for
+  // as long as one request means exactly one line.
+  return String(model).replace(/\s+/g, " ").slice(0, 120);
 }
 
 /** Anthropic-shaped refusal. The client renders the message verbatim as an API
@@ -649,7 +658,20 @@ function proxyRequest(clientReq, clientRes, log, pinnedModel = null) {
     }
     chunks.push(chunk);
   });
+  // The guard in `start` wraps the synchronous call only, and this runs later
+  // on the event loop: an unhandled throw here reaches nothing and takes the
+  // process down, which strands the `claude` child sharing it.
   clientReq.on("end", () => {
+    try {
+      adjudicateAndForward();
+    } catch (err) {
+      log(`request adjudication error: ${err.message}`);
+      if (!clientRes.headersSent) clientRes.writeHead(500, { "Content-Type": "text/plain" });
+      clientRes.end("Internal proxy error");
+    }
+  });
+
+  function adjudicateAndForward() {
     if (bodyTooLarge) return;
     const raw = Buffer.concat(chunks).toString();
     let body = raw;
@@ -682,7 +704,7 @@ function proxyRequest(clientReq, clientRes, log, pinnedModel = null) {
     }
 
     dialUpstream(body);
-  });
+  }
 
   clientReq.on("error", (err) => {
     log(`client request error: ${err.message}`);

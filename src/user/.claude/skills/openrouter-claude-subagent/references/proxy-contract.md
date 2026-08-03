@@ -44,11 +44,14 @@ The launcher pins the run to the one model you named, three ways:
   `..._SONNET_MODEL`, `..._HAIKU_MODEL`, `..._FABLE_MODEL` — are set to
   `--model`. Delegation still works; it just cannot leave the model you paid
   for. This is the part that keeps subagents useful rather than banning them.
-- **Pin.** The proxy refuses any completion request naming a different model
-  with an HTTP 403 carrying an Anthropic-shaped error body, and dials nothing
-  upstream. The message says what to do instead — carry on unaided, or delegate
-  with the model field left out — because an API error is the only channel back
-  to whatever asked.
+- **Pin.** On a completion request the rule is exact match or nothing: any
+  other model gets an HTTP 403 carrying an Anthropic-shaped error body, and
+  nothing is dialed upstream. A request naming *no* model is refused on the
+  same rule — it has not switched models, but it has handed the choice to
+  whatever is upstream, which loses the same control by a quieter route. The
+  message says what to do instead — carry on unaided, or delegate with the
+  model field left out — because an API error is the only channel back to
+  whatever asked.
 - **Denylist.** Claude models and the large GPT tiers are refused outright,
   pin or no pin: they are served properly elsewhere, so arriving here means
   something misrouted. The `-mini` GPT variants are exempt. The launcher exits

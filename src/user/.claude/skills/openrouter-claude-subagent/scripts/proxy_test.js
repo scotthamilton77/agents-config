@@ -902,9 +902,26 @@ test("screenModel fails closed on a present-but-empty model", () => {
   assert.equal(screenModel("", "moonshotai/kimi-k3").decision, "deny-pin");
 });
 
-test("screenModel lets a body that names no model through", () => {
-  assert.equal(screenModel(undefined, "moonshotai/kimi-k3").decision, "forward");
-  assert.equal(screenModel(null, "moonshotai/kimi-k3").decision, "forward");
+// Naming no model is not a switch, but it hands the choice of model to
+// whatever is upstream — the same loss of control, arriving quietly. Under a
+// pin the rule is exact match or nothing.
+test("screenModel refuses a body that names no model rather than letting upstream choose", () => {
+  assert.equal(screenModel(undefined, "moonshotai/kimi-k3").decision, "deny-pin");
+  assert.equal(screenModel(null, "moonshotai/kimi-k3").decision, "deny-pin");
+});
+
+test("the refusal for a model-less body says so, rather than reporting a model called none", () => {
+  assert.match(screenModel(undefined, "moonshotai/kimi-k3").message, /named no model at all/);
+});
+
+test("with no pin configured a model-less body is still forwarded", () => {
+  assert.equal(screenModel(undefined, null).decision, "forward");
+});
+
+test("a model id cannot forge a second ledger line with a newline", () => {
+  const forged = describeModel("a\nmodel-ledger POST /x model=y decision=forward");
+  assert.doesNotMatch(forged, /\n/, "one request must stay one line");
+  assert.ok(describeModel("x".repeat(500)).length <= 120, "nor may it bury the real lines");
 });
 
 test("the denylist refuses a model even when it is the pinned one", () => {
@@ -1061,16 +1078,30 @@ test("a completion naming an empty model is refused rather than forwarded", asyn
   }
 });
 
-test("a completion naming no model at all is forwarded, and the ledger says so", async () => {
+test("a completion naming no model at all is refused, and the ledger records it", async () => {
   const logs = [];
   const proxy = await start({ port: 0, pinnedModel: PINNED, log: (m) => logs.push(m) });
-  const sent = rawSend(proxy.port, "POST", "/v1/messages", JSON.stringify({ messages: [] }));
-  sent.response.catch(() => {});
   try {
-    const line = await waitForLog(logs, /^model-ledger/);
-    assert.match(line, /model=none decision=forward$/);
+    const { response } = rawSend(proxy.port, "POST", "/v1/messages", JSON.stringify({ messages: [] }));
+    const raw = await response;
+    assert.match(raw, /^HTTP\/1\.1 403\b/);
+    assert.match(await waitForLog(logs, /^model-ledger/), /model=none decision=deny-pin$/);
+    assert.deepEqual(
+      logs.filter((line) => line.startsWith("upstream")), [],
+      "handing the model choice upstream is exactly what must not be dialed",
+    );
   } finally {
-    sent.abort();
+    await proxy.close();
+  }
+});
+
+test("a completion body that is not JSON at all is refused under a pin", async () => {
+  const logs = [];
+  const proxy = await start({ port: 0, pinnedModel: PINNED, log: (m) => logs.push(m) });
+  try {
+    const { response } = rawSend(proxy.port, "POST", "/v1/messages", "not json");
+    assert.match(await response, /^HTTP\/1\.1 403\b/);
+  } finally {
     await proxy.close();
   }
 });
