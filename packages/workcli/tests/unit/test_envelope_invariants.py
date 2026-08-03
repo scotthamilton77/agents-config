@@ -330,6 +330,44 @@ VERB_CASES: list[VerbCase] = [
         ["reconcile"],
         [ScriptedStep(("list",), _GARBAGE)],  # unparseable bd list output -> E_BACKEND_DRIFT
     ),
+    VerbCase(
+        "discover",
+        [
+            "discover",
+            "--noun",
+            "feat",
+            "--title",
+            "New discovery",
+            "--anchor",
+            "epic-1",
+            "--anchor-why",
+            "best fit",
+            "--discovered-from",
+            "src-1",
+            "--scope",
+            "out-of-scope",
+            "--scope-why",
+            "found it",
+            "--priority",
+            "P2",
+            "--priority-why",
+            "hurts overnight",
+        ],
+        [
+            ScriptedStep(("show", "src-1", "--json"), _show_result(_item_raw("src-1", "T"))),
+            ScriptedStep(
+                ("show", "epic-1", "--json"),
+                _show_result(_item_raw("epic-1", "T", labels=["shape-epic"])),
+            ),
+            ScriptedStep(("search",), _search_result()),
+            ScriptedStep(("create",), _lifecycle_create_result("new-1")),
+            ScriptedStep(("dep", "add"), _OK),
+            ScriptedStep(("show", "new-1", "--json"), _show_result(_item_raw("new-1", "T"))),
+        ],
+        ["discover", "--noun", "feat", "--title", "T"],  # missing triage fields -> no bd call
+        [],
+        config_loader=_not_found_config_loader,
+    ),
 ]
 
 TYPED_ERROR_CODES = {str(code) for code in ErrorCode}
