@@ -128,7 +128,7 @@
       "properties": {
         "failures": {
           "type": "array",
-          "minItems": 1,
+          "minItems": 2,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -139,7 +139,7 @@
               "error": {"type": "string", "pattern": "\\S"}
             }
           },
-          "description": "Every transport that failed, in the order the round hit them, each with the verbatim error it returned. A policy that halts on a particular provider error reads this."
+          "description": "Every transport failure the round hit and did not recover from, in order, each with the verbatim error it returned. At least two, because the halting condition is a lens whose declared route died and whose failover died as well; more when parallel dispatches exhausted their routes together. A failure a successful failover recovered from belongs on that lens's substitution, not here. A policy that halts on a particular provider error reads this."
         },
         "abandoned_lenses": {
           "type": "array",

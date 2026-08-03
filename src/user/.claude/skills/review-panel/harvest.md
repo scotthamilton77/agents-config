@@ -47,8 +47,10 @@ If the failover also dies on a transport error — any error, any code, either v
 over. Abandon every dispatch not yet made. Do not retry, do not drop to a lesser model, and do not
 quietly finish the round with the lenses that happened to work.
 
-Write the verdict with `verdict: "halted"`, a `halt` block naming both dead routes and their
-verbatim errors, and every undispatched lens in `abandoned_lenses`.
+Write the verdict with `verdict: "halted"`, a `halt` block carrying every transport failure the
+round did not recover from — at minimum the declared route and the failover behind it, more when
+parallel dispatches ran out together — and every undispatched lens in `abandoned_lenses`. A failure
+some lens did recover from by failing over belongs on that lens's `substitution`, not here.
 
 Stopping forfeits the budget already spent. Continuing forfeits that too, and buys a document that
 reads like a review of a change most of the panel never opened.

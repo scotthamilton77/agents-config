@@ -111,8 +111,8 @@ every lens; a halted round is neither.
 A dispatch that returns no report is two different problems. A dead route — provider, auth, credit,
 connection — fails the lens over to the transport it was not declared on, and its single entry
 carries the substitution with that route's verbatim error; a failover that dies too halts the run,
-abandoning every remaining dispatch for a `halted` verdict naming both dead routes and everything
-they cost the round. A live route returning unusable output may instead be re-dispatched, and
+abandoning every remaining dispatch for a `halted` verdict naming the routes that ran out and
+everything they cost the round. A live route returning unusable output may instead be re-dispatched, and
 without a report the lens has no entry and the round is incomplete — fail closed. Every failover is
 reported to the operator, not merely recorded in the verdict. `harvest.md` holds the rest: how to
 tell those two failures apart, how tolerantly to read a report, what to do with a mechanical

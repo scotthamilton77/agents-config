@@ -87,9 +87,14 @@ def halt_failure(**overrides: Any) -> dict[str, Any]:
     return entry
 
 
+def halt_failures() -> list[dict[str, Any]]:
+    """The floor for a halt: one lens's declared route died, then its failover died too."""
+    return [halt_failure(), halt_failure(transport="codex", error="503 Service Unavailable")]
+
+
 def halt_object(**overrides: Any) -> dict[str, Any]:
     entry = {
-        "failures": [halt_failure()],
+        "failures": halt_failures(),
         "abandoned_lenses": [],
     }
     entry.update(overrides)
@@ -299,22 +304,53 @@ class TestHaltedVerdict:
         doc["halt"] = halt_object(failures=[])
         assert not is_valid(doc)
 
+    def test_halt_failures_single_well_formed_entry_is_invalid(self):
+        """A halt can never be caused by one dead transport — the declared route and the
+        failover it fell over to both have to die. A lone, otherwise-valid entry is still not a
+        halt."""
+        doc = halted_verdict()
+        doc["halt"] = halt_object(failures=[halt_failure()])
+        assert not is_valid(doc)
+
+    def test_halt_failures_two_entries_validates(self):
+        """The floor: declared route died, failover died too. Exactly two entries validates."""
+        doc = halted_verdict()
+        assert len(doc["halt"]["failures"]) == 2
+        assert is_valid(doc)
+
+    def test_halt_failures_more_than_two_entries_validates(self):
+        """Parallel dispatches can exhaust their routes together, producing more than two."""
+        doc = halted_verdict()
+        doc["halt"] = halt_object(failures=[
+            halt_failure(lens="correctness", transport="openrouter"),
+            halt_failure(lens="correctness", transport="codex"),
+            halt_failure(lens="security", transport="openrouter"),
+        ])
+        assert is_valid(doc)
+
     @pytest.mark.parametrize("field", ["lens", "transport", "error"])
     def test_halt_failure_missing_field_is_invalid(self, field):
-        """Every failure entry names what failed, on what transport, and why."""
-        failure = halt_failure()
-        del failure[field]
+        """Every failure entry names what failed, on what transport, and why — checked against
+        an otherwise well-formed two-entry array so the two-failure floor isn't what fails it."""
+        bad = halt_failure()
+        del bad[field]
         doc = halted_verdict()
-        doc["halt"] = halt_object(failures=[failure])
+        doc["halt"] = halt_object(failures=[bad, halt_failure(transport="codex")])
         assert not is_valid(doc)
+        doc["halt"] = halt_object(failures=[halt_failure(), halt_failure(transport="codex")])
+        assert is_valid(doc)
 
     @pytest.mark.parametrize("field", ["lens", "transport", "error"])
     @pytest.mark.parametrize("blank", ["", "   \t\n"])
     def test_halt_failure_blank_field_is_invalid(self, field, blank):
-        """Whitespace is not a declaration on a failure entry either."""
+        """Whitespace is not a declaration on a failure entry either — same isolation as above."""
         doc = halted_verdict()
-        doc["halt"] = halt_object(failures=[halt_failure(**{field: blank})])
+        doc["halt"] = halt_object(
+            failures=[halt_failure(**{field: blank}), halt_failure(transport="codex")]
+        )
         assert not is_valid(doc)
+        doc["halt"] = halt_object(failures=[halt_failure(), halt_failure(transport="codex")])
+        assert is_valid(doc)
 
     def test_halt_carries_unknown_key_is_rejected(self):
         """halt is closed to unknown fields, same as every other envelope object."""
@@ -323,10 +359,15 @@ class TestHaltedVerdict:
         assert not is_valid(doc)
 
     def test_halt_failure_carries_unknown_key_is_rejected(self):
-        """A failure entry is closed to unknown fields too."""
+        """A failure entry is closed to unknown fields too — checked against an otherwise
+        well-formed two-entry array."""
         doc = halted_verdict()
-        doc["halt"] = halt_object(failures=[halt_failure(note="extra")])
+        doc["halt"] = halt_object(
+            failures=[halt_failure(note="extra"), halt_failure(transport="codex")]
+        )
         assert not is_valid(doc)
+        doc["halt"] = halt_object(failures=[halt_failure(), halt_failure(transport="codex")])
+        assert is_valid(doc)
 
     def test_halted_verdict_may_carry_findings_lenses_reported_before_it_stopped(self):
         """A halted round keeps whatever findings its lenses reported before the stop."""
