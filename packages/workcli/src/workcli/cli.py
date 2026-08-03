@@ -175,8 +175,15 @@ def _add_discover_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParse
     discover_parser.add_argument(
         "--noun",
         required=True,
-        choices=[noun.value for noun in LEAF_NOUNS],
-        help="spike|chore|decision|feat|bugfix -- leaf nouns only, a discovery is not a container",
+        metavar="NOUN",
+        # No `choices=` here: an invalid --noun is validated inside the
+        # discover() handler instead of by argparse, alongside --priority, so
+        # a caller who gets both wrong learns both from one invocation
+        # rather than argparse raising on whichever it parses first.
+        help=(
+            f"{'|'.join(noun.value for noun in LEAF_NOUNS)} -- leaf nouns only "
+            "('bug' accepted as an alias for bugfix); a discovery is not a container"
+        ),
     )
     discover_parser.add_argument("--title", required=True)
     discover_parser.add_argument("--description")
