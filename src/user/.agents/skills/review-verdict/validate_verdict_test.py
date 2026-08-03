@@ -77,6 +77,34 @@ def mechanical_finding() -> dict[str, Any]:
     }
 
 
+def halt_failure(**overrides: Any) -> dict[str, Any]:
+    entry = {
+        "lens": "correctness",
+        "transport": "openrouter",
+        "error": "402 Insufficient credits",
+    }
+    entry.update(overrides)
+    return entry
+
+
+def halt_object(**overrides: Any) -> dict[str, Any]:
+    entry = {
+        "failures": [halt_failure()],
+        "abandoned_lenses": [],
+    }
+    entry.update(overrides)
+    return entry
+
+
+def halted_verdict() -> dict[str, Any]:
+    doc = valid_verdict()
+    doc["verdict"] = "halted"
+    doc["lenses"] = []
+    doc["findings"] = []
+    doc["halt"] = halt_object()
+    return doc
+
+
 def is_valid(document: Any) -> bool:
     return validator.validate_document(document)["valid"] is True
 
@@ -224,6 +252,109 @@ class TestInternalConsistency:
         assert all(f["type"] == "advisory" for f in doc["findings"])
 
 
+class TestHaltedVerdict:
+    """A round that loses every transport for a lens stops rather than reading as clean."""
+
+    def test_halted_with_empty_lenses_validates(self):
+        """A well-formed halt validates even when the round died on its first dispatch."""
+        assert is_valid(halted_verdict())
+
+    def test_halted_with_reported_lenses_validates(self):
+        """A halt after some lenses already reported is equally valid."""
+        doc = halted_verdict()
+        doc["lenses"] = [lens_entry()]
+        assert is_valid(doc)
+
+    def test_halted_without_halt_object_is_invalid(self):
+        """verdict "halted" without the halt object it requires is invalid."""
+        doc = halted_verdict()
+        del doc["halt"]
+        assert not is_valid(doc)
+
+    def test_halt_on_clean_verdict_is_invalid(self):
+        """halt is rejected outside a halted verdict — here, clean."""
+        doc = valid_verdict()
+        doc["halt"] = halt_object()
+        assert not is_valid(doc)
+
+    def test_halt_on_findings_verdict_is_invalid(self):
+        """halt is rejected outside a halted verdict — here, findings."""
+        doc = valid_verdict()
+        doc["verdict"] = "findings"
+        doc["findings"] = [mechanical_finding()]
+        doc["halt"] = halt_object()
+        assert not is_valid(doc)
+
+    def test_findings_verdict_with_empty_lenses_is_invalid(self):
+        """The halted relaxation on lens coverage must not leak into "findings"."""
+        doc = valid_verdict()
+        doc["verdict"] = "findings"
+        doc["findings"] = [mechanical_finding()]
+        doc["lenses"] = []
+        assert not is_valid(doc)
+
+    def test_halt_failures_empty_is_invalid(self):
+        """A halt with no recorded failure is not a halt."""
+        doc = halted_verdict()
+        doc["halt"] = halt_object(failures=[])
+        assert not is_valid(doc)
+
+    @pytest.mark.parametrize("field", ["lens", "transport", "error"])
+    def test_halt_failure_missing_field_is_invalid(self, field):
+        """Every failure entry names what failed, on what transport, and why."""
+        failure = halt_failure()
+        del failure[field]
+        doc = halted_verdict()
+        doc["halt"] = halt_object(failures=[failure])
+        assert not is_valid(doc)
+
+    @pytest.mark.parametrize("field", ["lens", "transport", "error"])
+    @pytest.mark.parametrize("blank", ["", "   \t\n"])
+    def test_halt_failure_blank_field_is_invalid(self, field, blank):
+        """Whitespace is not a declaration on a failure entry either."""
+        doc = halted_verdict()
+        doc["halt"] = halt_object(failures=[halt_failure(**{field: blank})])
+        assert not is_valid(doc)
+
+    def test_halt_carries_unknown_key_is_rejected(self):
+        """halt is closed to unknown fields, same as every other envelope object."""
+        doc = halted_verdict()
+        doc["halt"] = halt_object(note="extra")
+        assert not is_valid(doc)
+
+    def test_halt_failure_carries_unknown_key_is_rejected(self):
+        """A failure entry is closed to unknown fields too."""
+        doc = halted_verdict()
+        doc["halt"] = halt_object(failures=[halt_failure(note="extra")])
+        assert not is_valid(doc)
+
+    def test_halted_verdict_may_carry_findings_lenses_reported_before_it_stopped(self):
+        """A halted round keeps whatever findings its lenses reported before the stop."""
+        doc = halted_verdict()
+        doc["findings"] = [mechanical_finding()]
+        assert is_valid(doc)
+
+    def test_halted_verdict_may_carry_no_findings(self):
+        """Equally, a halted round with nothing gathered yet is valid."""
+        doc = halted_verdict()
+        doc["findings"] = []
+        assert is_valid(doc)
+
+    def test_duplicate_lens_rejected_on_halted_verdict(self):
+        """The duplicate-lens check runs regardless of which verdict value it's checking."""
+        doc = halted_verdict()
+        doc["lenses"] = [lens_entry("correctness"), lens_entry("correctness", transport="codex")]
+        assert not is_valid(doc)
+        assert "duplicate-lens" in codes(doc)
+
+    def test_duplicate_finding_id_rejected_on_halted_verdict(self):
+        """Likewise duplicate-finding-id — the check is not verdict-specific."""
+        doc = halted_verdict()
+        doc["findings"] = [mechanical_finding(), mechanical_finding()]
+        assert not is_valid(doc)
+        assert "duplicate-finding-id" in codes(doc)
+
+
 class TestNoPlanningJargon:
     """S6-A5: the shipped artifacts read standalone."""
 
@@ -345,6 +476,31 @@ class TestWhatActuallyRanTheLens:
         doc = valid_verdict()
         doc["lenses"] = [lens_entry(substitution={"reason": "  "})]
         assert not is_valid(doc)
+
+    def test_substitution_transport_error_validates(self):
+        """The verbatim error the declared route returned is recorded on the substitution."""
+        doc = valid_verdict()
+        doc["lenses"] = [lens_entry(substitution={
+            "declared_transport": "codex",
+            "reason": "codex credential expired; 401 from the provider",
+            "transport_error": "401 Missing bearer authentication",
+        })]
+        assert is_valid(doc)
+
+    @pytest.mark.parametrize("value", ["", "   "])
+    def test_blank_substitution_transport_error_is_rejected(self, value):
+        """Whitespace is not a verbatim error either."""
+        doc = valid_verdict()
+        doc["lenses"] = [lens_entry(
+            substitution={"reason": "codex credential expired", "transport_error": value}
+        )]
+        assert not is_valid(doc)
+
+    def test_substitution_without_transport_error_still_validates(self):
+        """transport_error is optional — a swap forced by nothing in particular has none to record."""
+        doc = valid_verdict()
+        doc["lenses"] = [lens_entry(substitution={"reason": "operator chose a faster route"})]
+        assert is_valid(doc)
 
     def test_one_vendor_across_the_panel_still_validates(self):
         """Collapse is an observation the reader derives, never a schema error that stalls a round."""

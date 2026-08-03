@@ -53,7 +53,7 @@
     },
     "lenses": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 0,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -83,7 +83,12 @@
             "properties": {
               "declared_transport": {"type": "string", "pattern": "\\S"},
               "declared_model": {"type": "string", "pattern": "\\S"},
-              "reason": {"type": "string", "pattern": "\\S"}
+              "reason": {"type": "string", "pattern": "\\S"},
+              "transport_error": {
+                "type": "string",
+                "pattern": "\\S",
+                "description": "The verbatim error the declared route returned, when the swap was forced by that route failing rather than chosen. Verbatim because a paraphrase cannot be matched against."
+              }
             },
             "description": "Present only when this lens ran on something other than what its registry entry declared; names what was declared and why the substitute was used."
           }
@@ -115,7 +120,35 @@
       },
       "description": "One entry per mechanical finding from every prior round's posted verdict."
     },
-    "verdict": {"enum": ["clean", "findings"]},
+    "verdict": {"enum": ["clean", "findings", "halted"]},
+    "halt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["failures", "abandoned_lenses"],
+      "properties": {
+        "failures": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["lens", "transport", "error"],
+            "properties": {
+              "lens": {"type": "string", "pattern": "\\S"},
+              "transport": {"type": "string", "pattern": "\\S"},
+              "error": {"type": "string", "pattern": "\\S"}
+            }
+          },
+          "description": "Every transport that failed, in the order the round hit them, each with the verbatim error it returned. A policy that halts on a particular provider error reads this."
+        },
+        "abandoned_lenses": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "\\S"},
+          "description": "Lenses the class declares that were never dispatched because the round stopped. Empty only when the round stopped on its last lens."
+        }
+      },
+      "description": "Present exactly when the verdict is halted: why the round stopped and what it never looked at."
+    },
     "findings": {
       "type": "array",
       "items": {
@@ -158,6 +191,15 @@
     {
       "if": {"properties": {"verdict": {"const": "clean"}}, "required": ["verdict"]},
       "then": {"properties": {"findings": {"maxItems": 0}}}
+    },
+    {
+      "if": {"properties": {"verdict": {"const": "halted"}}, "required": ["verdict"]},
+      "then": {"required": ["halt"]},
+      "else": {"not": {"required": ["halt"]}}
+    },
+    {
+      "if": {"properties": {"verdict": {"enum": ["clean", "findings"]}}, "required": ["verdict"]},
+      "then": {"properties": {"lenses": {"minItems": 1}}}
     }
   ]
 }

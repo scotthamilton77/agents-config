@@ -31,8 +31,8 @@ lens, and the named skill supplies the depth.
 
 Each panel mixes model tiers — hard-reasoning lenses on frontier models, mechanical walks on
 mid-tier — and spans two vendors, because blind spots correlate inside a vendor. A lens's declared
-`transport` is that diversity claim, not a routing guarantee: when it is down the lens runs on
-whatever is up, and the verdict records what actually ran it (`harvest.md`).
+`transport` is that diversity claim, not a routing guarantee: when it is down the lens fails over to
+the other transport, and the verdict records what actually ran it (`harvest.md`).
 
 Most lenses re-read the whole artifact every round. A lens marked `diff` reviews only the change
 since the head it last judged, and only when it returned green that round; anything judging
@@ -105,11 +105,15 @@ gets one entry per lens the class declares, green ones included, so coverage is 
 artifact and never inferred from an empty findings list. Each entry records the vendor, transport
 and model that *actually* produced the report, never the route `contracts.json` declared for it.
 `findings` is the union across lenses; `prior_dispositions` is the ledger from `round.json`.
-Terminal-clean means a complete round with zero mechanical findings across every lens.
+Terminal-clean means a complete round that came out `clean`, with zero mechanical findings across
+every lens; a halted round is neither.
 
-A lens whose reviewer errored, timed out, or returned output no tolerant read can parse may be
-re-dispatched inside the same round, on a substitute route when its own is down; its single entry
-then carries the substitution and the reason. Still without a report, it has no entry and the
-round is incomplete — fail closed. `harvest.md` holds the rest: how tolerantly to read a report,
-what to do with a mechanical finding carrying no evidence, and the vendor-collapse count to make
-before the verdict is written.
+A dispatch that returns no report is two different problems. A dead route — provider, auth, credit,
+connection — fails the lens over to the transport it was not declared on, and its single entry
+carries the substitution with that route's verbatim error; a failover that dies too halts the run,
+abandoning every remaining dispatch for a `halted` verdict naming both dead routes and everything
+they cost the round. A live route returning unusable output may instead be re-dispatched, and
+without a report the lens has no entry and the round is incomplete — fail closed. Every failover is
+reported to the operator, not merely recorded in the verdict. `harvest.md` holds the rest: how to
+tell those two failures apart, how tolerantly to read a report, what to do with a mechanical
+finding carrying no evidence, and the vendor-collapse count to make before the verdict is written.

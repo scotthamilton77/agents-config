@@ -14,21 +14,66 @@ exceptional one, and neither transport is the more reliable one — both have be
 other worked.
 
 What you may not do is run the lens and say nothing. Whenever a lens runs on something other than
-its declared entry, its verdict entry carries `substitution` with the declared transport or model
-and the reason. A round that lost diversity silently is indistinguishable from one that kept it.
+its declared entry, its verdict entry carries `substitution` with the declared transport or model,
+the reason, and — when the swap was forced rather than chosen — the dead route's error verbatim in
+`transport_error`. A round that lost diversity silently is indistinguishable from one that kept it.
 
-## Re-dispatching a lens that could not run
+## A dispatch that came back with no report
 
-A lens that errors, times out, or returns output no tolerant read can parse **may be re-dispatched
-inside the same round** — on the same route, or on a substitute model or transport. The round is
-not restarted and the other lenses are not re-run.
+Two failures look alike from outside and are handled oppositely, so tell them apart first.
 
-The lens ends with exactly one entry, describing the attempt that produced the report it carries,
-with `substitution` filled in if that attempt was not the declared route. Two entries for one lens
-is a validation error, not a fuller record: it double-counts coverage.
+**The route died.** What came back describes the *transport*, not the review: an HTTP status, an
+authentication or credit error, a refused connection, a dead broker or session — or nothing at all.
+The reviewer never ran. Judge this on the body rather than the exit status: a dead route shows up
+as an exit 1 carrying a short provider error, and equally as an exit 0 carrying nothing.
 
-If re-dispatch also fails, the lens has **no** entry and the round is incomplete. That is the
-contract working. Fail closed — never write a `clean` entry for a lens that never reported.
+**The reviewer failed.** A body came back that is the model's own output, and it does not survive
+the tolerance ladder below — or the reviewer stalled mid-reasoning. The route worked; what came
+over it is unusable.
+
+### The route died: fail over, once
+
+Fail the lens over to the transport it was **not** declared on — Codex for a lens declared on
+OpenRouter, OpenRouter for a lens declared on Codex — on the same prompt, unchanged. This is not a
+judgement call, and not a retry on the same route: that route has just told you it is down.
+
+The lens ends with exactly one entry, for the attempt that produced the report, carrying the
+`substitution` record above. Two entries for one lens is a validation error, not a fuller record:
+it double-counts coverage.
+
+### Both routes died: stop the run
+
+If the failover also dies on a transport error — any error, any code, either vendor — the round is
+over. Abandon every dispatch not yet made. Do not retry, do not drop to a lesser model, and do not
+quietly finish the round with the lenses that happened to work.
+
+Write the verdict with `verdict: "halted"`, a `halt` block naming both dead routes and their
+verbatim errors, and every undispatched lens in `abandoned_lenses`.
+
+Stopping forfeits the budget already spent. Continuing forfeits that too, and buys a document that
+reads like a review of a change most of the panel never opened.
+
+### The reviewer failed: re-dispatch, then fail closed
+
+A lens whose reviewer returned unusable output **may be re-dispatched** inside the same round, on
+the same route or another. The round is not restarted and the other lenses are not re-run. If the
+re-dispatch fails too, the lens has **no** entry and the round is incomplete. That is the contract
+working. Fail closed — never write a `clean` entry for a lens that never reported.
+
+## Say a failover out loud
+
+A substitution written into the verdict has been recorded, not reported. The verdict goes to a
+check run; the operator reads your summary. So every failover appears in what you tell them, and it
+appears even when the round comes out clean — a clean round that quietly lost a transport is the
+case most likely to go unmentioned.
+
+Per failover, name four things: the lens, the route that died, the route it ran on instead, and the
+error **verbatim**. Verbatim matters more than it looks. "OpenRouter was unavailable" and "402
+Insufficient credits" ask different things of whoever is reading, and only one of them can be acted
+on.
+
+A halted run leads with this, ahead of any finding. What the operator needs first is which
+transports died and what they said.
 
 ## Reading a lens report
 
