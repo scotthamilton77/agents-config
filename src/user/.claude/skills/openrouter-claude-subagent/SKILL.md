@@ -42,10 +42,11 @@ is a hard requirement; if it is missing, stop and say so rather than falling
 back to a direct invocation.
 
 **The run is pinned to `--model`.** The subagent may delegate further, and
-every run it starts answers on that same model — the aliases are redirected,
-so a nested dispatch that names `sonnet`, or an agent type that carries its own
-model, still lands there. A request for anything else is refused with an error
-explaining the alternative. Two families are refused outright, pin or no pin:
+every run it starts answers on that same model — the aliases are redirected, so
+a dispatch that names `sonnet`, or an agent type whose own model is one of those
+aliases, still lands there. Anything outside that vocabulary is refused with an
+error explaining the alternative, including an agent type pinned to a specific
+vendor model id and a request that names no model at all. Two families are refused outright, pin or no pin:
 Claude models, which belong in the harness you are already running, and the
 large GPT tiers (`gpt-5.5*`, `gpt-5.6*`, `-mini` variants excepted), which have
 their own transport. Naming one exits `78` before anything starts, and there is
