@@ -312,12 +312,11 @@ test("resolveModel accepts the same model named twice", () => {
   );
 });
 
-// A prompt is task text from somewhere else, and argv is flat, so a prompt
-// that happens to start with `--model` is indistinguishable from a second
-// flag. Refusing is the safe read of that: pinning the wrong model is how the
-// spend leaks in the first place.
+// Which of two `--model` flags the nested client would honour is its business,
+// not this launcher's, and a wrong guess pins the wrong model — which is how
+// the spend leaks in the first place.
 test("resolveModel refuses two different models instead of choosing one", () => {
-  const result = resolveModel(["--model", "vendor/model", "-p", "--model", "anthropic/claude-opus-5"]);
+  const result = resolveModel(["--model", "vendor/model", "--model=anthropic/claude-opus-5"]);
   assert.match(result.error, /more than one value/);
   assert.match(result.error, /vendor\/model/);
 });
@@ -411,4 +410,42 @@ test("main() still accepts the -mini tiers the denylist exempts", async () => {
     ]),
     /proxy\.start was reached/,
   );
+});
+
+// ─── The prompt is not a source of flags ───────────────────────────
+//
+// Prompt text routinely comes from the material being worked on, so a prompt
+// that opens with a flag name must not be able to answer for that flag. The
+// required-flag check is the launcher's guard against arguments that fail
+// silently; satisfying it with borrowed text would disarm it.
+
+test("a prompt that is exactly a flag name does not answer for that flag", () => {
+  const message = validateArgv([
+    "--model", "vendor/model",
+    "--permission-mode", "dontAsk",
+    "--allowedTools", "Read",
+    "-p", "--effort",
+  ]);
+  assert.match(message, /missing required flag\(s\): --effort\./);
+});
+
+test("nor does a prompt in the --flag=value shape, under either prompt spelling", () => {
+  const message = validateArgv([
+    "--model", "vendor/model",
+    "--permission-mode", "dontAsk",
+    "--allowedTools", "Read",
+    "--print", "--effort=high",
+  ]);
+  assert.match(message, /missing required flag\(s\): --effort\./);
+});
+
+test("a prompt cannot smuggle in a model of its own", () => {
+  assert.deepEqual(
+    resolveModel(["--model", "vendor/model", "-p", "--model=evil/model"]),
+    { model: "vendor/model" },
+  );
+});
+
+test("a legitimate prompt that merely mentions a flag still validates", () => {
+  assert.equal(validateArgv([...VALID_ARGV.slice(0, -1), "explain the --effort flag"]), null);
 });

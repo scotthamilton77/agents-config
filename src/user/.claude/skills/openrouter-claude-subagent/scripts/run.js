@@ -47,11 +47,29 @@ const REQUIRED_FLAGS = [
   ["--allowedTools", "--allowed-tools"],
 ];
 
+/** Argv with the prompt's value dropped.
+ *
+ *  Every other argument is written by whoever launched the run. The prompt
+ *  carries task text, which routinely comes from the material being worked on,
+ *  so a prompt beginning `--effort` would otherwise read as that flag being
+ *  present — and the checks below exist precisely because a missing one fails
+ *  silently rather than loudly. */
+function configArgv(argv) {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    out.push(argv[i]);
+    if (argv[i] === "-p" || argv[i] === "--print") i++;
+  }
+  return out;
+}
+
 /** Check argv for the required flags, accepting both `--flag v` and `--flag=v`.
  *  @returns {string|null} a message naming every missing flag, or null if none. */
 function validateArgv(argv) {
   const present = new Set(
-    argv.filter((arg) => arg.startsWith("--")).map((arg) => arg.split("=", 1)[0])
+    configArgv(argv)
+      .filter((arg) => arg.startsWith("--"))
+      .map((arg) => arg.split("=", 1)[0])
   );
   const missing = REQUIRED_FLAGS.filter(
     (spellings) => !spellings.some((flag) => present.has(flag))
@@ -74,11 +92,12 @@ function validateArgv(argv) {
  *
  *  @returns {{model: string}|{error: string}} */
 function resolveModel(argv) {
+  const args = configArgv(argv);
   const values = [];
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
     if (arg === "--model") {
-      const next = argv[i + 1];
+      const next = args[i + 1];
       // A model id never starts with a dash, so the next token being a flag
       // means this one was left without a value.
       values.push(next === undefined || next.startsWith("-") ? "" : next);
