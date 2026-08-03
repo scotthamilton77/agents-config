@@ -817,3 +817,310 @@ test("only Anthropic-vendor model ids keep the deferred-tool protocol", () => {
   assert.equal(isAnthropicModel("google/gemini-3.1-flash-lite"), false);
   assert.equal(isAnthropicModel(undefined), false, "a body with no model must not be treated as Anthropic");
 });
+
+// ─── Model gate: which model a request is allowed to name ──────────
+//
+// A nested run can start further runs, each choosing its own model, and every
+// one of them bills this proxy's account and answers in the launching run's
+// name. The denylist refuses a few families outright; the pin refuses anything
+// but the model the run was launched with. Both are enforced here because the
+// proxy is the only place the traffic has to pass through — the client's tool
+// grant does not reach the spawn path at all.
+
+const {
+  isDeniedModel,
+  isCompletionPath,
+  screenModel,
+  describeModel,
+} = require("./proxy.js");
+
+test("denies Claude models with or without a vendor prefix, in any case", () => {
+  assert.equal(isDeniedModel("anthropic/claude-opus-5"), true);
+  assert.equal(isDeniedModel("claude-sonnet-5"), true);
+  assert.equal(isDeniedModel("Anthropic/Claude-Opus-5"), true, "case must not be a way around it");
+});
+
+test("denies the large GPT tiers this transport does not carry", () => {
+  assert.equal(isDeniedModel("openai/gpt-5.6-sol"), true);
+  assert.equal(isDeniedModel("openai/gpt-5.5-turbo"), true);
+  assert.equal(isDeniedModel("gpt-5.6"), true);
+});
+
+test("exempts the -mini GPT variants, which are cheap and not what the denial guards", () => {
+  assert.equal(isDeniedModel("openai/gpt-5.6-mini"), false);
+  assert.equal(isDeniedModel("openai/gpt-5.5-mini-high"), false);
+  assert.equal(isDeniedModel("gpt-5.6-minimal"), true, "the exemption is the segment `mini`, not the letters");
+});
+
+test("no -mini spelling exempts a Claude model, which never belongs on this transport", () => {
+  assert.equal(isDeniedModel("anthropic/claude-mini"), true);
+});
+
+test("an OpenRouter :variant suffix is not a way around the denylist", () => {
+  assert.equal(isDeniedModel("anthropic/claude-opus-5:beta"), true);
+  assert.equal(isDeniedModel("openai/gpt-5.6-sol:nitro"), true);
+});
+
+test("leaves the models this transport exists to reach alone", () => {
+  assert.equal(isDeniedModel("moonshotai/kimi-k3"), false);
+  assert.equal(isDeniedModel("google/gemini-3.5-flash"), false);
+  assert.equal(isDeniedModel("z-ai/glm-5.2"), false);
+});
+
+test("treats an absent or non-string model as nothing to deny", () => {
+  assert.equal(isDeniedModel(undefined), false);
+  assert.equal(isDeniedModel(""), false);
+  assert.equal(isDeniedModel(42), false);
+});
+
+test("the gate applies to completions, not to counting tokens", () => {
+  assert.equal(isCompletionPath("/v1/messages"), true);
+  assert.equal(isCompletionPath("/api/v1/messages"), true, "the upstream rewrite must not shake the gate off");
+  assert.equal(isCompletionPath("/api/v1/messages/"), true, "a trailing slash is the same endpoint");
+  assert.equal(isCompletionPath("/api/v1/messages/count_tokens"), false);
+  assert.equal(isCompletionPath("/api/v1/models"), false);
+});
+
+test("screenModel forwards the model the run was launched with", () => {
+  assert.deepEqual(screenModel("moonshotai/kimi-k3", "moonshotai/kimi-k3"), { decision: "forward" });
+});
+
+test("screenModel refuses any other model and names both in the advice", () => {
+  const verdict = screenModel("anthropic-free/other", "moonshotai/kimi-k3");
+  assert.equal(verdict.decision, "deny-pin");
+  assert.match(verdict.message, /moonshotai\/kimi-k3/);
+  assert.match(verdict.message, /anthropic-free\/other/);
+});
+
+test("the refusal advises what to do instead, not only what went wrong", () => {
+  const verdict = screenModel("some/other", "moonshotai/kimi-k3");
+  assert.match(verdict.message, /your own context/i, "carrying on unaided must be offered");
+  assert.match(verdict.message, /model field left out/i, "so must the delegation that still works");
+});
+
+test("screenModel fails closed on a present-but-empty model", () => {
+  assert.equal(screenModel("", "moonshotai/kimi-k3").decision, "deny-pin");
+});
+
+// Naming no model is not a switch, but it hands the choice of model to
+// whatever is upstream — the same loss of control, arriving quietly. Under a
+// pin the rule is exact match or nothing.
+test("screenModel refuses a body that names no model rather than letting upstream choose", () => {
+  assert.equal(screenModel(undefined, "moonshotai/kimi-k3").decision, "deny-pin");
+  assert.equal(screenModel(null, "moonshotai/kimi-k3").decision, "deny-pin");
+});
+
+test("the refusal for a model-less body says so, rather than reporting a model called none", () => {
+  assert.match(screenModel(undefined, "moonshotai/kimi-k3").message, /named no model at all/);
+});
+
+test("with no pin configured a model-less body is still forwarded", () => {
+  assert.equal(screenModel(undefined, null).decision, "forward");
+});
+
+test("a model id cannot forge a second ledger line with a newline", () => {
+  const forged = describeModel("a\nmodel-ledger POST /x model=y decision=forward");
+  assert.doesNotMatch(forged, /\n/, "one request must stay one line");
+  assert.ok(describeModel("x".repeat(500)).length <= 120, "nor may it bury the real lines");
+});
+
+test("the denylist refuses a model even when it is the pinned one", () => {
+  const verdict = screenModel("anthropic/claude-opus-5", "anthropic/claude-opus-5");
+  assert.equal(verdict.decision, "deny-denylist", "the pin must not be able to authorize a denied model");
+});
+
+test("with no pin configured the denylist still applies and nothing else does", () => {
+  assert.equal(screenModel("moonshotai/kimi-k3", null).decision, "forward");
+  assert.equal(screenModel("anything/at-all", null).decision, "forward");
+  assert.equal(screenModel("anthropic/claude-opus-5", null).decision, "deny-denylist");
+});
+
+test("describeModel separates a body that named no model from one that named an empty one", () => {
+  assert.equal(describeModel(undefined), "none");
+  assert.equal(describeModel(""), "(empty)");
+  assert.equal(describeModel("vendor/m"), "vendor/m");
+});
+
+// ─── Model gate over a real socket ─────────────────────────────────
+//
+// The pure tests above fix the decision; these fix what a client actually
+// receives, since the advisory only steers anything if it survives the wire as
+// an error the caller can read.
+
+/** Send one raw request and hand back both the socket and the response.
+ *  Callers expecting a refusal await `response`. Callers testing a request
+ *  that gets *forwarded* call `abort()` instead and assert on the log: the
+ *  real upstream is not reachable from a test sandbox, and waiting for it to
+ *  give up costs a minute per test. */
+function rawSend(port, method, urlPath, body) {
+  const payload = body === null ? "" : body;
+  const request =
+    `${method} ${urlPath} HTTP/1.1\r\n` +
+    "Host: 127.0.0.1\r\n" +
+    "Content-Type: application/json\r\n" +
+    "Connection: close\r\n" +
+    `Content-Length: ${Buffer.byteLength(payload)}\r\n\r\n` +
+    payload;
+
+  let socket;
+  const response = new Promise((resolve, reject) => {
+    socket = net.createConnection(port, "127.0.0.1", () => socket.write(request));
+    let data = "";
+    socket.setTimeout(5000, () => {
+      socket.destroy();
+      reject(new Error("socket timed out waiting for a response"));
+    });
+    socket.on("data", (chunk) => { data += chunk.toString(); });
+    socket.on("end", () => resolve(data));
+    socket.on("error", reject);
+  });
+  return { response, abort: () => socket.destroy() };
+}
+
+/** Resolve once `logs` contains a matching line, or reject at the deadline. */
+async function waitForLog(logs, pattern, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const hit = logs.find((line) => pattern.test(line));
+    if (hit) return hit;
+    if (Date.now() > deadline) throw new Error(`no log line matched ${pattern} in ${JSON.stringify(logs)}`);
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
+const PINNED = "moonshotai/kimi-k3";
+
+test("a completion naming another model is refused with a readable Anthropic error", async () => {
+  const logs = [];
+  const proxy = await start({ port: 0, pinnedModel: PINNED, log: (m) => logs.push(m) });
+  try {
+    const { response } = rawSend(
+      proxy.port, "POST", "/v1/messages",
+      JSON.stringify({ model: "some/other-model", messages: [] }),
+    );
+    const raw = await response;
+
+    assert.match(raw, /^HTTP\/1\.1 403\b/, "a model switch is a refusal, not a bad request");
+    const body = JSON.parse(raw.slice(raw.indexOf("\r\n\r\n") + 4));
+    assert.equal(body.type, "error", "the client only renders Anthropic-shaped errors");
+    assert.equal(body.error.type, "permission_error");
+    assert.match(body.error.message, new RegExp(PINNED), "the advice has to name the model that would work");
+  } finally {
+    await proxy.close();
+  }
+});
+
+test("a refused completion never opens a connection to the upstream", async () => {
+  const logs = [];
+  const proxy = await start({ port: 0, pinnedModel: PINNED, log: (m) => logs.push(m) });
+  try {
+    const { response } = rawSend(
+      proxy.port, "POST", "/v1/messages",
+      JSON.stringify({ model: "some/other-model", messages: [] }),
+    );
+    await response;
+    assert.deepEqual(
+      logs.filter((line) => line.startsWith("upstream")), [],
+      "a refusal that still dials upstream is a refusal that still costs money",
+    );
+  } finally {
+    await proxy.close();
+  }
+});
+
+test("every completion request leaves one ledger line naming the model and the decision", async () => {
+  const logs = [];
+  const proxy = await start({ port: 0, pinnedModel: PINNED, log: (m) => logs.push(m) });
+  try {
+    const { response } = rawSend(
+      proxy.port, "POST", "/v1/messages",
+      JSON.stringify({ model: "some/other-model", messages: [] }),
+    );
+    await response;
+
+    const ledger = logs.filter((line) => line.startsWith("model-ledger"));
+    assert.equal(ledger.length, 1, "one request, one line — a ledger that double-counts is not a ledger");
+    assert.match(ledger[0], /^model-ledger POST \/api\/v1\/messages model=some\/other-model decision=deny-pin$/);
+  } finally {
+    await proxy.close();
+  }
+});
+
+test("a denied model is refused even when the run is pinned to it", async () => {
+  const logs = [];
+  const proxy = await start({ port: 0, pinnedModel: "anthropic/claude-opus-5", log: (m) => logs.push(m) });
+  try {
+    const { response } = rawSend(
+      proxy.port, "POST", "/v1/messages",
+      JSON.stringify({ model: "anthropic/claude-opus-5", messages: [] }),
+    );
+    const raw = await response;
+    assert.match(raw, /^HTTP\/1\.1 403\b/);
+    await waitForLog(logs, /decision=deny-denylist/);
+  } finally {
+    await proxy.close();
+  }
+});
+
+test("a completion naming an empty model is refused rather than forwarded", async () => {
+  const logs = [];
+  const proxy = await start({ port: 0, pinnedModel: PINNED, log: (m) => logs.push(m) });
+  try {
+    const { response } = rawSend(
+      proxy.port, "POST", "/v1/messages",
+      JSON.stringify({ model: "", messages: [] }),
+    );
+    const raw = await response;
+    assert.match(raw, /^HTTP\/1\.1 403\b/);
+    await waitForLog(logs, /model=\(empty\) decision=deny-pin/);
+  } finally {
+    await proxy.close();
+  }
+});
+
+test("a completion naming no model at all is refused, and the ledger records it", async () => {
+  const logs = [];
+  const proxy = await start({ port: 0, pinnedModel: PINNED, log: (m) => logs.push(m) });
+  try {
+    const { response } = rawSend(proxy.port, "POST", "/v1/messages", JSON.stringify({ messages: [] }));
+    const raw = await response;
+    assert.match(raw, /^HTTP\/1\.1 403\b/);
+    assert.match(await waitForLog(logs, /^model-ledger/), /model=none decision=deny-pin$/);
+    assert.deepEqual(
+      logs.filter((line) => line.startsWith("upstream")), [],
+      "handing the model choice upstream is exactly what must not be dialed",
+    );
+  } finally {
+    await proxy.close();
+  }
+});
+
+test("a completion body that is not JSON at all is refused under a pin", async () => {
+  const logs = [];
+  const proxy = await start({ port: 0, pinnedModel: PINNED, log: (m) => logs.push(m) });
+  try {
+    const { response } = rawSend(proxy.port, "POST", "/v1/messages", "not json");
+    assert.match(await response, /^HTTP\/1\.1 403\b/);
+  } finally {
+    await proxy.close();
+  }
+});
+
+test("counting tokens is not a completion and is neither gated nor ledgered", async () => {
+  const logs = [];
+  const proxy = await start({ port: 0, pinnedModel: PINNED, log: (m) => logs.push(m) });
+  const sent = rawSend(
+    proxy.port, "POST", "/v1/messages/count_tokens",
+    JSON.stringify({ model: "some/other-model", messages: [] }),
+  );
+  sent.response.catch(() => {});
+  try {
+    // Give the request the same head start the ledger tests get, then assert
+    // the absence — the gate declining to act is the whole claim.
+    await new Promise((r) => setTimeout(r, 200));
+    assert.deepEqual(logs.filter((line) => line.startsWith("model-ledger")), []);
+  } finally {
+    sent.abort();
+    await proxy.close();
+  }
+});

@@ -35,7 +35,8 @@ const EXIT_CONFIG_ERROR = 78;
  *  - `--allowedTools`: the proxy strips the deferred-tool declaration for
  *    non-Anthropic models, so this list is the entire tool grant.
  *  - `--model`: without it the redirect points at whatever default the client
- *    picks, which the OpenRouter account may not serve at all.
+ *    picks, which the OpenRouter account may not serve at all. It is also the
+ *    model the whole run is pinned to — see resolveModel and buildChildEnv.
  *  - `--effort`: the harness otherwise picks a reasoning level the task never
  *    asked for, at a cost nobody chose.
  */
@@ -46,11 +47,29 @@ const REQUIRED_FLAGS = [
   ["--allowedTools", "--allowed-tools"],
 ];
 
+/** Argv with the prompt's value dropped.
+ *
+ *  Every other argument is written by whoever launched the run. The prompt
+ *  carries task text, which routinely comes from the material being worked on,
+ *  so a prompt beginning `--effort` would otherwise read as that flag being
+ *  present — and the checks below exist precisely because a missing one fails
+ *  silently rather than loudly. */
+function configArgv(argv) {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    out.push(argv[i]);
+    if (argv[i] === "-p" || argv[i] === "--print") i++;
+  }
+  return out;
+}
+
 /** Check argv for the required flags, accepting both `--flag v` and `--flag=v`.
  *  @returns {string|null} a message naming every missing flag, or null if none. */
 function validateArgv(argv) {
   const present = new Set(
-    argv.filter((arg) => arg.startsWith("--")).map((arg) => arg.split("=", 1)[0])
+    configArgv(argv)
+      .filter((arg) => arg.startsWith("--"))
+      .map((arg) => arg.split("=", 1)[0])
   );
   const missing = REQUIRED_FLAGS.filter(
     (spellings) => !spellings.some((flag) => present.has(flag))
@@ -64,16 +83,62 @@ function validateArgv(argv) {
   );
 }
 
+/** Read the single model id this run is pinned to out of argv.
+ *
+ *  Every model the run reaches bills one account, so the launcher has to know
+ *  which one was asked for before it starts anything. Two values for the same
+ *  flag is refused rather than guessed at: which one the child would honour is
+ *  the client's business, and a wrong guess pins the wrong model.
+ *
+ *  @returns {{model: string}|{error: string}} */
+function resolveModel(argv) {
+  const args = configArgv(argv);
+  const values = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--model") {
+      const next = args[i + 1];
+      // A model id never starts with a dash, so the next token being a flag
+      // means this one was left without a value.
+      values.push(next === undefined || next.startsWith("-") ? "" : next);
+    } else if (arg.startsWith("--model=")) {
+      values.push(arg.slice("--model=".length));
+    }
+  }
+
+  const distinct = [...new Set(values.map((v) => v.trim()))];
+  if (distinct.length > 1) {
+    return {
+      error:
+        "--model was given more than one value (" +
+        distinct.map((v) => v || "<empty>").join(", ") +
+        "). This launcher pins the run to one model and cannot choose between them.",
+    };
+  }
+  const model = distinct[0] || "";
+  if (!model) {
+    return {
+      error:
+        "--model was given no value. This launcher pins the run to the model " +
+        "you name, so the name cannot be empty.",
+    };
+  }
+  return { model };
+}
+
 /** Build the child environment. The launcher owns every variable that decides
- *  WHERE the traffic goes, so a caller cannot half-configure the redirect and
- *  silently bill the wrong account. */
-function buildChildEnv(parentEnv, proxyUrl) {
+ *  WHERE the traffic goes and WHICH model answers, so a caller cannot
+ *  half-configure the redirect and silently bill the wrong account. */
+function buildChildEnv(parentEnv, proxyUrl, model) {
   const apiKey = parentEnv.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error(
       "OPENROUTER_API_KEY is not set. This launcher does not create or store " +
       "credentials — export the key, or ask where to find it."
     );
+  }
+  if (!model) {
+    throw new Error("buildChildEnv requires the model this run is pinned to.");
   }
   return {
     ...parentEnv,
@@ -87,6 +152,21 @@ function buildChildEnv(parentEnv, proxyUrl) {
     // Empty, not absent: an inherited real Anthropic key takes precedence over
     // ANTHROPIC_AUTH_TOKEN, and the call would quietly go to Anthropic.
     ANTHROPIC_API_KEY: "",
+    // Every model alias resolves to the one model this run was launched with.
+    // A nested run can start further runs, and each of those picks a model of
+    // its own from this alias vocabulary — by name, from an agent type's
+    // definition, or from a built-in default. Pointing all four at the named
+    // model means those runs still happen, still on the model the caller chose
+    // and paid for, and still speaking with this run's voice.
+    ANTHROPIC_DEFAULT_OPUS_MODEL: model,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: model,
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
+    ANTHROPIC_DEFAULT_FABLE_MODEL: model,
+    // The background chores — conversation titles and the like — ride the
+    // cheap alias, which now points at a model that may be neither cheap nor
+    // free. Nothing about this run needs them. Any non-empty value switches
+    // them off, "0" included; the variable reads as a switch, not a boolean.
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
   };
 }
 
@@ -106,12 +186,29 @@ async function main(argv) {
     return EXIT_CONFIG_ERROR;
   }
 
-  const { port, close } = await proxy.start({ port: 0 });
+  const resolved = resolveModel(argv);
+  if (resolved.error) {
+    process.stderr.write(`[run] ${resolved.error}\n`);
+    return EXIT_CONFIG_ERROR;
+  }
+  const model = resolved.model;
+
+  if (proxy.isDeniedModel(model)) {
+    process.stderr.write(
+      `[run] ${model} is not reachable over this transport, by design and not by ` +
+      "accident: Claude models run natively in the harness that launched this run, " +
+      "and the large GPT tiers run through their own vendor transport. Dispatch " +
+      "through the transport that serves it, or name a model from another vendor.\n"
+    );
+    return EXIT_CONFIG_ERROR;
+  }
+
+  const { port, close } = await proxy.start({ port: 0, pinnedModel: model });
   const proxyUrl = `http://127.0.0.1:${port}`;
 
   let env;
   try {
-    env = buildChildEnv(process.env, proxyUrl);
+    env = buildChildEnv(process.env, proxyUrl, model);
   } catch (err) {
     process.stderr.write(`[run] ${err.message}\n`);
     await close();
@@ -163,6 +260,7 @@ if (require.main === module) {
 module.exports = {
   main,
   validateArgv,
+  resolveModel,
   buildChildEnv,
   resolveExitCode,
   EXIT_CONFIG_ERROR,

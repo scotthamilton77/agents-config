@@ -1,0 +1,17 @@
+[
+  {"query": "i just wrote this cache layer, find someone to poke holes in it", "should_trigger": true},
+  {"query": "get me a second opinion on this before i commit", "should_trigger": true},
+  {"query": "i want an independent review of this design, not just you agreeing with yourself", "should_trigger": true},
+  {"query": "can you have someone else check my migration plan, i've been staring at it too long", "should_trigger": true},
+  {"query": "this diagnosis has failed twice now, get a fresh pair of eyes on it", "should_trigger": true},
+  {"query": "before i open the PR i want an adversarial pass over the auth changes", "should_trigger": true},
+  {"query": "spin up a kimi subagent to summarize the error handling across src/", "should_trigger": false},
+  {"query": "can you delegate this refactor to a cheap model through openrouter", "should_trigger": false},
+  {"query": "use codex to look at layer.py", "should_trigger": false},
+  {"query": "run this past gpt-5.6-terra and tell me what it says", "should_trigger": false},
+  {"query": "what models does openrouter support and what do they cost", "should_trigger": false},
+  {"query": "codex keeps failing to log in, how do i fix the auth", "should_trigger": false},
+  {"query": "write the brief for the subagent thats going to fix this flaky test", "should_trigger": false},
+  {"query": "review this PR for me", "should_trigger": false},
+  {"query": "add a docstring to CacheLayer.get", "should_trigger": false}
+]
