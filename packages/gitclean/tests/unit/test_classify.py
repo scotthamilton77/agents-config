@@ -10,7 +10,7 @@ from __future__ import annotations
 from conftest import iso, make_branch, make_pr, make_survey, make_worktree
 
 from gitclean.classify import classify, classify_branch, classify_worktree, trunk
-from gitclean.model import MergeEvidence, Survey, Target
+from gitclean.model import Counterpart, MergeEvidence, Survey, Target
 
 # A commit no fixture's trunk sits on, for the cases that must not collide with
 # it: matching the trunk's commit is itself a rule under test.
@@ -27,6 +27,11 @@ def _wt(worktree, survey: Survey | None = None) -> Target:  # type: ignore[no-un
     resolved = survey or make_survey()
     names, commits = trunk(resolved)
     return classify_worktree(worktree, resolved, trunk_names=names, trunk_commits=commits)
+
+
+def _pairing(target: Target) -> dict[str, Counterpart]:
+    """The row's counterparts by relation, which is how the JSON keys them."""
+    return {c.relation: c for c in target.pairing}
 
 
 # -- the squash-merge case, which is the whole reason this tool exists --------
@@ -359,6 +364,169 @@ def test_a_merged_remote_branch_is_reported_never_swept() -> None:
     assert target.merge_proven
     assert not target.sweepable
     assert "server" in (target.withheld or "")
+
+
+# -- the pairing a reader groups rows by -------------------------------------
+
+
+def test_a_branch_names_the_worktree_holding_it_and_its_copy_on_the_server() -> None:
+    """Stated as fields, because the alternative is a consumer recovering them
+    from `checked out at /a/b` -- splitting a sentence on a delimiter the path
+    it separates is allowed to contain."""
+    survey = make_survey(
+        branches=(
+            make_branch("feat/thing", head=ELSEWHERE, checked_out_at="/repo/wt"),
+            make_branch("origin/feat/thing", head=ELSEWHERE, is_remote=True, remote="origin"),
+        ),
+        worktrees=(make_worktree("/repo/wt", head=ELSEWHERE, branch="feat/thing"),),
+    )
+    pairing = _pairing(_one(survey.branches[0], survey))
+
+    assert pairing["worktree"] == Counterpart(
+        relation="worktree", name="/repo/wt", id="worktree:/repo/wt", known=True
+    )
+    assert pairing["upstream"] == Counterpart(
+        relation="upstream", name="origin/feat/thing", id="remote:origin/feat/thing", known=True
+    )
+
+
+def test_no_worktree_holding_a_branch_reads_differently_from_no_listing() -> None:
+    """`checked_out_at` is filled from the worktree listing, so a listing that
+    failed leaves the same None a branch nothing checks out has. Rendering both
+    as silence tells a reader a tree somebody may be standing in is free."""
+    branch = make_branch("feat/thing", head=ELSEWHERE)
+    measured = _one(branch, make_survey(branches=(branch,)))
+    unread = _one(branch, make_survey(branches=(branch,), worktrees_known=False))
+
+    assert _pairing(measured)["worktree"] == Counterpart(
+        relation="worktree", name=None, id=None, known=True
+    )
+    assert _pairing(unread)["worktree"] == Counterpart(
+        relation="worktree", name=None, id=None, known=False
+    )
+    assert any("unknown rather than none" in r for r in unread.reasons)
+    assert not any("unknown rather than none" in r for r in measured.reasons)
+
+
+def test_an_unparsed_worktree_block_leaves_the_holder_unestablished() -> None:
+    """A listing that ran without describing everything it listed is the same
+    hole as one that never ran: the block nobody could parse may be the tree
+    holding this branch."""
+    branch = make_branch("feat/thing", head=ELSEWHERE)
+    target = _one(branch, make_survey(branches=(branch,), dropped_worktrees=1))
+
+    assert _pairing(target)["worktree"].known is False
+
+
+def test_a_branch_names_an_upstream_this_report_has_no_row_for() -> None:
+    """The server's copy of the trunk is deliberately not a target, and a ref
+    the remote has dropped is not there to be one. Both leave the upstream
+    named with no row -- and dropping the name instead would read as a branch
+    that was never pushed."""
+    branch = make_branch("feat/thing", head=ELSEWHERE, upstream="origin/feat/thing")
+    target = _one(branch, make_survey(branches=(branch,)))
+
+    assert _pairing(target)["upstream"] == Counterpart(
+        relation="upstream", name="origin/feat/thing", id=None, known=True
+    )
+
+
+def test_a_branch_that_was_never_pushed_says_so_as_a_measurement() -> None:
+    branch = make_branch("feat/thing", head=ELSEWHERE, upstream=None)
+    target = _one(branch, make_survey(branches=(branch,)))
+
+    assert _pairing(target)["upstream"] == Counterpart(
+        relation="upstream", name=None, id=None, known=True
+    )
+
+
+def test_a_branch_tracking_a_local_branch_is_not_given_a_copy_on_the_server() -> None:
+    """`git branch --set-upstream-to=main feat/x` records a pairing made on this
+    disk. Reporting `main` as this branch's server counterpart would claim a
+    published ref out of a local one, and would spend the state that means "it
+    exists and this report has no row for it" on a copy nobody has ever seen."""
+    branch = make_branch(
+        "feat/thing", head=ELSEWHERE, upstream="main", upstream_ref="refs/heads/main"
+    )
+    target = _one(branch, make_survey(branches=(branch,)))
+
+    assert _pairing(target)["upstream"] == Counterpart(
+        relation="upstream", name=None, id=None, known=True
+    )
+    assert any("tracks the local branch main" in r for r in target.reasons)
+
+
+def test_a_local_upstream_is_told_apart_from_no_upstream_at_all() -> None:
+    """Both leave the row with no server counterpart, and only one of them means
+    the branch tracks nothing. A reader who cannot tell them apart reads the
+    first as never pushed."""
+    tracked = make_branch(
+        "feat/thing", head=ELSEWHERE, upstream="main", upstream_ref="refs/heads/main"
+    )
+    untracked = make_branch("feat/other", head=ELSEWHERE, upstream=None)
+
+    assert not any("never pushed" in r for r in _one(tracked).reasons)
+    assert any("never pushed" in r for r in _one(untracked).reasons)
+
+
+def test_a_local_upstream_still_reports_the_commits_it_does_not_have() -> None:
+    """The count is measured against whatever the branch tracks, and it is the
+    same fact whether that ref is on a server or on this disk. Only the sentence
+    about being pushed is withdrawn."""
+    branch = make_branch(
+        "feat/thing",
+        head=ELSEWHERE,
+        upstream="main",
+        upstream_ref="refs/heads/main",
+        unpushed_commits=2,
+    )
+
+    assert any("2 commit(s) not on main" in r for r in _one(branch).reasons)
+
+
+def test_a_branch_named_like_a_server_ref_does_not_become_one() -> None:
+    """git accepts `origin/main` as a local branch name, so the short upstream
+    is the same string either way. The full refname is the only thing that tells
+    a reader which one this branch is tracking."""
+    published = make_branch("feat/a", head=ELSEWHERE, upstream="origin/main")
+    local = make_branch(
+        "feat/b", head=ELSEWHERE, upstream="origin/main", upstream_ref="refs/heads/origin/main"
+    )
+
+    assert _pairing(_one(published))["upstream"].name == "origin/main"
+    assert _pairing(_one(local))["upstream"].name is None
+
+
+def test_a_server_ref_carries_no_pairing_of_its_own() -> None:
+    """Nothing checks one out and it tracks nothing itself. It joins a group
+    from the other end, by being named as some local branch's upstream."""
+    remote = make_branch("origin/feat/thing", head=ELSEWHERE, is_remote=True, remote="origin")
+
+    assert _one(remote, make_survey(branches=(remote,))).pairing == ()
+
+
+def test_a_detached_worktree_states_that_it_holds_no_branch() -> None:
+    """git's listing answers this outright, so it is a measured none -- not the
+    same row as one whose branch went unread, and it must not render as one."""
+    survey = make_survey(worktrees=(make_worktree("/repo/wt", head=ELSEWHERE, branch=None),))
+
+    assert _pairing(_wt(survey.worktrees[0], survey))["branch"] == Counterpart(
+        relation="branch", name=None, id=None, known=True
+    )
+
+
+def test_a_worktree_names_a_branch_no_row_describes() -> None:
+    """With no ref read there are no branch rows, and the worktree still knows
+    what it holds. Dropping the name would leave the row reading like the
+    detached checkout above."""
+    survey = make_survey(
+        worktrees=(make_worktree("/repo/wt", head=ELSEWHERE, branch="feat/thing"),),
+        branches_known=False,
+    )
+
+    assert _pairing(_wt(survey.worktrees[0], survey))["branch"] == Counterpart(
+        relation="branch", name="feat/thing", id=None, known=True
+    )
 
 
 # -- worktrees ---------------------------------------------------------------

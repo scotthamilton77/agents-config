@@ -21,8 +21,9 @@ loop: `make test-gitclean`.
 
 This package **is** in the installer's `CLI_PACKAGES` registry and installs onto
 PATH as `gitclean`. Being inside `make ci` is not what earns that — `vizsuite`
-is gated and stays off — so a change here reaches a deployed tool, and the
-`clean-up-git` skill drives it.
+is gated and stays off — so a change here reaches a deployed tool, driven by the
+`/clean-up-git` command interactively and named to agents by the
+`post-merge-cleanup` skill.
 
 ## Architecture
 
@@ -66,6 +67,16 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   convenient value turns each transient git failure into data loss, so unknowns
   render as a stated unknown on that target's own row. If you add a read, add
   its `None` path with it.
+- **A relation the report states is a field, never a sentence.** A worktree, the
+  branch it holds and that branch's copy on the server are one thing with two or
+  three parts, and a reader deciding about one has to see the others. Those
+  relations travel as `Target.pairing`, keyed by relation, each entry carrying a
+  `name`, the `id` of the row for it, and `known`. The prose in `reasons` says
+  the same thing for a person and is not the channel — recovering a pairing from
+  `checked out at /a/b` means splitting on a delimiter the path is allowed to
+  contain, the mis-keyed lookup returns nothing, and nothing then reads as an
+  absence somebody measured. Add a relation and it goes here too; do not leave a
+  consumer to parse it back out.
 - **Do not spend a check that git is already making for you.** `worktree
   remove` without `--force`, and `push --force-with-lease`, are the last guards
   against state that changed after the survey. There is no `--force` in this

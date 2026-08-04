@@ -445,6 +445,30 @@ def test_human_report_marks_the_sweepable_rows_and_shows_the_evidence() -> None:
     assert "sweepable now:" in text
 
 
+def test_the_human_report_names_each_row_s_counterparts() -> None:
+    """The reader deciding about a branch has to see the worktree that goes
+    with it -- git will refuse the deletion otherwise -- so the relation is on
+    the row rather than left to be inferred from the ids above it."""
+    _, text = invoke_human(["--report"], merged_branch_port())
+
+    body = text.split("branch:main", 1)[1]
+    assert "+ worktree: /repo [worktree:/repo]" in body
+
+
+def test_the_human_report_says_when_a_counterpart_was_never_established() -> None:
+    """A listing that failed leaves every branch looking unheld. Printing
+    nothing there is the report agreeing, so the row says which it is."""
+    port = make_port(
+        refs=[ref_at("refs/heads/main", "main", "a" * 40, head="*")],
+        extra={"worktree list --porcelain": fail("fatal: cannot open", code=128)},
+    )
+    _, text = invoke_human(["--report"], port)
+
+    body = text.split("branch:main", 1)[1]
+    assert "+ worktree: not established -- unknown, not none" in body
+    assert "unknown rather than none" in body
+
+
 def test_human_dry_run_is_not_rendered_as_failure() -> None:
     """A dry run leaves every deletion unverified by construction; showing
     FAIL would teach the reader to distrust a clean preview."""

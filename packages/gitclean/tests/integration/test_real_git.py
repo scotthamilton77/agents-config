@@ -449,6 +449,175 @@ def test_a_worktree_that_goes_dirty_after_the_survey_is_left_alone(repo: Path) -
     assert any("--force" in line for line in outcome.anomalies[0].transcript)
 
 
+# -- the pairing a reader groups rows by --------------------------------------
+#
+# The values worth crossing this with are the ones a naive recovery divides on.
+# Two are exercised below -- a worktree path containing the separator a reason
+# sentence uses, and a remote whose own name contains the slash in
+# `<remote>/<ref>`. Two are deliberately absent:
+#
+# - a branch name containing a space, because git will not make one. `git branch
+#   'feat with space'` is refused as an invalid ref name, so no repository can
+#   present the value and a test would be asserting against git's own rules.
+# - a newline in a worktree path, which git accepts and emits raw. It is absent
+#   for a different reason: `read_worktrees` parses that listing line by line, so
+#   the path is already truncated at the newline by the time anything pairs it.
+#   The two rows then agree with each other about a path that does not exist,
+#   and a test here would pin the truncation rather than the relation. It belongs
+#   with the fix to that parse, not with this.
+
+
+def test_the_pairing_holds_for_a_path_no_sentence_can_be_split_on(
+    repo: Path, tmp_path: Path
+) -> None:
+    """Why the pairing is a field and not a sentence.
+
+    `checked out at /a/b at rest` contains two ` at `s, and the only reader
+    that recovers the path is one that never split it. A directory named this
+    way is unusual; a directory whose name contains a word this tool happens to
+    use in a reason is not, and the row it mis-keys reports the wrong worktree
+    while looking exactly like a measurement.
+
+    Real git, because the point is what git accepts as a path and as a ref."""
+    _with_remote(repo, tmp_path)
+    work = repo.parent / "wt at rest"
+    git(repo, "worktree", "add", "-q", str(work), "-b", "feat/paired")
+    commit(work, "paired.txt")
+    git(work, "push", "-q", "-u", "origin", "feat/paired")
+
+    with reachability_guard(repo):  # a report changes nothing
+        payload = report(repo)
+
+    branch = find(payload, "branch:feat/paired")
+    assert branch["pairing"] == {
+        "worktree": {"name": str(work), "id": f"worktree:{work}", "known": True},
+        "upstream": {
+            "name": "origin/feat/paired",
+            "id": "remote:origin/feat/paired",
+            "known": True,
+        },
+    }
+    assert find(payload, f"worktree:{work}")["pairing"] == {
+        "branch": {"name": "feat/paired", "id": "branch:feat/paired", "known": True}
+    }
+    assert find(payload, "remote:origin/feat/paired")["pairing"] == {}
+
+    # The route the field replaces, run against the same row: the reason names
+    # the path and gives a splitter no way to tell where it ends.
+    prose = next(r for r in branch["reasons"] if str(r).startswith("checked out at"))
+    assert str(prose).split(" at ")[1] != str(work)
+
+
+def test_a_branch_tracking_a_ref_this_tool_will_not_target_still_names_it(
+    repo: Path, tmp_path: Path
+) -> None:
+    """`main` tracks `origin/main`, and the server's copy of the trunk is
+    deliberately not offered as a target. So the upstream is named with no row
+    to follow -- which is a third answer, and dropping the name to reach one of
+    the other two would report the trunk as never pushed."""
+    _with_remote(repo, tmp_path)
+
+    with reachability_guard(repo):
+        payload = report(repo)
+
+    assert find(payload, "branch:main")["pairing"]["upstream"] == {
+        "name": "origin/main",
+        "id": None,
+        "known": True,
+    }
+
+
+def test_a_branch_tracking_a_local_branch_is_given_no_copy_on_the_server(repo: Path) -> None:
+    """The upstream a branch records is not always a ref a remote publishes.
+
+    `git branch --set-upstream-to=main feat/local` is a pairing made entirely on
+    this disk, and this repository has no remote at all -- so a row claiming a
+    server counterpart here names something that exists nowhere. Real git,
+    because the whole question is what git records for that command: shortened,
+    the upstream is `main`, which is indistinguishable from a ref a remote
+    called `main` publishes."""
+    git(repo, "checkout", "-q", "-b", "feat/local")
+    commit(repo, "local.txt")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "branch", "--set-upstream-to=main", "feat/local")
+
+    with reachability_guard(repo):  # a report changes nothing
+        payload = report(repo)
+
+    survey_data = payload["repo"]
+    assert isinstance(survey_data, dict)
+    branches = survey_data["branches"]
+    assert isinstance(branches, list)
+    row = next(b for b in branches if b["name"] == "feat/local")
+    # What git recorded, which is what the pairing has to be read from: the
+    # short name says `main` for either kind of upstream, the full one does not.
+    assert row["upstream"] == "main"
+    assert row["upstream_ref"] == "refs/heads/main"
+
+    target = find(payload, "branch:feat/local")
+    assert target["pairing"]["upstream"] == {"name": None, "id": None, "known": True}
+    # And the row is not silent about the tracking it declines to publish, which
+    # is what would leave it reading like a branch that tracks nothing.
+    assert any("tracks the local branch main" in str(r) for r in target["reasons"])
+    assert not any("never pushed" in str(r) for r in target["reasons"])
+
+
+def test_the_pairing_holds_when_the_remote_s_own_name_holds_a_slash(
+    repo: Path, tmp_path: Path
+) -> None:
+    """The other delimiter, and the one a name is genuinely allowed to contain.
+
+    `git remote add team/origin <url>` is accepted, so the slash in
+    `<remote>/<ref>` is not a boundary anything can be split at: recovering the
+    server copy of `feat/slashed` by cutting `team/origin/feat/slashed` at the
+    first slash asks after a remote called `team` and a ref that is not there.
+
+    Nothing here splits it. The upstream a branch records and the short name
+    the server ref carries are compared whole, so the row is keyed by the name
+    git printed rather than by a guess about where it divides."""
+    bare = tmp_path / "server.git"
+    SubprocessCommands().git(["init", "-q", "--bare", "-b", "main", str(bare)])
+    git(repo, "remote", "add", "team/origin", str(bare))
+    git(repo, "push", "-q", "-u", "team/origin", "main")
+    git(repo, "checkout", "-q", "-b", "feat/slashed")
+    commit(repo, "slashed.txt")
+    git(repo, "push", "-q", "-u", "team/origin", "feat/slashed")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "fetch", "-q", "team/origin")
+
+    with reachability_guard(repo):
+        payload = report(repo)
+
+    pairing = find(payload, "branch:feat/slashed")["pairing"]
+    assert isinstance(pairing, dict)
+    assert pairing["upstream"] == {
+        "name": "team/origin/feat/slashed",
+        "id": "remote:team/origin/feat/slashed",
+        "known": True,
+    }
+    # And the id is a row rather than a string that resembles one: a pairing
+    # that names a counterpart nothing in the report describes is the state
+    # `id: null` exists to report, so a non-null one has to resolve.
+    assert find(payload, "remote:team/origin/feat/slashed")["name"] == "team/origin/feat/slashed"
+
+
+def test_a_detached_worktree_says_it_holds_no_branch_rather_than_saying_nothing(
+    repo: Path,
+) -> None:
+    """git's listing answers this outright, so the row carries a measured none
+    -- distinguishable from a branch that went unread, which is the whole
+    reason the entry carries `known` as well as a name."""
+    work = repo.parent / "wt-loose"
+    git(repo, "worktree", "add", "-q", "--detach", str(work))
+
+    with reachability_guard(repo):
+        payload = report(repo)
+
+    assert find(payload, f"worktree:{work}")["pairing"] == {
+        "branch": {"name": None, "id": None, "known": True}
+    }
+
+
 # -- remote deletion ----------------------------------------------------------
 
 

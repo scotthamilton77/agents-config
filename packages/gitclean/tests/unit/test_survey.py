@@ -30,18 +30,30 @@ an assertion about push state even in the tests that are about something
 else."""
 
 
+_AUTO_UPSTREAM_REF = "\x00auto"
+"""Sentinel: the full refname of the given upstream, read as a server copy.
+
+Tracking a ref a remote publishes is the ordinary case, so a line that names an
+upstream and nothing else describes one. A test about a branch tracking another
+local branch spells `upstream_ref` out, which is the whole of what tells the two
+apart."""
+
+
 def ref_line(
     full: str,
     short: str,
     *,
     committed: str = "2026-07-20T00:00:00+00:00",
     upstream: str = "",
+    upstream_ref: str = _AUTO_UPSTREAM_REF,
     track: str = _AUTO_TRACK,
     head: str = "",
 ) -> str:
     if track == _AUTO_TRACK:
         track = "=" if upstream else ""
-    return SEP.join([full, short, "a" * 40, committed, upstream, track, head])
+    if upstream_ref == _AUTO_UPSTREAM_REF:
+        upstream_ref = f"refs/remotes/{upstream}" if upstream else ""
+    return SEP.join([full, short, "a" * 40, committed, upstream_ref, upstream, track, head])
 
 
 def make_port(

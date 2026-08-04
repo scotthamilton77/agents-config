@@ -157,11 +157,15 @@ See [`src/user/.agents/skills/`](./src/user/.agents/skills/) for the authoritati
 
 ### Commands
 
-Slash commands that can be invoked directly:
+Slash commands that can be invoked directly. Claude Code only — commands are a
+tool-scoped namespace with no shared variant:
 
-- `/optimize-my-agent <path>` - Analyze and improve an agent definition file
-- `/optimize-my-skill <path>` - Analyze and improve a skill definition
-- `/refresh-agents-md` - Regenerate AGENTS.md from current repo state
+- `/clean-up-git [filter]` - Adjudicate which git worktrees and branches to
+  delete: one dated table with each worktree paired to its branch and every
+  deletion's cost stated, then a stop for your call before anything is touched
+
+See [`src/user/.claude/commands/`](./src/user/.claude/commands/) for the
+authoritative set.
 
 ### Templates
 

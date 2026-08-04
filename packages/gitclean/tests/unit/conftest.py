@@ -59,6 +59,7 @@ def make_branch(
     remote: str | None = None,
     last_activity: str | None = _UNSET,
     upstream: str | None = "origin/feat/thing",
+    upstream_ref: str | None = _UNSET,
     is_default: bool = False,
     is_current: bool = False,
     checked_out_at: str | None = None,
@@ -74,6 +75,10 @@ def make_branch(
     # commit does not -- which is git answering, not declining to. A test about
     # the containment probe failing passes None and means it.
     covers = (pr is not None and pr.head_oid == head) if pr_covers_tip == _UNSET else pr_covers_tip
+    # An upstream is a ref a remote publishes unless a test says otherwise: that
+    # is the ordinary branch, and spelling the full refname out on every call
+    # would make each builder an assertion about where the branch is tracked.
+    tracked = f"refs/remotes/{upstream}" if upstream else None
     return Branch(
         name=name,
         is_remote=is_remote,
@@ -81,6 +86,7 @@ def make_branch(
         head=head,
         last_activity=iso(1) if last_activity == _UNSET else last_activity,
         upstream=upstream,
+        upstream_ref=tracked if upstream_ref == _UNSET else upstream_ref,
         is_default=is_default,
         is_current=is_current,
         checked_out_at=checked_out_at,

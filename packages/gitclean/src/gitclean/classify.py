@@ -18,13 +18,29 @@ human naming it deletes it.
 on that target's own row instead of resolving to the convenient value. The rule
 is one-directional on purpose: it costs the occasional branch left uncleaned,
 and the alternative costs work.
+
+One thing here is not judgement: ``Counterpart``. It restates a relation the
+survey already read -- which worktree holds which branch, which branch tracks
+which server ref -- onto the row that has to carry it, because the target rows
+are what a reader groups into a table and the relation is what makes a group.
+It is assembled here for want of a better seam: nothing about it is opinion,
+but the target is built here, and the alternative is a consumer recovering it
+from a reason sentence by splitting on a delimiter those names may contain.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from gitclean.model import Branch, MergeEvidence, Survey, Target, TargetKind, Worktree
+from gitclean.model import (
+    Branch,
+    Counterpart,
+    MergeEvidence,
+    Survey,
+    Target,
+    TargetKind,
+    Worktree,
+)
 
 MERGE_PROOF = frozenset(
     {
@@ -49,6 +65,104 @@ def branch_id(name: str) -> str:
 
 def remote_branch_id(name: str) -> str:
     return f"remote:{name}"
+
+
+def holder_unmeasured(survey_data: Survey) -> bool:
+    """Whether "no worktree holds this branch" is a statement this survey is in
+    no position to make.
+
+    ``Branch.checked_out_at`` is filled from the worktree listing, so a None
+    there answers the question only when that listing described every tree it
+    has. A listing that failed produces the same None, and so does one carrying
+    a block nothing could parse -- and both then read as a branch free of any
+    checkout, which is the reading that hands a tree somebody is standing in to
+    a reader looking for something to delete."""
+    return not survey_data.worktrees_known or bool(survey_data.dropped_worktrees)
+
+
+def counterpart_worktree(branch: Branch, survey_data: Survey) -> Counterpart:
+    """The worktree holding this branch, if the survey can say."""
+    holder = branch.checked_out_at
+    if holder is None:
+        return Counterpart(
+            relation="worktree", name=None, id=None, known=not holder_unmeasured(survey_data)
+        )
+    listed = any(w.path == holder for w in survey_data.worktrees)
+    return Counterpart(
+        relation="worktree",
+        name=holder,
+        id=worktree_id(holder) if listed else None,
+        known=True,
+    )
+
+
+def tracks_a_server_ref(branch: Branch) -> bool:
+    """Whether what this branch tracks is a copy on a server.
+
+    Asked of the upstream's full refname, because the short one cannot answer
+    it: `git branch --set-upstream-to=main` records a local branch as the
+    upstream, and a local branch may itself be named `origin/main`. Both
+    shorten to a string that reads like a published ref."""
+    return bool(branch.upstream_ref and branch.upstream_ref.startswith("refs/remotes/"))
+
+
+def counterpart_upstream(branch: Branch, survey_data: Survey) -> Counterpart:
+    """This branch's copy on the server, as the branch itself records it.
+
+    Tracking nothing and tracking another local branch are one answer here, and
+    it is a measured one: nothing names a copy on a server. A local upstream is
+    a pairing made on this disk -- it says where to count commits from, not
+    where any of them were published -- so reporting it as a server counterpart
+    would assert a ref nobody has seen, and would spend the third state below on
+    a copy that does not exist. What the branch does track is still said out
+    loud, in that row's reasons.
+
+    A None upstream is measured rather than missing: this row exists because
+    the ref read produced it, and that read said the branch tracks nothing.
+    What a named upstream does not promise is that the server still has it -- a
+    ref the remote has since dropped is named here and has no row, which is what
+    the absent `id` says and the name beside it stops from reading as "never
+    pushed"."""
+    upstream = branch.upstream
+    if upstream is None or not tracks_a_server_ref(branch):
+        return Counterpart(relation="upstream", name=None, id=None, known=True)
+    listed = any(b.is_remote and b.name == upstream for b in survey_data.branches)
+    return Counterpart(
+        relation="upstream",
+        name=upstream,
+        id=remote_branch_id(upstream) if listed else None,
+        known=True,
+    )
+
+
+def branch_pairing(branch: Branch, survey_data: Survey) -> tuple[Counterpart, ...]:
+    """Nothing for a server ref. No worktree can hold one and it tracks nothing
+    itself, so both relations run the other way -- from the local branch that
+    names it as its upstream, which is how it joins that branch's group."""
+    if branch.is_remote:
+        return ()
+    return (counterpart_worktree(branch, survey_data), counterpart_upstream(branch, survey_data))
+
+
+def worktree_pairing(worktree: Worktree, survey_data: Survey) -> tuple[Counterpart, ...]:
+    """The branch this worktree has checked out.
+
+    Measured either way: the listing states outright whether a branch is
+    checked out here, so None is git answering rather than declining. The row
+    for that branch can still be missing -- with no ref read there are no
+    branch rows at all -- and a named branch with no `id` says that, which is a
+    different thing from a detached checkout."""
+    if worktree.branch is None:
+        return (Counterpart(relation="branch", name=None, id=None, known=True),)
+    listed = any(not b.is_remote and b.name == worktree.branch for b in survey_data.branches)
+    return (
+        Counterpart(
+            relation="branch",
+            name=worktree.branch,
+            id=branch_id(worktree.branch) if listed else None,
+            known=True,
+        ),
+    )
 
 
 def unanswered_probes(branch: Branch, base_ref: str) -> tuple[str, ...]:
@@ -225,13 +339,30 @@ def classify_branch(
     reasons.extend(missing_pr_evidence(survey_data, proven=proven, saw_pr=branch.pr is not None))
     if branch.checked_out_at:
         reasons.append(f"checked out at {branch.checked_out_at}")
+    elif not branch.is_remote and holder_unmeasured(survey_data):
+        # Said out loud because the alternative is silence, and silence here
+        # renders exactly like a branch nothing has checked out.
+        reasons.append(
+            "whether a worktree holds this branch was not established; the worktree listing "
+            "did not describe every tree it has, so this is unknown rather than none"
+        )
     if branch.unmerged_commits:
         reasons.append(f"{branch.unmerged_commits} commit(s) not in {survey_data.base_ref}")
     if not branch.is_remote:
         if branch.upstream is None:
             reasons.append("no upstream: never pushed")
-        elif branch.unpushed_commits:
-            reasons.append(f"{branch.unpushed_commits} commit(s) not on {branch.upstream}")
+        else:
+            if not tracks_a_server_ref(branch):
+                # The pairing above reports no server counterpart for this, which
+                # is the truthful answer and also an absence -- and an absence is
+                # indistinguishable from a branch that simply has no upstream.
+                # The reader is told which one they are looking at here.
+                reasons.append(
+                    f"tracks the local branch {branch.upstream}, not a ref on a server; "
+                    f"nothing here says whether these commits were pushed anywhere"
+                )
+            if branch.unpushed_commits:
+                reasons.append(f"{branch.unpushed_commits} commit(s) not on {branch.upstream}")
     reasons.extend(unanswered_probes(branch, survey_data.base_ref))
     reasons.extend(branch.probe_failures)
 
@@ -250,6 +381,7 @@ def classify_branch(
         id=ident,
         kind=kind,
         name=branch.name,
+        pairing=branch_pairing(branch, survey_data),
         merge_evidence=branch.merge_evidence,
         merge_proven=proven,
         sweepable=withheld is None,
@@ -375,6 +507,7 @@ def classify_worktree(
         id=worktree_id(worktree.path),
         kind=TargetKind.WORKTREE,
         name=worktree.path,
+        pairing=worktree_pairing(worktree, survey_data),
         merge_evidence=evidence,
         merge_proven=evidence in MERGE_PROOF,
         sweepable=withheld is None,
