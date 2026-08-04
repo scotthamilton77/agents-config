@@ -14,8 +14,13 @@ def target(
     kind: TargetKind = TargetKind.BRANCH,
     name: str | None = None,
     sweepable: bool = True,
+    remote: str = "origin",
 ) -> Target:
     resolved = name if name is not None else ident.split(":", 1)[1]
+    # The remote a server ref lives on, which only the survey can recover. Most
+    # fixtures here are on `origin`, and the builder says so rather than leaving
+    # the plan to work it out from a slash.
+    on_remote = kind is TargetKind.REMOTE_BRANCH and resolved.startswith(f"{remote}/")
     return Target(
         id=ident,
         kind=kind,
@@ -26,6 +31,8 @@ def target(
         withheld=None if sweepable else "no merge proof for this commit (evidence: none)",
         reasons=(),
         last_activity=None,
+        remote=remote if on_remote else None,
+        ref_name=resolved.removeprefix(f"{remote}/") if on_remote else None,
     )
 
 
@@ -281,6 +288,105 @@ def test_a_bare_name_needs_both_listings_because_it_could_be_either() -> None:
     assert "no ref could be read" in result.message
 
 
+_UNSPLIT = NotOffered(
+    name="origin/feat/x",
+    reason="the configured remote list could not be read, so which part of "
+    "refs/remotes/origin/feat/x names a remote is unknown",
+    unsplit=True,
+)
+"""What the survey records for a ref it could not split, and the whole of what
+is known about it. The remote is `origin` and the branch `feat/x`, or the remote
+is `origin/feat` and the branch `x` -- so both of those are names it may answer
+to, and nothing here can say which."""
+
+
+def test_a_ref_that_could_not_be_split_stops_a_miss_meaning_absence() -> None:
+    """A server ref recorded only as `<remote>/<ref>`, because telling the two
+    halves apart is what failed. Every other spelling of it -- including the
+    bare one this tool offers for selecting a server ref -- matches nothing,
+    and nothing is what a name that was never there matches too.
+
+    `feat/x` is one of the two ways `origin/feat/x` may split, so it is a name
+    this ref may answer to."""
+    survey = make_survey(unsplit_refs=1, not_offered=(_UNSPLIT,))
+
+    result = plan_for((target("branch:x"),), survey=survey, selectors=["feat/x"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_SURVEY_INCOMPLETE"
+    assert "could not be split" in result.message
+
+
+def test_a_match_does_not_settle_a_name_a_ref_nobody_split_may_also_answer_to() -> None:
+    """The failed probe used to *widen* what a run would delete, which is the
+    one thing an unanswered probe must never do.
+
+    With the remote list read, `refs/remotes/origin/feat/x` becomes a target
+    whose bare alias is `feat/x`, so `feat/x` matches two things and is refused
+    as ambiguous. With the read failed, that ref never becomes a target at all
+    -- so the same name matches exactly one thing and the local branch is
+    deleted. The count of matches is not evidence while something that could
+    have joined it went unnamed."""
+    survey = make_survey(unsplit_refs=1, not_offered=(_UNSPLIT,))
+
+    result = plan_for((target("branch:feat/x"),), survey=survey, selectors=["feat/x"])
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_AMBIGUOUS_TARGET"
+    assert "origin/feat/x" in result.message
+    assert "id" in result.remedy
+
+
+def test_the_exact_id_still_resolves_past_a_ref_nobody_split() -> None:
+    """The remedy has to work or the refusal is a dead end. An `id` says which
+    kind is meant, and no server ref can answer to a `branch:` spelling however
+    it splits."""
+    survey = make_survey(unsplit_refs=1, not_offered=(_UNSPLIT,))
+
+    result = plan_for((target("branch:feat/x"),), survey=survey, selectors=["branch:feat/x"])
+
+    assert isinstance(result, Plan)
+    assert [t.id for t in result.targets] == ["branch:feat/x"]
+
+
+def test_a_name_no_splitting_of_that_ref_could_produce_is_unaffected() -> None:
+    """The doubt is per-selector, and this is what that buys. `origin/feat/x`
+    splits into `feat/x` or `x` and into nothing else, so a target called
+    `other` cannot be the thing it collides with -- and a run-wide rule would
+    refuse it anyway, which in a repository holding one stale tracking ref
+    means refusing every name there is."""
+    survey = make_survey(unsplit_refs=1, not_offered=(_UNSPLIT,))
+
+    result = plan_for((target("branch:other"),), survey=survey, selectors=["other"])
+
+    assert isinstance(result, Plan)
+    assert [t.id for t in result.targets] == ["branch:other"]
+
+
+def test_a_local_branch_selector_is_not_refused_over_a_server_ref() -> None:
+    """`branch:` says a local branch outright, and local refs were read and
+    split without trouble. Refusing this over a server ref nobody was talking
+    about trades a false absence for a false refusal, which is not a trade --
+    both are the tool answering a question it was not asked."""
+    survey = make_survey(unsplit_refs=1)
+
+    result = plan_for((target("branch:x"),), survey=survey, selectors=["branch:gone"])
+
+    assert isinstance(result, Plan)
+    assert [a.selector for a in result.absent] == ["branch:gone"]
+
+
+def test_a_worktree_selector_is_not_refused_over_a_server_ref() -> None:
+    """Same boundary from the other side: a path can only mean a worktree, and
+    the worktree listing had nothing to do with splitting a ref."""
+    survey = make_survey(unsplit_refs=1)
+
+    result = plan_for((target("branch:x"),), survey=survey, selectors=["/repo/wt"])
+
+    assert isinstance(result, Plan)
+    assert [a.selector for a in result.absent] == ["/repo/wt"]
+
+
 def test_a_ref_this_tool_declines_to_offer_is_not_reported_as_gone() -> None:
     """The server's copy of the trunk exists and is deliberately kept out of
     the target list. "Nothing matched" is therefore true and "it is already
@@ -332,6 +438,26 @@ def test_exact_id_disambiguates() -> None:
     result = plan_for(targets, selectors=["branch:feat/x"])
     assert isinstance(result, Plan)
     assert [t.id for t in result.targets] == ["branch:feat/x"]
+
+
+def test_a_server_refs_bare_alias_is_the_name_the_remote_knows() -> None:
+    """The convenience spelling for `team/origin/feat/x` is `feat/x`, because
+    that is what the server calls the branch. Dropping everything before the
+    first slash offers `origin/feat/x` instead -- a name nothing in the
+    repository has, handed to a caller as though it were theirs."""
+    targets = (
+        target(
+            "remote:team/origin/feat/x",
+            kind=TargetKind.REMOTE_BRANCH,
+            remote="team/origin",
+        ),
+    )
+
+    assert isinstance(plan_for(targets, selectors=["feat/x"]), Plan)
+    result = plan_for(targets, selectors=["origin/feat/x"])
+    assert isinstance(result, Plan)
+    assert result.targets == ()
+    assert [a.selector for a in result.absent] == ["origin/feat/x"]
 
 
 def test_worktree_selectable_by_basename() -> None:
@@ -388,6 +514,32 @@ def test_named_occupied_branch_is_refused() -> None:
     result = plan_for((target("branch:held"),), survey=_occupied_survey(), selectors=["held"])
     assert isinstance(result, Refusal)
     assert result.code == "E_BRANCH_IN_USE"
+
+
+def test_the_occupancy_check_reads_the_local_branch_not_a_server_ref_of_that_name() -> None:
+    """`Branch.name` is the short name for a local ref and `<remote>/<ref>` for
+    a server one, and the two collide: a local branch `origin/held` and origin's
+    copy of `held` are both `origin/held`. A search that only compares names
+    can answer with the server ref, whose `checked_out_at` is always None,
+    and the branch its worktree still holds then reads as free.
+
+    Which one an unfiltered search finds today is decided by git listing
+    refs/heads before refs/remotes. That is not a rule this depends on, and
+    building the survey the other way round is how the test says so."""
+    survey = make_survey(
+        branches=(
+            make_branch("origin/held", is_remote=True, remote="origin", ref_name="held"),
+            make_branch("origin/held", ref="refs/heads/origin/held", checked_out_at="/repo/wt"),
+        )
+    )
+
+    result = plan_for(
+        (target("branch:origin/held"),), survey=survey, selectors=["branch:origin/held"]
+    )
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_BRANCH_IN_USE"
+    assert "/repo/wt" in result.message
 
 
 def test_automatic_sweep_skips_an_occupied_branch_instead_of_refusing() -> None:

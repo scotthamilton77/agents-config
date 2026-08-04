@@ -54,11 +54,15 @@ def make_pr(
 def make_branch(
     name: str = "feat/thing",
     *,
+    ref: str | None = None,
+    probe_ref: str | None = None,
+    ref_name: str | None = None,
     head: str = "0" * 40,
     is_remote: bool = False,
     remote: str | None = None,
     last_activity: str | None = _UNSET,
     upstream: str | None = "origin/feat/thing",
+    upstream_ref: str | None = _UNSET,
     is_default: bool = False,
     is_current: bool = False,
     checked_out_at: str | None = None,
@@ -74,13 +78,28 @@ def make_branch(
     # commit does not -- which is git answering, not declining to. A test about
     # the containment probe failing passes None and means it.
     covers = (pr is not None and pr.head_oid == head) if pr_covers_tip == _UNSET else pr_covers_tip
+    # The three spellings the survey recovers from the ref path and the
+    # configured remote list, neither of which a builder has. Composing them
+    # from `name` is the fixture stating where it means the ref to live -- the
+    # safe direction, and the one a test overrides when the point of the test
+    # is that the three come apart.
+    namespace = "refs/remotes/" if is_remote else "refs/heads/"
+    within = name.removeprefix(f"{remote}/") if is_remote and remote else name
+    # An upstream is a ref a remote publishes unless a test says otherwise: that
+    # is the ordinary branch, and spelling the full refname out on every call
+    # would make each builder an assertion about where the branch is tracked.
+    tracked = f"refs/remotes/{upstream}" if upstream else None
     return Branch(
         name=name,
+        ref=ref if ref is not None else f"{namespace}{name}",
+        probe_ref=probe_ref if probe_ref is not None else name,
+        ref_name=ref_name if ref_name is not None else within,
         is_remote=is_remote,
         remote=remote,
         head=head,
         last_activity=iso(1) if last_activity == _UNSET else last_activity,
         upstream=upstream,
+        upstream_ref=tracked if upstream_ref == _UNSET else upstream_ref,
         is_default=is_default,
         is_current=is_current,
         checked_out_at=checked_out_at,
@@ -141,7 +160,9 @@ def make_survey(
     branches: tuple[Branch, ...] = (),
     worktrees: tuple[Worktree, ...] = (),
     current_branch: str | None = "main",
-    base_ref: str = "origin/main",
+    # A full ref path, as the survey resolves it: the short spelling reaches a
+    # local branch of that name first, so it is not what goes into an argv.
+    base_ref: str = "refs/remotes/origin/main",
     default_branch: str = "main",
     default_branch_known: bool = True,
     gh_error: str | None = None,
@@ -150,6 +171,13 @@ def make_survey(
     worktrees_known: bool = True,
     dropped_refs: int = 0,
     dropped_worktrees: int = 0,
+    worktrees_framed: bool = True,
+    unsplit_refs: int = 0,
+    # The boring case is a repository with one remote called origin, which is
+    # what `base_ref` above already assumes. A test about a remote whose name
+    # contains a slash, or about a repository with none, says so here.
+    remotes: tuple[str, ...] = ("origin",),
+    remotes_known: bool = True,
     not_offered: tuple[NotOffered, ...] = (),
     warnings: tuple[str, ...] = (),
 ) -> Survey:
@@ -169,6 +197,10 @@ def make_survey(
         worktrees_known=worktrees_known,
         dropped_refs=dropped_refs,
         dropped_worktrees=dropped_worktrees,
+        worktrees_framed=worktrees_framed,
+        unsplit_refs=unsplit_refs,
+        remotes=remotes,
+        remotes_known=remotes_known,
         not_offered=not_offered,
         warnings=warnings,
     )

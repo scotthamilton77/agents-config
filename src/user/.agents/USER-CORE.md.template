@@ -17,6 +17,11 @@ Facing an unknown, classify then act:
 Narrow "when in doubt, do the safe thing" rules (merge authorization, destructive git) override this matrix on their domain.
 </decisions>
 
+<reporting>
+- While delegated work is outstanding, report no partial findings and no per-agent play-by-play — nothing a later report might revise. A one-line status is fine.
+- When the last delegated result is in, deliver one answer: recommendation first, then only the facts that carry it, then an offer of detail on request. Fold corrections into it rather than spending a turn on them.
+</reporting>
+
 <hard-lines>
 - No hard resets, force pushes, amends, or `git clean -fd` without explicit approval.
 - Stage by explicit path. `git add -A`, `git add .` and `commit -a` sweep in untracked artifacts and other agents' in-flight files; read `git status` first and name what you are committing.
@@ -29,3 +34,16 @@ Narrow "when in doubt, do the safe thing" rules (merge authorization, destructiv
 - Artifacts state the current decision, not its history — git is the changelog.
 - If the repo has a CONTEXT.md glossary, use its terminology.
 </conventions>
+
+<communication>
+- Write prose for human readers: complete sentences in plain professional English — no telegraphic fragments, no arrow chains, no invented abbreviations (`impl`, `cfg`, `req`) unless the codebase already uses them.
+- Lead with the outcome or recommendation; supporting detail after.
+- Docs and specs state the decision, its rationale, and its prerequisites so a reader who was not present can follow — no reasoning transcripts, no padding.
+- Keep progress narration to a sentence; never mix it into the deliverable.
+</communication>
+
+<simplicity>
+- Guard only against conditions that can occur. Validate at trust boundaries (user input, network data, parsed files); do not re-validate what the type system or caller contract already guarantees.
+- No speculative abstraction layers, config flags, fallbacks, or compatibility shims for consumers that don't exist. If you cannot name the real trigger for a defensive construct, delete it.
+- Go beyond happy path plus standard error handling only when an observed failure or an explicit requirement demands it.
+</simplicity>

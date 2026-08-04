@@ -289,6 +289,76 @@ def _worktree(repo: Path, name: str, branch: str) -> Path:
     return path
 
 
+def test_a_worktree_whose_path_holds_a_newline_is_surveyed_and_removed_whole(
+    repo: Path, tmp_path: Path
+) -> None:
+    """A path may contain a newline, and `worktree list --porcelain` emits it
+    raw rather than escaping it -- verified here against git rather than
+    against a belief about git.
+
+    Split that listing on newlines and the worktree is recorded under a path
+    cut short at the newline, with nothing counted as lost. Naming the real
+    path then matches nothing, and the run says there is nothing to delete
+    about a tree that is sitting there."""
+    path = tmp_path / "wt\nnewline"
+    git(repo, "worktree", "add", "-q", str(path), "-b", "feat/odd")
+    listing = git(repo, "worktree", "list", "--porcelain")
+    assert f"worktree {path}" in listing  # git escapes nothing; the newline is raw
+
+    surveyed = report(repo)
+    repository = surveyed["repo"]
+    assert isinstance(repository, dict)
+    assert str(path) in [w["path"] for w in repository["worktrees"]]
+    assert repository["dropped_worktrees"] == 0
+
+    with reachability_guard(repo):
+        payload = report(repo, "--cleanup", str(path))
+
+    assert payload["_exit"] == EXIT_OK, anomaly_lines(payload)
+    plan = payload["plan"]
+    assert isinstance(plan, dict)
+    assert plan["absent"] == []
+    deletion = payload["execution"]["deletions"][0]  # type: ignore[index]
+    assert (deletion["deleted"], deletion["verified"]) == (True, True)
+    assert not path.exists()
+    assert str(path) not in git(repo, "worktree", "list", "--porcelain")
+
+
+def test_a_run_inside_a_worktree_whose_path_holds_a_newline_does_not_sweep_itself(
+    repo: Path, tmp_path: Path
+) -> None:
+    """The path arrives whole from the worktree listing, which is framed with
+    NUL -- and as `rev-parse --show-toplevel`, which is not framed at all and
+    has no `-z` to ask for. Read that answer a line at a time and the run
+    records itself as living at `.../wt`, the two spellings stop matching, and
+    both guards on the worktree the process is executing in miss it.
+
+    Nothing else is left to catch it: the branch below is provably merged, the
+    tree is clean, and the `--no-ff` keeps it off the trunk's tip -- so the
+    guard that knows this is the working directory is the last one standing,
+    and a bare sweep with it disabled removes the ground it is standing on."""
+    path = tmp_path / "wt\nnl"
+    git(repo, "worktree", "add", "-q", str(path), "-b", "feat/odd")
+    commit(path, "odd.txt")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feat/odd", "feat/odd")
+
+    with reachability_guard(repo):
+        payload = report(path, "--cleanup")
+
+    surveyed = payload["repo"]
+    assert isinstance(surveyed, dict)
+    assert surveyed["repo_root"] == str(path)
+    target = find(payload, f"worktree:{path}")
+    # Merge-proven and clean, so the sentence has to be the specific one.
+    assert target["merge_proven"] is True
+    assert target["sweepable"] is False
+    assert "executing in" in str(target["withheld"])
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert [d for d in execution["deletions"] if d["deleted"]] == []
+    assert (path / "odd.txt").exists()
+
+
 def test_a_dirty_worktree_named_outright_is_left_to_git_to_refuse(repo: Path) -> None:
     """No flag here turns git's dirt check off, and adding one would mean
     re-implementing in Python what git has just read off the disk. The refusal
@@ -447,6 +517,175 @@ def test_a_worktree_that_goes_dirty_after_the_survey_is_left_alone(repo: Path) -
     assert (work / "urgent.txt").read_text(encoding="utf-8").startswith("work that exists")
     assert "git refused to remove worktree" in outcome.anomalies[0].message
     assert any("--force" in line for line in outcome.anomalies[0].transcript)
+
+
+# -- the pairing a reader groups rows by --------------------------------------
+#
+# The values worth crossing this with are the ones a naive recovery divides on.
+# Two are exercised below -- a worktree path containing the separator a reason
+# sentence uses, and a remote whose own name contains the slash in
+# `<remote>/<ref>`. Two are deliberately absent:
+#
+# - a branch name containing a space, because git will not make one. `git branch
+#   'feat with space'` is refused as an invalid ref name, so no repository can
+#   present the value and a test would be asserting against git's own rules.
+# - a newline in a worktree path, which git accepts and emits raw. It is absent
+#   for a different reason: `read_worktrees` parses that listing line by line, so
+#   the path is already truncated at the newline by the time anything pairs it.
+#   The two rows then agree with each other about a path that does not exist,
+#   and a test here would pin the truncation rather than the relation. It belongs
+#   with the fix to that parse, not with this.
+
+
+def test_the_pairing_holds_for_a_path_no_sentence_can_be_split_on(
+    repo: Path, tmp_path: Path
+) -> None:
+    """Why the pairing is a field and not a sentence.
+
+    `checked out at /a/b at rest` contains two ` at `s, and the only reader
+    that recovers the path is one that never split it. A directory named this
+    way is unusual; a directory whose name contains a word this tool happens to
+    use in a reason is not, and the row it mis-keys reports the wrong worktree
+    while looking exactly like a measurement.
+
+    Real git, because the point is what git accepts as a path and as a ref."""
+    _with_remote(repo, tmp_path)
+    work = repo.parent / "wt at rest"
+    git(repo, "worktree", "add", "-q", str(work), "-b", "feat/paired")
+    commit(work, "paired.txt")
+    git(work, "push", "-q", "-u", "origin", "feat/paired")
+
+    with reachability_guard(repo):  # a report changes nothing
+        payload = report(repo)
+
+    branch = find(payload, "branch:feat/paired")
+    assert branch["pairing"] == {
+        "worktree": {"name": str(work), "id": f"worktree:{work}", "known": True},
+        "upstream": {
+            "name": "origin/feat/paired",
+            "id": "remote:origin/feat/paired",
+            "known": True,
+        },
+    }
+    assert find(payload, f"worktree:{work}")["pairing"] == {
+        "branch": {"name": "feat/paired", "id": "branch:feat/paired", "known": True}
+    }
+    assert find(payload, "remote:origin/feat/paired")["pairing"] == {}
+
+    # The route the field replaces, run against the same row: the reason names
+    # the path and gives a splitter no way to tell where it ends.
+    prose = next(r for r in branch["reasons"] if str(r).startswith("checked out at"))
+    assert str(prose).split(" at ")[1] != str(work)
+
+
+def test_a_branch_tracking_a_ref_this_tool_will_not_target_still_names_it(
+    repo: Path, tmp_path: Path
+) -> None:
+    """`main` tracks `origin/main`, and the server's copy of the trunk is
+    deliberately not offered as a target. So the upstream is named with no row
+    to follow -- which is a third answer, and dropping the name to reach one of
+    the other two would report the trunk as never pushed."""
+    _with_remote(repo, tmp_path)
+
+    with reachability_guard(repo):
+        payload = report(repo)
+
+    assert find(payload, "branch:main")["pairing"]["upstream"] == {
+        "name": "origin/main",
+        "id": None,
+        "known": True,
+    }
+
+
+def test_a_branch_tracking_a_local_branch_is_given_no_copy_on_the_server(repo: Path) -> None:
+    """The upstream a branch records is not always a ref a remote publishes.
+
+    `git branch --set-upstream-to=main feat/local` is a pairing made entirely on
+    this disk, and this repository has no remote at all -- so a row claiming a
+    server counterpart here names something that exists nowhere. Real git,
+    because the whole question is what git records for that command: shortened,
+    the upstream is `main`, which is indistinguishable from a ref a remote
+    called `main` publishes."""
+    git(repo, "checkout", "-q", "-b", "feat/local")
+    commit(repo, "local.txt")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "branch", "--set-upstream-to=main", "feat/local")
+
+    with reachability_guard(repo):  # a report changes nothing
+        payload = report(repo)
+
+    survey_data = payload["repo"]
+    assert isinstance(survey_data, dict)
+    branches = survey_data["branches"]
+    assert isinstance(branches, list)
+    row = next(b for b in branches if b["name"] == "feat/local")
+    # What git recorded, which is what the pairing has to be read from: the
+    # short name says `main` for either kind of upstream, the full one does not.
+    assert row["upstream"] == "main"
+    assert row["upstream_ref"] == "refs/heads/main"
+
+    target = find(payload, "branch:feat/local")
+    assert target["pairing"]["upstream"] == {"name": None, "id": None, "known": True}
+    # And the row is not silent about the tracking it declines to publish, which
+    # is what would leave it reading like a branch that tracks nothing.
+    assert any("tracks the local branch main" in str(r) for r in target["reasons"])
+    assert not any("never pushed" in str(r) for r in target["reasons"])
+
+
+def test_the_pairing_holds_when_the_remote_s_own_name_holds_a_slash(
+    repo: Path, tmp_path: Path
+) -> None:
+    """The other delimiter, and the one a name is genuinely allowed to contain.
+
+    `git remote add team/origin <url>` is accepted, so the slash in
+    `<remote>/<ref>` is not a boundary anything can be split at: recovering the
+    server copy of `feat/slashed` by cutting `team/origin/feat/slashed` at the
+    first slash asks after a remote called `team` and a ref that is not there.
+
+    Nothing here splits it. The upstream a branch records and the short name
+    the server ref carries are compared whole, so the row is keyed by the name
+    git printed rather than by a guess about where it divides."""
+    bare = tmp_path / "server.git"
+    SubprocessCommands().git(["init", "-q", "--bare", "-b", "main", str(bare)])
+    git(repo, "remote", "add", "team/origin", str(bare))
+    git(repo, "push", "-q", "-u", "team/origin", "main")
+    git(repo, "checkout", "-q", "-b", "feat/slashed")
+    commit(repo, "slashed.txt")
+    git(repo, "push", "-q", "-u", "team/origin", "feat/slashed")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "fetch", "-q", "team/origin")
+
+    with reachability_guard(repo):
+        payload = report(repo)
+
+    pairing = find(payload, "branch:feat/slashed")["pairing"]
+    assert isinstance(pairing, dict)
+    assert pairing["upstream"] == {
+        "name": "team/origin/feat/slashed",
+        "id": "remote:team/origin/feat/slashed",
+        "known": True,
+    }
+    # And the id is a row rather than a string that resembles one: a pairing
+    # that names a counterpart nothing in the report describes is the state
+    # `id: null` exists to report, so a non-null one has to resolve.
+    assert find(payload, "remote:team/origin/feat/slashed")["name"] == "team/origin/feat/slashed"
+
+
+def test_a_detached_worktree_says_it_holds_no_branch_rather_than_saying_nothing(
+    repo: Path,
+) -> None:
+    """git's listing answers this outright, so the row carries a measured none
+    -- distinguishable from a branch that went unread, which is the whole
+    reason the entry carries `known` as well as a name."""
+    work = repo.parent / "wt-loose"
+    git(repo, "worktree", "add", "-q", "--detach", str(work))
+
+    with reachability_guard(repo):
+        payload = report(repo)
+
+    assert find(payload, f"worktree:{work}")["pairing"] == {
+        "branch": {"name": None, "id": None, "known": True}
+    }
 
 
 # -- remote deletion ----------------------------------------------------------
@@ -662,6 +901,224 @@ def test_an_unrelated_sibling_ref_is_not_read_as_the_deletion_having_failed(
     remaining = git(repo, "ls-remote", "--heads", "origin")
     assert "refs/heads/a/feat/x" in remaining
     assert "\trefs/heads/feat/x" not in remaining
+
+
+# -- names recovered from framing, not from a delimiter ------------------------
+
+
+def test_a_remote_whose_name_holds_a_slash_is_never_split_at_the_wrong_one(
+    repo: Path, tmp_path: Path
+) -> None:
+    """`git remote add team/origin <url>` is accepted, so the slash in
+    `<remote>/<ref>` is a delimiter the remote's own name is allowed to
+    contain. Splitting at the first one yields the remote `team`.
+
+    That is not merely wrong, it is quiet: git takes a *path* wherever it
+    expects a remote, so a sibling directory called `team` that happens to be a
+    repository answers the pre-delete probe -- successfully, with an empty ref
+    list, about a repository nobody named. An empty answer there means the
+    branch is already gone, so the run would report a live branch as nothing to
+    do and exit clean. The decoy below is that directory, sitting exactly where
+    the broken split reaches."""
+    bare = tmp_path / "server.git"
+    SubprocessCommands().git(["init", "-q", "--bare", "-b", "main", str(bare)])
+    git(repo, "remote", "add", "team/origin", str(bare))
+    git(repo, "push", "-q", "-u", "team/origin", "main")
+    git(repo, "checkout", "-q", "-b", "feat/gone")
+    only = commit(repo, "feat-gone.txt", "the only copy\n")
+    git(repo, "push", "-q", "-u", "team/origin", "feat/gone")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "fetch", "-q", "team/origin")
+
+    # The trap: a repository at the path `ls-remote team ...` would open,
+    # holding nothing, which is what makes its answer look like absence.
+    decoy = repo / "team"
+    SubprocessCommands().git(["init", "-q", "--bare", "-b", "main", str(decoy)])
+
+    surveyed = report(repo)
+    branches = surveyed["repo"]
+    assert isinstance(branches, dict)
+    feat = next(b for b in branches["branches"] if b["name"] == "team/origin/feat/gone")
+    assert feat["remote"] == "team/origin"
+    assert feat["ref_name"] == "feat/gone"
+    # The server's copy of the trunk is recognised as such: recovering the ref
+    # name needs the remote's name to end in the right place.
+    excluded = {n["name"]: str(n["reason"]) for n in branches["not_offered"]}
+    assert "trunk" in excluded["team/origin/main"]
+
+    port = Recording()
+    with reachability_guard(bare) as guard:
+        out = StringIO()
+        code = main(
+            ["--cleanup", "team/origin/feat/gone"],
+            port=port,
+            cwd=repo,
+            now=datetime.now(UTC),
+            out=out,
+        )
+        payload = json.loads(out.getvalue())
+        guard.proven_by_bundle(Path(str(payload["execution"]["salvages"][0]["path"])))
+
+    assert code == EXIT_OK
+    deletion = payload["execution"]["deletions"][0]
+    # The defect's signature: `already_absent` on a branch the server holds.
+    assert deletion["already_absent"] is False
+    assert deletion["deleted"] is True
+    assert "feat/gone" not in git(repo, "ls-remote", "--heads", "team/origin")
+    assert only not in git(bare, "rev-list", "--all").split()
+
+    # Every remote git was given is the configured name, never its first
+    # component -- and the decoy was never opened.
+    named = [call[call.index("--heads") + 1] for call in port.transcript if "--heads" in call]
+    assert named and set(named) == {"team/origin"}
+    assert git(decoy, "for-each-ref", "--format=%(refname)") == ""
+
+
+@pytest.mark.parametrize(
+    ("remote", "discovered"),
+    [("origin", True), ("team", False), ("team/origin", False)],
+)
+def test_a_trunk_published_only_by_a_remote_not_called_origin_stops_the_sweep(
+    repo: Path, tmp_path: Path, remote: str, discovered: bool
+) -> None:
+    """Discovery asks `refs/remotes/origin/HEAD` and then a local main/master,
+    so a trunk published only through a differently-named remote is found by no
+    tier. What matters is which way that fails, and it fails closed twice over:
+    no trunk is verified, and the ref merges would be measured against does not
+    resolve either, so nothing can reach merge proof in the first place. The
+    branch below is genuinely merged -- the setup insists on it -- and is still
+    left alone.
+
+    The remote's name is the only thing varying, and the slash in it changes
+    nothing: `team` and `team/origin` behave identically, because the tier that
+    declines is the one asking for `origin` by name rather than any split of a
+    path. The `origin` row is the control that keeps the other two from passing
+    vacuously -- same shape, same merged branch, and there the sweep does take
+    it."""
+    bare = tmp_path / "server.git"
+    SubprocessCommands().git(["init", "-q", "--bare", "-b", "trunk", str(bare)])
+    git(repo, "branch", "-m", "main", "trunk")
+    git(repo, "remote", "add", remote, str(bare))
+    git(repo, "push", "-q", "-u", remote, "trunk")
+    git(repo, "checkout", "-q", "-b", "feat")
+    commit(repo, "feat.txt")
+    git(repo, "checkout", "-q", "trunk")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feat", "feat")
+    git(repo, "push", "-q", remote, "trunk")
+    git(repo, "fetch", "-q", remote)
+    git(repo, "remote", "set-head", remote, "-a")
+    # Raises unless feat really is merged: without this the withholding below
+    # could be the ordinary no-merge-proof answer rather than the trunk one.
+    git(repo, "merge-base", "--is-ancestor", "feat", "trunk")
+
+    with reachability_guard(repo):
+        payload = report(repo, "--cleanup")
+
+    repo_block = payload["repo"]
+    assert isinstance(repo_block, dict)
+    assert repo_block["default_branch_known"] is discovered
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    swept = {d["target_id"] for d in execution["deletions"] if d["deleted"]}
+
+    if discovered:
+        assert repo_block["default_branch"] == "trunk"
+        assert swept == {"branch:feat"}
+        return
+
+    # Nothing was taken, and the trunk this repository actually has is still
+    # here under a name no tier recognised.
+    assert swept == set()
+    assert find(payload, "branch:feat")["sweepable"] is False
+    for ref in ("refs/heads/trunk", "refs/heads/feat"):
+        assert git(repo, "for-each-ref", "--format=%(refname)", ref) != ""
+
+
+def test_merges_are_not_measured_against_a_local_branch_named_like_the_server_trunk(
+    repo: Path, tmp_path: Path
+) -> None:
+    """Git resolves a bare name through `refs/heads/` before `refs/remotes/`,
+    so `origin/main` in an argv reaches a local branch of that name whenever
+    one exists -- and one legally can, as `git branch origin/main` here makes.
+
+    Point that decoy at unmerged work and the baseline every tier measures
+    against becomes the work itself: it is its own ancestor, `branch --merged`
+    lists it, `cherry` finds every patch. A bare sweep then deletes the only
+    copy of `feat`, holding a merge proof it manufactured. The full ref path is
+    what makes the baseline the ref the survey actually verified."""
+    _with_remote(repo, tmp_path)
+    git(repo, "checkout", "-q", "-b", "feat")
+    only = commit(repo, "feat.txt", "the only copy\n")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "branch", "origin/main", "feat")
+
+    # The trap, measured rather than assumed: the short spelling reaches the
+    # decoy, and the work really is absent from the server's trunk.
+    assert git(repo, "rev-parse", "origin/main") == only
+    assert git(repo, "rev-list", "--count", "refs/remotes/origin/main..feat") == "1"
+
+    with reachability_guard(repo):
+        payload = report(repo, "--cleanup")
+
+    surveyed = payload["repo"]
+    assert isinstance(surveyed, dict)
+    assert surveyed["base_ref"] == "refs/remotes/origin/main"
+    feat = find(payload, "branch:feat")
+    assert feat["merge_evidence"] == MergeEvidence.NONE.value
+    assert feat["sweepable"] is False
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert [d for d in execution["deletions"] if d["deleted"]] == []
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/feat") != ""
+
+
+def test_a_local_branch_spelled_like_a_remote_ref_is_a_target_of_its_own(
+    repo: Path, tmp_path: Path
+) -> None:
+    """`origin/main` is a legal local branch, and creating one changes what git
+    shortens the *server's* trunk to: `%(refname:short)` gives
+    `remotes/origin/main`, because `origin/main` no longer denotes it.
+
+    Reading a remote's name out of that string yields the remote `remotes`, and
+    the trunk exclusion -- which compares the remainder against `main` -- stops
+    firing for the server's own trunk. The local branch meanwhile has to stay
+    what it is: a separate ref, with its own id, that a caller can delete
+    without the report telling them it is the trunk."""
+    _with_remote(repo, tmp_path)
+    git(repo, "checkout", "-q", "-b", "origin/main")
+    stray = commit(repo, "stray.txt")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--squash", "origin/main")
+    git(repo, "commit", "-q", "-m", "squashed the stray branch")
+
+    assert git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads/origin/main") == (
+        "heads/origin/main"
+    )
+
+    payload = report(repo)
+    surveyed = payload["repo"]
+    assert isinstance(surveyed, dict)
+    # The server's copy is still recognised as the trunk's, which needs the
+    # remote's name to have stopped in the right place.
+    excluded = {n["name"]: str(n["reason"]) for n in surveyed["not_offered"]}
+    assert "trunk" in excluded["origin/main"]
+    # And it is told apart from the local branch by ref, not by the string the
+    # two of them share.
+    local = next(b for b in surveyed["branches"] if b["ref"] == "refs/heads/origin/main")
+    assert local["name"] == "origin/main"
+    assert local["is_remote"] is False
+
+    target = find(payload, "branch:origin/main")
+    assert "trunk" not in str(target["withheld"] or "")
+
+    with reachability_guard(repo) as guard:
+        deleted = report(repo, "--cleanup", "branch:origin/main")
+        guard.expect_unreachable(stray)
+
+    assert deleted["_exit"] == EXIT_OK, anomaly_lines(deleted)
+    assert deleted["execution"]["deletions"][0]["deleted"] is True  # type: ignore[index]
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/origin/main") == ""
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/remotes/origin/main") != ""
 
 
 @pytest.mark.parametrize(

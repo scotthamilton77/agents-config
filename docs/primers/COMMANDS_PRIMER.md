@@ -13,15 +13,30 @@ Commands differ from skills and agents in a critical way:
 - **Commands** are invoked by USERS, explicitly, at the start of a workflow
 - **Agents** are dispatched by orchestrators for role-specific subwork
 
-Commands should be lean and delegating: parse the user's intent, extract `$ARGUMENTS`, then execute in-agent for relatively simple tasks, or hand off to skills or agents for complex work. A command that contains 200 lines of methodology has potentially confused itself with a skill.
+Commands should be lean and delegating: parse the user's intent, extract `$ARGUMENTS`, then execute in-agent for relatively simple tasks, or hand off to skills or agents for complex work. A command carrying pages of methodology has potentially confused itself with a skill.
 
 ---
 
 ## File Format
 
-Plain markdown. No frontmatter.
+Markdown with YAML front matter. The front matter is not optional: the deploy
+gate treats `commands` as a gated namespace, and **a command carrying no
+`admission:` record is dropped at deploy** — it stages, and then simply never
+lands in the tool's config directory. In this repository `content-lint` catches
+it first and fails, because a record-less artifact under the user tree is fatal
+there; where that gate does not run, the drop is silent. A malformed record is
+worse in both places: it aborts the whole deploy.
 
 ```markdown
+---
+description: One line, shown to the user in the command list. Nothing here
+  reaches the model's context until someone types the command.
+admission:
+  provides: <the capability this supplies>   # or `prevents:`, never both
+  cost: <what it costs, and on which surface>
+  remove_when: <the observation that would retire it>
+---
+
 # Command Name
 
 Brief one-line description of what this command does.
@@ -38,7 +53,7 @@ Invoke the relevant skill or dispatch the relevant agent.
 Summarize what was done.
 ```
 
-`$ARGUMENTS` is a placeholder that receives everything the user typed after the slash command name. Example: `/optimize-my-skill writing-unit-tests` → `$ARGUMENTS = "writing-unit-tests"`.
+`$ARGUMENTS` is a placeholder that receives everything the user typed after the slash command name. Example: `/clean-up-git packages/` → `$ARGUMENTS = "packages/"`.
 
 ---
 
@@ -83,7 +98,7 @@ Always document what happens when `$ARGUMENTS` is empty. Commands that fail sile
 
 ## Best Practices
 
-- **Lean body**: under 80 lines. Complex methodology belongs in a skill; complex role work belongs in an agent.
+- **Lean body**: a smell, not a cap — nothing in a command reaches context until it is invoked, so no token budget measures it. Length signals prose doing work that code should do, or methodology that belongs in a skill and role work that belongs in an agent.
 - **Explicit `$ARGUMENTS` documentation**: what forms are accepted, what the defaults are, what happens on empty input.
 - **Delegate, don't inline complexity**: use `Skill({ skill: "name" })` or dispatch an agent rather than re-implementing methodology inline.
 - **Single purpose**: one command, one workflow. Complex branching logic is a signal to split into multiple commands.
@@ -109,7 +124,7 @@ Always document what happens when `$ARGUMENTS` is empty. Commands that fail sile
 | Undocumented `$ARGUMENTS` | No description of input format or defaults | Add argument documentation section |
 | No empty-args handling | Silent failure or undefined behavior when user omits args | Add explicit default behavior or usage message |
 | Duplicate of a skill | Command re-implements what a skill already provides | Refactor: command calls the skill |
-| Beads-specific content in shared commands | `bd` commands or bead tracker terminology | Move to plugin commands namespace |
+| Beads-specific content in a user-scoped command | `bd` commands or bead tracker terminology | Move to plugin commands namespace |
 | Hardcoded paths or assumptions | Command assumes specific directory structure | Parameterize via `$ARGUMENTS` or config |
 
 ---
@@ -125,4 +140,4 @@ src/plugins/<plugin>/
   <command-name>.md
 ```
 
-Command names must be unique across the merged installation tree (shared + all active plugins). Collisions are a **fatal install error** — check before adding.
+Commands are a tool-scoped namespace — there is no shared commands tree, so the only names a new command can collide with are the other commands staged into that same tool: its own tree plus every active plugin's. Collisions are a **fatal install error** — check before adding.

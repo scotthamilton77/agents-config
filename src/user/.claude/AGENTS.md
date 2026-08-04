@@ -28,10 +28,12 @@ into `~/.claude/` (Claude is always an active tool; never auto-detected away).
 - `rules/` is the append-only extension point for Claude-specific workflow
   (stuff that would only apply in a Claude context, plus any plugin
   append-merges); tool-agnostic rules source from `src/user/.agents/rules/`
-  and stage into `~/.claude/rules/` at install time. Both are empty today —
-  the record-less rules moved to `archive/src/user/**`. Keep files scoped and
-  single-purpose.
-- Everything in `skills/` and `rules/` is subject to the admission gate: no
+  and stage into `~/.claude/rules/` at install time. Each of those directories
+  carries its own `AGENTS.md` saying what is currently in it; read that rather
+  than counting files. Keep files scoped and single-purpose.
+- `commands/*.md` — one flat file per command; a tool-scoped namespace with no
+  shared variant, so Claude is the only tree that carries one.
+- Everything in `commands/`, `skills/` and `rules/` is subject to the admission gate: no
   `admission:` record in front matter means the installer drops it and prunes
   any deployed copy. Adding a file here without a record ships nothing.
 

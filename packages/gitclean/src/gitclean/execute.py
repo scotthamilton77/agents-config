@@ -38,6 +38,7 @@ from pathlib import Path
 
 from gitclean.model import Anomaly, Deletion, Plan, SalvageRecord, Survey, Target, TargetKind
 from gitclean.ports import CommandPort
+from gitclean.survey import list_worktrees
 
 SALVAGE_PREFIX = "gitclean-salvage"
 """Where the scratch branch a bundle is taken from lives. Namespaced so the
@@ -368,27 +369,35 @@ class Executor:
         # every worktree whose directory has gone missing, and those were never
         # planned targets: the executor acts on what the plan named, and
         # nothing else. `worktree remove` takes this one's record with it.
-        listing = self._port.git(git_argv("worktree", "list", "--porcelain"), cwd=self._cwd)
-        if not listing.ok:
-            # Absence of the worktree in output that was never produced is not
-            # evidence of anything. Unverified is its own outcome, distinct
-            # from verified-gone.
+        # The same framed read the survey uses, because the comparison here is
+        # against a whole path: a listing split on newlines answers "not there"
+        # for a worktree whose path contains one, which is the removal
+        # reporting itself successful by failing to spell what it looked for.
+        listing = list_worktrees(self._port, self._cwd)
+        if not listing.ok or listing.dropped or not listing.can_place(target.name):
+            # Absence of the worktree in output that was never produced -- or
+            # that lost a record on the way, or that cannot show it named this
+            # path in full -- is not evidence of anything. Unverified is its own
+            # outcome, distinct from verified-gone.
+            #
+            # `can_place` rather than the listing's framing outright: the path
+            # in question is known here, and one with no newline in it cannot be
+            # the truncated record. Refusing to confirm every removal on a git
+            # without `-z` would turn each of them into an anomaly and buy
+            # nothing.
             self._record(
                 "verify",
                 target.id,
                 f"could not confirm {target.name} is gone; the removal reported success",
-                listing.transcript(),
+                listing.result.transcript(),
             )
             return _failed(target, "deletion unverified")
-        still_there = any(
-            line.strip() == f"worktree {target.name}" for line in listing.stdout.splitlines()
-        )
-        if still_there:
+        if listing.holds(target.name):
             self._record(
                 "verify",
                 target.id,
                 f"worktree {target.name} still appears in `git worktree list` after removal",
-                listing.transcript(),
+                listing.result.transcript(),
             )
             return _failed(target, "still present after removal")
         return Deletion(
@@ -448,7 +457,14 @@ class Executor:
         `ls-remote` takes a pattern and matches it on path-component
         boundaries, so an unrelated `a/feat/x` answers a question asked about
         `feat/x`. The refname column settles it -- the same exact comparison
-        the local path makes."""
+        the local path makes.
+
+        ``remote`` has to be a name git itself listed as configured, and the
+        reason is that git accepts a *path* in this position: given `team`
+        rather than the real `team/origin`, a sibling directory of that name
+        that happens to be a repository is opened instead, and answers. The
+        answer is well-formed, empty and about somebody else entirely -- and an
+        empty answer here means the branch is already gone."""
         probe = self._port.git(
             git_argv("ls-remote", "--heads", remote, name=ref_path), cwd=self._cwd
         )
@@ -487,9 +503,12 @@ class Executor:
         on such a server, where the cost is a deletion this run declines to
         make; the tracking ref survives, the next report shows the target
         again, and naming it after a fetch still works."""
-        remote, _, ref = target.name.partition("/")
-        if not ref:
-            # Unparseable, and _delete_remote_branch is where that is reported.
+        remote, ref = target.remote, target.ref_name
+        if not remote or not ref:
+            # Undecomposed, and _delete_remote_branch is where that is
+            # reported. Splitting the name here to get on with it is the whole
+            # defect: the half-guessed remote is what turns a live branch into
+            # a clean "already gone".
             return None
         present, _ = self._remote_ref_present(remote, f"refs/heads/{ref}")
         if present is not False:
@@ -519,10 +538,16 @@ class Executor:
         The lease makes the server check for us: the delete is accepted only
         while the ref still points at the commit the survey judged, and is
         rejected as stale otherwise."""
-        remote, _, ref = target.name.partition("/")
-        if not ref:
-            self._record("delete", target.id, f"cannot split {target.name} into remote and ref", ())
-            return _failed(target, "unparseable remote ref")
+        remote, ref = target.remote, target.ref_name
+        if not remote or not ref:
+            self._record(
+                "delete",
+                target.id,
+                f"{target.name} reached the executor without a remote and a branch name, which "
+                f"only the survey can tell apart; nothing was deleted",
+                (),
+            )
+            return _failed(target, "undecomposed remote ref")
         expected = next(
             (b.head for b in self._survey.branches if b.is_remote and b.name == target.name),
             "",
@@ -604,10 +629,8 @@ class Executor:
 
         for target in plan.targets:
             if target.kind is TargetKind.BRANCH:
-                holder = next(
-                    (b.checked_out_at for b in self._survey.branches if b.name == target.name),
-                    None,
-                )
+                surveyed = self._survey.local_branch(target.name)
+                holder = surveyed.checked_out_at if surveyed else None
                 if holder and holder in stranded:
                     deletions.append(
                         _failed(target, f"skipped: its worktree {holder} was not removed")

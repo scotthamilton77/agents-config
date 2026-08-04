@@ -137,12 +137,56 @@ class Worktree:
 @dataclass(frozen=True, slots=True)
 class Branch:
     name: str
-    """Short name for a local branch (`feat/x`); `<remote>/<ref>` for a remote."""
+    """Short name for a local branch (`feat/x`); `<remote>/<ref>` for a remote.
+
+    What a caller types and what the report prints. Recovered from ``ref`` by
+    stripping the namespace it lives in, never from git's shortened form --
+    see ``probe_ref`` for why those are different strings."""
+    ref: str
+    """The full refname: `refs/heads/feat/x`, `refs/remotes/origin/feat/x`.
+
+    The only spelling that denotes exactly one ref in exactly one repository,
+    so it is what identity is decided on -- is this the trunk, is this the ref
+    a worktree holds. Every other name here is derived from it."""
+    probe_ref: str
+    """The spelling handed to git when a probe needs to name this ref.
+
+    git's own `%(refname:short)`, which is the shortest form that resolves back
+    to this ref and nothing else -- git lengthens it precisely when a shorter
+    one would be ambiguous, so `refs/remotes/origin/main` is `remotes/origin/main`
+    in a repository that also has a local branch called `origin/main`.
+
+    That guarantee is about *resolution* and nothing else. The same string is
+    an unreliable decomposition: nothing in it says where the remote's name
+    ends, which is why ``remote`` and ``ref_name`` are recovered from ``ref``
+    and never from here."""
+    ref_name: str
+    """The name the ref carries inside its own namespace: `feat/x` for both
+    `refs/heads/feat/x` and `refs/remotes/origin/feat/x`.
+
+    For a remote branch this is what the *server* calls the branch, which is
+    what a pull request is keyed by and what `push --delete` has to be given."""
     is_remote: bool
     remote: str | None
+    """Which remote a remote-tracking ref belongs to, taken from the configured
+    remote list rather than from the first slash. Remote names may contain
+    slashes -- `git remote add team/origin` is accepted -- so the slash is a
+    delimiter the name is allowed to contain, and splitting on it names a
+    remote that does not exist. None for a local branch."""
     head: str
     last_activity: str | None
     upstream: str | None
+    """What this branch tracks, in the short form git prints it."""
+    upstream_ref: str | None
+    """The same ref as ``upstream``, as its full refname -- ``refs/remotes/...``
+    for a copy on a server, ``refs/heads/...`` for another local branch. None
+    when the branch tracks nothing.
+
+    Carried because the short name cannot answer which of those it is, and the
+    answer decides whether this branch has a server counterpart at all:
+    ``git branch --set-upstream-to=main`` records a local pairing, and a local
+    branch is allowed to be named ``origin/main``. Both shorten to a string
+    that looks like a published ref."""
     is_default: bool
     is_current: bool
     checked_out_at: str | None
@@ -178,11 +222,15 @@ class Branch:
     def as_json(self) -> dict[str, object]:
         return {
             "name": self.name,
+            "ref": self.ref,
+            "probe_ref": self.probe_ref,
+            "ref_name": self.ref_name,
             "is_remote": self.is_remote,
             "remote": self.remote,
             "head": self.head,
             "last_activity": self.last_activity,
             "upstream": self.upstream,
+            "upstream_ref": self.upstream_ref,
             "is_default": self.is_default,
             "is_current": self.is_current,
             "checked_out_at": self.checked_out_at,
@@ -194,6 +242,55 @@ class Branch:
             "pr_covers_tip": self.pr_covers_tip,
             "probe_failures": list(self.probe_failures),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class Counterpart:
+    """One of the other parts of the thing a target belongs to.
+
+    A worktree, the branch it holds and that branch's copy on the server are
+    one thing with two or three parts, and git enforces it: a branch cannot be
+    deleted while a worktree holds it. So a reader deciding about one part has
+    to see the others -- which makes the relation a fact this report owes them,
+    not something to be recovered afterwards from a reason sentence. Recovering
+    it meant splitting prose on a delimiter the paths it separates are allowed
+    to contain, and a mis-keyed row does not announce itself: the lookup misses,
+    the miss returns nothing, and nothing reads as an absence somebody measured.
+
+    Three states, and they are three different answers:
+
+    - ``known`` false -- nothing established this. ``name`` and ``id`` are None,
+      and whether a counterpart exists is simply not known.
+    - ``known`` true with ``name`` None -- established: there is none.
+    - ``known`` true with ``name`` set -- something names one. ``id`` is the row
+      it appears as in this report, or None when this report holds no row for
+      it.
+
+    That last state says only what it says: **no row here**. Several things
+    produce it and the report does not claim which -- a counterpart that exists
+    and was deliberately not offered as a target, such as the server's copy of
+    the trunk; one nothing could look for, because the listing that would have
+    held it never ran; and one that is genuinely gone, since a branch goes on
+    recording the upstream it was pushed to after the remote drops that ref.
+    The name is carried through all three because dropping it is what makes a
+    branch that was certainly pushed read as never pushed.
+    """
+
+    relation: str
+    """What this is to the target carrying it: ``branch``, ``worktree`` or
+    ``upstream``. Only the relations that can apply to that target's kind are
+    present, so a server ref carries none -- nothing checks it out, and it joins
+    its group by being named as some local branch's upstream."""
+    name: str | None
+    """The counterpart's own path or ref, verbatim. This is what a row shows a
+    reader, and it is stated even when no target carries it."""
+    id: str | None
+    """The `Target.id` of the row for it, or None when this report has none.
+    Follow it to find the counterpart; never build it by joining strings."""
+    known: bool
+
+    def as_json(self) -> dict[str, object]:
+        return {"name": self.name, "id": self.id, "known": self.known}
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,12 +320,35 @@ class Target:
     """Everything measured about this target, in reader-facing prose. The audit
     trail, and it stands whether or not the target is sweepable."""
     last_activity: str | None
+    remote: str | None = None
+    """Which remote a server ref lives on. None for anything else.
+
+    Carried rather than re-derived from ``name``, because ``name`` is
+    `<remote>/<ref>` and the boundary between the two halves is not something
+    the string encodes: a remote may be called `team/origin`, and the first
+    slash then names `team`, which is not a remote at all. What makes that
+    dangerous rather than merely wrong is that git accepts a *path* wherever it
+    expects a remote, so a sibling directory that happens to be a repository
+    answers the probe -- with a clean, empty, entirely unrelated answer."""
+    ref_name: str | None = None
+    """What the server calls this branch, for a server ref. None for anything
+    else. The other half of the decomposition above, and what
+    `push --delete` and `ls-remote` are given."""
+    pairing: tuple[Counterpart, ...] = ()
+    """The other parts of the thing this target belongs to, keyed by relation in
+    the JSON. Structured because ``reasons`` already says the same in prose, and
+    prose is the wrong place to read it from: the sentence is for a person, and
+    a consumer that parses it back out is splitting on a delimiter the names
+    themselves may contain."""
 
     def as_json(self) -> dict[str, object]:
         return {
             "id": self.id,
             "kind": self.kind.value,
             "name": self.name,
+            "remote": self.remote,
+            "ref_name": self.ref_name,
+            "pairing": {c.relation: c.as_json() for c in self.pairing},
             "merge_evidence": self.merge_evidence.value,
             "merge_proven": self.merge_proven,
             "sweepable": self.sweepable,
@@ -251,9 +371,19 @@ class NotOffered:
 
     name: str
     reason: str
+    unsplit: bool = False
+    """True when what kept this ref out was that its remote and its branch
+    name could not be told apart.
+
+    The other exclusions know what they excluded: a symbolic HEAD, the server's
+    copy of the trunk. This one does not -- ``name`` is the whole path under
+    `refs/remotes/`, and where the remote's name stops inside it is the
+    unanswered question. So this is the only entry whose *other* spellings are
+    unknown, which is what makes it able to collide with a selector that
+    matched something else."""
 
     def as_json(self) -> dict[str, object]:
-        return {"name": self.name, "reason": self.reason}
+        return {"name": self.name, "reason": self.reason, "unsplit": self.unsplit}
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,6 +442,48 @@ class Survey:
     dropped_worktrees: int = 0
     """Worktree blocks the listing produced that could not be parsed. Same
     distinction as ``dropped_refs``, on the other listing."""
+    worktrees_framed: bool = True
+    """False when the worktree listing came back without the framing that keeps
+    a path whole.
+
+    Weaker than ``worktrees_known`` and stronger than nothing: the listing ran
+    and described worktrees, and it cannot prove it named every path. A path
+    containing a newline arrives as two records there, and while most such
+    truncations announce themselves -- counted in ``dropped_worktrees`` -- one
+    whose text after the newline begins with an attribute name reads as a
+    perfectly well-formed block.
+
+    So this says exactly one thing, and it is the one conclusion the listing
+    can no longer support: that something missing from it is missing from the
+    repository. Every positive match still means what it always did."""
+    unsplit_refs: int = 0
+    """Refs under `refs/remotes/` the listing read and could not split into a
+    remote and a branch name.
+
+    Distinct from ``dropped_refs``, which counts rows nobody could parse: these
+    parsed, and are recorded in ``not_offered`` under the full
+    `<remote>/<ref>` spelling git gave. What is missing is the *other* spelling
+    -- the bare name the remote knows the branch by -- because recovering it is
+    exactly what failed. So a caller naming one of these that way matches
+    nothing, and a miss that means nothing must not be read as absence. This is
+    the measurement that says so, and it is the same fact ``branches_known``
+    carries for the listing as a whole: a question that went unanswered, kept
+    where the code deciding what a miss means can see it."""
+    remotes: tuple[str, ...] = ()
+    """The configured remotes, exactly as `git remote` named them.
+
+    This is the only thing that says where a remote's name stops inside
+    `refs/remotes/team/origin/feat/x`, because a remote name is allowed to
+    contain a slash and the ref path does not mark the boundary. A ref under
+    `refs/remotes/` that no entry here accounts for -- or that two of them
+    could -- cannot be split at all, and is recorded in ``not_offered`` rather
+    than guessed at."""
+    remotes_known: bool = True
+    """False when `git remote` itself failed.
+
+    ``remotes`` is then empty, and so is the tuple for a repository that has no
+    remote configured. Only one of those is a measurement, and the difference
+    decides whether an unsplittable server ref is odd or expected."""
     not_offered: tuple[NotOffered, ...] = ()
     """Refs that exist and are deliberately absent from ``branches``.
 
@@ -344,8 +516,29 @@ class Survey:
             "worktrees_known": self.worktrees_known,
             "dropped_refs": self.dropped_refs,
             "dropped_worktrees": self.dropped_worktrees,
+            "worktrees_framed": self.worktrees_framed,
+            "unsplit_refs": self.unsplit_refs,
+            "remotes": list(self.remotes),
+            "remotes_known": self.remotes_known,
             "not_offered": [n.as_json() for n in self.not_offered],
         }
+
+    def local_branch(self, name: str) -> Branch | None:
+        """The local branch of this name, if the survey read one.
+
+        Filtered on ``is_remote`` rather than trusting the name to pick out one
+        ref, because ``Branch.name`` is the short name for a local branch and
+        `<remote>/<ref>` for a server one, and those collide: a local branch
+        called `origin/feat` and origin's copy of `feat` are both `origin/feat`.
+        Which of them an unfiltered search finds is then decided by the order
+        git happened to list refs in, and a deletion is not a thing to settle
+        on listing order.
+
+        One place rather than three, because the question -- which branch does
+        this name mean -- is asked wherever a branch target has to be matched
+        back to what was surveyed, and a rule written out three times is a rule
+        that will be right twice."""
+        return next((b for b in self.branches if not b.is_remote and b.name == name), None)
 
     def all_warnings(self) -> tuple[str, ...]:
         """Every degradation in one list, gh included.
