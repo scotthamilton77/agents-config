@@ -97,6 +97,10 @@ branch you are keeping"*, *"nothing on it yet; branched an hour ago"*.
 
 One table, oldest first, one entry per group.
 
+**Date it.** The envelope carries no run timestamp, so the date is yours to
+state and nothing in the report will supply it. An undated table of what was
+safe to delete reads as current long after it stopped being one.
+
 **State consequences, not mechanics.** Never make `squash_equal`, `patch_equal`
 or "merge base" load-bearing. Write *"merged as #436 — squashed, so its commits
 are not on the trunk by ancestry, which is expected"*. Keep the mechanical term

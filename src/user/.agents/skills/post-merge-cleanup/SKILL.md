@@ -25,6 +25,11 @@ clears its other measured checks, so a merged branch a worktree still holds, or
 one whose tree is dirty, is reported with the reason rather than swept. Each
 deletion it does make is verified by re-asking git, not by trusting an exit code.
 
+The copy on the server is held back from that sweep whatever the proof: a ref
+there has no reflog, so `gitclean` removes it only when it is named. The end
+state above therefore needs a further call naming that ref — after the user has
+agreed to it, never bundled into the sweep on their behalf.
+
 Reach for it. It is easy not to — it is a CLI on PATH, not a git subcommand, so
 nothing in a git session suggests it exists. If it is not installed, say so
 rather than substituting `git branch --merged`: under a squash merge that answer
