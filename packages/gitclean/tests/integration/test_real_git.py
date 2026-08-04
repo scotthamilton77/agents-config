@@ -974,6 +974,112 @@ def test_a_remote_whose_name_holds_a_slash_is_never_split_at_the_wrong_one(
     assert git(decoy, "for-each-ref", "--format=%(refname)") == ""
 
 
+def test_a_ref_reachable_only_through_a_custom_refspec_belongs_to_who_fetches_it(
+    repo: Path, tmp_path: Path
+) -> None:
+    """A fetch refspec chooses where refs land, and it may choose a path that
+    spells another remote's name. `+refs/heads/*:refs/remotes/origin/*` on a
+    remote called `upstream` is legal, and puts upstream's branches under
+    `refs/remotes/origin/` while nothing called `origin` is involved at all.
+
+    Matching configured names against the path answers `origin` here, which is
+    a remote this repository does not have. What the path cannot say, the
+    refspec can, so the refspec is what is asked."""
+    bare = tmp_path / "upstream.git"
+    SubprocessCommands().git(["init", "-q", "--bare", "-b", "main", str(bare)])
+    git(repo, "remote", "add", "upstream", str(bare))
+    git(repo, "config", "remote.upstream.fetch", "+refs/heads/*:refs/remotes/origin/*")
+    git(repo, "push", "-q", "upstream", "main")
+    git(repo, "checkout", "-q", "-b", "feat/live")
+    only = commit(repo, "feat-live.txt", "the only copy\n")
+    git(repo, "push", "-q", "upstream", "feat/live")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "fetch", "-q", "upstream")
+
+    surveyed = report(repo)
+    branches = surveyed["repo"]
+    assert isinstance(branches, dict)
+    feat = next(b for b in branches["branches"] if b["name"] == "origin/feat/live")
+    assert feat["remote"] == "upstream"
+    assert feat["ref_name"] == "feat/live"
+
+    port = Recording()
+    with reachability_guard(bare) as guard:
+        out = StringIO()
+        code = main(
+            ["--cleanup", "remote:origin/feat/live"],
+            port=port,
+            cwd=repo,
+            now=datetime.now(UTC),
+            out=out,
+        )
+        payload = json.loads(out.getvalue())
+        guard.proven_by_bundle(Path(str(payload["execution"]["salvages"][0]["path"])))
+
+    assert code == EXIT_OK
+    deletion = payload["execution"]["deletions"][0]
+    # The defect's signature: `already_absent` on a branch the server holds,
+    # settled by asking a remote that never had it.
+    assert deletion["already_absent"] is False
+    assert deletion["deleted"] is True
+    assert "feat/live" not in git(repo, "ls-remote", "--heads", "upstream")
+    assert only not in git(bare, "rev-list", "--all").split()
+
+    # Every remote git was handed is the one that fetches the ref, never the
+    # one the path happens to spell.
+    named = [call[call.index("--heads") + 1] for call in port.transcript if "--heads" in call]
+    assert named and set(named) == {"upstream"}
+
+
+def test_two_remotes_fetching_into_one_path_is_refused_rather_than_misattributed(
+    repo: Path, tmp_path: Path
+) -> None:
+    """The configuration the defect was reported against: `origin` present and
+    fetching normally, `upstream` configured to fetch into the same namespace,
+    and the branch live only on upstream. Nothing can say which of them holds a
+    given ref there.
+
+    The old answer was the worst available one -- attribute it to `origin`,
+    find nothing, and report a live branch as already gone while prescribing a
+    prune that would drop its tracking ref. A refusal costs a round trip; that
+    answer costs the ref."""
+    origin_bare = tmp_path / "origin.git"
+    upstream_bare = tmp_path / "upstream.git"
+    for path in (origin_bare, upstream_bare):
+        SubprocessCommands().git(["init", "-q", "--bare", "-b", "main", str(path)])
+    git(repo, "remote", "add", "origin", str(origin_bare))
+    git(repo, "remote", "add", "upstream", str(upstream_bare))
+    git(repo, "config", "remote.upstream.fetch", "+refs/heads/*:refs/remotes/origin/*")
+    git(repo, "push", "-q", "-u", "origin", "main")
+    git(repo, "checkout", "-q", "-b", "feat/live")
+    only = commit(repo, "feat-live.txt", "the only copy\n")
+    git(repo, "push", "-q", "upstream", "feat/live")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "fetch", "-q", "upstream")
+
+    surveyed = report(repo)
+    branches = surveyed["repo"]
+    assert isinstance(branches, dict)
+    assert "origin/feat/live" not in [b["name"] for b in branches["branches"]]
+    excluded = {n["name"]: str(n["reason"]) for n in branches["not_offered"]}
+    assert "origin, upstream" in excluded["origin/feat/live"]
+
+    out = StringIO()
+    code = main(
+        ["--cleanup", "origin/feat/live"],
+        port=Recording(),
+        cwd=repo,
+        now=datetime.now(UTC),
+        out=out,
+    )
+
+    # Loud, and the branch is still there -- not a clean exit reporting a
+    # deletion nobody could have performed.
+    assert code == EXIT_REFUSED
+    assert only in git(upstream_bare, "rev-list", "--all").split()
+    assert "feat/live" in git(repo, "ls-remote", "--heads", "upstream")
+
+
 @pytest.mark.parametrize(
     ("remote", "discovered"),
     [("origin", True), ("team", False), ("team/origin", False)],
