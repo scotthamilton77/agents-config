@@ -17,18 +17,27 @@ residue nothing cheaper could resolve.
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from gitclean.model import Branch, MergeEvidence, NotOffered, PullRequest, Survey, Worktree
-from gitclean.ports import CommandPort
+from gitclean.ports import CommandPort, CommandResult
 
 _SEP = "\x1f"
-# The FULL refname leads deliberately. Short names are ambiguous in exactly the
+# The FULL refname leads deliberately, and everything the survey *records*
+# about a ref is recovered from it. Short names are ambiguous in exactly the
 # place it matters: git shortens `refs/remotes/origin/HEAD` to `origin` -- no
 # slash, no HEAD suffix -- so a short-name filter reads the remote's symbolic
 # HEAD as a local branch literally named `origin` and offers it for deletion.
 # `refs/remotes/` as a prefix answers local-vs-remote with no guessing.
+#
+# The short form is kept all the same, because it answers a different question
+# well. It is the shortest spelling that resolves back to this ref and no
+# other -- git lengthens it the moment a shorter one would be ambiguous -- so
+# it is exactly what a probe should hand to git, and exactly what should never
+# be parsed for structure. `\x1f` and the newline are both safe as separators
+# here, and that is measured rather than assumed: `git check-ref-format`
+# rejects a refname containing either one.
 _REF_FORMAT = _SEP.join(
     [
         "%(refname)",
@@ -58,6 +67,28 @@ def _first_line(result_out: str) -> str:
     return result_out.splitlines()[0].strip() if result_out else ""
 
 
+def _whole_path(stdout: str) -> str:
+    """A one-value `rev-parse` answer, read without cutting it short.
+
+    Everything else this module reads a line of is something a newline cannot
+    appear inside -- a refname, an object id, a date -- so there a line is the
+    value. A filesystem path is not: it may legally contain a newline,
+    `rev-parse` prints it raw, and `rev-parse` has no `-z` to frame it with, so
+    the trick the worktree listing uses is not available. What it does have is
+    exactly one value per query, terminated by the one newline it added itself
+    -- so removing that suffix and nothing else recovers the path git reported,
+    whatever the path contains. `.strip()` is wrong here for the same reason
+    the first line is: a directory is allowed to end in a space.
+
+    Neither truncation was cosmetic. `repo_root` is compared against the whole
+    path the NUL-framed worktree listing hands back, so a cut-short one matches
+    nothing and both guards on the worktree this process is running in miss --
+    a bare sweep then plans away the directory it is executing in. A cut-short
+    `git_common_dir` composes salvage directories outside the repository, which
+    is where a bundle written before an irreversible push goes missing."""
+    return stdout.removesuffix("\n")
+
+
 def resolve_repo(port: CommandPort, cwd: Path | None) -> tuple[str, str] | None:
     """Return (repo_root, git_common_dir), or None when cwd is not a repo."""
     root = port.git(["rev-parse", "--show-toplevel"], cwd=cwd)
@@ -70,9 +101,9 @@ def resolve_repo(port: CommandPort, cwd: Path | None) -> tuple[str, str] | None:
         common = port.git(["rev-parse", "--git-common-dir"], cwd=cwd)
         if not common.ok:
             return None
-        resolved = Path(_first_line(root.out)) / _first_line(common.out)
-        return _first_line(root.out), str(resolved)
-    return _first_line(root.out), _first_line(common.out)
+        resolved = Path(_whole_path(root.stdout)) / _whole_path(common.stdout)
+        return _whole_path(root.stdout), str(resolved)
+    return _whole_path(root.stdout), _whole_path(common.stdout)
 
 
 def _ref_exists(port: CommandPort, cwd: Path | None, ref: str) -> bool | None:
@@ -162,50 +193,281 @@ def resolve_base_ref(
     local fallback is correct when the remote-tracking ref is genuinely absent
     and merely quiet when the probe errored -- so the second case says so, and
     every merge verdict in the report is then known to have been measured
-    against a ref that may be behind."""
+    against a ref that may be behind.
+
+    Handed back as a **full ref path**, which is the only spelling that reaches
+    the ref this function just proved exists. `origin/main` does not: git tries
+    `refs/heads/` before `refs/remotes/`, so a repository holding a local branch
+    of that name -- a legal ref, and what one `git branch origin/main` produces
+    -- answers the short spelling with the local decoy, and every merge tier
+    then measures against it. `branch --merged`, `rev-list`, `cherry` and
+    `merge-base` would each be reading a history nobody asked about, and a bare
+    sweep deletes unmerged work on the strength of it.
+
+    A path beginning `refs/` is matched literally by the first of git's
+    rev-parse rules, so no other ref can shadow it however the repository is
+    arranged, and it needs no `--` terminator either: a ref path cannot begin
+    with `-`. The warning below keeps the short form, being prose for a reader
+    rather than a rev for git."""
     state = _ref_exists(port, cwd, f"refs/remotes/origin/{default_branch}")
     if state:
-        return f"origin/{default_branch}", None
+        return f"refs/remotes/origin/{default_branch}", None
     if state is None:
-        return default_branch, (
+        return f"refs/heads/{default_branch}", (
             f"git would not say whether origin/{default_branch} exists, so merges here are "
             f"measured against the local {default_branch}, which may be behind the remote"
         )
-    return default_branch, None
+    return f"refs/heads/{default_branch}", None
+
+
+def read_remotes(port: CommandPort, cwd: Path | None) -> tuple[tuple[str, ...] | None, str | None]:
+    """The configured remotes, or None when git would not list them.
+
+    This is the one question that says where a remote's name stops inside a
+    path under `refs/remotes/`. Remote names may contain slashes -- `git remote
+    add team/origin <url>` is accepted -- so the ref path alone does not mark
+    the boundary, and the first slash is a guess dressed up as a parse.
+
+    None rather than an empty tuple when the read failed, because "this
+    repository has no remotes" and "nobody could say" send a server ref in
+    opposite directions: the first makes an unsplittable `refs/remotes/...`
+    genuinely odd, the second makes every one of them unsplittable through no
+    fault of its own. Neither is deleted either way; only the sentence differs.
+
+    `git remote` is line-framed and that is safe here, unlike everywhere else
+    in this module: git refuses to create a remote whose name holds a newline,
+    and refuses to read a config key containing one, so no name it prints can
+    span two lines."""
+    result = port.git(["remote"], cwd=cwd)
+    if not result.ok:
+        return None, (
+            f"could not read this repository's remote list (exit {result.returncode}); no ref "
+            f"under refs/remotes/ can be split into a remote and a branch name, so none of them "
+            f"is offered for deletion"
+        )
+    return tuple(line.strip() for line in result.stdout.splitlines() if line.strip()), None
+
+
+def split_remote_ref(full: str, remotes: tuple[str, ...] | None) -> tuple[str, str] | str:
+    """(remote, branch name) for a ref under `refs/remotes/`, or the
+    measurement that stopped the split.
+
+    The remote's name is matched against the ones git says are configured
+    rather than taken to be everything before the first slash. Both failure
+    modes are real and neither is guessable: a path no configured remote
+    accounts for -- a tracking ref left behind by `git remote remove` -- and a
+    path two of them could account for, which is what having both `team` and
+    `team/origin` produces. A caller who wants either gone can still use git;
+    what this must not do is pick one and issue a deletion against it."""
+    rest = full.removeprefix("refs/remotes/")
+    if remotes is None:
+        return (
+            f"the configured remote list could not be read, so which part of {full} names a "
+            f"remote and which part names the branch on it is unknown"
+        )
+    matches = [r for r in remotes if rest.startswith(f"{r}/")]
+    if len(matches) == 1:
+        remote = matches[0]
+        return remote, rest[len(remote) + 1 :]
+    if not matches:
+        return (
+            f"no configured remote accounts for {full}, so nothing says which part of it names "
+            f"a remote; a tracking ref outliving its remote looks exactly like this"
+        )
+    named = ", ".join(sorted(matches))
+    return (
+        f"{full} could be a branch on any of these configured remotes: {named} -- the ref path "
+        f"does not say which, and a deletion issued against the wrong one is a deletion on a "
+        f"repository nobody asked about"
+    )
+
+
+_WORKTREE_ATTRIBUTES = frozenset(
+    {"worktree", "bare", "HEAD", "branch", "detached", "locked", "prunable"}
+)
+"""The attributes `git worktree list --porcelain` documents.
+
+Read only by the fallback parser below, and read there as "keys this recognises"
+rather than as "keys git has". A key outside this set means the block said
+something that was not recorded, whether that is a path fragment or an
+attribute a git somewhere has and this does not -- and both settle the same
+way, as a block dropped rather than one recorded wrongly."""
+
+
+@dataclass(frozen=True, slots=True)
+class WorktreeListing:
+    """git's own account of the worktrees, framed so a path survives it whole.
+
+    Kept as one type because two callers need the same listing and the framing
+    rule must not be written twice: the survey builds targets from it, and the
+    executor re-asks it to confirm a removal. A rule about how to read git's
+    output that exists in two places is a rule that will disagree with itself."""
+
+    blocks: tuple[dict[str, str], ...]
+    warnings: tuple[str, ...]
+    dropped: int
+    result: CommandResult
+    """The command actually used, for the transcript an anomaly carries."""
+    framed: bool = True
+    """Whether the records came back NUL-framed, so a path is whole whatever it
+    contains.
+
+    False says this listing cannot prove it recorded every path -- not that it
+    got one wrong. ``dropped`` counts the truncations that announced
+    themselves; the ones that do not are the reason this flag exists, and the
+    only honest thing to do with them is to stop concluding *absence* from a
+    listing that may be a prefix of the truth. What a positive match means is
+    unchanged."""
+
+    @property
+    def ok(self) -> bool:
+        return self.result.ok
+
+    def holds(self, path: str) -> bool:
+        return any(block.get("worktree") == path for block in self.blocks)
+
+    def can_place(self, path: str) -> bool:
+        """Whether *this* path's absence from the listing means anything.
+
+        A truncation only ever shortens a path at a newline, and it only
+        corrupts the block it happens inside -- records are grouped by the empty
+        record between them, so a fragment lands among its own worktree's
+        attributes and nowhere else. A path with no newline in it therefore
+        cannot be the truncated one, and no other worktree's truncation can hide
+        it, so a framed listing and an unframed one answer alike about it.
+
+        This is narrower than the rule the survey applies to a *selector*, and
+        deliberately: there the string came from a caller and may be a shorter
+        name -- a basename, say -- for a path whose newline is further up, so a
+        selector with no newline in it proves nothing. Here the whole path is in
+        hand."""
+        return self.framed or "\n" not in path
+
+
+def _parse_worktrees(records: list[str], *, framed: bool) -> tuple[list[dict[str, str]], int]:
+    """Records into blocks, and the count of blocks that lost something.
+
+    ``framed`` says the records came from `-z`, where a record boundary is a
+    NUL and a path is therefore whole whatever it contains. Without it the
+    boundary is a newline, which a path is allowed to contain and which git
+    does not escape -- so a path holding one arrives as two records, the second
+    of them read as a stray key.
+
+    That stray key is the only evidence available in the unframed case, and it
+    is nearly enough: a key this does not recognise means the block said
+    something that was not recorded. The block is dropped rather than kept
+    under a path that may be a prefix of the real one -- a truncated path is a
+    name that matches nothing while the tree is sitting there, which is the
+    answer this package exists not to give.
+
+    A lock reason may hold a newline too, and needs no rule of its own: git
+    quotes it here (`locked "reason\\nwhy"`) and leaves it raw only under `-z`,
+    where a newline cannot end a record anyway. Documented behaviour in both
+    directions, so it is read rather than guarded against.
+
+    What it does not catch, and cannot: a path whose text after the newline
+    begins with an attribute name -- `.../we\\nbare` -- reads as a well-formed
+    block. Nothing in the unframed output distinguishes that from the real
+    thing, which is why `-z` is asked for first rather than treated as a
+    nicety, and why this parser runs only where git cannot provide it."""
+    blocks: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    lost = False
+    dropped = 0
+    for record in records:
+        if not record:
+            if current:
+                if lost:
+                    dropped += 1
+                else:
+                    blocks.append(current)
+                current = {}
+                lost = False
+            continue
+        key, _, value = record.partition(" ")
+        if not framed and key not in _WORKTREE_ATTRIBUTES:
+            lost = True
+        current[key] = value
+    if current:
+        if lost:
+            dropped += 1
+        else:
+            blocks.append(current)
+    return blocks, dropped
+
+
+def list_worktrees(port: CommandPort, cwd: Path | None) -> WorktreeListing:
+    """`worktree list --porcelain`, asked with NUL framing where git has it.
+
+    A worktree path may contain a newline, and the porcelain format does not
+    escape one -- it is emitted raw, so a line-based reader records a truncated
+    path and counts nothing as missing. `-z` frames every record with a NUL
+    instead, which no path can contain. This is not an inference about the
+    format: git documents `-z` as existing for exactly this, "to parse the
+    output when a worktree path contains a newline character", and recommends
+    combining it with `--porcelain`.
+
+    Whether the running git offers it is a question rather than an assumption,
+    so it is asked rather than predicted from a version. A git that declines
+    gets the line-based read, with the parser refusing to record a block whose
+    keys say it lost something. What must not happen is either reading: a
+    truncated path taken for a whole one, or a listing described as complete
+    when it is not.
+
+    Which is why the fallback also travels as ``framed=False``. Dropping the
+    blocks that announce their truncation is not the same as catching them all
+    -- a path whose text after the newline begins with an attribute name reads
+    as a well-formed block -- so the listing itself is marked as unable to prove
+    it recorded every path. That costs nothing where `-z` answers, and where it
+    does not it withholds one conclusion: that something absent from this
+    listing is absent from the repository."""
+    framed = port.git(["worktree", "list", "--porcelain", "-z"], cwd=cwd)
+    if framed.ok:
+        blocks, dropped = _parse_worktrees(framed.stdout.split("\0"), framed=True)
+        return WorktreeListing(tuple(blocks), (), dropped, framed)
+    plain = port.git(["worktree", "list", "--porcelain"], cwd=cwd)
+    if not plain.ok:
+        return WorktreeListing((), (), 0, plain, framed=False)
+    blocks, dropped = _parse_worktrees(plain.stdout.splitlines(), framed=False)
+    warnings = [
+        f"this git would not list worktrees with NUL framing (exit {framed.returncode}), so a "
+        f"worktree path containing a newline cannot be told from two records; a name matching "
+        f"nothing here is not evidence that what it names is gone"
+    ]
+    if dropped:
+        warnings.append(
+            f"{dropped} listed worktree(s) whose records this could not account for were left "
+            f"out rather than recorded under a path that may be cut short at a newline"
+        )
+    return WorktreeListing(tuple(blocks), tuple(warnings), dropped, plain, framed=False)
 
 
 def read_worktrees(
     port: CommandPort, cwd: Path | None
-) -> tuple[list[Worktree], list[str], bool, int]:
+) -> tuple[list[Worktree], list[str], bool, int, bool]:
     """Parse `worktree list --porcelain` and stat each tree for dirt.
 
-    Returns the worktrees, any parse warnings, and whether the listing answered
-    at all. The last is not derivable from an empty list -- a repository with
-    only its main working tree produces one entry, but a listing that failed
-    produces none, and "no worktree is there" is a conclusion only one of those
-    supports."""
-    result = port.git(["worktree", "list", "--porcelain"], cwd=cwd)
-    if not result.ok:
-        return [], [f"could not list worktrees (exit {result.returncode})"], False, 0
-
-    blocks: list[dict[str, str]] = []
-    current: dict[str, str] = {}
-    for raw in result.stdout.splitlines():
-        line = raw.strip()
-        if not line:
-            if current:
-                blocks.append(current)
-                current = {}
-            continue
-        key, _, value = line.partition(" ")
-        current[key] = value
-    if current:
-        blocks.append(current)
+    Returns the worktrees, any parse warnings, whether the listing answered at
+    all, how many blocks it lost, and whether its paths came back framed. The
+    third is not derivable from an empty list -- a repository with only its main
+    working tree produces one entry, but a listing that failed produces none,
+    and "no worktree is there" is a conclusion only one of those supports. The
+    last is the weaker cousin of that: the listing answered, and still cannot
+    prove it named every path."""
+    listing = list_worktrees(port, cwd)
+    if not listing.ok:
+        return (
+            [],
+            [f"could not list worktrees (exit {listing.result.returncode})"],
+            False,
+            0,
+            listing.framed,
+        )
 
     worktrees: list[Worktree] = []
-    warnings: list[str] = []
-    dropped_blocks = 0
-    for index, block in enumerate(blocks):
+    warnings: list[str] = list(listing.warnings)
+    dropped_blocks = listing.dropped
+    for index, block in enumerate(listing.blocks):
         path = block.get("worktree", "")
         if not path:
             # Counted as well as warned: a block nobody could read is a
@@ -259,7 +521,7 @@ def read_worktrees(
                 last_activity=None,
             )
         )
-    return worktrees, warnings, True, dropped_blocks
+    return worktrees, warnings, True, dropped_blocks, listing.framed
 
 
 def _count_dirt(port: CommandPort, path: Path) -> tuple[int, int, int] | None:
@@ -433,7 +695,7 @@ def _count_revs(port: CommandPort, cwd: Path | None, spec: str) -> int | None:
 
 
 def _unpushed_count(
-    port: CommandPort, cwd: Path | None, *, name: str, upstream: str, track: str
+    port: CommandPort, cwd: Path | None, *, name: str, spec: str, upstream: str, track: str
 ) -> tuple[int | None, str | None]:
     """Commits the upstream does not have, or None when that is not known.
 
@@ -445,7 +707,12 @@ def _unpushed_count(
     An upstream git records but cannot resolve reports as no marker at all --
     that is `[gone]`, the remote branch having been deleted. Nothing then
     proves these commits survive anywhere else, so the count is unknown rather
-    than zero."""
+    than zero.
+
+    ``name`` is what a reader is told and ``spec`` is what git is asked. They
+    are the same string in every ordinary repository and come apart in the one
+    that made this distinction necessary, so the two roles are separate
+    parameters rather than one value used for both."""
     if not upstream:
         return None, None
     if not track:
@@ -455,7 +722,7 @@ def _unpushed_count(
         )
     if ">" not in track:
         return 0, None
-    count = _count_revs(port, cwd, f"{upstream}..{name}")
+    count = _count_revs(port, cwd, f"{upstream}..{spec}")
     if count is None:
         return None, (
             f"could not count the commits on {name} missing from {upstream}; "
@@ -591,6 +858,11 @@ def _resolve_merge(
     is merged, the tier that said so, whether the PR covered the tip, and the
     probes that errored on the way.
 
+    ``name`` goes into an argv, so it must be a spelling that denotes this ref
+    and no other -- git's own `%(refname:short)`, which is exactly that. The
+    caller-facing name is not: `origin/main` is a legal local branch, and a
+    probe spelled that way would measure it instead of the server's copy.
+
     Both PR tiers are gated on containment. Falling through costs only speed:
     the ancestry, patch-id and squash tiers below re-derive the answer from
     what is actually in the repository, which is the stronger evidence anyway.
@@ -647,9 +919,11 @@ def read_branches(
     default_branch: str,
     prs: dict[str, PullRequest],
     worktree_by_branch: dict[str, str],
-) -> tuple[list[Branch], list[str], bool, list[NotOffered], int]:
-    """The branches, the warnings, whether the ref read answered at all, and
-    the refs deliberately left out of the first list.
+    remotes: tuple[str, ...] | None,
+) -> tuple[list[Branch], list[str], bool, list[NotOffered], int, int]:
+    """The branches, the warnings, whether the ref read answered at all, the
+    refs deliberately left out of the first list, and two counts of what this
+    read could not fully account for.
 
     The third is not derivable from an empty branch list, and a worktree row
     needs it: with no refs read there was nothing a commit could have been
@@ -657,7 +931,11 @@ def read_branches(
 
     The fourth exists because "not a target" and "not in the repository" are
     different facts that a bare absence from ``branches`` cannot tell apart --
-    and only one of them lets a caller be told there is nothing to delete."""
+    and only one of them lets a caller be told there is nothing to delete.
+
+    The counts are rows nobody could parse and refs nobody could split. Both
+    travel because both leave a spelling a caller might use matching nothing,
+    and a miss that means nothing must never settle as absence."""
     result = port.git(
         ["for-each-ref", f"--format={_REF_FORMAT}", "refs/heads", "refs/remotes"], cwd=cwd
     )
@@ -671,6 +949,7 @@ def read_branches(
             False,
             [],
             0,
+            0,
         )
 
     local_merged, local_warning = _merged_set(port, cwd, base_ref, remote=False)
@@ -680,6 +959,7 @@ def read_branches(
     branches: list[Branch] = []
     not_offered: list[NotOffered] = []
     dropped = 0
+    unsplit = 0
     for line in result.stdout.splitlines():
         if not line.strip():
             continue
@@ -690,10 +970,10 @@ def read_branches(
             # name" cannot tell that apart from the ref not being there.
             dropped += 1
             continue
-        full, name, head, committed, upstream_ref, upstream, track, head_marker = (
+        full, probe_ref, head, committed, upstream_ref, upstream, track, head_marker = (
             f.strip() for f in fields[:_REF_FIELDS]
         )
-        if not name or not full:
+        if not probe_ref or not full:
             dropped += 1
             continue
 
@@ -702,8 +982,8 @@ def read_branches(
             # The remote's symbolic HEAD is a pointer, not a branch.
             not_offered.append(
                 NotOffered(
-                    # Recorded from the full path rather than `name`: git
-                    # shortens refs/remotes/origin/HEAD to a bare `origin`,
+                    # Recorded from the full path rather than the short form:
+                    # git shortens refs/remotes/origin/HEAD to a bare `origin`,
                     # which is not a spelling anybody would type at this tool.
                     name=full.removeprefix("refs/remotes/"),
                     reason="the remote's symbolic HEAD, which points at a branch rather than "
@@ -711,10 +991,32 @@ def read_branches(
                 )
             )
             continue
-        remote = name.split("/", 1)[0] if is_remote and "/" in name else None
-        short = name.split("/", 1)[1] if is_remote and remote else name
 
-        if is_remote and short == default_branch:
+        if is_remote:
+            # The whole of the decomposition, and it is done from the full path
+            # against the configured remote list. Nothing here reads the short
+            # form: it is what git would let you *type*, which is a different
+            # question from where the remote's name ends.
+            split = split_remote_ref(full, remotes)
+            if isinstance(split, str):
+                # Unsplittable, so nothing can be issued against it -- but it
+                # is sitting right there, and a caller who names it must not be
+                # told it is already gone. NotOffered keeps those two answers
+                # apart for the full `<remote>/<ref>` spelling; the count keeps
+                # them apart for every other one, since the spelling this could
+                # not recover is the one a caller is most likely to use.
+                not_offered.append(
+                    NotOffered(name=full.removeprefix("refs/remotes/"), reason=split, unsplit=True)
+                )
+                unsplit += 1
+                continue
+            remote, ref_name = split
+            name = full.removeprefix("refs/remotes/")
+        else:
+            remote, ref_name = None, full.removeprefix("refs/heads/")
+            name = ref_name
+
+        if is_remote and ref_name == default_branch:
             not_offered.append(
                 NotOffered(
                     name=name,
@@ -726,8 +1028,10 @@ def read_branches(
 
         is_default = not is_remote and name == default_branch
         # A PR keyed by the trunk's name targets it rather than proposing it,
-        # so it says nothing about whether the trunk is finished with.
-        pr = None if is_default else prs.get(short)
+        # so it says nothing about whether the trunk is finished with. Keyed by
+        # what the *server* calls the branch, which for a remote-tracking ref
+        # is the half of the path the remote's name does not account for.
+        pr = None if is_default else prs.get(ref_name)
         # The trunk is measured like every other branch. It used to be handed
         # zeroes and a merge verdict on the reasoning that probing it against
         # itself is noise, but both halves of that were wrong: the counts are
@@ -736,14 +1040,22 @@ def read_branches(
         # measurement nobody took is the exact habit that made this tool
         # dangerous. Nothing needs the shortcut: the trunk is kept out of the
         # sweep by identity, not by carrying a manufactured verdict.
-        unmerged = _count_revs(port, cwd, f"{base_ref}..{name}")
+        #
+        # From here down every string handed to git is `probe_ref` and every
+        # string shown to a reader is `name`. They are the same in any
+        # repository that has not been arranged to make them differ, and the
+        # separation is what makes the arranged one measure the right ref: a
+        # probe spelled `origin/main` resolves to the *local* branch of that
+        # name when one exists, so the report would carry the local branch's
+        # history under the server ref's row.
+        unmerged = _count_revs(port, cwd, f"{base_ref}..{probe_ref}")
         if unmerged is None:
             warnings.append(
                 f"could not count the commits on {name} missing from {base_ref}; "
                 f"it will not be treated as merged"
             )
         unpushed, unpushed_warning = _unpushed_count(
-            port, cwd, name=name, upstream=upstream, track=track
+            port, cwd, name=name, spec=probe_ref, upstream=upstream, track=track
         )
         if unpushed_warning:
             warnings.append(unpushed_warning)
@@ -751,10 +1063,13 @@ def read_branches(
             port,
             cwd,
             base_ref,
-            name,
+            probe_ref,
             pr=pr,
             head=head,
-            ancestor_merged=name in (remote_merged if is_remote else local_merged),
+            # Both sides of this comparison are git's own short form, produced
+            # by the same shortening on the same repository, so equal strings
+            # are the same ref and different strings are not.
+            ancestor_merged=probe_ref in (remote_merged if is_remote else local_merged),
             unmerged_commits=unmerged,
         )
         warnings.extend(f"{name}: {failure}" for failure in probe_failures)
@@ -762,6 +1077,9 @@ def read_branches(
         branches.append(
             Branch(
                 name=name,
+                ref=full,
+                probe_ref=probe_ref,
+                ref_name=ref_name,
                 is_remote=is_remote,
                 remote=remote,
                 head=head,
@@ -785,7 +1103,13 @@ def read_branches(
             f"{dropped} ref row(s) could not be parsed and are missing from this report; "
             f"a name that matches nothing may be one of them"
         )
-    return branches, warnings, True, not_offered, dropped
+    if unsplit:
+        warnings.append(
+            f"{unsplit} ref(s) under refs/remotes/ could not be split into a remote and a "
+            f"branch name; they are listed under the full spelling git gave, and the shorter "
+            f"name a remote would know them by could not be recovered"
+        )
+    return branches, warnings, True, not_offered, dropped, unsplit
 
 
 def _worktree_activity(
@@ -839,7 +1163,9 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         )
     )
 
-    worktrees, warnings, worktrees_known, dropped_worktrees = read_worktrees(port, cwd)
+    worktrees, warnings, worktrees_known, dropped_worktrees, worktrees_framed = read_worktrees(
+        port, cwd
+    )
     if base_ref_warning is not None:
         warnings.append(base_ref_warning)
     if current_warning is not None:
@@ -849,14 +1175,19 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
     prs, gh_error, pr_evidence_gap = read_pull_requests(port, cwd)
     if pr_evidence_gap:
         warnings.append(pr_evidence_gap)
-    branches, branch_warnings, branches_known, not_offered, dropped_refs = read_branches(
+    remotes, remotes_warning = read_remotes(port, cwd)
+    if remotes_warning is not None:
+        warnings.append(remotes_warning)
+    read = read_branches(
         port,
         cwd,
         base_ref=base_ref,
         default_branch=default_branch,
         prs=prs,
         worktree_by_branch=worktree_by_branch,
+        remotes=remotes,
     )
+    branches, branch_warnings, branches_known, not_offered, dropped_refs, unsplit_refs = read
     warnings.extend(branch_warnings)
 
     # A worktree's age is the age of the branch it holds; that is only known
@@ -886,6 +1217,10 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         worktrees_known=worktrees_known,
         dropped_refs=dropped_refs,
         dropped_worktrees=dropped_worktrees,
+        worktrees_framed=worktrees_framed,
+        unsplit_refs=unsplit_refs,
+        remotes=remotes or (),
+        remotes_known=remotes is not None,
         not_offered=tuple(not_offered),
         warnings=tuple(warnings),
     )

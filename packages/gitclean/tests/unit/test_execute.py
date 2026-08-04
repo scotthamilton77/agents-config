@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from conftest import make_branch, make_survey, make_worktree
+from test_survey import porcelain
 
 from gitclean import execute
 from gitclean.execute import SALVAGE_PREFIX, Executor, default_salvage_dir, git_argv, slug
@@ -18,12 +19,17 @@ from gitclean.model import MergeEvidence, Plan, Target, TargetKind
 from gitclean.ports import CommandResult, ScriptedCommands, fail, ok
 
 
-def target(kind: TargetKind, name: str) -> Target:
+def target(kind: TargetKind, name: str, *, remote: str | None = "origin") -> Target:
     prefix = {
         TargetKind.WORKTREE: "worktree",
         TargetKind.BRANCH: "branch",
         TargetKind.REMOTE_BRANCH: "remote",
     }[kind]
+    # Which remote a server ref lives on is something only the survey can say,
+    # having had the configured remote list in hand. The fixture states it here
+    # instead, and a target the survey could not split is built by giving a
+    # name this remote does not account for.
+    on_remote = kind is TargetKind.REMOTE_BRANCH and remote and name.startswith(f"{remote}/")
     return Target(
         id=f"{prefix}:{name}",
         kind=kind,
@@ -34,6 +40,8 @@ def target(kind: TargetKind, name: str) -> Target:
         withheld=None,
         reasons=(),
         last_activity=None,
+        remote=remote if on_remote else None,
+        ref_name=name[len(remote) + 1 :] if on_remote and remote else None,
     )
 
 
@@ -152,7 +160,7 @@ def test_worktree_removal_is_verified_against_the_listing() -> None:
     port = ScriptedCommands(
         git={
             "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok("worktree /repo\nHEAD abc\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\nHEAD abc\n")),
         }
     )
     report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
@@ -164,12 +172,90 @@ def test_worktree_still_listed_after_removal_is_an_anomaly() -> None:
     port = ScriptedCommands(
         git={
             "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok("worktree /repo\n\nworktree /repo/wt\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\n\nworktree /repo/wt\n")),
         }
     )
     report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
     assert not report.ok
     assert report.anomalies[0].stage == "verify"
+
+
+def test_a_worktree_whose_path_holds_a_newline_is_verified_against_the_whole_path() -> None:
+    """The removal reported success and the worktree is still listed, which is
+    the case this verification exists for. Split the listing on newlines and
+    the path being looked for spans two lines, so the survivor matches nothing
+    and the run reports the deletion verified -- git's own output disproving
+    the claim, unread."""
+    path = "/repo/we\nird"
+    port = ScriptedCommands(
+        git={
+            f"worktree remove -- {path}": ok(),
+            "worktree list --porcelain": ok(
+                porcelain("worktree /repo\n\n") + f"worktree {path}\0\0"
+            ),
+        }
+    )
+    report = run(port, plan(target(TargetKind.WORKTREE, path)))
+
+    assert not report.ok
+    assert report.anomalies[0].stage == "verify"
+    assert not report.deletions[0].deleted
+
+
+def test_a_worktree_listing_that_lost_a_record_cannot_verify_a_removal() -> None:
+    """On a git with no NUL framing, a block whose keys say a path was cut
+    short is dropped -- so the worktree just removed may be exactly the one
+    missing from the listing. Absence from a listing that lost something is not
+    evidence, the same way absence from one that never ran is not."""
+    port = ScriptedCommands(
+        git={
+            "worktree remove -- /repo/wt": ok(),
+            "worktree list --porcelain -z": fail("error: unknown switch `z'", code=129),
+            "worktree list --porcelain": ok("worktree /repo\n\nworktree /repo/we\nird\n"),
+        }
+    )
+    report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
+
+    assert not report.ok
+    assert report.deletions[0].detail == "deletion unverified"
+
+
+def test_an_unframed_listing_cannot_confirm_a_newline_path_is_gone() -> None:
+    """`worktree remove` reported success, and the listing that would show a
+    survivor cannot spell this path. Absence from it is not evidence, the same
+    way absence from a listing that lost a record is not."""
+    path = "/repo/we\nbare"
+    port = ScriptedCommands(
+        git={
+            f"worktree remove -- {path}": ok(),
+            "worktree list --porcelain -z": fail("error: unknown switch `z'", code=129),
+            "worktree list --porcelain": ok("worktree /repo\n"),
+        }
+    )
+    report = run(port, plan(target(TargetKind.WORKTREE, path)))
+
+    assert not report.ok
+    assert report.deletions[0].detail == "deletion unverified"
+
+
+def test_an_unframed_listing_still_confirms_an_ordinary_path_is_gone() -> None:
+    """The narrowing that keeps the rule affordable. A truncation shortens a
+    path at a newline and corrupts only the block it falls inside -- records are
+    grouped by the empty record between them -- so a path with no newline in it
+    cannot be the truncated one and cannot be hidden by another's truncation.
+    Refusing to confirm every removal on a git without `-z` would make an
+    anomaly of each one and buy nothing."""
+    port = ScriptedCommands(
+        git={
+            "worktree remove -- /repo/wt": ok(),
+            "worktree list --porcelain -z": fail("error: unknown switch `z'", code=129),
+            "worktree list --porcelain": ok("worktree /repo\n\nworktree /repo/we\nbare\n"),
+        }
+    )
+    report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
+
+    assert report.ok
+    assert report.deletions[0].verified is True
 
 
 def test_a_worktree_is_never_removed_with_force() -> None:
@@ -181,7 +267,7 @@ def test_a_worktree_is_never_removed_with_force() -> None:
     port = ScriptedCommands(
         git={
             "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok("worktree /repo\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
         }
     )
     run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
@@ -225,7 +311,7 @@ def test_removing_a_worktree_prunes_nothing() -> None:
     port = ScriptedCommands(
         git={
             "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok("worktree /repo\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
         }
     )
     report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
@@ -266,7 +352,7 @@ def test_a_reachability_probe_that_will_not_answer_declines_the_removal() -> Non
             "rev-parse HEAD": ok(head),
             f"for-each-ref --count=1 --contains={head}": fail("fatal: bad object"),
             "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok("worktree /repo\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
         }
     )
     report = run(
@@ -301,7 +387,7 @@ def test_a_commit_made_since_the_survey_is_not_stranded_by_the_removal() -> None
             f"for-each-ref --count=1 --contains={surveyed}": ok("refs/heads/keeps-it"),
             f"for-each-ref --count=1 --contains={made_since}": ok(""),
             "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok("worktree /repo\n"),
+            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
         }
     )
     report = run(
@@ -418,13 +504,19 @@ def test_a_remote_branch_the_survey_never_saw_is_not_deleted_blind() -> None:
 def test_a_remote_target_naming_no_remote_is_never_pushed_to() -> None:
     """`refs/remotes/bare` is a legal ref layout with no remote in it, so a
     target can reach the delete carrying nothing to push to. There is no
-    guessing a remote here: the run says what it cannot parse and stops."""
+    guessing a remote here: the run says what it cannot parse and stops.
+
+    Which remote a ref belongs to is decided once, in the survey, against the
+    configured remote list. By the time a target is here that answer either
+    travelled with it or does not exist, and re-deriving it from the first
+    slash is the thing this refuses to do -- git takes a path where it expects
+    a remote, so the guess reaches a repository nobody named."""
     port = _remote_port(**_salvage_calls(f"/salvage/{slug('bare')}.bundle"))  # type: ignore[arg-type]
     report = run(port, plan(target(TargetKind.REMOTE_BRANCH, "bare")), _remote_survey("bare"))
 
     assert not report.ok
     assert "push" not in [call[1] for call in port.transcript]
-    assert "cannot split bare" in report.anomalies[0].message
+    assert "without a remote and a branch name" in report.anomalies[0].message
 
 
 def test_a_rejected_lease_is_reported_as_the_server_having_moved() -> None:
@@ -446,6 +538,20 @@ def test_the_survival_probe_asks_the_server_for_the_exact_ref() -> None:
 
     probe = next(call for call in port.transcript if call[1] == "ls-remote")
     assert probe[-1] == "refs/heads/feat/x"
+
+
+def test_the_server_is_named_by_its_whole_remote_name() -> None:
+    """A remote may be called `team/origin`, and git accepts a *path* wherever
+    it expects a remote -- so `team`, the first component, reaches a sibling
+    directory that happens to be a repository and answers about it instead. The
+    answer is empty and well-formed, which here means `already gone`."""
+    port = _remote_port(**{"ls-remote": ok("")})
+    settled = plan(target(TargetKind.REMOTE_BRANCH, "team/origin/feat/x", remote="team/origin"))
+    run(port, settled, _remote_survey("team/origin/feat/x"))
+
+    probe = next(call for call in port.transcript if call[1] == "ls-remote")
+    assert probe[3] == "team/origin"
+    assert "team" not in probe[3:]
 
 
 def test_remote_ref_surviving_a_successful_push_delete_is_an_anomaly() -> None:

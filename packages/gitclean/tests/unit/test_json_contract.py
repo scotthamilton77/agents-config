@@ -110,6 +110,9 @@ WORKTREE = {
 
 BRANCH = {
     "name": str,
+    "ref": str,
+    "probe_ref": str,
+    "ref_name": str,
     "is_remote": bool,
     "remote": (str, NONE),
     "head": str,
@@ -136,6 +139,8 @@ TARGET = {
     "id": str,
     "kind": str,
     "name": str,
+    "remote": (str, NONE),
+    "ref_name": (str, NONE),
     "pairing": {"*": dict},
     "merge_evidence": str,
     "merge_proven": bool,
@@ -145,7 +150,7 @@ TARGET = {
     "last_activity": (str, NONE),
 }
 
-NOT_OFFERED = {"name": str, "reason": str}
+NOT_OFFERED = {"name": str, "reason": str, "unsplit": bool}
 
 SURVEY = {
     "repo_root": str,
@@ -162,8 +167,12 @@ SURVEY = {
     "branches": [dict],
     "branches_known": bool,
     "worktrees_known": bool,
+    "worktrees_framed": bool,
     "dropped_refs": int,
     "dropped_worktrees": int,
+    "unsplit_refs": int,
+    "remotes": [str],
+    "remotes_known": bool,
     "not_offered": [dict],
 }
 
