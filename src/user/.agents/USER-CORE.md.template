@@ -47,3 +47,8 @@ Formatting & Deliverable Structure
 - **BLUF (Bottom Line Up Front):** Lead directly with the outcome, core finding, or summary sentence before diving into technical details.
 - **Separate Narration from Deliverables:** Keep progress updates brief (1 sentence). Do not mix meta-commentary or self-correction into the final documentation deliverable.
 </communication-and-doc-style>
+
+<code-complexity-and-defensive-limits>
+- **Pragmatism Over Paranoia:** Write clean, minimal, maintainable code. Do not write hyper-defensive code, unnecessary abstraction layers, or speculative validation for unlikely edge cases unless explicitly required.
+- **YAGNI Enforcement:** Handle happy paths and standard error cases first. Do NOT design for theoretical future requirements or extreme, low-probability scenarios.
+</code-complexity-and-defensive-limits>
