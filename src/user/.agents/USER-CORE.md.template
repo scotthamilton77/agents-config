@@ -36,3 +36,19 @@ Narrow "when in doubt, do the safe thing" rules (merge authorization, destructiv
 - Artifacts state the current decision, not its history — git is the changelog.
 - If the repo has a CONTEXT.md glossary, use its terminology.
 </conventions>
+
+<communication-and-doc-style>
+Clarity & Prose Standards
+- **Write for Human Readers:** Avoid hyper-compressed phrasing, telegraphic shorthand, or internal agent jargon. Standardize on plain, precise, professional English.
+- **No Abbreviated Jargon:** Never invent or use unstandardized abbreviations (e.g., `impl`, `cfg`, `req`) unless they are established in the codebase.
+- **Complete Context in Documentation:** When writing specs, skills, architectural docs, or code comments, include full rationale, prerequisites, and explicit context. Do not omit intermediate reasoning steps or assume implicit background knowledge.
+
+Formatting & Deliverable Structure
+- **BLUF (Bottom Line Up Front):** Lead directly with the outcome, core finding, or summary sentence before diving into technical details.
+- **Separate Narration from Deliverables:** Keep progress updates brief (1 sentence). Do not mix meta-commentary or self-correction into the final documentation deliverable.
+</communication-and-doc-style>
+
+<code-complexity-and-defensive-limits>
+- **Pragmatism Over Paranoia:** Write clean, minimal, maintainable code. Do not write hyper-defensive code, unnecessary abstraction layers, or speculative validation for unlikely edge cases unless explicitly required.
+- **YAGNI Enforcement:** Handle happy paths and standard error cases first. Do NOT design for theoretical future requirements or extreme, low-probability scenarios.
+</code-complexity-and-defensive-limits>
