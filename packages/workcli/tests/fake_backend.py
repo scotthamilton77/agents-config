@@ -318,3 +318,6 @@ class ReadOnlyFakeBackend(FakeBackend):
 
     def label_mutate(self, op: str, item_id: str, labels: Sequence[str]) -> None:
         self._refuse(op, item_id, labels)
+
+    def dep_mutate(self, op: DepOp, from_id: str, to_id: str, dep_type: str) -> None:
+        self._refuse(op, from_id, to_id, dep_type)

@@ -24,10 +24,11 @@ All fields are required.
 | `head_sha` | 40-hex | Reviewed head commit. The verdict is valid only for this commit. |
 | `claim_id` | non-blank string | The completion claim this round adjudicates. |
 | `retained_categories` | array of strings | Categories carried forward from earlier rounds. May be empty, but must be present — an empty array asserts "nothing retained". |
-| `lenses` | array, ≥ 1 | One entry per lens the artifact class declares, green ones included, each recording what actually ran it. |
+| `lenses` | array | One entry per lens the artifact class declares, green ones included, each recording what actually ran it. At least one, unless the round halted first. |
 | `prior_dispositions` | array | What happened to each earlier mechanical finding. May be empty on round 1. |
-| `verdict` | `"clean"` or `"findings"` | Round-level result. |
-| `findings` | array | Findings raised this round. Must be empty when `verdict` is `"clean"` and non-empty when it is `"findings"`. |
+| `verdict` | `"clean"`, `"findings"`, or `"halted"` | Round-level result. |
+| `findings` | array | Findings raised this round. Must be empty when `verdict` is `"clean"` and non-empty when it is `"findings"`. Unconstrained on a halted round. |
+| `halt` | object | Present exactly when `verdict` is `"halted"`. |
 
 ### Lens entry
 
@@ -35,7 +36,8 @@ All fields are required.
 {"lens": "correctness", "verdict": "findings", "vendor": "openai",
  "transport": "openrouter", "model": "openai/gpt-5.6-sol",
  "substitution": {"declared_transport": "codex", "declared_model": "gpt-5.6-terra",
-                  "reason": "codex credential expired; provider returned 401"}}
+                  "reason": "codex credential expired, lens failed over to openrouter",
+                  "transport_error": "401 Missing bearer authentication"}}
 ```
 
 `vendor`, `transport` and `model` record what **actually** produced the report, never what the
@@ -47,6 +49,10 @@ coverage.
 `substitution` appears only when the lens ran on something other than its declared entry, and its
 `reason` is mandatory and non-blank. Recording it is the round's own job: nothing downstream can
 reconstruct a swap the round did not write down.
+
+`transport_error` carries what the declared route returned when the swap was forced rather than
+chosen — verbatim, because a policy that stops a run on one particular provider error has only this
+string to recognise it by.
 
 **Vendor diversity is derived, never stored.** Count the distinct `vendor` values across `lenses`;
 one means the panel collapsed onto a single vendor and its blind spots now correlate. That is an
@@ -80,6 +86,20 @@ the demotion is silent.
 `disposition` is `fixed`, `rebutted`, or `advisory-deferred`. `evidence` is required and non-blank
 for `rebutted` — a rebuttal without evidence is just a disagreement.
 
+### Halt
+
+```json
+{"failures": [{"lens": "security", "transport": "openrouter", "error": "402 Insufficient credits"},
+              {"lens": "security", "transport": "codex", "error": "401 Missing bearer auth"}],
+ "abandoned_lenses": ["test-adequacy", "documentation-quality"]}
+```
+
+A halted round ran out of transports: a dispatch died on its route and the failover to the other
+route died too. It is never clean and never complete, and `verdict` says so outright rather than
+leaving it inferred from a missing lens entry — a silent check guarding the merge gate is one
+nobody notices passing. Its findings are real and still not a verdict on the change: most of it was
+never opened.
+
 ## Where a verdict is posted
 
 Outside the reviewed branch, never as a file in the diff:
@@ -96,7 +116,8 @@ Both media are posted by the App and keyed to a SHA. Two rules follow:
 
 ## When a round is complete
 
-Hand-verify all five against the pull request:
+A `halted` verdict is incomplete by construction. For every other verdict, hand-verify all five
+against the pull request:
 
 1. **Base sync** — the declared `base_sha` equals the diff's actual base (the merge base of the
    branch and its target). A mismatch means the reviewer looked at an unsynced checkout, and the
@@ -111,8 +132,9 @@ Hand-verify all five against the pull request:
 5. **Ledger coverage** — `prior_dispositions` accounts for every `mechanical` finding from every
    prior round's posted verdict.
 
-**Terminal-clean** = a complete round with zero `mechanical` findings. Advisory findings never
-block; they go to the backlog.
+**Terminal-clean** = a complete round whose `verdict` is `clean`, carrying zero `mechanical`
+findings. Advisory findings never block; they go to the backlog. A halted round is never
+terminal-clean, however few findings it holds.
 
 Completeness and diversity are separate questions. A round every lens reported on is complete even
 if all of them ran on one vendor — report the collapse alongside the verdict rather than treating

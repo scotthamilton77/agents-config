@@ -11,6 +11,7 @@ matching `test_dep_type_wall.py`/`test_capabilities.py`.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from argparse import Namespace
 from io import StringIO
@@ -18,7 +19,7 @@ from io import StringIO
 import pytest
 
 from tests.conftest import run_cli, run_cli_with_runner
-from tests.fake_backend import FakeBackend
+from tests.fake_backend import FakeBackend, ReadOnlyFakeBackend
 from tests.fakes import ScriptedBdRunner, ScriptedStep
 from workcli import cli as cli_module
 from workcli.adapters.bd.runner import BdResult
@@ -313,6 +314,34 @@ def test_manifest_row_out_of_scope_and_remaining_work_false() -> None:
     assert data["remaining_work"] is False
 
 
+def test_success_payload_matches_the_complete_data_shape_exactly() -> None:
+    """The whole `data` payload for a successful discover, not a subset --
+    catches a field dropped, renamed, or added that a narrower assertion
+    would miss."""
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args()
+
+    data = discover(backend, args)
+
+    assert isinstance(data, dict)
+    new_id = data["item"]["id"]  # type: ignore[index]
+    assert isinstance(new_id, str)
+    assert data == {
+        "item": {"id": new_id, "title": "New discovery", "track": None},
+        "edges": {"parent": "epic-1", "discovered_from": "src-1"},
+        "triage": {"scope": "out-of-scope", "priority": "P2", "anchor": "epic-1"},
+        "manifest_row": {
+            "item": "New discovery",
+            "scope": "out-of-scope",
+            "lands_in": "epic-1",
+            "tracked_item": new_id,
+            "priority_why": "P2 — reason",
+        },
+        "remaining_work": False,
+        "warnings": [],
+    }
+
+
 def test_manifest_row_in_scope_deferred_lands_in_parent_and_remaining_work_true() -> None:
     backend = _backend_with_epic_anchor()
     args = _args(
@@ -441,10 +470,10 @@ def test_post_create_track_read_failure_surfaces_created_id_for_replay() -> None
     assert exc_info.value.detail["created_id"] not in ("epic-1", "src-1")
 
 
-# --- AC11: --noun spec/epic -> E_USAGE (leaf nouns only, argparse choices) ---
+# --- AC11: --noun outside the leaf set -> E_USAGE (leaf nouns only) ---
 
 
-@pytest.mark.parametrize("noun", ["spec", "epic"])
+@pytest.mark.parametrize("noun", ["spec", "epic", "milestone"])
 def test_container_noun_is_usage_error_via_cli(noun: str) -> None:
     exit_code, envelope, _ = run_cli(
         [
@@ -473,6 +502,347 @@ def test_container_noun_is_usage_error_via_cli(noun: str) -> None:
 
     assert exit_code == 1
     assert envelope["error"]["code"] == str(ErrorCode.USAGE)  # type: ignore[index]
+
+
+# --- accepted argument-shape aliases (--noun 'bug', bare --priority), and
+# single-pass reporting when both --noun and --priority are malformed. ---
+
+
+def test_noun_alias_bug_resolves_to_canonical_bugfix_template() -> None:
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(noun="bug")
+
+    data = discover(backend, args)
+
+    assert isinstance(data, dict)
+    new_id = data["item"]["id"]  # type: ignore[index]
+    assert isinstance(new_id, str)
+    assert backend.get(new_id).type == "bug"
+    assert "shape-bugfix" in backend.labels(new_id)
+
+
+@pytest.mark.parametrize("digit", ["0", "1", "2", "3", "4"])
+def test_bare_priority_normalizes_to_canonical_p_notation(digit: str) -> None:
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(priority=digit)
+    expected = f"P{digit}"
+
+    data = discover(backend, args)
+
+    assert isinstance(data, dict)
+    assert data["triage"]["priority"] == expected  # type: ignore[index]
+    new_id = data["item"]["id"]  # type: ignore[index]
+    assert isinstance(new_id, str)
+    assert backend.get(new_id).priority == expected
+    assert f"- Priority: {expected} — reason" in backend.get(new_id).description
+
+
+def test_alias_and_canonical_forms_produce_byte_identical_stored_records() -> None:
+    backend_alias = _backend_with_epic_anchor()
+    backend_canon = _backend_with_epic_anchor()
+
+    data_alias = discover(backend_alias, _out_of_scope_args(noun="bug", priority="2"))
+    data_canon = discover(backend_canon, _out_of_scope_args(noun="bugfix", priority="P2"))
+
+    assert isinstance(data_alias, dict)
+    assert isinstance(data_canon, dict)
+    id_alias = data_alias["item"]["id"]  # type: ignore[index]
+    id_canon = data_canon["item"]["id"]  # type: ignore[index]
+    assert isinstance(id_alias, str)
+    assert isinstance(id_canon, str)
+    item_alias = backend_alias.get(id_alias)
+    item_canon = backend_canon.get(id_canon)
+
+    # Byte-identical field for field -- title, type, status, priority,
+    # labels, parent, description, notes, children, and dep edges -- except
+    # each backend's own assigned id.
+    assert dataclasses.replace(item_alias, id="") == dataclasses.replace(item_canon, id="")
+    # The discovered-from provenance edge, named explicitly.
+    assert item_alias.deps == item_canon.deps
+
+
+def test_unknown_noun_alone_raises_single_field_usage_error() -> None:
+    """A single bad --noun still raises its own (non-combined) error unchanged:
+    the exact code, message, and detail, not just a fragment of any of them --
+    AC5 pins full error identity, not "close enough"."""
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(noun="widget")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.USAGE
+    assert exc_info.value.message == (
+        "invalid choice: 'widget' (choose from spike, chore, decision, feat, bugfix)"
+    )
+    assert exc_info.value.detail == {"field": "noun"}
+    assert backend.ids() == ["epic-1", "src-1"]
+
+
+def test_malformed_noun_and_priority_together_are_both_reported_from_one_call() -> None:
+    """Neither 'widget' (not a noun or a known alias) nor 'P9' (out of
+    P0-P4, even after bare-digit normalization) is individually acceptable;
+    both are named from this single invocation. The top-level code is
+    `E_TRIAGE_INCOMPLETE`, so a caller grepping for a triage rejection
+    still finds one, even though the noun failure alone is `E_USAGE`.
+    """
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(noun="widget", priority="P9")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.TRIAGE_INCOMPLETE
+    assert "widget" in exc_info.value.message
+    assert "P0" in exc_info.value.message and "P4" in exc_info.value.message
+    errors = exc_info.value.detail["errors"]
+    assert isinstance(errors, list)
+    fields = {entry["field"] for entry in errors}  # type: ignore[union-attr]
+    assert fields == {"noun", "priority"}
+    # Every individual field's own code still survives in detail.errors,
+    # even though the top-level code is the folded one above.
+    codes_by_field = {entry["field"]: entry["code"] for entry in errors}  # type: ignore[union-attr]
+    assert codes_by_field == {
+        "noun": str(ErrorCode.USAGE),
+        "priority": str(ErrorCode.TRIAGE_INCOMPLETE),
+    }
+    assert backend.ids() == ["epic-1", "src-1"]
+
+
+def test_unknown_noun_alone_touches_no_backend_mutation() -> None:
+    """`ReadOnlyFakeBackend` raises on every mutator, so a malformed --noun
+    reaching `create_noun` fails loudly here. The backend is left empty --
+    noun validation runs before any read too, so nothing needs seeding.
+    """
+    backend = ReadOnlyFakeBackend()
+    args = _out_of_scope_args(noun="widget")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.USAGE
+
+
+def test_malformed_noun_and_priority_together_touches_no_backend_mutation() -> None:
+    """Same mechanical proof as above, for the combined-failure path."""
+    backend = ReadOnlyFakeBackend()
+    args = _out_of_scope_args(noun="widget", priority="P9")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.TRIAGE_INCOMPLETE
+
+
+def test_priority_only_failure_still_returns_triage_incomplete_alone() -> None:
+    """A triage-semantic failure alone returns `E_TRIAGE_INCOMPLETE` with its
+    own field and message -- matches
+    `test_invalid_priority_names_field_and_accepted_range` field for field.
+    """
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(priority="P9")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.TRIAGE_INCOMPLETE
+    assert exc_info.value.message == "priority must be one of P0-P4, got 'P9'"
+    assert exc_info.value.detail == {"field": "priority"}
+
+
+def test_placement_usage_precedes_the_noun_priority_aggregate() -> None:
+    """Placement (pure arg-shape, `E_USAGE`) fires before the noun/priority
+    aggregate: the aggregate must never move a pure well-formedness check
+    behind it.
+    """
+    backend = _backend_with_epic_anchor()
+    args = _args(anchor=None, orphan=False, priority="P9")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.USAGE
+    assert "anchor" in exc_info.value.message and "orphan" in exc_info.value.message
+
+
+def test_scope_precedes_the_noun_priority_aggregate() -> None:
+    """Bad --scope with bad --priority together surfaces the scope
+    rejection, not the priority one: scope fires before the aggregate.
+    """
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(scope="sideways", priority="P9")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.TRIAGE_INCOMPLETE
+    assert exc_info.value.detail["field"] == "scope"
+
+
+def test_placement_usage_precedes_the_noun_priority_aggregate_for_a_bad_noun() -> None:
+    """Same precedence proof as the bad-priority case above, exercising the
+    noun side of the aggregate instead: the whole aggregate sits behind
+    placement and scope, not just --priority's side of it.
+    """
+    backend = _backend_with_epic_anchor()
+    args = _args(anchor=None, orphan=False, noun="widget")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.USAGE
+    assert "anchor" in exc_info.value.message and "orphan" in exc_info.value.message
+
+
+def test_scope_precedes_the_noun_priority_aggregate_for_a_bad_noun() -> None:
+    """Same precedence proof as the bad-priority case above, but exercising
+    the noun side of the aggregate."""
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(scope="sideways", noun="widget")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.TRIAGE_INCOMPLETE
+    assert exc_info.value.detail["field"] == "scope"
+
+
+def test_placement_usage_both_shape_precedes_the_noun_priority_aggregate() -> None:
+    """The 'both' placement shape (--anchor and --orphan together) must also
+    fire before the noun/priority aggregate -- the existing placement
+    precedence tests above only cover the 'neither' shape.
+    """
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(orphan=True, escalation_why="none fits", priority="P9")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.USAGE
+    assert "anchor" in exc_info.value.message and "orphan" in exc_info.value.message
+
+
+def test_placement_usage_both_shape_precedes_the_noun_priority_aggregate_for_a_bad_noun() -> None:
+    """Same 'both' placement shape proof as above, exercising the noun side
+    of the aggregate."""
+    backend = _backend_with_epic_anchor()
+    args = _out_of_scope_args(orphan=True, escalation_why="none fits", noun="widget")
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.USAGE
+    assert "anchor" in exc_info.value.message and "orphan" in exc_info.value.message
+
+
+def test_malformed_noun_and_priority_together_via_cli_one_envelope() -> None:
+    """Same double-failure, driven through the CLI -- top-level code is
+    `E_TRIAGE_INCOMPLETE` (see the unit-level test's docstring above for
+    why)."""
+    exit_code, envelope, _ = run_cli(
+        [
+            "discover",
+            "--noun",
+            "widget",
+            "--title",
+            "T",
+            "--anchor",
+            "epic-1",
+            "--anchor-why",
+            "x",
+            "--discovered-from",
+            "src-1",
+            "--scope",
+            "out-of-scope",
+            "--scope-why",
+            "x",
+            "--priority",
+            "P9",
+            "--priority-why",
+            "x",
+        ],
+        steps=[],
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.TRIAGE_INCOMPLETE)
+    detail = error["detail"]
+    assert isinstance(detail, dict)
+    errors = detail["errors"]
+    assert isinstance(errors, list)
+    fields = {entry["field"] for entry in errors}  # type: ignore[union-attr]
+    assert fields == {"noun", "priority"}
+
+
+def test_previously_rejected_shapes_now_succeed_via_cli() -> None:
+    """--noun bug and --priority 2 together succeed, driven through the CLI."""
+
+    def _show_result(item_id: str, issue_type: str) -> BdResult:
+        return BdResult(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {
+                        "id": item_id,
+                        "title": "t",
+                        "issue_type": issue_type,
+                        "status": "open",
+                        "priority": 2,
+                        "labels": [],
+                    }
+                ]
+            ),
+            stderr="",
+        )
+
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(("show", "src-1", "--json"), _show_result("src-1", "task")),
+            ScriptedStep(("show", "epic-1", "--json"), _show_result("epic-1", "epic")),
+            ScriptedStep(("search",), BdResult(returncode=0, stdout=json.dumps([]), stderr="")),
+            ScriptedStep(
+                ("create",),
+                BdResult(returncode=0, stdout=json.dumps({"id": "new-1"}), stderr=""),
+            ),
+            ScriptedStep(("dep", "add"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("show", "new-1", "--json"), _show_result("new-1", "bug")),
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        [
+            "discover",
+            "--noun",
+            "bug",
+            "--title",
+            "New discovery",
+            "--anchor",
+            "epic-1",
+            "--anchor-why",
+            "best fit",
+            "--discovered-from",
+            "src-1",
+            "--scope",
+            "out-of-scope",
+            "--scope-why",
+            "found it",
+            "--priority",
+            "2",
+            "--priority-why",
+            "hurts overnight",
+        ],
+        runner,
+        config_loader=_not_found_config_loader,
+    )
+
+    assert exit_code == 0
+    assert envelope["ok"] is True
+    create_index = next(i for i, call in enumerate(runner.calls) if call[0] == "create")
+    create_call = runner.calls[create_index]
+    assert "--type" in create_call and "bug" in create_call
+    assert "--priority" in create_call and "P2" in create_call
 
 
 # --- AC12: every invocation emits exactly one parseable envelope ---

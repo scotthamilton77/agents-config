@@ -23,11 +23,13 @@ from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle import is_container
 from workcli.lifecycle.create import create_noun
+from workcli.lifecycle.nouns import LEAF_NOUNS, Noun, resolve_noun
 from workcli.model import Item
 from workcli.tracks import derive_track
 
 _HATCHES = ("externally-blocked", "blast-radius", "own-cycle")
 _PRIORITY_RE = re.compile(r"^P[0-4]$")
+_BARE_PRIORITY_RE = re.compile(r"^[0-4]$")
 _DISCOVERED_FROM_TYPE = "discovered-from"
 _ORPHAN_ANCHOR_DISPLAY = "none: escalated"
 
@@ -73,12 +75,97 @@ def _parse_scope(value: str | None) -> tuple[str, str | None]:
     )
 
 
+def _normalize_priority(value: str) -> str:
+    """A bare digit ('2') normalizes to the canonical 'P2' notation.
+
+    Nothing else about the value is ambiguous -- only the notation was ever
+    rejected -- so anything not matching the bare-digit shape passes through
+    unchanged for `_PRIORITY_RE` to accept or reject as before.
+    """
+    if _BARE_PRIORITY_RE.match(value):
+        return f"P{value}"
+    return value
+
+
 def _validate_priority(value: str | None) -> str:
     if value is None:
         raise _triage_incomplete("priority", "--priority is required")
-    if not _PRIORITY_RE.match(value):
+    normalized = _normalize_priority(value)
+    if not _PRIORITY_RE.match(normalized):
         raise _triage_incomplete("priority", f"priority must be one of P0-P4, got {value!r}")
-    return value
+    return normalized
+
+
+def _validate_noun(value: str) -> Noun:
+    noun = resolve_noun(value)
+    if noun is not None and noun in LEAF_NOUNS:
+        return noun
+    raise WorkError(
+        ErrorCode.USAGE,
+        f"invalid choice: {value!r} (choose from {', '.join(n.value for n in LEAF_NOUNS)})",
+        detail={"field": "noun"},
+    )
+
+
+def _combined_error(errors: list[WorkError]) -> WorkError:
+    """Fold 2+ independent field failures into one well-formed error.
+
+    `message` and `detail.errors` preserve every folded failure's own
+    message and code verbatim. The top-level `code` is `E_TRIAGE_INCOMPLETE`
+    if any folded failure is triage-semantic, `E_USAGE` only when every
+    folded failure is pure arg-shape -- so a caller grepping the top level
+    for a triage rejection still finds one when an unrelated arg-shape
+    mistake co-occurs in the same call.
+    """
+    detail: dict[str, JsonValue] = {
+        "errors": cast(
+            "list[JsonValue]",
+            [
+                {
+                    "code": str(error.code),
+                    "field": error.detail.get("field"),
+                    "message": error.message,
+                }
+                for error in errors
+            ],
+        )
+    }
+    message = "; ".join(f"{error.detail.get('field', '?')}: {error.message}" for error in errors)
+    code = (
+        ErrorCode.TRIAGE_INCOMPLETE
+        if any(error.code is ErrorCode.TRIAGE_INCOMPLETE for error in errors)
+        else ErrorCode.USAGE
+    )
+    return WorkError(code, message, detail)
+
+
+def _validate_noun_and_priority(args: Namespace) -> tuple[Noun, str]:
+    """Validate --noun and --priority together, in one pass.
+
+    Both validators run before either is allowed to raise, so a caller with
+    both fields wrong learns about both from one invocation. A single-field
+    failure still raises that field's own error unchanged; two failures fold
+    into one via `_combined_error`.
+    """
+    noun_result: Noun | WorkError
+    try:
+        noun_result = _validate_noun(args.noun)
+    except WorkError as noun_error:
+        noun_result = noun_error
+
+    priority_result: str | WorkError
+    try:
+        priority_result = _validate_priority(args.priority)
+    except WorkError as priority_error:
+        priority_result = priority_error
+
+    if isinstance(noun_result, WorkError) and isinstance(priority_result, WorkError):
+        raise _combined_error([noun_result, priority_result])
+    if isinstance(noun_result, WorkError):
+        raise noun_result
+    if isinstance(priority_result, WorkError):
+        raise priority_result
+    return noun_result, priority_result
 
 
 def _resolve_source(backend: Backend, discovered_from: str | None) -> Item:
@@ -143,6 +230,7 @@ def _render_description(
     scope: str,
     hatch: str | None,
     scope_why: str,
+    priority: str,
     priority_why: str,
     placement_why: str,
 ) -> str:
@@ -155,7 +243,10 @@ def _render_description(
         [
             "## Triage",
             f"- {scope_line}",
-            f"- Priority: {args.priority} — {priority_why}",
+            # `priority` (validated/normalized), never args.priority (raw) --
+            # an alternative-notation caller ('2') and a canonical-notation
+            # caller ('P2') must render byte-identical stored records.
+            f"- Priority: {priority} — {priority_why}",
             f"- Anchor: {anchor_display} — {placement_why}",
         ]
     )
@@ -172,9 +263,11 @@ def _derive_lands_in(scope: str, anchor: str | None, orphan: bool) -> str:
     return str(anchor)
 
 
-def _build_create_namespace(args: Namespace, description: str, priority: str) -> Namespace:
+def _build_create_namespace(
+    args: Namespace, description: str, priority: str, noun: Noun
+) -> Namespace:
     return Namespace(
-        noun=args.noun,
+        noun=noun.value,
         raw=False,
         title=args.title,
         description=description,
@@ -201,9 +294,12 @@ def discover(backend: Backend, args: Namespace) -> JsonValue:
     is enforced by the `REQUIRED_CAPABILITY` registration in
     `verbs/__init__.py`, ahead of this handler ever running.
     """
+    # Placement (pure arg-shape) is validated before scope (semantic),
+    # before the noun/priority aggregate -- keep this order: the aggregate
+    # must never fire ahead of placement or scope.
     _validate_placement_usage(args)
     scope, hatch = _parse_scope(args.scope)
-    priority = _validate_priority(args.priority)
+    noun, priority = _validate_noun_and_priority(args)
     scope_why = _require_rationale(args.scope_why, "scope_why", "--scope-why")
     priority_why = _require_rationale(args.priority_why, "priority_why", "--priority-why")
     if args.orphan:
@@ -218,11 +314,13 @@ def discover(backend: Backend, args: Namespace) -> JsonValue:
     if not args.orphan:
         _validate_anchor(backend, args.anchor, scope, source, args.discovered_from)
 
-    description = _render_description(args, scope, hatch, scope_why, priority_why, placement_why)
+    description = _render_description(
+        args, scope, hatch, scope_why, priority, priority_why, placement_why
+    )
 
     created = cast(
         "dict[str, JsonValue]",
-        create_noun(backend, _build_create_namespace(args, description, priority)),
+        create_noun(backend, _build_create_namespace(args, description, priority, noun)),
     )
     new_id = cast("str", created["id"])
 

@@ -1,8 +1,8 @@
 ---
 name: openrouter-claude-subagent
-description: Use when delegating work to an OpenRouter-hosted model (Kimi, GLM, Gemini Flash, GPT-5.6 variants, etc.) while still running it through the Claude Code CLI as the agent harness — spinning up a subagent on a different or cheaper model, routing a task through OpenRouter, launching a nested claude instance against an OpenRouter key, or when the user says "use openrouter", "route this to <model>", "delegate to a cheap model", "spin up a kimi/glm/gemini-flash subagent", "run this through OpenRouter", or asks which OpenRouter model fits a task and what it costs. Not for delegating to Codex, Gemini CLI, or any harness other than a nested claude process.
+description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, GPT), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, and not for Codex or Gemini CLI.
 admission:
-  prevents: Every review lens and every delegated opinion running on one vendor's models, so the whole panel shares that vendor's blind spots and agrees on a defect none of its models can see. Without a way to run the same harness against another vendor's model, "a second opinion" is the same opinion twice.
+  provides: A nested Claude Code harness whose model traffic is repointed at a non-Anthropic model, plus the stream repair that makes the reply actually arrive — so a task runs on another vendor's weights while keeping this harness's tool loop, permission system, and file editing.
   cost: A local proxy process for the life of each nested run, and an OpenRouter API key the user must supply and pay against. Node must be installed, and the model routing table needs a refresh whenever OpenRouter reprices or retires a model.
   remove_when: The review tooling can address models from more than one vendor natively, so a caller can name a non-Anthropic model without a nested harness and a repair proxy in between.
 ---
@@ -40,6 +40,17 @@ when `$OPENROUTER_API_KEY` is unset — this skill neither creates nor stores
 credentials, so ask the user where to find the key rather than guessing. Node
 is a hard requirement; if it is missing, stop and say so rather than falling
 back to a direct invocation.
+
+**The run is pinned to `--model`.** The subagent may delegate further, and
+every run it starts answers on that same model — the aliases are redirected, so
+a dispatch that names `sonnet`, or an agent type whose own model is one of those
+aliases, still lands there. Anything outside that vocabulary is refused with an
+error explaining the alternative, including an agent type pinned to a specific
+vendor model id and a request that names no model at all. Two families are refused outright, pin or no pin:
+Claude models, which belong in the harness you are already running, and the
+large GPT tiers (`gpt-5.5*`, `gpt-5.6*`, `-mini` variants excepted), which have
+their own transport. Naming one exits `78` before anything starts, and there is
+no rerouting around it — if that transport is down, the task waits.
 
 `references/proxy-contract.md` covers what the proxy repairs, why the tool
 grant is limited to what you pass, and what to re-verify when the Claude Code

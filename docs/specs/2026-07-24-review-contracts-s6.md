@@ -26,7 +26,7 @@ requirements, not lore.
 
 | Artifact | State | Facts |
 | --- | --- | --- |
-| Cross-model reviewer | working, unpackaged | The local codex CLI is the live foreign reviewer (GitHub codex auto-reviews are off since 2026-07-24 — request-only). Invoked `node "$CODEX_HOME/scripts/codex-companion.mjs" task --model gpt-5.6-terra --json < prompt.md`, `CODEX_HOME=${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/marketplaces/openai-codex/plugins/codex}`, read-only sandbox, run in background (minutes). Proven prompt shape and exact-JSON completion contract exist as tribal practice, in no deployed asset. |
+| Cross-model reviewer | working, unpackaged | The local codex CLI is the live foreign reviewer (GitHub codex auto-reviews are off since 2026-07-24 — request-only). Invoked `node "$CODEX_PLUGIN_ROOT/scripts/codex-companion.mjs" task --model gpt-5.6-terra --json < prompt.md`, `CODEX_PLUGIN_ROOT=${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/marketplaces/openai-codex/plugins/codex}`, read-only sandbox, run in background (minutes). Proven prompt shape and exact-JSON completion contract exist as tribal practice, in no deployed asset. |
 | Verdict artifact schema | nowhere | No schema, no file convention, no notion of "a complete round" keyed to a head SHA. The S5 loop carried the shape in-context only. |
 | Class-specific review contracts | nowhere | No typed-code / spec / skill-prose split; no reviewer prompt asset. Reviewers were prompted ad hoc. |
 | AC-attack round (D3) | nowhere | No pre-implementation attack asset. The S5 spec-contract slice explicitly deferred this to S6. |
