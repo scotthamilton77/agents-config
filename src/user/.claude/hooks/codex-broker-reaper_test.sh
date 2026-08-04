@@ -26,7 +26,18 @@ assert_dead()     { if wait_until "! kill -0 $2 2>/dev/null"; then PASS=$((PASS+
 # faster than a process can bind a socket or exit, and reports a false verdict.
 wait_until() { local n=0; while [ $n -lt 100 ]; do if eval "$1"; then return 0; fi; sleep 0.05; n=$((n+1)); done; return 1; }
 
-WORK="$(mktemp -d)"; trap 'pkill -g 0 -f "$WORK/app-server-broker.mjs" 2>/dev/null; command rm -rf "$WORK"' EXIT
+WORK="$(mktemp -d)"
+
+# Every stub this suite starts is recorded here and its process group signalled
+# on the way out. The stubs are deliberately given sessions of their own, so
+# they are in no group this script could sweep wholesale — a suite for a leak
+# reaper that leaked its own fixtures would be a poor advertisement.
+STARTED="$WORK/started.pids"; : > "$STARTED"
+cleanup() {
+  while read -r pid; do kill -TERM -- "-$pid" 2>/dev/null; done < "$STARTED"
+  command rm -rf "$WORK"
+}
+trap cleanup EXIT
 
 export CODEX_BROKER_REAPER_SCOPE="$WORK"
 export CODEX_BROKER_REAPER_MIN_AGE_SECONDS=0
@@ -66,8 +77,12 @@ start_stub() { # $1 = name; echoes "pid sockpath"
   local sock="$dir/broker.sock"
   setsid python3 "$STUB" serve --endpoint "unix:$sock" --cwd "$dir" --pid-file "$dir/broker.pid" \
     > "$dir/out" 2>&1 &
-  local pid=$!
   wait_until "[ -S '$sock' ]" || echo "stub $1 never bound its socket" >&2
+  # The stub's own pid file, not $!. Where setsid is emulated, the job pid is the
+  # wrapper's and the process that survives the exec is a different one — the
+  # pid the hook will see, and the only one worth tracking or asserting on.
+  local pid; pid="$(cat "$dir/broker.pid" 2>/dev/null || echo 0)"
+  echo "$pid" >> "$STARTED"
   echo "$pid $sock"
 }
 
