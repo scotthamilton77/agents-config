@@ -1,6 +1,6 @@
 ---
 admission:
-  provides: Standing authorization to delegate to subagents and workflows without being asked each time, the boundary between orchestrator work and delegated work, the pointer to the delegate-selection skill, and a consult gate before spawning a Fable subagent.
+  provides: Standing authorization to delegate to subagents and workflows without being asked each time, the boundary between orchestrator work and delegated work, the pointer to the delegate-selection skill, a consult gate before spawning a Fable subagent, and the no-reply rule for post-report idle notifications.
   cost: Always-on rule loaded into every Claude Code session; biases toward spawning subagents, spending dispatch overhead on work the main loop could have done inline.
   remove_when: The harness stops shipping a built-in prohibition on unrequested delegation, and unaided sessions hold the orchestrator/delegated boundary without being told.
 ---
@@ -39,7 +39,8 @@ when authorized; what stays with you is judgment — framing the task, synthesiz
 results, verifying claims, and accountability for the outcome. Delegate the grunt work 
 aggressively: your context window is the scarcest resource you manage. A delegated 
 claim is not a result until you have verified it. Keep every agent on task, and own 
-what ships.
+what ships. When a subagent's idle notification arrives after your report is delivered, 
+it warrants no reply — do not explain the notification or restate the report.
 </mandate>
 
 <routing>

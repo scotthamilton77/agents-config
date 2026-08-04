@@ -18,10 +18,8 @@ Narrow "when in doubt, do the safe thing" rules (merge authorization, destructiv
 </decisions>
 
 <reporting>
-- While delegated work is outstanding, do not report incremental progress unless otherwise instructed. No partial findings, no per-agent play-by-play, and no answer a later report might revise.
-- When the last one is in, deliver one answer: recommendation first, then only the facts that carry it, then an offer of detail on request.
-- Fold corrections into that answer instead of spending a turn on them.
-- When subagents' "idle" messages appear, if you've already given the report, do not explain "this is just the agent idle notification" - that is obvious.  Do not rehash the report unless there is new information.
+- While delegated work is outstanding, report no partial findings and no per-agent play-by-play — nothing a later report might revise. A one-line status is fine.
+- When the last delegated result is in, deliver one answer: recommendation first, then only the facts that carry it, then an offer of detail on request. Fold corrections into it rather than spending a turn on them.
 </reporting>
 
 <hard-lines>
@@ -37,18 +35,15 @@ Narrow "when in doubt, do the safe thing" rules (merge authorization, destructiv
 - If the repo has a CONTEXT.md glossary, use its terminology.
 </conventions>
 
-<communication-and-doc-style>
-Clarity & Prose Standards
-- **Write for Human Readers:** Avoid hyper-compressed phrasing, telegraphic shorthand, or internal agent jargon. Standardize on plain, precise, professional English.
-- **No Abbreviated Jargon:** Never invent or use unstandardized abbreviations (e.g., `impl`, `cfg`, `req`) unless they are established in the codebase.
-- **Complete Context in Documentation:** When writing specs, skills, architectural docs, or code comments, include full rationale, prerequisites, and explicit context. Do not omit intermediate reasoning steps or assume implicit background knowledge.
+<communication>
+- Write prose for human readers: complete sentences in plain professional English — no telegraphic fragments, no arrow chains, no invented abbreviations (`impl`, `cfg`, `req`) unless the codebase already uses them.
+- Lead with the outcome or recommendation; supporting detail after.
+- Docs and specs state the decision, its rationale, and its prerequisites so a reader who was not present can follow — no reasoning transcripts, no padding.
+- Keep progress narration to a sentence; never mix it into the deliverable.
+</communication>
 
-Formatting & Deliverable Structure
-- **BLUF (Bottom Line Up Front):** Lead directly with the outcome, core finding, or summary sentence before diving into technical details.
-- **Separate Narration from Deliverables:** Keep progress updates brief (1 sentence). Do not mix meta-commentary or self-correction into the final documentation deliverable.
-</communication-and-doc-style>
-
-<code-complexity-and-defensive-limits>
-- **Pragmatism Over Paranoia:** Write clean, minimal, maintainable code. Do not write hyper-defensive code, unnecessary abstraction layers, or speculative validation for unlikely edge cases unless explicitly required.
-- **YAGNI Enforcement:** Handle happy paths and standard error cases first. Do NOT design for theoretical future requirements or extreme, low-probability scenarios.
-</code-complexity-and-defensive-limits>
+<simplicity>
+- Guard only against conditions that can occur. Validate at trust boundaries (user input, network data, parsed files); do not re-validate what the type system or caller contract already guarantees.
+- No speculative abstraction layers, config flags, fallbacks, or compatibility shims for consumers that don't exist. If you cannot name the real trigger for a defensive construct, delete it.
+- Go beyond happy path plus standard error handling only when an observed failure or an explicit requirement demands it.
+</simplicity>
