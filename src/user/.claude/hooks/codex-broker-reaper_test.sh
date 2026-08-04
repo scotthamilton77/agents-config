@@ -130,6 +130,25 @@ assert_contains "and counts the client"                    "1 client(s) connecte
 assert_alive    "in-use orphan survives"                   "$BUSY_PID"
 kill "$CLIENT_PID" 2>/dev/null
 
+# --- a record that will not parse confers no protection ----------------------
+# Deliberate, not incidental: the plugin reads these the same way and treats a
+# parse failure as no session, so it will never reuse the broker such a record
+# names. The age gate, not this lookup, is what protects a record mid-write.
+read -r CORRUPT_PID CORRUPT_SOCK <<< "$(start_stub corrupt)"
+mkdir -p "$STATE/corrupt-workspace"
+printf '{"endpoint":"unix:%s","pid":' "$CORRUPT_SOCK" > "$STATE/corrupt-workspace/broker.json"
+run_hook --verbose
+assert_contains "broker behind a truncated record is reaped"  "REAP $CORRUPT_PID" "$OUT"
+assert_dead     "and is gone"                                 "$CORRUPT_PID"
+
+# A record that parses but names no pid is likewise no protection.
+read -r NOPID_PID NOPID_SOCK <<< "$(start_stub nopid)"
+mkdir -p "$STATE/nopid-workspace"
+printf '{"endpoint":"unix:%s"}\n' "$NOPID_SOCK" > "$STATE/nopid-workspace/broker.json"
+run_hook --verbose
+assert_contains "broker behind a pid-less record is reaped"   "REAP $NOPID_PID" "$OUT"
+assert_dead     "and is gone"                                 "$NOPID_PID"
+
 # --- a broker younger than the age gate is deferred --------------------------
 read -r YOUNG_PID YOUNG_SOCK <<< "$(start_stub young)"
 CODEX_BROKER_REAPER_MIN_AGE_SECONDS=3600 run_hook --verbose

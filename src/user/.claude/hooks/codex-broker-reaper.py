@@ -148,8 +148,16 @@ def referenced_pids(roots: list[Path]) -> set[int]:
             try:
                 pid = json.loads(record.read_text(encoding="utf8")).get("pid")
             except (OSError, ValueError):
-                # An unreadable record may still describe a live broker, so treat
-                # its contents as unknown rather than as an absence.
+                # A record that will not parse confers no reachability. The
+                # plugin loads these the same way and treats a parse failure as
+                # no session at all, so it will never reuse the broker such a
+                # record describes — it spawns a replacement and abandons it.
+                # That broker is therefore exactly what this hook removes.
+                #
+                # The one case where skipping could be wrong is a record caught
+                # mid-write for a broker someone is about to use. Records are
+                # written within milliseconds of a spawn, and nothing rewrites
+                # one later, so the minimum-age gate already covers that window.
                 continue
             if isinstance(pid, int):
                 pids.add(pid)
