@@ -176,6 +176,17 @@ class Branch:
     head: str
     last_activity: str | None
     upstream: str | None
+    """What this branch tracks, in the short form git prints it."""
+    upstream_ref: str | None
+    """The same ref as ``upstream``, as its full refname -- ``refs/remotes/...``
+    for a copy on a server, ``refs/heads/...`` for another local branch. None
+    when the branch tracks nothing.
+
+    Carried because the short name cannot answer which of those it is, and the
+    answer decides whether this branch has a server counterpart at all:
+    ``git branch --set-upstream-to=main`` records a local pairing, and a local
+    branch is allowed to be named ``origin/main``. Both shorten to a string
+    that looks like a published ref."""
     is_default: bool
     is_current: bool
     checked_out_at: str | None
@@ -219,6 +230,7 @@ class Branch:
             "head": self.head,
             "last_activity": self.last_activity,
             "upstream": self.upstream,
+            "upstream_ref": self.upstream_ref,
             "is_default": self.is_default,
             "is_current": self.is_current,
             "checked_out_at": self.checked_out_at,
@@ -230,6 +242,55 @@ class Branch:
             "pr_covers_tip": self.pr_covers_tip,
             "probe_failures": list(self.probe_failures),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class Counterpart:
+    """One of the other parts of the thing a target belongs to.
+
+    A worktree, the branch it holds and that branch's copy on the server are
+    one thing with two or three parts, and git enforces it: a branch cannot be
+    deleted while a worktree holds it. So a reader deciding about one part has
+    to see the others -- which makes the relation a fact this report owes them,
+    not something to be recovered afterwards from a reason sentence. Recovering
+    it meant splitting prose on a delimiter the paths it separates are allowed
+    to contain, and a mis-keyed row does not announce itself: the lookup misses,
+    the miss returns nothing, and nothing reads as an absence somebody measured.
+
+    Three states, and they are three different answers:
+
+    - ``known`` false -- nothing established this. ``name`` and ``id`` are None,
+      and whether a counterpart exists is simply not known.
+    - ``known`` true with ``name`` None -- established: there is none.
+    - ``known`` true with ``name`` set -- something names one. ``id`` is the row
+      it appears as in this report, or None when this report holds no row for
+      it.
+
+    That last state says only what it says: **no row here**. Several things
+    produce it and the report does not claim which -- a counterpart that exists
+    and was deliberately not offered as a target, such as the server's copy of
+    the trunk; one nothing could look for, because the listing that would have
+    held it never ran; and one that is genuinely gone, since a branch goes on
+    recording the upstream it was pushed to after the remote drops that ref.
+    The name is carried through all three because dropping it is what makes a
+    branch that was certainly pushed read as never pushed.
+    """
+
+    relation: str
+    """What this is to the target carrying it: ``branch``, ``worktree`` or
+    ``upstream``. Only the relations that can apply to that target's kind are
+    present, so a server ref carries none -- nothing checks it out, and it joins
+    its group by being named as some local branch's upstream."""
+    name: str | None
+    """The counterpart's own path or ref, verbatim. This is what a row shows a
+    reader, and it is stated even when no target carries it."""
+    id: str | None
+    """The `Target.id` of the row for it, or None when this report has none.
+    Follow it to find the counterpart; never build it by joining strings."""
+    known: bool
+
+    def as_json(self) -> dict[str, object]:
+        return {"name": self.name, "id": self.id, "known": self.known}
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,6 +334,12 @@ class Target:
     """What the server calls this branch, for a server ref. None for anything
     else. The other half of the decomposition above, and what
     `push --delete` and `ls-remote` are given."""
+    pairing: tuple[Counterpart, ...] = ()
+    """The other parts of the thing this target belongs to, keyed by relation in
+    the JSON. Structured because ``reasons`` already says the same in prose, and
+    prose is the wrong place to read it from: the sentence is for a person, and
+    a consumer that parses it back out is splitting on a delimiter the names
+    themselves may contain."""
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -281,6 +348,7 @@ class Target:
             "name": self.name,
             "remote": self.remote,
             "ref_name": self.ref_name,
+            "pairing": {c.relation: c.as_json() for c in self.pairing},
             "merge_evidence": self.merge_evidence.value,
             "merge_proven": self.merge_proven,
             "sweepable": self.sweepable,

@@ -95,7 +95,7 @@ This project hosts agent configuration under `src/`, which the install script de
   - `grind/` — the event-sourced grind runtime: event schema, FSM fold, and the `grind` CLI that D14 nominates as the pipeline executor loop
   - `prgroom/` — PR-grooming CLI. Per charter D13 it is **carved, not finished** (slice S8).
   - `executor/` — the decision layer above grind and the `work` facade: the closed pairing table that turns one executor verb into one runtime event and at most one tracker verb. Driven by `docs/specs/2026-07-25-executor-seam-s9-tier1.md`. There is no dispatch loop — it answers what a verb pairs with, not when to run it.
-  - `gitclean/` — surveys this repository's worktrees and branches, sweeps only what it can prove is merged, and reports everything else with the measurement that stopped it. Merge evidence resolves in tiers rather than trusting `git branch --merged`, which under squash merges is wrong in both directions. It concludes one thing — is this provably merged? — and a bare sweep takes only targets that clear that plus five measured checks; a target named on the command line is not re-adjudicated at all, so naming one is an authorisation and the caller owns the consequence. That boundary is now settled, so it ships: it is on PATH and the `clean-up-git` skill drives it.
+  - `gitclean/` — surveys this repository's worktrees and branches, sweeps only what it can prove is merged, and reports everything else with the measurement that stopped it. Merge evidence resolves in tiers rather than trusting `git branch --merged`, which under squash merges is wrong in both directions. It concludes one thing — is this provably merged? — and a bare sweep takes only targets that clear that plus five measured checks; a target named on the command line is not re-adjudicated at all, so naming one is an authorisation and the caller owns the consequence. That boundary is now settled, so it ships: it is on PATH, the `/clean-up-git` command drives it interactively, and the `post-merge-cleanup` skill is what tells an agent it exists at all — measured, because eight of nine agents with no skill loaded reached the right answer by hand, and none of the nine ever reached for the tool.
   - `pdlc/`, `holding-place/`, `vizsuite/`, `contracts/` — earlier-stage packages
   - `workcli`, `prgroom`, `grind`, `executor` and `gitclean` are the packages installed onto PATH (`uv tool install`, receipt-tracked, pruned on retirement), landing as the `work`, `prgroom`, `grind`, `executor` and `gitclean` commands; `CLI_PACKAGES` in `packages/installer/src/installer/core/clis.py` holds that list. Being gated by `make ci` is not what earns a place on it — `vizsuite` is gated and stays off. Most packages carry their own `AGENTS.md` with a scoped workflow — read it before changing that package.
 - `project-config.toml` — project-level configuration, and the convention is that **a commented-out key is future work nothing reads**, not a live setting. Uncomment one only in the change that deploys its reader. `.critical-paths` follows the same convention and currently selects nothing.
@@ -115,3 +115,17 @@ working tree before asserting it. `graphify update .` builds a fresh one in a fe
 if you want it, and running it from a worktree is fine: everything it writes, including
 `.graphify_root`, lands inside that worktree's own `graphify-out/`, which is untracked
 and disappears with the worktree. Never stage `graphify-out/` into a branch.
+
+## Communication Style
+
+Keep responses focused, brief, and concise. Keep disclaimers and caveats short, and spend 
+most of the response on the main answer. When asked to explain something, give a high-level 
+summary unless an in-depth explanation is specifically requested. BLUF - bottom line up 
+front.  
+
+Don't assume the user will recognize work by work-id, document sections by section
+number, etc.  The user needs help connecting dots sometimes, so it's ok to use short
+reminders, e.g. `xjc2.4 (auth feature epic)`.
+
+Match the length of written documents to what the task needs: cover the substance, but 
+do not pad with filler sections, redundant summaries, or boilerplate.
