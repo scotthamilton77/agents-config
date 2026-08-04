@@ -143,6 +143,17 @@ class Branch:
     head: str
     last_activity: str | None
     upstream: str | None
+    """What this branch tracks, in the short form git prints it."""
+    upstream_ref: str | None
+    """The same ref as ``upstream``, as its full refname -- ``refs/remotes/...``
+    for a copy on a server, ``refs/heads/...`` for another local branch. None
+    when the branch tracks nothing.
+
+    Carried because the short name cannot answer which of those it is, and the
+    answer decides whether this branch has a server counterpart at all:
+    ``git branch --set-upstream-to=main`` records a local pairing, and a local
+    branch is allowed to be named ``origin/main``. Both shorten to a string
+    that looks like a published ref."""
     is_default: bool
     is_current: bool
     checked_out_at: str | None
@@ -183,6 +194,7 @@ class Branch:
             "head": self.head,
             "last_activity": self.last_activity,
             "upstream": self.upstream,
+            "upstream_ref": self.upstream_ref,
             "is_default": self.is_default,
             "is_current": self.is_current,
             "checked_out_at": self.checked_out_at,
@@ -214,9 +226,18 @@ class Counterpart:
     - ``known`` false -- nothing established this. ``name`` and ``id`` are None,
       and whether a counterpart exists is simply not known.
     - ``known`` true with ``name`` None -- established: there is none.
-    - ``known`` true with ``name`` set -- there is one, named. ``id`` is the row
-      it appears as in this report, or None when the report holds no row for it,
-      which is a counterpart that exists and was not offered as a target.
+    - ``known`` true with ``name`` set -- something names one. ``id`` is the row
+      it appears as in this report, or None when this report holds no row for
+      it.
+
+    That last state says only what it says: **no row here**. Several things
+    produce it and the report does not claim which -- a counterpart that exists
+    and was deliberately not offered as a target, such as the server's copy of
+    the trunk; one nothing could look for, because the listing that would have
+    held it never ran; and one that is genuinely gone, since a branch goes on
+    recording the upstream it was pushed to after the remote drops that ref.
+    The name is carried through all three because dropping it is what makes a
+    branch that was certainly pushed read as never pushed.
     """
 
     relation: str

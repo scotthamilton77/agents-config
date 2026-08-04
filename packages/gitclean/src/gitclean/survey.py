@@ -35,6 +35,12 @@ _REF_FORMAT = _SEP.join(
         "%(refname:short)",
         "%(objectname)",
         "%(committerdate:iso-strict)",
+        # The upstream's FULL refname leads its short form for the same reason
+        # the branch's own does. Shortened, a tracked local branch and a ref a
+        # remote publishes are the same kind of string -- and a local branch is
+        # allowed to be named `origin/main` -- so nothing in the short name says
+        # whether this branch has a copy on a server. `refs/remotes/` does.
+        "%(upstream)",
         "%(upstream:short)",
         # The short form, not `%(upstream:track)`. The long one spells the
         # count out -- `[ahead 2]` -- but it is translated, so parsing it
@@ -44,7 +50,7 @@ _REF_FORMAT = _SEP.join(
         "%(HEAD)",
     ]
 )
-_REF_FIELDS = 7
+_REF_FIELDS = 8
 _PR_LIMIT = 500
 
 
@@ -684,7 +690,7 @@ def read_branches(
             # name" cannot tell that apart from the ref not being there.
             dropped += 1
             continue
-        full, name, head, committed, upstream, track, head_marker = (
+        full, name, head, committed, upstream_ref, upstream, track, head_marker = (
             f.strip() for f in fields[:_REF_FIELDS]
         )
         if not name or not full:
@@ -761,6 +767,7 @@ def read_branches(
                 head=head,
                 last_activity=committed or None,
                 upstream=upstream or None,
+                upstream_ref=upstream_ref or None,
                 is_default=is_default,
                 is_current=head_marker == "*",
                 checked_out_at=worktree_by_branch.get(name),

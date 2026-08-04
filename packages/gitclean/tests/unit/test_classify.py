@@ -440,6 +440,63 @@ def test_a_branch_that_was_never_pushed_says_so_as_a_measurement() -> None:
     )
 
 
+def test_a_branch_tracking_a_local_branch_is_not_given_a_copy_on_the_server() -> None:
+    """`git branch --set-upstream-to=main feat/x` records a pairing made on this
+    disk. Reporting `main` as this branch's server counterpart would claim a
+    published ref out of a local one, and would spend the state that means "it
+    exists and this report has no row for it" on a copy nobody has ever seen."""
+    branch = make_branch(
+        "feat/thing", head=ELSEWHERE, upstream="main", upstream_ref="refs/heads/main"
+    )
+    target = _one(branch, make_survey(branches=(branch,)))
+
+    assert _pairing(target)["upstream"] == Counterpart(
+        relation="upstream", name=None, id=None, known=True
+    )
+    assert any("tracks the local branch main" in r for r in target.reasons)
+
+
+def test_a_local_upstream_is_told_apart_from_no_upstream_at_all() -> None:
+    """Both leave the row with no server counterpart, and only one of them means
+    the branch tracks nothing. A reader who cannot tell them apart reads the
+    first as never pushed."""
+    tracked = make_branch(
+        "feat/thing", head=ELSEWHERE, upstream="main", upstream_ref="refs/heads/main"
+    )
+    untracked = make_branch("feat/other", head=ELSEWHERE, upstream=None)
+
+    assert not any("never pushed" in r for r in _one(tracked).reasons)
+    assert any("never pushed" in r for r in _one(untracked).reasons)
+
+
+def test_a_local_upstream_still_reports_the_commits_it_does_not_have() -> None:
+    """The count is measured against whatever the branch tracks, and it is the
+    same fact whether that ref is on a server or on this disk. Only the sentence
+    about being pushed is withdrawn."""
+    branch = make_branch(
+        "feat/thing",
+        head=ELSEWHERE,
+        upstream="main",
+        upstream_ref="refs/heads/main",
+        unpushed_commits=2,
+    )
+
+    assert any("2 commit(s) not on main" in r for r in _one(branch).reasons)
+
+
+def test_a_branch_named_like_a_server_ref_does_not_become_one() -> None:
+    """git accepts `origin/main` as a local branch name, so the short upstream
+    is the same string either way. The full refname is the only thing that tells
+    a reader which one this branch is tracking."""
+    published = make_branch("feat/a", head=ELSEWHERE, upstream="origin/main")
+    local = make_branch(
+        "feat/b", head=ELSEWHERE, upstream="origin/main", upstream_ref="refs/heads/origin/main"
+    )
+
+    assert _pairing(_one(published))["upstream"].name == "origin/main"
+    assert _pairing(_one(local))["upstream"].name is None
+
+
 def test_a_server_ref_carries_no_pairing_of_its_own() -> None:
     """Nothing checks one out and it tracks nothing itself. It joins a group
     from the other end, by being named as some local branch's upstream."""

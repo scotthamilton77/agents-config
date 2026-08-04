@@ -527,6 +527,41 @@ def test_a_branch_tracking_a_ref_this_tool_will_not_target_still_names_it(
     }
 
 
+def test_a_branch_tracking_a_local_branch_is_given_no_copy_on_the_server(repo: Path) -> None:
+    """The upstream a branch records is not always a ref a remote publishes.
+
+    `git branch --set-upstream-to=main feat/local` is a pairing made entirely on
+    this disk, and this repository has no remote at all -- so a row claiming a
+    server counterpart here names something that exists nowhere. Real git,
+    because the whole question is what git records for that command: shortened,
+    the upstream is `main`, which is indistinguishable from a ref a remote
+    called `main` publishes."""
+    git(repo, "checkout", "-q", "-b", "feat/local")
+    commit(repo, "local.txt")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "branch", "--set-upstream-to=main", "feat/local")
+
+    with reachability_guard(repo):  # a report changes nothing
+        payload = report(repo)
+
+    survey_data = payload["repo"]
+    assert isinstance(survey_data, dict)
+    branches = survey_data["branches"]
+    assert isinstance(branches, list)
+    row = next(b for b in branches if b["name"] == "feat/local")
+    # What git recorded, which is what the pairing has to be read from: the
+    # short name says `main` for either kind of upstream, the full one does not.
+    assert row["upstream"] == "main"
+    assert row["upstream_ref"] == "refs/heads/main"
+
+    target = find(payload, "branch:feat/local")
+    assert target["pairing"]["upstream"] == {"name": None, "id": None, "known": True}
+    # And the row is not silent about the tracking it declines to publish, which
+    # is what would leave it reading like a branch that tracks nothing.
+    assert any("tracks the local branch main" in str(r) for r in target["reasons"])
+    assert not any("never pushed" in str(r) for r in target["reasons"])
+
+
 def test_the_pairing_holds_when_the_remote_s_own_name_holds_a_slash(
     repo: Path, tmp_path: Path
 ) -> None:

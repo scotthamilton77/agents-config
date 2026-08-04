@@ -2,7 +2,7 @@
 description: Adjudicate which git worktrees and branches to delete. Presents one dated table with each worktree paired to its branch, every unproven candidate already investigated, and what each deletion would spend — then waits for your call before touching anything.
 admission:
   provides: A cleanup a human can decide from consequences instead of git internals. Invoking it produces one dated table — worktrees paired with their branches, the trunk absent unless it has news, each unproven candidate investigated before it is shown, and the cost of each deletion stated on its own row — followed by a stop for ratification. It never deletes anything the operator has not named back.
-  cost: One Claude-scoped command. Only its description line is always-on; the body and the investigation are paid solely when someone types it. The investigation is the expensive part — a merge-base diff per candidate carrying no merge proof, plus at most one tracker lookup for each whose name happens to carry an identifier.
+  cost: One Claude-scoped command. Nothing is always-on — the body and the investigation are paid solely when someone types it. The investigation is the expensive part — a merge-base diff per candidate carrying no merge proof, plus at most one tracker lookup for each whose name happens to carry an identifier.
   remove_when: Two consecutive cleanups in which the operator makes every keep-or-delete call straight from `gitclean --report --format human` without asking a follow-up question.
 ---
 
@@ -128,19 +128,28 @@ is the trunk, which is not news. Everything else is relayed verbatim — includi
 a withhold that names something wrong with the repository rather than with the
 target — because a summarized withhold is how a real refusal disappears.
 
-Report `plan.skipped` too — a sweep that quietly did less than asked reads as
-success. If `repo.gh_error` is set, merge evidence was git-only and squash merges
-were invisible to it; say so before presenting anything as safe.
+If `repo.gh_error` is set, merge evidence was git-only and squash merges were
+invisible to it; say so before presenting anything as safe.
 
 ## 4 — Ratify, then act
 
-Stop. Ask which entries go. **MUST NOT** name a target the user did not name —
-not to route around a `withheld` reason you find unconvincing, and not because
-your own read of the history says it is safe.
+Stop. Ask which entries go. Choosing an entry authorizes the worktree and branch
+in it — git refuses to delete a branch its worktree holds, which is what makes
+them one entry — but not the copy on the server, which `gitclean` deletes only
+when it is named and which therefore waits for the user to name it. A user who
+picks out only some of an entry's parts has narrowed it to exactly those, and the
+rest stay unnamed. **MUST NOT** name a target the user did not name — not to
+route around a `withheld` reason you find unconvincing, and not because your own
+read of the history says it is safe.
 
 Then `gitclean --cleanup --dry-run` with exactly those names, show the plan, and
 `gitclean --cleanup` with the same names. **MUST NOT** re-run a refused command
 unchanged: every refusal carries a `remedy` saying what would let it proceed.
+
+Both of those carry `plan.skipped` — targets the run selected and then dropped.
+Report every one. This is the first step that has them: a report builds no plan,
+so nothing in step 3 could have shown them, and a sweep that quietly did less
+than asked reads as success.
 
 **A remedy is advice to the user, not authority for you.** Some of them widen
 the selection — the refusal for a branch a worktree still holds is remedied by

@@ -96,22 +96,41 @@ def counterpart_worktree(branch: Branch, survey_data: Survey) -> Counterpart:
     )
 
 
+def tracks_a_server_ref(branch: Branch) -> bool:
+    """Whether what this branch tracks is a copy on a server.
+
+    Asked of the upstream's full refname, because the short one cannot answer
+    it: `git branch --set-upstream-to=main` records a local branch as the
+    upstream, and a local branch may itself be named `origin/main`. Both
+    shorten to a string that reads like a published ref."""
+    return bool(branch.upstream_ref and branch.upstream_ref.startswith("refs/remotes/"))
+
+
 def counterpart_upstream(branch: Branch, survey_data: Survey) -> Counterpart:
     """This branch's copy on the server, as the branch itself records it.
 
+    Tracking nothing and tracking another local branch are one answer here, and
+    it is a measured one: nothing names a copy on a server. A local upstream is
+    a pairing made on this disk -- it says where to count commits from, not
+    where any of them were published -- so reporting it as a server counterpart
+    would assert a ref nobody has seen, and would spend the third state below on
+    a copy that does not exist. What the branch does track is still said out
+    loud, in that row's reasons.
+
     A None upstream is measured rather than missing: this row exists because
     the ref read produced it, and that read said the branch tracks nothing.
-    What it does not promise is that a recorded upstream still exists -- a ref
-    the remote has since dropped is named here and has no row, which is what
+    What a named upstream does not promise is that the server still has it -- a
+    ref the remote has since dropped is named here and has no row, which is what
     the absent `id` says and the name beside it stops from reading as "never
     pushed"."""
-    if branch.upstream is None:
+    upstream = branch.upstream
+    if upstream is None or not tracks_a_server_ref(branch):
         return Counterpart(relation="upstream", name=None, id=None, known=True)
-    listed = any(b.is_remote and b.name == branch.upstream for b in survey_data.branches)
+    listed = any(b.is_remote and b.name == upstream for b in survey_data.branches)
     return Counterpart(
         relation="upstream",
-        name=branch.upstream,
-        id=remote_branch_id(branch.upstream) if listed else None,
+        name=upstream,
+        id=remote_branch_id(upstream) if listed else None,
         known=True,
     )
 
@@ -332,8 +351,18 @@ def classify_branch(
     if not branch.is_remote:
         if branch.upstream is None:
             reasons.append("no upstream: never pushed")
-        elif branch.unpushed_commits:
-            reasons.append(f"{branch.unpushed_commits} commit(s) not on {branch.upstream}")
+        else:
+            if not tracks_a_server_ref(branch):
+                # The pairing above reports no server counterpart for this, which
+                # is the truthful answer and also an absence -- and an absence is
+                # indistinguishable from a branch that simply has no upstream.
+                # The reader is told which one they are looking at here.
+                reasons.append(
+                    f"tracks the local branch {branch.upstream}, not a ref on a server; "
+                    f"nothing here says whether these commits were pushed anywhere"
+                )
+            if branch.unpushed_commits:
+                reasons.append(f"{branch.unpushed_commits} commit(s) not on {branch.upstream}")
     reasons.extend(unanswered_probes(branch, survey_data.base_ref))
     reasons.extend(branch.probe_failures)
 
