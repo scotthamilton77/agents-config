@@ -61,6 +61,28 @@ def _first_line(result_out: str) -> str:
     return result_out.splitlines()[0].strip() if result_out else ""
 
 
+def _whole_path(stdout: str) -> str:
+    """A one-value `rev-parse` answer, read without cutting it short.
+
+    Everything else this module reads a line of is something a newline cannot
+    appear inside -- a refname, an object id, a date -- so there a line is the
+    value. A filesystem path is not: it may legally contain a newline,
+    `rev-parse` prints it raw, and `rev-parse` has no `-z` to frame it with, so
+    the trick the worktree listing uses is not available. What it does have is
+    exactly one value per query, terminated by the one newline it added itself
+    -- so removing that suffix and nothing else recovers the path git reported,
+    whatever the path contains. `.strip()` is wrong here for the same reason
+    the first line is: a directory is allowed to end in a space.
+
+    Neither truncation was cosmetic. `repo_root` is compared against the whole
+    path the NUL-framed worktree listing hands back, so a cut-short one matches
+    nothing and both guards on the worktree this process is running in miss --
+    a bare sweep then plans away the directory it is executing in. A cut-short
+    `git_common_dir` composes salvage directories outside the repository, which
+    is where a bundle written before an irreversible push goes missing."""
+    return stdout.removesuffix("\n")
+
+
 def resolve_repo(port: CommandPort, cwd: Path | None) -> tuple[str, str] | None:
     """Return (repo_root, git_common_dir), or None when cwd is not a repo."""
     root = port.git(["rev-parse", "--show-toplevel"], cwd=cwd)
@@ -73,9 +95,9 @@ def resolve_repo(port: CommandPort, cwd: Path | None) -> tuple[str, str] | None:
         common = port.git(["rev-parse", "--git-common-dir"], cwd=cwd)
         if not common.ok:
             return None
-        resolved = Path(_first_line(root.out)) / _first_line(common.out)
-        return _first_line(root.out), str(resolved)
-    return _first_line(root.out), _first_line(common.out)
+        resolved = Path(_whole_path(root.stdout)) / _whole_path(common.stdout)
+        return _whole_path(root.stdout), str(resolved)
+    return _whole_path(root.stdout), _whole_path(common.stdout)
 
 
 def _ref_exists(port: CommandPort, cwd: Path | None, ref: str) -> bool | None:
@@ -165,16 +187,31 @@ def resolve_base_ref(
     local fallback is correct when the remote-tracking ref is genuinely absent
     and merely quiet when the probe errored -- so the second case says so, and
     every merge verdict in the report is then known to have been measured
-    against a ref that may be behind."""
+    against a ref that may be behind.
+
+    Handed back as a **full ref path**, which is the only spelling that reaches
+    the ref this function just proved exists. `origin/main` does not: git tries
+    `refs/heads/` before `refs/remotes/`, so a repository holding a local branch
+    of that name -- a legal ref, and what one `git branch origin/main` produces
+    -- answers the short spelling with the local decoy, and every merge tier
+    then measures against it. `branch --merged`, `rev-list`, `cherry` and
+    `merge-base` would each be reading a history nobody asked about, and a bare
+    sweep deletes unmerged work on the strength of it.
+
+    A path beginning `refs/` is matched literally by the first of git's
+    rev-parse rules, so no other ref can shadow it however the repository is
+    arranged, and it needs no `--` terminator either: a ref path cannot begin
+    with `-`. The warning below keeps the short form, being prose for a reader
+    rather than a rev for git."""
     state = _ref_exists(port, cwd, f"refs/remotes/origin/{default_branch}")
     if state:
-        return f"origin/{default_branch}", None
+        return f"refs/remotes/origin/{default_branch}", None
     if state is None:
-        return default_branch, (
+        return f"refs/heads/{default_branch}", (
             f"git would not say whether origin/{default_branch} exists, so merges here are "
             f"measured against the local {default_branch}, which may be behind the remote"
         )
-    return default_branch, None
+    return f"refs/heads/{default_branch}", None
 
 
 def read_remotes(port: CommandPort, cwd: Path | None) -> tuple[tuple[str, ...] | None, str | None]:

@@ -89,7 +89,7 @@ def make_port(
         # The trunk is probed like any other branch, so its own count is part
         # of the boring case. A test that cares what it says overrides it
         # through `counts`, which is applied after this table.
-        "rev-list --count origin/main..main": ok("0"),
+        "rev-list --count refs/remotes/origin/main..main": ok("0"),
         # The merge base's tree, which the squash tier compares against the
         # branch tip's. Deliberately unlike the "treesha" those tests give the
         # tip: the boring branch changed something, so there is a diff to
@@ -222,14 +222,14 @@ def test_a_dangling_origin_head_leaves_the_trunk_unknown_on_the_report() -> None
     so nothing downstream reads the guess as a protected name."""
     port = make_port(
         refs=[ref_line("refs/heads/trunk", "trunk", head="*")],
-        counts={"origin/main..trunk": "3"},
+        counts={"refs/remotes/origin/main..trunk": "3"},
         extra={
             "symbolic-ref --quiet refs/remotes/origin/HEAD": ok("refs/remotes/origin/master"),
             "show-ref --verify --quiet refs/remotes/origin/master": fail(),
             "show-ref --verify --quiet refs/heads/main": fail(),
             "show-ref --verify --quiet refs/heads/master": fail(),
-            "cherry origin/main -- trunk": fail(),
-            "merge-base origin/main -- trunk": fail(),
+            "cherry refs/remotes/origin/main -- trunk": fail(),
+            "merge-base refs/remotes/origin/main -- trunk": fail(),
         },
     )
 
@@ -245,16 +245,16 @@ def test_an_unknown_default_branch_is_reported_on_the_survey() -> None:
             ref_line("refs/heads/trunk", "trunk"),
             ref_line("refs/heads/feature", "feature", head="*"),
         ],
-        counts={"main..trunk": "3", "main..feature": "1"},
+        counts={"refs/heads/main..trunk": "3", "refs/heads/main..feature": "1"},
         extra={
             "symbolic-ref --quiet refs/remotes/origin/HEAD": fail(),
             "show-ref --verify --quiet refs/heads/main": fail(),
             "show-ref --verify --quiet refs/heads/master": fail(),
             "show-ref --verify --quiet refs/remotes/origin/main": fail(),
-            "cherry main -- trunk": fail(),
-            "cherry main -- feature": fail(),
-            "merge-base main -- trunk": fail(),
-            "merge-base main -- feature": fail(),
+            "cherry refs/heads/main -- trunk": fail(),
+            "cherry refs/heads/main -- feature": fail(),
+            "merge-base refs/heads/main -- trunk": fail(),
+            "merge-base refs/heads/main -- feature": fail(),
         },
     )
 
@@ -303,14 +303,20 @@ def test_an_unreadable_published_head_is_not_reported_as_an_unpublished_one() ->
 
 
 def test_base_prefers_the_remote_tracking_tip() -> None:
-    """A stale local default branch would under-report merges."""
+    """A stale local default branch would under-report merges.
+
+    Handed back as a full ref path, which is the whole of what makes it name
+    the ref this just proved exists: `origin/main` is also a legal *local*
+    branch, and git reaches `refs/heads/` before `refs/remotes/`."""
     port = ScriptedCommands(git={"show-ref --verify --quiet refs/remotes/origin/main": ok()})
-    assert resolve_base_ref(port, None, "main") == ("origin/main", None)
+    assert resolve_base_ref(port, None, "main") == ("refs/remotes/origin/main", None)
 
 
 def test_base_falls_back_to_the_local_branch_without_a_remote() -> None:
+    """The fallback is a ref path for the same reason: `main` alone would find
+    a tag of that name before the branch."""
     port = ScriptedCommands(git={"show-ref --verify --quiet refs/remotes/origin/main": fail()})
-    assert resolve_base_ref(port, None, "main") == ("main", None)
+    assert resolve_base_ref(port, None, "main") == ("refs/heads/main", None)
 
 
 def test_an_unreadable_remote_tip_falls_back_to_the_local_branch_and_says_so() -> None:
@@ -322,7 +328,9 @@ def test_an_unreadable_remote_tip_falls_back_to_the_local_branch_and_says_so() -
         git={"show-ref --verify --quiet refs/remotes/origin/main": fail("bad object", code=128)}
     )
     base, warning = resolve_base_ref(port, None, "main")
-    assert base == "main"
+    assert base == "refs/heads/main"
+    # The warning is prose for a reader, so it keeps the short spelling the
+    # reader would type; only the rev handed to git has to be unambiguous.
     assert warning is not None and "would not say whether origin/main exists" in warning
 
 
@@ -780,7 +788,7 @@ def test_a_remote_name_containing_a_slash_is_taken_whole() -> None:
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/remotes/team/origin/feat/x", "team/origin/feat/x"),
         ],
-        counts={"origin/main..team/origin/feat/x": "0"},
+        counts={"refs/remotes/origin/main..team/origin/feat/x": "0"},
     )
 
     surveyed = run(port)
@@ -825,7 +833,7 @@ def test_a_local_branch_colliding_with_a_remote_ref_keeps_its_own_name() -> None
             ref_line("refs/heads/origin/main", "heads/origin/main"),
             ref_line("refs/remotes/origin/main", "remotes/origin/main"),
         ],
-        counts={"origin/main..heads/origin/main": "0"},
+        counts={"refs/remotes/origin/main..heads/origin/main": "0"},
     )
 
     surveyed = run(port)
@@ -912,18 +920,18 @@ def test_remote_refs_are_identified_by_prefix_not_by_a_slash() -> None:
             ref_line("refs/remotes/origin/feat", "origin/feat"),
         ],
         counts={
-            "origin/main..team/feat": "1",
-            "origin/main..origin/feat": "1",
+            "refs/remotes/origin/main..team/feat": "1",
+            "refs/remotes/origin/main..origin/feat": "1",
         },
         extra={
-            "cherry origin/main -- team/feat": ok("+ abc"),
-            "cherry origin/main -- origin/feat": ok("+ abc"),
-            "merge-base origin/main": ok("base1"),
+            "cherry refs/remotes/origin/main -- team/feat": ok("+ abc"),
+            "cherry refs/remotes/origin/main -- origin/feat": ok("+ abc"),
+            "merge-base refs/remotes/origin/main": ok("base1"),
             "rev-parse base1^{tree}": ok("basetree1"),
             "rev-parse team/feat^{tree}": ok("tree1"),
             "rev-parse origin/feat^{tree}": ok("tree2"),
             "commit-tree": ok("synth"),
-            "cherry origin/main synth": ok("+ zzz"),
+            "cherry refs/remotes/origin/main synth": ok("+ zzz"),
         },
     )
     by_name = {b.name: b for b in run(port).branches}
@@ -967,7 +975,7 @@ def test_refs_that_were_read_are_recorded_as_read() -> None:
 def test_a_failed_batch_ancestry_check_is_warned_not_swallowed() -> None:
     """Failure here only loses the cheap tier -- the per-branch probes still
     answer -- so it degrades speed, not safety. It is still reported."""
-    port = _tier_port(**{"cherry origin/main -- feat": ok("- aaa")})
+    port = _tier_port(**{"cherry refs/remotes/origin/main -- feat": ok("- aaa")})
     port._git["branch --merged"] = fail("boom")
     result = run(port)
     feat = next(b for b in result.branches if b.name == "feat")
@@ -984,7 +992,7 @@ def _tier_port(*, track: str = _AUTO_TRACK, **extra: CommandResult) -> ScriptedC
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/heads/feat", "feat", upstream="origin/feat", track=track),
         ],
-        counts={"origin/main..feat": "2", "origin/feat..feat": "0"},
+        counts={"refs/remotes/origin/main..feat": "2", "origin/feat..feat": "0"},
         extra=extra,
     )
 
@@ -1007,7 +1015,7 @@ def test_a_merged_pr_is_the_top_tier_of_evidence() -> None:
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/heads/feat", "feat"),
         ],
-        counts={"origin/main..feat": "2"},
+        counts={"refs/remotes/origin/main..feat": "2"},
         prs=[_pr("MERGED")],
     )
     feat = next(b for b in run(port).branches if b.name == "feat")
@@ -1023,15 +1031,15 @@ def test_a_merged_pr_that_predates_the_tip_does_not_prove_the_branch_merged() ->
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/heads/feat", "feat"),
         ],
-        counts={"origin/main..feat": "2"},
+        counts={"refs/remotes/origin/main..feat": "2"},
         prs=[_pr("MERGED", oid="b" * 40)],
         extra={
             "merge-base --is-ancestor": fail("not an ancestor"),
-            "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main -- feat": ok("basesha"),
+            "cherry refs/remotes/origin/main -- feat": ok("+ aaa"),
+            "merge-base refs/remotes/origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
-            "cherry origin/main synthsha": ok("+ synthsha"),
+            "cherry refs/remotes/origin/main synthsha": ok("+ synthsha"),
         },
     )
     feat = next(b for b in run(port).branches if b.name == "feat")
@@ -1048,7 +1056,7 @@ def test_a_tip_behind_the_merged_head_is_still_covered_by_the_merge() -> None:
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/heads/feat", "feat"),
         ],
-        counts={"origin/main..feat": "2"},
+        counts={"refs/remotes/origin/main..feat": "2"},
         prs=[_pr("MERGED", oid="b" * 40)],
         extra={"merge-base --is-ancestor": ok()},
     )
@@ -1064,14 +1072,14 @@ def test_a_pr_with_no_head_sha_never_covers_a_tip() -> None:
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/heads/feat", "feat"),
         ],
-        counts={"origin/main..feat": "2"},
+        counts={"refs/remotes/origin/main..feat": "2"},
         prs=[_pr("MERGED", oid="")],
         extra={
-            "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main -- feat": ok("basesha"),
+            "cherry refs/remotes/origin/main -- feat": ok("+ aaa"),
+            "merge-base refs/remotes/origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
-            "cherry origin/main synthsha": ok("+ synthsha"),
+            "cherry refs/remotes/origin/main synthsha": ok("+ synthsha"),
         },
     )
     feat = next(b for b in run(port).branches if b.name == "feat")
@@ -1086,15 +1094,15 @@ def test_the_squash_tier_still_answers_when_a_pr_verdict_is_declined() -> None:
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/heads/feat", "feat"),
         ],
-        counts={"origin/main..feat": "2"},
+        counts={"refs/remotes/origin/main..feat": "2"},
         prs=[_pr("MERGED", oid="b" * 40)],
         extra={
             "merge-base --is-ancestor": fail("not an ancestor"),
-            "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main -- feat": ok("basesha"),
+            "cherry refs/remotes/origin/main -- feat": ok("+ aaa"),
+            "merge-base refs/remotes/origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
-            "cherry origin/main synthsha": ok("- synthsha"),
+            "cherry refs/remotes/origin/main synthsha": ok("- synthsha"),
         },
     )
     feat = next(b for b in run(port).branches if b.name == "feat")
@@ -1103,7 +1111,7 @@ def test_the_squash_tier_still_answers_when_a_pr_verdict_is_declined() -> None:
 
 def test_ancestry_settles_a_branch_with_nothing_ahead() -> None:
     port = _tier_port()
-    port._git["rev-list --count origin/main..feat"] = ok("0")
+    port._git["rev-list --count refs/remotes/origin/main..feat"] = ok("0")
     feat = next(b for b in run(port).branches if b.name == "feat")
     assert feat.merge_evidence is MergeEvidence.ANCESTOR
 
@@ -1114,7 +1122,7 @@ def test_a_closed_pr_is_recorded_as_a_discard_not_a_merge() -> None:
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/heads/feat", "feat"),
         ],
-        counts={"origin/main..feat": "2"},
+        counts={"refs/remotes/origin/main..feat": "2"},
         prs=[_pr("CLOSED", number=9)],
     )
     feat = next(b for b in run(port).branches if b.name == "feat")
@@ -1130,15 +1138,15 @@ def test_a_discard_decision_does_not_reach_commits_made_after_it() -> None:
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/heads/feat", "feat"),
         ],
-        counts={"origin/main..feat": "2"},
+        counts={"refs/remotes/origin/main..feat": "2"},
         prs=[_pr("CLOSED", number=9, oid="b" * 40)],
         extra={
             "merge-base --is-ancestor": fail("not an ancestor"),
-            "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main -- feat": ok("basesha"),
+            "cherry refs/remotes/origin/main -- feat": ok("+ aaa"),
+            "merge-base refs/remotes/origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
-            "cherry origin/main synthsha": ok("+ synthsha"),
+            "cherry refs/remotes/origin/main synthsha": ok("+ synthsha"),
         },
     )
     feat = next(b for b in run(port).branches if b.name == "feat")
@@ -1146,7 +1154,7 @@ def test_a_discard_decision_does_not_reach_commits_made_after_it() -> None:
 
 
 def test_patch_equivalence_catches_rebased_and_cherry_picked_work() -> None:
-    port = _tier_port(**{"cherry origin/main -- feat": ok("- aaa\n- bbb")})
+    port = _tier_port(**{"cherry refs/remotes/origin/main -- feat": ok("- aaa\n- bbb")})
     feat = next(b for b in run(port).branches if b.name == "feat")
     assert feat.merged and feat.merge_evidence is MergeEvidence.PATCH_EQUAL
 
@@ -1156,11 +1164,11 @@ def test_squash_merges_are_caught_by_replaying_the_tree_as_one_commit() -> None:
     with any individual branch commit, and the tip is nobody's ancestor."""
     port = _tier_port(
         **{
-            "cherry origin/main -- feat": ok("+ aaa\n+ bbb"),
-            "merge-base origin/main -- feat": ok("basesha"),
+            "cherry refs/remotes/origin/main -- feat": ok("+ aaa\n+ bbb"),
+            "merge-base refs/remotes/origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
-            "cherry origin/main synthsha": ok("- synthsha"),
+            "cherry refs/remotes/origin/main synthsha": ok("- synthsha"),
         }
     )
     feat = next(b for b in run(port).branches if b.name == "feat")
@@ -1177,11 +1185,11 @@ def test_a_branch_ending_on_the_tree_it_started_from_proves_nothing() -> None:
     before asking a question whose answer it cannot use."""
     port = _tier_port(
         **{
-            "cherry origin/main -- feat": ok("+ aaa\n+ bbb"),
-            "merge-base origin/main -- feat": ok("basesha"),
+            "cherry refs/remotes/origin/main -- feat": ok("+ aaa\n+ bbb"),
+            "merge-base refs/remotes/origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("sametree"),
             "rev-parse basesha^{tree}": ok("sametree"),
-            "cherry origin/main synthsha": ok("- synthsha"),
+            "cherry refs/remotes/origin/main synthsha": ok("- synthsha"),
         }
     )
     feat = next(b for b in run(port).branches if b.name == "feat")
@@ -1208,13 +1216,13 @@ def test_the_squash_probe_terminates_argv_for_a_branch_named_like_an_option() ->
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/heads/-m", "-m"),
         ],
-        counts={"origin/main..-m": "2"},
+        counts={"refs/remotes/origin/main..-m": "2"},
         extra={
-            "cherry origin/main -- -m": ok("+ aaa\n+ bbb"),
-            "merge-base origin/main -- -m": ok("basesha"),
+            "cherry refs/remotes/origin/main -- -m": ok("+ aaa\n+ bbb"),
+            "merge-base refs/remotes/origin/main -- -m": ok("basesha"),
             "rev-parse refs/heads/-m^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
-            "cherry origin/main synthsha": ok("- synthsha"),
+            "cherry refs/remotes/origin/main synthsha": ok("- synthsha"),
         },
     )
     branch = next(b for b in run(port).branches if b.name == "-m")
@@ -1224,11 +1232,11 @@ def test_the_squash_probe_terminates_argv_for_a_branch_named_like_an_option() ->
 def test_a_genuinely_unmerged_branch_proves_nothing() -> None:
     port = _tier_port(
         **{
-            "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main -- feat": ok("basesha"),
+            "cherry refs/remotes/origin/main -- feat": ok("+ aaa"),
+            "merge-base refs/remotes/origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
-            "cherry origin/main synthsha": ok("+ synthsha"),
+            "cherry refs/remotes/origin/main synthsha": ok("+ synthsha"),
         }
     )
     feat = next(b for b in run(port).branches if b.name == "feat")
@@ -1241,18 +1249,18 @@ def test_a_squash_probe_that_stops_part_way_is_unknown_at_every_step() -> None:
     the longest key, so a short one is shadowed by the answer it meant to
     replace and the case goes untested while the suite stays green."""
     for broken in (
-        {"merge-base origin/main -- feat": fail("bad object", code=128)},
+        {"merge-base refs/remotes/origin/main -- feat": fail("bad object", code=128)},
         {"rev-parse feat^{tree}": fail("bad object", code=128)},
         {"commit-tree treesha -p basesha -m gitclean-probe": fail("cannot write", code=128)},
-        {"cherry origin/main synthsha": fail("bad revision", code=128)},
+        {"cherry refs/remotes/origin/main synthsha": fail("bad revision", code=128)},
     ):
         port = _tier_port(
             **{
-                "cherry origin/main -- feat": ok("+ aaa"),
-                "merge-base origin/main -- feat": ok("basesha"),
+                "cherry refs/remotes/origin/main -- feat": ok("+ aaa"),
+                "merge-base refs/remotes/origin/main -- feat": ok("basesha"),
                 "rev-parse feat^{tree}": ok("treesha"),
                 "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
-                "cherry origin/main synthsha": ok("+ x"),
+                "cherry refs/remotes/origin/main synthsha": ok("+ x"),
                 **broken,
             }
         )
@@ -1266,11 +1274,11 @@ def test_an_empty_cherry_result_does_not_count_as_merged() -> None:
     already upstream."""
     port = _tier_port(
         **{
-            "cherry origin/main -- feat": ok(""),
-            "merge-base origin/main -- feat": ok("basesha"),
+            "cherry refs/remotes/origin/main -- feat": ok(""),
+            "merge-base refs/remotes/origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
-            "cherry origin/main synthsha": ok(""),
+            "cherry refs/remotes/origin/main synthsha": ok(""),
         }
     )
     feat = next(b for b in run(port).branches if b.name == "feat")
@@ -1287,11 +1295,11 @@ def test_an_errored_patch_probe_is_an_unknown_not_a_negative() -> None:
     finding nothing looks like."""
     port = _tier_port(
         **{
-            "cherry origin/main -- feat": fail("fatal: bad revision", code=128),
-            "merge-base origin/main -- feat": ok("basesha"),
+            "cherry refs/remotes/origin/main -- feat": fail("fatal: bad revision", code=128),
+            "merge-base refs/remotes/origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
-            "cherry origin/main synthsha": ok("+ synthsha"),
+            "cherry refs/remotes/origin/main synthsha": ok("+ synthsha"),
         }
     )
 
@@ -1308,8 +1316,8 @@ def test_an_errored_squash_probe_is_an_unknown_not_a_negative() -> None:
     does not say it went unasked reads as a branch nobody merged."""
     port = _tier_port(
         **{
-            "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main -- feat": fail("fatal: bad object", code=128),
+            "cherry refs/remotes/origin/main -- feat": ok("+ aaa"),
+            "merge-base refs/remotes/origin/main -- feat": fail("fatal: bad object", code=128),
         }
     )
 
@@ -1328,8 +1336,8 @@ def test_histories_with_no_merge_base_are_answered_rather_than_unknown() -> None
     history in the repository."""
     port = _tier_port(
         **{
-            "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main -- feat": fail(code=1),
+            "cherry refs/remotes/origin/main -- feat": ok("+ aaa"),
+            "merge-base refs/remotes/origin/main -- feat": fail(code=1),
         }
     )
 
@@ -1348,15 +1356,15 @@ def test_a_containment_check_git_cannot_answer_is_unknown_not_uncovered() -> Non
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/heads/feat", "feat"),
         ],
-        counts={"origin/main..feat": "2"},
+        counts={"refs/remotes/origin/main..feat": "2"},
         prs=[_pr("MERGED", oid="b" * 40)],
         extra={
             "merge-base --is-ancestor": fail("fatal: Not a valid object name", code=128),
-            "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main -- feat": ok("basesha"),
+            "cherry refs/remotes/origin/main -- feat": ok("+ aaa"),
+            "merge-base refs/remotes/origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
-            "cherry origin/main synthsha": ok("+ synthsha"),
+            "cherry refs/remotes/origin/main synthsha": ok("+ synthsha"),
         },
     )
 
@@ -1372,15 +1380,15 @@ def test_a_containment_check_git_answers_no_to_is_recorded_as_no() -> None:
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/heads/feat", "feat"),
         ],
-        counts={"origin/main..feat": "2"},
+        counts={"refs/remotes/origin/main..feat": "2"},
         prs=[_pr("MERGED", oid="b" * 40)],
         extra={
             "merge-base --is-ancestor": fail("", code=1),
-            "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main -- feat": ok("basesha"),
+            "cherry refs/remotes/origin/main -- feat": ok("+ aaa"),
+            "merge-base refs/remotes/origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
-            "cherry origin/main synthsha": ok("+ synthsha"),
+            "cherry refs/remotes/origin/main synthsha": ok("+ synthsha"),
         },
     )
 
@@ -1405,7 +1413,7 @@ def test_an_unreadable_remote_tip_is_reported_on_the_assembled_survey() -> None:
     the survey carries it."""
     port = make_port(
         refs=[ref_line("refs/heads/main", "main", head="*")],
-        counts={"main..main": "0"},
+        counts={"refs/heads/main..main": "0"},
     )
     port._git["symbolic-ref --quiet refs/remotes/origin/HEAD"] = fail()
     port._git["show-ref --verify --quiet refs/heads/main"] = ok()
@@ -1413,7 +1421,7 @@ def test_an_unreadable_remote_tip_is_reported_on_the_assembled_survey() -> None:
 
     result = run(port)
 
-    assert result.base_ref == "main"
+    assert result.base_ref == "refs/heads/main"
     assert any("measured against the local main" in w for w in result.warnings)
 
 
@@ -1423,7 +1431,7 @@ def test_a_pull_request_gh_described_oddly_leaves_the_survey_saying_so() -> None
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/heads/feat", "feat"),
         ],
-        counts={"origin/main..feat": "2"},
+        counts={"refs/remotes/origin/main..feat": "2"},
         prs=[
             {
                 "number": "not-a-number",
@@ -1434,11 +1442,11 @@ def test_a_pull_request_gh_described_oddly_leaves_the_survey_saying_so() -> None
             }
         ],
         extra={
-            "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main -- feat": ok("basesha"),
+            "cherry refs/remotes/origin/main -- feat": ok("+ aaa"),
+            "merge-base refs/remotes/origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
-            "cherry origin/main synthsha": ok("+ synthsha"),
+            "cherry refs/remotes/origin/main synthsha": ok("+ synthsha"),
         },
     )
 
@@ -1547,12 +1555,12 @@ def test_the_trunk_is_measured_rather_than_assumed() -> None:
     main = next(b for b in run(port).branches if b.name == "main")
 
     assert main.is_default
-    assert ("git", "rev-list", "--count", "origin/main..main") in port.transcript
+    assert ("git", "rev-list", "--count", "refs/remotes/origin/main..main") in port.transcript
 
 
 def test_counts_that_are_not_numbers_are_unknown_not_zero() -> None:
-    port = _tier_port(**{"cherry origin/main -- feat": ok("- aaa")})
-    port._git["rev-list --count origin/main..feat"] = ok("not-a-number")
+    port = _tier_port(**{"cherry refs/remotes/origin/main -- feat": ok("- aaa")})
+    port._git["rev-list --count refs/remotes/origin/main..feat"] = ok("not-a-number")
     feat = next(b for b in run(port).branches if b.name == "feat")
     assert feat.unmerged_commits is None
 
@@ -1563,14 +1571,14 @@ def test_a_failing_rev_list_is_unknown_and_never_proves_a_merge() -> None:
     authorise deleting the very branch it failed on."""
     port = _tier_port(
         **{
-            "cherry origin/main -- feat": ok("+ aaa"),
-            "merge-base origin/main -- feat": ok("basesha"),
+            "cherry refs/remotes/origin/main -- feat": ok("+ aaa"),
+            "merge-base refs/remotes/origin/main -- feat": ok("basesha"),
             "rev-parse feat^{tree}": ok("treesha"),
             "commit-tree treesha -p basesha -m gitclean-probe": ok("synthsha"),
-            "cherry origin/main synthsha": ok("+ synthsha"),
+            "cherry refs/remotes/origin/main synthsha": ok("+ synthsha"),
         }
     )
-    port._git["rev-list --count origin/main..feat"] = fail("bad revision")
+    port._git["rev-list --count refs/remotes/origin/main..feat"] = fail("bad revision")
     result = run(port)
     feat = next(b for b in result.branches if b.name == "feat")
     assert feat.unmerged_commits is None
@@ -1580,7 +1588,7 @@ def test_a_failing_rev_list_is_unknown_and_never_proves_a_merge() -> None:
 
 
 def test_a_failing_unpushed_count_is_unknown_and_warned() -> None:
-    port = _tier_port(track=">", **{"cherry origin/main -- feat": ok("- aaa")})
+    port = _tier_port(track=">", **{"cherry refs/remotes/origin/main -- feat": ok("- aaa")})
     port._git["rev-list --count origin/feat..feat"] = fail("bad revision")
     result = run(port)
     feat = next(b for b in result.branches if b.name == "feat")
@@ -1592,7 +1600,7 @@ def test_a_branch_in_sync_with_its_upstream_costs_no_probe() -> None:
     """The tracking marker already answered, and the overwhelming majority of
     branches are in sync -- paying a `rev-list` each to be told zero is the
     per-branch cost this batching exists to remove."""
-    port = _tier_port(track="=", **{"cherry origin/main -- feat": ok("- aaa")})
+    port = _tier_port(track="=", **{"cherry refs/remotes/origin/main -- feat": ok("- aaa")})
     del port._git["rev-list --count origin/feat..feat"]
 
     feat = next(b for b in run(port).branches if b.name == "feat")
@@ -1605,7 +1613,7 @@ def test_a_branch_in_sync_with_its_upstream_costs_no_probe() -> None:
 
 
 def test_a_branch_only_behind_its_upstream_has_nothing_to_push() -> None:
-    port = _tier_port(track="<", **{"cherry origin/main -- feat": ok("- aaa")})
+    port = _tier_port(track="<", **{"cherry refs/remotes/origin/main -- feat": ok("- aaa")})
     del port._git["rev-list --count origin/feat..feat"]
     assert next(b for b in run(port).branches if b.name == "feat").unpushed_commits == 0
 
@@ -1614,7 +1622,7 @@ def test_an_upstream_that_no_longer_exists_is_unknown_not_pushed() -> None:
     """`[gone]` -- the remote branch was deleted. Reading that as zero unpushed
     would claim a copy survives somewhere it does not, which is exactly the
     claim that lets a branch into the bare sweep."""
-    port = _tier_port(track="", **{"cherry origin/main -- feat": ok("- aaa")})
+    port = _tier_port(track="", **{"cherry refs/remotes/origin/main -- feat": ok("- aaa")})
     del port._git["rev-list --count origin/feat..feat"]
 
     result = run(port)
@@ -1631,9 +1639,9 @@ def test_a_branch_with_no_upstream_has_no_unpushed_count() -> None:
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/heads/solo", "solo"),
         ],
-        counts={"origin/main..solo": "2"},
+        counts={"refs/remotes/origin/main..solo": "2"},
         extra={
-            "cherry origin/main -- solo": ok("- aaa"),
+            "cherry refs/remotes/origin/main -- solo": ok("- aaa"),
         },
     )
     solo = next(b for b in run(port).branches if b.name == "solo")
@@ -1642,7 +1650,7 @@ def test_a_branch_with_no_upstream_has_no_unpushed_count() -> None:
 
 
 def test_upstream_is_carried_through_and_unpushed_counted() -> None:
-    port = _tier_port(track=">", **{"cherry origin/main -- feat": ok("- aaa")})
+    port = _tier_port(track=">", **{"cherry refs/remotes/origin/main -- feat": ok("- aaa")})
     port._git["rev-list --count origin/feat..feat"] = ok("3")
     feat = next(b for b in run(port).branches if b.name == "feat")
     assert feat.upstream == "origin/feat"

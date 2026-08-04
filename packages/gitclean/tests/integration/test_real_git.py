@@ -324,6 +324,41 @@ def test_a_worktree_whose_path_holds_a_newline_is_surveyed_and_removed_whole(
     assert str(path) not in git(repo, "worktree", "list", "--porcelain")
 
 
+def test_a_run_inside_a_worktree_whose_path_holds_a_newline_does_not_sweep_itself(
+    repo: Path, tmp_path: Path
+) -> None:
+    """The path arrives whole from the worktree listing, which is framed with
+    NUL -- and as `rev-parse --show-toplevel`, which is not framed at all and
+    has no `-z` to ask for. Read that answer a line at a time and the run
+    records itself as living at `.../wt`, the two spellings stop matching, and
+    both guards on the worktree the process is executing in miss it.
+
+    Nothing else is left to catch it: the branch below is provably merged, the
+    tree is clean, and the `--no-ff` keeps it off the trunk's tip -- so the
+    guard that knows this is the working directory is the last one standing,
+    and a bare sweep with it disabled removes the ground it is standing on."""
+    path = tmp_path / "wt\nnl"
+    git(repo, "worktree", "add", "-q", str(path), "-b", "feat/odd")
+    commit(path, "odd.txt")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feat/odd", "feat/odd")
+
+    with reachability_guard(repo):
+        payload = report(path, "--cleanup")
+
+    surveyed = payload["repo"]
+    assert isinstance(surveyed, dict)
+    assert surveyed["repo_root"] == str(path)
+    target = find(payload, f"worktree:{path}")
+    # Merge-proven and clean, so the sentence has to be the specific one.
+    assert target["merge_proven"] is True
+    assert target["sweepable"] is False
+    assert "executing in" in str(target["withheld"])
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert [d for d in execution["deletions"] if d["deleted"]] == []
+    assert (path / "odd.txt").exists()
+
+
 def test_a_dirty_worktree_named_outright_is_left_to_git_to_refuse(repo: Path) -> None:
     """No flag here turns git's dirt check off, and adding one would mean
     re-implementing in Python what git has just read off the disk. The refusal
@@ -828,6 +863,44 @@ def test_a_trunk_published_only_by_a_remote_not_called_origin_stops_the_sweep(
     assert find(payload, "branch:feat")["sweepable"] is False
     for ref in ("refs/heads/trunk", "refs/heads/feat"):
         assert git(repo, "for-each-ref", "--format=%(refname)", ref) != ""
+
+
+def test_merges_are_not_measured_against_a_local_branch_named_like_the_server_trunk(
+    repo: Path, tmp_path: Path
+) -> None:
+    """Git resolves a bare name through `refs/heads/` before `refs/remotes/`,
+    so `origin/main` in an argv reaches a local branch of that name whenever
+    one exists -- and one legally can, as `git branch origin/main` here makes.
+
+    Point that decoy at unmerged work and the baseline every tier measures
+    against becomes the work itself: it is its own ancestor, `branch --merged`
+    lists it, `cherry` finds every patch. A bare sweep then deletes the only
+    copy of `feat`, holding a merge proof it manufactured. The full ref path is
+    what makes the baseline the ref the survey actually verified."""
+    _with_remote(repo, tmp_path)
+    git(repo, "checkout", "-q", "-b", "feat")
+    only = commit(repo, "feat.txt", "the only copy\n")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "branch", "origin/main", "feat")
+
+    # The trap, measured rather than assumed: the short spelling reaches the
+    # decoy, and the work really is absent from the server's trunk.
+    assert git(repo, "rev-parse", "origin/main") == only
+    assert git(repo, "rev-list", "--count", "refs/remotes/origin/main..feat") == "1"
+
+    with reachability_guard(repo):
+        payload = report(repo, "--cleanup")
+
+    surveyed = payload["repo"]
+    assert isinstance(surveyed, dict)
+    assert surveyed["base_ref"] == "refs/remotes/origin/main"
+    feat = find(payload, "branch:feat")
+    assert feat["merge_evidence"] == MergeEvidence.NONE.value
+    assert feat["sweepable"] is False
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert [d for d in execution["deletions"] if d["deleted"]] == []
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/feat") != ""
 
 
 def test_a_local_branch_spelled_like_a_remote_ref_is_a_target_of_its_own(

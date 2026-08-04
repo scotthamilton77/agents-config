@@ -154,7 +154,9 @@ def make_survey(
     branches: tuple[Branch, ...] = (),
     worktrees: tuple[Worktree, ...] = (),
     current_branch: str | None = "main",
-    base_ref: str = "origin/main",
+    # A full ref path, as the survey resolves it: the short spelling reaches a
+    # local branch of that name first, so it is not what goes into an argv.
+    base_ref: str = "refs/remotes/origin/main",
     default_branch: str = "main",
     default_branch_known: bool = True,
     gh_error: str | None = None,

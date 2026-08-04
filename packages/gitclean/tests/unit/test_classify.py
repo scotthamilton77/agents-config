@@ -187,7 +187,7 @@ def test_a_merge_probe_that_errored_is_named_on_the_branchs_own_row() -> None:
     or two of them errored, and only one of those is a measurement."""
     branch = make_branch(
         head=ELSEWHERE,
-        probe_failures=("the squash-equivalence probe against origin/main errored",),
+        probe_failures=("the squash-equivalence probe against refs/remotes/origin/main errored",),
     )
     assert any("squash-equivalence probe" in r for r in _one(branch).reasons)
 
@@ -288,7 +288,7 @@ def test_the_local_trunk_is_never_swept_even_though_it_is_an_ancestor() -> None:
     branch = make_branch(
         "main", head=ELSEWHERE, is_default=True, merge_evidence=MergeEvidence.ANCESTOR
     )
-    target = _one(branch, make_survey(default_branch="main", base_ref="origin/main"))
+    target = _one(branch, make_survey(default_branch="main", base_ref="refs/remotes/origin/main"))
     assert target.merge_proven
     assert not target.sweepable
     assert "trunk" in (target.withheld or "")
@@ -304,7 +304,7 @@ def test_the_remote_counterpart_of_the_trunk_is_matched_by_ref_not_by_string() -
     and the two are only the same string, never the same ref."""
     survey = make_survey(
         branches=(make_branch("main", head="a" * 40, is_default=True),),
-        base_ref="origin/main",
+        base_ref="refs/remotes/origin/main",
         default_branch="main",
     )
     names, _ = trunk(survey)

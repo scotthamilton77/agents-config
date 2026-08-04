@@ -52,7 +52,7 @@ def merged_branch_port() -> ScriptedCommands:
             ref_at("refs/heads/main", "main", "a" * 40, head="*"),
             ref_at("refs/heads/done", "done", "d" * 40),
         ],
-        counts={"origin/main..done": "0"},
+        counts={"refs/remotes/origin/main..done": "0"},
         extra={
             "branch -D -- done": ok(),
             "for-each-ref --format=%(refname) refs/heads/done": ok(""),
@@ -164,7 +164,7 @@ def half_measured_port() -> ScriptedCommands:
             f"\n"
             f"worktree /repo/wt\nHEAD {'d' * 40}\nbranch refs/heads/done\n"
         ),
-        counts={"origin/main..done": "0"},
+        counts={"refs/remotes/origin/main..done": "0"},
     )
     port._git["status --porcelain=v1"] = [ok(""), fail("fatal: cannot open", code=128)]
     return port
@@ -256,7 +256,7 @@ def test_an_anomaly_exits_three_with_the_transcript() -> None:
             ref_at("refs/heads/main", "main", "a" * 40, head="*"),
             ref_at("refs/heads/done", "done", "d" * 40),
         ],
-        counts={"origin/main..done": "0"},
+        counts={"refs/remotes/origin/main..done": "0"},
         extra={
             "branch -D -- done": ok(),
             "for-each-ref --format=%(refname) refs/heads/done": ok("refs/heads/done"),
@@ -295,7 +295,7 @@ def _remote_port() -> ScriptedCommands:
             ref_at("refs/heads/main", "main", "a" * 40, head="*"),
             ref_at("refs/remotes/origin/feat/x", "origin/feat/x", "f" * 40),
         ],
-        counts={"origin/main..origin/feat/x": "0"},
+        counts={"refs/remotes/origin/main..origin/feat/x": "0"},
         # The server still has it. Every route to deleting a server ref asks
         # that first, dry runs included, so a fixture that left it unscripted
         # would only ever exercise the already-gone path.
@@ -374,7 +374,10 @@ def _colliding_names_port(*, remote_list: str | None = "origin\n") -> ScriptedCo
             ref_at("refs/heads/feat/x", "feat/x", "b" * 40),
             ref_at("refs/remotes/origin/feat/x", "origin/feat/x", "b" * 40),
         ],
-        counts={"origin/main..feat/x": "0", "origin/main..origin/feat/x": "0"},
+        counts={
+            "refs/remotes/origin/main..feat/x": "0",
+            "refs/remotes/origin/main..origin/feat/x": "0",
+        },
         extra={
             "branch -D -- feat/x": ok(),
             "for-each-ref --format=%(refname) refs/heads/feat/x": ok(""),
@@ -423,6 +426,16 @@ def test_the_id_remedy_deletes_the_branch_the_caller_meant() -> None:
     assert [d["name"] for d in execution["deletions"] if d["deleted"]] == ["feat/x"]
 
 
+_TRUNCATED_HEAD = "c" * 40
+_PLAIN_HEAD = "b" * 40
+
+_UNFRAMED_LISTING = (
+    "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n"
+    f"worktree /repo/plain\nHEAD {_PLAIN_HEAD}\nbranch refs/heads/plain\n\n"
+    f"worktree /repo/we\nbare\nHEAD {_TRUNCATED_HEAD}\nbranch refs/heads/odd\n"
+)
+
+
 def _unframed_worktree_port() -> ScriptedCommands:
     """A git with no NUL framing, listing a worktree at `/repo/we<LF>bare`.
 
@@ -430,13 +443,18 @@ def _unframed_worktree_port() -> ScriptedCommands:
     block parses as well-formed: the path is recorded cut short at `/repo/we`
     and nothing counts as dropped. This is the truncation that does not
     announce itself, and it is why the listing rather than the block is what
-    carries the doubt."""
+    carries the doubt.
+
+    `/repo/plain` is the control, and it has to be here rather than being
+    played by the truncated one: `/repo/we` is a path this repository does not
+    have -- git registered `/repo/we<LF>bare` -- so no command aimed at it can
+    succeed, and a fixture that let one succeed would pin an outcome git cannot
+    produce. The control is a whole path git really does hold, which is the
+    only kind that can stand for "acted on exactly as it would be with
+    framing"."""
     port = make_port(refs=[ref_at("refs/heads/main", "main", "a" * 40, head="*")])
     port._git["worktree list --porcelain -z"] = fail("error: unknown switch `z'", code=129)
-    port._git["worktree list --porcelain"] = ok(
-        "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n"
-        "worktree /repo/we\nbare\nHEAD bbb\nbranch refs/heads/odd\n"
-    )
+    port._git["worktree list --porcelain"] = ok(_UNFRAMED_LISTING)
     return port
 
 
@@ -466,23 +484,61 @@ def test_a_worktree_that_does_match_is_unaffected_by_the_unframed_listing() -> N
     """Only the absence conclusion is withheld. A name the listing does answer
     for resolves and is acted on exactly as it would be with framing."""
     port = _unframed_worktree_port()
-    port._git["worktree remove -- /repo/we"] = ok()
-    port._git["rev-parse HEAD"] = ok("b" * 40)
-    port._git["for-each-ref --count=1 --contains"] = ok("refs/heads/odd")
+    port._git["worktree remove -- /repo/plain"] = ok()
+    port._git["rev-parse HEAD"] = ok(_PLAIN_HEAD)
+    port._git["for-each-ref --count=1 --contains"] = ok("refs/heads/plain")
     # The survey reads the listing, then the verifier reads it again after the
-    # removal -- so the second answer is the one without it.
+    # removal -- so the second answer is the one without it. The truncated
+    # record stays: nothing removed that one, and its presence is what proves
+    # the confirmation is not riding on a listing that got tidier.
     port._git["worktree list --porcelain"] = [
         port._git["worktree list --porcelain"],
-        ok("worktree /repo\nHEAD abc\nbranch refs/heads/main\n"),
+        ok(
+            _UNFRAMED_LISTING.replace(
+                f"worktree /repo/plain\nHEAD {_PLAIN_HEAD}\nbranch refs/heads/plain\n\n", ""
+            )
+        ),
     ]
 
-    code, payload = invoke(["--cleanup", "worktree:/repo/we"], port)
+    code, payload = invoke(["--cleanup", "worktree:/repo/plain"], port)
 
     assert code == EXIT_OK, payload["execution"]
     execution = payload["execution"]
     assert isinstance(execution, dict)
     assert execution["deletions"][0]["deleted"] is True
     assert any(call[:3] == ("git", "worktree", "remove") for call in port.transcript)
+
+
+def test_naming_the_truncated_path_gets_gits_refusal_rather_than_a_phantom_removal() -> None:
+    """The other half of the same listing, and the half that cannot be made to
+    work. `/repo/we` is what the truncation recorded, so a caller reading the
+    report may well name it -- and it is not a path git has: `worktree remove`
+    answers `fatal: '/repo/we' is not a working tree` and exits 128, whatever
+    the record says.
+
+    So the removal fails, and the only thing left to get wrong is the report.
+    git's refusal travels as an anomaly with the transcript in it, `deleted`
+    stays false, and the run exits 3 rather than telling a caller a worktree
+    that is sitting on disk under a longer name has been cleaned up."""
+    port = _unframed_worktree_port()
+    # cwd for this one is the recorded path, which is a directory nothing
+    # created; the port turns the OSError into exit 127.
+    port._git["rev-parse HEAD"] = fail("[Errno 2] No such file or directory: '/repo/we'", code=127)
+    port._git["for-each-ref --count=1 --contains"] = ok("refs/heads/odd")
+    port._git["worktree remove -- /repo/we"] = fail(
+        "fatal: '/repo/we' is not a working tree", code=128
+    )
+
+    code, payload = invoke(["--cleanup", "worktree:/repo/we"], port)
+
+    assert code == EXIT_ANOMALY
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    deletion = execution["deletions"][0]
+    assert (deletion["deleted"], deletion["verified"]) == (False, False)
+    assert "not a working tree" in "\n".join(
+        line for a in execution["anomalies"] for line in a["transcript"]
+    )
 
 
 def test_a_framed_listing_costs_a_miss_nothing() -> None:
@@ -567,7 +623,7 @@ def _absent_remote_port() -> ScriptedCommands:
             ref_at("refs/heads/main", "main", "a" * 40, head="*"),
             ref_at("refs/remotes/origin/feat/x", "origin/feat/x", "f" * 40),
         ],
-        counts={"origin/main..origin/feat/x": "0"},
+        counts={"refs/remotes/origin/main..origin/feat/x": "0"},
         extra={"ls-remote": ok("")},
     )
 
@@ -655,7 +711,7 @@ def test_human_output_names_a_failed_deletion() -> None:
             ref_at("refs/heads/main", "main", "a" * 40, head="*"),
             ref_at("refs/heads/done", "done", "d" * 40),
         ],
-        counts={"origin/main..done": "0"},
+        counts={"refs/remotes/origin/main..done": "0"},
         extra={
             "branch -D -- done": ok(),
             "for-each-ref --format=%(refname) refs/heads/done": ok("refs/heads/done"),
@@ -683,7 +739,7 @@ def test_human_output_names_a_skipped_target() -> None:
             "\n"
             "worktree /repo/wt\nHEAD hhh\nbranch refs/heads/held\nlocked\n"
         ),
-        counts={"origin/main..held": "0"},
+        counts={"refs/remotes/origin/main..held": "0"},
     )
     _, text = invoke_human(["--cleanup", "--dry-run"], port)
     assert "SKIPPED held" in text
