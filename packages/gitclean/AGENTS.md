@@ -182,9 +182,17 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   deletes from the server guards the **bare** repository rather than the
   working clone: `push --delete` is what the run performs, and the server is
   what loses the ref.
-- **The guard only covers the topologies the matrix names.** It is a property
-  check, but it runs on the shapes in `test_a_sweep_strands_only_the_commits_it_proved_redundant`,
-  and every one of those but a single named branch drives a *bare* sweep. A
-  deletion reached by naming a target is barely represented, so a defect on the
-  named path can pass the whole suite. Adding a row is cheap; assuming one
-  exists is how a shape goes unmeasured.
+- **The bare sweep is covered by shapes nobody enumerated; the named path is
+  not.** `test_generated_topologies.py` builds repositories from a seeded draw
+  over an alphabet of real git operations and holds each one to the guard with
+  an allowance of exactly the commits the generator itself squashed or
+  cherry-picked onto the trunk -- so a bare sweep that strands anything else
+  fails a test written before the shape existed. Remotes are guarded with no
+  allowance at all, because a bare sweep never reaches a server. What that
+  leaves unmeasured is the deletion a caller *names*: the executor's check that
+  some ref contains a worktree's commit is only reachable that way, since a
+  commit no ref holds carries no merge proof and the sweep withholds it long
+  before the executor is asked. Removing that check passes the entire generated
+  corpus and fails exactly one enumerated test. Both suites stay: the matrix
+  names the shapes worth stating outright, and the draw finds the ones nobody
+  would have.
