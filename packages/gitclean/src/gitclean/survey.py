@@ -151,7 +151,14 @@ def _published_trunk(
     merge in the report is measured against, and picking the one that is ahead
     is what makes unmerged work look merged -- so the disagreement is handed
     back as prose and the tier declines. Declining costs a tier and leaves the
-    local main/master below it to answer; guessing costs commits."""
+    local main/master below it to answer; guessing costs commits.
+
+    A remote whose HEAD could not be read is one of those disagreements as far
+    as anything here knows, so it declines the tier too -- even when another
+    remote did answer. Accepting the name that came back would be taking
+    agreement from a remote that was never asked: the read that failed is the
+    one that might have contradicted it, and a trunk accepted on partial data is
+    exactly what the disagreement rule above exists to refuse."""
     if not remotes:
         return "", (), "this repository has no configured remote to publish a HEAD"
     published: dict[str, str] = {}
@@ -167,20 +174,32 @@ def _published_trunk(
             # an answer. Anything else is git declining to look, which is not.
             unreadable.append((remote, result.returncode))
     names = set(published.values())
-    if len(names) == 1:
-        trunk = next(iter(names))
-        return trunk, tuple(r for r, n in published.items() if n == trunk), ""
     if len(names) > 1:
         spelled = ", ".join(f"{r} publishes {n}" for r, n in sorted(published.items()))
         return "", (), f"the configured remotes disagree about which branch is the trunk: {spelled}"
     if unreadable:
         listed = ", ".join(f"{remote} (exit {code})" for remote, code in unreadable)
+        if names:
+            # Withheld agreement rather than a missing HEAD, and the two are
+            # worth separate sentences: something did answer here, and what
+            # stopped the tier is that the remote which did not could have
+            # contradicted it.
+            answered = ", ".join(sorted(published))
+            withheld = (
+                f"the published HEAD of {listed} could not be read, and a remote that would "
+                f"not answer could name a trunk other than the {next(iter(names))} that came "
+                f"back from {answered}"
+            )
+            return "", (), withheld
         unread_detail = (
             f"{unreadable[0][0]}'s published HEAD could not be read (exit {unreadable[0][1]})"
             if len(unreadable) == 1
             else f"the published HEAD of these remotes could not be read: {listed}"
         )
         return "", (), unread_detail
+    if len(names) == 1:
+        trunk = next(iter(names))
+        return trunk, tuple(r for r, n in published.items() if n == trunk), ""
     if len(remotes) == 1:
         return "", (), f"{remotes[0]} has published no HEAD"
     return "", (), f"none of this repository's remotes ({', '.join(remotes)}) has published a HEAD"

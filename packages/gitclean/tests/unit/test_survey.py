@@ -335,6 +335,30 @@ def test_remotes_that_disagree_about_the_trunk_decline_rather_than_pick_one() ->
     assert "alpha publishes trunk, beta publishes release" in warning
 
 
+def test_a_remote_that_would_not_answer_is_not_taken_for_one_that_agreed() -> None:
+    """One remote publishes a trunk and the read of another's HEAD errors. The
+    name that came back is not evidence on its own: the read that failed is the
+    one that could have contradicted it, so accepting it would be taking
+    agreement from a remote nothing managed to ask. That is the same partial
+    data the disagreement rule refuses, and it declines the same way -- with a
+    sentence of its own, because a HEAD nobody could read is not a HEAD nobody
+    published."""
+    port = ScriptedCommands(
+        git={
+            "symbolic-ref --quiet refs/remotes/alpha/HEAD": ok("refs/remotes/alpha/trunk"),
+            "symbolic-ref --quiet refs/remotes/beta/HEAD": fail("fatal: bad ref store", code=128),
+            "show-ref --verify --quiet refs/heads/": fail(),
+        }
+    )
+
+    name, remote, warning = resolve_default_branch(port, None, ("alpha", "beta"))
+
+    assert (name, remote) == (None, None)
+    assert warning is not None
+    assert "the published HEAD of beta (exit 128) could not be read" in warning
+    assert "could name a trunk other than the trunk that came back from alpha" in warning
+
+
 def test_a_fork_still_takes_its_trunk_from_origin() -> None:
     """`origin` and `upstream` disagreeing about the trunk is what a fork looks
     like, and the repository you are standing in is the one `origin` describes.
