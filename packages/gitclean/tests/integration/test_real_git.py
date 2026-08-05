@@ -579,19 +579,14 @@ def test_a_worktree_that_goes_dirty_after_the_survey_is_left_alone(repo: Path) -
 # -- the pairing a reader groups rows by --------------------------------------
 #
 # The values worth crossing this with are the ones a naive recovery divides on.
-# Two are exercised below -- a worktree path containing the separator a reason
-# sentence uses, and a remote whose own name contains the slash in
-# `<remote>/<ref>`. Two are deliberately absent:
+# Three are exercised below -- a worktree path containing the separator a
+# reason sentence uses, a remote whose own name contains the slash in
+# `<remote>/<ref>`, and a newline inside a worktree path. One is deliberately
+# absent:
 #
 # - a branch name containing a space, because git will not make one. `git branch
 #   'feat with space'` is refused as an invalid ref name, so no repository can
 #   present the value and a test would be asserting against git's own rules.
-# - a newline in a worktree path, which git accepts and emits raw. It is absent
-#   for a different reason: `read_worktrees` parses that listing line by line, so
-#   the path is already truncated at the newline by the time anything pairs it.
-#   The two rows then agree with each other about a path that does not exist,
-#   and a test here would pin the truncation rather than the relation. It belongs
-#   with the fix to that parse, not with this.
 
 
 def test_the_pairing_holds_for_a_path_no_sentence_can_be_split_on(
@@ -726,6 +721,41 @@ def test_the_pairing_holds_when_the_remote_s_own_name_holds_a_slash(
     # that names a counterpart nothing in the report describes is the state
     # `id: null` exists to report, so a non-null one has to resolve.
     assert find(payload, "remote:team/origin/feat/slashed")["name"] == "team/origin/feat/slashed"
+
+
+def test_the_pairing_holds_for_a_path_holding_a_newline(repo: Path, tmp_path: Path) -> None:
+    """The one value in this group that used to be untestable, not because git
+    refuses it but because the pieces needed to prove it landed on separate
+    branches: `-z` framing, which keeps a newline inside the worktree listing
+    whole, and the pairing fields themselves. Neither alone says the relation
+    holds for this value -- a truncated path and an untruncated one would key
+    the same rows either way if the framing had not landed, and a test written
+    before it had would have pinned that truncation rather than this relation.
+
+    Both are on this branch now, so the pairing is asked to key both directions
+    by a path that contains the one character `worktree list --porcelain`
+    prints raw and does not frame with anything but `-z`."""
+    _with_remote(repo, tmp_path)
+    work = tmp_path / "wt\nnewlined"
+    git(repo, "worktree", "add", "-q", str(work), "-b", "feat/newlined")
+    commit(work, "newlined.txt")
+    git(work, "push", "-q", "-u", "origin", "feat/newlined")
+
+    with reachability_guard(repo):  # a report changes nothing
+        payload = report(repo)
+
+    branch = find(payload, "branch:feat/newlined")
+    assert branch["pairing"] == {
+        "worktree": {"name": str(work), "id": f"worktree:{work}", "known": True},
+        "upstream": {
+            "name": "origin/feat/newlined",
+            "id": "remote:origin/feat/newlined",
+            "known": True,
+        },
+    }
+    assert find(payload, f"worktree:{work}")["pairing"] == {
+        "branch": {"name": "feat/newlined", "id": "branch:feat/newlined", "known": True}
+    }
 
 
 def test_a_detached_worktree_says_it_holds_no_branch_rather_than_saying_nothing(
