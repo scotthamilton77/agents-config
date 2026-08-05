@@ -7,7 +7,7 @@
 
 ## What Rules Are
 
-**Rules** are markdown files in a tool's `rules/` directory that the tool loads into the agent's context. A rule whose front matter carries no `paths` field is loaded at session start with the same priority as `.claude/CLAUDE.md`. A rule with a `paths` field is **path-scoped**: it only enters context when the agent reads files matching the configured glob patterns.
+**Rules** are markdown files in a tool's `rules/` directory. Claude Code loads them into the agent's context; the other three tools are meant to get the same content by a different route, described below. A rule whose front matter carries no `paths` field is loaded at session start with the same priority as `.claude/CLAUDE.md`. A rule with a `paths` field is **path-scoped**: it only enters context when the agent reads files matching the configured glob patterns.
 
 > Quoted directly from the official docs:
 > *"Rules load into context every session or when matching files are opened. For task-specific instructions that don't need to be in context all the time, use skills instead, which only load when you invoke them or when Claude determines they're relevant to your prompt."*
@@ -25,8 +25,10 @@ gate treats `rules` as a gated namespace, and **a rule carrying no `admission:`
 record is dropped at deploy** — it stages, and then simply never lands in the
 tool's config directory, while any copy an earlier run deployed is pruned. In
 this repository `content-lint` catches it first and fails, because a record-less
-artifact under `src/user/` is fatal there; where that gate does not run, the drop
-is silent. A malformed record is worse in both places: it aborts the whole deploy.
+artifact under `src/user/` is fatal there; where that gate does not run, the
+installer reports the drop and carries on — a count of unadmitted artifacts on
+every run, and the names behind it only under `--verbose`. A malformed record is
+worse in both places: it aborts the whole deploy.
 
 The gate strips what it admits — the `admission:` and `claims:` blocks are
 repo-side bookkeeping and never reach the deployed bytes — so the record costs
