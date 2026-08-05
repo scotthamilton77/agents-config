@@ -31,7 +31,16 @@ def main() -> int:
         i: e["track"]
         for i, e in json.loads((HERE / "assignment.json").read_text())["items"].items()
     }
-    expected_mismatch = json.loads((HERE / "expected_mismatches.json").read_text())["edges"]
+    # Generated, never committed: it is a function of the assignment and the live
+    # parent graph, so a checked-in copy is stale as soon as either moves. Absence
+    # is a skipped step, not a missing dependency — say which step.
+    expected_path = HERE / "expected_mismatches.json"
+    if not expected_path.exists():
+        raise SystemExit(
+            f"{expected_path.name} is missing — run gen_expected_mismatches.py first "
+            "and review the edges it lists before verifying against them"
+        )
+    expected_mismatch = json.loads(expected_path.read_text())["edges"]
 
     lint = work(root, "lint")["data"]
     violations = {v["id"] for v in lint["track_violations"]}

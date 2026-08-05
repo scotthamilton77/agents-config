@@ -1,7 +1,12 @@
 # track-backfill
 
-One-shot migration applying the decided track assignment to the backlog.
+Applies the decided track assignment to the backlog.
 Design: `docs/specs/2026-07-19-track-backfill-migration-design.md`.
+
+Built as a one-shot migration and run twice: once in July 2026 against the
+database the tracker reset later retired, and again in August 2026 against its
+replacement, which inherited none of the labels. Each run needs its own decided
+`assignment.json`; everything else here is re-runnable as written.
 
 ## Constraints
 
@@ -18,7 +23,8 @@ Design: `docs/specs/2026-07-19-track-backfill-migration-design.md`.
    decided assignment from one checkout, the database from another. Three copies
    of that guard would be three chances to fix two of them.
 2. The track vocabulary in `project-config.toml` must be live before applying, or
-   147 writes fail `E_UNKNOWN_TRACK`. `apply.py` pre-flights this.
+   every write against a missing name fails `E_UNKNOWN_TRACK`. `apply.py`
+   pre-flights this and names what is missing.
 3. **The migration needs a quiescent window.** `work track set` has no status
    guard and the tracker offers no compare-and-set, so a concurrent agent's
    legitimate track write would be silently overwritten. `apply.py` refuses to
@@ -30,8 +36,10 @@ Design: `docs/specs/2026-07-19-track-backfill-migration-design.md`.
 5. `work track set` is the only track write path. Raw `bd label add track:*`
    bypasses vocabulary validation and is forbidden.
 
-Note: `work create --raw` silently ignores `--track` (it builds `CreateFields`
-with no track field). Always set a track with `work track set`, never at create.
+Note: `work create --raw` **refuses** `--track` with `E_USAGE` and creates
+nothing, so a bypass create can never look tracked when it is not. Set a track
+with `work track set`, or supply `--track` to the lifecycle `work create <noun>`,
+which validates it against the vocabulary.
 
 ## Run
 
@@ -39,12 +47,14 @@ with no track field). Always set a track with `work track set`, never at create.
     python3 scripts/track-backfill/apply.py --apply
     python3 scripts/track-backfill/anchor_orphans.py --dry-run
     python3 scripts/track-backfill/anchor_orphans.py --apply
+    python3 scripts/track-backfill/gen_expected_mismatches.py
     python3 scripts/track-backfill/verify.py
 
 Re-running is safe. `reconcile()` classifies an item already carrying its target
 track as `already_correct` and issues no write, so a second full run reports
-`apply: 0 / unchanged: 366`. A partial run is repaired by running again. Every
-successful write is appended to `applied.log`.
+`apply: 0` with every covered item counted as `unchanged`. A partial run is
+repaired by running again. Every successful write is appended to `applied.log`,
+which spans every run rather than resetting per migration.
 
 ## Tests
 
@@ -93,13 +103,19 @@ guessing. Residue converges to zero only once `[tracks].enforcement` flips to
 
 ## expected_mismatches.json
 
-The **55 whole edges** — `(child, child_track, parent, parent_track)` — expected
-after the migration: the 54 the assignment implies, plus the one the Task 7
-`9v0y` reparent deliberately adds.
+The whole edges — `(child, child_track, parent, parent_track)` — expected after
+the migration. **Generated, not maintained by hand:** run
+`gen_expected_mismatches.py`, which derives them from `assignment.json` plus the
+live parent graph using the same rule `work lint` applies. The file is not
+committed, because it is a function of live state that is stale the moment either
+input moves; `verify.py` fails loudly on its absence rather than comparing
+against a stale set. Generate it immediately before verifying, and **read what it
+produces** — every edge listed is a cross-track parenting the migration is about
+to make real, and reviewing that list is the point of the file.
 
-`track_mismatches` reads 0 today only because nothing is labelled; labelling
-materializes every pre-existing cross-track parent at once. Reading that 0 as a
-stable baseline is the mistake this file exists to prevent.
+`track_mismatches` reads 0 while nothing is labelled; labelling materializes
+every pre-existing cross-track parent at once. Reading that 0 as a stable
+baseline is the mistake this file exists to prevent.
 
 Criterion 5 compares whole edges in **both** directions. Bare child ids are not
 enough: a child reparented to a *different* non-milestone parent on a different

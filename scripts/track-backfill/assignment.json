@@ -1,1475 +1,526 @@
 {
- "cascade_used": false,
- "design": "docs/specs/2026-07-19-track-backfill-migration-design.md",
- "explicit_count": 366,
- "generated_for": "agents-config-jpn0s",
- "inherit_via_cascade": [],
- "items": {
-  "agents-config-0qwmz": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-19n9": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-1fhaw": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-1k35t": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-1sso": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-1x98": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-24eo5": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-2gzy": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-2vr": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-2w7vz": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-2yyb": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-2yyb.1": {
-   "provenance": "inherited-from-container:agents-config-2yyb",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-30fpy": {
-   "provenance": "two-pass-agree",
-   "track": "review-and-merge"
-  },
-  "agents-config-33rn": {
-   "provenance": "human-decided",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-38o1v": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-38o1v.3": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-38o1v.5": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-3f52": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-3o00y": {
-   "provenance": "two-pass-agree",
-   "track": "prgroom"
-  },
-  "agents-config-4hhw": {
-   "provenance": "human-decided",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-4htl": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-4vn5": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-4vn5.1": {
-   "provenance": "two-pass-agree",
-   "track": "ops-meta"
-  },
-  "agents-config-528x8": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-55bh": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-5ch8": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-5e3": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-5n21z": {
-   "provenance": "human-decided",
-   "track": "installer"
-  },
-  "agents-config-5s7ab": {
-   "provenance": "two-pass-agree",
-   "track": "ops-meta"
-  },
-  "agents-config-5vxfw": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-5yfy": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-63nm3": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-640vd": {
-   "provenance": "ops-meta-reaudit",
-   "track": "prgroom"
-  },
-  "agents-config-64ecc": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-6ms7": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-6wun7": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-717": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-7bk": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-7bk.11": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-7bk.12": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-7bk.16": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-7bk.17": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-7bk.18": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-7bk.19.7.1": {
-   "provenance": "explicit-closed-parent",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-7bk.19.9.1": {
-   "provenance": "explicit-closed-parent",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-7bk.21": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-7bk.22": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-7bk.23": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-7bk.25": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-7bk.25.1": {
-   "provenance": "inherited-from-container:agents-config-7bk.25",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-7bk.4": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-7bk.5": {
-   "provenance": "human-resolved-disagreement",
-   "track": "ops-meta"
-  },
-  "agents-config-7d5h8": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-7qfs": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-7r77": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-811pq": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-89v77": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-96iof": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-9obqv": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "installer"
-  },
-  "agents-config-9v0y": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "review-and-merge"
-  },
-  "agents-config-9x3g": {
-   "provenance": "two-pass-agree",
-   "track": "ops-meta"
-  },
-  "agents-config-9xj1f": {
-   "provenance": "two-pass-agree",
-   "track": "prgroom"
-  },
-  "agents-config-abasv": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.10.1": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-abn9.12": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-abn9.13": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-abn9.13.1": {
-   "provenance": "inherited-from-container:agents-config-abn9.13",
-   "track": "review-and-merge"
-  },
-  "agents-config-abn9.14": {
-   "provenance": "two-pass-agree",
-   "track": "review-and-merge"
-  },
-  "agents-config-abn9.14.1": {
-   "provenance": "inherited-from-container:agents-config-abn9.14",
-   "track": "review-and-merge"
-  },
-  "agents-config-abn9.15": {
-   "provenance": "human-decided",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-abn9.17": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-abn9.18": {
-   "provenance": "ops-meta-reaudit",
-   "track": "workcli"
-  },
-  "agents-config-abn9.19": {
-   "provenance": "ops-meta-reaudit",
-   "track": "workcli"
-  },
-  "agents-config-abn9.20": {
-   "provenance": "ops-meta-reaudit",
-   "track": "installer"
-  },
-  "agents-config-abn9.21": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-abn9.22": {
-   "provenance": "ops-meta-reaudit",
-   "track": "workcli"
-  },
-  "agents-config-abn9.23": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "ops-meta"
-  },
-  "agents-config-abn9.23.2": {
-   "provenance": "ops-meta-reaudit",
-   "track": "installer"
-  },
-  "agents-config-abn9.23.3": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "ops-meta"
-  },
-  "agents-config-abn9.23.4": {
-   "provenance": "human-resolved-disagreement",
-   "track": "ops-meta"
-  },
-  "agents-config-abn9.24": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-abn9.25": {
-   "provenance": "human-decided",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-abn9.26": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "ops-meta"
-  },
-  "agents-config-abn9.27": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.28": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-abn9.29": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-abn9.30": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-abn9.31": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-abn9.32": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-abn9.33": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-abn9.35": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-abn9.36": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-abn9.37": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-abn9.37.1": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-abn9.37.1.3": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-abn9.37.2": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-abn9.37.3": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-abn9.37.4": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-abn9.39": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-abn9.40": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-abn9.40.1": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-abn9.40.2": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-abn9.40.2.1": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-abn9.40.3": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "installer"
-  },
-  "agents-config-abn9.40.4": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-abn9.40.5": {
-   "provenance": "two-pass-agree",
-   "track": "ops-meta"
-  },
-  "agents-config-abn9.43": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-abn9.44": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-abn9.44.2": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-abn9.44.2.9": {
-   "provenance": "two-pass-agree",
-   "track": "review-and-merge"
-  },
-  "agents-config-abn9.44.3": {
-   "provenance": "human-decided-reconcile",
-   "track": "review-and-merge"
-  },
-  "agents-config-abn9.44.4": {
-   "provenance": "human-decided-reconcile",
-   "track": "review-and-merge"
-  },
-  "agents-config-abn9.8": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.14": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.17": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.18": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.19": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.20": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.22": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.23": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.23.2": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.23.3": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.24": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.29": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.30": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.31": {
-   "provenance": "inherited-from-container:agents-config-abn9.8",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.33": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.36": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.37": {
-   "provenance": "two-pass-agree",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.38": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.39": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.41": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.42": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.43": {
-   "provenance": "ops-meta-reaudit",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.45": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.46": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.47": {
-   "provenance": "two-pass-agree",
-   "track": "review-and-merge"
-  },
-  "agents-config-abn9.8.48": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.49": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-abn9.8.50": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.51": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.52": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.53": {
-   "provenance": "inherited-from-container:agents-config-abn9.8",
-   "track": "prgroom"
-  },
-  "agents-config-abn9.8.54": {
-   "provenance": "human-decided-reconcile",
-   "track": "prgroom"
-  },
-  "agents-config-acmh": {
-   "provenance": "two-pass-agree",
-   "track": "ops-meta"
-  },
-  "agents-config-acmh.10": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-acmh.11": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "installer"
-  },
-  "agents-config-acmh.12": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-acmh.13.1": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-acmh.2": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-acmh.4": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-acmh.6": {
-   "provenance": "two-pass-agree",
-   "track": "ops-meta"
-  },
-  "agents-config-acmh.7": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-acmh.8": {
-   "provenance": "two-pass-agree",
-   "track": "prgroom"
-  },
-  "agents-config-acmh.9": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-ak007": {
-   "provenance": "two-pass-agree",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-awdv8": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-b1eqk": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-bgzyv": {
-   "provenance": "single-pass-confident",
-   "track": "vizsuite"
-  },
-  "agents-config-biy4": {
-   "provenance": "human-decided",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-bkvgz": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "vizsuite"
-  },
-  "agents-config-bt9e": {
-   "provenance": "two-pass-agree",
-   "track": "ops-meta"
-  },
-  "agents-config-c2nwf": {
-   "provenance": "human-decided",
-   "track": "installer"
-  },
-  "agents-config-c66bx": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-clz": {
-   "provenance": "ops-meta-reaudit",
-   "track": "prgroom"
-  },
-  "agents-config-cp6iv": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-ctq5": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-cx6": {
-   "provenance": "human-decided-retired-track",
-   "track": "ops-meta"
-  },
-  "agents-config-cx6.7": {
-   "provenance": "human-decided-retired-track",
-   "track": "ops-meta"
-  },
-  "agents-config-cx6.7.15": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-cx6.7.16": {
-   "provenance": "human-decided-retired-track",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-dawr": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-dtnq": {
-   "provenance": "two-pass-agree",
-   "track": "review-and-merge"
-  },
-  "agents-config-e2l": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-ep74t": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-evi": {
-   "provenance": "human-decided-retired-track",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-f298": {
-   "provenance": "human-decided",
-   "track": "workcli"
-  },
-  "agents-config-fa3n1": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-ffxh": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-fl80": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-fn0y": {
-   "provenance": "ops-meta-reaudit",
-   "track": "installer"
-  },
-  "agents-config-g17x": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-g3jv": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-g42cj": {
-   "provenance": "two-pass-agree",
-   "track": "ops-meta"
-  },
-  "agents-config-g6ix3": {
-   "provenance": "single-pass-confident",
-   "track": "holding-place"
-  },
-  "agents-config-gcg": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-gefc9": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "prgroom"
-  },
-  "agents-config-gmxo": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-go1w": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-gvt64": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-h8u6v": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-hft": {
-   "provenance": "human-decided",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-hhou": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-hn4z4": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-hrvzu": {
-   "provenance": "ops-meta-reaudit",
-   "track": "review-and-merge"
-  },
-  "agents-config-ic0s": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-iohrs": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-j8pdq": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-jp9w": {
-   "provenance": "two-pass-agree",
-   "track": "review-and-merge"
-  },
-  "agents-config-jp9w.1": {
-   "provenance": "inherited-from-container:agents-config-jp9w",
-   "track": "review-and-merge"
-  },
-  "agents-config-jpn0s": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-jqacs": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-jsx6": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-kdh1h": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-kswrp": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-kz1vn": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-lgz": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-lpeg": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-ltuv": {
-   "provenance": "human-decided",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-m027": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-m5tkg": {
-   "provenance": "human-decided",
-   "track": "review-and-merge"
-  },
-  "agents-config-n0y9": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-n7q0p": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-nbrd": {
-   "provenance": "human-decided-retired-track",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-nr2e": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-nwtz": {
-   "provenance": "human-decided-retired-track",
-   "track": "ops-meta"
-  },
-  "agents-config-o2oub": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-oav16": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-obz09": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-oh7a7": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-opnn2": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-owqa": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-p2dq8": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-p3": {
-   "provenance": "human-decided",
-   "track": "workcli"
-  },
-  "agents-config-p53nm": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-pdmkh": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-phzj": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "ops-meta"
-  },
-  "agents-config-phzj.1": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-phzj.2": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-phzj.4": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-phzj.4.1": {
-   "provenance": "inherited-from-container:agents-config-yf2ov.1",
-   "track": "installer"
-  },
-  "agents-config-pqvc": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-pqvc.1": {
-   "provenance": "inherited-from-container:agents-config-abn9.25",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-psyw2": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-q1elf": {
-   "provenance": "two-pass-agree",
-   "track": "review-and-merge"
-  },
-  "agents-config-qn0g.1": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-qn0g.1.1": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-qptb4": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-qv7o5": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-r3pvo": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-r8wsz": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-rdkh8": {
-   "provenance": "human-decided-retired-track",
-   "track": "installer"
-  },
-  "agents-config-s0u9c": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-ssiad": {
-   "provenance": "ops-meta-reaudit",
-   "track": "installer"
-  },
-  "agents-config-syod": {
-   "provenance": "ops-meta-reaudit",
-   "track": "workcli"
-  },
-  "agents-config-t142.1": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-t142.2": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "review-and-merge"
-  },
-  "agents-config-t142.2.1": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-t142.2.2": {
-   "provenance": "ops-meta-reaudit",
-   "track": "review-and-merge"
-  },
-  "agents-config-t142.2.3": {
-   "provenance": "ops-meta-reaudit",
-   "track": "review-and-merge"
-  },
-  "agents-config-td39": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-thlyy": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-tjgu7": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-tlqn4": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-ukzs": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-ulv3": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-us8da": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-uxns2.1": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-uxns2.1.2": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-uxns2.1.4": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-uxns2.2": {
-   "provenance": "human-decided-retired-track",
-   "track": "installer"
-  },
-  "agents-config-uxns2.2.1": {
-   "provenance": "human-decided-retired-track",
-   "track": "installer"
-  },
-  "agents-config-uxns2.3": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-uxns2.4": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-uxns2.5": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-uxns2.6": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-uxns2.6.1": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-uxns2.6.2": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-uxns2.6.3": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-uy5wx": {
-   "provenance": "two-pass-agree",
-   "track": "ops-meta"
-  },
-  "agents-config-vaac.1": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "prgroom"
-  },
-  "agents-config-vaac.10": {
-   "provenance": "ops-meta-reaudit",
-   "track": "prgroom"
-  },
-  "agents-config-vaac.11": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-vaac.12": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-vaac.14": {
-   "provenance": "human-decided-retired-track",
-   "track": "ops-meta"
-  },
-  "agents-config-vaac.2": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-vaac.2.1": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-vaac.2.2": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-vaac.2.3": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-vaac.2.4": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-vaac.2.5": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-vaac.2.6": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-vaac.2.7": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-vaac.2.8": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "prgroom"
-  },
-  "agents-config-vaac.2.9": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-vaac.3": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-vaac.4": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-vaac.5": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-vinbn": {
-   "provenance": "two-pass-agree",
-   "track": "review-and-merge"
-  },
-  "agents-config-vo7": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-vximp": {
-   "provenance": "single-pass-confident",
-   "track": "vizsuite"
-  },
-  "agents-config-vxiq": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-wgclw.10": {
-   "provenance": "single-pass-confident",
-   "track": "holding-place"
-  },
-  "agents-config-wgclw.10.1": {
-   "provenance": "two-pass-agree",
-   "track": "holding-place"
-  },
-  "agents-config-wgclw.11": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-wgclw.12": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-wgclw.16": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-wgclw.2": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-wgclw.2.2.2": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-wgclw.2.2.3": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-wgclw.2.2.4": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-wgclw.2.2.5": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-wgclw.2.2.6": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-wgclw.2.2.7": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-wgclw.2.3": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-wgclw.2.4": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-wgclw.22": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-wgclw.23": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-wgclw.24": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-wgclw.25": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-wgclw.27": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-wgclw.3": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-wgclw.30": {
-   "provenance": "new-track-cluster",
-   "track": "grind-runtime"
-  },
-  "agents-config-wgclw.30.1": {
-   "provenance": "new-track-cluster",
-   "track": "grind-runtime"
-  },
-  "agents-config-wgclw.30.2": {
-   "provenance": "new-track-cluster",
-   "track": "grind-runtime"
-  },
-  "agents-config-wgclw.30.3": {
-   "provenance": "new-track-cluster",
-   "track": "grind-runtime"
-  },
-  "agents-config-wgclw.30.4": {
-   "provenance": "new-track-cluster",
-   "track": "grind-runtime"
-  },
-  "agents-config-wgclw.30.5": {
-   "provenance": "new-track-cluster",
-   "track": "grind-runtime"
-  },
-  "agents-config-wgclw.30.6": {
-   "provenance": "new-track-cluster",
-   "track": "grind-runtime"
-  },
-  "agents-config-wgclw.30.7": {
-   "provenance": "new-track-cluster",
-   "track": "grind-runtime"
-  },
-  "agents-config-wgclw.4": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-wgclw.5": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-wgclw.6": {
-   "provenance": "single-pass-confident",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-wgclw.7": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "workcli"
-  },
-  "agents-config-wgclw.8": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-wgclw.9": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-wgclw.9.10": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-wgclw.9.11": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-wgclw.9.3": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-wgclw.9.4": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-wgclw.9.4.1": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-wgclw.9.4.2": {
-   "provenance": "two-pass-agree",
-   "track": "review-and-merge"
-  },
-  "agents-config-wgclw.9.4.3": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-wgclw.9.4.4": {
-   "provenance": "ops-meta-reaudit",
-   "track": "workcli"
-  },
-  "agents-config-wgclw.9.4.5": {
-   "provenance": "ops-meta-reaudit",
-   "track": "workcli"
-  },
-  "agents-config-wgclw.9.4.6": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-wgclw.9.6": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-wgclw.9.6.1": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-wgclw.9.6.2": {
-   "provenance": "two-pass-agree",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-wgclw.9.6.3": {
-   "provenance": "single-pass-confident",
-   "track": "workcli"
-  },
-  "agents-config-x12t5": {
-   "provenance": "single-pass-confident",
-   "track": "prgroom"
-  },
-  "agents-config-xshc": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-xsvj8": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-y2g": {
-   "provenance": "single-pass-confident",
-   "track": "ops-meta"
-  },
-  "agents-config-y9mm": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-y9mm.5": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-y9mm.7": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-yf2ov.1": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-yf2ov.1.1": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-yf2ov.2": {
-   "provenance": "single-pass-confident",
-   "track": "vizsuite"
-  },
-  "agents-config-yf2ov.2.12": {
-   "provenance": "single-pass-confident",
-   "track": "vizsuite"
-  },
-  "agents-config-yf2ov.2.13": {
-   "provenance": "single-pass-confident",
-   "track": "vizsuite"
-  },
-  "agents-config-yf2ov.2.14": {
-   "provenance": "single-pass-confident",
-   "track": "vizsuite"
-  },
-  "agents-config-yf2ov.2.15": {
-   "provenance": "single-pass-confident",
-   "track": "vizsuite"
-  },
-  "agents-config-yf2ov.2.4": {
-   "provenance": "single-pass-confident",
-   "track": "vizsuite"
-  },
-  "agents-config-yf2ov.2.5": {
-   "provenance": "single-pass-confident",
-   "track": "vizsuite"
-  },
-  "agents-config-yf2ov.2.6": {
-   "provenance": "single-pass-confident",
-   "track": "vizsuite"
-  },
-  "agents-config-yf2ov.2.7": {
-   "provenance": "single-pass-confident",
-   "track": "vizsuite"
-  },
-  "agents-config-yf2ov.2.8": {
-   "provenance": "single-pass-confident",
-   "track": "vizsuite"
-  },
-  "agents-config-ysfvl": {
-   "provenance": "two-pass-agree",
-   "track": "pdlc-orchestrator"
-  },
-  "agents-config-yvi8": {
-   "provenance": "single-pass-confident",
-   "track": "pipeline-discipline"
-  },
-  "agents-config-z5pg9": {
-   "provenance": "single-pass-confident",
-   "track": "installer"
-  },
-  "agents-config-z7a": {
-   "provenance": "single-pass-confident",
-   "track": "review-and-merge"
-  },
-  "agents-config-zi9c7": {
-   "provenance": "ops-meta-reaudit",
-   "track": "prgroom"
-  },
-  "agents-config-zz20g": {
-   "provenance": "two-pass-near-agree(pass2)",
-   "track": "vizsuite"
-  },
-  "agents-config-zzsv8": {
-   "provenance": "ops-meta-reaudit",
-   "track": "pdlc-orchestrator"
+  "schema": "track-backfill-assignment-v1",
+  "design": "docs/specs/2026-07-19-track-backfill-migration-design.md",
+  "generated_for": "agents-config-9k9.139",
+  "explicit_count": 103,
+  "cascade_used": false,
+  "inherit_via_cascade": [],
+  "reconciled_against_lint": 103,
+  "items": {
+    "agents-config-9k9.125": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The defective code is the upstream Codex plugin's broker lifecycle (scripts/lib/broker-lifecycle.mjs) and the deliverable is an issue/PR against that project, which is ops-meta's external-dependency-management clause; runner-up review-and-merge, since codex here is the cross-model review dispatch vehicle it charters, but the leak fires on every parallel codex dispatch regardless of purpose and no repo asset is being changed."
+    },
+    "agents-config-9k9.84": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Code locus is packages/installer -- cli.main()'s home= parameter and core/clis.py::UvCliDeploy -- and 'receipts, CLI deployment' is charter-explicit for installer."
+    },
+    "agents-config-9k9.50": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "A new lint over every packages/*/AGENTS.md joining make ci: the checked assets span every track, so no single code locus decides it under 3.1 and it lands as repo-wide staleness insurance. Runner-up installer (the item names packages/installer as a candidate home), discriminated by the fact that packages/ is not the deployed surface installer charters -- installer would only be where the code sat, not what it serves."
+    },
+    "agents-config-9k9.23": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "project-config.toml's merge sections name resolve_policy.py, merge-guard and gate-triage as consumers, and merge-guard plus the completion/quality gate are charter-explicit review-and-merge assets. Runner-up prgroom under 3.3, because the item names S8's prgroom merge-eligibility evaluator as the future implementer; discriminated by 3.4's narrow reading of prgroom as the grooming corridor (monitor-pr, wait-for-pr-comments, reply-and-resolve) rather than everything about merging, and by the fact that two of the three decision options write no prgroom code at all."
+    },
+    "agents-config-9k9.133": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Textbook 3.2: a pure README prose sweep with zero behavioural delta, whose stale entries span merge-guard (review-and-merge), monitor-pr and wait-for-pr-comments (prgroom), ralf-* and whats-next (pipeline-discipline) -- multi-track editorial resolves to ops-meta."
+    },
+    "agents-config-9k9.112": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Deleting archive/ disposes of a tree spanning every track, and the item is gated on the re-admission queue reaching terminal verdicts -- inventory and milestone management. Runner-up pipeline-discipline, since the skills leaking into live sessions (orchestrated-grind, dispatching-subagents) are SDLC-engine assets; discriminated by the deliverable being a repo-wide tree deletion rather than a change to any one of those skills."
+    },
+    "agents-config-9k9.88": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The deliverable amends one of two conflicting rules -- the global authoring convention deployed to every user, or packages/gitclean/AGENTS.md -- so it spans two tracks and resolves to ops-meta under 3.2. Runner-up review-and-merge via 3.1, since the 11 flagged sites are gitclean docstrings; discriminated by the item's own triage, which records the conflict as repo-wide rule adjudication with gitclean merely where it first showed up measurably."
+    },
+    "agents-config-9k9.53.7.2.4": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "gitclean redesign implementation (GCR-A7 through A11: worktree exclusion from plans, explicit naming for remote deletion, salvage proven by restore) -- packages/gitclean, which inherits the track of sync-after-remote-merge, the post-merge teardown asset review-and-merge charters. Runner-up prgroom; discriminated by gitclean operating after the merge, outside the grooming corridor."
+    },
+    "agents-config-9k9.53.7.2": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Implementation container for the gitclean redesign spec (docs/specs/2026-07-28-gitclean-redesign.md); takes its children's track, packages/gitclean, homed with sync-after-remote-merge as above. Runner-up prgroom, same discriminator."
+    },
+    "agents-config-9k9.1.22": {
+      "track": "grind-runtime",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The duplication is grind's budget config keys and ATTEMPT_KINDS mirrored into the executor, and closing it needs a grind-side change; packages/contracts plus grind's own vocabulary is the locus. Runner-up pdlc-orchestrator on the reading that packages/executor is the FSM decision layer; discriminated by the executor here consuming grind's event/budget vocabulary rather than driving Objectives through a lifecycle, and by 3.1 preferring that locus over the parent epic."
+    },
+    "agents-config-9k9.69": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The same merge-authorization surface as 9k9.23: the gate the config presumes is merge-guard, charter-explicit in review-and-merge, and the fix is making project-config.toml agree with it. Runner-up prgroom via 3.3 (S8's evaluator is the eventual implementer); discriminated by the item scoping itself to the config/instruction disagreement rather than restoring the capability, which 9k9.64 holds."
+    },
+    "agents-config-9k9.57": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The [gates] block is read by the green-loop, quality-sweep and preflight stage orchestrators -- the formula/bead SDLC engine pipeline-discipline charters -- so under 3.3 the policy takes the track of the assets that consume it. Runner-up review-and-merge, since the misreporting surface is a test/quality gate; discriminated by the consumers being stage orchestrators that decide how work moves, not the completion gate."
+    },
+    "agents-config-9k9.41": {
+      "track": "grind-runtime",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Single unambiguous code locus under 3.1: packages/grind/pyproject.toml's fail_under plus the sentence in packages/grind/AGENTS.md that states the floor."
+    },
+    "agents-config-9k9.36": {
+      "track": "vizsuite",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The whole change is inside packages/vizsuite -- ~363 field/type/test occurrences plus TrackerPort's docstring -- and 'its data contracts' is charter-explicit for vizsuite. Runner-up workcli under 3.5's boundary-ownership rule, since the defect is about the tracker boundary; discriminated by the item's own finding that vizsuite already talks to the work facade correctly, leaving only vizsuite-internal vocabulary and prose to fix -- 3.5 owns the facade, not each consumer's naming."
+    },
+    "agents-config-9k9.1.14": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "whats-next is named in pipeline-discipline's charter by asset, and the work is the skill itself (collect.py, deleting brainstorm/planning modes, the in_flight audit). Porting it onto the work facade is a means, not the item; 3.5 gives workcli the facade, not every consumer that calls it, so the milestone ancestry under the grind executor epic loses to the asset under 3.1."
+    },
+    "agents-config-9k9.31": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=low)",
+      "why": "explain-diff (an HTML change-explainer, explicitly not review) and caveman (a communication mode) serve no functional track; the item's own framing is personal-preference admission records and early test cases for admit-request, i.e. governance of the deployed catalogue. Runner-up pipeline-discipline as the deployed agent-asset surface; neither is a good fit and this is the weakest assignment in the chunk."
+    },
+    "agents-config-9k9.18": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Code locus is packages/installer/core/namespaces.py -- the PRUNE and BACKUP namespace vocabulary -- which is installer's receipt/prune machinery verbatim."
+    },
+    "agents-config-9k9.3": {
+      "track": "prgroom",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "3.4's asset rule, applied against the purpose reading: the item implements docs/specs/2026-07-17-prgroom-preflight-gate.md inside the carved prgroom package (D13/S8), so the asset changed is prgroom's code. Runner-up review-and-merge, which charters merge-guard by name and is what the probe is for; discriminated by 3.4 deciding on asset touched rather than purpose, and by prgroom being merge-guard's preflight successor here."
+    },
+    "agents-config-9k9.121": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "A deferred test crossing gitclean's pairing relation with a newline worktree path; the item's own anchor note calls it gitclean work, and packages/gitclean is homed with sync-after-remote-merge, the post-merge teardown asset review-and-merge charters. Runner-up prgroom; same discriminator as the rest of the gitclean family."
+    },
+    "agents-config-9k9.117": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "gitclean's resolve_default_branch/resolve_base_ref hardcode 'origin', costing the published-HEAD merge-evidence tier -- packages/gitclean, homed with sync-after-remote-merge. Runner-up prgroom on a PR-corridor reading; discriminated by the code being post-merge branch classification, not PR grooming."
+    },
+    "agents-config-9k9.110": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=low)",
+      "why": "A session retrospective skill rerouted onto durable memory and the admission bar, to be judged against the D19 tripwire instruments -- operating-the-operation instrumentation rather than any functional track. Runner-up pipeline-discipline as the deployed agent-asset surface; discriminated by the item's remove-condition resting on the size/cost instruments, which is telemetry, but the fit is weak either way."
+    },
+    "agents-config-9k9.102": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "A repo-wide authoring-policy decision whose candidate remedies touch the shared conventions block, admit-request and writing-skills -- three assets across tracks, so 3.2's multi-track clause governs. Runner-up pipeline-discipline as owner of deployed agent instruction; discriminated by the item explicitly refusing to author a new always-on rule until it establishes why the existing convention fails, leaving no single implementing asset for 3.3 to point at."
+    },
+    "agents-config-9k9.98": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Code locus is .installignore and the staging/pruning path that ships a skill directory as one DIR item, plus content-lint's declaration role -- installer's per-tool projection and asset-compatibility charter. The sibling it may collapse into (9k9.96) is the same manifest."
+    },
+    "agents-config-9k9.75": {
+      "track": "grind-runtime",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Item.review's lifetime across pr_closed and item_enqueued.closure in grind's fold, plus status --full, the handoff projection and the dashboard -- 'pure FSM fold, CLI, dashboard projection' is grind-runtime's charter verbatim. The word 'review' names the payload, not the track."
+    },
+    "agents-config-9k9.45": {
+      "track": "workcli",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "~45 comments in packages/workcli's generic layer outside adapters/bd/; single-track editorial with zero behavioural delta, which under 3.2 takes the track of the asset it edits, and 3.5 puts the tracker boundary in workcli regardless."
+    },
+    "agents-config-9k9.5": {
+      "track": "workcli",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "A defect in the bd binary's own dolt server-lifecycle tracking, plus a runbook corroboration step -- 3.5 assigns bd defects and capability asks against the binary itself to workcli explicitly, alongside 1sso/f298/p3."
+    },
+    "agents-config-9k9.132": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Edits docs/primers/RULES_PRIMER.md, whose only subject is the admission gate implemented at packages/installer/src/installer/core/admission.py (GATED_NAMESPACES), and whose remove_when is 'a rule authored straight from it passes content-lint'. Runner-up ops-meta: it is zero-behaviour prose, but §3.2 sends editorial work to ops-meta only when it spans two or more tracks, and this primer documents the installer gate alone."
+    },
+    "agents-config-9k9.64": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The asset is merge-guard itself — the five-step flow, judge_merge.py, record_provenance.py, the approving-review mechanism and project-config.toml's merge sections — and 'merge-guard' is named verbatim in review-and-merge's charter. Runner-up prgroom, because the runnable eligibility evaluation it is gated on lands in the carved prgroom (S8/9k9.28); discriminated by §3.4's asset reading, which keeps prgroom to the grooming corridor rather than the merge decision."
+    },
+    "agents-config-9k9.1": {
+      "track": "grind-runtime",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "The epic is the event-sourced grind runtime by name (continues archived wgclw.30; append-only event log as source of truth with derived projections), matching grind-runtime's charter clause for clause, with code in packages/grind and packages/executor. Runner-up pdlc-orchestrator via the 'executor loop of the new pipeline' framing, but §3.6 separates those two by shipped-versus-planned mechanism and this package exists."
+    },
+    "agents-config-9k9.130": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Touches src/user/.claude/skills/review-panel/contracts.json and its per-lens transports — 'adversarial-QA assets, cross-model review passes' is review-and-merge's charter text. Runner-up ops-meta on its external-dependency clause (the codex CLI), but that clause covers adoption spikes rather than making a declared review transport executable."
+    },
+    "agents-config-9k9.17.12": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The archived agent's own front matter (archive/src/plugins/beads/.agents/agents/bead-verifier.md) describes it as collecting quality-gate evidence at completion gates and declares a verification-before-completion dependency; the completion/quality gate is review-and-merge's charter, and the re-admission is judged against review-panel's lenses. Runner-up pipeline-discipline, since its four siblings in that directory are worker-fleet agents tracked under 9k9.1.11 — discriminated by what this one agent does rather than where it was stored."
+    },
+    "agents-config-9k9.95": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Every named reader of src/ is installer code — build_plan's phases 1-5, overlay.overlay_plugins, PluginAdapter.routes, kits.stage_kits, and content-lint's _staged_dirs — and the remedy migrates four call sites on the installer's core staging path."
+    },
+    "agents-config-9k9.85": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Per §3.3 the policy takes the track of the asset that implements it: the prohibition must name the installer's real entry points (installer.cli.main(), install_pipeline, core.clis) and the sanctioned alternative is ScriptedCliDeploy. Runner-up ops-meta, since the edit is prose in root AGENTS.md and the fix asks for a sweep of neighbouring prohibitions; §3.2's bound keeps single-track editorial with its asset, and the defect named is installer-only."
+    },
+    "agents-config-9k9.53.7.2.3": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=low)",
+      "why": "Description is empty; resolved through the parent chain to 9k9.53 (gitclean CLI + clean-up-git skill), so the locus is packages/gitclean and the post-merge-cleanup skill — post-merge branch and worktree cleanup, the successor to review-and-merge's charter clause 'sync-after-remote-merge'. Runner-up prgroom, excluded by §3.4: gitclean is neither the prgroom package, monitor-pr, nor a superseded PR-corridor asset. Low, because no charter names gitclean and the vocabulary predates it."
+    },
+    "agents-config-9k9.17.10": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Changes ac-attack's attack-record.schema.json and SKILL.md to carry the per-lens vendor/transport/model fields its sibling 9k9.17.7 gave the review verdict, under the S6 review-contracts epic; ac-attack is an adversarial-QA asset, named in review-and-merge's charter. Runner-up pipeline-discipline on the reading that attacking criteria pre-implementation decides what work happens, but nothing in that charter's enumeration covers it."
+    },
+    "agents-config-9k9.78": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Audits the emitter under src/user/.claude/skills/review-panel/ against the defect family PR #403 fixed in ac-attack's — both are adversarial-QA/cross-model-review assets named in review-and-merge's charter."
+    },
+    "agents-config-9k9.66": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Zero-behaviour table edit to src/user/.agents/skills/AGENTS.md whose three stale rows span tracks — wait-for-pr-comments and reply-and-resolve-pr-threads are prgroom assets under §3.4, verify-checklist is a completion-gate asset under review-and-merge — so §3.2's spanning bound sends it to ops-meta. Runner-up prgroom on the two-of-three majority; discriminated by the fact that the edit is one registry, not one skill."
+    },
+    "agents-config-9k9.47": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "The gap is in always_on_violations and SKILL_BODY_TOKEN_CAP under packages/installer/src/installer/core/surface_budget.py, and the fix folds descriptions into the always-on total the installer measures per tool."
+    },
+    "agents-config-9k9.40": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "After the 2026-08-05 rescope only the receipt/prune claim survives, and it is a claim about packages/installer/src/installer/core/clis.py (RETIRED_CLIS is an empty tuple) — 'receipts, CLI deployment' is installer's charter text. Runner-up ops-meta as editorial repo hygiene, but the surviving half is single-track, so §3.2's bound keeps it with the installer."
+    },
+    "agents-config-9k9.1.18": {
+      "track": "grind-runtime",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The change is one field in packages/grind/src/grind/cli.py's JSON envelope, so §3.1's code locus decides. Runner-up workcli, whose {protocol, ok, data, error} shape is the model being copied — excluded by §3.5, which scopes workcli to ownership of the issue-tracker boundary, and grind's envelope is not that boundary."
+    },
+    "agents-config-9k9.1.13": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=low)",
+      "why": "The deliverable is one on-demand skill merging archive/src/user/.agents/skills/using-git-worktrees, .agents/rules/worktrees.md and .claude/rules/worktree-safety.md — agent isolation hygiene for implementation work, which is pipeline-discipline's 'how work moves' plus its container-hygiene clause. Runner-up grind-runtime, since the parent is the executor epic and the item routes its mechanical parts into S9 executor worktree code; §3.1 puts code locus over milestone ancestry and the artifact shipped here is the skill."
+    },
+    "agents-config-9k9.29": {
+      "track": "workcli",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Archives src/plugins/beads (a rule speaking raw bd in all nine bullets) and src/kits/beads (.beads/PRIME.md, a full bd priming surface) because workcli subsumes all agent interaction with beads under D11 — §3.5's boundary ownership, verbatim. Runner-up installer, since the acceptance work is verifying scan-based tolerance of absent dirs and receipt pruning; that is the verification step, not the deliverable."
+    },
+    "agents-config-9k9.17": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "The S6 epic itself: verdict artifact schema, class-specific review contracts, the AC-attack contract, bot identity for machine review actions, and a merge gate that requires the verdict artifact — the whole of review-and-merge's charter."
+    },
+    "agents-config-9k9.2": {
+      "track": "prgroom",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "One function, packages/prgroom/src/prgroom/lifecycle/poll.py::_ci_state, in the carved prgroom package. Runner-up review-and-merge, because the failure it names is false-green merge eligibility passing a red PR; §3.4 makes this the archetypal case where the asset reading wins over the purpose reading."
+    },
+    "agents-config-9k9.120": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=low)",
+      "why": "gitclean's survey layer (dropped_refs, dropped_worktrees, worktrees_framed in packages/gitclean), sibling to the other gitclean measurement-honesty items — post-merge cleanup, closest to review-and-merge's 'sync-after-remote-merge' clause. Runner-up prgroom, excluded by §3.4 since gitclean is not a PR-corridor asset. Low for the same reason as 9k9.53.7.2.3: no charter names gitclean."
+    },
+    "agents-config-9k9.115": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Verified in code at packages/installer/src/installer/core/deploy_gate.py:167-168 and surface_budget.py:29 — the skill-body cap has no commands-namespace branch. The doc side is admit-request's budget table, but the decision and the one-branch fix are both installer gate work."
+    },
+    "agents-config-9k9.109": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Re-admits archive/src/user/.agents/skills/improve-codebase-architecture/, a development-practice skill that surfaces refactoring work and cross-references grill-with-docs — it belongs to the discipline layer that decides what work happens, alongside the other work-shaping skills. Runner-up ops-meta; discriminated by the skill producing engineering work rather than running the operation, and by its upstream-sync provenance being a check on re-admission rather than its subject."
+    },
+    "agents-config-9k9.101": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Zero-behaviour front-matter sweep across three artifacts in different tracks — src/user/.claude/rules/delegation.md, skills/instructing-subagents/SKILL.md, and src/plugins/codex/.claude/skills/delegating-to-codex/SKILL.md — which is exactly §3.2's spanning condition. Runner-up installer, since the rule being restated is admit-request check 6 and the item asks whether anything mechanical should enforce it; it prefers the prose answer, so no installer code is in scope."
+    },
+    "agents-config-9k9.96": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "All five silencing channels are installer code — staged roots, per-parent namespaces, .installignore, UNGATED_ROOTS, BUILD_DIRS — and content-lint is the installer's gate over the staged tree."
+    },
+    "agents-config-9k9.73": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Deletes packages/installer/src/installer/plugins/beads.py and its _SPECIALIZED entry in registry.py, and asks whether the specialized-adapter mechanism itself should go — installer engine architecture. Runner-up workcli under §3.5's beads-boundary ownership; discriminated by the asset being dead installer plumbing rather than anything that talks to the tracker, which is what separates this from 9k9.29."
+    },
+    "agents-config-9k9.33": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Re-admits where-does-this-fit, an orientation skill that situates a work item in project goals and architecture — the same family as whats-next, named in pipeline-discipline's charter. Runner-up workcli, since the port replaces bd show/bd list with work facade verbs; discriminated by §3.5 giving workcli the facade itself, not every consumer that calls it, and the port being a migration step rather than the skill's purpose."
+    },
+    "agents-config-9k9.68": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Adds an 'exemption:' key to the installer's admission validation and undoes a hand-install that bypassed the installer's receipt system — admission gate and deployment plumbing, both packages/installer."
+    },
+    "agents-config-9k9.87": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The failing asset is the openrouter-claude-subagent transport (src/user/.claude/skills/openrouter-claude-subagent, its run.js repair proxy) in its role as the review panel's second vendor; review-and-merge's charter names cross-model review passes/dispatch explicitly. Runner-up ops-meta (external-dependency management) — discriminated because the broken code is a skill this repo ships and the guarantee at stake is the review contract's vendor diversity, not a third party's behaviour."
+    },
+    "agents-config-9k9.17.9": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Reassesses the review-panel contract itself — scope, responsibilities, per-lens instructions, the Mechanical/Advisory taxonomy and the round cap — i.e. src/user/.claude/skills/review-panel plus the review-verdict schema. Squarely the adversarial-QA/cross-model-review asset family."
+    },
+    "agents-config-9k9.25": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The asset is the handoff skill (src/user/.agents/skills/handoff) and the SAVEPOINTS practice — context surviving compaction and session handoff, which is how work moves rather than how it merges. Runner-up ops-meta, since half the item is a resync against the Pocock OSS upstream (external-dependency management); discriminated because the deliverable is a re-admission of a skill we ship, with the upstream resync as one change inside it."
+    },
+    "agents-config-9k9.138": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "src/user/.claude/settings.json.template hardcodes ~/.claude/hooks paths while the installer anchors every destination on the injected `home` in cli.py `_run`; the fix is either a template change or a deploy-time path rewrite. Template assembly and per-tool projection are the installer charter, and the item carries the `install` label."
+    },
+    "agents-config-9k9.128": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Both behaviours (the five-retry loop and recovery_not_run) live inside the compiled codex binary below our plugin's JavaScript, the remedy is upstream, and the spike's own closing condition is whether it is worth taking upstream — ops-meta's external-dependency-management clause. Runner-up review-and-merge, since codex is the declared transport for most panel lenses; discriminated by locus: no asset in this repo changes."
+    },
+    "agents-config-9k9.17.11": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Re-admits dispatching-bare-subagents specifically as the D7 context-stripped review seat, and the item's own instruction is to re-aim the description off the general second-opinion framing onto that seat. Runner-up pipeline-discipline (the mechanism is bare-subagent dispatch, and the live counterparts named are instructing-subagents and choosing-a-delegate); discriminated because the capability is only justified by the review contract that needs an uncontaminated reviewer."
+    },
+    "agents-config-9k9.93": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "content_lint_cli.main and core/content_lint.py both live in packages/installer/src/installer/, and the fix is a staged-item count plus a per-root existence contract inside that gate. Unambiguous code locus."
+    },
+    "agents-config-9k9.83": {
+      "track": "workcli",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "The string is authored at packages/workcli/src/workcli/adapters/bd/parse.py:405 and the defect is adapter error text crossing the facade's quarantine boundary into the generic envelope — §3.5's issue-tracker boundary, owned by workcli whichever consumer relays it."
+    },
+    "agents-config-9k9.53.7.2.2": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=low)",
+      "why": "Description is empty; decided from the parent chain (9k9.53.7.2 is the gitclean-redesign impl container under docs/specs/2026-07-28-gitclean-redesign.md), so the asset is packages/gitclean's verdict model. No track names gitclean, and review-and-merge is the closest by charter because it owns sync-after-remote-merge, the archived post-merge-hygiene skill that gitclean and post-merge-cleanup supersede — §3.4's rule that a superseded asset shares a track with its successor. Runner-up prgroom, ruled out because §3.4 lists prgroom's assets exhaustively and gitclean is not among them."
+    },
+    "agents-config-9k9.82": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Amends the shared AC-writing guidance carried by grilling, grill-with-docs and to-spec under the S5 spec contract — the spec-readiness gate that decides what work is admitted and how it is shaped, and the successor of the brainstorm skill named in pipeline-discipline's charter. Runner-up review-and-merge, since the cost driver is review rounds and the sibling ac-attack contract is a review asset; discriminated because the item's own placement note rules the change into authoring discipline, not review or dispatch."
+    },
+    "agents-config-9k9.74": {
+      "track": "workcli",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Decides whether the harness may reach past the `work` facade into bd — §3.5's integration boundary, which workcli owns by definition, and the item is gated on the remaining facade gaps closing. Runner-up ops-meta because the change is a paragraph of root AGENTS.md prose; ruled out by §3.2, which allows ops-meta editorial work only when it spans two or more tracks, and this touches one."
+    },
+    "agents-config-9k9.65": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "What actually changes is management of a third-party tool's output — tracked-vs-untracked graphify-out, a 0.7.0-to-0.9.27 upgrade, hook installation, .graphifyignore/.claudeignore and the PreToolUse nag — which is ops-meta's external-dependency-management clause. Runner-up vizsuite, whose charter covers knowledge-graph data contracts and whose `viz pr` centrality axis the notes identify as the real consumer; discriminated by §3.1 code locus, since the vizsuite change is one docstring while every other edit lands on repo-level config and rules."
+    },
+    "agents-config-9k9.44": {
+      "track": "workcli",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "A projection defect in the `work` facade's list-shaped verbs — search reporting parent null where show reports the true parent — fixed inside packages/workcli. Direct code locus on the tracker boundary."
+    },
+    "agents-config-9k9.39": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Moves lens expertise out of review-panel's contracts.json into dedicated or imported skills; the asset is the review-panel contract set, which is the adversarial-QA/cross-model-review family."
+    },
+    "agents-config-9k9.1.16": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Re-admits writing-unit-tests as the tautology filter for D4/D5 scaffold review — charter slice S7's scaffold pipeline, i.e. the work-execution loop, not the PR corridor. Runner-up review-and-merge, since a scaffold-review check is a review contract; discriminated because the gate sits inside the worker loop before a PR exists, whereas review-and-merge owns the gates around the corridor."
+    },
+    "agents-config-9k9.1.11": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The assets are worker agent definitions (tdd-red/green, bug-diagnoser, docs-edits-team), and pipeline-discipline's charter names worker-fleet agents and dispatch outright. Runner-up grind-runtime via the 9k9.1 executor-loop parent; discriminated by §3.1 code locus, since the change is agent prose plus a report contract, and touches none of grind's event schema, append log or FSM fold."
+    },
+    "agents-config-9k9.17.5": {
+      "track": "prgroom",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Defines contracts, not code — the item says gate evaluation code is S8, and the charter's S8 prgroom carve is where the verdict harvester and merge-eligibility evaluation land, with App-identity posting and escalation typing riding prgroom's retained gh client. §3.3 sends a policy item to the asset that will implement it, and §3.4 decides this pair by asset. Runner-up review-and-merge, which owns merge gates by purpose and is the reading the S6 parent invites; the asset reading decides it the other way."
+    },
+    "agents-config-9k9.13": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Surviving scope is two prose sites — README.md's src/ file tree and templates block, and docs/guide/configuration.md's first configure step — both describing the template set and @-include composition, which is the install engine's surface. Runner-up ops-meta, since the work is purely editorial; ruled out by §3.2's bound, which reserves ops-meta for editorial work spanning two or more tracks and sends single-track editorial to the asset's own track."
+    },
+    "agents-config-9k9.136": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Decides a repo-wide authoring convention stated in root AGENTS.md and applying to every artifact's comments and docstrings — editorial with zero behavioural delta and spanning tracks, which is exactly §3.2's ops-meta case. Runner-up is whichever track owns gitclean (review-and-merge here), since the observed findings and any resulting sweep sit in packages/gitclean; discriminated because the item scopes itself as the decision, not the sweep."
+    },
+    "agents-config-9k9.1.24": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Baselines three orchestration sections — decompose-or-decline, the nesting/decision ladder, monitoring doctrine — destined for the delegate-selection skill, which is dispatch discipline and named in pipeline-discipline's charter as worker-fleet dispatch. Runner-up ops-meta, because choosing-a-delegate also carries model-routing economics; discriminated because all three candidate sections govern decomposition and monitoring of delegated work, not cost or routing."
+    },
+    "agents-config-9k9.114": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Scope is explicitly evaluation-only — snapshot github/gh-stack into oss-snapshots/ at a pinned commit and run the admission gate, default DECLINE — which is ops-meta's adoption-spike and external-dependency clause, and the open questions are prime-directive and merge-policy judgements. Runner-up prgroom, since an admitted gh-stack skill would be a PR-corridor asset; discriminated because nothing deploys unless the gate admits it, so there is no prgroom asset yet."
+    },
+    "agents-config-9k9.17.13": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Re-admits test-review as a class-specific review contract, converting its rubric to the live review-verdict Mechanical/Advisory shape and reconciling with 9k9.39's lens extraction — the same review-panel/review-verdict asset family."
+    },
+    "agents-config-9k9.100": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The cost: field is enforced by _REQUIRED_FIELDS in packages/installer/src/installer/core/admission.py, where a malformed block aborts the deploy, so any outcome but keep-as-is is a change to that gate. Runner-up ops-meta, since it is also a front-matter convention touching every admitted artifact; discriminated by §3.2, which requires zero behavioural delta for the ops-meta editorial route, and changing the gate's required fields is behavioural."
+    },
+    "agents-config-9k9.1.23": {
+      "track": "grind-runtime",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Reconciles S9T1-D11's error set with what packages/executor shipped; the executor is the D14 re-aim of the grind runtime as the pipeline executor loop, and its 9k9.1 parent carries that title. Runner-up pdlc-orchestrator, the other FSM-lifecycle track; discriminated because packages/pdlc is a separate design corpus and this error surface is the executor's own. Rated medium because no charter names packages/executor, so the decision leans on D14 lineage rather than a charter-named locus."
+    },
+    "agents-config-9k9.61": {
+      "track": "workcli",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "A defect in `work park`'s idempotent re-park path — the marker note is never repaired after a partial park — fixed in the facade's verb implementation. Direct code locus on the tracker boundary."
+    },
+    "agents-config-9k9.12": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "A parked, not-admitted candidate sourced from an external Cursor article, whose admission trigger is the D19/S10 size-distribution instruments — adoption spike plus telemetry, both named in ops-meta's charter. Runner-up pipeline-discipline, since the candidate includes a decomposition dispatch of worker agents; discriminated because nothing is admitted and the deliverable is a watched signal on the instruments."
+    },
+    "agents-config-9k9.21": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "GATED_NAMESPACES in packages/installer/src/installer/core/admission.py omits the workflows namespace, so the change is to the installer's admission gate plus a disposition call on the artifact it lets through. Unambiguous code locus."
+    },
+    "agents-config-9k9.86": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The degraded asset is the review-panel lens round -- an adversarial-QA/cross-model review pass, both named in review-and-merge's charter -- and the item's own triage anchors it to the review tooling rather than to gitclean. Runner-up ops-meta, whose claim rests on the openrouter-claude-subagent launcher (the prior pass sent that skill to ops-meta for its model-routing table); rejected because the defect is the review round losing evidentiary standing, not routing or cost."
+    },
+    "agents-config-9k9.59": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Code locus verified in the tree: cli._run's stage_and_transform -> run_admission_gate ordering (packages/installer/src/installer/cli.py:288,358), AppendRulesStrategy staging, and sanitize's leading-fence split are all install-engine plumbing (core/deploy_gate.py:126)."
+    },
+    "agents-config-9k9.24": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "review-and-merge's charter names sync-after-remote-merge outright, and the asset is archive/src/user/.claude/skills/sync-after-remote-merge; the prior pass sent the same post-merge-cleanup family there (merge-and-cleanup skill, 'codify post-merge cleanup rules')."
+    },
+    "agents-config-9k9.118": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The change lands in src/user/.agents/skills/writing-skills/references/testing-methodology.md, and the only prior decision on writing-skills content went to pipeline-discipline (the ops-meta writing-skills item was a pure adopt-or-not verdict on a competing upstream skill). Runner-up ops-meta, discriminated by section 3.2's bound: this carries behavioural delta inside one asset, so it is not editorial hygiene spanning two tracks."
+    },
+    "agents-config-9k9.106": {
+      "track": "ops-meta",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Same asset as the prior pass's 'Five-class memory routing taxonomy -- replace 2-tier memory-routing.md', which was decided ops-meta; the file re-admitted here is archive/src/user/.agents/rules/memory-routing.md. Runner-up pipeline-discipline (a memory-lifecycle item went there), discriminated by asset identity -- the ops-meta precedent names this exact file."
+    },
+    "agents-config-9k9.90": {
+      "track": "installer",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "content-lint is installer code (packages/installer/src/installer/content_lint_cli.py with core/installignore.py), and the fix is its filesystem traversal agreeing with git's ignore rules. section 3.1 code-locus beats the CI-hygiene reading that would have pulled it to ops-meta, whose CI precedent covered workflow configuration rather than package code."
+    },
+    "agents-config-9k9.53.7.2.5": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=low)",
+      "why": "Description is empty; decided entirely from ancestry -- parent chain runs 9k9.53.7.2 [Impl] -> 9k9.53.7 'gitclean redesign child spec' -> 9k9.53 'gitclean CLI + clean-up-git skill', so it inherits gitclean's post-merge-cleanup track. Rated low because the item carries no evidence of its own; runner-up pipeline-discipline on the same weak grounds as the other gitclean rows."
+    },
+    "agents-config-9k9.53.7.2.1": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Title names the gitclean test harness (a reachability oracle over packages/gitclean's mutating tests), so it takes gitclean's track alongside 9k9.134/.135/.119. Runner-up pipeline-discipline, rejected for the same reason: no bead-SDLC asset is touched."
+    },
+    "agents-config-9k9.81": {
+      "track": "prgroom",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "section 3.3 policy item -- it edits AGENTS.md prose, so it takes the track of the asset that implements it, and the mechanism it defines (poll pulls/<n>/comments and /reviews plus issues/<n>/comments, match original_commit_id) is precisely the corridor section 3.4 assigns to prgroom through wait-for-pr-comments and the S8 verdict harvester; the prior pass also put '.prgroom.toml quiescence config' in prgroom. Runner-up review-and-merge on the completion-gate reading, rejected because section 3.4 decides this pair by asset, not purpose."
+    },
+    "agents-config-9k9.72": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=low)",
+      "why": "Hardens src/user/.claude/hooks/ruff-postedit_test.sh; the hook is an authoring-time guardrail whose own docstring defers real enforcement to the CI gate, so it is implementation discipline rather than a completion gate. No charter names lint hooks, hence low. Runner-up review-and-merge (the quality-gate reading), discriminated by when the asset fires -- per edit during authoring, not at PR or merge; installer was rejected because it owns the install engine, not the content it deploys."
+    },
+    "agents-config-9k9.17.4.1": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Parent is 9k9.17.4 'S6-C: AC-attack skill', a slice of charter S6 'Review contracts', and the ac-attack record checker is an adversarial-QA asset named in review-and-merge's charter. Runner-up pipeline-discipline, where the prior pass put AC-handling items -- discriminated by asset: those changed the brainstorm-bead formula, this changes the review-contract skill's checker."
+    },
+    "agents-config-9k9.43": {
+      "track": "workcli",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "section 3.5 boundary ownership plus code locus: the dangling pointer is project-config.toml's groom-state key read by the `work groom` verb, and the missing item was minted by the track-backfill migration the prior pass assigned to workcli (agents-config-jpn0s, 'one-shot supervised labeling + groom-state bead mint'). Runner-up ops-meta -- the item calls itself a grooming-discipline gap, not a workcli defect -- rejected because all three remedies it lists change the facade's config key or its consumer."
+    },
+    "agents-config-9k9.38": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "The change is a bounded retry/backoff mechanism inside review-panel's own tooling, an adversarial-QA asset the review-and-merge charter names directly; no other track owns lens dispatch."
+    },
+    "agents-config-9k9.1.15": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The bytes changed are archive/src/user/.agents/skills/test-driven-development, a shared implementation-discipline skill being re-admitted and cut to the body cap. Runner-up grind-runtime by ancestry -- parent 9k9.1 is 'Executor loop: re-aim event-sourced grind runtime', continuing archived wgclw.30 which the prior pass assigned grind-runtime -- rejected under section 3.1, code-locus over milestone ancestry."
+    },
+    "agents-config-9k9.32": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Re-admits archive/src/user/.agents/skills/triaging-discovered-work and absorbs the discovered-work rule; the prior pass split this exact pair the same way -- 'Class C: migrate triage/create skills onto work discover' went to pipeline-discipline while 'workcli: work discover verb' went to workcli. Runner-up workcli under section 3.5, discriminated by the skill/verb line: porting a skill onto facade verbs consumes the boundary, it does not own it."
+    },
+    "agents-config-9k9.22": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Amends the spec-authoring contract shipped by charter slice S5 'Spec contract' (grilling/to-spec plus spec lint), the upstream spec-readiness discipline the prior pass routed to pipeline-discipline (brainstorm-readiness gate, spec-quality items). Runner-up review-and-merge, whose claim is the item's stated purpose -- giving review lenses declared ACs to judge -- rejected as a purpose reading where section 3.4's lesson requires an asset reading."
+    },
+    "agents-config-9k9.4": {
+      "track": "prgroom",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "Changes GhCli.rest in the retained gh client of packages/prgroom under the S8 prgroom carve (D13); the prgroom package is the charter's code locus for that track."
+    },
+    "agents-config-9k9.135": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Locus verified: packages/gitclean/src/gitclean/classify.py pairing construction (counterpart_worktree:83, counterpart_upstream:109, worktree_pairing:147), so it takes gitclean's post-merge-cleanup track. Runner-up pipeline-discipline, rejected as with the other gitclean rows -- no bead-SDLC asset is involved."
+    },
+    "agents-config-9k9.119": {
+      "track": "review-and-merge",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "gitclean trunk discovery in packages/gitclean, the same asset and therefore the same track as 9k9.134/.135. Runner-up pipeline-discipline, rejected on the same grounds; the item is a capability limit in the sweep tool, not a change to how work moves."
+    },
+    "agents-config-9k9.111": {
+      "track": "workcli",
+      "provenance": "per-item-assessment-2026-08-05(confidence=high)",
+      "why": "The item states its own locus: package work in packages/workcli as a report verb with a facade JSON envelope, explicitly not an admission into src/, and it turns on closing a recorded facade gap -- section 3.5 boundary ownership."
+    },
+    "agents-config-9k9.107": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "Re-admits archive/src/user/.agents/skills/prototype, a pre-spec design skill; the prior pass routed the brainstorm/design-phase asset family to pipeline-discipline. Runner-up ops-meta, which fits the item's second sub-task (resync-or-divorce against the Pocock upstream) as external-dependency management -- rejected because the admission of a design-phase skill is the item's primary act and the drift policy is one clause of three."
+    },
+    "agents-config-9k9.1.21": {
+      "track": "workcli",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The whole deliverable is one test in packages/workcli mirroring test_park.py's redispatch no-op, pinning workcli's abandon verb over the shared _unpark, with no production change. Runner-up grind-runtime by ancestry (parent 9k9.1 is the executor-loop epic continuing archived wgclw.30, assigned grind-runtime last pass); section 3.1 code-locus decides for workcli."
+    },
+    "agents-config-9k9.46": {
+      "track": "workcli",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "scripts/track-backfill/ is the one-time bead-data migration tooling section 3.5 names as workcli's, and the prior pass assigned that migration to workcli (agents-config-jpn0s). Runner-up ops-meta, since archive-vs-maintain reads as repo hygiene -- rejected by section 3.2's bound: the decision spans a single track's asset, so it takes that asset's track."
+    },
+    "agents-config-9k9.11": {
+      "track": "pipeline-discipline",
+      "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
+      "why": "The proposed asset is a worker-agent contract plus executor-loop wiring, which pipeline-discipline's charter covers as worker-fleet agents and dispatch. Runner-up review-and-merge, which owns anything merge-shaped by purpose -- rejected under section 3.4's asset-over-purpose discriminator: this is not one of the gates (merge-guard, completion gate, adversarial-QA) but a worker that edits branches."
+    }
   }
- },
- "reconciled_against_lint": 366,
- "schema": "track-backfill-assignment-v1"
 }
