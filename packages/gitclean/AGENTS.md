@@ -66,7 +66,12 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   not zero, clean, or absent. Defaulting an unanswered question to the
   convenient value turns each transient git failure into data loss, so unknowns
   render as a stated unknown on that target's own row. If you add a read, add
-  its `None` path with it.
+  its `None` path with it. The one thing that suppresses such a sentence is
+  another tier having already answered the same question — the tiers are
+  independent reads, so a failed count sits happily beside authoritative merge
+  proof, and printing both leaves a row that calls the merge unproven next to
+  the decision to sweep it. Suppress only the question that was answered: a
+  proven merge says nothing about whether the work was pushed.
 - **A relation the report states is a field, never a sentence.** A worktree, the
   branch it holds and that branch's copy on the server are one thing with two or
   three parts, and a reader deciding about one has to see the others. Those

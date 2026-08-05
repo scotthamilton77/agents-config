@@ -7,9 +7,17 @@ report is measurement, and measurement is the survey's business."""
 
 from __future__ import annotations
 
+import pytest
 from conftest import iso, make_branch, make_pr, make_survey, make_worktree
 
-from gitclean.classify import classify, classify_branch, classify_worktree, pairing_index, trunk
+from gitclean.classify import (
+    MERGE_PROOF,
+    classify,
+    classify_branch,
+    classify_worktree,
+    pairing_index,
+    trunk,
+)
 from gitclean.model import Counterpart, MergeEvidence, Survey, Target
 
 # A commit no fixture's trunk sits on, for the cases that must not collide with
@@ -159,6 +167,35 @@ def test_an_uncounted_unmerged_total_never_yields_the_sweep() -> None:
     target = _one(branch)
     assert not target.sweepable
     assert any("merge state unproven" in reason for reason in target.reasons)
+
+
+@pytest.mark.parametrize("evidence", sorted(MERGE_PROOF, key=str), ids=lambda e: e.value)
+def test_a_swept_row_never_calls_its_own_merge_unproven(evidence: MergeEvidence) -> None:
+    """The count probe and the tier that proved this merge are independent
+    reads, so a failure of the first says nothing about the second. Printed
+    beside `merge proven by ...` on a row the sweep is taking, the unknown
+    contradicts the decision printed with it, and a reader has no way to tell
+    which half to believe. Asked of every tier because each one reaches this
+    row by its own path."""
+    branch = make_branch(head=ELSEWHERE, merge_evidence=evidence, unmerged_commits=None)
+    target = _one(branch)
+    assert target.sweepable
+    assert not any("merge state unproven" in r for r in target.reasons)
+
+
+def test_a_proven_merge_does_not_silence_the_unpushed_unknown() -> None:
+    """Only the merge sentence is made redundant by merge proof. A merge says
+    these commits reached the base ref and nothing at all about whether this
+    branch's upstream has them, so suppressing both would drop a fact that is
+    still true -- and the row would then read as though the push had been
+    measured."""
+    branch = make_branch(
+        head=ELSEWHERE,
+        merge_evidence=MergeEvidence.PR_MERGED,
+        unmerged_commits=None,
+        unpushed_commits=None,
+    )
+    assert any("nothing proves these commits are pushed" in r for r in _one(branch).reasons)
 
 
 def test_an_uncounted_unpushed_total_is_stated_as_unknown() -> None:
