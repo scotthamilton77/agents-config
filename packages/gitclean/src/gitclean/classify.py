@@ -17,7 +17,10 @@ human naming it deletes it.
 ``None`` is a question git declined to answer; it renders as a stated unknown
 on that target's own row instead of resolving to the convenient value. The rule
 is one-directional on purpose: it costs the occasional branch left uncleaned,
-and the alternative costs work.
+and the alternative costs work. Where it stops is the unknown that nothing
+turns on: a question another tier has already answered is not restated as open
+beside that answer, because a row saying both is wrong whichever half a reader
+believes.
 
 One thing here is not judgement: ``Counterpart``. It restates a relation the
 survey already read -- which worktree holds which branch, which branch tracks
@@ -196,15 +199,28 @@ def worktree_pairing(worktree: Worktree, index: PairingIndex) -> tuple[Counterpa
     )
 
 
-def unanswered_probes(branch: Branch, base_ref: str) -> tuple[str, ...]:
+def unanswered_probes(branch: Branch, base_ref: str, *, proven: bool) -> tuple[str, ...]:
     """Reasons naming each count the read layer could not obtain.
 
-    Kept beside the measurements rather than folded into the sweep rule so the
-    audit trail cannot drift from the behaviour: a branch whose merge count
-    never came back carries ``MergeEvidence.NONE``, which is exactly what the
-    first question refuses."""
+    Kept beside the measurements rather than folded into the sweep rule, so
+    each unknown renders on the row of the branch it was missing from while
+    the sweep goes on deciding from the evidence tier.
+
+    The merge sentence is suppressed once something else proved the merge. An
+    unanswered count does not imply ``MergeEvidence.NONE``: the tiers are
+    independent reads -- a pull request is answered by the forge, this count by
+    `rev-list` -- so a branch can carry authoritative proof while that one
+    probe failed, and the row would then call the merge unproven beside the
+    tier that proved it. The unknown that can withhold a deletion is one in the
+    tier authorising it, and this is not that; what is dropped here changed no
+    outcome and contradicted the proof next to it.
+
+    The unpushed sentence is not suppressed on those grounds and must not be. A
+    merge proves these commits reached the base ref; it says nothing about
+    whether this branch's own upstream ever received them, so that unknown
+    stays true beside any proof and stays worth saying."""
     unknown: list[str] = []
-    if branch.unmerged_commits is None:
+    if branch.unmerged_commits is None and not proven:
         unknown.append(f"could not count commits missing from {base_ref}; merge state unproven")
     if branch.upstream is not None and branch.unpushed_commits is None:
         unknown.append(
@@ -412,7 +428,7 @@ def classify_branch(
                 )
             if branch.unpushed_commits:
                 reasons.append(f"{branch.unpushed_commits} commit(s) not on {branch.upstream}")
-    reasons.extend(unanswered_probes(branch, survey_data.base_ref))
+    reasons.extend(unanswered_probes(branch, survey_data.base_ref, proven=proven))
     reasons.extend(branch.probe_failures)
 
     withheld = withheld_reason(
