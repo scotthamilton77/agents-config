@@ -1,8 +1,9 @@
-"""Tests for salvage, deletion, and verification.
+"""Tests for salvage, deletion, and what a deletion reports.
 
-The interesting cases are the ones where git reports success and the thing is
-still there. A tool that trusts exit codes cannot tell those from real
-successes, which is why every deletion re-asks."""
+The interesting cases are the ones where git and this tool could disagree
+about what happened. For anything git deletes here, git's own account is the
+report; the exception is a ref on a server, which a zero exit does not settle,
+so those tests are about the second read of the remote."""
 
 from __future__ import annotations
 
@@ -93,37 +94,23 @@ def test_dry_run_announces_no_salvage_for_a_local_branch() -> None:
 # -- local branch ------------------------------------------------------------
 
 
-def test_branch_deletion_is_verified_by_re_asking_git() -> None:
-    port = ScriptedCommands(
-        git={
-            "branch -D -- feat/x": ok(),
-            "for-each-ref --format=%(refname) refs/heads/feat/x": ok(""),
-        }
-    )
+def test_a_branch_delete_git_performed_is_reported_as_done() -> None:
+    """One question, and its answer is the outcome. The scripted port raises on
+    anything it was not given, so a run that asked a second question about the
+    ref would fail here rather than pass quietly."""
+    port = ScriptedCommands(git={"branch -D -- feat/x": ok()})
     report = run(port, plan(target(TargetKind.BRANCH, "feat/x")))
     assert report.ok
+    assert report.deletions[0].deleted
     assert report.deletions[0].verified
+    assert report.deletions[0].detail == "local ref deleted"
 
 
-def test_a_ref_surviving_a_successful_delete_is_an_anomaly() -> None:
-    """`git branch -D` exited 0 and the ref is still there. Reporting success
-    here is how cleanup silently does nothing."""
-    port = ScriptedCommands(
-        git={
-            "branch -D -- feat/x": ok(),
-            "for-each-ref --format=%(refname) refs/heads/feat/x": ok("refs/heads/feat/x"),
-        }
-    )
-    report = run(port, plan(target(TargetKind.BRANCH, "feat/x")))
-    assert not report.ok
-    assert report.anomalies[0].stage == "verify"
-    assert not report.deletions[0].deleted
-
-
-def test_a_broken_ref_probe_is_unverified_not_deleted() -> None:
-    """`show-ref --verify` cannot express this: it exits nonzero both when the
-    ref is absent and when the command failed, so a fatal error read as a
-    successful deletion. `for-each-ref` exits 0 and answers in stdout."""
+def test_a_ref_probe_that_would_not_answer_costs_the_deletion_nothing() -> None:
+    """The case that earned the removal of the second question. It ran after a
+    successful `branch -D`, and a git that would not answer it turned a
+    deletion that had happened into a row saying it had not -- which sends a
+    caller to re-run, or to raw git, over work already done."""
     port = ScriptedCommands(
         git={
             "branch -D -- feat/x": ok(),
@@ -131,10 +118,25 @@ def test_a_broken_ref_probe_is_unverified_not_deleted() -> None:
         }
     )
     report = run(port, plan(target(TargetKind.BRANCH, "feat/x")))
-    assert not report.ok
-    assert not report.deletions[0].deleted
-    assert report.deletions[0].detail == "deletion unverified"
-    assert "bad repository" in "\n".join(report.anomalies[0].transcript)
+    assert report.ok
+    assert report.deletions[0].deleted
+    assert report.deletions[0].detail == "local ref deleted"
+
+
+def test_a_ref_that_would_still_resolve_is_not_re_adjudicated() -> None:
+    """What taking git at its word costs, stated rather than left to be found.
+    The ref list would still show this branch, and nobody asks it: `branch -D`
+    said what it did and that is the report."""
+    port = ScriptedCommands(
+        git={
+            "branch -D -- feat/x": ok(),
+            "for-each-ref --format=%(refname) refs/heads/feat/x": ok("refs/heads/feat/x"),
+        }
+    )
+    report = run(port, plan(target(TargetKind.BRANCH, "feat/x")))
+    assert report.ok
+    assert report.deletions[0].deleted
+    assert not any("for-each-ref" in call for call in port.transcript)
 
 
 def test_a_failed_delete_carries_the_command_transcript() -> None:
@@ -153,19 +155,29 @@ def test_a_failed_delete_carries_the_command_transcript() -> None:
 # -- worktree ----------------------------------------------------------------
 
 
-def test_worktree_removal_is_verified_against_the_listing() -> None:
-    port = ScriptedCommands(
-        git={
-            "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok(porcelain("worktree /repo\nHEAD abc\n")),
-        }
-    )
+def test_a_worktree_removal_git_performed_is_reported_as_done() -> None:
+    """`worktree remove` reporting success is the outcome, and the port raises
+    on any question this does not script -- so a run that went back to the
+    worktree listing afterwards would fail here."""
+    port = ScriptedCommands(git={"worktree remove -- /repo/wt": ok()})
     report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
     assert report.ok
+    assert report.deletions[0].deleted
     assert report.deletions[0].verified
+    assert report.deletions[0].detail == "worktree removed"
 
 
-def test_worktree_still_listed_after_removal_is_an_anomaly() -> None:
+def test_a_removal_is_not_re_checked_against_a_listing() -> None:
+    """The listing is not consulted after a removal git said it performed, and
+    that settles four cases at once rather than one per listing defect.
+
+    Each of them was a way for the confirmation to fail to confirm something
+    that had happened: a listing that would not run, one that lost a record to
+    a truncation, one whose framing could not spell the path being looked for,
+    and one that answered with the worktree still in it. Three reported a
+    removal that happened as one that had not. The fourth is the case the
+    check existed for, and the price of losing it is stated here rather than
+    hidden: git said the tree is gone, and the report says so."""
     port = ScriptedCommands(
         git={
             "worktree remove -- /repo/wt": ok(),
@@ -173,86 +185,24 @@ def test_worktree_still_listed_after_removal_is_an_anomaly() -> None:
         }
     )
     report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
-    assert not report.ok
-    assert report.anomalies[0].stage == "verify"
-
-
-def test_a_worktree_whose_path_holds_a_newline_is_verified_against_the_whole_path() -> None:
-    """The removal reported success and the worktree is still listed, which is
-    the case this verification exists for. Split the listing on newlines and
-    the path being looked for spans two lines, so the survivor matches nothing
-    and the run reports the deletion verified -- git's own output disproving
-    the claim, unread."""
-    path = "/repo/we\nird"
-    port = ScriptedCommands(
-        git={
-            f"worktree remove -- {path}": ok(),
-            "worktree list --porcelain": ok(
-                porcelain("worktree /repo\n\n") + f"worktree {path}\0\0"
-            ),
-        }
-    )
-    report = run(port, plan(target(TargetKind.WORKTREE, path)))
-
-    assert not report.ok
-    assert report.anomalies[0].stage == "verify"
-    assert not report.deletions[0].deleted
-
-
-def test_a_worktree_listing_that_lost_a_record_cannot_verify_a_removal() -> None:
-    """On a git with no NUL framing, a block whose keys say a path was cut
-    short is dropped -- so the worktree just removed may be exactly the one
-    missing from the listing. Absence from a listing that lost something is not
-    evidence, the same way absence from one that never ran is not."""
-    port = ScriptedCommands(
-        git={
-            "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain -z": fail("error: unknown switch `z'", code=129),
-            "worktree list --porcelain": ok("worktree /repo\n\nworktree /repo/we\nird\n"),
-        }
-    )
-    report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
-
-    assert not report.ok
-    assert report.deletions[0].detail == "deletion unverified"
-
-
-def test_an_unframed_listing_cannot_confirm_a_newline_path_is_gone() -> None:
-    """`worktree remove` reported success, and the listing that would show a
-    survivor cannot spell this path. Absence from it is not evidence, the same
-    way absence from a listing that lost a record is not."""
-    path = "/repo/we\nbare"
-    port = ScriptedCommands(
-        git={
-            f"worktree remove -- {path}": ok(),
-            "worktree list --porcelain -z": fail("error: unknown switch `z'", code=129),
-            "worktree list --porcelain": ok("worktree /repo\n"),
-        }
-    )
-    report = run(port, plan(target(TargetKind.WORKTREE, path)))
-
-    assert not report.ok
-    assert report.deletions[0].detail == "deletion unverified"
-
-
-def test_an_unframed_listing_still_confirms_an_ordinary_path_is_gone() -> None:
-    """The narrowing that keeps the rule affordable. A truncation shortens a
-    path at a newline and corrupts only the block it falls inside -- records are
-    grouped by the empty record between them -- so a path with no newline in it
-    cannot be the truncated one and cannot be hidden by another's truncation.
-    Refusing to confirm every removal on a git without `-z` would make an
-    anomaly of each one and buy nothing."""
-    port = ScriptedCommands(
-        git={
-            "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain -z": fail("error: unknown switch `z'", code=129),
-            "worktree list --porcelain": ok("worktree /repo\n\nworktree /repo/we\nbare\n"),
-        }
-    )
-    report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
 
     assert report.ok
-    assert report.deletions[0].verified is True
+    assert report.deletions[0].deleted
+    assert not any("list" in call for call in port.transcript)
+
+
+def test_a_worktree_path_holding_a_newline_reaches_git_whole() -> None:
+    """A path may contain a newline, and every hazard that creates is about
+    reading it back out of git's output. The removal itself takes the path as
+    one argument, so it is handed over whole."""
+    path = "/repo/we\nird"
+    port = ScriptedCommands(git={f"worktree remove -- {path}": ok()})
+    report = run(port, plan(target(TargetKind.WORKTREE, path)))
+
+    assert report.ok
+    assert report.deletions[0].deleted
+    removal = next(call for call in port.transcript if call[:3] == ("git", "worktree", "remove"))
+    assert removal[-1] == path
 
 
 def test_a_worktree_is_never_removed_with_force() -> None:
@@ -261,12 +211,7 @@ def test_a_worktree_is_never_removed_with_force() -> None:
     and overriding them means re-implementing in Python what git has just read
     off the disk. Naming a target authorises the deletion; it does not make
     this process a better judge of that directory than git is."""
-    port = ScriptedCommands(
-        git={
-            "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
-        }
-    )
+    port = ScriptedCommands(git={"worktree remove -- /repo/wt": ok()})
     run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
 
     removal = next(call for call in port.transcript if call[:3] == ("git", "worktree", "remove"))
@@ -305,51 +250,25 @@ def test_removing_a_worktree_prunes_nothing() -> None:
     """`worktree prune` destroys the administrative records of worktrees this
     run never planned to touch -- outside the plan, unsalvaged, and absent from
     `skipped`. The executor acts on planned targets only."""
-    port = ScriptedCommands(
-        git={
-            "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
-        }
-    )
+    port = ScriptedCommands(git={"worktree remove -- /repo/wt": ok()})
     report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
     assert report.ok
     assert not any("prune" in call for call in port.transcript)
 
 
-def test_an_unlistable_worktree_check_is_unverified_not_removed() -> None:
-    """Absence from output that was never produced is not evidence. Empty
-    stdout on a failed command previously read as 'gone'."""
-    port = ScriptedCommands(
-        git={
-            "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": fail("fatal: not a git repository"),
-        }
-    )
-    report = run(port, plan(target(TargetKind.WORKTREE, "/repo/wt")))
-    assert not report.ok
-    assert not report.deletions[0].deleted
-    assert report.deletions[0].detail == "deletion unverified"
-
-
-def test_a_reachability_probe_that_will_not_answer_declines_the_removal() -> None:
-    """The one place a named target is refused on reachability grounds, and the
-    refusal has to hold when the probe itself fails.
-
-    git's interlocks cover uncommitted content and say nothing about a commit
-    made in this tree on no branch: the tree is clean, git removes it happily,
-    and the per-worktree reflog that held the commit dies with the record. So
-    an unanswered probe is read as a stranding. Being wrong that way costs a
-    worktree someone removes by hand; being wrong the other way costs the
-    commit.
-
-    The removal is scripted to succeed, so nothing but the guard stops it."""
+def test_removing_a_worktree_that_holds_an_orphan_commit_says_what_it_cost() -> None:
+    """git's interlocks cover uncommitted content and say nothing about a
+    commit made in this tree on no branch: the tree is clean, git removes it
+    happily, and the per-worktree reflog that held the commit goes with the
+    record. Naming the tree authorises that, so the removal proceeds -- and
+    what the caller is owed afterwards is the commit and the command that
+    keeps it, on the row for the tree that held it."""
     head = "a" * 40
     port = ScriptedCommands(
         git={
             "rev-parse HEAD": ok(head),
-            f"for-each-ref --count=1 --contains={head}": fail("fatal: bad object"),
+            f"for-each-ref --count=1 --contains={head}": ok(""),
             "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
         }
     )
     report = run(
@@ -358,25 +277,50 @@ def test_a_reachability_probe_that_will_not_answer_declines_the_removal() -> Non
         make_survey(worktrees=(make_worktree("/repo/wt", head=head, branch=None),)),
     )
 
-    assert not report.ok
-    assert not report.deletions[0].deleted
-    assert head[:8] in report.deletions[0].detail
-    assert report.anomalies[0].stage == "delete"
-    assert "would strand" in report.anomalies[0].message
-    # The refusal is a claim about what git said, so it travels with what git
-    # said. A reader cannot re-derive the probe from the prose.
-    assert "for-each-ref" in "\n".join(report.anomalies[0].transcript)
-    assert not any(call[:3] == ("git", "worktree", "remove") for call in port.transcript)
+    assert report.ok
+    assert report.deletions[0].deleted
+    detail = report.deletions[0].detail
+    assert head[:8] in detail
+    assert "no ref contains" in detail
+    assert f"git branch <name> {head[:8]}" in detail
 
 
-def test_a_commit_made_since_the_survey_is_not_stranded_by_the_removal() -> None:
+def test_a_reachability_probe_that_will_not_answer_is_disclosed_not_decided() -> None:
+    """A probe that failed made no measurement, so the row says that rather
+    than choosing one of the two answers it might have given. Reporting "no ref
+    contains it" would be a claim nobody checked; reporting nothing at all
+    would hide a commit that may have just gone out of reach."""
+    head = "a" * 40
+    port = ScriptedCommands(
+        git={
+            "rev-parse HEAD": ok(head),
+            f"for-each-ref --count=1 --contains={head}": fail("fatal: bad object"),
+            "worktree remove -- /repo/wt": ok(),
+        }
+    )
+    report = run(
+        port,
+        plan(target(TargetKind.WORKTREE, "/repo/wt")),
+        make_survey(worktrees=(make_worktree("/repo/wt", head=head, branch=None),)),
+    )
+
+    assert report.ok
+    assert report.deletions[0].deleted
+    detail = report.deletions[0].detail
+    assert head[:8] in detail
+    assert "could not be read" in detail
+    assert "unknown" in detail
+
+
+def test_the_commit_disclosed_is_the_one_the_tree_holds_now() -> None:
     """The survey is a snapshot; the deletion happens after it. An agent
     committing in that tree in between leaves the recorded commit sitting on a
     branch -- where it answers "contained" -- and the new one held only by the
     record this call is about to delete.
 
-    So asking about the surveyed commit is not a weaker check, it is the wrong
-    one: it clears in exactly the case it exists to refuse."""
+    So a disclosure built from the surveyed commit is not a smaller one, it is
+    about the wrong commit: it reports nothing at risk in exactly the case
+    where something is."""
     surveyed, made_since = "a" * 40, "b" * 40
     port = ScriptedCommands(
         git={
@@ -384,7 +328,6 @@ def test_a_commit_made_since_the_survey_is_not_stranded_by_the_removal() -> None
             f"for-each-ref --count=1 --contains={surveyed}": ok("refs/heads/keeps-it"),
             f"for-each-ref --count=1 --contains={made_since}": ok(""),
             "worktree remove -- /repo/wt": ok(),
-            "worktree list --porcelain": ok(porcelain("worktree /repo\n")),
         }
     )
     report = run(
@@ -393,9 +336,9 @@ def test_a_commit_made_since_the_survey_is_not_stranded_by_the_removal() -> None
         make_survey(worktrees=(make_worktree("/repo/wt", head=surveyed, branch=None),)),
     )
 
-    assert not report.ok
+    assert report.ok
     assert made_since[:8] in report.deletions[0].detail
-    assert not any(call[:3] == ("git", "worktree", "remove") for call in port.transcript)
+    assert surveyed[:8] not in report.deletions[0].detail
 
 
 # -- remote branch -----------------------------------------------------------

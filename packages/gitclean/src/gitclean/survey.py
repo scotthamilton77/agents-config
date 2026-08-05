@@ -598,10 +598,11 @@ way, as a block dropped rather than one recorded wrongly."""
 class WorktreeListing:
     """git's own account of the worktrees, framed so a path survives it whole.
 
-    Kept as one type because two callers need the same listing and the framing
-    rule must not be written twice: the survey builds targets from it, and the
-    executor re-asks it to confirm a removal. A rule about how to read git's
-    output that exists in two places is a rule that will disagree with itself."""
+    The blocks travel with the evidence about how well they were read -- what
+    was dropped, and whether the framing that makes a path whole was available
+    at all -- because the survey's conclusions about absence rest on both, and
+    a caller handed the blocks alone would have no way to tell a listing that
+    named everything from one that could not."""
 
     blocks: tuple[dict[str, str], ...]
     warnings: tuple[str, ...]
@@ -622,26 +623,6 @@ class WorktreeListing:
     @property
     def ok(self) -> bool:
         return self.result.ok
-
-    def holds(self, path: str) -> bool:
-        return any(block.get("worktree") == path for block in self.blocks)
-
-    def can_place(self, path: str) -> bool:
-        """Whether *this* path's absence from the listing means anything.
-
-        A truncation only ever shortens a path at a newline, and it only
-        corrupts the block it happens inside -- records are grouped by the empty
-        record between them, so a fragment lands among its own worktree's
-        attributes and nowhere else. A path with no newline in it therefore
-        cannot be the truncated one, and no other worktree's truncation can hide
-        it, so a framed listing and an unframed one answer alike about it.
-
-        This is narrower than the rule the survey applies to a *selector*, and
-        deliberately: there the string came from a caller and may be a shorter
-        name -- a basename, say -- for a path whose newline is further up, so a
-        selector with no newline in it proves nothing. Here the whole path is in
-        hand."""
-        return self.framed or "\n" not in path
 
 
 def _parse_worktrees(records: list[str], *, framed: bool) -> tuple[list[dict[str, str]], int]:

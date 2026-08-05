@@ -667,27 +667,15 @@ def build_plan(
                     "and name this one from there",
                 )
             )
+        # Occupancy is not asked about here. git will not delete a branch a
+        # worktree still holds, and it says so in a message that names the
+        # worktree and describes the disk as it is at that moment. Working the
+        # objection out again in advance only substitutes an older answer for
+        # git's, and takes the deletion out of the caller's hands to do it.
+        skipped: list[Skipped] = []
     else:
         chosen = [t for t in targets if t.sweepable]
-
-    occupancy = _occupancy_blockers(chosen, survey_data)
-    chosen, skipped = _skip_occupied(chosen, occupancy)
-    if occupancy and selectors:
-        # Named explicitly: the caller believes this is deletable and git is
-        # about to disagree, so say so rather than silently doing less than
-        # they asked for. Reported as a refusal rather than the sweep's quiet
-        # `Skipped` row, and in place of it -- one omission, said once, in the
-        # register the caller's own naming earned.
-        detail = "; ".join(f"{t.name} is checked out at {path}" for t, path in occupancy)
-        refused.append(
-            Refusal(
-                code="E_BRANCH_IN_USE",
-                message=f"git will not delete a branch a worktree still holds: {detail}",
-                blocked=tuple(t for t, _ in occupancy),
-                remedy="add the holding worktree to the same cleanup so it is removed first",
-            )
-        )
-        skipped = []
+        chosen, skipped = _skip_occupied(chosen, _occupancy_blockers(chosen, survey_data))
 
     return Plan(
         targets=_ordered(chosen),

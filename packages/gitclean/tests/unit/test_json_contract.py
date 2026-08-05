@@ -377,10 +377,10 @@ def test_a_plan_holds_exactly_its_published_fields() -> None:
         # a consumer reads instead of this object.
         refused=(
             Refusal(
-                code="E_BRANCH_IN_USE",
-                message="a worktree still holds it",
+                code="E_INVOKING_WORKTREE",
+                message="this run is executing inside it",
                 blocked=(_target(),),
-                remedy="add the holding worktree to the same cleanup",
+                remedy="run gitclean from another worktree and name this one from there",
             ),
         ),
     )
