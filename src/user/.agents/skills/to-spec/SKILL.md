@@ -8,8 +8,9 @@ admission:
 ---
 
 <!--
-Source: oss-snapshots/pocock/skills/skills/engineering/to-spec/
-Upstream: https://github.com/mattpocock/skills
+Source: skills/engineering/to-spec/
+Upstream: https://github.com/mattpocock/skills @ ed37663cc5fbef691ddfecd080dff42f7e7e350d
+Last sync: 2026-07-24
 Drift policy: local-fork — grafted, do not re-sync
 -->
 

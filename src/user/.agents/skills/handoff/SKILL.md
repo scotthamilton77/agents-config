@@ -11,8 +11,8 @@ admission:
 ---
 
 <!--
-Source: oss-snapshots/pocock/skills/skills/productivity/handoff/ (pristine upstream); promoted project-extended fork
-Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7
+Source: skills/productivity/handoff/ (pristine upstream); promoted project-extended fork
+Upstream: https://github.com/mattpocock/skills @ ed37663cc5fbef691ddfecd080dff42f7e7e350d
 Local extensions: Claude-specific frontmatter (disable-model-invocation, allowed-tools), !-command working-tree snapshot prelude, 8-section required document structure, redaction constraints
 Last sync: 2026-05-23
 Drift policy: rewrite-and-divorce (project-extended, Claude-specific; do not re-sync from upstream)
