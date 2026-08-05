@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from conftest import iso, make_branch, make_pr, make_survey, make_worktree
 
-from gitclean.classify import classify, classify_branch, classify_worktree, trunk
+from gitclean.classify import classify, classify_branch, classify_worktree, pairing_index, trunk
 from gitclean.model import Counterpart, MergeEvidence, Survey, Target
 
 # A commit no fixture's trunk sits on, for the cases that must not collide with
@@ -20,13 +20,17 @@ ELSEWHERE = "e" * 40
 def _one(branch, survey: Survey | None = None) -> Target:  # type: ignore[no-untyped-def]
     resolved = survey or make_survey()
     names, commits = trunk(resolved)
-    return classify_branch(branch, resolved, trunk_names=names, trunk_commits=commits)
+    index = pairing_index(resolved)
+    return classify_branch(branch, resolved, trunk_names=names, trunk_commits=commits, index=index)
 
 
 def _wt(worktree, survey: Survey | None = None) -> Target:  # type: ignore[no-untyped-def]
     resolved = survey or make_survey()
     names, commits = trunk(resolved)
-    return classify_worktree(worktree, resolved, trunk_names=names, trunk_commits=commits)
+    index = pairing_index(resolved)
+    return classify_worktree(
+        worktree, resolved, trunk_names=names, trunk_commits=commits, index=index
+    )
 
 
 def _pairing(target: Target) -> dict[str, Counterpart]:
@@ -537,6 +541,19 @@ def test_a_branch_named_like_a_server_ref_does_not_become_one() -> None:
 
     assert _pairing(_one(published))["upstream"].name == "origin/main"
     assert _pairing(_one(local))["upstream"].name is None
+
+
+def test_a_local_branch_sharing_the_upstreams_name_does_not_answer_for_it() -> None:
+    """The remote counterpart is matched among branches marked `is_remote` --
+    a local branch that merely happens to share the upstream's short name must
+    not be mistaken for the copy on the server that name refers to."""
+    tracking = make_branch("feat/thing", head=ELSEWHERE, upstream="origin/main")
+    impostor = make_branch("origin/main", head=ELSEWHERE)
+    survey = make_survey(branches=(tracking, impostor))
+
+    assert _pairing(_one(tracking, survey))["upstream"] == Counterpart(
+        relation="upstream", name="origin/main", id=None, known=True
+    )
 
 
 def test_a_server_ref_carries_no_pairing_of_its_own() -> None:
