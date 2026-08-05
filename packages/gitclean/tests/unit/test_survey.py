@@ -67,6 +67,18 @@ def ref_line(
     return SEP.join([full, short, "a" * 40, committed, upstream_ref, upstream, track, head])
 
 
+def default_refspecs(remotes: str) -> str:
+    """What `git remote add` writes for each of these remotes, NUL-framed.
+
+    Every remote fetching into the path that spells its own name is the case
+    that made a name match look like a parse for as long as it did."""
+    return "".join(
+        f"remote.{name}.fetch\n+refs/heads/*:refs/remotes/{name}/*\0"
+        for name in (line.strip() for line in remotes.splitlines())
+        if name
+    )
+
+
 def make_port(
     *,
     refs: list[str] | None = None,
@@ -79,6 +91,7 @@ def make_port(
     has_gh: bool = True,
     gh_result: CommandResult | None = None,
     remotes: str = "origin\n",
+    refspecs: str | None = None,
 ) -> ScriptedCommands:
     table: dict[str, CommandResult] = {
         "rev-parse --show-toplevel": ok("/repo"),
@@ -86,6 +99,13 @@ def make_port(
         # remote's name stops inside a path under refs/remotes/, so the boring
         # case has to answer it too.
         "remote": ok(remotes),
+        # And the refspecs that put refs under refs/remotes/, which is what
+        # says which remote fetched one. Defaulted to what `git remote add`
+        # writes for each remote in `remotes`, because that is the boring
+        # case; a test about a refspec that does something else passes its own.
+        "config -z --get-regexp": ok(
+            refspecs if refspecs is not None else default_refspecs(remotes)
+        ),
         "rev-parse --path-format=absolute --git-common-dir": ok("/repo/.git"),
         "symbolic-ref --quiet refs/remotes/origin/HEAD": ok("refs/remotes/origin/main"),
         "show-ref --verify --quiet refs/remotes/origin/main": ok(),
@@ -900,6 +920,250 @@ def test_a_ref_two_remotes_could_own_is_reported_rather_than_guessed() -> None:
     assert not [b for b in surveyed.branches if b.is_remote]
     reason = {n.name: n.reason for n in surveyed.not_offered}["team/origin/x"]
     assert "team, team/origin" in reason
+
+
+def test_a_remote_fetching_into_another_remotes_path_owns_what_it_fetched() -> None:
+    """The name in a `refs/remotes/` path is a destination some refspec chose,
+    not a remote naming itself. With upstream configured to fetch into
+    `refs/remotes/origin/`, the branch there is upstream's -- and probing the
+    remote actually called `origin` reports a branch alive on the server as
+    already gone, then prescribes a prune that would discard its tracking ref."""
+    port = make_port(
+        remotes="origin\nupstream\n",
+        refspecs=(
+            "remote.origin.fetch\n+refs/heads/*:refs/remotes/origin-mirror/*\0"
+            "remote.upstream.fetch\n+refs/heads/*:refs/remotes/origin/*\0"
+        ),
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/feat/live", "origin/feat/live"),
+        ],
+        counts={"refs/remotes/origin/main..origin/feat/live": "0"},
+    )
+
+    surveyed = run(port)
+
+    live = {b.name: b for b in surveyed.branches if b.is_remote}["origin/feat/live"]
+    assert (live.remote, live.ref_name) == ("upstream", "feat/live")
+
+
+def test_a_refspec_that_renames_on_the_way_in_reports_the_servers_own_name() -> None:
+    """`+refs/heads/*:refs/remotes/origin/mirror/*` makes `mirror/` part of the
+    local path and no part of what the server calls the branch. The tail of the
+    tracking path is therefore the wrong string to hand `git push --delete`;
+    the refspec's source side is the right one."""
+    port = make_port(
+        remotes="origin\n",
+        refspecs="remote.origin.fetch\n+refs/heads/*:refs/remotes/origin/mirror/*\0",
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/mirror/feat/x", "origin/mirror/feat/x"),
+        ],
+        counts={"refs/remotes/origin/main..origin/mirror/feat/x": "0"},
+    )
+
+    surveyed = run(port)
+
+    mirrored = {b.name: b for b in surveyed.branches if b.is_remote}["origin/mirror/feat/x"]
+    assert (mirrored.remote, mirrored.ref_name) == ("origin", "feat/x")
+
+
+def test_a_remote_configured_with_no_fetch_refspec_accounts_for_nothing() -> None:
+    """Git's own answer to which tracking refs a remote owns is its fetch
+    refspec, so a remote without one owns none of them. Failing closed here
+    costs a report line; guessing costs a deletion issued somewhere nobody
+    asked about."""
+    port = make_port(
+        remotes="origin\n",
+        refspecs="",
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/feat/x", "origin/feat/x"),
+        ],
+    )
+
+    surveyed = run(port)
+
+    assert not [b for b in surveyed.branches if b.is_remote]
+    assert (
+        "no configured remote accounts"
+        in {n.name: n.reason for n in surveyed.not_offered}["origin/feat/x"]
+    )
+
+
+def test_two_remotes_fetching_into_one_path_is_reported_rather_than_guessed() -> None:
+    """Nothing forbids two remotes writing into the same namespace, and the
+    path cannot say which of them last put a ref there."""
+    port = make_port(
+        remotes="origin\nupstream\n",
+        refspecs=(
+            "remote.origin.fetch\n+refs/heads/*:refs/remotes/origin/*\0"
+            "remote.upstream.fetch\n+refs/heads/*:refs/remotes/origin/*\0"
+        ),
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/feat/x", "origin/feat/x"),
+        ],
+    )
+
+    surveyed = run(port)
+
+    assert not [b for b in surveyed.branches if b.is_remote]
+    reason = {n.name: n.reason for n in surveyed.not_offered}["origin/feat/x"]
+    assert "origin, upstream" in reason
+
+
+def test_a_refspec_fetching_something_other_than_a_branch_is_not_offered() -> None:
+    """`git push --delete` names a branch. A ref that arrived from somewhere
+    else in the server's namespace has no such name, and inventing one from
+    the local path is how a deletion lands on the wrong kind of ref."""
+    port = make_port(
+        remotes="origin\n",
+        refspecs="remote.origin.fetch\n+refs/tags/*:refs/remotes/origin/tags/*\0",
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/tags/v1", "origin/tags/v1"),
+        ],
+    )
+
+    surveyed = run(port)
+
+    assert not [b for b in surveyed.branches if b.is_remote]
+    assert (
+        "is not a branch on origin"
+        in {n.name: n.reason for n in surveyed.not_offered}["origin/tags/v1"]
+    )
+
+
+def test_a_refspec_naming_one_branch_rather_than_globbing_still_accounts_for_it() -> None:
+    """A refspec is not required to glob. `refs/heads/release:refs/remotes/
+    origin/release` fetches exactly one branch, and the ref it puts there
+    belongs to that remote as much as any other."""
+    port = make_port(
+        remotes="origin\n",
+        refspecs="remote.origin.fetch\n+refs/heads/release:refs/remotes/origin/release\0",
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/release", "origin/release"),
+        ],
+        counts={"refs/remotes/origin/main..origin/release": "0"},
+    )
+
+    surveyed = run(port)
+
+    released = {b.name: b for b in surveyed.branches if b.is_remote}["origin/release"]
+    assert (released.remote, released.ref_name) == ("origin", "release")
+
+
+def test_a_negative_refspec_is_skipped_rather_than_read_as_a_destination() -> None:
+    """`^refs/heads/wip/*` has no destination side at all, so reading it as one
+    would attribute nothing and lose the remote that does own the ref. Skipping
+    it can only ever widen the candidates, and two candidates is a refusal --
+    never a deletion issued somewhere nobody asked about."""
+    port = make_port(
+        remotes="origin\n",
+        refspecs=(
+            "remote.origin.fetch\n+refs/heads/*:refs/remotes/origin/*\0"
+            "remote.origin.fetch\n^refs/heads/wip/*\0"
+        ),
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/feat/x", "origin/feat/x"),
+        ],
+        counts={"refs/remotes/origin/main..origin/feat/x": "0"},
+    )
+
+    surveyed = run(port)
+
+    feat = {b.name: b for b in surveyed.branches if b.is_remote}["origin/feat/x"]
+    assert (feat.remote, feat.ref_name) == ("origin", "feat/x")
+
+
+def test_one_remotes_refspecs_disagreeing_about_a_name_is_reported_not_picked() -> None:
+    """Two refspecs on the same remote may both cover a path and disagree about
+    what the server calls what lands there. The remote is not in doubt; the
+    branch name is, and that is the string `git push --delete` is handed."""
+    port = make_port(
+        remotes="origin\n",
+        refspecs=(
+            "remote.origin.fetch\n+refs/heads/*:refs/remotes/origin/*\0"
+            "remote.origin.fetch\n+refs/heads/team/*:refs/remotes/origin/*\0"
+        ),
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/feat/x", "origin/feat/x"),
+        ],
+    )
+
+    surveyed = run(port)
+
+    assert not [b for b in surveyed.branches if b.is_remote]
+    reason = {n.name: n.reason for n in surveyed.not_offered}["origin/feat/x"]
+    assert "refs/heads/feat/x, refs/heads/team/feat/x" in reason
+
+
+def test_a_refspec_with_no_destination_puts_nothing_anywhere() -> None:
+    """A one-sided refspec fetches into FETCH_HEAD and writes no tracking ref,
+    so it accounts for nothing under refs/remotes/."""
+    port = make_port(
+        remotes="origin\n",
+        refspecs="remote.origin.fetch\n+refs/heads/*\0",
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/feat/x", "origin/feat/x"),
+        ],
+    )
+
+    surveyed = run(port)
+
+    assert not [b for b in surveyed.branches if b.is_remote]
+    assert (
+        "no configured remote accounts"
+        in {n.name: n.reason for n in surveyed.not_offered}["origin/feat/x"]
+    )
+
+
+def test_a_ref_too_short_for_its_destination_pattern_is_not_a_match() -> None:
+    """`refs/remotes/origin/*/x` needs something on both sides of what `*`
+    stands for. A path that satisfies the prefix and the suffix by overlapping
+    them has nothing left in between, and reading one anyway is how a captured
+    name comes back inside out."""
+    port = make_port(
+        remotes="origin\n",
+        refspecs="remote.origin.fetch\n+refs/heads/*:refs/remotes/origin/*/x\0",
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/x", "origin/x"),
+        ],
+    )
+
+    surveyed = run(port)
+
+    assert not [b for b in surveyed.branches if b.is_remote]
+    assert (
+        "no configured remote accounts"
+        in {n.name: n.reason for n in surveyed.not_offered}["origin/x"]
+    )
+
+
+def test_an_unreadable_refspec_list_leaves_every_server_ref_unoffered() -> None:
+    """The question that decides which remote holds a ref is one probe like any
+    other, and an unanswered probe authorises nothing. Exit 1 is not that
+    failure -- `--get-regexp` spends it on "nothing matched", which is an
+    answer."""
+    port = make_port(
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/feat/x", "origin/feat/x"),
+        ],
+        extra={"config -z --get-regexp": fail("fatal: bad config line 3", code=128)},
+    )
+
+    surveyed = run(port)
+
+    assert not [b for b in surveyed.branches if b.is_remote]
+    assert any("fetch refspecs" in w for w in surveyed.all_warnings())
+    assert "could not be read" in {n.name: n.reason for n in surveyed.not_offered}["origin/feat/x"]
 
 
 def test_an_unreadable_remote_list_leaves_every_server_ref_unoffered() -> None:
