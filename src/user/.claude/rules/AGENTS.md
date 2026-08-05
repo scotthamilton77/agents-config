@@ -2,7 +2,7 @@
 
 Rules in this directory are Claude Code-specific and are installed into `~/.claude/rules/`. They append-merge with same-named plugin files.
 
-Installation is gated on admission: a rule without a complete `admission:` record (`prevents` **or** `provides`, plus `cost` and `remove_when`) in its front matter is dropped at deploy and pruned. `delegation.md` is the only rule here; the record-less rules moved to `archive/src/user/.claude/rules/`.
+Installation is gated on admission: a rule without a complete `admission:` record (`prevents` **or** `provides`, plus `cost` and `remove_when`) in its front matter is dropped at deploy and pruned. `delegation.md` is the only rule here; the record-less rules were retired out of the repository.
 
 ## Companion readmes
 

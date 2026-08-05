@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-21
 **Status:** Agreed in dialog (Scott + Fable 5), pending Scott's review of this document
-**Companions:** `SAVEPOINTS/2026-07-20-harness-findings-handoff.md` (diagnosis), `SAVEPOINTS/2026-07-20-pr-baseline.md` (outcome baseline), `SAVEPOINTS/LEFT-OFF-NOTES.md` (raw audit verdicts)
+**Companions**, all in the `scotthamilton77/agents-config-ARCHIVE` repository: `SAVEPOINTS/2026-07-20-harness-findings-handoff.md` (diagnosis), `SAVEPOINTS/2026-07-20-pr-baseline.md` (outcome baseline), `SAVEPOINTS/LEFT-OFF-NOTES.md` (raw audit verdicts). The three claims from the diagnosis that this charter's decisions rest on are stated directly in the root `AGENTS.md`, so reaching for the archive is only necessary for the underlying evidence.
 
 This spec records the decisions from the way-forward dialog that followed the
 harness self-obstruction findings. It is the charter (parent doc) for the
