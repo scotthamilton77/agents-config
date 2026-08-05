@@ -18,8 +18,14 @@ stale in the backlog and were rescoped on 2026-08-05; see "Tracker reconciliatio
 - **`docs/guide/reference.md`** — full rewrite parked behind the milestone. This
   sweep replaces its contents with a short placeholder naming the work that must
   finish before it can be written truthfully. Detail in Phase 3.
-- **`9k9.50`** — rescoped from `packages/*/AGENTS.md` to the whole repository.
-  Detail in Phase 6.
+- **`9k9.50`** — rescoped from `packages/*/AGENTS.md` to the whole repository, **and
+  raised P3 → P1**. It is the only item in this plan that prevents recurrence rather
+  than paying down what already rotted; it was ranked below every item it would have
+  prevented. Detail in Phase 6. *Not yet applied to the tracker — one command,
+  pending go.*
+- **New repositories** — the extracted trees are staged as sibling projects under
+  `~/src/projects/` and pushed to **private** repos under the `scotthamilton77`
+  account via `gh`. Authorized 2026-08-05. Detail in "New repositories".
 - **Delivery** — stacked PRs on `chore/archive-relocation`, with a tag on `main`
   before the first merge. Detail in "Branch, PRs and tagging".
 
@@ -349,7 +355,7 @@ level up, in the tracker.
 | `9k9.133` README skills tables | **Valid, one stale pointer** | Description says the retired skills "sit under `archive/src/user/.agents/skills/`" — that tree left the repo in `dda95a1c`. Repoint to `../agents-config-ARCHIVE/` |
 | `9k9.40` root AGENTS.md gate claims | **Half fixed, half live** | Rescope to the surviving half |
 | `9k9.13` persona/session-primer sweep | **Mostly overtaken** | Rescope to what survives, and cut the blocked `remove_when` |
-| `9k9.50` symbol-existence lint | **Right idea, wrong target** | Widen to repo-wide, two check classes (Phase 6) |
+| `9k9.50` symbol-existence lint | **Right idea, wrong target, wrong rank** | Widen to repo-wide, two check classes (Phase 6). **Raise P3 → P1** — pending, not yet applied |
 
 **`9k9.40` in detail.** The defect it describes is gone: root `AGENTS.md` no longer
 enumerates `ci` targets — line 107 now says "Read the `Makefile` for which packages
@@ -372,6 +378,92 @@ the file tree and templates block) and `docs/guide/configuration.md:16-22` (the
 persona step). Both are Phase 3. Separately, its `remove_when` is gated on "the
 DYNAMIC-INCLUDE engine reassessment (D17) has settled" — a dependency on unfinished
 S4 work that would hold the item open long after the prose is right. Split that off.
+
+---
+
+## New repositories
+
+Authorized 2026-08-05: stage extracted trees as sibling projects under
+`~/src/projects/`, create the remotes with `gh` under the **`scotthamilton77`**
+account, **private**. Two repos — `oss-snapshots` is *not* one of them, it is deleted
+and repinned per Decision 4.
+
+**First, a correction to how "archive" has been framed in this plan.** Deleting a
+tracked file from `agents-config` does not lose it — its history stays in that repo's
+git objects. The archive repository is for *browsability*, not preservation. The only
+material genuinely at risk is what git never tracked, and that is a short, specific
+list: the 29 untracked files under `SAVEPOINTS/`, `.grind/ORCHESTRATION-STATE.md`,
+and `.viz/kimi-k3-ui-assessment-2026-07-18.md`. Those exist in one place on disk. Get
+them committed first and the rest is convenience.
+
+### Repo A — `agents-config-ARCHIVE` (already staged at `~/src/projects/agents-config-ARCHIVE`)
+
+**The `.gitignore` trap is real and worse than expected.** Verified 2026-08-05:
+`~/src/projects/agents-config-ARCHIVE/SAVEPOINTS/.gitignore` contains exactly:
+
+```
+.gitignore
+*
+```
+
+That ignores every file in the directory *and itself*. It is why only 28 of 57
+`SAVEPOINTS/` files were ever tracked in `agents-config` — the other 29 were created
+after the ignore landed and git never saw them. **`git init` + add in that directory
+without deleting this file first captures almost nothing, silently.** Delete it before
+the first commit.
+
+Lines from `agents-config/.gitignore` that must **not** be carried into the archive
+repo, because each suppresses something being deliberately archived:
+
+| Line | Suppresses |
+|---|---|
+| `.grind` | `.grind/ORCHESTRATION-STATE.md` — on the archive list |
+| `.viz/` | `.viz/kimi-k3-ui-assessment-2026-07-18.md` — on the archive list |
+| `scripts/backlog-landscape/output/` | regenerated output; harmless to drop, but decide rather than inherit |
+
+An archive `.gitignore`, if written at all, should carry only genuine noise:
+`.DS_Store`, `__pycache__/`, `.venv/`, and the tooling caches. **Do not copy the
+source repo's file.**
+
+Procedure:
+
+1. Survey first — `find . -name .gitignore` across the whole tree, and check whether
+   `.git/` already exists. *(Unverified at time of writing: the Bash classifier was
+   unavailable. Treat the two facts above as verified and this survey as still owed.)*
+2. Delete `SAVEPOINTS/.gitignore` and any other suppressing ignore file found.
+3. `git init`, then stage **by explicit top-level path** — `git add archive SAVEPOINTS
+   issues.backup.jsonl …` — never `git add -A` or `git add .`, per the shared hard
+   lines. Read `git status --porcelain` first and name what is being committed.
+4. **Verify the ignore work mechanically** before pushing:
+   `git ls-files | wc -l` against `find . -type f -not -path './.git/*' | wc -l`.
+   A mismatch means an ignore rule is still eating something. This is the check that
+   catches a silent `*`.
+5. `gh repo create scotthamilton77/agents-config-ARCHIVE --private --source=. --push`.
+6. Move `packages/pdlc/` and `packages/holding-place/` in as part of Phase 5, together
+   (path dependency), and land the S9 pointers from Decision 3.
+
+### Repo B — visualization-suite
+
+Staged at `~/src/projects/vizsuite` (name follows the package; the CLI it installs is
+`viz`). Contents: `packages/vizsuite/` at the repo root, plus the design spec
+`docs/specs/2026-07-12-visualization-suite-design.md` and the whole
+`docs/plans/visualization-suite/` corpus, which is its evidence base.
+
+**Preserve history — do not `git init` from a copy.** This is a live, CI-gated package
+with real history and four rounds of review behind parts of it. Use `git filter-repo
+--path packages/vizsuite --path docs/plans/visualization-suite` against a clone of
+`agents-config`, then restructure. A fresh init would throw away exactly the record
+that makes the extraction safe to review.
+
+Decision 2's four conditions all attach here, and condition 1 is the ordering rule:
+**CI green in the new repo before `agents-config` deletes anything.** Also carry over
+the `work` protocol contract test (condition 2), since
+`vizsuite/tracker/port.py:57` shells out to the `work` binary and line 28 pins
+`_EXPECTED_PROTOCOL_MAJOR = "1"` — a coupling that today is held by a shared `make ci`
+and after extraction is held by nothing.
+
+`gh repo create scotthamilton77/vizsuite --private --source=. --push` once the tree
+and its gate are in place.
 
 ---
 
@@ -424,15 +516,18 @@ tag marking a deliberate boundary is a promise that evaporates.
 
 ## Open questions
 
-1. **Does `../agents-config-ARCHIVE/` become a git repo?** Right now it is a loose
-   directory with no history and no remote. Decision 3 puts a durable pointer into it
-   from the S9 spec and work item, Decision 4 adds material, and the tag message will
-   name it. A pointer at an unversioned directory is a weak promise, and it is now
-   the sole home of 383 `archive/` files and 57 `SAVEPOINTS/` files, 29 of which git
-   never tracked and which therefore exist in exactly one place on disk. **This is the
-   one open question with a data-loss failure mode.**
+1. **~~Does `../agents-config-ARCHIVE/` become a git repo?~~ RESOLVED** — yes,
+   private, under `scotthamilton77`. See "New repositories". The residual risk is
+   narrower than first stated: only the 29 never-tracked `SAVEPOINTS/` files and the
+   two untracked `.grind`/`.viz` documents exist in a single place on disk. Everything
+   git ever tracked remains recoverable from `agents-config` history regardless.
+   **Sequencing consequence: create this repo and verify its file count before any
+   phase deletes anything.**
 2. **S5 versus the `oss-snapshots/` deletion** — finish the S5 sourcing first, or
    delete now and have S5 clone at the pinned SHA? See Decision 4.
+3. **Repo B's name.** `vizsuite` follows the package; the CLI is `viz`. Say if you
+   want something more descriptive — renaming a private repo later is cheap, but the
+   `gh` command in this plan hardcodes it.
 3. **Admission records on deletion work.** The delivery contract says new work enters
    as a child of `9k9` with an admission record stating what it prevents or provides.
    That maps fine here — "prevents agents authoring rules that silently do not
