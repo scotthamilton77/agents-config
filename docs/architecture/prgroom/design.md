@@ -26,7 +26,7 @@ This is the high-level design reference for the prgroom CLI. It is **lean by int
 
 ### Problem & goal
 
-`prgroom` is a Python CLI that replaces the `wait-for-pr-comments` and `reply-and-resolve-pr-threads` skills. The gh/git/JSON work is already mechanical, but the **phase-orchestration glue** — walking phase logic, dispatching subagents, auditing their reports, managing crash recovery — still loads on top of an implementer's already-bloated context every cycle. `prgroom` moves that orchestration out of agent prose and into deterministic code, confining agent invocations to *named hand-off points* (comment classification, fix implementation, escalation judgment), each shelled out as a fresh agent context. State lives behind a `prsession.Store` interface so recovery, idempotency, and inspection are uniform across every caller.
+`prgroom` is a Python CLI that took over from the `wait-for-pr-comments` and `reply-and-resolve-pr-threads` skills, both of which were retired. The gh/git/JSON work is already mechanical, but the **phase-orchestration glue** — walking phase logic, dispatching subagents, auditing their reports, managing crash recovery — still loads on top of an implementer's already-bloated context every cycle. `prgroom` moves that orchestration out of agent prose and into deterministic code, confining agent invocations to *named hand-off points* (comment classification, fix implementation, escalation judgment), each shelled out as a fresh agent context. State lives behind a `prsession.Store` interface so recovery, idempotency, and inspection are uniform across every caller.
 
 ### Non-goals (MVP)
 
