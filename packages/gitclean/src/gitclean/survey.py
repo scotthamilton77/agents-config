@@ -262,38 +262,151 @@ def read_remotes(port: CommandPort, cwd: Path | None) -> tuple[tuple[str, ...] |
     return tuple(line.strip() for line in result.stdout.splitlines() if line.strip()), None
 
 
-def split_remote_ref(full: str, remotes: tuple[str, ...] | None) -> tuple[str, str] | str:
-    """(remote, branch name) for a ref under `refs/remotes/`, or the
-    measurement that stopped the split.
+def read_fetch_refspecs(
+    port: CommandPort, cwd: Path | None
+) -> tuple[dict[str, tuple[str, ...]] | None, str | None]:
+    """Every configured `remote.<name>.fetch`, keyed by remote.
 
-    The remote's name is matched against the ones git says are configured
-    rather than taken to be everything before the first slash. Both failure
-    modes are real and neither is guessable: a path no configured remote
-    accounts for -- a tracking ref left behind by `git remote remove` -- and a
-    path two of them could account for, which is what having both `team` and
-    `team/origin` produces. A caller who wants either gone can still use git;
-    what this must not do is pick one and issue a deletion against it."""
+    This is what actually says which remote a path under `refs/remotes/`
+    belongs to. The name in that path is a destination a refspec chose, not a
+    remote naming itself: `git config remote.upstream.fetch
+    '+refs/heads/*:refs/remotes/origin/*'` is legal, and puts upstream's
+    branches under `refs/remotes/origin/` while a remote genuinely called
+    `origin` sits beside them owning none of them.
+
+    None rather than an empty mapping when the read failed, for the same
+    reason `read_remotes` draws that line: "no remote configures a fetch
+    refspec" and "nobody could say" are different answers, and only the second
+    one is a hole in the survey. Exit 1 is the first of those -- `--get-regexp`
+    spends it on "nothing matched" -- so only a worse code is a failure.
+
+    `-z` because a config value may hold a newline; git writes one back for
+    `\\n` in a value and would then split a single refspec across what a
+    line-framed read calls two records. Each `-z` record is `key\\nvalue`, and
+    a key holds no newline, so the first one in a record is the boundary."""
+    result = port.git(["config", "-z", "--get-regexp", r"^remote\..*\.fetch$"], cwd=cwd)
+    if not result.ok and result.returncode > 1:
+        return None, (
+            f"could not read this repository's fetch refspecs (exit {result.returncode}); "
+            f"nothing says which remote a ref under refs/remotes/ was fetched by, so none of "
+            f"them is offered for deletion"
+        )
+    specs: dict[str, list[str]] = {}
+    for record in result.stdout.split("\0"):
+        if not record:
+            continue
+        key, _, value = record.partition("\n")
+        remote = key.removeprefix("remote.").removesuffix(".fetch")
+        specs.setdefault(remote, []).append(value)
+    return {remote: tuple(values) for remote, values in specs.items()}, None
+
+
+def _refspec_destination_match(destination: str, full: str) -> str | None:
+    """What `*` stood for when this destination matched, or None for no match.
+
+    An exact destination matches exactly and captures the empty string, which
+    is why the answer is a string-or-None rather than a truthy one: a literal
+    refspec that matched returns `""`, and that is a match."""
+    prefix, star, suffix = destination.partition("*")
+    if not star:
+        return "" if full == destination else None
+    if not full.startswith(prefix) or not full.endswith(suffix):
+        return None
+    if len(full) < len(prefix) + len(suffix):
+        return None
+    return full[len(prefix) : len(full) - len(suffix)] if suffix else full[len(prefix) :]
+
+
+def _fetch_sources(refspec: str, full: str) -> str | None:
+    """The ref on the server that this refspec would fetch into `full`.
+
+    A negative refspec (`^refs/heads/wip/*`) is skipped rather than
+    interpreted. It narrows what a remote fetches, so honouring it could only
+    ever remove a remote from the candidates -- and every caller here treats
+    two candidates as a refusal. Ignoring one can therefore turn a correct
+    single answer into a stated refusal, and can never turn it into a
+    deletion issued against the wrong remote, which is the direction that
+    matters."""
+    spec = refspec.removeprefix("+")
+    if spec.startswith("^"):
+        return None
+    source, colon, destination = spec.partition(":")
+    if not colon:
+        return None
+    capture = _refspec_destination_match(destination, full)
+    if capture is None:
+        return None
+    return source.replace("*", capture, 1) if "*" in source else source
+
+
+def split_remote_ref(
+    full: str,
+    remotes: tuple[str, ...] | None,
+    refspecs: dict[str, tuple[str, ...]] | None,
+) -> tuple[str, str] | str:
+    """(remote, branch name on that remote) for a ref under `refs/remotes/`,
+    or the measurement that stopped the split.
+
+    Ownership is decided by asking which remote's fetch refspec puts a ref at
+    this path, not by matching configured remote names against the path
+    itself. The path is a destination some refspec chose; the remote whose
+    name it happens to spell need not be the one that fetches it, and probing
+    that remote reports a branch alive on the server as already gone.
+
+    The branch name comes back out of the refspec's source side for the same
+    reason: `+refs/heads/*:refs/remotes/origin/mirror/*` makes `mirror/` part
+    of the local path and no part of what the server calls the branch, so the
+    tail of the tracking path is the wrong string to hand `git push --delete`.
+
+    Every failure mode here is real and none is guessable: a path no refspec
+    accounts for, a path two remotes both fetch into, a remote configured with
+    no fetch refspec at all, and a refspec that maps something other than a
+    branch. A caller who wants any of them gone can still use git; what this
+    must not do is pick one and issue a deletion against it."""
     rest = full.removeprefix("refs/remotes/")
     if remotes is None:
         return (
             f"the configured remote list could not be read, so which part of {full} names a "
             f"remote and which part names the branch on it is unknown"
         )
-    matches = [r for r in remotes if rest.startswith(f"{r}/")]
-    if len(matches) == 1:
-        remote = matches[0]
-        return remote, rest[len(remote) + 1 :]
-    if not matches:
+    if refspecs is None:
         return (
-            f"no configured remote accounts for {full}, so nothing says which part of it names "
-            f"a remote; a tracking ref outliving its remote looks exactly like this"
+            f"this repository's fetch refspecs could not be read, so nothing says which remote "
+            f"{full} was fetched by"
         )
-    named = ", ".join(sorted(matches))
-    return (
-        f"{full} could be a branch on any of these configured remotes: {named} -- the ref path "
-        f"does not say which, and a deletion issued against the wrong one is a deletion on a "
-        f"repository nobody asked about"
-    )
+    owners: dict[str, set[str]] = {}
+    for remote in remotes:
+        for refspec in refspecs.get(remote, ()):
+            source = _fetch_sources(refspec, full)
+            if source is not None:
+                owners.setdefault(remote, set()).add(source)
+    if not owners:
+        return (
+            f"no configured remote accounts for {full}: no remote's fetch refspec puts a ref "
+            f"at that path, which is what a tracking ref outliving its remote -- or a remote "
+            f"configured with no fetch refspec -- looks like"
+        )
+    if len(owners) > 1:
+        named = ", ".join(sorted(owners))
+        return (
+            f"{full} is fetched into that path by more than one configured remote: {named} -- "
+            f"nothing says which one holds it, and a deletion issued against the wrong one is "
+            f"a deletion on a repository nobody asked about"
+        )
+    remote, sources = next(iter(owners.items()))
+    if len(sources) > 1:
+        spelled = ", ".join(sorted(sources))
+        return (
+            f"{remote} fetches {rest} through refspecs that disagree about what it is called "
+            f"there: {spelled} -- a deletion has to name one of them and nothing says which"
+        )
+    source = next(iter(sources))
+    if not source.startswith("refs/heads/"):
+        return (
+            f"{full} is fetched from {source}, which is not a branch on {remote}; deleting it "
+            f"is not something `git push --delete` expresses"
+        )
+    return remote, source.removeprefix("refs/heads/")
 
 
 _WORKTREE_ATTRIBUTES = frozenset(
@@ -993,6 +1106,7 @@ def read_branches(
     prs: dict[str, PullRequest],
     worktree_by_branch: dict[str, str],
     remotes: tuple[str, ...] | None,
+    refspecs: dict[str, tuple[str, ...]] | None,
 ) -> tuple[list[Branch], list[str], bool, list[NotOffered], int, int]:
     """The branches, the warnings, whether the ref read answered at all, the
     refs deliberately left out of the first list, and two counts of what this
@@ -1067,10 +1181,10 @@ def read_branches(
 
         if is_remote:
             # The whole of the decomposition, and it is done from the full path
-            # against the configured remote list. Nothing here reads the short
-            # form: it is what git would let you *type*, which is a different
-            # question from where the remote's name ends.
-            split = split_remote_ref(full, remotes)
+            # against the refspecs that put refs there. Nothing here reads the
+            # short form: it is what git would let you *type*, which is a
+            # different question from which remote fetched this.
+            split = split_remote_ref(full, remotes, refspecs)
             if isinstance(split, str):
                 # Unsplittable, so nothing can be issued against it -- but it
                 # is sitting right there, and a caller who names it must not be
@@ -1251,6 +1365,9 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
     remotes, remotes_warning = read_remotes(port, cwd)
     if remotes_warning is not None:
         warnings.append(remotes_warning)
+    refspecs, refspecs_warning = read_fetch_refspecs(port, cwd)
+    if refspecs_warning is not None:
+        warnings.append(refspecs_warning)
     read = read_branches(
         port,
         cwd,
@@ -1259,6 +1376,7 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         prs=prs,
         worktree_by_branch=worktree_by_branch,
         remotes=remotes,
+        refspecs=refspecs,
     )
     branches, branch_warnings, branches_known, not_offered, dropped_refs, unsplit_refs = read
     warnings.extend(branch_warnings)
