@@ -1,7 +1,10 @@
 # Work-Tracker Track Partition — workcli Track Layer, Extraction Policy, Operating Model
 
 **Date:** 2026-07-15
-**Status:** Draft — pending review
+**Status:** Implemented. **The §3 vocabulary is superseded** — it was revised on
+evidence by `docs/specs/2026-07-19-track-backfill-migration-design.md` §3 before
+any of it was applied. Everything else here — the track model, the enforcement
+rollout, the extraction semantics, the `work triggers` contract — still stands.
 **Bead:** to be minted at PR merge (see Continuations); nearest anchor `agents-config-wgclw.9` (work facade CLI v1)
 **Decision:** Keep the monorepo and the single bead database. Partition the *tracker*
 with a first-class, split-portable **track** dimension built into the work-facade
@@ -61,7 +64,18 @@ counts live rather than trusting them.)
 
 ## 3. Track model and configuration
 
-**Vocabulary** (initial; config-owned):
+> **The vocabulary below is superseded and was never applied.** It named
+> `skills-discipline` and `portability`, which
+> `docs/specs/2026-07-19-track-backfill-migration-design.md` §3 retired before the
+> backfill ran — `skills-discipline` alone would have absorbed 49% of the backlog
+> and breached `max-track-backlog` on day one. That spec minted
+> `pipeline-discipline`, `review-and-merge` and `grind-runtime` in their place and
+> is the vocabulary of record; `project-config.toml` matches it. Read this section
+> for the *track model* — one label per item, milestones exempt, closed items
+> exempt, config-owned names — and take the names themselves from the 2026-07-19
+> spec.
+
+**Vocabulary** (initial; config-owned — superseded, see above):
 
 `installer`, `prgroom`, `workcli`, `pdlc-orchestrator`, `holding-place`,
 `vizsuite`, `skills-discipline`, `portability`, `ops-meta`.
