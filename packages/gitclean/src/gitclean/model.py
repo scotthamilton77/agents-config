@@ -115,7 +115,13 @@ class PullRequestOutcome:
 
     number: int
     state: str
-    """OPEN | MERGED | CLOSED, verbatim from gh."""
+    """OPEN | MERGED | CLOSED, upper-cased on the way in.
+
+    Case-folded rather than kept verbatim because the comparison that decides
+    whether anything is deleted is made against MERGED, and one that depended
+    on how a payload happened to spell a word is one gh could change
+    underneath this. Empty when gh named no state at all -- which is not a
+    state, and reaches the caller as a refusal like any other."""
     head_ref: str
     """The branch the pull request was opened from, as the server names it.
 

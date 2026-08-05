@@ -777,6 +777,30 @@ def test_a_pull_request_with_no_head_ref_names_no_branch_to_act_on() -> None:
     assert "which branch" in outcome
 
 
+def test_a_null_head_ref_is_absence_rather_than_a_branch_called_none() -> None:
+    """JSON null arrives as None, and `str(None)` is the five-character word
+    "None" -- not empty, so an emptiness check made after the conversion passes
+    it. A field gh declined to answer would then become the scope, and the
+    sweep would narrow to a branch literally called None."""
+    port = pr_view(number=7, state="MERGED", headRefName=None, mergedAt="2026-08-01T09:30:00Z")
+
+    outcome = read_pull_request(port, None, "7")
+
+    assert isinstance(outcome, str)
+    assert "did not say which branch" in outcome
+
+
+def test_a_null_state_is_no_state_rather_than_the_word_none() -> None:
+    """Same conversion, same trap, and here it reaches a caller as the sentence
+    explaining why nothing was deleted."""
+    port = pr_view(number=7, state=None, headRefName="feat/x", mergedAt=None)
+
+    outcome = read_pull_request(port, None, "7")
+
+    assert not isinstance(outcome, str)
+    assert outcome.state == ""
+
+
 def test_a_pull_request_number_gh_states_as_something_else_is_not_read_past() -> None:
     """`int()` on whatever gh put there would raise out of the read and take
     the run with it -- and the number is what every sentence downstream names,

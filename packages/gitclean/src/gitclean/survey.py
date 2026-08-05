@@ -707,7 +707,13 @@ def read_pull_request(port: CommandPort, cwd: Path | None, number: str) -> PullR
         return f"gh pr view {number} returned unparseable JSON ({exc})"
     if not isinstance(payload, dict):
         return f"gh pr view {number} returned a payload that describes no pull request"
-    head = str(payload.get("headRefName", ""))
+    # Emptiness is decided before the value becomes a string, not after. JSON
+    # null reaches here as None, and `str(None)` is the five-character word
+    # "None" -- which is not empty, so a check made afterwards passes it, and a
+    # field gh declined to answer becomes a branch name. Nothing then refuses,
+    # and the scope narrows to a branch literally called None.
+    raw_head = payload.get("headRefName")
+    head = str(raw_head) if raw_head else ""
     if not head:
         return f"gh did not say which branch pull request #{number} was opened from"
     try:
@@ -716,10 +722,11 @@ def read_pull_request(port: CommandPort, cwd: Path | None, number: str) -> PullR
         # A pull request number that is not a number is gh telling us something
         # this does not understand about the very thing being asked after.
         return f"gh answered for pull request #{number} with a number this could not read"
+    raw_state = payload.get("state")
     merged_at = payload.get("mergedAt")
     return PullRequestOutcome(
         number=resolved,
-        state=str(payload.get("state", "")).upper(),
+        state=str(raw_state).upper() if raw_state else "",
         head_ref=head,
         merged_at=str(merged_at) if merged_at else None,
     )
