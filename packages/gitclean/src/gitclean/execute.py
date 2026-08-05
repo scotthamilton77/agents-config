@@ -287,10 +287,10 @@ class Executor:
         failed probe never made it."""
         surveyed = next((w for w in self._survey.worktrees if w.path == target.name), None)
         if surveyed is None:
-            return "", True
+            return "", None
         head = self._head_now(target, surveyed.head)
         if not head:
-            return "", True
+            return "", None
         refs = self._port.git(
             git_argv("for-each-ref", "--count=1", f"--contains={head}"), cwd=self._cwd
         )
