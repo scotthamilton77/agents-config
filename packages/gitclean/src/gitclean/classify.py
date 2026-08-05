@@ -30,6 +30,7 @@ from a reason sentence by splitting on a delimiter those names may contain.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from gitclean.model import (
@@ -80,14 +81,42 @@ def holder_unmeasured(survey_data: Survey) -> bool:
     return not survey_data.worktrees_known or bool(survey_data.dropped_worktrees)
 
 
-def counterpart_worktree(branch: Branch, survey_data: Survey) -> Counterpart:
+@dataclass(frozen=True, slots=True)
+class PairingIndex:
+    """The membership questions ``branch_pairing`` and ``worktree_pairing`` ask
+    repeatedly, answered once per classification instead of once per row.
+
+    Membership is not identity. A local branch and a ref on the server may
+    carry the same short name, so ``local_branch_names`` and
+    ``remote_branch_names`` stay two sets rather than one, each built with the
+    same ``is_remote`` split the scans they replace tested inline -- losing
+    that split here would let a local branch answer for the server's copy of a
+    name it merely happens to share."""
+
+    worktree_paths: frozenset[str]
+    local_branch_names: frozenset[str]
+    remote_branch_names: frozenset[str]
+
+
+def pairing_index(survey_data: Survey) -> PairingIndex:
+    """Built once per classification and threaded down to every row, rather
+    than rescanning ``survey_data.worktrees`` and ``survey_data.branches`` once
+    per branch or worktree."""
+    return PairingIndex(
+        worktree_paths=frozenset(w.path for w in survey_data.worktrees),
+        local_branch_names=frozenset(b.name for b in survey_data.branches if not b.is_remote),
+        remote_branch_names=frozenset(b.name for b in survey_data.branches if b.is_remote),
+    )
+
+
+def counterpart_worktree(branch: Branch, survey_data: Survey, index: PairingIndex) -> Counterpart:
     """The worktree holding this branch, if the survey can say."""
     holder = branch.checked_out_at
     if holder is None:
         return Counterpart(
             relation="worktree", name=None, id=None, known=not holder_unmeasured(survey_data)
         )
-    listed = any(w.path == holder for w in survey_data.worktrees)
+    listed = holder in index.worktree_paths
     return Counterpart(
         relation="worktree",
         name=holder,
@@ -106,7 +135,7 @@ def tracks_a_server_ref(branch: Branch) -> bool:
     return bool(branch.upstream_ref and branch.upstream_ref.startswith("refs/remotes/"))
 
 
-def counterpart_upstream(branch: Branch, survey_data: Survey) -> Counterpart:
+def counterpart_upstream(branch: Branch, index: PairingIndex) -> Counterpart:
     """This branch's copy on the server, as the branch itself records it.
 
     Tracking nothing and tracking another local branch are one answer here, and
@@ -126,7 +155,7 @@ def counterpart_upstream(branch: Branch, survey_data: Survey) -> Counterpart:
     upstream = branch.upstream
     if upstream is None or not tracks_a_server_ref(branch):
         return Counterpart(relation="upstream", name=None, id=None, known=True)
-    listed = any(b.is_remote and b.name == upstream for b in survey_data.branches)
+    listed = upstream in index.remote_branch_names
     return Counterpart(
         relation="upstream",
         name=upstream,
@@ -135,16 +164,18 @@ def counterpart_upstream(branch: Branch, survey_data: Survey) -> Counterpart:
     )
 
 
-def branch_pairing(branch: Branch, survey_data: Survey) -> tuple[Counterpart, ...]:
+def branch_pairing(
+    branch: Branch, survey_data: Survey, index: PairingIndex
+) -> tuple[Counterpart, ...]:
     """Nothing for a server ref. No worktree can hold one and it tracks nothing
     itself, so both relations run the other way -- from the local branch that
     names it as its upstream, which is how it joins that branch's group."""
     if branch.is_remote:
         return ()
-    return (counterpart_worktree(branch, survey_data), counterpart_upstream(branch, survey_data))
+    return (counterpart_worktree(branch, survey_data, index), counterpart_upstream(branch, index))
 
 
-def worktree_pairing(worktree: Worktree, survey_data: Survey) -> tuple[Counterpart, ...]:
+def worktree_pairing(worktree: Worktree, index: PairingIndex) -> tuple[Counterpart, ...]:
     """The branch this worktree has checked out.
 
     Measured either way: the listing states outright whether a branch is
@@ -154,7 +185,7 @@ def worktree_pairing(worktree: Worktree, survey_data: Survey) -> tuple[Counterpa
     different thing from a detached checkout."""
     if worktree.branch is None:
         return (Counterpart(relation="branch", name=None, id=None, known=True),)
-    listed = any(not b.is_remote and b.name == worktree.branch for b in survey_data.branches)
+    listed = worktree.branch in index.local_branch_names
     return (
         Counterpart(
             relation="branch",
@@ -338,6 +369,7 @@ def classify_branch(
     *,
     trunk_names: frozenset[str],
     trunk_commits: frozenset[str],
+    index: PairingIndex,
 ) -> Target:
     reasons: list[str] = []
     kind = TargetKind.REMOTE_BRANCH if branch.is_remote else TargetKind.BRANCH
@@ -398,7 +430,7 @@ def classify_branch(
         id=ident,
         kind=kind,
         name=branch.name,
-        pairing=branch_pairing(branch, survey_data),
+        pairing=branch_pairing(branch, survey_data, index),
         merge_evidence=branch.merge_evidence,
         merge_proven=proven,
         sweepable=withheld is None,
@@ -463,6 +495,7 @@ def classify_worktree(
     *,
     trunk_names: frozenset[str],
     trunk_commits: frozenset[str],
+    index: PairingIndex,
 ) -> Target:
     evidence = commit_proof(worktree.head, survey_data.branches)
     dirt = held_dirt(worktree)
@@ -532,7 +565,7 @@ def classify_worktree(
         id=worktree_id(worktree.path),
         kind=TargetKind.WORKTREE,
         name=worktree.path,
-        pairing=worktree_pairing(worktree, survey_data),
+        pairing=worktree_pairing(worktree, index),
         merge_evidence=evidence,
         merge_proven=evidence in MERGE_PROOF,
         sweepable=withheld is None,
@@ -547,12 +580,17 @@ def classify(survey_data: Survey) -> tuple[Target, ...]:
     then local branches, then remote branches -- the order deletion must
     follow, since a branch cannot be deleted while a worktree holds it."""
     trunk_names, trunk_commits = trunk(survey_data)
+    index = pairing_index(survey_data)
     branch_targets = [
-        classify_branch(b, survey_data, trunk_names=trunk_names, trunk_commits=trunk_commits)
+        classify_branch(
+            b, survey_data, trunk_names=trunk_names, trunk_commits=trunk_commits, index=index
+        )
         for b in survey_data.branches
     ]
     worktree_targets = [
-        classify_worktree(w, survey_data, trunk_names=trunk_names, trunk_commits=trunk_commits)
+        classify_worktree(
+            w, survey_data, trunk_names=trunk_names, trunk_commits=trunk_commits, index=index
+        )
         for w in survey_data.worktrees
     ]
     locals_ = [t for t in branch_targets if t.kind is TargetKind.BRANCH]
