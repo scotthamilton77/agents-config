@@ -23,6 +23,8 @@ Skills exist because some workflows (debugging, TDD, brainstorming, code review)
 | Gemini CLI | `activate_skill` tool — skills auto-discovered at session start |
 | Copilot CLI | `skill` tool |
 
+The four tools this repository installs into are Claude Code, Codex CLI, Gemini CLI and OpenCode; a shared skill is staged into all four. Copilot CLI appears above as a format reference, not as an install target, and the invocation mechanism for Codex and OpenCode is not recorded here — confirm it against those tools rather than inferring it from this table.
+
 Agents do not use the Read tool on SKILL.md files; the Skill tool is the interface.
 
 When a subagent definition lists skills in its `skills:` frontmatter field, those skills' **full content** is injected into the subagent's context at startup (this is the inverse of the on-demand model).
@@ -41,6 +43,34 @@ description: "..."         # required; max 1024 chars; non-empty; no XML tags
                             # MUST be written in third person
 ---
 ```
+
+### Required for deployment: the admission record
+
+Those two fields make a skill *valid*; they do not make it *ship*. The deploy
+gate treats `skills` as a gated namespace, and **a skill whose SKILL.md carries
+no `admission:` record is dropped at deploy** — it stages, and then simply never
+lands in the tool's config directory, while any copy an earlier run deployed is
+pruned. In this repository `content-lint` catches it first and fails, because a
+record-less artifact under `src/user/` is fatal there; where that gate does not
+run, the drop is silent. A malformed record is worse in both places: it aborts
+the whole deploy.
+
+```yaml
+---
+name: skill-name
+description: "..."
+admission:
+  provides: <the capability this supplies>   # or `prevents:`, never both
+  cost: <what it costs, and on which surface>
+  remove_when: <the observation that would retire it>
+---
+```
+
+A skill directory keeps its record in `SKILL.md` and nowhere else — a directory
+without one has no inspectable record and is dropped. The gate strips what it
+admits: the `admission:` and `claims:` blocks never reach the deployed bytes and
+are not charged against the body budget, so write them for the next maintainer of
+this repository rather than for the agent that loads the skill.
 
 ### Optional documented fields
 
@@ -103,7 +133,17 @@ The body is what the agent reads after invocation. It should:
 - Include red flags / anti-patterns to prevent common mistakes
 - Push detail not needed at first-step into supporting files (see Progressive Disclosure)
 
-**Body length budget**: keep SKILL.md under **500 lines** for optimal performance. Approaching that limit is a signal to split content into separate reference files.
+### Body budget
+
+The budget is a token cap, not a line count, and it is enforced rather than advised. Each admitted skill **body** — the SKILL.md content after its front matter — must stay under `SKILL_BODY_TOKEN_CAP` in `packages/installer/src/installer/core/surface_budget.py`, currently **2,000 tokens**, counted as `ceil(bytes / 4)`. A breach is fatal: the deploy aborts before any write, and `make content-lint` fails the same way in this repository.
+
+Three consequences worth holding onto:
+
+- **Only the body is charged.** Front matter, `references/`, and `scripts/` fall outside the measurement, which is exactly what makes progressive disclosure the way to stay under the cap rather than a stylistic preference.
+- **Bytes, not lines.** At this repository's prose density a body runs around 13 tokens per line, so 2,000 tokens is roughly 150 lines — but a dense table costs more per line than a sparse list, and the number the gate reads is the byte count.
+- **Measure, do not estimate.** `make content-lint` prints every admitted skill's body weight on a pass, so headroom is visible as a trend before it becomes a failed deploy.
+
+When a body outgrows the cap, move sections into `references/` verbatim and leave a pointer. Cutting content to fit is how a skill quietly stops teaching what it used to.
 
 ---
 
@@ -128,7 +168,7 @@ Long skill bodies should be split into a primary SKILL.md plus supporting files,
 ```
 skills/
   processing-pdfs/
-    SKILL.md           # Entry point — under 500 lines
+    SKILL.md           # Entry point — the only file charged against the body cap
     FORMS.md           # Loaded when user mentions form filling
     REFERENCE.md       # Loaded when API details are needed
     EXAMPLES.md        # Loaded when concrete examples are needed
@@ -208,7 +248,9 @@ When a skill references MCP tools, **always use the fully qualified `ServerName:
 | Description not in third person | "I can…" or "You can…" framing | Rewrite as "Processes…", "Generates…" |
 | Description over 1024 chars | Validation will fail | Tighten or split |
 | `name` violates schema | Uppercase, spaces, reserved words, XML, over 64 chars | Rename to lowercase-kebab-case |
-| Body over 500 lines | SKILL.md is the entire methodology with no supporting files | Split into reference files; keep SKILL.md as entry point |
+| No `admission:` record | Front matter carries `name` and `description` only | Add a complete record; without one the skill deploys nothing and any deployed copy is pruned |
+| Incomplete `admission:` record | States both `prevents` and `provides`, or neither; a required field is empty | Fix it — a malformed record aborts the whole deploy, not just this artifact |
+| Body over the token cap | SKILL.md is the entire methodology with no supporting files | Move sections into reference files verbatim; keep SKILL.md as entry point |
 | References more than one level deep | SKILL.md → A → B → C | Flatten to SKILL.md → A, SKILL.md → B, SKILL.md → C |
 | Reference file >100 lines without TOC | Claude may read partial content and miss sections | Add a Contents section at the top |
 | History/rationale as primary content | Long preamble before the methodology | Move rationale to references/ or remove |
@@ -216,8 +258,9 @@ When a skill references MCP tools, **always use the fully qualified `ServerName:
 | Time-sensitive information in main body | Dates that will go stale | Move to "Old patterns" section with `<details>` |
 | Inconsistent terminology | Same concept named multiple ways across the body | Pick one term; replace all instances |
 | Windows-style paths | Backslashes in path examples | Convert to forward slashes |
-| Bead references in shared skills | `bd` commands or bead terminology in `src/user/` skills | Move to plugin namespace (`src/plugins/beads/`) |
+| Tool- or tracker-specific content in a shared skill | A skill under `src/user/.agents/skills/` names a capability only one tool has, or a tracker CLI | Move it to that tool's tree (`src/user/.claude/skills/`) or to the owning plugin (`src/plugins/<plugin>/`) |
 | Inline shell sequences for deterministic logic | Skill prescribes complex bash steps in prose | Extract to a script; skill references the script |
+| Shipped script with no test suite | A `.py`/`.js`/`.sh` file with no sibling `<stem>_test.*` or `test_<stem>.*` | Add the suite — `content-tests` fails a shipped script that has none |
 | Missing MCP qualified names | `bigquery_schema` instead of `BigQuery:bigquery_schema` | Add server prefix |
 | Spurious cross-references | "See also: skill-x" with no actionable dependency | Remove or make the dependency concrete |
 
@@ -226,14 +269,22 @@ When a skill references MCP tools, **always use the fully qualified `ServerName:
 ## File Locations
 
 ```
-src/user/.agents/skills/           # Shared skills (copied to all detected tools)
+src/user/.agents/skills/           # Shared skills — staged into EVERY active tool
   <skill-name>/
-    SKILL.md                       # Required entry point
+    SKILL.md                       # Required entry point; carries the admission record
     <REFERENCE>.md                 # Optional: on-demand reference files (one level deep)
     scripts/                       # Optional: helper scripts (executed, not read)
 
+src/user/.claude/skills/           # Claude-only skills — staged into ~/.claude/ alone
+  <skill-name>/
+
 src/plugins/<plugin>/
-  .agents/skills/                  # Plugin-specific skills (installed only when plugin detected)
+  .agents/skills/                  # Plugin skills for every active tool
+  .<tool>/skills/                  # Plugin skills for one tool (e.g. .claude/skills/)
 ```
 
-Shared skills must be tool-agnostic. Tool-specific behavior (Bash, Read, Agent tools by name) belongs in plugin skills or in the optional `allowed-tools` frontmatter field where it can be enforced rather than narrated.
+Where a skill lives decides which tools receive it, and a skill is admitted or dropped the same way in every one of these trees — a plugin can be discovered, activated, and still install nothing. Two differences are worth knowing: `content-lint` treats a record-less artifact as fatal under `src/user/` but only reports it under `src/plugins/`, and a plugin's content deploys only into tools that are themselves detected.
+
+Skills are discovered exactly one level deep, so every immediate child of a skills root is one skill — never an organizational subfolder. Names must be unique across the combined tree (shared plus tool-specific plus every active plugin); a collision is a fatal install error, unlike the append-merge that rules get.
+
+Shared skills must be tool-agnostic. Tool-specific behavior (Bash, Read, Agent tools by name) belongs in a tool tree or a plugin skill, or in the optional `allowed-tools` frontmatter field where it can be enforced rather than narrated.
