@@ -6,25 +6,25 @@
         ci-workcli test-workcli lint-workcli format-check-workcli \
         typecheck-workcli cov-workcli audit-workcli verify-entry-workcli \
         itest-workcli \
-        ci-vizsuite test-vizsuite lint-vizsuite format-check-vizsuite \
-        typecheck-vizsuite cov-vizsuite audit-vizsuite verify-entry-vizsuite \
         ci-grind test-grind lint-grind format-check-grind \
         typecheck-grind cov-grind audit-grind verify-entry-grind \
         ci-gitclean test-gitclean lint-gitclean format-check-gitclean \
         typecheck-gitclean cov-gitclean audit-gitclean verify-entry-gitclean \
         ci-executor test-executor lint-executor format-check-executor \
         typecheck-executor cov-executor audit-executor verify-entry-executor \
-        spec-lint content-lint content-tests
+        spec-lint content-lint content-tests doc-lint
 
 INSTALLER := packages/installer
 PRGROOM := packages/prgroom
 WORKCLI := packages/workcli
-VIZSUITE := packages/vizsuite
 GRIND := packages/grind
 GITCLEAN := packages/gitclean
 EXECUTOR := packages/executor
 
-ci: ci-installer ci-prgroom ci-workcli ci-vizsuite ci-grind ci-gitclean ci-executor \
+# `doc-lint` is deliberately absent: it reports live staleness in prose that is
+# being corrected right now, so adding it here would turn every unrelated build
+# red until that sweep lands. Add it once the tree is clean.
+ci: ci-installer ci-prgroom ci-workcli ci-grind ci-gitclean ci-executor \
     lint-actions spec-lint content-lint content-tests
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
@@ -70,6 +70,18 @@ content-lint:
 # PATH: the suites are node:test and PEP 723 scripts respectively.
 content-tests:
 	uv --project $(INSTALLER) run python -m installer.content_tests_cli .
+
+# doc-lint reads every tracked Markdown file outside docs/specs/ and reports the
+# backticked citations that no longer resolve — a path, a Python symbol, or a
+# named skill/rule/command/agent. It is the only gate over prose nobody is
+# editing, which is the prose that rots: review catches a false sentence in a
+# changed file and cannot catch a true one that stopped being true. The asset
+# roster comes from the same staging-and-gate path content-lint uses, so the two
+# cannot disagree about what deploys. Repo-root invocation (no `cd`) so it
+# resolves the tracked set and every cited path against the repo; it writes
+# nothing and never invokes the installer. NOT in `ci` — see the note there.
+doc-lint:
+	uv --project $(INSTALLER) run python -m installer.doc_lint_cli .
 
 # lint-actions and verify-entry-installer run from the repo root (no `cd`) so
 # they can resolve .github/workflows/ and scripts/ respectively. The
@@ -151,27 +163,6 @@ verify-entry-workcli:
 # ~1.4s bd init ONCE (under -n auto it would re-init per worker).
 itest-workcli:
 	cd $(WORKCLI) && uv run pytest tests/integration -q -p no:xdist
-
-# ── vizsuite (mirrors the ci-workcli block one-for-one; enforced via the
-# top-level `ci:` aggregate) ──
-ci-vizsuite: lint-vizsuite format-check-vizsuite typecheck-vizsuite \
-             cov-vizsuite audit-vizsuite verify-entry-vizsuite
-
-test-vizsuite:
-	cd $(VIZSUITE) && uv run pytest -q
-lint-vizsuite:
-	cd $(VIZSUITE) && uv run ruff check
-format-check-vizsuite:
-	cd $(VIZSUITE) && uv run ruff format --check
-typecheck-vizsuite:
-	cd $(VIZSUITE) && uv run mypy --strict src
-cov-vizsuite:
-	cd $(VIZSUITE) && uv run pytest --cov --cov-report=term-missing
-audit-vizsuite:
-	cd $(VIZSUITE) && uv sync --frozen && uv run pip-audit
-verify-entry-vizsuite:
-	uv --project $(VIZSUITE) run viz --protocol-version > /dev/null
-	uv --project $(VIZSUITE) run viz --help > /dev/null
 
 # ── grind (mirrors the ci-workcli block one-for-one; enforced via the
 # top-level `ci:` aggregate). ──

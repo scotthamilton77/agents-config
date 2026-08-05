@@ -47,7 +47,11 @@ Out of scope:
 
 - Installing `bd` (external prerequisite, unchanged).
 - Deploying `pdlc`, `holding-place`, or `vizsuite` (early packages; the
-  registry is deliberately closed).
+  registry is deliberately closed). None of the three is in this repository
+  any more: the first two were retired to `scotthamilton77/agents-config-ARCHIVE`
+  on 2026-08-05 and the third extracted to `scotthamilton77/vizsuite` the same
+  day. The registry stays closed for the same reason, so this exclusion is now
+  simply moot rather than load-bearing.
 - Project-scoped installs (`--project` never deploys CLIs).
 - The discipline-layer asset migration itself (agents-config-wgclw.9.4).
 - Package `__version__` surfacing (digest-based staleness makes it unneeded).

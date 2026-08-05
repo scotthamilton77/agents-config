@@ -2,11 +2,16 @@
 
 **Date:** 2026-07-15
 **Status:** Draft — pending review
-**Relocated authority:** this spec cites the project's `CONTEXT.md` domain glossary
-as binding in several places. That glossary was retired to the
-`scotthamilton77/agents-config-ARCHIVE` repository, where it keeps its root path.
-Its terminology describes the pre-rework lifecycle, so treat the citations below as
-naming the source this spec was written against, not as a live contract.
+**Two premises expired on 2026-08-05.** This spec repeatedly names vizsuite V2's
+work-map as the seeing layer that consumes `track` (§5, §8, and the `work graph`
+data contract). The vizsuite package was extracted to `scotthamilton77/vizsuite`
+that day; only V1 was ever built, and **V2 is not planned**, so the §8 contract
+handoff has no recipient and §7's interim landscape generator has no successor to
+retire it — that generator was itself retired to
+`scotthamilton77/agents-config-ARCHIVE` on the same day, so its stated retirement
+condition is void rather than outstanding. The track dimension itself is
+unaffected: it is a tracker concern, and the track names remain registered in
+`project-config.toml`.
 **Bead:** to be minted at PR merge (see Continuations); nearest anchor `agents-config-wgclw.9` (work facade CLI v1)
 **Decision:** Keep the monorepo and the single bead database. Partition the *tracker*
 with a first-class, split-portable **track** dimension built into the work-facade
