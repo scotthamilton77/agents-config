@@ -99,6 +99,22 @@ class Recording(GitOnly):
         return super().git(args, cwd=cwd)
 
 
+def remotes_asked(transcript: list[tuple[str, ...]]) -> list[str]:
+    """Every remote an `ls-remote` in this transcript was pointed at.
+
+    Two questions reach a remote by that command and they are spelled
+    differently: the survey asks one what it still advertises
+    (`ls-remote --heads -- <remote>`), and the deletion asks after a single ref
+    on it (`ls-remote --heads <remote> <ref>`). The remote is the first
+    argument that is not an option in both, which is what this reads -- a fixed
+    position is not something the two spellings share."""
+    return [
+        next(arg for arg in call[call.index("ls-remote") + 1 :] if not arg.startswith("-"))
+        for call in transcript
+        if "ls-remote" in call
+    ]
+
+
 def report(
     repo: Path, *args: str, now: datetime | None = None, port: CommandPort | None = None
 ) -> dict[str, object]:
@@ -807,12 +823,13 @@ def test_a_salvaged_server_ref_restores_by_the_command_the_tool_printed(
     assert git(clone, "cat-file", "-p", f"{only}:feat-gone.txt") == "the only copy"
 
 
-def test_a_server_ref_the_remote_already_dropped_costs_no_bundle(
+def test_a_server_ref_the_remote_already_dropped_is_never_offered(
     repo: Path, tmp_path: Path
 ) -> None:
     """What a forge that deletes a branch when its PR merges leaves behind: a
     tracking ref under refs/remotes naming a branch the server no longer has.
-    That stale ref is the only reason the target is in the plan at all.
+    That stale ref is the only thing that ever made this a target, and the
+    survey asks the server rather than believing it.
 
     The ref is dropped *inside the bare repository*, which is what a forge
     tidying up after a merge does and is the only way to reach this state:
@@ -822,9 +839,14 @@ def test_a_server_ref_the_remote_already_dropped_costs_no_bundle(
     this is about, and the assertion below is there because a setup that
     quietly cleaned the cache would test nothing.
 
-    The salvage list is what matters. Learning the ref is gone from a rejected
-    push means learning it after bundling the branch's entire history for
-    something that was never there to lose."""
+    Real git, because this is also what proves `ls-remote --heads --` is an
+    argv git accepts. The terminator is there for option safety -- it stops a
+    remote named like a flag being read as one -- and not for the repository
+    position, which git will fill from a path whatever precedes it; what keeps
+    the probe pointed at a real remote is that the name came from the
+    configured remote list. Either way a spelling git rejected would fail every
+    probe, and a failed probe reports every server ref as still there, so this
+    would pass while measuring nothing."""
     bare = _with_remote(repo, tmp_path)
     _push_only_copy(repo, "feat/vanished")
     git(bare, "update-ref", "-d", "refs/heads/feat/vanished")
@@ -832,14 +854,20 @@ def test_a_server_ref_the_remote_already_dropped_costs_no_bundle(
 
     payload = report(repo, "--cleanup", "origin/feat/vanished")
 
-    assert payload["_exit"] == EXIT_OK
+    assert payload["_exit"] == EXIT_REFUSED
+    refusal = refusals(payload)[0]
+    assert refusal["code"] == "E_NOT_A_TARGET"
+    assert "no longer advertises refs/heads/feat/vanished" in str(refusal["message"])
+    assert "fetch --prune origin" in str(refusal["message"])
+    assert "remote:origin/feat/vanished" not in [t["id"] for t in payload["targets"]]  # type: ignore[union-attr]
+    # Nothing was spent finding that out, and the tracking ref is still here:
+    # gitclean does not prune what a fetch created.
     execution = payload["execution"]
     assert isinstance(execution, dict)
     assert execution["anomalies"] == []
     assert execution["salvages"] == []
-    deletion = execution["deletions"][0]
-    assert deletion["already_absent"] is True
-    assert deletion["deleted"] is False
+    assert execution["deletions"] == []
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/remotes/origin/feat/vanished")
 
 
 def test_the_salvage_ref_does_not_outlive_the_run(repo: Path, tmp_path: Path) -> None:
@@ -1010,7 +1038,7 @@ def test_a_remote_whose_name_holds_a_slash_is_never_split_at_the_wrong_one(
 
     # Every remote git was given is the configured name, never its first
     # component -- and the decoy was never opened.
-    named = [call[call.index("--heads") + 1] for call in port.transcript if "--heads" in call]
+    named = remotes_asked(port.transcript)
     assert named and set(named) == {"team/origin"}
     assert git(decoy, "for-each-ref", "--format=%(refname)") == ""
 
@@ -1068,7 +1096,7 @@ def test_a_ref_reachable_only_through_a_custom_refspec_belongs_to_who_fetches_it
 
     # Every remote git was handed is the one that fetches the ref, never the
     # one the path happens to spell.
-    named = [call[call.index("--heads") + 1] for call in port.transcript if "--heads" in call]
+    named = remotes_asked(port.transcript)
     assert named and set(named) == {"upstream"}
 
 

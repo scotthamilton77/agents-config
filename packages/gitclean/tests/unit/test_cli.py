@@ -389,6 +389,51 @@ def test_a_bare_name_only_the_server_wears_is_told_the_spelling_that_reaches_it(
     assert execution["deletions"] == []
 
 
+def _phantom_remote_port() -> ScriptedCommands:
+    """The tracking ref is here and the server has moved on: origin advertises
+    the trunk and nothing else, which is what a forge that deletes a branch
+    when its pull request merges leaves behind."""
+    return make_port(
+        refs=[
+            ref_at("refs/heads/main", "main", "a" * 40, head="*"),
+            ref_at("refs/remotes/origin/feat/x", "origin/feat/x", "f" * 40),
+        ],
+        counts={"refs/remotes/origin/main..origin/feat/x": "0"},
+        ls_remote={"origin": ok(f"{'a' * 40}\trefs/heads/main")},
+    )
+
+
+def test_naming_a_ref_the_server_dropped_says_what_is_actually_the_matter() -> None:
+    """The survey no longer offers it, so the full spelling lands on the
+    exclusion rather than on a deletion -- and the reason is the whole value of
+    the refusal: nothing on the server, a tracking ref a fetch left here, and
+    the prune that clears it."""
+    port = _phantom_remote_port()
+
+    code, payload = invoke(["--cleanup", "origin/feat/x"], port)
+
+    assert code == EXIT_REFUSED
+    refusal = sole_refusal(payload)
+    assert refusal["code"] == "E_NOT_A_TARGET"
+    assert "no longer advertises refs/heads/feat/x" in str(refusal["message"])
+    assert "git fetch --prune origin" in str(refusal["message"])
+    assert not any(call[:2] == ("git", "push") for call in port.transcript)
+
+
+def test_a_bare_name_the_server_no_longer_wears_is_absent_rather_than_quoted() -> None:
+    """The other half of the same change. `E_BARE_NAME_IS_SERVER_REF` exists to
+    quote the spelling that would reach the server's copy, and there is no
+    longer a copy to reach -- so the honest answer is the one the caller asked
+    for: nothing here wears that name."""
+    code, payload = invoke(["--cleanup", "feat/x"], _phantom_remote_port())
+
+    assert code == EXIT_OK
+    assert refusals(payload) == []
+    plan = payload["plan"]
+    assert isinstance(plan, dict)
+    assert [a["selector"] for a in plan["absent"]] == ["feat/x"]
+
+
 def test_a_miss_with_no_refs_read_exits_refused_not_clean() -> None:
     """Exit 0 here would report a branch as gone on the strength of a list that
     failed to load. The caller is entitled to know the difference between "it
@@ -711,8 +756,13 @@ def test_an_unsplittable_server_ref_is_counted_on_the_survey() -> None:
 
 
 def _absent_remote_port() -> ScriptedCommands:
-    """The tracking ref is here and the server's copy is not, which is what a
-    forge that deletes merged branches leaves behind."""
+    """A server that dropped the ref between the survey and the deletion.
+
+    It advertises the branch when the survey asks what it holds -- so the
+    target is offered -- and holds nothing by the time the executor asks after
+    that one ref. That race is what the check before the delete is for, and it
+    is the only route to this outcome now that a ref the survey found missing
+    never becomes a target at all."""
     return make_port(
         refs=[
             ref_at("refs/heads/main", "main", "a" * 40, head="*"),

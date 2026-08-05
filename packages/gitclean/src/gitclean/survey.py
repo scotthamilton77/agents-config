@@ -1097,6 +1097,99 @@ def _resolve_merge(
     return False, MergeEvidence.NONE, covers_tip, tuple(failures)
 
 
+def _advertised_heads(
+    port: CommandPort, cwd: Path | None, remote: str
+) -> tuple[set[str] | None, str | None]:
+    """Every branch this remote currently advertises, or None and the warning
+    when it would not say.
+
+    Asked because everything under `refs/remotes/` is a local cache that a
+    fetch refreshes and nothing invalidates. On a forge that deletes a branch
+    when its pull request merges -- the common configuration -- that cache
+    routinely names refs the server dropped weeks ago, so offering one as a
+    target sends a reader after something that is not there.
+
+    The refname is the LAST tab-separated field, which is the same comparison
+    the deletion-time probe makes: `ls-remote` prints `<oid>\\t<refname>`, and
+    reading the column rather than searching the line is what keeps an
+    unrelated `a/feat/x` from answering for `feat/x`.
+
+    Two separate protections, and it is worth not confusing them. `--` ends
+    option parsing, which is what keeps a branch or remote named like a flag
+    from being read as one. It does *not* stop git accepting a path in the
+    repository position -- nothing does.
+
+    What covers that is where `remote` comes from: the decomposition against
+    the configured remote list, so the only names reaching here are ones git
+    itself listed. It matters because a name that is not a configured remote
+    is not rejected -- a sibling directory of that name that happens to be a
+    repository is opened instead and answers, well-formed, empty, and about
+    somebody else entirely. An empty answer here means every branch is gone."""
+    result = port.git(["ls-remote", "--heads", "--", remote], cwd=cwd)
+    if not result.ok:
+        return None, (
+            f"could not ask {remote} which branches it still has (exit {result.returncode}); "
+            f"its refs are reported as this repository's remote-tracking refs hold them, which "
+            f"may be out of date -- nothing here says any of them is gone"
+        )
+    return {
+        line.split("\t")[-1].strip() for line in result.stdout.splitlines() if line.strip()
+    }, None
+
+
+def _verify_against_remotes(
+    port: CommandPort, cwd: Path | None, branches: list[Branch]
+) -> tuple[list[Branch], list[NotOffered], list[str]]:
+    """The branches with the phantoms taken out, those phantoms, and the
+    remotes that would not answer.
+
+    A phantom is a remote-tracking ref whose server no longer advertises the
+    branch it names. The deletion path already asks this question before
+    spending anything on such a target; asking it during the survey is what
+    keeps one from being offered as a target at all, so a reader is never shown
+    a branch that is already gone.
+
+    One probe per remote, and only for remotes some candidate ref belongs to.
+    That is why this is a pass over the branches rather than a sweep over the
+    configured remotes: a remote nobody has refs from -- a server that moved,
+    a colleague's fork left in the config -- would otherwise cost a full
+    network timeout to learn nothing about.
+
+    A probe that did not answer leaves its branches exactly as they were. Not
+    knowing what a server holds is not evidence that it holds nothing, and
+    reading it that way would drop every one of that remote's refs out of the
+    report on the strength of a connection that failed."""
+    advertised: dict[str, set[str] | None] = {}
+    kept: list[Branch] = []
+    phantoms: list[NotOffered] = []
+    warnings: list[str] = []
+    for branch in branches:
+        remote = branch.remote
+        if remote is None:
+            # A local branch: no server holds a copy, so there is nobody to ask.
+            kept.append(branch)
+            continue
+        if remote not in advertised:
+            heads, warning = _advertised_heads(port, cwd, remote)
+            advertised[remote] = heads
+            if warning is not None:
+                warnings.append(warning)
+        heads = advertised[remote]
+        if heads is None or f"refs/heads/{branch.ref_name}" in heads:
+            kept.append(branch)
+            continue
+        phantoms.append(
+            NotOffered(
+                name=branch.name,
+                reason=f"{remote} no longer advertises refs/heads/{branch.ref_name}, so there "
+                f"is nothing on the server to delete; what is left is {branch.ref}, the "
+                f"remote-tracking ref a fetch created here, and `git fetch --prune {remote}` "
+                f"is what clears it -- gitclean does not prune refs it did not create",
+            )
+        )
+    return kept, phantoms, warnings
+
+
 def read_branches(
     port: CommandPort,
     cwd: Path | None,
@@ -1285,6 +1378,12 @@ def read_branches(
                 probe_failures=probe_failures,
             )
         )
+    # Last, over the branches this loop built: every server ref here was read
+    # from a cache, and the servers themselves are the only thing that says
+    # which of those refs still exist.
+    branches, phantoms, probe_warnings = _verify_against_remotes(port, cwd, branches)
+    not_offered.extend(phantoms)
+    warnings.extend(probe_warnings)
     if dropped:
         warnings.append(
             f"{dropped} ref row(s) could not be parsed and are missing from this report; "
