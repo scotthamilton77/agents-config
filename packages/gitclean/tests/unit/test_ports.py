@@ -2,22 +2,109 @@
 
 The real port's job is to turn every way a command can go wrong into a
 CommandResult rather than an exception, because the layers above it report
-anomalies and must never be interrupted by one."""
+anomalies and must never be interrupted by one.
+
+The argv constructors are tested here for the same reason they live here: the
+rule they carry is about everything this package hands to git, not about one of
+the modules that does the handing."""
 
 from __future__ import annotations
 
+import ast
 import subprocess
 from pathlib import Path
 
 import pytest
 
+import gitclean
 from gitclean.ports import (
     CommandResult,
     ScriptedCommands,
     SubprocessCommands,
     fail,
+    git_argv,
+    git_rev,
     ok,
 )
+
+# -- the argv constructors ---------------------------------------------------
+
+
+def test_every_git_call_in_the_package_is_assembled_by_the_one_argv_constructor() -> None:
+    """The terminator used to be a habit applied call site by call site, and
+    the sites that forgot it were the ones nobody could type by hand: a bundle
+    of a ref named `-m`, and a survival probe for one. Neither shows up in
+    review as a missing argument -- it looks exactly like the sites that were
+    right.
+
+    So the property is asserted over every module in the package, not over one
+    call and not over one file. Checking only the module the known defects
+    happened to land in is the same judgement that missed them: the next probe
+    goes wherever the next question is asked, and a file nobody remembered to
+    add here would be covered by nothing at all."""
+    package = Path(gitclean.__file__).parent
+    unrouted: list[str] = []
+    asking: set[str] = set()
+    for module in sorted(package.glob("*.py")):
+        tree = ast.parse(module.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and ast.unparse(node.func).endswith(".git")):
+                continue
+            asking.add(module.name)
+            if not (
+                node.args
+                and isinstance(node.args[0], ast.Call)
+                and ast.unparse(node.args[0].func) == "git_argv"
+            ):
+                unrouted.append(f"{module.name}: {ast.unparse(node)}")
+
+    assert unrouted == []
+    # Not vacuous. A glob that matched nothing, or a module renamed out from
+    # under this, leaves an empty list to compare and passes on having looked
+    # at no code -- so the two files that do ask git are named.
+    assert {"survey.py", "execute.py"} <= asking
+
+
+def test_the_constructor_terminates_a_name_git_would_read_as_an_option() -> None:
+    assert git_argv("branch", "-D", name="-m") == ["branch", "-D", "--", "-m"]
+
+
+def test_the_constructor_leaves_a_full_ref_path_unterminated() -> None:
+    """`bundle create` hands its arguments to rev-list, where `--` introduces a
+    pathspec: terminating there produces `Refusing to create empty bundle`
+    rather than protection. A `refs/...` path needs no terminator -- no git
+    command reads one as an option."""
+    assert git_argv("bundle", "create", "/salvage/x.bundle", name="refs/heads/-m") == [
+        "bundle",
+        "create",
+        "/salvage/x.bundle",
+        "refs/heads/-m",
+    ]
+
+
+def test_a_command_carrying_no_name_comes_through_unchanged() -> None:
+    """Which is what makes the rule checkable: every git call goes through the
+    constructor, so a new one has nowhere else to put a name."""
+    assert git_argv("worktree", "list", "--porcelain", "-z") == [
+        "worktree",
+        "list",
+        "--porcelain",
+        "-z",
+    ]
+
+
+def test_a_rev_spelling_names_an_option_shaped_branch_by_its_full_path() -> None:
+    """A rev expression has no argument of its own to terminate, so the name
+    inside it is spelled as a path instead."""
+    assert f"{git_rev('-m')}^{{tree}}" == "refs/heads/-m^{tree}"
+
+
+def test_a_rev_spelling_leaves_a_name_git_reads_correctly_alone() -> None:
+    """`refs/heads/` is the wrong prefix for a remote-tracking branch, and its
+    short name leads with its remote, so it is already unambiguous."""
+    assert git_rev("origin/feat") == "origin/feat"
+    assert git_rev("feat") == "feat"
+
 
 # -- CommandResult -----------------------------------------------------------
 

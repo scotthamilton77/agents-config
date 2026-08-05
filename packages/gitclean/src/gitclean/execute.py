@@ -37,7 +37,7 @@ from datetime import datetime
 from pathlib import Path
 
 from gitclean.model import Anomaly, Deletion, Plan, SalvageRecord, Survey, Target, TargetKind
-from gitclean.ports import CommandPort
+from gitclean.ports import CommandPort, git_argv
 from gitclean.survey import list_worktrees
 
 SALVAGE_PREFIX = "gitclean-salvage"
@@ -64,36 +64,6 @@ class ExecutionReport:
     @property
     def ok(self) -> bool:
         return not self.anomalies
-
-
-def git_argv(*command: str, name: str | None = None) -> list[str]:
-    """The only place a name out of the repository is put into a git argv.
-
-    A repo-derived name can be spelled exactly like an option. `refs/heads/-m`
-    is a legal ref -- `git branch` will not create one, but `update-ref` will
-    and a remote can push one -- and `git branch -D -m` is a rename, not a
-    deletion. Two spellings survive that, and which one applies is a property
-    of the name rather than of the caller, so it is decided here:
-
-    - a full `refs/...` path, which no git command parses as an option, and
-    - the `--` terminator, for names that have to stay short.
-
-    Both exist because `bundle create` hands its arguments to rev-list, where
-    `--` introduces a pathspec: terminating there yields `Refusing to create
-    empty bundle` rather than protection. `branch -D` is the mirror image --
-    it rejects a full ref path and takes only the short name -- so neither
-    spelling covers every call site and neither can be the single rule.
-
-    Passing through one constructor is what makes that impossible to forget: a
-    new call site has nowhere else to put the name. Commands carrying no
-    repo-derived name come through here too, so the rule is "every git call in
-    this module", which a test can check -- rather than "every git call that a
-    reader judged to carry a name", which is the judgement that missed two."""
-    if name is None:
-        return list(command)
-    if name.startswith("refs/"):
-        return [*command, name]
-    return [*command, "--", name]
 
 
 def slug(name: str) -> str:
