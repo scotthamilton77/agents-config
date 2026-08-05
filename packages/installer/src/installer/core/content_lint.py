@@ -89,10 +89,10 @@ from installer.plugins.registry import discover, is_plugin_dir
 from installer.tools.registry import get_adapter, known_tools
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from installer.core.io_port import IOPort
-    from installer.core.model import StagedItem
+    from installer.core.model import StagedItem, StagingPlan, Tool
     from installer.plugins.base import PluginAdapter
 
 # The subtree the repo declares to be admitted content only, so a record-less
@@ -138,6 +138,90 @@ UNGATED_ROOTS: dict[Path, str] = {}
 _ARTIFACT = "artifact"  # attributable to one source file
 _SURFACE = "surface"  # a property of the tool, not of any one file
 _WHOLE = "whole"  # spans artifacts; grouped with nothing
+
+
+@dataclass(frozen=True, slots=True)
+class StagedSource:
+    """``src/`` staged for every tool with every plugin, plus the inputs that
+    produced it.
+
+    The plans are what both consumers here need, but not all they need:
+    ``lint_content`` also has to ask which directories staging read, and that
+    answer is a function of the same ``.installignore`` and the same plugin
+    discovery. Carrying all four together is what keeps the gate's fileset and
+    its accounting derived from one staging run rather than from two that could
+    disagree about which plugins exist.
+    """
+
+    plans: dict[Tool, StagingPlan]
+    plugins: tuple[PluginAdapter, ...]
+    plugins_root: Path
+    ignore: InstallIgnore
+
+
+def stage_src(repo_root: Path, *, io: IOPort) -> StagedSource:
+    """Stage ``repo_root``'s ``src/`` for every known tool and every discovered
+    plugin, without writing anything.
+
+    Every tool with every plugin, rather than whatever the current machine has
+    installed, for the reason stated at the top of this module: what deploys must
+    not depend on the home directory of whoever runs the check.
+
+    ``io`` receives whatever staging itself emits (e.g. a last-wins merge
+    warning). Raises whatever ``load_installignore`` and staging raise — an
+    absent ``.installignore`` or an irreconcilable collision is a repo defect the
+    caller surfaces, not something to swallow.
+    """
+    ignore = load_installignore(repo_root / ".installignore")
+    # Stated once. ``_staged_dirs`` takes it as an argument rather than restating
+    # it, so the directory this gate discovers plugins from and the directory it
+    # considers accounted for cannot drift apart. The env override
+    # ``config.resolve_plugins_root`` honours is deliberately not consulted: this
+    # gate lints the repo's own tree, not whatever a machine points the installer at.
+    plugins_root = repo_root / "src" / "plugins"
+    plugins = tuple(discover(plugins_root).values())
+    plans = stage_and_transform(
+        known_tools(), repo_root=repo_root, io=io, ignore=ignore, plugins=plugins
+    )
+    return StagedSource(plans=plans, plugins=plugins, plugins_root=plugins_root, ignore=ignore)
+
+
+def admitted_asset_names(plans: Mapping[Tool, StagingPlan]) -> dict[str, frozenset[str]]:
+    """The name of every gated artifact in ``plans``, keyed by namespace.
+
+    Meant to be handed the gate's *filtered* plans, in which case the answer is
+    the authoritative deployed-asset roster: a rule, skill, command or agent that
+    reaches an agent is exactly one that survived the admission partition, which
+    is why presence in ``src/`` is not the question to ask. Handed the pre-gate
+    plans it answers the wider question — everything staged, admitted or not.
+
+    A name is the destination's own, minus a ``.md`` suffix, because that is what
+    the tool addresses the artifact by: ``skills/writing-skills`` (a directory)
+    and ``rules/delegation.md`` (a file) are both named for their last component.
+    Namespaces are unioned across tools, since the roster is a property of the
+    repo rather than of any one deploy target.
+    """
+    names: dict[str, set[str]] = {}
+    for plan in plans.values():
+        for dest, item in plan.items.items():
+            if item.namespace is None:
+                continue
+            names.setdefault(item.namespace, set()).add(
+                dest.stem if dest.suffix == ".md" else dest.name
+            )
+    return {namespace: frozenset(found) for namespace, found in names.items()}
+
+
+def deployed_asset_names(repo_root: Path, *, io: IOPort) -> dict[str, frozenset[str]]:
+    """Every asset name that actually deploys out of ``repo_root``'s ``src/``.
+
+    The one query a sibling check should ask when it needs the roster, because it
+    stages and gates through the same path ``lint_content`` does. A second
+    derivation — walking ``src/`` for directory names, say — would answer a
+    different question (what is authored) and drift from this one silently, since
+    nothing would ever compare the two.
+    """
+    return admitted_asset_names(run_admission_gate(stage_src(repo_root, io=io).plans).plans)
 
 
 @dataclass(frozen=True, slots=True)
@@ -596,17 +680,8 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
     absent ``.installignore`` or an irreconcilable collision is a repo defect
     the caller surfaces, not something to swallow into a clean result.
     """
-    ignore = load_installignore(repo_root / ".installignore")
-    # Stated once. ``_staged_dirs`` takes it as an argument rather than restating
-    # it, so the directory this gate discovers plugins from and the directory it
-    # considers accounted for cannot drift apart. The env override
-    # ``config.resolve_plugins_root`` honours is deliberately not consulted: this
-    # gate lints the repo's own tree, not whatever a machine points the installer at.
-    plugins_root = repo_root / "src" / "plugins"
-    plugins = tuple(discover(plugins_root).values())
-    plans = stage_and_transform(
-        known_tools(), repo_root=repo_root, io=io, ignore=ignore, plugins=plugins
-    )
+    staged = stage_src(repo_root, io=io)
+    plans = staged.plans
 
     # Built from the PRE-gate plans: run_admission_gate returns a filtered copy
     # with the dropped items already gone, so this is the only place the skipped
@@ -662,8 +737,10 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
         "source-side, or UNGATED_ROOTS for this one path with the reason it is exempt"
         for path in _unaccounted_dirs(
             repo_root,
-            staged=_staged_dirs(repo_root, plugins_root=plugins_root, plugins=plugins),
-            ignore=ignore,
+            staged=_staged_dirs(
+                repo_root, plugins_root=staged.plugins_root, plugins=staged.plugins
+            ),
+            ignore=staged.ignore,
         )
     )
     violations.extend(_stale_exemptions(repo_root))
