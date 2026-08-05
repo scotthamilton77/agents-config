@@ -1,6 +1,6 @@
 # agents-config
 
-Versioned collection of agents, skills, commands, and templates for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, **Google Gemini CLI**, and **OpenCode**. Shared content is installed to all detected tools; tool-specific content goes only where it belongs.
+Versioned collection of skills, rules, commands, and templates for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, **Google Gemini CLI**, and **OpenCode**. Shared content is installed to all detected tools; tool-specific content goes only where it belongs.
 
 > **New here and want to _use_ this?** Start with the **[User Guide](./docs/guide/index.md)** — install, configure a project, and run the opinionated agentic SDLC. This README is the project overview and installer reference.
 
@@ -17,37 +17,31 @@ If the harness works as intended, an idealized "day in the life" looks like:
 
 The five load-bearing convictions behind this:
 
-1. **Methodology is the moat, not the model.** Skills define HOW (TDD, brainstorming, verification, adversarial review); agents define WHO; the underlying model is interchangeable.
+1. **Methodology is the moat, not the model.** Skills define HOW (design, spec-writing, review, delegation); agents define WHO; the underlying model is interchangeable.
 2. **AI must be good at saying "no, not ready."** Under-specified work should bounce back to the human BEFORE implementation, with structured feedback on what is missing — not after a wasted autonomous run.
-3. **Adversarial cross-model review is a first-class substitute for human review.** Different models have different blind spots; multi-model dialectic catches what a single model misses (RALF, foreign-CLI, codex adversarial review).
+3. **Adversarial cross-model review is a first-class substitute for human review.** Different models have different blind spots; multi-model dialectic catches what a single model misses.
 4. **Evidence before assertion, always.** Mechanical gates (tests, build, lint, review) sit between "I think this works" and "this is done."
-5. **Persistent context survives compaction.** Beads, memories, formulas, and audit logs let work span sessions, agents, and overnight cranking without losing thread.
+5. **Persistent context survives compaction.** Tracked work items and handoff documents let work span sessions, agents, and overnight cranking without losing thread.
 
-### Current state
+### Current state — mid-rebuild
 
-The core architecture is in place, and several keystone enablers have shipped since the first cut: a canonical decision matrix that resolves the decide-vs-escalate direction, a three-tier completion gate (SKIP/SERIAL/HEAVY) that scales verification to the diff, a two-axis review/merge policy (`never` / `explicit` / `rule-based`) enforced by `merge-guard`, and the `prgroom` CLI + `monitor-pr` skill that make PR grooming deterministic. Notable remaining gaps:
+**The harness is being rebuilt, and a large part of what this repo used to ship no longer exists.** The completion gate, the merge guard, the PR-feedback skills, the planning and test-first skills, and every role-based agent definition were retired; their replacements are specified but mostly not built. What ships today is a much smaller set: the always-on instruction core (laws, decision matrix, hard lines), the design and spec-writing path (`grilling`, `to-spec`, `ac-attack`), the review contracts (`review-panel`, `review-verdict`), the delegation skills, and git cleanup.
 
-- The "no, not ready" brainstorm-readiness gate is implicit, not enforced (milestone M2)
-- The 85/5/10 ratio is not yet instrumented — aspirational, not measured
-- No spec post-mortem feedback loop yet — failures don't automatically improve future brainstorming
-- Rule-based auto-merge exists but is opt-in per repo; most repos still default to `explicit` (a human "ship it") — though on a protected branch it can satisfy the required review via an App-attested approver (`[merge-policy.approver]`)
-- The PDLC Orchestrator (the FSM that would run overnight autonomy) is an early tracer bullet — CLI, durable state, and the strike/recovery machine are designed, not built (milestone M4)
+The plan of record is [`docs/specs/2026-07-21-harness-rework-way-forward.md`](./docs/specs/2026-07-21-harness-rework-way-forward.md) — decisions, acceptance criteria, and the ordered slice list. Read it before building on anything here. Live status lives in the tracker, not in this file.
 
-Treat the vision as direction and the rules-as-written as the current contract. Contributions are welcome.
+Where this README and the source tree disagree, believe the source tree.
 
 ## Prerequisites
 
-This configuration relies on two Claude Code plugins being installed:
+- **An AI coding assistant** — Claude Code, OpenAI Codex CLI, Google Gemini CLI, or OpenCode. The installer detects which you have.
+- **`uv`** — the installer is a uv-managed Python package (auto-installs Python ≥3.11 on first run). `uv` ≥ 0.10.4 is required for the stage that deploys this repo's CLIs onto PATH.
 
-- **[obra/superpowers](https://github.com/obra/superpowers)** - Provides the skill/agent framework referenced throughout: brainstorming, TDD, verification-before-completion, dispatching-parallel-agents, finishing-a-development-branch, and more
-- **[steveyegge/beads](https://github.com/steveyegge/beads)** - Git-backed issue tracker providing the `bd` command used for task tracking in the AGENTS.md template
+Nothing else is required. Two former prerequisites are now optional:
 
-Without these plugins, several shared workflow rules (`delegation`, `completion-gate` under `src/user/.agents/rules/`, and `beads` under `src/plugins/beads/`) will reference skills and commands that don't exist.
+- **[steveyegge/beads](https://github.com/steveyegge/beads)** — the `bd` tracker. The `work` CLI this repo installs is a facade over `bd` and needs it to function, but nothing in the installed instruction surface requires either.
+- **[obra/superpowers](https://github.com/obra/superpowers)** — no longer a dependency. The rules and skills that referenced its process skills were retired.
 
-**Optional integrations** (each degrades gracefully if absent):
-
-- **`prgroom` CLI** — the `monitor-pr` skill drives it for deterministic PR grooming. It is a standalone package (`packages/prgroom/`) and is **not** installed by the installer; `uv tool install` it from that directory if you want the `monitor-pr` path. The skill-based `wait-for-pr-comments` path works without it.
-- **beads / codex plugins** (`src/plugins/`) — auto-detected and installed only when their footprint is present (`bd`/`~/.beads/`, `~/.codex/`). The `codex` plugin's routing rule additionally assumes the [Codex CLI plugin](https://github.com/openai/codex).
+The `codex` plugin under `src/plugins/` is auto-detected (`~/.codex/` present or `codex` on PATH) and its skill assumes the [Codex CLI](https://github.com/openai/codex) is available.
 
 ## What's Inside
 
@@ -56,10 +50,15 @@ scripts/
 ├── install.sh                      # Thin exec stub → packages/installer (uv-managed Python)
 └── install.py                      # Python entry point (uv run python -m installer)
 packages/                           # Real Python packages (standalone uv projects, not installed config)
-├── installer/                      # The installer engine; CI-gated (make ci-installer)
-├── prgroom/                        # Deterministic PR-grooming CLI; CI-gated (make ci-prgroom)
-├── pdlc/                           # PDLC Orchestrator FSM engine (early)
-└── holding-place/                  # Idea pipeline + Promote contract to PDLC (early)
+│                                   #   See the Makefile for which are CI-gated, and
+│                                   #   core/clis.py for which deploy onto PATH
+├── installer/                      # The installer engine
+├── workcli/                        # The `work` issue-tracker facade CLI
+├── prgroom/                        # PR-grooming CLI (carved, not finished)
+├── grind/                          # Event-sourced runtime: event schema + FSM fold
+├── executor/                       # Verb→event→tracker pairing layer (no dispatch loop yet)
+├── gitclean/                       # Provably-merged branch and worktree sweeper
+└── …                               # Plus earlier-stage packages
 docs/
 ├── guide/                          # User guide — how to configure a project & run the SDLC
 ├── architecture/                   # Evergreen HLD artifacts (C4, sequence, state machines) per subsystem
@@ -70,26 +69,22 @@ docs/
 src/
 ├── user/
 │   ├── .agents/                    # Shared content (copied into all detected tools)
-│   │   ├── agents/                 # Role-based agent definitions
-│   │   ├── rules/                  # Shared workflow rules (delegation, completion-gate, subagents, worktrees, …)
+│   │   ├── rules/                  # Shared always-on rules (empty today)
 │   │   ├── skills/                 # Methodology guides with examples
-│   │   ├── AGENTS.md.template             # Zero-based shared laws, decision matrix, hard lines
-│   │   ├── AGENT-PERSONA.md.template     # Agent persona/personality
-│   │   └── USER-PERSONA.md.template      # User persona
+│   │   └── USER-CORE.md.template   # Zero-based laws, decision matrix, hard lines, conventions
 │   ├── .claude/                    # Claude-specific (→ ~/.claude/)
 │   │   ├── commands/               # Slash commands
-│   │   ├── skills/                 # Claude-only skills (e.g. orchestrating-subagents)
-│   │   ├── rules/                  # Claude-specific rules (claude-sandbox, headless-claude, orchestrating-subagents, worktree-safety)
+│   │   ├── skills/                 # Claude-only skills
+│   │   ├── rules/                  # Claude-specific rules
+│   │   ├── hooks/                  # PostToolUse / SessionStart hooks
 │   │   ├── AGENTS.md.template      # Claude instruction file
 │   │   ├── CLAUDE.md.template      # Points to AGENTS.md
-│   │   ├── CLAUDE-EXTENSIONS.md.template  # Stub header (content moved to rules/)
 │   │   └── settings.json.template  # Permissions, hooks & experimental features
 │   ├── .codex/                     # Codex-specific (→ ~/.codex/)
 │   ├── .gemini/                    # Gemini-specific (→ ~/.gemini/)
-│   └── .opencode/                  # OpenCode-specific (→ ~/.config/opencode/)
+│   └── .opencode/                  # OpenCode-specific (→ ~/.config/opencode/), + opencode.jsonc.template
 └── plugins/                        # Optional plugin content (auto-discovered, installed when detected)
-    ├── beads/                      # beads plugin: bd CLI gotcha + discovered-work rules
-    └── codex/                      # codex plugin: Codex routing rule (Claude-only)
+    └── codex/                      # codex plugin: model-routing skill for a Codex run (Claude-only)
 ```
 
 > Not everything under `src/` is a wrapper around a single tool: shared content
@@ -97,63 +92,37 @@ src/
 > `.gemini/`, and `.opencode/` add tool-specific pieces. The `packages/` are real
 > code, not installed configuration.
 
+### What actually deploys
+
+Being in `src/` is necessary but not sufficient. Every rule, skill, command and
+agent must carry a complete **admission record** in its front matter — what it
+prevents or provides, what it costs, and what observation would remove it.
+Anything without one is dropped at install and pruned on the next run, wherever
+it sits, plugin trees included. `src/user/.agents/rules/` is empty today for
+exactly that reason.
+
+Rather than duplicate a list that goes stale, read the directories — they are
+the authoritative inventory:
+
+| What | Where | Installs to |
+|------|-------|-------------|
+| Shared skills | [`src/user/.agents/skills/`](./src/user/.agents/skills/) | every detected tool |
+| Shared rules | [`src/user/.agents/rules/`](./src/user/.agents/rules/) | every detected tool |
+| Claude-only skills | [`src/user/.claude/skills/`](./src/user/.claude/skills/) | `~/.claude/skills/` |
+| Claude-only rules | [`src/user/.claude/rules/`](./src/user/.claude/rules/) | `~/.claude/rules/` |
+| Slash commands | [`src/user/.claude/commands/`](./src/user/.claude/commands/) | `~/.claude/commands/` |
+| Plugin content | [`src/plugins/`](./src/plugins/) | matching tools, when detected |
+
+Each `rules/` directory carries its own `AGENTS.md` stating what currently lives
+there. For a walkthrough of what the installed set does and where the gaps are,
+see [The SDLC Workflow](./docs/guide/sdlc-workflow.md).
+
 ### Agents
 
-Role-specific configurations that define expertise areas, behavioral patterns, and domain knowledge. Each agent file has YAML frontmatter (name, description, model, color) followed by role definition, domain-specific standards, and boundaries. See [`src/user/.agents/agents/`](./src/user/.agents/agents/) for the full set.
-
-Shipping agents:
-
-- `quality-reviewer` — proactive code quality/security/maintainability review plus plan-vs-implementation drift detection
-- `tech-lead` — orchestrates complex multi-step work across specialized agents and skills (no Write/Edit tools)
-- `pr-comment-fixer-team` — fixes a single PR review comment; invoked per-comment by the PR-feedback flow
-
-### Skills
-
-Deep methodology guides for specific tasks. Unlike agents (which define *who*), skills define *how* to approach particular problems. The set below ships from this repo; process skills referenced by the workflow rules (e.g. `brainstorming`, `test-driven-development`) come from the [superpowers](https://github.com/obra/superpowers) plugin (see Prerequisites).
-
-**Process / gate skills** — the backbone of the opinionated workflow:
-
-| Skill | Purpose |
-|-------|---------|
-| `bugfix` | Parallel debugging investigation with systematic root-cause analysis |
-| `writing-plans` | Turn a spec/requirements into a multi-step plan before touching code |
-| `writing-unit-tests` | Test behavior, not implementation; when to refuse testing untestable code |
-| `test-review` | Code review of unit/integration tests for quality and design issues |
-| `gate-triage` | Deterministic completion-gate router — computes the SKIP/SERIAL/HEAVY tier as JSON |
-| `simplify` | Review changed code for reuse/quality/efficiency and fix what it finds |
-| `verify-checklist` | Structured completion auditing with evidence requirements |
-| `using-git-worktrees` | Ensure an isolated workspace exists before feature work |
-| `finishing-a-development-branch` | Decide how to integrate completed work (merge / PR / cleanup) |
-| `merge-guard` | Pre-merge enforcement of the repo's two-axis review/merge policy |
-| `self-improving-agent` | Persist lessons from user corrections as actionable rules |
-| `retrospect` | Session retrospective — what slowed things down, what to improve |
-| `orchestrating-subagents` | Coordination contract for dispatching and nesting subagents (Claude-only) |
-
-**PR-feedback skills** — the `monitor-pr` skill drives the `prgroom` CLI (see `packages/prgroom/`); the older skill-based path is still shipped:
-
-| Skill | Purpose |
-|-------|---------|
-| `monitor-pr` | Supervise a PR through the `prgroom` grooming loop |
-| `wait-for-pr-comments` | Copilot-aware PR feedback handler: polls, classifies (FIX/SKIP/ESCALATE), fixes via per-comment subagents, pushes, then chains `reply-and-resolve-pr-threads` |
-| `reply-and-resolve-pr-threads` | Reply to every PR review thread; resolve only the FIXED ones via GraphQL |
-
-**Domain / authoring skills:**
-
-| Skill | Purpose |
-|-------|---------|
-| `ralf-review` | Bounded adversarial fresh-eyes review cycles for specs, designs, or code (explicit invocation) |
-| `ralf-implement` | Iterative implementation refinement with adversarial fresh-eyes passes (explicit invocation) |
-| `grill-with-docs` | Stress-test a plan against the project's domain model; update CONTEXT.md/ADRs inline |
-| `improve-codebase-architecture` | Find deepening/refactoring opportunities informed by CONTEXT.md and ADRs |
-| `prototype` | Build a throwaway prototype (terminal app or UI variations) to flesh out a design |
-| `optimize-agents-md` | Optimize CLAUDE.md/AGENTS.md files (size, redundancy, merging) |
-| `optimize-my-agent` | Audit and improve an agent persona file |
-| `optimize-my-skill` | Audit and improve a SKILL.md |
-| `whats-next` | Surface the right beads work list for the session |
-| `where-does-this-fit` | Explain how a work item fits the broader project architecture |
-| `caveman` | Ultra-compressed communication mode (~75% token cut) |
-
-See [`src/user/.agents/skills/`](./src/user/.agents/skills/) for the authoritative set.
+**None ship.** The role-based agent definitions (`quality-reviewer`, `tech-lead`
+and the rest) were retired in the rebuild and have no replacement yet. The
+installer still supports an `agents/` namespace, so this section will come back;
+today `~/.claude/agents/` gets nothing from this repo.
 
 ### Commands
 
@@ -170,23 +139,23 @@ authoritative set.
 ### Templates
 
 **Shared** (in `src/user/.agents/`):
-- `AGENTS.md.template` - Zero-based shared laws, decision matrix, hard lines, and conventions (D17). Hand-deployed to the standard homes (S0); not yet wired into automated per-tool assembly (`agents-config-9k9.10`)
-- `AGENT-PERSONA.md.template` - Agent personality and behavioral traits (referenced via `@AGENT-PERSONA.md`)
-- `USER-PERSONA.md.template` - User description and interaction preferences (referenced via `@USER-PERSONA.md`)
+- `USER-CORE.md.template` — the zero-based always-on core: laws, decision matrix, hard lines, conventions. This is the substance of every tool's instruction file.
 
-**Claude-specific** (in `src/user/.claude/`):
-- `AGENTS.md.template` - Claude instruction file referencing shared persona/session-primer content + Claude extensions
-- `CLAUDE.md.template` - Minimal file that points to AGENTS.md
-- `CLAUDE-EXTENSIONS.md.template` - Stub header (content moved to `rules/`)
-- `settings.json.template` - Pre-configured permission allowlists, hooks, and experimental features
+**Per-tool:**
+- `src/user/.claude/AGENTS.md.template` — Claude instruction file
+- `src/user/.claude/CLAUDE.md.template` — minimal file pointing at `AGENTS.md`
+- `src/user/.claude/settings.json.template` — permissions, hooks, experimental features
+- `src/user/.codex/AGENTS.md.template`, `src/user/.gemini/GEMINI.md.template`, `src/user/.opencode/AGENTS.md.template` — the equivalent instruction files
+- `src/user/.opencode/opencode.jsonc.template` — OpenCode settings
 
-> **Note:** The templates contain content specific to the author's setup:
-> - The persona templates reflect personal interaction preferences
-> - The `beads` plugin (under `src/plugins/beads/`) assumes use of [steveyegge/beads](https://github.com/steveyegge/beads) as a task tracker
-> - The `delegation` and `completion-gate` rules (in `src/user/.agents/rules/`) assume [obra/superpowers](https://github.com/obra/superpowers) skills are available
-> - Various constraints have a TypeScript/Node.js bias
->
-> You'll want to customize or remove these to match your own workflow.
+There are no persona templates. The `USER-PERSONA.md` / `AGENT-PERSONA.md` pair
+that earlier versions shipped was retired: the always-on surface is now
+zero-based and carries no identity content.
+
+> **Note:** some of what ships still reflects the author's setup — the
+> `settings.json` experimental flags and taste keys most obviously, and some
+> constraints carry a Python/TypeScript bias. Customize or remove to match your
+> own workflow.
 
 ## Installation
 
@@ -216,6 +185,8 @@ The installer (`scripts/install.sh`) is a thin exec stub backed by a uv-managed 
 - Copies tool-specific content (e.g., `src/user/.claude/`) into the corresponding tool's config directory
 - Copies `*.md.template` files (stripping `.template` suffix), with diff preview and confirmation for existing files
 - Syncs `agents/`, `skills/`, `commands/`, and `rules/` directories using hash comparison per item, and a recursive digest to detect drift inside owned directories
+- Enforces the **admission bar**: drops (and prunes) any rule, skill, command or agent whose front matter lacks a complete `admission:` record, and strips that repo-side bookkeeping from the bytes it deploys
+- Deploys this repo's CLIs onto PATH via `uv tool install` (receipt-tracked, pruned on retirement); `CLI_PACKAGES` in `packages/installer/src/installer/core/clis.py` is the authoritative list
 - Union-merges `settings.json.template` into existing `settings.json` via a pluggable per-key merge registry (preserves your values, adds new keys/entries)
 - Records an **install receipt** of what it owns, so pruning is a precise diff against the last install rather than a glob guess
 - Honors a shared `.installignore` manifest that excludes source-only files (test fixtures, rationale docs) from install
@@ -232,11 +203,15 @@ Requires `uv` (auto-installs Python ≥3.11 on first run). Use `--dry-run` to pr
 | `--yes`, `-y` | Auto-accept all prompts (suppresses diffs in quiet mode) |
 | `--verbose`, `-v` | Per-file progress (phases, up-to-date, installed, diffs) |
 | `--tools=TOOLS` | Comma-separated tool list (`claude`, `codex`, `gemini`, `opencode`); default auto-detect |
-| `--plugins=PLUGINS` | Comma-separated plugin list (`beads`, `codex`); default auto-detect; pass `--plugins=` to disable all |
+| `--plugins=PLUGINS` | Comma-separated plugin list, discovered under `src/plugins/`; default auto-detect; pass `--plugins=` to disable all |
+| `--project=PATH` | Install project-scoped content into PATH instead of user space |
+| `--profiles=CSV` | Profile names to install (requires `--project`) |
 | `--prune` | After install, remove orphans (items the install receipt no longer owns) under the managed namespaces, with backup |
 | `--prune-only` | Skip install; only scan + prune orphans (mutually exclusive with `--prune`) |
 | `--dump-stage=DIR` | Debug: materialize the in-memory staging plan to a directory tree instead of installing |
 | `--help`, `-h` | Show help |
+
+`--prune`, `--prune-only` and `--dump-stage` are mutually exclusive.
 
 #### Pruning orphans
 
@@ -245,7 +220,7 @@ previously owned but no longer ships — useful for keeping your install in sync
 after files are renamed or deleted upstream.
 
 - **Receipt-based, not glob-based:** each install writes an **install receipt** recording exactly what it owns (a roots allowlist plus a per-entry digest). Pruning diffs the current staging plan against that receipt, so it removes precisely the items the repo dropped — not whatever happens to sit in a namespace directory. Files you added yourself outside the owned set are not touched.
-- **Scope:** the managed namespaces (`commands` / `skills` / `agents` / `rules` under each tool's config dir, plus beads' `~/.beads/` routes). Top-level `*.md`, `settings.json`, and `hooks/` are never pruned.
+- **Scope:** the managed namespaces (`commands` / `skills` / `agents` / `rules` under each tool's config dir, plus any bespoke routes an active plugin declares outside the tool trees). Top-level `*.md`, `settings.json`, and `hooks/` are never pruned.
 - **Backups:** orphans are moved to a `<namespace>-backup/<basename>.backup-<timestamp>` sibling before deletion; those `*-backup/` siblings are excluded from future scans.
 - **Modes:**
   - `--dry-run` lists orphans and exits without changes.
@@ -255,54 +230,46 @@ after files are renamed or deleted upstream.
 
 ### Manual
 
+The installer does more than copy — it enforces the admission bar, strips
+repo-side bookkeeping from the deployed bytes, union-merges settings, and writes
+a receipt so pruning is precise. Copying by hand skips all of that, so prefer
+`./scripts/install.sh`. If you want a subset anyway:
+
 ```bash
-# Copy shared content (agents, skills)
-cp -r src/user/.agents/agents ~/.claude/
+# Shared skills (installed to every tool by the installer)
 cp -r src/user/.agents/skills ~/.claude/
 
-# Copy Claude-specific content (commands and workflow rules)
+# Claude-specific content
+cp -r src/user/.claude/skills ~/.claude/
 cp -r src/user/.claude/commands ~/.claude/
 cp -r src/user/.claude/rules ~/.claude/
+cp -r src/user/.claude/hooks ~/.claude/
 
-# Copy and customize shared templates
-cp src/user/.agents/AGENT-PERSONA.md.template ~/.claude/AGENT-PERSONA.md
-cp src/user/.agents/USER-PERSONA.md.template ~/.claude/USER-PERSONA.md
-
-# Copy and customize Claude-specific templates
-cp src/user/.claude/AGENTS.md.template ~/.claude/AGENTS.md
+# Instruction files and settings
+cp src/user/.agents/USER-CORE.md.template ~/.claude/AGENTS.md
 cp src/user/.claude/CLAUDE.md.template ~/.claude/CLAUDE.md
-cp src/user/.claude/CLAUDE-EXTENSIONS.md.template ~/.claude/CLAUDE-EXTENSIONS.md
 cp src/user/.claude/settings.json.template ~/.claude/settings.json
 ```
 
 ### Project-level (applies to specific project)
 
+Use `./scripts/install.sh --project=/path/to/your/project`, which stages
+project-scoped content properly. The blunt equivalent:
+
 ```bash
 cd /path/to/your/project
-
-# Copy what you need
-cp -r /path/to/agents-config/src/user/.agents/agents .claude/
 cp -r /path/to/agents-config/src/user/.agents/skills .claude/
 cp -r /path/to/agents-config/src/user/.claude/commands .claude/
 ```
 
-### Customizing Templates
+### Customizing what you installed
 
-The `.template` files ship with the author's personal configuration and must be customized after installation.
+- **`settings.json`** (Claude only) — the shipped `allow` list is empty by design; add your own safe-command entries to cut permission prompts. The `deny` list, the hooks, and the experimental env flags are all worth reading before you keep them.
+- **Rules** — remove any rule you don't want from your tool's `rules/` directory. Read the `AGENTS.md` in each source `rules/` directory for what currently lives there.
+- **Plugins** — `--plugins=` (empty) installs none; `--plugins=<names>` picks an explicit set.
 
-**Must personalize** (these contain the author's identity):
-1. **`USER-PERSONA.md`** — Replace entirely with your own name, role, and interaction preferences
-2. **`AGENT-PERSONA.md`** — Defines the AI's personality and expertise claims. Adjust to your preferred style
-
-**Adjust to your workflow:**
-3. **Tool-specific extensions** — Remove rules for plugins you don't use:
-   - **Claude:** shared workflow rules live in `src/user/.agents/rules/` — `delegation.md`, `completion-gate.md`, `subagents.md`, `worktrees.md`, `memory-routing.md`, `user-prompts.md`, `bash-scripting.md`; Claude-specific rules in `src/user/.claude/rules/` — `claude-sandbox.md`, `headless-claude.md`, `orchestrating-subagents.md`, `worktree-safety.md`. `delegation` and `completion-gate` reference superpowers skills; delivery (worktree isolation → PR creation → review monitoring) is now handled by the `using-git-worktrees`, `finishing-a-development-branch`, and `monitor-pr`/`wait-for-pr-comments` skills rather than a standalone rule
-   - **Beads plugin** (`src/plugins/beads/`) — adds `beads.md` to `rules/` at install time; assumes [beads](https://github.com/steveyegge/beads)
-   - **Codex/Gemini** — see `CODEX-EXTENSIONS.md` or `GEMINI-EXTENSIONS.md`
-4. **`settings.json`** (Claude only) — Adjust permission allowlists, hooks, and deny rules to match your needs
-
-**No changes needed:**
-- `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` — Thin wrappers that reference the files above
+The instruction files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) are thin wrappers
+around the shared core and generally need no changes.
 
 ## Scope: User vs Project
 
@@ -310,8 +277,8 @@ Claude Code looks for configuration in multiple locations with the following pre
 
 | Location | Scope | Use Case |
 |----------|-------|----------|
-| `~/.claude/` | User (global) | Personal preferences, agents you always want available |
-| `.claude/` in project | Project | Project-specific agents, skills, and settings |
+| `~/.claude/` | User (global) | Personal preferences, skills you always want available |
+| `.claude/` in project | Project | Project-specific skills, commands, and settings |
 
 Project-level settings override user-level. Use user-level for your personal workflow; use project-level for team-shared configurations.
 
@@ -327,9 +294,11 @@ Installer / distribution:
 - [ ] **Selective install** — Choose which agents/skills to include
 - [ ] **Agent marketplace** — Community-contributed agents and skills
 
-The deeper capability roadmap (brainstorm-readiness gate, worker fleet, overnight
-autonomy) is tracked as milestone beads — `bd list --type milestone` — and
-summarized in the repo's `AGENTS.md`.
+The deeper capability roadmap — the harness rebuild itself — is the ordered
+slice list in
+[`docs/specs/2026-07-21-harness-rework-way-forward.md`](./docs/specs/2026-07-21-harness-rework-way-forward.md).
+Live status is in the tracker (`work show agents-config-9k9`), not in any
+document here; the charter deliberately tracks no progress.
 
 ## Contributing
 
