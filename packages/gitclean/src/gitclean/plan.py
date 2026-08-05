@@ -18,9 +18,10 @@ narrowed the scope *and* relaxed the proof would be a naming wearing a sweep's
 clothes.
 
 So the refusals left here are few, and each answers something the caller could
-not have answered themselves: a name matching two things, a branch git will
-reject because a worktree still holds it, and the directory this process is
-standing in.
+not have answered themselves: a name matching two things, a name matching one
+thing in a survey that lost a row -- where whether it matched two is exactly
+what went unrecorded -- a branch git will reject because a worktree still holds
+it, and the directory this process is standing in.
 
 None of them stops the rest. A refusal is about the selector it names, so what
 resolved cleanly is still planned and still deleted, and the refusals ride
@@ -156,21 +157,47 @@ def _unsplit_this_could_name(selector: str, survey_data: Survey) -> NotOffered |
     return None
 
 
+def _could_name_a_worktree(selector: str) -> bool:
+    """Whether the worktree listing is one this selector's answer depends on.
+
+    The `worktree:` / `branch:` / `remote:` prefixes are the convention the ids
+    use, and a caller who spelled the kind out has said which listing is the
+    relevant one -- what happened in the other is then none of this selector's
+    business. An absolute path says the same thing without the prefix: git will
+    not create a ref whose short name begins with a slash, so nothing but a
+    worktree can be meant. A bare name says neither, so it depends on both
+    listings: being unable to say which kind was meant is not a reason to trust
+    whichever one happened to answer.
+
+    Written once because two questions turn on it -- whether a miss can mean
+    absence, and whether a match can mean the only match -- and two copies of
+    this would be two places to disagree about what a selector denotes."""
+    return not selector.startswith(("branch:", "remote:"))
+
+
+def _could_name_a_ref(selector: str) -> bool:
+    """The same question about the ref listing, on the same convention: a
+    `worktree:` prefix or an absolute path has said a worktree is meant, and
+    nothing in the ref listing can answer for it."""
+    return not selector.startswith(("worktree:", "/"))
+
+
+_WORKTREE_ROWS_LOST = "{count} worktree block(s) went unparsed"
+_REF_ROWS_LOST = "{count} ref row(s) went unparsed"
+"""What a listing that definitely lost a row says about itself.
+
+One wording each, because the two questions it settles -- whether a miss is
+absence, and whether a match is the only match -- are the same measurement read
+for two purposes, and a reader should not have to work out that they are."""
+
+
 def _lists_that_could_not_answer(selector: str, survey_data: Survey) -> list[str]:
     """Of the listings that could have contained this name, which did not run.
 
-    Keyed on what the selector's own spelling can denote. The `worktree:` /
-    `branch:` / `remote:` prefixes are the convention the ids use, and a caller
-    who spelled out the kind has said which listing is the relevant one -- a
-    failure in the other is then none of this selector's business, and refusing
-    on it would block the commonest cleanup there is, a worktree already
-    removed, over a ref read that had nothing to do with it. An absolute path
-    says the same thing without the prefix: git will not create a ref whose
-    short name begins with a slash, so nothing but a worktree can be meant.
-
-    A bare name could be either -- a branch, or a worktree's basename -- so it
-    needs both. Being unable to say which kind was meant is not a reason to
-    trust whichever one happened to answer.
+    Keyed on what the selector's own spelling can denote, which the two
+    predicates above answer. What that keying buys here is the commonest cleanup
+    there is: a worktree already removed, named after the fact, which a failed
+    ref read that had nothing to do with it must not block.
 
     "Could not answer" covers a listing that did not run, one that ran without
     describing everything it listed, *and* one holding a server ref whose
@@ -187,14 +214,12 @@ def _lists_that_could_not_answer(selector: str, survey_data: Survey) -> list[str
     branch outright. Local refs were read and split fine; a miss there is a
     real miss, and refusing it over a remote ref nobody was talking about
     trades a false absence for a false refusal."""
-    worktree_only = selector.startswith("worktree:") or selector.startswith("/")
-    ref_only = selector.startswith(("branch:", "remote:"))
     unread: list[str] = []
-    if not ref_only:
+    if _could_name_a_worktree(selector):
         if not survey_data.worktrees_known:
             unread.append("no worktree could be listed")
         elif survey_data.dropped_worktrees:
-            unread.append(f"{survey_data.dropped_worktrees} worktree block(s) went unparsed")
+            unread.append(_WORKTREE_ROWS_LOST.format(count=survey_data.dropped_worktrees))
         elif not survey_data.worktrees_framed:
             # Not "a path was truncated" -- nobody can say that. The listing
             # cannot prove it named every path, and a name matching nothing is
@@ -207,11 +232,11 @@ def _lists_that_could_not_answer(selector: str, survey_data: Survey) -> list[str
                 "the worktree listing could not be framed so a path containing a newline stays "
                 "whole, so it cannot show that every worktree it holds was named in full"
             )
-    if not worktree_only:
+    if _could_name_a_ref(selector):
         if not survey_data.branches_known:
             unread.append("no ref could be read")
         elif survey_data.dropped_refs:
-            unread.append(f"{survey_data.dropped_refs} ref row(s) went unparsed")
+            unread.append(_REF_ROWS_LOST.format(count=survey_data.dropped_refs))
         unsplit = _unsplit_this_could_name(selector, survey_data)
         if unsplit is not None:
             unread.append(
@@ -220,6 +245,57 @@ def _lists_that_could_not_answer(selector: str, survey_data: Survey) -> list[str
                 f"exactly the question that went unanswered"
             )
     return unread
+
+
+def _rows_that_may_hide_a_second_match(selector: str, survey_data: Survey) -> list[str]:
+    """Of the listings this selector reaches, the ones that definitely lost a row.
+
+    A match is a claim about one target. Deleting on it is a claim about all of
+    them -- that nothing else here answers to the name -- and only the first of
+    those was measured. A listing that dropped a row is where the two come
+    apart: git handed back something nobody could parse, so what that row named
+    is unknown, and one of the things it may have named is a second target
+    wearing this selector. Removing a worktree has no undo, so the run reports
+    what it measured rather than acting on what it assumed.
+
+    Only a *proven* loss, never an unproven completeness, and that distinction
+    is the whole of this rule. ``worktrees_framed`` says the listing could not
+    show it named every path it holds, which is true of every git too old to
+    offer NUL framing whether or not anything was lost -- so refusing a match on
+    it would refuse every named cleanup on those versions and buy nothing that
+    was measured. It stays where it belongs, withholding the one conclusion it
+    really does undermine: that a miss means absence. ``worktrees_known`` and
+    ``branches_known`` are that same kind of claim about a listing that never
+    ran, and a listing that never ran contributed no match to refuse.
+
+    Scoped by what the selector can denote, for the reason the miss path scopes
+    it: a `branch:` cannot collide with a lost worktree block, and a `worktree:`
+    cannot collide with a lost ref row.
+
+    The ref count has no reachable trigger on any git shipping today. A row is
+    dropped when it comes back with fewer fields than were asked for, and the
+    fields are separated by `\\x1f` and the newline -- both of which
+    `git check-ref-format` bars from a refname, along with every other ASCII
+    control byte, so no refname can split its own row. It is covered because
+    covering it costs one condition, and because that unreachability is a
+    property of the ref format as it stands rather than a guarantee this package
+    is owed. Nobody can produce one; if the format ever admits such a byte, the
+    check is already here.
+
+    What this cannot see, and what no count can: a worktree block truncated at a
+    newline whose remaining text begins with an attribute name, which reads as a
+    perfectly well-formed block. Nothing about it announces itself, so the count
+    stays 0 and this returns nothing. A caller whose match is refused here has
+    learned that a row was definitely lost; a caller whose match is accepted has
+    learned only that no loss announced itself, which is the weaker fact. That
+    gap is permanent for as long as an unframed listing is read at all, and
+    closing it would take framing every listing, not a further count."""
+    lost: list[str] = []
+    if _could_name_a_worktree(selector) and survey_data.dropped_worktrees:
+        lost.append(_WORKTREE_ROWS_LOST.format(count=survey_data.dropped_worktrees))
+    if _could_name_a_ref(selector) and survey_data.dropped_refs:
+        lost.append(_REF_ROWS_LOST.format(count=survey_data.dropped_refs))
+    return lost
 
 
 def resolve_selectors(
@@ -252,6 +328,12 @@ def resolve_selectors(
     Nothing here can distinguish a worktree removed thirty seconds ago from a
     name with a letter wrong -- the repository answers identically -- so
     asserting either one would be a claim the tool cannot support.
+
+    A match is held to the same standard, and for a while it was not. One match
+    is measured; the *only* match is a second claim about every row that was
+    supposed to have been listed, and a survey that dropped one has not made it.
+    So a single match against a listing that lost a row refuses too, rather than
+    deleting on an assertion nobody checked.
     """
     resolved: list[Target] = []
     absent: list[Absent] = []
@@ -324,6 +406,26 @@ def resolve_selectors(
                     message=f"{selector!r} matches more than one target: {ids}",
                     blocked=tuple(matches),
                     remedy="re-run naming the exact `id`",
+                )
+            )
+            continue
+        lost = _rows_that_may_hide_a_second_match(selector, survey_data)
+        if lost:
+            # The same claim the miss path makes, so it keeps the same code: the
+            # survey did not describe everything it listed, and what follows
+            # from a name here is not what it would be from a complete one.
+            # There the unrecorded row may be the thing the caller named; here
+            # it may be a second one, and choosing between two things when only
+            # one of them was recorded is not a choice this run gets to make.
+            refused.append(
+                Refusal(
+                    code="E_SURVEY_INCOMPLETE",
+                    message=f"{selector!r} matches {matches[0].id}, and this run cannot say that "
+                    f"is the only thing it matches: {' and '.join(lost)}, and nothing records "
+                    f"what they named -- one of them may be a second target wearing that name",
+                    blocked=(matches[0],),
+                    remedy="fix what stopped the listing (the warnings say what it was) and "
+                    "re-run; nothing under this name was deleted",
                 )
             )
             continue

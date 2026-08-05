@@ -348,6 +348,86 @@ def test_a_dropped_worktree_block_is_the_same_hole_on_the_other_listing() -> Non
     assert "2 worktree block(s) went unparsed" in refusal.message
 
 
+def test_a_dropped_block_stops_a_match_meaning_the_only_match() -> None:
+    """One match is measured; the only match is a further claim about every row
+    the listing was supposed to have described, and a block nobody could parse
+    is a row that went unrecorded. It may have been a second worktree wearing
+    this name, and removing the wrong one has no undo."""
+    survey = make_survey(worktrees_known=True, dropped_worktrees=1)
+    targets = (target("worktree:/repo/wt", kind=TargetKind.WORKTREE),)
+
+    result = plan_for(targets, survey=survey, selectors=["worktree:/repo/wt"])
+
+    assert result.targets == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_SURVEY_INCOMPLETE"
+    assert [t.id for t in refusal.blocked] == ["worktree:/repo/wt"]
+    assert "1 worktree block(s) went unparsed" in refusal.message
+
+
+def test_a_dropped_block_does_not_stop_a_branch_that_matches() -> None:
+    """The counts are read per listing on the match path exactly as they are on
+    the miss path. A `branch:` names a local ref, and no worktree block -- lost
+    or listed -- can be a second thing wearing that name."""
+    survey = make_survey(dropped_worktrees=1)
+    targets = (target("branch:feat/x"),)
+
+    result = plan_for(targets, survey=survey, selectors=["branch:feat/x"])
+
+    assert result.refused == ()
+    assert [t.name for t in result.targets] == ["feat/x"]
+
+
+def test_a_dropped_ref_row_stops_a_branch_match_the_same_way() -> None:
+    """The other listing, and the one no git shipping today can trigger: the
+    fields are separated by `\\x1f` and the newline, and `git check-ref-format`
+    bars both from a refname. Covered because the rule is about a row that went
+    unrecorded rather than about which listing lost it, and because that
+    unreachability is a fact about the ref format as it stands."""
+    survey = make_survey(dropped_refs=1)
+    targets = (target("branch:feat/x"),)
+
+    result = plan_for(targets, survey=survey, selectors=["branch:feat/x"])
+
+    assert result.targets == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_SURVEY_INCOMPLETE"
+    assert "1 ref row(s) went unparsed" in refusal.message
+
+
+def test_an_unframed_listing_does_not_stop_a_match() -> None:
+    """The trigger is a proven loss, not an unproven completeness, and these are
+    different claims. `worktrees_framed` is false on every git too old to offer
+    NUL framing, whether or not a path was truncated -- refusing a match on it
+    would refuse every named cleanup on those versions in exchange for nothing
+    anybody measured. It keeps withholding the conclusion it does undermine, on
+    the miss path, and leaves a match alone."""
+    survey = make_survey(worktrees_framed=False, dropped_worktrees=0)
+    targets = (target("worktree:/repo/wt", kind=TargetKind.WORKTREE),)
+
+    result = plan_for(targets, survey=survey, selectors=["worktree:/repo/wt"])
+
+    assert result.refused == ()
+    assert [t.name for t in result.targets] == ["/repo/wt"]
+
+
+def test_a_match_refused_over_a_dropped_block_does_not_spend_the_other_names() -> None:
+    """A refusal is about the selector it names. The caller asked for two
+    things, one of them cannot be answered for, and the other is still theirs to
+    have -- an unrelated name paying for it is the round trip this run exists
+    not to cost."""
+    survey = make_survey(dropped_worktrees=1)
+    targets = (
+        target("worktree:/repo/wt", kind=TargetKind.WORKTREE),
+        target("branch:feat/x"),
+    )
+
+    result = plan_for(targets, survey=survey, selectors=["worktree:/repo/wt", "branch:feat/x"])
+
+    assert [r.code for r in result.refused] == ["E_SURVEY_INCOMPLETE"]
+    assert [t.name for t in result.targets] == ["feat/x"]
+
+
 def test_a_dropped_ref_row_does_not_block_naming_a_worktree() -> None:
     """The counts are read per listing, like the flags beside them. A ref row
     nobody could parse says nothing about the worktree listing."""
