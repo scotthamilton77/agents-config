@@ -2,6 +2,11 @@
 
 **Date:** 2026-07-15
 **Status:** Draft — pending review
+**Relocated authority:** this spec cites the project's `CONTEXT.md` domain glossary
+as binding in several places. That glossary was retired to the
+`scotthamilton77/agents-config-ARCHIVE` repository, where it keeps its root path.
+Its terminology describes the pre-rework lifecycle, so treat the citations below as
+naming the source this spec was written against, not as a live contract.
 **Bead:** to be minted at PR merge (see Continuations); nearest anchor `agents-config-wgclw.9` (work facade CLI v1)
 **Decision:** Keep the monorepo and the single bead database. Partition the *tracker*
 with a first-class, split-portable **track** dimension built into the work-facade

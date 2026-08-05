@@ -83,8 +83,10 @@ value is fresh context. Reviewers are instructed to ignore in-repo
 intentionality claims; verdicts judge against ACs. Re-review triggers only on
 claimed-fix pushes.
 
-**D8 — Verdict artifact schema = Mechanical/Advisory** (adopting the
-CONTEXT.md design). Mechanical findings block and must carry a mechanical
+**D8 — Verdict artifact schema = Mechanical/Advisory** (adopting the design in
+the then-current `CONTEXT.md` glossary, since retired to the
+`scotthamilton77/agents-config-ARCHIVE` repository; the live contract is the
+`review-verdict` skill). Mechanical findings block and must carry a mechanical
 artifact (failing test, lint output, broken link). Advisory findings route to
 the backlog, never block, and are never re-litigated in the fix loop. Review
 exits when a complete round produces zero mechanical findings.

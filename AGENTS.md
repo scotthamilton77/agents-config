@@ -94,8 +94,8 @@ This project hosts agent configuration under `src/`, which the install script de
   - `guide/` — user guide for people *running* the deployed assets: install, configure a project, run the agentic SDLC
   - `specs/` — dated point-in-time design proposals; status varies from draft through implemented. A spec describes its full intent, and partial per-PR implementation is expected — a spec that describes code nobody has written yet is working as designed, not a defect to file or annotate.
   - `architecture/` — evergreen HLD artifacts (C4 levels, sequence diagrams, state machines, data-flow views), grouped per subsystem with an `index.md` orientation file. Amended in place; filenames are undated and describe content.
-  - `primers/` — explainers for the key primitives of this architecture (skills, agents, rules, commands, formulas)
-  - `plans/`, `adr/`, `reference/`, `prototypes/`, `beads/` — supporting material
+  - `primers/` — explainers for the key primitives of this architecture (skills, agents, rules, commands)
+  - `adr/`, `reference/`, `prototypes/` — supporting material. `plans/` holds only the visualization-suite corpus; the prose plan is retired as an artifact class and the rest of that tree is gone.
 - `packages/` — standalone uv projects; **not** part of the installed config surface.
   - `installer/` — the installer engine that `scripts/install.sh` execs
   - `workcli/` — the `work` facade CLI: quarantines the issue-tracker backend behind a stable JSON-envelope contract. Driven by `docs/specs/2026-07-22-workcli-completion-s2.md`, which supersedes the 2026-07-04 work-facade contract spec where they conflict.

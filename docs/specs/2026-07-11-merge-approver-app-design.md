@@ -117,7 +117,10 @@ material and no absolute user paths.
 The `[merge-policy]` schema documentation in
 `docs/architecture/review-merge-policy/design.md` ("Resolver contract" and the
 Axis-2 schema section) is amended in the same change that implements the resolver
-extension — spec/code/HLD stay in agreement.
+extension — spec/code/HLD stay in agreement. **That HLD has since been retired to
+the `scotthamilton77/agents-config-ARCHIVE` repository**, where it keeps its
+original path, and the resolver it describes is not deployed here; the amendment
+obligation above is void rather than outstanding.
 
 ### 3.3 Approver script contract — `approve_pr.py`
 

@@ -3,6 +3,7 @@
 **Date:** 2026-07-17
 **Status:** Approved (design)
 **Beads:** agents-config-s0u9c (preflight gate design); agents-config-abn9.8.44 (gh-auth probe misdiagnoses GitHub 5xx incidents as auth failure) — absorbed by this spec's ruling (§3, Continuations).
+**Relocated companions:** `docs/architecture/prgroom/cutover-runbook.md` and `2026-07-16-merge-gate-triage-aware-thread-blocker.md` now live in the `scotthamilton77/agents-config-ARCHIVE` repository at their original paths. `docs/architecture/prgroom/design.md` stays here.
 **Related:** `docs/architecture/prgroom/design.md` §3.6 — the failure-tier/exit-code registry this gate raises into; `docs/architecture/prgroom/cutover-runbook.md` "Operator preflight" — the manual checklist this gate automates; agents-config-abn9.8.14 / abn9.8.20 — the cutover that retires `wait-for-pr-comments/lib.sh`, which is why that file gets no fix (§3); `2026-07-16-merge-gate-triage-aware-thread-blocker.md` — sibling amendments to the same `check-merge-eligibility.sh` this spec's merge-guard fix touches.
 
 ## 1. Problem

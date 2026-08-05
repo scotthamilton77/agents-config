@@ -9,7 +9,8 @@ The PDLC architecture distinguishes two primitives:
 - **Idea** — a human-curated possibility that lives in a workspace called the Holding Place, where it is captured, groomed across buckets, possibly shaped via brainstorming, and either promoted into work or killed with an epitaph
 - **Objective** — a unit of work tracked by the PDLC orchestrator's deterministic finite-state machine, which traverses lifecycle stages from `CANDIDATE_UOW` through to a terminal state (`MERGED`, `KILLED`, or `PARKED`)
 
-The project's domain glossary (`CONTEXT.md > Holding Place`) had already pinned the Holding Place as "a peer service, NOT owned by the Orchestrator," and had specified the orchestrator's interactions with it as **exactly two** operations: `promote(idea_id) → objective_id` and `create_idea(provenance.decomposition_of=<container_id>)`.
+The project's domain glossary (`CONTEXT.md > Holding Place`, since retired to the
+`scotthamilton77/agents-config-ARCHIVE` repository) had already pinned the Holding Place as "a peer service, NOT owned by the Orchestrator," and had specified the orchestrator's interactions with it as **exactly two** operations: `promote(idea_id) → objective_id` and `create_idea(provenance.decomposition_of=<container_id>)`.
 
 However, the PDLC Design Phase epic claimed Holding Place persistence, Capture protocol, Provenance Backreference, Grooming ceremony UX, buckets, the grooming nag, Cool Idea Quarantine UX, and the Idea Curator persona — all as in-scope. This put the Idea pipeline architecturally inside the Design Phase, which is a post-Promote stage of the Orchestrator's FSM.
 

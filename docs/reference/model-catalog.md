@@ -20,9 +20,8 @@ Prices are USD per million tokens (input / output).
 ## Routing tier map
 
 How task classes map to model tiers. The canonical routing rules live in the
-Codex routing rule, the escalation-ladder spec
-(`docs/specs/2026-07-04-model-routing-policy-and-escalation-ladder.md`), and the
-prgroom dispatcher (`packages/prgroom/src/prgroom/agent/dispatcher.py`).
+`delegating-to-codex` and `openrouter-claude-subagent` skills and in the prgroom
+dispatcher (`packages/prgroom/src/prgroom/agent/dispatcher.py`).
 
 | Use case | OpenAI (Codex) | Anthropic (Claude) | Local / cheap |
 |---|---|---|---|
@@ -124,9 +123,8 @@ Active sidekick profiles (from `llm.defaults.yaml`):
 
 ## Related
 
-- Codex routing rule — use-case → OpenAI model selection.
-- `docs/specs/2026-07-04-model-routing-policy-and-escalation-ladder.md` — the
-  escalation ladder + user-space `[providers.*]` rate schema.
+- The `delegating-to-codex` skill — use-case → OpenAI model selection.
+- The `openrouter-claude-subagent` skill — OpenRouter-hosted model selection and rates.
 - `packages/prgroom/src/prgroom/agent/dispatcher.py` — `_DEFAULT_CHAINS`.
 - `project-config.toml` `[foreign-cli]` — per-stage Codex/Gemini model bindings.
 - Bead `agents-config-uy5wx` — consolidate these duplicated model IDs into a

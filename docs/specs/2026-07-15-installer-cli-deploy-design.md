@@ -10,8 +10,10 @@
 CI-gated CLI packages that no deployed user space can invoke: the installer has
 no mechanism to put a CLI on PATH. The prgroom design plan
 (`docs/plans/2026-05-12-prgroom-cli-design.md`, distribution section) and the
-prgroom deployment HLD (`docs/architecture/prgroom/c4-deployment.md`) already
-prescribe the pattern — installer-owned `uv tool install ./packages/<pkg>`,
+prgroom deployment HLD (`docs/architecture/prgroom/c4-deployment.md`) — both now
+in the `scotthamilton77/agents-config-ARCHIVE` repository at their original
+paths, the deployment statement since consolidated into
+`docs/architecture/prgroom/design.md` §1 — already prescribe the pattern — installer-owned `uv tool install ./packages/<pkg>`,
 idempotent, uninstalled on `--prune` — but the bash-era implementation was
 retired when `install.sh` collapsed to a stub, and the Python installer never
 re-adopted it.
