@@ -12,16 +12,15 @@ The harness is being rebuilt. Until the rework milestone closes (charter AC9), o
 
 1. `docs/specs/2026-07-21-harness-rework-way-forward.md` — the canonical charter: all decisions (D1–D20), acceptance criteria (AC1–AC9), the ordered slice plan (S0–S10), and the zero-based user AGENTS.md draft (Appendix A). If you read only one file, read this one.
 2. `work show agents-config-9k9` — where "where are we right now" lives: the milestone carries the charter pointer, records facade gaps in its notes, and its children are the live status of what is minted, in flight, and done. The charter deliberately tracks no progress.
-3. `SAVEPOINTS/2026-07-20-harness-findings-handoff.md` — the evidence behind the charter's decisions. Read when a decision seems underjustified.
-4. `docs/specs/2026-07-22-workcli-completion-s2.md` — the S2 child spec, and the worked example of the per-slice pattern (child spec → per-slice ACs → implement).
+3. `docs/specs/2026-07-22-workcli-completion-s2.md` — the S2 child spec, and the worked example of the per-slice pattern (child spec → per-slice ACs → implement).
 
 Standing implications while the rework runs:
 
 - Where any deployed rule, skill, or doc (including this file) contradicts the charter, the charter wins — and flag the contradiction explicitly so it gets fixed.
 - Address the tracker through the `work` facade (D11). Fall back to `bd` only when the facade cannot express the operation, and record each fallback as a facade gap in a note on `agents-config-9k9`.
 - New harness work enters only as a child of the milestone, carrying an admission record: what it prevents or provides, what it costs, and what observation would remove it (D16/D20).
-- Any proposal to add a rule/skill/command/agent to `src/`, or to lift one out of `archive/`, runs through the `admit-request` skill — a project-scoped gate, not a deployed asset. Its default verdict is DECLINE; there is no grandfathering.
-- **`archive/` is not live.** Nothing under it describes current behaviour — do not follow it, cite it as a contract, or invoke a skill found there. If a workflow you need exists only in `archive/`, that is the signal to escalate, not to reinstate it by hand.
+- Any proposal to add a rule/skill/command/agent to `src/`, or to reinstate one that was retired, runs through the `admit-request` skill — a project-scoped gate, not a deployed asset. Its default verdict is DECLINE; there is no grandfathering.
+- **Retired content is not live, and it is no longer in this repository.** The former `archive/` tree and the savepoint records moved to the private `scotthamilton77/agents-config-ARCHIVE` repository. Nothing there describes current behaviour — do not follow it, cite it as a contract, or invoke a skill found in it. If a workflow you need exists only there, that is the signal to escalate, not to reinstate it by hand.
 - **The admission gate decides what deploys, not the folder.** The installer drops any rule/skill/command/agent whose front matter lacks a complete `admission:` record, wherever it sits — plugin trees included. What the gate admits, it sanitizes: the `admission:`/`claims:` front matter and the provenance comment are repo-side bookkeeping, stripped from the deployed bytes. Write them for this repo's reader, not the downstream agent's.
 - **Presence in `src/` is not evidence of deployment**, and neither is an admission record — an admitted artifact can still fail a mechanical staging check and ship nothing. Before telling a user or a subagent that a skill, rule, or command is available, list the tool's own config directory and confirm it landed.
 
@@ -34,6 +33,15 @@ This is the whole delivery contract:
 3. Verify mechanically before claiming anything. For `packages/**`, and for any skill under `src/` that ships its own tests, that is `make ci` — read the `ci` target in the `Makefile` for its current membership, and note that a single package's gate is not the whole-repo gate. Run it from the root of the tree you are working in: the `Makefile` `cd`s relative to the invoking directory, so a gate run from the main checkout while you are on a worktree branch reports green on code you did not change. Run the gate standalone and read its exit status — never pipe it into a `grep && commit` chain, where the pipeline's status is the grep's and a red gate ships. For prose-only changes, state what you checked and how.
 4. Open a PR and address review to quiescence. Every item gets a disposition in your own inventory; only items that change the code get a reply on the PR. Bookkeeping and meta comments are dispositioned silently — a thread of "no action required" replies is noise the next reader has to wade through.
 5. **Merge only on an explicit human instruction.** No rule-based merge policy is configured here, no implementation of one is deployed, and the repository ruleset requires an approving review that no configured reviewer submits — see `agents-config-9k9.23`. The shared hard-lines permit merging under "a configured rule-based policy"; that clause has nothing here to match. If you believe it does, read `project-config.toml`'s `[merge-policy]` before acting on it, and read anything commented out there as future work rather than permission.
+
+### Why the charter decides as it does
+
+The charter states its decisions without the reasoning underneath them. Four claims carry most of that weight, and they are what to read when a decision looks arbitrary or you are tempted to work around one.
+
+- **Why acceptance criteria are load-bearing (D1/D3/D8).** An LLM reviewer is a findings generator: given any surface, it emits findings in proportion to that surface, indefinitely. Convergence needs a contract to check against, because taste is inexhaustible. Acceptance criteria are therefore not primarily a defect-prevention device — they are the termination condition that review otherwise lacks.
+- **Why every artifact carries a removal condition (D16).** The system had an add operator and no delete operator. Every failure historically minted a permanent global rule, and nothing carried a budget, a scope bound, or an obligation to tear down what it replaced. Duplicate deploys, contradictory rules, and two live workflow generations were all one disease, not four.
+- **Why reviewer prompts must not carry the house rulebook (D5/D7).** A reviewer loaded with the full house context reviews the change against the plan — both in-house artifacts, sharing the author's blind spots. A fresh-context reviewer reviews the artifact against the world instead. Inconsistency between a document and the code is invisible to plan-conformance review precisely when the plan is the inconsistent document.
+- **Why a plan states signatures and not bodies (D4).** The signature is the decision and the implementation is its consequence. A plan that embeds bodies promotes consequences into decisions and freezes them before the evidence for them exists.
 
 ## Vision & Mission
 
@@ -82,7 +90,6 @@ This project hosts agent configuration under `src/`, which the install script de
   - `src/user/.codex/`, `src/user/.gemini/`, `src/user/.opencode/` — per-tool instruction templates; OpenCode additionally carries `opencode.jsonc.template` and gets a flat, dynamically-built instruction file rather than `@` includes
   - `src/plugins/` — optional plugin content, auto-detected by a directory scan. A plugin's content deploys only when its tool is detected **and** the artifact clears the admission gate.
   - Each rules directory carries its own `AGENTS.md` stating what currently lives there; read it rather than inferring from the folder's contents.
-- `archive/` — retired content mirroring the live tree's shape (`archive/src/user/**`, `archive/docs/**`). **Historical only — never a behavioural contract.** Read it to recover an idea; do not copy a path back into `src/` without an admission record.
 - `docs/`
   - `guide/` — user guide for people *running* the deployed assets: install, configure a project, run the agentic SDLC
   - `specs/` — dated point-in-time design proposals; status varies from draft through implemented. A spec describes its full intent, and partial per-PR implementation is expected — a spec that describes code nobody has written yet is working as designed, not a defect to file or annotate.

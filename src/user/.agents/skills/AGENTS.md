@@ -2,7 +2,7 @@
 
 Source-of-truth for every skill that gets staged into each detected tool's user-space skills directory by `scripts/install.sh`. Edits here are what land in `~/.claude/skills/`, `~/.codex/skills/`, `~/.gemini/skills/`, and `~/.config/opencode/skills/` on the next install run.
 
-Staging is gated on admission: a `SKILL.md` without a complete `admission:` record (`prevents` **or** `provides`, plus `cost` and `remove_when`) in its front matter is dropped at deploy and pruned from every tool. Only admitted skills live in this folder; skills awaiting or past admission live under `archive/src/user/**`.
+Staging is gated on admission: a `SKILL.md` without a complete `admission:` record (`prevents` **or** `provides`, plus `cost` and `remove_when`) in its front matter is dropped at deploy and pruned from every tool. Only admitted skills live in this folder; a skill awaiting admission, or retired after it, is not here at all.
 
 An admission record is necessary but not sufficient — a skill can hold a complete record and still fail a mechanical staging check, in which case it deploys nothing. Before telling anyone a skill is available, list the tool's own config directory and confirm it landed. `writing-skills` is in exactly that state today (it exceeds the file-size limit and carries an `exemption:` key the installer does not yet honour); `agents-config-9k9.68` tracks it.
 
@@ -53,7 +53,7 @@ The full unmodified upstream artifacts live under `<repo-root>/oss-snapshots/<sn
 
 One row per OSS-derived or OSS-influenced skill that is **here now**. Skills built from
 scratch in-repo do not appear. When a skill is retired, delete its row — the SKILL.md
-carries its own provenance header into `archive/`, and git holds the rest.
+carries its own provenance header with it wherever it goes, and git holds the rest.
 
 | Skill | Location | Snapshot path | Upstream | Last sync | Drift policy |
 |-------|----------|---------------|----------|-----------|--------------|

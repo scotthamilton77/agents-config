@@ -1,6 +1,6 @@
 # Rules
 
-Rules in this directory are installed as always-on constraints for all supported tools — if they are admitted. A rule without a complete `admission:` record (`prevents` **or** `provides`, plus `cost` and `remove_when`) in its front matter is dropped at deploy and pruned from every tool's config. This folder is empty today; the record-less rules moved to `archive/src/user/.agents/rules/`.
+Rules in this directory are installed as always-on constraints for all supported tools — if they are admitted. A rule without a complete `admission:` record (`prevents` **or** `provides`, plus `cost` and `remove_when`) in its front matter is dropped at deploy and pruned from every tool's config. This folder is empty today; the record-less rules were retired out of the repository.
 
 ## Companion readmes
 
