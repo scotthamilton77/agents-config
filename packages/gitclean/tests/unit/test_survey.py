@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from gitclean.model import MergeEvidence, Survey
+from gitclean.model import MergeEvidence, PullRequestOutcome, Survey
 from gitclean.ports import CommandResult, ScriptedCommands, SubprocessCommands, fail, ok
 from gitclean.survey import (
     _count_dirt,
+    read_pull_request,
     read_pull_requests,
     read_worktrees,
     resolve_base_ref,
@@ -92,6 +93,7 @@ def make_port(
     gh_result: CommandResult | None = None,
     remotes: str = "origin\n",
     refspecs: str | None = None,
+    pr_view: dict[str, object] | None = None,
 ) -> ScriptedCommands:
     table: dict[str, CommandResult] = {
         "rev-parse --show-toplevel": ok("/repo"),
@@ -133,7 +135,12 @@ def make_port(
         table[f"rev-list --count {spec}"] = ok(value)
     table.update(extra or {})
     gh = gh_result or ok(json.dumps(prs or []))
-    return ScriptedCommands(git=table, gh={"pr list": gh}, has_gh=has_gh)
+    answers = {"pr list": gh}
+    if pr_view is not None:
+        # Left unscripted unless a test asks for one, so that a run reaching for
+        # a pull request nobody set up fails loudly rather than on a default.
+        answers["pr view"] = ok(json.dumps(pr_view))
+    return ScriptedCommands(git=table, gh=answers, has_gh=has_gh)
 
 
 def run(port: ScriptedCommands, **kwargs: object) -> Survey:
@@ -673,6 +680,170 @@ def test_a_pr_list_below_the_cap_warns_about_nothing() -> None:
     port = ScriptedCommands(gh={"pr list": ok(payload)}, has_gh=True)
 
     assert read_pull_requests(port, None)[2] is None
+
+
+# -- one pull request, read because a caller named it -------------------------
+
+
+def pr_view(**fields: object) -> ScriptedCommands:
+    """A port whose only answer is `gh pr view`, carrying the fields given.
+
+    Spelled as gh spells them, because that is the payload this parse has to
+    survive -- rewriting them into the model's own names here would test the
+    builder rather than the read."""
+    return ScriptedCommands(gh={"pr view": ok(json.dumps(fields))}, has_gh=True)
+
+
+MERGED_PR: dict[str, object] = {
+    "number": 7,
+    "state": "MERGED",
+    "headRefName": "feat/x",
+    "mergedAt": "2026-08-01T09:30:00Z",
+}
+
+
+def test_a_pull_request_read_by_number_carries_the_branch_it_was_opened_from() -> None:
+    """The head ref is the whole of what one pull request says about which
+    branch is finished with, and the bulk read spends that string as its index
+    key -- so this is the only place it survives as a value."""
+    port = pr_view(**MERGED_PR)
+
+    outcome = read_pull_request(port, None, "7")
+
+    assert isinstance(outcome, PullRequestOutcome)
+    assert (outcome.number, outcome.state, outcome.head_ref) == (7, "MERGED", "feat/x")
+    assert outcome.merged_at == "2026-08-01T09:30:00Z"
+
+
+def test_the_pull_request_number_reaches_gh_exactly_as_the_caller_spelled_it() -> None:
+    """`gh pr view` accepts a URL and a branch name in that position too, so a
+    round trip through int() would change what is asked for. The argv is
+    asserted rather than the result, because a run that resolved some *other*
+    pull request would return an outcome that looks perfectly well-formed."""
+    port = pr_view(**MERGED_PR)
+
+    read_pull_request(port, None, "0007")
+
+    assert (
+        "gh",
+        "pr",
+        "view",
+        "0007",
+        "--json",
+        "number,state,headRefName,mergedAt",
+    ) in port.transcript
+
+
+def test_without_gh_nothing_says_whether_the_pull_request_merged() -> None:
+    """The bulk read degrades here and carries on, because a missing tier still
+    leaves the git evidence. This read is the authorisation itself, so there is
+    nothing left to carry on with -- and the sentence has to say so."""
+    outcome = read_pull_request(ScriptedCommands(has_gh=False), None, "7")
+
+    assert isinstance(outcome, str)
+    assert "gh is not on PATH" in outcome
+    assert "#7" in outcome
+
+
+def test_a_failing_gh_pr_view_is_reported_with_what_gh_said() -> None:
+    port = ScriptedCommands(gh={"pr view": fail("could not resolve to a PullRequest")}, has_gh=True)
+
+    outcome = read_pull_request(port, None, "7")
+
+    assert isinstance(outcome, str)
+    assert "could not resolve to a PullRequest" in outcome
+
+
+def test_a_gh_failure_with_nothing_on_stderr_still_says_what_happened() -> None:
+    """An empty stderr is not an empty answer. Reporting the exit code is what
+    keeps the refusal from reading as though gh said nothing at all."""
+    port = ScriptedCommands(gh={"pr view": fail("", code=4)}, has_gh=True)
+
+    outcome = read_pull_request(port, None, "7")
+
+    assert isinstance(outcome, str)
+    assert "exit 4" in outcome
+
+
+def test_unparseable_gh_pr_view_json_authorises_nothing() -> None:
+    port = ScriptedCommands(gh={"pr view": ok("{{{not json")}, has_gh=True)
+
+    outcome = read_pull_request(port, None, "7")
+
+    assert isinstance(outcome, str)
+    assert "unparseable" in outcome
+
+
+def test_a_payload_that_is_not_a_pull_request_object_authorises_nothing() -> None:
+    """gh answering with a list, or with null, is gh describing something this
+    did not ask about. Reading a merge out of it would be inventing one."""
+    port = ScriptedCommands(gh={"pr view": ok("[]")}, has_gh=True)
+
+    outcome = read_pull_request(port, None, "7")
+
+    assert isinstance(outcome, str)
+    assert "describes no pull request" in outcome
+
+
+def test_a_pull_request_with_no_head_ref_names_no_branch_to_act_on() -> None:
+    """The head ref is the scope. Without it there is nothing this run could
+    narrow itself to, and an empty string would match no branch while looking
+    exactly like a repository that had already been cleaned."""
+    port = pr_view(number=7, state="MERGED", headRefName="", mergedAt="2026-08-01T09:30:00Z")
+
+    outcome = read_pull_request(port, None, "7")
+
+    assert isinstance(outcome, str)
+    assert "which branch" in outcome
+
+
+def test_a_null_head_ref_is_absence_rather_than_a_branch_called_none() -> None:
+    """JSON null arrives as None, and `str(None)` is the five-character word
+    "None" -- not empty, so an emptiness check made after the conversion passes
+    it. A field gh declined to answer would then become the scope, and the
+    sweep would narrow to a branch literally called None."""
+    port = pr_view(number=7, state="MERGED", headRefName=None, mergedAt="2026-08-01T09:30:00Z")
+
+    outcome = read_pull_request(port, None, "7")
+
+    assert isinstance(outcome, str)
+    assert "did not say which branch" in outcome
+
+
+def test_a_null_state_is_no_state_rather_than_the_word_none() -> None:
+    """Same conversion, same trap, and here it reaches a caller as the sentence
+    explaining why nothing was deleted."""
+    port = pr_view(number=7, state=None, headRefName="feat/x", mergedAt=None)
+
+    outcome = read_pull_request(port, None, "7")
+
+    assert not isinstance(outcome, str)
+    assert outcome.state == ""
+
+
+def test_a_pull_request_number_gh_states_as_something_else_is_not_read_past() -> None:
+    """`int()` on whatever gh put there would raise out of the read and take
+    the run with it -- and the number is what every sentence downstream names,
+    so a guess in its place is a report about a pull request nobody opened."""
+    port = pr_view(
+        number="not-a-number", state="MERGED", headRefName="feat/x", mergedAt="2026-08-01T09:30:00Z"
+    )
+
+    outcome = read_pull_request(port, None, "7")
+
+    assert isinstance(outcome, str)
+    assert "could not read" in outcome
+
+
+def test_a_pull_request_that_never_merged_carries_no_merge_time() -> None:
+    """gh states `mergedAt` as null there, and null is not a timestamp: the
+    field says nothing merged rather than saying nothing."""
+    port = pr_view(number=7, state="CLOSED", headRefName="feat/x", mergedAt=None)
+
+    outcome = read_pull_request(port, None, "7")
+
+    assert isinstance(outcome, PullRequestOutcome)
+    assert (outcome.state, outcome.merged_at) == ("CLOSED", None)
 
 
 # -- ref classification ------------------------------------------------------

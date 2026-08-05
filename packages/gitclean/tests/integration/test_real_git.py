@@ -1878,3 +1878,170 @@ def test_the_port_reports_a_real_failure_with_its_transcript(repo: Path) -> None
 
     assert not result.ok
     assert "$ git cat-file -e does-not-exist" in result.transcript()[0]
+
+
+class WithPullRequest(Recording):
+    """The real port, git untouched, answering for exactly one pull request.
+
+    A tmp repository has no forge behind it, so the authorising fact has to come
+    from somewhere -- and the thing under test is what gitclean does with that
+    fact against a real repository, not whether it can parse gh. Everything git
+    is asked still goes to git."""
+
+    def __init__(self, payload: dict[str, object]) -> None:
+        super().__init__()
+        self._payload = payload
+
+    def has_gh(self) -> bool:
+        return True
+
+    def gh(
+        self,
+        args: Sequence[str],
+        *,
+        cwd: Path | None = None,  # noqa: ARG002 - the port's signature; gh needs no cwd here
+    ) -> CommandResult:
+        # The bulk index answers empty on purpose. Merge evidence then comes
+        # from git alone, so what these tests exercise is the mode acting on
+        # the pull request it was handed rather than on a PR-state tier that
+        # happened to agree with it.
+        if list(args[:2]) == ["pr", "list"]:
+            body = "[]"
+        elif list(args[:2]) == ["pr", "view"]:
+            body = json.dumps(self._payload)
+        else:  # pragma: no cover - a call no test intends
+            raise AssertionError(f"unexpected gh call: {args}")
+        return CommandResult(argv=("gh", *args), returncode=0, stdout=body, stderr="")
+
+
+def _merge_a_branch(repo: Path, name: str) -> str:
+    """A branch carrying one commit that is now an ancestor of the trunk.
+
+    A bare `git branch` off the tip is NOT this: gitclean withholds a branch
+    sitting exactly on the trunk, because nothing on disk distinguishes that
+    from the trunk itself, and a fixture built that way tests the withhold
+    rather than the sweep."""
+    git(repo, "checkout", "-q", "-b", name)
+    head = commit(repo, f"{name}.txt", f"work on {name}\n")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--no-ff", "-m", f"merge {name}", name)
+    return head
+
+
+def _merged_payload(head_ref: str, number: int = 438) -> dict[str, object]:
+    return {
+        "number": number,
+        "state": "MERGED",
+        "headRefName": head_ref,
+        "mergedAt": "2026-08-01T09:30:00Z",
+    }
+
+
+def test_after_merge_removes_the_worktree_and_branch_one_pull_request_produced(
+    repo: Path, tmp_path: Path
+) -> None:
+    """The whole point of the mode, against a real repository: an agent that
+    merged its own pull request reaches the end state in one call, having named
+    nothing, and every other branch is still there afterwards."""
+    _merge_a_branch(repo, "shipped")
+    wt = tmp_path / "wt-shipped"
+    git(repo, "worktree", "add", "-q", str(wt), "shipped")
+    git(repo, "branch", "someone-elses-work")
+
+    port = WithPullRequest(_merged_payload("shipped"))
+    with reachability_guard(repo):
+        payload = report(repo, "--after-merge", "438", port=port)
+
+    assert payload["_exit"] == EXIT_OK
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert {d["name"] for d in execution["deletions"]} == {str(wt), "shipped"}
+    assert all(d["deleted"] and d["verified"] for d in execution["deletions"])
+
+    remaining = git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+    assert "shipped" not in remaining.split()
+    assert "someone-elses-work" in remaining.split()
+    assert not wt.exists()
+
+
+def test_after_merge_never_deletes_the_worktree_the_run_is_standing_in(
+    repo: Path, tmp_path: Path
+) -> None:
+    """The likeliest way to invoke this mode is from inside the worktree it is
+    about -- an agent merges its own pull request and cleans up where it stands.
+    Removing that directory pulls the working directory out from under the
+    process, so the sweep withholds it, and the branch it holds is withheld
+    beside it because git would refuse that too. Nothing is deleted and both
+    reasons are reported."""
+    _merge_a_branch(repo, "shipped")
+    wt = tmp_path / "wt-shipped"
+    git(repo, "worktree", "add", "-q", str(wt), "shipped")
+
+    port = WithPullRequest(_merged_payload("shipped"))
+    with reachability_guard(repo):
+        # cwd is the worktree itself, which is what makes it the invoking one.
+        payload = report(wt, "--after-merge", "438", port=port)
+
+    assert payload["_exit"] == EXIT_OK
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert execution["deletions"] == []
+    plan = payload["plan"]
+    assert isinstance(plan, dict)
+    reasons = {s["target_id"]: str(s["reason"]) for s in plan["skipped"]}
+    assert set(reasons) == {f"worktree:{wt}", "branch:shipped"}
+    # Each withheld for its own measured reason, not incidentally.
+    assert "the run is executing in" in reasons[f"worktree:{wt}"]
+    assert str(wt) in reasons["branch:shipped"]
+    assert wt.exists()
+    assert "shipped" in git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads").split()
+
+
+def test_after_merge_leaves_a_branch_carrying_work_the_pull_request_did_not_merge(
+    repo: Path,
+) -> None:
+    """A merged pull request describes the commit its head pointed at, not
+    whatever the branch of that name holds now. Someone pushing one more commit
+    after the merge is ordinary, and that commit exists nowhere else."""
+    git(repo, "checkout", "-q", "-b", "shipped")
+    commit(repo, "shipped.txt", "merged work\n")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "shipped")
+    git(repo, "checkout", "-q", "shipped")
+    stranded = commit(repo, "after.txt", "landed after the merge\n")
+    git(repo, "checkout", "-q", "main")
+
+    port = WithPullRequest(_merged_payload("shipped"))
+    with reachability_guard(repo):
+        payload = report(repo, "--after-merge", "438", port=port)
+
+    assert payload["_exit"] == EXIT_OK
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert execution["deletions"] == []
+    assert stranded in git(repo, "rev-list", "--all").split()
+    assert "shipped" in git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads").split()
+
+
+def test_a_pull_request_that_closed_unmerged_deletes_nothing_in_a_real_repository(
+    repo: Path,
+) -> None:
+    """The refusal that protects the only copy of abandoned work."""
+    git(repo, "checkout", "-q", "-b", "abandoned")
+    only = commit(repo, "abandoned.txt", "the only copy\n")
+    git(repo, "checkout", "-q", "main")
+
+    payload = {
+        "number": 438,
+        "state": "CLOSED",
+        "headRefName": "abandoned",
+        "mergedAt": None,
+    }
+    with reachability_guard(repo):
+        envelope = report(repo, "--after-merge", "438", port=WithPullRequest(payload))
+
+    assert envelope["_exit"] == EXIT_REFUSED
+    refusal = envelope["refusal"]
+    assert isinstance(refusal, dict)
+    assert refusal["code"] == "E_PR_NOT_MERGED"
+    assert only in git(repo, "rev-list", "--all").split()

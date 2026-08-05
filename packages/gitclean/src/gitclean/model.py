@@ -91,6 +91,54 @@ class PullRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class PullRequestOutcome:
+    """What one pull request decided, read because a caller named it.
+
+    ``PullRequest`` above is a row in an index built from one bulk read and
+    keyed by the branch a PR was opened from. It travels *to* a branch, as
+    evidence to be laid beside everything else measured about it, and a gh that
+    could not answer costs it a tier and nothing more.
+
+    This is the other direction, and it carries a different weight. A caller
+    naming a pull request is asking this tool to act because that pull request
+    merged, so the read is not evidence about a target -- it is the whole
+    authorisation, and a read that did not answer leaves nothing to act on.
+
+    It carries the head ref because nothing else here does: the bulk index
+    spends that string as its key, and the head ref is precisely what one pull
+    request says about which branch is finished with.
+
+    Deliberately absent from the envelope. What the report publishes is what a
+    run measured about the repository; this is the fact that authorised the run,
+    and it reaches a reader through the refusal that quotes it or not at all.
+    """
+
+    number: int
+    state: str
+    """OPEN | MERGED | CLOSED, upper-cased on the way in.
+
+    Case-folded rather than kept verbatim because the comparison that decides
+    whether anything is deleted is made against MERGED, and one that depended
+    on how a payload happened to spell a word is one gh could change
+    underneath this. Empty when gh named no state at all -- which is not a
+    state, and reaches the caller as a refusal like any other."""
+    head_ref: str
+    """The branch the pull request was opened from, as the server names it.
+
+    A local branch of that name is what a merged pull request finishes with. It
+    is not a promise that such a branch is still here, nor that what is here is
+    what the pull request merged -- both of those are measured elsewhere, and
+    neither is inferred from this string."""
+    merged_at: str | None
+    """When it merged, or None when nothing merged it.
+
+    Read alongside ``state`` because the two are one fact stated twice, and a
+    fact stated twice is established only when both statements agree. A payload
+    that says MERGED and dates nothing is gh saying something this cannot read,
+    which is not the same as a merge."""
+
+
+@dataclass(frozen=True, slots=True)
 class Worktree:
     path: str
     branch: str | None
