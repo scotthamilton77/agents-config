@@ -45,8 +45,14 @@ def invoke_human(argv: list[str], port: ScriptedCommands) -> tuple[int, str]:
     return code, buffer.getvalue()
 
 
-def merged_branch_port() -> ScriptedCommands:
-    """A repo with one provably-merged branch and nothing else interesting."""
+def merged_branch_port(
+    *, pr_view: dict[str, object] | None = None, has_gh: bool = True
+) -> ScriptedCommands:
+    """A repo with one provably-merged branch and nothing else interesting.
+
+    `pr_view` stays unset unless a test is about a pull request, so a run that
+    reaches for one nobody set up fails naming the argv rather than on a
+    default that quietly authorises something."""
     return make_port(
         refs=[
             ref_at("refs/heads/main", "main", "a" * 40, head="*"),
@@ -57,6 +63,8 @@ def merged_branch_port() -> ScriptedCommands:
             "branch -D -- done": ok(),
             "for-each-ref --format=%(refname) refs/heads/done": ok(""),
         },
+        pr_view=pr_view,
+        has_gh=has_gh,
     )
 
 
@@ -773,3 +781,86 @@ def test_human_output_warns_when_gh_is_unavailable() -> None:
     port = make_port(refs=[ref_line("refs/heads/main", "main", head="*")], has_gh=False)
     _, text = invoke_human(["--report"], port)
     assert "WARN:" in text
+
+
+# -- --after-merge -----------------------------------------------------------
+
+
+_MERGED_DONE: dict[str, object] = {
+    "number": 438,
+    "state": "MERGED",
+    "headRefName": "done",
+    "mergedAt": "2026-08-01T09:30:00Z",
+}
+
+
+def after_merge_port(**pr: object) -> ScriptedCommands:
+    """The merged-branch repository, plus an answer for one pull request."""
+    payload = dict(_MERGED_DONE)
+    payload.update(pr)
+    return merged_branch_port(pr_view=payload)
+
+
+def test_after_merge_sweeps_the_branch_the_pull_request_finished_with() -> None:
+    """The round trip this mode removes: an agent that merged its own pull
+    request cleans up after itself in one call, and nothing else moves."""
+    code, payload = invoke(["--after-merge", "438"], after_merge_port())
+
+    assert code == EXIT_OK
+    assert payload["mode"] == "after-merge"
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert [d["name"] for d in execution["deletions"]] == ["done"]
+
+
+def test_a_pull_request_that_did_not_merge_refuses_and_deletes_nothing() -> None:
+    code, payload = invoke(["--after-merge", "438"], after_merge_port(state="CLOSED"))
+
+    assert code == EXIT_REFUSED
+    refusal = payload["refusal"]
+    assert isinstance(refusal, dict)
+    assert refusal["code"] == "E_PR_NOT_MERGED"
+    assert payload.get("execution") is None
+
+
+def test_after_merge_without_gh_refuses_rather_than_falling_back_to_a_sweep() -> None:
+    """No forge, no authorising fact. Falling back to a bare sweep here would
+    take every provably-merged branch in the repository on the strength of a
+    command that asked about one."""
+    code, payload = invoke(["--after-merge", "438"], merged_branch_port(has_gh=False))
+
+    assert code == EXIT_REFUSED
+    refusal = payload["refusal"]
+    assert isinstance(refusal, dict)
+    assert refusal["code"] == "E_PR_UNREADABLE"
+
+
+def test_a_pull_request_number_that_is_not_a_number_is_a_usage_error() -> None:
+    """Exit 2 before anything is read: `gh pr view` also accepts a URL and a
+    branch name there, so a spelling that is not a number could resolve some
+    other pull request and authorise a deletion nobody asked for."""
+    with pytest.raises(SystemExit) as exit_info:
+        invoke(["--after-merge", "feat/x"], merged_branch_port())
+
+    assert exit_info.value.code == EXIT_USAGE
+
+
+def test_after_merge_and_cleanup_cannot_be_asked_for_together() -> None:
+    """One authorises by proof and the other by naming. A command line claiming
+    both has not said which rule applies to the targets."""
+    with pytest.raises(SystemExit) as exit_info:
+        invoke(["--after-merge", "438", "--cleanup", "done"], merged_branch_port())
+
+    assert exit_info.value.code == EXIT_USAGE
+
+
+def test_after_merge_dry_run_changes_nothing() -> None:
+    code, payload = invoke(["--after-merge", "438", "--dry-run"], after_merge_port())
+
+    assert code == EXIT_OK
+    plan = payload["plan"]
+    assert isinstance(plan, dict)
+    assert plan["dry_run"] is True
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert all(d["deleted"] is False for d in execution["deletions"])

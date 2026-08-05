@@ -30,6 +30,14 @@ there has no reflog, so `gitclean` removes it only when it is named. The end
 state above therefore needs a further call naming that ref — after the user has
 agreed to it, never bundled into the sweep on their behalf.
 
+After a pull request **you** merged, `gitclean --after-merge <pr>` takes that
+one pull request's branch and worktree without asking. It is not a naming and
+skips nothing: it applies the same proof and the same checks a bare sweep does,
+scoped to what that pull request produced, and reports whatever it will not
+take. What authorises it is that the pull request merged — a fact the forge
+answers, not one you judged. The server's copy is **not** in its scope; that
+still waits to be named.
+
 Reach for it. It is easy not to — it is a CLI on PATH, not a git subcommand, so
 nothing in a git session suggests it exists. If it is not installed, say so
 rather than substituting `git branch --merged`: under a squash merge that answer
@@ -46,4 +54,5 @@ deletion on the strength of a survey that never happened.
 So: survey everything you mention, relay each withheld target **with the reason
 given**, and say plainly when something was not measured. Naming a target to
 `gitclean` skips the checks a bare sweep applies, which makes it the user's
-decision to make and never yours to make for them.
+decision to make and never yours to make for them — the one exception being the
+pull request you merged, where nothing is skipped and nothing was judged.

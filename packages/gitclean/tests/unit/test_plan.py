@@ -4,8 +4,17 @@ from __future__ import annotations
 
 from conftest import make_branch, make_survey
 
-from gitclean.model import MergeEvidence, NotOffered, Plan, Refusal, Target, TargetKind
-from gitclean.plan import build_plan, resolve_selectors
+from gitclean.model import (
+    Counterpart,
+    MergeEvidence,
+    NotOffered,
+    Plan,
+    PullRequestOutcome,
+    Refusal,
+    Target,
+    TargetKind,
+)
+from gitclean.plan import build_after_merge_plan, build_plan, resolve_selectors
 
 
 def target(
@@ -15,6 +24,7 @@ def target(
     name: str | None = None,
     sweepable: bool = True,
     remote: str = "origin",
+    pairing: tuple[Counterpart, ...] = (),
 ) -> Target:
     resolved = name if name is not None else ident.split(":", 1)[1]
     # The remote a server ref lives on, which only the survey can recover. Most
@@ -33,7 +43,17 @@ def target(
         last_activity=None,
         remote=remote if on_remote else None,
         ref_name=resolved.removeprefix(f"{remote}/") if on_remote else None,
+        pairing=pairing,
     )
+
+
+def counterpart(relation: str, of: Target) -> Counterpart:
+    """The relation a classified row carries, built from the row it points at.
+
+    Taking the target rather than two strings is what stops a fixture
+    describing a report that cannot exist: a counterpart naming a row carries
+    that row's own id and name, and the two cannot drift apart here."""
+    return Counterpart(relation=relation, name=of.name, id=of.id, known=True)
 
 
 def plan_for(
@@ -579,3 +599,201 @@ def test_plan_orders_worktrees_then_local_then_remote() -> None:
     result = plan_for(targets, selectors=["remote:origin/z", "branch:b", "worktree:/repo/w"])
     assert isinstance(result, Plan)
     assert [t.kind.value for t in result.targets] == ["worktree", "branch", "remote_branch"]
+
+
+# -- after a merged pull request ---------------------------------------------
+
+
+def _merged(number: int = 438, head_ref: str = "feat/shipped") -> PullRequestOutcome:
+    return PullRequestOutcome(
+        number=number, state="MERGED", head_ref=head_ref, merged_at="2026-08-01T00:00:00Z"
+    )
+
+
+def after_merge(
+    targets: tuple[Target, ...],
+    *,
+    pull_request: PullRequestOutcome | str | None = None,
+    survey=None,  # type: ignore[no-untyped-def]
+) -> Plan | Refusal:
+    return build_after_merge_plan(
+        targets,
+        survey if survey is not None else make_survey(),
+        pull_request=pull_request if pull_request is not None else _merged(),
+        dry_run=False,
+    )
+
+
+def _shipped_pair() -> tuple[Target, Target]:
+    """A merged branch and the worktree holding it, pointing at each other.
+
+    Built as a pair because that is how the survey reports them: the scope is
+    reached by following the relation, so a fixture whose rows do not name each
+    other is testing a report that never occurs."""
+    worktree = target(
+        "worktree:/repo/wt-shipped", kind=TargetKind.WORKTREE, name="/repo/wt-shipped"
+    )
+    branch = target("branch:feat/shipped", pairing=(counterpart("worktree", worktree),))
+    return branch, worktree
+
+
+def test_a_merged_pull_request_sweeps_its_branch_and_the_worktree_holding_it() -> None:
+    """The round trip this mode exists to remove. Nothing is named and nothing
+    is skipped: the scope is what the pull request produced, and both rows
+    cleared the same checks a bare sweep applies."""
+    branch, worktree = _shipped_pair()
+
+    result = after_merge((branch, worktree, target("branch:someone-elses-work")))
+
+    assert isinstance(result, Plan)
+    assert [t.name for t in result.targets] == ["/repo/wt-shipped", "feat/shipped"]
+    assert result.skipped == ()
+
+
+def test_nothing_a_different_pull_request_produced_enters_the_scope() -> None:
+    """The whole reason a bare sweep was not an option. An agent cleaning up
+    after itself must take its own two rows and leave every other branch in the
+    repository exactly where it is, however provably merged they are."""
+    branch, worktree = _shipped_pair()
+    others = (
+        target("branch:someone-elses-work"),
+        target("worktree:/repo/wt-theirs", kind=TargetKind.WORKTREE, name="/repo/wt-theirs"),
+    )
+
+    result = after_merge((branch, worktree, *others))
+
+    assert isinstance(result, Plan)
+    assert {t.name for t in result.targets} == {"/repo/wt-shipped", "feat/shipped"}
+
+
+def test_a_pull_request_that_closed_without_merging_is_not_a_deletion_authority() -> None:
+    """Closing a pull request says somebody stopped wanting the change. It
+    never says the commits landed anywhere else, and they did not."""
+    branch, worktree = _shipped_pair()
+    closed = PullRequestOutcome(number=438, state="CLOSED", head_ref="feat/shipped", merged_at=None)
+
+    result = after_merge((branch, worktree), pull_request=closed)
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_PR_NOT_MERGED"
+    assert "CLOSED" in result.message
+
+
+def test_an_open_pull_request_is_not_a_deletion_authority_either() -> None:
+    """The failure that would hurt most: deleting the branch of a pull request
+    still under review takes the only copy of work nobody has merged."""
+    branch, worktree = _shipped_pair()
+    still_open = PullRequestOutcome(
+        number=438, state="OPEN", head_ref="feat/shipped", merged_at=None
+    )
+
+    result = after_merge((branch, worktree), pull_request=still_open)
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_PR_NOT_MERGED"
+
+
+def test_a_pull_request_read_that_did_not_answer_authorises_nothing() -> None:
+    """The authorising fact is the only thing this mode has that a sweep does
+    not, so a read that failed leaves it with no authority at all -- not a
+    degraded one that falls back to sweeping."""
+    branch, worktree = _shipped_pair()
+
+    result = after_merge((branch, worktree), pull_request="gh is not on PATH")
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_PR_UNREADABLE"
+    assert "gh is not on PATH" in result.message
+
+
+def test_a_merge_stated_without_a_time_is_not_one_this_acts_on() -> None:
+    """State and merge time are one fact stated twice, and a fact stated twice
+    is established only when both statements agree."""
+    branch, worktree = _shipped_pair()
+    undated = PullRequestOutcome(
+        number=438, state="MERGED", head_ref="feat/shipped", merged_at=None
+    )
+
+    result = after_merge((branch, worktree), pull_request=undated)
+
+    assert isinstance(result, Refusal)
+    assert result.code == "E_PR_UNREADABLE"
+
+
+def test_the_servers_copy_is_reported_and_never_swept() -> None:
+    """A merged pull request authorises deleting this repository's copy of the
+    work. The server keeps no reflog, so its copy still goes only when named --
+    and the row saying so is what stops a clean run reading as gone everywhere."""
+    server = target("remote:origin/feat/shipped", kind=TargetKind.REMOTE_BRANCH)
+    worktree = target(
+        "worktree:/repo/wt-shipped", kind=TargetKind.WORKTREE, name="/repo/wt-shipped"
+    )
+    branch = target(
+        "branch:feat/shipped",
+        pairing=(counterpart("worktree", worktree), counterpart("upstream", server)),
+    )
+
+    result = after_merge((branch, worktree, server))
+
+    assert isinstance(result, Plan)
+    assert "remote:origin/feat/shipped" not in [t.id for t in result.targets]
+    reported = {s.target_id: s.reason for s in result.skipped}
+    assert "the copy on the server" in reported["remote:origin/feat/shipped"]
+
+
+def test_a_branch_the_sweep_would_withhold_is_left_exactly_where_it_is() -> None:
+    """The pull request describes the commit its head pointed at, not whatever
+    the branch of that name holds now. So the six questions are still asked, and
+    a branch that fails one is reported with the measurement that stopped it."""
+    worktree = target(
+        "worktree:/repo/wt-shipped", kind=TargetKind.WORKTREE, name="/repo/wt-shipped"
+    )
+    branch = target(
+        "branch:feat/shipped", sweepable=False, pairing=(counterpart("worktree", worktree),)
+    )
+
+    result = after_merge((branch, worktree))
+
+    assert isinstance(result, Plan)
+    assert [t.name for t in result.targets] == ["/repo/wt-shipped"]
+    reported = {s.target_id: s.reason for s in result.skipped}
+    assert reported["branch:feat/shipped"] == branch.withheld
+
+
+def test_an_occupied_branch_is_skipped_rather_than_stopping_the_run() -> None:
+    """What a sweep does about occupancy, and this is a sweep. git refuses to
+    delete a branch a worktree still holds, so the branch is skipped with the
+    holder named and everything else in scope still goes."""
+    held = target("branch:held", pairing=())
+    survey = make_survey(branches=(make_branch("held", checked_out_at="/repo/elsewhere"),))
+
+    result = after_merge((held,), pull_request=_merged(head_ref="held"), survey=survey)
+
+    assert isinstance(result, Plan)
+    assert result.targets == ()
+    assert [s.target_id for s in result.skipped] == ["branch:held"]
+    assert "/repo/elsewhere" in result.skipped[0].reason
+
+
+def test_a_pull_request_whose_branch_is_already_gone_is_a_completed_job() -> None:
+    """Routine rather than exceptional: the forge deletes the branch on merge,
+    or the agent ran this a moment ago. Reporting a finished job as a failure is
+    what sends a caller back to raw git."""
+    result = after_merge((target("branch:something-else"),))
+
+    assert isinstance(result, Plan)
+    assert result.targets == ()
+    assert result.skipped == ()
+    assert [a.selector for a in result.absent] == ["feat/shipped"]
+
+
+def test_a_pull_request_plan_never_carries_a_salvage_directory() -> None:
+    """Salvage is retained only where no reflog exists, which is the server --
+    and no server ref can enter this plan. A directory here would be a bundle
+    nothing writes and a route nobody takes."""
+    branch, worktree = _shipped_pair()
+
+    result = after_merge((branch, worktree))
+
+    assert isinstance(result, Plan)
+    assert result.salvage_dir is None

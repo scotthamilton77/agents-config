@@ -7,6 +7,16 @@ up arguing with the person using it. git's own refusals still stand where
 nothing overrides them, and they carry better information than a re-derivation
 would -- git knows what its working tree holds right now.
 
+Between those two sits a merged pull request, and it is a sweep rather than a
+naming. Nothing about it is authorised by somebody's judgement that a branch is
+finished with: what authorises it is the mechanical fact that the pull request
+merged, which a caller cannot assert and gh has to answer. So every check a
+bare sweep applies is applied here too, unchanged -- the scope is narrowed to
+the targets one pull request produced, and nothing else about the sweep moves.
+That is the whole of the difference, and it is deliberate: a mode that both
+narrowed the scope *and* relaxed the proof would be a naming wearing a sweep's
+clothes.
+
 So the refusals left here are few, and each answers something the caller could
 not have answered themselves: a name matching two things, a branch git will
 reject because a worktree still holds it, and the directory this process is
@@ -36,6 +46,7 @@ from gitclean.model import (
     Absent,
     NotOffered,
     Plan,
+    PullRequestOutcome,
     Refusal,
     Skipped,
     Survey,
@@ -309,6 +320,173 @@ def _occupancy_blockers(chosen: list[Target], survey_data: Survey) -> list[tuple
     return blockers
 
 
+def _skip_occupied(
+    chosen: list[Target], occupancy: list[tuple[Target, str]]
+) -> tuple[list[Target], list[Skipped]]:
+    """Drop the branches git will refuse because a worktree still holds them,
+    and say which.
+
+    What a sweep does about occupancy, wherever the sweep got its candidates
+    from: one occupied branch must not block cleaning everything else that is
+    provably merged, so it is skipped rather than refused -- and the ``Skipped``
+    row carries the omission, because a clean-looking run that quietly did less
+    than the caller assumes reads as "everything was cleaned".
+
+    One function rather than one per sweeping mode. Two copies of this would be
+    two places to disagree about whether an occupied branch stops a run."""
+    blocked = {t.id for t, _ in occupancy}
+    return (
+        [t for t in chosen if t.id not in blocked],
+        [
+            Skipped(
+                target_id=t.id,
+                name=t.name,
+                reason=f"checked out at {path}; remove that worktree to make it deletable",
+            )
+            for t, path in occupancy
+        ],
+    )
+
+
+def _pull_request_scope(head_ref: str, targets: tuple[Target, ...]) -> list[Target]:
+    """Everything one pull request produced that this report has a row for: the
+    branch it was opened from, the worktree holding that branch, and the copy of
+    that branch on the server.
+
+    The counterparts are reached by following ``pairing``, which is the relation
+    the survey measured, and never by taking a path or a ref apart. Both of
+    those are strings whose halves cannot be recovered by looking for a
+    delimiter -- a worktree path may contain anything at all, and a remote's own
+    name may contain the slash in `<remote>/<ref>` -- so a scope built by
+    splitting would silently take in a neighbour's worktree, or miss the one it
+    was aiming at. Following the id is what publishing the id is for.
+
+    The server copy is gathered so that it can be *reported*. It is part of what
+    the pull request produced, and a scope that simply left it out would let a
+    caller read a clean run as the branch being gone everywhere, which is the
+    one place this mode could quietly mislead."""
+    branch = next((t for t in targets if t.kind is TargetKind.BRANCH and t.name == head_ref), None)
+    if branch is None:
+        return []
+    by_id = {t.id: t for t in targets}
+    scope = [by_id[c.id] for c in branch.pairing if c.id is not None]
+    scope.append(branch)
+    return scope
+
+
+def build_after_merge_plan(
+    targets: tuple[Target, ...],
+    survey_data: Survey,
+    *,
+    pull_request: PullRequestOutcome | str,
+    dry_run: bool,
+) -> Plan | Refusal:
+    """A sweep narrowed to what one merged pull request produced.
+
+    The refusals here are all about the authorising fact, because that fact is
+    the only thing this mode has that a bare sweep does not. It cannot be
+    asserted by the caller and it cannot be inferred from the repository: a
+    merged pull request is something gh answers for, so a gh that did not answer
+    means this run has no authority at all -- not a degraded one -- and a pull
+    request that closed without merging is not an authority either. Closing one
+    says somebody stopped wanting the change; it never says its commits exist
+    anywhere else, and they do not.
+
+    Past that point nothing is taken on the pull request's word. A merged pull
+    request describes the commit its head pointed at, not whatever the branch of
+    that name holds now, so what the sweep takes is decided by the same six
+    questions classification asks of everything else. A branch in scope that
+    fails one of them is reported with the measurement that stopped it and left
+    exactly where it is.
+
+    ``salvage_dir`` has no parameter here, and that is a property of the mode
+    rather than an omission: salvage is retained only where no reflog exists,
+    which is the server, and no server ref can enter this plan."""
+    if isinstance(pull_request, str):
+        return Refusal(
+            code="E_PR_UNREADABLE",
+            message=f"this run deletes only what a merged pull request produced, and whether "
+            f"one merged could not be established: {pull_request}",
+            remedy="fix what stopped the pull-request read and re-run, or name what you want "
+            "gone to --cleanup, which asks nothing of gh; nothing here was touched",
+        )
+    if pull_request.state != "MERGED":
+        return Refusal(
+            code="E_PR_NOT_MERGED",
+            message=f"pull request #{pull_request.number} is {pull_request.state}, not merged: "
+            f"the one thing authorising this mode to delete is that the change landed, and a "
+            f"pull request that closed without merging says somebody stopped wanting it rather "
+            f"than that its commits exist anywhere else",
+            remedy=f"nothing was deleted; if you want {pull_request.head_ref} gone regardless, "
+            f"name it to --cleanup -- that authorisation is yours to give, and this mode "
+            f"deliberately will not infer it",
+        )
+    if pull_request.merged_at is None:
+        return Refusal(
+            code="E_PR_UNREADABLE",
+            message=f"gh reports pull request #{pull_request.number} as MERGED and recorded no "
+            f"time at which it merged, so the two things it says about that decision do not "
+            f"agree; a merge this cannot read is not one it acts on",
+            remedy="check what gh reports for that pull request and re-run, or name what you "
+            "want gone to --cleanup; nothing here was touched",
+        )
+
+    scope = _pull_request_scope(pull_request.head_ref, targets)
+    if not scope:
+        # A job already done is a success. The branch a merged pull request
+        # finishes with is routinely deleted by the forge, by whatever removed
+        # the worktree, or by the agent that ran this a moment ago -- and being
+        # told a completed job failed is what sends a caller to raw git.
+        return Plan(
+            targets=(),
+            salvage_dir=None,
+            dry_run=dry_run,
+            absent=(
+                Absent(
+                    selector=pull_request.head_ref,
+                    note=f"pull request #{pull_request.number} merged, and nothing it produced "
+                    f"is still here: no local branch named {pull_request.head_ref!r}, and so no "
+                    f"worktree holding one. The cleanup was already done",
+                ),
+            ),
+        )
+
+    chosen: list[Target] = []
+    skipped: list[Skipped] = []
+    for candidate in scope:
+        if candidate.kind is TargetKind.REMOTE_BRANCH:
+            # Whatever its state, and not by way of the sweep rule that would
+            # have caught it anyway: a merged pull request is an authority over
+            # this repository's copy of the work, and deleting the server's copy
+            # is irreversible for everyone fetching it.
+            skipped.append(
+                Skipped(
+                    target_id=candidate.id,
+                    name=candidate.name,
+                    reason=f"the copy on the server, which a merged pull request does not "
+                    f"authorise deleting: the server keeps no reflog, so it goes only when it "
+                    f"is named -- `gitclean --cleanup {candidate.name}` bundles it first",
+                )
+            )
+        elif candidate.withheld is not None:
+            # `sweepable` asked in the spelling that carries the answer: the two
+            # are the same question, and only one of them can be reported.
+            skipped.append(
+                Skipped(target_id=candidate.id, name=candidate.name, reason=candidate.withheld)
+            )
+        else:
+            chosen.append(candidate)
+
+    chosen, occupied = _skip_occupied(chosen, _occupancy_blockers(chosen, survey_data))
+    skipped.extend(occupied)
+    return Plan(
+        targets=_ordered(chosen),
+        salvage_dir=None,
+        dry_run=dry_run,
+        skipped=tuple(skipped),
+    )
+
+
 def build_plan(
     targets: tuple[Target, ...],
     survey_data: Survey,
@@ -347,21 +525,7 @@ def build_plan(
             blocked=tuple(t for t, _ in occupancy),
             remedy="add the holding worktree to the same cleanup so it is removed first",
         )
-    skipped: list[Skipped] = []
-    if occupancy:
-        # Swept automatically: one occupied branch must not block cleaning
-        # everything else that is provably merged. Skip it; `skipped` carries
-        # the omission so a clean-looking run never hides what it left behind.
-        blocked_ids = {t.id for t, _ in occupancy}
-        chosen = [t for t in chosen if t.id not in blocked_ids]
-        skipped.extend(
-            Skipped(
-                target_id=t.id,
-                name=t.name,
-                reason=f"checked out at {path}; remove that worktree to make it deletable",
-            )
-            for t, path in occupancy
-        )
+    chosen, skipped = _skip_occupied(chosen, occupancy)
 
     return Plan(
         targets=_ordered(chosen),

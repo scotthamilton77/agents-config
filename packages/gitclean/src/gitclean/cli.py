@@ -3,8 +3,9 @@
 Cleanup re-surveys before it acts. The report the caller read may be minutes
 old; a branch can gain commits or a worktree can go dirty in that window, and
 acting on the stale classification is precisely the failure this tool exists
-to prevent. So --cleanup runs the full survey and classification again, and
-plans against what is true now.
+to prevent. So every mode that acts -- --cleanup and --after-merge alike --
+runs the full survey and classification again, and plans against what is true
+now.
 """
 
 from __future__ import annotations
@@ -20,8 +21,9 @@ from gitclean import get_version
 from gitclean.classify import classify
 from gitclean.execute import ExecutionReport, Executor, default_salvage_dir
 from gitclean.model import MergeEvidence, Plan, Refusal, Survey, Target
-from gitclean.plan import build_plan
+from gitclean.plan import build_after_merge_plan, build_plan
 from gitclean.ports import CommandPort, SubprocessCommands
+from gitclean.survey import read_pull_request
 from gitclean.survey import survey as run_survey
 
 EXIT_OK = 0
@@ -33,6 +35,7 @@ _EPILOG = """\
 modes:
   --report                 survey only; emits the full measured state as JSON
   --cleanup [NAME ...]     sweep what is provably merged, or delete exactly the named targets
+  --after-merge PR         sweep what one merged pull request produced
 
 what a bare --cleanup takes:
   a target whose merge_evidence is pr_merged, ancestor, patch_equal or squash_equal,
@@ -65,11 +68,21 @@ all, and when the name is a ref this tool does not offer as a target, such as th
 server's copy of the trunk. Both of those look identical to an absent name and neither
 one is, so saying "already gone" about them would be a false report.
 
+what --after-merge takes:
+  the local branch a pull request was opened from, and the worktree holding it -- each
+  only where it clears the same checks a bare sweep applies. It is a sweep with a
+  narrower scope, not a list of names: what authorises it is the mechanical fact that
+  the pull request merged, so gh has to answer, and a pull request that closed without
+  merging is refused rather than treated as a decision about the branch's commits. The
+  branch's copy on the server is reported and never deleted; naming it stays the only
+  way that happens. Nothing left to clean up exits 0 with an empty plan.
+
 examples:
   gitclean --report --format human
   gitclean --cleanup --dry-run
   gitclean --cleanup feat/old-thing worktree:/path/to/wt
   gitclean --cleanup origin/feat/old-thing
+  gitclean --after-merge 438 --dry-run
 """
 
 
@@ -90,6 +103,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="NAME",
         help="delete the safe subset, or exactly the named worktrees/branches",
     )
+    mode.add_argument(
+        "--after-merge",
+        metavar="PR",
+        help="sweep the branch and worktree one merged pull request produced",
+    )
 
     parser.add_argument(
         "--dry-run", action="store_true", help="resolve and report the plan without executing it"
@@ -103,6 +121,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--format", choices=("json", "human"), default="json", help="output format (default json)"
     )
     return parser
+
+
+def _pull_request_number(parser: argparse.ArgumentParser, given: str) -> str:
+    """The pull request number as the caller spelled it, or a usage error.
+
+    Checked rather than converted, and handed on as the same string. `gh pr
+    view` also accepts a URL and a branch name in that position, and either
+    would resolve *some* pull request -- which is not the same as the one the
+    caller named, and would authorise a deletion against a branch nobody asked
+    about. Round-tripping through ``int`` would answer that, and would also
+    quietly rewrite the spelling gh is asked for; this keeps the argv exact.
+
+    A usage error rather than a refusal, because nothing has been measured yet.
+    The command as typed cannot be carried out at all, which is what exit 2
+    means everywhere else in this CLI."""
+    if not given.isdigit():
+        parser.error(f"--after-merge takes a pull request number, not {given!r}")
+    return given
 
 
 def _envelope(
@@ -319,10 +355,18 @@ def main(
 ) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    # Before the survey: a command line that cannot be carried out is not worth
+    # reading a repository for, and exit 2 must not arrive after a minute of git.
+    number = None if args.after_merge is None else _pull_request_number(parser, args.after_merge)
     stream = out if out is not None else sys.stdout
     runner: CommandPort = port if port is not None else SubprocessCommands()
     moment = now if now is not None else datetime.now(UTC)
-    mode = "report" if args.report else "cleanup"
+    if args.report:
+        mode = "report"
+    elif number is not None:
+        mode = "after-merge"
+    else:
+        mode = "cleanup"
 
     surveyed = run_survey(runner, cwd=cwd)
     if isinstance(surveyed, str):
@@ -339,14 +383,25 @@ def main(
         )
         return EXIT_OK
 
-    salvage_dir = args.salvage_dir or default_salvage_dir(surveyed, moment)
-    outcome = build_plan(
-        targets,
-        surveyed,
-        selectors=list(args.cleanup or []),
-        dry_run=args.dry_run,
-        salvage_dir=salvage_dir,
-    )
+    if number is not None:
+        outcome = build_after_merge_plan(
+            targets,
+            surveyed,
+            # Read here rather than before the survey: the survey is what says
+            # this is a repository at all, and asking a forge about a pull
+            # request in a directory that is not one answers the wrong question.
+            pull_request=read_pull_request(runner, cwd, number),
+            dry_run=args.dry_run,
+        )
+    else:
+        salvage_dir = args.salvage_dir or default_salvage_dir(surveyed, moment)
+        outcome = build_plan(
+            targets,
+            surveyed,
+            selectors=list(args.cleanup or []),
+            dry_run=args.dry_run,
+            salvage_dir=salvage_dir,
+        )
     if isinstance(outcome, Refusal):
         _emit(
             _envelope(mode, ok=False, survey_data=surveyed, targets=targets, refusal=outcome),

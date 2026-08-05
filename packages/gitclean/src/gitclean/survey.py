@@ -20,7 +20,15 @@ import json
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from gitclean.model import Branch, MergeEvidence, NotOffered, PullRequest, Survey, Worktree
+from gitclean.model import (
+    Branch,
+    MergeEvidence,
+    NotOffered,
+    PullRequest,
+    PullRequestOutcome,
+    Survey,
+    Worktree,
+)
 from gitclean.ports import CommandPort, CommandResult
 
 _SEP = "\x1f"
@@ -61,6 +69,12 @@ _REF_FORMAT = _SEP.join(
 )
 _REF_FIELDS = 8
 _PR_LIMIT = 500
+_PR_VIEW_FIELDS = "number,state,headRefName,mergedAt"
+"""What one pull request has to say for itself before it authorises anything.
+
+``mergedAt`` is asked for alongside ``state`` deliberately: they are one fact
+stated twice, and requiring both to agree is what keeps a payload this cannot
+read from being taken for a merge."""
 
 
 def _first_line(result_out: str) -> str:
@@ -657,6 +671,58 @@ def read_pull_requests(
             f"were left out; a branch of theirs is judged on git evidence alone"
         )
     return index, None, "; ".join(gaps) if gaps else None
+
+
+def read_pull_request(port: CommandPort, cwd: Path | None, number: str) -> PullRequestOutcome | str:
+    """One pull request, asked for by number -- or the measurement that stopped
+    the read.
+
+    Every failure here is a sentence rather than an empty result, which is what
+    separates this from the bulk read above. That one gathers evidence to lay
+    beside branches nobody named: a gh that is absent or failing costs it a
+    tier, the run continues, and each row says squash merges were invisible to
+    it. Here the pull request is the authorisation itself. A read that did not
+    answer leaves nothing to act on, so the only honest outcomes are the fact or
+    the reason it is missing -- and a caller who is told which can fix it.
+
+    ``number`` travels as the caller spelled it. It goes straight into an argv,
+    and round-tripping it through ``int`` would change the string gh is asked
+    for -- gh accepts a URL and a branch name there too, so the spelling that
+    reaches it is worth keeping exact.
+
+    The payload is read the way the bulk list is read: nothing is assumed about
+    the shape gh returns, because an entry described in terms this does not
+    understand is a fact nobody established, and the one thing it must not
+    become is a merge.
+    """
+    if not port.has_gh():
+        return f"gh is not on PATH, so nothing could say whether pull request #{number} merged"
+    result = port.gh(["pr", "view", number, "--json", _PR_VIEW_FIELDS], cwd=cwd)
+    if not result.ok:
+        detail = result.stderr.strip() or f"exit {result.returncode}"
+        return f"gh pr view {number} failed ({detail})"
+    try:
+        payload = json.loads(result.stdout or "null")
+    except json.JSONDecodeError as exc:
+        return f"gh pr view {number} returned unparseable JSON ({exc})"
+    if not isinstance(payload, dict):
+        return f"gh pr view {number} returned a payload that describes no pull request"
+    head = str(payload.get("headRefName", ""))
+    if not head:
+        return f"gh did not say which branch pull request #{number} was opened from"
+    try:
+        resolved = int(payload.get("number", 0))
+    except (TypeError, ValueError):
+        # A pull request number that is not a number is gh telling us something
+        # this does not understand about the very thing being asked after.
+        return f"gh answered for pull request #{number} with a number this could not read"
+    merged_at = payload.get("mergedAt")
+    return PullRequestOutcome(
+        number=resolved,
+        state=str(payload.get("state", "")).upper(),
+        head_ref=head,
+        merged_at=str(merged_at) if merged_at else None,
+    )
 
 
 def _merged_set(
