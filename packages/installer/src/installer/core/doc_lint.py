@@ -238,17 +238,36 @@ _MAX_LITERAL_LENGTH = 64
 
 
 @dataclass(frozen=True, slots=True)
+class CitationContext:
+    """What the sentence around one citation says about it.
+
+    ``directive`` — the clause before it tells a reader to reach for it.
+    ``negated`` — the sentence says the thing is not there.
+    ``near_miss`` — this sentence does not, but a neighbouring one does. That is
+    the most likely honest mistake, and naming it is the difference between a
+    finding an author can act on and one they reverse-engineer by rephrasing.
+    """
+
+    directive: bool
+    negated: bool
+    near_miss: bool
+
+
+@dataclass(frozen=True, slots=True)
 class Finding:
     """One citation that does not resolve.
 
     ``citation`` is the author's own text so the finding can be found by search,
-    and ``line`` is 1-based so it can be clicked.
+    and ``line`` is 1-based so it can be clicked. ``target`` is the repo-relative
+    path a path finding resolved to, carried so the CLI can ask git whether that
+    path is one it was told to ignore without re-deriving it.
     """
 
     file: Path
     line: int
     citation: str
     reason: str
+    target: str | None = None
 
 
 def format_finding(finding: Finding) -> str:
@@ -799,8 +818,9 @@ def _sentences(lines: Sequence[str], fenced: Sequence[bool]) -> list[list[tuple[
                 for index, (number, text) in enumerate(block)
                 if starts[index] < end and starts[index] + len(text) > begin
             ]
-            out.append((sentence, covered))
+            sentences.append((sentence, covered))
             position = end
+        out.append(sentences)
         block.clear()
 
     for index, line in enumerate(lines, start=1):
@@ -831,14 +851,77 @@ def suppressed_citations(lines: Sequence[str], fenced: Sequence[bool]) -> set[tu
     instead" in one sentence — if ``new`` is *also* missing, nothing reports it.
     Two sentences, and both are judged.
     """
-    return {
-        (number, token)
-        for sentence, covered in _sentences(lines, fenced)
-        if _negates_existence(sentence)
-        for number in covered
-        for _column, token in _code_spans(lines[number - 1])
-        if f"`{token}`" in sentence
-    }
+    return {key for key, context in citation_contexts(lines, fenced).items() if context.negated}
+
+
+def citation_contexts(
+    lines: Sequence[str], fenced: Sequence[bool]
+) -> dict[tuple[int, str], CitationContext]:
+    """What the prose around each citation says about it.
+
+    One traversal answering both questions the checks ask — is this sentence
+    telling me to use the thing, and does it say the thing is gone — so the two
+    can never be computed from different readings of the same paragraph.
+
+    Keyed by ``(line, span text)``. A token repeated on one line in two different
+    sentences collapses to one entry; the first sentence's reading wins. Rare
+    enough to be worth the simple key, and the direction it errs in depends on
+    which sentence came first, so it is recorded here rather than relied upon.
+    """
+    contexts: dict[tuple[int, str], CitationContext] = {}
+    for block in _sentences(lines, fenced):
+        negations = [_negates_existence(sentence) for sentence, _covered in block]
+        for index, (sentence, covered) in enumerate(block):
+            neighbours = negations[max(index - 1, 0) : index + 2]
+            for number in covered:
+                for _column, token in _code_spans(lines[number - 1]):
+                    quoted = f"`{token}`"
+                    position = sentence.find(quoted)
+                    if position < 0:
+                        continue
+                    contexts.setdefault(
+                        (number, token),
+                        CitationContext(
+                            directive=_directive_before(sentence, position),
+                            negated=negations[index],
+                            near_miss=not negations[index] and any(neighbours),
+                        ),
+                    )
+    return contexts
+
+
+# A citation no sentence claimed — inside a table cell the block walk split
+# differently, say. Neither directive nor negated, so the asset check stays quiet
+# and the path and symbol checks stay live, which is the conservative reading.
+_NO_CONTEXT = CitationContext(directive=False, negated=False, near_miss=False)
+
+
+def _asset_reason(kind: str, context: CitationContext) -> str:
+    """What the author has to do about it, not just what is wrong.
+
+    A gate that knows what it wants and will not say gets reverse-engineered by
+    trial and error — write correct English, get flagged, guess, rephrase, get
+    flagged again. That is how a gate ends up deleted, so the finding carries its
+    own remedy. The near-miss wording is separate because it is the most likely
+    honest mistake and it has a different fix: the words are already there, one
+    sentence too far away.
+    """
+    if context.near_miss:
+        # Careful with this wording: the neighbouring retirement may be about a
+        # *different* name — that is exactly the live case in
+        # ``installer-design.md``, where the retired thing is the agent and the
+        # flagged thing is a harness built-in. So the message points at the
+        # near-miss without asserting the neighbour is about this name.
+        return (
+            f"tells a reader to use a {kind} that nothing provides — a neighbouring "
+            "sentence carries a retirement clause and this check reads one sentence at "
+            "a time, so if this one is gone too, say so in this sentence"
+        )
+    return (
+        f"tells a reader to use a {kind} that nothing provides — if it is gone, say so "
+        "in this sentence and the mention stops being a finding; if it is not, the "
+        "artifact is missing from src/"
+    )
 
 
 def lint_markdown_text(
@@ -862,7 +945,7 @@ def lint_markdown_text(
     findings: list[Finding] = []
     lines = text.splitlines()
     mask = fence_mask(lines)
-    suppressed = suppressed_citations(lines, mask)
+    contexts = citation_contexts(lines, mask)
     for number, (line, fenced) in enumerate(zip(lines, mask, strict=True), start=1):
         if fenced:
             continue
@@ -870,7 +953,11 @@ def lint_markdown_text(
         claimed: set[str] = set()
         for kind, namespace, name, token in _asset_citations(line):
             claimed.add(token)
-            if (number, token) in suppressed:
+            context = contexts.get((number, token), _NO_CONTEXT)
+            # Only an instruction to reach for the asset. A mention misleads
+            # nobody — and the mention is what a retirement note is made of, so
+            # firing on it made the check fire on its own remedy.
+            if context.negated or not context.directive:
                 continue
             if name not in assets.get(namespace, frozenset()):
                 findings.append(
@@ -878,13 +965,13 @@ def lint_markdown_text(
                         file=relpath,
                         line=number,
                         citation=name,
-                        reason=f"names a {kind} that no admitted artifact provides",
+                        reason=_asset_reason(kind, context),
                     )
                 )
 
         module = _line_module(line, repo_root, index)
         for _column, token in _code_spans(line):
-            if token in claimed or (number, token) in suppressed:
+            if token in claimed or contexts.get((number, token), _NO_CONTEXT).negated:
                 continue
             located = _SYMBOL_LOCATOR_RE.match(token)
             if located is not None:
@@ -901,6 +988,7 @@ def lint_markdown_text(
                             line=number,
                             citation=token,
                             reason="path does not exist",
+                            target=target,
                         )
                     )
                 continue

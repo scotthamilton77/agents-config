@@ -436,7 +436,7 @@ def test_a_shell_command_is_not_a_deployed_command(tmp_path: Path) -> None:
 
 def test_a_slash_command_is_checked(tmp_path: Path) -> None:
     assert _lint(tmp_path, "The `/clean-up-git` command drives it.\n") == []
-    findings = _lint(tmp_path, "The `/grind-prgroom` command drives it.\n")
+    findings = _lint(tmp_path, "Run the `/grind-prgroom` command to drive it.\n")
     assert [f.citation for f in findings] == ["grind-prgroom"]
 
 
@@ -493,7 +493,7 @@ def test_an_unreadable_file_is_a_finding_not_an_exception(tmp_path: Path) -> Non
 
 
 def test_the_pass_reads_every_file_in_the_fileset(tmp_path: Path) -> None:
-    _write(tmp_path, "README.md", "The `retired-thing` skill.\n")
+    _write(tmp_path, "README.md", "Run the `retired-thing` skill.\n")
     _write(tmp_path, "CONTRIBUTING.md", "See `docs/gone.md`.\n")
     findings, _suppressed = lint_markdown(
         [Path("CONTRIBUTING.md"), Path("README.md")],
@@ -560,7 +560,7 @@ def test_the_retirement_lemma_alone_suppresses_nothing(tmp_path: Path) -> None:
     """
     text = (
         "Retiring one is not automatic: uninstall authority is bounded by a "
-        "registry, so the `gone-skill` skill needs a retired entry of its own.\n"
+        "registry, so run the `gone-skill` skill to add a retired entry.\n"
     )
     findings = _lint(tmp_path, text)
     assert [f.citation for f in findings] == ["gone-skill"]
@@ -571,7 +571,10 @@ def test_supersession_is_not_absence(tmp_path: Path) -> None:
     1788-line `scripts/install.sh`" — and that script is still on disk, still
     the entry point. Admitting ``replaces`` would silence live citations."""
     _write(tmp_path, "scripts/install.sh", "#!/bin/sh\n")
-    text = "The package that replaces `scripts/install.sh` also replaces the `gone-skill` skill.\n"
+    text = (
+        "The package that replaces `scripts/install.sh` is the one to run; "
+        "use the `gone-skill` skill for the rest.\n"
+    )
     findings = _lint(tmp_path, text)
     assert [f.citation for f in findings] == ["gone-skill"]
 
@@ -616,3 +619,76 @@ def test_the_reach_of_the_rule_is_reported() -> None:
     assert count_suppressed("The `old-skill` skill has been retired.\n") == 1
     both = "The `old-skill` skill and `docs/gone.md` are now archived.\n"
     assert count_suppressed(both) == 2
+
+
+# --------------------------------------------------------------------------
+# Directive frames
+# --------------------------------------------------------------------------
+
+
+def test_only_an_instruction_to_use_an_asset_is_a_finding(tmp_path: Path) -> None:
+    """The correction that made the asset check usable. Naming an absent asset
+    misleads nobody; being *told to reach for* one does. Firing on the mention
+    made the check fire on the sentence that repairs the decay."""
+    directive = "Invoke the `gone-skill` skill before anything else.\n"
+    assert [f.citation for f in _lint(tmp_path, directive)] == ["gone-skill"]
+
+    mention = "`prgroom` is a CLI that supersedes the `gone-skill` skill.\n"
+    assert _lint(tmp_path, mention) == []
+
+
+def test_the_directive_must_precede_the_citation(tmp_path: Path) -> None:
+    """ "Run the `x` skill" is an instruction; "the `x` skill runs nightly" is a
+    description that happens to contain the same verb."""
+    assert _lint(tmp_path, "Run the `gone-skill` skill nightly.\n") != []
+    assert _lint(tmp_path, "The `gone-skill` skill runs nightly.\n") == []
+
+
+def test_a_reference_frame_counts_as_directive(tmp_path: Path) -> None:
+    """A pointer is an instruction to go there: a table row saying "via the `x`
+    skill" sends a reader after it exactly as "run" does."""
+    row = "| **Interactive** | User in chat, via the `gone-skill` skill | n/a |\n"
+    assert [f.citation for f in _lint(tmp_path, row)] == ["gone-skill"]
+
+
+def test_a_lineage_claim_is_not_a_directive(tmp_path: Path) -> None:
+    """Prose describing what a tool replaced tells nobody to use the replaced
+    thing, so it is not the harm this check exists to catch."""
+    text = "It was built to replace the `gone-skill` skill and the `also-gone` skill.\n"
+    assert _lint(tmp_path, text) == []
+
+
+def test_an_internal_role_described_in_passing_is_not_a_directive(tmp_path: Path) -> None:
+    """A design document naming its own dispatch roles — "the `fix` agent runs
+    with fresh context" — is describing its architecture, not routing a reader
+    to a deployed artifact."""
+    text = "Across retries the `gone-agent` agent runs with fresh context each dispatch.\n"
+    assert _lint(tmp_path, text) == []
+
+
+def test_a_finding_says_how_to_clear_it(tmp_path: Path) -> None:
+    """A gate that knows what it wants and will not say gets reverse-engineered
+    by trial and error, which is how a gate ends up deleted."""
+    findings = _lint(tmp_path, "Run the `gone-skill` skill.\n")
+    assert len(findings) == 1
+    assert "say so in this sentence" in findings[0].reason
+    assert "missing from src/" in findings[0].reason
+
+
+def test_an_adjacent_retirement_is_named_as_a_near_miss(tmp_path: Path) -> None:
+    """The most likely honest mistake: the words are already there, one sentence
+    too far away. The wording stays conditional because the neighbouring
+    retirement may be about a different name — which is the live case."""
+    text = "Run the `gone-skill` skill. The `old-skill` skill was retired.\n"
+    findings = _lint(tmp_path, text)
+    assert len(findings) == 1
+    assert "one sentence at a time" in findings[0].reason
+    assert "if this one is gone too" in findings[0].reason
+
+
+def test_a_path_finding_carries_the_target_it_resolved(tmp_path: Path) -> None:
+    """So the CLI can ask git whether that path is one it was told to ignore,
+    without re-deriving the path from the author's raw span."""
+    findings = _lint(tmp_path, "See `docs/generated/out.md:12` for the dump.\n")
+    assert [f.target for f in findings] == ["docs/generated/out.md"]
+    assert [f.citation for f in findings] == ["docs/generated/out.md:12"]

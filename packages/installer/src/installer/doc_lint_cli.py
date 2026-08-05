@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from installer.core.content_lint import deployed_asset_names
@@ -64,6 +65,40 @@ def tracked_files(repo_root: Path) -> list[Path]:
     return [Path(entry) for entry in proc.stdout.split("\0") if entry]
 
 
+def ignored_paths(repo_root: Path, candidates: Sequence[str]) -> frozenset[str]:
+    """Which of ``candidates`` git is told to ignore.
+
+    A path a tool writes at runtime — ``graphify-out/graph.json``, ``.viz/out`` —
+    is documented prose about a generated artifact, not a stale citation, and
+    nothing about the string distinguishes the two. ``.gitignore`` already draws
+    that line, so the answer comes from git rather than from a pattern matcher
+    written here: the same reasoning that puts the asset roster behind the
+    admission gate instead of a directory listing.
+
+    One batched call over stdin rather than one per path. ``check-ignore`` exits
+    1 when nothing matched and 128 when it cannot answer at all, so the return
+    code is not read — an unanswerable query leaves the findings standing, which
+    is the safe direction.
+    """
+    if not candidates:
+        return frozenset()
+    proc = subprocess.run(  # noqa: S603  # fixed argv; paths arrive on stdin, never as args
+        ["git", "-C", str(repo_root), "check-ignore", "--stdin"],  # noqa: S607
+        input="\n".join(candidates),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return frozenset(line.strip() for line in proc.stdout.splitlines() if line.strip())
+
+
+def drop_ignored(repo_root: Path, findings: list[Finding]) -> list[Finding]:
+    """``findings`` minus the path citations git would ignore."""
+    targets = [f.target for f in findings if f.target is not None]
+    ignored = ignored_paths(repo_root, targets)
+    return [f for f in findings if f.target is None or f.target not in ignored]
+
+
 def _report(findings: list[Finding]) -> None:
     """Print findings to stderr, grouped by file.
 
@@ -110,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         assets=assets,
         index=build_index(repo_root, tracked=tracked),
     )
+    findings = drop_ignored(repo_root, findings)
 
     _report(findings)
     stale = stale_exemptions(repo_root)

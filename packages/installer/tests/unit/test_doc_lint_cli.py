@@ -16,6 +16,7 @@ import pytest
 
 from installer import doc_lint_cli
 from installer.core.content_lint import admitted_asset_names, deployed_asset_names
+from installer.core.doc_lint import Finding
 from installer.core.io_port import ScriptedIO
 
 _RECORD = "---\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\n"
@@ -112,7 +113,7 @@ def test_findings_exit_one_and_are_grouped_by_file(
     session, and a flat list makes a reader hop between documents."""
     repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
     (repo / "docs" / "specs").mkdir(parents=True)
-    (repo / "README.md").write_text("The `gone-skill` skill.\n", encoding="utf-8")
+    (repo / "README.md").write_text("Run the `gone-skill` skill.\n", encoding="utf-8")
     (repo / "CONTRIBUTING.md").write_text("See `docs/missing.md`.\n", encoding="utf-8")
     monkeypatch.setattr(
         doc_lint_cli,
@@ -205,3 +206,61 @@ def test_module_is_runnable_as_python_dash_m(
     with pytest.raises(SystemExit) as exc_info:
         runpy.run_module("installer.doc_lint_cli", run_name="__main__")
     assert exc_info.value.code == 0
+
+
+def test_a_generated_path_git_ignores_is_not_a_finding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A path a tool writes at runtime is documented prose about a generated
+    artifact, not a stale citation, and nothing about the string tells the two
+    apart. ``.gitignore`` already draws that line, so the answer comes from git
+    rather than from a pattern matcher written here."""
+    readme = Path("README.md")
+    findings = [
+        Finding(file=readme, line=3, citation="out/x.json", reason="p", target="out/x.json"),
+        Finding(file=readme, line=4, citation="docs/gone.md", reason="p", target="docs/gone.md"),
+        Finding(file=readme, line=5, citation="a-skill", reason="asset"),
+    ]
+
+    def _run(argv: list[str], **kwargs: object) -> object:
+        assert argv[3] == "check-ignore"
+        assert kwargs["input"] == "out/x.json\ndocs/gone.md"
+
+        class _Proc:
+            stdout = "out/x.json\n"
+
+        return _Proc()
+
+    monkeypatch.setattr(subprocess, "run", _run)
+    kept = doc_lint_cli.drop_ignored(tmp_path, findings)
+    assert [f.citation for f in kept] == ["docs/gone.md", "a-skill"]
+
+
+def test_no_path_findings_means_no_git_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One batched call, and none at all when there is nothing to ask about."""
+
+    def _boom(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError
+
+    monkeypatch.setattr(subprocess, "run", _boom)
+    asset = [Finding(file=Path("README.md"), line=1, citation="a-skill", reason="asset")]
+    assert doc_lint_cli.drop_ignored(tmp_path, asset) == asset
+
+
+def test_an_unanswerable_query_leaves_the_findings_standing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``check-ignore`` exits nonzero both when nothing matched and when it
+    cannot answer, so the return code is not read — the safe direction is to
+    report."""
+
+    class _Proc:
+        stdout = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: _Proc())
+    findings = [
+        Finding(file=Path("README.md"), line=1, citation="x/y.md", reason="p", target="x/y.md")
+    ]
+    assert doc_lint_cli.drop_ignored(tmp_path, findings) == findings
