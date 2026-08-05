@@ -421,8 +421,9 @@ def resolve_selectors(
                 Refusal(
                     code="E_SURVEY_INCOMPLETE",
                     message=f"{selector!r} matches {matches[0].id}, and this run cannot say that "
-                    f"is the only thing it matches: {' and '.join(lost)}, and nothing records "
-                    f"what they named -- one of them may be a second target wearing that name",
+                    f"is the only thing it matches: {' and '.join(lost)}. Nothing records what "
+                    f"those unparsed rows named, so one of them may be a second target wearing "
+                    f"that name",
                     blocked=(matches[0],),
                     remedy="fix what stopped the listing (the warnings say what it was) and "
                     "re-run; nothing under this name was deleted",
