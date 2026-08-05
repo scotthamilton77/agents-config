@@ -273,16 +273,23 @@ def resolve_selectors(
                 continue
             servers = _bare_server_refs(selector, targets)
             if servers:
-                spellings = ", ".join(t.name for t in servers)
+                listed = ", ".join(t.name for t in servers)
+                # Joined with `or` for the remedy, where the comma-joined list
+                # would be actively misleading: a remedy that reads as something
+                # to paste puts `origin/x, upstream/x` on the command line as a
+                # single argv, comma and all, which names nothing at all. It is
+                # a choice besides -- two remotes carrying the name is not two
+                # copies the caller meant.
+                choice = " or ".join(t.name for t in servers)
                 refused.append(
                     Refusal(
                         code="E_BARE_NAME_IS_SERVER_REF",
                         message=f"nothing local matches {selector!r}: no worktree, and no branch "
-                        f"in this repository. What carries that name here is {spellings} -- a "
+                        f"in this repository. What carries that name here is {listed} -- a "
                         f"copy on a server, which a bare name does not select",
                         blocked=tuple(servers),
-                        remedy=f"if a server's copy is what you meant, re-run naming it in full "
-                        f"({spellings}) -- a server keeps no reflog, so its refs go only when "
+                        remedy=f"if a server's copy is what you meant, re-run naming that one in "
+                        f"full: {choice}. A server keeps no reflog, so its refs go only when "
                         f"spelled out; if you meant a local branch, it is already gone",
                     )
                 )

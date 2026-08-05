@@ -742,7 +742,15 @@ class Plan:
 
     Distinct from ``skipped``, which is the sweep declining to take something
     nobody asked for by name. Both are omissions; only this one contradicts an
-    instruction."""
+    instruction.
+
+    Ordered as: everything raised while resolving names, in the order those
+    names were given, then the two checks made of the selection as a whole once
+    it is known -- the worktree the run is standing in, and branches a worktree
+    still holds. Not one flat selector order, because the second of those pair
+    is a single refusal covering however many branches were occupied, so it has
+    no one position among the selectors to take. Map a refusal back to what you
+    typed through ``blocked`` and the names in its message, never by index."""
 
     def as_json(self) -> dict[str, object]:
         return {

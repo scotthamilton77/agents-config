@@ -253,11 +253,17 @@ def test_a_refused_name_takes_only_itself_out_of_the_run() -> None:
     assert [r.code for r in result.refused] == ["E_NOT_A_TARGET"]
 
 
-def test_refusals_arrive_in_the_order_their_selectors_were_given() -> None:
-    """Reading order is the only order a caller can map back onto what they
-    typed. A list assembled in some order of the tool's own -- by code, or by
-    whichever target happened to be surveyed first -- leaves somebody who named
-    six things pairing refusals to selectors by hand.
+def test_refusals_raised_while_resolving_keep_the_order_their_selectors_had() -> None:
+    """Reading order is the order a caller can map back onto what they typed,
+    so a list assembled by code, or by whichever target happened to be surveyed
+    first, leaves somebody who named six things pairing refusals up by hand.
+
+    Scoped to resolution deliberately. The two checks made of the selection as
+    a whole -- the invoking worktree, and branches a worktree still holds --
+    are appended after these, and the second is one refusal covering however
+    many branches were occupied, so it has no single position among the
+    selectors to hold. Claiming one flat selector order would be claiming
+    something the shape of that refusal cannot deliver; `Plan.refused` says so.
 
     Asserted both ways round, because a single ordering is also what a fixed
     order of codes would produce."""
@@ -582,7 +588,14 @@ def test_every_server_copy_of_a_bare_name_is_named_not_just_the_first() -> None:
     course, and a caller working in one has no reason to be thinking about the
     other. Naming one copy would describe half of what is there, and a reader
     handed half reads it as the whole -- so they delete the one they were told
-    about and leave a ref they meant to be rid of, believing it gone."""
+    about and leave a ref they meant to be rid of, believing it gone.
+
+    The remedy offers them as a choice and not as a list to paste. A remedy is
+    read as something to type back, and `origin/feat/x, upstream/feat/x` typed
+    back is one argument with a comma in it, which names nothing -- so a caller
+    following the advice exactly would be told their own remedy matched
+    nothing. Two remotes carrying a name is also not two copies anybody meant
+    to be rid of."""
     survey = make_survey(remotes=("origin", "upstream"))
     targets = (
         target("remote:origin/feat/x", kind=TargetKind.REMOTE_BRANCH, sweepable=False),
@@ -598,7 +611,11 @@ def test_every_server_copy_of_a_bare_name_is_named_not_just_the_first() -> None:
         "remote:origin/feat/x",
         "remote:upstream/feat/x",
     ]
-    assert "upstream/feat/x" in refusal.remedy
+    assert "origin/feat/x or upstream/feat/x" in refusal.remedy
+    assert "origin/feat/x, upstream/feat/x" not in refusal.remedy
+    # The message is a statement of what is there, so it stays a list; only the
+    # remedy is read as something to type back.
+    assert "origin/feat/x, upstream/feat/x" in refusal.message
 
 
 def test_the_full_name_still_selects_the_servers_copy_past_a_local_branch() -> None:
