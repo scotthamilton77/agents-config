@@ -8,14 +8,19 @@ admission:
 ---
 
 <!--
-Sources (amalgam):
-  - Source: skills/writing-skills/
-    Upstream: https://github.com/obra/superpowers @ f2cbfbefebbfef77321e4c9abc9e949826bea9d7 (v5.1.0)
-  - Source: skills/skill-creator/
-    Upstream: https://github.com/anthropics/skills @ f458cee31a7577a47ba0c9a101976fa599385174
-    (development continues at https://github.com/anthropics/claude-plugins-official;
-    the pinned repository and commit both remain reachable, and content was
-    verified byte-identical at the 2026-07-17 repo-move refresh)
+Amalgam of two upstreams, one Source/Upstream pair each. Keep every key at the
+start of its own line: the installer recognises a provenance header by matching
+`Source:`/`Upstream:` there, so folding these into bullets or prose would stop
+this block being stripped and ship these paths into every downstream install.
+
+  Source: skills/writing-skills/
+  Upstream: https://github.com/obra/superpowers @ f2cbfbefebbfef77321e4c9abc9e949826bea9d7 (v5.1.0)
+
+  Source: skills/skill-creator/
+  Upstream: https://github.com/anthropics/skills @ f458cee31a7577a47ba0c9a101976fa599385174
+  (development continues at https://github.com/anthropics/claude-plugins-official;
+  the pinned repository and commit both remain reachable, and content was
+  verified byte-identical at the 2026-07-17 repo-move refresh)
 Last sync: 2026-05-17
 Drift policy: accept-periodic-resync. The merged SKILL.md is the authoritative
 copy and may diverge from either upstream. To inspect drift, clone each
