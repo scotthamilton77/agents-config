@@ -118,7 +118,7 @@ merge-authorization = "explicit"
 # ---------------------------------------------------------------------------
 # [tracks] / [operating-model] / [extraction] — work-tracker track partition
 # Read by: workcli (work create gate, work list --track, work track set,
-#          work lint, work graph) and, when they ship, work triggers/groom.
+#          work lint, work graph, work triggers, work groom).
 # Contract: docs/specs/2026-07-15-workcli-track-partition-design.md §3 for the
 #           track model; docs/specs/2026-07-19-track-backfill-migration-design.md
 #           §3 for the vocabulary, which supersedes the 2026-07-15 names
