@@ -43,9 +43,11 @@ This is the high-level design reference for the prgroom CLI. It is **lean by int
 
 | Pattern | Caller | Invocation |
 |---|---|---|
-| **Interactive** | User in chat, via the `monitor-pr` skill | `prgroom run <pr> --interactive` |
+| **Interactive** | User in chat, invoking the CLI directly | `prgroom run <pr> --interactive` |
 | **Autonomous** | Cron / `/loop` / GHA | `prgroom run <pr> --autonomous`, or `prgroom sweep <repo>` |
 | **Executable-bead** (v2) | bd-side dispatcher | bead payload `prgroom run --pr <n> --autonomous` |
+
+The `monitor-pr` skill that used to drive the interactive pattern was retired, and nothing replaced it. Nothing invokes `prgroom` today — no deployed asset and no harness path — so all three rows describe a designed surface rather than a running one; `packages/prgroom/AGENTS.md` states the package's current standing.
 
 **Locked decisions:**
 
@@ -336,7 +338,7 @@ Codes are stable `<CATEGORY>_<SPECIFIC>` identifiers, each carrying `what`/`why`
 
 | Category | Codes (representative) | Tier / exit |
 |----------|------------------------|-------------|
-| `PRECONDITION_*` user-error | `NO_PR_DETECTED`, `NO_AUTH`, `REPO_UNREACHABLE`, `BAD_PR_REF` | user-error / 2 |
+| `PRECONDITION_*` user-error | `NO_PR_DETECTED`, `NO_AUTH`, `REPO_UNREACHABLE`, `BAD_PR_REF`, `WRONG_BRANCH` | user-error / 2 |
 | `PRECONDITION_NO_*` no-work (enumerated) | `NO_ITEMS`, `NO_CLUSTERS`, `NO_COMMITS`, `NO_UNREPLIED`, `NO_UNRESOLVED`, `NO_ESCALATIONS` | no-work / 0 (2 under `--no-prework`) |
 | `PRECONDITION_NO_VERIFY_CONFIG` | tier's verify command unconfigured (§6.3) | user-error / 2 |
 | `PRECONDITION_LOCK_HELD` | live-process lock contention | transient-equiv / 75 |
@@ -344,6 +346,8 @@ Codes are stable `<CATEGORY>_<SPECIFIC>` identifiers, each carrying `what`/`why`
 | `CONTRACT_*` | `CLUSTER_MALFORMED`, `CLUSTER_COVERAGE`, `FIX_MALFORMED`, `FIX_ORPHAN_COMMIT`, `FIX_UNREACHABLE_SHA`, `FIX_AUDIT_FAILED` | audit / 65 |
 | `STATE_*` | `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN` | state / 78 |
 | `LIFECYCLE_*` | `LIFECYCLE_FIX_VERIFY_EXHAUSTED`, `LIFECYCLE_PR_REVIEW_EXHAUSTED` | cap / 0 (graceful) |
+
+**`PRECONDITION_WRONG_BRANCH` guards the one irreversible mutation.** `push` uploads the local PR-branch HEAD, so an ambient checkout on another branch — or a detached HEAD, which reads as the literal `HEAD` — would publish the wrong commits. The check runs before the queued-commit read rather than trusting the working tree, and it refuses rather than correcting: the operator checks out the PR head branch, or runs from its worktree, and re-invokes.
 
 `flock(2)` auto-releases on process death, so there is no stale-lock code; live contention surfaces as `PRECONDITION_LOCK_HELD`. The `BlockingErrorCodes` set (§3.2) is not cleared by `resolve-escalated` alone — each member needs its own recovery (a retry-budget raise for the `LIFECYCLE_*` caps, state inspection for `STATE_*`, manual reconciliation for the terminal `RUNTIME_*`).
 
@@ -757,4 +761,4 @@ prgroom owns the `## Decisions` block between sentinel markers and rewrites it w
 - **Non-CONTEXTUAL** — accepted, logged as deferred, not an error.
 - **Declared-but-missing `memory_writes` path** — soft warning (stderr), not a cluster failure.
 
-`memory_dir` containment is the only hard cluster-flipping memory breach (orphan commits, §5, are the other). A worked 3-retry example — a first-retry decision surviving two fresh-context dispatches via the `## Decisions` block, preventing re-litigation and silent regression — lives in the source proposal under `docs/plans/`.
+`memory_dir` containment is the only hard cluster-flipping memory breach (orphan commits, §5, are the other). A worked 3-retry example — a first-retry decision surviving two fresh-context dispatches via the `## Decisions` block, preventing re-litigation and silent regression — lives in the source proposal, now in the `scotthamilton77/agents-config-ARCHIVE` repository under `docs/plans/`.

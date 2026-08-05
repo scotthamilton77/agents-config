@@ -47,9 +47,11 @@ available.
 | `gpt-5.5` | — | — | Legacy. Superseded by `terra`/`sol`; still available. |
 | `gpt-5.4-mini` | — | — | Legacy. Superseded by `luna`; still available. |
 
-Family derivation: `src/user/.agents/skills/merge-guard/model_family.py` classifies any `gpt-`/`o1`/`o3`/
-`o4`/`chatgpt` prefix as `openai` — version-generic, so new `gpt-5.6-*` variants
-auto-classify with no code change.
+Family derivation: the `merge-guard` skill and its `model_family.py` script were
+retired and nothing replaced them, so no code in this repository derives a model
+family today. The script classified any `gpt-`/`o1`/`o3`/`o4`/`chatgpt` prefix as
+`openai`, version-generically; a new `gpt-5.6-*` variant is now classified by
+whatever reads this table rather than automatically.
 
 ---
 
