@@ -41,7 +41,7 @@ Nothing else is required. Two former prerequisites are now optional:
 - **[steveyegge/beads](https://github.com/steveyegge/beads)** — the `bd` tracker. The `work` CLI this repo installs is a facade over `bd` and needs it to function, but nothing in the installed instruction surface requires either.
 - **[obra/superpowers](https://github.com/obra/superpowers)** — no longer a dependency. The rules and skills that referenced its process skills were retired.
 
-The `codex` plugin under `src/plugins/` is auto-detected (`~/.codex/` present or `codex` on PATH) and its skill assumes the [Codex CLI](https://github.com/openai/codex) is available.
+The `codex` plugin under `src/plugins/` is auto-detected when `~/.codex/` exists — a `codex` binary on PATH alone will not trigger it — and its skill assumes the [Codex CLI](https://github.com/openai/codex) is available.
 
 ## What's Inside
 

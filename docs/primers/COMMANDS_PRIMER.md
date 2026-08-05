@@ -24,8 +24,10 @@ gate treats `commands` as a gated namespace, and **a command carrying no
 `admission:` record is dropped at deploy** — it stages, and then simply never
 lands in the tool's config directory. In this repository `content-lint` catches
 it first and fails, because a record-less artifact under the user tree is fatal
-there; where that gate does not run, the drop is silent. A malformed record is
-worse in both places: it aborts the whole deploy.
+there; where that gate does not run, the installer reports the drop and carries
+on — a count of unadmitted artifacts on every run, and the names behind it only
+under `--verbose`. A malformed record is worse in both places: it aborts the
+whole deploy.
 
 ```markdown
 ---
