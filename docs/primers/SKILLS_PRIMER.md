@@ -52,8 +52,9 @@ no `admission:` record is dropped at deploy** — it stages, and then simply nev
 lands in the tool's config directory, while any copy an earlier run deployed is
 pruned. In this repository `content-lint` catches it first and fails, because a
 record-less artifact under `src/user/` is fatal there; where that gate does not
-run, the drop is silent. A malformed record is worse in both places: it aborts
-the whole deploy.
+run, the installer reports the drop and carries on — a count of unadmitted
+artifacts on every run, and the names behind it only under `--verbose`. A
+malformed record is worse in both places: it aborts the whole deploy.
 
 ```yaml
 ---
