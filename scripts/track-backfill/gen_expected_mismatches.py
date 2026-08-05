@@ -41,6 +41,13 @@ def cross_track_edges(items: list[dict], assignment: dict[str, str]) -> list[dic
     by_id = {item["id"]: item for item in items}
     edges = []
     for item in items:
+        # Milestones are excluded on BOTH sides of the edge, matching lint, which
+        # filters them out of its item list before the walk and skips them again
+        # as parents. A milestone carrying a track is out of contract rather than
+        # impossible -- raw label writes bypass the gate -- and an edge emitted
+        # here that lint will never report is one verify.py can never reconcile.
+        if item.get("type") == "milestone":
+            continue
         parent_id = item.get("parent")
         if parent_id is None or parent_id not in by_id:
             continue
