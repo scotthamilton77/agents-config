@@ -15,6 +15,7 @@ from gitclean.survey import (
     resolve_base_ref,
     resolve_default_branch,
     resolve_repo,
+    split_remote_ref,
     survey,
 )
 
@@ -80,6 +81,45 @@ def default_refspecs(remotes: str) -> str:
     )
 
 
+def advertised_heads(refs: list[str], remotes: str, refspecs: str) -> dict[str, CommandResult]:
+    """What each remote answers `ls-remote --heads` with, derived from the refs
+    the fixture already supplied: a server holding exactly what the local cache
+    holds.
+
+    That is the boring case, and it is what nearly every fixture here means. A
+    survey asks each remote what it still advertises, so a fixture that
+    answered nothing would describe every server ref in it as one the remote
+    dropped -- turning tests about splitting a path, or about proving a merge,
+    into tests about stale tracking refs. A test that is actually about a stale
+    one says so by passing `ls_remote` itself.
+
+    Which remote owns a path, and what the server calls the branch that landed
+    there, come from the production split rather than from the shape of the
+    path. A fixture whose refspec renames on the way in has a server-side name
+    the local path does not spell, and one where two remotes fetch into a
+    single namespace has no owner at all -- so deriving either by hand here
+    would answer differently from the code under test."""
+    configured = tuple(line.strip() for line in remotes.splitlines() if line.strip())
+    specs: dict[str, list[str]] = {}
+    for record in refspecs.split("\0"):
+        if not record:
+            continue
+        key, _, value = record.partition("\n")
+        specs.setdefault(key.removeprefix("remote.").removesuffix(".fetch"), []).append(value)
+    parsed = {remote: tuple(values) for remote, values in specs.items()}
+    heads: dict[str, list[str]] = {}
+    for line in refs:
+        full = line.split(SEP)[0]
+        if not full.startswith("refs/remotes/") or full.endswith("/HEAD"):
+            continue
+        split = split_remote_ref(full, configured, parsed)
+        if isinstance(split, str):
+            continue
+        remote, ref_name = split
+        heads.setdefault(remote, []).append(f"{'a' * 40}\trefs/heads/{ref_name}")
+    return {remote: ok("\n".join(lines)) for remote, lines in heads.items()}
+
+
 def make_port(
     *,
     refs: list[str] | None = None,
@@ -93,8 +133,10 @@ def make_port(
     gh_result: CommandResult | None = None,
     remotes: str = "origin\n",
     refspecs: str | None = None,
+    ls_remote: dict[str, CommandResult] | None = None,
     pr_view: dict[str, object] | None = None,
 ) -> ScriptedCommands:
+    configured_refspecs = refspecs if refspecs is not None else default_refspecs(remotes)
     table: dict[str, CommandResult] = {
         "rev-parse --show-toplevel": ok("/repo"),
         # Asked of every survey: it is the only thing that says where a
@@ -105,9 +147,7 @@ def make_port(
         # says which remote fetched one. Defaulted to what `git remote add`
         # writes for each remote in `remotes`, because that is the boring
         # case; a test about a refspec that does something else passes its own.
-        "config -z --get-regexp": ok(
-            refspecs if refspecs is not None else default_refspecs(remotes)
-        ),
+        "config -z --get-regexp": ok(configured_refspecs),
         "rev-parse --path-format=absolute --git-common-dir": ok("/repo/.git"),
         "symbolic-ref --quiet refs/remotes/origin/HEAD": ok("refs/remotes/origin/main"),
         "show-ref --verify --quiet refs/remotes/origin/main": ok(),
@@ -133,6 +173,14 @@ def make_port(
     }
     for spec, value in (counts or {}).items():
         table[f"rev-list --count {spec}"] = ok(value)
+    # Every remote some surveyed ref belongs to is asked what it still holds.
+    # Keyed per remote and left unscripted for the rest, so a run that probes a
+    # remote nothing was fetched from fails naming the argv rather than on a
+    # default that hides the cost of asking.
+    advertised = advertised_heads(refs or [], remotes, configured_refspecs)
+    advertised.update(ls_remote or {})
+    for remote, answer in advertised.items():
+        table[f"ls-remote --heads -- {remote}"] = answer
     table.update(extra or {})
     gh = gh_result or ok(json.dumps(prs or []))
     answers = {"pr list": gh}
@@ -1428,6 +1476,103 @@ def test_a_failed_batch_ancestry_check_is_warned_not_swallowed() -> None:
     feat = next(b for b in result.branches if b.name == "feat")
     assert feat.merge_evidence is MergeEvidence.PATCH_EQUAL
     assert any("batch ancestry check for local branches" in w for w in result.warnings)
+
+
+# -- what the server still advertises -----------------------------------------
+
+
+def _stale_ref_port(**kwargs: object) -> ScriptedCommands:
+    """One server ref beside the trunk, with what origin answers left open.
+
+    The refs are the same in every test below; what differs is whether origin
+    still has `feat/x`, and whether it answers at all."""
+    return make_port(
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/feat/x", "origin/feat/x"),
+        ],
+        counts={"refs/remotes/origin/main..origin/feat/x": "0"},
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+
+def test_a_server_ref_the_remote_still_advertises_stays_a_target() -> None:
+    """The ordinary case, and the one the check must not cost anything: the
+    cache and the server agree, so the branch is surveyed as it always was."""
+    surveyed = run(_stale_ref_port())
+
+    feat = next(b for b in surveyed.branches if b.is_remote)
+    assert (feat.name, feat.remote, feat.ref_name) == ("origin/feat/x", "origin", "feat/x")
+    assert not surveyed.not_offered
+    assert not surveyed.warnings
+
+
+def test_a_server_ref_the_remote_dropped_is_recorded_rather_than_offered() -> None:
+    """What a forge configured to delete a branch when its PR merges leaves
+    behind. `refs/remotes/` is a cache nothing invalidates, so it goes on
+    naming the branch for as long as nobody prunes -- and offering that as a
+    target sends a reader after something that is not there.
+
+    Recorded rather than dropped, because a caller who names it must be told
+    what is actually the matter and what clears it, not that it is already
+    gone."""
+    port = _stale_ref_port(ls_remote={"origin": ok(f"{'a' * 40}\trefs/heads/main")})
+
+    surveyed = run(port)
+
+    assert not [b for b in surveyed.branches if b.is_remote]
+    reason = {n.name: n.reason for n in surveyed.not_offered}["origin/feat/x"]
+    assert "no longer advertises refs/heads/feat/x" in reason
+    assert "git fetch --prune origin" in reason
+    assert "does not prune refs it did not create" in reason
+
+
+def test_a_remote_that_would_not_answer_leaves_its_refs_exactly_as_they_were() -> None:
+    """The invariant the whole check rests on. A probe that errored is a
+    question nobody answered, and reading it as "the server does not have it"
+    would take every one of that remote's refs out of the report on the
+    strength of a connection that failed -- while telling the reader they are
+    gone."""
+    port = _stale_ref_port(ls_remote={"origin": fail("could not read from remote", code=128)})
+
+    surveyed = run(port)
+
+    assert [b.name for b in surveyed.branches if b.is_remote] == ["origin/feat/x"]
+    assert not surveyed.not_offered
+    warning = next(w for w in surveyed.warnings if "origin" in w)
+    assert "could not ask origin which branches it still has" in warning
+    assert "may be out of date" in warning
+
+
+def test_each_remote_is_asked_once_and_a_remote_with_no_refs_here_not_at_all() -> None:
+    """One probe per remote rather than per branch, and only for remotes some
+    surveyed ref actually belongs to.
+
+    The second half is why this runs over the branches instead of over the
+    configured remotes: `abandoned` below is a server that moved or a fork
+    somebody left in the config, and asking it costs a full network timeout to
+    learn nothing. It is left unscripted, so a run that asks fails naming the
+    argv."""
+    port = make_port(
+        remotes="origin\nupstream\nabandoned\n",
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/origin/feat/x", "origin/feat/x"),
+            ref_line("refs/remotes/origin/feat/y", "origin/feat/y"),
+            ref_line("refs/remotes/upstream/feat/z", "upstream/feat/z"),
+        ],
+        counts={
+            "refs/remotes/origin/main..origin/feat/x": "0",
+            "refs/remotes/origin/main..origin/feat/y": "0",
+            "refs/remotes/origin/main..upstream/feat/z": "0",
+        },
+    )
+
+    surveyed = run(port)
+
+    assert len([b for b in surveyed.branches if b.is_remote]) == 3
+    probes = [call for call in port.transcript if call[1] == "ls-remote"]
+    assert [call[-1] for call in probes] == ["origin", "upstream"]
 
 
 # -- the merge tiers ---------------------------------------------------------
