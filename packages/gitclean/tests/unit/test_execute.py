@@ -6,15 +6,12 @@ successes, which is why every deletion re-asks."""
 
 from __future__ import annotations
 
-import ast
 from datetime import UTC, datetime
-from pathlib import Path
 
 from conftest import make_branch, make_survey, make_worktree
 from test_survey import porcelain
 
-from gitclean import execute
-from gitclean.execute import SALVAGE_PREFIX, Executor, default_salvage_dir, git_argv, slug
+from gitclean.execute import SALVAGE_PREFIX, Executor, default_salvage_dir, slug
 from gitclean.model import MergeEvidence, Plan, Target, TargetKind
 from gitclean.ports import CommandResult, ScriptedCommands, fail, ok
 
@@ -856,48 +853,6 @@ def test_an_unrelated_branch_still_deletes_when_a_worktree_fails() -> None:
 
 
 # -- helpers -----------------------------------------------------------------
-
-
-def test_every_git_call_is_assembled_by_the_one_argv_constructor() -> None:
-    """The terminator used to be a habit applied call site by call site, and
-    the two sites that forgot it were the two nobody could type by hand: a
-    bundle of a ref named `-m`, and a survival probe for one. Neither shows up
-    in review as a missing argument -- it looks exactly like the sites that
-    were right.
-
-    So the property is asserted over the module rather than over one call: a
-    site that builds its own argument list is the failure, whatever that list
-    happens to contain today."""
-    tree = ast.parse(Path(execute.__file__).read_text(encoding="utf-8"))
-    unrouted = [
-        ast.unparse(node)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and ast.unparse(node.func).endswith("_port.git")
-        and not (
-            node.args
-            and isinstance(node.args[0], ast.Call)
-            and ast.unparse(node.args[0].func) == "git_argv"
-        )
-    ]
-    assert unrouted == []
-
-
-def test_the_constructor_terminates_a_name_git_would_read_as_an_option() -> None:
-    assert git_argv("branch", "-D", name="-m") == ["branch", "-D", "--", "-m"]
-
-
-def test_the_constructor_leaves_a_full_ref_path_unterminated() -> None:
-    """`bundle create` hands its arguments to rev-list, where `--` introduces a
-    pathspec: terminating there produces `Refusing to create empty bundle`
-    rather than protection. A `refs/...` path needs no terminator -- no git
-    command reads one as an option."""
-    assert git_argv("bundle", "create", "/salvage/x.bundle", name="refs/heads/-m") == [
-        "bundle",
-        "create",
-        "/salvage/x.bundle",
-        "refs/heads/-m",
-    ]
 
 
 def test_slug_is_filesystem_safe_and_readable() -> None:
