@@ -1114,11 +1114,17 @@ def _advertised_heads(
     reading the column rather than searching the line is what keeps an
     unrelated `a/feat/x` from answering for `feat/x`.
 
-    `--` matters, and for the same reason it matters there: `remote` is
-    repo-derived, and git accepts a *path* in this position. Given a name that
-    is not a configured remote, a sibling directory of that name that happens
-    to be a repository is opened instead and answers -- well-formed, empty, and
-    about somebody else entirely."""
+    Two separate protections, and it is worth not confusing them. `--` ends
+    option parsing, which is what keeps a branch or remote named like a flag
+    from being read as one. It does *not* stop git accepting a path in the
+    repository position -- nothing does.
+
+    What covers that is where `remote` comes from: the decomposition against
+    the configured remote list, so the only names reaching here are ones git
+    itself listed. It matters because a name that is not a configured remote
+    is not rejected -- a sibling directory of that name that happens to be a
+    repository is opened instead and answers, well-formed, empty, and about
+    somebody else entirely. An empty answer here means every branch is gone."""
     result = port.git(["ls-remote", "--heads", "--", remote], cwd=cwd)
     if not result.ok:
         return None, (

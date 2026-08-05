@@ -840,9 +840,13 @@ def test_a_server_ref_the_remote_already_dropped_is_never_offered(
     quietly cleaned the cache would test nothing.
 
     Real git, because this is also what proves `ls-remote --heads --` is an
-    argv git accepts: the terminator is what keeps a remote name from being
-    read as a path to some other repository, and a spelling git rejected would
-    fail every probe and report every server ref as still there."""
+    argv git accepts. The terminator is there for option safety -- it stops a
+    remote named like a flag being read as one -- and not for the repository
+    position, which git will fill from a path whatever precedes it; what keeps
+    the probe pointed at a real remote is that the name came from the
+    configured remote list. Either way a spelling git rejected would fail every
+    probe, and a failed probe reports every server ref as still there, so this
+    would pass while measuring nothing."""
     bare = _with_remote(repo, tmp_path)
     _push_only_copy(repo, "feat/vanished")
     git(bare, "update-ref", "-d", "refs/heads/feat/vanished")
