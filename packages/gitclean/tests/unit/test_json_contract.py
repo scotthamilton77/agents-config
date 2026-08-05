@@ -200,6 +200,7 @@ PLAN = {
     "dry_run": bool,
     "skipped": [dict],
     "absent": [dict],
+    "refused": [dict],
 }
 
 EXECUTION = {
@@ -371,10 +372,26 @@ def test_a_plan_holds_exactly_its_published_fields() -> None:
         dry_run=True,
         skipped=(Skipped(target_id="branch:feat/thing", name="feat/thing", reason="held"),),
         absent=(Absent(selector="feat/gone", note="nothing matched"),),
+        # A plan carries its refusals rather than replacing itself with one, so
+        # they are part of the published shape and not a separate envelope key
+        # a consumer reads instead of this object.
+        refused=(
+            Refusal(
+                code="E_BRANCH_IN_USE",
+                message="a worktree still holds it",
+                blocked=(_target(),),
+                remedy="add the holding worktree to the same cleanup",
+            ),
+        ),
     )
     payload = full.as_json()
     assert_shape(payload, PLAN, "plan")
-    for key, spec in (("targets", TARGET), ("skipped", SKIPPED), ("absent", ABSENT)):
+    for key, spec in (
+        ("targets", TARGET),
+        ("skipped", SKIPPED),
+        ("absent", ABSENT),
+        ("refused", REFUSAL),
+    ):
         rows = payload[key]
         assert isinstance(rows, list)
         assert_shape(rows[0], spec, f"plan.{key}[0]")

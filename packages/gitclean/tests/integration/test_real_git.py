@@ -124,6 +124,21 @@ def find(payload: dict[str, object], target_id: str) -> dict[str, object]:
     return match
 
 
+def refusals(payload: dict[str, object]) -> list[dict[str, object]]:
+    """The objections a cleanup raised, each about one name the caller gave.
+
+    Read out of the plan rather than out of the envelope's `refusal` field.
+    That field is the run having nothing to act on at all, and a cleanup no
+    longer produces one: the names that resolved cleanly are still deleted, so
+    there is always a plan."""
+    plan = payload["plan"]
+    assert isinstance(plan, dict)
+    entries = plan["refused"]
+    assert isinstance(entries, list)
+    assert all(isinstance(entry, dict) for entry in entries), entries
+    return entries
+
+
 def anomaly_lines(payload: dict[str, object]) -> str:
     execution = payload["execution"]
     assert isinstance(execution, dict)
@@ -252,9 +267,7 @@ def test_naming_the_branch_you_are_standing_on_does_not_delete_it(repo: Path) ->
         payload = report(repo, "--cleanup", "feat/parked")
 
     assert payload["_exit"] == EXIT_REFUSED
-    refusal = payload["refusal"]
-    assert isinstance(refusal, dict)
-    assert refusal["code"] == "E_BRANCH_IN_USE"
+    assert [r["code"] for r in refusals(payload)] == ["E_BRANCH_IN_USE"]
     assert git(repo, "rev-parse", "--abbrev-ref", "HEAD") == "feat/parked"
     assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/feat/parked") != ""
 
@@ -477,10 +490,38 @@ def test_the_worktree_the_run_executes_in_is_never_deleted(repo: Path) -> None:
     assert swept["_exit"] == EXIT_OK
     assert "executing in" in str(find(swept, f"worktree:{work}")["withheld"])
     assert named["_exit"] == EXIT_REFUSED
-    refusal = named["refusal"]
-    assert isinstance(refusal, dict)
-    assert refusal["code"] == "E_INVOKING_WORKTREE"
-    assert str(work) in str(refusal["message"])
+    refused = refusals(named)
+    assert [r["code"] for r in refused] == ["E_INVOKING_WORKTREE"]
+    assert str(work) in str(refused[0]["message"])
+
+
+def test_a_refusal_beside_a_merged_branch_still_leaves_the_branch_deleted(repo: Path) -> None:
+    """Partial execution, asked of git rather than of the run's own report.
+
+    Two names in one command: `feat/done`, provably merged, and the worktree
+    the process is executing in, which can never go while it is standing there.
+    Aborting the selection over the second used to spend the first as well, and
+    the caller's remedy was to re-run with the offender removed -- a round trip
+    over a name the tool had already worked out it could not act on.
+
+    Both halves have to be true at once, and each is what stops the other being
+    read wrong: a caller who sees only exit 1 must not conclude the deletion
+    did not happen, and one who sees only the deletion must not conclude the
+    command was carried out. So the branch is looked for in git afterwards,
+    not in the envelope that has an interest in the answer."""
+    git(repo, "checkout", "-q", "-b", "feat/done")
+    commit(repo, "done.txt")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feat/done", "feat/done")
+
+    with reachability_guard(repo):
+        payload = report(repo, "--cleanup", "feat/done", f"worktree:{repo}")
+
+    assert payload["_exit"] == EXIT_REFUSED, anomaly_lines(payload)
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/feat/done") == ""
+    assert repo.exists()
+    assert str(repo) in git(repo, "worktree", "list", "--porcelain")
+    assert [r["code"] for r in refusals(payload)] == ["E_INVOKING_WORKTREE"]
 
 
 def test_a_worktree_that_goes_dirty_after_the_survey_is_left_alone(repo: Path) -> None:

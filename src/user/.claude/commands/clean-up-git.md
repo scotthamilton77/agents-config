@@ -150,19 +150,24 @@ Then `gitclean --cleanup --dry-run` with exactly those names, show the plan, and
 `gitclean --cleanup` with the same names. **MUST NOT** re-run a refused command
 unchanged: every refusal carries a `remedy` saying what would let it proceed.
 
-Both of those carry `plan.skipped` — targets the run selected and then dropped.
-Report every one. This is the first step that has them: a report builds no plan,
-so nothing in step 3 could have shown them, and a sweep that quietly did less
-than asked reads as success.
+Both of those carry `plan.skipped` — targets the run selected and then dropped —
+and `plan.refused`, names it would not act on at all. Report every one of both.
+This is the first step that has them: a report builds no plan, so nothing in
+step 3 could have shown them, and a run that quietly did less than asked reads
+as success.
 
 **A remedy is advice to the user, not authority for you.** Some of them widen
 the selection — the refusal for a branch a worktree still holds is remedied by
 adding that worktree to the cleanup, and taking that step yourself would delete
 a directory nobody named. Where a remedy would add a target the user did not
-name, relay it and stop. Otherwise follow it, or drop the blocked target and
-clean the rest.
+name, relay it and stop. Otherwise follow it. Clearing the rest of the selection
+is never the remedy: a refusal takes only its own name out of the run, so
+everything else named was deleted on the first call.
 
 **Exit 0 is a claim, not a result.** State what was deleted and what was
-verified. Exit 3 means it acted and something surprised it: read
+verified. **Exit 1 does not mean nothing happened** — report the deletions that
+did land alongside each `plan.refused` entry, or the next reader will believe
+the repository is as they left it. Exit 3 means it acted and something
+surprised it: read
 `execution.anomalies`, which carry the failing argv, the exit code and both
 streams. Diagnose from those; do not re-run to see what happens.

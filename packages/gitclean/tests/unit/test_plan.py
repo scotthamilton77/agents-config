@@ -61,7 +61,10 @@ def plan_for(
     *,
     survey=None,  # type: ignore[no-untyped-def]
     selectors: list[str] | None = None,
-) -> Plan | Refusal:
+) -> Plan:
+    # Always a plan. An objection belongs to the selector it is about and rides
+    # in `Plan.refused`, so there is no longer a return value that stands in
+    # for the whole run having stopped.
     return build_plan(
         targets,
         survey if survey is not None else make_survey(),
@@ -145,10 +148,29 @@ def test_naming_the_invoking_worktree_is_refused_with_its_path() -> None:
 
     result = plan_for(targets, selectors=["worktree:/repo"])
 
-    assert isinstance(result, Refusal)
-    assert result.code == "E_INVOKING_WORKTREE"
-    assert "/repo" in result.message
-    assert [t.name for t in result.blocked] == ["/repo"]
+    assert result.targets == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_INVOKING_WORKTREE"
+    assert "/repo" in refusal.message
+    assert [t.name for t in refusal.blocked] == ["/repo"]
+
+
+def test_the_invoking_worktree_is_refused_without_stopping_the_one_beside_it() -> None:
+    """The objection is about one directory: this process is standing in it.
+    It says nothing about another worktree the same command named, which is
+    somewhere else entirely and still goes -- and an agent cleaning up several
+    trees at once is precisely the caller who names the one it is running in
+    by accident."""
+    here = target("worktree:/repo", kind=TargetKind.WORKTREE, sweepable=False)
+    elsewhere = target("worktree:/repo/wt", kind=TargetKind.WORKTREE, sweepable=False)
+
+    result = plan_for((here, elsewhere), selectors=["worktree:/repo", "worktree:/repo/wt"])
+
+    assert [t.id for t in result.targets] == ["worktree:/repo/wt"]
+    [refusal] = result.refused
+    assert refusal.code == "E_INVOKING_WORKTREE"
+    assert "/repo" in refusal.message
+    assert [t.id for t in refusal.blocked] == ["worktree:/repo"]
 
 
 def test_a_named_deletion_still_works_without_a_known_trunk() -> None:
@@ -166,9 +188,13 @@ def test_a_named_deletion_still_works_without_a_known_trunk() -> None:
 
 
 def test_another_worktree_is_not_mistaken_for_the_invoking_one() -> None:
+    """A worktree *under* the invoking one is still a different directory. The
+    comparison is between whole paths, and a prefix test would refuse every
+    tree a repository keeps beside its checkout."""
     targets = (target("worktree:/repo/wt", kind=TargetKind.WORKTREE, sweepable=False),)
     result = plan_for(targets, selectors=["worktree:/repo/wt"])
-    assert isinstance(result, Plan)
+    assert [t.id for t in result.targets] == ["worktree:/repo/wt"]
+    assert result.refused == ()
 
 
 # -- selector resolution -----------------------------------------------------
@@ -208,6 +234,45 @@ def test_one_absent_name_does_not_abort_the_names_beside_it() -> None:
     assert [a.selector for a in result.absent] == ["gone-already"]
 
 
+def test_a_refused_name_takes_only_itself_out_of_the_run() -> None:
+    """The whole cost of the old whole-run refusal. One name this tool would
+    not act on stopped every other deletion asked for in the same breath, and
+    the only way forward was to re-run with the offender removed -- a round
+    trip spent teaching the tool something it had already worked out.
+
+    A refusal is about the selector it names. What resolved beside it is still
+    the caller's to have, and the run reports both."""
+    survey = make_survey(
+        not_offered=(NotOffered(name="origin/main", reason="the server's copy of the trunk"),)
+    )
+    targets = (target("branch:x"), target("branch:y"))
+
+    result = plan_for(targets, survey=survey, selectors=["x", "origin/main", "y"])
+
+    assert [t.id for t in result.targets] == ["branch:x", "branch:y"]
+    assert [r.code for r in result.refused] == ["E_NOT_A_TARGET"]
+
+
+def test_refusals_arrive_in_the_order_their_selectors_were_given() -> None:
+    """Reading order is the only order a caller can map back onto what they
+    typed. A list assembled in some order of the tool's own -- by code, or by
+    whichever target happened to be surveyed first -- leaves somebody who named
+    six things pairing refusals to selectors by hand.
+
+    Asserted both ways round, because a single ordering is also what a fixed
+    order of codes would produce."""
+    survey = make_survey(
+        not_offered=(NotOffered(name="origin/main", reason="the server's copy of the trunk"),)
+    )
+    targets = (target("remote:origin/feat/x", kind=TargetKind.REMOTE_BRANCH, sweepable=False),)
+
+    result = plan_for(targets, survey=survey, selectors=["origin/main", "feat/x"])
+    assert [r.code for r in result.refused] == ["E_NOT_A_TARGET", "E_BARE_NAME_IS_SERVER_REF"]
+
+    swapped = plan_for(targets, survey=survey, selectors=["feat/x", "origin/main"])
+    assert [r.code for r in swapped.refused] == ["E_BARE_NAME_IS_SERVER_REF", "E_NOT_A_TARGET"]
+
+
 def test_a_miss_is_not_absence_when_no_ref_could_be_read() -> None:
     """`branches` is empty here because `for-each-ref` failed, not because the
     repository has none -- and the list alone cannot tell those apart. Calling
@@ -217,10 +282,11 @@ def test_a_miss_is_not_absence_when_no_ref_could_be_read() -> None:
 
     result = plan_for((), survey=survey, selectors=["feat/x"])
 
-    assert isinstance(result, Refusal)
-    assert result.code == "E_SURVEY_INCOMPLETE"
-    assert "feat/x" in result.message
-    assert result.remedy
+    assert result.absent == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_SURVEY_INCOMPLETE"
+    assert "feat/x" in refusal.message
+    assert refusal.remedy
 
 
 def test_a_worktree_miss_is_not_absence_when_no_worktree_could_be_listed() -> None:
@@ -231,9 +297,10 @@ def test_a_worktree_miss_is_not_absence_when_no_worktree_could_be_listed() -> No
 
     result = plan_for((), survey=survey, selectors=["worktree:/repo/wt"])
 
-    assert isinstance(result, Refusal)
-    assert result.code == "E_SURVEY_INCOMPLETE"
-    assert "no worktree could be listed" in result.message
+    assert result.absent == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_SURVEY_INCOMPLETE"
+    assert "no worktree could be listed" in refusal.message
 
 
 def test_a_failed_ref_read_does_not_block_naming_an_absent_worktree() -> None:
@@ -258,9 +325,10 @@ def test_a_listing_that_ran_but_dropped_a_row_has_not_answered() -> None:
 
     result = plan_for((), survey=survey, selectors=["branch:feat/x"])
 
-    assert isinstance(result, Refusal)
-    assert result.code == "E_SURVEY_INCOMPLETE"
-    assert "1 ref row(s) went unparsed" in result.message
+    assert result.absent == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_SURVEY_INCOMPLETE"
+    assert "1 ref row(s) went unparsed" in refusal.message
 
 
 def test_a_dropped_worktree_block_is_the_same_hole_on_the_other_listing() -> None:
@@ -268,9 +336,10 @@ def test_a_dropped_worktree_block_is_the_same_hole_on_the_other_listing() -> Non
 
     result = plan_for((), survey=survey, selectors=["worktree:/repo/wt"])
 
-    assert isinstance(result, Refusal)
-    assert result.code == "E_SURVEY_INCOMPLETE"
-    assert "2 worktree block(s) went unparsed" in result.message
+    assert result.absent == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_SURVEY_INCOMPLETE"
+    assert "2 worktree block(s) went unparsed" in refusal.message
 
 
 def test_a_dropped_ref_row_does_not_block_naming_a_worktree() -> None:
@@ -303,9 +372,10 @@ def test_a_bare_name_needs_both_listings_because_it_could_be_either() -> None:
 
     result = plan_for((), survey=survey, selectors=["ambiguous"])
 
-    assert isinstance(result, Refusal)
-    assert result.code == "E_SURVEY_INCOMPLETE"
-    assert "no ref could be read" in result.message
+    assert result.absent == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_SURVEY_INCOMPLETE"
+    assert "no ref could be read" in refusal.message
 
 
 _UNSPLIT = NotOffered(
@@ -322,39 +392,60 @@ to, and nothing here can say which."""
 
 def test_a_ref_that_could_not_be_split_stops_a_miss_meaning_absence() -> None:
     """A server ref recorded only as `<remote>/<ref>`, because telling the two
-    halves apart is what failed. Every other spelling of it -- including the
-    bare one this tool offers for selecting a server ref -- matches nothing,
-    and nothing is what a name that was never there matches too.
+    halves apart is what failed. `feat/x` is one of the two ways
+    `origin/feat/x` may split, so it is a name this ref may answer to, and the
+    ref is sitting right there.
 
-    `feat/x` is one of the two ways `origin/feat/x` may split, so it is a name
-    this ref may answer to."""
+    Had the split succeeded, this same miss would still refuse -- a bare name
+    does not select a server ref -- but it would refuse by quoting the full
+    spelling to use instead. Here that spelling is exactly what nobody could
+    work out, so the refusal reports the unanswered question rather than a
+    remedy it cannot name. Either way the one answer that stays unavailable is
+    absence."""
     survey = make_survey(unsplit_refs=1, not_offered=(_UNSPLIT,))
 
     result = plan_for((target("branch:x"),), survey=survey, selectors=["feat/x"])
 
-    assert isinstance(result, Refusal)
-    assert result.code == "E_SURVEY_INCOMPLETE"
-    assert "could not be split" in result.message
+    assert result.absent == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_SURVEY_INCOMPLETE"
+    assert "could not be split" in refusal.message
 
 
-def test_a_match_does_not_settle_a_name_a_ref_nobody_split_may_also_answer_to() -> None:
-    """The failed probe used to *widen* what a run would delete, which is the
-    one thing an unanswered probe must never do.
+def test_a_failed_split_cannot_change_what_a_bare_name_deletes() -> None:
+    """An unanswered probe must never *widen* what a run deletes, and that is
+    now true by construction rather than by a refusal.
 
-    With the remote list read, `refs/remotes/origin/feat/x` becomes a target
-    whose bare alias is `feat/x`, so `feat/x` matches two things and is refused
-    as ambiguous. With the read failed, that ref never becomes a target at all
-    -- so the same name matches exactly one thing and the local branch is
-    deleted. The count of matches is not evidence while something that could
-    have joined it went unnamed."""
-    survey = make_survey(unsplit_refs=1, not_offered=(_UNSPLIT,))
+    It used to be enforced the hard way. With the remote list read,
+    `refs/remotes/origin/feat/x` became a target whose bare alias was `feat/x`,
+    so the name matched two things and was refused as ambiguous; with the read
+    failed, that ref never became a target and the same name matched exactly
+    one. The number of things a name meant therefore moved with a probe that
+    had measured nothing about the repository, and refusing was how that was
+    kept from turning into a deletion.
 
-    result = plan_for((target("branch:feat/x"),), survey=survey, selectors=["feat/x"])
+    A bare name no longer reaches a server ref under either reading, so the ref
+    never joins the match and the local branch is the only thing `feat/x` can
+    mean. The two fixtures below agree, which is precisely the property the
+    refusal was buying -- and nothing is lost with it, because the server's copy
+    is still unreachable without its full spelling either way."""
+    both_read = plan_for(
+        (
+            target("branch:feat/x"),
+            target("remote:origin/feat/x", kind=TargetKind.REMOTE_BRANCH),
+        ),
+        selectors=["feat/x"],
+    )
+    assert [t.id for t in both_read.targets] == ["branch:feat/x"]
+    assert both_read.refused == ()
 
-    assert isinstance(result, Refusal)
-    assert result.code == "E_AMBIGUOUS_TARGET"
-    assert "origin/feat/x" in result.message
-    assert "id" in result.remedy
+    split_failed = plan_for(
+        (target("branch:feat/x"),),
+        survey=make_survey(unsplit_refs=1, not_offered=(_UNSPLIT,)),
+        selectors=["feat/x"],
+    )
+    assert [t.id for t in split_failed.targets] == ["branch:feat/x"]
+    assert split_failed.refused == ()
 
 
 def test_the_exact_id_still_resolves_past_a_ref_nobody_split() -> None:
@@ -417,10 +508,11 @@ def test_a_ref_this_tool_declines_to_offer_is_not_reported_as_gone() -> None:
 
     result = plan_for((target("branch:x"),), survey=survey, selectors=["origin/main"])
 
-    assert isinstance(result, Refusal)
-    assert result.code == "E_NOT_A_TARGET"
-    assert "origin/main" in result.message
-    assert "the server's copy of the trunk" in result.message
+    assert result.absent == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_NOT_A_TARGET"
+    assert "origin/main" in refusal.message
+    assert "the server's copy of the trunk" in refusal.message
 
 
 def test_the_local_trunk_is_not_confused_with_the_servers_copy_of_it() -> None:
@@ -437,17 +529,139 @@ def test_the_local_trunk_is_not_confused_with_the_servers_copy_of_it() -> None:
     assert [t.name for t in result.targets] == ["main"]
 
 
-def test_ambiguous_bare_name_is_refused_with_the_candidates() -> None:
-    """`feat/x` names both the local branch and origin's copy. Guessing which
-    one the caller meant is how the wrong ref gets deleted."""
+# -- a bare name is local; a server ref is spelled out -----------------------
+
+
+def test_a_bare_name_takes_the_local_branch_and_not_the_servers_copy_of_it() -> None:
+    """The commonest cleanup there is: the branch whose work just merged, named
+    the way a person says it. In any ordinary repository the server's copy
+    wears that same bare name, so offering the spelling to both made the
+    routine case ambiguous -- naming the branch that had just been merged was
+    answered with a refusal and a demand for an `id`.
+
+    Nothing about the server's copy is decided here. It is neither deleted nor
+    an obstacle: it goes only when it is spelled out in full, and that rule is
+    what makes the bare name unambiguous again."""
+    targets = (
+        target("branch:docs/thing"),
+        target("remote:origin/docs/thing", kind=TargetKind.REMOTE_BRANCH),
+    )
+
+    result = plan_for(targets, selectors=["docs/thing"])
+
+    assert [t.id for t in result.targets] == ["branch:docs/thing"]
+    assert result.refused == ()
+    # No server ref entered the plan, so there is nothing here that a bundle
+    # would be the only undo for.
+    assert result.salvage_dir is None
+
+
+def test_a_bare_name_only_a_server_ref_wears_is_refused_rather_than_called_gone() -> None:
+    """Nothing local answers to it, and ordinarily that is a job already done.
+    Not here: the thing the caller named is on the server under exactly that
+    name, so "already gone" would be false about the only ref that bears it,
+    and a caller told that believes a deletion happened.
+
+    The refusal is also what keeps the server's copy safe. It is the one
+    deletion with no reflog behind it, so it goes only when it is named in
+    full, and the remedy quotes the spelling that would do it."""
+    server = target("remote:origin/feat/x", kind=TargetKind.REMOTE_BRANCH, sweepable=False)
+
+    result = plan_for((server, target("branch:other")), selectors=["feat/x"])
+
+    assert result.targets == ()
+    assert result.absent == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_BARE_NAME_IS_SERVER_REF"
+    assert [t.id for t in refusal.blocked] == ["remote:origin/feat/x"]
+    assert "origin/feat/x" in refusal.remedy
+
+
+def test_every_server_copy_of_a_bare_name_is_named_not_just_the_first() -> None:
+    """A fork carries the same branch name on two remotes as a matter of
+    course, and a caller working in one has no reason to be thinking about the
+    other. Naming one copy would describe half of what is there, and a reader
+    handed half reads it as the whole -- so they delete the one they were told
+    about and leave a ref they meant to be rid of, believing it gone."""
+    survey = make_survey(remotes=("origin", "upstream"))
+    targets = (
+        target("remote:origin/feat/x", kind=TargetKind.REMOTE_BRANCH, sweepable=False),
+        target("remote:upstream/feat/x", kind=TargetKind.REMOTE_BRANCH, remote="upstream"),
+    )
+
+    result = plan_for(targets, survey=survey, selectors=["feat/x"])
+
+    assert result.targets == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_BARE_NAME_IS_SERVER_REF"
+    assert [t.id for t in refusal.blocked] == [
+        "remote:origin/feat/x",
+        "remote:upstream/feat/x",
+    ]
+    assert "upstream/feat/x" in refusal.remedy
+
+
+def test_the_full_name_still_selects_the_servers_copy_past_a_local_branch() -> None:
+    """The remedy has to reach the ref or the refusal above is a dead end --
+    and it has to reach it in a repository where the local branch of that name
+    is still present, which is the only shape the refusal ever appears in."""
     targets = (
         target("branch:feat/x"),
-        target("remote:origin/feat/x", kind=TargetKind.REMOTE_BRANCH),
+        target("remote:origin/feat/x", kind=TargetKind.REMOTE_BRANCH, sweepable=False),
     )
-    result = plan_for(targets, selectors=["feat/x"])
-    assert isinstance(result, Refusal)
-    assert result.code == "E_AMBIGUOUS_TARGET"
-    assert len(result.blocked) == 2
+
+    result = plan_for(targets, selectors=["origin/feat/x"])
+
+    assert [t.id for t in result.targets] == ["remote:origin/feat/x"]
+    assert result.refused == ()
+
+
+def test_the_id_still_selects_the_servers_copy_too() -> None:
+    """The other spelling that names one ref and no other. `--report` prints
+    this one on every row, so it is what an agent copies out of the report."""
+    targets = (
+        target("branch:feat/x"),
+        target("remote:origin/feat/x", kind=TargetKind.REMOTE_BRANCH, sweepable=False),
+    )
+
+    result = plan_for(targets, selectors=["remote:origin/feat/x"])
+
+    assert [t.id for t in result.targets] == ["remote:origin/feat/x"]
+    assert result.refused == ()
+
+
+def test_a_branch_selector_is_not_diverted_to_a_server_ref_of_that_bare_name() -> None:
+    """`branch:` says a local ref outright. The server's copy is not something
+    that selector could have meant however it is spelled, so the miss is a
+    plain miss -- and the caller is told the job is done rather than handed a
+    refusal about a ref they were not talking about."""
+    server = target("remote:origin/feat/x", kind=TargetKind.REMOTE_BRANCH, sweepable=False)
+
+    result = plan_for((server,), selectors=["branch:feat/x"])
+
+    assert result.refused == ()
+    assert [a.selector for a in result.absent] == ["branch:feat/x"]
+
+
+def test_ambiguous_bare_name_is_refused_with_the_candidates() -> None:
+    """A worktree answers to its basename and a branch to its name, and neither
+    of those is derived from the other -- so `feat` can still mean two things
+    at once, and nothing but the caller knows which. Guessing is how the wrong
+    one gets deleted, so the refusal names both and asks for an `id`.
+
+    A local branch beside the server's copy of it is no longer this case, and
+    it was much the commoner one: a bare name does not reach a server ref, so
+    that pair does not collide any more. What is left is a collision between
+    the two listings."""
+    targets = (
+        target("branch:feat"),
+        target("worktree:/repo/wt/feat", kind=TargetKind.WORKTREE),
+    )
+    result = plan_for(targets, selectors=["feat"])
+    assert result.targets == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_AMBIGUOUS_TARGET"
+    assert {t.id for t in refusal.blocked} == {"branch:feat", "worktree:/repo/wt/feat"}
 
 
 def test_exact_id_disambiguates() -> None:
@@ -460,11 +674,17 @@ def test_exact_id_disambiguates() -> None:
     assert [t.id for t in result.targets] == ["branch:feat/x"]
 
 
-def test_a_server_refs_bare_alias_is_the_name_the_remote_knows() -> None:
-    """The convenience spelling for `team/origin/feat/x` is `feat/x`, because
-    that is what the server calls the branch. Dropping everything before the
-    first slash offers `origin/feat/x` instead -- a name nothing in the
-    repository has, handed to a caller as though it were theirs."""
+def test_the_bare_name_a_server_ref_answers_to_is_the_one_the_remote_knows() -> None:
+    """A bare name no longer *selects* a server ref, but it is still matched
+    against one to tell a caller the ref is there -- and which name it is
+    matched against is the same question it always was. The remote knows
+    `team/origin/feat/x` as `feat/x`, so that is the name the refusal answers
+    to and the full spelling is what its remedy quotes.
+
+    Dropping everything before the first slash would answer to `origin/feat/x`
+    instead: a name nothing in this repository has. Reporting that one as
+    already gone is a claim about a ref that does not exist, and it would arrive
+    while the ref the caller was reaching for sat untouched."""
     targets = (
         target(
             "remote:team/origin/feat/x",
@@ -473,10 +693,13 @@ def test_a_server_refs_bare_alias_is_the_name_the_remote_knows() -> None:
         ),
     )
 
-    assert isinstance(plan_for(targets, selectors=["feat/x"]), Plan)
+    [refusal] = plan_for(targets, selectors=["feat/x"]).refused
+    assert refusal.code == "E_BARE_NAME_IS_SERVER_REF"
+    assert "team/origin/feat/x" in refusal.remedy
+
     result = plan_for(targets, selectors=["origin/feat/x"])
-    assert isinstance(result, Plan)
     assert result.targets == ()
+    assert result.refused == ()
     assert [a.selector for a in result.absent] == ["origin/feat/x"]
 
 
@@ -496,29 +719,35 @@ def test_repeated_selector_is_not_planned_twice() -> None:
 
 def test_resolve_selectors_returns_targets_in_request_order() -> None:
     targets = (target("branch:a"), target("branch:b"))
-    resolved, absent, refusal = resolve_selectors(["b", "a"], targets, make_survey())
-    assert refusal is None
+    resolved, absent, refusals = resolve_selectors(["b", "a"], targets, make_survey())
+    assert refusals == []
     assert absent == []
     assert [t.name for t in resolved] == ["b", "a"]
 
 
-def test_ambiguity_still_refuses_and_carries_nothing_forward() -> None:
+def test_ambiguity_refuses_that_name_and_nothing_else() -> None:
     """A miss is a job done; ambiguity is a question. Two real things match and
-    picking one destroys the other, so this is the refusal that stays -- and it
-    resolves no selector beside it, because the caller is about to re-issue the
-    whole command with a precise name."""
+    picking one destroys the other, so this is the refusal that stays.
+
+    What it no longer does is take the rest of the command with it. The
+    question is about one name -- the others were unambiguous, and the caller
+    is going to re-issue only the offending one with an `id`. Discarding their
+    resolved targets meant the re-run had to repeat every name that had already
+    worked, and a caller who edits that line under time pressure is the one who
+    drops a name they meant to keep."""
     targets = (
-        target("branch:feat/x"),
-        target("remote:origin/feat/x", kind=TargetKind.REMOTE_BRANCH),
+        target("branch:feat"),
+        target("worktree:/repo/wt/feat", kind=TargetKind.WORKTREE),
         target("branch:other"),
     )
-    resolved, absent, refusal = resolve_selectors(
-        ["other", "feat/x", "nope"], targets, make_survey()
+    resolved, absent, refusals = resolve_selectors(
+        ["other", "feat", "nope"], targets, make_survey()
     )
-    assert refusal is not None
-    assert refusal.code == "E_AMBIGUOUS_TARGET"
-    assert resolved == []
-    assert absent == []
+    assert [r.code for r in refusals] == ["E_AMBIGUOUS_TARGET"]
+    assert [t.id for t in resolved] == ["branch:other"]
+    # And the selector after the ambiguous one was still resolved, rather than
+    # never reached: resolution does not stop at the first objection.
+    assert [a.selector for a in absent] == ["nope"]
 
 
 # -- worktree occupancy ------------------------------------------------------
@@ -530,10 +759,34 @@ def _occupied_survey():  # type: ignore[no-untyped-def]
 
 def test_named_occupied_branch_is_refused() -> None:
     """Not a safety judgement -- git is about to reject this outright, and
-    saying so names the worktree that has to go first."""
+    saying so names the worktree that has to go first.
+
+    Refused rather than carrying the sweep's quiet `Skipped` row, and in place
+    of it: the caller named this one, so the omission is said once, in the
+    register their naming earned."""
     result = plan_for((target("branch:held"),), survey=_occupied_survey(), selectors=["held"])
-    assert isinstance(result, Refusal)
-    assert result.code == "E_BRANCH_IN_USE"
+    assert result.targets == ()
+    assert result.skipped == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_BRANCH_IN_USE"
+
+
+def test_an_occupied_branch_named_is_refused_beside_a_target_that_still_goes() -> None:
+    """The objection is git's, and it is about one branch. Every other name in
+    the same command resolved to something git will delete without complaint,
+    and holding those back would make one occupied worktree a reason to do
+    none of the work asked for."""
+    result = plan_for(
+        (target("branch:held"), target("branch:free")),
+        survey=_occupied_survey(),
+        selectors=["held", "free"],
+    )
+
+    assert [t.id for t in result.targets] == ["branch:free"]
+    assert result.skipped == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_BRANCH_IN_USE"
+    assert [t.id for t in refusal.blocked] == ["branch:held"]
 
 
 def test_the_occupancy_check_reads_the_local_branch_not_a_server_ref_of_that_name() -> None:
@@ -557,9 +810,10 @@ def test_the_occupancy_check_reads_the_local_branch_not_a_server_ref_of_that_nam
         (target("branch:origin/held"),), survey=survey, selectors=["branch:origin/held"]
     )
 
-    assert isinstance(result, Refusal)
-    assert result.code == "E_BRANCH_IN_USE"
-    assert "/repo/wt" in result.message
+    assert result.targets == ()
+    [refusal] = result.refused
+    assert refusal.code == "E_BRANCH_IN_USE"
+    assert "/repo/wt" in refusal.message
 
 
 def test_automatic_sweep_skips_an_occupied_branch_instead_of_refusing() -> None:
@@ -575,6 +829,19 @@ def test_a_skipped_target_is_reported_never_silently_dropped() -> None:
     assert isinstance(result, Plan)
     assert [s.name for s in result.skipped] == ["held"]
     assert "/repo/wt" in result.skipped[0].reason
+
+
+def test_a_bare_sweep_still_skips_an_occupied_branch_rather_than_refusing_it() -> None:
+    """The line between the two modes, and it is the one thing splitting the
+    refusal out per selector must not blur. Nobody named this branch, so no
+    instruction was contradicted -- an unattended sweep that turned an occupied
+    branch into a refusal would exit non-zero, and report a run as failed, on a
+    repository where everything it was actually asked to do was done."""
+    result = plan_for((target("branch:held"), target("branch:free")), survey=_occupied_survey())
+
+    assert [t.id for t in result.targets] == ["branch:free"]
+    assert [s.target_id for s in result.skipped] == ["branch:held"]
+    assert result.refused == ()
 
 
 def test_occupancy_resolves_when_the_worktree_is_also_being_removed() -> None:
