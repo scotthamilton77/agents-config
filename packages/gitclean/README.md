@@ -38,9 +38,11 @@ a branch, its detached HEAD when it does not. A commit no ref proves merged has
 no proof, whether or not a branch names it.
 
 Naming a target deletes it. Nothing is re-derived, no flag is demanded, and the
-reflog is the undo for a local branch. Two things still stop a named deletion:
-the worktree this process is running in, and git itself — a checked-out branch,
-a dirty or locked worktree. Those refusals arrive verbatim, with the transcript.
+reflog is the undo for a local branch. Three things still stop a named deletion:
+the worktree this process is running in; git itself — a checked-out branch, a
+dirty or locked worktree — whose refusals arrive verbatim, with the transcript;
+and a listing that dropped a row it could not parse, which leaves the run unable
+to say the one thing your name matched is the only thing it matches.
 
 A bare name reaches a worktree or a local branch. The copy on a server answers
 to its full `<remote>/<ref>` spelling and to nothing shorter, so the name you
