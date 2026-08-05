@@ -272,18 +272,22 @@ def test_the_trunk_is_never_swept_although_it_is_provably_merged(
     assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/main") != ""
 
 
-def test_naming_the_branch_you_are_standing_on_does_not_delete_it(repo: Path) -> None:
+def test_naming_the_branch_you_are_standing_on_gets_gits_own_refusal(repo: Path) -> None:
     """Naming a target is an authorisation, so nothing here re-derives whether
-    it is wise. What stops this is that git will not delete a branch a worktree
-    holds -- and saying so up front names the worktree that has to go first."""
+    it is wise. git will not delete a branch a worktree holds, and its message
+    -- read off the disk as the deletion is attempted, and naming the worktree
+    -- is what the caller gets, with the argv that produced it."""
     git(repo, "checkout", "-q", "-b", "feat/parked")
     commit(repo, "parked.txt")
 
     with reachability_guard(repo):
         payload = report(repo, "--cleanup", "feat/parked")
 
-    assert payload["_exit"] == EXIT_REFUSED
-    assert [r["code"] for r in refusals(payload)] == ["E_BRANCH_IN_USE"]
+    assert payload["_exit"] == EXIT_ANOMALY
+    assert refusals(payload) == []
+    said = anomaly_lines(payload)
+    assert "cannot delete branch" in said
+    assert str(repo) in said
     assert git(repo, "rev-parse", "--abbrev-ref", "HEAD") == "feat/parked"
     assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/feat/parked") != ""
 
@@ -450,36 +454,61 @@ def test_a_worktree_holding_uncommitted_work_survives_a_bare_sweep(repo: Path) -
     assert "1 untracked file(s)" in str(target["withheld"])
 
 
-def test_naming_a_detached_worktree_will_not_strand_the_commit_it_holds(repo: Path) -> None:
-    """The gap in "git's own refusals are enough".
+def test_naming_a_detached_worktree_removes_it_and_says_what_that_cost(repo: Path) -> None:
+    """The gap in "git's own refusals are enough", and what is done about it.
 
     They cover uncommitted content. They say nothing about a commit made
     inside the worktree on no branch: that tree is clean, git removes it
     without complaint, and the record it deletes is the only thing that held
-    HEAD -- the per-worktree reflog goes with it. No ref, no reflog, no undo.
+    HEAD -- the per-worktree reflog goes with it. No ref, no reflog.
 
-    Naming a target is an authorisation to delete a checkout, and it was
-    silently spending a commit. The run declines and says which commit and
-    how to keep it, which is the difference between authorising and being
-    told afterwards."""
+    Naming a target is an authorisation to delete a checkout, and the caller
+    owns what that spends. So the removal happens, and the row for it names the
+    commit that is now reachable from nothing and the one command that keeps
+    it. The guard is told about that commit by name, because a run that strands
+    one silently is what it exists to catch."""
     work = repo.parent / "wt-orphan"
     git(repo, "worktree", "add", "-q", "--detach", str(work))
     only = commit(work, "only.txt", "the only copy\n")
 
-    with reachability_guard(repo):
+    with reachability_guard(repo) as exemptions:
+        exemptions.expect_unreachable(only)
         payload = report(repo, "--cleanup", f"worktree:{work}")
 
-    assert payload["_exit"] == EXIT_ANOMALY
-    assert work.exists()
+    assert payload["_exit"] == EXIT_OK, anomaly_lines(payload)
+    assert not work.exists()
     assert git(repo, "for-each-ref", "--count=1", f"--contains={only}") == ""
-    said = str(payload["execution"]["anomalies"])  # type: ignore[index]
-    assert only[:8] in said and "git branch" in said
+    deletion = payload["execution"]["deletions"][0]  # type: ignore[index]
+    assert (deletion["deleted"], deletion["verified"]) == (True, True)
+    assert only[:8] in str(deletion["detail"])
+    assert "git branch" in str(deletion["detail"])
 
 
-def test_naming_a_worktree_whose_commit_a_branch_holds_still_removes_it(repo: Path) -> None:
-    """The refusal is about reachability, not about being detached. A commit
-    some branch contains survives the removal, so the removal proceeds --
-    otherwise the check would block the ordinary case it exists to permit."""
+def test_a_bare_sweep_will_not_touch_a_worktree_holding_an_orphan_commit(repo: Path) -> None:
+    """The same repository, with nobody naming anything. The narrowing above is
+    the named path's alone: a commit no ref contains carries no merge proof, so
+    the sweep withholds the tree long before any of this is reached, and the
+    commit is still there afterwards with the guard given no exemption to
+    excuse it."""
+    work = repo.parent / "wt-orphan-swept"
+    git(repo, "worktree", "add", "-q", "--detach", str(work))
+    only = commit(work, "only.txt", "the only copy\n")
+
+    with reachability_guard(repo):
+        payload = report(repo, "--cleanup")
+
+    assert payload["_exit"] == EXIT_OK
+    assert work.exists()
+    assert git(repo, "rev-parse", "--verify", f"{only}^{{commit}}") == only
+    assert find(payload, f"worktree:{work}")["sweepable"] is False
+
+
+def test_naming_a_worktree_whose_commit_a_branch_holds_costs_nothing(repo: Path) -> None:
+    """The disclosure is about reachability, not about being detached. A commit
+    some branch contains survives the removal, so the row for it says only that
+    the worktree was removed -- otherwise every ordinary cleanup would carry a
+    warning about work that is in no danger, and the one that matters would
+    read as more of the same."""
     work = _worktree(repo, "wt-kept", "feat/kept")
     commit(work, "kept.txt")
 
@@ -488,6 +517,7 @@ def test_naming_a_worktree_whose_commit_a_branch_holds_still_removes_it(repo: Pa
 
     assert payload["_exit"] == EXIT_OK
     assert not work.exists()
+    assert payload["execution"]["deletions"][0]["detail"] == "worktree removed"  # type: ignore[index]
 
 
 def test_the_worktree_the_run_executes_in_is_never_deleted(repo: Path) -> None:

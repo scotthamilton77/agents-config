@@ -18,10 +18,14 @@ object already, and answers yes for bundles that clone back empty and for
 bundles that will not clone at all. A salvage that does not restore is reported
 as an anomaly, recorded as no salvage, and aborts its deletion.
 
-**Every deletion is verified by re-asking git.** A zero exit code is a claim,
-not a fact -- `git push --delete` in particular can exit 0 against a ref the
-server kept. So the ref is queried again afterwards, and a survivor becomes an
-anomaly rather than a line in the success list.
+**A deletion git performed is reported as done.** git's own account of a
+deletion it just made is the answer, and re-asking afterwards is a second
+opinion this tool has no standing to hold: a probe that errors would turn a
+removal that happened into a row saying it did not. The server is the one place
+that reasoning does not reach, because there the exit code answers a different
+question than the one that matters -- `git push --delete` can exit 0 against a
+ref the remote kept -- so that ref alone is queried again, and a survivor
+becomes an anomaly rather than a line in the success list.
 
 **Anomalies carry the transcript.** Whoever reads this output must be able to
 remediate without re-running anything, so the argv, exit code, and both
@@ -38,7 +42,6 @@ from pathlib import Path
 
 from gitclean.model import Anomaly, Deletion, Plan, SalvageRecord, Survey, Target, TargetKind
 from gitclean.ports import CommandPort, git_argv
-from gitclean.survey import list_worktrees
 
 SALVAGE_PREFIX = "gitclean-salvage"
 """Where the scratch branch a bundle is taken from lives. Namespaced so the
@@ -247,24 +250,22 @@ class Executor:
     def _head_now(self, target: Target, surveyed: str) -> str:
         """What the worktree holds at this moment, not when the survey read it.
 
-        Every other guard on this path is git's own, taken as the deletion
-        happens, because that is the only moment that describes the disk. This
-        one is ours, so it is taken then too. A commit made in that tree after
-        the survey ran is held by the record about to be deleted and by nothing
-        else -- while the commit it replaced, the one the survey recorded, is
-        sitting safely on some branch and answers the containment question
-        yes. Asking about the stale commit is therefore not a smaller check,
-        it is the wrong check, and it clears exactly when it should refuse.
+        This decides which commit the removal discloses, and the survey is the
+        wrong source for it. A commit made in that tree after the survey ran is
+        held by the record about to be deleted and by nothing else, while the
+        commit it replaced -- the one the survey recorded -- is sitting on some
+        branch and answers the containment question yes. Reading the stale
+        commit would therefore report nothing at risk in exactly the case where
+        something is.
 
-        If git will not say, the surveyed commit is the better of the two
-        remaining answers: stale evidence still refuses far more often than no
-        evidence does."""
+        If git will not say what the tree holds now, the surveyed commit is the
+        only other answer available, and it still names work the removal is
+        about to put out of reach."""
         live = self._port.git(git_argv("rev-parse", "HEAD"), cwd=Path(target.name))
         return live.out if live.ok and live.out else surveyed
 
-    def _commit_only_this_worktree_holds(self, target: Target) -> tuple[str, tuple[str, ...]]:
-        """The commit that removing this worktree would strand, or "", with the
-        transcript of whatever git said when asked.
+    def _commit_only_this_worktree_holds(self, target: Target) -> tuple[str, bool | None]:
+        """The commit this worktree holds, and whether any ref contains it.
 
         git's refusals are the safety story for a named worktree, and they have
         exactly one gap: they know about *uncommitted* content and nothing
@@ -274,25 +275,26 @@ class Executor:
         deleted is what held HEAD, and the per-worktree reflog dies in the same
         step. No ref, no reflog, no undo.
 
-        So the question git cannot answer is asked of git directly: does any
-        ref contain this commit? Not "does it look abandoned", not "is the
-        tree clean" -- reachability, which is the thing that actually decides
-        whether deleting is recoverable. A worktree on a branch answers yes
-        through that branch and is unaffected.
+        That is a cost the caller is owed a report of, not a deletion this tool
+        gets to decline: naming the tree is the authorisation. So the question
+        git cannot answer for itself is asked of git directly -- does any ref
+        contain this commit? -- and the answer is disclosed rather than acted
+        on. A worktree on a branch answers yes through that branch and costs
+        nothing.
 
-        A probe that does not answer is treated as a stranding. The cost of
-        being wrong that way is a worktree someone removes by hand; the cost
-        of being wrong the other way is the commit."""
+        ``None`` is a probe that would not answer, and it stays distinct from
+        ``False``: saying no ref contains a commit is a measurement, and a
+        failed probe never made it."""
         surveyed = next((w for w in self._survey.worktrees if w.path == target.name), None)
         if surveyed is None:
-            return "", ()
+            return "", True
         head = self._head_now(target, surveyed.head)
         if not head:
-            return "", ()
+            return "", True
         refs = self._port.git(
             git_argv("for-each-ref", "--count=1", f"--contains={head}"), cwd=self._cwd
         )
-        return ("", refs.transcript()) if refs.ok and refs.out else (head, refs.transcript())
+        return (head, bool(refs.out)) if refs.ok else (head, None)
 
     def _delete_worktree(self, target: Target) -> Deletion:
         """Remove the worktree and let git's own interlocks stand.
@@ -311,20 +313,10 @@ class Executor:
         Ignored files do not trigger the refusal, so removing a finished
         worktree full of caches is unaffected.
 
-        There is one thing git's refusals do not cover, and it is added below
-        rather than assumed away."""
-        stranded, probe = self._commit_only_this_worktree_holds(target)
-        if stranded:
-            self._record(
-                "delete",
-                target.id,
-                f"removing {target.name} would strand commit {stranded[:8]}, which no ref "
-                f"contains; nothing was deleted. Keep it with "
-                f"`git branch <name> {stranded[:8]}` and re-run, or discard it deliberately "
-                f"with `git worktree remove --force {target.name}`",
-                probe,
-            )
-            return _failed(target, f"would strand commit {stranded[:8]}")
+        There is one thing git's refusals do not cover -- a commit the tree
+        holds on no branch -- and the removal proceeds anyway, carrying what it
+        cost on its own row."""
+        held, contained = self._commit_only_this_worktree_holds(target)
         removal = self._port.git(git_argv("worktree", "remove", name=target.name), cwd=self._cwd)
         if not removal.ok:
             self._record(
@@ -339,77 +331,27 @@ class Executor:
         # every worktree whose directory has gone missing, and those were never
         # planned targets: the executor acts on what the plan named, and
         # nothing else. `worktree remove` takes this one's record with it.
-        # The same framed read the survey uses, because the comparison here is
-        # against a whole path: a listing split on newlines answers "not there"
-        # for a worktree whose path contains one, which is the removal
-        # reporting itself successful by failing to spell what it looked for.
-        listing = list_worktrees(self._port, self._cwd)
-        if not listing.ok or listing.dropped or not listing.can_place(target.name):
-            # Absence of the worktree in output that was never produced -- or
-            # that lost a record on the way, or that cannot show it named this
-            # path in full -- is not evidence of anything. Unverified is its own
-            # outcome, distinct from verified-gone.
-            #
-            # `can_place` rather than the listing's framing outright: the path
-            # in question is known here, and one with no newline in it cannot be
-            # the truncated record. Refusing to confirm every removal on a git
-            # without `-z` would turn each of them into an anomaly and buy
-            # nothing.
-            self._record(
-                "verify",
-                target.id,
-                f"could not confirm {target.name} is gone; the removal reported success",
-                listing.result.transcript(),
-            )
-            return _failed(target, "deletion unverified")
-        if listing.holds(target.name):
-            self._record(
-                "verify",
-                target.id,
-                f"worktree {target.name} still appears in `git worktree list` after removal",
-                listing.result.transcript(),
-            )
-            return _failed(target, "still present after removal")
         return Deletion(
             target_id=target.id,
             kind=target.kind,
             name=target.name,
             deleted=True,
             verified=True,
-            detail="worktree removed",
+            detail=_removal_detail(held, contained),
         )
 
     def _delete_branch(self, target: Target) -> Deletion:
+        """`branch -D`, and what it says about itself is the outcome.
+
+        The commits stay in the reflog for git's configured expiry, so the one
+        thing a second opinion could add here is a way to report a deletion
+        that happened as one that did not."""
         removal = self._port.git(git_argv("branch", "-D", name=target.name), cwd=self._cwd)
         if not removal.ok:
             self._record(
                 "delete", target.id, f"could not delete branch {target.name}", removal.transcript()
             )
             return _failed(target, "delete command failed")
-        # `show-ref --verify` cannot answer this: it exits nonzero both when the
-        # ref is absent and when the command itself failed, so "gone" and
-        # "broken" are the same signal. `for-each-ref` exits 0 either way and
-        # answers in stdout, which separates them.
-        ref = f"refs/heads/{target.name}"
-        probe = self._port.git(
-            git_argv("for-each-ref", "--format=%(refname)", name=ref), cwd=self._cwd
-        )
-        if not probe.ok:
-            self._record(
-                "verify",
-                target.id,
-                f"could not confirm {ref} is gone; the delete reported success",
-                probe.transcript(),
-            )
-            return _failed(target, "deletion unverified")
-        if any(line.strip() == ref for line in probe.stdout.splitlines()):
-            self._record(
-                "verify",
-                target.id,
-                f"{ref} still resolves after `git branch -D`",
-                probe.transcript(),
-            )
-            return _failed(target, "ref survived deletion")
         return Deletion(
             target_id=target.id,
             kind=target.kind,
@@ -669,6 +611,32 @@ class Executor:
             anomalies=tuple(self._anomalies),
             salvage_dir=plan.salvage_dir,
         )
+
+
+def _removal_detail(held: str, contained: bool | None) -> str:
+    """What removing this worktree cost, said on the row it happened on.
+
+    Removing a refusal is not licence to go quiet. The record that held a
+    detached HEAD is gone, and with it the per-worktree reflog, so the commit
+    is now reachable from nothing -- it survives only until git collects it,
+    and the caller has to be told which commit and what one command keeps it.
+    The report is the whole obligation here: it blocks nothing, and the
+    deletion it describes already happened.
+
+    An unanswered probe reads as its own sentence rather than as either
+    answer. "No ref contains this" is a measurement, and a probe that failed
+    did not make it."""
+    if not held or contained:
+        return "worktree removed"
+    if contained is None:
+        return (
+            f"worktree removed; whether any ref contains {held[:8]}, the commit it held, "
+            f"could not be read, so whether the removal put that commit out of reach is unknown"
+        )
+    return (
+        f"worktree removed; it held commit {held[:8]}, which no ref contains, so nothing "
+        f"reaches it now -- keep it with `git branch <name> {held[:8]}` before git collects it"
+    )
 
 
 def _failed(target: Target, detail: str) -> Deletion:

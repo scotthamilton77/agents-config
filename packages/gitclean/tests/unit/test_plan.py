@@ -854,36 +854,30 @@ def _occupied_survey():  # type: ignore[no-untyped-def]
     return make_survey(branches=(make_branch("held", checked_out_at="/repo/wt"),))
 
 
-def test_named_occupied_branch_is_refused() -> None:
-    """Not a safety judgement -- git is about to reject this outright, and
-    saying so names the worktree that has to go first.
-
-    Refused rather than carrying the sweep's quiet `Skipped` row, and in place
-    of it: the caller named this one, so the omission is said once, in the
-    register their naming earned."""
+def test_a_named_occupied_branch_is_planned_and_left_to_git() -> None:
+    """Naming it is the authorisation. git will not delete a branch a worktree
+    still holds, and its refusal is taken at the moment of the deletion and
+    names the worktree in its own words -- so the plan carries the target
+    rather than an objection worked out from a survey taken earlier."""
     result = plan_for((target("branch:held"),), survey=_occupied_survey(), selectors=["held"])
-    assert result.targets == ()
+    assert [t.id for t in result.targets] == ["branch:held"]
     assert result.skipped == ()
-    [refusal] = result.refused
-    assert refusal.code == "E_BRANCH_IN_USE"
+    assert result.refused == ()
 
 
-def test_an_occupied_branch_named_is_refused_beside_a_target_that_still_goes() -> None:
-    """The objection is git's, and it is about one branch. Every other name in
-    the same command resolved to something git will delete without complaint,
-    and holding those back would make one occupied worktree a reason to do
-    none of the work asked for."""
+def test_a_named_occupied_branch_does_not_hold_up_the_rest_of_the_command() -> None:
+    """Whatever git makes of the occupied one, the other names in the same
+    command were resolved and are planned. One branch a worktree holds is not a
+    reason to do none of the work asked for."""
     result = plan_for(
         (target("branch:held"), target("branch:free")),
         survey=_occupied_survey(),
         selectors=["held", "free"],
     )
 
-    assert [t.id for t in result.targets] == ["branch:free"]
+    assert sorted(t.id for t in result.targets) == ["branch:free", "branch:held"]
     assert result.skipped == ()
-    [refusal] = result.refused
-    assert refusal.code == "E_BRANCH_IN_USE"
-    assert [t.id for t in refusal.blocked] == ["branch:held"]
+    assert result.refused == ()
 
 
 def test_the_occupancy_check_reads_the_local_branch_not_a_server_ref_of_that_name() -> None:
@@ -891,7 +885,9 @@ def test_the_occupancy_check_reads_the_local_branch_not_a_server_ref_of_that_nam
     a server one, and the two collide: a local branch `origin/held` and origin's
     copy of `held` are both `origin/held`. A search that only compares names
     can answer with the server ref, whose `checked_out_at` is always None,
-    and the branch its worktree still holds then reads as free.
+    and the branch its worktree still holds then reads as free -- so the sweep
+    takes a branch git is about to refuse, and reports the refusal as a
+    surprise rather than as the omission it planned.
 
     Which one an unfiltered search finds today is decided by git listing
     refs/heads before refs/remotes. That is not a rule this depends on, and
@@ -903,14 +899,11 @@ def test_the_occupancy_check_reads_the_local_branch_not_a_server_ref_of_that_nam
         )
     )
 
-    result = plan_for(
-        (target("branch:origin/held"),), survey=survey, selectors=["branch:origin/held"]
-    )
+    result = plan_for((target("branch:origin/held"),), survey=survey)
 
     assert result.targets == ()
-    [refusal] = result.refused
-    assert refusal.code == "E_BRANCH_IN_USE"
-    assert "/repo/wt" in refusal.message
+    assert [s.target_id for s in result.skipped] == ["branch:origin/held"]
+    assert "/repo/wt" in result.skipped[0].reason
 
 
 def test_automatic_sweep_skips_an_occupied_branch_instead_of_refusing() -> None:

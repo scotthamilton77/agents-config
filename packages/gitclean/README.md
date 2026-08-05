@@ -99,17 +99,18 @@ Without `gh` on PATH there is no squash signal at all. That is reported in
   survey read it. Overriding them would mean re-implementing every one of those
   checks in Python. A person who has read git's complaint and still wants the
   tree gone runs one `git worktree remove --force` themselves.
-- **A removal that would strand a commit is declined.** git's refusals cover
+- **A removal that strands a commit says so.** git's refusals cover
   *uncommitted* content and know nothing about a commit made inside a worktree
   on no branch: that tree is clean, so git removes it without complaint, and
   the administrative record it deletes is the only thing holding that commit —
   the per-worktree reflog goes with it. So before removing a worktree the tool
   asks git whether any ref contains the commit that tree holds *now* — re-read
-  as the deletion happens, not taken from the survey — and declines when none
-  does, naming the commit and how to keep it. A commit made in that tree since
-  the survey ran is exactly the one at risk, and the surveyed commit it
-  replaced would have answered for it. Naming a target authorises deleting a
-  checkout; it should not quietly spend a commit.
+  as the deletion happens, not taken from the survey, because a commit made in
+  that tree since is exactly the one at risk and the surveyed commit it
+  replaced would have answered for it. The removal proceeds either way, and
+  where no ref holds it the row for that worktree names the commit and the one
+  command that keeps it before git collects the object. Naming a target
+  authorises deleting a checkout; what it costs is reported, not adjudicated.
 - **Salvage is kept only where there is no reflog** — a ref on the server. It
   becomes a `git bundle` before the delete, and what earns the delete is a
   restore, not an inspection: the bundle is cloned into an empty directory and
@@ -127,8 +128,12 @@ Without `gh` on PATH there is no squash signal at all. That is reported in
   your local `refs/remotes` cache. The delete carries `--force-with-lease`, so
   if the server moved since your last fetch it is rejected rather than taking
   commits nobody surveyed.
-- **Every deletion is verified by re-asking git.** A zero exit code is a claim,
-  not a fact. A ref that survives becomes an anomaly, not a success line.
+- **A deletion git made is reported as made, and a server ref is asked about
+  twice.** For a branch or a worktree, git's own account of what it just did is
+  the outcome — a second opinion could only turn a deletion that happened into
+  a row saying it had not. On a server that reasoning does not hold: `git push
+  --delete` can exit 0 against a ref the remote kept, so that ref is queried
+  again and a survivor becomes an anomaly rather than a success line.
 - **Anomalies carry the transcript** — argv, exit code, both streams — so a
   reader can remediate without re-running anything.
 - **Omissions are named.** A target the sweep selected and then dropped is
@@ -196,7 +201,7 @@ because the argument parser claims `-m` as a flag first: select it by its
 | 0 | clean |
 | 1 | something was refused (`plan.refused[]`, or `refusal` for a whole-run one) — other named targets may still have been deleted |
 | 2 | unusable (not a repository, bad arguments) |
-| 3 | acted, but something surprised us (see `execution.anomalies`) |
+| 3 | a deletion was attempted and did not complete (see `execution.anomalies`) |
 
 ## Scope
 

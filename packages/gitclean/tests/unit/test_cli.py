@@ -283,8 +283,8 @@ def test_naming_the_invoking_worktree_exits_one_with_its_path() -> None:
 
 
 def test_an_anomaly_exits_three_with_the_transcript() -> None:
-    """Acted, but git surprised us. A caller must be able to tell this from a
-    clean run without parsing prose."""
+    """The run set out to delete something and git would not. A caller must be
+    able to tell that from a clean run without parsing prose."""
     port = make_port(
         refs=[
             ref_at("refs/heads/main", "main", "a" * 40, head="*"),
@@ -292,8 +292,9 @@ def test_an_anomaly_exits_three_with_the_transcript() -> None:
         ],
         counts={"refs/remotes/origin/main..done": "0"},
         extra={
-            "branch -D -- done": ok(),
-            "for-each-ref --format=%(refname) refs/heads/done": ok("refs/heads/done"),
+            "branch -D -- done": fail(
+                "error: cannot delete branch 'done' used by worktree at '/repo/wt'", code=1
+            )
         },
     )
     code, payload = invoke(["--cleanup"], port)
@@ -620,18 +621,6 @@ def test_a_worktree_that_does_match_is_unaffected_by_the_unframed_listing() -> N
     port._git["worktree remove -- /repo/plain"] = ok()
     port._git["rev-parse HEAD"] = ok(_PLAIN_HEAD)
     port._git["for-each-ref --count=1 --contains"] = ok("refs/heads/plain")
-    # The survey reads the listing, then the verifier reads it again after the
-    # removal -- so the second answer is the one without it. The truncated
-    # record stays: nothing removed that one, and its presence is what proves
-    # the confirmation is not riding on a listing that got tidier.
-    port._git["worktree list --porcelain"] = [
-        port._git["worktree list --porcelain"],
-        ok(
-            _UNFRAMED_LISTING.replace(
-                f"worktree /repo/plain\nHEAD {_PLAIN_HEAD}\nbranch refs/heads/plain\n\n", ""
-            )
-        ),
-    ]
 
     code, payload = invoke(["--cleanup", "worktree:/repo/plain"], port)
 
@@ -840,11 +829,11 @@ def test_a_refusal_about_one_name_does_not_fill_the_run_wide_refusal_field() -> 
 
 def test_an_anomaly_outranks_a_refusal_in_the_exit_code() -> None:
     """A refusal is the tool declining to act and leaving the repository as it
-    found it. An anomaly is a deletion that ran and could not be confirmed
-    afterwards, which is the one outcome somebody has to go and look at. A run
-    that raised both must not report the milder of the two: exit 1 is what a
-    caller scripts "fix the name and re-run" against, and doing that here would
-    walk straight past an unverified deletion."""
+    found it. An anomaly is a deletion this run went out and attempted and did
+    not complete, which is the one outcome somebody has to go and look at. A
+    run that raised both must not report the milder of the two: exit 1 is what
+    a caller scripts "fix the name and re-run" against, and doing that here
+    would walk straight past the deletion that did not happen."""
     port = make_port(
         refs=[
             ref_at("refs/heads/main", "main", "a" * 40, head="*"),
@@ -852,9 +841,10 @@ def test_an_anomaly_outranks_a_refusal_in_the_exit_code() -> None:
         ],
         counts={"refs/remotes/origin/main..done": "0"},
         extra={
-            "branch -D -- done": ok(),
-            # git reported the deletion and the ref is still there afterwards.
-            "for-each-ref --format=%(refname) refs/heads/done": ok("refs/heads/done"),
+            # git would not make this deletion, and said why.
+            "branch -D -- done": fail(
+                "error: cannot delete branch 'done' used by worktree at '/repo/wt'", code=1
+            )
         },
     )
 
@@ -964,8 +954,9 @@ def test_human_output_names_a_failed_deletion() -> None:
         ],
         counts={"refs/remotes/origin/main..done": "0"},
         extra={
-            "branch -D -- done": ok(),
-            "for-each-ref --format=%(refname) refs/heads/done": ok("refs/heads/done"),
+            "branch -D -- done": fail(
+                "error: cannot delete branch 'done' used by worktree at '/repo/wt'", code=1
+            )
         },
     )
     _, text = invoke_human(["--cleanup"], port)
