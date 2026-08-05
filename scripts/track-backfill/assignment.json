@@ -45,12 +45,14 @@
     "agents-config-9k9.53.7.2.4": {
       "track": "review-and-merge",
       "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
-      "why": "gitclean redesign implementation (GCR-A7 through A11: worktree exclusion from plans, explicit naming for remote deletion, salvage proven by restore) -- packages/gitclean, which inherits the track of sync-after-remote-merge, the post-merge teardown asset review-and-merge charters. Runner-up prgroom; discriminated by gitclean operating after the merge, outside the grooming corridor."
+      "why": "gitclean redesign implementation (GCR-A7 through A11: worktree exclusion from plans, explicit naming for remote deletion, salvage proven by restore) -- packages/gitclean, which inherits the track of sync-after-remote-merge, the post-merge teardown asset review-and-merge charters. Runner-up prgroom; discriminated by gitclean operating after the merge, outside the grooming corridor.",
+      "confidence_note": "Assessed low/medium because no charter named gitclean; resolved 2026-08-05 by decision recorded in the design §3.4, which now places post-merge cleanup in review-and-merge."
     },
     "agents-config-9k9.53.7.2": {
       "track": "review-and-merge",
       "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
-      "why": "Implementation container for the gitclean redesign spec (docs/specs/2026-07-28-gitclean-redesign.md); takes its children's track, packages/gitclean, homed with sync-after-remote-merge as above. Runner-up prgroom, same discriminator."
+      "why": "Implementation container for the gitclean redesign spec (docs/specs/2026-07-28-gitclean-redesign.md); takes its children's track, packages/gitclean, homed with sync-after-remote-merge as above. Runner-up prgroom, same discriminator.",
+      "confidence_note": "Assessed low/medium because no charter named gitclean; resolved 2026-08-05 by decision recorded in the design §3.4, which now places post-merge cleanup in review-and-merge."
     },
     "agents-config-9k9.1.22": {
       "track": "grind-runtime",
@@ -100,12 +102,14 @@
     "agents-config-9k9.121": {
       "track": "review-and-merge",
       "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
-      "why": "A deferred test crossing gitclean's pairing relation with a newline worktree path; the item's own anchor note calls it gitclean work, and packages/gitclean is homed with sync-after-remote-merge, the post-merge teardown asset review-and-merge charters. Runner-up prgroom; same discriminator as the rest of the gitclean family."
+      "why": "A deferred test crossing gitclean's pairing relation with a newline worktree path; the item's own anchor note calls it gitclean work, and packages/gitclean is homed with sync-after-remote-merge, the post-merge teardown asset review-and-merge charters. Runner-up prgroom; same discriminator as the rest of the gitclean family.",
+      "confidence_note": "Assessed low/medium because no charter named gitclean; resolved 2026-08-05 by decision recorded in the design §3.4, which now places post-merge cleanup in review-and-merge."
     },
     "agents-config-9k9.117": {
       "track": "review-and-merge",
       "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
-      "why": "gitclean's resolve_default_branch/resolve_base_ref hardcode 'origin', costing the published-HEAD merge-evidence tier -- packages/gitclean, homed with sync-after-remote-merge. Runner-up prgroom on a PR-corridor reading; discriminated by the code being post-merge branch classification, not PR grooming."
+      "why": "gitclean's resolve_default_branch/resolve_base_ref hardcode 'origin', costing the published-HEAD merge-evidence tier -- packages/gitclean, homed with sync-after-remote-merge. Runner-up prgroom on a PR-corridor reading; discriminated by the code being post-merge branch classification, not PR grooming.",
+      "confidence_note": "Assessed low/medium because no charter named gitclean; resolved 2026-08-05 by decision recorded in the design §3.4, which now places post-merge cleanup in review-and-merge."
     },
     "agents-config-9k9.110": {
       "track": "ops-meta",
@@ -175,7 +179,8 @@
     "agents-config-9k9.53.7.2.3": {
       "track": "review-and-merge",
       "provenance": "per-item-assessment-2026-08-05(confidence=low)",
-      "why": "Description is empty; resolved through the parent chain to 9k9.53 (gitclean CLI + clean-up-git skill), so the locus is packages/gitclean and the post-merge-cleanup skill — post-merge branch and worktree cleanup, the successor to review-and-merge's charter clause 'sync-after-remote-merge'. Runner-up prgroom, excluded by §3.4: gitclean is neither the prgroom package, monitor-pr, nor a superseded PR-corridor asset. Low, because no charter names gitclean and the vocabulary predates it."
+      "why": "Description is empty; resolved through the parent chain to 9k9.53 (gitclean CLI + clean-up-git skill), so the locus is packages/gitclean and the post-merge-cleanup skill — post-merge branch and worktree cleanup, the successor to review-and-merge's charter clause 'sync-after-remote-merge'. Runner-up prgroom, excluded by §3.4: gitclean is neither the prgroom package, monitor-pr, nor a superseded PR-corridor asset. Low, because no charter names gitclean and the vocabulary predates it.",
+      "confidence_note": "Assessed low/medium because no charter named gitclean; resolved 2026-08-05 by decision recorded in the design §3.4, which now places post-merge cleanup in review-and-merge."
     },
     "agents-config-9k9.17.10": {
       "track": "review-and-merge",
@@ -230,7 +235,8 @@
     "agents-config-9k9.120": {
       "track": "review-and-merge",
       "provenance": "per-item-assessment-2026-08-05(confidence=low)",
-      "why": "gitclean's survey layer (dropped_refs, dropped_worktrees, worktrees_framed in packages/gitclean), sibling to the other gitclean measurement-honesty items — post-merge cleanup, closest to review-and-merge's 'sync-after-remote-merge' clause. Runner-up prgroom, excluded by §3.4 since gitclean is not a PR-corridor asset. Low for the same reason as 9k9.53.7.2.3: no charter names gitclean."
+      "why": "gitclean's survey layer (dropped_refs, dropped_worktrees, worktrees_framed in packages/gitclean), sibling to the other gitclean measurement-honesty items — post-merge cleanup, closest to review-and-merge's 'sync-after-remote-merge' clause. Runner-up prgroom, excluded by §3.4 since gitclean is not a PR-corridor asset. Low for the same reason as 9k9.53.7.2.3: no charter names gitclean.",
+      "confidence_note": "Assessed low/medium because no charter named gitclean; resolved 2026-08-05 by decision recorded in the design §3.4, which now places post-merge cleanup in review-and-merge."
     },
     "agents-config-9k9.115": {
       "track": "installer",
@@ -310,7 +316,8 @@
     "agents-config-9k9.53.7.2.2": {
       "track": "review-and-merge",
       "provenance": "per-item-assessment-2026-08-05(confidence=low)",
-      "why": "Description is empty; decided from the parent chain (9k9.53.7.2 is the gitclean-redesign impl container under docs/specs/2026-07-28-gitclean-redesign.md), so the asset is packages/gitclean's verdict model. No track names gitclean, and review-and-merge is the closest by charter because it owns sync-after-remote-merge, the archived post-merge-hygiene skill that gitclean and post-merge-cleanup supersede — §3.4's rule that a superseded asset shares a track with its successor. Runner-up prgroom, ruled out because §3.4 lists prgroom's assets exhaustively and gitclean is not among them."
+      "why": "Description is empty; decided from the parent chain (9k9.53.7.2 is the gitclean-redesign impl container under docs/specs/2026-07-28-gitclean-redesign.md), so the asset is packages/gitclean's verdict model. No track names gitclean, and review-and-merge is the closest by charter because it owns sync-after-remote-merge, the archived post-merge-hygiene skill that gitclean and post-merge-cleanup supersede — §3.4's rule that a superseded asset shares a track with its successor. Runner-up prgroom, ruled out because §3.4 lists prgroom's assets exhaustively and gitclean is not among them.",
+      "confidence_note": "Assessed low/medium because no charter named gitclean; resolved 2026-08-05 by decision recorded in the design §3.4, which now places post-merge cleanup in review-and-merge."
     },
     "agents-config-9k9.82": {
       "track": "pipeline-discipline",
@@ -405,7 +412,8 @@
     "agents-config-9k9.86": {
       "track": "review-and-merge",
       "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
-      "why": "The degraded asset is the review-panel lens round -- an adversarial-QA/cross-model review pass, both named in review-and-merge's charter -- and the item's own triage anchors it to the review tooling rather than to gitclean. Runner-up ops-meta, whose claim rests on the openrouter-claude-subagent launcher (the prior pass sent that skill to ops-meta for its model-routing table); rejected because the defect is the review round losing evidentiary standing, not routing or cost."
+      "why": "The degraded asset is the review-panel lens round -- an adversarial-QA/cross-model review pass, both named in review-and-merge's charter -- and the item's own triage anchors it to the review tooling rather than to gitclean. Runner-up ops-meta, whose claim rests on the openrouter-claude-subagent launcher (the prior pass sent that skill to ops-meta for its model-routing table); rejected because the defect is the review round losing evidentiary standing, not routing or cost.",
+      "confidence_note": "Assessed low/medium because no charter named gitclean; resolved 2026-08-05 by decision recorded in the design §3.4, which now places post-merge cleanup in review-and-merge."
     },
     "agents-config-9k9.59": {
       "track": "installer",
@@ -435,12 +443,14 @@
     "agents-config-9k9.53.7.2.5": {
       "track": "review-and-merge",
       "provenance": "per-item-assessment-2026-08-05(confidence=low)",
-      "why": "Description is empty; decided entirely from ancestry -- parent chain runs 9k9.53.7.2 [Impl] -> 9k9.53.7 'gitclean redesign child spec' -> 9k9.53 'gitclean CLI + clean-up-git skill', so it inherits gitclean's post-merge-cleanup track. Rated low because the item carries no evidence of its own; runner-up pipeline-discipline on the same weak grounds as the other gitclean rows."
+      "why": "Description is empty; decided entirely from ancestry -- parent chain runs 9k9.53.7.2 [Impl] -> 9k9.53.7 'gitclean redesign child spec' -> 9k9.53 'gitclean CLI + clean-up-git skill', so it inherits gitclean's post-merge-cleanup track. Rated low because the item carries no evidence of its own; runner-up pipeline-discipline on the same weak grounds as the other gitclean rows.",
+      "confidence_note": "Assessed low/medium because no charter named gitclean; resolved 2026-08-05 by decision recorded in the design §3.4, which now places post-merge cleanup in review-and-merge."
     },
     "agents-config-9k9.53.7.2.1": {
       "track": "review-and-merge",
       "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
-      "why": "Title names the gitclean test harness (a reachability oracle over packages/gitclean's mutating tests), so it takes gitclean's track alongside 9k9.134/.135/.119. Runner-up pipeline-discipline, rejected for the same reason: no bead-SDLC asset is touched."
+      "why": "Title names the gitclean test harness (a reachability oracle over packages/gitclean's mutating tests), so it takes gitclean's track alongside 9k9.134/.135/.119. Runner-up pipeline-discipline, rejected for the same reason: no bead-SDLC asset is touched.",
+      "confidence_note": "Assessed low/medium because no charter named gitclean; resolved 2026-08-05 by decision recorded in the design §3.4, which now places post-merge cleanup in review-and-merge."
     },
     "agents-config-9k9.81": {
       "track": "prgroom",
@@ -490,12 +500,14 @@
     "agents-config-9k9.135": {
       "track": "review-and-merge",
       "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
-      "why": "Locus verified: packages/gitclean/src/gitclean/classify.py pairing construction (counterpart_worktree:83, counterpart_upstream:109, worktree_pairing:147), so it takes gitclean's post-merge-cleanup track. Runner-up pipeline-discipline, rejected as with the other gitclean rows -- no bead-SDLC asset is involved."
+      "why": "Locus verified: packages/gitclean/src/gitclean/classify.py pairing construction (counterpart_worktree:83, counterpart_upstream:109, worktree_pairing:147), so it takes gitclean's post-merge-cleanup track. Runner-up pipeline-discipline, rejected as with the other gitclean rows -- no bead-SDLC asset is involved.",
+      "confidence_note": "Assessed low/medium because no charter named gitclean; resolved 2026-08-05 by decision recorded in the design §3.4, which now places post-merge cleanup in review-and-merge."
     },
     "agents-config-9k9.119": {
       "track": "review-and-merge",
       "provenance": "per-item-assessment-2026-08-05(confidence=medium)",
-      "why": "gitclean trunk discovery in packages/gitclean, the same asset and therefore the same track as 9k9.134/.135. Runner-up pipeline-discipline, rejected on the same grounds; the item is a capability limit in the sweep tool, not a change to how work moves."
+      "why": "gitclean trunk discovery in packages/gitclean, the same asset and therefore the same track as 9k9.134/.135. Runner-up pipeline-discipline, rejected on the same grounds; the item is a capability limit in the sweep tool, not a change to how work moves.",
+      "confidence_note": "Assessed low/medium because no charter named gitclean; resolved 2026-08-05 by decision recorded in the design §3.4, which now places post-merge cleanup in review-and-merge."
     },
     "agents-config-9k9.111": {
       "track": "workcli",

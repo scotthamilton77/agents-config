@@ -45,7 +45,7 @@ Counts are the decided assignment, not estimates.
 | `pipeline-discipline` | 92 | organizing-only | The bead SDLC engine as it exists today: formulas, brainstorm/implement-bead, whats-next, worker-fleet agents and dispatch, RALF skills, HEP escalation, container hygiene gates. Decides *what work happens and how it moves*. |
 | `prgroom` | 53 | extractable | The deterministic PR-grooming CLI, its scripts, and the skills driving it. |
 | `installer` | 50 | extractable | The install engine: template assembly, DYNAMIC-INCLUDE flattening, per-tool projection and asset compatibility, receipts, CLI deployment, tool detection. |
-| `review-and-merge` | 47 | extractable | merge-guard, completion/quality gate including its HEAVY tier, adversarial-QA assets, cross-model review passes, sync-after-remote-merge. |
+| `review-and-merge` | 47 | extractable | merge-guard, completion/quality gate including its HEAVY tier, adversarial-QA assets, cross-model review passes, sync-after-remote-merge, and post-merge cleanup — `packages/gitclean`, the `clean-up-git` command and the `post-merge-cleanup` skill (see §3.4). |
 | `ops-meta` | 39 | organizing-only | Running the operation: roadmap and milestone management, cost/model-routing economics, telemetry, dashboards; external-dependency management and adoption spikes ("decide whether to adopt X"); and purely editorial repo hygiene per §3.2. |
 | `workcli` | 31 | extractable | Owner of the issue-tracker boundary: the `work` facade CLI, its verbs and adapter, the `bd-*.sh` helper scripts, bd defects and capability asks, and one-time bead-data migrations. Ownership follows the boundary, not the implementation language — see §3.5. |
 | `pdlc-orchestrator` | 29 | extractable | The deterministic FSM engine intended to drive Objectives through the lifecycle, and its design corpus. |
@@ -93,11 +93,24 @@ The discriminator is the asset, not the purpose:
   so that retirement work and successor work share one track.
 - **`review-and-merge`** — the gates around that corridor: merge-guard,
   completion/quality gate, adversarial-QA, cross-model review dispatch,
-  sync-after-remote-merge.
+  sync-after-remote-merge, **and post-merge cleanup: `packages/gitclean`, the
+  `clean-up-git` command, and the `post-merge-cleanup` skill.**
 
 This rule is load-bearing: 21 items in this assignment touch
 `wait-for-pr-comments` or `reply-and-resolve-pr-threads`, and without it they
 split arbitrarily between the two tracks.
+
+**Post-merge cleanup resolves to `review-and-merge`, by decision.** gitclean did
+not exist when this vocabulary was decided, and it is the one member whose
+placement the superseded-asset rule above does not settle on its own: gitclean
+supersedes `sync-after-remote-merge`, a `review-and-merge` clause, so read
+mechanically the rule would pull that clause toward a gitclean track rather than
+gitclean toward this one. No such track is minted. The cleanup gates belong with
+the merge gates they run after, and splitting them would put "did this land?" and
+"what can now be deleted?" in different workstreams. Recorded here so the next
+reader inherits the decision rather than the ambiguity — 14 items in the
+2026-08-05 assessment rest on it, 12 of them in the artifact and 2 held out as
+leased.
 
 ### 3.5 `workcli` owns a boundary, not a directory
 
