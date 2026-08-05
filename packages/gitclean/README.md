@@ -42,6 +42,18 @@ reflog is the undo for a local branch. Two things still stop a named deletion:
 the worktree this process is running in, and git itself — a checked-out branch,
 a dirty or locked worktree. Those refusals arrive verbatim, with the transcript.
 
+A bare name reaches a worktree or a local branch. The copy on a server answers
+to its full `<remote>/<ref>` spelling and to nothing shorter, so the name you
+just merged is never ambiguous between the two — and a bare name that only a
+server ref wears is refused with the full spelling to use, rather than reported
+as already gone about a ref that is sitting right there.
+
+Each refusal stops only the name it is about. Whatever else was named and
+resolved cleanly is deleted, every refusal lands in `plan.refused` with its own
+code and remedy, and the run exits 1 for having raised any — so one mistyped
+name costs a correction rather than a whole re-run. **Exit 1 therefore does not
+mean nothing happened**: read `execution.deletions` for what did.
+
 ## How a merge gets proven
 
 `git branch --merged` is wrong in both directions under a squash-merge
@@ -170,7 +182,7 @@ because the argument parser claims `-m` as a flag first: select it by its
 | code | meaning |
 |---|---|
 | 0 | clean |
-| 1 | refused (see `refusal.code` and `refusal.remedy`) |
+| 1 | something was refused (`plan.refused[]`, or `refusal` for a whole-run one) — other named targets may still have been deleted |
 | 2 | unusable (not a repository, bad arguments) |
 | 3 | acted, but something surprised us (see `execution.anomalies`) |
 

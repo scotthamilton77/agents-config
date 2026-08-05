@@ -55,6 +55,9 @@ a pairing by splitting a name or a reason sentence.
 
 naming a target deletes it. Nothing is re-derived, no flag is demanded, and git's
 own refusals -- a checked-out branch, a dirty or locked worktree -- stand as they are.
+a bare name reaches a worktree or a local branch only; the copy on a server answers to
+its full `<remote>/<ref>` spelling and to nothing shorter, so the name you merged is
+never ambiguous between the two.
 
 a name that matches nothing is not an error, once nothing-matched actually means gone.
 It lands in `plan.absent` with a note and the other named targets are still deleted. A
@@ -64,9 +67,15 @@ reported as work done: `deleted` stays false, because only a true there means th
 acted.
 
 it refuses instead where nothing-matched proves nothing -- when no ref could be read at
-all, and when the name is a ref this tool does not offer as a target, such as the
-server's copy of the trunk. Both of those look identical to an absent name and neither
-one is, so saying "already gone" about them would be a false report.
+all, when the name is a ref this tool does not offer as a target such as the server's
+copy of the trunk, and when the only thing wearing the name is a server ref, which the
+refusal then spells out in full for you. All of those look identical to an absent name
+and none of them is, so saying "already gone" about them would be a false report.
+
+one refusal does not stop the others. Whatever resolved cleanly is still deleted, each
+refusal is reported in `plan.refused` with its own code and remedy, and the run exits 1
+for having raised any -- so a single mistyped name no longer costs a whole re-run. An
+unverified deletion still outranks it and exits 3.
 
 what --after-merge takes:
   the local branch a pull request was opened from, and the worktree holding it -- each
@@ -298,6 +307,15 @@ def _render_human(payload: dict[str, object], out: TextIO) -> None:
     # that as FAIL would teach the reader to distrust a clean preview.
     dry = isinstance(plan, dict) and bool(plan.get("dry_run"))
     if isinstance(plan, dict):
+        # Ahead of the deletions rather than after them. A caller who named
+        # five things and reads four `ok` lines has been shown a successful
+        # run; the thing that makes it not one has to arrive before they stop
+        # reading.
+        for entry in plan.get("refused") or []:
+            if isinstance(entry, dict):
+                print("", file=out)
+                print(f"REFUSED ({entry.get('code')}): {entry.get('message')}", file=out)
+                print(f"  remedy: {entry.get('remedy')}", file=out)
         skipped = plan.get("skipped")
         if isinstance(skipped, list) and skipped:
             print("", file=out)
@@ -414,7 +432,7 @@ def main(
     _emit(
         _envelope(
             mode,
-            ok=execution.ok,
+            ok=execution.ok and not outcome.refused,
             survey_data=surveyed,
             targets=targets,
             plan=outcome,
@@ -423,7 +441,13 @@ def main(
         args.format,
         stream,
     )
-    return EXIT_OK if execution.ok else EXIT_ANOMALY
+    # An anomaly outranks a refusal. A refusal is the tool declining to act and
+    # leaving the repository as it found it; an anomaly is a deletion that ran
+    # and could not be confirmed afterwards, which is the one outcome a reader
+    # must not have hidden behind the milder code.
+    if not execution.ok:
+        return EXIT_ANOMALY
+    return EXIT_REFUSED if outcome.refused else EXIT_OK
 
 
 def entry() -> None:

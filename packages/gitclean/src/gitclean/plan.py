@@ -22,20 +22,27 @@ not have answered themselves: a name matching two things, a branch git will
 reject because a worktree still holds it, and the directory this process is
 standing in.
 
-A name matching *nothing* used to be one of them, and was wrong. The caller
-asked for that thing to be gone; it is gone. Refusing there reports a completed
-job as a failure -- and because a selector refusal aborts the whole plan, one
-name that had already been dealt with stopped every other deletion the caller
-asked for.
+None of them stops the rest. A refusal is about the selector it names, so what
+resolved cleanly is still planned and still deleted, and the refusals ride
+along beside it -- the run reports both and exits non-zero. Aborting the whole
+selection over one bad name was the older behaviour and it was the worse one:
+a name that had already been dealt with stopped every other deletion the caller
+asked for, and the only way out was to re-run with the offender removed, which
+is a round trip spent teaching the tool something it had already worked out.
 
-What replaced it is narrower than "a miss is fine", because a miss has three
-causes and only one of them is absence. The list can also be empty because the
-ref read failed, or missing a name because this tool does not offer that ref as
-a target -- and in both the branch is sitting right there. Those two refuse,
-and the refusal codes say which, because the alternative is telling somebody
-their branch is gone while it is not. Concluding absence from a list that was
-never able to answer is the same mistake as reading an unanswered probe as a
-clean working tree.
+A name matching *nothing* is not a refusal at all. The caller asked for that
+thing to be gone; it is gone, and reporting a finished job as a failure is what
+sends somebody back to raw git.
+
+That is narrower than "a miss is fine", though, because a miss has four causes
+and only one of them is absence. The list can also be empty because the ref
+read failed, or missing a name because this tool does not offer that ref as a
+target, or missing it because the only thing wearing that name is a copy on a
+server -- which a bare name deliberately no longer reaches. In all three the
+branch is sitting right there. Those refuse, and the codes say which, because
+the alternative is telling somebody their branch is gone while it is not.
+Concluding absence from a list that was never able to answer is the same
+mistake as reading an unanswered probe as a clean working tree.
 """
 
 from __future__ import annotations
@@ -58,17 +65,40 @@ from gitclean.model import (
 def _selector_candidates(target: Target) -> set[str]:
     """Every string a caller may reasonably use to name this target.
 
-    The bare-branch alias for a server ref is the name the *remote* knows it
-    by, carried down from the survey. Recovering it here by dropping everything
-    before the first slash would put `origin/feat/x` in this set for a ref on a
-    remote called `team/origin` -- a spelling that names nothing, offered to a
-    caller as though it named their branch."""
+    A server ref answers to its full `<remote>/<ref>` spelling and its
+    `remote:` id, and to nothing shorter. The bare name a remote knows a branch
+    by is, in any ordinary repository, the very string the local branch goes by
+    -- so accepting it here made the commonest cleanup there is, deleting the
+    branch whose work just merged, ambiguous between a local ref and a copy on
+    a server that this tool declines to delete unnamed anyway. Requiring the
+    full spelling contradicts nothing the tool offers: a bare name only ever
+    reached a server ref where no local branch shared it, and where one did,
+    the run refused rather than choosing."""
     names = {target.id, target.name}
     if target.kind is TargetKind.WORKTREE:
         names.add(Path(target.name).name)
-    if target.kind is TargetKind.REMOTE_BRANCH and target.ref_name:
-        names.add(target.ref_name)
     return names
+
+
+def _bare_server_refs(selector: str, targets: tuple[Target, ...]) -> list[Target]:
+    """Every server ref this selector names in each way except the one that counts.
+
+    Consulted only once nothing matched, and it is what keeps that miss from
+    being read as absence. The refs are right there; what is absent is a local
+    target wearing the name. "Already gone" would be false about the only
+    things that bear it, and staying silent would leave a caller believing a
+    deletion they asked for had happened.
+
+    All of them rather than the first, because a fork with `origin` and
+    `upstream` carries the same branch name twice as a matter of course, and
+    telling that caller about one copy would name half of what is there --
+    which reads as the whole of it.
+
+    Not asked of a selector that has already said it means something else: a
+    `branch:` names a local ref, and `worktree:` or a path names a worktree."""
+    if selector.startswith(("branch:", "worktree:", "/")):
+        return []
+    return [t for t in targets if t.kind is TargetKind.REMOTE_BRANCH and t.ref_name == selector]
 
 
 def _not_offered(selector: str, survey_data: Survey) -> NotOffered | None:
@@ -86,8 +116,15 @@ def _not_offered(selector: str, survey_data: Survey) -> NotOffered | None:
 
 
 def _unsplit_this_could_name(selector: str, survey_data: Survey) -> NotOffered | None:
-    """A ref whose remote and branch name could not be told apart, and which
-    this selector might have been naming.
+    """A ref whose remote and branch name could not be told apart, and whose
+    branch name this selector may be.
+
+    Not a rival for the selection -- a bare name does not reach a server ref at
+    all now, so nothing here competes for a match. It is the unsplittable twin
+    of the case above: where the split succeeded, a bare name that hits only a
+    server ref can be told exactly what to spell instead, and where it failed
+    the spelling to suggest is the unanswered question. So the run reports the
+    doubt rather than an absence it cannot support.
 
     The doubt is per-selector, and that is decidable rather than a guess. A
     remote-tracking ref is `refs/remotes/<remote>/<branch>`, and the two halves
@@ -136,14 +173,15 @@ def _lists_that_could_not_answer(selector: str, survey_data: Survey) -> list[str
     trust whichever one happened to answer.
 
     "Could not answer" covers a listing that did not run, one that ran without
-    describing everything it listed, *and* one that described a ref under a
-    spelling this selector cannot be compared against. A row nobody could
-    parse is a thing whose existence went unrecorded, which is the same hole as
-    never having looked -- and so is a server ref recorded only as
-    `<remote>/<ref>` because the two halves could not be told apart. The tool
-    offers the bare name a remote knows a branch by as a way to select it, and
-    for those refs that name is precisely what could not be recovered, so it
-    matches nothing here while the branch may be alive on the server.
+    describing everything it listed, *and* one holding a server ref whose
+    branch name went unrecovered. A row nobody could parse is a thing whose
+    existence went unrecorded, which is the same hole as never having looked --
+    and so is a ref recorded only as `<remote>/<ref>` because the two halves
+    could not be told apart. A bare name would not have selected that ref in
+    any case, but where the split succeeds the caller is told the full spelling
+    to use instead, and here that spelling is exactly what nobody could work
+    out. Absence is the one answer that stays unavailable, since the branch may
+    be alive on the server under the name they gave.
 
     That last one is asked of every selector but `branch:`, which says a local
     branch outright. Local refs were read and split fine; a miss there is a
@@ -178,27 +216,35 @@ def _lists_that_could_not_answer(selector: str, survey_data: Survey) -> list[str
         if unsplit is not None:
             unread.append(
                 f"the server ref recorded as {unsplit.name} could not be split into a remote and "
-                f"a branch name, and one of the ways it may split is the name you gave"
+                f"a branch name, so whether the server holds a branch called {selector!r} is "
+                f"exactly the question that went unanswered"
             )
     return unread
 
 
 def resolve_selectors(
     selectors: list[str], targets: tuple[Target, ...], survey_data: Survey
-) -> tuple[list[Target], list[Absent], Refusal | None]:
+) -> tuple[list[Target], list[Absent], list[Refusal]]:
     """Map caller-supplied names onto targets.
+
+    Every selector is resolved on its own, and one that cannot be resolved
+    takes only itself out of the run. What it produces is a refusal in the
+    returned list rather than a stop: the caller named several things, and the
+    ones that resolved are still theirs to have.
 
     A miss is recorded and the remaining selectors are still resolved. But a
     miss only *means* absence when the survey was in a position to see the
-    thing, and there are two ways it was not -- both of which reach here
+    thing, and there are three ways it was not -- all of which reach here
     looking exactly like a name that matches nothing:
 
     - the listing that would have held it failed, so it is missing from a list
       that is empty for that reason rather than because the repository is
     - the name is a ref this tool deliberately does not offer as a target
+    - the only thing wearing the name is a copy on a server, which a bare name
+      does not select
 
-    In neither case is "there is nothing to delete" a fact anybody measured,
-    and saying it would leave a caller believing a deletion happened. Both
+    In none of them is "there is nothing to delete" a fact anybody measured,
+    and saying it would leave a caller believing a deletion happened. All three
     refuse instead, which is what the tool does whenever the honest answer is
     that it cannot say.
 
@@ -209,36 +255,58 @@ def resolve_selectors(
     """
     resolved: list[Target] = []
     absent: list[Absent] = []
+    refused: list[Refusal] = []
     for selector in selectors:
         matches = [t for t in targets if selector in _selector_candidates(t)]
         if not matches:
             excluded = _not_offered(selector, survey_data)
             if excluded is not None:
-                return (
-                    [],
-                    [],
+                refused.append(
                     Refusal(
                         code="E_NOT_A_TARGET",
                         message=f"{excluded.name} exists but is not something gitclean "
                         f"deletes: {excluded.reason}",
                         remedy="use git directly if that is genuinely what you want; "
                         "nothing in this run touched it",
-                    ),
+                    )
                 )
+                continue
+            servers = _bare_server_refs(selector, targets)
+            if servers:
+                listed = ", ".join(t.name for t in servers)
+                # Joined with `or` for the remedy, where the comma-joined list
+                # would be actively misleading: a remedy that reads as something
+                # to paste puts `origin/x, upstream/x` on the command line as a
+                # single argv, comma and all, which names nothing at all. It is
+                # a choice besides -- two remotes carrying the name is not two
+                # copies the caller meant.
+                choice = " or ".join(t.name for t in servers)
+                refused.append(
+                    Refusal(
+                        code="E_BARE_NAME_IS_SERVER_REF",
+                        message=f"nothing local matches {selector!r}: no worktree, and no branch "
+                        f"in this repository. What carries that name here is {listed} -- a "
+                        f"copy on a server, which a bare name does not select",
+                        blocked=tuple(servers),
+                        remedy=f"if a server's copy is what you meant, re-run naming that one in "
+                        f"full: {choice}. A server keeps no reflog, so its refs go only when "
+                        f"spelled out; if you meant a local branch, it is already gone",
+                    )
+                )
+                continue
             unread = _lists_that_could_not_answer(selector, survey_data)
             if unread:
-                return (
-                    [],
-                    [],
+                refused.append(
                     Refusal(
                         code="E_SURVEY_INCOMPLETE",
                         message=f"nothing matched {selector!r}, and nothing follows from that "
-                        f"here: {' and '.join(unread)}, so what would have matched was never "
-                        f"listed -- it may be sitting right there",
+                        f"here: {' and '.join(unread)}. So this run cannot tell you that name "
+                        f"is gone -- what wears it may be sitting right there",
                         remedy="fix what stopped the listing (the warnings say what it was) "
-                        "and re-run; nothing was deleted",
-                    ),
+                        "and re-run; nothing under this name was deleted",
+                    )
                 )
+                continue
             absent.append(
                 Absent(
                     selector=selector,
@@ -250,40 +318,18 @@ def resolve_selectors(
             continue
         if len(matches) > 1:
             ids = ", ".join(t.id for t in matches)
-            return (
-                [],
-                [],
+            refused.append(
                 Refusal(
                     code="E_AMBIGUOUS_TARGET",
                     message=f"{selector!r} matches more than one target: {ids}",
                     blocked=tuple(matches),
                     remedy="re-run naming the exact `id`",
-                ),
+                )
             )
-        # Matching something is not the same as matching everything that could
-        # have matched. A ref whose remote and branch name could not be told
-        # apart never became a target, so it cannot appear above -- and one of
-        # the ways it may split is this very name. Had the split succeeded, the
-        # count here would have been two and this would already be refused, so
-        # taking the single match would let a probe that failed decide what
-        # gets deleted. That is the one thing an unanswered probe must never do.
-        rival = _unsplit_this_could_name(selector, survey_data)
-        if rival is not None:
-            return (
-                [],
-                [],
-                Refusal(
-                    code="E_AMBIGUOUS_TARGET",
-                    message=f"{selector!r} matches {matches[0].id}, and may also be the server "
-                    f"ref recorded as {rival.name}, which could not be split into a remote and "
-                    f"a branch name: {rival.reason}",
-                    blocked=tuple(matches),
-                    remedy="re-run naming the exact `id`, which says which of the two you mean",
-                ),
-            )
+            continue
         if matches[0] not in resolved:
             resolved.append(matches[0])
-    return resolved, absent, None
+    return resolved, absent, refused
 
 
 _ORDER = {TargetKind.WORKTREE: 0, TargetKind.BRANCH: 1, TargetKind.REMOTE_BRANCH: 2}
@@ -494,38 +540,51 @@ def build_plan(
     selectors: list[str],
     dry_run: bool,
     salvage_dir: str | None,
-) -> Plan | Refusal:
+) -> Plan:
+    """Always a plan, never a refusal for the run as a whole.
+
+    Nothing a caller can put on a command line makes the *other* things they
+    named undeletable, so there is no longer a way for this to answer with a
+    stop. Each objection belongs to the target it is about, travels in
+    ``Plan.refused``, and the run exits non-zero for having raised any."""
     absent: list[Absent] = []
+    refused: list[Refusal] = []
     if selectors:
-        chosen, absent, refusal = resolve_selectors(selectors, targets, survey_data)
-        if refusal is not None:
-            return refusal
+        chosen, absent, refused = resolve_selectors(selectors, targets, survey_data)
         invoking = _invoking_worktree(chosen, survey_data)
         if invoking:
-            return Refusal(
-                code="E_INVOKING_WORKTREE",
-                message=f"this run is executing inside {survey_data.repo_root}, so removing "
-                f"it would delete the process's own working directory",
-                blocked=tuple(invoking),
-                remedy="run gitclean from another worktree, or from the main checkout, "
-                "and name this one from there",
+            chosen = [t for t in chosen if t not in invoking]
+            refused.append(
+                Refusal(
+                    code="E_INVOKING_WORKTREE",
+                    message=f"this run is executing inside {survey_data.repo_root}, so removing "
+                    f"it would delete the process's own working directory",
+                    blocked=tuple(invoking),
+                    remedy="run gitclean from another worktree, or from the main checkout, "
+                    "and name this one from there",
+                )
             )
     else:
         chosen = [t for t in targets if t.sweepable]
 
     occupancy = _occupancy_blockers(chosen, survey_data)
+    chosen, skipped = _skip_occupied(chosen, occupancy)
     if occupancy and selectors:
         # Named explicitly: the caller believes this is deletable and git is
         # about to disagree, so say so rather than silently doing less than
-        # they asked for.
+        # they asked for. Reported as a refusal rather than the sweep's quiet
+        # `Skipped` row, and in place of it -- one omission, said once, in the
+        # register the caller's own naming earned.
         detail = "; ".join(f"{t.name} is checked out at {path}" for t, path in occupancy)
-        return Refusal(
-            code="E_BRANCH_IN_USE",
-            message=f"git will not delete a branch a worktree still holds: {detail}",
-            blocked=tuple(t for t, _ in occupancy),
-            remedy="add the holding worktree to the same cleanup so it is removed first",
+        refused.append(
+            Refusal(
+                code="E_BRANCH_IN_USE",
+                message=f"git will not delete a branch a worktree still holds: {detail}",
+                blocked=tuple(t for t, _ in occupancy),
+                remedy="add the holding worktree to the same cleanup so it is removed first",
+            )
         )
-    chosen, skipped = _skip_occupied(chosen, occupancy)
+        skipped = []
 
     return Plan(
         targets=_ordered(chosen),
@@ -539,4 +598,5 @@ def build_plan(
         dry_run=dry_run,
         skipped=tuple(skipped),
         absent=tuple(absent),
+        refused=tuple(refused),
     )
