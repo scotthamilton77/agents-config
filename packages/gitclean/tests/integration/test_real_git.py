@@ -1179,27 +1179,22 @@ def test_two_remotes_fetching_into_one_path_is_refused_rather_than_misattributed
     assert "feat/live" in git(repo, "ls-remote", "--heads", "upstream")
 
 
-@pytest.mark.parametrize(
-    ("remote", "discovered"),
-    [("origin", True), ("team", False), ("team/origin", False)],
-)
-def test_a_trunk_published_only_by_a_remote_not_called_origin_stops_the_sweep(
-    repo: Path, tmp_path: Path, remote: str, discovered: bool
+@pytest.mark.parametrize("remote", ["origin", "team", "team/origin"])
+def test_a_trunk_published_by_the_only_remote_is_found_whatever_it_is_called(
+    repo: Path, tmp_path: Path, remote: str
 ) -> None:
-    """Discovery asks `refs/remotes/origin/HEAD` and then a local main/master,
-    so a trunk published only through a differently-named remote is found by no
-    tier. What matters is which way that fails, and it fails closed twice over:
-    no trunk is verified, and the ref merges would be measured against does not
-    resolve either, so nothing can reach merge proof in the first place. The
-    branch below is genuinely merged -- the setup insists on it -- and is still
-    left alone.
+    """Discovery used to ask `refs/remotes/origin/HEAD` and then a local
+    main/master, so a trunk published only through a differently-named remote
+    was found by no tier: none was verified, the ref merges would be measured
+    against did not resolve either, and the tool was inert in that repository.
+    The branch below is genuinely merged -- the setup insists on it -- and used
+    to be left alone in two of these three rows.
 
-    The remote's name is the only thing varying, and the slash in it changes
-    nothing: `team` and `team/origin` behave identically, because the tier that
-    declines is the one asking for `origin` by name rather than any split of a
-    path. The `origin` row is the control that keeps the other two from passing
-    vacuously -- same shape, same merged branch, and there the sweep does take
-    it."""
+    The remote's name is the only thing varying, and none of it matters now: the
+    question is asked of whichever remotes are configured. The slash in
+    `team/origin` earns its own row because a remote name may contain one, so a
+    path under `refs/remotes/` does not say on its own where the name stops. The
+    `origin` row is the behaviour-preservation control."""
     bare = tmp_path / "server.git"
     SubprocessCommands().git(["init", "-q", "--bare", "-b", "trunk", str(bare)])
     git(repo, "branch", "-m", "main", "trunk")
@@ -1212,8 +1207,8 @@ def test_a_trunk_published_only_by_a_remote_not_called_origin_stops_the_sweep(
     git(repo, "push", "-q", remote, "trunk")
     git(repo, "fetch", "-q", remote)
     git(repo, "remote", "set-head", remote, "-a")
-    # Raises unless feat really is merged: without this the withholding below
-    # could be the ordinary no-merge-proof answer rather than the trunk one.
+    # Raises unless feat really is merged: without this the sweep below could be
+    # passing on the ordinary no-merge-proof answer rather than on the trunk.
     git(repo, "merge-base", "--is-ancestor", "feat", "trunk")
 
     with reachability_guard(repo):
@@ -1221,20 +1216,63 @@ def test_a_trunk_published_only_by_a_remote_not_called_origin_stops_the_sweep(
 
     repo_block = payload["repo"]
     assert isinstance(repo_block, dict)
-    assert repo_block["default_branch_known"] is discovered
+    assert repo_block["default_branch_known"] is True
+    assert repo_block["default_branch"] == "trunk"
+    # And measured against that remote's copy of it, not against a spelling
+    # assembled out of a name no repository is obliged to use.
+    assert repo_block["base_ref"] == f"refs/remotes/{remote}/trunk"
     execution = payload["execution"]
     assert isinstance(execution, dict)
-    swept = {d["target_id"] for d in execution["deletions"] if d["deleted"]}
+    assert {d["target_id"] for d in execution["deletions"] if d["deleted"]} == {"branch:feat"}
+    # The trunk itself is still here: found means protected, not swept.
+    assert git(repo, "for-each-ref", "--format=%(refname)", "refs/heads/trunk") != ""
 
-    if discovered:
-        assert repo_block["default_branch"] == "trunk"
-        assert swept == {"branch:feat"}
-        return
 
-    # Nothing was taken, and the trunk this repository actually has is still
-    # here under a name no tier recognised.
-    assert swept == set()
+def test_remotes_that_disagree_about_the_trunk_stop_the_sweep(repo: Path, tmp_path: Path) -> None:
+    """The limit that survives consulting the remote list: two servers, two
+    published HEADs, and nothing in the repository saying which one it belongs
+    to. Their trunks are allowed to differ, and measuring merges against one
+    that is ahead of the real trunk reports unmerged work as merged -- so the
+    tier declines rather than picking, and with no local main or master beneath
+    it nothing resolves at all. The branch below is genuinely merged into the
+    trunk this repository does have, and is still left alone."""
+    alpha_bare = tmp_path / "alpha.git"
+    beta_bare = tmp_path / "beta.git"
+    SubprocessCommands().git(["init", "-q", "--bare", "-b", "trunk", str(alpha_bare)])
+    SubprocessCommands().git(["init", "-q", "--bare", "-b", "release", str(beta_bare)])
+    git(repo, "branch", "-m", "main", "trunk")
+    git(repo, "remote", "add", "alpha", str(alpha_bare))
+    git(repo, "remote", "add", "beta", str(beta_bare))
+    git(repo, "push", "-q", "-u", "alpha", "trunk")
+    git(repo, "checkout", "-q", "-b", "release")
+    commit(repo, "release.txt")
+    git(repo, "push", "-q", "-u", "beta", "release")
+    git(repo, "checkout", "-q", "trunk")
+    git(repo, "checkout", "-q", "-b", "feat")
+    commit(repo, "feat.txt")
+    git(repo, "checkout", "-q", "trunk")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feat", "feat")
+    git(repo, "push", "-q", "alpha", "trunk")
+    for remote in ("alpha", "beta"):
+        git(repo, "fetch", "-q", remote)
+        git(repo, "remote", "set-head", remote, "-a")
+    git(repo, "merge-base", "--is-ancestor", "feat", "trunk")
+
+    with reachability_guard(repo):
+        payload = report(repo, "--cleanup")
+
+    repo_block = payload["repo"]
+    assert isinstance(repo_block, dict)
+    assert repo_block["default_branch_known"] is False
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert {d["target_id"] for d in execution["deletions"] if d["deleted"]} == set()
     assert find(payload, "branch:feat")["sweepable"] is False
+    warnings = payload["warnings"]
+    assert isinstance(warnings, list)
+    # Named, so a reader can go and settle it rather than being told only that
+    # something was indeterminate.
+    assert any("alpha publishes trunk, beta publishes release" in w for w in warnings)
     for ref in ("refs/heads/trunk", "refs/heads/feat"):
         assert git(repo, "for-each-ref", "--format=%(refname)", ref) != ""
 

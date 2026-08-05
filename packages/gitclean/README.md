@@ -27,7 +27,7 @@ does not is what lands in the target's `withheld` field.
 | # | question | answered from |
 |---|---|---|
 | 1 | is the merge proven? | `merge_evidence` is `pr_merged`, `ancestor`, `patch_equal` or `squash_equal` |
-| 2 | is the default branch verified? | `origin/HEAD` or a local `main`/`master` that resolves |
+| 2 | is the default branch verified? | a remote's published HEAD, or a local `main`/`master`, that resolves |
 | 3 | is this the trunk? | the default branch, the ref merges are measured against, and either one's counterpart across the remote boundary — by name *and* by commit |
 | 4 | is the working tree empty? | a measured zero from `git status`; unknown and `prunable` are not zero |
 | 5 | is this a server ref? | server refs are deleted only when named |
@@ -139,10 +139,20 @@ Without `gh` on PATH there is no squash signal at all. That is reported in
   reader deciding what to name is looking at the row, and there "not measured"
   has to read differently from "measured zero".
 
-A repository whose default branch cannot be identified — no published
-`origin/HEAD`, no `main`, no `master` — sweeps nothing at all, because the run
-cannot tell the trunk from cruft. Naming targets still works. Publish it with
-`git remote set-head origin -a`.
+A repository whose default branch cannot be identified — no remote publishing a
+HEAD, no `main`, no `master` — sweeps nothing at all, because the run cannot
+tell the trunk from cruft. Naming targets still works. Publish it with `git
+remote set-head <remote> -a`.
+
+Which remote is asked is the configured list's business, not a name this tool
+spells. `origin` answers alone wherever it is configured, so a fork takes its
+trunk from the repository it was cloned from rather than from `upstream`.
+Elsewhere every configured remote is asked, and one distinct published branch
+name settles it — whether that is one remote speaking or several agreeing.
+Remotes that disagree name no trunk at all: their trunks are allowed to differ,
+and measuring merges against one that is ahead of the real trunk would report
+unmerged work as merged, so the run says which remotes disagreed and sweeps
+nothing.
 
 ## Trades worth knowing
 
