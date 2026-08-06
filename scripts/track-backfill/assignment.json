@@ -1,6 +1,6 @@
 {
   "schema": "track-backfill-assignment-v1",
-  "design": "docs/specs/2026-07-19-track-backfill-migration-design.md",
+  "design": "docs/specs/2026-07-15-workcli-track-partition-design.md §3",
   "generated_for": "agents-config-9k9.139",
   "explicit_count": 103,
   "cascade_used": false,

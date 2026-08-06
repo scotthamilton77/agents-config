@@ -1,7 +1,11 @@
 # track-backfill
 
 Applies the decided track assignment to the backlog.
-Design: `docs/specs/2026-07-19-track-backfill-migration-design.md`.
+Vocabulary, per-track charters and the rules deciding which track an item takes:
+`docs/specs/2026-07-15-workcli-track-partition-design.md` §3. The migration design
+that first specified this procedure was retired to
+`scotthamilton77/agents-config-ARCHIVE`; what was load-bearing in it is either
+stated here or in that §3.
 
 Built as a one-shot migration and run twice: once in July 2026 against the
 database the tracker reset later retired, and again in August 2026 against its
@@ -128,5 +132,16 @@ Note `work lint` keys these entries on `child`, not `id`.
 
 ## Retirement
 
-Delete this directory once enforcement is `required` and residue has been zero
-across a full Backlog Grooming cycle. Migration code earns no permanent residence.
+Delete this directory once `[tracks].enforcement` is `required` **and** residue
+has been zero across a full Backlog Grooming cycle. Migration code earns no
+permanent residence.
+
+**"The migration has run" is not that condition, and is not sufficient.** This
+directory was retired once on exactly that reasoning, in August 2026, and had to
+come back within the day: the tracker reset had discarded the labels the July run
+applied, so the migration had run and its result did not exist. The stated
+condition is stricter on purpose. `enforcement = "required"` is what stops new
+untracked items appearing, and a grooming cycle at zero residue is what
+demonstrates none are. Until both hold, a reset — or ordinary drift — leaves work
+this directory is the tool for, and deleting it converts a re-run into a
+rebuild.

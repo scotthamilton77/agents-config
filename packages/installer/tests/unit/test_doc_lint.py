@@ -1,0 +1,694 @@
+"""The citation lint over fixture trees.
+
+Pins the decisions that decide whether this gate is usable at all. Half of these
+tests are negative: what the check refuses to report is as much its contract as
+what it reports, because a gate that flags ``done`` and ``queued`` in ordinary
+prose gets switched off and then catches nothing.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from installer.core.doc_lint import (
+    EXEMPT_TREES,
+    Finding,
+    RepoIndex,
+    build_index,
+    count_suppressed,
+    format_finding,
+    in_scope,
+    lint_markdown,
+    lint_markdown_text,
+    merge_rosters,
+    project_asset_names,
+    select_markdown,
+    stale_exemptions,
+)
+
+_ASSETS: dict[str, frozenset[str]] = {
+    "skills": frozenset({"grilling", "writing-skills"}),
+    "rules": frozenset({"delegation"}),
+    "commands": frozenset({"clean-up-git"}),
+    "agents": frozenset(),
+}
+
+
+def _index(tmp_path: Path, tracked: list[str] | None = None) -> RepoIndex:
+    return build_index(tmp_path, tracked=[Path(entry) for entry in tracked or []])
+
+
+def _lint(
+    tmp_path: Path,
+    text: str,
+    *,
+    relpath: str = "README.md",
+    tracked: list[str] | None = None,
+    assets: dict[str, frozenset[str]] | None = None,
+) -> list[Finding]:
+    return lint_markdown_text(
+        Path(relpath),
+        text,
+        repo_root=tmp_path,
+        assets=_ASSETS if assets is None else assets,
+        index=_index(tmp_path, tracked),
+    )
+
+
+def _write(root: Path, relpath: str, text: str = "x\n") -> Path:
+    path = root / relpath
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+# --------------------------------------------------------------------------
+# Scope
+# --------------------------------------------------------------------------
+
+
+def test_dated_specs_are_out_of_scope() -> None:
+    """A spec is a point-in-time proposal, so naming what does not exist yet is
+    correct there — the same reason ``spec_lint`` carries a date cutoff."""
+    assert in_scope(Path("docs/guide/configuration.md"))
+    assert not in_scope(Path("docs/specs/2026-07-21-harness-rework.md"))
+    assert not in_scope(Path("docs/specs/undated-note.md"))
+
+
+def test_specs_are_dropped_from_the_fileset() -> None:
+    """The exclusion holds at selection, not only as a predicate: the gate never
+    opens a spec, so no future check can accidentally read one."""
+    selected = select_markdown(
+        [
+            Path("README.md"),
+            Path("docs/specs/2026-07-21-charter.md"),
+            Path("docs/specs/appendix.md"),
+        ]
+    )
+    assert selected == [Path("README.md")]
+
+
+def test_a_dated_name_is_out_of_scope_wherever_the_date_sits() -> None:
+    """Both dating conventions in this repo mean the same thing — a record of a
+    moment — so a rule that saw only the prefix form would read the other as
+    evergreen prose and demand it be corrected into a falsehood."""
+    assert not in_scope(Path("docs/plans/2026-06-07-prgroom-impl.md"))
+    assert not in_scope(Path("CLEANUP-PLAN-2026-08-05.md"))
+    assert in_scope(Path("CONTRIBUTING.md"))
+
+
+def test_an_exempt_tree_and_non_markdown_files_are_out_of_scope() -> None:
+    assert not in_scope(Path("docs/specs/anything.md"))
+    assert not in_scope(Path("README.rst"))
+    assert not in_scope(Path("src/user/.agents/skills/x/node_modules/dep/README.md"))
+
+
+def test_an_exemption_with_no_content_behind_it_is_reported(tmp_path: Path) -> None:
+    """An exemption matching nothing never fires, so it fails silent — the same
+    retirement condition ``content_lint`` puts on its own register. It has already
+    earned its keep: ``oss-snapshots/`` was extracted while this gate was being
+    written, and this is what noticed."""
+    (tmp_path / "docs" / "specs").mkdir(parents=True)
+    assert stale_exemptions(tmp_path) == []
+
+    (tmp_path / "docs" / "specs").rmdir()
+    stale = stale_exemptions(tmp_path)
+    assert len(stale) == 1
+    assert "docs/specs" in stale[0]
+
+
+def test_every_exemption_states_a_reason() -> None:
+    assert all(reason.strip() for reason in EXEMPT_TREES.values())
+
+
+# --------------------------------------------------------------------------
+# The false-positive guard
+# --------------------------------------------------------------------------
+
+
+def test_ordinary_backticked_prose_is_never_a_finding(tmp_path: Path) -> None:
+    """The contract that decides whether the gate survives contact with the repo.
+
+    None of these spans is a citation, and every one of them would trip a check
+    that judged a token because it happened to be in backticks.
+    """
+    text = (
+        "A bead moves `open` -> `in_progress` -> `done`, and a blocked one is "
+        "`blocked` until its dep clears. Pass `--dir` to point elsewhere; run "
+        "`ruff check` and `uv run pytest -q`. The `work` facade wraps `bd`, and "
+        "`gh pr view` reads the PR. Status may be `queued`.\n"
+        "Set `branch = true` and `fail_under = 90`. See `and/or` handling.\n"
+    )
+    assert _lint(tmp_path, text) == []
+
+
+def test_a_code_fence_is_not_prose(tmp_path: Path) -> None:
+    """A fenced block is illustration, so nothing inside it claims anything about
+    the repo — the same reading ``spec_lint`` gives, from the same masker."""
+    text = "```\nsee packages/nonexistent/AGENTS.md and the `nope` skill\n```\n"
+    assert _lint(tmp_path, text) == []
+
+
+def test_deploy_space_and_out_of_tree_paths_are_not_claims(tmp_path: Path) -> None:
+    """Four ways a path-shaped span says nothing about this checkout. ``.git`` is
+    in there because a worktree makes it a file, which would otherwise make the
+    gate's answer depend on which checkout it ran from."""
+    text = (
+        "Installed at `~/.claude/skills/foo/SKILL.md`; a skill lives at "
+        "`skills/<name>/SKILL.md`. Hooks are in `.git/hooks/`. The archive is at "
+        "`../agents-config-ARCHIVE/`. Docs at `https://example.com/a/b.md`.\n"
+    )
+    assert _lint(tmp_path, text) == []
+
+
+def test_a_third_party_dotted_name_is_silence(tmp_path: Path) -> None:
+    """A dotted root the repo does not know is far likelier to be a library than
+    a stale citation, and a check that cannot tell them apart must not guess."""
+    text = "It calls `yaml.safe_load` and `subprocess.run`, then `os.path.join`.\n"
+    assert _lint(tmp_path, text) == []
+
+
+def test_a_bare_identifier_outside_a_package_is_silence(tmp_path: Path) -> None:
+    """Repo-wide prose gives a bare identifier no scope to resolve in, and
+    resolving it against everything would resolve it against nothing."""
+    _write(tmp_path, "packages/grind/src/grind/fold.py", "def apply_event() -> None: ...\n")
+    text = "The runtime binds `some_removed_helper` and `AnotherGoneClass`.\n"
+    assert _lint(tmp_path, text, tracked=["packages/grind/src/grind/fold.py"]) == []
+
+
+# --------------------------------------------------------------------------
+# Path citations
+# --------------------------------------------------------------------------
+
+
+def test_a_missing_path_is_reported_with_file_and_line(tmp_path: Path) -> None:
+    _write(tmp_path, "docs/guide/index.md")
+    text = "See `docs/guide/index.md`.\nThen read `docs/guide/gone.md` for more.\n"
+    findings = _lint(tmp_path, text)
+    assert len(findings) == 1
+    assert findings[0].line == 2
+    assert findings[0].citation == "docs/guide/gone.md"
+    assert "docs/guide/gone.md" in format_finding(findings[0])
+    assert "README.md:2" in format_finding(findings[0])
+
+
+def test_a_relocated_tree_is_caught_by_its_suffix_alone(tmp_path: Path) -> None:
+    """The head segment of a relocated tree is missing *because* it moved, so a
+    first-segment test can never see it; the file suffix is what makes the token
+    a path claim at all."""
+    _write(tmp_path, "docs/guide/index.md")
+    findings = _lint(tmp_path, "Read `archive/docs/audits/rules.md`.\n")
+    assert [f.citation for f in findings] == ["archive/docs/audits/rules.md"]
+
+
+def test_a_line_locator_is_not_part_of_the_path(tmp_path: Path) -> None:
+    """Otherwise the most precise citations in the repo are the ones that report
+    as missing."""
+    _write(tmp_path, "packages/grind/AGENTS.md")
+    text = "See `packages/grind/AGENTS.md:19` and `packages/grind/AGENTS.md:16-22`.\n"
+    assert _lint(tmp_path, text) == []
+
+
+def test_package_internal_coordinates_resolve(tmp_path: Path) -> None:
+    """An architecture document for one subsystem addresses a file by however
+    much of its path disambiguates it, and it is not wrong to."""
+    _write(tmp_path, "packages/installer/src/installer/core/run.py", "def go() -> None: ...\n")
+    tracked = ["packages/installer/src/installer/core/run.py"]
+    assert _lint(tmp_path, "The engine is `core/run.py`.\n", tracked=tracked) == []
+    assert _lint(tmp_path, "The tree is `src/installer/core/`.\n", tracked=tracked) == []
+    findings = _lint(tmp_path, "The engine is `core/gone.py`.\n", tracked=tracked)
+    assert [f.citation for f in findings] == ["core/gone.py"]
+
+
+def test_a_component_boundary_is_required_for_a_suffix_match(tmp_path: Path) -> None:
+    """Without it, ``run.py`` would be satisfied by ``prerun.py``."""
+    _write(tmp_path, "packages/installer/src/installer/prerun.py", "x = 1\n")
+    findings = _lint(
+        tmp_path,
+        "See `installer/run.py`.\n",
+        tracked=["packages/installer/src/installer/prerun.py"],
+    )
+    assert [f.citation for f in findings] == ["installer/run.py"]
+
+
+def test_a_glob_claims_a_populated_shape(tmp_path: Path) -> None:
+    _write(tmp_path, "packages/grind/AGENTS.md")
+    tracked = ["packages/grind/AGENTS.md"]
+    assert _lint(tmp_path, "Each of `packages/*/AGENTS.md`.\n", tracked=tracked) == []
+    findings = _lint(tmp_path, "Each of `packages/*/CHARTER.md`.\n", tracked=tracked)
+    assert [f.citation for f in findings] == ["packages/*/CHARTER.md"]
+
+
+def test_a_module_written_without_its_extension_resolves(tmp_path: Path) -> None:
+    _write(tmp_path, "packages/prgroom/src/prgroom/proc.py", "def spawn() -> None: ...\n")
+    findings = _lint(
+        tmp_path,
+        "Subprocess work lives in `src/prgroom/proc`.\n",
+        tracked=["packages/prgroom/src/prgroom/proc.py"],
+    )
+    assert findings == []
+
+
+def test_deployed_prose_is_not_judged_on_paths_but_still_on_assets(tmp_path: Path) -> None:
+    """Prose under ``src/`` ships into other people's projects, where a path from
+    this repo's root resolves to nothing — which is why this repo forbids citing
+    one there. Its path-shaped spans are illustrations. Its asset names are not."""
+    text = (
+        "Put helpers in `scripts/helper.py` and see `references/aws.md`.\nUse the `nope` skill.\n"
+    )
+    findings = _lint(tmp_path, text, relpath="src/user/.agents/skills/writing-skills/refs.md")
+    assert [(f.line, f.citation) for f in findings] == [(2, "nope")]
+
+
+# --------------------------------------------------------------------------
+# Symbol citations
+# --------------------------------------------------------------------------
+
+
+def test_a_symbol_locator_is_checked_in_both_halves(tmp_path: Path) -> None:
+    """``file.py::Symbol`` is the strongest citation the repo writes, because the
+    author has said outright which file they mean."""
+    _write(tmp_path, "packages/grind/src/grind/fold.py", "class Folder:\n    pass\n")
+    tracked = ["packages/grind/src/grind/fold.py"]
+    assert _lint(tmp_path, "See `src/grind/fold.py::Folder`.\n", tracked=tracked) == []
+
+    findings = _lint(tmp_path, "See `src/grind/fold.py::Unfolder`.\n", tracked=tracked)
+    assert len(findings) == 1
+    assert "defines no `Unfolder`" in findings[0].reason
+
+    gone = _lint(tmp_path, "See `src/grind/gone.py::Folder`.\n", tracked=tracked)
+    assert [f.reason for f in gone] == ["path does not exist"]
+
+
+def test_a_dotted_citation_resolves_to_the_longest_real_module(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "packages/installer/src/installer/core/spec_lint.py",
+        "def lint_specs() -> None: ...\n",
+    )
+    _write(tmp_path, "packages/installer/src/installer/__init__.py", "")
+    _write(tmp_path, "packages/installer/src/installer/core/__init__.py", "")
+    text_ok = "Call `installer.core.spec_lint.lint_specs` from the edge.\n"
+    assert _lint(tmp_path, text_ok) == []
+
+    findings = _lint(tmp_path, "Call `installer.core.spec_lint.lint_nothing`.\n")
+    assert len(findings) == 1
+    assert "defines no `lint_nothing`" in findings[0].reason
+
+
+def test_a_module_stem_resolves_only_inside_a_package(tmp_path: Path) -> None:
+    """``sync.remote`` in a primer about git hooks is a git config key. A repo-wide
+    stem lookup matched it to the installer's ``sync.py`` and reported a git
+    setting as a missing symbol."""
+    _write(tmp_path, "packages/installer/src/installer/core/sync.py", "def apply() -> None: ...\n")
+    assert _lint(tmp_path, "Set `sync.remote` in the hook config.\n") == []
+
+    findings = _lint(tmp_path, "Call `sync.remote`.\n", relpath="packages/installer/AGENTS.md")
+    assert len(findings) == 1
+    assert "defines no `remote`" in findings[0].reason
+
+
+def test_a_file_named_in_the_same_sentence_is_where_a_symbol_must_be(tmp_path: Path) -> None:
+    """The shape the repo's prose actually uses: the symbol and its file are two
+    separate code spans in one sentence."""
+    _write(tmp_path, "packages/installer/src/installer/core/clis.py", "CLI_PACKAGES = ()\n")
+    tracked = ["packages/installer/src/installer/core/clis.py"]
+    ok = "`CLI_PACKAGES` in `packages/installer/src/installer/core/clis.py` holds the list.\n"
+    assert _lint(tmp_path, ok, tracked=tracked) == []
+
+    bad = "`GONE_PACKAGES` in `packages/installer/src/installer/core/clis.py` holds it.\n"
+    findings = _lint(tmp_path, bad, tracked=tracked)
+    assert len(findings) == 1
+    assert "defines no `GONE_PACKAGES`" in findings[0].reason
+
+
+def test_a_bare_identifier_resolves_against_the_citing_package(tmp_path: Path) -> None:
+    _write(tmp_path, "packages/grind/src/grind/fold.py", "def apply_event() -> None: ...\n")
+    relpath = "packages/grind/AGENTS.md"
+    assert _lint(tmp_path, "The fold runs `apply_event()`.\n", relpath=relpath) == []
+
+    findings = _lint(tmp_path, "The fold runs `apply_gone()`.\n", relpath=relpath)
+    assert [f.reason for f in findings] == ["nothing under packages/grind defines it"]
+
+
+def test_a_name_that_lives_as_data_still_counts(tmp_path: Path) -> None:
+    """Event names, error codes and status values are real, findable things that
+    live in the code as string literals. Calling them missing is the cry-wolf
+    report that gets a gate switched off."""
+    _write(
+        tmp_path,
+        "packages/grind/src/grind/payloads.py",
+        'VALIDATORS = {"item_enqueued": None, "E_NOT_FOUND": None}\n',
+    )
+    text = "Events are `item_enqueued`; errors are `E_NOT_FOUND`.\n"
+    assert _lint(tmp_path, text, relpath="packages/grind/AGENTS.md") == []
+
+
+def test_a_docstring_is_not_a_definition(tmp_path: Path) -> None:
+    """The literal index is bounded to identifier-shaped, short constants so that
+    prose inside the module cannot vouch for a symbol the module deleted."""
+    _write(
+        tmp_path,
+        "packages/prgroom/src/prgroom/errors.py",
+        '"""An ``EscalationSink`` event is filed when the budget runs out."""\n',
+    )
+    findings = _lint(
+        tmp_path, "Failures reach the `EscalationSink`.\n", relpath="packages/prgroom/AGENTS.md"
+    )
+    assert [f.citation for f in findings] == ["EscalationSink"]
+
+
+def test_a_cross_package_citation_is_not_a_finding(tmp_path: Path) -> None:
+    """Orientation files legitimately point across the boundary, and reporting
+    those would punish the cross-reference that keeps the packages coherent."""
+    _write(tmp_path, "packages/installer/src/installer/core/clis.py", "CLI_PACKAGES = ()\n")
+    _write(tmp_path, "packages/gitclean/src/gitclean/cli.py", "def main() -> None: ...\n")
+    text = "This package is listed in `CLI_PACKAGES`.\n"
+    assert _lint(tmp_path, text, relpath="packages/gitclean/AGENTS.md") == []
+
+
+def test_a_parameter_is_a_name(tmp_path: Path) -> None:
+    _write(tmp_path, "packages/workcli/tests/test_x.py", "def test_it(tmp_path):\n    pass\n")
+    assert _lint(tmp_path, "Use `tmp_path`.\n", relpath="packages/workcli/AGENTS.md") == []
+
+
+def test_a_data_filename_is_never_read_as_a_symbol(tmp_path: Path) -> None:
+    """``installer.toml`` is a filename. Reading it as a module attribute reported
+    the repo's own config file as a missing symbol."""
+    _write(tmp_path, "packages/installer/src/installer/__init__.py", "")
+    _write(tmp_path, "packages/prgroom/src/prgroom/agent/usage.py", "def record() -> None: ...\n")
+    assert _lint(tmp_path, "Config is `installer.toml`.\n") == []
+    assert _lint(tmp_path, "Writes `usage.jsonl`.\n", relpath="packages/prgroom/AGENTS.md") == []
+
+
+def test_a_bare_script_name_resolves_inside_its_package(tmp_path: Path) -> None:
+    _write(tmp_path, "packages/grind/src/grind/fold.py", "def apply_event() -> None: ...\n")
+    relpath = "packages/grind/AGENTS.md"
+    assert _lint(tmp_path, "The fold lives in `fold.py`.\n", relpath=relpath) == []
+    findings = _lint(tmp_path, "The fold lives in `unfold.py`.\n", relpath=relpath)
+    assert [f.reason for f in findings] == ["no such file under packages/grind"]
+
+
+def test_an_unparseable_module_reports_rather_than_vouches(tmp_path: Path) -> None:
+    """A file the repo's own gates cannot parse is a defect, and reporting its
+    citations as unresolved is a truthful symptom rather than a wrong answer."""
+    _write(tmp_path, "packages/grind/src/grind/broken.py", "def (:\n")
+    findings = _lint(tmp_path, "It binds `apply_event()`.\n", relpath="packages/grind/AGENTS.md")
+    assert [f.citation for f in findings] == ["apply_event()"]
+
+
+# --------------------------------------------------------------------------
+# Asset citations
+# --------------------------------------------------------------------------
+
+
+def test_a_named_asset_must_be_one_that_deploys(tmp_path: Path) -> None:
+    text = (
+        "Read the `grilling` skill first, then the `retired-thing` skill.\n"
+        "The `delegation` rule applies; the `codex-routing` rule does not.\n"
+    )
+    findings = _lint(tmp_path, text)
+    assert [(f.line, f.citation) for f in findings] == [(1, "retired-thing"), (2, "codex-routing")]
+    assert "skill" in findings[0].reason
+    assert "rule" in findings[1].reason
+
+
+def test_both_word_orders_are_read(tmp_path: Path) -> None:
+    findings = _lint(tmp_path, "Invoke skill `retired-thing` before anything else.\n")
+    assert [f.citation for f in findings] == ["retired-thing"]
+
+
+def test_an_asset_name_is_normalised_to_the_roster_entry(tmp_path: Path) -> None:
+    """Prose names an asset several ways and they all denote one roster entry."""
+    text = (
+        "See the `writing-skills/SKILL.md` skill, the `delegation.md` rule, and "
+        "the `plugin:grilling` skill.\n"
+    )
+    assert _lint(tmp_path, text) == []
+
+
+def test_a_shell_command_is_not_a_deployed_command(tmp_path: Path) -> None:
+    """Unqualified, "command" means a shell command far more often than a deployed
+    one, and admitting it made this the noisiest check in the module."""
+    text = "Run the `gh` command, then the `bd` commands and the `status` command.\n"
+    assert _lint(tmp_path, text) == []
+
+
+def test_a_slash_command_is_checked(tmp_path: Path) -> None:
+    assert _lint(tmp_path, "The `/clean-up-git` command drives it.\n") == []
+    findings = _lint(tmp_path, "Run the `/grind-prgroom` command to drive it.\n")
+    assert [f.citation for f in findings] == ["grind-prgroom"]
+
+
+def test_a_code_identifier_beside_the_word_rule_is_not_an_asset(tmp_path: Path) -> None:
+    """The noisiest false positive the asset check has: real code and config
+    sitting next to the word "rule"."""
+    text = (
+        "The `pull_request` rule and the `required_status_checks` rule are "
+        "GitHub's. `should_install_namespace` rules apply per tool, and the "
+        "`[gates].test` command runs them.\n"
+    )
+    assert _lint(tmp_path, text) == []
+
+
+def test_a_verbed_span_is_not_an_asset_name(tmp_path: Path) -> None:
+    """``the wrapping skill `exec`s the binary`` is a sentence, not a citation."""
+    assert _lint(tmp_path, "The wrapping skill `exec`s the binary on PATH.\n") == []
+
+
+def test_project_scoped_assets_are_real(tmp_path: Path) -> None:
+    """A second location, not a second derivation: the admission gate judges what
+    ``src/`` ships and says nothing about what this repo installs for itself."""
+    (tmp_path / ".claude" / "skills" / "admit-request").mkdir(parents=True)
+    (tmp_path / ".claude" / "commands").mkdir(parents=True)
+    (tmp_path / ".claude" / "commands" / "local-thing.md").write_text("x\n", encoding="utf-8")
+
+    roster = project_asset_names(tmp_path)
+    assert roster["skills"] == frozenset({"admit-request"})
+    assert roster["commands"] == frozenset({"local-thing"})
+
+    merged = merge_rosters(_ASSETS, roster)
+    assert merged["skills"] == frozenset({"grilling", "writing-skills", "admit-request"})
+    assert _lint(tmp_path, "Run the `admit-request` skill.\n", assets=merged) == []
+
+
+def test_merging_rosters_keeps_namespaces_apart() -> None:
+    merged = merge_rosters({"skills": frozenset({"a"})}, {"rules": frozenset({"a"})})
+    assert merged == {"skills": frozenset({"a"}), "rules": frozenset({"a"})}
+
+
+# --------------------------------------------------------------------------
+# The fileset
+# --------------------------------------------------------------------------
+
+
+def test_an_unreadable_file_is_a_finding_not_an_exception(tmp_path: Path) -> None:
+    """The run reports on the whole fileset or it reports nothing anyone can
+    act on."""
+    findings, _suppressed = lint_markdown(
+        [Path("gone.md")], repo_root=tmp_path, assets=_ASSETS, index=_index(tmp_path)
+    )
+    assert len(findings) == 1
+    assert "unreadable" in findings[0].reason
+
+
+def test_the_pass_reads_every_file_in_the_fileset(tmp_path: Path) -> None:
+    _write(tmp_path, "README.md", "Run the `retired-thing` skill.\n")
+    _write(tmp_path, "CONTRIBUTING.md", "See `docs/gone.md`.\n")
+    findings, _suppressed = lint_markdown(
+        [Path("CONTRIBUTING.md"), Path("README.md")],
+        repo_root=tmp_path,
+        assets=_ASSETS,
+        index=_index(tmp_path),
+    )
+    assert [f.file.name for f in findings] == ["CONTRIBUTING.md", "README.md"]
+
+
+def test_an_index_over_a_repo_without_packages_is_still_usable(tmp_path: Path) -> None:
+    index = build_index(tmp_path, tracked=[Path("README.md")])
+    assert index.modules == {}
+    assert index.resolves_as_suffix("README.md")
+
+
+# --------------------------------------------------------------------------
+# Non-existence claims
+# --------------------------------------------------------------------------
+
+
+def test_prose_saying_a_thing_is_gone_is_not_a_finding(tmp_path: Path) -> None:
+    """The rule that decides whether this gate gets adopted or worked around.
+
+    "The `merge-guard` skill has been retired" is the *correct* remediation for
+    stale documentation — it is what a reader arriving from an older install
+    needs. Reporting it leaves only two ways to silence the gate, un-backticking
+    the name or deleting the sentence, and both are worse prose.
+    """
+    text = "**Nothing enforces this.** The `merge-guard` skill that read it has been retired.\n"
+    assert _lint(tmp_path, text) == []
+
+
+def test_the_claim_reaches_across_a_hard_wrap(tmp_path: Path) -> None:
+    """Markdown wraps prose, so a sentence is not a line: this repo names a skill
+    on one line and says it is archived on the next. A line-scoped rule cannot
+    see the two together."""
+    text = (
+        "It was built to replace the `wait-for-pr-comments` and\n"
+        "`reply-and-resolve-pr-threads` skills, both now archived along with the\n"
+        "`monitor-pr` skill that used to drive it.\n"
+    )
+    assert _lint(tmp_path, text) == []
+
+
+def test_a_negative_existence_claim_covers_symbols_and_paths_too(tmp_path: Path) -> None:
+    """Retirement is one case of a general shape — prose asserting a thing does
+    not exist — so the rule is not special to the asset check."""
+    _write(tmp_path, "packages/grind/src/grind/fold.py", "def apply_event() -> None: ...\n")
+    relpath = "packages/grind/AGENTS.md"
+    symbol = "Status is derived by the fold. There is no `status_changed` event.\n"
+    assert _lint(tmp_path, symbol, relpath=relpath) == []
+
+    path = "The `docs/audits/rules.md` report was deleted in the sweep.\n"
+    assert _lint(tmp_path, path) == []
+
+
+def test_the_retirement_lemma_alone_suppresses_nothing(tmp_path: Path) -> None:
+    """Retirement is this codebase's *domain vocabulary*, not only an
+    announcement. Matching the bare stem suppressed 197 citations where 7 were
+    wanted — ``RETIRED_CLIS``, "retiring one is not automatic", "a retired
+    plugin's recorded root" all say nothing about whether the name beside them
+    exists. A marker has to be a predicate.
+    """
+    text = (
+        "Retiring one is not automatic: uninstall authority is bounded by a "
+        "registry, so run the `gone-skill` skill to add a retired entry.\n"
+    )
+    findings = _lint(tmp_path, text)
+    assert [f.citation for f in findings] == ["gone-skill"]
+
+
+def test_supersession_is_not_absence(tmp_path: Path) -> None:
+    """The tree's own counter-example: the installer package "replaces the
+    1788-line `scripts/install.sh`" — and that script is still on disk, still
+    the entry point. Admitting ``replaces`` would silence live citations."""
+    _write(tmp_path, "scripts/install.sh", "#!/bin/sh\n")
+    text = (
+        "The package that replaces `scripts/install.sh` is the one to run; "
+        "use the `gone-skill` skill for the rest.\n"
+    )
+    findings = _lint(tmp_path, text)
+    assert [f.citation for f in findings] == ["gone-skill"]
+
+
+def test_unused_is_not_absent(tmp_path: Path) -> None:
+    """ "Nothing reads it" says a thing is unused, which is the opposite of saying
+    it is missing — the root orientation file uses that phrasing about a config
+    file that is very much there."""
+    text = "Nothing reads it today, and the `gone-skill` skill is how you would.\n"
+    findings = _lint(tmp_path, text)
+    assert [f.citation for f in findings] == ["gone-skill"]
+
+
+def test_the_claim_does_not_reach_the_next_sentence(tmp_path: Path) -> None:
+    """The scope is one sentence, because one sentence is one assertion."""
+    text = "The `old-skill` skill has been retired. Use the `gone-skill` skill instead.\n"
+    findings = _lint(tmp_path, text)
+    assert [f.citation for f in findings] == ["gone-skill"]
+
+
+def test_the_claim_does_not_reach_the_next_bullet(tmp_path: Path) -> None:
+    """A bullet often has no full stop at all, so without a structural boundary
+    one unterminated list item would join the next and carry its marker over."""
+    text = "- The `old-skill` skill was archived\n- Run the `gone-skill` skill\n"
+    findings = _lint(tmp_path, text)
+    assert [f.citation for f in findings] == ["gone-skill"]
+
+
+def test_one_sentence_retiring_and_directing_hides_both(tmp_path: Path) -> None:
+    """The documented way to trip over this by accident, pinned so it stays a
+    known cost rather than a surprise: deciding *which* name a clause negates
+    needs a parser this does not have, so a sentence that both retires one thing
+    and points at another silences both. Two sentences, and both are judged."""
+    text = "The `old-skill` skill was retired; use the `gone-skill` skill instead.\n"
+    assert _lint(tmp_path, text) == []
+
+
+def test_the_reach_of_the_rule_is_reported() -> None:
+    """A silencing rule that leaves no trace is a rule nobody can audit, and this
+    one can hide a real finding."""
+    assert count_suppressed("Run the `gone-skill` skill.\n") == 0
+    assert count_suppressed("The `old-skill` skill has been retired.\n") == 1
+    both = "The `old-skill` skill and `docs/gone.md` are now archived.\n"
+    assert count_suppressed(both) == 2
+
+
+# --------------------------------------------------------------------------
+# Directive frames
+# --------------------------------------------------------------------------
+
+
+def test_only_an_instruction_to_use_an_asset_is_a_finding(tmp_path: Path) -> None:
+    """The correction that made the asset check usable. Naming an absent asset
+    misleads nobody; being *told to reach for* one does. Firing on the mention
+    made the check fire on the sentence that repairs the decay."""
+    directive = "Invoke the `gone-skill` skill before anything else.\n"
+    assert [f.citation for f in _lint(tmp_path, directive)] == ["gone-skill"]
+
+    mention = "`prgroom` is a CLI that supersedes the `gone-skill` skill.\n"
+    assert _lint(tmp_path, mention) == []
+
+
+def test_the_directive_must_precede_the_citation(tmp_path: Path) -> None:
+    """ "Run the `x` skill" is an instruction; "the `x` skill runs nightly" is a
+    description that happens to contain the same verb."""
+    assert _lint(tmp_path, "Run the `gone-skill` skill nightly.\n") != []
+    assert _lint(tmp_path, "The `gone-skill` skill runs nightly.\n") == []
+
+
+def test_a_reference_frame_counts_as_directive(tmp_path: Path) -> None:
+    """A pointer is an instruction to go there: a table row saying "via the `x`
+    skill" sends a reader after it exactly as "run" does."""
+    row = "| **Interactive** | User in chat, via the `gone-skill` skill | n/a |\n"
+    assert [f.citation for f in _lint(tmp_path, row)] == ["gone-skill"]
+
+
+def test_a_lineage_claim_is_not_a_directive(tmp_path: Path) -> None:
+    """Prose describing what a tool replaced tells nobody to use the replaced
+    thing, so it is not the harm this check exists to catch."""
+    text = "It was built to replace the `gone-skill` skill and the `also-gone` skill.\n"
+    assert _lint(tmp_path, text) == []
+
+
+def test_an_internal_role_described_in_passing_is_not_a_directive(tmp_path: Path) -> None:
+    """A design document naming its own dispatch roles — "the `fix` agent runs
+    with fresh context" — is describing its architecture, not routing a reader
+    to a deployed artifact."""
+    text = "Across retries the `gone-agent` agent runs with fresh context each dispatch.\n"
+    assert _lint(tmp_path, text) == []
+
+
+def test_a_finding_says_how_to_clear_it(tmp_path: Path) -> None:
+    """A gate that knows what it wants and will not say gets reverse-engineered
+    by trial and error, which is how a gate ends up deleted."""
+    findings = _lint(tmp_path, "Run the `gone-skill` skill.\n")
+    assert len(findings) == 1
+    assert "say so in this sentence" in findings[0].reason
+    assert "missing from src/" in findings[0].reason
+
+
+def test_an_adjacent_retirement_is_named_as_a_near_miss(tmp_path: Path) -> None:
+    """The most likely honest mistake: the words are already there, one sentence
+    too far away. The wording stays conditional because the neighbouring
+    retirement may be about a different name — which is the live case."""
+    text = "Run the `gone-skill` skill. The `old-skill` skill was retired.\n"
+    findings = _lint(tmp_path, text)
+    assert len(findings) == 1
+    assert "one sentence at a time" in findings[0].reason
+    assert "if this one is gone too" in findings[0].reason
+
+
+def test_a_path_finding_carries_the_target_it_resolved(tmp_path: Path) -> None:
+    """So the CLI can ask git whether that path is one it was told to ignore,
+    without re-deriving the path from the author's raw span."""
+    findings = _lint(tmp_path, "See `docs/generated/out.md:12` for the dump.\n")
+    assert [f.target for f in findings] == ["docs/generated/out.md"]
+    assert [f.citation for f in findings] == ["docs/generated/out.md:12"]

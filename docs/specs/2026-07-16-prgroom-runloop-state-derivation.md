@@ -3,6 +3,14 @@
 **Date:** 2026-07-16
 **Status:** Approved (design)
 **Beads:** agents-config-abn9.8.38 (interactive run cannot reach `quiesced` without the wait verb), agents-config-abn9.8.33 (`_ci_state` ignores classic commit-status on mixed-CI repos). One spec, two beads — both are gaps in how the run loop derives PR state from observation; each bead's AC section is separate (§6).
+**Relocated companions:** every document this spec names below except
+`docs/architecture/prgroom/design.md` now lives in the
+`scotthamilton77/agents-config-ARCHIVE` repository at its original path — the
+prgroom HLD artifacts and the sibling prgroom specs alike. The
+`cutover-runbook.md` documentation obligations in §5 and §6 are therefore void:
+that runbook is no longer part of this repository and is not to be recreated.
+The bug analyses and the code AC below stand unchanged.
+
 **Related:** `2026-07-16-prgroom-verb-atomicity.md` — no logical overlap (it never touches `_ci_state` or the interactive waiting-phase branch), but it diffs the same three files this spec's beads diff (`lifecycle/run.py`, `lifecycle/poll.py`, `test_lifecycle_poll.py`), so §5 sequences this work after it. `2026-07-16-prgroom-dispatcher-observability.md` — overlap is `lifecycle/run.py` only (its edits sit at `run.py:149-256`, far from the interactive branch); ordering relative to it is preference, not need. Bead agents-config-abn9.8.32 (closed) — its E2E campaign is where .38 was discovered; `docs/architecture/prgroom/cutover-runbook.md` and the monitor-pr skill carry the operational contract this spec corrects.
 
 ## 1. Problem

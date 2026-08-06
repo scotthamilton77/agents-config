@@ -4,9 +4,10 @@
 **Status:** Draft (pending review)
 **Beads:** agents-config-uxns2.1 (install profiles), agents-config-viiud (project-scoped staging)
 **Relation to prior spec:** Supersedes §6 (profiles) and §7 (project-scoped
-install) of `2026-07-04-user-overlay-profiles-project-staging.md`. That spec's
-§4–5 (user overrides, extraction/migration) remain authoritative and are not
-touched here.
+install) of `2026-07-04-user-overlay-profiles-project-staging.md`, which now
+lives in the `scotthamilton77/agents-config-ARCHIVE` repository at its original
+path. That spec's §4–5 (user overrides, extraction/migration) remain
+authoritative and are not touched here.
 **Decision:** One mechanism decides both *what* installs and *where* it lands:
 a `profiles.toml` manifest whose entries carry destination scope as data. One
 pure resolver turns (profile definitions, selected set, staged universe, bound

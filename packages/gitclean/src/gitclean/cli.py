@@ -74,8 +74,8 @@ and none of them is, so saying "already gone" about them would be a false report
 
 one refusal does not stop the others. Whatever resolved cleanly is still deleted, each
 refusal is reported in `plan.refused` with its own code and remedy, and the run exits 1
-for having raised any -- so a single mistyped name no longer costs a whole re-run. An
-unverified deletion still outranks it and exits 3.
+for having raised any -- so a single mistyped name no longer costs a whole re-run. A
+deletion that was attempted and did not complete still outranks it and exits 3.
 
 what --after-merge takes:
   the local branch a pull request was opened from, and the worktree holding it -- each
@@ -442,9 +442,9 @@ def main(
         stream,
     )
     # An anomaly outranks a refusal. A refusal is the tool declining to act and
-    # leaving the repository as it found it; an anomaly is a deletion that ran
-    # and could not be confirmed afterwards, which is the one outcome a reader
-    # must not have hidden behind the milder code.
+    # leaving the repository as it found it; an anomaly is a deletion this run
+    # attempted and did not complete, which is the one outcome a reader must
+    # not have hidden behind the milder code.
     if not execution.ok:
         return EXIT_ANOMALY
     return EXIT_REFUSED if outcome.refused else EXIT_OK

@@ -2,47 +2,68 @@
 
 Two scopes, two jobs:
 
-- **User scope** (`~/.claude/`, `~/.codex/`, …) — your personal identity and
-  preferences, applied to every project. Set these once, after install.
+- **User scope** (`~/.claude/`, `~/.codex/`, …) — your personal preferences,
+  applied to every project. Set these once, after install.
 - **Project scope** (a repo's `.claude/` and root config files) — how one
   project's workflow behaves: its quality gates, merge policy, domain language.
   Project settings override user settings.
 
-## 1. Personalize the personas (do this first)
+> Read the [guide index](./index.md) first if you have not. Several of the
+> control surfaces below are described as designed rather than working, because
+> the code that read them was retired and its replacement is not finished. Each
+> one says which it is.
 
-The installer ships persona templates carrying the author's identity. Replace
-them, or your assistant will think it's talking to someone else:
-
-- **`USER-PERSONA.md`** — who *you* are: name, role, how you like to be
-  challenged and addressed. Replace it entirely.
-- **`AGENT-PERSONA.md`** — the assistant's personality and standards. Adjust to
-  taste.
-
-Both are referenced from your instruction file via `@AGENT-PERSONA.md` /
-`@USER-PERSONA.md`.
-
-## 2. Review `settings.json` (Claude)
+## 1. Review `settings.json` (Claude)
 
 The installed `~/.claude/settings.json` union-merges with anything you already
 have (your values win; new keys are added). Worth knowing what ships:
 
-- **Permissions** — an allowlist for common safe commands plus a hardened
-  `deny` list (blocks reading `.env`, SSH keys, `/etc/shadow`, and writing to
-  system binary dirs). Extend the allowlist to cut permission prompts.
-- **Hooks** — a `PostToolUse` hook that lints/formats Python you just wrote
-  (`ruff-postedit`), and one that detects a PR push to kick off review
-  monitoring.
+- **Permissions** — a hardened `deny` list that blocks reading `.env`, shell
+  profiles, SSH keys and `/etc/shadow`, and blocks writing to system binary
+  directories. The `allow` list ships **empty** on purpose: an allowlist is
+  personal, and every entry is a permission prompt you have chosen not to see.
+  Add your own as you find the prompts that annoy you.
+- **Hooks** — a `PostToolUse` hook that lints and formats Python you just wrote
+  (`ruff-postedit`), and a `SessionStart`/`SessionEnd` hook that reaps leaked
+  Codex broker processes (`codex-broker-reaper`).
 - **Experimental features** — agent teams, fork-subagents, tool search, and
   auto-backgrounded tasks are enabled via env vars. Turn off any your setup
   doesn't support.
 
-## 3. Set your project's control surface: `project-config.toml`
+Some keys are simply the author's taste — `effortLevel`, `tui`, `voice`,
+`verbose`. Change them freely; nothing depends on them.
 
-Drop a `project-config.toml` at your **project root** to tell the workflow how
-this repo behaves. Every section is optional; absent sections fall back to
-sensible defaults. The high-value sections:
+## 2. Teach it your domain: `CONTEXT.md`
 
-### Quality gates — `[gates]`, `[coverage]`
+Put a `CONTEXT.md` at your repo root (or `CONTEXT-MAP.md` pointing at per-area
+glossaries) with your domain vocabulary. The installed instruction core tells
+the assistant to use that glossary's terminology when one exists — a soft
+convention that sharply reduces terminology drift. This works today; it is one
+line in the always-on `<conventions>` block, not a mechanism with moving parts.
+
+## 3. `project-config.toml` — mostly not wired up yet
+
+A `project-config.toml` at your project root is the intended control surface for
+how a repo behaves: its quality gates, its coverage floor, its review and merge
+policy. **Most of it has no reader.** The per-stage orchestrators that consumed
+these sections were retired with the old pipeline, and the rebuild has not
+replaced them. A section with no reader is a statement of intent that a human or
+an agent may read, and nothing more — writing one does not change any behaviour.
+
+What genuinely reads the file today:
+
+- **`[install]`** — read by the installer, to select project-scoped install
+  profiles.
+- **`[tracks]`, `[operating-model]`, `[extraction.*]`** — read by the `work`
+  CLI for its track partition and work-in-progress rules.
+
+Everything else is currently inert. The sections below are documented because
+they are the shape the rebuild is expected to restore, and because this repo's
+own `project-config.toml` carries them as annotated examples — read that file
+for the full schema, including which keys are commented out precisely because
+nothing reads them.
+
+### Quality gates — `[gates]`, `[coverage]` (no deployed reader)
 
 ```toml
 [gates]
@@ -56,120 +77,76 @@ applicable = true      # false for docs/config repos with no coverage tooling
 threshold  = 80        # percent
 ```
 
-The completion gate and verification skills read these to run *your* commands
-for mechanical evidence. A docs-leaning repo can leave them empty and set
-`applicable = false` — the gates detect empty stubs and skip gracefully.
+The intent is that verification runs *your* commands for mechanical evidence.
+No installed skill or rule currently reads these, so today they serve as
+documentation for whoever — human or agent — goes looking for how to build and
+test your repo.
 
-### Completion-gate tiering — `[completion-gate]`
+### Completion-gate tiering — `[completion-gate]` (not implemented)
 
-The gate routes each change to **SKIP** (trivial), **SERIAL** (default), or
-**HEAVY** (large/critical) verification. Tune the thresholds:
+The design routes each change to SKIP, SERIAL, or HEAVY verification by size and
+risk. **There is no tier router.** The skill that computed the tier was retired,
+the thresholds have no reader, and the companion `.critical-paths` file selects
+nothing. This repo's `project-config.toml` keeps the keys commented out for that
+reason; uncomment them only in the change that deploys a router.
 
-```toml
-[completion-gate]
-trivial_max_loc      = 3     # SKIP ceiling (hard-capped at 20)
-heavy_min_files      = 8
-heavy_min_loc        = 400
-heavy_min_subsystems = 3
-```
-
-### Review and merge policy
-
-This is the safety-critical one. It has **two axes**:
+### Review and merge policy — `[review-expectations]`, `[merge-policy]` (not implemented)
 
 ```toml
-[review-expectations]              # Axis 1: what reviews to wait for
-bot-review-expected      = true
-bot-reviewers            = ["Copilot"]
-human-approvers-required = 0
-
-[merge-policy]                     # Axis 2: who may merge
+[merge-policy]
 merge-authorization = "explicit"   # never | explicit | rule-based
-# merge-rule        = "bot-quiescence"   # required only for rule-based
 ```
 
-`merge-authorization` decides how far autonomy goes at the finish line:
+`merge-authorization` is meant to decide how far autonomy goes at the finish
+line: `never` hands off to a human, `explicit` waits for a direct instruction,
+`rule-based` permits an autonomous merge when a named rule and a live
+eligibility check both pass.
 
-| Value | Meaning |
-|-------|---------|
-| `never` | The agent never merges; it hands off to a human. |
-| `explicit` (default) | The agent merges only on a direct human instruction ("merge it", "ship it"). |
-| `rule-based` | The agent may auto-merge **only** when the named `merge-rule` and the live eligibility check both pass. A deliberate, named opt-in. |
+**Nothing enforces this.** The `merge-guard` skill that read it has been
+retired, no code reads `merge-authorization`, and nothing polls for reviews, so
+`[review-expectations]` has no effect either. What remains true is the rule that
+does not depend on any of it: **creating a PR is not authorization to merge**,
+and that lives in the always-on `<hard-lines>` block your assistant loads on
+every session. Treat a `[merge-policy]` section as a note to your future self
+and to any agent reading the repo — not as a control.
 
-Absent a `[merge-policy]` section, `explicit` applies — creating a PR is never
-authorization to merge. This is enforced by the `merge-guard` skill; see
-[The SDLC Workflow](./sdlc-workflow.md#7-merge) for how it plays out.
+The `[merge-policy.approver]` block — a GitHub App that submits an attested
+approving review so an authorized autonomous merge can clear branch protection —
+is designed and not built. Do not set it up expecting it to do anything.
 
-#### Autonomous merge on a protected branch — `[merge-policy.approver]`
+### Adversarial review — `[foreign-cli]` (no deployed reader)
 
-If your default branch has protection requiring an approving review, a `rule-based`
-merge would otherwise stall: there is no human to approve, and an agent cannot
-approve its own PR. The optional approver closes that gap — a **GitHub App** submits
-an attested approving review at merge time, pinned to the exact commit the
-eligibility floor checked, *satisfying* the required-review rule rather than
-bypassing it.
+Binary paths and per-task model selections for cross-model review. The stages
+that read it were retired. The `delegating-to-codex` skill, which does ship,
+picks a model from its own routing table rather than from this section.
 
-```toml
-[merge-policy.approver]           # opt-in; omit the block and behavior is unchanged
-type         = "github-app"
-app-id       = 123456
-key-path-env = "MERGE_GUARD_APPROVER_KEY_PATH"   # env var that names the PEM path
-```
+## 4. Wire up work tracking (optional)
 
-One-time setup (the repo owner does this; the agent cannot):
+The workflow treats durable work as issues that outlive a session and survive
+context compaction. This repo's tracker is [beads](https://github.com/steveyegge/beads),
+addressed through the `work` CLI that the installer puts on your PATH — `work`
+is a facade over `bd`, so you need `bd` installed and a `bd init` in your
+project for any of it to function.
 
-1. Create a GitHub App (Settings → Developer settings → GitHub Apps) with **no
-   webhook**, installable only on your account. Grant it **Pull requests: Read &
-   write** *and* **Contents: Read & write** — both are required. Without
-   `Contents: write`, GitHub records the App's approval but does **not** count it
-   toward the required review.
-2. Generate a private key; store the PEM locally (e.g.
-   `~/.config/merge-guard/approver.pem`, `chmod 600`) — never in any repo. Install
-   the App on the repo.
-3. Export the env var named above to the PEM path, e.g. in your shell profile:
-   `export MERGE_GUARD_APPROVER_KEY_PATH="$HOME/.config/merge-guard/approver.pem"`.
+Be aware of what does **not** ship: no installed rule or skill instructs your
+assistant to file an issue before writing code, to claim one when it starts, or
+to close one when it finishes. That discipline was carried by rules that have
+been retired. Today the tracker is a tool available to you and to your agent
+when either of you reaches for it, not a habit the configuration enforces.
 
-The approver is **mechanism, not authorization**: `merge-guard` runs it only after a
-`rule-based` merge is already authorized and the eligibility floor re-clears, and any
-failure is a fail-loud hand-off to you — never an `--admin` bypass. **Security:**
-because the App holds `Contents: write`, the PEM key can push code to the repo, so
-guard it like any write credential. (At run time the approver mints a token scoped
-down to `pull_requests: write` only, but a holder of the key can mint more.)
+## Optional: the CLIs on your PATH
 
-### Adversarial review — `[foreign-cli]`
+A normal install puts five CLIs from this repo on your PATH via `uv tool
+install` — `work`, `prgroom`, `grind`, `executor` and `gitclean` — no separate
+step needed. Only `gitclean` is reached for by an installed skill
+(`post-merge-cleanup`, which uses it to decide safely which branches and
+worktrees a merged PR made disposable) and by the `/clean-up-git` slash command.
 
-If you use cross-model review (Codex/Gemini), point at their binaries and pick
-per-task models here.
+The other four are components of the rebuild rather than finished user tools.
+`prgroom` grooms a PR deterministically but the skills that drove it were
+retired; `grind` and `executor` are runtime pieces with no driver yet. They are
+installed because the repo's own development uses them, and they are harmless if
+you ignore them.
 
-## 4. Teach it your domain: `CONTEXT.md`
-
-Put a `CONTEXT.md` at your repo root (or `CONTEXT-MAP.md` pointing at per-area
-glossaries) with your domain vocabulary. The rules tell the assistant to read it
-and use *your* terms when discussing domain concepts — a soft convention that
-sharply reduces terminology drift.
-
-## 5. Wire up work tracking (beads)
-
-The workflow treats durable work as **beads** — issues that outlive a session
-and survive context compaction. Run `bd init` in your project. File a bead
-before writing code for it; the assistant claims it, works it, and closes it.
-See [The SDLC Workflow](./sdlc-workflow.md#1-capture) for the loop.
-
-## Optional: the `prgroom` CLI
-
-`prgroom` is a standalone CLI that grooms a PR deterministically (poll → cluster
-feedback → fix → push → reply → resolve). The `monitor-pr` skill drives it. The
-installer deploys it onto your PATH automatically (`uv tool install`,
-receipt-tracked, pruned on retirement) as part of a normal install — no separate
-step needed.
-
-If you're running without the installer (or want to install it manually against
-a specific checkout), the fallback is the same command the installer runs under
-the hood:
-
-```bash
-uv tool install ./packages/prgroom     # or: uv run prgroom --help
-```
-
-Without it, the skill-based `wait-for-pr-comments` path handles PR feedback
-instead.
+If you want one without the installer, `uv tool install ./packages/<name>` from
+this repo is the same command the installer runs.

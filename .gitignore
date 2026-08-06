@@ -50,11 +50,9 @@ htmlcov/
 # optimize-my-skill --deep workspaces (persistent but not committed)
 .eval-runs/
 
-# vizsuite artifact output (`viz pr` writes .viz/out/*.html at cwd)
+# `viz pr` artifact output, written to .viz/out/*.html at cwd. The tool now lives
+# in its own repository (scotthamilton77/vizsuite) but still analyses this one.
 .viz/
-
-# backlog-landscape regenerated artifacts (scripts/backlog-landscape/regenerate.sh)
-scripts/backlog-landscape/output/
 
 # graphify knowledge graph — a local, on-demand artifact, never versioned
 graphify-out/

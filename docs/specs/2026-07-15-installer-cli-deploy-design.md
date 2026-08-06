@@ -10,8 +10,10 @@
 CI-gated CLI packages that no deployed user space can invoke: the installer has
 no mechanism to put a CLI on PATH. The prgroom design plan
 (`docs/plans/2026-05-12-prgroom-cli-design.md`, distribution section) and the
-prgroom deployment HLD (`docs/architecture/prgroom/c4-deployment.md`) already
-prescribe the pattern — installer-owned `uv tool install ./packages/<pkg>`,
+prgroom deployment HLD (`docs/architecture/prgroom/c4-deployment.md`) — both now
+in the `scotthamilton77/agents-config-ARCHIVE` repository at their original
+paths, the deployment statement since consolidated into
+`docs/architecture/prgroom/design.md` §1 — already prescribe the pattern — installer-owned `uv tool install ./packages/<pkg>`,
 idempotent, uninstalled on `--prune` — but the bash-era implementation was
 retired when `install.sh` collapsed to a stub, and the Python installer never
 re-adopted it.
@@ -45,7 +47,11 @@ Out of scope:
 
 - Installing `bd` (external prerequisite, unchanged).
 - Deploying `pdlc`, `holding-place`, or `vizsuite` (early packages; the
-  registry is deliberately closed).
+  registry is deliberately closed). None of the three is in this repository
+  any more: the first two were retired to `scotthamilton77/agents-config-ARCHIVE`
+  on 2026-08-05 and the third extracted to `scotthamilton77/vizsuite` the same
+  day. The registry stays closed for the same reason, so this exclusion is now
+  simply moot rather than load-bearing.
 - Project-scoped installs (`--project` never deploys CLIs).
 - The discipline-layer asset migration itself (agents-config-wgclw.9.4).
 - Package `__version__` surfacing (digest-based staleness makes it unneeded).

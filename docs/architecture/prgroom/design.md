@@ -1,12 +1,14 @@
 # prgroom CLI — Design Reference
 
 > **Up**: [index](index.md)
-> **Subsystem**: prgroom — the PR-grooming CLI (`agents-config-fca6` epic)
-> **Role**: the evergreen, consolidated design these HLD artifacts visualise — amended in place as the design evolves
-> **Companion artifacts**: the C4 / sequence / state-machine files in this folder render this design; each cites the section(s) it visualises
-> **Historical proposals**: the dated, point-in-time proposals that seeded this design live under `docs/plans/` and `docs/specs/`; this consolidated document is the living source of truth.
+> **Subsystem**: prgroom — the PR-grooming CLI
+> **Role**: the evergreen, consolidated design — amended in place as the design evolves
+> **Companion artifacts**: none in this repository. The C4, sequence, state-machine, data and deployment views that once rendered this design were retired to the `scotthamilton77/agents-config-ARCHIVE` repository, where they keep their original paths under `docs/architecture/prgroom/`. They describe a subsystem substantially larger than the one being kept — read them as history, never as a contract.
+> **Historical proposals**: the dated proposals that seeded this design are in the same archive repository under `docs/plans/` and `docs/specs/`; this document is the living source of truth.
 
-This is the high-level design reference for the prgroom CLI. It is **lean by intent** — data structures and contracts are shown; procedural code is not. For runtime behaviour drawn as diagrams, follow the per-section links into the companion artifacts.
+This is the high-level design reference for the prgroom CLI. It is **lean by intent** — data structures and contracts are shown; procedural code is not.
+
+**Scope warning.** prgroom is being carved down, not finished. Verbs and subsystems described below — the `verify` gate and its convergence loop, `sweep`, and the reply/poll/wait/snapshot machinery — are design-of-record for a system that will not be built in full. Where this document and `packages/prgroom/src/` disagree about what exists, the code is the authority.
 
 ## Contents
 
@@ -24,7 +26,7 @@ This is the high-level design reference for the prgroom CLI. It is **lean by int
 
 ### Problem & goal
 
-`prgroom` is a Python CLI that replaces the `wait-for-pr-comments` and `reply-and-resolve-pr-threads` skills. The gh/git/JSON work is already mechanical, but the **phase-orchestration glue** — walking phase logic, dispatching subagents, auditing their reports, managing crash recovery — still loads on top of an implementer's already-bloated context every cycle. `prgroom` moves that orchestration out of agent prose and into deterministic code, confining agent invocations to *named hand-off points* (comment classification, fix implementation, escalation judgment), each shelled out as a fresh agent context. State lives behind a `prsession.Store` interface so recovery, idempotency, and inspection are uniform across every caller.
+`prgroom` is a Python CLI that took over from the `wait-for-pr-comments` and `reply-and-resolve-pr-threads` skills, both of which were retired. The gh/git/JSON work is already mechanical, but the **phase-orchestration glue** — walking phase logic, dispatching subagents, auditing their reports, managing crash recovery — still loads on top of an implementer's already-bloated context every cycle. `prgroom` moves that orchestration out of agent prose and into deterministic code, confining agent invocations to *named hand-off points* (comment classification, fix implementation, escalation judgment), each shelled out as a fresh agent context. State lives behind a `prsession.Store` interface so recovery, idempotency, and inspection are uniform across every caller.
 
 ### Non-goals (MVP)
 
@@ -41,15 +43,18 @@ This is the high-level design reference for the prgroom CLI. It is **lean by int
 
 | Pattern | Caller | Invocation |
 |---|---|---|
-| **Interactive** | User in chat, via the `monitor-pr` skill | `prgroom run <pr> --interactive` |
+| **Interactive** | User in chat, invoking the CLI directly | `prgroom run <pr> --interactive` |
 | **Autonomous** | Cron / `/loop` / GHA | `prgroom run <pr> --autonomous`, or `prgroom sweep <repo>` |
 | **Executable-bead** (v2) | bd-side dispatcher | bead payload `prgroom run --pr <n> --autonomous` |
 
+The `monitor-pr` skill that used to drive the interactive pattern was retired, and nothing replaced it. Nothing invokes `prgroom` today — no deployed asset and no harness path — so all three rows describe a designed surface rather than a running one; `packages/prgroom/AGENTS.md` states the package's current standing.
+
 **Locked decisions:**
 
-- **Language:** Python 3.11+, reusing the repo's existing toolchain (`ruff`, `mypy --strict`, `pytest` + coverage, `pip-audit`) verbatim. State-model / `Protocol` / `StrEnum` shape mirrors the sibling `pdlc` package.
+- **Language:** Python 3.11+, reusing the repo's existing toolchain (`ruff`, `mypy --strict`, `pytest` + coverage, `pip-audit`) verbatim. The state-model / `Protocol` / `StrEnum` shape was modelled on the `pdlc` package, which was retired out of this repository on 2026-08-05; the shape itself is unchanged and the sibling packages carry it too.
 - **CLI framework:** `typer` (type-hint-driven, pairs with `mypy --strict`).
-- **Placement:** `packages/prgroom/`, a fourth sibling to `installer`, `pdlc`, and `holding-place`.
+- **Placement:** `packages/prgroom/`, one of the packages under `packages/`.
+- **Distribution:** there is no compiled binary and no artifact-transport step. The project installer owns the install — its CLI-deploy stage runs `uv tool install` against `packages/prgroom/`, which places the `prgroom` console-script on `PATH` and records it in the install receipt. The version lives in `packages/prgroom/pyproject.toml` and ships with the repo; there is no independent release cadence, no tags, and no GitHub releases.
 - **Agent boundary:** synchronous subprocess shell-out; each invocation is fresh context. The runtime is chosen per-contract in TOML config — the contract is the API, the runtime is swappable.
 - **Scope:** equivalent of `wait-for-pr-comments` + `reply-and-resolve-pr-threads`; excludes create-PR, merge, cleanup, and bead-lifecycle helpers.
 
@@ -238,7 +243,7 @@ A PR starts in `idle` on first invocation. `poll` advances it to `awaiting-revie
 
 **Terminal-for-CLI:** `quiesced`, `human-gated`, `merged`. The CLI takes no further autonomous action in these phases. **Re-enters the loop:** both `quiesced` and `human-gated` can return to `fixes-pending` — on new reviewer activity, an external push, an operator `resolve-escalated`, or (for a budget-gated PR) a raised PR-review retry budget. **Graph-terminal:** `merged` only (absorbing).
 
-For the fully-labelled edge diagram, see [`state-machine.md`](state-machine.md).
+The transition matrix in §3.2 carries the same edges in table form.
 
 ### 3.2 Phase × verb transition matrix
 
@@ -283,7 +288,7 @@ Each step is a `VerbStep` run in order; a step with no work no-ops (`verify` and
 
 `cap-guard` runs **after** `verify` by design — the budget decision needs verify's verdict to know whether the work is even good enough to be worth pushing; a guard placed before verify would escalate (or proceed) blind. `rereview` runs **last** and guarded: only required bot reviewers needing a fresh review are re-requested, and only after a successful push.
 
-The cycle repeats; end-of-cycle resolution (§3.2) yields the next phase. On a terminal phase (`quiesced` / `human-gated` / `merged`) `run` returns; on `awaiting-review` it blocks in `_wait` (§4.2) until reviewer activity or quiescence breaks the wait, then loops. See [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md) for the verb-level control flow.
+The cycle repeats; end-of-cycle resolution (§3.2) yields the next phase. On a terminal phase (`quiesced` / `human-gated` / `merged`) `run` returns; on `awaiting-review` it blocks in `_wait` (§4.2) until reviewer activity or quiescence breaks the wait, then loops. `lifecycle/run.py::_build_pipeline` is the built order of record.
 
 ### 3.4 The fix↔verify convergence loop
 
@@ -293,7 +298,7 @@ The heart of the fix↔verify subsystem. Within one `fixes-pending` cycle, after
 - **Red gate, inner retries remain** → write the gate output to a temp file, dispatch a whole-branch **repair** fix (fed the temp file, in `fix-repair` mode), re-audit (orphan/sha with repair-attribution), and re-run the gate. Loop.
 - **Red gate, inner retries exhausted** → `phase = HUMAN_GATED`, `last_error = LIFECYCLE_FIX_VERIFY_EXHAUSTED`.
 
-The loop is bounded by `fix_verify_retries` (§3.5), independent of the PR-review retry budget because a verify-fail never pushes. Like the fix step's per-cluster fan-out, the convergence loop is **internal to one cycle** — not a state-machine transition; the only state edge it produces is the exhaustion → `human-gated`. The repair dispatch (§5) is whole-branch, not per-cluster. The full component view is [`c4-l3-verify.md`](c4-l3-verify.md).
+The loop is bounded by `fix_verify_retries` (§3.5), independent of the PR-review retry budget because a verify-fail never pushes. Like the fix step's per-cluster fan-out, the convergence loop is **internal to one cycle** — not a state-machine transition; the only state edge it produces is the exhaustion → `human-gated`. The repair dispatch (§5) is whole-branch, not per-cluster. None of this convergence loop is built: there is no `verify` field on `PRGroomingState`, no `verify` pipeline step, and no `LIFECYCLE_FIX_VERIFY_EXHAUSTED` code.
 
 ### 3.5 The two retry caps
 
@@ -333,7 +338,7 @@ Codes are stable `<CATEGORY>_<SPECIFIC>` identifiers, each carrying `what`/`why`
 
 | Category | Codes (representative) | Tier / exit |
 |----------|------------------------|-------------|
-| `PRECONDITION_*` user-error | `NO_PR_DETECTED`, `NO_AUTH`, `REPO_UNREACHABLE`, `BAD_PR_REF` | user-error / 2 |
+| `PRECONDITION_*` user-error | `NO_PR_DETECTED`, `NO_AUTH`, `REPO_UNREACHABLE`, `BAD_PR_REF`, `WRONG_BRANCH` | user-error / 2 |
 | `PRECONDITION_NO_*` no-work (enumerated) | `NO_ITEMS`, `NO_CLUSTERS`, `NO_COMMITS`, `NO_UNREPLIED`, `NO_UNRESOLVED`, `NO_ESCALATIONS` | no-work / 0 (2 under `--no-prework`) |
 | `PRECONDITION_NO_VERIFY_CONFIG` | tier's verify command unconfigured (§6.3) | user-error / 2 |
 | `PRECONDITION_LOCK_HELD` | live-process lock contention | transient-equiv / 75 |
@@ -341,6 +346,8 @@ Codes are stable `<CATEGORY>_<SPECIFIC>` identifiers, each carrying `what`/`why`
 | `CONTRACT_*` | `CLUSTER_MALFORMED`, `CLUSTER_COVERAGE`, `FIX_MALFORMED`, `FIX_ORPHAN_COMMIT`, `FIX_UNREACHABLE_SHA`, `FIX_AUDIT_FAILED` | audit / 65 |
 | `STATE_*` | `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN` | state / 78 |
 | `LIFECYCLE_*` | `LIFECYCLE_FIX_VERIFY_EXHAUSTED`, `LIFECYCLE_PR_REVIEW_EXHAUSTED` | cap / 0 (graceful) |
+
+**`PRECONDITION_WRONG_BRANCH` guards the one irreversible mutation.** `push` uploads the local PR-branch HEAD, so an ambient checkout on another branch — or a detached HEAD, which reads as the literal `HEAD` — would publish the wrong commits. The check runs before the queued-commit read rather than trusting the working tree, and it refuses rather than correcting: the operator checks out the PR head branch, or runs from its worktree, and re-invokes.
 
 `flock(2)` auto-releases on process death, so there is no stale-lock code; live contention surfaces as `PRECONDITION_LOCK_HELD`. The `BlockingErrorCodes` set (§3.2) is not cleared by `resolve-escalated` alone — each member needs its own recovery (a retry-budget raise for the `LIFECYCLE_*` caps, state inspection for `STATE_*`, manual reconciliation for the terminal `RUNTIME_*`).
 
@@ -419,6 +426,59 @@ The actual merge gate and policy overlay are owned by future beads; §4 defines 
 | `human_review_satisfied` | label `human-review-required` absent, OR satisfied per §4.4 |
 
 The status JSON also surfaces `human_review.candidates_seen` (each examined PR-approval with its bot-filter outcome) for debuggability — "why didn't approval X count?" Adding fields is non-breaking; removing/renaming requires a version-bumped envelope.
+
+#### The envelope
+
+This is the shape a consumer may rely on. It is assembled per-query from `PRGroomingState` plus a live gh enrichment for the label and approval state; the four `merge_gates` bools and `auto_merge_eligible` are derived at query time and never persisted.
+
+```json
+{
+  "pr": 42,
+  "phase": "quiesced",
+  "last_error": "",
+  "pr_review_retries_used": 1,
+  "reviewers": [
+    {"login": "github-copilot[bot]", "required": true, "is_bot": true, "status": "review_found", "declined_reason": ""}
+  ],
+  "ci_state": "success",
+  "items_summary": {"fixed": 3, "already_addressed": 1, "wont_fix": 0, "escalated": 0, "failed": 0, "skipped": 0, "deferred": 0},
+  "items": [
+    {
+      "kind": "review_summary",
+      "gh_id": "3141592653",
+      "thread_id": "",
+      "author": "github-copilot[bot]",
+      "disposition": {"kind": "skipped", "decided_at": "2026-05-25T14:40:02Z", "decided_by": "claude sonnet"},
+      "replied": true,
+      "resolved": false,
+      "posted_reply_ids": ["4875007359"]
+    }
+  ],
+  "last_activity_at": "2026-05-25T14:32:11Z",
+  "quiesced_at": "2026-05-25T14:42:11Z",
+  "merge_gates": {
+    "phase_is_quiesced": true,
+    "last_error_clear": true,
+    "no_blocker_items": true,
+    "human_review_satisfied": false
+  },
+  "human_review": {
+    "required": true,
+    "satisfied_by": null,
+    "candidates_seen": [{"login": "alice", "approved": true, "counted": false, "reason": "bot"}]
+  },
+  "auto_merge_eligible": false
+}
+```
+
+Four properties of the envelope are load-bearing rather than incidental:
+
+- **`items[]` is a deliberate projection, not a state dump.** `body_excerpt`, `rationale`, `commits`, `response_path`, `gate`, `escalation_filed` and the cluster bookkeeping stay private to the store. `disposition` is `null` for an untriaged item and otherwise carries exactly `kind`, `decided_at`, `decided_by`.
+- **`gh_id` and `posted_reply_ids` are strings.** A consumer matching them against live GitHub ids must coerce GitHub's numeric ids to string first. `posted_reply_ids` is a list even though one reply per item is the current storage shape, so a future multi-reply change stays non-breaking.
+- **`reviewers[]` is sorted by login** so the output is deterministic and diffable.
+- **`no_blocker_items` screens the same disposition set the quiescence predicate uses** (§4.1), never a parallel notion of "blocker".
+
+`author` on an item is informational and must never be used as an exclusion key. `quiesced_at` is the empty string when the PR has not quiesced.
 
 ### 4.6 Auto-request human review on lifecycle gating
 
@@ -502,11 +562,25 @@ class Sink(Protocol):
     def emit(self, escalation: Escalation) -> None: ...
 ```
 
-| Sink | When | Behavior |
-|---|---|---|
-| **stderr** | Default (interactive) | Pretty-print to stderr |
-| **bd** | `--bd-bead <id>` / `PRGROOM_BD_BEAD` | Add `human` label + append notes |
-| **file** | `--escalation-file <path>` | Append one JSON line per escalation; for watchers/cron |
+| Sink | When | Behavior | Built? |
+|---|---|---|---|
+| **stderr** | Default (interactive) | Pretty-print to stderr | Yes — the only sink `_build_sink` returns |
+| **file** | intended `--escalation-file <path>` | Append one JSON line per escalation; for watchers/cron | Class implemented, **no flag selects it** |
+| **bd** | intended `--bd-bead <id>` / `PRGROOM_BD_BEAD` | Add `human` label + append notes | No — deferred to v2, no code |
+
+Adapter selection is unbuilt: the CLI always constructs the stderr sink. Treat the file and bd rows as design intent, not as an operator-reachable surface.
+
+**The file sink's wire format** is one JSON line per event, flat and public-safe by construction — it carries the triggering item's id but never its body, rationale, or disposition detail:
+
+```json
+{"pr": "scotthamilton77/agents-config#42", "reason": "item PRRT_kgABC456 dispositioned escalated", "severity": "block", "item_gh_id": "PRRT_kgABC456"}
+```
+
+`pr` is the `<owner>/<repo>#<number>` shorthand, not an object. `item_gh_id` is present only when an item triggered the event.
+
+**Severity** is a three-value vocabulary (`info` / `warn` / `block`). The lifecycle hook files `block` both for a per-item `escalated`/`failed` disposition and for a set `last_error`; the agent-side audit layer defaults to `warn` and reserves `block` for orphan commits and memory-containment breaches.
+
+**Emission is best-effort and dedup-safe, in that order.** A dedup flag — `escalation_filed` per item, `lifecycle_escalation_filed` per gate — is set *only after* the emit returns successfully, and the state is written immediately after. So a sink that raises is swallowed (and logged, so a persistently unreachable sink is visible rather than silent), the flag stays unset, and the next pass retries. Lifecycle progression never blocks on sink reachability. A crash between a successful emit and the state write may double-fire on the next invocation; sinks absorb that on the receiving end.
 
 ### Verb → contract → CLI action
 
@@ -687,4 +761,4 @@ prgroom owns the `## Decisions` block between sentinel markers and rewrites it w
 - **Non-CONTEXTUAL** — accepted, logged as deferred, not an error.
 - **Declared-but-missing `memory_writes` path** — soft warning (stderr), not a cluster failure.
 
-`memory_dir` containment is the only hard cluster-flipping memory breach (orphan commits, §5, are the other). A worked 3-retry example — a first-retry decision surviving two fresh-context dispatches via the `## Decisions` block, preventing re-litigation and silent regression — lives in the source proposal under `docs/plans/`.
+`memory_dir` containment is the only hard cluster-flipping memory breach (orphan commits, §5, are the other). A worked 3-retry example — a first-retry decision surviving two fresh-context dispatches via the `## Decisions` block, preventing re-litigation and silent regression — lives in the source proposal, now in the `scotthamilton77/agents-config-ARCHIVE` repository under `docs/plans/`.

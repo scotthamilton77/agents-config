@@ -94,8 +94,8 @@ def discover_spec_files(specs_dir: Path) -> list[Path]:
     return out
 
 
-def _fence_mask(lines: list[str]) -> list[bool]:
-    """``True`` for every line that is inert to structural parsing because it
+def fence_mask(lines: list[str]) -> list[bool]:
+    """``True`` for every line that is inert to Markdown prose parsing because it
     sits inside a fenced code block — including the fence marker lines
     themselves. A fence opens on any run of ``>= 3`` backticks or tildes and
     records that marker's character and run length; while open, a line
@@ -105,7 +105,11 @@ def _fence_mask(lines: list[str]) -> list[bool]:
     fence quoted inside a 4-backtick outer fence) is inert content, not a
     real close. Full CommonMark indentation/info-string rules are out of
     scope; this char+length rule is enough to cover the gaming cases (an
-    example definition entry or slice heading quoted inside a fence)."""
+    example definition entry or slice heading quoted inside a fence).
+
+    Public because ``doc_lint`` masks the same way, for the same reason: a code
+    block is illustration, so nothing inside one is a claim about the repo. One
+    definition, so the two gates cannot disagree about where prose ends."""
     mask: list[bool] = []
     open_char: str | None = None
     open_len = 0
@@ -172,7 +176,7 @@ def lint_spec_text(path: Path, text: str) -> list[Violation]:
     through only for violation labeling — content is never read from disk
     here, keeping this function pure."""
     lines = text.splitlines()
-    fenced = _fence_mask(lines)
+    fenced = fence_mask(lines)
     headings = _headings(lines, fenced)
 
     ac_headings = [h for h in headings if _AC_HEADING_KEYWORD in h[2].lower()]

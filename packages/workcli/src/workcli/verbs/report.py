@@ -186,8 +186,12 @@ def _closed_ancestors(backend: Backend, items: list[Item], by_id: dict[str, Item
 
 
 def graph(backend: Backend, args: Namespace) -> JsonValue:
-    """`work graph --json` -- the vizsuite V2 / landscape data contract
-    (schema shipped at workcli/schemas/work-graph.schema.json)."""
+    """`work graph --json` -- the dependency-graph data contract
+    (schema shipped at workcli/schemas/work-graph.schema.json).
+
+    Written for a work-map renderer that was never built; the schema is the
+    contract for whatever consumes it next.
+    """
     if not args.json_output:
         raise WorkError(ErrorCode.USAGE, "work graph requires --json (the only v1 output)")
     args.load_config()  # new-verb gate; the payload itself is config-free
