@@ -427,8 +427,8 @@ class NotOffered:
     copy of the trunk. This one does not -- ``name`` is the whole path under
     `refs/remotes/`, and where the remote's name stops inside it is the
     unanswered question. So this is the only entry whose *other* spellings are
-    unknown, which is what makes it able to collide with a selector that
-    matched something else."""
+    unknown, which is why a name that matches nothing cannot be called absent
+    while one of these is on the books."""
 
     def as_json(self) -> dict[str, object]:
         return {"name": self.name, "reason": self.reason, "unsplit": self.unsplit}
@@ -648,9 +648,14 @@ class Deletion:
     gone: a target that was already absent is gone and this is False, because
     only a True here is evidence the tool did something."""
     verified: bool
-    """The end state was confirmed by asking git, rather than inferred from an
-    exit code. It does **not** mean a deletion happened -- an already-absent
-    target is verified too, because the server was asked and answered.
+    """The end state rests on git having said so, rather than on a guess.
+
+    For a local branch or a worktree that is git's report of the deletion it
+    just performed; for a ref on a server it is a second read of the remote,
+    because there a zero exit answers a different question than the one asked
+    and the ref can outlive it. It does **not** mean a deletion happened -- an
+    already-absent target is verified too, because the server was asked and
+    answered.
 
     So this is the wrong field to count a cleanup's work by; ``deleted`` is the
     one that says the tool acted. The pair is only ever read together."""
@@ -731,6 +736,26 @@ class Plan:
     absent: tuple[Absent, ...] = field(default_factory=tuple)
     """Names that resolved to nothing. A plan holding only these is a plan to
     do nothing, which is a valid plan and not an error."""
+    refused: tuple[Refusal, ...] = field(default_factory=tuple)
+    """Names this run would not act on, each with the reason and the remedy.
+
+    A plan carrying these is still a plan: the targets beside them resolved
+    cleanly and are deleted. What the refusals change is the verdict on the
+    run as a whole -- `ok` is false and the exit code says something was
+    refused -- because a caller who named five things and had four deleted has
+    not had their command carried out, however much of it worked.
+
+    Distinct from ``skipped``, which is the sweep declining to take something
+    nobody asked for by name. Both are omissions; only this one contradicts an
+    instruction.
+
+    Ordered as: everything raised while resolving names, in the order those
+    names were given, then the two checks made of the selection as a whole once
+    it is known -- the worktree the run is standing in, and branches a worktree
+    still holds. Not one flat selector order, because the second of those pair
+    is a single refusal covering however many branches were occupied, so it has
+    no one position among the selectors to take. Map a refusal back to what you
+    typed through ``blocked`` and the names in its message, never by index."""
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -739,6 +764,7 @@ class Plan:
             "dry_run": self.dry_run,
             "skipped": [s.as_json() for s in self.skipped],
             "absent": [a.as_json() for a in self.absent],
+            "refused": [r.as_json() for r in self.refused],
         }
 
 
@@ -749,8 +775,9 @@ class Refusal:
     Refusals are few and narrow, because a named target is an authorisation
     rather than a proposal. What is left answers something the caller could not
     have answered themselves -- a name matching two things, a deletion git
-    itself will reject. ``blocked`` lists the targets so they can be dropped
-    from the selection rather than argued with.
+    itself will reject. ``blocked`` lists the targets the refusal is about,
+    which a per-selector refusal has already dropped from the plan: it is there
+    to be read, not to be acted on before re-running.
 
     A name matching *nothing* is not among them. It asks for a state that
     already holds, which is a job already done rather than a job refused; see
