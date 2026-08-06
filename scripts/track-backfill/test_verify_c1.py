@@ -43,8 +43,21 @@ class TestAuditTracks(unittest.TestCase):
 
     def test_a_run_log_write_outside_the_artifact_is_a_failure(self):
         """What the old check was reaching for, asked of the writer."""
-        audit = audit_tracks([item("a", track="workcli")], [], {"a": "workcli"}, {"a", "rogue"})
+        audit = audit_tracks(
+            [item("a", track="workcli"), item("rogue", track="installer")],
+            [],
+            {"a": "workcli"},
+            {"a", "rogue"},
+        )
         self.assertEqual(audit["wrote_outside_artifact"], ["rogue"])
+
+    def test_run_log_ids_from_a_retired_database_are_not_a_failure(self):
+        """The log is cumulative across migrations, including ones whose
+        database was replaced. Those ids exist nowhere now and prove nothing."""
+        audit = audit_tracks(
+            [item("a", track="workcli")], [], {"a": "workcli"}, {"a", "gone-with-the-old-db"}
+        )
+        self.assertEqual(audit["wrote_outside_artifact"], [])
 
     def test_two_track_labels_are_a_failure_whatever_the_status(self):
         doubled = item("a", labels=["track:workcli", "track:installer"], track=None)

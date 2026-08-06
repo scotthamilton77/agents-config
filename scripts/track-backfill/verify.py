@@ -36,15 +36,21 @@ def track_labels(item: dict) -> list[str]:
 
 def audit_tracks(
     live: list[dict], closed: list[dict], assigned: dict[str, str], written: set[str]
-) -> dict[str, list]:
+) -> dict:
     """C1's sweep: did this migration produce the outcome the artifact decided?
 
     Three findings, each a defect on its own terms:
 
     `mismatched` — a live artifact item not carrying its decided track.
     `doubled` — any item carrying two track labels, whatever its status.
-    `wrote_outside_artifact` — an id in the run log that the artifact does not
-    cover, meaning the applicator wrote beyond what was decided and reviewed.
+    `wrote_outside_artifact` — an id in the run log that exists in this database
+    and the artifact does not cover, meaning the applicator wrote beyond what was
+    decided and reviewed. The existence filter is load-bearing, not defensive:
+    the run log is cumulative across migrations by design, so it still names
+    every id written in earlier runs — including runs against a database that has
+    since been retired and replaced. Those ids exist nowhere now and are evidence
+    of nothing here. Without the filter the criterion fails by hundreds on a
+    correct run, which is how it was found.
 
     Deliberately NOT a finding: an item carrying a track the artifact never
     mentions. That was the original stray check, and it measured a premise that
@@ -72,11 +78,15 @@ def audit_tracks(
             skipped_closed.append(item["id"])
         elif item["track"] != want:
             mismatched.append((item["id"], want, item["track"], item["status"]))
+    extant = {item["id"] for item in live + closed}
+    in_scope = written & extant
     return {
         "mismatched": mismatched,
         "doubled": doubled,
         "skipped_closed": skipped_closed,
-        "wrote_outside_artifact": sorted(written - set(assigned)),
+        "logged": len(written),
+        "logged_in_scope": len(in_scope),
+        "wrote_outside_artifact": sorted(in_scope - set(assigned)),
     }
 
 
@@ -142,7 +152,8 @@ def main() -> int:
     print(
         f"C1: {len(assigned) - len(audit['skipped_closed'])} live assigned item(s) compared; "
         f"{len(audit['skipped_closed'])} closed since the artifact was generated (not compared); "
-        f"{len(written)} write(s) in the run log, all within the artifact"
+        f"{audit['logged']} write(s) in the run log across all runs, "
+        f"{audit['logged_in_scope']} of them naming items in this database"
     )
 
     # C2 — zero violations among covered ids; residue reported, not asserted away.
