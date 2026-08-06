@@ -120,21 +120,26 @@ merge-authorization = "explicit"
 # ---------------------------------------------------------------------------
 # [tracks] / [operating-model] / [extraction] — work-tracker track partition
 # Read by: workcli (work create gate, work list --track, work track set,
-#          work lint, work graph) and, when they ship, work triggers/groom.
-# Contract: docs/specs/2026-07-15-workcli-track-partition-design.md §3
+#          work lint, work graph, work triggers, work groom).
+# Contract: docs/specs/2026-07-15-workcli-track-partition-design.md §3 — the
+#           track model, the per-track charters, and the §3.1-§3.6 rules that
+#           decide which track an item takes. This file is authoritative for the
+#           names; that section is their charter.
 # ---------------------------------------------------------------------------
 [tracks]
 names = ["installer", "prgroom", "workcli", "pdlc-orchestrator",
          "holding-place", "vizsuite", "review-and-merge",
          "pipeline-discipline", "grind-runtime", "ops-meta"]
-organizing-only = ["pipeline-discipline", "grind-runtime", "ops-meta"]
-enforcement = "advisory"   # flip to "required" is agents-config-63nm3
+# grind-runtime was organizing-only pending a package; packages/grind now exists,
+# so it is extractable and `work triggers` evaluates it.
+organizing-only = ["pipeline-discipline", "ops-meta"]
+enforcement = "advisory"   # flip to "required" is agents-config-9k9.140
 
 [operating-model]
 milestone-wip-cap = 2
 wip-exempt-milestones = ["agents-config-uxns2"]  # PORT — work item id, never display name
 backlog-groom-nag-days = 7
-groom-state-item = "agents-config-zohw0"   # minted by the track backfill migration
+groom-state-item = "agents-config-t8o"   # minted 2026-08-05 per the backfill design §5.6
 
 [extraction.pressure]
 max-track-backlog = 100
