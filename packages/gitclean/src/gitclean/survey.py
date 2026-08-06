@@ -12,6 +12,12 @@ reader can see *why* a deletion was called safe.
 The tiers are ordered by cost. Batch reads (`for-each-ref`, `branch --merged`,
 one `gh pr list`) answer most branches; the per-branch probes run only on the
 residue nothing cheaper could resolve.
+
+Every git call here is assembled by the shared argv constructor, and a name the
+repository chose reaches git only through it or through the rev spelling beside
+it. A probe added without one is the failure mode: the terminator is not a
+habit to apply call site by call site, and the sites that forget it are the ones
+nobody can type by hand.
 """
 
 from __future__ import annotations
@@ -29,7 +35,7 @@ from gitclean.model import (
     Survey,
     Worktree,
 )
-from gitclean.ports import CommandPort, CommandResult
+from gitclean.ports import CommandPort, CommandResult, git_argv, git_rev
 
 _SEP = "\x1f"
 # The FULL refname leads deliberately, and everything the survey *records*
@@ -105,14 +111,14 @@ def _whole_path(stdout: str) -> str:
 
 def resolve_repo(port: CommandPort, cwd: Path | None) -> tuple[str, str] | None:
     """Return (repo_root, git_common_dir), or None when cwd is not a repo."""
-    root = port.git(["rev-parse", "--show-toplevel"], cwd=cwd)
+    root = port.git(git_argv("rev-parse", "--show-toplevel"), cwd=cwd)
     if not root.ok:
         return None
-    common = port.git(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=cwd)
+    common = port.git(git_argv("rev-parse", "--path-format=absolute", "--git-common-dir"), cwd=cwd)
     if not common.ok:
         # --path-format landed in git 2.31; older git still answers the plain
         # form, relative to the repo root.
-        common = port.git(["rev-parse", "--git-common-dir"], cwd=cwd)
+        common = port.git(git_argv("rev-parse", "--git-common-dir"), cwd=cwd)
         if not common.ok:
             return None
         resolved = Path(_whole_path(root.stdout)) / _whole_path(common.stdout)
@@ -127,15 +133,110 @@ def _ref_exists(port: CommandPort, cwd: Path | None, ref: str) -> bool | None:
     when it could not look -- an unreadable ref store, a repository it will not
     open. Reading both as "not there" is how the report comes to state that the
     trunk no longer exists when nothing ever checked."""
-    result = port.git(["show-ref", "--verify", "--quiet", ref], cwd=cwd)
+    result = port.git(git_argv("show-ref", "--verify", "--quiet", name=ref), cwd=cwd)
     if result.ok:
         return True
     return False if result.returncode == 1 else None
 
 
-def resolve_default_branch(port: CommandPort, cwd: Path | None) -> tuple[str | None, str | None]:
+def _published_trunk(
+    port: CommandPort, cwd: Path | None, remotes: tuple[str, ...]
+) -> tuple[str, tuple[str, ...], str]:
+    """The branch these remotes publish as their HEAD, the remotes that publish
+    it, and -- when no single name came back -- the clause saying why.
+
+    A published HEAD is a local symbolic ref that `git fetch` or `git remote
+    set-head` wrote, so asking every configured remote costs no network round
+    trip and this loop is as cheap as the single question it grew out of.
+
+    One distinct name is the whole bar, and remotes that agree are worth as much
+    as a remote on its own: what this tier produces is the trunk's *name*, and
+    two servers that both call their trunk `main` are saying the same thing
+    about it. Remotes that disagree are saying nothing that can be acted on --
+    picking one of them would silently decide which repository's history every
+    merge in the report is measured against, and picking the one that is ahead
+    is what makes unmerged work look merged -- so the disagreement is handed
+    back as prose and the tier declines. Declining costs a tier and leaves the
+    local main/master below it to answer; guessing costs commits.
+
+    A remote whose HEAD could not be read is one of those disagreements as far
+    as anything here knows, so it declines the tier too -- even when another
+    remote did answer. Accepting the name that came back would be taking
+    agreement from a remote that was never asked: the read that failed is the
+    one that might have contradicted it, and a trunk accepted on partial data is
+    exactly what the disagreement rule above exists to refuse."""
+    if not remotes:
+        return "", (), "this repository has no configured remote to publish a HEAD"
+    published: dict[str, str] = {}
+    unreadable: list[tuple[str, int]] = []
+    for remote in remotes:
+        result = port.git(
+            git_argv("symbolic-ref", "--quiet", name=f"refs/remotes/{remote}/HEAD"), cwd=cwd
+        )
+        if result.ok:
+            name = _first_line(result.out).removeprefix(f"refs/remotes/{remote}/")
+            if name:
+                published[remote] = name
+        elif result.returncode != 1:
+            # Exit 1 is git saying this remote has published no HEAD, which is
+            # an answer. Anything else is git declining to look, which is not.
+            unreadable.append((remote, result.returncode))
+    names = set(published.values())
+    if len(names) > 1:
+        spelled = ", ".join(f"{r} publishes {n}" for r, n in sorted(published.items()))
+        return "", (), f"the configured remotes disagree about which branch is the trunk: {spelled}"
+    if unreadable:
+        listed = ", ".join(f"{remote} (exit {code})" for remote, code in unreadable)
+        if names:
+            # Withheld agreement rather than a missing HEAD, and the two are
+            # worth separate sentences: something did answer here, and what
+            # stopped the tier is that the remote which did not could have
+            # contradicted it.
+            answered = ", ".join(sorted(published))
+            withheld = (
+                f"the published HEAD of {listed} could not be read, and a remote that would "
+                f"not answer could name a trunk other than the {next(iter(names))} that came "
+                f"back from {answered}"
+            )
+            return "", (), withheld
+        unread_detail = (
+            f"{unreadable[0][0]}'s published HEAD could not be read (exit {unreadable[0][1]})"
+            if len(unreadable) == 1
+            else f"the published HEAD of these remotes could not be read: {listed}"
+        )
+        return "", (), unread_detail
+    if len(names) == 1:
+        trunk = next(iter(names))
+        return trunk, tuple(r for r, n in published.items() if n == trunk), ""
+    if len(remotes) == 1:
+        return "", (), f"{remotes[0]} has published no HEAD"
+    return "", (), f"none of this repository's remotes ({', '.join(remotes)}) has published a HEAD"
+
+
+def _consulted_remotes(remotes: tuple[str, ...] | None) -> tuple[str, ...]:
+    """The remotes whose account of the trunk this repository will accept.
+
+    `origin` alone whenever it is configured, and that is behaviour worth
+    stating rather than defaulting into. In a fork, `origin` and `upstream`
+    legitimately disagree about the trunk, and the repository you are standing
+    in is the one `origin` describes -- so consulting the others there could
+    only replace a right answer with a refusal. Only where there is no `origin`
+    does the rest of the remote list get a say.
+
+    An unreadable remote list is not an empty one, and it is not a licence to
+    ask more widely either: nothing can be enumerated, so this asks `origin` and
+    no further, which is exactly the reach it had before any other remote could
+    be consulted. A transient failure to list remotes therefore costs nothing
+    that was working, and widens nothing on the strength of what nobody read."""
+    return ("origin",) if remotes is None or "origin" in remotes else remotes
+
+
+def resolve_default_branch(
+    port: CommandPort, cwd: Path | None, remotes: tuple[str, ...] | None
+) -> tuple[str | None, str | None, str | None]:
     """The repository's trunk -- the branch that is never a deletion candidate
-    -- and, when nothing answered, the warning that says which tier declined.
+    -- the remote whose published HEAD named it, and, when nothing answered,
+    the warning that says which tier declined.
 
     Discovered, never supplied by the caller. A caller who could name what
     merges are measured against could measure against something the real trunk
@@ -143,13 +244,26 @@ def resolve_default_branch(port: CommandPort, cwd: Path | None) -> tuple[str | N
     sweepable -- so the question is asked of the repository, and only of the
     repository.
 
-    origin's published HEAD first, then a local main/master -- **each verified
+    A remote's published HEAD first, then a local main/master -- **each verified
     to resolve**. Returning the literal `main` when nothing answers used to
     look harmless: every merge probe against a ref that is not there fails, so
     nothing could be proven merged. But protection is assigned by *name*, and
     a repository whose trunk is `trunk` then has no protected branch at all:
     the real trunk is left indistinguishable from cruft, deletable like any
     other branch.
+
+    Which remote is asked is decided from the configured list rather than
+    spelled `origin` in the question. A repository whose remote is called
+    anything else -- and which has no local `main` or `master` either -- used to
+    reach no tier at all, so no trunk resolved, nothing could be proven merged,
+    and the tool was inert in it. See the two helpers above for which remotes
+    get a say and what settles a disagreement between them.
+
+    The remote is handed back so that what merges are measured against can be
+    that same remote's copy of the trunk rather than a second, independent
+    guess. Only a sole publisher is recorded: where several remotes agree, the
+    *name* is settled and which server's copy to measure against is not, and
+    that second question is one the base ref resolves for itself.
 
     The published-HEAD tier is the one most likely to be stale -- a dangling
     `origin/HEAD -> origin/master` is the standard leftover after a
@@ -162,42 +276,73 @@ def resolve_default_branch(port: CommandPort, cwd: Path | None) -> tuple[str | N
     verdict is the same either way -- an unverified name is not a trunk -- but
     the sentence is not, and telling someone their `main` does not exist when
     the probe never answered sends them to fix the wrong thing."""
-    head = port.git(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], cwd=cwd)
-    published = _first_line(head.out).removeprefix("refs/remotes/origin/") if head.ok else ""
-    candidates = [(published, f"refs/remotes/origin/{published}")] if published else []
-    candidates += [(name, f"refs/heads/{name}") for name in ("main", "master")]
+    consulted = _consulted_remotes(remotes)
+    published, publishers, declined = _published_trunk(port, cwd, consulted)
+    source = publishers[0] if len(publishers) == 1 else None
+    candidates: list[tuple[str, str, str | None]] = [
+        (published, f"refs/remotes/{remote}/{published}", source) for remote in publishers
+    ]
+    candidates += [(name, f"refs/heads/{name}", None) for name in ("main", "master")]
     unread: list[str] = []
-    for name, ref in candidates:
+    for name, ref, from_remote in candidates:
         state = _ref_exists(port, cwd, ref)
         if state:
-            return name, None
+            return name, from_remote, None
         if state is None:
             unread.append(ref)
 
     if unread:
         detail = f"git would not say whether {' or '.join(unread)} exists, so no tier was ruled out"
-    elif published:
-        detail = (
-            f"origin publishes HEAD as origin/{published}, which no longer exists, and neither "
-            f"main nor master exists"
-        )
-    elif head.ok or head.returncode == 1:
-        detail = "origin has published no HEAD, and neither main nor master exists"
     else:
+        if not published:
+            cause = declined
+        elif len(publishers) == 1:
+            cause = (
+                f"{publishers[0]} publishes HEAD as {publishers[0]}/{published}, which no longer "
+                f"exists"
+            )
+        else:
+            cause = (
+                f"{', '.join(publishers)} agree in publishing HEAD as {published}, and no "
+                f"remote-tracking ref for it exists under any of them"
+            )
+        detail = f"{cause}, and neither main nor master exists"
+    if remotes is None:
         detail = (
-            f"origin's published HEAD could not be read (exit {head.returncode}), and neither "
-            f"main nor master exists"
+            f"this repository's remote list could not be read, so no remote beyond origin could "
+            f"be consulted, and {detail}"
         )
-    return None, (
+
+    # Every remote this prescribes is one git listed. A repository with no
+    # `origin` must not be told to publish origin's HEAD, and a repository whose
+    # remote list went unread has no remote this can name at all -- there the
+    # placeholder says what to do without asserting that any particular remote
+    # is there to do it to.
+    named = None if remotes is None else consulted
+    remedies: list[str] = []
+    if named is not None and len(named) == 1:
+        remedies.append(
+            f"publish {named[0]}'s HEAD (`git remote set-head {named[0]} -a`) and re-run"
+        )
+    elif consulted:
+        remedies.append(
+            "publish the HEAD of whichever remote holds your trunk "
+            "(`git remote set-head <remote> -a`) and re-run"
+        )
+    remedies.append("delete what you want gone by naming it")
+    warning = (
         f"could not determine this repository's default branch: {detail}. Nothing here can be "
-        f"told apart from the trunk, so nothing will be swept; publish origin's HEAD "
-        f"(`git remote set-head origin -a`) and re-run, or delete what you want gone by "
-        f"naming it"
+        f"told apart from the trunk, so nothing will be swept; {', or '.join(remedies)}"
     )
+    return None, None, warning
 
 
 def resolve_base_ref(
-    port: CommandPort, cwd: Path | None, default_branch: str
+    port: CommandPort,
+    cwd: Path | None,
+    default_branch: str,
+    remotes: tuple[str, ...] | None,
+    trunk_remote: str | None,
 ) -> tuple[str, str | None]:
     """What merges are measured against, plus the warning when the preferred
     ref could not be read.
@@ -208,6 +353,16 @@ def resolve_base_ref(
     and merely quiet when the probe errored -- so the second case says so, and
     every merge verdict in the report is then known to have been measured
     against a ref that may be behind.
+
+    Whose copy of the trunk that is comes from ``trunk_remote`` -- the remote
+    whose published HEAD named the default branch -- rather than from a second
+    guess made here. Where the name came from a local `main` or `master`
+    instead, nothing has nominated a remote, so the same one-distinct-answer
+    rule the trunk tier uses applies again: exactly one remote holding a copy of
+    the trunk is an answer, and several is not. Several is left to the local
+    branch, because it is the direction that fails closed -- a base ref *behind*
+    the real trunk under-reports merges, while one *ahead* of it reports
+    unmerged work as merged.
 
     Handed back as a **full ref path**, which is the only spelling that reaches
     the ref this function just proved exists. `origin/main` does not: git tries
@@ -221,17 +376,35 @@ def resolve_base_ref(
     A path beginning `refs/` is matched literally by the first of git's
     rev-parse rules, so no other ref can shadow it however the repository is
     arranged, and it needs no `--` terminator either: a ref path cannot begin
-    with `-`. The warning below keeps the short form, being prose for a reader
+    with `-`. The warnings below keep the short form, being prose for a reader
     rather than a rev for git."""
-    state = _ref_exists(port, cwd, f"refs/remotes/origin/{default_branch}")
-    if state:
-        return f"refs/remotes/origin/{default_branch}", None
-    if state is None:
-        return f"refs/heads/{default_branch}", (
-            f"git would not say whether origin/{default_branch} exists, so merges here are "
+    candidates = (trunk_remote,) if trunk_remote is not None else _consulted_remotes(remotes)
+    local = f"refs/heads/{default_branch}"
+    found: list[str] = []
+    unread: list[str] = []
+    for remote in candidates:
+        state = _ref_exists(port, cwd, f"refs/remotes/{remote}/{default_branch}")
+        if state:
+            found.append(remote)
+        elif state is None:
+            unread.append(remote)
+    if len(found) > 1:
+        listed = ", ".join(f"{remote}/{default_branch}" for remote in found)
+        return local, (
+            f"more than one remote holds a {default_branch} ({listed}) and no published HEAD "
+            f"says which of them this repository's work merges into; measuring against one that "
+            f"is ahead of the real trunk would report unmerged work as merged, so merges here "
+            f"are measured against the local {default_branch}, which may be behind"
+        )
+    if unread:
+        listed = " or ".join(f"{remote}/{default_branch}" for remote in unread)
+        return local, (
+            f"git would not say whether {listed} exists, so merges here are "
             f"measured against the local {default_branch}, which may be behind the remote"
         )
-    return f"refs/heads/{default_branch}", None
+    if found:
+        return f"refs/remotes/{found[0]}/{default_branch}", None
+    return local, None
 
 
 def read_remotes(port: CommandPort, cwd: Path | None) -> tuple[tuple[str, ...] | None, str | None]:
@@ -252,7 +425,7 @@ def read_remotes(port: CommandPort, cwd: Path | None) -> tuple[tuple[str, ...] |
     in this module: git refuses to create a remote whose name holds a newline,
     and refuses to read a config key containing one, so no name it prints can
     span two lines."""
-    result = port.git(["remote"], cwd=cwd)
+    result = port.git(git_argv("remote"), cwd=cwd)
     if not result.ok:
         return None, (
             f"could not read this repository's remote list (exit {result.returncode}); no ref "
@@ -284,7 +457,7 @@ def read_fetch_refspecs(
     `\\n` in a value and would then split a single refspec across what a
     line-framed read calls two records. Each `-z` record is `key\\nvalue`, and
     a key holds no newline, so the first one in a record is the boundary."""
-    result = port.git(["config", "-z", "--get-regexp", r"^remote\..*\.fetch$"], cwd=cwd)
+    result = port.git(git_argv("config", "-z", "--get-regexp", r"^remote\..*\.fetch$"), cwd=cwd)
     if not result.ok and result.returncode > 1:
         return None, (
             f"could not read this repository's fetch refspecs (exit {result.returncode}); "
@@ -425,10 +598,11 @@ way, as a block dropped rather than one recorded wrongly."""
 class WorktreeListing:
     """git's own account of the worktrees, framed so a path survives it whole.
 
-    Kept as one type because two callers need the same listing and the framing
-    rule must not be written twice: the survey builds targets from it, and the
-    executor re-asks it to confirm a removal. A rule about how to read git's
-    output that exists in two places is a rule that will disagree with itself."""
+    The blocks travel with the evidence about how well they were read -- what
+    was dropped, and whether the framing that makes a path whole was available
+    at all -- because the survey's conclusions about absence rest on both, and
+    a caller handed the blocks alone would have no way to tell a listing that
+    named everything from one that could not."""
 
     blocks: tuple[dict[str, str], ...]
     warnings: tuple[str, ...]
@@ -449,26 +623,6 @@ class WorktreeListing:
     @property
     def ok(self) -> bool:
         return self.result.ok
-
-    def holds(self, path: str) -> bool:
-        return any(block.get("worktree") == path for block in self.blocks)
-
-    def can_place(self, path: str) -> bool:
-        """Whether *this* path's absence from the listing means anything.
-
-        A truncation only ever shortens a path at a newline, and it only
-        corrupts the block it happens inside -- records are grouped by the empty
-        record between them, so a fragment lands among its own worktree's
-        attributes and nowhere else. A path with no newline in it therefore
-        cannot be the truncated one, and no other worktree's truncation can hide
-        it, so a framed listing and an unframed one answer alike about it.
-
-        This is narrower than the rule the survey applies to a *selector*, and
-        deliberately: there the string came from a caller and may be a shorter
-        name -- a basename, say -- for a path whose newline is further up, so a
-        selector with no newline in it proves nothing. Here the whole path is in
-        hand."""
-        return self.framed or "\n" not in path
 
 
 def _parse_worktrees(records: list[str], *, framed: bool) -> tuple[list[dict[str, str]], int]:
@@ -548,11 +702,11 @@ def list_worktrees(port: CommandPort, cwd: Path | None) -> WorktreeListing:
     it recorded every path. That costs nothing where `-z` answers, and where it
     does not it withholds one conclusion: that something absent from this
     listing is absent from the repository."""
-    framed = port.git(["worktree", "list", "--porcelain", "-z"], cwd=cwd)
+    framed = port.git(git_argv("worktree", "list", "--porcelain", "-z"), cwd=cwd)
     if framed.ok:
         blocks, dropped = _parse_worktrees(framed.stdout.split("\0"), framed=True)
         return WorktreeListing(tuple(blocks), (), dropped, framed)
-    plain = port.git(["worktree", "list", "--porcelain"], cwd=cwd)
+    plain = port.git(git_argv("worktree", "list", "--porcelain"), cwd=cwd)
     if not plain.ok:
         return WorktreeListing((), (), 0, plain, framed=False)
     blocks, dropped = _parse_worktrees(plain.stdout.splitlines(), framed=False)
@@ -671,7 +825,8 @@ def _count_dirt(port: CommandPort, path: Path) -> tuple[int, int, int] | None:
     to ``=all``. Measured on a 2.5 GB checkout the pair costs ~0.15s against
     ~0.02s, and returns 47,620 ignored files where the old pair returned 90."""
     status = port.git(
-        ["status", "--porcelain=v1", "--untracked-files=all", "--ignored=traditional"], cwd=path
+        git_argv("status", "--porcelain=v1", "--untracked-files=all", "--ignored=traditional"),
+        cwd=path,
     )
     if not status.ok:
         return None
@@ -850,11 +1005,16 @@ def _merged_set(
 ) -> tuple[set[str], str | None]:
     """Branches the batch ancestry check calls merged, plus a warning when it
     would not run. An empty set only costs the cheap tier -- the per-branch
-    probes still answer -- so failure here degrades speed, not safety."""
-    args = ["branch", "--merged", base_ref, "--format=%(refname:short)"]
-    if remote:
-        args.insert(1, "-r")
-    result = port.git(args, cwd=cwd)
+    probes still answer -- so failure here degrades speed, not safety.
+
+    ``base_ref`` is the one repo-derived name here and it goes in as a plain
+    argument: it arrives as a full ref path, which is the spelling that needs no
+    terminator, and it could not have taken one anyway with a format argument
+    behind it."""
+    remote_only = ("-r",) if remote else ()
+    result = port.git(
+        git_argv("branch", *remote_only, "--merged", base_ref, "--format=%(refname:short)"), cwd=cwd
+    )
     if not result.ok:
         scope = "remote" if remote else "local"
         return set(), (
@@ -870,8 +1030,14 @@ def _count_revs(port: CommandPort, cwd: Path | None, spec: str) -> int | None:
     None is load-bearing. Returning 0 for a failed count reads downstream as
     "nothing ahead of base", which resolves to ANCESTOR, which is proof of a
     merge -- so a transient failure would authorise deleting the branch it
-    failed on."""
-    result = port.git(["rev-list", "--count", spec], cwd=cwd)
+    failed on.
+
+    The range is one argument with two revs inside it, so it goes in whole
+    rather than as a terminated name -- `rev-list` spends `--` on a pathspec,
+    and counting commits that touched a path is not this question. What keeps
+    it from being read as an option is the spelling of the rev it opens with,
+    which the callers settle before composing it."""
+    result = port.git(git_argv("rev-list", "--count", spec), cwd=cwd)
     if not result.ok:
         return None
     try:
@@ -898,7 +1064,10 @@ def _unpushed_count(
     ``name`` is what a reader is told and ``spec`` is what git is asked. They
     are the same string in every ordinary repository and come apart in the one
     that made this distinction necessary, so the two roles are separate
-    parameters rather than one value used for both."""
+    parameters rather than one value used for both. ``upstream`` splits the same
+    way: the sentences below spell it as a reader knows it, and the range below
+    those opens with it, which is the position an option-shaped name would be
+    read from -- so that one copy is spelled by the rev constructor."""
     if not upstream:
         return None, None
     if not track:
@@ -908,7 +1077,7 @@ def _unpushed_count(
         )
     if ">" not in track:
         return 0, None
-    count = _count_revs(port, cwd, f"{upstream}..{spec}")
+    count = _count_revs(port, cwd, f"{git_rev(upstream)}..{spec}")
     if count is None:
         return None, (
             f"could not count the commits on {name} missing from {upstream}; "
@@ -923,10 +1092,11 @@ def _patch_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str) 
     probe errored: `git cherry` has no exit code meaning "no", so a non-zero
     exit is always a question that went unanswered rather than an answer of
     not-equivalent."""
-    # `--` because the branch name is repo-derived: `refs/heads/-m` is a
-    # perfectly legal ref that plumbing and remotes can both create, and
-    # without the terminator `git cherry` reads it as a switch and errors.
-    result = port.git(["cherry", base_ref, "--", name], cwd=cwd)
+    # The branch name is repo-derived, so it reaches git through the argv
+    # constructor: `refs/heads/-m` is a perfectly legal ref that plumbing and
+    # remotes can both create, and unterminated `git cherry` reads it as a
+    # switch and errors.
+    result = port.git(git_argv("cherry", base_ref, name=name), cwd=cwd)
     if not result.ok:
         return None
     lines = [line for line in result.stdout.splitlines() if line.strip()]
@@ -953,28 +1123,23 @@ def _squash_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str)
 
     A name beginning with `-` -- `refs/heads/-m` is a legal ref that
     `update-ref` or a remote push can create -- is otherwise read by git as a
-    switch. `--` genuinely terminates `merge-base`'s option parsing, so it is
-    applied unconditionally, matching every other probe in this module.
-    `rev-parse` has no terminator that survives here: both `--` and
-    `--end-of-options` are echoed back as a literal output line rather than
-    consumed, so the tree lookup instead names the branch by its full ref path
-    when the short name would otherwise be misread -- a path never begins with
-    `-`. That substitution is conditional, not unconditional like the one
-    above: a remote-tracking branch's short name always carries its remote
-    first (`origin/feat`, never bare `feat`) and already resolves correctly,
-    while `refs/heads/` would be the wrong prefix for it."""
-    base = port.git(["merge-base", base_ref, "--", name], cwd=cwd)
+    switch, and this tier is where both spellings that survive that are needed
+    at once. `merge-base` takes the name as an argument of its own, so the argv
+    constructor terminates it. The tree lookup composes the name into a rev
+    expression instead, where nothing can be terminated, so it goes through the
+    rev constructor beside it -- and both decisions live there rather than
+    here."""
+    base = port.git(git_argv("merge-base", base_ref, name=name), cwd=cwd)
     if base.returncode == 1:
         # git's own answer, not a failed read: these histories share no commit,
         # so there is no base to replay the tree onto and no squash to find.
         return False
     if not base.ok or not base.out:
         return None
-    ref = f"refs/heads/{name}" if name.startswith("-") else name
-    tree = port.git(["rev-parse", f"{ref}^{{tree}}"], cwd=cwd)
+    tree = port.git(git_argv("rev-parse", f"{git_rev(name)}^{{tree}}"), cwd=cwd)
     if not tree.ok or not tree.out:
         return None
-    base_tree = port.git(["rev-parse", f"{_first_line(base.out)}^{{tree}}"], cwd=cwd)
+    base_tree = port.git(git_argv("rev-parse", f"{_first_line(base.out)}^{{tree}}"), cwd=cwd)
     if not base_tree.ok or not base_tree.out:
         return None
     if _first_line(base_tree.out) == _first_line(tree.out):
@@ -987,12 +1152,19 @@ def _squash_equal(port: CommandPort, cwd: Path | None, base_ref: str, name: str)
         # commits are the only copy of the work they hold.
         return False
     synthetic = port.git(
-        ["commit-tree", _first_line(tree.out), "-p", _first_line(base.out), "-m", "gitclean-probe"],
+        git_argv(
+            "commit-tree",
+            _first_line(tree.out),
+            "-p",
+            _first_line(base.out),
+            "-m",
+            "gitclean-probe",
+        ),
         cwd=cwd,
     )
     if not synthetic.ok or not synthetic.out:
         return None
-    cherry = port.git(["cherry", base_ref, _first_line(synthetic.out)], cwd=cwd)
+    cherry = port.git(git_argv("cherry", base_ref, _first_line(synthetic.out)), cwd=cwd)
     if not cherry.ok:
         return None
     lines = [line for line in cherry.stdout.splitlines() if line.strip()]
@@ -1023,7 +1195,7 @@ def _pr_covers_tip(port: CommandPort, cwd: Path | None, pr: PullRequest, head: s
         return None
     if pr.head_oid == head:
         return True
-    result = port.git(["merge-base", "--is-ancestor", head, pr.head_oid], cwd=cwd)
+    result = port.git(git_argv("merge-base", "--is-ancestor", head, pr.head_oid), cwd=cwd)
     if result.ok:
         return True
     return False if result.returncode == 1 else None
@@ -1114,10 +1286,10 @@ def _advertised_heads(
     reading the column rather than searching the line is what keeps an
     unrelated `a/feat/x` from answering for `feat/x`.
 
-    Two separate protections, and it is worth not confusing them. `--` ends
-    option parsing, which is what keeps a branch or remote named like a flag
-    from being read as one. It does *not* stop git accepting a path in the
-    repository position -- nothing does.
+    Two separate protections, and it is worth not confusing them. The
+    terminator the argv constructor applies ends option parsing, which is what
+    keeps a branch or remote named like a flag from being read as one. It does
+    *not* stop git accepting a path in the repository position -- nothing does.
 
     What covers that is where `remote` comes from: the decomposition against
     the configured remote list, so the only names reaching here are ones git
@@ -1125,7 +1297,7 @@ def _advertised_heads(
     is not rejected -- a sibling directory of that name that happens to be a
     repository is opened instead and answers, well-formed, empty, and about
     somebody else entirely. An empty answer here means every branch is gone."""
-    result = port.git(["ls-remote", "--heads", "--", remote], cwd=cwd)
+    result = port.git(git_argv("ls-remote", "--heads", name=remote), cwd=cwd)
     if not result.ok:
         return None, (
             f"could not ask {remote} which branches it still has (exit {result.returncode}); "
@@ -1217,7 +1389,7 @@ def read_branches(
     travel because both leave a spelling a caller might use matching nothing,
     and a miss that means nothing must never settle as absence."""
     result = port.git(
-        ["for-each-ref", f"--format={_REF_FORMAT}", "refs/heads", "refs/remotes"], cwd=cwd
+        git_argv("for-each-ref", f"--format={_REF_FORMAT}", "refs/heads", "refs/remotes"), cwd=cwd
     )
     if not result.ok:
         return (
@@ -1411,12 +1583,16 @@ def _worktree_activity(
     created ten seconds ago at a two-year-old tag reports a two-year-old
     timestamp. Nothing judges on it, which is why the discrepancy is tolerable
     -- it is a fact for a reader, and no rule reads it. If anything ever does,
-    this is the wrong measurement for it."""
+    this is the wrong measurement for it.
+
+    The head is an object id git printed, and it goes in as a plain argument: an
+    object id cannot begin with `-`, and `show` spends `--` on a pathspec, so a
+    terminator here would ask for a date filtered by a path of that name."""
     if worktree.branch:
         return activity_by_branch.get(worktree.branch)
     if worktree.prunable or not worktree.head:
         return None
-    result = port.git(["show", "-s", "--format=%cI", worktree.head], cwd=cwd)
+    result = port.git(git_argv("show", "-s", "--format=%cI", worktree.head), cwd=cwd)
     return _first_line(result.out) if result.ok else None
 
 
@@ -1427,14 +1603,21 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
         return "not inside a git repository"
     repo_root, common_dir = resolved
 
-    resolved_default, default_branch_warning = resolve_default_branch(port, cwd)
+    # Read before the trunk is resolved rather than beside the other reads
+    # below: which remote's published HEAD gets to name the default branch is
+    # decided from this list, so it has to be in hand first. Its warning joins
+    # the others further down, where there is a list to put it in.
+    remotes, remotes_warning = read_remotes(port, cwd)
+    resolved_default, trunk_remote, default_branch_warning = resolve_default_branch(
+        port, cwd, remotes
+    )
     # The name is still needed downstream to compare against, but it is now
     # known to be a guess -- so it protects nothing it cannot prove, and the
     # flag travels with the survey so the run can report that it is guessing.
     default_branch = resolved_default if resolved_default is not None else "main"
-    base_ref, base_ref_warning = resolve_base_ref(port, cwd, default_branch)
+    base_ref, base_ref_warning = resolve_base_ref(port, cwd, default_branch, remotes, trunk_remote)
 
-    head = port.git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd)
+    head = port.git(git_argv("rev-parse", "--abbrev-ref", "HEAD"), cwd=cwd)
     current = _first_line(head.out) if head.ok else None
     if current == "HEAD":
         current = None
@@ -1461,7 +1644,6 @@ def survey(port: CommandPort, *, cwd: Path | None = None) -> Survey | str:
     prs, gh_error, pr_evidence_gap = read_pull_requests(port, cwd)
     if pr_evidence_gap:
         warnings.append(pr_evidence_gap)
-    remotes, remotes_warning = read_remotes(port, cwd)
     if remotes_warning is not None:
         warnings.append(remotes_warning)
     refspecs, refspecs_warning = read_fetch_refspecs(port, cwd)
