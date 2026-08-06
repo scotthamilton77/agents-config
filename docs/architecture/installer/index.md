@@ -33,7 +33,7 @@ Each artifact file in this folder carries its **own short glossary** at the top,
 
 This folder is the **high-level design (HLD) artifact set** for the Python installer. It exists to fix the big-picture architecture in pictures — boundary, internals, runtime flow, data model — so the 34 implementation stories (A.1 … H.5) share one mental model of the system rather than each re-deriving it from 394 lines of spec prose.
 
-These artifacts are **evergreen reference material**: they describe how the installer is meant to be structured and behave, and are amended in place as the design evolves. They are NOT point-in-time proposals — those live in `docs/plans/` and `docs/specs/` with date-prefixed filenames. The companion design here, `installer-design.md`, is itself the design-of-record (moved into this folder rather than dated because it is the living installer design, not a snapshot).
+These artifacts are **evergreen reference material**: they describe how the installer is meant to be structured and behave, and are amended in place as the design evolves. They are NOT point-in-time proposals — those live in `docs/specs/` with date-prefixed filenames. The companion design here, `installer-design.md`, is itself the design-of-record (moved into this folder rather than dated because it is the living installer design, not a snapshot).
 
 ## Scope and non-scope
 

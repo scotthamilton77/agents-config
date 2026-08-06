@@ -20,7 +20,7 @@ hand-pick a subset — the linter and the formatter are orthogonal. Faster inner
 loop: `make test-gitclean`.
 
 This package **is** in the installer's `CLI_PACKAGES` registry and installs onto
-PATH as `gitclean`. Being inside `make ci` is not what earns that — `vizsuite`
+PATH as `gitclean`. Being inside `make ci` is not what earns that — `installer`
 is gated and stays off — so a change here reaches a deployed tool, driven by the
 `/clean-up-git` command interactively and named to agents by the
 `post-merge-cleanup` skill.
@@ -66,7 +66,12 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   not zero, clean, or absent. Defaulting an unanswered question to the
   convenient value turns each transient git failure into data loss, so unknowns
   render as a stated unknown on that target's own row. If you add a read, add
-  its `None` path with it.
+  its `None` path with it. The one thing that suppresses such a sentence is
+  another tier having already answered the same question — the tiers are
+  independent reads, so a failed count sits happily beside authoritative merge
+  proof, and printing both leaves a row that calls the merge unproven next to
+  the decision to sweep it. Suppress only the question that was answered: a
+  proven merge says nothing about whether the work was pushed.
 - **A relation the report states is a field, never a sentence.** A worktree, the
   branch it holds and that branch's copy on the server are one thing with two or
   three parts, and a reader deciding about one has to see the others. Those
@@ -114,25 +119,24 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   conclusion, and the cost lands as a deletion not made rather than as a lie.
   Adding an exclusion to `read_branches` without adding its `NotOffered` record
   reintroduces this defect silently.
-- **With one exception, and know why it is there.** git's refusals cover
+- **No exception to that, and an obligation in its place.** git's refusals cover
   uncommitted content; they say nothing about a commit made inside a worktree
   on no branch. That tree is clean, git removes it happily, and the record it
   deletes is what held the commit — the per-worktree reflog dies with it, so
-  there is no undo. Before removing a worktree the executor asks git whether
-  any ref contains that commit and declines when none does. **It asks about
-  the commit the tree holds now, re-read as the deletion happens, not the one
-  the survey recorded.** Every other guard on that path is git's own and is
-  taken at that moment; this one is ours, so it is taken then too. A commit
-  made in the tree after the survey ran is held by the record about to be
-  deleted and by nothing else, while the commit it replaced sits on a branch
-  and answers "contained" — so asking about the surveyed commit is not a
-  weaker check, it is the wrong one, and it clears in the exact case it exists
-  to refuse. This is the one
-  place a named target is refused on reachability grounds, and it is not a
-  precedent for re-deriving anything else: it exists because "the reflog is
-  the undo" — the argument that retired salvage everywhere else — is simply
-  false here. Do not generalise it, and do not remove it without replacing
-  the guarantee.
+  there is no undo. That is a cost the caller is owed a report of, not a
+  deletion this tool declines: the removal proceeds, and the row for that
+  worktree names the commit and the command that keeps it before git collects
+  the object. **The probe asks about the commit the tree holds now, re-read as
+  the deletion happens, not the one the survey recorded.** A commit made in the
+  tree after the survey ran is held by the record about to be deleted and by
+  nothing else, while the commit it replaced sits on a branch and answers
+  "contained" — so a disclosure built from the surveyed commit is not a smaller
+  one, it is about the wrong commit, and it reports nothing at risk in the
+  exact case where something is. A probe that would not answer is disclosed as
+  unknown rather than resolved either way, for the same reason `None` never
+  authorises anything here. Removing a refusal is not licence to go quiet:
+  saying what a deletion cost blocks nothing, and it is the whole of what
+  survives here.
 - **Never add a merge check that relies on ancestry alone.** `git branch
   --merged` is wrong in both directions under squash merges. New evidence goes
   in as a tier in `_resolve_merge` with its own `MergeEvidence` member, so the
@@ -147,7 +151,12 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   salvage that does not restore is an anomaly carrying the transcript, is
   recorded as no salvage, and leaves the target alone. Unbundling is not a
   substitute — it reports success on exactly the bundle that will not clone.
-- **Verify every deletion by re-asking git.** Exit codes are claims.
+- **A deletion git performed is reported as done; a server ref is asked twice.**
+  For a branch or a worktree, the command that made the deletion is the report,
+  and re-asking afterwards only creates a way to call a deletion that happened
+  one that did not. The server is where an exit code answers a different
+  question than the one asked — `push --delete` can exit 0 against a ref the
+  remote kept — so that one is queried again.
 - **Anomalies carry `CommandResult.transcript()`.** An agent reading the output
   must be able to remediate without re-running anything. Never summarise a
   failure into prose that drops the argv.
@@ -182,9 +191,19 @@ ports.py  →  survey.py  →  classify.py  →  plan.py  →  execute.py  →  
   deletes from the server guards the **bare** repository rather than the
   working clone: `push --delete` is what the run performs, and the server is
   what loses the ref.
-- **The guard only covers the topologies the matrix names.** It is a property
-  check, but it runs on the shapes in `test_a_sweep_strands_only_the_commits_it_proved_redundant`,
-  and every one of those but a single named branch drives a *bare* sweep. A
-  deletion reached by naming a target is barely represented, so a defect on the
-  named path can pass the whole suite. Adding a row is cheap; assuming one
-  exists is how a shape goes unmeasured.
+- **The bare sweep is covered by shapes nobody enumerated; the named path is
+  not.** `test_generated_topologies.py` builds repositories from a seeded draw
+  over an alphabet of real git operations and holds each one to the guard with
+  an allowance of exactly the commits the generator itself squashed or
+  cherry-picked onto the trunk -- so a bare sweep that strands anything else
+  fails a test written before the shape existed. Remotes are guarded with no
+  allowance at all, because a bare sweep never reaches a server. What that
+  leaves unmeasured is the deletion a caller *names*: the executor's probe for
+  whether some ref contains a worktree's commit is only reachable that way,
+  since a commit no ref holds carries no merge proof and the sweep withholds it
+  long before the executor is asked. That is also why the one test whose block
+  deliberately strands a commit is a named deletion, and why it declares that
+  commit to the guard by name -- the generated corpus would pass with the
+  disclosure gone, and the enumerated test is what fails. Both suites stay: the
+  matrix names the shapes worth stating outright, and the draw finds the ones
+  nobody would have.

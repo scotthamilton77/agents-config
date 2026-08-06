@@ -522,7 +522,7 @@ def test_engagement_stamps_activity_time_not_poll_time() -> None:
 
 
 def test_approved_review_flips_required_reviewer_to_review_found() -> None:
-    # §4.1 + sequences.md L96: an APPROVED review is a terminal verdict written by
+    # §4.1: an APPROVED review is a terminal verdict written by
     # _poll → REVIEW_FOUND (satisfies G_REVIEWERS).
     reviewers = _requested_at(at=_T0 - timedelta(hours=2))
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)

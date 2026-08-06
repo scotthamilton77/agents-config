@@ -2,7 +2,7 @@
 
 Source-of-truth for every skill that gets staged into each detected tool's user-space skills directory by `scripts/install.sh`. Edits here are what land in `~/.claude/skills/`, `~/.codex/skills/`, `~/.gemini/skills/`, and `~/.config/opencode/skills/` on the next install run.
 
-Staging is gated on admission: a `SKILL.md` without a complete `admission:` record (`prevents` **or** `provides`, plus `cost` and `remove_when`) in its front matter is dropped at deploy and pruned from every tool. Only admitted skills live in this folder; skills awaiting or past admission live under `archive/src/user/**`.
+Staging is gated on admission: a `SKILL.md` without a complete `admission:` record (`prevents` **or** `provides`, plus `cost` and `remove_when`) in its front matter is dropped at deploy and pruned from every tool. Only admitted skills live in this folder; a skill awaiting admission, or retired after it, is not here at all.
 
 An admission record is necessary but not sufficient — a skill can hold a complete record and still fail a mechanical staging check, in which case it deploys nothing. Before telling anyone a skill is available, list the tool's own config directory and confirm it landed. `writing-skills` is in exactly that state today (it exceeds the file-size limit and carries an `exemption:` key the installer does not yet honour); `agents-config-9k9.68` tracks it.
 
@@ -33,10 +33,10 @@ description: ...
 ---
 
 <!--
-Source: oss-snapshots/<snapshot-folder>/<path-to-original-skill>
+Source: <path to the skill inside the upstream repository>
 Upstream: https://github.com/<owner>/<repo> @ <commit-sha>
 Last sync: YYYY-MM-DD
-Drift policy: <accept-periodic-resync | rewrite-and-divorce | track-upstream | ...>
+Drift policy: <accept-periodic-resync | rewrite-and-divorce | local-fork | track-upstream | ...>
 -->
 
 # My Skill
@@ -45,26 +45,30 @@ Drift policy: <accept-periodic-resync | rewrite-and-divorce | track-upstream | .
 
 **Why HTML comments and not a co-located AGENTS.md.** Hosts do not read per-skill AGENTS.md files at runtime, and an in-folder note that travels with the SKILL.md is the only durable place for provenance that survives install staging. (See the provenance registry below for the project-wide rollup.)
 
-The full unmodified upstream artifacts live under `<repo-root>/oss-snapshots/<snapshot-folder>/`. To inspect drift between an upstream snapshot and a modified deployed copy, `diff` the two trees. When a snapshot is refreshed to a newer upstream commit, bump the commit SHA and `Last sync` date in the deployed skill's header in the same change.
+**The pinned commit is the reference copy.** This repository vendored full upstream trees until 2026-08-05; it no longer does, because `Upstream` plus `Source` already identifies the exact bytes and a clone reproduces them on demand. To inspect drift, clone the upstream repository, check out the pinned SHA, and diff that against the deployed copy. When a skill is resynced to a newer upstream commit, bump the SHA and the `Last sync` date in its header in the same change.
 
-**Never rename the provenance keys.** `Source: oss-snapshots` and `Drift policy:` are the literal strings a resync sweep greps for. A skill that *amalgamates* — lifts specific patterns rather than resyncing byte-for-byte — keeps the same keys and encodes the amalgam semantics in the `Drift policy:` **value** (`selective-amalgamation`), never in a renamed key like `Amalgamation source:`. If a new policy value is needed (e.g. `vendor-pinned`), add it to the enum above rather than inventing an ad-hoc key.
+That makes each row's accuracy load-bearing in a way it was not while a local copy existed. A pin that names a commit predating the skill it claims to source is not a stale convenience — it is the only record, and it is wrong. Verify a SHA by hashing the file you are pinning and finding the commit whose blob matches, not by picking a commit near the right date.
+
+**Never rename the provenance keys.** The installer's sanitizer matches `Source:` and `Upstream:` by key name alone, case-insensitively, and never reads their values — so a key rename silently stops provenance being recognised, while a value's shape is free. A skill that *amalgamates* — lifts specific patterns rather than resyncing byte-for-byte — keeps the same keys and encodes the amalgam semantics in the `Drift policy:` **value** (`selective-amalgamation`), never in a renamed key like `Amalgamation source:`. If a new policy value is needed, add it to the enum above rather than inventing an ad-hoc key.
 
 ## Skill provenance registry
 
 One row per OSS-derived or OSS-influenced skill that is **here now**. Skills built from
 scratch in-repo do not appear. When a skill is retired, delete its row — the SKILL.md
-carries its own provenance header into `archive/`, and git holds the rest.
+carries its own provenance header with it wherever it goes, and git holds the rest.
 
-| Skill | Location | Snapshot path | Upstream | Last sync | Drift policy |
-|-------|----------|---------------|----------|-----------|--------------|
-| `writing-skills` | shared | `oss-snapshots/superpowers/writing-skills/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-17 | accept-periodic-resync |
-| `writing-skills` | shared | `oss-snapshots/anthropics/skill-creator/` | `anthropics/skills @ f458cee` | 2026-05-17 | accept-periodic-resync |
-| `grill-with-docs` | shared | `oss-snapshots/pocock/skills/skills/engineering/grill-with-docs/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | local-fork |
-| `grilling` | shared | `oss-snapshots/pocock/skills/skills/productivity/grilling/` | `mattpocock/skills @ e74f0061` | 2026-07-24 | local-fork |
-| `to-spec` | shared | `oss-snapshots/pocock/skills/skills/engineering/to-spec/` | `mattpocock/skills @ e74f0061` | 2026-07-24 | local-fork |
-| `handoff` | shared *(see below)* | `oss-snapshots/pocock/skills/skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
+| Skill | Location | Upstream | Path in upstream | Last sync | Drift policy |
+|-------|----------|----------|------------------|-----------|--------------|
+| `writing-skills` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/writing-skills/` | 2026-05-17 | accept-periodic-resync |
+| `writing-skills` | shared | `anthropics/skills @ f458cee` | `skills/skill-creator/` | 2026-05-17 | accept-periodic-resync |
+| `grill-with-docs` | shared | `mattpocock/skills @ ed37663c` | `skills/engineering/grill-with-docs/` | 2026-05-23 | local-fork |
+| `grilling` | shared | `mattpocock/skills @ ed37663c` | `skills/productivity/grilling/` | 2026-07-24 | local-fork |
+| `to-spec` | shared | `mattpocock/skills @ ed37663c` | `skills/engineering/to-spec/` | 2026-07-24 | local-fork |
+| `handoff` | shared *(see below)* | `mattpocock/skills @ ed37663c` | `skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
 
 Update this table whenever a skill is added, replaced, retired, or amalgamated from an OSS source.
+
+`Upstream` and `Path in upstream` together fetch the exact reference bytes. `Last sync` is a different fact — when the deployed copy was last reconciled against upstream — so it can legitimately predate the pinned commit, and does for two rows here.
 
 `handoff` is the standing exception to the placement rule: it carries Claude-only front matter but sits in the shared tree, so it stages into Codex, Gemini and OpenCode where those keys do nothing. Deliberate and temporary — `agents-config-9k9.68` resolves it, either with per-tool exemption support or by moving the skill back.
 
@@ -80,5 +84,4 @@ catches these cross-file contract gaps that per-line review misses.
 
 ## Companion folders
 
-- `<repo-root>/oss-snapshots/` — unmodified reference clones of upstream skill catalogs, pinned to specific commits. Each snapshot folder carries its own `AGENTS.md` documenting source repo, commit, and per-skill inventory.
 - `src/user/.claude/skills/` — skills that depend on Claude-only capabilities (depth-1 same rule). Placement is by capability-dependency: a skill that works on every supported tool belongs in **this** folder; one that needs a Claude-specific capability belongs in **that** one.

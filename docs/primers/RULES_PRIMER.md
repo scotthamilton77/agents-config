@@ -7,22 +7,44 @@
 
 ## What Rules Are
 
-**Rules** are markdown files in `.claude/rules/` that Claude Code loads into the agent's context. Rules without a `paths` frontmatter field are loaded at session start with the same priority as `.claude/CLAUDE.md`. Rules with a `paths` field are **path-scoped**: they only enter context when Claude reads files matching the configured glob patterns.
+**Rules** are markdown files in a tool's `rules/` directory. Claude Code loads them into the agent's context; the other three tools are meant to get the same content by a different route, described below. A rule whose front matter carries no `paths` field is loaded at session start with the same priority as `.claude/CLAUDE.md`. A rule with a `paths` field is **path-scoped**: it only enters context when the agent reads files matching the configured glob patterns.
 
 > Quoted directly from the official docs:
 > *"Rules load into context every session or when matching files are opened. For task-specific instructions that don't need to be in context all the time, use skills instead, which only load when you invoke them or when Claude determines they're relevant to your prompt."*
 
-Rules are a Claude Code-specific construct. In this project, rules are authored Claude-specifically, but their substantive content is intended to be **universal in applicability**: the install pipeline will eventually embed rule content into the AGENTS.md instruction files for Codex, Gemini, and other tools. Author rules accordingly — the constraint or convention should be tool-agnostic in spirit, even though the file lives under `.claude/rules/`.
+The `paths` mechanism and the session-start loading priority are Claude Code behaviour. Distribution is not: `rules` is one of the shared namespaces, so a rule authored in the shared tree is staged into **every** active tool's `rules/` directory, and every admitted rule is charged against that tool's always-on budget. Author accordingly — a rule in the shared tree must read as a constraint any agent on any tool can follow. A rule that only makes sense inside Claude Code belongs in the Claude tree instead, where it stages nowhere else.
+
+Staged is not the same as loaded. Claude Code reads a loose `rules/` directory natively; the other three tools are meant to receive rules inlined into their instruction file instead, and that wiring is currently incomplete — see "Embedding rules into the instruction file" below before assuming a shared rule takes effect everywhere it lands.
 
 ---
 
 ## File Format
 
-Plain markdown. YAML frontmatter is **required only for path-scoped rules**.
+Markdown with YAML front matter. The front matter is not optional: the deploy
+gate treats `rules` as a gated namespace, and **a rule carrying no `admission:`
+record is dropped at deploy** — it stages, and then simply never lands in the
+tool's config directory, while any copy an earlier run deployed is pruned. In
+this repository `content-lint` catches it first and fails, because a record-less
+artifact under `src/user/` is fatal there; where that gate does not run, the
+installer reports the drop and carries on — a count of unadmitted artifacts on
+every run, and the names behind it only under `--verbose`. A malformed record is
+worse in both places: it aborts the whole deploy.
 
-### Always-loaded rule (no frontmatter)
+The gate strips what it admits — the `admission:` and `claims:` blocks are
+repo-side bookkeeping and never reach the deployed bytes — so the record costs
+the reader nothing and is not charged against the always-on budget. Write it for
+the next maintainer of this repository, not for the agent that loads the rule.
+
+### Always-loaded rule
 
 ```markdown
+---
+admission:
+  prevents: <the failure this rule stops>   # or `provides:`, never both
+  cost: <what it costs, and on which surface>
+  remove_when: <the observation that would retire it>
+---
+
 # Rule Name
 
 One-line statement of what this rule governs.
@@ -36,13 +58,17 @@ Specific situations or "all non-trivial work".
 Explicit prescriptions: "always X before Y", "never Z without explicit authorization".
 ```
 
-### Path-scoped rule (with `paths` frontmatter)
+### Path-scoped rule (with `paths` front matter)
 
 ```markdown
 ---
 paths:
   - "src/api/**/*.ts"
   - "src/api/**/*.tsx"
+admission:
+  provides: <the capability this supplies>
+  cost: <what it costs, and on which surface>
+  remove_when: <the observation that would retire it>
 ---
 
 # API Development Rules
@@ -52,7 +78,11 @@ paths:
 - Include OpenAPI documentation comments
 ```
 
-Path-scoped rules trigger when Claude reads files matching the patterns. Glob syntax supports brace expansion: `"src/**/*.{ts,tsx}"`.
+Sanitization removes only the governance keys, so `paths` survives into the
+deployed file. A rule whose front matter held nothing but the admission record
+deploys with no front matter at all.
+
+Path-scoped rules trigger when the agent reads files matching the patterns. Glob syntax supports brace expansion: `"src/**/*.{ts,tsx}"`.
 
 ---
 
@@ -60,12 +90,20 @@ Path-scoped rules trigger when Claude reads files matching the patterns. Glob sy
 
 | Rule type | When loaded |
 |-----------|-------------|
-| Rule with no `paths` field | Every session, at startup, like `.claude/CLAUDE.md` |
-| Rule with `paths` field | Only when Claude reads a file matching one of the patterns |
+| Deployed rule with no `paths` field | Every session, at startup, like `.claude/CLAUDE.md` |
+| Deployed rule with a `paths` field | Only when Claude reads a file matching one of the patterns |
 
 User-level rules in `~/.claude/rules/` apply to every project. Project-level rules in `<project>/.claude/rules/` are loaded for that project specifically. **Project rules have higher priority than user rules** when both apply.
 
 `.claude/rules/` supports symlinks for sharing a rule set across projects.
+
+---
+
+## The Always-On Budget
+
+An always-loaded rule is the most expensive artifact class this repository ships: its bytes sit in every session whether or not they are needed. That cost is capped mechanically. A tool's **always-on surface** — its deployed instruction file plus every admitted rule staged into it — must stay under `ALWAYS_ON_TOKEN_CAP` in `packages/installer/src/installer/core/surface_budget.py`, currently **10,000 tokens**, counted as `ceil(bytes / 4)`. A breach is fatal: the deploy aborts before any write, and `make content-lint` fails the same way in this repository.
+
+The cap is measured after sanitization, so the record is free and only the rule's own prose is charged. On a pass, `make content-lint` prints each tool's current weight and rule count — read that rather than guessing at headroom, and read a rising token count against a flat rule count as one rule bloating.
 
 ---
 
@@ -98,42 +136,57 @@ If a rule has grown to 5+ steps of methodology, the methodology belongs in a ski
 
 ## How Rules Are Organized in This Project
 
-Rules in this project are sourced under `src/` and installed into the user-level Claude Code rules directory by `scripts/install.sh`.
+Rules in this project are sourced under `src/`, and where a rule lives decides which tools receive it. The shared tree reaches all of them; a tool tree reaches one. The behaviour described in this section is implemented in the installer core, `packages/installer/src/installer/core/`, and the module names below are relative to it.
 
 ### Source layout
 
 ```
-src/user/.claude/rules/            # Shared rules — install to ~/.claude/rules/
+src/user/.agents/rules/               # Shared rules — staged into EVERY active tool's rules/
   <rule-name>.md
 
-src/plugins/<plugin>/.claude/rules/   # Plugin rules — appended to base on install
+src/user/.claude/rules/               # Claude-only rules — staged into ~/.claude/rules/ alone
+  <rule-name>.md
+
+src/plugins/<plugin>/.agents/rules/   # Plugin rules for every active tool
+  <rule-name>.md
+
+src/plugins/<plugin>/.<tool>/rules/   # Plugin rules for one tool (e.g. .claude/rules/)
   <rule-name>.md
 ```
+
+Each rules directory carries its own `AGENTS.md` saying what is currently in it — read that rather than counting files, and read `namespaces.py` for which namespaces are shared as against tool-scoped.
+
+Every one of these locations is gated, plugin trees included: a plugin can be discovered, activated, and still install nothing. A rule reaching every tool is charged against every tool's always-on budget, which is the practical argument for putting a rule in the narrowest tree that serves it.
 
 ### Collision / append model
 
 Rule files with the same name across source trees (base + active plugins) are **appended** during install, not overwritten:
 
 ```
-base:    src/user/.claude/rules/completion-gate.md
-plugin:  src/plugins/beads/.claude/rules/completion-gate.md
+base:    src/user/.claude/rules/<rule-name>.md
+plugin:  src/plugins/<plugin>/.claude/rules/<rule-name>.md
 
-result:  ~/.claude/rules/completion-gate.md
+result:  ~/.claude/rules/<rule-name>.md
          = base content
            ---
            (plugin content appended)
 ```
 
-The base content always lands first; plugins append alphabetically.
+The base content always lands first; plugins append alphabetically. The mechanism is `merge/strategies/append_rules.py`, and rules are the only namespace that resolves a collision this way — a same-name collision in `skills/`, `commands/` or `agents/` is a fatal install error.
 
 **Consequences for authors**:
 - Plugin additions must be purely additive (new clauses, new contexts) — not replacements
 - Do not duplicate base rule content in plugin additions; the append model handles it
 - Read the base rule before writing a plugin extension to avoid contradictions
+- The merged file's front matter is the base file's; admission is judged on the merged bytes, so an append onto a record-less base still deploys nothing
 
-### Future intent (cross-tool embedding)
+### Embedding rules into the instruction file
 
-Rules are currently a Claude Code-only construct, but the install pipeline is intended to eventually embed rule content into AGENTS.md instruction files for Codex, Gemini, and other tools so the same constraints apply across all agents. Author rules with universal applicability in mind: the substantive guidance should be tool-agnostic, even though the file format and loading mechanism are Claude-specific.
+Beyond copying rule files into each tool's `rules/` directory, the installer can inline them into the tool's assembled instruction file: a `<!-- DYNAMIC-INCLUDE-ALL-RULES -->` marker in a tool's `*.md.template` is replaced by the staged rules, and `<!-- DYNAMIC-INCLUDE-RULES: a,b -->` inlines a named subset. When an instruction file inlines the rules this way, the flatten also drops the loose `rules/` files it consumed, so they are not deployed twice.
+
+The mechanism is implemented in `templates.py`, and the design it encodes is that Claude keeps a loose `rules/` tree while Codex, Gemini and OpenCode receive their rules inlined. **No tool template carries either marker today** — every one of them includes only the shared `USER-CORE.md.template` — so nothing is inlined and nothing is dropped, and a shared rule currently lands as a loose file in three config directories whose tools the installer's own comments say do not read one.
+
+The practical consequence for an author: a shared rule reliably reaches Claude Code, and reaching the other three depends on wiring that is not in place. Read the `*.md.template` files before claiming otherwise; two comments in the installer describe the intended state rather than the current one.
 
 ---
 
@@ -141,12 +194,15 @@ Rules are currently a Claude Code-only construct, but the install pipeline is in
 
 | Issue | Symptom | Fix |
 |-------|---------|-----|
+| No `admission:` record | Front matter is absent, or carries `paths` alone | Add a complete record; without one the rule deploys nothing and any deployed copy is pruned |
+| Incomplete `admission:` record | States both `prevents` and `provides`, or neither; a required field is empty | Fix it — a malformed record aborts the whole deploy, not just this artifact |
 | Duplicates skill content | Rule re-describes methodology a skill already encodes | Replace with "invoke skill X"; remove duplication |
 | Advisory vs. normative drift | "Should", "consider", "it's good to" language in a rule file | Rewrite as "always", "never", "must" |
 | Mixed concerns | One file governs both completion AND delivery | Split into two focused files |
 | No consequence grounding | Hard constraint with no "why" anchor | Add one-line rationale |
 | Over-specified how-to | Rule includes a 10-step methodology inline | Extract to skill; rule becomes "invoke skill X" |
 | Inline shell sequences | Rule prescribes a deterministic command sequence in prose | Move to a helper script; rule references the script |
-| Missing path scope | Rule only matters for a subset of files but loads every session | Add `paths` frontmatter to scope it |
-| Tool-specific phrasing where universal would do | Rule guidance reads as Claude-Code-only when it could apply to any agent | Rephrase substantive content as tool-agnostic |
+| Missing path scope | Rule only matters for a subset of files but loads every session | Add `paths` front matter to scope it |
+| Tool-specific content in the shared tree | A rule under `src/user/.agents/rules/` names a capability only one tool has | Move it to that tool's tree, or rephrase the substance as tool-agnostic |
 | Plugin rule contradicts base | Plugin addition conflicts with the base rule it appends to | Rewrite as extension, not contradiction |
+| Always-on weight nobody measured | Rule added without checking the tool's surface total | Run `make content-lint` and read the reported headroom |

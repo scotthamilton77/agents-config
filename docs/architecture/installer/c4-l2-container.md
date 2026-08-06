@@ -87,7 +87,7 @@ C4Container
 
 The whole installer runs here. Every invocation is **terminal** — parse argv, build `Config`, build the `StagingPlan`(s), flush to disk, exit. There is no daemon and no background work; the one piece of state that *does* survive a run is the install receipt (read at prune start, rewritten at run end). Internally — at L3 — this process is composed of a tool-agnostic `core/` engine (`model`, `io_port`, `templates`, `staging`, `sync`, the receipt-based prune subsystem `run`/`receipt*`/`prune_hash`/`prune_flow`/`ownership`, `merge/*`), per-tool `tools/` adapters, per-plugin `plugins/` adapters, and a `cli`/`config`/`orchestrator` top layer. Those components are drawn in [`c4-l3-engine.md`](c4-l3-engine.md).
 
-The installer's entry points are `python3 scripts/install.py` (a thin stub: `from installer.cli import main`) and the module form `python -m installer` (requires `packages/installer/__main__.py`); both invoke the same `installer.cli.main`.
+The installer's entry points are `python3 scripts/install.py` (a thin stub: `from installer.cli import main`) and the module form `python -m installer` (requires `packages/installer/src/installer/__main__.py`); both invoke the same `installer.cli.main`.
 
 ### Read-only inputs
 

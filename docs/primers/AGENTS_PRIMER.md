@@ -46,8 +46,18 @@ model: opus[1m]                # optional; options: opus[1m], sonnet[1m], sonnet
 effort: high                   # optional; low | medium | high | xhigh | max
 memory: project                # optional; project | user | none (default)
 color: purple                  # optional; display color in UI
+admission:                     # required for deployment (see below)
+  provides: <the capability this supplies>   # or `prevents:`, never both
+  cost: <what it costs, and on which surface>
+  remove_when: <the observation that would retire it>
 ---
 ```
+
+`agents` is a gated namespace alongside `rules`, `skills` and `commands`: an agent
+definition carrying no `admission:` record is dropped at deploy and any previously
+deployed copy is pruned, and a malformed record aborts the whole deploy. The gate
+strips the record from the bytes that ship. The rules primer's File Format section
+states the mechanism in full; it applies here unchanged.
 
 The body follows — a full description of the agent's role, responsibilities, methodology, and communication protocol.
 
@@ -147,7 +157,8 @@ Keep the body focused on the ROLE — not on the specific task being dispatched.
 | No examples in description | Plain text description, no `<example>` blocks | Add 1-2 concrete dispatch scenarios |
 | Wrong model tier | Haiku reviewing security-critical code; Opus doing a simple grep | Match model to role demands |
 | Body mixes role with task | Body contains task-specific instructions that should be in dispatch prompt | Move task specifics to caller's prompt |
-| Bead references in shared agents | `bd` commands or bead terminology in `src/user/` agents | Move to plugin namespace (`src/plugins/beads/`) |
+| Tool- or tracker-specific content in a shared agent | A shared agent names a capability only one tool has, or a tracker CLI | Move it to that tool's tree, or to the owning plugin (`src/plugins/<plugin>/`) |
+| No `admission:` record | Front matter carries `name` and `description` only | Add a complete record; without one the agent deploys nothing |
 | `skills` lists unused skills | `skills:` field lists skills the body never references or invokes | Remove unused skill references |
 
 ---
@@ -158,9 +169,14 @@ Keep the body focused on the ROLE — not on the specific task being dispatched.
 src/user/.agents/agents/           # Shared agents (copied to all detected tools)
   <agent-name>.md
 
+src/user/.claude/agents/           # Claude-only agents (staged into ~/.claude/ alone)
+  <agent-name>.md
+
 src/plugins/<plugin>/
   .agents/agents/                  # Plugin-specific agents (installed only when plugin detected)
   <agent-name>.md
 ```
 
-Shared agents must not reference Claude-specific constructs (e.g. claude rules) in their bodies. Use generic language that maps to multiple tool environments, or move Claude-specific agents to `src/user/.claude/agents/`.
+None of these directories exists in the tree today — this repository ships no agent definitions at all, so the layout above is where one would go rather than where one is. `agents` is nonetheless a live staged namespace, which is why the admission record above is required rather than aspirational.
+
+Shared agents must not reference Claude-specific constructs (e.g. claude rules) in their bodies. Use generic language that maps to multiple tool environments, or place an agent that needs a Claude-only capability in the Claude tree instead.

@@ -50,10 +50,12 @@ Each plugin directory follows this layout (all subdirs are optional):
    makes it discoverable — the installer scans this directory; there is no
    registration list to edit.
 2. By default it auto-detects via the `GenericPluginAdapter`, whose footprint
-   check is `~/.<name>/` present *or* `<name>` on PATH. If that footprint isn't
-   the right signal, or the plugin needs to install outside the tool config
-   dirs (e.g. beads routing `~/.beads/`), add a specialized adapter under
-   `packages/installer/src/installer/plugins/` and register it in
+   check is `~/.<name>/` present as a directory — and nothing else. A binary of
+   the same name on PATH does not count; probing PATH takes a specialized
+   adapter, which is what `BeadsPlugin` adds on top of the directory check. If
+   the directory isn't the right signal, or the plugin needs to install outside
+   the tool config dirs (e.g. beads routing `~/.beads/`), add a specialized
+   adapter under `packages/installer/src/installer/plugins/` and register it in
    `registry.py`'s `_SPECIALIZED` map.
 
 ## Admission applies here too
@@ -68,4 +70,4 @@ be discovered, activated, and still install nothing.
 
 | Plugin | Auto-detect footprint | Adapter | What it installs |
 |--------|----------------------|---------|-----------------|
-| `codex` | `~/.codex/` or `codex` on PATH | generic | `delegating-to-codex` — the task-profile-to-model routing table for a Codex run (admitted, installs into `~/.claude/skills/`) |
+| `codex` | `~/.codex/` present | generic | `delegating-to-codex` — the task-profile-to-model routing table for a Codex run (admitted, installs into `~/.claude/skills/`) |

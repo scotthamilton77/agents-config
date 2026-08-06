@@ -17,8 +17,8 @@ their exit criterion, add the AC4 mechanical spec lint, and delete
 | Artifact | State | Facts |
 | --- | --- | --- |
 | `grill-with-docs` | deployed, `src/user/.agents/skills/grill-with-docs/` | 3 files, 225 lines (~1.3k tokens). Content-identical to upstream `mattpocock/skills @ e74f0061` except the provenance header and a brainstorming cross-ref note (SKILL.md:26–29). Drift policy `accept-periodic-resync`. No admission record. |
-| `grilling` | upstream only, `oss-snapshots/pocock/skills/skills/productivity/grilling/` | The evolved interview core (one question at a time with a recommended answer, look-up-facts-instead-of-asking, confirm-shared-understanding-before-acting). Upstream `grill-me` is now a one-line alias onto it. The old top-level snapshot set (including the 10-line ancestor `grill-me`) is slated for deletion as separate work — S5 sources only the current mirror (`oss-snapshots/pocock/skills/`). Never promoted to `src/`. |
-| `to-spec` | vendored only, `oss-snapshots/pocock/skills/skills/engineering/to-spec/` | Synthesis-not-interview; `disable-model-invocation: true`. Its embedded spec template has **no Acceptance Criteria section and no slice pattern** — Pocock's own template would fail AC4. The D18 graft is load-bearing, not cosmetic. Absent from `src/`. |
+| `grilling` | upstream only, `mattpocock/skills @ ed37663c`, path `skills/productivity/grilling/` | The evolved interview core (one question at a time with a recommended answer, look-up-facts-instead-of-asking, confirm-shared-understanding-before-acting). Upstream `grill-me` is now a one-line alias onto it. Not in `src/` when this spec was written; admitted since, by this spec's own S5-D1. |
+| `to-spec` | upstream only, `mattpocock/skills @ ed37663c`, path `skills/engineering/to-spec/` | Synthesis-not-interview; `disable-model-invocation: true`. Its embedded spec template has **no Acceptance Criteria section and no slice pattern** — Pocock's own template would fail AC4. The D18 graft is load-bearing, not cosmetic. Not in `src/` when this spec was written; admitted since. |
 | `brainstorming` | deployed | 8 files, 1,484 lines (~9–10k tokens, dominated by the browser-companion server) — over the 2k skill-body cap by itself. Hard-chains into writing-plans at SKILL.md:40, :91, :225–228. Nine referencing files outside its folder. |
 | `writing-plans` | deployed | 245 lines. Exactly one external reference: its provenance-registry row (`skills/AGENTS.md:61`). |
 | Admission machinery | `packages/installer/src/installer/core/admission.py`, `surface_budget.py` | `admission:` frontmatter with `prevents`/`cost`/`remove_when`; three-valued classify (no-record → dropped, malformed → abort, complete → admitted). Caps: 10k always-on, 2k per skill body. **Zero deployed artifacts carry a record today.** |
@@ -35,7 +35,7 @@ label), plus generic-word prose mentions in `SKILLS_PRIMER.md:14`,
 ## 2. Decisions
 
 **S5-D1 — Two grill skills, two seats.** `grilling` is admitted (promoted
-from the current mirror `oss-snapshots/pocock/skills/skills/productivity/grilling/`
+from upstream `mattpocock/skills @ ed37663c`, path `skills/productivity/grilling/`
 to `src/user/.agents/skills/grilling/`) as the lightweight interview core —
 the brainstorming replacement's front half; it matches D18's name, and
 upstream `grill-me` is now merely an alias onto it (the alias is not
