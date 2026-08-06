@@ -78,10 +78,11 @@ EXEMPT_TREES: dict[Path, str] = {
 }
 
 # A dated filename declares the file a record of a moment; see the module
-# docstring. Matched anywhere in the name rather than only as a prefix, because
-# both conventions are in use here — ``2026-07-21-harness-rework.md`` and
-# ``CLEANUP-PLAN-2026-08-05.md`` are the same kind of document, and a rule that
-# saw only the first would read the second as evergreen prose.
+# docstring. Matched anywhere in the name rather than only as a prefix, because a
+# date leading the name and a date trailing it declare the same thing — anchoring
+# to the front would read ``SWEEP-NOTES-2026-08-05.md`` as evergreen prose and
+# demand it be corrected into a falsehood. Only the leading form is in the tree
+# today; matching anywhere costs nothing and needs no revisit when that changes.
 _DATED_BASENAME_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 # A trailing ``:12`` or ``:16-22`` on a path is a pointer into the file, not part

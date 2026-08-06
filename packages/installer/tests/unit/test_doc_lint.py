@@ -89,11 +89,11 @@ def test_specs_are_dropped_from_the_fileset() -> None:
 
 
 def test_a_dated_name_is_out_of_scope_wherever_the_date_sits() -> None:
-    """Both dating conventions in this repo mean the same thing — a record of a
-    moment — so a rule that saw only the prefix form would read the other as
-    evergreen prose and demand it be corrected into a falsehood."""
+    """A date leading the name and a date trailing it mean the same thing — a
+    record of a moment — so a rule that saw only the prefix form would read the
+    other as evergreen prose and demand it be corrected into a falsehood."""
     assert not in_scope(Path("docs/plans/2026-06-07-prgroom-impl.md"))
-    assert not in_scope(Path("CLEANUP-PLAN-2026-08-05.md"))
+    assert not in_scope(Path("SWEEP-NOTES-2026-08-05.md"))
     assert in_scope(Path("CONTRIBUTING.md"))
 
 
