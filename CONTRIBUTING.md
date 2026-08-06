@@ -26,12 +26,15 @@ fork — that's what the templates are designed for.
 See [`AGENTS.md`](./AGENTS.md) for the file-format conventions used throughout
 the repo:
 
-- Agent files — frontmatter schema for `src/user/.agents/agents/*.md`
+- Agent files — frontmatter schema, documented in [`docs/primers/AGENTS_PRIMER.md`](./docs/primers/AGENTS_PRIMER.md). No agent definitions ship today and there is no `agents/` directory under `src/`, but `agents` is still a staged namespace, so the schema binds the first one added.
 - Skill files — `SKILL.md` layout for `src/user/.agents/skills/*/`
 - Command files — markdown layout for `src/user/.claude/commands/*.md`
 
 ## Install & plugin prerequisites
 
-See the root [`README.md`](./README.md) for installation instructions and the
-Claude Code plugin prerequisites (`obra/superpowers`, `steveyegge/beads`) that
-several of the templates assume.
+See the root [`README.md`](./README.md) for installation instructions and for
+what the installed content actually depends on. Neither plugin this file used
+to list as a prerequisite is one: `obra/superpowers` was dropped when the rules
+and skills referencing it were retired, and `steveyegge/beads` is needed only
+because the `work` CLI is a facade over `bd` — nothing in the installed
+instruction surface requires either.

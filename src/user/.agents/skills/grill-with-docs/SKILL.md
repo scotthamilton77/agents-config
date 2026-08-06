@@ -8,8 +8,8 @@ admission:
 ---
 
 <!--
-Source: oss-snapshots/pocock/skills/skills/engineering/grill-with-docs/
-Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7
+Source: skills/engineering/grill-with-docs/
+Upstream: https://github.com/mattpocock/skills @ ed37663cc5fbef691ddfecd080dff42f7e7e350d
 Last sync: 2026-05-23
 Drift policy: local-fork — grafted, do not re-sync
 Note: promoted from byte-identical local copy at <repo>/.claude/skills/grill-with-docs/.

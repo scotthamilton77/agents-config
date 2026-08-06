@@ -169,11 +169,14 @@ Keep the body focused on the ROLE — not on the specific task being dispatched.
 src/user/.agents/agents/           # Shared agents (copied to all detected tools)
   <agent-name>.md
 
+src/user/.claude/agents/           # Claude-only agents (staged into ~/.claude/ alone)
+  <agent-name>.md
+
 src/plugins/<plugin>/
   .agents/agents/                  # Plugin-specific agents (installed only when plugin detected)
   <agent-name>.md
 ```
 
-Neither directory exists in the tree today — this repository ships no agent definitions at all, so the layout above is where one would go rather than where one is. `agents` is nonetheless a live staged namespace, which is why the admission record above is required rather than aspirational.
+None of these directories exists in the tree today — this repository ships no agent definitions at all, so the layout above is where one would go rather than where one is. `agents` is nonetheless a live staged namespace, which is why the admission record above is required rather than aspirational.
 
-Shared agents must not reference Claude-specific constructs (e.g. claude rules) in their bodies. Use generic language that maps to multiple tool environments, or move Claude-specific agents to `src/user/.claude/agents/`.
+Shared agents must not reference Claude-specific constructs (e.g. claude rules) in their bodies. Use generic language that maps to multiple tool environments, or place an agent that needs a Claude-only capability in the Claude tree instead.

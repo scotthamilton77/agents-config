@@ -4,9 +4,9 @@
 # Lives at the repository root. Read by per-stage orchestrators to configure
 # quality gates, coverage thresholds, foreign-CLI model selection, and more.
 #
-# Review/merge policy schema: docs/architecture/review-merge-policy/design.md
-# Every other section's schema came from the pre-rework bead-pipeline design,
-# which was retired out of this repository along with the pipeline it described.
+# Review/merge policy: a merge is authorized by CI green, a review verdict artifact,
+# and an approving review. That schema, and every other section's, came from pre-rework
+# designs retired out of this repository along with the pipelines they described.
 #
 # All sections are optional. Absent sections use per-stage defaults.
 # Stage role names (not numbers) are the authority in all section names.
@@ -75,7 +75,8 @@ command = ""   # no lint auto-fix for this project
 
 # ---------------------------------------------------------------------------
 # Review expectations and merge authorization.
-# Schema: docs/architecture/review-merge-policy/design.md
+# Schema: the retired review/merge policy design — CI green, a review verdict
+# artifact, and an approving review.
 #
 # Commented-out keys below anticipate future work (agents-config-9k9.69) and are
 # not policy. Uncomment a key only in the change that deploys something reading it.

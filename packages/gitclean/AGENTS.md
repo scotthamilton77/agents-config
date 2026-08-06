@@ -20,7 +20,7 @@ hand-pick a subset — the linter and the formatter are orthogonal. Faster inner
 loop: `make test-gitclean`.
 
 This package **is** in the installer's `CLI_PACKAGES` registry and installs onto
-PATH as `gitclean`. Being inside `make ci` is not what earns that — `vizsuite`
+PATH as `gitclean`. Being inside `make ci` is not what earns that — `installer`
 is gated and stays off — so a change here reaches a deployed tool, driven by the
 `/clean-up-git` command interactively and named to agents by the
 `post-merge-cleanup` skill.

@@ -5,6 +5,8 @@
 **Tracker:** `agents-config-9k9.1.20`; covers `agents-config-9k9.1.4` (S9c), `agents-config-9k9.1.3` (S9b), `agents-config-9k9.1.6` (S9e)
 **Companions**, both in the `scotthamilton77/agents-config-ARCHIVE` repository: `SAVEPOINTS/2026-07-24-tier1-executor-seam-design.md` (options considered and rejected; its §2.4 is void per its own header errata), `SAVEPOINTS/2026-07-24-v1-executor-loop-fit-report.md` (V1 substrate inventory)
 
+**Prior art**, also in that archive repository, at `packages/pdlc/` and `packages/holding-place/`: an earlier deterministic-FSM orchestrator, retired 2026-08-05. It is not a design to resume, but four problems this seam will meet were worked through there against an adversarial review round, and the reasoning is worth reading before solving them again: lease lifecycle, concurrency control by compare-and-set predicate, crash recovery by roll-forward, and pre-strike triage.
+
 The executor decision layer — the code that consumes grind's facts and enacts
 tracker verbs, attempt budgets, and the parked-work surfacing D10 requires —
 lives in a new `packages/executor/`. Tier 1 ships the pairing layer, the
