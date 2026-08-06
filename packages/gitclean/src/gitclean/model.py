@@ -648,9 +648,14 @@ class Deletion:
     gone: a target that was already absent is gone and this is False, because
     only a True here is evidence the tool did something."""
     verified: bool
-    """The end state was confirmed by asking git, rather than inferred from an
-    exit code. It does **not** mean a deletion happened -- an already-absent
-    target is verified too, because the server was asked and answered.
+    """The end state rests on git having said so, rather than on a guess.
+
+    For a local branch or a worktree that is git's report of the deletion it
+    just performed; for a ref on a server it is a second read of the remote,
+    because there a zero exit answers a different question than the one asked
+    and the ref can outlive it. It does **not** mean a deletion happened -- an
+    already-absent target is verified too, because the server was asked and
+    answered.
 
     So this is the wrong field to count a cleanup's work by; ``deleted`` is the
     one that says the tool acted. The pair is only ever read together."""

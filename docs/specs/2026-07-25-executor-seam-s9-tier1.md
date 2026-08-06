@@ -3,7 +3,7 @@
 **Date:** 2026-07-25
 **Status:** Child spec of `docs/specs/2026-07-21-harness-rework-way-forward.md` (S9 slice — **Tier 1 only**; this is not the S9 spec, see §4)
 **Tracker:** `agents-config-9k9.1.20`; covers `agents-config-9k9.1.4` (S9c), `agents-config-9k9.1.3` (S9b), `agents-config-9k9.1.6` (S9e)
-**Companions:** `SAVEPOINTS/2026-07-24-tier1-executor-seam-design.md` (options considered and rejected; its §2.4 is void per its own header errata), `SAVEPOINTS/2026-07-24-v1-executor-loop-fit-report.md` (V1 substrate inventory)
+**Companions**, both in the `scotthamilton77/agents-config-ARCHIVE` repository: `SAVEPOINTS/2026-07-24-tier1-executor-seam-design.md` (options considered and rejected; its §2.4 is void per its own header errata), `SAVEPOINTS/2026-07-24-v1-executor-loop-fit-report.md` (V1 substrate inventory)
 
 The executor decision layer — the code that consumes grind's facts and enacts
 tracker verbs, attempt budgets, and the parked-work surfacing D10 requires —

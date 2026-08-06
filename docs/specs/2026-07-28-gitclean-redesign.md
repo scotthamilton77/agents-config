@@ -3,7 +3,8 @@
 **Status:** approved, not started
 **Parent:** `agents-config-9k9.53`
 **Supersedes:** the fix slices `agents-config-9k9.53.2` – `.53.5`, all closed wont-fix.
-**Evidence:** `SAVEPOINTS/gitclean-9k9-53/review-round-3/FINDINGS-REVISED.md` — 13
+**Evidence:** `SAVEPOINTS/gitclean-9k9-53/review-round-3/FINDINGS-REVISED.md`, in the
+`scotthamilton77/agents-config-ARCHIVE` repository — 13
 confirmed findings, each reproduced against `a8c6401` with the exact command.
 
 ## 1. Why this is a redesign and not another fix round

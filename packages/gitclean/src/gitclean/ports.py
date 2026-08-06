@@ -5,6 +5,12 @@ returns data. That is what makes the classification rules testable without a
 fixture repo, and it is why ``ScriptedCommands`` fails loudly on an unscripted
 call -- a silent default would let a test pass while the real tool asks git a
 question nobody predicted.
+
+It is also where an argument is spelled for git. The two constructors below
+are the only places a name the repository chose gets the spelling that keeps
+git from reading it as an option, and they live here rather than beside either
+caller because both the read stage and the write stage need them and neither
+may import the other.
 """
 
 from __future__ import annotations
@@ -19,6 +25,65 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 _DEFAULT_TIMEOUT = 60
+
+
+def git_argv(*command: str, name: str | None = None) -> list[str]:
+    """The only place a name out of the repository is put into a git argv.
+
+    A repo-derived name can be spelled exactly like an option. `refs/heads/-m`
+    is a legal ref -- `git branch` will not create one, but `update-ref` will
+    and a remote can push one -- and `git branch -D -m` is a rename, not a
+    deletion. Two spellings survive that, and which one applies is a property
+    of the name rather than of the caller, so it is decided here:
+
+    - a full `refs/...` path, which no git command parses as an option, and
+    - the `--` terminator, for names that have to stay short.
+
+    Both exist because `bundle create` hands its arguments to rev-list, where
+    `--` introduces a pathspec: terminating there yields `Refusing to create
+    empty bundle` rather than protection. `branch -D` is the mirror image --
+    it rejects a full ref path and takes only the short name -- so neither
+    spelling covers every call site and neither can be the single rule. The
+    same split is why only a name in the last position can be terminated at
+    all: `--` protects everything after it and nothing before, so a name
+    followed by another argument goes in as a full ref path or not at all.
+
+    What neither spelling does is bound where git will look. `--` ends option
+    parsing; it does not stop git accepting a path in the repository position,
+    and nothing in an argv does. Only where the name came from covers that.
+
+    Passing through one constructor is what makes the option case impossible to
+    forget: a new call site has nowhere else to put the name. Commands carrying
+    no repo-derived name come through here too, so the rule is "every git call
+    in this package", which a test can check -- rather than "every git call
+    that a reader judged to carry a name", which is the judgement that missed
+    two."""
+    if name is None:
+        return list(command)
+    if name.startswith("refs/"):
+        return [*command, name]
+    return [*command, "--", name]
+
+
+def git_rev(name: str) -> str:
+    """A repo-derived branch name spelled for a rev expression it is only part
+    of -- `<rev>^{tree}`, `<a>..<b>` -- where neither argv spelling is offered.
+
+    A composed rev occupies one argument with no room to terminate anything
+    inside it, and the commands that take one spend `--` on a pathspec anyway.
+    `rev-parse` will not even consume a terminator: both `--` and
+    `--end-of-options` come back from it as a literal line of output rather
+    than being read as one. So the protection left is the other spelling,
+    applied within the expression -- a full ref path, which cannot begin with
+    `-`.
+
+    Applied only when the short name would otherwise be misread, because
+    `refs/heads/` is the wrong prefix for half of what reaches here. A
+    remote-tracking branch's short name always leads with its remote --
+    `origin/feat`, never a bare `feat` -- so it already resolves to the ref it
+    names, while prefixing it would ask for a local branch that is usually not
+    there and occasionally is somebody else's."""
+    return f"refs/heads/{name}" if name.startswith("-") else name
 
 
 @dataclass(frozen=True, slots=True)

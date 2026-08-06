@@ -7,9 +7,17 @@ report is measurement, and measurement is the survey's business."""
 
 from __future__ import annotations
 
+import pytest
 from conftest import iso, make_branch, make_pr, make_survey, make_worktree
 
-from gitclean.classify import classify, classify_branch, classify_worktree, trunk
+from gitclean.classify import (
+    MERGE_PROOF,
+    classify,
+    classify_branch,
+    classify_worktree,
+    pairing_index,
+    trunk,
+)
 from gitclean.model import Counterpart, MergeEvidence, Survey, Target
 
 # A commit no fixture's trunk sits on, for the cases that must not collide with
@@ -20,13 +28,17 @@ ELSEWHERE = "e" * 40
 def _one(branch, survey: Survey | None = None) -> Target:  # type: ignore[no-untyped-def]
     resolved = survey or make_survey()
     names, commits = trunk(resolved)
-    return classify_branch(branch, resolved, trunk_names=names, trunk_commits=commits)
+    index = pairing_index(resolved)
+    return classify_branch(branch, resolved, trunk_names=names, trunk_commits=commits, index=index)
 
 
 def _wt(worktree, survey: Survey | None = None) -> Target:  # type: ignore[no-untyped-def]
     resolved = survey or make_survey()
     names, commits = trunk(resolved)
-    return classify_worktree(worktree, resolved, trunk_names=names, trunk_commits=commits)
+    index = pairing_index(resolved)
+    return classify_worktree(
+        worktree, resolved, trunk_names=names, trunk_commits=commits, index=index
+    )
 
 
 def _pairing(target: Target) -> dict[str, Counterpart]:
@@ -155,6 +167,35 @@ def test_an_uncounted_unmerged_total_never_yields_the_sweep() -> None:
     target = _one(branch)
     assert not target.sweepable
     assert any("merge state unproven" in reason for reason in target.reasons)
+
+
+@pytest.mark.parametrize("evidence", sorted(MERGE_PROOF, key=str), ids=lambda e: e.value)
+def test_a_swept_row_never_calls_its_own_merge_unproven(evidence: MergeEvidence) -> None:
+    """The count probe and the tier that proved this merge are independent
+    reads, so a failure of the first says nothing about the second. Printed
+    beside `merge proven by ...` on a row the sweep is taking, the unknown
+    contradicts the decision printed with it, and a reader has no way to tell
+    which half to believe. Asked of every tier because each one reaches this
+    row by its own path."""
+    branch = make_branch(head=ELSEWHERE, merge_evidence=evidence, unmerged_commits=None)
+    target = _one(branch)
+    assert target.sweepable
+    assert not any("merge state unproven" in r for r in target.reasons)
+
+
+def test_a_proven_merge_does_not_silence_the_unpushed_unknown() -> None:
+    """Only the merge sentence is made redundant by merge proof. A merge says
+    these commits reached the base ref and nothing at all about whether this
+    branch's upstream has them, so suppressing both would drop a fact that is
+    still true -- and the row would then read as though the push had been
+    measured."""
+    branch = make_branch(
+        head=ELSEWHERE,
+        merge_evidence=MergeEvidence.PR_MERGED,
+        unmerged_commits=None,
+        unpushed_commits=None,
+    )
+    assert any("nothing proves these commits are pushed" in r for r in _one(branch).reasons)
 
 
 def test_an_uncounted_unpushed_total_is_stated_as_unknown() -> None:
@@ -537,6 +578,19 @@ def test_a_branch_named_like_a_server_ref_does_not_become_one() -> None:
 
     assert _pairing(_one(published))["upstream"].name == "origin/main"
     assert _pairing(_one(local))["upstream"].name is None
+
+
+def test_a_local_branch_sharing_the_upstreams_name_does_not_answer_for_it() -> None:
+    """The remote counterpart is matched among branches marked `is_remote` --
+    a local branch that merely happens to share the upstream's short name must
+    not be mistaken for the copy on the server that name refers to."""
+    tracking = make_branch("feat/thing", head=ELSEWHERE, upstream="origin/main")
+    impostor = make_branch("origin/main", head=ELSEWHERE)
+    survey = make_survey(branches=(tracking, impostor))
+
+    assert _pairing(_one(tracking, survey))["upstream"] == Counterpart(
+        relation="upstream", name="origin/main", id=None, known=True
+    )
 
 
 def test_a_server_ref_carries_no_pairing_of_its_own() -> None:

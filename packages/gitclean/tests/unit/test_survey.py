@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from gitclean.model import MergeEvidence, PullRequestOutcome, Survey
 from gitclean.ports import CommandResult, ScriptedCommands, SubprocessCommands, fail, ok
 from gitclean.survey import (
@@ -137,6 +139,15 @@ def make_port(
     pr_view: dict[str, object] | None = None,
 ) -> ScriptedCommands:
     configured_refspecs = refspecs if refspecs is not None else default_refspecs(remotes)
+    configured = tuple(line.strip() for line in remotes.splitlines() if line.strip())
+    # Whose published HEAD names the trunk here. `origin` wherever it is
+    # configured, which is what production consults first; otherwise the first
+    # remote the fixture lists, so a fixture that renamed its remote still
+    # describes a repository whose trunk was found rather than one where every
+    # tier declined. That is the boring case, and a test about a repository that
+    # cannot name its trunk says so by overriding these through `extra`.
+    trunk_remote = "origin" if not configured or "origin" in configured else configured[0]
+    trunk_ref = f"refs/remotes/{trunk_remote}/main"
     table: dict[str, CommandResult] = {
         "rev-parse --show-toplevel": ok("/repo"),
         # Asked of every survey: it is the only thing that says where a
@@ -149,8 +160,8 @@ def make_port(
         # case; a test about a refspec that does something else passes its own.
         "config -z --get-regexp": ok(configured_refspecs),
         "rev-parse --path-format=absolute --git-common-dir": ok("/repo/.git"),
-        "symbolic-ref --quiet refs/remotes/origin/HEAD": ok("refs/remotes/origin/main"),
-        "show-ref --verify --quiet refs/remotes/origin/main": ok(),
+        f"symbolic-ref --quiet refs/remotes/{trunk_remote}/HEAD": ok(trunk_ref),
+        f"show-ref --verify --quiet {trunk_ref}": ok(),
         "rev-parse --abbrev-ref HEAD": ok("main"),
         "worktree list --porcelain": ok(porcelain(worktrees)),
         "status --porcelain=v1": ok(""),
@@ -163,7 +174,7 @@ def make_port(
         # The trunk is probed like any other branch, so its own count is part
         # of the boring case. A test that cares what it says overrides it
         # through `counts`, which is applied after this table.
-        "rev-list --count refs/remotes/origin/main..main": ok("0"),
+        f"rev-list --count {trunk_ref}..main": ok("0"),
         # The merge base's tree, which the squash tier compares against the
         # branch tip's. Deliberately unlike the "treesha" those tests give the
         # tip: the boring branch changed something, so there is a diff to
@@ -171,6 +182,16 @@ def make_port(
         # overriding this to match.
         "rev-parse basesha^{tree}": ok("basetreesha"),
     }
+    if trunk_remote != "origin":
+        # Where there is no `origin` to consult on its own, production asks
+        # every configured remote what it publishes as HEAD. The ones that are
+        # not the trunk's publish none, and git reports that as exit 1 -- an
+        # answer rather than a failed read. Left unscripted where `origin` is
+        # configured, so a run that consulted the others anyway fails naming the
+        # argv instead of passing on a fixture that answered a question the tool
+        # should not have asked.
+        for remote in configured:
+            table.setdefault(f"symbolic-ref --quiet refs/remotes/{remote}/HEAD", fail())
     for spec, value in (counts or {}).items():
         table[f"rev-list --count {spec}"] = ok(value)
     # Every remote some surveyed ref belongs to is asked what it still holds.
@@ -240,7 +261,7 @@ def test_default_branch_comes_from_origins_published_head() -> None:
             "show-ref --verify --quiet refs/remotes/origin/trunk": ok(),
         }
     )
-    assert resolve_default_branch(port, None) == ("trunk", None)
+    assert resolve_default_branch(port, None, ("origin",)) == ("trunk", "origin", None)
 
 
 def test_default_branch_falls_back_to_master_when_main_is_absent() -> None:
@@ -251,7 +272,209 @@ def test_default_branch_falls_back_to_master_when_main_is_absent() -> None:
             "show-ref --verify --quiet refs/heads/master": ok(),
         }
     )
-    assert resolve_default_branch(port, None) == ("master", None)
+    # No remote nominated it, so nothing is handed to the base ref either -- it
+    # works out whose copy of `master` to measure against for itself.
+    assert resolve_default_branch(port, None, ("origin",)) == ("master", None, None)
+
+
+@pytest.mark.parametrize("remote", ["team", "team/origin"])
+def test_a_trunk_published_by_the_only_remote_is_found_whatever_it_is_called(remote: str) -> None:
+    """The defect this pins: discovery used to spell `origin` in the question,
+    so a repository whose remote is called anything else reached the
+    published-HEAD tier for nobody. With no local `main` or `master` either --
+    the shape below -- no trunk resolved at all, nothing could be told apart
+    from the trunk, and the tool was inert in that repository.
+
+    A slash in the remote's name changes nothing, and is worth a row of its own
+    because it is the case where a path cannot be taken apart: `git remote add
+    team/origin <url>` is accepted, and the configured list is the only thing
+    that says where the name stops."""
+    port = ScriptedCommands(
+        git={
+            f"symbolic-ref --quiet refs/remotes/{remote}/HEAD": ok(f"refs/remotes/{remote}/trunk"),
+            f"show-ref --verify --quiet refs/remotes/{remote}/trunk": ok(),
+        }
+    )
+    assert resolve_default_branch(port, None, (remote,)) == ("trunk", remote, None)
+
+
+def test_remotes_that_agree_about_the_trunk_name_it_between_them() -> None:
+    """Several remotes and no `origin`. They say the same thing, so the name is
+    settled -- but which server's copy of it merges are measured against is not,
+    and that question is left to the base ref rather than answered by picking
+    whichever remote was listed first."""
+    port = ScriptedCommands(
+        git={
+            "symbolic-ref --quiet refs/remotes/alpha/HEAD": ok("refs/remotes/alpha/trunk"),
+            "symbolic-ref --quiet refs/remotes/beta/HEAD": ok("refs/remotes/beta/trunk"),
+            "show-ref --verify --quiet refs/remotes/alpha/trunk": ok(),
+        }
+    )
+    assert resolve_default_branch(port, None, ("alpha", "beta")) == ("trunk", None, None)
+
+
+def test_remotes_that_disagree_about_the_trunk_decline_rather_than_pick_one() -> None:
+    """Two servers, two answers, and nothing in the repository says which one it
+    belongs to. Picking one would decide silently what every merge in the report
+    is measured against, and picking the one that is ahead of the real trunk
+    reports unmerged work as merged -- so the tier declines, names the
+    disagreement, and lets a local main or master answer if there is one. Here
+    there is not, so nothing is swept at all."""
+    port = ScriptedCommands(
+        git={
+            "symbolic-ref --quiet refs/remotes/alpha/HEAD": ok("refs/remotes/alpha/trunk"),
+            "symbolic-ref --quiet refs/remotes/beta/HEAD": ok("refs/remotes/beta/release"),
+            "show-ref --verify --quiet refs/heads/": fail(),
+        }
+    )
+
+    name, remote, warning = resolve_default_branch(port, None, ("alpha", "beta"))
+
+    assert (name, remote) == (None, None)
+    assert warning is not None
+    assert "alpha publishes trunk, beta publishes release" in warning
+
+
+def test_a_remote_that_would_not_answer_is_not_taken_for_one_that_agreed() -> None:
+    """One remote publishes a trunk and the read of another's HEAD errors. The
+    name that came back is not evidence on its own: the read that failed is the
+    one that could have contradicted it, so accepting it would be taking
+    agreement from a remote nothing managed to ask. That is the same partial
+    data the disagreement rule refuses, and it declines the same way -- with a
+    sentence of its own, because a HEAD nobody could read is not a HEAD nobody
+    published."""
+    port = ScriptedCommands(
+        git={
+            "symbolic-ref --quiet refs/remotes/alpha/HEAD": ok("refs/remotes/alpha/trunk"),
+            "symbolic-ref --quiet refs/remotes/beta/HEAD": fail("fatal: bad ref store", code=128),
+            "show-ref --verify --quiet refs/heads/": fail(),
+        }
+    )
+
+    name, remote, warning = resolve_default_branch(port, None, ("alpha", "beta"))
+
+    assert (name, remote) == (None, None)
+    assert warning is not None
+    assert "the published HEAD of beta (exit 128) could not be read" in warning
+    assert "could name a trunk other than the trunk that came back from alpha" in warning
+
+
+def test_a_fork_still_takes_its_trunk_from_origin() -> None:
+    """`origin` and `upstream` disagreeing about the trunk is what a fork looks
+    like, and the repository you are standing in is the one `origin` describes.
+    Consulting the others there could only replace a right answer with a
+    refusal, so `origin` configured is consulted alone -- which the fixture
+    enforces by leaving upstream's HEAD unscripted: asking for it raises."""
+    port = ScriptedCommands(
+        git={
+            "symbolic-ref --quiet refs/remotes/origin/HEAD": ok("refs/remotes/origin/trunk"),
+            "show-ref --verify --quiet refs/remotes/origin/trunk": ok(),
+        }
+    )
+    assert resolve_default_branch(port, None, ("origin", "upstream")) == ("trunk", "origin", None)
+
+
+def test_an_unreadable_remote_list_asks_origin_and_widens_to_nobody() -> None:
+    """`None` is "nobody could say", not "there are none" -- and it is not a
+    licence to ask more widely either. Nothing can be enumerated, so the tier
+    keeps exactly the reach it had before any other remote could be consulted,
+    and a transient failure to list remotes costs nothing that was working."""
+    port = ScriptedCommands(
+        git={
+            "symbolic-ref --quiet refs/remotes/origin/HEAD": ok("refs/remotes/origin/trunk"),
+            "show-ref --verify --quiet refs/remotes/origin/trunk": ok(),
+        }
+    )
+    assert resolve_default_branch(port, None, None) == ("trunk", "origin", None)
+
+
+def test_a_repository_with_no_remotes_says_so_rather_than_prescribing_one() -> None:
+    """Every remote the warning prescribes has to be one git listed. There is
+    none here, so the remedy that names one is dropped rather than sending a
+    reader to publish the HEAD of a remote that does not exist."""
+    port = ScriptedCommands(git={"show-ref --verify --quiet refs/heads/": fail()})
+
+    name, remote, warning = resolve_default_branch(port, None, ())
+
+    assert (name, remote) == (None, None)
+    assert warning is not None
+    assert "no configured remote to publish a HEAD" in warning
+    assert "set-head" not in warning
+
+
+def test_a_repository_without_an_origin_is_never_told_to_publish_origins_head() -> None:
+    """The remedy used to spell `origin` unconditionally, which in a repository
+    whose remote is called something else is an instruction that cannot be
+    carried out."""
+    port = ScriptedCommands(
+        git={
+            "symbolic-ref --quiet refs/remotes/team/HEAD": fail(),
+            "show-ref --verify --quiet refs/heads/": fail(),
+        }
+    )
+
+    _, _, warning = resolve_default_branch(port, None, ("team",))
+
+    assert warning is not None
+    assert "`git remote set-head team -a`" in warning
+    assert "origin" not in warning
+
+
+def test_several_remotes_and_no_published_head_between_them_names_none_of_them() -> None:
+    """No remote to prescribe by name, so the remedy carries a placeholder
+    rather than picking one of them for the reader to argue with."""
+    port = ScriptedCommands(
+        git={
+            "symbolic-ref --quiet refs/remotes/alpha/HEAD": fail(),
+            "symbolic-ref --quiet refs/remotes/beta/HEAD": fail(),
+            "show-ref --verify --quiet refs/heads/": fail(),
+        }
+    )
+
+    _, _, warning = resolve_default_branch(port, None, ("alpha", "beta"))
+
+    assert warning is not None
+    assert "none of this repository's remotes (alpha, beta) has published a HEAD" in warning
+    assert "`git remote set-head <remote> -a`" in warning
+
+
+def test_remotes_agreeing_on_a_head_that_resolves_nowhere_report_all_of_them() -> None:
+    """The dangling-pointer case with more than one pointer. Every remote that
+    published the name is named back, because the reader has to know which
+    `set-head` went stale and there is no way to tell from one of them."""
+    port = ScriptedCommands(
+        git={
+            "symbolic-ref --quiet refs/remotes/alpha/HEAD": ok("refs/remotes/alpha/trunk"),
+            "symbolic-ref --quiet refs/remotes/beta/HEAD": ok("refs/remotes/beta/trunk"),
+            "show-ref --verify --quiet refs/remotes/": fail(),
+            "show-ref --verify --quiet refs/heads/": fail(),
+        }
+    )
+
+    name, _, warning = resolve_default_branch(port, None, ("alpha", "beta"))
+
+    assert name is None
+    assert warning is not None
+    assert "alpha, beta agree in publishing HEAD as trunk" in warning
+
+
+def test_an_unreadable_remote_list_says_so_rather_than_implying_there_were_none() -> None:
+    """The warning has to survive the reader asking why only `origin` was
+    consulted. Nothing enumerated the remotes, which is a different sentence
+    from this repository having only that one -- and it is why no remote is
+    prescribed by name here."""
+    port = ScriptedCommands(
+        git={
+            "symbolic-ref --quiet refs/remotes/origin/HEAD": fail(),
+            "show-ref --verify --quiet refs/heads/": fail(),
+        }
+    )
+
+    _, _, warning = resolve_default_branch(port, None, None)
+
+    assert warning is not None
+    assert "remote list could not be read" in warning
+    assert "`git remote set-head <remote> -a`" in warning
 
 
 def test_an_unidentifiable_default_branch_is_unknown_not_guessed_as_main() -> None:
@@ -265,8 +488,8 @@ def test_an_unidentifiable_default_branch_is_unknown_not_guessed_as_main() -> No
             "show-ref --verify --quiet refs/heads/": fail(),
         }
     )
-    name, warning = resolve_default_branch(port, None)
-    assert name is None
+    name, remote, warning = resolve_default_branch(port, None, ("origin",))
+    assert (name, remote) == (None, None)
     assert warning is not None and "origin has published no HEAD" in warning
 
 
@@ -286,8 +509,8 @@ def test_a_dangling_origin_head_is_not_a_default_branch() -> None:
             "show-ref --verify --quiet refs/heads/master": fail(),
         }
     )
-    name, warning = resolve_default_branch(port, None)
-    assert name is None
+    name, remote, warning = resolve_default_branch(port, None, ("origin",))
+    assert (name, remote) == (None, None)
     assert warning is not None and "origin/master" in warning
 
 
@@ -301,7 +524,7 @@ def test_a_dangling_origin_head_still_falls_through_to_a_local_trunk() -> None:
             "show-ref --verify --quiet refs/heads/main": ok(),
         }
     )
-    assert resolve_default_branch(port, None) == ("main", None)
+    assert resolve_default_branch(port, None, ("origin",)) == ("main", None, None)
 
 
 def test_a_dangling_origin_head_leaves_the_trunk_unknown_on_the_report() -> None:
@@ -351,6 +574,29 @@ def test_an_unknown_default_branch_is_reported_on_the_survey() -> None:
     assert any("could not determine" in w for w in result.warnings)
 
 
+def test_a_survey_reads_the_remote_list_before_it_resolves_the_trunk() -> None:
+    """The wiring the discovery rule depends on. Which remote's published HEAD
+    may name the trunk comes out of the configured list, so the list has to be
+    in hand first -- and in a repository whose only remote is called something
+    else, a survey that asked `origin` would find no trunk, prove no merge, and
+    report a repository it cannot act in. The fixture scripts no `origin`
+    anything, so asking for one raises rather than quietly answering."""
+    port = make_port(
+        remotes="team\n",
+        refs=[
+            ref_line("refs/heads/main", "main", head="*"),
+            ref_line("refs/remotes/team/feat", "team/feat"),
+        ],
+        counts={"refs/remotes/team/main..team/feat": "0"},
+    )
+
+    result = run(port)
+
+    assert result.default_branch_known is True
+    assert (result.default_branch, result.base_ref) == ("main", "refs/remotes/team/main")
+    assert {b.name: b.merged for b in result.branches}["team/feat"] is True
+
+
 def test_a_ref_probe_that_errors_is_not_read_as_a_missing_trunk() -> None:
     """`show-ref` exits 1 for a ref that is not there and 128 when it could not
     look. Collapsing the two told the reader that neither main nor master
@@ -364,9 +610,9 @@ def test_a_ref_probe_that_errors_is_not_read_as_a_missing_trunk() -> None:
         }
     )
 
-    name, warning = resolve_default_branch(port, None)
+    name, remote, warning = resolve_default_branch(port, None, ("origin",))
 
-    assert name is None
+    assert (name, remote) == (None, None)
     assert warning is not None
     assert "would not say whether refs/heads/main exists" in warning
     assert "neither main nor master exists" not in warning
@@ -383,9 +629,9 @@ def test_an_unreadable_published_head_is_not_reported_as_an_unpublished_one() ->
         }
     )
 
-    name, warning = resolve_default_branch(port, None)
+    name, remote, warning = resolve_default_branch(port, None, ("origin",))
 
-    assert name is None
+    assert (name, remote) == (None, None)
     assert warning is not None and "published HEAD could not be read" in warning
 
 
@@ -396,14 +642,17 @@ def test_base_prefers_the_remote_tracking_tip() -> None:
     the ref this just proved exists: `origin/main` is also a legal *local*
     branch, and git reaches `refs/heads/` before `refs/remotes/`."""
     port = ScriptedCommands(git={"show-ref --verify --quiet refs/remotes/origin/main": ok()})
-    assert resolve_base_ref(port, None, "main") == ("refs/remotes/origin/main", None)
+    assert resolve_base_ref(port, None, "main", ("origin",), "origin") == (
+        "refs/remotes/origin/main",
+        None,
+    )
 
 
 def test_base_falls_back_to_the_local_branch_without_a_remote() -> None:
     """The fallback is a ref path for the same reason: `main` alone would find
     a tag of that name before the branch."""
     port = ScriptedCommands(git={"show-ref --verify --quiet refs/remotes/origin/main": fail()})
-    assert resolve_base_ref(port, None, "main") == ("refs/heads/main", None)
+    assert resolve_base_ref(port, None, "main", ("origin",), "origin") == ("refs/heads/main", None)
 
 
 def test_an_unreadable_remote_tip_falls_back_to_the_local_branch_and_says_so() -> None:
@@ -414,11 +663,65 @@ def test_an_unreadable_remote_tip_falls_back_to_the_local_branch_and_says_so() -
     port = ScriptedCommands(
         git={"show-ref --verify --quiet refs/remotes/origin/main": fail("bad object", code=128)}
     )
-    base, warning = resolve_base_ref(port, None, "main")
+    base, warning = resolve_base_ref(port, None, "main", ("origin",), "origin")
     assert base == "refs/heads/main"
     # The warning is prose for a reader, so it keeps the short spelling the
     # reader would type; only the rev handed to git has to be unambiguous.
     assert warning is not None and "would not say whether origin/main exists" in warning
+
+
+def test_base_measures_against_the_remote_that_named_the_trunk() -> None:
+    """Not a second guess at which remote to ask. The trunk tier has already
+    established whose published HEAD named this branch, and that is the server
+    whose copy the work here merges into -- so the answer travels rather than
+    being re-derived.
+
+    Re-deriving it would cost the answer outright here: `mirror` holds a `main`
+    of its own, so a second pass over the remotes would find two candidates,
+    decline between them, and fall back to a local branch that may be behind.
+    The fixture leaves mirror's ref unscripted, so asking about it raises."""
+    port = ScriptedCommands(git={"show-ref --verify --quiet refs/remotes/team/main": ok()})
+    assert resolve_base_ref(port, None, "main", ("team", "mirror"), "team") == (
+        "refs/remotes/team/main",
+        None,
+    )
+
+
+def test_base_finds_the_only_remote_holding_the_trunk_when_none_nominated_it() -> None:
+    """A trunk named by a local `main` rather than by any published HEAD. No
+    remote has been nominated, so the same one-distinct-answer rule applies
+    again: one remote holds a copy of it, and that is an answer."""
+    port = ScriptedCommands(git={"show-ref --verify --quiet refs/remotes/team/main": ok()})
+    assert resolve_base_ref(port, None, "main", ("team",), None) == (
+        "refs/remotes/team/main",
+        None,
+    )
+
+
+def test_base_declines_when_several_remotes_hold_a_copy_of_the_trunk() -> None:
+    """Nothing here says which server's `main` this repository's work merges
+    into, and the two are allowed to differ. Measuring against one that is ahead
+    of the real trunk would report unmerged work as merged, so the local branch
+    answers instead -- behind is the direction that fails closed."""
+    port = ScriptedCommands(
+        git={
+            "show-ref --verify --quiet refs/remotes/alpha/main": ok(),
+            "show-ref --verify --quiet refs/remotes/beta/main": ok(),
+        }
+    )
+
+    base, warning = resolve_base_ref(port, None, "main", ("alpha", "beta"), None)
+
+    assert base == "refs/heads/main"
+    assert warning is not None and "alpha/main, beta/main" in warning
+
+
+def test_base_asks_origin_alone_when_the_remote_list_could_not_be_read() -> None:
+    """The same reach the trunk tier keeps on an unreadable list: `origin` and
+    no further. The fixture enforces it -- there is no other remote it could
+    ask, because there is no list to ask from."""
+    port = ScriptedCommands(git={"show-ref --verify --quiet refs/remotes/origin/main": ok()})
+    assert resolve_base_ref(port, None, "main", None, None) == ("refs/remotes/origin/main", None)
 
 
 # -- worktree parsing --------------------------------------------------------
@@ -1039,7 +1342,7 @@ def test_a_remote_name_containing_a_slash_is_taken_whole() -> None:
             ref_line("refs/heads/main", "main", head="*"),
             ref_line("refs/remotes/team/origin/feat/x", "team/origin/feat/x"),
         ],
-        counts={"refs/remotes/origin/main..team/origin/feat/x": "0"},
+        counts={"refs/remotes/team/origin/main..team/origin/feat/x": "0"},
     )
 
     surveyed = run(port)

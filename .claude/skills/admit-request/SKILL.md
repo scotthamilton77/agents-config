@@ -1,6 +1,6 @@
 ---
 name: admit-request
-description: Evaluate any request to admit a rule, skill, command, or agent into src/ — newly authored or lifted out of archive/. Use whenever someone proposes adding an artifact to the deployed surface, reinstating a retired one, or asks whether something belongs.
+description: Evaluate any request to admit a rule, skill, command, or agent into src/ — newly authored or reinstated after retirement. Use whenever someone proposes adding an artifact to the deployed surface, reinstating a retired one, or asks whether something belongs.
 ---
 
 # Admitting an artifact
@@ -15,8 +15,8 @@ Applies to any artifact in a gated namespace: `rules`, `skills`, `commands`,
 `agents`. Claude `workflows/` are not gated by the installer today; that is a
 known hole.
 
-Applies equally to a newly authored artifact and to one lifted out of
-`archive/`. **There is no grandfathering.** An artifact that shipped before
+Applies equally to a newly authored artifact and to one being reinstated after
+retirement. **There is no grandfathering.** An artifact that shipped before
 the bar existed gets the same evaluation as one written this morning.
 
 ## Verdict

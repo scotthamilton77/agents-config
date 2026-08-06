@@ -15,8 +15,13 @@ level facts derived from that snapshot.
 review triggering, merge eligibility, and every tracker call belong to the
 decision layer above it. Mechanically: no import of a tracker facade, and no
 `subprocess` anywhere, so nothing here shells out to `gh`/`git`. Keeping that
-true is what lets the runtime serve as the executor substrate
-(`SAVEPOINTS/2026-07-24-v1-executor-loop-fit-report.md`).
+true is what lets the runtime serve as the executor substrate. The same
+independence holds for agent topology, and deliberately so: `Lane.agent`,
+`.model` and `.effort` are opaque strings that `fold.py` copies through from
+`lane_handover` and only `serialize.py`, `handoff.py` and `render.py` ever read
+back out. Nothing branches on them or validates them against a roster, so no
+particular arrangement of agents is baked in and a decision layer above can
+choose its own.
 
 **Process-global state — the clock, cwd, and environment — is defaulted in
 `cli.main()` and read nowhere else.** All three arrive as parameters a caller can

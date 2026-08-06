@@ -5,7 +5,8 @@
 # quality gates, coverage thresholds, foreign-CLI model selection, and more.
 #
 # Review/merge policy schema: docs/architecture/review-merge-policy/design.md
-# (other sections' schema origin: archive/docs/specs/bead-pipeline-architecture.md)
+# Every other section's schema came from the pre-rework bead-pipeline design,
+# which was retired out of this repository along with the pipeline it described.
 #
 # All sections are optional. Absent sections use per-stage defaults.
 # Stage role names (not numbers) are the authority in all section names.
