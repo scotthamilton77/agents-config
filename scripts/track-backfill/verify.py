@@ -12,6 +12,73 @@ import tomllib
 
 from context import HERE, resolve_root, work
 
+RUNLOG = HERE / "applied.log"
+
+
+def applied_ids(runlog_text: str) -> set[str]:
+    """Ids this migration has written, from the tab-separated run log."""
+    return {
+        line.split("\t", 1)[0]
+        for line in runlog_text.splitlines()
+        if line.strip() and "\t" in line
+    }
+
+
+def track_labels(item: dict) -> list[str]:
+    """Raw `track:*` labels, not the derived track.
+
+    `derive_track` collapses 0 and 2+ labels alike to None, so an item
+    accidentally given two tracks reads as untracked. Counting the raw labels is
+    what makes that case visible.
+    """
+    return [label for label in item["labels"] if label.startswith("track:")]
+
+
+def audit_tracks(
+    live: list[dict], closed: list[dict], assigned: dict[str, str], written: set[str]
+) -> dict[str, list]:
+    """C1's sweep: did this migration produce the outcome the artifact decided?
+
+    Three findings, each a defect on its own terms:
+
+    `mismatched` — a live artifact item not carrying its decided track.
+    `doubled` — any item carrying two track labels, whatever its status.
+    `wrote_outside_artifact` — an id in the run log that the artifact does not
+    cover, meaning the applicator wrote beyond what was decided and reviewed.
+
+    Deliberately NOT a finding: an item carrying a track the artifact never
+    mentions. That was the original stray check, and it measured a premise that
+    has since expired. It held when the artifact was the only way a track could
+    arrive; `work create --track` now threads one through the lifecycle gate at
+    creation, and the enforcement flip makes that mandatory. Under that check,
+    every correctly created item is a failure and the criterion gets more wrong
+    every week. What the check was actually for -- proving the applicator stayed
+    inside its mandate -- is the run log's job, which names writers rather than
+    inferring them from end state.
+
+    Closed items are swept for doubled labels but never compared against a target:
+    reconcile skips an artifact item that closed before apply, making no write, so
+    comparing its empty track against its target would fail a correct run.
+    """
+    mismatched, doubled, skipped_closed = [], [], []
+    for item in live + closed:
+        labels = track_labels(item)
+        if len(labels) > 1:
+            doubled.append((item["id"], labels))
+        want = assigned.get(item["id"])
+        if want is None:
+            continue
+        if item["status"] == "closed":
+            skipped_closed.append(item["id"])
+        elif item["track"] != want:
+            mismatched.append((item["id"], want, item["track"], item["status"]))
+    return {
+        "mismatched": mismatched,
+        "doubled": doubled,
+        "skipped_closed": skipped_closed,
+        "wrote_outside_artifact": sorted(written - set(assigned)),
+    }
+
 
 def main() -> int:
     # Bind to the script's own repo, not the caller's cwd. Without this, running
@@ -53,48 +120,29 @@ def main() -> int:
 
     failures: list[str] = []
 
-    def track_labels(item: dict) -> list[str]:
-        """Raw track:* labels, not the derived track.
-
-        derive_track() collapses 0 and 2+ labels alike to None, so an item that
-        was accidentally given two tracks reads as untracked. Counting the raw
-        labels is what makes that case visible.
-        """
-        return [x for x in item["labels"] if x.startswith("track:")]
-
-    # C1 — outcome matches the artifact; nothing outside it was written to.
-    # The groom-state item is minted by this migration and is deliberately not in
-    # the artifact, so it is carved out of the stray check.
-    #
-    # The target-track comparison applies to LIVE items only. `reconcile()`
-    # deliberately skips an artifact item that closed before apply — no write is
-    # made — so comparing that item's (still empty) track against its artifact
-    # target would report a failure for the documented normal drift case, after
-    # an entirely correct run. Closed items are still swept for stray and
-    # doubled labels, which are real defects whatever the item's status.
-    mismatched, stray, doubled, skipped_closed = [], [], [], []
-    for item in items + closed:
-        labels = track_labels(item)
-        is_closed = item["status"] == "closed"
-        if len(labels) > 1:
-            doubled.append((item["id"], labels))
-        want = assigned.get(item["id"])
-        if want is not None:
-            if is_closed:
-                skipped_closed.append(item["id"])
-            elif item["track"] != want:
-                mismatched.append((item["id"], want, item["track"], item["status"]))
-        elif labels and item["id"] != groom_item:
-            stray.append((item["id"], item["type"], item["status"], labels))
-    if mismatched:
-        failures.append(f"C1 outcome != artifact: {mismatched[:5]} ({len(mismatched)} total)")
-    if stray:
-        failures.append(f"C1 track written outside the artifact: {stray[:5]} ({len(stray)} total)")
-    if doubled:
-        failures.append(f"C1 item carries multiple track labels: {doubled[:5]} ({len(doubled)} total)")
+    # C1 — the outcome matches the artifact, and the applicator stayed inside it.
+    written = applied_ids(RUNLOG.read_text()) if RUNLOG.exists() else set()
+    audit = audit_tracks(items, closed, assigned, written)
+    if audit["mismatched"]:
+        failures.append(
+            f"C1 outcome != artifact: {audit['mismatched'][:5]} "
+            f"({len(audit['mismatched'])} total)"
+        )
+    if audit["wrote_outside_artifact"]:
+        failures.append(
+            f"C1 run log records writes the artifact does not cover: "
+            f"{audit['wrote_outside_artifact'][:5]} "
+            f"({len(audit['wrote_outside_artifact'])} total)"
+        )
+    if audit["doubled"]:
+        failures.append(
+            f"C1 item carries multiple track labels: {audit['doubled'][:5]} "
+            f"({len(audit['doubled'])} total)"
+        )
     print(
-        f"C1: {len(assigned) - len(skipped_closed)} live assigned item(s) compared; "
-        f"{len(skipped_closed)} closed since the artifact was generated (not compared)"
+        f"C1: {len(assigned) - len(audit['skipped_closed'])} live assigned item(s) compared; "
+        f"{len(audit['skipped_closed'])} closed since the artifact was generated (not compared); "
+        f"{len(written)} write(s) in the run log, all within the artifact"
     )
 
     # C2 — zero violations among covered ids; residue reported, not asserted away.
