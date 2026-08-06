@@ -121,9 +121,10 @@ merge-authorization = "explicit"
 # [tracks] / [operating-model] / [extraction] — work-tracker track partition
 # Read by: workcli (work create gate, work list --track, work track set,
 #          work lint, work graph, work triggers, work groom).
-# Contract: docs/specs/2026-07-15-workcli-track-partition-design.md §3 for the
-#           track model; docs/specs/2026-07-19-track-backfill-migration-design.md
-#           §3 for the vocabulary, which supersedes the 2026-07-15 names
+# Contract: docs/specs/2026-07-15-workcli-track-partition-design.md §3 — the
+#           track model, the per-track charters, and the §3.1-§3.6 rules that
+#           decide which track an item takes. This file is authoritative for the
+#           names; that section is their charter.
 # ---------------------------------------------------------------------------
 [tracks]
 names = ["installer", "prgroom", "workcli", "pdlc-orchestrator",

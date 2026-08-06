@@ -1,10 +1,13 @@
 # Work-Tracker Track Partition — workcli Track Layer, Extraction Policy, Operating Model
 
 **Date:** 2026-07-15
-**Status:** Implemented. **The §3 vocabulary is superseded** — it was revised on
-evidence by `docs/specs/2026-07-19-track-backfill-migration-design.md` §3 before
-any of it was applied. The track model, the enforcement rollout, the extraction
-semantics and the `work triggers` contract still stand, except as noted next.
+**Status:** Implemented, and §3 amended. The track names this spec first proposed
+were revised on evidence before any of them was applied; that revision lived in a
+companion migration design later retired out of this repository, so **§3 now
+holds the vocabulary of record and its assignment rules** rather than pointing at
+a document that is gone. The track model, the enforcement rollout, the extraction
+semantics and the `work triggers` contract stand as written, except as noted
+next.
 **Two premises expired on 2026-08-05.** This spec repeatedly names vizsuite V2's
 work-map as the seeing layer that consumes `track` (§5, §8, and the `work graph`
 data contract). The vizsuite package was extracted to `scotthamilton77/vizsuite`
@@ -74,26 +77,41 @@ counts live rather than trusting them.)
 
 ## 3. Track model and configuration
 
-> **The vocabulary below is superseded and was never applied.** It named
-> `skills-discipline` and `portability`, which
-> `docs/specs/2026-07-19-track-backfill-migration-design.md` §3 retired before the
-> backfill ran — `skills-discipline` alone would have absorbed 49% of the backlog
-> and breached `max-track-backlog` on day one. That spec minted
-> `pipeline-discipline`, `review-and-merge` and `grind-runtime` in their place and
-> is the vocabulary of record; `project-config.toml` matches it. Read this section
-> for the *track model* — one label per item, milestones exempt, closed items
-> exempt, config-owned names — and take the names themselves from the 2026-07-19
-> spec.
+**Vocabulary** (config-owned; `project-config.toml` is authoritative and this
+table is its charter). The names this spec first proposed were revised on
+evidence before any of them was applied: `skills-discipline` alone would have
+absorbed 49% of the backlog and breached `max-track-backlog` on day one, so it
+and `portability` were retired and `pipeline-discipline`, `review-and-merge` and
+`grind-runtime` minted in their place. That revision lived in a companion
+migration design that has since been retired out of this repository; its
+vocabulary content is stated here so the registry has one home rather than a
+pointer.
 
-**Vocabulary** (initial; config-owned — superseded, see above):
+| Track | Kind | Charter |
+|---|---|---|
+| `pipeline-discipline` | organizing-only | The work-through-the-SDLC engine: formulas, dispatch, worker agents, escalation, container-hygiene gates. Decides *what work happens and how it moves*. |
+| `prgroom` | extractable | The deterministic PR-grooming corridor: the prgroom package, its scripts, and the skills driving it. |
+| `installer` | extractable | The install engine: template assembly, `DYNAMIC-INCLUDE` flattening, per-tool projection and asset compatibility, receipts, CLI deployment, tool detection. |
+| `review-and-merge` | extractable | The gates around the PR corridor: merge-guard, the completion/quality gate, adversarial-QA assets, cross-model review passes, sync-after-remote-merge, and post-merge cleanup — `packages/gitclean`, the `clean-up-git` command and the `post-merge-cleanup` skill (§3.4). |
+| `ops-meta` | organizing-only | Running the operation: roadmap and milestone management, cost and model-routing economics, telemetry, dashboards; external-dependency management and adoption spikes; and purely editorial repo hygiene, bounded by §3.2. |
+| `workcli` | extractable | Owner of the issue-tracker boundary: the `work` facade CLI, its verbs and adapter, tracker-backend defects and capability asks, and one-time tracker-data migrations. Ownership follows the boundary, not the implementation language — §3.5. |
+| `pdlc-orchestrator` | extractable | The deterministic FSM engine intended to drive Objectives through the lifecycle, and its design corpus. |
+| `grind-runtime` | extractable | The event-sourced grind runtime: typed event schema, single-writer append log, pure FSM fold, CLI, dashboard projection. Was organizing-only pending a package; `packages/grind` exists, so it is extractable and `work triggers` evaluates it. |
+| `vizsuite` | extractable | Backlog and knowledge-graph visualization and its data contracts. The package was extracted to its own repository; the name stays registered because work items still carry it, and removing a name orphans them. |
+| `holding-place` | extractable | The idea pipeline and its Promote contract. |
 
-`installer`, `prgroom`, `workcli`, `pdlc-orchestrator`, `holding-place`,
-`vizsuite`, `skills-discipline`, `portability`, `ops-meta`.
-
-`skills-discipline`, `portability`, and `ops-meta` are **organizing-only**: they
-partition the backlog but are never extraction candidates (they are cross-cutting
-config/process, not packages). `work triggers` excludes them from extraction
+`pipeline-discipline` and `ops-meta` are **organizing-only**: they partition the
+backlog but are never extraction candidates, being cross-cutting process and
+config rather than packages. `work triggers` excludes them from extraction
 evaluation entirely.
+
+Two further tracks were proposed during the revision and **rejected on
+evidence**: `agent-skill-platform` (five of eight candidate members failed its
+own charter — it reproduced `skills-discipline` at small scale) and
+`runtime-integration` (the gap it named turned out to be three items wide).
+Recorded so they are not re-proposed from intuition.
+
+Which of these an item takes is decided by §3.1–§3.6.
 
 **Storage:** one `track:<name>` label per bead. Milestone-type beads carry no
 track label (they legitimately span tracks) and are exempt from every track
@@ -104,9 +122,9 @@ invariant and gate. Closed beads are exempt from all track invariants.
 ```toml
 [tracks]
 names = ["installer", "prgroom", "workcli", "pdlc-orchestrator",
-         "holding-place", "vizsuite", "skills-discipline",
-         "portability", "ops-meta"]
-organizing-only = ["skills-discipline", "portability", "ops-meta"]
+         "holding-place", "vizsuite", "review-and-merge",
+         "pipeline-discipline", "grind-runtime", "ops-meta"]
+organizing-only = ["pipeline-discipline", "ops-meta"]
 enforcement = "advisory"   # "advisory" | "required"; omitted key ⇒ "advisory" (fail-safe)
 
 [operating-model]
@@ -119,9 +137,9 @@ groom-state-item = ""   # work item id holding backlog-groom state; minted durin
 
 [extraction.pressure]
 # PRESSURE signals — "this track would BENEFIT from its own repo."
-max-track-backlog = 100            # mechanical: non-closed beads in one track.
-                                   # Dial ≈ 2x today's largest extractable track
-                                   # (prgroom, 49); tune at Backlog Grooming.
+max-track-backlog = 100            # mechanical: non-closed items in one track.
+                                   # Dial ≈ 2x the largest extractable track at
+                                   # the time it was set; tune at Backlog Grooming.
 external-consumer-tracks = []      # human-declared (see §5)
 independent-release-tracks = []    # human-declared (see §5)
 
@@ -153,6 +171,81 @@ as a non-list `names`) — every new flag/verb in §4 fails with the typed
 `E_NOT_CONFIGURED` error, its message naming the specific parse or validation
 problem; a broken config therefore fails only the track layer and can never
 break an existing verb.
+
+### 3.1 Primary tie-break: code-locus over milestone ancestry
+
+An item under a roadmap milestone suggesting one track, but changing code
+belonging to another, takes the track of the code it changes. This is what let
+`portability` be retired: 13 of the PORT milestone's 16 items had an unambiguous
+installer locus.
+
+### 3.2 Secondary tie-break: change-kind over code-locus, bounded
+
+Purely editorial work — zero behavioural delta — takes `ops-meta` **only when it
+spans two or more tracks**. Single-track editorial work takes the track of the
+asset it edits. Without this bound, `ops-meta`'s hygiene clause can claim an item
+from any track.
+
+### 3.3 Policy items with no code locus
+
+An item that defines policy rather than changing code takes the track of the
+asset that will implement it.
+
+### 3.4 `prgroom` / `review-and-merge`: the PR-corridor boundary
+
+These two are the easiest pair to confuse, because `prgroom`'s charter is a
+**code locus** while `review-and-merge`'s reads as a **purpose** — and by purpose
+alone, prgroom is a subset of review-and-merge, since everything prgroom does
+also decides whether work lands.
+
+The discriminator is the asset, not the purpose:
+
+- **`prgroom`** — the PR-grooming corridor itself: the prgroom package and its
+  scripts, and **the assets prgroom supersedes.** Superseded assets stay with
+  their successor, so retirement work and successor work share one track.
+- **`review-and-merge`** — the gates around that corridor: merge-guard, the
+  completion/quality gate, adversarial-QA, cross-model review dispatch,
+  sync-after-remote-merge, **and post-merge cleanup: `packages/gitclean`, the
+  `clean-up-git` command, and the `post-merge-cleanup` skill.**
+
+The superseded-asset half of this rule is load-bearing: in the assignment that
+first applied this vocabulary, 21 items touched assets prgroom supersedes, and
+without the rule they split arbitrarily between the two tracks.
+
+**Post-merge cleanup resolves to `review-and-merge`, by decision.** gitclean did
+not exist when this vocabulary was decided, and it is the one member the
+superseded-asset rule does not settle on its own: gitclean supersedes
+`sync-after-remote-merge`, a `review-and-merge` clause, so read mechanically the
+rule would pull that clause toward a gitclean track rather than gitclean toward
+this one. No such track is minted. The cleanup gates belong with the merge gates
+they run after, and splitting them would put "did this land?" and "what can now
+be deleted?" in different workstreams. Recorded so the next reader inherits the
+decision rather than the ambiguity — 14 items in the 2026-08-05 assessment rest
+on it.
+
+### 3.5 `workcli` owns a boundary, not a directory
+
+`workcli` is the one track defined by **ownership of an integration boundary**
+rather than by code locus: everything concerning how this repo talks to its issue
+tracker belongs there, including defects and capability asks against the tracker
+backend itself.
+
+The tension this creates is acknowledged rather than resolved. `workcli` is
+marked `extractable`, yet some of its members are upstream backend concerns that
+cannot travel with `packages/workcli/` on extraction. The alternative — routing
+upstream defects to `ops-meta` — was rejected because it splits one team's
+working set across two tracks to satisfy a property that only matters on the day
+extraction happens. If `workcli` is ever extracted, those members are re-homed at
+that point.
+
+### 3.6 Known expiry: `pipeline-discipline` / `pdlc-orchestrator`
+
+These two are separated by *time*, not structure: both own "what work happens and
+how it moves", differing only in whether the mechanism is shipped or planned. The
+boundary is therefore temporary by construction. **Merge condition:**
+`pdlc-orchestrator` folds into `pipeline-discipline` when the FSM engine drives
+its first Objective end-to-end. Recorded so the boundary expires by decision
+rather than by drift.
 
 ## 4. workcli surface changes
 
