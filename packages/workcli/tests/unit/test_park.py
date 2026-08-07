@@ -27,12 +27,14 @@ from workcli.lifecycle.park import (
     PARKED_MARKER,
     REASONS,
     REDISPATCHED_MARKER,
+    REPAIR_TEXT,
     abandon,
     park,
     parked,
     redispatch,
 )
 from workcli.lifecycle.transitions import claim
+from workcli.verbs.read import ready
 
 _NOW = datetime(2026, 7, 22, 12, 0, 0, tzinfo=UTC)
 _ISO = _NOW.isoformat()
@@ -147,6 +149,60 @@ def test_repark_is_an_idempotent_noop_reporting_the_existing_stint():  # S2-B3
     }
 
 
+def test_repark_repairs_the_marker_a_failed_park_never_wrote():  # S2-B3 (partial park)
+    """A park that lost its note append is repaired by the next park call.
+
+    The three primitives land status-first, so the label is on with nothing
+    recorded -- and the label short-circuits every later park, making this
+    the only call that can ever mint the missing marker. The repaired
+    marker's head is the repairing call's instant and reason (the failed
+    park's are unrecoverable), which its free text says outright.
+    """
+    backend = FakeBackend().add("w1", status="blocked", labels=[PARKED_LABEL])
+
+    data = park(backend, _park_args("w1", "ci-failure", note="flaky job"))
+
+    # One marker, in the normal format: the caveat leads, the call's note follows.
+    assert backend.note_lines("w1") == [
+        f"{PARKED_MARKER} {_ISO} ci-failure: {REPAIR_TEXT}; flaky job"
+    ]
+    assert data == {"id": "w1", "status": "parked", "reason": "ci-failure", "category": "machine"}
+
+
+def test_a_repaired_stint_reads_back_as_a_real_one_on_every_surface():  # S2-B3 (partial park)
+    """The point of the repair: the item stops reporting nulls forever.
+
+    Before it, a marker-less parked item shows null reason and null
+    parked-at in `work parked` and sits in the `parked_stale` block on every
+    `ready` and `claim` -- the unknown-age arm, which no amount of waiting
+    clears.
+    """
+    backend = FakeBackend().add("w1", status="blocked", labels=[PARKED_LABEL])
+    backend.add("w2", status="open")
+
+    park(backend, _park_args("w1", "approval-required"))
+
+    assert parked(backend, _parked_args()) == {
+        "items": [
+            {
+                "id": "w1",
+                "title": "T",
+                "reason": "approval-required",
+                "category": "human",
+                "parked_at": _ISO,
+                "stale": False,
+            }
+        ],
+        "stale_days": 7,
+    }
+    for data in (
+        ready(backend, Namespace(label=None, now=lambda: _NOW)),
+        claim(backend, _id_args("w2")),
+    ):
+        assert isinstance(data, dict)
+        assert data["parked_stale"] == []
+
+
 def test_parked_item_is_not_claimable():  # S2-B4
     backend = FakeBackend().add("w1", status="in_progress")
     park(backend, _park_args("w1", "approval-required"))
@@ -209,6 +265,31 @@ def test_abandon_records_its_own_distinct_intent():  # S2-B6
     assert PARKED_LABEL not in item.labels
     assert f"{ABANDONED_MARKER} {_ISO}" in backend.note_lines("w1")
     assert data == {"id": "w1", "status": "open"}
+
+
+def test_abandon_twice_is_an_idempotent_no_op_that_writes_nothing():  # S2-B6 (idempotency)
+    """A lost response makes the executor re-issue `abandon`; the replay is a no-op.
+
+    `abandon` reaches that contract only through the branch it shares with
+    `redispatch`, whose no-op is pinned separately -- so a guard inserted
+    ahead of the shared path would break the retry with the suite green.
+    The replay runs on a backend that raises on every mutator, which turns
+    "returns before any write" into a proof rather than a state comparison.
+    """
+    backend = FakeBackend()
+    _parked_item(backend, "w1", parked_at=_ISO, reason="budget-exhausted")
+
+    first = abandon(backend, _id_args("w1"))
+    settled = backend.get("w1")
+    replay_backend = ReadOnlyFakeBackend().add(
+        "w1", status=settled.status, labels=settled.labels, notes=settled.notes
+    )
+
+    second = abandon(replay_backend, _id_args("w1"))
+
+    assert first == second == {"id": "w1", "status": "open"}
+    lines = replay_backend.note_lines("w1")
+    assert sum(1 for line in lines if line.startswith(ABANDONED_MARKER)) == 1
 
 
 def test_parked_report_lists_reason_category_staleness_read_only():  # S2-B7
