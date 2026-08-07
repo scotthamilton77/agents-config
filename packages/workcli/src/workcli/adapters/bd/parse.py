@@ -287,16 +287,30 @@ def parse_item(raw: dict[str, JsonValue], *, unknown: frozenset[str] = frozenset
     _assert_object_elements(dependencies, field="dependencies", item_id=item_id)
     _assert_object_elements(dependents, field="dependents", item_id=item_id)
 
-    deps = [
-        _dep_edge_from_raw(entry, item_id)
-        for entry in dependencies
-        if _dep_type(entry, item_id) != "parent-child"
-    ]
-    children = [
-        _dep_edge_from_raw(entry, item_id).id
-        for entry in dependents
-        if _dep_type(entry, item_id) == "parent-child"
-    ]
+    # A declared-unknown relationship is emptied here, not merely dropped by the
+    # verb layer. `bd list`/`ready` DO carry dependency rows, but with no status
+    # on the far end -- an edge that cannot say whether it still blocks. Keeping
+    # those on the Item would leave partial data for any in-package caller that
+    # reads `Item.deps` without consulting `unknown_relations`, which is the same
+    # half-truth one layer below the envelope.
+    deps = (
+        []
+        if "deps" in unknown
+        else [
+            _dep_edge_from_raw(entry, item_id)
+            for entry in dependencies
+            if _dep_type(entry, item_id) != "parent-child"
+        ]
+    )
+    children = (
+        []
+        if "children" in unknown
+        else [
+            _dep_edge_from_raw(entry, item_id).id
+            for entry in dependents
+            if _dep_type(entry, item_id) == "parent-child"
+        ]
+    )
 
     return Item(
         id=item_id,
@@ -305,16 +319,17 @@ def parse_item(raw: dict[str, JsonValue], *, unknown: frozenset[str] = frozenset
         status=_string_field(raw, "status", item_id),
         priority=f"P{priority_raw}",
         labels=_string_list_field(raw, "labels", item_id),
-        parent=str(raw["parent"]) if raw.get("parent") is not None else None,
+        parent=(None if "parent" in unknown or raw.get("parent") is None else str(raw["parent"])),
         deps=deps,
         children=children,
         description=_string_field(raw, "description", item_id, default=""),
         notes=_string_field(raw, "notes", item_id, default=""),
         created=str(raw["created_at"]) if raw.get("created_at") is not None else None,
         updated=str(raw["updated_at"]) if raw.get("updated_at") is not None else None,
-        # An unanswerable relationship keeps its empty value here and travels
-        # declared: the verb layer drops the field rather than publishing the
-        # empty as an answer.
+        # An unanswerable relationship is empty here AND travels declared, so
+        # neither layer can mistake it for an answer: in-package callers reading
+        # the Item see nothing to misread, and the verb layer drops the field
+        # rather than publishing the empty as a result.
         unknown_relations=unknown,
     )
 

@@ -29,6 +29,7 @@ import pytest
 from tests.conftest import run_cli
 from tests.fake_backend import FakeBackend
 from tests.fakes import ScriptedStep
+from workcli.adapters.bd.parse import parse_items
 from workcli.adapters.bd.runner import BdResult
 from workcli.envelope import JsonValue
 from workcli.model import RELATIONSHIP_FIELDS
@@ -253,3 +254,23 @@ def test_the_in_memory_backend_holds_the_same_contract_as_bd(verb: str) -> None:
     reported = _one(reads[verb](), "c-1")
 
     _assert_agrees_with_show(reported, shown, verb=verb)
+
+
+@pytest.mark.parametrize("command", ["show", "search", "list", "ready"])
+def test_a_parsed_item_never_holds_a_relationship_it_declares_unknown(command: str) -> None:
+    # The envelope drops a declared field, but `Item` is also read directly
+    # inside this package. `bd list`/`ready` DO emit dependency rows -- with no
+    # status on the far end -- so a parser that only declared, without emptying,
+    # left half-truth edges on the dataclass for any in-package caller that never
+    # consults `unknown_relations`. Pin both halves at the parse boundary.
+    items = parse_items(_payload(f"bd_{command}_shape.json"), command=command)
+    assert items, f"bd_{command}_shape.json carries no items"
+
+    empty_for = {"parent": None, "deps": [], "children": []}
+    for item in items:
+        for field in RELATIONSHIP_FIELDS:
+            if field in item.unknown_relations:
+                assert getattr(item, field) == empty_for[field], (
+                    f"{command} declares {field!r} unknown for {item.id} "
+                    f"but the Item still carries {getattr(item, field)!r}"
+                )
