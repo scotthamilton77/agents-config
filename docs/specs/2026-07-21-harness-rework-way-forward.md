@@ -192,6 +192,14 @@ enough to need no router is the goal), `wayfinder` (autopsy scheduled when
 the parent-spec path is designed), `triage`,
 `improve-codebase-architecture`. This discharges `wgclw.24`/`.25`.
 
+*Amended 2026-08-07:* `wayfinder` is admitted, user-invoked, with its tracker
+model rewritten onto `work` verbs and its setup command removed. The autopsy
+this decision deferred is superseded by that port: the objection was its
+tracker binding, and the binding is now the facade. Its open mechanical
+questions — the label scheme, the absence of a mechanical completion condition
+for a map, and whether a map is the retired prose-plan class under a new name —
+are carried by `agents-config-9k9.157`, not by this list.
+
 ### Measurement and sequencing
 
 **D19 — Instruments.** Bot App identity separates human from machine PR
