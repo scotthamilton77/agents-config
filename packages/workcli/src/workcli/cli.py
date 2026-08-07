@@ -70,9 +70,16 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
     create_parser.add_argument(
         "noun",
         nargs="?",
-        choices=[noun.value for noun in Noun],
         metavar="NOUN",
-        help="spike|chore|decision|feat|bugfix|spec|epic|milestone -- omit with --raw",
+        # No `choices=` here: an invalid NOUN is validated inside the
+        # create_noun handler instead of by argparse, alongside --priority, so
+        # a caller who gets both wrong learns both from one invocation rather
+        # than argparse raising on whichever it parses first -- same
+        # precedent as `discover`'s --noun.
+        help=(
+            f"{'|'.join(noun.value for noun in Noun)} "
+            "('bug' accepted as an alias for bugfix) -- omit with --raw"
+        ),
     )
     create_parser.add_argument("--raw", action="store_true")
     create_parser.add_argument("--title", required=True)
