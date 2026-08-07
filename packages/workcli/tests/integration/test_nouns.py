@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.integration.conftest import ITEST_TRACK
+
 # (noun, expected bd type, expected shape label) — verified against
 # lifecycle/nouns.py NOUN_TEMPLATES (bd_type, shape_label). Exact contract.
 NOUN_EXPECTATIONS = [
@@ -19,12 +21,25 @@ NOUN_EXPECTATIONS = [
 
 @pytest.mark.parametrize("noun,bd_type,shape_label", NOUN_EXPECTATIONS)
 def test_create_noun_stamps_type_and_shape_label(driver, noun, bd_type, shape_label):
-    created = driver(["create", noun, "--title", f"noun-{noun}", "--priority", "2", "--orphan"])
+    created = driver(
+        [
+            "create",
+            noun,
+            "--title",
+            f"noun-{noun}",
+            "--priority",
+            "2",
+            "--orphan",
+            "--track",
+            ITEST_TRACK,
+        ]
+    )
     assert created["ok"] is True, created
     item_id = created["data"]["id"]  # create → {"id": ...}
     shown = driver(["show", item_id])["data"]  # single-id show → item directly
     assert shown["type"] == bd_type  # Item field is `type`, not `issue_type`
     assert shape_label in shown["labels"]
+    assert f"track:{ITEST_TRACK}" in shown["labels"]  # --track lands as the track label
 
 
 def test_create_spec_children_carry_exactly_their_own_labels(driver):
@@ -34,9 +49,25 @@ def test_create_spec_children_carry_exactly_their_own_labels(driver):
     # and `shape-spec` (wgclw.9.8). The adapter opts out per create; this pins
     # the EXACT label set against a live bd so any new inheritance surprise
     # fails loudly here, not in a reconcile sweep.
-    created = driver(["create", "spec", "--title", "exact-labels", "--priority", "2", "--orphan"])
+    created = driver(
+        [
+            "create",
+            "spec",
+            "--title",
+            "exact-labels",
+            "--priority",
+            "2",
+            "--orphan",
+            "--track",
+            ITEST_TRACK,
+        ]
+    )
     assert created["ok"] is True, created
     design = driver(["show", created["data"]["design_child"]])["data"]
     placeholder = driver(["show", created["data"]["placeholder"]])["data"]
-    assert set(design["labels"]) == {"shape-design"}
-    assert set(placeholder["labels"]) == {"impl-placeholder"}
+    # The container's track propagates to both children (create.py:
+    # instantiate_spec_shape stamps track_label on each), so the exact sets are
+    # the child's own label plus that track — and nothing inherited.
+    track = f"track:{ITEST_TRACK}"
+    assert set(design["labels"]) == {"shape-design", track}
+    assert set(placeholder["labels"]) == {"impl-placeholder", track}
