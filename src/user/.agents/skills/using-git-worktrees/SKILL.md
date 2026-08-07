@@ -49,7 +49,13 @@ If your harness has its own worktree primitive — a tool or command that create
 one and tells you where it put it — use that instead of this step. It owns
 placement and cleanup; going around it leaves state the harness cannot see.
 
-Otherwise, and only from a `main-checkout`:
+**A new worktree starts from the last commit, not from what is on disk.**
+Unstaged edits, staged-but-uncommitted files and untracked files all stay
+behind in the checkout you left. Run `git status` first: if the work you are
+about to isolate is sitting there uncommitted, commit or stash it, or you will
+arrive in the new worktree without it.
+
+Then, and only from a `main-checkout`:
 
 ```bash
 git worktree list                      # where does this project already put them?
@@ -58,7 +64,8 @@ git worktree add <dir>/<branch> -b <branch>
 
 **Placement.** Match what `git worktree list` already shows — several agents
 may share this project, and one convention is what lets them find each other's
-work. With nothing to match, use `.worktrees/<branch>` at the top level.
+work. Ignore any entry marked `prunable`: its directory is already gone. With
+nothing to match, use `.worktrees/<branch>` at the top level.
 
 **The directory must be ignored before anything is created in it**, or the next
 `git add` sweeps an entire second checkout into the index. The survey's
