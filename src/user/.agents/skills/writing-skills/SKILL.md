@@ -28,10 +28,13 @@ this block being stripped and ship these paths into every downstream install.
   verified byte-identical at the 2026-07-17 repo-move refresh)
 
   Source: skills/productivity/writing-for-agents/
-  Upstream: https://github.com/mattpocock/skills @ f054defc3f694558dbd1f418cd9046057594283b
-  (SKILL.md and SKILL-MECHANICS.md were both verified byte-identical to this
-  commit's blobs by hash, and were still unchanged at upstream main on the
-  sync date below)
+  Upstream: https://github.com/mattpocock/skills @ 4aaccb58d40559d7e3c59a029b2290ae5ba538de
+  (all three files in that directory — SKILL.md, SKILL-MECHANICS.md and
+  agents/openai.yaml — were verified byte-identical to this commit's blobs by
+  hash. SKILL.md and SKILL-MECHANICS.md reached this content two commits
+  earlier at f054defc, but 4aaccb58 is the first commit at which the whole
+  source directory reproduces, so it is the pin. Only the first two were
+  grafted; agents/openai.yaml is upstream-specific and was not taken.)
 Last sync: 2026-08-07
 Drift policy: selective-amalgamation. The merged SKILL.md is the authoritative
 copy and diverges from every upstream by construction — specific patterns were
