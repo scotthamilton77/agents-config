@@ -60,4 +60,10 @@ def test_protocol_wire_value_is_pinned() -> None:
     # The serialization boundary pins the literal wire value; every other
     # test references PROTOCOL_VERSION. Bumping the protocol means updating
     # this one assertion deliberately.
-    assert PROTOCOL_VERSION == "1.4"
+    #
+    # 1.5 adds `unknown_relations` to every read item and stops emitting the
+    # relationship fields it names. The removals keep the major: the fields
+    # they drop were never populated on those reads, so no consumer can have
+    # been reading a true value out of one, and the major is what every
+    # consumer handshake pins on.
+    assert PROTOCOL_VERSION == "1.5"
