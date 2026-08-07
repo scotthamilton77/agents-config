@@ -133,7 +133,7 @@ names = ["installer", "prgroom", "workcli", "pdlc-orchestrator",
 # grind-runtime was organizing-only pending a package; packages/grind now exists,
 # so it is extractable and `work triggers` evaluates it.
 organizing-only = ["pipeline-discipline", "ops-meta"]
-enforcement = "advisory"   # flip to "required" is agents-config-9k9.140
+enforcement = "required"   # an underivable create fails E_TRACK_REQUIRED and writes nothing
 
 [operating-model]
 milestone-wip-cap = 2
