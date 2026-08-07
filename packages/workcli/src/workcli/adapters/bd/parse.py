@@ -16,9 +16,11 @@ golden fixtures, not documented anywhere in bd's `--help`):
   entries are raw edge rows (`issue_id`, `depends_on_id`, `type`) with no
   `status` for the other end at all.
 - `bd show` exposes no `children` key; children are recovered by filtering
-  `dependents[]` down to `dependency_type == "parent-child"`. `bd list`
-  exposes no `dependents` key at all, so query()-sourced Items always have
-  `children == []`.
+  `dependents[]` down to `dependency_type == "parent-child"`.
+
+Which reads can see which relationship is therefore not uniform, and
+`_UNKNOWN_RELATIONS` below is where that asymmetry is declared rather than
+absorbed.
 """
 
 from __future__ import annotations
@@ -32,6 +34,32 @@ from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.model import DepEdge, Item
 
 _REQUIRED_ITEM_KEYS = ("id", "title", "issue_type", "status", "priority")
+
+# Which relationships each bd read simply cannot answer, captured from bd
+# 1.0.3 against an isolated scratch install:
+#
+#   command   parent   dependencies       dependents
+#   show      yes      yes (full beads)   yes
+#   list      yes      yes (edge rows)    never emitted
+#   ready     yes      yes (edge rows)    never emitted
+#   search    never    never              never
+#
+# Children come from `dependents[]`, so only `show` can report them. `list`
+# and `ready` do carry edges, but as raw rows with no status for the far end,
+# and an edge without it cannot answer the one question deps are for -- so
+# they report no deps rather than edges that look complete and are not.
+#
+# Keyed on the command rather than sniffed from the payload because bd omits
+# any key whose value is empty: a missing `dependents` means "this item has no
+# children" under `show` and "this command never says" under the other three,
+# and no amount of looking at one payload tells those apart. Reading it as the
+# first is how `list` came to report every epic as childless.
+_UNKNOWN_RELATIONS: dict[str, frozenset[str]] = {
+    "show": frozenset(),
+    "list": frozenset({"children", "deps"}),
+    "ready": frozenset({"children", "deps"}),
+    "search": frozenset({"parent", "deps", "children"}),
+}
 
 # Confirmed against the real bd binary, per golden capture: a
 # not-found `show` logs this exact wording to stderr per missing id, even
@@ -234,7 +262,7 @@ def _assert_object_elements(entries: list[Any], *, field: str, item_id: str) -> 
             )
 
 
-def parse_item(raw: dict[str, JsonValue]) -> Item:
+def parse_item(raw: dict[str, JsonValue], *, unknown: frozenset[str] = frozenset()) -> Item:
     missing = [key for key in _REQUIRED_ITEM_KEYS if key not in raw]
     if missing:
         raise _drift(
@@ -284,11 +312,16 @@ def parse_item(raw: dict[str, JsonValue]) -> Item:
         notes=_string_field(raw, "notes", item_id, default=""),
         created=str(raw["created_at"]) if raw.get("created_at") is not None else None,
         updated=str(raw["updated_at"]) if raw.get("updated_at") is not None else None,
+        # An unanswerable relationship keeps its empty value here and travels
+        # declared: the verb layer drops the field rather than publishing the
+        # empty as an answer.
+        unknown_relations=unknown,
     )
 
 
 def parse_items(stdout: str, *, command: str = "show") -> list[Item]:
     raw_items = _load_json_array(stdout, command=command)
+    unknown = _UNKNOWN_RELATIONS[command]
     items = []
     for raw in raw_items:
         if not isinstance(raw, dict):
@@ -296,7 +329,7 @@ def parse_items(stdout: str, *, command: str = "show") -> list[Item]:
                 f"bd {command} array element is not a JSON object",
                 {"reason": "element_not_an_object", "raw_type": type(raw).__name__},
             )
-        items.append(parse_item(raw))
+        items.append(parse_item(raw, unknown=unknown))
     return items
 
 
