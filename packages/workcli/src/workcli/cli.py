@@ -24,7 +24,7 @@ from workcli.adapters.bd.backend import BdBackend
 from workcli.adapters.bd.runner import BdRunner, SubprocessBdRunner
 from workcli.config import TrackLayerConfig, load_config
 from workcli.envelope import ErrorCode, JsonValue, WorkError, emit_failure, emit_success
-from workcli.lifecycle.nouns import LEAF_NOUNS
+from workcli.lifecycle.nouns import LEAF_NOUNS, Noun
 from workcli.lifecycle.park import DEFAULT_STALE_DAYS
 from workcli.render import render_human
 from workcli.verbs import VERBS, missing_capability
@@ -77,7 +77,7 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
         # than argparse raising on whichever it parses first -- same
         # precedent as `discover`'s --noun.
         help=(
-            "spike|chore|decision|feat|bugfix|spec|epic|milestone "
+            f"{'|'.join(noun.value for noun in Noun)} "
             "('bug' accepted as an alias for bugfix) -- omit with --raw"
         ),
     )
