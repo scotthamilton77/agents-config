@@ -13,7 +13,11 @@ import pytest
 
 from installer.content_lint_cli import main
 from installer.core.merge.base import CollisionError
-from installer.core.surface_budget import ALWAYS_ON_TOKEN_CAP, SKILL_BODY_TOKEN_CAP
+from installer.core.surface_budget import (
+    ALWAYS_ON_TOKEN_CAP,
+    SKILL_BODY_TOKEN_CAP,
+    USER_INVOKED_SKILL_BODY_TOKEN_CAP,
+)
 
 _RECORD = "---\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\n"
 
@@ -35,8 +39,25 @@ def test_clean_tree_exits_zero_and_prints_both_budgets(
 
     out = capsys.readouterr().out
     assert f"cap {ALWAYS_ON_TOKEN_CAP} tokens" in out
+    # Both ceilings on the header, and the one that applied on the body's own
+    # line: with two caps in play a lone number says nothing about headroom.
     assert f"cap {SKILL_BODY_TOKEN_CAP} tokens" in out
+    assert f"{USER_INVOKED_SKILL_BODY_TOKEN_CAP} when user-invoked" in out
+    assert f"/ {SKILL_BODY_TOKEN_CAP}" in out
     assert "skills/tidy" in out
+
+
+def test_a_user_invoked_skill_reports_against_the_raised_ceiling(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A body between the two caps deploys, and the trend line says which ceiling
+    let it through."""
+    body = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
+    flagged = _RECORD.replace("---\n", "---\ndisable-model-invocation: true\n", 1)
+    repo = _repo(tmp_path, skill=flagged + body)
+
+    assert main([str(repo)]) == 0
+    assert f"/ {USER_INVOKED_SKILL_BODY_TOKEN_CAP}" in capsys.readouterr().out
 
 
 def test_over_cap_body_exits_one_and_names_the_skill_on_stderr(

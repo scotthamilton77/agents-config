@@ -9,15 +9,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from installer.core.deploy_gate import item_label, run_admission_gate
+import pytest
+
+from installer.core.deploy_gate import GateResult, item_label, run_admission_gate
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
 from installer.core.surface_budget import (
     ALWAYS_ON_TOKEN_CAP,
     SKILL_BODY_TOKEN_CAP,
+    USER_INVOKED_SKILL_BODY_TOKEN_CAP,
     approx_tokens,
 )
 
 _COMPLETE = b"---\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\nbody\n"
+_RECORD = "admission:\n  prevents: p\n  cost: c\n  remove_when: r\n"
 
 
 def _rule(name: str, content: bytes) -> StagedItem:
@@ -287,6 +291,107 @@ def test_admitted_skill_bodies_are_measured_after_sanitization() -> None:
     assert [(m.label, m.tokens) for m in result.skills] == [
         ("claude:skills/tidy", approx_tokens("body\n"))
     ]
+
+
+def _shared_skill(tmp_path: Path, name: str, text: str) -> StagedItem:
+    """A skill directory staged out of the shared tree, as every tool receives it."""
+    skill = tmp_path / "skills" / name
+    skill.mkdir(parents=True, exist_ok=True)
+    (skill / "SKILL.md").write_text(text, encoding="utf-8")
+    return StagedItem(
+        source_path=skill,
+        dest_relpath=Path("skills") / name,
+        kind=FileKind.DIR,
+        namespace="skills",
+        provenance=Provenance(kind="tool", name="shared"),
+        content=None,
+    )
+
+
+def _deployed_entry(result: GateResult, tool: Tool, name: str) -> bytes:
+    return result.plans[tool].dir_overrides[Path("skills") / name][Path("SKILL.md")]
+
+
+@pytest.mark.parametrize("tool", list(Tool))
+def test_a_shared_flagged_skill_stages_into_every_tool_with_its_projection(
+    tmp_path: Path, tool: Tool
+) -> None:
+    """One shared skill, four deploy targets: Claude keeps the capability keys it
+    defines, and the three tools that define none of them receive the artifact
+    without them rather than with three inert lines."""
+    item = _shared_skill(
+        tmp_path,
+        "handoff",
+        "---\nname: handoff\nargument-hint: [focus]\n"
+        "disable-model-invocation: true\nallowed-tools: Write\n"
+        f"{_RECORD}---\nbody\n",
+    )
+    result = run_admission_gate({tool: _plan(_instruction(b"laws"), item, tool=tool)})
+
+    assert result.ok, result.violations
+    entry = _deployed_entry(result, tool, "handoff")
+    if tool is Tool.CLAUDE:
+        assert entry == (
+            b"---\nname: handoff\nargument-hint: [focus]\n"
+            b"disable-model-invocation: true\nallowed-tools: Write\n---\nbody\n"
+        )
+    else:
+        assert entry == b"---\nname: handoff\n---\nbody\n"
+
+
+def test_a_flagged_body_over_the_raised_ceiling_fails(tmp_path: Path) -> None:
+    body = "x" * (USER_INVOKED_SKILL_BODY_TOKEN_CAP * 4 + 4)
+    item = _shared_skill(
+        tmp_path,
+        "huge",
+        f"---\nname: huge\ndisable-model-invocation: true\n{_RECORD}---\n{body}",
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert not result.ok
+    assert any(
+        f"{USER_INVOKED_SKILL_BODY_TOKEN_CAP}-token cap" in v and "skills/huge" in v
+        for v in result.violations
+    )
+
+
+def test_a_flagged_body_between_the_two_caps_passes(tmp_path: Path) -> None:
+    body = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
+    item = _shared_skill(
+        tmp_path,
+        "roomy",
+        f"---\nname: roomy\ndisable-model-invocation: true\n{_RECORD}---\n{body}",
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert result.ok, result.violations
+    assert [m.cap for m in result.skills] == [USER_INVOKED_SKILL_BODY_TOKEN_CAP]
+
+
+def test_an_unflagged_body_over_the_standard_cap_still_fails(tmp_path: Path) -> None:
+    body = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
+    item = _shared_skill(tmp_path, "bloated", f"---\nname: bloated\n{_RECORD}---\n{body}")
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert not result.ok
+    assert any(f"{SKILL_BODY_TOKEN_CAP}-token cap" in v for v in result.violations)
+
+
+@pytest.mark.parametrize("tool", list(Tool))
+def test_the_cap_is_the_artifact_s_and_not_the_tool_s(tmp_path: Path, tool: Tool) -> None:
+    """The flag is read from the source front matter, before the projection strips
+    it for a tool that cannot honour it. Reading it after would make one repo pass
+    on a Claude-only machine and fail wherever a second tool is detected."""
+    body = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
+    item = _shared_skill(
+        tmp_path,
+        "roomy",
+        f"---\nname: roomy\ndisable-model-invocation: true\n{_RECORD}---\n{body}",
+    )
+    result = run_admission_gate({tool: _plan(_instruction(b"laws"), item, tool=tool)})
+
+    assert result.ok, result.violations
+    assert [m.cap for m in result.skills] == [USER_INVOKED_SKILL_BODY_TOKEN_CAP]
 
 
 def test_item_label_is_the_join_key_the_gate_reports_under() -> None:

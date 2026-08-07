@@ -1,15 +1,19 @@
-"""Deploy-time sanitization of governance metadata.
+"""Deploy-time rewriting of front matter, both removals.
 
-Pins the two removals (governance front-matter keys, provenance comment) and,
-just as importantly, what must survive them: every other front-matter key,
-byte for byte, and any comment that is content rather than bookkeeping.
+Pins the tool-independent sanitization (governance front-matter keys,
+provenance comment) and the per-tool capability projection, and — just as
+importantly — what must survive each: every other front-matter key, byte for
+byte, and any comment that is content rather than bookkeeping.
 """
 
 from __future__ import annotations
 
-from installer.core.sanitize import sanitize_bytes, sanitize_text
+import pytest
+
+from installer.core.sanitize import project_capabilities, sanitize_bytes, sanitize_text
 
 _RECORD = "admission:\n  prevents: p\n  cost: c\n  remove_when: r\n"
+_FLAGGED = "---\nname: handoff\ndisable-model-invocation: true\n---\nbody\n"
 
 
 def test_admission_block_is_removed() -> None:
@@ -120,3 +124,64 @@ def test_crlf_artifact_keeps_crlf_endings() -> None:
 def test_crlf_artifact_with_only_governance_keys_drops_the_fence() -> None:
     text = "---\r\n" + _RECORD.replace("\n", "\r\n") + "---\r\n\r\nbody\r\n"
     assert sanitize_text(text) == "body\r\n"
+
+
+def test_claude_keeps_the_capability_key() -> None:
+    assert project_capabilities(_FLAGGED, tool="claude") == _FLAGGED
+
+
+@pytest.mark.parametrize("tool", ["codex", "gemini", "opencode"])
+def test_a_tool_without_the_capability_loses_the_key(tool: str) -> None:
+    assert project_capabilities(_FLAGGED, tool=tool) == "---\nname: handoff\n---\nbody\n"
+
+
+@pytest.mark.parametrize("tool", ["codex", "gemini", "opencode"])
+def test_every_claude_only_capability_key_is_projected_out(tool: str) -> None:
+    text = (
+        "---\nname: handoff\nargument-hint: [focus]\n"
+        "disable-model-invocation: true\nallowed-tools: Write Bash(git status *)\n"
+        "description: d\n---\nbody\n"
+    )
+    projected = project_capabilities(text, tool=tool)
+    assert projected == "---\nname: handoff\ndescription: d\n---\nbody\n"
+
+
+def test_surviving_keys_are_byte_identical_through_the_projection() -> None:
+    description = 'description: "Use when: X, Y; or Z — see the notes"'
+    text = f"---\nname: a\n{description}\ndisable-model-invocation: true\n---\nbody\n"
+    assert project_capabilities(text, tool="gemini") == f"---\nname: a\n{description}\n---\nbody\n"
+
+
+def test_the_projection_does_not_touch_the_body() -> None:
+    """A capability is a property of the loading runtime; the body is not. A
+    leading comment that survives sanitization must survive this too."""
+    text = "---\ndisable-model-invocation: true\nname: a\n---\n<!-- TODO: rewrite -->\nbody\n"
+    assert (
+        project_capabilities(text, tool="codex")
+        == "---\nname: a\n---\n<!-- TODO: rewrite -->\nbody\n"
+    )
+
+
+def test_front_matter_of_nothing_but_capability_keys_drops_the_fence() -> None:
+    assert (
+        project_capabilities("---\nallowed-tools: Write\n---\n\nbody\n", tool="codex") == "body\n"
+    )
+
+
+def test_text_without_front_matter_passes_through_the_projection() -> None:
+    assert project_capabilities("# heading\n\nbody\n", tool="codex") == "# heading\n\nbody\n"
+
+
+def test_unparseable_front_matter_is_not_projected() -> None:
+    text = "---\n: : :\n---\ndisable-model-invocation: true\n"
+    assert project_capabilities(text, tool="codex") == text
+
+
+def test_projecting_twice_is_a_no_op() -> None:
+    once = project_capabilities(_FLAGGED, tool="opencode")
+    assert project_capabilities(once, tool="opencode") == once
+
+
+def test_projection_keeps_crlf_endings() -> None:
+    text = "---\r\nname: a\r\ndisable-model-invocation: true\r\n---\r\nbody\r\n"
+    assert project_capabilities(text, tool="gemini") == "---\r\nname: a\r\n---\r\nbody\r\n"
