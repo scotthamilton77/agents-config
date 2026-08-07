@@ -70,10 +70,10 @@ Concrete results — only if you have them and they're load-bearing.
 
 Use the skill name with an explicit requirement marker:
 
-- ✅ `REQUIRED SUB-SKILL: Use test-driven-development`
+- ✅ `REQUIRED SUB-SKILL: Use tdd`
 - ✅ `REQUIRED BACKGROUND: You MUST understand bugfix`
-- ❌ `See skills/testing/test-driven-development` — unclear if required
-- ❌ `@skills/testing/test-driven-development/SKILL.md` — force-loads, burns
+- ❌ `See skills/testing/tdd` — unclear if required
+- ❌ `@skills/testing/tdd/SKILL.md` — force-loads, burns
   context
 
 ## Principle of Lack of Surprise

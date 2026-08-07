@@ -68,7 +68,7 @@ Documented divergences since:
     "completion bound" to keep it distinct from a review's acceptance
     criteria. Its steps/reference split, invocation axis and pruning levers
     are the parts that reshaped this body.
-Internal cross-references use bare-name skill conventions (e.g., `test-driven-development`).
+Internal cross-references use bare-name skill conventions (e.g., `tdd`).
 If a cross-reference dangles in a deployment, verify the skill exists in your installation.
 -->
 
@@ -205,7 +205,7 @@ This binds **discipline** documents in full. For technique and reference the spi
 still applies — verify the document teaches what you think it teaches — but the test
 format is application or retrieval, not pressure compliance.
 
-The cycle is `test-driven-development` applied to documentation. **RED** runs the
+The cycle is `tdd` applied to documentation. **RED** runs the
 scenario WITHOUT the document, or with the OLD version, capturing verbatim what the
 agent chose and which queries missed; **GREEN** addresses only those failures;
 **REFACTOR** counters the rationalizations and near-misses that testing then
