@@ -89,10 +89,19 @@ error, it silently resolves against whichever tree the thing resolving it
 happens to be standing in. Build every path from the `toplevel:` the survey
 printed, and re-run the survey rather than assuming a `cd` reached everything.
 
-**One committer per worktree.** The index and HEAD are per-worktree, so
-separate worktrees never collide — but two things committing in the *same* one
-do: the second gets `Unable to create '.git/index.lock': File exists` and
-fails. If you delegate work into a worktree, one agent commits there.
+**One committer per worktree.** Two things committing in the same worktree
+collide: the second gets `Unable to create '.git/index.lock': File exists` and
+fails. Two worktrees do not collide **so long as they hold different
+branches** — which is what git enforces when it refuses to check one branch out
+twice. Force past that refusal and the protection is gone: each worktree's HEAD
+is a symref to the one shared branch ref, so a commit in one moves the other's
+HEAD, and the other's next commit is built on a stale index and silently drops
+the first one's files. Exit 0, no warning. Give each committer its own branch.
+
+**Delegate with an absolute path.** If you hand work that commits to another
+agent, give it the absolute path of the worktree. A delegate that starts
+somewhere else commits to whatever *that* place has checked out — which is
+usually the branch the user had open.
 
 **Do not remove a worktree anything is still standing in.** Once the directory
 is gone, every command from a process whose working directory was inside it
