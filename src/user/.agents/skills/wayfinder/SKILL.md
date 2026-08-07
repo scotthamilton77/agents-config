@@ -44,7 +44,7 @@ The map is an **index**, not a store. It lists the decisions made and points at 
 | The ticket's type | the noun: `spike` for research and prototype, `decision` for a grilling question, `chore` for a task |
 | An agent may resolve it alone | `--label wayfinder:afk`; without it, the ticket needs the human |
 | Blocking | `work dep add <blocked> <blocker>` — "the first depends on the second", wired in a second pass once both ids exist |
-| The frontier | `work ready` — open, unblocked, unclaimed. `work ready --label wayfinder:afk` is what a session can fan out without the human |
+| The ticket frontier | `work ready` — open, unblocked, unclaimed; tickets that are startable, not questions that are answerable. `work ready --label wayfinder:afk` is what a session can fan out without the human |
 | Claim | `work claim <id>` — refuses a blocked, closed, or already-claimed ticket, so the claim is enforced rather than a convention |
 | Resolve | `work close <id> --disposition "<the answer>"` — records the answer and closes, in one call |
 | Link an asset | `work note <id> "<pointer to the branch, file or document>"` |
@@ -103,7 +103,7 @@ User invokes with a loose idea.
 1. **Name the destination.** Run a `grilling` and `domain-modeling` session to pin down what this map is finding its way to — the spec, decision, or change. The destination fixes the scope, so it's settled first.
 2. **Map the frontier.** Grill again, **breadth-first** this time: fan out across the whole space rather than deep on any one thread, surfacing the open decisions and the first steps takeable now. **If this surfaces no fog** — the way to the destination is already clear, the whole journey small enough for one session — you don't need a map. Stop and ask the user how they'd like to proceed.
 3. **Create the map**, with Destination and Notes filled in, Decisions-so-far empty, and the fog sketched into **Not yet specified**.
-4. **Create the tickets you can specify now** as children of the map, then wire blocking edges in a **second pass** — items need ids before they can reference each other. Wiring sorts them into the frontier and the blocked; everything you can't yet specify stays in the fog.
+4. **Create the tickets you can specify now** as children of the map, then wire blocking edges in a **second pass** — items need ids before they can reference each other. Wiring sorts them into the ticket frontier and the blocked; everything you can't yet specify stays in the fog.
 5. **Fire the research subagents.** For each research ticket you just created, delegate a `research` run to resolve it in parallel, and note the resulting artifact's location back onto the ticket.
 6. Stop — charting is one session's work; it hand-resolves nothing.
 

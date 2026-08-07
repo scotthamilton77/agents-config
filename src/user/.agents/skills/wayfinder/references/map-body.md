@@ -2,7 +2,7 @@
 
 The whole map at low resolution, loaded once per session. It goes in the map item's description, and is rewritten in place as the effort advances.
 
-Open tickets are **not** listed here — they are the map's open children, found by query (`work ready` for the frontier, `work list --parent <map-id> --status open` for all of them). Listing them in the body would mean maintaining a second copy that goes stale the moment a ticket closes.
+Open tickets are **not** listed here — they are the map's open children, found by query (`work ready` for the ticket frontier, `work list --parent <map-id> --status open` for all of them). Listing them in the body would mean maintaining a second copy that goes stale the moment a ticket closes.
 
 ```markdown
 ## Destination

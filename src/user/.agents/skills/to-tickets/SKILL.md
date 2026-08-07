@@ -94,9 +94,9 @@ Read it as "the first depends on the second". One call per edge.
 
 Do NOT close or modify the container or any parent item.
 
-### 6. Hand off the frontier
+### 6. Hand off the ticket frontier
 
-`work ready` now returns the **frontier**: every ticket whose blockers are all closed and which nobody has claimed. For a purely linear chain that is top to bottom. Whoever picks one up takes it with `work claim <id>` first, so concurrent sessions don't collide.
+`work ready` now returns the **ticket frontier** — every ticket whose blockers are all closed and which nobody has claimed. This frontier is work that is startable, not questions that are answerable. For a purely linear chain it is top to bottom. Whoever picks one up takes it with `work claim <id>` first, so concurrent sessions don't collide.
 
 ## What goes in the ticket body
 
