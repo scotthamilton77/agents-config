@@ -1,0 +1,243 @@
+/* explain-pr theme — "theme-aware slate"
+ * Inline this file verbatim into the explainer's <style> block.
+ * Light + dark are handled automatically via prefers-color-scheme.
+ * Use the documented class vocabulary (see assets/palette.md) so every
+ * generated explainer looks like it came from the same shop.
+ */
+
+:root {
+  /* light (default) */
+  --bg:        #f8fafc;
+  --surface:   #ffffff;
+  --surface-2: #f1f5f9;
+  --border:    #e2e8f0;
+  --text:      #0f172a;
+  --text-dim:  #475569;
+  --accent:    #0891b2;
+  --accent-fg: #ffffff;
+
+  /* callout tints */
+  --note-bd:   #0891b2;  --note-bg:   #ecfeff;
+  --key-bd:    #7c3aed;  --key-bg:    #f5f3ff;
+  --warn-bd:   #d97706;  --warn-bg:   #fffbeb;
+  --def-bd:    #64748b;  --def-bg:    #f8fafc;
+
+  /* syntax tokens */
+  --tok-kw:   #0e7490;
+  --tok-str:  #15803d;
+  --tok-num:  #b45309;
+  --tok-com:  #64748b;
+  --tok-fn:   #7c3aed;
+  --tok-type: #0891b2;
+  --tok-var:  #0f172a;
+  --tok-punc: #475569;
+
+  --radius: 10px;
+  --maxw: 820px;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:        #0f172a;
+    --surface:   #1e293b;
+    --surface-2: #172033;
+    --border:    #334155;
+    --text:      #e2e8f0;
+    --text-dim:  #94a3b8;
+    --accent:    #22d3ee;
+    --accent-fg: #062c33;
+
+    --note-bd:   #22d3ee;  --note-bg:   #0c343d;
+    --key-bd:    #a78bfa;  --key-bg:    #2a2350;
+    --warn-bd:   #fbbf24;  --warn-bg:   #3a2c0a;
+    --def-bd:    #64748b;  --def-bg:    #1a2436;
+
+    --tok-kw:   #22d3ee;
+    --tok-str:  #4ade80;
+    --tok-num:  #fbbf24;
+    --tok-com:  #64748b;
+    --tok-fn:   #c4b5fd;
+    --tok-type: #67e8f9;
+    --tok-var:  #e2e8f0;
+    --tok-punc: #94a3b8;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 2rem 1.25rem 6rem; }
+
+h1 { font-size: 2rem; line-height: 1.2; margin: 1.5rem 0 0.5rem; }
+h2 {
+  font-size: 1.5rem;
+  margin: 3rem 0 1rem;
+  padding-top: 0.75rem;
+  border-top: 2px solid var(--border);
+  scroll-margin-top: 1rem;
+}
+h3 { font-size: 1.2rem; margin: 2rem 0 0.5rem; }
+a { color: var(--accent); }
+p, li { color: var(--text); }
+small, .dim { color: var(--text-dim); }
+
+/* ---- Table of contents ---- */
+.toc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  margin: 1.5rem 0 2rem;
+}
+.toc h2 { border: 0; margin: 0 0 0.5rem; padding: 0; font-size: 0.85rem;
+          text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+.toc ol { margin: 0; padding-left: 1.25rem; }
+.toc a { text-decoration: none; }
+.toc a:hover { text-decoration: underline; }
+
+/* ---- Collapsible (deep background) ---- */
+details {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 1rem;
+  margin: 1rem 0;
+}
+details summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+details[open] summary { margin-bottom: 0.5rem; }
+
+/* ---- Callouts ---- */
+.callout {
+  border-left: 4px solid var(--def-bd);
+  background: var(--def-bg);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 0.75rem 1rem;
+  margin: 1.25rem 0;
+}
+.callout .label {
+  font-weight: 700; font-size: 0.75rem; text-transform: uppercase;
+  letter-spacing: 0.06em; display: block; margin-bottom: 0.25rem;
+}
+.callout.note { border-color: var(--note-bd); background: var(--note-bg); }
+.callout.note .label { color: var(--note-bd); }
+.callout.key  { border-color: var(--key-bd);  background: var(--key-bg); }
+.callout.key  .label { color: var(--key-bd); }
+.callout.warn { border-color: var(--warn-bd); background: var(--warn-bg); }
+.callout.warn .label { color: var(--warn-bd); }
+.callout.def  { border-color: var(--def-bd);  background: var(--def-bg); }
+.callout.def  .label { color: var(--def-bd); }
+
+/* ---- Code blocks ----
+ * The pre-wrap here is the safeguard: even a mis-authored block keeps newlines.
+ */
+pre {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  overflow-x: auto;
+  white-space: pre;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  margin: 1.25rem 0;
+}
+pre.wrap-lines { white-space: pre-wrap; }
+code { font-family: var(--mono); font-size: 0.9em; }
+p code, li code {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.05em 0.35em;
+}
+
+/* ---- Syntax tokens (hand-tag spans; no external highlighter) ---- */
+.tok-kw   { color: var(--tok-kw);   font-weight: 600; }
+.tok-str  { color: var(--tok-str); }
+.tok-num  { color: var(--tok-num); }
+.tok-com  { color: var(--tok-com);  font-style: italic; }
+.tok-fn   { color: var(--tok-fn); }
+.tok-type { color: var(--tok-type); }
+.tok-var  { color: var(--tok-var); }
+.tok-punc { color: var(--tok-punc); }
+/* diff emphasis inside a <pre> */
+.diff-add { background: color-mix(in srgb, var(--tok-str) 18%, transparent); display: block; }
+.diff-del { background: color-mix(in srgb, var(--warn-bd) 18%, transparent); display: block; }
+
+/* ---- Diagram primitives ---- */
+.diagram {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  margin: 1.5rem 0;
+  overflow-x: auto;
+}
+.diagram .caption { color: var(--text-dim); font-size: 0.85rem; margin-top: 0.75rem; text-align: center; }
+.flow { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+.node {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.9rem;
+  text-align: center;
+}
+.node.hot { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+.arrow { color: var(--text-dim); font-size: 1.2rem; }
+.arrow::before { content: "\2192"; }        /* → */
+.arrow.down::before { content: "\2193"; }    /* ↓ */
+.data-tag {
+  display: inline-block; font-family: var(--mono); font-size: 0.75rem;
+  background: var(--note-bg); color: var(--note-bd);
+  border-radius: 5px; padding: 0.05em 0.4em;
+}
+/* tiny UI mock frame */
+.uimock {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); max-width: 320px; margin: 0 auto; overflow: hidden;
+}
+.uimock .titlebar { background: var(--surface-2); border-bottom: 1px solid var(--border);
+                    padding: 0.4rem 0.75rem; font-size: 0.8rem; color: var(--text-dim); }
+.uimock .body { padding: 0.85rem; }
+
+/* ---- Quiz ---- */
+.quiz { margin: 1.5rem 0; }
+.q {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1rem 1.25rem; margin: 1rem 0;
+}
+.q .stem { font-weight: 600; margin-bottom: 0.75rem; }
+.q .opt {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.6rem 0.85rem; margin: 0.4rem 0; font-size: 0.95rem;
+  transition: background 0.12s, border-color 0.12s;
+}
+.q .opt:hover { border-color: var(--accent); }
+.q .opt.correct   { border-color: var(--tok-str); background: var(--note-bg); }
+.q .opt.incorrect { border-color: var(--warn-bd); background: var(--warn-bg); }
+.q .opt:disabled  { cursor: default; }
+.q .feedback {
+  margin-top: 0.6rem; font-size: 0.9rem; color: var(--text-dim);
+  display: none; border-top: 1px dashed var(--border); padding-top: 0.6rem;
+}
+.q .feedback.show { display: block; }
+
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .wrap { padding: 1rem 1rem 4rem; }
+  h1 { font-size: 1.6rem; }
+  h2 { font-size: 1.3rem; }
+}

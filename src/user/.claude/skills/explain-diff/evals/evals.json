@@ -1,0 +1,16 @@
+{
+  "skill_name": "explain-diff",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Create an explain-diff HTML page for a change that makes a command-line tool preserve request order when its backend returns records in arbitrary order. Use the resolved persona's voice throughout.",
+      "expected_output": "A self-contained explainer with five four-option quiz questions that distinguish real understanding from plausible misconceptions while giving the persona one visibly absurd, wrong answer in each question.",
+      "expectations": [
+        "Each question has exactly four option buttons: two plausible false distractors, one true answer, and one false option marked data-comic=\"true\".",
+        "Each data-comic option is visibly and factually incompatible with the change; it is not a plausible misconception with a sarcastic suffix.",
+        "The data-comic option's visible wording and feedback use the resolved persona's cadence, references, and attitude without breaking the explainer's factual explanation.",
+        "Each question has exactly one data-correct=\"true\" option and one feedback element."
+      ]
+    }
+  ]
+}
