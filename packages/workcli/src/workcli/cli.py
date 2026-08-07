@@ -24,7 +24,7 @@ from workcli.adapters.bd.backend import BdBackend
 from workcli.adapters.bd.runner import BdRunner, SubprocessBdRunner
 from workcli.config import TrackLayerConfig, load_config
 from workcli.envelope import ErrorCode, JsonValue, WorkError, emit_failure, emit_success
-from workcli.lifecycle.nouns import LEAF_NOUNS, Noun
+from workcli.lifecycle.nouns import LEAF_NOUNS
 from workcli.lifecycle.park import DEFAULT_STALE_DAYS
 from workcli.render import render_human
 from workcli.verbs import VERBS, missing_capability
@@ -70,9 +70,16 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
     create_parser.add_argument(
         "noun",
         nargs="?",
-        choices=[noun.value for noun in Noun],
         metavar="NOUN",
-        help="spike|chore|decision|feat|bugfix|spec|epic|milestone -- omit with --raw",
+        # No `choices=` here: an invalid NOUN is validated inside the
+        # create_noun handler instead of by argparse, alongside --priority, so
+        # a caller who gets both wrong learns both from one invocation rather
+        # than argparse raising on whichever it parses first -- same
+        # precedent as `discover`'s --noun.
+        help=(
+            "spike|chore|decision|feat|bugfix|spec|epic|milestone "
+            "('bug' accepted as an alias for bugfix) -- omit with --raw"
+        ),
     )
     create_parser.add_argument("--raw", action="store_true")
     create_parser.add_argument("--title", required=True)
