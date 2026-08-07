@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from tests.integration.conftest import _bd_env
+from tests.integration.conftest import ITEST_TRACK, _bd_env
 from workcli.adapters.bd.runner import SubprocessBdRunner
 
 
@@ -21,9 +21,19 @@ def test_bad_flag_is_usage_error(driver):
 
 
 def test_deliver_without_evidence_is_refused(driver):
-    item_id = driver(["create", "feat", "--title", "ep-noevidence", "--priority", "2", "--orphan"])[
-        "data"
-    ]["id"]
+    item_id = driver(
+        [
+            "create",
+            "feat",
+            "--title",
+            "ep-noevidence",
+            "--priority",
+            "2",
+            "--orphan",
+            "--track",
+            ITEST_TRACK,
+        ]
+    )["data"]["id"]
     driver(["claim", item_id])
     env = driver(["deliver", item_id])  # no --pr/--items/--trivial
     assert env["ok"] is False
@@ -32,12 +42,32 @@ def test_deliver_without_evidence_is_refused(driver):
 
 def test_type_wall_verb_envelope(driver):
     # (a) The verb-layer pre-check raises E_TYPE_WALL before bd is called.
-    epic = driver(["create", "epic", "--title", "ep-epic", "--priority", "2", "--orphan"])["data"][
-        "id"
-    ]
-    task = driver(["create", "feat", "--title", "ep-task", "--priority", "2", "--orphan"])["data"][
-        "id"
-    ]
+    epic = driver(
+        [
+            "create",
+            "epic",
+            "--title",
+            "ep-epic",
+            "--priority",
+            "2",
+            "--orphan",
+            "--track",
+            ITEST_TRACK,
+        ]
+    )["data"]["id"]
+    task = driver(
+        [
+            "create",
+            "feat",
+            "--title",
+            "ep-task",
+            "--priority",
+            "2",
+            "--orphan",
+            "--track",
+            ITEST_TRACK,
+        ]
+    )["data"]["id"]
     env = driver(["dep", "add", epic, task, "--type", "blocks"])
     assert env["ok"] is False
     assert env["error"]["code"] == "E_TYPE_WALL"

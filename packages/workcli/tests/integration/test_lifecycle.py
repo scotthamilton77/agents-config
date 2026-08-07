@@ -2,13 +2,27 @@
 
 from __future__ import annotations
 
+from tests.integration.conftest import ITEST_TRACK
+
 
 def test_create_claim_deliver_trivial_then_reconcile_noop(driver):
     # `create feat` mints a shape-feat leaf (not a container); claimable once ready.
     # `--orphan` is required alongside `--parent` (create.py: exactly one of the two).
-    item_id = driver(["create", "feat", "--title", "lc-leaf", "--priority", "2", "--orphan"])[
-        "data"
-    ]["id"]
+    # `--track` is required too: these are orphans, so there is no tracked parent
+    # to inherit from and the fixture config enforces the track gate.
+    item_id = driver(
+        [
+            "create",
+            "feat",
+            "--title",
+            "lc-leaf",
+            "--priority",
+            "2",
+            "--orphan",
+            "--track",
+            ITEST_TRACK,
+        ]
+    )["data"]["id"]
     assert driver(["claim", item_id])["ok"] is True
     # A leaf delivery with trivial evidence closes it.
     delivered = driver(["deliver", item_id, "--trivial"])
@@ -25,9 +39,19 @@ def test_plan_add_then_done(driver):
     # no separate "add to queue" step distinct from --done. An epic IS a container
     # (nouns.py: is_container=True), so --done needs no --force (plan's guard:
     # `not is_container(item) and not args.force`).
-    item_id = driver(["create", "epic", "--title", "lc-epic", "--priority", "2", "--orphan"])[
-        "data"
-    ]["id"]
+    item_id = driver(
+        [
+            "create",
+            "epic",
+            "--title",
+            "lc-epic",
+            "--priority",
+            "2",
+            "--orphan",
+            "--track",
+            ITEST_TRACK,
+        ]
+    )["data"]["id"]
     added = driver(["plan", item_id, "--done"])
     assert added["ok"] is True
     assert added["data"]["planned"] is True
@@ -42,9 +66,19 @@ def test_plan_add_then_done(driver):
 def test_promote_leaf_to_spec_container(driver):
     # promote requires a shape-feat leaf (transitions.py::promote); `create feat`
     # provides exactly that. Result: the leaf becomes a shape-spec container.
-    leaf = driver(["create", "feat", "--title", "lc-promote", "--priority", "2", "--orphan"])[
-        "data"
-    ]["id"]
+    leaf = driver(
+        [
+            "create",
+            "feat",
+            "--title",
+            "lc-promote",
+            "--priority",
+            "2",
+            "--orphan",
+            "--track",
+            ITEST_TRACK,
+        ]
+    )["data"]["id"]
     promoted = driver(["promote", leaf])
     assert promoted["ok"] is True
     assert promoted["data"]["promoted"] == "spec"
