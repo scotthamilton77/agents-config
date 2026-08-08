@@ -56,18 +56,19 @@ def test_plugin_tool_scoped_view() -> None:
 
 
 def test_prune_view() -> None:
-    # Receipt-recorded, prune-eligible tool-tree namespaces. hooks absent — see
-    # test_hooks_is_staged_but_not_pruned_or_backed_up. formulas absent: it is
+    # Receipt-recorded, prune-eligible tool-tree namespaces. hooks included — see
+    # test_hooks_is_staged_and_pruned_and_backed_up. formulas absent: it is
     # plugin-routed and tracked via the plugin-route receipt path, not this set.
-    assert namespaces.PRUNE == ("commands", "skills", "agents", "rules", "workflows")
+    assert namespaces.PRUNE == ("commands", "skills", "agents", "rules", "hooks", "workflows")
 
 
 def test_backup_view() -> None:
     # Namespaces whose backups route to a sibling <ns>-backup/ dir (else an
     # in-place suffix). formulas included — overwritten plugin-route content still
-    # gets a sibling-dir backup; hooks absent (same gap as PRUNE).
+    # gets a sibling-dir backup; hooks included — an overwritten hook is backed up
+    # too, not lost.
     assert (
-        frozenset({"commands", "skills", "agents", "rules", "formulas", "workflows"})
+        frozenset({"commands", "skills", "agents", "rules", "hooks", "formulas", "workflows"})
         == namespaces.BACKUP
     )
 
@@ -88,18 +89,18 @@ def test_shared_carrier_is_a_subset_of_shared() -> None:
     assert set(namespaces.SHARED) >= namespaces.SHARED_CARRIER
 
 
-def test_hooks_is_staged_but_not_pruned_or_backed_up() -> None:
+def test_hooks_is_staged_and_pruned_and_backed_up() -> None:
     """hooks is a tool-scoped, deployed namespace (src/user/.claude/hooks/ ->
-    ~/.claude/hooks/) that is NOT receipt-tracked or sibling-backed-up. A
-    removed-source hook therefore survives forever with no receipt entry to
-    trigger its deletion — the same survives-forever gap that was deliberately
-    fixed for ``workflows`` (see test_workflows_namespace). This pins the CURRENT
-    state that the consolidation preserves unchanged; the prune-policy decision is
-    tracked as separate follow-up work.
+    ~/.claude/hooks/) that IS receipt-tracked and sibling-backed-up: a
+    removed-source hook is pruned on the next install, and an overwritten hook
+    is backed up to a sibling ``hooks-backup/`` dir rather than lost — the
+    identical fix already applied to ``workflows`` (see test_workflows_namespace).
+    The full prune/backup behavior is pinned end-to-end in
+    test_hooks_prune_and_backup.py; this pins the vocabulary membership only.
     """
     assert "hooks" in namespaces.TOOL_SCOPED
-    assert "hooks" not in namespaces.PRUNE
-    assert "hooks" not in namespaces.BACKUP
+    assert "hooks" in namespaces.PRUNE
+    assert "hooks" in namespaces.BACKUP
 
 
 def test_formulas_is_plugin_routed_backup_only() -> None:

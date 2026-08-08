@@ -53,19 +53,18 @@ SHARED_CARRIER: frozenset[str] = frozenset({"skills", "agents"})
 PLUGIN_TOOL_SCOPED: tuple[str, ...] = ("commands", "skills", "agents", "rules")
 
 # Namespaces recorded in the install receipt (prune-eligible tool-tree content).
-# Excludes ``hooks``: it is staged and deployed (see :data:`TOOL_SCOPED`) but is
-# NOT currently receipt-tracked, so a removed-source hook survives forever in
-# ~/.claude/hooks/ — a suspected latent gap (the identical gap was deliberately
-# fixed for ``workflows``, which is why workflows IS here). Preserved as-is so
-# this consolidation changes no behavior; the prune-policy fix is tracked as
-# separate follow-up work. Excludes ``formulas``: plugin-routed content is pruned
-# via the plugin-route receipt path, not this tool-tree set.
-PRUNE: tuple[str, ...] = ("commands", "skills", "agents", "rules", "workflows")
+# Includes ``hooks``: it is staged and deployed (see :data:`TOOL_SCOPED`) and IS
+# receipt-tracked, so a removed-source hook is pruned from ~/.claude/hooks/ on
+# the next install — the identical fix already applied to ``workflows``.
+# Excludes ``formulas``: plugin-routed content is pruned via the plugin-route
+# receipt path, not this tool-tree set.
+PRUNE: tuple[str, ...] = ("commands", "skills", "agents", "rules", "hooks", "workflows")
 
 # Namespaces whose backups route to a sibling ``<namespace>-backup/`` dir rather
 # than an in-place ``<name>.backup-<ts>`` suffix. Includes ``formulas``: an
-# overwritten plugin-route file still gets a sibling-dir backup. Excludes
-# ``hooks`` (the same suspected gap as :data:`PRUNE`).
+# overwritten plugin-route file still gets a sibling-dir backup. Includes
+# ``hooks``: an overwritten hook script is backed up to ``hooks-backup/`` rather
+# than lost, since a hook is an executable in the user's home.
 BACKUP: frozenset[str] = frozenset(
-    {"commands", "skills", "agents", "rules", "formulas", "workflows"}
+    {"commands", "skills", "agents", "rules", "hooks", "formulas", "workflows"}
 )
