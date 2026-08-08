@@ -102,7 +102,7 @@ sequenceDiagram
         Note over CLI,Port: Phase 3 — CLI-deploy stage (still inside the receipt lock), via run.deploy_clis
         CLI->>CliDep: deploy_clis(CLI_PACKAGES, prior, deploy=cli_deploy)
         CliDep->>Port: uv_version() -- MIN_UV_VERSION guard
-        loop per registry CLI (workcli, then prgroom, then grind)
+        loop per CLI in CLI_PACKAGES, in registry order
             CliDep->>Port: shim_path / tool_list (PATH-independent decision signals)
             alt verify (digest unchanged, shim + provenance proven)
                 CliDep->>Port: smoke(shim, spec.smoke_args)
@@ -131,7 +131,7 @@ sequenceDiagram
 - **Tool order is the detection order; tools are independent within each pass.** Each tool gets its own plan and its own sync pass — there is no cross-tool state. A failure shaping one tool's plan does not corrupt another's.
 - **Collisions happen in both base staging and overlay.** Within a single tool's plan, shared + per-tool content can collide (base staging, `staging.py`); the more common case is plugin content landing on a base asset (`overlay.py`). Both route through the same merge registry (Sequence 2), never through `Sync`.
 - **`Config` is built between the two passes, not before the loop.** `resolve_tools` / `resolve_plugins` (pure functions in `config.py`) run once, up front; the frozen `Config` dataclass itself (`home`, `tools`, `auto_yes`) is constructed after staging finishes and before the sync pass begins. `installer.toml` plays no part in any of this — its loader is parsed but unwired (see [`data-view.md`](data-view.md)).
-- **The CLI-deploy stage runs third, still inside the receipt lock, and only on the user path.** `deploy_clis` walks the closed `CLI_PACKAGES` registry (`workcli` → `work`, `prgroom` → `prgroom`, `grind` → `grind`) in order, deciding verify/heal/fresh per CLI from PATH-independent signals (`shim_path`, `tool_list`) rather than trusting `PATH` itself — `which` is consulted only for the reachability invariant after a successful install. A `--project` run never constructs a `CliDeployPort` and never calls `deploy_clis`/`prune_clis` — the user-space CLI deploy is entirely out of scope for project-local installs. Its outcome merges into `record_receipt` via `merge_clis` alongside the file-install/prune outcomes (see [`data-view.md`](data-view.md) §"Install receipt").
+- **The CLI-deploy stage runs third, still inside the receipt lock, and only on the user path.** `deploy_clis` walks the closed `CLI_PACKAGES` registry in its declared order, deciding verify/heal/fresh per CLI from PATH-independent signals (`shim_path`, `tool_list`) rather than trusting `PATH` itself — `which` is consulted only for the reachability invariant after a successful install. A `--project` run never constructs a `CliDeployPort` and never calls `deploy_clis`/`prune_clis` — the user-space CLI deploy is entirely out of scope for project-local installs. Its outcome merges into `record_receipt` via `merge_clis` alongside the file-install/prune outcomes (see [`data-view.md`](data-view.md) §"Install receipt").
 
 ---
 
@@ -236,7 +236,7 @@ sequenceDiagram
 
 - **Hash-compare is the skip gate.** Unchanged files are never rewritten, so re-running the installer is cheap and quiet — the common case (most files identical) produces no prompts and no backups.
 - **Three modes govern the hashes-differ branch.** `--yes` (auto_yes): backup and write unconditionally, no diff or prompt. `--dry-run`: show diff, no write. Interactive: show diff, prompt, write only on confirmation.
-- **`--dry-run` short-circuits before every write but still shows diffs.** It is the preview mode: the operator sees exactly what *would* change (created / updated counts + diffs) without touching disk. This is also the parity-gate smoke-test surface (`install.py --dry-run` vs `install.sh --dry-run`).
+- **`--dry-run` short-circuits before every write but still shows diffs.** It is the preview mode: the operator sees exactly what *would* change (created / updated counts + diffs) without touching disk.
 - **Backup precedes overwrite, always** — including under `--yes`. No destination file is overwritten without first being copied to its path-aware backup location. The backup routing keeps namespaced backups out of the assistant's discovery walk.
 - **All prompting is through `IOPort`.** `show_diff` and `confirm` never call the terminal directly; `ScriptedIO` drives them in tests, so every branch above is unit-testable without a TTY.
 
@@ -334,7 +334,7 @@ sequenceDiagram
 - **The component structure** that executes these flows — see [`c4-l3-engine.md`](c4-l3-engine.md).
 - **The data shapes** (`StagingPlan`, `StagedItem`, `Orphan`, `Counters`, `Config`) the participants pass — see [`data-view.md`](data-view.md).
 - **DYNAMIC-INCLUDE flattening internals** (the three directive forms) and the **Gemini frontmatter transform** mechanics — referenced as steps here; specified in `installer-design.md`.
-- **The golden-master parity harness** (`install.sh` vs `install.py` diff) — a test artifact, not an install-time flow; see `installer-design.md` §"Test architecture".
+- **The test suites** — test artifacts, not install-time flows; see `installer-design.md` §"Test architecture".
 
 ## Cross-references
 
