@@ -37,6 +37,22 @@ is a record of a moment, and correcting its citations would falsify the record
 rather than repair it. Evergreen prose — a README, a guide, a primer, an
 orientation file — carries no date precisely because it claims to describe the
 present, so it is exactly what this gate reads.
+
+**Tracker identifiers are not judged, and a check for them has a harder
+question to settle first.** A token like ``widget-shop-qq7.30.1`` matches none
+of the shapes above — a dot-separated part beginning with a digit is not an
+identifier — so nothing here resolves it. Existence is the wrong question to ask
+of one anyway: prose stating what a closed item decided is worth keeping, and
+only an identifier whose item was deleted is a dangling pointer, so a check that
+cannot separate the two reports either every historical reference or none of
+them, and both are useless. The cost is not in the code, either. This would be
+the first check here that does not read the tree — existence lives in a tracker,
+one out-of-process call per distinct identifier, in a gate that runs on every
+change — and a cited identifier may belong to another project's tracker, which
+the local one cannot adjudicate at all. Against all of that, the class is not
+accumulating: the few stale identifiers this repo has produced were fixed by
+ordinary editing of the prose around them. Evidence that they accumulate is what
+earns the check.
 """
 
 from __future__ import annotations
