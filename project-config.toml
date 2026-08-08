@@ -34,9 +34,16 @@ name = "agents-config"
 # The agent merges only on an explicit in-session human instruction.
 merge-authorization = "explicit"
 
-# Anticipates future work: autonomous merge once the selected rule holds. Needs a
-# deployed rule evaluator and an approving review the branch ruleset accepts —
-# neither exists (agents-config-9k9.23, .28, .64).
+# Anticipates future work: autonomous merge once the selected rule holds. What is
+# missing is the approving review the branch ruleset accepts (agents-config-9k9.23);
+# reinstating the authorization itself is agents-config-9k9.64.
+#
+# An eligibility evaluator does ship, and it is not the one this anticipates:
+# `prgroom status --json` emits `auto_merge_eligible`, the AND of four gates
+# (packages/prgroom/src/prgroom/lifecycle/status.py). It is derived from prgroom's
+# own bot quiescence, which the charter supersedes, and no term in it consults a
+# review verdict. Read a true value there as a report on grooming, never as an
+# authorization to merge — nothing stands behind it as one.
 # merge-authorization = "rule-based"
 # merge-rule          = "bot-quiescence"
 
@@ -49,7 +56,9 @@ merge-authorization = "explicit"
 # key-path-env = "MERGE_GUARD_APPROVER_KEY_PATH"
 
 # Anticipates future work: which reviews to expect, and how many human approvals a
-# merge needs. Nothing polls for reviews today.
+# merge needs. Reviews are fetched today — `prgroom poll` queries gh for review
+# items, reviews and CI status — but nothing turns that into an expected-reviewer
+# set or an approval count, so these keys would have no reader if uncommented.
 # [review-expectations]
 # bot-review-expected      = true
 # bot-reviewers            = ["Copilot", "copilot-pull-request-reviewer[bot]", "chatgpt-codex-connector[bot]"]  # exact identities, never substrings
