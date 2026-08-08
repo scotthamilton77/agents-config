@@ -6,8 +6,7 @@ admission:
     AGENTS.md/CLAUDE.md — producing a trigger tested against near-misses, a body
     sized to its budget, and material disclosed to references by branch, instead
     of prose written by imitation of whatever skill the author read last.
-  cost: A RED baseline.
-    run before every skill edit, which is slower than editing the prose directly.
+  cost: A RED baseline run before every skill edit, which is slower than editing the prose directly.
   remove_when: Agents author skills and instruction files that trigger accurately
     and stay within budget without being told the method.
 ---
