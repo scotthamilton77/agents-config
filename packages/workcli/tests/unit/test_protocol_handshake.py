@@ -87,7 +87,7 @@ def test_the_readme_states_the_protocol_version_the_code_emits() -> None:
     # quoted in prose and in every sample envelope, so this reads them all
     # rather than one blessed line: a bump that updates the headline and
     # leaves the samples stale is the same defect in a smaller form.
-    readme = (Path(__file__).resolve().parents[2] / "README.md").read_text()
+    readme = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
     stated = set(re.findall(r'"protocol": "(\d+\.\d+)"', readme)) | set(
         re.findall(r"Protocol is `\"(\d+\.\d+)\"`", readme)
     )
