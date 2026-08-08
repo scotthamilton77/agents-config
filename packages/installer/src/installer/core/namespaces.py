@@ -28,8 +28,10 @@ ALL: frozenset[str] = frozenset({"commands", "skills", "agents", "rules", "hooks
 # tool-scoped content (Codex/Gemini/OpenCode) return ``()`` independently.
 # Every namespace in :data:`ALL` is a tool-tree dir today, so this view currently
 # holds the whole vocabulary. It stays a distinct name because it answers a
-# narrower question: content that lands outside every tool tree — what a route's
-# ``dest_dir`` names — belongs to :data:`ALL` but not here.
+# narrower question: a namespace that staged outside every tool tree would be in
+# :data:`ALL` and not here. None does now. Route destinations are not the example
+# of that — a route's ``dest_dir`` is an arbitrary directory name mirrored from its
+# source tree, and nothing reads it as a namespace.
 TOOL_SCOPED: tuple[str, ...] = ("commands", "skills", "agents", "rules", "hooks", "workflows")
 
 # Shared namespaces staged from ``src/user/.agents`` (staging Phase 2) and
