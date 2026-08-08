@@ -279,11 +279,11 @@ def test_default_branch_falls_back_to_master_when_main_is_absent() -> None:
 
 @pytest.mark.parametrize("remote", ["team", "team/origin"])
 def test_a_trunk_published_by_the_only_remote_is_found_whatever_it_is_called(remote: str) -> None:
-    """The defect this pins: discovery used to spell `origin` in the question,
-    so a repository whose remote is called anything else reached the
-    published-HEAD tier for nobody. With no local `main` or `master` either --
-    the shape below -- no trunk resolved at all, nothing could be told apart
-    from the trunk, and the tool was inert in that repository.
+    """Spelling `origin` in the question is what this rules out: a repository
+    whose remote is called anything else would reach the published-HEAD tier
+    for nobody. With no local `main` or `master` either -- the shape below --
+    no trunk resolves at all, nothing can be told apart from the trunk, and the
+    tool is inert in that repository.
 
     A slash in the remote's name changes nothing, and is worth a row of its own
     because it is the case where a path cannot be taken apart: `git remote add
@@ -403,9 +403,9 @@ def test_a_repository_with_no_remotes_says_so_rather_than_prescribing_one() -> N
 
 
 def test_a_repository_without_an_origin_is_never_told_to_publish_origins_head() -> None:
-    """The remedy used to spell `origin` unconditionally, which in a repository
-    whose remote is called something else is an instruction that cannot be
-    carried out."""
+    """A remedy that spells `origin` unconditionally is, in a repository whose
+    remote is called something else, an instruction that cannot be carried
+    out."""
     port = ScriptedCommands(
         git={
             "symbolic-ref --quiet refs/remotes/team/HEAD": fail(),
@@ -1297,8 +1297,8 @@ def test_a_dropped_worktree_block_is_counted_not_just_warned() -> None:
 
 
 def test_an_unparseable_ref_row_is_counted_and_warned_rather_than_vanishing() -> None:
-    """These rows used to be dropped in silence, so a ref could go unrecorded
-    with nothing anywhere saying a row had been lost."""
+    """Dropping these rows in silence lets a ref go unrecorded with nothing
+    anywhere saying a row was lost."""
     port = make_port(refs=[ref_line("refs/heads/main", "main", head="*"), "truncated\x1frow"])
 
     surveyed = run(port)
@@ -2382,9 +2382,8 @@ def test_worktree_activity_is_taken_from_the_branch_it_holds() -> None:
 
 
 def test_a_detached_worktree_is_dated_from_its_head() -> None:
-    """With no branch to inherit from, a detached worktree used to have no age
-    at all -- and an unknown age can never be called abandoned, so it stayed in
-    the report permanently. The HEAD commit answers the same question."""
+    """With no branch to inherit from, nothing but the HEAD commit can date a
+    detached worktree, and it answers the same question a branch's tip would."""
     port = make_port(
         refs=[ref_line("refs/heads/main", "main", head="*")],
         worktrees=(
@@ -2440,12 +2439,13 @@ def test_a_detached_head_is_reported_as_no_current_branch() -> None:
 
 
 def test_the_trunk_is_measured_rather_than_assumed() -> None:
-    """The trunk used to be handed zeroes and a merge verdict unprobed.
+    """Handing the trunk zeroes and a merge verdict unprobed is the shortcut
+    this rules out.
 
     Its counts are the most useful ones in the report -- commits sitting on
     the local trunk that were never pushed are exactly what someone about to
     clean up wants to see -- and a row asserting a measurement nobody took is
-    the habit that made this tool dangerous."""
+    the habit that makes this tool dangerous."""
     port = make_port(refs=[ref_line("refs/heads/main", "main", head="*")])
     main = next(b for b in run(port).branches if b.name == "main")
 

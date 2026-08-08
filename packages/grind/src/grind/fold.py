@@ -34,10 +34,10 @@ from grind.model import (
     new_attempt_ledger,
 )
 
-# The pre-charter park vocabulary, which lived on a field named `kind`. Three
-# of its four members survived the reconciliation unchanged; `human-gated` is
-# retired because `approval-required` names the same state. Read-side only --
-# nothing writes `kind` any more, and the validator rejects it on input.
+# The park vocabulary a log can carry on a field named `kind` instead of
+# `reason`. Three members map to themselves; `human-gated` maps onto
+# `approval-required`, which names the same state. Read-side only -- nothing
+# writes `kind`, and the validator rejects it on input.
 _LEGACY_PARK_KINDS: dict[str, ParkReason] = {
     "discovered-work": "discovered-work",
     "later-wave": "later-wave",

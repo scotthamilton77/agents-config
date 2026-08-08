@@ -199,9 +199,9 @@ def test_a_proven_merge_does_not_silence_the_unpushed_unknown() -> None:
 
 
 def test_an_uncounted_unpushed_total_is_stated_as_unknown() -> None:
-    """The count is not what authorises anything any more -- merge evidence is
-    -- but a probe that went quiet still renders as a stated unknown on this
-    branch's own row rather than vanishing."""
+    """The count is not what authorises anything -- merge evidence is -- but a
+    probe that went quiet still renders as a stated unknown on this branch's own
+    row rather than vanishing."""
     branch = make_branch(upstream="origin/feat/thing", unpushed_commits=None)
     assert any("nothing proves these commits are pushed" in r for r in _one(branch).reasons)
 
@@ -288,23 +288,23 @@ def test_an_unmeasured_ignored_count_is_stated_rather_than_left_as_silence() -> 
 
 
 def test_a_worktree_with_no_timestamp_says_its_age_is_unknown() -> None:
-    """Branches said this and worktrees did not, so a `show` that failed left
-    the row silent."""
+    """A `show` that does not answer leaves this row silent unless the unknown
+    is stated outright."""
     target = _wt(make_worktree(head=ELSEWHERE, branch=None, last_activity=None))
     assert any("age is unknown" in r for r in target.reasons)
 
 
 def test_an_open_pr_is_named_on_the_row() -> None:
     """It is the single most useful fact for a person deciding what to name,
-    and it is a fact -- unlike the verdict that used to be computed from it."""
+    and it is a fact -- unlike any verdict that could be computed from it."""
     branch = make_branch(pr=make_pr(number=12, state="OPEN"))
     assert any("PR #12 is open" in r for r in _one(branch).reasons)
 
 
 def test_unpushed_commits_are_counted_on_the_row() -> None:
-    """Nothing reads this to authorise anything any more. It stays because it
-    is what tells a reader whether deleting the branch costs them the only
-    copy, which is the decision the report exists to support."""
+    """Nothing reads this to authorise anything. It stays because it is what
+    tells a reader whether deleting the branch costs them the only copy, which
+    is the decision the report exists to support."""
     branch = make_branch(upstream="origin/feat/thing", unpushed_commits=3)
     assert any("3 commit(s) not on origin/feat/thing" in r for r in _one(branch).reasons)
 
@@ -663,9 +663,8 @@ def test_a_detached_worktree_says_its_date_came_from_the_commit() -> None:
     row is the commit's. A worktree made this morning at a two-year-old tag
     therefore reads as two years idle.
 
-    Nothing decides anything on that number now -- the lifecycle verdict that
-    used to call it abandoned is gone -- but a reader who saw only the date
-    would draw the same conclusion by hand, so the row says what was
+    Nothing decides anything on that number, but a reader who saw only the date
+    would conclude the checkout was abandoned, so the row says what was
     measured."""
     survey = make_survey(
         branches=(make_branch("main", head="a" * 40, is_default=True),),

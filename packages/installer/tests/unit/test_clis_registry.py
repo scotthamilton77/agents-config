@@ -29,10 +29,10 @@ def test_registry_is_exactly_workcli_prgroom_grind_executor_and_gitclean() -> No
 
     Pins the closed registry; pdlc/holding-place/vizsuite must NOT
     auto-deploy. Being gated by `make ci` is not what earns a place here —
-    vizsuite is gated and stays off. gitclean was withheld while it decided
-    what was safe to delete; it now decides only whether a merge is proven,
-    and everything else it reports with the measurement that stopped it.
-    A caller who names a target authorizes that deletion outright.
+    vizsuite is gated and stays off. gitclean earns its place by concluding one
+    thing — whether a merge is proven — and reporting everything else with the
+    measurement that stopped it. A caller who names a target authorizes that
+    deletion outright.
     """
     assert [s.name for s in CLI_PACKAGES] == [
         "workcli",

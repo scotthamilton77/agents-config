@@ -444,9 +444,9 @@ def test_edge_add_failure_surfaces_created_id_for_replay() -> None:
 
 
 # --- recovery contract: post-create track read fails -> detail.created_id set ---
-# (codex review finding on PR #327: backend.get(new_id) for track derivation is a
-# third post-create step not covered by the original enumeration; it must carry
-# created_id on failure exactly like the edge-add and orphan-marker seams do.)
+# (backend.get(new_id) for track derivation is a third post-create step; it must
+# carry created_id on failure exactly like the edge-add and orphan-marker seams
+# do.)
 
 
 class _GetFailingBackend(FakeBackend):

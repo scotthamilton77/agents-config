@@ -1,11 +1,11 @@
 """Pure judgement: a Survey in, Targets out. No I/O, no subprocesses.
 
 One judgement is made here, and it is narrow: may an unattended sweep delete
-this? Everything that used to answer *is anyone still using this?* is gone,
-because nothing in a repository measures that. Age measures commits, not
-intent. A clean working tree measures files, not consent. Deriving a lifecycle
-verdict from either produced confident answers to a question the data could not
-settle, and those answers authorised deletions.
+this? Nothing here answers *is anyone still using this?*, because nothing in a
+repository measures that. Age measures commits, not intent. A clean working
+tree measures files, not consent. Deriving a lifecycle verdict from either
+gives a confident answer to a question the data cannot settle, and such an
+answer authorises deletions.
 
 What is left is ``withheld_reason``: six measured questions, each with an
 answer a reader can check. A target that clears all six is provably merged and
@@ -524,9 +524,8 @@ def classify_worktree(
         # Said out loud because the number is not what its name suggests. A
         # detached checkout has no branch to date it from, so the date is the
         # commit's -- and a worktree created a minute ago at a two-year-old tag
-        # reads as two years idle. Nothing decides anything on it any more, but
-        # a reader who saw only the date would draw the conclusion the old
-        # lifecycle verdict used to draw for them.
+        # reads as two years idle. Nothing decides anything on it, but a reader
+        # who saw only the date would conclude the checkout is abandoned.
         reasons.append(
             f"dated {worktree.last_activity[:10]} from the commit it holds, "
             f"which is not when this checkout was made or last touched"

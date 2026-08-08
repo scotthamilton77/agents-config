@@ -204,9 +204,8 @@ def test_item_parked_requires_item_reason_note():
 
 
 def test_item_parked_rejects_a_retired_pre_charter_reason():
-    # `human-gated` was a park kind before the vocabulary was reconciled onto
-    # the charter's typed reasons; it is subsumed by `approval-required` and
-    # must not be quietly accepted alongside its replacement.
+    # `human-gated` names the same state as `approval-required`, which subsumes
+    # it, so the boundary must not quietly accept both spellings of one park.
     retired = {"item": "a", "reason": "human-gated", "note": "n"}
     assert validate_payload("item_parked", retired) != []
     assert (

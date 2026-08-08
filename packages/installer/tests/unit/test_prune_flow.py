@@ -378,7 +378,7 @@ def test_malformed_timestamp_under_auto_yes_rejected_before_any_delete(tmp_path:
 
     Pins the guardrail on a *deleting* path: the timestamp is interpolated raw
     into the backup path, so a path-separator-bearing value must be rejected
-    before any I/O. The raise now originates at the ``back_up`` boundary
+    before any I/O. The raise originates at the ``back_up`` boundary
     (safe-by-default), not from an explicit check in ``run_prune``.
     """
     o1 = _file_orphan(tmp_path, "claude", "skills", "a")

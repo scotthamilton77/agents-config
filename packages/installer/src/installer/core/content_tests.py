@@ -1,10 +1,10 @@
 """Discovery and execution of the test suites shipped inside ``src/``.
 
 Skills ship real code — a launcher, an SSE repair proxy, a prompt emitter, a
-verdict validator — and each ships a test suite beside it. Until this module
-existed no target ran any of them, so a regression in shipped code reached
-``main`` with CI green and surfaced as a broken delegation at use time, on
-someone else's machine.
+verdict validator — and each ships a test suite beside it. Without this module
+no target runs any of them, so a regression in shipped code reaches ``main``
+with CI green and surfaces as a broken delegation at use time, on someone
+else's machine.
 
 Three rules, all mechanical and all anti-drift:
 

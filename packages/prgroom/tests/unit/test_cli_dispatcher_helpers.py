@@ -1,7 +1,7 @@
 """Tests for the CLI dispatcher-build seams + logging helpers (§4, §5).
 
 The production dispatcher builders wire ``usage_hook=append_usage`` — the
-bead-item-1 regression guard here drives a dispatch through the REAL
+regression guard here drives a dispatch through the REAL
 ``_build_fix_dispatcher()`` construction line (fake runner, real hook, tmp XDG
 state dir) and asserts rows land in ``usage.jsonl``. ``_resolve_log_level`` pins
 the fail-lateral env-knob choice; ``lifecycle.warn.default_warn`` is the shared
@@ -69,8 +69,8 @@ class _ScriptedRunner:
 def test_production_fix_builder_appends_usage_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The bead-item-1 regression guard: this drives the EXACT construction line
-    # that used to omit usage_hook. One row per chain-link attempt must land in
+    # This drives the EXACT production construction line, so a builder that
+    # omits usage_hook is caught. One row per chain-link attempt must land in
     # usage.jsonl — failures included.
     from prgroom.agent.contracts import FixInput
     from prgroom.prsession.pr_ref import PRRef
@@ -96,7 +96,7 @@ def test_production_fix_builder_appends_usage_rows(
     assert [r["outcome"] for r in rows] == ["error", "success"]
     assert all(r["contract"] == "fix" for r in rows)
     # The success row threads the runner result's parsed usage figures through
-    # (the reviewer-flagged regression: they were hard-coded to null before).
+    # rather than hard-coding them to null.
     error_row, success_row = rows[0], rows[1]
     assert success_row["input_tokens"] == 100
     assert success_row["output_tokens"] == 5

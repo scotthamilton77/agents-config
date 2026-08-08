@@ -26,10 +26,10 @@ it, and the directory this process is standing in.
 None of them stops the rest. A refusal is about the selector it names, so what
 resolved cleanly is still planned and still deleted, and the refusals ride
 along beside it -- the run reports both and exits non-zero. Aborting the whole
-selection over one bad name was the older behaviour and it was the worse one:
-a name that had already been dealt with stopped every other deletion the caller
-asked for, and the only way out was to re-run with the offender removed, which
-is a round trip spent teaching the tool something it had already worked out.
+selection over one bad name is the worse design: a name already dealt with
+would stop every other deletion the caller asked for, and the only way out
+would be a re-run with the offender removed, which is a round trip spent
+teaching the tool something it has already worked out.
 
 A name matching *nothing* is not a refusal at all. The caller asked for that
 thing to be gone; it is gone, and reporting a finished job as a failure is what
@@ -39,7 +39,7 @@ That is narrower than "a miss is fine", though, because a miss has four causes
 and only one of them is absence. The list can also be empty because the ref
 read failed, or missing a name because this tool does not offer that ref as a
 target, or missing it because the only thing wearing that name is a copy on a
-server -- which a bare name deliberately no longer reaches. In all three the
+server -- which a bare name deliberately does not reach. In all three the
 branch is sitting right there. Those refuse, and the codes say which, because
 the alternative is telling somebody their branch is gone while it is not.
 Concluding absence from a list that was never able to answer is the same
@@ -69,12 +69,12 @@ def _selector_candidates(target: Target) -> set[str]:
     A server ref answers to its full `<remote>/<ref>` spelling and its
     `remote:` id, and to nothing shorter. The bare name a remote knows a branch
     by is, in any ordinary repository, the very string the local branch goes by
-    -- so accepting it here made the commonest cleanup there is, deleting the
-    branch whose work just merged, ambiguous between a local ref and a copy on
-    a server that this tool declines to delete unnamed anyway. Requiring the
-    full spelling contradicts nothing the tool offers: a bare name only ever
-    reached a server ref where no local branch shared it, and where one did,
-    the run refused rather than choosing."""
+    -- so accepting it here would make the commonest cleanup there is, deleting
+    the branch whose work just merged, ambiguous between a local ref and a copy
+    on a server that this tool declines to delete unnamed anyway. Requiring the
+    full spelling contradicts nothing the tool offers: a bare name would reach a
+    server ref only where no local branch shares it, and where one shares it the
+    run would refuse rather than choose."""
     names = {target.id, target.name}
     if target.kind is TargetKind.WORKTREE:
         names.add(Path(target.name).name)
@@ -329,11 +329,11 @@ def resolve_selectors(
     name with a letter wrong -- the repository answers identically -- so
     asserting either one would be a claim the tool cannot support.
 
-    A match is held to the same standard, and for a while it was not. One match
-    is measured; the *only* match is a second claim about every row that was
-    supposed to have been listed, and a survey that dropped one has not made it.
-    So a single match against a listing that lost a row refuses too, rather than
-    deleting on an assertion nobody checked.
+    A match is held to the same standard. One match is measured; the *only*
+    match is a second claim about every row that was supposed to have been
+    listed, and a survey that dropped one has not made it. So a single match
+    against a listing that lost a row refuses too, rather than deleting on an
+    assertion nobody checked.
     """
     resolved: list[Target] = []
     absent: list[Absent] = []
@@ -647,9 +647,9 @@ def build_plan(
     """Always a plan, never a refusal for the run as a whole.
 
     Nothing a caller can put on a command line makes the *other* things they
-    named undeletable, so there is no longer a way for this to answer with a
-    stop. Each objection belongs to the target it is about, travels in
-    ``Plan.refused``, and the run exits non-zero for having raised any."""
+    named undeletable, so there is no way for this to answer with a stop. Each
+    objection belongs to the target it is about, travels in ``Plan.refused``,
+    and the run exits non-zero for having raised any."""
     absent: list[Absent] = []
     refused: list[Refusal] = []
     if selectors:
@@ -681,8 +681,8 @@ def build_plan(
         targets=_ordered(chosen),
         # Salvage is retained only where no reflog exists, which is the server.
         # A local branch deleted with `-D` leaves its commits in the reflog for
-        # the configured expiry, and bundling them as well bought disk usage
-        # and a restore route nobody took.
+        # the configured expiry, and bundling them as well buys disk usage
+        # and a restore route nobody takes.
         salvage_dir=(
             salvage_dir if any(t.kind is TargetKind.REMOTE_BRANCH for t in chosen) else None
         ),

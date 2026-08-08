@@ -370,9 +370,9 @@ def test_cli_targets_render_as_blocks() -> None:
     Given counters keyed cli:workcli with activity
     When render_summary runs with clis=("cli:workcli",)
     Then verbose renders a '-- cli:workcli --' block and quiet renders its
-    change line (previously cli:* keys were silently dropped).
+    change line — a cli:* key the renderer does not reach is dropped silently.
 
-    Pins the summary-rendering change for cli: targets.
+    Pins the summary rendering for cli: targets.
     """
     counters = {"cli:workcli": Counters(created=1)}
     io = ScriptedIO()
@@ -407,12 +407,12 @@ def test_quiet_cli_failure_with_no_counters_does_not_claim_up_to_date() -> None:
     uv-version guard rejects before any CLI is processed, or a hard install/
     smoke failure whose branch never touches skipped/created/updated)
     When render_summary runs under quiet with any_failed=True
-    Then it does NOT print the misleading 'All files up to date' line — codex
-    review finding on PR #328: deploy_clis's record-and-continue failures
-    reach render_summary with empty cli: counters, right before cli.py
-    returns exit 1, so the quiet summary must not claim success.
+    Then it does NOT print the misleading 'All files up to date' line:
+    deploy_clis's record-and-continue failures reach render_summary with empty
+    cli: counters, right before cli.py returns exit 1, so the quiet summary
+    must not claim success.
 
-    Pins the summary-rendering change plus the failure-surfacing rule.
+    Pins the summary rendering plus the failure-surfacing rule.
     """
     io = ScriptedIO()
     render_summary(

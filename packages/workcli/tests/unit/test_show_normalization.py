@@ -72,13 +72,14 @@ def test_show_single_id_with_a_real_dependency_yields_a_lean_dep_edge():
 
 def test_show_answers_one_id_in_the_same_shape_it_answers_many():
     # The uniform-shape contract, and the reason the two tests above read
-    # through `items[0]`. One id used to answer with the item itself and two
-    # or more with `{"items": [...]}`, so a consumer could not write one
+    # through `items[0]`. Answering one id with the item itself and two or
+    # more with `{"items": [...]}` leaves a consumer unable to write one
     # accessor for the verb -- and the argument count is frequently not a
     # literal at the call site: a script showing whatever ids a previous verb
-    # returned got one shape on a one-result day and another on a two-result
-    # day. The two answers now differ in the length of `items` and in nothing
-    # else, which is what this asserts rather than the singular case alone.
+    # returned would get one shape on a one-result day and another on a
+    # two-result day. The two answers differ in the length of `items` and in
+    # nothing else, which is what this asserts rather than the singular case
+    # alone.
     raw = {
         "id": "x.1",
         "title": "First",

@@ -2,9 +2,9 @@
 
 Ports the bash installer's ``sync_settings_file`` (``scripts/install.sh:1268-1335``):
 a settings.json install is not a blind overwrite — the staged template is
-union-merged into the user's current file so user values survive. The Python
-installer previously overwrote (user keys survived only in the backup); these
-tests pin the union semantics.
+union-merged into the user's current file so user values survive. A blind
+overwrite would leave the user's keys only in the backup; these tests pin the
+union semantics.
 """
 
 from __future__ import annotations
@@ -130,9 +130,9 @@ def test_sync_preserves_and_skips_invalid_existing_settings(tmp_path: Path) -> N
     """An existing settings.json that is not valid JSON is left untouched and
     reported as an error, not overwritten — matching bash, which refuses to touch a
     file it cannot parse (``scripts/install.sh:1299-1304``: err + skip + return, the
-    file left in place). The earlier Python behaviour clobbered it with the template
-    (the user's content survived only in a backup); these assertions pin the
-    skip-and-preserve contract."""
+    file left in place). Clobbering it with the template would leave the user's
+    content only in a backup; these assertions pin the skip-and-preserve
+    contract."""
     home = tmp_path / "home"
     home.mkdir()
     invalid = "{ not valid json"

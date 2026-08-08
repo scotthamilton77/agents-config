@@ -2,10 +2,10 @@
 
 `NOUN_TEMPLATES` is the single source of truth verbs key off to
 turn a noun into a bd `--type` + birth shape label. `is_container` is a
-declared-state test only -- deep review flagged (MAJOR) an earlier
-child-count-based guard as wrong, since a `claim` on a childless-but-labeled
-container must still be rejected, and a plain item with children but no
-container label/type must not accidentally be treated as one.
+declared-state test only -- a child-count-based guard is wrong, since a
+`claim` on a childless-but-labeled container must still be rejected, and a
+plain item with children but no container label/type must not accidentally be
+treated as one.
 """
 
 from __future__ import annotations

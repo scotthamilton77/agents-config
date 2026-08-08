@@ -93,7 +93,7 @@ def test_a_body_between_the_two_caps_passes_only_when_user_invoked() -> None:
 
 
 def test_the_measurement_carries_the_cap_that_applies_to_it() -> None:
-    """With two caps the token count alone no longer says whether a body has
+    """With two caps the token count alone does not say whether a body has
     headroom, so the trend report needs the ceiling beside the number."""
     measures = measure_skill_bodies(
         [_body("c:skills/m", 10), _body("c:skills/u", 10, user_invoked=True)]
@@ -150,8 +150,8 @@ def test_catalog_entries_are_charged_to_the_always_on_surface() -> None:
 
 
 def test_a_catalog_alone_can_breach_the_always_on_cap() -> None:
-    """No new ceiling: the entries are measured by the one that was already there,
-    over a domain that now includes them."""
+    """No separate ceiling: the entries are measured by the always-on cap, over a
+    domain that includes them."""
     over = b"x" * (ALWAYS_ON_TOKEN_CAP * 4 + 4)
     violations = always_on_violations(tool="opencode", instruction=None, rules=[], catalog=[over])
     assert len(violations) == 1

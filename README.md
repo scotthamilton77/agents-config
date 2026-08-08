@@ -25,7 +25,7 @@ The five load-bearing convictions behind this:
 
 ### Current state — mid-rebuild
 
-**The harness is being rebuilt, and a large part of what this repo used to ship no longer exists.** The completion gate, the merge guard, the PR-feedback skills, the planning and test-first skills, and every role-based agent definition were retired; their replacements are specified but mostly not built. What ships today is a much smaller set: the always-on instruction core (laws, decision matrix, hard lines), the design and spec-writing path (`grilling`, `to-spec`, `ac-attack`), the review contracts (`review-panel`, `review-verdict`), the delegation skills, and git cleanup.
+**The harness is being rebuilt, and much of what the vision above describes is not in the tree.** There is no completion gate, no merge guard, no PR-feedback skill and no role-based agent definition; their replacements are specified but mostly not built. What ships today is a much smaller set: the always-on instruction core (laws, decision matrix, hard lines), the design and spec-writing path (`grilling`, `to-spec`, `ac-attack`), the review contracts (`review-panel`, `review-verdict`), the delegation skills, and git cleanup.
 
 The plan of record is [`docs/specs/2026-07-21-harness-rework-way-forward.md`](./docs/specs/2026-07-21-harness-rework-way-forward.md) — decisions, acceptance criteria, and the ordered slice list. Read it before building on anything here. Live status lives in the tracker, not in this file.
 
@@ -36,10 +36,10 @@ Where this README and the source tree disagree, believe the source tree.
 - **An AI coding assistant** — Claude Code, OpenAI Codex CLI, Google Gemini CLI, or OpenCode. The installer detects which you have.
 - **`uv`** — the installer is a uv-managed Python package (auto-installs Python ≥3.11 on first run). `uv` ≥ 0.10.4 is required for the stage that deploys this repo's CLIs onto PATH.
 
-Nothing else is required. Two former prerequisites are now optional:
+Nothing else is required. Two related tools are optional:
 
 - **[steveyegge/beads](https://github.com/steveyegge/beads)** — the `bd` tracker. The `work` CLI this repo installs is a facade over `bd` and needs it to function, but nothing in the installed instruction surface requires either.
-- **[obra/superpowers](https://github.com/obra/superpowers)** — no longer a dependency. The rules and skills that referenced its process skills were retired.
+- **[obra/superpowers](https://github.com/obra/superpowers)** — not a dependency. Nothing installed invokes its process skills.
 
 The `codex` plugin under `src/plugins/` is auto-detected when `~/.codex/` exists — a `codex` binary on PATH alone will not trigger it — and its skill assumes the [Codex CLI](https://github.com/openai/codex) is available.
 
@@ -119,10 +119,10 @@ see [The SDLC Workflow](./docs/guide/sdlc-workflow.md).
 
 ### Agents
 
-**None ship.** The role-based agent definitions (`quality-reviewer`, `tech-lead`
-and the rest) were retired in the rebuild and have no replacement yet. The
-installer still supports an `agents/` namespace, so this section will come back;
-today `~/.claude/agents/` gets nothing from this repo.
+**None ship.** There are no role-based agent definitions (`quality-reviewer`,
+`tech-lead` and the rest) and no replacement for them yet. The installer still
+supports an `agents/` namespace, so this section will come back; today
+`~/.claude/agents/` gets nothing from this repo.
 
 ### Commands
 
@@ -148,9 +148,8 @@ authoritative set.
 - `src/user/.codex/AGENTS.md.template`, `src/user/.gemini/GEMINI.md.template`, `src/user/.opencode/AGENTS.md.template` — the equivalent instruction files
 - `src/user/.opencode/opencode.jsonc.template` — OpenCode settings
 
-There are no persona templates. The `USER-PERSONA.md` / `AGENT-PERSONA.md` pair
-that earlier versions shipped was retired: the always-on surface is now
-zero-based and carries no identity content.
+There are no persona templates — no `USER-PERSONA.md`, no `AGENT-PERSONA.md`:
+the always-on surface is zero-based and carries no identity content.
 
 > **Note:** some of what ships still reflects the author's setup — the
 > `settings.json` experimental flags and taste keys most obviously, and some

@@ -2,13 +2,12 @@
 per-concern namespace view.
 
 A *namespace* is a top-level content directory name the installer routes on
-(``skills``, ``rules``, …). Historically seven lists across five modules named
-these strings independently and drifted: ``hooks`` appeared in one, ``workflows``
-was missing from two, and two lists held the same set in different orders. This
-module is the one place the vocabulary lives; each per-concern view below is a
-named, rationale-carrying subset (or ordering) of :data:`ALL` that a call site
-consumes. Add a namespace here and to the views it belongs to — never re-declare
-a list at a call site.
+(``skills``, ``rules``, …). Lists that name these strings independently at each
+call site drift: a namespace lands in one and goes missing from another, and two
+lists hold the same set in different orders. This module is the one place the
+vocabulary lives; each per-concern view below is a named, rationale-carrying
+subset (or ordering) of :data:`ALL` that a call site consumes. Add a namespace
+here and to the views it belongs to — never re-declare a list at a call site.
 
 Ordering note: for the iterated tuple views (:data:`TOOL_SCOPED`, :data:`SHARED`,
 :data:`PLUGIN_TOOL_SCOPED`) iteration order is *not* collision-load-bearing —

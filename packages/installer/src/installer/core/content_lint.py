@@ -4,7 +4,7 @@
 exercises it over synthetic fixtures. Neither one ever looks at what is actually
 in ``src/``. So an over-cap or malformed artifact passes every gate in the repo
 and is discovered only when a human runs the installer and watches it exit 1 —
-which is how a 3,467-token skill body reached ``main`` against a 2,000-token cap
+which is how a 3,467-token skill body reaches ``main`` against a 2,000-token cap
 with CI green.
 
 This module closes that hole. It stages the repo's own ``src/`` for **every**
@@ -31,7 +31,7 @@ copy, and the header is exactly what the filter removes.
 None is a second derivation of anything the installer computes — the payload is
 a number only one side takes, the cost rule reads the record the gate already
 read, and the header exists on only one side. The invariant that guards the
-shared measurements is therefore intact and narrower than it once read.
+shared measurements is therefore intact.
 
 Staging every tool with every plugin rather than whatever the current machine
 has installed is deliberate: the question the lint answers is "is this content
@@ -169,9 +169,9 @@ _ROUTE_PROBE_HOME = Path("/nonexistent-home-route-inspection-only")
 # never fires, so without the check a stale entry is found only by someone
 # reading this file.
 #
-# The worked example, should it come back: ``src/kits`` held project-scoped kit
-# content until it was archived. ``cli._run_project`` stages it and returns
-# before ``run_admission_gate`` is ever called, so no kit has ever been measured.
+# The worked example, should it come back: a ``src/kits`` tree of project-scoped
+# kit content. ``cli._run_project`` stages it and returns before
+# ``run_admission_gate`` is ever called, so no kit is ever measured.
 # That fact alone is not a reason — "the gate does not reach here" describes the
 # gap rather than justifying it. The reason that would carry is a property of
 # kits themselves: ``stage_kits`` mirrors arbitrary files with no namespace
@@ -779,8 +779,9 @@ def _provenance_findings(plans: Mapping[Tool, StagingPlan]) -> list[str]:
     The unit is the **contributor**, matching the bar: a destination assembled by
     the append-merge has one header question per source file, and asking it of the
     assembled bytes would read only the leading contributor's — the same
-    half-blindness the gate stopped having. ``record_bearers`` decides what the
-    contributors are, so the two cannot answer that differently.
+    half-blindness the gate avoids by classifying each contributor on its own.
+    ``record_bearers`` decides what the contributors are, so the two cannot answer
+    that differently.
 
     Labelled with ``contributor_label``, on the same ``sole`` rule the gate applies,
     because these findings are collapsed against ``GateResult.sources`` and a label

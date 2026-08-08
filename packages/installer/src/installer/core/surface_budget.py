@@ -130,7 +130,7 @@ class SkillMeasure:
     """One admitted skill body's weight, measured after sanitization.
 
     ``cap`` travels with the measurement because with two caps in play the
-    number alone no longer says whether a body has headroom.
+    number alone does not say whether a body has headroom.
     """
 
     label: str

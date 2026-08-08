@@ -2,10 +2,10 @@
 
 `parse_continuations` turns a spec's `## Continuations` section into a typed
 `Manifest`. The grammar is wrap-tolerant (a bullet's title/AC may continue
-across physical lines) and requires a bare `Noun` token -- both load-bearing
-per the deep review that blocked the pre-fix grammar (MAJOR finding: wrapped
-and annotated bullets were rejected; placement annotations like "(under `x`)"
-are not part of the facade grammar).
+across physical lines) and requires a bare `Noun` token -- both load-bearing:
+a grammar demanding one physical line per bullet rejects bullets a spec author
+legitimately writes, and placement annotations like "(under `x`)" are not part
+of the facade grammar.
 """
 
 from __future__ import annotations

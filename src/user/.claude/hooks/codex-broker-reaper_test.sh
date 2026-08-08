@@ -149,11 +149,11 @@ assert_alive    "recorded broker survives"                 "$KEPT_PID"
 
 # --- the other two state roots confer the same protection --------------------
 # Redirecting HOME and TMPDIR into this run costs the coverage those two roots
-# used to get from the machine's own records, and a root the hook skips is a
-# root whose glob and path joining nothing checks. Each therefore gets a record
-# of its own here: a root that is merely reachable proves nothing about the scan
-# that reads it. The plugin directory name is arbitrary on purpose — the hook
-# reaches this root by globbing `*` between `data` and `state`.
+# would otherwise get from the machine's own records, and a root the hook skips
+# is a root whose glob and path joining nothing checks. Each therefore gets a
+# record of its own here: a root that is merely reachable proves nothing about
+# the scan that reads it. The plugin directory name is arbitrary on purpose —
+# the hook reaches this root by globbing `*` between `data` and `state`.
 start_stub homerec HOMEREC_PID HOMEREC_SOCK
 record_at "$HOOK_HOME/.claude/plugins/data/installed-plugin/state/homerec-workspace" \
   "$HOMEREC_PID" "$HOMEREC_SOCK"

@@ -51,11 +51,10 @@ before dispatch:
 | Architecture / judgment-heavy | `moonshotai/kimi-k3` | `openai/gpt-5.6-terra` | `openai/gpt-5.6-sol` or `anthropic/claude-opus-4.8` |
 
 `z-ai/glm-5.2` is the cheapest output in its price band and holds a 1M context,
-which keeps it useful for long-horizon agentic work. It is no longer the
-all-purpose cheap fallback it once was: its input price now sits within two
-cents of the Kimi code tier, and accepting only `high`/`xhigh` means it cannot
-be run cheaply on mechanical work. For that, step down to
-`google/gemini-3.1-flash-lite`.
+which keeps it useful for long-horizon agentic work. It is not the all-purpose
+cheap fallback it looks like: its input price sits within two cents of the Kimi
+code tier, and accepting only `high`/`xhigh` means it cannot be run cheaply on
+mechanical work. For that, step down to `google/gemini-3.1-flash-lite`.
 
 ## Anthropic-compatibility mechanics
 

@@ -267,11 +267,10 @@ def test_dir_item_excludes_nested_test_files_and_caches(tmp_path: Path) -> None:
     ``ignore`` manifest carrying the matching UNANCHORED patterns
     When sync_plan materialises it
     Then none of the dev-only artifacts reach dest at any depth, while the
-    real skill files land untouched. This is the regression this fix closes:
-    an unfiltered ``copytree`` shipped a skill's own test suite and caches
-    wholesale (agents-config-9k9.77) — an ANCHORED ``.installignore`` pattern
-    cannot catch these (a skill directory is staged as a single DIR item whose
-    interior an anchored pattern never walks), but an unanchored pattern
+    real skill files land untouched. An unfiltered ``copytree`` ships a skill's
+    own test suite and caches wholesale, and an ANCHORED ``.installignore``
+    pattern cannot catch these (a skill directory is staged as a single DIR item
+    whose interior an anchored pattern never walks), but an unanchored pattern
     reaches every depth, including this one.
     """
     src = tmp_path / "src_skill"
@@ -882,7 +881,7 @@ def test_walk_is_non_transactional_earlier_items_survive_a_later_failure(tmp_pat
 
 
 # ── W2: interactive install consent ──────────────────────────────────────────
-# sync_plan gains a per-changed-item diff+confirm gate (full parity with the
+# sync_plan carries a per-changed-item diff+confirm gate (full parity with the
 # bash installer's confirm()). The shared no-TTY guard (consent.require_consent)
 # runs once up front; auto_yes / dry_run waive the per-item prompt.
 

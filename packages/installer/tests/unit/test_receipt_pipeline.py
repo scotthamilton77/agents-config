@@ -348,10 +348,10 @@ def test_plugin_named_like_tool_does_not_prune_untargeted_tool_entry(tmp_path: P
     the codex plugin discovered (but the codex tool untargeted) must NOT delete a
     recorded ``.codex/...`` tool entry.
 
-    The plain-string owner model unioned raw discovered plugin names into scope, so
-    the codex plugin's discovery pulled the codex *tool*'s entries into scope; with
-    ``.codex`` in the persisted roots allowlist, ``validate_entry`` then authorized
-    their deletion. Pins the scoped-run safety invariant against the name collision.
+    Unioning raw discovered plugin names into scope pulls the codex *tool*'s entries
+    in behind the codex plugin's discovery; with ``.codex`` in the persisted roots
+    allowlist, ``validate_entry`` then authorizes their deletion. Pins the scoped-run
+    safety invariant against the name collision.
     """
     home = _claude_home(tmp_path)
     cx = home / ".codex" / "skills" / "cx"

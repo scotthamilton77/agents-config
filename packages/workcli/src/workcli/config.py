@@ -211,7 +211,7 @@ def _validate(raw: dict[str, object], path: Path) -> TrackLayerConfig:
     if backlog_groom_nag_days is not None and backlog_groom_nag_days < 0:
         # A negative threshold makes day 0 (immediately after `work groom
         # --done`) already breached (0 > negative), defeating the reset
-        # `--done` is meant to guarantee (Codex finding).
+        # `--done` is meant to guarantee.
         raise _not_configured(
             f"[operating-model].backlog-groom-nag-days must be non-negative, "
             f"got {backlog_groom_nag_days} in {path}",

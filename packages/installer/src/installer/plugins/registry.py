@@ -10,8 +10,7 @@ from installer.plugins.generic import GenericPluginAdapter
 # express. A factory is `(name, source_path) -> PluginAdapter` — a concrete
 # class whose __init__ matches that shape satisfies it (typing it as
 # `type[PluginAdapter]` would wrongly imply instantiating the Protocol).
-# Empty since the one plugin that needed it (beads) was archived out of the
-# repo — `discover` never sees a `beads` directory to dispatch. Stays as a
+# Empty: every plugin in the repo is served by the generic adapter. Stays as a
 # named extension point: a future plugin needing bespoke `is_detected`/
 # `routes` registers here.
 _SPECIALIZED: dict[str, Callable[[str, Path], PluginAdapter]] = {}

@@ -171,12 +171,12 @@ def test_a_removal_is_not_re_checked_against_a_listing() -> None:
     """The listing is not consulted after a removal git said it performed, and
     that settles four cases at once rather than one per listing defect.
 
-    Each of them was a way for the confirmation to fail to confirm something
-    that had happened: a listing that would not run, one that lost a record to
-    a truncation, one whose framing could not spell the path being looked for,
-    and one that answered with the worktree still in it. Three reported a
-    removal that happened as one that had not. The fourth is the case the
-    check existed for, and the price of losing it is stated here rather than
+    Each of them is a way for a confirmation to fail to confirm something that
+    happened: a listing that will not run, one that loses a record to a
+    truncation, one whose framing cannot spell the path being looked for, and
+    one that answers with the worktree still in it. Three would report a
+    removal that happened as one that had not. The fourth is the case such a
+    check exists for, and the price of losing it is stated here rather than
     hidden: git said the tree is gone, and the report says so."""
     port = ScriptedCommands(
         git={
@@ -620,8 +620,8 @@ def test_a_probe_that_will_not_answer_never_claims_the_ref_is_gone() -> None:
 
 def test_a_local_branch_is_not_bundled() -> None:
     """`branch -D` leaves the commits in the reflog for git's configured
-    expiry. Bundling them as well bought disk usage and a restore route nobody
-    took, in front of a deletion that already had one."""
+    expiry. Bundling them as well buys disk usage and a restore route nobody
+    takes, in front of a deletion that already has one."""
     port = ScriptedCommands(
         git={
             "branch -D -- wip": ok(),
@@ -685,10 +685,10 @@ def test_a_bundle_that_fails_to_write_aborts_the_deletion() -> None:
 def test_a_bundle_that_will_not_open_aborts_the_deletion() -> None:
     """An archive nobody can open is not a safety net, so it buys no deletion.
 
-    `git bundle verify` is what used to answer this, and it answers about the
+    `git bundle verify` is the obvious thing to ask, and it answers about the
     repository it runs in -- the one holding every object already. It reports a
-    complete history for a bundle `git clone` refuses, which is how a report
-    came to say verified in front of a deletion with no undo."""
+    complete history for a bundle `git clone` refuses, so a report resting on
+    it says verified in front of a deletion with no undo."""
     port = _remote_salvage_port(
         **{f"clone --bare --quiet {WIP_BUNDLE}": fail("remote did not send all necessary objects")}
     )
@@ -743,12 +743,12 @@ def test_an_unreadable_scratch_tip_aborts_before_anything_is_bundled() -> None:
 
 
 def test_missing_salvage_directory_aborts_rather_than_deleting_unprotected() -> None:
-    """The assertion is that nothing was *changed*, which is narrower than the
-    `transcript == []` it replaces and is the claim the test was always about.
-    One read-only question now precedes the abort: whether the server still has
-    the ref. It has to, and in that order -- a ref the server no longer holds
-    needs no bundle, so refusing it for want of somewhere to put one would be
-    an error raised about a job that does not exist."""
+    """The assertion is that nothing was *changed*, which is narrower than
+    `transcript == []` and is the claim this test is about. One read-only
+    question precedes the abort: whether the server still has the ref. It has
+    to, and in that order -- a ref the server no longer holds needs no bundle,
+    so refusing it for want of somewhere to put one would be an error raised
+    about a job that does not exist."""
     port = ScriptedCommands(git={"ls-remote": ok(f"{REMOTE_HEAD}\trefs/heads/wip")})
     report = run(
         port,

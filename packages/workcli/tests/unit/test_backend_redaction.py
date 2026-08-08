@@ -33,10 +33,10 @@ FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 #
 # Four names identify this backend: its binary, the plural noun that also
 # names its environment variable and its storage directory, the singular noun
-# it uses for one item, and the storage engine underneath. The singular was
-# the spelling the pattern missed -- and it is the one whose removal from the
-# facade's own vocabulary was a whole piece of earlier work, so a sentence
-# carrying it back out undoes that quietly.
+# it uses for one item, and the storage engine underneath. The singular is the
+# spelling a pattern most easily misses -- and keeping it out of the facade's
+# own vocabulary is the whole point, so a sentence carrying it back out undoes
+# that quietly.
 #
 # The sentences are the backend's, not invented: the first three are captured
 # failures this adapter has met, and the singular-noun cases are lifted

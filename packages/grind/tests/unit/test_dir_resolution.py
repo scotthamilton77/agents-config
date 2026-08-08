@@ -1,7 +1,7 @@
 """The `--dir` resolution contract: the omitted-flag path can never silently
 act on a different state than the explicit-flag path.
 
-Every test here is a variation on the reported defect -- create with an
+Every test here is a variation on the silent split -- create with an
 explicit `--dir`, then omit it on a later call -- and asserts one of the only
 two acceptable outcomes: the *same* grind, or a loud command error. There is
 no third outcome where an empty board is reported as fact.
@@ -31,7 +31,7 @@ _SEED = {
 _NOW: Callable[[], datetime] = lambda: datetime(2026, 7, 19, 12, 0, 0, tzinfo=UTC)  # noqa: E731
 
 # Every verb but `create` acts on a grind that already exists, so every one of
-# them is exposed to the defect.
+# them is exposed to the silent split.
 _STATE_READING_INVOCATIONS = [
     ["status"],
     ["status", "--full"],
@@ -82,9 +82,9 @@ _IDS = [" ".join(inv[:2]) for inv in _STATE_READING_INVOCATIONS]
 def test_omitted_flag_far_from_the_grind_fails_loudly_and_writes_nothing(
     tmp_path: Path, invocation: list[str]
 ):
-    """The reported defect, verb by verb: created under `--dir run/`, invoked
-    from an unrelated cwd without the flag. Previously each of these folded an
-    empty cwd and answered confidently; now none of them can."""
+    """The silent split, verb by verb: created under `--dir run/`, invoked
+    from an unrelated cwd without the flag. Folding an empty cwd and answering
+    confidently is the one outcome none of these verbs may reach."""
     grind_dir = _seeded_grind(tmp_path)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()

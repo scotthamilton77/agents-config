@@ -192,10 +192,10 @@ class Requires(StrEnum):
 
     It is strict about absence: an item holding no reference matches no PR.
     A requirement named "the PR matches" that passed vacuously when there was
-    no PR would be a trap for the next row that used it -- which is exactly
-    how `pr-closed` came to accept an invented closure against an item that
-    had never opened one. Rows wanting the clearer `E_NO_OPEN_PR` for that
-    case pair it with `PR_REFERENCE`, which is why the two stay separate.
+    no PR would be a trap for the next row that used it -- under `pr-closed`
+    it would admit an invented closure against an item that never opened one.
+    Rows wanting the clearer `E_NO_OPEN_PR` for that case pair it with
+    `PR_REFERENCE`, which is why the two stay separate.
 
     `OPEN_PR` is the strictly stronger form of `PR_REFERENCE` and the two are
     not interchangeable. A closure leaves the reference behind and marks it

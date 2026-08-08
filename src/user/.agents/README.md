@@ -13,8 +13,7 @@ something here is useful to more than one tool, it lives here.
   `agents-config-9k9.10` tracks wiring it into automated per-tool assembly.
 - `skills/` — methodology guides, one directory per skill with a `SKILL.md` and
   optional supporting scripts.
-- `rules/` — tool-agnostic always-on rules. Empty today: every rule here was
-  record-less and was retired out of the repository.
+- `rules/` — tool-agnostic always-on rules. Empty today.
 
 `skills/` and `rules/` are gated on admission: a file without a complete
 `admission:` record in its front matter is dropped at deploy and pruned from

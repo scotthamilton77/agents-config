@@ -566,8 +566,8 @@ def _dispatched_stub(out: FixOutput, winner: AgentSpec, *failures: LinkFailure) 
 
 
 def test_winner_stamps_every_disposition_and_the_result() -> None:
-    # The bead-item-2 regression: under the old code decided_by read the CONFIGURED
-    # chain head; it must read the link that actually produced the output.
+    # decided_by must read the link that actually produced the output, not the
+    # CONFIGURED chain head.
     winner = AgentSpec(cli="codex", model="gpt-5.6-terra")
     out = FixOutput(
         items=[FixItemResult(gh_id="C_1", disposition=DispositionKind.FIXED, commit_shas=["n1"])]

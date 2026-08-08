@@ -306,11 +306,11 @@ def _assert_object_elements(entries: list[Any], *, field: str, item_id: str) -> 
 
     `_dep_edge_from_raw` requires a mapping; a non-object edge entry (bd
     emitting a bare string/number where every known edge shape is an object)
-    was previously filtered out silently by an `isinstance(entry, dict)`
-    guard at the call site, dropping the edge and continuing with a
-    partially-mangled Item. That is bd shape drift, not something to drop and
-    carry on from -- same discipline as `parse_items`'/`parse_dep_edges`'
-    own `element_not_an_object` check.
+    filtered out silently by an `isinstance(entry, dict)` guard at the call
+    site would drop the edge and continue with a partially-mangled Item. That
+    is bd shape drift, not something to drop and carry on from -- same
+    discipline as `parse_items`'/`parse_dep_edges`' own
+    `element_not_an_object` check.
     """
     for entry in entries:
         if not isinstance(entry, dict):

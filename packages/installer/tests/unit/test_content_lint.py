@@ -530,9 +530,9 @@ def test_an_exemption_naming_a_missing_directory_is_a_violation(tmp_path: Path) 
 def test_a_plugins_bespoke_routes_are_accounted(tmp_path: Path) -> None:
     """Routes are a third staging channel, and the one a map built from the tool overlay
     cannot see: a specialized adapter can send content to a bespoke destination outside
-    every tool tree, as the one this codebase used to ship did. Missing them did not
-    under-report, it inverted the claim — the gate called correctly-wired content "content
-    that deploys nowhere" and offered three remedies that would each break it.
+    every tool tree. Missing them does not under-report, it inverts the claim — the gate
+    calls correctly-wired content "content that deploys nowhere" and offers three
+    remedies that would each break it.
 
     No specialized adapter ships in production today (``_SPECIALIZED`` is empty), so this
     drives ``_staged_dirs``/``_unaccounted_dirs`` directly with an injected
@@ -589,8 +589,8 @@ def test_a_build_directory_is_not_reported(tmp_path: Path) -> None:
 def test_every_specialized_adapters_routes_are_accounted(tmp_path: Path) -> None:
     """The completeness check, generalised over the registry rather than over one adapter.
 
-    Three review rounds each found the same shape: a staging channel the accounting map did
-    not model, reported as content that deploys nowhere. This iterates whatever
+    The defect has one shape: a staging channel the accounting map does not model,
+    reported as content that deploys nowhere. This iterates whatever
     ``_SPECIALIZED`` holds and fails if the map does not reach a registered adapter's
     declared routes, so registering one cannot silently reintroduce that defect.
 

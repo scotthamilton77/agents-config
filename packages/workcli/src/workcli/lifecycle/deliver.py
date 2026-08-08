@@ -338,8 +338,8 @@ def reconcile_placeholder(backend: Backend, placeholder_id: str, manifest: Manif
     if design is not None and design.status != "closed":
         backend.close([design.id])
     if CREATING_SPEC_LABEL in placeholder.labels:
-        # A legacy placeholder minted before the adapter's --no-inherit-labels
-        # opt-out inherited the container's `creating-spec`. Strip
+        # A placeholder minted without the adapter's --no-inherit-labels
+        # opt-out carries the container's `creating-spec` by inheritance. Strip
         # it with the handle -- BEFORE the handle, which stays strictly last --
         # or the later instantiation sweep in the same `reconcile` call would
         # see a handle-free leaf carrying `creating-spec` and re-finalize it

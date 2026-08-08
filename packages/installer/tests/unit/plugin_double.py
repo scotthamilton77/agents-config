@@ -1,12 +1,12 @@
 """Test double for a specialized ``PluginAdapter`` whose content routes to a
 bespoke, non-tool-tree destination.
 
-Stands in for the retired specialized plugin adapter (the only one this
-codebase ever shipped) so plugin-route dispatch, receipt, and prune tests keep
-exercising the real ``PluginRoute``/``sync_routes`` machinery without
-depending on production code that no longer exists. The formulas/scripts
-convention below is arbitrary fixture data — these tests pin the machinery's
-behaviour, not this class's internals.
+Stands in for a specialized plugin adapter — no such adapter ships in
+production — so plugin-route dispatch, receipt, and prune tests keep exercising
+the real ``PluginRoute``/``sync_routes`` machinery without depending on
+production code that does not exist. The formulas/scripts convention below is
+arbitrary fixture data — these tests pin the machinery's behaviour, not this
+class's internals.
 """
 
 from __future__ import annotations

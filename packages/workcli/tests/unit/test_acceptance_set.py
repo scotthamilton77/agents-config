@@ -61,8 +61,8 @@ def _quoted(text: str) -> list[str]:
 
 
 def test_the_criteria_an_item_was_created_with_can_be_corrected() -> None:
-    # The whole gap in one assertion: before this verb, the criteria were
-    # settable exactly once and a typo had no repair short of recreating.
+    # The whole gap in one assertion: without this verb the criteria are
+    # settable exactly once and a typo has no repair short of recreating.
     backend = FakeBackend().add("w1", acceptance=_OLD)
 
     data = acceptance(backend, _args("w1", _NEW))

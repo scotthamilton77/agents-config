@@ -359,7 +359,7 @@ def test_entry_probe_no_rearm_on_bare_rerun() -> None:
 
 
 def test_entry_probe_skips_has_queued_when_poll_exits_gate() -> None:
-    # PR #165 review: a poll that moves the PR out of human-gated (external merge) must
+    # A poll that moves the PR out of human-gated (external merge) must
     # NOT trigger the effectful has_queued read — a transient failure there would corrupt
     # an otherwise-clean terminal run. has_queued raises here; the probe must not call it.
     reads: list[int] = []
@@ -428,7 +428,7 @@ def test_resolve_end_of_cycle_caps_when_queue_survives_at_cap() -> None:
 
 
 def test_guarded_has_queued_routes_tagged_error_through_discipline() -> None:
-    # PR #165: the cap re-arm + end-of-cycle reads call has_queued OUTSIDE the VerbStep
+    # The cap re-arm + end-of-cycle reads call has_queued OUTSIDE the VerbStep
     # pipeline. A tagged failure must still go through handle_verb_error + persist +
     # flush + re-raise, never escape the lifecycle's error handling.
     from prgroom.lifecycle.run import _guarded_has_queued

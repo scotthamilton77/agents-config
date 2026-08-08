@@ -35,9 +35,9 @@ import re
 # easiest of the four to leave out: it names no file and no environment
 # variable, so it reads as domain vocabulary rather than as a name. It is the
 # backend's word for an item, it is authored throughout the backend's own
-# user-facing prose, and removing it from this facade's vocabulary was the
-# whole of an earlier piece of work -- which a sentence carrying it back
-# outward would undo silently.
+# user-facing prose, and keeping it out of this facade's vocabulary is the
+# whole point -- which a sentence carrying it back outward would undo
+# silently.
 _BACKEND_IDENTITY = re.compile(
     r"(?<![A-Za-z0-9])\.?(?:beads?|bd|dolt)(?![A-Za-z0-9])",
     re.IGNORECASE,

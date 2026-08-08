@@ -100,7 +100,7 @@ def test_malformed_toml_is_invalid_and_names_the_problem(tmp_path: Path) -> None
 
 
 def test_non_utf8_config_is_invalid_not_a_crash(tmp_path: Path) -> None:
-    # REGRESSION PIN (Codex finding): read_text(encoding="utf-8") raises
+    # REGRESSION PIN: read_text(encoding="utf-8") raises
     # UnicodeDecodeError on undecodable bytes -- uncaught, that would surface
     # as E_INTERNAL instead of the track layer's own typed failure.
     root = _repo(tmp_path, config_text=None)
@@ -285,7 +285,7 @@ def test_backlog_groom_nag_days_bool_is_invalid(tmp_path: Path) -> None:
 
 
 def test_backlog_groom_nag_days_negative_is_invalid(tmp_path: Path) -> None:
-    # REGRESSION PIN (Codex finding): a negative threshold makes day 0
+    # REGRESSION PIN: a negative threshold makes day 0
     # (immediately after `work groom --done`) already breached (0 > -1),
     # defeating the reset --done is meant to guarantee.
     root = _repo(
@@ -347,7 +347,7 @@ max-cross-track-edges = 3
 
 
 def test_external_consumer_tracks_outside_names_is_invalid(tmp_path: Path) -> None:
-    # REGRESSION PIN (Codex finding): a typo'd track name in a declared
+    # REGRESSION PIN: a typo'd track name in a declared
     # pressure list must fail loud, not silently produce zero pressure
     # signal -- mirrors [tracks].organizing-only's existing vocabulary check.
     root = _repo(

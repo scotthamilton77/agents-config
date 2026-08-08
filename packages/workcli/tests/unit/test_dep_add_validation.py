@@ -195,9 +195,9 @@ def test_every_type_in_the_closed_set_is_still_accepted():
 
 
 def test_dep_remove_still_accepts_a_type_outside_the_closed_set():
-    # Deliberate asymmetry. Edges with an unsanctioned type already exist,
-    # written before this check landed; closing the set on removal too would
-    # strand precisely the edges that need cleaning up.
+    # Deliberate asymmetry. Edges with an unsanctioned type already exist;
+    # closing the set on removal too would strand precisely the edges that
+    # need cleaning up.
     runner = ScriptedBdRunner(steps=[ScriptedStep(("dep", "remove"), _OK)])
 
     exit_code, _, _ = run_cli_with_runner(

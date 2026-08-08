@@ -17,11 +17,10 @@ scope. Later patches see earlier patches' effects — target resolution always
 runs against the CURRENT plan state. Every failure is terminal
 (ExtensionError); no partial application.
 
-Unlike the bash-era spec, patches mutate plan state rather than a staging
-tree on disk: a FILE item's bytes are replaced on the item; a file inside a
-DIR item (skill/agent dirs, ``content=None``) patches into
-``plan.dir_overrides`` — the same side channel the F.3 carrier-merge writes,
-consumed by the plan-walking sync (Epic E/H).
+Patches mutate plan state rather than a staging tree on disk: a FILE item's
+bytes are replaced on the item; a file inside a DIR item (skill/agent dirs,
+``content=None``) patches into ``plan.dir_overrides`` — the same side channel
+the F.3 carrier-merge writes, consumed by the plan-walking sync (Epic E/H).
 """
 
 from __future__ import annotations

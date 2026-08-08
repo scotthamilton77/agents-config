@@ -128,8 +128,8 @@ def test_wrongly_nested_container_raises_state_corrupt(tmp_path: Path) -> None:
 
 
 def test_stale_shape_with_current_version_raises_state_corrupt(tmp_path: Path) -> None:
-    # A valid-JSON file carrying the current schema_version but a pre-rename shape
-    # (the retired 'round' key instead of 'pr_review_retries_used') must map to the
+    # A valid-JSON file carrying the current schema_version but a stale shape
+    # (a 'round' key where 'pr_review_retries_used' belongs) must map to the
     # §3.7 STATE_CORRUPT contract, never escape as a raw KeyError.
     ref = PRRef("octo", "demo", 7)
     payload = _state(ref).to_dict()

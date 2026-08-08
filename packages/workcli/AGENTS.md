@@ -166,7 +166,7 @@ of raising is scanned in the source, the adapter is scanned for any route to
 publishing an argv, and the layers above it are scanned for backend
 vocabulary in a printable string. The source-level scans exist because the
 behavioural one only meets the paths some test happens to drive, and the
-leaks this rule was written for were mostly on paths no test drove.
+leaks this rule guards against sit mostly on paths no test drives.
 
 Note what the adapter scan deliberately does not read: argv literals and
 stderr markers. It reads the message argument of an error and nothing else,

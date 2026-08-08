@@ -112,7 +112,7 @@ def _sweep_orphaned_designs(backend: Backend, *, dry_run: bool) -> list[JsonValu
     """Enumerate `shape-design` children; close any still open whose own
     (`blocks`-linked) placeholder is already reconciled. Finishes a delivery
     interrupted between the placeholder's reconciliation and the design child's
-    close -- and recovers an old-code delivery that closed in that order. When
+    close -- and recovers any delivery left closed in that order. When
     the pending-placeholder sweep above just healed a tree, the design child is
     already closed here, so this never double-reports."""
     findings: list[JsonValue] = []

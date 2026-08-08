@@ -112,7 +112,7 @@ def run_prune(
     return skips that orphan (left in place, not counted, not added to ``removed``
     so the receipt keeps it). This closes the TOCTOU window between the up-front
     hash/type partition and the actual delete — a file edited or a path replaced
-    during the interactive confirm prompt is no longer deleted.
+    during the interactive confirm prompt is not deleted.
     """
     if not io.is_interactive() and not dry_run and not auto_yes:
         if prune_only:

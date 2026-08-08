@@ -212,7 +212,7 @@ def test_dir_entry_with_non_null_sha256_is_corrupt(tmp_path: Path) -> None:
 
 
 def test_well_formed_file_and_dir_entries_read_ok(tmp_path: Path) -> None:
-    # Regression guard: the tightening is narrow — a file-with-sha and a
+    # The kind<->sha256 coupling is narrow — a file-with-sha and a
     # dir-with-null entry together still read OK.
     path = tmp_path / "install-receipt.json"
     write_receipt(

@@ -323,7 +323,7 @@ def test_push_past_the_budget_does_not_re_warn() -> None:
 
 
 def test_has_queued_fix_commits_maps_404_to_terminal() -> None:
-    # PR #165 review: a 404 on the remote-HEAD read (vanished PR/repo) maps to a
+    # A 404 on the remote-HEAD read (vanished PR/repo) maps to a
     # terminal PrgroomError here, never a raw GhNotFoundError — so the run-loop's
     # PrgroomError-only handlers (_execute_step / run_lifecycle) catch it.
     with pytest.raises(PrgroomError) as excinfo:

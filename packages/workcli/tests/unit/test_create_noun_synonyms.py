@@ -1,12 +1,11 @@
 """`work create <noun>` accepts the same noun aliases and priority notations
-`work discover --noun` already does -- 9k9.169, the residual of 9k9.99 for
-the `create` surface.
+`work discover --noun` already does.
 
-`create`'s NOUN positional used to be an argparse `choices=` list built
-straight off the `Noun` enum, which bypassed `resolve_noun` (and its
-`NOUN_ALIASES`) entirely and rejected before the handler -- and hence before
-`discover`-style combined-error reporting -- ever ran. These tests pin: the
-alias resolves to the identical mint discover's does, the bare-priority-digit
+An argparse `choices=` list on `create`'s NOUN positional, built straight off
+the `Noun` enum, would bypass `resolve_noun` (and its `NOUN_ALIASES`) entirely
+and reject before the handler -- and hence before `discover`-style
+combined-error reporting -- ever runs. These tests pin: the alias resolves to
+the identical mint discover's does, the bare-priority-digit
 form normalizes the same way, an invalid NOUN is rejected by the handler (not
 argparse) with zero backend calls, and an invalid NOUN + an invalid --priority
 together fold into one envelope.
@@ -180,8 +179,7 @@ def test_create_bare_priority_digit_normalizes_to_canonical_p_notation() -> None
 
 def test_create_priority_omitted_still_creates_without_a_priority_flag() -> None:
     """Regression guard: --priority stays optional for `create` -- unlike
-    `discover`, which requires it. Every noun that worked before this change
-    (no --priority at all) must keep working."""
+    `discover`, which requires it. Omitting it entirely must still mint."""
     backend = FakeBackend()
 
     data = create_noun(backend, _create_args(priority=None))

@@ -60,9 +60,8 @@ one registration serves every directory.
    adapter. If the directory isn't the right signal, or the plugin needs to
    install outside the tool config dirs, add a specialized adapter under
    `packages/installer/src/installer/plugins/` and register it in
-   `registry.py`'s `_SPECIALIZED` map. That map is empty — the one adapter that
-   used it was retired — so yours would be the first, and there is no worked
-   example in the tree to copy.
+   `registry.py`'s `_SPECIALIZED` map. That map is empty, so yours would be the
+   first, and there is no worked example in the tree to copy.
 
 ## Admission applies here too
 
