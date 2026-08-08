@@ -312,10 +312,10 @@ def create_noun(backend: Backend, args: Namespace) -> JsonValue:
     """`work create <noun> --title T (--parent ID | --orphan) [...]`.
 
     NOUN and --priority are validated together, before any backend call --
-    same precedence discover's aggregate holds, and the same reason: a caller
-    who gets both wrong learns about both from one invocation, and an invalid
-    NOUN never reaches the backend. `args.priority` is reassigned to the validated,
-    canonicalized value so every downstream read (here and in
+    the same precedence `discover`'s aggregate holds, and for the same reason:
+    a caller who gets both wrong learns about both from one invocation, and an
+    invalid NOUN never reaches the backend. `args.priority` is reassigned to
+    the validated, canonicalized value so every downstream read (here and in
     `_create_spec_container`) sees the same notation `discover` would have
     produced for the same input, without threading a second parameter through
     both call sites.

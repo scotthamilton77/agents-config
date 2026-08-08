@@ -102,10 +102,9 @@ def _type_wall_check(backend: Backend, from_id: str, to_id: str, dep_type: str) 
 
     `blocks` requires both items epic, or both non-epic (a milestone counts
     as non-epic). One order-preserving `Backend.batch_get` read pays for
-    this certainty; a
-    violation raises before `dep_mutate` (the mutating backend call) is ever
-    invoked -- the fake's call log must show zero `dep`-mutation
-    invocations in that case.
+    this certainty; a violation raises before `dep_mutate` (the mutating
+    backend call) is ever invoked -- the fake's call log must show zero
+    `dep`-mutation invocations in that case.
     """
     if dep_type != _DEFAULT_DEP_TYPE:
         return
