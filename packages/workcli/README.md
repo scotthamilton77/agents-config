@@ -58,7 +58,7 @@ selected by whether a noun positional or `--raw` is given.
 | `work promote ID` | a `shape-feat` leaf becomes a `shape-spec` container |
 | `work reconcile [--dry-run]` | recovery sweep over the states the tracker can still observe: interrupted delivers, unreconciled placeholders, interrupted expansions — idempotent, safe to run from any session or cron |
 
-Protocol is `"1.2"` — additive-only bumps (new `ErrorCode` members, the
+Protocol is `"1.6"` — additive-only bumps (new `ErrorCode` members, the
 derived `Item.track` field, the capability-disposition model and
 `partial_progress` detail below) never change an existing envelope or data
 shape. `Capabilities` splits `ready` and `sync` into a `ReadySupport`/
@@ -96,13 +96,13 @@ second, human-readable rendering on stderr.
 Success:
 
 ```json
-{"protocol": "1.2", "ok": true, "data": {"id": "x.1", "title": "..."}, "error": null}
+{"protocol": "1.6", "ok": true, "data": {"id": "x.1", "title": "..."}, "error": null}
 ```
 
 Failure:
 
 ```json
-{"protocol": "1.2", "ok": false, "data": null,
+{"protocol": "1.6", "ok": false, "data": null,
  "error": {"code": "E_TYPE_WALL", "message": "blocks: epic may not block task",
            "detail": {"from": "x.1", "to": "y.1", "dep_type": "blocks"}}}
 ```
@@ -135,7 +135,7 @@ component; refuse to run against a mismatched facade rather than risk
 mis-parsing mid-run:
 
 ```json
-{"protocol": "1.2", "ok": true, "data": {"protocol": "1.2"}, "error": null}
+{"protocol": "1.6", "ok": true, "data": {"protocol": "1.6"}, "error": null}
 ```
 
 Every other verb's envelope carries the same `protocol` field at the top
@@ -156,7 +156,7 @@ are the same value, always.
 - `sync` → `{"synced": ..., "mode": "push" | "pull" | "noop"}`. `"noop"` is
   reserved for server-authoritative backends (the CLI contract spec §6's
   declared no-op); the bd adapter only ever emits `"push"` or `"pull"`.
-- `--protocol-version` → `{"protocol": "1.2"}`.
+- `--protocol-version` → `{"protocol": "1.6"}`.
 
 Human-readable output is opt-in only (`--format human`): it renders the
 envelope's `data` (or `error`) to **stderr**, for direct human use at a

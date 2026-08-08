@@ -478,14 +478,22 @@ _BACKEND_IDENTITY = re.compile(
 # exactly why they are here. The missing-workspace line is the incident that
 # prompted this invariant: it names the binary, its environment variable and
 # its storage directory in a single sentence.
+# Named rather than inlined: it is the only multi-line capture, and inside a
+# list literal its implicit concatenation reads like a missing comma. A comma
+# dropped there would merge two entries and shrink this corpus without failing
+# anything, which is the one way a check like this goes quiet.
+_MISSING_WORKSPACE_STDERR = (
+    "Error: no beads database found\n"
+    "Hint: run 'bd where' to inspect the resolved workspace, or 'bd init' to create a new "
+    "database\n      or set BEADS_DIR to point to your .beads directory\n"
+)
+
 _CAPTURED_BACKEND_STDERR = [
     'no issue found matching "bogus"\n',
     "Error getting parent x.9: not found: issue x.9\n",
     "cannot close probe-2mk: blocked by open issues [probe-6cl] (use --force to override)\n",
     "epics can only block other epics, not tasks\n",
-    "Error: no beads database found\n"
-    "Hint: run 'bd where' to inspect the resolved workspace, or 'bd init' to create a new "
-    "database\n      or set BEADS_DIR to point to your .beads directory\n",
+    _MISSING_WORKSPACE_STDERR,
     "panic: dolt: runtime error at hash 0xdeadbeef\n",
 ]
 
