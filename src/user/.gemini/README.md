@@ -6,27 +6,29 @@ exists or when the user passes `--tools=gemini`.
 
 ## What lives here
 
-- `GEMINI.md.template` — Top-level instruction file that pulls in the shared
-  personas, session-primer, and all rules; and `GEMINI-EXTENSIONS.md`. Gemini
-  is the one tool where the shared zero-based `AGENTS.md.template` survivor
-  *could* wire in safely today (its dest is `GEMINI.md`, not `AGENTS.md`, so
-  no basename collision) — not done here to keep the four tools' behavior
-  consistent until `agents-config-9k9.10` fixes it for all of them at once.
-- `GEMINI-EXTENSIONS.md.template` — Placeholder for Gemini-specific workflow
-  additions. Currently empty; populate as Gemini-specific conventions emerge.
+- `GEMINI.md.template` — Top-level instruction file. It is a single
+  `DYNAMIC-INCLUDE` of the shared zero-based core in
+  `src/user/.agents/USER-CORE.md.template`, which the installer flattens in at
+  deploy time; it carries no text of its own. There is no Gemini-specific
+  instruction content.
 
 ## Where it installs
 
 Into `~/.gemini/` (user-scoped Gemini CLI config). The installer strips the
 `.template` suffix on copy.
 
-Shared content from `src/user/.agents/` also installs into `~/.gemini/`
-(agents, skills, personas).
+Shared content from `src/user/.agents/` also installs into `~/.gemini/` — the
+skills, and the rules directory, which is empty today. No agent definitions and
+no persona templates exist to install: the always-on surface is zero-based and
+carries no identity content.
 
 ## Who it's for
 
-Google Gemini CLI users who want the same agents, skills, and persona setup
-they'd get under Claude Code, adapted to Gemini's conventions.
+Google Gemini CLI users who want the same shared instruction core they'd get
+under Claude Code. The skills stage here too, but whether the Gemini CLI reads a
+deployed skill at all is not established by any vendor documentation, so this
+project does not model its skill loading and reports no skill measurement for
+it — expect the instruction core to carry the weight.
 
 See the [root README](../../../README.md) for install flow and customization
 pointers.
