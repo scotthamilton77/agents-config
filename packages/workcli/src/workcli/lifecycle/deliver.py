@@ -4,7 +4,7 @@ reconciliation.
 Dispatches on the `shape-design` label (CLI surface table): a design
 child's `deliver` parses the merged spec's `## Continuations` manifest and
 reconciles the sibling placeholder; a leaf's `deliver` verifies
-bd-observable evidence before recording the `[work] delivered:` marker and
+tracker-observable evidence before recording the `[work] delivered:` marker and
 closing. A container is refused outright -- it completes via close-walk when
 its children close, never through `deliver`. `reconcile_placeholder` is
 exported for reuse by `reconcile` -- it is short-circuit idempotent
@@ -158,7 +158,7 @@ def _deliver_design(backend: Backend, args: Namespace, design_item: Item) -> Jso
 def _leaf_evidence(backend: Backend, args: Namespace) -> str:
     """Verify + describe the evidence for a leaf `deliver`.
 
-    `--pr` is caller-attested (no bd verification); `--items` is verified
+    `--pr` is caller-attested (no backend verification); `--items` is verified
     via `batch_get` -- a miss surfaces `E_NOT_FOUND`, translated here to
     `E_EVIDENCE` because the items themselves ARE the evidence, not a lookup
     target; `--trivial` records a bare acknowledgement. Absent all three,
@@ -247,7 +247,7 @@ def _reconcile_single(backend: Backend, placeholder_id: str, manifest: Manifest)
     # its shape label yet already off the sweep's handle.
     item = manifest.items[0]
     template = NOUN_TEMPLATES[Noun(item.noun)]
-    backend.set_type(placeholder_id, template.bd_type)
+    backend.set_type(placeholder_id, template.item_type)
     backend.set_fields(placeholder_id, UpdateFields(title=item.title))
     backend.set_acceptance(placeholder_id, item.acceptance)
     backend.label_mutate("add", placeholder_id, [template.shape_label, SPEC_READY_LABEL])
@@ -255,7 +255,7 @@ def _reconcile_single(backend: Backend, placeholder_id: str, manifest: Manifest)
 
 def _reconcile_multi(backend: Backend, placeholder: Item, manifest: Manifest) -> None:
     # One order-preserving batch_get instead of an N+1 get()-per-child loop
-    # (empty children -> zero bd calls, per the batch_get empty-ids pin).
+    # (empty children -> zero backend calls, per the batch_get empty-ids pin).
     existing_titles = {child.title for child in backend.batch_get(list(placeholder.children))}
     for item in manifest.items:
         if item.title in existing_titles:
@@ -264,7 +264,7 @@ def _reconcile_multi(backend: Backend, placeholder: Item, manifest: Manifest) ->
         backend.create(
             CreateFields(
                 title=item.title,
-                type=template.bd_type,
+                type=template.item_type,
                 parent=placeholder.id,
                 labels=(template.shape_label,),
                 acceptance=item.acceptance,

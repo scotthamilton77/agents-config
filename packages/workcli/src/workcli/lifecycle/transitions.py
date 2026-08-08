@@ -26,7 +26,7 @@ def _claimed(item_id: str, block: list[JsonValue]) -> JsonValue:
 
 
 def claim(backend: Backend, args: Namespace) -> JsonValue:
-    """`work claim ID` -- uses bd's own atomic `--claim`; detects stale claims.
+    """`work claim ID` -- uses the seam's atomic `claim`; detects stale claims.
 
     Every SUCCESS carries the read-only `parked_stale` block: taking new work
     is exactly the interaction that must show the stuck work first. A refusal

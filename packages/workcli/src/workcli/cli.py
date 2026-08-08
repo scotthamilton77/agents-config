@@ -1,7 +1,7 @@
 """workcli CLI — argparse wiring, protocol handshake, and the dispatch loop.
 
 `main()` is the single injectable entry point: every outside-world dependency
-(argv, the bd runner, stdout/stderr, sleep) arrives as an argument, never a
+(argv, the backend runner, stdout/stderr, sleep) arrives as an argument, never a
 module global. The `Backend` itself is constructed lazily, inside `main()`,
 only when a verb actually dispatches -- `--protocol-version` short-circuits
 before it and never touches the runner: the handshake is cheap and

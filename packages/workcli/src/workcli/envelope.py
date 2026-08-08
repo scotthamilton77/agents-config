@@ -47,10 +47,11 @@ class StepProgress:
     """A `label_mutate`/`sync` mid-sequence failure's replayable progress.
 
     The seam's only two irreducibly multi-call `Backend` primitives
-    (`label_mutate` -- one `bd label` call per label; `sync` --
-    `dolt commit` then `dolt push`) can fail after some sub-steps already
-    applied. `with_progress` attaches this record to the raised `WorkError`
-    so a caller can tell "nothing applied" (no `partial_progress` key --
+    (`label_mutate` -- one backend call per label, where the backend takes
+    them one at a time; `sync` -- a commit followed by a push) can fail
+    after some sub-steps already applied. `with_progress` attaches this record
+    to the raised `WorkError` so a caller can tell "nothing applied"
+    (no `partial_progress` key --
     contract per decision "absence means atomic") from "these sub-steps
     already applied, retry from the top is safe" (this record present).
     """
