@@ -6,7 +6,15 @@ write:
 - the **always-on surface** for a tool — the deployed instruction file plus
   every admitted always-on rule — is capped at ``ALWAYS_ON_TOKEN_CAP``;
 - each admitted **skill body** (the SKILL.md content after its front matter,
-  the on-invoke payload) is capped at ``SKILL_BODY_TOKEN_CAP``.
+  the on-invoke payload) is capped at ``SKILL_BODY_TOKEN_CAP``, or at
+  ``USER_INVOKED_SKILL_BODY_TOKEN_CAP`` when the skill is user-invoked.
+
+A model-invoked skill's body is loaded on the model's own judgement, mid-task,
+against whatever else the context is already carrying. A user-invoked one is
+reached only when the user names it, so the cost is asked for and lands at a
+moment chosen for it. That difference is what the second cap prices, and it is
+all it prices: the looser number is relief for a body that has already been
+split down, never permission to leave it whole.
 
 Token count is the ``bytes / 4`` approximation (ceil): no tokenizer dependency
 is added. The cap carries >20x margin at the zero-base (~418 tokens vs
@@ -24,9 +32,14 @@ surface weighs.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 ALWAYS_ON_TOKEN_CAP = 10_000
 SKILL_BODY_TOKEN_CAP = 2_000
+USER_INVOKED_SKILL_BODY_TOKEN_CAP = 5_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,11 +57,31 @@ class SurfaceMeasure:
 
 
 @dataclass(frozen=True, slots=True)
+class SkillBodySource:
+    """One admitted skill body on its way to the scale.
+
+    ``user_invoked`` is read from the artifact's source front matter, so it is
+    a property of the skill rather than of any one deploy target: a tool whose
+    loader cannot honour the flag still measures the body against the cap the
+    author chose.
+    """
+
+    label: str
+    body: str
+    user_invoked: bool
+
+
+@dataclass(frozen=True, slots=True)
 class SkillMeasure:
-    """One admitted skill body's weight, measured after sanitization."""
+    """One admitted skill body's weight, measured after sanitization.
+
+    ``cap`` travels with the measurement because with two caps in play the
+    number alone no longer says whether a body has headroom.
+    """
 
     label: str
     tokens: int
+    cap: int
 
 
 def approx_tokens(data: bytes | str) -> int:
@@ -73,11 +106,22 @@ def measure_always_on(
     return SurfaceMeasure(tool=tool, tokens=total, rules=len(rules))
 
 
-def measure_skill_bodies(bodies: list[tuple[str, str]]) -> list[SkillMeasure]:
-    """Weigh each admitted skill body. ``bodies`` is ``(label, body_text)``
-    per admitted skill; ``body_text`` is the SKILL.md content with front matter
-    already stripped."""
-    return [SkillMeasure(label=label, tokens=approx_tokens(body)) for label, body in bodies]
+def skill_body_cap(*, user_invoked: bool) -> int:
+    """The cap one skill body is measured against."""
+    return USER_INVOKED_SKILL_BODY_TOKEN_CAP if user_invoked else SKILL_BODY_TOKEN_CAP
+
+
+def measure_skill_bodies(bodies: Sequence[SkillBodySource]) -> list[SkillMeasure]:
+    """Weigh each admitted skill body against the cap its invocation mode picks.
+    ``body`` is the SKILL.md content with front matter already stripped."""
+    return [
+        SkillMeasure(
+            label=source.label,
+            tokens=approx_tokens(source.body),
+            cap=skill_body_cap(user_invoked=source.user_invoked),
+        )
+        for source in bodies
+    ]
 
 
 def always_on_violations(*, tool: str, instruction: bytes | None, rules: list[bytes]) -> list[str]:
@@ -92,12 +136,11 @@ def always_on_violations(*, tool: str, instruction: bytes | None, rules: list[by
     return []
 
 
-def skill_body_violations(bodies: list[tuple[str, str]]) -> list[str]:
-    """Violation messages for admitted skill bodies over the per-skill cap.
-    Returns one message per over-cap skill."""
+def skill_body_violations(bodies: Sequence[SkillBodySource]) -> list[str]:
+    """Violation messages for admitted skill bodies over the cap that applies to
+    them. Returns one message per over-cap skill."""
     return [
-        f"{m.label}: skill body is {m.tokens} tokens, over the "
-        f"{SKILL_BODY_TOKEN_CAP}-token cap — delegate to code"
+        f"{m.label}: skill body is {m.tokens} tokens, over the {m.cap}-token cap — delegate to code"
         for m in measure_skill_bodies(bodies)
-        if m.tokens > SKILL_BODY_TOKEN_CAP
+        if m.tokens > m.cap
     ]

@@ -250,11 +250,13 @@ class SkillBody:
     ``where`` is the source file when the plan records one and the destination
     otherwise. ``tools`` names every tool the body was measured for: a shared
     skill stages into every plan, so ungrouped it reports the same number four
-    times.
+    times. ``cap`` is the ceiling that measured it — a property of the source
+    front matter, so every tool in ``tools`` agrees on it.
     """
 
     where: str
     tokens: int
+    cap: int
     tools: tuple[str, ...]
 
 
@@ -448,16 +450,20 @@ def _group_skill_bodies(
 
     ``tokens`` is part of the key rather than an attribute of the group because a
     per-tool transform can change one source's deployed weight, and one file
-    reporting two different numbers is precisely the thing worth seeing.
+    reporting two different numbers is precisely the thing worth seeing. The cap
+    is not: it is decided by the source front matter, which every tool staging
+    that artifact read, so the first measure in a group speaks for all of them.
     """
-    grouped: dict[tuple[str, int], tuple[str, list[str]]] = {}
+    grouped: dict[tuple[str, int], tuple[str, int, list[str]]] = {}
     for measure in measures:
         identity, where = _identity(measure.label, sources.get(measure.label))
-        _where, tools = grouped.setdefault((identity, measure.tokens), (where, []))
+        _where, _cap, tools = grouped.setdefault(
+            (identity, measure.tokens), (where, measure.cap, [])
+        )
         tools.append(measure.label.partition(":")[0])
     return [
-        SkillBody(where=where, tokens=tokens, tools=tuple(sorted(set(tools))))
-        for (_identity_key, tokens), (where, tools) in sorted(grouped.items())
+        SkillBody(where=where, tokens=tokens, cap=cap, tools=tuple(sorted(set(tools))))
+        for (_identity_key, tokens), (where, cap, tools) in sorted(grouped.items())
     ]
 
 

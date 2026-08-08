@@ -82,7 +82,7 @@ row goes, and a row for something that will never land is a defect, not a forwar
 | `grilling` | shared | `mattpocock/skills @ 84fdeffd` | `skills/productivity/grilling/` | 2026-08-07 | selective-amalgamation |
 | `zoom-out` | claude (command) | `mattpocock/skills @ e74f0061` | `skills/engineering/zoom-out/` (deleted upstream after this commit) | 2026-08-07 | rewrite-and-divorce |
 | `to-spec` | shared | `mattpocock/skills @ ed37663c` | `skills/engineering/to-spec/` | 2026-07-24 | local-fork |
-| `handoff` | shared *(see below)* | `mattpocock/skills @ ed37663c` | `skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
+| `handoff` | shared | `mattpocock/skills @ ed37663c` | `skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
 | `improve-codebase-architecture` | shared | `mattpocock/skills @ e74f006` | `skills/engineering/improve-codebase-architecture/` | 2026-05-23 | rewrite-and-divorce (project-extended fork) |
 | `to-tickets` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/to-tickets/` | 2026-08-07 | local-fork |
 | `research` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/research/` | 2026-08-07 | local-fork |
@@ -96,7 +96,9 @@ Update this table whenever an artifact is added, replaced, retired, or amalgamat
 
 `Upstream` and `Path in upstream` together fetch the exact reference bytes. `Last sync` is a different fact — when the deployed copy was last reconciled against upstream — so it can legitimately predate the pinned commit, as `handoff`'s does. `zoom-out` is the opposite case: its path is gone from upstream's head, so the pin is the last commit that still holds the reference bytes and no later pin exists to move to.
 
-`handoff` is the standing exception to the placement rule: it carries Claude-only front matter but sits in the shared tree, so it stages into Codex, Gemini and OpenCode where those keys do nothing. Deliberate and temporary — `agents-config-9k9.68` resolves it, either with per-tool exemption support or by moving the skill back.
+Claude-only front matter is no longer a reason to leave the shared tree. The installer projects capability keys per target tool at deploy: `disable-model-invocation`, `allowed-tools` and `argument-hint` are kept for Claude and dropped for Codex, Gemini and OpenCode, which have no equivalent to translate onto. `handoff` was the standing exception to the placement rule and is now the ordinary case.
+
+Placement still turns on capability-dependency, but of the skill's *procedure* rather than its front matter. A skill whose steps require a Claude-only mechanism belongs in the Claude tree. So does one whose admission record depends on behaviour the other tools cannot reproduce — dropping a key removes the bytes, not the gap, so a skill that must not fire unprompted is still model-invocable wherever the flag is unsupported.
 
 ## Common pitfall — extracted helpers must be wired in
 

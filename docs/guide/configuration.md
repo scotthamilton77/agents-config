@@ -58,10 +58,14 @@ What genuinely reads the file today:
   CLI for its track partition and work-in-progress rules.
 
 Everything else is currently inert. The sections below are documented because
-they are the shape the rebuild is expected to restore, and because this repo's
-own `project-config.toml` carries them as annotated examples — read that file
-for the full schema, including which keys are commented out precisely because
-nothing reads them.
+they are the shape the rebuild is expected to restore, and the schema each one
+would take is given here in full — this page is the reference, not a pointer to
+one.
+
+This repo's own `project-config.toml` is not that reference. It carries only
+sections a named consumer actually reads, plus commented-out keys for work not
+yet deployed. A section documented on this page and absent from that file is
+absent on purpose.
 
 ### Quality gates — `[gates]`, `[coverage]` (no deployed reader)
 

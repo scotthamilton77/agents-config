@@ -1,85 +1,34 @@
 # project-config.toml
-# TODO clean up stale beads references once v2 architecture is in place
-# Per-project configuration for the bead pipeline architecture.
-# Lives at the repository root. Read by per-stage orchestrators to configure
-# quality gates, coverage thresholds, foreign-CLI model selection, and more.
+# Per-project configuration, read at the repository root.
 #
-# Review/merge policy: a merge is authorized by CI green, a review verdict artifact,
-# and an approving review. That schema, and every other section's, came from pre-rework
-# designs retired out of this repository along with the pipelines they described.
+# Only three consumers read this file, and between them they read four sections:
+#   workcli   -- [tracks], [operating-model], [extraction.pressure],
+#                [extraction.eligibility]
+#   installer -- [install] (the persisted profile selection; absent until the
+#                installer writes it)
+#   scripts/track-backfill -- [tracks]
 #
-# All sections are optional. Absent sections use per-stage defaults.
-# Stage role names (not numbers) are the authority in all section names.
+# Anything else here is prose for a human, not configuration. Two conventions
+# hold, and they are what keep this file honest:
+#
+#   A commented-out key is future work nothing reads. Uncomment one only in
+#   the change that deploys its reader.
+#
+#   A section states who reads it. If no live consumer can be named, the
+#   section does not belong here -- the mechanical gates are declared in the
+#   Makefile and nowhere else.
 
 [project]
-name            = "agents-config"
-default-formula = "implement-feature"  # fallback when no formula-* label on bead
+name = "agents-config"
 
 # ---------------------------------------------------------------------------
-# [gates] — default quality-gate commands
-# Read by: green-loop (quality gate per iteration), quality-sweep
-# ---------------------------------------------------------------------------
-[gates]
-# This project is primarily documentation — no build, typecheck, or lint —
-# but it now ships an automated bash smoke-test suite for the skill helper
-# scripts under src/user/.agents/skills, src/user/.claude/skills, and
-# src/user/.claude/hooks (added by abn9.4). The build/
-# typecheck/lint gates remain empty stubs and stages detect them as such and
-# skip gracefully; the test gate is wired up to the smoke-test runner.
-build     = ""   # no build step
-typecheck = ""   # no type checker
-lint      = ""   # no linter
-test      = "find src/user/.agents/skills src/user/.claude/skills src/user/.claude/hooks -name '*_test.sh' -print0 | sort -z | xargs -0 -I{} sh -c 'echo \"[TEST] $1\"; bash \"$1\" || exit 1' _ {}"   # skill smoke tests (added by abn9.4); null-delimited handles spaces/newlines (find -print0 / sort -z / xargs -0 are common GNU/BSD extensions, not POSIX; portable on macOS + Linux)
-
-# ---------------------------------------------------------------------------
-# [coverage] — code coverage settings
-# Read by: green-loop, quality-sweep, preflight
-# ---------------------------------------------------------------------------
-[coverage]
-# applicable: explicit opt-out for coverage handling across pipeline stages
-# (preflight, green-loop, quality-sweep), intended for projects with no
-# coverage tooling (docs-only repos, config repos, etc.). Default is true
-# (treated as true when absent). When false:
-#   - preflight does NOT fire the human-flag protocol on missing/empty
-#     report-location and proceeds to worktree creation;
-#   - green-loop's DoD does NOT enforce the coverage threshold;
-#   - quality-sweep does not separately enforce a coverage threshold.
-# When true (or absent), the existing semantics apply: empty/missing
-# report-location triggers human-flag, and green-loop's DoD enforces threshold.
-applicable       = false  # smoke tests exist (see [gates].test) but coverage tooling is intentionally not wired up for this docs-leaning repo
-threshold        = 80     # percent; ignored when applicable = false; per-bead override: coverage-threshold-<n> label
-report-location  = ""     # n/a — applicable = false suppresses coverage handling
-format           = ""     # n/a
-
-# ---------------------------------------------------------------------------
-# [lint-autofix] — lint auto-fix command
-# Read by: quality-sweep (runs BEFORE build/typecheck/lint/test)
-# ---------------------------------------------------------------------------
-[lint-autofix]
-command = ""   # no lint auto-fix for this project
-
-# ---------------------------------------------------------------------------
-# [static-analysis] — extra checks (semgrep, depcheck, etc.)
-# Read by: quality-sweep
-# Absent or all-empty → quality-sweep is skippable (preflight marks it so)
-# ---------------------------------------------------------------------------
-[static-analysis]
-# commands = ["semgrep --config auto ."]   # example; uncomment when needed
-
-# ---------------------------------------------------------------------------
-# [functional-tests] — UI/e2e commands
-# Read by: verify-ac
-# ---------------------------------------------------------------------------
-[functional-tests]
-# commands = ["playwright test"]   # example; uncomment when needed
-
-# ---------------------------------------------------------------------------
-# Review expectations and merge authorization.
-# Schema: the retired review/merge policy design — CI green, a review verdict
-# artifact, and an approving review.
+# [merge-policy] — merge authorization.
+# Read by: no code. The root AGENTS.md sends a reader here to confirm that no
+#          rule-based policy is configured, so the live key below is the answer
+#          to that question and exists for that reason alone.
 #
-# Commented-out keys below anticipate future work (agents-config-9k9.69) and are
-# not policy. Uncomment a key only in the change that deploys something reading it.
+# Commented-out keys anticipate future work (agents-config-9k9.69) and are not
+# policy. Uncomment a key only in the change that deploys something reading it.
 # ---------------------------------------------------------------------------
 [merge-policy]
 # The agent merges only on an explicit in-session human instruction.
@@ -149,18 +98,7 @@ independent-release-tracks = []
 [extraction.eligibility]
 max-cross-track-edges = 3
 
-# ---------------------------------------------------------------------------
-# [foreign-cli] — foreign-CLI binary paths and model selections
-# Read by: red-tests (Codex adversarial test review),
-#          green-loop (RALF-IT foreign-eyes iterations),
-#          any stage invoking adversarial-codex
-# ---------------------------------------------------------------------------
-[foreign-cli]
-# codex_binary_path              = ""     # default: ${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs
-gemini_binary_path             = "gemini"
-codex_red_tests_model            = "gpt-5.6-terra"    # adversarial test review
-codex_green_loop_iter1_model     = "gpt-5.6-terra"    # RALF-IT iter 1 implementation review
-codex_adversarial_review_model   = "gpt-5.6-sol"          # review-level:deep only
-gemini_green_loop_iter2_model    = "gemini-3-flash-preview"
-codex_max_concurrent             = 1
-gemini_max_concurrent            = 1
+# Foreign-CLI model selection is not configured here. The Codex plugin's runtime
+# leaves the model unset unless a caller names one, and the skill that routes a
+# task profile to a tier carries that table itself — one place, versioned with
+# the skill that uses it.
