@@ -176,6 +176,32 @@ def test_a_bare_identifier_outside_a_package_is_silence(tmp_path: Path) -> None:
     assert _lint(tmp_path, text, tracked=["packages/grind/src/grind/fold.py"]) == []
 
 
+def test_a_tracker_identifier_is_silence_in_every_frame(tmp_path: Path) -> None:
+    """A tracker identifier is deliberately not judged, and this is what makes that
+    a checked property instead of a claim in prose — the distinction this gate
+    exists to enforce, so the module is the last place that should rest on one.
+
+    Existence is the wrong question to ask of one: prose stating what a closed item
+    decided is worth keeping, and only an identifier whose item was deleted is a
+    dangling pointer, which nothing here can tell apart. The silence is
+    over-determined rather than aimed — hyphens, a part opening with a digit, and a
+    leading name that resolves to nothing each exclude the token on their own — so
+    what this pins is the outcome and not any one rule. The frames are here for the
+    same reason: a span becomes a claim only inside one, and loosening what counts
+    as an asset name is what makes the marker line start reporting.
+    """
+    text = (
+        "The decision behind this lives in `widget-shop-qq7.30.1`.\n"
+        "\n"
+        "Read `widget-shop-qq7.30.1` before changing this module.\n"
+        "\n"
+        "Consult `qq7.30.1` and `qq7.30` for the rationale.\n"
+        "\n"
+        "**REQUIRED BACKGROUND:** You MUST understand `widget-shop-qq7.30.1`.\n"
+    )
+    assert _lint(tmp_path, text) == []
+
+
 # --------------------------------------------------------------------------
 # Path citations
 # --------------------------------------------------------------------------
