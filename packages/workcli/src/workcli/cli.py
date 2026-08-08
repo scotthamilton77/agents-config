@@ -95,12 +95,17 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
     create_parser.add_argument("--track", metavar="NAME")
 
     update_parser = subparsers.add_parser(
-        "update", help="update title/priority/description (replace semantics only)"
+        "update", help="update title/priority/description/parent (replace semantics only)"
     )
     update_parser.add_argument("id", metavar="ID")
     update_parser.add_argument("--set-title")
     update_parser.add_argument("--set-priority")
     update_parser.add_argument("--set-description")
+    update_parser.add_argument(
+        "--set-parent",
+        metavar="ID",
+        help="move this item under a new parent, replacing the old one (the move operation)",
+    )
     # Recognized only so it reaches the named E_FIELD_CLOBBER_GUARD instead
     # of a generic E_USAGE unknown-flag error -- notes are append-only.
     # help=SUPPRESS hides it from --help entirely: it's a tripwire, not an

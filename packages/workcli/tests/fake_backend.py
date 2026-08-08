@@ -198,6 +198,12 @@ class FakeBackend:
             rec.priority = fields.priority
         if fields.description is not None:
             rec.description = fields.description
+        if fields.parent is not None:
+            # Replace, matching bd: the old parent is gone, not kept beside
+            # the new one. `_children_of` derives children from this single
+            # field, so the fake cannot represent a double parent at all --
+            # which is the state the real backend now refuses to reach.
+            rec.parent = fields.parent
 
     def claim(self, item_id: str) -> None:
         self._require(item_id).status = "in_progress"
