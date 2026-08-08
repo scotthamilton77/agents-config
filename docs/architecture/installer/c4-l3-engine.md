@@ -23,7 +23,7 @@
 
 Open the `installer` process boundary and show its components. Answers: *what code inside the process actually does the work, how is the tool-agnostic core kept separate from tool/plugin specifics, and where are the seams a test substitutes a fake across?*
 
-This is the most-detailed structural artifact in the set. It is the L3 zoom an implementer reads alongside the story they are wiring (e.g. C.1 staging, E.* merge strategies, F.2 plugin overlay).
+This is the most-detailed structural artifact in the set. It is the L3 zoom to read alongside the module being changed — staging, a merge strategy, the plugin overlay.
 
 ## Diagram
 
@@ -48,8 +48,8 @@ C4Component
             Component(overlay, "overlay.py", "Python", "Phase 6: overlay_plugins — merges each active plugin's content onto the base plan, alphabetical plugin order. Carrier-merges a plugin's disjoint files into a shared_carrier skills/agents DIR; every other collision routes through the merge registry (DIR is fatal).")
             Component(sync, "sync.py", "Python", "Phase 7: require_consent guard -> hash-compare -> diff -> confirm -> path-aware backup -> write. Reports per-item InstallOutcome (WRITTEN / SKIPPED_IDENTICAL / DECLINED). Honours --dry-run.")
             Component(consent, "consent.py", "Python", "require_consent: hard-fails a non-interactive run (no TTY) that passes neither --yes nor --dry-run, before any write. Raises ConsentRequiredError, caught by cli.py as exit 1.")
-            Component(run, "run.py", "Python", "Run-level composition, called directly by cli.py after staging finishes for every tool: install_pipeline + install_plugin_routes (the plugin-route analog: the destinations an adapter claims outside any tool tree) + deploy_clis / prune_clis (the CLI-deploy stage: uv tool install/uninstall for the work + prgroom + grind console scripts) + prune_pipeline (diff -> partition -> run_prune) + record_receipt (mirrors disk, now including cli deploy/prune outcomes).")
-            Component(clis, "clis.py", "Python", "CLI_PACKAGES registry (workcli -> work, prgroom -> prgroom, grind -> grind) + RETIRED_CLIS allowlist; cli_source_digest (deployable-source hash); the CliDeployPort protocol + UvCliDeploy (real, the only module that shells out for CLI deploys) + ScriptedCliDeploy (test fake).")
+            Component(run, "run.py", "Python", "Run-level composition, called directly by cli.py after staging finishes for every tool: install_pipeline + install_plugin_routes (the plugin-route analog: the destinations an adapter claims outside any tool tree) + deploy_clis / prune_clis (the CLI-deploy stage: uv tool install/uninstall for every console script the CLI_PACKAGES registry names) + prune_pipeline (diff -> partition -> run_prune) + record_receipt (mirrors disk, now including cli deploy/prune outcomes).")
+            Component(clis, "clis.py", "Python", "CLI_PACKAGES registry, each entry pairing a uv tool name with the console script it provides, + RETIRED_CLIS allowlist; cli_source_digest (deployable-source hash); the CliDeployPort protocol + UvCliDeploy (real, the only module that shells out for CLI deploys) + ScriptedCliDeploy (test fake).")
             Component(receipt, "receipt.py + receipt_store.py + receipt_lock.py", "Python", "Receipt / ReceiptEntry model + canonical serialization + integrity digest; read (MISSING vs CORRUPT) / atomic write; single-writer advisory flock.")
             Component(rdiff, "receipt_diff.py + receipt_build.py", "Python", "scope_owners + validate_entry + diff_orphans -> Orphan list; desired_staged_keys / desired_route_keys, entry builders, merge_receipt.")
             Component(phash, "prune_hash.py", "Python", "is_prunable + partition_file_orphans: hash/type-aware prune-vs-relinquish, re-checked at the deletion boundary (TOCTOU guard).")
@@ -152,7 +152,7 @@ The engine knows nothing about any specific tool; it takes a `ToolAdapter` and a
 - **`io_port.py`** is the I/O chokepoint. `sync` and `prune` reach the terminal only through the `IOPort` protocol; tests inject `ScriptedIO` to drive every prompt deterministically.
 - **`templates.py`** does DYNAMIC-INCLUDE flattening. The file form inlines one fragment; the ALL-RULES form expands the staged rules collection sorted + `\n---\n`-joined. (The Gemini frontmatter conversion is invoked here in tests but **lives in `tools/gemini.py`** — the engine stays tool-agnostic.)
 - **`staging.py`** walks the source, strips the `.template` suffix, scopes files into namespaces, consults `.installignore`, builds `StagedItem`s into the `StagingPlan`, and calls the adapter's `post_staging_transforms`. It is parameterised by the `ToolAdapter`, never branching on a tool name itself. A same-dest collision within base staging (shared + per-tool content) routes through the merge registry, same as plugin overlay.
-- **`installignore.py`** loads `.installignore`, the shared exclusion manifest both `staging.py` and `overlay.py` consult while walking a namespace. A missing, unreadable, or non-UTF-8 file is a **hard error** (`cli.py` exit 2) — the manifest is load-bearing policy, not an optional default; a silent empty-exclusion fallback would re-leak namespace dev-docs identically on both installers, the failure mode the golden-master parity oracle can't see.
+- **`installignore.py`** loads `.installignore`, the shared exclusion manifest both `staging.py` and `overlay.py` consult while walking a namespace. A missing, unreadable, or non-UTF-8 file is a **hard error** (`cli.py` exit 2) — the manifest is load-bearing policy, not an optional default. A silent empty-exclusion fallback would deploy every namespace's development docs into every destination store, and a run doing that looks exactly like a correct one from the outside.
 - **`overlay.py`** (`overlay_plugins`, Phase 6) merges each active plugin's `.<tool>/` (tool scope) and shared `.agents/` content onto the base plan, in alphabetical plugin order so last-wins collisions resolve deterministically. A plugin directory colliding with a `shared_carrier` skills/agents `DIR` carrier-merges when the two directories' file sets are disjoint (recording the plugin's files in `StagingPlan.dir_overrides`); every other collision — including a second plugin landing on an already-merged carrier — routes through the merge registry, where `FileKind.DIR` is fatal.
 - **`sync.py`** is Phase 7: `require_consent` guards up front (hard-fails a non-interactive run with neither `--yes` nor `--dry-run`), then for each planned file, hash-compare against the destination; identical → skip; different → diff via `IOPort`, confirm, path-aware backup, write. It reports a per-item `InstallOutcome` (`WRITTEN` / `SKIPPED_IDENTICAL` / `DECLINED`, with the real `sha256`) so the receipt records only what was actually written as our bytes. `--dry-run` short-circuits before any write.
 - **`consent.py`** (`require_consent`) is the non-interactive consent guard: raises `ConsentRequiredError` before any write when stdin is not a TTY and neither `--yes` nor `--dry-run` was passed. Called from `sync.py`'s `sync_plan`/`sync_routes`; `cli.py` catches the exception and exits 1.
@@ -173,14 +173,14 @@ One module per tool behind the `ToolAdapter` protocol (`base.py`). Each adapter 
 
 ### `plugins/` — per-plugin adapters
 
-Plugins sit behind the `PluginAdapter` protocol (`base.py`), **string-keyed** in `registry.py` and discovered dynamically by scanning `src/plugins/` — adding a plugin requires no change to `model.py`. **`generic.py`** holds `GenericPluginAdapter`, the adapter every discovered plugin gets: it detects on the plugin's own `~/.<name>/` footprint and declares no bespoke routes, so its content reaches disk through the per-tool namespace overlay. A plugin needing behaviour that convention cannot express — a detection probe beyond the home footprint, or a destination outside every tool tree — registers a factory in `registry.py`'s specialized-adapter map, which is the named extension point and is empty. **`extensions.py`** (`apply_extensions()`, story F.5) applies plugin-declared YAML patches to base markdown assets post-staging, once per enabled tool against that tool's plan.
+Plugins sit behind the `PluginAdapter` protocol (`base.py`), **string-keyed** in `registry.py` and discovered dynamically by scanning `src/plugins/` — adding a plugin requires no change to `model.py`. **`generic.py`** holds `GenericPluginAdapter`, the adapter every discovered plugin gets: it detects on the plugin's own `~/.<name>/` footprint and declares no bespoke routes, so its content reaches disk through the per-tool namespace overlay. A plugin needing behaviour that convention cannot express — a detection probe beyond the home footprint, or a destination outside every tool tree — registers a factory in `registry.py`'s specialized-adapter map, which is the named extension point and is empty. **`extensions.py`** (`apply_extensions()`) applies plugin-declared YAML patches to base markdown assets post-staging, once per enabled tool against that tool's plan.
 
 ### The four protocol seams
 
 | Seam | Protocol module | What a test substitutes |
 |---|---|---|
 | Tool behaviour | `tools/base.py` `ToolAdapter` | `FakeToolAdapter` — exercises the core engine with no real tool |
-| Plugin overlay | `plugins/base.py` `PluginAdapter` | synthetic test-plugin fixture (story F.1) |
+| Plugin overlay | `plugins/base.py` `PluginAdapter` | synthetic test-plugin fixture |
 | Collision resolution | `core/merge/base.py` `MergeStrategy` | swap a registry entry to assert dispatch |
 | All I/O | `core/io_port.py` `IOPort` | `ScriptedIO` — drives prompts, records transcript |
 
@@ -190,7 +190,7 @@ Every cross-boundary dependency is one of these four protocols. That is the desi
 
 - **Execution order across the components** — detect → stage → overlay → merge → sync → prune is the subject of [`sequences.md`](sequences.md).
 - **The data shapes** the components pass around (`StagingPlan`, `StagedItem`, `Config`, …) and the merge-dispatch table — see [`data-view.md`](data-view.md).
-- **The per-strategy merge mechanics** (append separator placement, JSON deep-union rules, fatal message format) — specified in `installer-design.md` §"Test architecture" and per-strategy in the E.* stories.
+- **The per-strategy merge mechanics** (append separator placement, JSON deep-union rules, fatal message format) — specified in `installer-design.md` §"Test architecture".
 - **The container boundary + external stores at process granularity** — see [`c4-l2-container.md`](c4-l2-container.md).
 
 ## Cross-references

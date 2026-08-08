@@ -32,7 +32,7 @@ The data view answers: *what shapes does the installer build in memory, what dri
 
 ## In-memory model ER diagram
 
-Field names mirror the target dataclasses in `packages/installer/src/installer/core/model.py` and `packages/installer/src/installer/config.py`. This represents target state, not necessarily current code — the ER is the design authority; implementation stories bring the code into alignment with it.
+This is the current entity model. Field names mirror the dataclasses in `packages/installer/src/installer/core/model.py` and `packages/installer/src/installer/config.py`, and the diagram is amended in step with them; a divergence between the two is a defect in whichever one moved without the other.
 
 ```mermaid
 erDiagram
@@ -109,7 +109,7 @@ erDiagram
 
 ## Merge-dispatch table — `(FileKind, namespace)` → `MergeStrategy`
 
-The collision matrix — the dispatch contract `core/merge/registry.py` implements (see `installer-design.md`). It keys on `(FileKind, namespace)`: `NAMESPACED_MD` is the only kind whose namespace changes the strategy; for every other kind the namespace component is unused and the lookup degenerates to a `FileKind`-only key. The strategy names below are the design's; the modules land in Epic E.
+The collision matrix — the dispatch contract `core/merge/registry.py` implements (see `installer-design.md`). It keys on `(FileKind, namespace)`: `NAMESPACED_MD` is the only kind whose namespace changes the strategy; for every other kind the namespace component is unused and the lookup degenerates to a `FileKind`-only key. The strategy modules live under `core/merge/strategies/`, one class per module.
 
 | FileKind | Namespace | Strategy | Behaviour on collision |
 |---|---|---|---|
@@ -151,7 +151,7 @@ erDiagram
         string integrity       "sha256: digest over canonical (schema_version + roots + entries [+ clis when non-empty]); recomputed on read, mismatch -> CORRUPT"
         Roots  roots           "persisted install-root allowlist (prior | this run's live roots); retired-plugin root validation"
         Entry  entries         "the recorded wholesale-authored entries"
-        Cli    clis            "the recorded installer-deployed uv tools (workcli/prgroom/grind); empty on every pre-CLI-deploy receipt"
+        Cli    clis            "the recorded installer-deployed uv tools, one per registry entry; empty on every pre-CLI-deploy receipt"
     }
 
     ReceiptEntry {
@@ -163,8 +163,8 @@ erDiagram
     }
 
     CliReceiptEntry {
-        string name    "registry / uv tool name (workcli, prgroom, grind) — the diff key"
-        string binary  "console-script the tool provides (work, prgroom, grind)"
+        string name    "registry / uv tool name — the diff key"
+        string binary  "console-script the tool provides; need not match name (workcli provides work)"
         string digest  "cli_source_digest(package_dir) at deploy time — gates verify/heal/fresh"
     }
 ```
@@ -173,7 +173,7 @@ erDiagram
 - **`path` is the diff key, `owner` the scope tag.** Orphan detection is `{ e ∈ prior : e.owner ∈ scope ∧ (e.owner, e.path) ∉ desired_staged_keys ∧ validate_entry(e) }`. `desired_staged_keys` is the owned dest paths in this run's staging plan (built even under `--prune-only`) plus the active plugins' currently-shipped route files.
 - **`sha256` is ownership-drift protection.** A file orphan whose on-disk bytes no longer match the recorded digest is the user's now — it is relinquished, not deleted. `dir` entries carry `sha256: null` (recursive content-drift protection is a deliberate v1 limitation, deferred).
 - **`integrity` + `roots` make the receipt a trusted deletion-authority input.** `integrity` is recomputed on read; any accidental change fails closed (prune disabled, file untouched). `roots` is the persisted allowlist used to validate a *retired* plugin's recorded root (tool and discovered-plugin roots come from live code instead). See [`sequences.md`](sequences.md) §"Sequence 4 — Prune flow" for the full lifecycle.
-- **`clis` is additive and omitted-when-empty for integrity compatibility.** `canonical_bytes` serializes the `clis` key into the integrity payload only when `receipt.clis` is non-empty, so a receipt written before this field existed — or one where the CLI-deploy stage never ran — hashes byte-identically to today's code and its persisted `integrity` still validates on read (no forced re-hash, no downgrade caveat: an OLDER installer reading a NEWER receipt with a non-empty `clis` simply ignores the unknown key via its own dict-based parser, and ignores CLIs it never shipped). Merged by `merge_clis` (`receipt_build.py`): a registry name (`workcli`/`prgroom`/`grind`) keeps the run's freshly deployed entry when deployed, else its retained prior entry (skip/decline/failure); a non-registry (retired) name drops once its uninstall completes or it is relinquished as foreign, else it is retained so retirement retries next prune.
+- **`clis` is additive and omitted-when-empty for integrity compatibility.** `canonical_bytes` serializes the `clis` key into the integrity payload only when `receipt.clis` is non-empty, so a receipt written before this field existed — or one where the CLI-deploy stage never ran — hashes byte-identically to today's code and its persisted `integrity` still validates on read (no forced re-hash, no downgrade caveat: an OLDER installer reading a NEWER receipt with a non-empty `clis` simply ignores the unknown key via its own dict-based parser, and ignores CLIs it never shipped). Merged by `merge_clis` (`receipt_build.py`): a name still in the registry keeps the run's freshly deployed entry when deployed, else its retained prior entry (skip/decline/failure); a non-registry (retired) name drops once its uninstall completes or it is relinquished as foreign, else it is retained so retirement retries next prune.
 
 ## Canonical-ownership boundaries
 
@@ -238,8 +238,8 @@ flowchart LR
 
 - **The components that build / read these shapes** — see [`c4-l3-engine.md`](c4-l3-engine.md).
 - **The order** in which the shapes are built and flushed — see [`sequences.md`](sequences.md).
-- **The per-strategy merge mechanics** (deep-union algorithm, append separator placement) — specified per-strategy in the E.* stories and `installer-design.md` §"Test architecture".
-- **The golden-master / fixture data shapes** — test artifacts; see `installer-design.md` §"Fixture strategy".
+- **The per-strategy merge mechanics** (deep-union algorithm, append separator placement) — specified per-strategy in `installer-design.md` §"Test architecture".
+- **The fixture data shapes** — test artifacts; see `installer-design.md` §"Fixture strategy".
 
 ## Cross-references
 
