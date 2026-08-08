@@ -85,7 +85,7 @@ PY
 
 # Each stub leads its own process group, exactly as the plugin's detached
 # broker does — the hook declines to signal anything that does not.
-start_stub() { # $1 = name; echoes "pid sockpath"
+start_stub() { # $1 = name, $2 and $3 = names of vars to receive the pid and socket
   local dir="$WORK/$1"; mkdir -p "$dir"
   local sock="$dir/broker.sock"
   setsid python3 "$STUB" serve --endpoint "unix:$sock" --cwd "$dir" --pid-file "$dir/broker.pid" \
@@ -94,9 +94,22 @@ start_stub() { # $1 = name; echoes "pid sockpath"
   # The stub's own pid file, not $!. Where setsid is emulated, the job pid is the
   # wrapper's and the process that survives the exec is a different one — the
   # pid the hook will see, and the only one worth tracking or asserting on.
-  local pid; pid="$(cat "$dir/broker.pid" 2>/dev/null || echo 0)"
+  #
+  # A stub that never wrote that file has no pid, and everything downstream takes
+  # whatever this reports for a process identity: a fabricated `0` reaches the
+  # cleanup trap as process group 0, which is this script's own — signalling the
+  # gate run rather than a fixture. There is no verdict to salvage once a fixture
+  # is missing, so the run says which one and stops instead of inventing a pid.
+  local pid; pid="$(cat "$dir/broker.pid" 2>/dev/null)"
+  case "$pid" in
+    '' | *[!0-9]* | 0)
+      echo "FATAL: stub $1 reported no usable pid (got '$pid'); output in $dir/out" >&2
+      exit 1
+      ;;
+  esac
   echo "$pid" >> "$STARTED"
-  echo "$pid $sock"
+  printf -v "$2" '%s' "$pid"
+  printf -v "$3" '%s' "$sock"
 }
 
 record_broker() { # $1 = state slug, $2 = pid, $3 = sockpath
@@ -113,7 +126,7 @@ if ! command -v setsid >/dev/null 2>&1; then
 fi
 
 # --- an unreferenced broker with no client is terminated ---------------------
-read -r ORPHAN_PID ORPHAN_SOCK <<< "$(start_stub orphan)"
+start_stub orphan ORPHAN_PID ORPHAN_SOCK
 run_hook --verbose
 assert_rc      "hook always exits 0"                       0 "$RC"
 assert_contains "unreferenced idle broker is reaped"       "REAP $ORPHAN_PID" "$OUT"
@@ -121,7 +134,7 @@ assert_contains "and says why"                             "no client connected"
 assert_dead    "unreferenced idle broker is gone"          "$ORPHAN_PID"
 
 # --- a broker named by a session record is left alone ------------------------
-read -r KEPT_PID KEPT_SOCK <<< "$(start_stub recorded)"
+start_stub recorded KEPT_PID KEPT_SOCK
 record_broker recorded-workspace "$KEPT_PID" "$KEPT_SOCK"
 run_hook --verbose
 assert_contains "recorded broker is kept"                  "keep $KEPT_PID" "$OUT"
@@ -131,7 +144,7 @@ assert_alive    "recorded broker survives"                 "$KEPT_PID"
 
 # --- an unreferenced broker with a live client is left alone -----------------
 # This is the race loser: absent from every record, yet serving a real task.
-read -r BUSY_PID BUSY_SOCK <<< "$(start_stub busy)"
+start_stub busy BUSY_PID BUSY_SOCK
 python3 -c 'import socket,sys,time
 c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); c.connect(sys.argv[1])
 sys.stdout.write("connected\n"); sys.stdout.flush(); time.sleep(60)' "$BUSY_SOCK" > "$WORK/client-out" &
@@ -147,7 +160,7 @@ kill "$CLIENT_PID" 2>/dev/null
 # Deliberate, not incidental: the plugin reads these the same way and treats a
 # parse failure as no session, so it will never reuse the broker such a record
 # names. The age gate, not this lookup, is what protects a record mid-write.
-read -r CORRUPT_PID CORRUPT_SOCK <<< "$(start_stub corrupt)"
+start_stub corrupt CORRUPT_PID CORRUPT_SOCK
 mkdir -p "$STATE/corrupt-workspace"
 printf '{"endpoint":"unix:%s","pid":' "$CORRUPT_SOCK" > "$STATE/corrupt-workspace/broker.json"
 run_hook --verbose
@@ -155,7 +168,7 @@ assert_contains "broker behind a truncated record is reaped"  "REAP $CORRUPT_PID
 assert_dead     "and is gone"                                 "$CORRUPT_PID"
 
 # A record that parses but names no pid is likewise no protection.
-read -r NOPID_PID NOPID_SOCK <<< "$(start_stub nopid)"
+start_stub nopid NOPID_PID NOPID_SOCK
 mkdir -p "$STATE/nopid-workspace"
 printf '{"endpoint":"unix:%s"}\n' "$NOPID_SOCK" > "$STATE/nopid-workspace/broker.json"
 run_hook --verbose
@@ -163,7 +176,7 @@ assert_contains "broker behind a pid-less record is reaped"   "REAP $NOPID_PID" 
 assert_dead     "and is gone"                                 "$NOPID_PID"
 
 # --- a broker younger than the age gate is deferred --------------------------
-read -r YOUNG_PID YOUNG_SOCK <<< "$(start_stub young)"
+start_stub young YOUNG_PID YOUNG_SOCK
 CODEX_BROKER_REAPER_MIN_AGE_SECONDS=3600 run_hook --verbose
 assert_contains "young broker is deferred"                 "too young to judge" "$OUT"
 assert_alive    "young broker survives"                    "$YOUNG_PID"
@@ -175,7 +188,7 @@ assert_contains "socket-less orphan is reaped"             "socket removed" "$OU
 assert_dead     "socket-less orphan is gone"               "$YOUNG_PID"
 
 # --- dry run decides but does not act ----------------------------------------
-read -r DRY_PID DRY_SOCK <<< "$(start_stub dryrun)"
+start_stub dryrun DRY_PID DRY_SOCK
 run_hook --dry-run --verbose
 assert_contains "dry run reports the verdict"              "would terminate" "$OUT"
 assert_alive    "dry run leaves the process running"       "$DRY_PID"
