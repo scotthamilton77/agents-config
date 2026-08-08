@@ -41,8 +41,13 @@ Each plugin directory follows this layout (all subdirs are optional):
 | `.md` in `rules/` | Append (base first, plugins alphabetically) |
 | `.md` in `commands/`, `skills/`, `agents/` | **Fatal error** |
 | `settings.json.template` | Union-merge (base first, plugins alphabetically) |
-| `.toml` (formulas) | Last-wins alphabetically + warn |
+| `.toml` (any directory) | Last-wins alphabetically + warn |
 | Directories | **Fatal error** (plugin vs base OR plugin vs plugin) |
+
+The `.toml` row keys on the extension alone. Unlike the `.md` rows above it, the
+directory is not part of the dispatch key: `.toml` is registered as a
+non-namespaced kind, so the namespace is discarded on both sides of the lookup and
+one registration serves every directory.
 
 ## Adding a New Plugin
 
@@ -52,11 +57,12 @@ Each plugin directory follows this layout (all subdirs are optional):
 2. By default it auto-detects via the `GenericPluginAdapter`, whose footprint
    check is `~/.<name>/` present as a directory — and nothing else. A binary of
    the same name on PATH does not count; probing PATH takes a specialized
-   adapter, which is what `BeadsPlugin` adds on top of the directory check. If
-   the directory isn't the right signal, or the plugin needs to install outside
-   the tool config dirs (e.g. beads routing `~/.beads/`), add a specialized
-   adapter under `packages/installer/src/installer/plugins/` and register it in
-   `registry.py`'s `_SPECIALIZED` map.
+   adapter. If the directory isn't the right signal, or the plugin needs to
+   install outside the tool config dirs, add a specialized adapter under
+   `packages/installer/src/installer/plugins/` and register it in
+   `registry.py`'s `_SPECIALIZED` map. That map is empty — the one adapter that
+   used it was retired — so yours would be the first, and there is no worked
+   example in the tree to copy.
 
 ## Admission applies here too
 
