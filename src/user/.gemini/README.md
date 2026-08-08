@@ -24,8 +24,11 @@ carries no identity content.
 
 ## Who it's for
 
-Google Gemini CLI users who want the same skills and the same shared instruction
-core they'd get under Claude Code.
+Google Gemini CLI users who want the same shared instruction core they'd get
+under Claude Code. The skills stage here too, but whether the Gemini CLI reads a
+deployed skill at all is not established by any vendor documentation, so this
+project does not model its skill loading and reports no skill measurement for
+it — expect the instruction core to carry the weight.
 
 See the [root README](../../../README.md) for install flow and customization
 pointers.
