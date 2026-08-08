@@ -18,13 +18,11 @@ Interview the user relentlessly until you reach a shared understanding. Map this
 
 Work the tree in **rounds**. The **question frontier** is every decision whose prerequisites are already settled — the questions you can ask *now* without guessing at answers you have not heard yet. Ask the whole question frontier in one round: number each question and give your recommended answer. Then wait for the user's answers before the next round. (The qualifier matters: this frontier is *questions that are answerable*, not work that is startable.)
 
-Format each question like this:
+Format each question like this, as Markdown in your reply rather than inside a code block:
 
-```
-❓ **Q1** - **<question title>**: <question body, possibly several paragraphs, including any multiple choices>
+❓ **Q1** - **Question title**: question body, possibly several paragraphs, including any multiple choices.
 
-➡️ <your recommended answer>
-```
+➡️ Your recommended answer
 
 Each round of answers reshapes the tree — settled decisions push the question frontier outward and unblock the questions that depended on them. Recompute it, then ask the next round. A question whose answer depends on another question still open in this round belongs to a *later* round, not this one.
 

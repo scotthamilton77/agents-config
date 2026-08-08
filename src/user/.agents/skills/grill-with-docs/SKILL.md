@@ -14,7 +14,7 @@ Last sync: 2026-08-07
 Drift policy: selective-amalgamation — upstream's dispatcher shape is adopted, but the domain-model entry point and the docs cross-check on the exit criterion are local additions a byte-for-byte resync would revert. Take upstream changes selectively.
 -->
 
-Run a `grilling` session. The interview itself — the design tree, the rounds, the question frontier, and the acceptance-criteria exit criterion — lives in that skill, which this one composes rather than restates.
+**Invoke `grilling` at the start of this session.** The interview itself — the design tree, the rounds, the question frontier, and the acceptance-criteria exit criterion — lives in that skill, which this one composes rather than restates.
 
 ## Domain awareness
 
