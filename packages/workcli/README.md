@@ -32,7 +32,7 @@ Twelve verbs; each is a subcommand of `work`.
 | `work ready [--label L]` | unbounded |
 | `work dep {add,remove,list} ID [TARGET] [--type blocks]` | `dep add A B` = A depends on B |
 | `work label {add,remove,list} ID [LABELS...]` | multi-label in one call |
-| `work search QUERY` | — |
+| `work search QUERY [--in FIELD] [--status S] [--limit N]` | reads title, description and notes, every status, unbounded — `--in` (repeatable) narrows the fields, `--status`/`--limit` the rest |
 | `work sync [--pull]` | — |
 | global | `--format {json,human}` (human renders to **stderr**; stdout envelope unchanged), `--protocol-version`, `--config PATH` (explicit `project-config.toml`; overrides the upward search — track-layer surfaces only, see below) |
 
@@ -58,10 +58,15 @@ selected by whether a noun positional or `--raw` is given.
 | `work promote ID` | a `shape-feat` leaf becomes a `shape-spec` container |
 | `work reconcile [--dry-run]` | recovery sweep over the states the tracker can still observe: interrupted delivers, unreconciled placeholders, interrupted expansions — idempotent, safe to run from any session or cron |
 
-Protocol is `"1.6"` — additive-only bumps (new `ErrorCode` members, the
-derived `Item.track` field, the capability-disposition model and
-`partial_progress` detail below) never change an existing envelope or data
-shape. `Capabilities` splits `ready` and `sync` into a `ReadySupport`/
+Protocol is `"1.9"` — additive-only bumps (new `ErrorCode` members, the
+derived `Item.track` field and the `acceptance` field beside it, the
+capability-disposition model, `partial_progress` detail below, and `search`'s
+optional narrowing flags) never change an existing envelope or data shape. A
+bump can still widen what an unchanged call *answers*: 1.8 makes `search`
+read descriptions and notes as well as titles, stop excluding closed items,
+and stop stopping at the first page, so a query that used to return nothing
+may now return matches — and `create <noun>` refuses a title a closed item
+already carries. `Capabilities` splits `ready` and `sync` into a `ReadySupport`/
 `SyncSupport` disposition each (`NATIVE` | `EMULATED`/`SERVER_AUTHORITATIVE`
 | `UNSUPPORTED`) instead of a single boolean, and `dep` gates only typed
 writes via `supports_dep_write` — `dep list` is never gated, even when
@@ -96,13 +101,13 @@ second, human-readable rendering on stderr.
 Success:
 
 ```json
-{"protocol": "1.6", "ok": true, "data": {"id": "x.1", "title": "..."}, "error": null}
+{"protocol": "1.9", "ok": true, "data": {"id": "x.1", "title": "..."}, "error": null}
 ```
 
 Failure:
 
 ```json
-{"protocol": "1.6", "ok": false, "data": null,
+{"protocol": "1.9", "ok": false, "data": null,
  "error": {"code": "E_TYPE_WALL", "message": "blocks: epic may not block task",
            "detail": {"from": "x.1", "to": "y.1", "dep_type": "blocks"}}}
 ```
@@ -118,11 +123,12 @@ Failure:
 | `E_LOCK_CONTENTION` | backend lock contention survived the bounded retry — from `label_mutate`/`sync`, may carry `detail.partial_progress` |
 | `E_SYNC_BEHIND` | `sync --pull` with uncommitted local changes |
 | `E_OPEN_BLOCKERS` | `close` refused: items blocking this one are still open — `detail.blocked_by` names them |
+| `E_NO_WORKSPACE` | no tracker workspace is configured for the directory the verb ran in, so nothing was attempted — a configuration failure to fix, not a defect to report |
 | `E_BACKEND_DRIFT` | the backend's output or behavior failed the facade's own model — the drift alarm; `detail.backend_diagnostic` carries what the backend reported, scrubbed of its identity and carrying no contract to match on |
 | `E_UNSUPPORTED_CAPABILITY` | the verb is not supported by the active backend's declared `Capabilities` |
 | `E_USAGE` | invalid CLI usage — bad flags, missing required args, or a rejected flag combination (e.g. `create` given neither `--raw` nor a noun; noun creation given `--type`/`--label`; `deliver` given flags for the wrong shape) |
 | `E_INTERNAL` | an unexpected internal fault — the envelope invariant holds even on facade bugs |
-| `E_DUPLICATE_TITLE` | `create <noun>` found an exact, case-sensitive title match before minting |
+| `E_DUPLICATE_TITLE` | `create <noun>` found an exact, case-sensitive title match before minting — in any status, closed included; `detail` carries the `id` and its `status` |
 | `E_NOT_CLAIMABLE` | `claim` refused a container, a blocked leaf, or a closed item |
 | `E_EVIDENCE` | `deliver` has no verifiable evidence (`--pr`/`--items`/`--trivial` missing, or `--items` didn't resolve) |
 | `E_MANIFEST` | a spec's `## Continuations` section is missing, empty, or fails the manifest grammar |
@@ -135,7 +141,7 @@ component; refuse to run against a mismatched facade rather than risk
 mis-parsing mid-run:
 
 ```json
-{"protocol": "1.6", "ok": true, "data": {"protocol": "1.6"}, "error": null}
+{"protocol": "1.9", "ok": true, "data": {"protocol": "1.9"}, "error": null}
 ```
 
 Every other verb's envelope carries the same `protocol` field at the top
@@ -147,6 +153,10 @@ are the same value, always.
 - `show` with one id → `data` IS the item object (never a single-element
   array). `show` with 2+ ids, `list`, `ready`, `search` → `data =
   {"items": [...]}`.
+- Every read item carries `acceptance`: the criteria the item was created
+  with, or `null` when it has none. The key is always present on `show`,
+  `list`, `ready` and `search` alike, so `null` reads as "this item has no
+  criteria" and never as "this verb did not fetch them".
 - `label list` → a bare `string[]` (never embedded objects).
 - `dep list` → `data = {"depends_on": [...], "dependents": [...]}` (bd's own
   inverted `--direction` naming is translated to these names).
@@ -156,7 +166,7 @@ are the same value, always.
 - `sync` → `{"synced": ..., "mode": "push" | "pull" | "noop"}`. `"noop"` is
   reserved for server-authoritative backends (the CLI contract spec §6's
   declared no-op); the bd adapter only ever emits `"push"` or `"pull"`.
-- `--protocol-version` → `{"protocol": "1.6"}`.
+- `--protocol-version` → `{"protocol": "1.9"}`.
 
 Human-readable output is opt-in only (`--format human`): it renders the
 envelope's `data` (or `error`) to **stderr**, for direct human use at a

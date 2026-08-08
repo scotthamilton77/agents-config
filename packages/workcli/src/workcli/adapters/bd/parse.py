@@ -108,6 +108,16 @@ _OPEN_BLOCKERS_PATTERN = re.compile(
 )
 
 
+# Captured live from bd 1.0.3 against a directory with no install: every
+# command this adapter drives refuses with this wording and exit 1, before it
+# looks at anything the caller asked for. The backend cannot tell a workspace
+# that was never created from one whose database was removed underneath it --
+# it emits the same sentence for both -- and neither can this adapter, which
+# is why the code below states the absence rather than a cause. The remedy is
+# the same either way.
+_MISSING_WORKSPACE_STDERR_MARKER = "no beads database found"
+
+
 def _drift(message: str, detail: dict[str, JsonValue]) -> WorkError:
     return WorkError(ErrorCode.BACKEND_DRIFT, message, detail=detail)
 
@@ -246,6 +256,27 @@ def _string_field(
     return str(value)
 
 
+def _optional_string_field(raw: dict[str, JsonValue], key: str, item_id: str) -> str | None:
+    """Return `raw[key]` as a `str`, or `None` where the backend reports nothing.
+
+    The opposite discipline to `_string_field`, and for a field the normalized
+    model types as optional: absence is an answer here, not a gap. bd omits any
+    key whose value is empty, so an absent key, an explicit `null` and `""` are
+    one answer arriving three ways -- all normalize to `None`, because
+    publishing three spellings of "none" would make every consumer handle each.
+    A non-string value is still drift: the model types this as text.
+    """
+    value = raw.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise _drift(
+            f"the backend returned an item whose {key} field is not a string",
+            {"reason": "unexpected_field_type", "field": key, "id": item_id},
+        )
+    return value or None
+
+
 def _string_list_field(raw: dict[str, JsonValue], key: str, item_id: str) -> list[str]:
     """Return `raw[key]` as a `list[str]`, alarming on any non-string element.
 
@@ -358,6 +389,11 @@ def parse_item(raw: dict[str, JsonValue], *, unknown: frozenset[str] = frozenset
         notes=_string_field(raw, "notes", item_id, default=""),
         created=str(raw["created_at"]) if raw.get("created_at") is not None else None,
         updated=str(raw["updated_at"]) if raw.get("updated_at") is not None else None,
+        # Every read command carries this field (captured from bd 1.0.3
+        # against an isolated scratch install: show, list, ready and search
+        # all report it), so no read has to declare it unavailable the way
+        # the relationships below are declared -- see `_UNKNOWN_RELATIONS`.
+        acceptance=_optional_string_field(raw, "acceptance_criteria", item_id),
         # An unanswerable relationship is empty here AND travels declared, so
         # neither layer can mistake it for an answer: in-package callers reading
         # the Item see nothing to misread, and the verb layer drops the field
@@ -482,12 +518,13 @@ def map_bd_failure(result: BdResult) -> WorkError:
     """Translate a nonzero bd exit into a typed error.
 
     Two classes come out of here, and the difference decides what travels.
-    A *classified* failure -- NOT_FOUND, OPEN_BLOCKERS, TYPE_WALL, DEP_CYCLE
-    -- means this adapter understood what bd said, so the typed code and a
-    message in the facade's own words are the complete answer; bd's sentence
-    would add nothing but bd's vocabulary, and is dropped. An *unclassified*
-    failure is the drift alarm, and there the sentence is the only content
-    there is -- so it travels, scrubbed of bd's identity.
+    A *classified* failure -- NO_WORKSPACE, NOT_FOUND, OPEN_BLOCKERS,
+    TYPE_WALL, DEP_CYCLE -- means this adapter understood what bd said, so the
+    typed code and a message in the facade's own words are the complete
+    answer; bd's sentence would add nothing but bd's vocabulary, and is
+    dropped. An *unclassified* failure is the drift alarm, and there the
+    sentence is the only content there is -- so it travels, scrubbed of bd's
+    identity.
 
     TYPE_WALL/DEP_CYCLE are a fallback safety net only: `dep`'s verb layer
     pre-checks the type wall via two `Backend.get` reads before ever calling
@@ -500,6 +537,15 @@ def map_bd_failure(result: BdResult) -> WorkError:
     without knowing the backend is not a diagnostic, it is a disclosure, and
     the surest way not to publish one is not to be holding it.
     """
+    # First, because it is the failure that precedes every other one: with no
+    # workspace to read, nothing the caller asked for was ever attempted, and
+    # the answer is about their configuration rather than about their request.
+    if _MISSING_WORKSPACE_STDERR_MARKER in result.stderr:
+        return WorkError(
+            ErrorCode.NO_WORKSPACE,
+            "no tracker workspace is configured for this directory; create one here, "
+            "or run from a directory that already has one",
+        )
     if _NOT_FOUND_STDERR_MARKER in result.stderr or _NOT_FOUND_ALT_STDERR_MARKER in result.stderr:
         return WorkError(ErrorCode.NOT_FOUND, "no item matches the requested id")
     if _OPEN_BLOCKERS_STDERR_MARKER in result.stderr:

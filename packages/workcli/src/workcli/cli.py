@@ -26,6 +26,7 @@ from workcli.config import TrackLayerConfig, load_config
 from workcli.envelope import ErrorCode, JsonValue, WorkError, emit_failure, emit_success
 from workcli.lifecycle.nouns import LEAF_NOUNS, Noun
 from workcli.lifecycle.park import DEFAULT_STALE_DAYS
+from workcli.model import SEARCH_FIELDS
 from workcli.render import render_human
 from workcli.verbs import VERBS, missing_capability
 
@@ -58,8 +59,28 @@ def _add_read_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser])
     ready_parser = subparsers.add_parser("ready", help="list ready-to-work items, unbounded")
     ready_parser.add_argument("--label")
 
-    search_parser = subparsers.add_parser("search", help="search items by query text")
+    search_parser = subparsers.add_parser(
+        "search",
+        help="search items by query text: every field, every status, unbounded unless narrowed",
+    )
     search_parser.add_argument("query", metavar="QUERY")
+    search_parser.add_argument(
+        "--in",
+        dest="corpus",
+        action="append",
+        choices=SEARCH_FIELDS,
+        metavar="FIELD",
+        help=(
+            f"restrict the search to one field ({'|'.join(SEARCH_FIELDS)}); repeatable, "
+            "default all of them (an id match reports under 'title')"
+        ),
+    )
+    search_parser.add_argument(
+        "--status", help="restrict to one status; default every status, closed included"
+    )
+    search_parser.add_argument(
+        "--limit", type=int, default=None, help="cap the result count; default unbounded"
+    )
 
 
 def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:

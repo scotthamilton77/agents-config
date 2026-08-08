@@ -59,7 +59,9 @@ def test_show_zero_or_multi_track_labels_carry_null() -> None:
         # `ready` reads the parking lot first (the parked_stale block), so its
         # own listing is the SECOND bd call.
         (["ready"], (("list",),), ("ready",)),
-        (["search", "T"], (), ("search",)),
+        # Narrowed to one corpus field so this stays a one-call case like its
+        # siblings; the field a match came from has no bearing on the track.
+        (["search", "T", "--in", "title"], (), ("search",)),
     ],
 )
 def test_every_list_shaped_read_verb_carries_track(

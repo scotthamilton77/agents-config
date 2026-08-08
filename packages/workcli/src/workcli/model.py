@@ -42,6 +42,13 @@ class Item:
     notes: str
     created: str | None  # ISO strings as bd emits them; no datetime parsing in v1
     updated: str | None
+    # The criteria a claim on this item is checked against. `None` is the
+    # backend's own answer -- this item carries none -- and is why the field
+    # takes no default: an item built without one would report "no criteria"
+    # for an item nobody asked about, which is the silence this field exists
+    # to end. Optional rather than `str` because "none" is a real state here,
+    # unlike `description`/`notes`, where the empty string says the same thing.
+    acceptance: str | None
     # Which of `RELATIONSHIP_FIELDS` the source read could not express. The
     # fields themselves hold their empty value when named here, and the verb
     # layer drops them from the envelope rather than publishing an empty
@@ -102,3 +109,24 @@ class QueryFilters:
     parent: str | None = None
     type: str | None = None
     limit: int | None = None
+
+
+# The `Item` fields a search may read, in the order a result set reports them
+# -- a title match ranks above a description match, which ranks above a note.
+# Ordering is contract, not incidental: it is what a caller's `--limit` keeps.
+SEARCH_FIELDS = ("title", "description", "notes")
+
+
+@dataclass(frozen=True)
+class SearchFilters:
+    query: str
+    # Every field by default. The three narrowings this verb used to apply
+    # silently -- corpus, status, bound -- are each askable now, and each
+    # defaults to the wide answer: a narrowing nobody chose returns an empty
+    # result a caller cannot tell from a true "nothing like this exists".
+    corpus: frozenset[str] = frozenset(SEARCH_FIELDS)
+    status: str | None = None  # None = every status, closed included
+    # No limit here on purpose. A search spans several fields, and a bound
+    # pushed down per field would truncate each one before they are merged
+    # and undercount the union; the verb layer applies it to the merged set
+    # instead (same ordering `list --track` already enforces).

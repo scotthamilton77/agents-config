@@ -18,9 +18,10 @@ Fidelity choices that matter for recovery correctness:
   regression that trusts a query result's children is caught rather than
   masked. A fake that answered any of these from its own complete state would
   hide exactly the class of defect this seam exists to catch.
-- `Item` is frozen and carries no `acceptance` field, so `get()` rebuilds a
-  fresh snapshot per read, and acceptance -- which bd stores but the normalized
-  Item drops -- is exposed for assertions via `acceptance_of()`.
+- `Item` is frozen, so `get()` rebuilds a fresh snapshot per read. The record
+  holds acceptance the way bd stores it (`""` for an item that has none) and
+  the snapshot collapses that to `None`, exactly as the parser does;
+  `acceptance_of()` reads the stored text for write-path assertions.
 
 `add()`/`acceptance_of()`/`note_lines()` are test-facing scaffolding, not part
 of the `Backend` protocol; structural conformance to `Backend` is enforced by
@@ -40,6 +41,7 @@ from workcli.model import (
     DepListing,
     Item,
     QueryFilters,
+    SearchFilters,
     SyncResult,
     UpdateFields,
 )
@@ -145,6 +147,9 @@ class FakeBackend:
             notes=rec.notes,
             created=None,
             updated=None,
+            # Stored as the backend stores it, reported as the parser reports
+            # it: no criteria is `None` on the way out, never `""`.
+            acceptance=rec.acceptance or None,
             unknown_relations=unknown,
         )
 
@@ -289,11 +294,20 @@ class FakeBackend:
     def labels(self, item_id: str) -> list[str]:
         return list(self._require(item_id).labels)
 
-    def search(self, query: str) -> list[Item]:
+    def search(self, filters: SearchFilters) -> list[Item]:
+        # Models the seam's contract, not one backend's text semantics: the
+        # corpus is whatever the caller asked for, closed items are in it
+        # unless a status narrows them out, and nothing is truncated.
+        def matches(rec: _Rec) -> bool:
+            if filters.status is not None and rec.status != filters.status:
+                return False
+            fields = {"title": rec.title, "description": rec.description, "notes": rec.notes}
+            return any(filters.query in fields[field] for field in filters.corpus)
+
         return [
             self._snapshot(rec, unknown=_SEARCH_UNKNOWN)
             for rec in self._items.values()
-            if query in rec.title
+            if matches(rec)
         ]
 
     def sync(self, pull: bool) -> SyncResult:

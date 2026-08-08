@@ -110,13 +110,19 @@ Two surfaces, and an artifact is priced on the one it actually loads into.
 | Artifact | Always-on cost | On-invoke cost |
 |---|---|---|
 | Rule | its whole body — it is always loaded | — |
-| Skill / command / agent | its front-matter `description` only | its body, paid when invoked |
+| Skill / agent | its front-matter `description` only | its body, paid when invoked |
+| Command | none — it appears in no catalog | its body, paid when the user types it |
 
 **A skill's body is not always-on.** Until something invokes it, a skill costs
 its description line in the catalog and nothing else. So body size is a
 question of whether the body earns its cap *at the moment of use*, and
 description sprawl is the always-on concern — a vague description is worse than
 a long body, because it is paid every session and buys mis-invocation.
+
+**A command is not in any catalog at all.** Neither its body nor its
+description reaches a session until the user types it, so a command has no
+always-on figure to state and its whole cost is one the user asked for. Do not
+ask a command to justify a context cost it does not impose.
 
 Mechanical caps the installer enforces at deploy:
 

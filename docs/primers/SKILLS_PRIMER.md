@@ -9,7 +9,7 @@
 
 ## What Skills Are
 
-A **skill** is a methodology guide — a SKILL.md file (with optional supporting files) that tells an agent *how* to approach a category of work. At session startup, only the `name` and `description` from each skill's YAML frontmatter are pre-loaded. Claude reads SKILL.md only when the skill becomes relevant, and reads supporting files only on demand. This is **progressive disclosure**: the context window cost is paid in proportion to actual use.
+A **skill** is a methodology guide — a SKILL.md file (with optional supporting files) that tells an agent *how* to approach a category of work. At session startup, only the `name` and `description` from each skill's YAML frontmatter are pre-loaded — and on Claude Code, a skill that sets `disable-model-invocation` is left out of that pre-load entirely (see Body budget). Claude reads SKILL.md only when the skill becomes relevant, and reads supporting files only on demand. This is **progressive disclosure**: the context window cost is paid in proportion to actual use.
 
 Skills exist because some workflows (debugging, TDD, brainstorming, code review) benefit from a consistent, opinionated process. Rather than embedding that process in every agent definition, skills provide a shared, reusable methodology that any agent can invoke.
 
@@ -136,13 +136,15 @@ The body is what the agent reads after invocation. It should:
 
 ### Body budget
 
-The budget is a token cap, not a line count, and it is enforced rather than advised. Each admitted skill **body** — the SKILL.md content after its front matter — must stay under `SKILL_BODY_TOKEN_CAP` in `packages/installer/src/installer/core/surface_budget.py`, currently **2,000 tokens**, counted as `ceil(bytes / 4)`. A breach is fatal: the deploy aborts before any write, and `make content-lint` fails the same way in this repository.
+The budget is a token cap, not a line count, and it is enforced rather than advised. Each admitted skill **body** — the SKILL.md content after its front matter — is weighed as `ceil(bytes / 4)` against one of two caps in `packages/installer/src/installer/core/surface_budget.py`. A model-invoked skill is held to `SKILL_BODY_TOKEN_CAP`, currently **2,000 tokens**. A skill whose front matter sets `disable-model-invocation: true` is held to `USER_INVOKED_SKILL_BODY_TOKEN_CAP`, currently **5,000 tokens**. That flag is read from the source front matter before the per-tool projection strips it, so one skill is measured against one cap on every tool, including the tools whose loader cannot honour the flag at all. The test is for the parsed YAML boolean and nothing else, so `true`, `True`, `yes` and `on` all qualify, while a quoted `"true"`, a bare `1`, or a misspelt key leaves the skill on the 2,000-token cap — the safe direction for the budget, and worth knowing when a body you believed was user-invoked fails the gate at 2,000. A breach is fatal: the deploy aborts before any write, and `make content-lint` fails the same way in this repository.
+
+The two numbers price two different costs. A model-invoked skill's body is loaded on the model's own judgement, mid-task, on top of whatever the context is already carrying. On Claude Code, a skill carrying the flag is kept out of the model's catalog entirely — not even its description is pre-loaded — so it is reached only when the user names it, and its body is paid at a moment the user chose. That relief is real on Claude Code alone: Codex, Gemini and OpenCode define no equivalent key, so the flag is stripped from their deployed bytes while the 5,000-token cap still measures the body. **The looser cap is relief, not permission** — and on three of the four tools it is relief against a cost the author has not avoided. Progressive disclosure applies identically to both kinds of skill, and a body that fits 5,000 tokens only because nothing was moved into `references/` has passed the gate and failed its intent.
 
 Three consequences worth holding onto:
 
 - **Only the body is charged.** Front matter, `references/`, and `scripts/` fall outside the measurement, which is exactly what makes progressive disclosure the way to stay under the cap rather than a stylistic preference.
-- **Bytes, not lines.** At this repository's prose density a body runs around 13 tokens per line, so 2,000 tokens is roughly 150 lines — but a dense table costs more per line than a sparse list, and the number the gate reads is the byte count.
-- **Measure, do not estimate.** `make content-lint` prints every admitted skill's body weight on a pass, so headroom is visible as a trend before it becomes a failed deploy.
+- **Bytes, not lines.** A dense table costs several times more per line than a sparse list, so no line count converts reliably into a token count in either direction. The number the gate reads is the byte count.
+- **Measure, do not estimate.** `make content-lint` prints every admitted skill's body weight against the cap that applies to it on a pass, so headroom is visible as a trend before it becomes a failed deploy.
 
 When a body outgrows the cap, move sections into `references/` verbatim and leave a pointer. Cutting content to fit is how a skill quietly stops teaching what it used to.
 

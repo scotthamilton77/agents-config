@@ -77,7 +77,34 @@ def test_protocol_wire_value_is_pinned() -> None:
     # envelope every other rejection already does. Both refusals only ever
     # rejected a call whose success was the defect, so no consumer had correct
     # behaviour to lose.
-    assert PROTOCOL_VERSION == "1.6"
+    #
+    # 1.7 adds `E_NO_WORKSPACE`, which takes a failure that used to arrive as
+    # `E_BACKEND_DRIFT` -- a directory with no tracker workspace configured.
+    # The envelope and every `data` shape are untouched, so the major holds. A
+    # consumer branching on the drift alarm loses only a case it could not have
+    # handled correctly anyway: it was being told the facade's model of its
+    # backend had broken, when what was missing was a workspace.
+    #
+    # 1.8 gives `search` optional narrowing flags and widens what it answers
+    # without them: descriptions and notes join the corpus, closed items stop
+    # being filtered out, and the result stops ending at the backend's own
+    # first page. `create <noun>` correspondingly refuses a title a CLOSED
+    # item already carries. Same rule as 1.6 and the same verdict: the
+    # envelope and the `data` shape are untouched -- `search` still answers
+    # `{"items": [...]}` of the same item objects, declaring the same
+    # relationships unknown -- and a consumer that acted on the old empty
+    # result was acting on a false negative. What changes is the answer, not
+    # its shape, and a wider true answer is what the verb always claimed to
+    # give.
+    #
+    # 1.9 adds `acceptance` to every read item -- the criteria a claim on the
+    # item is checked against, which the write path has always stored and no
+    # read could return. A new key on an existing object is the same additive
+    # case as `track` in 1.1: nothing an existing consumer reads changes value
+    # or shape, and one that ignores the key sees exactly what it saw before.
+    # The field is always present, `null` where the item has none, so the
+    # answer never arrives as a missing key a consumer would have to interpret.
+    assert PROTOCOL_VERSION == "1.9"
 
 
 def test_the_readme_states_the_protocol_version_the_code_emits() -> None:
