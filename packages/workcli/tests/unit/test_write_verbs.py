@@ -209,6 +209,62 @@ def test_close_not_found_maps_to_not_found_envelope():
     assert error["code"] == str(ErrorCode.NOT_FOUND)
 
 
+def test_close_refused_for_open_blockers_is_a_refusal_not_a_drift_alarm():
+    # The backend understood the request perfectly and declined it: the item
+    # has an open blocker. Reporting that through the drift catch-all would
+    # tell the caller their tracker is broken when their graph is working,
+    # which is a worse answer than the leak it used to arrive with. The
+    # blockers come back itemised, because "which ones" is the whole of what
+    # the caller does next.
+    exit_code, envelope, _ = run_cli(
+        ["close", "itest-2mk"],
+        steps=[
+            ScriptedStep(
+                ("close",),
+                BdResult(
+                    returncode=1,
+                    stdout="",
+                    stderr=(
+                        "cannot close itest-2mk: blocked by open issues "
+                        "[itest-6cl] (use --force to override)\n"
+                    ),
+                ),
+            )
+        ],
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.OPEN_BLOCKERS)
+    assert error["detail"]["blocked_by"] == ["itest-6cl"]
+    assert "itest-6cl" in error["message"]
+    # The backend offers a flag that overrides this. The facade does not, so
+    # the advice that travels is advice the caller can actually take.
+    assert "--force" not in error["message"]
+
+
+def test_a_blocker_refusal_the_adapter_cannot_itemise_is_still_a_refusal():
+    # Same refusal, a wording this adapter's pattern does not fit. Falling
+    # back to the drift alarm here would misreport a working tracker; falling
+    # back to an un-itemised refusal loses the ids and nothing else.
+    exit_code, envelope, _ = run_cli(
+        ["close", "itest-2mk"],
+        steps=[
+            ScriptedStep(
+                ("close",),
+                BdResult(returncode=1, stdout="", stderr="refusing: blocked by open issues\n"),
+            )
+        ],
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.OPEN_BLOCKERS)
+    assert error["detail"] == {}
+
+
 def test_reopen_sends_exactly_one_bd_call_with_the_id():
     runner = ScriptedBdRunner(steps=[ScriptedStep(("reopen",), _OK)])
 

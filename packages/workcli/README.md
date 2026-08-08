@@ -56,9 +56,9 @@ selected by whether a noun positional or `--raw` is given.
 | `work deliver ID [--spec PATH] [--pr REF] [--items ID,ID] [--trivial]` | on a design child: parses the merged spec's `## Continuations` manifest and reconciles the sibling placeholder; on a leaf: evidence-gated close |
 | `work plan ID (--done \| --undo) [--force]` | stamps/revokes the `planned` label (Planning-queue membership) |
 | `work promote ID` | a `shape-feat` leaf becomes a `shape-spec` container |
-| `work reconcile [--dry-run]` | bd-observable recovery sweep: interrupted delivers, unreconciled placeholders, interrupted expansions — idempotent, safe to run from any session or cron |
+| `work reconcile [--dry-run]` | recovery sweep over the states the tracker can still observe: interrupted delivers, unreconciled placeholders, interrupted expansions — idempotent, safe to run from any session or cron |
 
-Protocol is `"1.2"` — additive-only bumps (new `ErrorCode` members, the
+Protocol is `"1.6"` — additive-only bumps (new `ErrorCode` members, the
 derived `Item.track` field, the capability-disposition model and
 `partial_progress` detail below) never change an existing envelope or data
 shape. `Capabilities` splits `ready` and `sync` into a `ReadySupport`/
@@ -96,13 +96,13 @@ second, human-readable rendering on stderr.
 Success:
 
 ```json
-{"protocol": "1.2", "ok": true, "data": {"id": "x.1", "title": "..."}, "error": null}
+{"protocol": "1.6", "ok": true, "data": {"id": "x.1", "title": "..."}, "error": null}
 ```
 
 Failure:
 
 ```json
-{"protocol": "1.2", "ok": false, "data": null,
+{"protocol": "1.6", "ok": false, "data": null,
  "error": {"code": "E_TYPE_WALL", "message": "blocks: epic may not block task",
            "detail": {"from": "x.1", "to": "y.1", "dep_type": "blocks"}}}
 ```
@@ -117,7 +117,8 @@ Failure:
 | `E_FIELD_CLOBBER_GUARD` | an attempt to replace notes via `update` instead of appending via `note` |
 | `E_LOCK_CONTENTION` | backend lock contention survived the bounded retry — from `label_mutate`/`sync`, may carry `detail.partial_progress` |
 | `E_SYNC_BEHIND` | `sync --pull` with uncommitted local changes |
-| `E_BACKEND_DRIFT` | the backend's output or behavior failed the facade's own model — the drift alarm |
+| `E_OPEN_BLOCKERS` | `close` refused: items blocking this one are still open — `detail.blocked_by` names them |
+| `E_BACKEND_DRIFT` | the backend's output or behavior failed the facade's own model — the drift alarm; `detail.backend_diagnostic` carries what the backend reported, scrubbed of its identity and carrying no contract to match on |
 | `E_UNSUPPORTED_CAPABILITY` | the verb is not supported by the active backend's declared `Capabilities` |
 | `E_USAGE` | invalid CLI usage — bad flags, missing required args, or a rejected flag combination (e.g. `create` given neither `--raw` nor a noun; noun creation given `--type`/`--label`; `deliver` given flags for the wrong shape) |
 | `E_INTERNAL` | an unexpected internal fault — the envelope invariant holds even on facade bugs |
@@ -125,7 +126,7 @@ Failure:
 | `E_NOT_CLAIMABLE` | `claim` refused a container, a blocked leaf, or a closed item |
 | `E_EVIDENCE` | `deliver` has no verifiable evidence (`--pr`/`--items`/`--trivial` missing, or `--items` didn't resolve) |
 | `E_MANIFEST` | a spec's `## Continuations` section is missing, empty, or fails the manifest grammar |
-| `E_TIMEOUT` | a non-idempotent bd mutation (`create`/`note`) timed out; it may have partially applied — run `work reconcile`. A retryable mutation (`label_mutate`/`sync`) surfaces this only after retry exhaustion, and may carry `detail.partial_progress` |
+| `E_TIMEOUT` | a non-idempotent backend mutation (`create`/`note`) timed out; it may have partially applied — run `work reconcile`. A retryable mutation (`label_mutate`/`sync`) surfaces this only after retry exhaustion, and may carry `detail.partial_progress` |
 
 ## Consumer handshake
 
@@ -134,7 +135,7 @@ component; refuse to run against a mismatched facade rather than risk
 mis-parsing mid-run:
 
 ```json
-{"protocol": "1.2", "ok": true, "data": {"protocol": "1.2"}, "error": null}
+{"protocol": "1.6", "ok": true, "data": {"protocol": "1.6"}, "error": null}
 ```
 
 Every other verb's envelope carries the same `protocol` field at the top
@@ -155,7 +156,7 @@ are the same value, always.
 - `sync` → `{"synced": ..., "mode": "push" | "pull" | "noop"}`. `"noop"` is
   reserved for server-authoritative backends (the CLI contract spec §6's
   declared no-op); the bd adapter only ever emits `"push"` or `"pull"`.
-- `--protocol-version` → `{"protocol": "1.2"}`.
+- `--protocol-version` → `{"protocol": "1.6"}`.
 
 Human-readable output is opt-in only (`--format human`): it renders the
 envelope's `data` (or `error`) to **stderr**, for direct human use at a

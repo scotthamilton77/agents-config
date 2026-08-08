@@ -134,7 +134,7 @@ def test_step_progress_as_detail_shapes_the_partial_progress_record():
 
 
 def test_with_progress_preserves_the_original_code_and_message_and_merges_detail():
-    err = WorkError(ErrorCode.BACKEND_DRIFT, "bd exited weird", detail={"argv": ["x"]})
+    err = WorkError(ErrorCode.BACKEND_DRIFT, "the backend failed oddly", detail={"returncode": 3})
     progress = StepProgress(
         operation="sync", steps_total=2, completed=("commit",), failed="push", remaining=()
     )
@@ -142,8 +142,8 @@ def test_with_progress_preserves_the_original_code_and_message_and_merges_detail
     wrapped = with_progress(err, progress)
 
     assert wrapped.code == ErrorCode.BACKEND_DRIFT
-    assert wrapped.message == "bd exited weird"
-    assert wrapped.detail["argv"] == ["x"]
+    assert wrapped.message == "the backend failed oddly"
+    assert wrapped.detail["returncode"] == 3
     assert wrapped.detail["partial_progress"] == {
         "operation": "sync",
         "steps_total": 2,

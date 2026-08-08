@@ -175,7 +175,7 @@ def _add_transition_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentPa
     deliver_parser.add_argument("--trivial", action="store_true")
 
     reconcile_parser = subparsers.add_parser(
-        "reconcile", help="sweep bd-observable recoverable states"
+        "reconcile", help="sweep recoverable states the tracker can still observe"
     )
     reconcile_parser.add_argument("--dry-run", action="store_true")
 
@@ -259,7 +259,7 @@ def _add_report_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser
 
 def _add_sync_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
     sync_parser = subparsers.add_parser(
-        "sync", help="sync with the backend (bd: dolt commit+push, or --pull)"
+        "sync", help="publish local tracker changes to the shared store, or --pull to take theirs"
     )
     sync_parser.add_argument("--pull", action="store_true")
 
@@ -331,8 +331,26 @@ def _finish_success(data: JsonValue, out: TextIO, err: TextIO, fmt: str) -> int:
     return exit_code
 
 
+# What to run about a failure, for the codes where the answer is a `work`
+# verb. It lives here because the verbs are this layer's vocabulary: an
+# adapter naming one would reach past the seam it sits behind, and would go
+# stale silently the day the verb was renamed. Adapters state the fact; this
+# is where the fact acquires an instruction.
+_RECOVERY_ADVICE: dict[ErrorCode, str] = {
+    ErrorCode.TIMEOUT: "run `work reconcile` to settle it",
+}
+
+
+def _with_recovery_advice(work_error: WorkError) -> WorkError:
+    advice = _RECOVERY_ADVICE.get(work_error.code)
+    if advice is None:
+        return work_error
+    return WorkError(work_error.code, f"{work_error.message} — {advice}", work_error.detail)
+
+
 def _finish_failure(work_error: WorkError, out: TextIO, err: TextIO, fmt: str) -> int:
     """Emit the failure envelope to `out`; additionally render it to `err` on `--format human`."""
+    work_error = _with_recovery_advice(work_error)
     exit_code = emit_failure(work_error, out)
     if fmt == "human":
         render_human(

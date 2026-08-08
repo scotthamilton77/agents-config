@@ -63,14 +63,27 @@ def test_non_array_show_payload_raises_backend_drift():
     assert error.detail["reason"] == "not_an_array"
 
 
-def test_non_json_stdout_raises_backend_drift_with_raw_excerpt():
+def test_non_json_stdout_raises_backend_drift_with_a_diagnostic():
     with pytest.raises(WorkError) as exc_info:
         parse_items("not json at all {{{")
 
     error = exc_info.value
     assert error.code == ErrorCode.BACKEND_DRIFT
     assert error.detail["reason"] == "invalid_json"
-    assert "not json at all" in error.detail["raw_excerpt"]
+    assert "not json at all" in error.detail["backend_diagnostic"]
+
+
+def test_the_published_excerpt_is_scrubbed_of_the_backends_identity():
+    # The excerpt exists so a human can see what arrived instead of JSON.
+    # What arrives when bd is misconfigured is a sentence naming bd -- so the
+    # excerpt has to survive the trip without carrying that name with it.
+    with pytest.raises(WorkError) as exc_info:
+        parse_items("Error: no beads database found; run 'bd init'")
+
+    diagnostic = exc_info.value.detail["backend_diagnostic"]
+    assert "database found" in diagnostic  # the diagnosis survives
+    assert "beads" not in diagnostic  # the identity does not
+    assert "bd" not in diagnostic
 
 
 def test_non_integer_priority_raises_backend_drift():

@@ -83,8 +83,12 @@ def test_get_maps_an_unrecognized_nonzero_exit_to_backend_drift_with_diagnostic_
     except WorkError as error:
         assert error.code == ErrorCode.BACKEND_DRIFT
         assert error.detail["returncode"] == 2
-        assert "segfault" in error.detail["stderr"]
-        assert error.detail["argv"] == ["show", "x.1", "--json"]
+        # The failure is unclassified, so what bd said is the only lead there
+        # is and it travels. The command line that produced it does not: the
+        # caller cannot run it without knowing bd is there, which is the one
+        # thing the facade will not tell them.
+        assert "segfault" in error.detail["backend_diagnostic"]
+        assert "argv" not in error.detail
 
 
 def test_batch_get_raises_not_found_when_bd_silently_omits_a_requested_id():

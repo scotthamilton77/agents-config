@@ -7,8 +7,10 @@ and PDLC pin a major version and refuse to run against a mismatched facade.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from io import StringIO
+from pathlib import Path
 
 import pytest
 
@@ -76,3 +78,21 @@ def test_protocol_wire_value_is_pinned() -> None:
     # rejected a call whose success was the defect, so no consumer had correct
     # behaviour to lose.
     assert PROTOCOL_VERSION == "1.6"
+
+
+def test_the_readme_states_the_protocol_version_the_code_emits() -> None:
+    # The README documents the wire contract, and it had drifted four
+    # versions behind the code before anyone noticed -- exactly the class of
+    # rot that a reader is trusted to catch and never does. The version is
+    # quoted in prose and in every sample envelope, so this reads them all
+    # rather than one blessed line: a bump that updates the headline and
+    # leaves the samples stale is the same defect in a smaller form.
+    readme = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
+    stated = set(re.findall(r'"protocol": "(\d+\.\d+)"', readme)) | set(
+        re.findall(r"Protocol is `\"(\d+\.\d+)\"`", readme)
+    )
+
+    assert stated, "the README quotes no protocol version; this check has nothing to hold"
+    assert stated == {PROTOCOL_VERSION}, (
+        f"README states protocol {sorted(stated)}, code emits {PROTOCOL_VERSION!r}"
+    )

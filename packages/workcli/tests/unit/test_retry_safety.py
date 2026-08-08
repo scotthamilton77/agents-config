@@ -134,7 +134,10 @@ def test_all_timeouts_exhausted_raises_timeout_not_lock_contention():
         run_with_retry(runner, ["show", "x.1", "--json"], sleep=sleep, retry_on_timeout=True)
 
     assert exc_info.value.code == ErrorCode.TIMEOUT
-    assert "reconcile" in exc_info.value.message
+    # The adapter states the fact and stops. Naming the verb that resolves it
+    # is the CLI's job, and `test_cli_dispatch` is where that is asserted --
+    # an adapter that spelled a `work` verb would reach past its own seam.
+    assert "may have partially applied" in exc_info.value.message
     assert sleep_calls == [0.5, 1.0]
     assert len(runner.calls) == 3
 

@@ -83,7 +83,7 @@ class BdBackend:
         argv = ["show", *ids, "--json"]
         result = run_with_retry(self._runner, argv, sleep=self._sleep)
         if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+            raise map_bd_failure(result)
 
         items = parse_items(result.stdout, command="show")
 
@@ -97,7 +97,7 @@ class BdBackend:
             # request one-for-one.
             raise WorkError(
                 ErrorCode.NOT_FOUND,
-                f"bd show: no such item(s): {', '.join(missing)}",
+                f"no such item(s): {', '.join(missing)}",
                 detail={"missing": cast("list[JsonValue]", missing)},
             )
         # bd's own output order for `show a b --json` is never asserted to
@@ -121,7 +121,7 @@ class BdBackend:
 
         result = run_with_retry(self._runner, argv, sleep=self._sleep)
         if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+            raise map_bd_failure(result)
         return parse_items(result.stdout, command="list")
 
     def ready(self, label: str | None) -> list[Item]:
@@ -132,7 +132,7 @@ class BdBackend:
 
         result = run_with_retry(self._runner, argv, sleep=self._sleep)
         if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+            raise map_bd_failure(result)
         return parse_items(result.stdout, command="ready")
 
     def search(self, query: str) -> list[Item]:
@@ -140,7 +140,7 @@ class BdBackend:
 
         result = run_with_retry(self._runner, argv, sleep=self._sleep)
         if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+            raise map_bd_failure(result)
         return parse_items(result.stdout, command="search")
 
     def create(self, fields: CreateFields) -> str:
@@ -169,7 +169,7 @@ class BdBackend:
 
         result = run_with_retry(self._runner, argv, sleep=self._sleep, retry_on_timeout=False)
         if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+            raise map_bd_failure(result)
         return parse_created_id(result.stdout)
 
     def _update_and_check(self, argv: list[str], *, retry_on_timeout: bool = True) -> None:
@@ -177,7 +177,7 @@ class BdBackend:
             self._runner, argv, sleep=self._sleep, retry_on_timeout=retry_on_timeout
         )
         if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+            raise map_bd_failure(result)
 
     def set_fields(self, item_id: str, fields: UpdateFields) -> None:
         argv = ["update", item_id]
@@ -217,14 +217,14 @@ class BdBackend:
 
         result = run_with_retry(self._runner, argv, sleep=self._sleep)
         if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+            raise map_bd_failure(result)
 
     def reopen(self, item_id: str) -> None:
         argv = ["reopen", item_id]
 
         result = run_with_retry(self._runner, argv, sleep=self._sleep)
         if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+            raise map_bd_failure(result)
 
     def dep_mutate(self, op: DepOp, from_id: str, to_id: str, dep_type: str) -> None:
         if op == "add":
@@ -243,7 +243,7 @@ class BdBackend:
 
         result = run_with_retry(self._runner, argv, sleep=self._sleep)
         if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+            raise map_bd_failure(result)
 
     def dep_list(self, item_id: str) -> DepListing:
         # bd's own `--direction` naming reads backward from intuition:
@@ -254,16 +254,14 @@ class BdBackend:
         down_argv = ["dep", "list", item_id, "--json"]
         down_result = run_with_retry(self._runner, down_argv, sleep=self._sleep)
         if down_result.returncode != 0:
-            raise map_bd_failure(down_argv, down_result)
-        depends_on = parse_dep_edges(down_result.stdout, self_id=item_id, command="dep list")
+            raise map_bd_failure(down_result)
+        depends_on = parse_dep_edges(down_result.stdout, self_id=item_id, direction="depends-on")
 
         up_argv = ["dep", "list", item_id, "--direction", "up", "--json"]
         up_result = run_with_retry(self._runner, up_argv, sleep=self._sleep)
         if up_result.returncode != 0:
-            raise map_bd_failure(up_argv, up_result)
-        dependents = parse_dep_edges(
-            up_result.stdout, self_id=item_id, command="dep list --direction up"
-        )
+            raise map_bd_failure(up_result)
+        dependents = parse_dep_edges(up_result.stdout, self_id=item_id, direction="dependents")
 
         return DepListing(depends_on=depends_on, dependents=dependents)
 
@@ -306,7 +304,7 @@ class BdBackend:
             except WorkError as exc:
                 raise progress(exc) from exc
             if result.returncode != 0 and idempotent_marker not in result.stderr:
-                raise progress(map_bd_failure(argv, result))
+                raise progress(map_bd_failure(result))
             applied.append(one_label)
 
     def labels(self, item_id: str) -> list[str]:
@@ -314,7 +312,7 @@ class BdBackend:
 
         result = run_with_retry(self._runner, argv, sleep=self._sleep)
         if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+            raise map_bd_failure(result)
         return parse_labels(result.stdout)
 
     def sync(self, pull: bool) -> SyncResult:
@@ -325,10 +323,10 @@ class BdBackend:
                 if _SYNC_BEHIND_STDERR_MARKER in result.stderr:
                     raise WorkError(
                         ErrorCode.SYNC_BEHIND,
-                        "bd dolt pull: local working set has uncommitted changes",
-                        detail={"argv": cast("list[JsonValue]", list(argv))},
+                        "cannot pull: the local working copy has uncommitted changes; "
+                        "sync them first",
                     )
-                raise map_bd_failure(argv, result)
+                raise map_bd_failure(result)
             return SyncResult(synced=True, mode="pull")
 
         commit_argv = ["dolt", "commit"]
@@ -337,7 +335,7 @@ class BdBackend:
             commit_result.returncode != 0
             and _NOTHING_TO_COMMIT_STDERR_MARKER not in commit_result.stderr
         ):
-            raise map_bd_failure(commit_argv, commit_result)
+            raise map_bd_failure(commit_result)
 
         def push_progress(err: WorkError) -> WorkError:
             return with_progress(
@@ -360,6 +358,6 @@ class BdBackend:
         except WorkError as exc:
             raise push_progress(exc) from exc
         if push_result.returncode != 0:
-            err = push_progress(map_bd_failure(push_argv, push_result))
+            err = push_progress(map_bd_failure(push_result))
             raise err
         return SyncResult(synced=True, mode="push")
