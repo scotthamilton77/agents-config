@@ -213,7 +213,7 @@ python3 scripts/install.py [--dry-run] [--yes] [--verbose] [--tools=TOOLS] [--pl
 1. **Test plan review** (collaborative, before any code). For the story, co-author a list of unit and integration test cases — names + brief intent + which fixture or scripted-IO scenario each exercises. The list captures the contract the implementation must satisfy. User signs off before red-phase work starts.
 2. **Red phase.** Implement the tests. No production code yet. Tests fail by definition. Commit the red phase.
 3. **Green phase.** Write the minimum production code to make the tests pass. No speculative scope, no extra abstractions beyond what the tests require.
-4. **Refactor + verify.** Run the verification gate: `make ci-installer` — lint, format-check, typecheck, coverage, audit and entry-verify, whose current membership is the `ci-installer` target in the `Makefile` — plus the `simplify` skill. The gate is mechanical only: this step used to also name a `quality-reviewer` agent, which was retired without a replacement, so there is no agent-based review gate today.
+4. **Refactor + verify.** Run the verification gate: `make ci-installer` — lint, format-check, typecheck, coverage, audit and entry-verify, whose current membership is the `ci-installer` target in the `Makefile`. The gate is mechanical only: this step used to also name a `quality-reviewer` agent and a `simplify` skill, and this repository no longer provides either, so there is no agent-based review gate today.
 
 **Test plan completeness criteria** — before signing off on a test plan, confirm:
 - Every public function/class introduced has at least one unit test.
