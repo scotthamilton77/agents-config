@@ -7,9 +7,11 @@
 # hook looks for `app-server-broker.mjs serve`, so the fixture's command line
 # has to be exactly that shape.
 #
-# Every run is scoped to its own temp directory via CODEX_BROKER_REAPER_SCOPE,
-# so no test can reach a broker belonging to a real session, and the age gate
-# is lowered so a freshly spawned fixture is judged rather than deferred.
+# Every run is scoped to its own temp directory: CODEX_BROKER_REAPER_SCOPE keeps
+# the sweep to this run's own fixtures, and the hook's state roots are all
+# redirected beneath that directory, so neither a real session's broker nor a
+# real session's record can reach a test. The age gate is lowered so a freshly
+# spawned fixture is judged rather than deferred.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -44,6 +46,17 @@ export CODEX_BROKER_REAPER_MIN_AGE_SECONDS=0
 export CLAUDE_PLUGIN_DATA="$WORK/plugin-data"
 STATE="$CLAUDE_PLUGIN_DATA/state"; mkdir -p "$STATE"
 
+# CLAUDE_PLUGIN_DATA is one of three state roots the hook reads. The other two —
+# `~/.claude/plugins/data/*/state` and `$TMPDIR/codex-companion` — are
+# machine-wide, and between them hold a record for every broker any session or
+# plugin test on the machine has ever started. A fixture that draws a pid one of
+# those records names is judged reachable and is not reaped, so under the real
+# HOME and TMPDIR this suite's verdict turns on the machine's history and on
+# where the pid counter has wrapped to rather than on the hook's behaviour.
+# Handing the hook a home and a temp directory of this run's own leaves the
+# records the suite itself writes as the only ones it can see.
+HOOK_HOME="$WORK/home"; HOOK_TMPDIR="$WORK/tmp"; mkdir -p "$HOOK_HOME" "$HOOK_TMPDIR"
+
 # Stands in for the plugin's broker: binds the endpoint socket, writes its pid
 # file, then idles. Its filename is load-bearing — see the header.
 STUB="$WORK/app-server-broker.mjs"
@@ -72,7 +85,7 @@ PY
 
 # Each stub leads its own process group, exactly as the plugin's detached
 # broker does — the hook declines to signal anything that does not.
-start_stub() { # $1 = name; echoes "pid sockpath"
+start_stub() { # $1 = name, $2 and $3 = names of vars to receive the pid and socket
   local dir="$WORK/$1"; mkdir -p "$dir"
   local sock="$dir/broker.sock"
   setsid python3 "$STUB" serve --endpoint "unix:$sock" --cwd "$dir" --pid-file "$dir/broker.pid" \
@@ -81,17 +94,35 @@ start_stub() { # $1 = name; echoes "pid sockpath"
   # The stub's own pid file, not $!. Where setsid is emulated, the job pid is the
   # wrapper's and the process that survives the exec is a different one — the
   # pid the hook will see, and the only one worth tracking or asserting on.
-  local pid; pid="$(cat "$dir/broker.pid" 2>/dev/null || echo 0)"
+  #
+  # A stub that never wrote that file has no pid, and everything downstream takes
+  # whatever this reports for a process identity: a fabricated `0` reaches the
+  # cleanup trap as process group 0, which is this script's own — signalling the
+  # gate run rather than a fixture. There is no verdict to salvage once a fixture
+  # is missing, so the run says which one and stops instead of inventing a pid.
+  local pid; pid="$(cat "$dir/broker.pid" 2>/dev/null)"
+  case "$pid" in
+    '' | *[!0-9]* | 0)
+      echo "FATAL: stub $1 reported no usable pid (got '$pid'); output in $dir/out" >&2
+      exit 1
+      ;;
+  esac
   echo "$pid" >> "$STARTED"
-  echo "$pid $sock"
+  printf -v "$2" '%s' "$pid"
+  printf -v "$3" '%s' "$sock"
 }
 
-record_broker() { # $1 = state slug, $2 = pid, $3 = sockpath
-  mkdir -p "$STATE/$1"
-  printf '{"endpoint":"unix:%s","pid":%s}\n' "$3" "$2" > "$STATE/$1/broker.json"
+record_at() { # $1 = workspace directory, $2 = pid, $3 = sockpath
+  mkdir -p "$1"
+  printf '{"endpoint":"unix:%s","pid":%s}\n' "$3" "$2" > "$1/broker.json"
 }
 
-run_hook() { OUT="$(printf '{}' | python3 "$HOOK" "$@" 2>&1)"; RC=$?; }
+# The common case: a record under the root CLAUDE_PLUGIN_DATA names. The hook
+# reads two others, reached by globbing the home plugin directory and by joining
+# TMPDIR; those are addressed with record_at directly, below.
+record_broker() { record_at "$STATE/$1" "$2" "$3"; } # $1 = state slug, $2 = pid, $3 = sockpath
+
+run_hook() { OUT="$(printf '{}' | HOME="$HOOK_HOME" TMPDIR="$HOOK_TMPDIR" python3 "$HOOK" "$@" 2>&1)"; RC=$?; }
 
 # --- setsid must be available, or the fixtures are not group leaders ---------
 if ! command -v setsid >/dev/null 2>&1; then
@@ -100,7 +131,7 @@ if ! command -v setsid >/dev/null 2>&1; then
 fi
 
 # --- an unreferenced broker with no client is terminated ---------------------
-read -r ORPHAN_PID ORPHAN_SOCK <<< "$(start_stub orphan)"
+start_stub orphan ORPHAN_PID ORPHAN_SOCK
 run_hook --verbose
 assert_rc      "hook always exits 0"                       0 "$RC"
 assert_contains "unreferenced idle broker is reaped"       "REAP $ORPHAN_PID" "$OUT"
@@ -108,7 +139,7 @@ assert_contains "and says why"                             "no client connected"
 assert_dead    "unreferenced idle broker is gone"          "$ORPHAN_PID"
 
 # --- a broker named by a session record is left alone ------------------------
-read -r KEPT_PID KEPT_SOCK <<< "$(start_stub recorded)"
+start_stub recorded KEPT_PID KEPT_SOCK
 record_broker recorded-workspace "$KEPT_PID" "$KEPT_SOCK"
 run_hook --verbose
 assert_contains "recorded broker is kept"                  "keep $KEPT_PID" "$OUT"
@@ -116,9 +147,31 @@ assert_contains "and says why"                             "named by a session r
 assert_missing  "recorded broker is never reaped"          "REAP $KEPT_PID" "$OUT"
 assert_alive    "recorded broker survives"                 "$KEPT_PID"
 
+# --- the other two state roots confer the same protection --------------------
+# Redirecting HOME and TMPDIR into this run costs the coverage those two roots
+# used to get from the machine's own records, and a root the hook skips is a
+# root whose glob and path joining nothing checks. Each therefore gets a record
+# of its own here: a root that is merely reachable proves nothing about the scan
+# that reads it. The plugin directory name is arbitrary on purpose — the hook
+# reaches this root by globbing `*` between `data` and `state`.
+start_stub homerec HOMEREC_PID HOMEREC_SOCK
+record_at "$HOOK_HOME/.claude/plugins/data/installed-plugin/state/homerec-workspace" \
+  "$HOMEREC_PID" "$HOMEREC_SOCK"
+run_hook --verbose
+assert_contains "a record under the home plugin root protects its broker" \
+  "keep $HOMEREC_PID: named by a session record" "$OUT"
+assert_alive    "and that broker survives"                 "$HOMEREC_PID"
+
+start_stub tmprec TMPREC_PID TMPREC_SOCK
+record_at "$HOOK_TMPDIR/codex-companion/tmprec-workspace" "$TMPREC_PID" "$TMPREC_SOCK"
+run_hook --verbose
+assert_contains "a record under the temp companion root protects its broker" \
+  "keep $TMPREC_PID: named by a session record" "$OUT"
+assert_alive    "and that broker survives"                 "$TMPREC_PID"
+
 # --- an unreferenced broker with a live client is left alone -----------------
 # This is the race loser: absent from every record, yet serving a real task.
-read -r BUSY_PID BUSY_SOCK <<< "$(start_stub busy)"
+start_stub busy BUSY_PID BUSY_SOCK
 python3 -c 'import socket,sys,time
 c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); c.connect(sys.argv[1])
 sys.stdout.write("connected\n"); sys.stdout.flush(); time.sleep(60)' "$BUSY_SOCK" > "$WORK/client-out" &
@@ -134,7 +187,7 @@ kill "$CLIENT_PID" 2>/dev/null
 # Deliberate, not incidental: the plugin reads these the same way and treats a
 # parse failure as no session, so it will never reuse the broker such a record
 # names. The age gate, not this lookup, is what protects a record mid-write.
-read -r CORRUPT_PID CORRUPT_SOCK <<< "$(start_stub corrupt)"
+start_stub corrupt CORRUPT_PID CORRUPT_SOCK
 mkdir -p "$STATE/corrupt-workspace"
 printf '{"endpoint":"unix:%s","pid":' "$CORRUPT_SOCK" > "$STATE/corrupt-workspace/broker.json"
 run_hook --verbose
@@ -142,7 +195,7 @@ assert_contains "broker behind a truncated record is reaped"  "REAP $CORRUPT_PID
 assert_dead     "and is gone"                                 "$CORRUPT_PID"
 
 # A record that parses but names no pid is likewise no protection.
-read -r NOPID_PID NOPID_SOCK <<< "$(start_stub nopid)"
+start_stub nopid NOPID_PID NOPID_SOCK
 mkdir -p "$STATE/nopid-workspace"
 printf '{"endpoint":"unix:%s"}\n' "$NOPID_SOCK" > "$STATE/nopid-workspace/broker.json"
 run_hook --verbose
@@ -150,7 +203,7 @@ assert_contains "broker behind a pid-less record is reaped"   "REAP $NOPID_PID" 
 assert_dead     "and is gone"                                 "$NOPID_PID"
 
 # --- a broker younger than the age gate is deferred --------------------------
-read -r YOUNG_PID YOUNG_SOCK <<< "$(start_stub young)"
+start_stub young YOUNG_PID YOUNG_SOCK
 CODEX_BROKER_REAPER_MIN_AGE_SECONDS=3600 run_hook --verbose
 assert_contains "young broker is deferred"                 "too young to judge" "$OUT"
 assert_alive    "young broker survives"                    "$YOUNG_PID"
@@ -162,7 +215,7 @@ assert_contains "socket-less orphan is reaped"             "socket removed" "$OU
 assert_dead     "socket-less orphan is gone"               "$YOUNG_PID"
 
 # --- dry run decides but does not act ----------------------------------------
-read -r DRY_PID DRY_SOCK <<< "$(start_stub dryrun)"
+start_stub dryrun DRY_PID DRY_SOCK
 run_hook --dry-run --verbose
 assert_contains "dry run reports the verdict"              "would terminate" "$OUT"
 assert_alive    "dry run leaves the process running"       "$DRY_PID"
