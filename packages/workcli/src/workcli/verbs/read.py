@@ -49,11 +49,16 @@ def _serialize_items(items: list[Item]) -> JsonValue:
 
 
 def show(backend: Backend, args: Namespace) -> JsonValue:
-    """`work show ID...` — one id -> object, 2+ ids -> `{"items": [...]}`."""
-    items = backend.batch_get(args.ids)
-    if len(items) == 1:
-        return _serialize_item(items[0])
-    return _serialize_items(items)
+    """`work show ID...` — always `{"items": [...]}`, one id or many.
+
+    One shape per verb, matching `list`, `ready` and `search`. The count of
+    ids is frequently not a literal at the call site, so a shape that
+    followed it made a consumer branch on its own argument list to parse the
+    reply -- and got the singular case wrong by iterating null rather than by
+    failing at the source. The single item stays reachable as `items[0]`;
+    nothing about the item object itself changed.
+    """
+    return _serialize_items(backend.batch_get(args.ids))
 
 
 def list_(backend: Backend, args: Namespace) -> JsonValue:

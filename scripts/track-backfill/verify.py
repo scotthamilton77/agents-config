@@ -10,7 +10,7 @@ import collections
 import json
 import tomllib
 
-from context import HERE, resolve_root, work
+from context import HERE, resolve_root, show, work
 
 RUNLOG = HERE / "applied.log"
 
@@ -236,7 +236,7 @@ def main() -> int:
     if not groom_item:
         failures.append("C6 groom-state-item empty")
     else:
-        got = work(root, "show", groom_item, require_ok=False)
+        got = show(root, groom_item, require_ok=False)
         if not got.get("ok"):
             failures.append(f"C6 groom-state-item {groom_item} does not exist")
         else:

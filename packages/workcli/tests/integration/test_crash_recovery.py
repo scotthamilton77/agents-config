@@ -94,7 +94,7 @@ def test_interrupted_deliver_is_healed_by_reconcile(fresh_install, bd_binary):
     # in-band manifest snapshot the appends recorded before the fault is present
     # — that snapshot is what `reconcile` replays off, so its persistence proves
     # the fault landed after the appends and before the shape mutation.
-    mid = drive(["show", placeholder])["data"]
+    mid = drive(["show", placeholder])["data"]["items"][0]
     assert "impl-placeholder" in mid["labels"]
     assert "shape-feat" not in mid["labels"]
     assert "[work] manifest:" in mid["notes"]
@@ -108,21 +108,23 @@ def test_interrupted_deliver_is_healed_by_reconcile(fresh_install, bd_binary):
     # (delivery complete), spec-ready is stamped, and the placeholder keeps
     # its manifest-noun shape — the instantiation sweep must never re-finalize
     # it into a planned shape-spec container (wgclw.9.8).
-    healed = drive(["show", placeholder])["data"]
+    healed = drive(["show", placeholder])["data"]["items"][0]
     assert "impl-placeholder" not in healed["labels"]  # handle removed strictly last
     assert "spec-ready" in healed["labels"]
     assert "shape-feat" in healed["labels"]  # manifest-noun shape survives the sweep
     assert "creating-spec" not in healed["labels"]
     assert "planned" not in healed["labels"]
-    assert drive(["show", design_child])["data"]["status"] == "closed"
+    assert drive(["show", design_child])["data"]["items"][0]["status"] == "closed"
 
 
 def _design_and_placeholder(drive, container_id: str) -> tuple[str, str]:
     """Return (design_child_id, placeholder_id): the container's two children."""
-    children = drive(["show", container_id])["data"]["children"]  # single-id show
+    children = drive(["show", container_id])["data"]["items"][0][
+        "children"
+    ]  # show → {"items": [...]}
     design_child = placeholder = None
     for child_id in children:
-        labels = drive(["show", child_id])["data"]["labels"]
+        labels = drive(["show", child_id])["data"]["items"][0]["labels"]
         if "shape-design" in labels:
             design_child = child_id
         else:

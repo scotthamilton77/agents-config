@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from tests.conftest import run_cli
+from tests.conftest import only_item, run_cli
 from tests.fakes import ScriptedStep
 from workcli.adapters.bd.runner import BdResult
 
@@ -39,17 +39,13 @@ def test_show_carries_derived_track() -> None:
         ["show", "w-1"], [_show_step("w-1", ["track:installer", "planned"])]
     )
     assert exit_code == 0
-    data = envelope["data"]
-    assert isinstance(data, dict)
-    assert data["track"] == "installer"
+    assert only_item(envelope["data"])["track"] == "installer"
 
 
 def test_show_zero_or_multi_track_labels_carry_null() -> None:
     exit_code, envelope, _ = run_cli(["show", "w-1"], [_show_step("w-1", ["track:a", "track:b"])])
     assert exit_code == 0
-    data = envelope["data"]
-    assert isinstance(data, dict)
-    assert data["track"] is None
+    assert only_item(envelope["data"])["track"] is None
 
 
 @pytest.mark.parametrize(
