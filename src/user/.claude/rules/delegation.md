@@ -5,10 +5,6 @@ admission:
   remove_when: The harness stops shipping a built-in prohibition on unrequested delegation, and unaided sessions hold the orchestrator/delegated boundary without being told.
 ---
 
-<!--
-Source: authored 2026-07-26.
--->
-
 # Delegation
 
 <subagent-user-authorization>

@@ -197,6 +197,15 @@ source, it MUST carry the provenance header immediately after the front matter,
 using the literal audit keys (`Source:`, `Upstream:`, `Last sync:`,
 `Drift policy:`), and MUST get a row in the shared skills registry.
 
+An artifact we authored ourselves MUST NOT carry a provenance header at all — no
+comment, and none of those keys. The header means one thing — there is an outside
+party, at a known commit, whose future changes could collide with ours — and a
+reader who has learned to read it that way has to open the upstream to discover
+that this instance meant something else. `Source: authored <date>` is not
+provenance; it is history, which git already holds. An artifact that is partly
+ours and partly derived keeps the header and scopes it, naming which files have
+an upstream and which do not.
+
 Set the drift policy deliberately. Any local graft that diverges from upstream
 flips the policy to a fork policy — a resync would silently revert the graft.
 
