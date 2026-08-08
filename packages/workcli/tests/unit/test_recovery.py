@@ -254,7 +254,7 @@ def test_reconcile_ignores_a_non_placeholder_blocks_dependent_of_a_design():
 
 
 def test_reconcile_ignores_a_non_blocks_dependent_even_with_a_placeholder_marker():
-    # Only the blocks-edge links a design to its placeholder; a related-to
+    # Only the blocks-edge links a design to its placeholder; a relates-to
     # dependent (even one carrying a manifest marker) is not that relationship.
     backend = FakeBackend()
     backend.add("c", type="feature", labels=["shape-spec"])
@@ -263,8 +263,8 @@ def test_reconcile_ignores_a_non_blocks_dependent_even_with_a_placeholder_marker
         "relative",
         type="task",
         labels=["shape-feat"],
-        notes=_snapshot_note(_single()),  # marker present, but linked related-to, not blocks
-        deps=[DepEdge(id="d", type="related-to", status="in_progress")],
+        notes=_snapshot_note(_single()),  # marker present, but linked relates-to, not blocks
+        deps=[DepEdge(id="d", type="relates-to", status="in_progress")],
     )
 
     findings = _reconcile(backend)

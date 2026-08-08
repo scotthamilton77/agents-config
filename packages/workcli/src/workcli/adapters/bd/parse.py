@@ -67,6 +67,14 @@ _UNKNOWN_RELATIONS: dict[str, frozenset[str]] = {
 # (see BdBackend.batch_get's own missing-id reconciliation for that case).
 _NOT_FOUND_STDERR_MARKER = "no issue found matching"
 
+# bd's OTHER not-found wording, captured live from `bd update ID --parent
+# <missing>` (exit 1, stderr "Error getting parent X: not found: issue X").
+# The reparent path never emits the marker above, so without this one a
+# typo'd `--set-parent` -- the likeliest mistake anyone makes with that flag
+# -- reports E_BACKEND_DRIFT ("bd's model of itself broke") instead of the
+# plain missing-item answer it is.
+_NOT_FOUND_ALT_STDERR_MARKER = "not found: issue"
+
 # Confirmed by reading bd's own Go source at the installed binary's commit:
 # internal/storage/issueops/dependencies.go emits "epics can only block
 # other epics, not tasks" / "tasks can only block other tasks, not epics"
@@ -431,7 +439,7 @@ def map_bd_failure(argv: Sequence[str], result: BdResult) -> WorkError:
     bd instance should never actually surface these to this function -- but
     a pre-check race (a stale read) is still a bd failure, not a crash.
     """
-    if _NOT_FOUND_STDERR_MARKER in result.stderr:
+    if _NOT_FOUND_STDERR_MARKER in result.stderr or _NOT_FOUND_ALT_STDERR_MARKER in result.stderr:
         return WorkError(
             ErrorCode.NOT_FOUND,
             "bd reported no matching issue",

@@ -43,13 +43,18 @@ def create_raw(backend: Backend, args: Namespace) -> JsonValue:
 
 
 def update(backend: Backend, args: Namespace) -> JsonValue:
-    """`work update ID [--set-title] [--set-priority] [--set-description]`.
+    """`work update ID [--set-title] [--set-priority] [--set-description] [--set-parent]`.
 
     Replace semantics only; status never moves through this verb
-    (lifecycle verbs own claiming/status). `--set-notes` is recognized by
-    argparse only so it reaches this named clobber-guard rather than a
-    generic `E_USAGE` — notes only ever move through
-    `work note`. (Suppressed from `--help`; rationale at its
+    (lifecycle verbs own claiming/status). `--set-parent` is the move
+    operation: a parent is single-valued, which is exactly the contract this
+    verb already declares, and it maps to bd's own atomic reparent — the old
+    parent-child edge is replaced, never added beside. `dep add` refuses a
+    second parent and names this flag.
+
+    `--set-notes` is recognized by argparse only so it reaches this named
+    clobber-guard rather than a generic `E_USAGE` — notes only ever move
+    through `work note`. (Suppressed from `--help`; rationale at its
     `add_argument` site in `cli.py`.)
     """
     if args.set_notes is not None:
@@ -57,12 +62,28 @@ def update(backend: Backend, args: Namespace) -> JsonValue:
             ErrorCode.FIELD_CLOBBER_GUARD,
             "notes are append-only; use `work note ID TEXT` instead of --set-notes",
         )
-    if args.set_title is None and args.set_priority is None and args.set_description is None:
+    if args.set_parent is not None and not args.set_parent:
+        # bd reads an empty `--parent` as "remove the parent", and an
+        # unset shell variable expands to exactly that. Orphaning an item is
+        # not what anyone typing a move means, and this verb replaces a value
+        # with a value; detaching a parent is deliberately unexpressible here.
+        raise WorkError(
+            ErrorCode.USAGE,
+            "--set-parent requires an item id; it moves an item, it cannot detach one",
+            detail={"field": "parent"},
+        )
+    if (
+        args.set_title is None
+        and args.set_priority is None
+        and args.set_description is None
+        and args.set_parent is None
+    ):
         raise WorkError(ErrorCode.USAGE, "update requires at least one --set-* flag")
     fields = UpdateFields(
         title=args.set_title,
         priority=args.set_priority,
         description=args.set_description,
+        parent=args.set_parent,
     )
     backend.set_fields(args.id, fields)
     return None

@@ -61,9 +61,18 @@ def test_protocol_wire_value_is_pinned() -> None:
     # test references PROTOCOL_VERSION. Bumping the protocol means updating
     # this one assertion deliberately.
     #
-    # 1.5 adds `unknown_relations` to every read item and stops emitting the
+    # 1.5 added `unknown_relations` to every read item and stopped emitting the
     # relationship fields it names. The removals keep the major: the fields
     # they drop were never populated on those reads, so no consumer can have
     # been reading a true value out of one, and the major is what every
     # consumer handshake pins on.
-    assert PROTOCOL_VERSION == "1.5"
+    #
+    # 1.6 adds `update --set-parent`, and starts refusing two inputs `dep add`
+    # used to accept: a `--type` outside bd's vocabulary, and a second parent
+    # for an item that already has one. The rule scopes MAJOR to breaking
+    # changes in the ENVELOPE or `data` shapes, and neither moves here -- a new
+    # flag is additive, and a newly-refused input yields the same typed failure
+    # envelope every other rejection already does. Both refusals only ever
+    # rejected a call whose success was the defect, so no consumer had correct
+    # behaviour to lose.
+    assert PROTOCOL_VERSION == "1.6"

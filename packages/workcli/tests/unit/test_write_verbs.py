@@ -63,6 +63,79 @@ def test_update_with_no_set_flags_yields_usage_envelope():
     assert error["code"] == str(ErrorCode.USAGE)
 
 
+def test_update_set_parent_sends_one_bd_call_carrying_bds_own_reparent_flag():
+    # bd's `update --parent` REPLACES the parent-child edge (verified against
+    # bd 1.0.3), so the move is one call and never passes through a state where
+    # the item has two parents.
+    runner = ScriptedBdRunner(steps=[ScriptedStep(("update",), _OK)])
+
+    exit_code, _, _ = run_cli_with_runner(["update", "x.1", "--set-parent", "p.2"], runner)
+
+    assert exit_code == 0
+    assert runner.calls == [("update", "x.1", "--parent", "p.2")]
+
+
+def test_update_set_parent_alone_satisfies_the_at_least_one_flag_requirement():
+    runner = ScriptedBdRunner(steps=[ScriptedStep(("update",), _OK)])
+
+    exit_code, envelope, _ = run_cli_with_runner(["update", "x.1", "--set-parent", "p.2"], runner)
+
+    assert exit_code == 0
+    assert envelope["error"] is None
+
+
+def test_update_combines_set_parent_with_other_replace_fields_in_one_call():
+    runner = ScriptedBdRunner(steps=[ScriptedStep(("update",), _OK)])
+
+    exit_code, _, _ = run_cli_with_runner(
+        ["update", "x.1", "--set-title", "New title", "--set-parent", "p.2"], runner
+    )
+
+    assert exit_code == 0
+    assert runner.calls == [("update", "x.1", "--title", "New title", "--parent", "p.2")]
+
+
+def test_update_set_parent_with_an_empty_value_is_refused_before_any_bd_call():
+    # bd reads an empty `--parent` as "remove the parent", which is what an
+    # unset shell variable expands to. Silently orphaning an item is not what
+    # anyone typing a move means.
+    runner = ScriptedBdRunner(steps=[])
+
+    exit_code, envelope, _ = run_cli_with_runner(["update", "x.1", "--set-parent", ""], runner)
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.USAGE)
+    assert error["detail"] == {"field": "parent"}
+    assert runner.calls == []
+
+
+def test_update_set_parent_to_a_missing_item_reports_not_found_not_backend_drift():
+    # bd's reparent path uses a DIFFERENT not-found wording than every other
+    # command ("not found: issue X", not "no issue found matching X"). Without
+    # that second marker the likeliest `--set-parent` mistake reports
+    # E_BACKEND_DRIFT -- "bd's own model of itself broke" -- for a plain typo.
+    exit_code, envelope, _ = run_cli(
+        ["update", "x.1", "--set-parent", "nosuch.1"],
+        steps=[
+            ScriptedStep(
+                ("update",),
+                BdResult(
+                    returncode=1,
+                    stdout="",
+                    stderr="Error getting parent nosuch.1: not found: issue nosuch.1\n",
+                ),
+            )
+        ],
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.NOT_FOUND)
+
+
 def test_update_not_found_maps_to_not_found_envelope():
     exit_code, envelope, _ = run_cli(
         ["update", "bogus-id", "--set-title", "T"],
