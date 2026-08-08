@@ -44,8 +44,8 @@ The map is an **index**, not a store. It lists the decisions made and points at 
 | The ticket's type | the noun: `spike` for research and prototype, `decision` for a grilling question, `chore` for a task |
 | An agent may resolve it alone | `--label wayfinder:afk`; without it, the ticket needs the human |
 | Blocking | `work dep add <blocked> <blocker>` — "the first depends on the second", wired in a second pass once both ids exist |
-| The ticket frontier | `work ready` — open, unblocked, unclaimed; tickets that are startable, not questions that are answerable. `work ready --label wayfinder:afk` is what a session can fan out without the human |
-| Claim | `work claim <id>` — refuses a blocked, closed, or already-claimed ticket, so the claim is enforced rather than a convention |
+| The ticket frontier | `work list --parent <map-id> --status open` — this map's live tickets, the closed and the claimed already out. The blocked are still in, and `work claim` is what rejects them, so the frontier is whatever claims: startable, which is not the same as answerable. Add `--label wayfinder:afk` for what a session can fan out without the human |
+| Claim | `work claim <id>` — refuses a blocked or closed ticket, so startability is enforced rather than assumed. On a ticket already in progress it no-ops instead of refusing, so it is not a lock against a concurrent session |
 | Resolve | `work close <id> --disposition "<the answer>"` — records the answer and closes, in one call |
 | Link an asset | `work note <id> "<pointer to the branch, file or document>"` |
 | Rule out of scope | `work close <id> --disposition "Out of scope: <why>"` |
@@ -53,7 +53,9 @@ The map is an **index**, not a store. It lists the decisions made and points at 
 
 Two of those carry a trap worth naming. `--set-description` **replaces**: re-read the map immediately before you write it back, or a concurrent session's line is lost. And a ticket is invalidated by **closing it with a disposition that says so**, never by deleting it — the facade has no delete, and the record of a route not taken is worth keeping anyway.
 
-If a track is configured, the facade refuses the map's create until you name one, and lists the choices. Tickets minted under the map inherit its track and need no flag.
+`work ready` is absent from that table on purpose. It is global and takes no parent, so on a tracker carrying anything besides this effort it returns other work alongside this map's, and a session that takes its first result can claim and close a ticket belonging to something else entirely. Scope with `--parent`; let `claim` reject what is blocked.
+
+If tracks are configured and required, the facade refuses the map's create until you pass `--track <name>`, and the refusal lists the choices. Tickets minted under the map inherit its track and need no flag.
 
 **On labels.** Two survive, and only two. `wayfinder:map`, because enumerating maps — `work list --label wayfinder:map` — has no other expression, the container noun being shared with ordinary containers. `wayfinder:afk`, because whether a session may resolve a ticket without the human is the thing a session filters on when it fans out, and no field carries it. Everything else the label scheme once carried is now the noun, which is a first-class field; a label restating a field is duplication.
 
@@ -112,7 +114,7 @@ User invokes with a loose idea.
 User invokes with a map. A ticket is **optional** — without one, you pick the next decision, not the user.
 
 1. Load the **map** — the low-res view, not every ticket body.
-2. Choose the ticket. If the user named one, use it. Otherwise take the first ticket `work ready` returns for this map. **Claim it** before any work.
+2. Choose the ticket. If the user named one, **claim it** before any work. Otherwise walk this map's open tickets — `work list --parent <map-id> --status open` — claiming each in turn until one is accepted; a refusal means that ticket is still blocked, so move to the next.
 3. Resolve it — **zoom as needed**: fetch the full body of any related or closed ticket on demand; invoke the skills the map's `## Notes` block names. If in doubt, use `grilling` and `domain-modeling`.
 4. Record the resolution: close the ticket with the answer as its disposition, then append a one-line gist and link to the map's Decisions-so-far.
 5. Add newly-surfaced tickets (create, then wire); graduate any fog the answer has made specifiable, clearing each graduated patch from **Not yet specified** so it lives only as its new ticket. If the answer reveals a ticket — this one or another — sits beyond the destination, rule it out of scope rather than resolving it on the route. If the decision invalidates other parts of the map, close those tickets with a disposition saying why.

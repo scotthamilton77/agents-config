@@ -9,7 +9,7 @@ Four kinds of ticket. The noun carries the shape; the `wayfinder:afk` label carr
 | Grilling | `decision` | HITL | conversation — `grilling` and `domain-modeling` |
 | Task | `chore` | either | doing the thing |
 
-A HITL ticket only resolves through a live exchange with a human who speaks for themselves. The agent never stands in for the human's side of it — a grilling agent that answers its own questions has broken this. Only AFK tickets carry `wayfinder:afk`, and `work ready --label wayfinder:afk` is what a session fans out when the human is away.
+A HITL ticket only resolves through a live exchange with a human who speaks for themselves. The agent never stands in for the human's side of it — a grilling agent that answers its own questions has broken this. Only AFK tickets carry `wayfinder:afk`, and `work list --parent <map-id> --status open --label wayfinder:afk` is what a session fans out when the human is away.
 
 **Research.** Reading documentation, third-party APIs, or local resources like a knowledge base, to surface a fact a decision waits on. Use when knowledge from outside the current working directory is required. These are the one exception to one-ticket-per-session: fire them in parallel.
 
