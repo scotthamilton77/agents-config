@@ -746,3 +746,67 @@ def test_a_user_invoked_shared_skill_reports_one_line_per_ceiling(tmp_path: Path
         (SKILL_BODY_TOKEN_CAP, ("codex", "opencode")),
         (USER_INVOKED_SKILL_BODY_TOKEN_CAP, ("claude",)),
     ]
+
+
+def _costed(cost: str) -> str:
+    """A complete record whose ``cost`` is ``cost``, plus a one-line body."""
+    return f"---\nadmission:\n  prevents: p\n  cost: {cost}\n  remove_when: r\n---\nbody\n"
+
+
+def test_a_cost_mentioning_tokens_is_a_violation_with_or_without_a_number(
+    tmp_path: Path,
+) -> None:
+    """The gate prints every token number that exists, at the moment it is true, so a
+    record restating one is a hand-copy at a location nothing updates — three of the
+    six that lived in this tree had already drifted from what they claimed. The rule
+    bans the word rather than the number: a value that means money can say money, and
+    a second heuristic telling the two apart would be free to drift from the first."""
+    repo = _repo(
+        tmp_path,
+        skills={
+            "priced": _costed("68 always-on tokens, measured"),
+            "wordy": _costed("the tokens a reader spends on it"),
+        },
+    )
+    result = _lint(repo)
+
+    assert not result.ok
+    assert len([v for v in result.violations if "cost mentions tokens" in v]) == 2
+
+
+def test_a_vacuous_cost_is_a_violation_however_it_is_cased(tmp_path: Path) -> None:
+    """The deploy-time check tests only that the field is non-empty, so ``cost:
+    None`` cleared it while violating a rule this repo had already written down.
+    Capitalisation is the author's, not the claim's."""
+    repo = _repo(tmp_path, skills={"bare": _costed("None"), "shouty": _costed("NEGLIGIBLE")})
+    result = _lint(repo)
+
+    assert not result.ok
+    assert len([v for v in result.violations if "cost is vacuous" in v]) == 2
+
+
+def test_a_cost_naming_what_no_gate_measures_passes(tmp_path: Path) -> None:
+    """Both conforming shapes: a cost that falls outside every measurement, and the
+    sentinel an artifact carries when its only cost is its own footprint. The
+    sentinel needs no exemption from the token rule — it is written not to want one."""
+    repo = _repo(
+        tmp_path,
+        skills={
+            "external": _costed("An API key the user must supply and pay against."),
+            "plain": _costed("Context footprint only, bounded by the caps content-lint enforces."),
+        },
+    )
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_one_shared_artifact_reports_its_cost_defect_once(tmp_path: Path) -> None:
+    """A shared skill stages into every tool's plan, so keying on the label would
+    report one authored line as four defects in four places. The value is a
+    property of the file, which is also the only thing a reader can edit."""
+    repo = _repo(tmp_path, skills={"spread": _costed("a 900 token body")})
+    result = _lint(repo)
+
+    assert len([v for v in result.violations if "cost mentions tokens" in v]) == 1

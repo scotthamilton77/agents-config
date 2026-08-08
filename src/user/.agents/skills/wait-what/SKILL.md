@@ -4,7 +4,7 @@ description: Stop. That last message did not land — re-pitch it.
 disable-model-invocation: true
 admission:
   prevents: A re-explanation delivered in the register that just failed — same jargon, no orienting context, terms that are not the project's. The default response to "I don't follow" is to restate it at greater length, which fails the same way and costs another round-trip.
-  cost: A catalog entry of 16 always-on tokens on Codex and OpenCode, which strip the user-invoked declaration and publish the description regardless — zero on Claude, which honours it, and unmeasured on Gemini. The body is 51 tokens, measured, paid only on invocation.
+  cost: Context footprint only, bounded by the caps content-lint enforces.
   remove_when: Re-explanations land unprompted — the user stops needing a second turn after saying they are lost.
 ---
 
