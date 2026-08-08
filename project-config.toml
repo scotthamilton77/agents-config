@@ -86,7 +86,7 @@ merge-authorization = "explicit"
 # ---------------------------------------------------------------------------
 [tracks]
 names = ["installer", "prgroom", "workcli", "pdlc-orchestrator",
-         "holding-place", "vizsuite", "review-and-merge",
+         "holding-place", "review-and-merge",
          "pipeline-discipline", "grind-runtime", "ops-meta"]
 # grind-runtime was organizing-only pending a package; packages/grind now exists,
 # so it is extractable and `work triggers` evaluates it.
