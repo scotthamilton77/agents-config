@@ -51,7 +51,7 @@ After writing, print the absolute file path on its own line so the user can pass
 4. **Lessons learned** — anything the next agent should know to avoid pitfalls or dead ends that isn't already in the agent memory or easily discoverable in the artifacts
 5. **Open questions and blockers** — anything the next agent needs to resolve before progress
 6. **Next concrete steps** — ordered, actionable
-7. **References** — paths and URLs only; do NOT duplicate content from PRDs, plans, ADRs, issues/beads, commits, or diffs
+7. **References** — paths and URLs only; do NOT duplicate content from PRDs, plans, ADRs, tracker items, commits, or diffs
 8. **Suggested skills** — skills the next agent should invoke (e.g. `grilling`, `prototype`, `diagnosing-bugs`)
 
 ## Constraints

@@ -52,11 +52,12 @@ Each plugin directory follows this layout (all subdirs are optional):
 2. By default it auto-detects via the `GenericPluginAdapter`, whose footprint
    check is `~/.<name>/` present as a directory — and nothing else. A binary of
    the same name on PATH does not count; probing PATH takes a specialized
-   adapter, which is what `BeadsPlugin` adds on top of the directory check. If
-   the directory isn't the right signal, or the plugin needs to install outside
-   the tool config dirs (e.g. beads routing `~/.beads/`), add a specialized
-   adapter under `packages/installer/src/installer/plugins/` and register it in
-   `registry.py`'s `_SPECIALIZED` map.
+   adapter. If the directory isn't the right signal, or the plugin needs to
+   install outside the tool config dirs, add a specialized adapter under
+   `packages/installer/src/installer/plugins/` and register it in
+   `registry.py`'s `_SPECIALIZED` map. That map is empty — the one adapter that
+   used it was retired — so yours would be the first, and there is no worked
+   example in the tree to copy.
 
 ## Admission applies here too
 
