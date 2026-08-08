@@ -4,7 +4,7 @@ description: Chart work too big for one agent session as a map of decision quest
 disable-model-invocation: true
 admission:
   provides: A durable map on the tracker for an effort larger than one agent session — the destination, the open decisions, their blocking edges, and what has been decided so far — so a fresh session orients from the tracker instead of from the previous session's context.
-  cost: A user-invoked catalog entry at zero always-on cost; per effort, one container plus one tracker item per decision, and a standing rule of one ticket resolved per session.
+  cost: A catalog entry of 103 always-on tokens on Codex and OpenCode, which strip the user-invoked declaration and publish the description regardless — zero on Claude, which honours it, and unmeasured on Gemini. Per effort, one container plus one tracker item per decision, and a standing rule of one ticket resolved per session.
   remove_when: A session's context reliably spans a whole effort, so the decisions and their order no longer need an artifact to outlive it.
 ---
 
@@ -12,7 +12,7 @@ admission:
 Source: skills/engineering/wayfinder/
 Upstream: https://github.com/mattpocock/skills @ 84fdeffd12f2ee307994d1eb6feb48173b6e0502
 Last sync: 2026-08-07
-Drift policy: local-fork — setup command and local-markdown fallback removed, tracker model rewritten onto work verbs, label scheme reduced to two, map body and ticket types split into references/; do not re-sync
+Drift policy: local-fork — setup command and local-markdown fallback removed, tracker model rewritten onto work verbs, label scheme reduced to two, map body, frontier-section rules, ticket types and tracker operations split into references/; do not re-sync
 -->
 
 # Wayfinder
@@ -33,31 +33,11 @@ Every map and ticket is a work item, so it has a **name** — its title. In ever
 
 ## The map on the tracker
 
-The map is a single container item labelled `wayfinder:map` — the canonical artifact. Its tickets are its children. `work` is the tracker, and there is no setup step: never stand up a parallel set of ticket files beside it.
+The map is a single container item labelled `wayfinder:map` — the canonical artifact. Its tickets are its children.
 
-The map is an **index**, not a store. It lists the decisions made and points at the tickets that hold their detail; a decision lives in exactly one place — its ticket — so the map never restates it, only gists it and links.
+The map is an **index**, not a store. It lists the decisions made and points at the tickets that hold their detail; a decision lives in exactly one place — its ticket — so the map never restates it, only gists it and links. What goes in its body is [references/map-body.md](references/map-body.md).
 
-| What | How |
-|---|---|
-| Create the map | `work create epic --title "<destination>" --label wayfinder:map (--parent <id> \| --orphan)`; the map body is `--description`. See [references/map-body.md](references/map-body.md). |
-| Create a ticket | `work create <noun> --title "<the question>" --parent <map-id> --description "<the question in full>"` |
-| The ticket's type | the noun: `spike` for research and prototype, `decision` for a grilling question, `chore` for a task |
-| An agent may resolve it alone | `--label wayfinder:afk`; without it, the ticket needs the human |
-| Blocking | `work dep add <blocked> <blocker>` — "the first depends on the second", wired in a second pass once both ids exist |
-| The ticket frontier | `work list --parent <map-id> --status open` — this map's live tickets, the closed and the claimed already out. The blocked are still in, and `work claim` is what rejects them, so the frontier is whatever claims: startable, which is not the same as answerable. Add `--label wayfinder:afk` for what a session can fan out without the human |
-| Claim | `work claim <id>` — refuses a blocked or closed ticket, so startability is enforced rather than assumed. On a ticket already in progress it no-ops instead of refusing, so it is not a lock against a concurrent session |
-| Resolve | `work close <id> --disposition "<the answer>"` — records the answer and closes, in one call |
-| Link an asset | `work note <id> "<pointer to the branch, file or document>"` |
-| Rule out of scope | `work close <id> --disposition "Out of scope: <why>"` |
-| Update the map | `work update <map-id> --set-description "<the whole new body>"` |
-
-Two of those carry a trap worth naming. `--set-description` **replaces**: re-read the map immediately before you write it back, or a concurrent session's line is lost. And a ticket is invalidated by **closing it with a disposition that says so**, never by deleting it — the facade has no delete, and the record of a route not taken is worth keeping anyway.
-
-`work ready` is absent from that table on purpose. It is global and takes no parent, so on a tracker carrying anything besides this effort it returns other work alongside this map's, and a session that takes its first result can claim and close a ticket belonging to something else entirely. Scope with `--parent`; let `claim` reject what is blocked.
-
-If tracks are configured and required, the facade refuses the map's create until you pass `--track <name>`, and the refusal lists the choices. Tickets minted under the map inherit its track and need no flag.
-
-**On labels.** Two survive, and only two. `wayfinder:map`, because enumerating maps — `work list --label wayfinder:map` — has no other expression, the container noun being shared with ordinary containers. `wayfinder:afk`, because whether a session may resolve a ticket without the human is the thing a session filters on when it fans out, and no field carries it. Everything else the label scheme once carried is now the noun, which is a first-class field; a label restating a field is duplication.
+Every verb — minting the map and its tickets, wiring blocking edges, walking the frontier, claiming, resolving, writing the map back — is in [references/tracker-operations.md](references/tracker-operations.md). Read it before touching the tracker: two of those calls carry a trap, and one query that looks exactly right returns work belonging to other efforts.
 
 ## Tickets
 
@@ -75,24 +55,9 @@ The answer isn't part of the description — it is recorded on resolution, as th
 
 ## Fog of war
 
-The map is _deliberately_ incomplete: don't chart what you can't yet see. Beyond the live tickets lies the **fog of war** — the dim view of decisions and investigations you can tell are coming but can't yet pin down, because they hang on questions still open. Resolving a ticket clears the fog ahead of it, graduating whatever's now specifiable into fresh tickets — one at a time, until the way to the destination is clear and no tickets remain.
+The map is _deliberately_ incomplete: don't chart what you can't yet see. Beyond the live tickets lies the **fog of war** — decisions and investigations you can tell are coming but can't yet pin down, because they hang on questions still open. Resolving a ticket clears the fog ahead of it, graduating whatever's now specifiable into fresh tickets — one at a time, until the way to the destination is clear and no tickets remain.
 
-The map's **Not yet specified** section is where that dim view is written down: the suspected question, the area to revisit later. It's the undiscovered frontier _toward_ the destination — everything here is in scope, just not sharp enough to ticket. Write as loosely or as fully as the view allows; it doubles as a signpost for collaborators reading where the effort is headed.
-
-**Fog or ticket?** The test is whether you can state the question precisely now — _not_ whether you can answer it now.
-
-- **Ticket when** the question is already sharp — even if it's blocked and you can't act on it yet.
-- **Not yet specified when** you can't yet phrase it that sharply. Don't pre-slice the fog into ticket-sized pieces: it's coarser than a ticket, and one patch may graduate into several tickets, or none, once the frontier reaches it.
-
-**Not yet specified** excludes what's already decided (Decisions so far), what's already a live ticket, and what's out of scope.
-
-## Out of scope
-
-Fog only ever gathers _toward_ the destination. The destination fixes the scope, so work beyond it is **out of scope** — it isn't fog, and it doesn't belong in **Not yet specified**. It gets its own **Out of scope** section on the map: work you've consciously ruled out of _this_ effort. Scope, not sharpness, lands it here.
-
-Out-of-scope work never graduates — the frontier stops at the destination — so it returns only if the destination is redrawn, and then as a fresh effort, not a resumption.
-
-Ruling something out of scope is a scoping act, not a step on the route. When a ticket that already exists turns out to sit past the destination — mis-scoped in while charting, or exposed by a resolution — **close it out of scope** and leave one line in the **Out of scope** section: the gist plus why, linking the closed ticket. It stays out of **Decisions so far**, which records the route actually walked — a scope boundary isn't a step on it.
+Fog is in scope and merely unsharp, so it lives in the map's **Not yet specified** section; the test for putting something there is whether you can state the question precisely now, _not_ whether you can answer it. Work you've consciously ruled beyond the destination is a different thing — **out of scope**, never fog — and it never graduates. Both sections, and how to rule an existing ticket out of scope, are in [references/map-body.md](references/map-body.md).
 
 ## Invocation
 

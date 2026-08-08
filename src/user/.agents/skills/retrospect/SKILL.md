@@ -4,7 +4,7 @@ description: Use when the user wants to reflect on the current session and make 
 disable-model-invocation: true
 admission:
   provides: The only pass that reads the session transcript for cause. Size and budget instruments measure artifacts; review gates measure a change; neither can see that a round-trip happened because context was buried, a tool went unused, or a request was under-specified. Produces a ranked set of fixes, each routed by root cause and each with a landing site that outlives the session.
-  cost: Zero always-on tokens — user-invoked, so the description is absent from the session catalog. On invoke it costs the body plus a pass over the conversation already in context.
+  cost: A catalog entry of 170 always-on tokens on Codex and OpenCode, which strip the user-invoked declaration and publish the description regardless — zero on Claude, which honours it, and unmeasured on Gemini. On invoke it costs the body plus a pass over the conversation already in context.
   remove_when: Two consecutive retrospectives produce no recommendation that changes a file, a gate, or a memory — the findings are all reinforcement, meaning the upstream causes are already being caught.
 ---
 
