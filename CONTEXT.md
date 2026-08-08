@@ -206,8 +206,9 @@ them, and not as a description of anything current.
   diagnosis state that a third strike routed to. Never built.
 - **Atomic AT**, **Child-Level AT**, **Container-Level AT**, **Scaffold AT**,
   **Cleanup AT**, **Container Closure** — the acceptance-test vocabulary that
-  preceded *acceptance criterion*. Do not use it: a spec written in these terms
-  is rejected by the spec lint, which requires an acceptance-criteria section.
+  preceded *acceptance criterion*. Do not use it: spec lint requires an
+  **Acceptance criteria** section with structured, ID-bearing entries, so using
+  this vocabulary *instead of that structure* will fail `make spec-lint`.
 - **Proposed Rule** — a third review finding class. The verdict schema accepts
   two; see *Verdict artifact*.
 - **Decomposition**, **Decomposition Architect**, **Decomposition Plan**,
