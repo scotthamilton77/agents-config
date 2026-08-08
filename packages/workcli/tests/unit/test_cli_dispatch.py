@@ -11,6 +11,7 @@ both cases raise into `main()`'s `WorkError` handling.
 from __future__ import annotations
 
 import json
+import subprocess
 from collections.abc import Sequence
 from io import StringIO
 
@@ -97,3 +98,34 @@ def test_protocol_version_never_constructs_a_backend_or_touches_the_runner():
 
     assert exit_code == 0
     assert err.getvalue() == ""
+
+
+class _AlwaysTimingOutRunner:
+    """A `BdRunner` whose every call hits the subprocess deadline."""
+
+    def run(self, args: Sequence[str]) -> BdResult:
+        raise subprocess.TimeoutExpired(cmd=list(args), timeout=60)
+
+
+def test_a_timeout_envelope_names_the_verb_that_resolves_it():
+    # A half-applied mutation is only actionable if the caller learns what to
+    # run about it. The adapter that detects the timeout may not say -- `work
+    # reconcile` is this layer's word, and this layer is where it gets added,
+    # so the advice has to survive the trip out or the caller is left holding
+    # a fact with no next step.
+    out = StringIO()
+    err = StringIO()
+
+    exit_code = main(
+        ["note", "x.1", "hello"],
+        runner=_AlwaysTimingOutRunner(),
+        out=out,
+        err=err,
+        sleep=lambda _: None,
+    )
+
+    assert exit_code == 1
+    envelope = json.loads(out.getvalue())
+    assert envelope["error"]["code"] == "E_TIMEOUT"
+    assert "may have partially applied" in envelope["error"]["message"]
+    assert "work reconcile" in envelope["error"]["message"]

@@ -16,12 +16,17 @@ import subprocess
 from collections.abc import Callable, Sequence
 
 from workcli.adapters.bd.runner import BdResult, BdRunner
-from workcli.envelope import ErrorCode, JsonValue, WorkError
+from workcli.envelope import ErrorCode, WorkError
 
 _ATTEMPTS = 3
 _BACKOFFS = (0.5, 1.0)
 
-_TIMEOUT_MESSAGE = "bd timed out; the operation may have partially applied — run `work reconcile`"
+# States the fact and stops there. What a caller should RUN about it names a
+# `work` verb, which is the CLI's word and not this adapter's to spell: an
+# adapter that spelled it would go stale the day the verb was renamed, and a
+# second adapter would have to copy it to stay consistent. The CLI attaches
+# its own recovery advice to this code on the way out.
+_TIMEOUT_MESSAGE = "the backend did not respond in time; the operation may have partially applied"
 
 _RETRYABLE_STDERR_SUBSTRINGS = (
     "database is locked",
@@ -42,7 +47,6 @@ def run_with_retry(
     sleep: Callable[[float], None],
     retry_on_timeout: bool = True,
 ) -> BdResult:
-    last_result: BdResult | None = None
     last_failure_was_timeout = False
     for attempt in range(_ATTEMPTS):
         try:
@@ -52,17 +56,11 @@ def run_with_retry(
                 # Non-idempotent mutation (create/append_note): re-running a
                 # possibly-completed call would duplicate it, so a timeout
                 # surfaces immediately rather than retrying blind.
-                raise WorkError(
-                    ErrorCode.TIMEOUT,
-                    _TIMEOUT_MESSAGE,
-                    detail={"argv": list(args)},
-                ) from exc
-            last_result = BdResult(returncode=124, stdout="", stderr=str(exc))
+                raise WorkError(ErrorCode.TIMEOUT, _TIMEOUT_MESSAGE) from exc
             last_failure_was_timeout = True
         else:
             if result.returncode == 0 or not _is_retryable_stderr(result.stderr):
                 return result
-            last_result = result
             last_failure_was_timeout = False
 
         if attempt < _ATTEMPTS - 1:
@@ -71,16 +69,9 @@ def run_with_retry(
     if last_failure_was_timeout:
         # Every retry timed out: surface E_TIMEOUT so repeated timeouts are not
         # misreported to callers as lock contention.
-        raise WorkError(
-            ErrorCode.TIMEOUT,
-            _TIMEOUT_MESSAGE,
-            detail={"argv": list(args)},
-        )
+        raise WorkError(ErrorCode.TIMEOUT, _TIMEOUT_MESSAGE)
 
-    detail: dict[str, JsonValue] = {
-        "argv": list(args),
-        "stderr": last_result.stderr if last_result is not None else "",
-    }
     raise WorkError(
-        ErrorCode.LOCK_CONTENTION, "bd lock contention exhausted all retry attempts", detail=detail
+        ErrorCode.LOCK_CONTENTION,
+        f"the backend stayed locked through all {_ATTEMPTS} attempts; retry when it is idle",
     )

@@ -1,4 +1,4 @@
-"""Envelope invariant matrix + handshake tail.
+"""Envelope invariant matrix + handshake tail + the backend quarantine.
 
 Every one of the twelve contract verbs, in both a success and a failure
 case, must emit exactly one parseable JSON envelope on stdout carrying
@@ -7,11 +7,23 @@ uniformly, regardless of which verb or which typed error fired. This file
 asserts ONLY those uniform invariants; per-verb data-shape assertions
 belong to that verb's own granular test file (`test_show_normalization.py`,
 `test_sync.py`, etc.) and are deliberately not duplicated here.
+
+The quarantine is the last invariant in the file and the widest: whatever a
+verb emits, it never names the tracker behind the seam. It is asserted twice
+over, because neither way is sufficient alone. The behavioural half drives
+the real CLI and reads the bytes that actually leave it, which is the only
+way to catch text the adapter passed through rather than wrote. The
+source-level half scans every message the adapter is *capable* of raising,
+which is the only way to cover the paths no test happens to drive — and the
+audit that found these leaks in the first place found most of them on paths
+no test drove.
 """
 
 from __future__ import annotations
 
+import ast
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -437,3 +449,281 @@ def test_protocol_version_data_matches_every_other_verbs_protocol_field() -> Non
             runner, case.success_argv, case.config_loader
         )
         assert envelope["protocol"] == handshake_envelope["data"]["protocol"]
+
+
+# ── the backend quarantine ───────────────────────────────────────────────
+
+_SRC = Path(__file__).resolve().parents[2] / "src" / "workcli"
+_ADAPTERS = _SRC / "adapters"
+
+# The names that would tell a consumer which tracker is behind the seam: the
+# binary, the project that names its environment variable and its storage
+# directory, and the storage engine under it. Word edges are spelled out
+# rather than left to `\b` so `BEADS_DIR` and `.beads` are caught — `_` and a
+# leading `.` are word characters, and `\b` would wave both through.
+#
+# Restated here rather than imported from the adapter's own scrubber, on
+# purpose. The adapter's list is a claim about what it knows to hide; a test
+# that imported it would ratify that claim instead of checking it, and would
+# go green the moment someone shortened it. Two independent statements of the
+# same fact: narrow one without the other and this file turns red.
+_BACKEND_IDENTITY = re.compile(
+    r"(?<![A-Za-z0-9])\.?(?:beads|bd|dolt)(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+
+# Real stderr, captured from the live backend, one line per failure mode this
+# adapter can meet. The first four it classifies; the last two it does not,
+# and those are the ones that carry the backend's own text outward — which is
+# exactly why they are here. The missing-workspace line is the incident that
+# prompted this invariant: it names the binary, its environment variable and
+# its storage directory in a single sentence.
+_CAPTURED_BACKEND_STDERR = [
+    'no issue found matching "bogus"\n',
+    "Error getting parent x.9: not found: issue x.9\n",
+    "cannot close probe-2mk: blocked by open issues [probe-6cl] (use --force to override)\n",
+    "epics can only block other epics, not tasks\n",
+    "Error: no beads database found\n"
+    "Hint: run 'bd where' to inspect the resolved workspace, or 'bd init' to create a new "
+    "database\n      or set BEADS_DIR to point to your .beads directory\n",
+    "panic: dolt: runtime error at hash 0xdeadbeef\n",
+]
+
+
+def _assert_envelope_is_quarantined(envelope: dict) -> None:
+    """Assert the facade-authored half of `envelope` names no backend.
+
+    `data` is exempt, and the exemption is the point rather than a gap: an
+    item's title, description and notes are whatever a user typed into them,
+    and a tracker item that discusses the tracker is a thing people write.
+    Echoing a user's own words back is not disclosure — the facade would be
+    corrupting its payload if it scrubbed them. `error` carries no user text
+    at all, so it is held to the whole rule.
+    """
+    error = envelope.get("error")
+    if error is None:
+        return
+    published = json.dumps(error)
+    leak = _BACKEND_IDENTITY.search(published)
+    assert leak is None, f"error envelope names the backend ({leak.group(0)!r}): {published}"
+    detail = error.get("detail")
+    assert not isinstance(detail, dict) or "argv" not in detail, (
+        f"error envelope publishes the backend's command line: {published}"
+    )
+
+
+@pytest.mark.parametrize("case", VERB_CASES, ids=lambda c: c.verb)
+def test_a_successful_envelope_never_names_the_backend(case: VerbCase) -> None:
+    runner = ScriptedBdRunner(steps=list(case.success_steps))
+    _, envelope = _assert_stdout_is_exactly_one_envelope(
+        runner, case.success_argv, case.config_loader
+    )
+
+    _assert_envelope_is_quarantined(envelope)
+
+
+@pytest.mark.parametrize("case", VERB_CASES, ids=lambda c: c.verb)
+def test_a_failure_envelope_never_names_the_backend(case: VerbCase) -> None:
+    runner = ScriptedBdRunner(steps=list(case.failure_steps))
+    _, envelope = _assert_stdout_is_exactly_one_envelope(
+        runner, case.failure_argv, case.config_loader
+    )
+
+    _assert_envelope_is_quarantined(envelope)
+
+
+@pytest.mark.parametrize("stderr", _CAPTURED_BACKEND_STDERR)
+def test_real_backend_stderr_never_reaches_a_consumer_intact(stderr: str) -> None:
+    """
+    Given a failure the real backend reports in its own words
+    When the facade turns that failure into an envelope
+    Then nothing in the envelope says which backend it was.
+
+    The matrix above only meets the failures its fakes are scripted to
+    produce. This meets the ones the backend actually produces, including the
+    two it reports in sentences that name itself.
+    """
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("show",), BdResult(returncode=1, stdout="", stderr=stderr))]
+    )
+
+    _, envelope = _assert_stdout_is_exactly_one_envelope(runner, ["show", "x.1"])
+
+    assert envelope["ok"] is False
+    _assert_envelope_is_quarantined(envelope)
+
+
+def _adapter_sources() -> list[Path]:
+    return sorted(_ADAPTERS.rglob("*.py"))
+
+
+def _generic_sources() -> list[Path]:
+    return sorted(path for path in _SRC.rglob("*.py") if not path.is_relative_to(_ADAPTERS))
+
+
+def _error_messages(tree: ast.AST) -> dict[int, tuple[ast.expr, set[str]]]:
+    """Every message argument handed to an error constructor, keyed by line.
+
+    `WorkError`'s message is its second positional argument; `_drift`, the
+    adapter's own drift-alarm helper, takes it first. Both are matched by
+    name, so a third helper wrapping either would need adding here — which is
+    the intended friction: a new way to author an error is a new way to leak.
+
+    Each message comes with the parameter names in scope where it was
+    written, because a message that is simply a parameter being passed along
+    was authored at the call site rather than here, and the call site is
+    itself in this list.
+    """
+    found: dict[int, tuple[ast.expr, set[str]]] = {}
+    for func in ast.walk(tree):
+        if not isinstance(func, ast.FunctionDef):
+            continue
+        params = {
+            arg.arg for arg in (*func.args.posonlyargs, *func.args.args, *func.args.kwonlyargs)
+        }
+        for node in ast.walk(func):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+            index = {"WorkError": 1, "_drift": 0}.get(str(name))
+            if index is None or len(node.args) <= index:
+                continue
+            # Nested functions are walked by their parent too; union the
+            # scopes rather than letting whichever pass ran last win.
+            previous = found.get(node.lineno)
+            merged = params | (previous[1] if previous else set())
+            found[node.lineno] = (node.args[index], merged)
+    return found
+
+
+def _module_string_constants(tree: ast.AST) -> dict[str, str]:
+    """Module-level `NAME = "..."` bindings, the adapter's other home for text."""
+    constants = {}
+    for node in getattr(tree, "body", []):
+        if (
+            isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            constants[node.targets[0].id] = node.value.value
+    return constants
+
+
+def _literal_text(expr: ast.expr) -> str | None:
+    """The fixed text of a string literal or f-string; None if it isn't one.
+
+    An f-string's interpolations are skipped — their runtime values are the
+    scrubber's problem, not this scan's. What is returned is everything the
+    author typed, which is what an authored leak is made of.
+    """
+    if isinstance(expr, ast.Constant) and isinstance(expr.value, str):
+        return expr.value
+    if isinstance(expr, ast.JoinedStr):
+        return "".join(
+            part.value
+            for part in expr.values
+            if isinstance(part, ast.Constant) and isinstance(part.value, str)
+        )
+    return None
+
+
+def test_the_source_scan_actually_has_sources_to_scan() -> None:
+    """
+    Given the package's source tree
+    When it is split into the adapter and everything above it
+    Then both halves are non-empty and the adapter raises errors at all.
+
+    The control for the three scans below. Each is an assertion over a
+    comprehension, and every one of them passes trivially over an empty list
+    — a scan pointed at the wrong directory would prove nothing, loudly.
+    """
+    assert len(_adapter_sources()) >= 4
+    assert len(_generic_sources()) >= 10
+    messages = [
+        message
+        for path in _adapter_sources()
+        for message in _error_messages(ast.parse(path.read_text(encoding="utf-8"))).values()
+    ]
+    assert len(messages) >= 20
+
+
+def test_no_error_the_adapter_can_raise_names_the_backend() -> None:
+    """
+    Given every error message the adapter is able to construct
+    When each one's authored text is read
+    Then none of it names the backend.
+
+    Covers what no behavioural test can: a message on a branch nothing
+    currently drives is still a message that will one day be published.
+    """
+    offenders = []
+    for path in _adapter_sources():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        constants = _module_string_constants(tree)
+        for lineno, (expr, params) in _error_messages(tree).items():
+            text = _literal_text(expr)
+            if text is None and isinstance(expr, ast.Name):
+                if expr.id in params:
+                    continue  # forwarded; authored at a call site that is scanned
+                text = constants.get(expr.id)
+            assert text is not None, (
+                f"{path.name}:{lineno} builds an error message this scan cannot read; "
+                "author it as a literal, an f-string, or a module constant so it stays checkable"
+            )
+            if _BACKEND_IDENTITY.search(text):
+                offenders.append(f"{path.name}:{lineno}: {text}")
+
+    assert offenders == []
+
+
+def test_the_adapter_has_no_route_to_publish_a_command_line() -> None:
+    """
+    Given the adapter's sources
+    When they are searched for the key a command line would travel under
+    Then it appears nowhere.
+
+    A caller cannot act on the backend's argv without already knowing the
+    backend, so publishing one buys nothing and spends the whole quarantine.
+    Asserting the key is absent from the source is what stops it coming back
+    on a path no test drives.
+    """
+    offenders = [
+        f"{path.name}:{node.lineno}"
+        for path in _adapter_sources()
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.Constant) and node.value == "argv"
+    ]
+
+    assert offenders == []
+
+
+def test_nothing_above_the_adapter_names_the_backend_in_a_string() -> None:
+    """
+    Given every module of the facade that sits above the adapter seam
+    When its string literals are read — argparse help among them
+    Then none of them names the backend.
+
+    The other direction of the same wall. Prose is out of scope here on
+    purpose: a comment is read by whoever maintains this package, while a
+    string literal is liable to be printed, and `work --help` printing the
+    backend's name is contract, not commentary.
+    """
+    offenders = []
+    for path in _generic_sources():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        docstrings = {
+            id(node.value)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+        }
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                continue
+            if id(node) in docstrings:
+                continue
+            if _BACKEND_IDENTITY.search(node.value):
+                offenders.append(f"{path.relative_to(_SRC)}:{node.lineno}: {node.value!r}")
+
+    assert offenders == []

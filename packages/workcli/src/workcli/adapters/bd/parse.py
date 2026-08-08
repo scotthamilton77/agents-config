@@ -26,12 +26,21 @@ absorbed.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+import re
 from typing import Any, cast
 
 from workcli.adapters.bd.runner import BdResult
+from workcli.adapters.bd.vocabulary import redact
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.model import DepEdge, Item
+
+# The key every published fragment of backend-authored text travels under.
+# Named for what it is: a diagnostic, scrubbed of the backend's identity,
+# carrying no contract a consumer may match on. Only the paths where this
+# adapter has NO classification of its own populate it -- once a failure has
+# a typed code, the code and its message are the whole answer and the raw
+# text would add nothing but vocabulary.
+_DIAGNOSTIC_KEY = "backend_diagnostic"
 
 _REQUIRED_ITEM_KEYS = ("id", "title", "issue_type", "status", "priority")
 
@@ -85,22 +94,35 @@ _NOT_FOUND_ALT_STDERR_MARKER = "not found: issue"
 _TYPE_WALL_STDERR_MARKER = "can only block"
 _DEP_CYCLE_STDERR_MARKER = "would create a cycle"
 
+# Captured live from `bd close` against an item with an open blocker (exit 1,
+# stderr `cannot close X: blocked by open issues [Y] (use --force to
+# override)`). This is a well-formed refusal, not drift: the backend
+# understood the request and declined it, and reporting it through the
+# catch-all would tell the caller their tracker is broken when in fact their
+# graph is doing its job. The pattern lifts the two facts a caller can act on
+# -- which item, and what is holding it -- out of a sentence that also names
+# a backend flag the facade does not offer.
+_OPEN_BLOCKERS_STDERR_MARKER = "blocked by open issues"
+_OPEN_BLOCKERS_PATTERN = re.compile(
+    r"cannot close (?P<item>\S+?):\s*blocked by open issues \[(?P<blockers>[^\]]*)\]"
+)
+
 
 def _drift(message: str, detail: dict[str, JsonValue]) -> WorkError:
     return WorkError(ErrorCode.BACKEND_DRIFT, message, detail=detail)
 
 
-def _load_json_array(stdout: str, *, command: str) -> list[Any]:
+def _load_json_array(stdout: str) -> list[Any]:
     try:
         parsed = json.loads(stdout)
     except json.JSONDecodeError as exc:
         raise _drift(
-            f"bd {command} produced non-JSON stdout: {exc}",
-            {"reason": "invalid_json", "raw_excerpt": stdout[:200]},
+            f"the backend's response was not valid JSON: {exc}",
+            {"reason": "invalid_json", _DIAGNOSTIC_KEY: redact(stdout[:200])},
         ) from exc
     if not isinstance(parsed, list):
         raise _drift(
-            f"bd {command} produced a non-array JSON payload",
+            "the backend's response was not the expected JSON array",
             {"reason": "not_an_array", "raw_type": type(parsed).__name__},
         )
     return parsed
@@ -114,7 +136,7 @@ def _dep_edge_from_raw(entry: dict[str, JsonValue], self_id: str) -> DepEdge:
         # as E_INTERNAL.
         if "id" not in entry:
             raise _drift(
-                "bd dependency edge (show-shape) is missing required key: id",
+                "the backend returned a dependency edge with no item id",
                 {
                     "reason": "missing_edge_keys",
                     "shape": "show",
@@ -133,7 +155,8 @@ def _dep_edge_from_raw(entry: dict[str, JsonValue], self_id: str) -> DepEdge:
     missing = [key for key in ("issue_id", "depends_on_id", "type") if key not in entry]
     if missing:
         raise _drift(
-            f"bd dependency edge (list-shape) is missing required key(s): {', '.join(missing)}",
+            f"the backend returned a dependency edge missing required field(s): "
+            f"{', '.join(missing)}",
             {
                 "reason": "missing_edge_keys",
                 "shape": "list",
@@ -158,7 +181,8 @@ def _dep_type(entry: dict[str, JsonValue], item_id: str) -> str:
             value = entry[key]
             if value is None:
                 raise _drift(
-                    f"bd dependency edge's {key} field is null, expected a string",
+                    f"the backend returned a dependency edge whose {key} field is null, "
+                    f"expected a string",
                     {"reason": "null_field", "field": key, "id": item_id},
                 )
             return str(value)
@@ -180,12 +204,12 @@ def _list_field(raw: dict[str, JsonValue], key: str, item_id: str) -> list[Any]:
     value = raw[key]
     if value is None:
         raise _drift(
-            f"bd item's {key} field is null, expected an array",
+            f"the backend returned an item whose {key} field is null, expected an array",
             {"reason": "null_field", "field": key, "id": item_id},
         )
     if not isinstance(value, list):
         raise _drift(
-            f"bd item's {key} field is not an array",
+            f"the backend returned an item whose {key} field is not an array",
             {"reason": "unexpected_field_type", "field": key, "id": item_id},
         )
     return value
@@ -206,7 +230,7 @@ def _string_field(
         if default is not None:
             return default
         raise _drift(
-            f"bd item is missing required key: {key}",
+            f"the backend returned an item missing required field: {key}",
             {
                 "reason": "missing_required_keys",
                 "missing_keys": cast("list[JsonValue]", [key]),
@@ -216,7 +240,7 @@ def _string_field(
     value = raw[key]
     if value is None:
         raise _drift(
-            f"bd item's {key} field is null, expected a string",
+            f"the backend returned an item whose {key} field is null, expected a string",
             {"reason": "null_field", "field": key, "id": item_id},
         )
     return str(value)
@@ -235,7 +259,7 @@ def _string_list_field(raw: dict[str, JsonValue], key: str, item_id: str) -> lis
     for value in values:
         if not isinstance(value, str):
             raise _drift(
-                f"bd item's {key} field contains a non-string element",
+                f"the backend returned an item whose {key} field contains a non-string element",
                 {
                     "reason": "non_string_list_element",
                     "field": key,
@@ -260,7 +284,7 @@ def _assert_object_elements(entries: list[Any], *, field: str, item_id: str) -> 
     for entry in entries:
         if not isinstance(entry, dict):
             raise _drift(
-                f"bd item's {field} entry is not a JSON object",
+                f"the backend returned an item whose {field} entry is not a JSON object",
                 {
                     "reason": "element_not_an_object",
                     "field": field,
@@ -274,7 +298,7 @@ def parse_item(raw: dict[str, JsonValue], *, unknown: frozenset[str] = frozenset
     missing = [key for key in _REQUIRED_ITEM_KEYS if key not in raw]
     if missing:
         raise _drift(
-            f"bd item is missing required key(s): {', '.join(missing)}",
+            f"the backend returned an item missing required field(s): {', '.join(missing)}",
             {
                 "reason": "missing_required_keys",
                 "missing_keys": cast("list[JsonValue]", missing),
@@ -286,7 +310,7 @@ def parse_item(raw: dict[str, JsonValue], *, unknown: frozenset[str] = frozenset
     priority_raw = raw["priority"]
     if not isinstance(priority_raw, int):
         raise _drift(
-            "bd item's priority field is not an integer",
+            "the backend returned an item whose priority field is not an integer",
             {"reason": "unexpected_priority_type", "id": item_id, "priority": priority_raw},
         )
 
@@ -343,20 +367,20 @@ def parse_item(raw: dict[str, JsonValue], *, unknown: frozenset[str] = frozenset
 
 
 def parse_items(stdout: str, *, command: str = "show") -> list[Item]:
-    raw_items = _load_json_array(stdout, command=command)
+    raw_items = _load_json_array(stdout)
     unknown = _UNKNOWN_RELATIONS[command]
     items = []
     for raw in raw_items:
         if not isinstance(raw, dict):
             raise _drift(
-                f"bd {command} array element is not a JSON object",
+                "the backend's response contains an element that is not a JSON object",
                 {"reason": "element_not_an_object", "raw_type": type(raw).__name__},
             )
         items.append(parse_item(raw, unknown=unknown))
     return items
 
 
-def parse_created_id(stdout: str, *, command: str = "create") -> str:
+def parse_created_id(stdout: str) -> str:
     """Extract the new item's id from `bd create --json` output.
 
     Unlike show/list/ready/search (which emit a JSON array of items), `bd
@@ -372,24 +396,24 @@ def parse_created_id(stdout: str, *, command: str = "create") -> str:
         parsed = json.loads(stdout)
     except json.JSONDecodeError as exc:
         raise _drift(
-            f"bd {command} produced non-JSON stdout: {exc}",
-            {"reason": "invalid_json", "raw_excerpt": stdout[:200]},
+            f"the backend's response to a create was not valid JSON: {exc}",
+            {"reason": "invalid_json", _DIAGNOSTIC_KEY: redact(stdout[:200])},
         ) from exc
     if not isinstance(parsed, dict):
         raise _drift(
-            f"bd {command} produced a non-object JSON payload",
+            "the backend's response to a create was not a JSON object",
             {"reason": "not_an_object", "raw_type": type(parsed).__name__},
         )
     item_id = parsed.get("id")
     if not isinstance(item_id, str) or not item_id:
         raise _drift(
-            f"bd {command} payload is missing a non-empty string `id`",
+            "the backend's response to a create carries no item id",
             {"reason": "missing_id", "raw_keys": cast("list[JsonValue]", list(parsed.keys()))},
         )
     return item_id
 
 
-def parse_dep_edges(stdout: str, *, self_id: str, command: str = "dep list") -> list[DepEdge]:
+def parse_dep_edges(stdout: str, *, self_id: str, direction: str = "depends-on") -> list[DepEdge]:
     """Parse `bd dep list --json`'s flat array into lean `DepEdge`s.
 
     Unlike `show`/`list` (arrays of full items), `bd dep list --json` emits a
@@ -400,68 +424,97 @@ def parse_dep_edges(stdout: str, *, self_id: str, command: str = "dep list") -> 
     emits the list-shape raw edge row for this command). A record missing
     `dependency_type` is an unrecognized shape, not a silent guess.
     """
-    raw_entries = _load_json_array(stdout, command=command)
+    raw_entries = _load_json_array(stdout)
     edges = []
     for raw in raw_entries:
         if not isinstance(raw, dict):
             raise _drift(
-                f"bd {command} array element is not a JSON object",
+                f"the backend's {direction} listing contains an element that is not a JSON object",
                 {"reason": "element_not_an_object", "raw_type": type(raw).__name__},
             )
         if "dependency_type" not in raw or "id" not in raw:
             raise _drift(
-                f"bd {command} record is missing dependency_type/id",
+                f"the backend's {direction} listing has a record missing its edge type or item id",
                 {"reason": "missing_required_keys", "raw_keys": cast("list[JsonValue]", list(raw))},
             )
         edges.append(_dep_edge_from_raw(raw, self_id))
     return edges
 
 
-def parse_labels(stdout: str, *, command: str = "label list") -> list[str]:
-    raw_labels = _load_json_array(stdout, command=command)
+def parse_labels(stdout: str) -> list[str]:
+    raw_labels = _load_json_array(stdout)
     for label in raw_labels:
         if not isinstance(label, str):
             raise _drift(
-                f"bd {command} array element is not a string",
+                "the backend's label listing contains an element that is not a string",
                 {"reason": "label_not_a_string", "raw_type": type(label).__name__},
             )
     return raw_labels
 
 
-def map_bd_failure(argv: Sequence[str], result: BdResult) -> WorkError:
+def _open_blockers_failure(stderr: str) -> WorkError:
+    """The backend's close-time blocker refusal, restated in facade terms.
+
+    The backend's own sentence ends with the flag that would override the
+    refusal. That flag is not the facade's to offer, so the advice here names
+    what a caller can actually do through the seam instead.
+    """
+    match = _OPEN_BLOCKERS_PATTERN.search(stderr)
+    if match is None:
+        # The marker matched but the sentence around it did not: the refusal
+        # is still real and still not drift, it just cannot be itemised.
+        return WorkError(
+            ErrorCode.OPEN_BLOCKERS,
+            "cannot close an item while the items blocking it are still open; "
+            "close or unblock them first",
+        )
+    item_id = match.group("item")
+    blockers = [blocker for blocker in re.split(r"[,\s]+", match.group("blockers")) if blocker]
+    return WorkError(
+        ErrorCode.OPEN_BLOCKERS,
+        f"cannot close {item_id} while the items blocking it are still open "
+        f"({', '.join(blockers)}); close or unblock them first",
+        detail={"id": item_id, "blocked_by": cast("list[JsonValue]", blockers)},
+    )
+
+
+def map_bd_failure(result: BdResult) -> WorkError:
     """Translate a nonzero bd exit into a typed error.
 
-    NOT_FOUND, TYPE_WALL, and DEP_CYCLE are mapped here; anything this
-    function doesn't recognize is the same alarm class as an unparseable
-    shape -- the facade's model of bd broke. TYPE_WALL/DEP_CYCLE are a
-    fallback safety net only: `dep`'s verb layer pre-checks the type wall
-    via two `Backend.get` reads before ever calling `dep_mutate`, so a live
-    bd instance should never actually surface these to this function -- but
-    a pre-check race (a stale read) is still a bd failure, not a crash.
+    Two classes come out of here, and the difference decides what travels.
+    A *classified* failure -- NOT_FOUND, OPEN_BLOCKERS, TYPE_WALL, DEP_CYCLE
+    -- means this adapter understood what bd said, so the typed code and a
+    message in the facade's own words are the complete answer; bd's sentence
+    would add nothing but bd's vocabulary, and is dropped. An *unclassified*
+    failure is the drift alarm, and there the sentence is the only content
+    there is -- so it travels, scrubbed of bd's identity.
+
+    TYPE_WALL/DEP_CYCLE are a fallback safety net only: `dep`'s verb layer
+    pre-checks the type wall via two `Backend.get` reads before ever calling
+    `dep_mutate`, so a live bd instance should never actually surface these
+    to this function -- but a pre-check race (a stale read) is still a bd
+    failure, not a crash.
+
+    This function cannot see the argv that produced `result`, and that is the
+    point rather than an oversight: a command line the caller cannot run
+    without knowing the backend is not a diagnostic, it is a disclosure, and
+    the surest way not to publish one is not to be holding it.
     """
     if _NOT_FOUND_STDERR_MARKER in result.stderr or _NOT_FOUND_ALT_STDERR_MARKER in result.stderr:
-        return WorkError(
-            ErrorCode.NOT_FOUND,
-            "bd reported no matching issue",
-            detail={"argv": list(argv), "stderr": result.stderr.strip()},
-        )
+        return WorkError(ErrorCode.NOT_FOUND, "no item matches the requested id")
+    if _OPEN_BLOCKERS_STDERR_MARKER in result.stderr:
+        return _open_blockers_failure(result.stderr)
     if _TYPE_WALL_STDERR_MARKER in result.stderr:
-        return WorkError(
-            ErrorCode.TYPE_WALL,
-            "bd rejected a cross-type dependency",
-            detail={"argv": list(argv), "stderr": result.stderr.strip()},
-        )
+        return WorkError(ErrorCode.TYPE_WALL, "the backend rejected a cross-type dependency")
     if _DEP_CYCLE_STDERR_MARKER in result.stderr:
         return WorkError(
-            ErrorCode.DEP_CYCLE,
-            "bd rejected a dependency that would create a cycle",
-            detail={"argv": list(argv), "stderr": result.stderr.strip()},
+            ErrorCode.DEP_CYCLE, "the backend rejected a dependency that would create a cycle"
         )
     return _drift(
-        f"bd exited {result.returncode} with an unrecognized failure",
+        f"the backend failed with exit status {result.returncode} in a way this adapter does "
+        f"not recognize; detail.{_DIAGNOSTIC_KEY} carries what it reported",
         {
-            "argv": cast("list[JsonValue]", list(argv)),
             "returncode": result.returncode,
-            "stderr": result.stderr[:500],
+            _DIAGNOSTIC_KEY: redact(result.stderr[:500].strip()),
         },
     )

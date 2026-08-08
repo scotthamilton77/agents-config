@@ -88,6 +88,61 @@ def test_type_wall_raw_bd_marker_drift(fresh_install, bd_binary):
     assert "can only block" in result.stderr.lower()
 
 
+def test_close_with_an_open_blocker_is_a_typed_refusal_naming_the_blocker(driver):
+    # The refusal only exists in the real backend's stderr, so only a real
+    # backend can prove the adapter still recognises it. If bd reworded this
+    # sentence, the failure would silently become an unrecognised one and the
+    # caller would be told their tracker had drifted -- this test is what
+    # notices instead.
+    blocker = driver(
+        [
+            "create",
+            "feat",
+            "--title",
+            "ep-blocker",
+            "--priority",
+            "2",
+            "--orphan",
+            "--track",
+            ITEST_TRACK,
+        ]
+    )["data"]["id"]
+    blocked = driver(
+        [
+            "create",
+            "feat",
+            "--title",
+            "ep-blocked",
+            "--priority",
+            "2",
+            "--orphan",
+            "--track",
+            ITEST_TRACK,
+        ]
+    )["data"]["id"]
+    assert driver(["dep", "add", blocked, blocker, "--type", "blocks"])["ok"] is True
+
+    env = driver(["close", blocked])
+
+    assert env["ok"] is False
+    assert env["error"]["code"] == "E_OPEN_BLOCKERS"
+    assert env["error"]["detail"]["blocked_by"] == [blocker]
+    assert blocker in env["error"]["message"]
+
+
+def test_a_real_backend_refusal_reaches_the_consumer_naming_no_backend(driver):
+    # The quarantine, end to end, over bytes the backend actually wrote --
+    # the unit matrix can only assert this over stderr someone typed into a
+    # fixture, which is a statement about the fixture.
+    env = driver(["show", "itest-nope-xyz"])
+
+    assert env["ok"] is False
+    published = json.dumps(env["error"])
+    for name in ("bd", "beads", "dolt", "BEADS_DIR"):
+        assert name not in published, f"the error envelope names the backend: {published}"
+    assert "argv" not in env["error"]["detail"]
+
+
 def _create_raw(runner, title, bd_type):
     r = runner.run(["create", "--json", "--title", title, "--type", bd_type, "--priority", "2"])
     assert r.returncode == 0, r.stderr
