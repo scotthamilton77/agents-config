@@ -14,7 +14,6 @@ from pathlib import Path
 from installer.core.installignore import load_installignore
 from installer.core.model import Tool
 from installer.core.staging import build_plan
-from installer.core.sync import _nested_path_is_excluded
 from installer.tools.registry import get_adapter
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -62,7 +61,7 @@ def test_marker_docs_are_excluded_at_every_depth_not_just_the_namespace_level() 
 
     for marker in sorted(_MARKER_BASENAMES):
         for rel in (Path(f"some-skill/{marker}"), Path(f"some-skill/references/{marker}")):
-            assert _nested_path_is_excluded(rel, ignore), (
+            assert ignore.excludes_path(rel), (
                 f"{rel} would deploy — {marker} is anchored in .installignore and must not be"
             )
 
@@ -76,5 +75,5 @@ def test_readme_stays_anchored_so_a_skill_can_ship_one() -> None:
     file, which is the failure mode the anchoring rule exists to prevent."""
     ignore = load_installignore(_REPO_ROOT / ".installignore")
 
-    assert not _nested_path_is_excluded(Path("some-skill/references/README.md"), ignore)
+    assert not ignore.excludes_path(Path("some-skill/references/README.md"))
     assert ignore.excludes("README.md", is_dir=False, at_root=True)

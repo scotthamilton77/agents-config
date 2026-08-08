@@ -7,6 +7,7 @@ layer serializes into envelope `data` via `dataclasses.asdict`.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 # The three fields describing an item's place in the tree. Not every backend
@@ -106,11 +107,29 @@ class UpdateFields:  # replace-semantics fields ONLY; notes never appear here
 
 @dataclass(frozen=True)
 class QueryFilters:
+    # `None` is every status, closed included -- the same meaning it carries
+    # on `SearchFilters`, so one word means one thing across the seam. It used
+    # to mean "whatever the backend lists when nobody asks", which left the
+    # facade's answer defined by the backend rather than by the facade: a
+    # listing came back short and read exactly like a complete one. A caller
+    # that wants live work narrows for itself, which is what `not_closed` is
+    # for -- there is no single status meaning "not closed", so that narrowing
+    # cannot travel through this field.
     status: str | None = None
     label: str | None = None
     parent: str | None = None
     type: str | None = None
     limit: int | None = None
+
+
+def not_closed(items: Iterable[Item]) -> list[Item]:
+    """The live items of a listing -- everything the tracker has not closed.
+
+    A listing answers every status, so a sweep that acts on what it finds
+    says here that a closed item is not one of its candidates. Written once
+    because four sweeps need it and each would otherwise re-decide it.
+    """
+    return [item for item in items if item.status != "closed"]
 
 
 # The `Item` fields a search may read, in the order a result set reports them

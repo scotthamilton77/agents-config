@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from installer.core import namespaces
 from installer.core.io_port import IOPort, ScriptedIO
 from installer.core.model import StagingPlan
 from installer.core.sync import sync
@@ -379,9 +380,7 @@ def test_write_to_read_only_destination_surfaces_permission_error(tmp_path: Path
 _FIXED_TS = "20260613-120000"
 
 
-@pytest.mark.parametrize(
-    "namespace", ["commands", "skills", "agents", "rules", "formulas", "workflows"]
-)
+@pytest.mark.parametrize("namespace", sorted(namespaces.BACKUP))
 def test_overwrite_in_scoped_namespace_backs_up_to_sibling_dir(
     tmp_path: Path, namespace: str
 ) -> None:
@@ -391,7 +390,11 @@ def test_overwrite_in_scoped_namespace_backs_up_to_sibling_dir(
     When sync overwrites it
     Then the original bytes are copied to a sibling ``<namespace>-backup/``
     directory under a ``<name>.backup-<ts>`` filename — the coded routing
-    decision for the five prune-managed namespaces.
+    decision for every backup-routed namespace.
+
+    Parametrized from the canonical vocabulary rather than a restated list: this
+    file's copy had already drifted (it never gained ``hooks``), and a namespace
+    added to BACKUP without this behaviour would otherwise ship uncovered.
     """
     src_root = tmp_path / "repo"
     dest_root = tmp_path / "home"

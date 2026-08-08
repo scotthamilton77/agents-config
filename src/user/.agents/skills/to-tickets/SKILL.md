@@ -4,7 +4,7 @@ description: Break a settled plan, spec, or the current conversation into build 
 disable-model-invocation: true
 admission:
   provides: A published set of vertical slices with real blocking edges on the tracker, each independently demoable and sized to one context window, from a spec or conversation that states an outcome and no sequence.
-  cost: A user-invoked catalog entry at zero always-on cost; per invocation, a decomposition pass, one round of approval with the user, and two tracker passes — mint, then wire.
+  cost: Per invocation, a decomposition pass, one round of approval with the user, and two tracker passes — mint, then wire.
   remove_when: The executor slices a spec into independently mergeable work and wires its dependency edges itself, so nothing invokes this.
 ---
 

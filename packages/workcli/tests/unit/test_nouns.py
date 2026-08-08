@@ -80,3 +80,21 @@ def test_noun_templates_covers_all_eight_nouns_per_the_l9_table():
         Noun.EPIC: NounTemplate("epic", "shape-epic", True, False, False),
         Noun.MILESTONE: NounTemplate("milestone", "shape-milestone", True, False, False),
     } == NOUN_TEMPLATES
+
+
+def test_the_readme_lists_every_noun_the_cli_accepts():
+    # The CLI derives its noun list from `Noun` and cannot drift; the README
+    # spells the same list by hand and did drift -- it advertised seven of the
+    # eight, so `milestone` read as uncreatable to anyone who trusted the
+    # documented surface over the code. Hand-copied vocabulary rots the moment
+    # the enum grows, and the next reader is the one who pays.
+    from pathlib import Path
+
+    readme = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
+    documented = {
+        noun
+        for noun in (member.value for member in Noun)
+        if rf"\|{noun}" in readme or f"`{noun}\\|" in readme
+    }
+    missing = {member.value for member in Noun} - documented
+    assert not missing, f"README's noun list omits {sorted(missing)}; the CLI accepts them"

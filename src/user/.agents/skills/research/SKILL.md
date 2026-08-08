@@ -3,7 +3,7 @@ name: research
 description: Investigate a question against primary sources and leave the findings as a dated, cited note in the project's reference documentation. Use when a decision waits on an external fact — API behaviour, library semantics, specification details — that reading can settle and whose answer should outlive this session.
 admission:
   provides: A cited note at a known path, traced to the documents that own each claim rather than to recall or a secondary write-up, which later sessions read instead of asking again.
-  cost: One model-invoked catalog description, always on; per invocation, a reading pass over primary sources and one committed file.
+  cost: Per invocation, a reading pass over primary sources and one committed file.
   remove_when: Fact-finding routes to a retrieval tool that cites primary sources and persists its answer, so a hand-written note adds nothing.
 ---
 

@@ -77,6 +77,59 @@ def test_missing_continuations_section_raises_manifest_error():
     assert exc_info.value.code == ErrorCode.MANIFEST
 
 
+def test_missing_section_error_states_both_bullet_forms_including_the_declination():
+    # AC3: the author reads the error, not the parser. A spec with no follow-on
+    # work needs to learn from the refusal that `- none` is how to say so --
+    # otherwise the only visible way out is to invent an empty section.
+    spec = "# Some Spec\n\nNo continuations section here.\n"
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_continuations(spec)
+
+    message = str(exc_info.value.message)
+    assert "## Continuations" in message
+    assert "`- <noun>: <title> — AC: <acceptance>`" in message
+    assert "`- none — <why there is none>`" in message
+
+
+def test_empty_section_error_states_both_bullet_forms_including_the_declination():
+    # The section-present-but-blank trip is the one an author reaches by
+    # guessing at the requirement, so it has to teach the same way out.
+    spec = "## Continuations\n\n## Out of Scope\n- feat: X — AC: y\n"
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_continuations(spec)
+
+    message = str(exc_info.value.message)
+    assert "`- <noun>: <title> — AC: <acceptance>`" in message
+    assert "`- none — <why there is none>`" in message
+
+
+def test_bullet_that_is_neither_an_item_nor_the_none_literal_names_both_forms():
+    # `- None` is a near-miss at declining: the declination is case-sensitive,
+    # so this lands on the item-grammar path. The error has to name the exact
+    # spelling, or the author who did consider continuations reads a complaint
+    # about noun syntax they never meant to write.
+    spec = "## Continuations\n- None\n"
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_continuations(spec)
+
+    message = str(exc_info.value.message)
+    assert "`- none — <why there is none>`" in message
+
+
+def test_unknown_noun_error_names_every_valid_noun():
+    spec = "## Continuations\n- widget: Add the flag — AC: flag toggles behavior\n"
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_continuations(spec)
+
+    message = str(exc_info.value.message)
+    for noun in ("spike", "chore", "decision", "feat", "bugfix", "spec", "epic", "milestone"):
+        assert noun in message
+
+
 def test_non_bare_noun_annotation_is_rejected():
     spec = "## Continuations\n- feat (under `x`): Add the flag — AC: flag toggles behavior\n"
 

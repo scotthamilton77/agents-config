@@ -3,7 +3,7 @@ name: delegating-to-codex
 description: Use when a run is being launched on Codex and the model tier still has to be chosen — the user named Codex, or another skill sent a dispatch here. Not for deciding whether to leave Claude in the first place, not for questions about Codex when nothing is being dispatched, not for Codex CLI setup or auth, and not for OpenRouter or Gemini CLI.
 admission:
   provides: The task-profile-to-model mapping for a Codex run — the one routing decision the Codex plugin declines to make, since its own runtime leaves the model unset unless the caller names one.
-  cost: 68 always-on tokens for this description line, measured; the body's 409 are paid only when a Codex dispatch is actually in hand. The model table needs a refresh whenever OpenAI reprices, renames, or retires a tier.
+  cost: The model table needs a refresh whenever OpenAI reprices, renames, or retires a tier.
   remove_when: The Codex plugin's runtime selects a model by task profile itself, so a caller that names nothing still gets the right tier.
 ---
 

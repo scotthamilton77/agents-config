@@ -44,8 +44,13 @@ def _report_budgets(result: ContentLintResult) -> None:
     """Print the measured always-on and per-skill numbers to stdout."""
     sys.stdout.write(f"content-lint: always-on surface (cap {ALWAYS_ON_TOKEN_CAP} tokens)\n")
     for surface in sorted(result.surfaces, key=lambda s: s.tool):
+        # The two components are split because they grow for different reasons:
+        # rules change rarely, and the catalog gains an entry with every skill
+        # admitted. A single total hides which one is moving.
         sys.stdout.write(
-            f"  {surface.tool:<10} {surface.tokens:>6} tokens  ({surface.rules} rule(s))\n"
+            f"  {surface.tool:<10} {surface.tokens:>6} tokens  "
+            f"({surface.rules} rule(s), {surface.catalog_entries} catalog entr"
+            f"{'y' if surface.catalog_entries == 1 else 'ies'})\n"
         )
 
     # Already one entry per artifact, grouped by the lint on the same identity
@@ -65,6 +70,22 @@ def _report_budgets(result: ContentLintResult) -> None:
         sys.stdout.write(
             f"  {body.tokens:>6} / {body.cap:<5} tokens  {body.where}  [{', '.join(body.tools)}]\n"
         )
+
+    # No cap on this block, and the header says so plainly: a number printed
+    # beside two ceilings would otherwise read as a third one. Sorted by the
+    # figure that decides anything — the largest single file, which is the unit
+    # a reader actually pays when they follow one pointer.
+    if result.payloads:
+        sys.stdout.write(
+            "content-lint: skill reference payloads (reported, no cap; non-prose is "
+            "executed or indexed, never loaded as context)\n"
+        )
+        for payload in result.payloads:
+            sys.stdout.write(
+                f"  {payload.prose_tokens:>6} prose in {payload.prose_files:>2} file(s), "
+                f"largest {payload.largest_tokens:>6} ({payload.largest_file or '-'}), "
+                f"{payload.other_tokens:>6} non-prose  {payload.label}\n"
+            )
 
 
 def main(argv: list[str] | None = None) -> int:

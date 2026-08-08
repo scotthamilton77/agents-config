@@ -10,7 +10,7 @@ import collections
 import json
 import tomllib
 
-from context import HERE, resolve_root, work
+from context import HERE, resolve_root, show, work
 
 RUNLOG = HERE / "applied.log"
 
@@ -121,11 +121,19 @@ def main() -> int:
 
     lint = work(root, "lint")["data"]
     violations = {v["id"] for v in lint["track_violations"]}
-    items = work(root, "list", "--limit", "0")["data"]["items"]
+    # C1 audits live and closed items on different terms, so the two views are
+    # derived here rather than taken from whatever `work list` happens to
+    # return. That default MOVED: protocol 1.13 widened a bare `work list` to
+    # carry every status, where earlier versions omitted closed. This script
+    # runs against whichever `work` is on PATH, which is not necessarily the
+    # one in this checkout, so it must be correct under both — filtering a
+    # superset costs nothing and reading the default costs correctness.
+    listed = work(root, "list", "--limit", "0")["data"]["items"]
+    items = [item for item in listed if item["status"] != "closed"]
 
-    # Closed items are excluded from `work list` by default, which would make a
-    # stray write to a closed item invisible to C1 — and `work track set` has no
-    # status guard, so such a write is possible. Enumerate them explicitly.
+    # Closed items are asked for explicitly, and still must be: a stray write to
+    # a closed item would otherwise be invisible to C1, and `work track set` has
+    # no status guard, so such a write is possible.
     closed = work(root, "list", "--limit", "0", "--status", "closed")["data"]["items"]
 
     failures: list[str] = []
@@ -228,7 +236,7 @@ def main() -> int:
     if not groom_item:
         failures.append("C6 groom-state-item empty")
     else:
-        got = work(root, "show", groom_item, require_ok=False)
+        got = show(root, groom_item, require_ok=False)
         if not got.get("ok"):
             failures.append(f"C6 groom-state-item {groom_item} does not exist")
         else:

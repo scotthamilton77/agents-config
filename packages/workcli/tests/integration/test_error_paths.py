@@ -145,7 +145,7 @@ def test_a_missing_workspace_is_a_configuration_failure_not_a_drift_alarm(bd_bin
     assert env["error"]["code"] == "E_NO_WORKSPACE"
     assert env["error"]["detail"] == {}
     published = json.dumps(env["error"])
-    for name in ("bd", "beads", "dolt", "BEADS_DIR"):
+    for name in ("bd", "bead", "beads", "dolt", "BEADS_DIR"):
         assert name not in published, f"the error envelope names the backend: {published}"
 
 
@@ -157,7 +157,7 @@ def test_a_real_backend_refusal_reaches_the_consumer_naming_no_backend(driver):
 
     assert env["ok"] is False
     published = json.dumps(env["error"])
-    for name in ("bd", "beads", "dolt", "BEADS_DIR"):
+    for name in ("bd", "bead", "beads", "dolt", "BEADS_DIR"):
         assert name not in published, f"the error envelope names the backend: {published}"
     assert "argv" not in env["error"]["detail"]
 
