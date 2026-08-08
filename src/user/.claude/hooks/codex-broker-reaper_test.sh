@@ -112,10 +112,15 @@ start_stub() { # $1 = name, $2 and $3 = names of vars to receive the pid and soc
   printf -v "$3" '%s' "$sock"
 }
 
-record_broker() { # $1 = state slug, $2 = pid, $3 = sockpath
-  mkdir -p "$STATE/$1"
-  printf '{"endpoint":"unix:%s","pid":%s}\n' "$3" "$2" > "$STATE/$1/broker.json"
+record_at() { # $1 = workspace directory, $2 = pid, $3 = sockpath
+  mkdir -p "$1"
+  printf '{"endpoint":"unix:%s","pid":%s}\n' "$3" "$2" > "$1/broker.json"
 }
+
+# The common case: a record under the root CLAUDE_PLUGIN_DATA names. The hook
+# reads two others, reached by globbing the home plugin directory and by joining
+# TMPDIR; those are addressed with record_at directly, below.
+record_broker() { record_at "$STATE/$1" "$2" "$3"; } # $1 = state slug, $2 = pid, $3 = sockpath
 
 run_hook() { OUT="$(printf '{}' | HOME="$HOOK_HOME" TMPDIR="$HOOK_TMPDIR" python3 "$HOOK" "$@" 2>&1)"; RC=$?; }
 
@@ -141,6 +146,28 @@ assert_contains "recorded broker is kept"                  "keep $KEPT_PID" "$OU
 assert_contains "and says why"                             "named by a session record" "$OUT"
 assert_missing  "recorded broker is never reaped"          "REAP $KEPT_PID" "$OUT"
 assert_alive    "recorded broker survives"                 "$KEPT_PID"
+
+# --- the other two state roots confer the same protection --------------------
+# Redirecting HOME and TMPDIR into this run costs the coverage those two roots
+# used to get from the machine's own records, and a root the hook skips is a
+# root whose glob and path joining nothing checks. Each therefore gets a record
+# of its own here: a root that is merely reachable proves nothing about the scan
+# that reads it. The plugin directory name is arbitrary on purpose — the hook
+# reaches this root by globbing `*` between `data` and `state`.
+start_stub homerec HOMEREC_PID HOMEREC_SOCK
+record_at "$HOOK_HOME/.claude/plugins/data/installed-plugin/state/homerec-workspace" \
+  "$HOMEREC_PID" "$HOMEREC_SOCK"
+run_hook --verbose
+assert_contains "a record under the home plugin root protects its broker" \
+  "keep $HOMEREC_PID: named by a session record" "$OUT"
+assert_alive    "and that broker survives"                 "$HOMEREC_PID"
+
+start_stub tmprec TMPREC_PID TMPREC_SOCK
+record_at "$HOOK_TMPDIR/codex-companion/tmprec-workspace" "$TMPREC_PID" "$TMPREC_SOCK"
+run_hook --verbose
+assert_contains "a record under the temp companion root protects its broker" \
+  "keep $TMPREC_PID: named by a session record" "$OUT"
+assert_alive    "and that broker survives"                 "$TMPREC_PID"
 
 # --- an unreferenced broker with a live client is left alone -----------------
 # This is the race loser: absent from every record, yet serving a real task.
