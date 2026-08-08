@@ -22,7 +22,10 @@ verified against git 2.50:
   pattern ending in a slash matches directories only and that directory does
   not exist yet — which is exactly the state you are in before the first
   worktree. A path *inside* the directory is tested instead, which answers
-  correctly whether or not the directory exists.
+  correctly whether or not the directory exists, and it is tested from the
+  repository top level, because the directory being judged is the top-level
+  one and ``check-ignore`` resolves a relative path against the directory it
+  runs in.
 
 A directory holding worktrees must be ignored before anything is created in
 it, or the next ``git add`` sweeps a whole second checkout into the index.
@@ -88,9 +91,17 @@ def main_worktree(cwd: str) -> str | None:
     return None
 
 
-def is_ignored(directory: str, cwd: str) -> bool:
-    """Whether a directory of that name would be ignored if it existed."""
-    return git("check-ignore", "-q", f"{directory}/probe", cwd=cwd) is not None
+def is_ignored(directory: str, toplevel: str) -> bool:
+    """Whether that top-level directory would be ignored if it existed.
+
+    The probe runs from ``toplevel`` and not from wherever the caller stands,
+    because ``check-ignore`` resolves a relative path against the directory it
+    runs in. Asked from a subdirectory it would answer for
+    ``<subdirectory>/<directory>`` — a different path, which a root-anchored
+    pattern does not match and a subdirectory's own ``.gitignore`` may match
+    when the top-level one does not.
+    """
+    return git("check-ignore", "-q", f"{directory}/probe", cwd=toplevel) is not None
 
 
 def yn(value: bool) -> str:
@@ -127,7 +138,7 @@ def survey(cwd: str) -> list[str] | None:
     if verdict != "linked-worktree" and toplevel:
         for name in CANDIDATE_DIRS:
             exists = (Path(toplevel) / name).is_dir()
-            ignored = is_ignored(name, cwd)
+            ignored = is_ignored(name, toplevel)
             lines.append(f"candidate: {name} exists={yn(exists)} ignored={yn(ignored)}")
     return lines
 

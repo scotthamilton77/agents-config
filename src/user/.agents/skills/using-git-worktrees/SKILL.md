@@ -26,12 +26,14 @@ you are not, and committing to the user's branch.
 
 ## 1. Survey before you create
 
-Run `scripts/worktree_status.py` from anywhere in the project. It prints where
+Run this skill's bundled `scripts/worktree_status.py` — that path is inside the
+skill's own directory, not the project's. It reports on the working directory
+you run it from, so run it from anywhere inside the project: it prints where
 you are, what git thinks the workspace is, and whether the conventional
-directories are ignored. It resolves both git paths before comparing them and
-probes ignore rules with a path that answers correctly whether or not the
-directory exists — do not re-derive either check by hand, because both are
-wrong when taken the obvious way.
+directories are ignored. It resolves both git paths before comparing them, and
+probes ignore rules from the repository top level with a path that answers
+correctly whether or not the directory exists — do not re-derive either check
+by hand, because both are wrong when taken the obvious way.
 
 | `verdict:` | What it means | What to do |
 |---|---|---|

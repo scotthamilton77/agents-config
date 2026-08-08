@@ -218,6 +218,56 @@ def test_an_existing_candidate_directory_is_reported_as_existing(repo: Path) -> 
     assert "candidate: .worktrees exists=yes ignored=yes" in lines
 
 
+# --- the answer does not depend on where you stand -------------------------
+#
+# The survey reports on the *top-level* candidate directory — `exists` is
+# already measured there — but `check-ignore` resolves a relative path against
+# the directory it runs in. Probed from a subdirectory it answers for
+# `<subdirectory>/.worktrees`, a different path, and the two cases below are
+# where that different path gets a different answer.
+
+
+def test_root_anchored_pattern_is_ignored_from_a_subdirectory(repo: Path) -> None:
+    # A pattern anchored at the repository root matches the top-level
+    # directory only. Probed from a subdirectory it does not match, and the
+    # survey reports an ignored directory as unignored: the caller then adds a
+    # second, redundant `.gitignore` entry it was told to commit first.
+    (repo / ".gitignore").write_text("/.worktrees/\n")
+    deep = repo / "deep" / "nested"
+    deep.mkdir(parents=True)
+
+    lines = survey(str(deep)) or []
+
+    assert "candidate: .worktrees exists=no ignored=yes" in lines
+
+
+def test_a_subdirectorys_own_gitignore_does_not_answer_for_the_top_level(repo: Path) -> None:
+    # The dangerous direction. Nothing ignores the top-level `.worktrees`, but
+    # a `.gitignore` beside the caller matches the path the probe resolves to,
+    # so the survey reports `ignored=yes` and the caller creates an unignored
+    # second checkout that the next `git add` sweeps into the index.
+    (repo / ".gitignore").write_text("unrelated\n")
+    deep = repo / "deep" / "nested"
+    deep.mkdir(parents=True)
+    (deep / ".gitignore").write_text(".worktrees/\n")
+
+    lines = survey(str(deep)) or []
+
+    assert "candidate: .worktrees exists=no ignored=no" in lines
+
+
+def test_the_whole_survey_reads_the_same_from_anywhere_in_the_checkout(repo: Path) -> None:
+    # The invariant the two cases above are instances of, stated once: the
+    # skill tells the caller to run this from anywhere in the project, so
+    # every line of it has to be a fact about the project rather than about
+    # the directory the caller happened to be standing in.
+    (repo / ".gitignore").write_text("/.worktrees/\n")
+    deep = repo / "deep" / "nested"
+    deep.mkdir(parents=True)
+
+    assert survey(str(deep)) == survey(str(repo))
+
+
 if __name__ == "__main__":
     sys.dont_write_bytecode = True
     sys.exit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
