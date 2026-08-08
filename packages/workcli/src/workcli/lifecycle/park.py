@@ -47,6 +47,21 @@ REASONS: dict[str, str] = {
     "budget-exhausted": "human",
 }
 
+# What a repaired marker says about itself. A repair can only ever record the
+# repairing call's instant and reason -- the failed park's are unrecoverable --
+# so the marker admits it, in the free text where no reader parses.
+REPAIR_TEXT = "marker repaired on re-park; this timestamp and reason are the repairing call's"
+
+
+def _park_marker(now: datetime, reason: str, text: str) -> str:
+    """The one park-marker format: `[work] parked <ISO-8601> <code>: <text>`.
+
+    Everything before the first `": "` is the head `_last_park_record` parses
+    and must stay exactly two whitespace-separated tokens; `text` is free
+    prose no reader interprets.
+    """
+    return f"{PARKED_MARKER} {now.isoformat()} {reason}: {text}"
+
 
 def _last_park_record(notes: str) -> tuple[str | None, str | None]:
     """(parked_at, reason) from the LAST `[work] parked` marker, or Nones.
@@ -117,7 +132,9 @@ def park(backend: Backend, args: Namespace) -> JsonValue:
     Mutation order is graceful-degradation order: status `blocked` FIRST
     (kills claimability the instant anything lands), then the `parked`
     handle, then the marker note -- a crash mid-park leaves an item that is
-    at worst un-ready, never a claimable "parked" item.
+    at worst un-ready, never a claimable "parked" item. That order also makes
+    the marker the only thing a partial park can be missing, and re-parking
+    such an item repairs it.
     """
     if args.reason not in REASONS:
         raise WorkError(
@@ -128,20 +145,29 @@ def park(backend: Backend, args: Namespace) -> JsonValue:
     if item.status == "closed":
         raise WorkError(ErrorCode.USAGE, f"park {args.id}: cannot park a closed item")
     if PARKED_LABEL in item.labels:
-        # Idempotent replay: report the existing stint, mint nothing.
+        # Idempotent replay: report the existing stint, mint nothing -- unless
+        # there is no readable stint to report. The three primitives make a
+        # park that failed after the label a parked item with nothing
+        # recorded, and the label short-circuits every later park, so this
+        # branch is the only one that can ever repair it; reporting the
+        # incoming reason over an item that stores none would disguise the
+        # damage instead. Mint the marker the failed park owed, then report it.
         _, existing = _last_park_record(item.notes)
-        reason = existing if existing is not None else args.reason
+        if existing is None:
+            text = f"{REPAIR_TEXT}; {args.note}" if args.note else REPAIR_TEXT
+            backend.append_note(args.id, _park_marker(args.now(), args.reason, text))
+            existing = args.reason
         return {
             "id": args.id,
             "status": "parked",
-            "reason": reason,
-            "category": REASONS[reason],
+            "reason": existing,
+            "category": REASONS[existing],
         }
 
     backend.set_status(args.id, "blocked")
     backend.label_mutate("add", args.id, [PARKED_LABEL])
     text = args.note if args.note is not None else ""
-    backend.append_note(args.id, f"{PARKED_MARKER} {args.now().isoformat()} {args.reason}: {text}")
+    backend.append_note(args.id, _park_marker(args.now(), args.reason, text))
     return {
         "id": args.id,
         "status": "parked",

@@ -9,6 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# The three fields describing an item's place in the tree. Not every backend
+# read reports all three -- see `Item.unknown_relations`.
+RELATIONSHIP_FIELDS = ("parent", "deps", "children")
+
 
 @dataclass(frozen=True)
 class DepEdge:
@@ -32,6 +36,13 @@ class Item:
     notes: str
     created: str | None  # ISO strings as bd emits them; no datetime parsing in v1
     updated: str | None
+    # Which of `RELATIONSHIP_FIELDS` the source read could not express. The
+    # fields themselves hold their empty value when named here, and the verb
+    # layer drops them from the envelope rather than publishing an empty
+    # stand-in for an answer the backend never gave: `[]` is indistinguishable
+    # from a true "no children", so a verb that cannot see children must say
+    # so rather than imply there are none.
+    unknown_relations: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
