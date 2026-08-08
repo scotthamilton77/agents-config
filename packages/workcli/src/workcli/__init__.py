@@ -7,4 +7,4 @@ for the behavioral spec this package implements.
 
 from __future__ import annotations
 
-PROTOCOL_VERSION = "1.7"
+PROTOCOL_VERSION = "1.8"

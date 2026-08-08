@@ -14,7 +14,7 @@ from typing import cast
 from workcli.backend import Backend
 from workcli.envelope import JsonValue
 from workcli.lifecycle.park import parked_stale
-from workcli.model import Item, QueryFilters
+from workcli.model import SEARCH_FIELDS, Item, QueryFilters, SearchFilters
 from workcli.tracks import derive_track, require_known_track
 
 
@@ -112,5 +112,21 @@ def ready(backend: Backend, args: Namespace) -> JsonValue:
 
 
 def search(backend: Backend, args: Namespace) -> JsonValue:
-    """`work search QUERY`."""
-    return _serialize_items(backend.search(args.query))
+    """`work search QUERY [--in FIELD] [--status S] [--limit N]`.
+
+    Wide by default on all three axes -- every searchable field, every
+    status, no bound -- because each narrowing turns a match into an empty
+    result indistinguishable from a true "nothing like this exists", and a
+    caller checking for prior art reads that as permission to file. Any of
+    the three can be asked for explicitly; none is applied unasked.
+
+    `--limit` slices the merged result, never the individual field reads:
+    bounding each field before the merge would undercount the union, the
+    same ordering `list --track` enforces on its own filter. Zero-or-negative
+    means unbounded, matching `list`.
+    """
+    corpus = frozenset(args.corpus or SEARCH_FIELDS)
+    items = backend.search(SearchFilters(query=args.query, corpus=corpus, status=args.status))
+    if args.limit is not None and args.limit > 0:
+        items = items[: args.limit]
+    return _serialize_items(items)

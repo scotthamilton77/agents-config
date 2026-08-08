@@ -43,12 +43,12 @@ def _search_result(*raw_items: dict[str, object]) -> BdResult:
     return BdResult(returncode=0, stdout=json.dumps(list(raw_items)), stderr="")
 
 
-def _item_raw(item_id: str, title: str) -> dict[str, object]:
+def _item_raw(item_id: str, title: str, *, status: str = "open") -> dict[str, object]:
     return {
         "id": item_id,
         "title": title,
         "issue_type": "task",
-        "status": "open",
+        "status": status,
         "priority": 2,
         "labels": [],
         "dependencies": [],
@@ -84,7 +84,7 @@ def test_create_spike_with_parent_sends_search_then_one_create_call():
     assert exit_code == 0
     assert envelope["data"] == {"id": "x.1"}
     assert runner.calls == [
-        ("search", "T", "--json"),
+        ("search", "T", "--json", "--status", "all", "--limit", "0"),
         (
             "create",
             "--json",
@@ -119,7 +119,7 @@ def test_create_chore_with_orphan_creates_with_no_parent_and_records_orphan_note
     assert exit_code == 0
     assert envelope["data"] == {"id": "x.1"}
     assert runner.calls == [
-        ("search", "T", "--json"),
+        ("search", "T", "--json", "--status", "all", "--limit", "0"),
         ("create", "--json", "--title", "T", "--type", "chore", "--labels", "shape-chore"),
         ("update", "x.1", "--append-notes", ORPHAN_MARKER),
     ]
@@ -158,8 +158,53 @@ def test_create_duplicate_title_blocks_before_any_create_call():
     error = envelope["error"]
     assert isinstance(error, dict)
     assert error["code"] == str(ErrorCode.DUPLICATE_TITLE)
-    assert error["detail"] == {"id": "x.9"}
-    assert runner.calls == [("search", "T", "--json")]
+    assert error["detail"] == {"id": "x.9", "status": "open"}
+    assert runner.calls == [("search", "T", "--json", "--status", "all", "--limit", "0")]
+
+
+def test_duplicate_title_guard_reads_titles_alone_and_never_a_second_corpus():
+    # The guard keeps only an EXACT title match, so a hit in a description or
+    # a note could never satisfy it -- widening its corpus would spend two
+    # more backend reads per create on rows it then discards. One leg.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(("search",), _search_result()),
+            ScriptedStep(("create",), _create_result("x.1")),
+            ScriptedStep(("update",), BdResult(returncode=0, stdout="", stderr="")),
+        ]
+    )
+
+    exit_code, _, _ = run_cli_with_runner(
+        ["create", "spike", "--title", "T", "--orphan"],
+        runner,
+        config_loader=_not_found_config_loader,
+    )
+
+    assert exit_code == 0
+    assert runner.calls[0] == ("search", "T", "--json", "--status", "all", "--limit", "0")
+    assert [call[0] for call in runner.calls] == ["search", "create", "update"]
+
+
+def test_create_refuses_a_title_a_closed_item_already_carries():
+    # Prior art that was already finished is still prior art, and re-filing it
+    # under the same title is the duplicate this guard exists to prevent. The
+    # refusal names the id, so the caller can reopen it, link it, or retitle.
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("search",), _search_result(_item_raw("x.4", "T", status="closed")))]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        ["create", "spike", "--title", "T", "--orphan"],
+        runner,
+        config_loader=_not_found_config_loader,
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.DUPLICATE_TITLE)
+    assert error["detail"] == {"id": "x.4", "status": "closed"}
+    assert "closed" in error["message"]
 
 
 def test_create_feat_with_type_flag_is_usage_error_without_any_bd_call():
@@ -205,7 +250,7 @@ def test_create_feat_with_spec_evidence_adds_spec_ready_label():
 
     assert exit_code == 0
     assert runner.calls == [
-        ("search", "T", "--json"),
+        ("search", "T", "--json", "--status", "all", "--limit", "0"),
         (
             "create",
             "--json",
@@ -238,7 +283,7 @@ def test_create_feat_without_evidence_omits_spec_ready_label():
 
     assert exit_code == 0
     assert runner.calls == [
-        ("search", "T", "--json"),
+        ("search", "T", "--json", "--status", "all", "--limit", "0"),
         (
             "create",
             "--json",
@@ -271,7 +316,7 @@ def test_create_feat_with_trivial_adds_spec_ready_label():
 
     assert exit_code == 0
     assert runner.calls == [
-        ("search", "T", "--json"),
+        ("search", "T", "--json", "--status", "all", "--limit", "0"),
         (
             "create",
             "--json",
@@ -328,7 +373,7 @@ def test_create_epic_sends_one_create_with_epic_type_and_shape_label():
     assert exit_code == 0
     assert envelope["data"] == {"id": "x.1"}
     assert runner.calls == [
-        ("search", "T", "--json"),
+        ("search", "T", "--json", "--status", "all", "--limit", "0"),
         (
             "create",
             "--json",
@@ -375,7 +420,7 @@ def test_create_spec_mints_shape_with_creating_spec_handle_removed_last():
     assert exit_code == 0
     assert envelope["data"] == {"id": "x.1", "design_child": "x.2", "placeholder": "x.3"}
     assert runner.calls == [
-        ("search", "T", "--json"),
+        ("search", "T", "--json", "--status", "all", "--limit", "0"),
         (
             "create",
             "--json",
@@ -458,7 +503,7 @@ def test_create_spec_with_orphan_creates_container_with_no_parent_and_records_or
     assert exit_code == 0
     assert envelope["data"] == {"id": "x.1", "design_child": "x.2", "placeholder": "x.3"}
     assert runner.calls[:3] == [
-        ("search", "T", "--json"),
+        ("search", "T", "--json", "--status", "all", "--limit", "0"),
         (
             "create",
             "--json",

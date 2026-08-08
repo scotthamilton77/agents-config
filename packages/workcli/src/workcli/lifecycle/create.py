@@ -27,7 +27,7 @@ from workcli.lifecycle.nouns import (
 )
 from workcli.lifecycle.park import PARKED_LABEL
 from workcli.lifecycle.validate import combine_errors, validate_noun, validate_priority
-from workcli.model import CreateFields
+from workcli.model import CreateFields, SearchFilters
 from workcli.tracks import TRACK_PREFIX, derive_track, require_known_track, track_label
 
 # The reserved-namespace wall for additive `--label`: labels that
@@ -195,13 +195,31 @@ def _validate_usage(args: Namespace, noun: Noun) -> None:
 
 
 def _check_duplicate_title(backend: Backend, title: str) -> None:
-    matches = backend.search(title)
+    """Refuse a title some item already carries, whatever became of that item.
+
+    The guard states its own search rather than inheriting the verb's wide
+    defaults, because it asks a narrower question than a person searching
+    does. Two of the three axes are deliberate:
+
+    - **Titles alone.** Only an exact title match can collide, so a hit in a
+      description or a note could never satisfy the test below -- widening
+      the corpus would spend extra backend reads per create on rows this
+      discards.
+    - **Every status, closed included.** Work that was already done is still
+      prior art, and re-filing it under the same title is exactly the
+      duplicate this guard exists to prevent -- the more so because a closed
+      item is the one a caller is least likely to have found by hand. The
+      refusal carries the id and its status, so the caller can reopen it,
+      link to it, or retitle deliberately; genuinely recurring work gets a
+      title that distinguishes the occurrence.
+    """
+    matches = backend.search(SearchFilters(query=title, corpus=frozenset({"title"})))
     collision = next((item for item in matches if item.title == title), None)
     if collision is not None:
         raise WorkError(
             ErrorCode.DUPLICATE_TITLE,
-            f"an item titled {title!r} already exists: {collision.id}",
-            detail={"id": collision.id},
+            f"an item titled {title!r} already exists ({collision.status}): {collision.id}",
+            detail={"id": collision.id, "status": collision.status},
         )
 
 

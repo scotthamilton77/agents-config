@@ -49,7 +49,13 @@ def _ok(stdout: str) -> BdResult:
 
 
 _SHOW_STEPS = [ScriptedStep(("show",), _ok(_payload("bd_show_shape.json")))]
-_SEARCH_STEPS = [ScriptedStep(("search",), _ok(_payload("bd_search_shape.json")))]
+# A default search reads every corpus field; only the title leg matches
+# here, and the other two answer empty.
+_SEARCH_STEPS = [
+    ScriptedStep(("search",), _ok(_payload("bd_search_shape.json"))),
+    ScriptedStep(("list",), _ok("[]")),
+    ScriptedStep(("list",), _ok("[]")),
+]
 _LIST_STEPS = [ScriptedStep(("list",), _ok(_payload("bd_list_shape.json")))]
 # `ready` reads the parked set first (one `bd list --label parked`); no seeded
 # item carries the label, so the empty reply short-circuits the re-read.
@@ -219,6 +225,7 @@ def _read_args(**overrides: object) -> Namespace:
         "type": None,
         "limit": None,
         "track": None,
+        "corpus": None,
         "stale_days": 14,
         "now": lambda: datetime(2026, 8, 7, 12, 0, tzinfo=UTC),
         "load_config": lambda: None,

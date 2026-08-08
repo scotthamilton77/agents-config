@@ -40,6 +40,7 @@ from workcli.model import (
     DepListing,
     Item,
     QueryFilters,
+    SearchFilters,
     SyncResult,
     UpdateFields,
 )
@@ -289,11 +290,20 @@ class FakeBackend:
     def labels(self, item_id: str) -> list[str]:
         return list(self._require(item_id).labels)
 
-    def search(self, query: str) -> list[Item]:
+    def search(self, filters: SearchFilters) -> list[Item]:
+        # Models the seam's contract, not one backend's text semantics: the
+        # corpus is whatever the caller asked for, closed items are in it
+        # unless a status narrows them out, and nothing is truncated.
+        def matches(rec: _Rec) -> bool:
+            if filters.status is not None and rec.status != filters.status:
+                return False
+            fields = {"title": rec.title, "description": rec.description, "notes": rec.notes}
+            return any(filters.query in fields[field] for field in filters.corpus)
+
         return [
             self._snapshot(rec, unknown=_SEARCH_UNKNOWN)
             for rec in self._items.values()
-            if query in rec.title
+            if matches(rec)
         ]
 
     def sync(self, pull: bool) -> SyncResult:

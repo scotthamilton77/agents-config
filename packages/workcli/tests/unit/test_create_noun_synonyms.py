@@ -107,7 +107,7 @@ def test_create_bug_alias_sends_the_identical_bd_call_as_bugfix() -> None:
     assert envelope_alias["data"] == envelope_canon["data"]
     assert runner_alias.calls == runner_canon.calls
     assert runner_canon.calls == [
-        ("search", "T", "--json"),
+        ("search", "T", "--json", "--status", "all", "--limit", "0"),
         (
             "create",
             "--json",
@@ -159,7 +159,7 @@ def test_create_bare_priority_digit_normalizes_to_canonical_p_notation() -> None
     assert exit_code == 0
     assert envelope["data"] == {"id": "x.1"}
     assert runner.calls == [
-        ("search", "T", "--json"),
+        ("search", "T", "--json", "--status", "all", "--limit", "0"),
         (
             "create",
             "--json",

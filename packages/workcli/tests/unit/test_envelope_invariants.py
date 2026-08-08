@@ -215,7 +215,12 @@ VERB_CASES: list[VerbCase] = [
     VerbCase(
         "search",
         ["search", "quarantine"],
-        [ScriptedStep(("search",), _EMPTY_ARRAY)],
+        # One step per corpus field: a default search reads them all.
+        [
+            ScriptedStep(("search",), _EMPTY_ARRAY),
+            ScriptedStep(("list",), _EMPTY_ARRAY),
+            ScriptedStep(("list",), _EMPTY_ARRAY),
+        ],
         ["search", "quarantine"],
         [ScriptedStep(("search",), _GARBAGE)],
     ),

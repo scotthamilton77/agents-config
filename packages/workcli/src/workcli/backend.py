@@ -12,7 +12,15 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal, Protocol
 
-from workcli.model import CreateFields, DepListing, Item, QueryFilters, SyncResult, UpdateFields
+from workcli.model import (
+    CreateFields,
+    DepListing,
+    Item,
+    QueryFilters,
+    SearchFilters,
+    SyncResult,
+    UpdateFields,
+)
 
 DepOp = Literal["add", "remove"]
 
@@ -63,5 +71,12 @@ class Backend(Protocol):
         self, op: str, item_id: str, labels: Sequence[str]
     ) -> None: ...  # pragma: no cover
     def labels(self, item_id: str) -> list[str]: ...  # pragma: no cover
-    def search(self, query: str) -> list[Item]: ...  # pragma: no cover
+    def search(self, filters: SearchFilters) -> list[Item]:
+        """Return every item matching `filters`, unbounded, in `SEARCH_FIELDS` order.
+
+        Deduplicated by id: an item matched on two fields is reported once,
+        at the rank of the first field that matched it.
+        """
+        ...  # pragma: no cover
+
     def sync(self, pull: bool) -> SyncResult: ...  # pragma: no cover
