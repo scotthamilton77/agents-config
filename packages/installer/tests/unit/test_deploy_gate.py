@@ -396,11 +396,21 @@ def test_an_unflagged_body_over_the_standard_cap_still_fails(tmp_path: Path) -> 
     assert any(f"{SKILL_BODY_TOKEN_CAP}-token cap" in v for v in result.violations)
 
 
-@pytest.mark.parametrize("tool", list(Tool))
-def test_the_cap_is_the_artifact_s_and_not_the_tool_s(tmp_path: Path, tool: Tool) -> None:
-    """The flag is read from the source front matter, before the projection strips
-    it for a tool that cannot honour it. Reading it after would make one repo pass
-    on a Claude-only machine and fail wherever a second tool is detected."""
+@pytest.mark.parametrize(
+    ("tool", "cap"),
+    [
+        (Tool.CLAUDE, USER_INVOKED_SKILL_BODY_TOKEN_CAP),
+        (Tool.CODEX, SKILL_BODY_TOKEN_CAP),
+        (Tool.OPENCODE, SKILL_BODY_TOKEN_CAP),
+    ],
+)
+def test_the_cap_is_the_target_s_and_not_the_source_s_claim(
+    tmp_path: Path, tool: Tool, cap: int
+) -> None:
+    """One shared skill declaring itself user-invoked, measured against the loose
+    cap on the one tool whose loader honours the declaration and the strict cap on
+    the tools that strip it. On those the model reaches the body on its own
+    judgement whatever the author wrote, so the cost was never asked for."""
     body = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
     item = _shared_skill(
         tmp_path,
@@ -409,8 +419,88 @@ def test_the_cap_is_the_artifact_s_and_not_the_tool_s(tmp_path: Path, tool: Tool
     )
     result = run_admission_gate({tool: _plan(_instruction(b"laws"), item, tool=tool)})
 
+    assert [m.cap for m in result.skills] == [cap]
+    assert result.ok is (cap == USER_INVOKED_SKILL_BODY_TOKEN_CAP)
+
+
+def test_a_user_invoked_skill_is_a_catalog_entry_only_where_the_key_is_stripped(
+    tmp_path: Path,
+) -> None:
+    """The same fact priced twice: Claude keeps the declaration and publishes
+    nothing, so the entry costs zero; Codex strips it and publishes the
+    description, so the entry is charged. A record claiming zero always-on cost
+    for a shared user-invoked skill is true on one tool and false on the others."""
+    item = _shared_skill(
+        tmp_path,
+        "quiet",
+        f"---\nname: quiet\ndescription: {'d' * 400}\n"
+        f"disable-model-invocation: true\n{_RECORD}---\nbody\n",
+    )
+    plans = {
+        tool: _plan(_instruction(b"laws"), item, tool=tool) for tool in (Tool.CLAUDE, Tool.CODEX)
+    }
+    result = run_admission_gate(plans)
+
+    charged = {s.tool: s.catalog_entries for s in result.surfaces}
+    assert charged == {"claude": 0, "codex": 1}
+    weights = {s.tool: s.tokens for s in result.surfaces}
+    assert weights["codex"] > weights["claude"]
+
+
+def test_an_oversized_skill_description_breaches_the_always_on_cap(tmp_path: Path) -> None:
+    """The catalog entry is charged against the ceiling that already exists, so a
+    description nobody can decline fails the deploy exactly as a rule would."""
+    item = _shared_skill(
+        tmp_path,
+        "verbose",
+        f"---\nname: verbose\ndescription: {'d' * (ALWAYS_ON_TOKEN_CAP * 4 + 8)}\n"
+        f"{_RECORD}---\nbody\n",
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert not result.ok
+    assert any("always-on surface" in v for v in result.violations)
+
+
+def test_a_command_description_is_charged_nothing(tmp_path: Path) -> None:
+    """A command is summoned by the user typing its name on every tool, so neither
+    its description nor its body is a cost anyone was handed. The regression guard
+    for that exemption, which nothing else in the gate states."""
+    command = StagedItem(
+        source_path=tmp_path / "commands" / "verbose.md",
+        dest_relpath=Path("commands") / "verbose.md",
+        kind=FileKind.NAMESPACED_MD,
+        namespace="commands",
+        provenance=Provenance(kind="tool", name="claude"),
+        content=(
+            f"---\nname: verbose\ndescription: {'d' * (ALWAYS_ON_TOKEN_CAP * 4 + 8)}\n"
+            f"{_RECORD}---\nbody\n"
+        ).encode(),
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), command)})
+
     assert result.ok, result.violations
-    assert [m.cap for m in result.skills] == [USER_INVOKED_SKILL_BODY_TOKEN_CAP]
+    assert [s.catalog_entries for s in result.surfaces] == [0]
+    assert result.skills == []
+
+
+def test_gemini_contributes_to_neither_skill_measurement(tmp_path: Path) -> None:
+    """Gemini's CLI is deprecated and nothing establishes what its runtime does
+    with a deployed skill, so this project models neither its catalog nor its body
+    cap. A number invented for it would be a guess a reader would act on."""
+    body = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
+    item = _shared_skill(
+        tmp_path,
+        "unmodelled",
+        f"---\nname: unmodelled\ndescription: {'d' * 400}\n{_RECORD}---\n{body}",
+    )
+    result = run_admission_gate({Tool.GEMINI: _plan(_instruction(b"laws"), item, tool=Tool.GEMINI)})
+
+    assert result.ok, result.violations
+    assert result.skills == []
+    assert [s.catalog_entries for s in result.surfaces] == [0]
+    # The skill still deploys — exempt from the measurements, not from the gate.
+    assert Path("skills/unmodelled") in result.plans[Tool.GEMINI].items
 
 
 def test_item_label_is_the_join_key_the_gate_reports_under() -> None:

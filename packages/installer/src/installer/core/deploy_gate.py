@@ -12,9 +12,13 @@ is assembled and before any write. It:
    the target tool's loader does not define are projected out (see
    ``sanitize`` and ``capabilities``);
 3. measures the **surface budget** over the *rewritten admitted* content — the
-   always-on surface per tool and each admitted skill body. Measuring after the
-   rewrite is the point: the budget weighs what a reader actually loads, not
-   the governance metadata that enforces the budget;
+   always-on surface per tool, which now includes the catalog entry of every
+   skill that tool's runtime publishes to the model, and each admitted skill
+   body against the cap that fits the target it is deploying to. Measuring
+   after the rewrite is the point twice over: the budget weighs what a reader
+   actually loads rather than the governance metadata that enforces it, and it
+   reads the projected front matter rather than the source, so a declaration
+   the target's loader cannot honour prices nothing;
 4. runs the **conflict audit** over the admitted artifacts' claims.
 
 The unit judged is the **contributor**, not the destination. A rule destination
@@ -57,7 +61,7 @@ from installer.core.admission import (
     entry_file_text,
     is_gated,
 )
-from installer.core.capabilities import is_user_invoked
+from installer.core.capabilities import is_user_invoked, models_skill_loading
 from installer.core.conflict_audit import conflict_violations
 from installer.core.frontmatter import split_frontmatter
 from installer.core.installignore import InstallIgnore
@@ -167,6 +171,22 @@ def _skill_body(text: str) -> str:
     """The admitted skill's on-invoke body: its entry file minus front matter."""
     _mapping, body = split_frontmatter(text)
     return body
+
+
+def _catalog_entry(text: str) -> bytes:
+    """The bytes a tool's skill catalog carries for one admitted skill.
+
+    Its ``name`` and ``description``, which is what a runtime publishes to the
+    model before the user has typed anything. The exact framing each vendor
+    renders around them is not knowable from this repository, so the joined pair
+    is an approximation and the ``bytes / 4`` token estimate carries the slack
+    conservatively. What matters is that the two fields are charged at all: they
+    load into every session unconditionally, and until now nothing weighed them.
+    """
+    mapping, _body = split_frontmatter(text)
+    if mapping is None:
+        return b""
+    return f"{mapping.get('name', '')}: {mapping.get('description', '')}".encode()
 
 
 def _record_bearers(item: StagedItem, overrides: dict[Path, Contribution]) -> list[Contribution]:
@@ -322,11 +342,16 @@ def _judge(
     and sanitization read the same bytes: what the bar judged is what deploys,
     minus only the governance metadata the bar itself consumed.
 
-    The invocation mode is read from the SOURCE front matter, before the
-    projection removes the key for a tool that does not define it. Reading it
-    after would make one artifact's cap depend on which tool is being staged, so
-    the same repo would pass on a Claude-only machine and fail wherever a second
-    tool is detected.
+    The invocation mode is read from the DEPLOYED front matter, after the
+    projection has removed the key for a tool whose loader does not define it.
+    That makes one artifact's cap depend on which tool is being staged, and it
+    is the point: on a tool that strips the key the skill is model-invocable
+    whatever its author declared, so the strict cap is the one that fits and the
+    description does reach the catalog. The repository's verdict stays uniform
+    regardless, because the repo-side content lint stages every known tool on
+    every run — no artifact is ever judged against fewer targets than it can
+    reach, so a per-machine deploy can only be looser than the gate that
+    already passed.
     """
     text = contribution.content.decode("utf-8", errors="replace")
     verdict = classify(text)
@@ -334,12 +359,13 @@ def _judge(
         return None, None
     if verdict.outcome is AdmissionOutcome.MALFORMED:
         return None, f"{label}: incomplete admission record — {verdict.detail}"
+    deployed = project_capabilities(sanitize_text(text), tool=tool.value)
     return (
         _Admitted(
             source=contribution.source_path,
             label=label,
-            text=project_capabilities(sanitize_text(text), tool=tool.value),
-            user_invoked=is_user_invoked(text),
+            text=deployed,
+            user_invoked=is_user_invoked(deployed),
             claims=verdict.claims,
         ),
         None,
@@ -362,6 +388,9 @@ def run_admission_gate(
     sources: dict[str, Path] = {}
     claims_by_artifact: list[tuple[str, dict[str, str]]] = []
     skill_bodies: list[SkillBodySource] = []
+    # Per tool, because a catalog is a property of one runtime: the same skill
+    # is an entry on a tool that publishes it and nothing on a tool that hides it.
+    catalog: dict[Tool, list[bytes]] = {tool: [] for tool in plans}
 
     for tool, plan in plans.items():
         kept: dict[Path, StagedItem] = {}
@@ -440,7 +469,13 @@ def run_admission_gate(
                 )
             kept[dest] = item
 
-            if item.namespace == "skills":
+            # Only skills, and only on a tool whose skill loading is modelled.
+            # A commands namespace is charged nothing here and capped nowhere:
+            # the user types a command's name, so neither its description nor
+            # its body is a cost anyone was handed. An unmodelled tool is
+            # measured on neither count, which is the honest report when what
+            # its runtime does with a deployed skill is not established.
+            if item.namespace == "skills" and models_skill_loading(tool.value):
                 skill_bodies += [
                     SkillBodySource(
                         label=part.label,
@@ -448,6 +483,9 @@ def run_admission_gate(
                         user_invoked=part.user_invoked,
                     )
                     for part in admitted
+                ]
+                catalog[tool] += [
+                    _catalog_entry(part.text) for part in admitted if not part.user_invoked
                 ]
 
         # Drop override bytes for any item the gate removed, then lay each
@@ -465,11 +503,14 @@ def run_admission_gate(
             if it.namespace == "rules" and it.content is not None
         ]
         instruction = _instruction_bytes(plan)
+        entries = catalog[tool]
         surfaces.append(
-            measure_always_on(tool=tool.value, instruction=instruction, rules=rule_bytes)
+            measure_always_on(
+                tool=tool.value, instruction=instruction, rules=rule_bytes, catalog=entries
+            )
         )
         violations += always_on_violations(
-            tool=tool.value, instruction=instruction, rules=rule_bytes
+            tool=tool.value, instruction=instruction, rules=rule_bytes, catalog=entries
         )
     violations += skill_body_violations(skill_bodies)
     violations += conflict_violations(claims_by_artifact)
