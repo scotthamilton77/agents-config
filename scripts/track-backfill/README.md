@@ -88,6 +88,10 @@ default.
 
 ## Recovery
 
+The facade has no backup, export or recovery-point verb, so every command below is
+one a human runs. An agent that needs a recovery point asks for one and waits; it
+does not reach for the backend itself.
+
 Before applying:
 
     bd backup sync

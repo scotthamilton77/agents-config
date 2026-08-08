@@ -11,4 +11,7 @@ its config, its git hooks, and its backups. It is installed and maintained by
 beads itself. **Do not edit anything in here.**
 
 `AGENTS.md` (this file) is the one exception: it is ours, and it exists to say
-the above.
+the above. The `README.md` beside it is not ours — it is boilerplate the backend
+drops on init, it documents the backend's own command line, and it is not
+instruction for this project. Read it as vendor documentation for a tool you do
+not run.
