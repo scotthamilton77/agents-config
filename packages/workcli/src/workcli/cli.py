@@ -174,6 +174,18 @@ def _add_transition_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentPa
     )
     abandon_parser.add_argument("id", metavar="ID")
 
+    defer_parser = subparsers.add_parser(
+        "defer",
+        help="set aside an item nobody has started; it leaves ready, with no obstruction implied",
+    )
+    defer_parser.add_argument("id", metavar="ID")
+    defer_parser.add_argument("--note", metavar="TEXT")
+
+    undefer_parser = subparsers.add_parser(
+        "undefer", help="bring a set-aside item back; back to ready"
+    )
+    undefer_parser.add_argument("id", metavar="ID")
+
     plan_parser = subparsers.add_parser("plan", help="add/remove an item from the Planning queue")
     plan_parser.add_argument("id", metavar="ID")
     plan_parser.add_argument("--done", action="store_true")
