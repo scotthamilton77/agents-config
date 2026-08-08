@@ -18,7 +18,7 @@ change.
 
 ## Verb table
 
-Twelve verbs; each is a subcommand of `work`.
+31 verbs; each is a subcommand of `work`.
 
 | Verb | Args/flags |
 |---|---|
