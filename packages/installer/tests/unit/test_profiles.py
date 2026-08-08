@@ -955,10 +955,15 @@ def test_kits_selector_scopes_to_project() -> None:
 
 
 def test_scopes_cover_universe_eligible_namespaces() -> None:
-    """Guard: every STAGED namespace (TOOL_SCOPED union SHARED) plus the synthetic
+    """Guard, in both directions, on what [scopes] may and must name.
+
+    Every STAGED namespace (TOOL_SCOPED union SHARED) plus the synthetic
     instructions/settings must have a [scopes] match, or a forced-full user run
-    crashes. formulas is plugin-routed (never a universe key) and must NOT be
-    required."""
+    crashes. And no selector may name something outside the vocabulary: a selector
+    for a namespace nothing stages is dead config that resolves nothing, and it
+    reads as a live routing decision to whoever finds it next. `kits` is the one
+    non-namespace head allowed — a kit is selected by its own tree, not by a
+    namespace (see test_kits_selector_scopes_to_project)."""
     manifest = load_manifest(_REPO_ROOT / "profiles.toml")
     eligible = set(namespaces.TOOL_SCOPED) | set(namespaces.SHARED) | {"instructions", "settings"}
     scope_selectors = list(manifest.scopes.keys())
@@ -966,7 +971,10 @@ def test_scopes_cover_universe_eligible_namespaces() -> None:
         probe = ns if ns in ("instructions", "settings") else f"{ns}/probe"
         matched = any(_selector_matches(sel, probe) for sel in scope_selectors)
         assert matched, f"namespace {ns!r} has no [scopes] entry"
-    assert "formulas" not in {s.split("/")[0] for s in scope_selectors}
+    addressable = namespaces.ALL | {"instructions", "settings", "kits"}
+    for sel in scope_selectors:
+        head = sel.split("/")[0]
+        assert head in addressable, f"[scopes] selector {sel!r} names no staged namespace"
 
 
 def test_resolve_sorts_tool_none_kit_ref_without_crash() -> None:

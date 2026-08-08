@@ -42,8 +42,9 @@ def test_routes_install_matched_files_with_their_exec_bit(tmp_path: Path) -> Non
     Then both files land at their dest_dir; the script carries an exec bit and the
     formula does not; both count as created.
 
-    Pins AC: routes place files at ~/.beads/{formulas,scripts}; the scripts route's
-    exec bit is honored (install.sh:1086 chmod +x), the formulas route's is not.
+    Pins: each route places its glob matches under its own ``dest_dir``, and the
+    exec bit is the route's, not the source file's — the executable route's files
+    get 0o755, the non-executable route's do not.
     """
     src = tmp_path / "src"
     dest_formulas = tmp_path / "home" / ".beads" / "formulas"

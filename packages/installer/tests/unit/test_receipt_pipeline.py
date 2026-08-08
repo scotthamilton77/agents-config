@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+from installer.core import namespaces
 from installer.core.io_port import ScriptedIO
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
 from installer.core.receipt import Receipt, ReceiptEntry
@@ -173,6 +174,66 @@ def test_retired_plugin_formula_pruned_via_receipt(tmp_path: Path) -> None:
     assert not formula.exists()
     assert outcome.pruned_paths == {Path(".beads/formulas/old.toml")}
     assert outcome.relinquished_paths == set()
+
+
+def test_entry_recorded_under_a_retired_namespace_name_prunes_and_backs_up_in_place(
+    tmp_path: Path,
+) -> None:
+    """What a receipt written under the old vocabulary does on the next install.
+
+    Dropping a name from the canonical vocabulary is not the inverse of adding one:
+    the receipt on disk still carries paths written under the old names, and prune
+    authority comes from those recorded entries. Both halves of the consequence are
+    pinned here.
+
+    Authority is untouched: ``diff_orphans`` derives ``Orphan.namespace`` from the
+    recorded path and never consults the vocabulary, so the entry is still scoped,
+    validated against the persisted roots allowlist, and deleted.
+
+    Only the pre-delete backup moves. With ``formulas`` absent from
+    ``namespaces.BACKUP`` the backup lands in place beside the original instead of
+    in a sibling ``formulas-backup/`` dir. The bytes are still recoverable, so no
+    migration is owed for the removal — but a caller reading the old location will
+    not find them, which is what makes removal a behaviour change and not a
+    rename.
+    """
+    assert "formulas" not in namespaces.BACKUP  # the precondition this test is about
+
+    home = _claude_home(tmp_path)
+    formula = home / ".beads" / "formulas" / "old.toml"
+    formula.parent.mkdir(parents=True)
+    formula_bytes = b"old = 1\n"
+    formula.write_bytes(formula_bytes)
+    prior = Receipt(
+        roots=(Path(".claude"), Path(".beads")),
+        entries=(
+            ReceiptEntry(
+                Path(".beads/formulas/old.toml"),
+                "beads",
+                Path(".beads"),
+                "file",
+                hashlib.sha256(formula_bytes).hexdigest(),
+            ),
+        ),
+    )
+
+    outcome = prune_pipeline(
+        [get_adapter(Tool.CLAUDE)],
+        plugins=(),
+        plans={Tool.CLAUDE: StagingPlan(items={}, tool=Tool.CLAUDE)},
+        prior=prior,
+        home=home,
+        discovered_plugin_names=set(),
+        io=ScriptedIO(interactive=False),
+        auto_yes=True,
+        timestamp=_TS,
+    )
+
+    assert outcome.pruned_paths == {Path(".beads/formulas/old.toml")}  # authority unchanged
+    assert not formula.exists()
+    in_place = formula.parent / f"old.toml.backup-{_TS}"
+    assert in_place.read_bytes() == formula_bytes  # recoverable, beside the original
+    assert not (home / ".beads" / "formulas-backup").exists()  # no sibling-dir backup
 
 
 def test_active_plugin_shipped_formula_survives_retired_pruned(tmp_path: Path) -> None:

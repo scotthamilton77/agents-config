@@ -169,8 +169,8 @@ def desired_route_keys(plugins: Iterable[PluginAdapter], *, home: Path) -> set[t
 
     A plugin's route installs each ``source_dir.glob(glob)`` file at
     ``dest_dir/<name>``; those still-shipped files must count as desired so a
-    ``--prune`` run does not delete an active plugin's current formulas. A prior
-    file the plugin no longer ships is absent here, so it is still pruned."""
+    ``--prune`` run does not delete the files an active plugin currently routes. A
+    prior file the plugin no longer ships is absent here, so it is still pruned."""
     keys: set[tuple[str, Path]] = set()
     for plugin in plugins:
         for route in plugin.routes(home):
