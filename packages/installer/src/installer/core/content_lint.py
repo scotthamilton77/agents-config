@@ -646,11 +646,14 @@ def _provenance_findings(plans: Mapping[Tool, StagingPlan]) -> list[str]:
     keeps this verdict independent of the admission one — an artifact can be wrong in
     both ways at once and should hear about both.
 
-    Gated artifacts are the population, and today that is no narrowing at all: every
-    provenance comment in the tree sits in one's entry file, which is also the only
-    place the sanitizer would strip one. A header on ungated staged content would
-    deploy rather than be stripped, and is a different defect with a different
-    remedy.
+    A record bearer is the population — the entry file, or each contributor to an
+    assembled destination. Today that is no narrowing at all: every provenance
+    comment in the tree sits in a bearer, which is also the only place the
+    sanitizer strips one. A header on a file *beside* the entry is a different
+    defect and already has its own remedy: the gate's interior scan reports any
+    provenance comment there, upstream or not, because on a file whose record
+    nothing reads a header governs nothing. So this check asks about the upstream
+    only where a header is legitimate in the first place.
     """
     findings: list[str] = []
     for tool, plan in plans.items():
