@@ -1,4 +1,4 @@
-/* explain-pr quiz interaction — inline this verbatim inside a <script> tag.
+/* explain-diff quiz interaction — inline this verbatim inside a <script> tag.
  * Markup contract (see assets/palette.md):
  *   <div class="q">
  *     <div class="stem">Question text?</div>

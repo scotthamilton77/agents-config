@@ -13,7 +13,7 @@ admission:
 
 <!--
 Source: authored in-repo 2026-07-10 — SKILL.md, assets/theme.css, assets/quiz.js and assets/palette.md have no upstream.
-Source: assets/sidekick/personas/ — 17 of the upstream's 48 persona files, trimmed to theme + personality_traits + tone_traits + snarky_examples and re-emitted as plain YAML; the statusline and welcome fields are dropped.
+Source: assets/personas/ — 17 of the upstream's 48 persona files, trimmed to theme + personality_traits + tone_traits + snarky_examples and re-emitted as plain YAML; the statusline and welcome fields are dropped.
 Upstream: https://github.com/scotthamilton77/claude-code-sidekick @ 44e57b67beceb29825fb7be95b07520ec5445ad9
 Last sync: 2026-07-10
 Drift policy: local-fork — the trim is deliberate, and a resync would restore fields this skill has no use for.
@@ -96,15 +96,15 @@ voice is not hardcoded — resolve a persona, then narrate the whole page in it.
 2. **Active** — otherwise, if you already have an active persona / voice directive in
    your context, reuse it. (This is a soft self-check — there's no mechanical signal to
    query, so if no such directive is present, fall through.)
-3. **Random** — otherwise pick one at random from the bundled assets, resolving the
-   path against this SKILL.md's own directory:
+3. **Random** — otherwise pick one at random from the bundled assets:
 
    ```bash
-   ls assets/personas/*.yaml | sort -R | head -1
+   ls "${CLAUDE_SKILL_DIR}"/assets/personas/*.yaml | sort -R | head -1
    ```
 
-   No git dependency, and it picks fresh each run (`sort -R` over `shuf` — `shuf`
-   isn't on stock macOS).
+   `${CLAUDE_SKILL_DIR}` resolves to this skill's own directory, so the command
+   works whatever the working directory is. No git dependency, and it picks fresh
+   each run (`sort -R` over `shuf` — `shuf` isn't on stock macOS).
 
 Once resolved, read that persona's YAML and adopt its `theme`, `personality_traits`,
 and `tone_traits`; draw flavor from its `snarky_examples`. Tell the reader up front
