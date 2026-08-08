@@ -7,6 +7,7 @@ run over the admitted set only.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -701,6 +702,43 @@ def test_a_non_markdown_sibling_is_not_scanned(tmp_path: Path) -> None:
     (item.source_path / "data.yaml").write_bytes(b"admission:\n  cost: c\n")
 
     result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert result.ok, result.violations
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a mode-000 file, so nothing is proven")
+def test_a_file_the_scan_cannot_read_is_never_read(tmp_path: Path) -> None:
+    """The suffix filter runs before the bytes are read, not after.
+
+    The interior carries implementation scripts and fixtures the scan can have no
+    opinion about; reading them to discard them unexamined is work done on a
+    user's machine to produce nothing. Pinned without instrumenting file IO: an
+    unreadable file makes the read itself the observable event, so a gate that
+    passes here is a gate that did not attempt it."""
+    item = _skill_dir(tmp_path, "unread")
+    blocked = item.source_path / "big.py"
+    blocked.write_bytes(b"x" * 4096)
+    blocked.chmod(0o000)
+    try:
+        result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+        assert result.ok, result.violations
+    finally:
+        blocked.chmod(0o644)
+
+
+def test_an_override_the_scan_cannot_read_is_filtered_too(tmp_path: Path) -> None:
+    """The suffix filter is the scan's own question and applies to both sides. The
+    manifest exemption overrides carry is about what *deploys*, and it does not
+    extend to what this check can make sense of."""
+    item = _skill_dir(tmp_path, "binary-override")
+    plan = _plan(_instruction(b"laws"), item)
+    plan.dir_overrides[Path("skills/binary-override")] = {
+        Path("assets/data.json"): Contribution(
+            source_path=Path("/plugin/assets/data.json"), content=b'{"admission": 1}'
+        )
+    }
+
+    result = run_admission_gate({Tool.CLAUDE: plan})
 
     assert result.ok, result.violations
 

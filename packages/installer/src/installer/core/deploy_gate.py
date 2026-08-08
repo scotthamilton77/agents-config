@@ -205,30 +205,46 @@ def _record_bearers(item: StagedItem, overrides: dict[Path, Contribution]) -> li
     ]
 
 
-def _deployed_interior(
+def _scanned_interior(
     item: StagedItem, overrides: Mapping[Path, Contribution], ignore: InstallIgnore
 ) -> dict[Path, Contribution]:
-    """Every file a directory item deploys *below* its entry file, by relative path.
+    """The files below a directory item's entry that the interior scan can read.
 
-    The source tree filtered the way the copy filters it, then the overrides laid
-    on top — the same construction the sync's idempotency check makes, and for
-    the same reason: what matters is what reaches disk, not what is authored.
-    Overrides are deliberately not filtered, because the sync writes them
+    Two filters, answering two different questions, and keeping them apart is
+    what makes this correct.
+
+    **What deploys** is the manifest's question. The source tree is filtered the
+    way the copy filters it, then the overrides are laid on top — the same
+    construction the sync's idempotency check makes, and for the same reason:
+    what matters is what reaches disk, not what is authored. Overrides are
+    deliberately *not* manifest-filtered, because the sync writes them
     unconditionally after the filtered copy; a name the manifest excludes still
     deploys when an override supplies its bytes.
+
+    **What can be read** is the scan's own question, and it applies to both
+    sides equally: a non-markdown override is as opaque to the scan as a
+    non-markdown file in the tree. It is applied *before* the bytes are read
+    rather than after, which is the whole reason this filter lives here instead
+    of at the call site. The interior carries implementation scripts, schemas
+    and fixtures — hundreds of kilobytes per gate run, on the deploy path — and
+    reading them to discard them unexamined is work done on a user's machine to
+    produce nothing.
 
     The entry file is dropped at the top level only. It is the one file the gate
     already reads and rewrites, so nothing is left in it to find; a ``SKILL.md``
     nested deeper is a different file, which nothing reads and nothing strips.
     """
     interior = {
-        path.relative_to(item.source_path): Contribution(
-            source_path=path, content=path.read_bytes()
+        rel: Contribution(source_path=path, content=path.read_bytes())
+        for path, rel in (
+            (path, path.relative_to(item.source_path))
+            for path in sorted(item.source_path.rglob("*"))
         )
-        for path in sorted(item.source_path.rglob("*"))
-        if path.is_file() and not ignore.excludes_path(path.relative_to(item.source_path))
+        if rel.suffix in _SCANNED_SUFFIXES and path.is_file() and not ignore.excludes_path(rel)
     }
-    interior.update(overrides)
+    interior.update(
+        {rel: part for rel, part in overrides.items() if rel.suffix in _SCANNED_SUFFIXES}
+    )
     interior.pop(Path(DIR_RECORD_FILE), None)
     return interior
 
@@ -247,8 +263,8 @@ def _interior_violations(
     A skill directory copies verbatim, so the gate reading exactly one file per
     directory means every other file in it ships as authored — including the
     ``admission`` block or the provenance comment the sanitizer exists to keep
-    out of a deploy. This is the scan that closes that, and it reads the same
-    interior the sync will write.
+    out of a deploy. This is the scan that closes that, over the part of the
+    interior the sync will write that this check can read (`_scanned_interior`).
 
     **Reported, never rewritten**, and the asymmetry with the entry file is the
     decision rather than an omission. The entry file's record is *consumed*: the
@@ -268,9 +284,7 @@ def _interior_violations(
     neither.
     """
     violations: list[str] = []
-    for rel, contribution in sorted(_deployed_interior(item, overrides, ignore).items()):
-        if rel.suffix not in _SCANNED_SUFFIXES:
-            continue
+    for rel, contribution in sorted(_scanned_interior(item, overrides, ignore).items()):
         found = governance_findings(contribution.content.decode("utf-8", errors="replace"))
         if not found:
             continue
