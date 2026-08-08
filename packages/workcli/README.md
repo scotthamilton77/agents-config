@@ -118,8 +118,8 @@ backend returned unasked, which was live work only, so an id that exists
 could be absent from a complete-looking listing. It now carries every
 status, closed included, and `--status` is the only thing that narrows it.
 `ready` is unchanged — it answers the queue question, where closed work has
-no place, and a caller wanting the queue view of a listing asks `list
---status open` for it.
+no place, and a caller wanting the queue view of a listing asks
+`list --status open` for it.
 `Capabilities` splits `ready` and `sync` into a `ReadySupport`/
 `SyncSupport` disposition each (`NATIVE` | `EMULATED`/`SERVER_AUTHORITATIVE`
 | `UNSUPPORTED`) instead of a single boolean, and `dep` gates only typed
