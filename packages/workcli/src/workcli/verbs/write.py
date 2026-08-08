@@ -9,11 +9,10 @@ envelope.
 from __future__ import annotations
 
 from argparse import Namespace
-from typing import cast
 
 from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
-from workcli.lifecycle.closewalk import close_walk
+from workcli.lifecycle.closewalk import close_walk, walk_payload
 from workcli.model import CreateFields, UpdateFields
 
 
@@ -102,17 +101,18 @@ def close(backend: Backend, args: Namespace) -> JsonValue:
     One batched `Backend.close` for all ids first, then one `append_note` per
     id carrying the disposition text (orchestrator ruling: the backend's own
     close-reason field is the wrong home; the disposition is an appended
-    note), then the close-walk: exhausted non-milestone parents close with a walk
-    note. `data` stays None when nothing walked (legacy envelope shape).
+    note), then the close-walk: exhausted parents close with a walk note, and
+    exhausted parents carrying scope of their own are reported held. The ids
+    named here are closed unconditionally -- the walk's rules govern what it
+    infers, not what the caller states. `data` stays None when the walk had
+    nothing to report (legacy envelope shape).
     """
     backend.close(args.ids)
     if args.disposition is not None:
         for item_id in args.ids:
             backend.append_note(item_id, args.disposition)
-    walked = close_walk(backend, list(args.ids))
-    if walked:
-        return {"walked": cast("list[JsonValue]", list(walked))}
-    return None
+    payload = walk_payload(close_walk(backend, list(args.ids)))
+    return payload or None
 
 
 def reopen(backend: Backend, args: Namespace) -> JsonValue:
