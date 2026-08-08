@@ -6,29 +6,24 @@ E_BACKEND_DRIFT with detail.reason == "invalid_json"."""
 
 from __future__ import annotations
 
-import io
-import json
 from collections.abc import Sequence
 
-from tests.integration.conftest import _bd_env
+from tests.integration.conftest import ITEST_TRACK, _bd_env, driver_for
 from tests.integration.fault_runner import Fault, FaultInjectingBdRunner
 from workcli.adapters.bd.runner import SubprocessBdRunner
-from workcli.cli import main
 
-
-def _drive(runner, argv: Sequence[str]) -> dict:
-    out, err = io.StringIO(), io.StringIO()
-    main(list(argv), runner=runner, out=out, err=err)
-    return json.loads(out.getvalue())
+# These tests wrap the real runner in a fault-injecting one, so they build their
+# drivers by hand rather than taking the `driver` fixture. `driver_for` is the
+# same factory the fixture uses, which is what keeps their `work` calls bound to
+# the install's own project-config.toml instead of the ambient repository's.
 
 
 def test_malformed_json_on_read_is_invalid_json_drift(fresh_install, bd_binary):
     real = SubprocessBdRunner(
         bd_binary=bd_binary, cwd=str(fresh_install), env=_bd_env(fresh_install)
     )
-    created = _drive(
-        real, ["create", "--raw", "--title", "cr-item", "--type", "task", "--priority", "2"]
-    )
+    drive = driver_for(real, fresh_install)
+    created = drive(["create", "--raw", "--title", "cr-item", "--type", "task", "--priority", "2"])
     item_id = created["data"]["id"]
 
     # Fault the `show --json` read with garbage stdout, exit 0.
@@ -37,7 +32,7 @@ def test_malformed_json_on_read_is_invalid_json_drift(fresh_install, bd_binary):
         fail_when=lambda _n, argv: "show" in argv and "--json" in argv,
         fault=Fault.MALFORMED_JSON,
     )
-    env = _drive(faulted, ["show", item_id])
+    env = driver_for(faulted, fresh_install)(["show", item_id])
     assert env["ok"] is False
     assert env["error"]["code"] == "E_BACKEND_DRIFT"
     assert env["error"]["detail"]["reason"] == "invalid_json"
@@ -50,16 +45,28 @@ def test_interrupted_deliver_is_healed_by_reconcile(fresh_install, bd_binary):
     real = SubprocessBdRunner(
         bd_binary=bd_binary, cwd=str(fresh_install), env=_bd_env(fresh_install)
     )
+    drive = driver_for(real, fresh_install)
 
     # --- Arrange: promote a shape-feat leaf → a shape-spec container. That mints
     # a design child (shape-design) + an impl-placeholder sibling under it
     # (transitions.py::promote → finalize_spec_instantiation). `create` requires
-    # exactly one of --parent/--orphan; this leaf is standalone → --orphan.
-    leaf = _drive(real, ["create", "feat", "--title", "cr-spec", "--priority", "2", "--orphan"])[
-        "data"
-    ]["id"]
-    _drive(real, ["promote", leaf])
-    design_child, placeholder = _design_and_placeholder(real, leaf)
+    # exactly one of --parent/--orphan; this leaf is standalone → --orphan, which
+    # leaves no parent to inherit a track from, so it names one itself.
+    leaf = drive(
+        [
+            "create",
+            "feat",
+            "--title",
+            "cr-spec",
+            "--priority",
+            "2",
+            "--orphan",
+            "--track",
+            ITEST_TRACK,
+        ]
+    )["data"]["id"]
+    drive(["promote", leaf])
+    design_child, placeholder = _design_and_placeholder(drive, leaf)
 
     # A `## Continuations` single-item manifest. GRAMMAR (manifest.py, verified):
     # `- <noun>: <title> — AC: <acceptance>` — note the em-dash separator " — AC: ".
@@ -77,7 +84,9 @@ def test_interrupted_deliver_is_healed_by_reconcile(fresh_install, bd_binary):
         return argv[:1] == ["update"] and "--type" in argv
 
     faulted = FaultInjectingBdRunner(real, fail_when=fail_on_set_type, fault=Fault.NONZERO_EXIT)
-    crashed = _drive(faulted, ["deliver", design_child, "--spec", str(spec_file)])
+    crashed = driver_for(faulted, fresh_install)(
+        ["deliver", design_child, "--spec", str(spec_file)]
+    )
     assert crashed["ok"] is False  # the injected fault aborted deliver
 
     # Partial state is real: the placeholder still carries the impl-placeholder
@@ -85,13 +94,13 @@ def test_interrupted_deliver_is_healed_by_reconcile(fresh_install, bd_binary):
     # in-band manifest snapshot the appends recorded before the fault is present
     # — that snapshot is what `reconcile` replays off, so its persistence proves
     # the fault landed after the appends and before the shape mutation.
-    mid = _drive(real, ["show", placeholder])["data"]
+    mid = drive(["show", placeholder])["data"]
     assert "impl-placeholder" in mid["labels"]
     assert "shape-feat" not in mid["labels"]
     assert "[work] manifest:" in mid["notes"]
 
     # --- Heal: reconcile replays reconcile_placeholder off the recorded snapshot.
-    swept = _drive(real, ["reconcile"])
+    swept = drive(["reconcile"])
     assert swept["ok"] is True
 
     # Assert the full correct heal: the impl-placeholder recovery handle is
@@ -99,21 +108,21 @@ def test_interrupted_deliver_is_healed_by_reconcile(fresh_install, bd_binary):
     # (delivery complete), spec-ready is stamped, and the placeholder keeps
     # its manifest-noun shape — the instantiation sweep must never re-finalize
     # it into a planned shape-spec container (wgclw.9.8).
-    healed = _drive(real, ["show", placeholder])["data"]
+    healed = drive(["show", placeholder])["data"]
     assert "impl-placeholder" not in healed["labels"]  # handle removed strictly last
     assert "spec-ready" in healed["labels"]
     assert "shape-feat" in healed["labels"]  # manifest-noun shape survives the sweep
     assert "creating-spec" not in healed["labels"]
     assert "planned" not in healed["labels"]
-    assert _drive(real, ["show", design_child])["data"]["status"] == "closed"
+    assert drive(["show", design_child])["data"]["status"] == "closed"
 
 
-def _design_and_placeholder(runner, container_id: str) -> tuple[str, str]:
+def _design_and_placeholder(drive, container_id: str) -> tuple[str, str]:
     """Return (design_child_id, placeholder_id): the container's two children."""
-    children = _drive(runner, ["show", container_id])["data"]["children"]  # single-id show
+    children = drive(["show", container_id])["data"]["children"]  # single-id show
     design_child = placeholder = None
     for child_id in children:
-        labels = _drive(runner, ["show", child_id])["data"]["labels"]
+        labels = drive(["show", child_id])["data"]["labels"]
         if "shape-design" in labels:
             design_child = child_id
         else:

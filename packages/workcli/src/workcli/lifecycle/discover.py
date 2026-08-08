@@ -15,7 +15,6 @@ validation, and track resolution all execute unchanged.
 
 from __future__ import annotations
 
-import re
 from argparse import Namespace
 from typing import cast
 
@@ -23,13 +22,13 @@ from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle import is_container
 from workcli.lifecycle.create import create_noun
-from workcli.lifecycle.nouns import LEAF_NOUNS, Noun, resolve_noun
+from workcli.lifecycle.nouns import LEAF_NOUNS, Noun
+from workcli.lifecycle.validate import combine_errors, validate_noun
+from workcli.lifecycle.validate import validate_priority as _validate_priority_format
 from workcli.model import Item
 from workcli.tracks import derive_track
 
 _HATCHES = ("externally-blocked", "blast-radius", "own-cycle")
-_PRIORITY_RE = re.compile(r"^P[0-4]$")
-_BARE_PRIORITY_RE = re.compile(r"^[0-4]$")
 _DISCOVERED_FROM_TYPE = "discovered-from"
 _ORPHAN_ANCHOR_DISPLAY = "none: escalated"
 
@@ -75,68 +74,19 @@ def _parse_scope(value: str | None) -> tuple[str, str | None]:
     )
 
 
-def _normalize_priority(value: str) -> str:
-    """A bare digit ('2') normalizes to the canonical 'P2' notation.
-
-    Nothing else about the value is ambiguous -- only the notation was ever
-    rejected -- so anything not matching the bare-digit shape passes through
-    unchanged for `_PRIORITY_RE` to accept or reject as before.
-    """
-    if _BARE_PRIORITY_RE.match(value):
-        return f"P{value}"
-    return value
-
-
 def _validate_priority(value: str | None) -> str:
+    """discover's own required-ness over the shared notation rule
+    (`validate.validate_priority`): missing is triage-semantic, and so is a
+    malformed value -- both `E_TRIAGE_INCOMPLETE`, unlike `create`'s plain
+    `E_USAGE` framing over the same shared validator.
+    """
     if value is None:
         raise _triage_incomplete("priority", "--priority is required")
-    normalized = _normalize_priority(value)
-    if not _PRIORITY_RE.match(normalized):
-        raise _triage_incomplete("priority", f"priority must be one of P0-P4, got {value!r}")
-    return normalized
+    return _validate_priority_format(value, code=ErrorCode.TRIAGE_INCOMPLETE)
 
 
 def _validate_noun(value: str) -> Noun:
-    noun = resolve_noun(value)
-    if noun is not None and noun in LEAF_NOUNS:
-        return noun
-    raise WorkError(
-        ErrorCode.USAGE,
-        f"invalid choice: {value!r} (choose from {', '.join(n.value for n in LEAF_NOUNS)})",
-        detail={"field": "noun"},
-    )
-
-
-def _combined_error(errors: list[WorkError]) -> WorkError:
-    """Fold 2+ independent field failures into one well-formed error.
-
-    `message` and `detail.errors` preserve every folded failure's own
-    message and code verbatim. The top-level `code` is `E_TRIAGE_INCOMPLETE`
-    if any folded failure is triage-semantic, `E_USAGE` only when every
-    folded failure is pure arg-shape -- so a caller grepping the top level
-    for a triage rejection still finds one when an unrelated arg-shape
-    mistake co-occurs in the same call.
-    """
-    detail: dict[str, JsonValue] = {
-        "errors": cast(
-            "list[JsonValue]",
-            [
-                {
-                    "code": str(error.code),
-                    "field": error.detail.get("field"),
-                    "message": error.message,
-                }
-                for error in errors
-            ],
-        )
-    }
-    message = "; ".join(f"{error.detail.get('field', '?')}: {error.message}" for error in errors)
-    code = (
-        ErrorCode.TRIAGE_INCOMPLETE
-        if any(error.code is ErrorCode.TRIAGE_INCOMPLETE for error in errors)
-        else ErrorCode.USAGE
-    )
-    return WorkError(code, message, detail)
+    return validate_noun(value, LEAF_NOUNS)
 
 
 def _validate_noun_and_priority(args: Namespace) -> tuple[Noun, str]:
@@ -145,7 +95,7 @@ def _validate_noun_and_priority(args: Namespace) -> tuple[Noun, str]:
     Both validators run before either is allowed to raise, so a caller with
     both fields wrong learns about both from one invocation. A single-field
     failure still raises that field's own error unchanged; two failures fold
-    into one via `_combined_error`.
+    into one via `validate.combine_errors`.
     """
     noun_result: Noun | WorkError
     try:
@@ -160,7 +110,7 @@ def _validate_noun_and_priority(args: Namespace) -> tuple[Noun, str]:
         priority_result = priority_error
 
     if isinstance(noun_result, WorkError) and isinstance(priority_result, WorkError):
-        raise _combined_error([noun_result, priority_result])
+        raise combine_errors([noun_result, priority_result])
     if isinstance(noun_result, WorkError):
         raise noun_result
     if isinstance(priority_result, WorkError):

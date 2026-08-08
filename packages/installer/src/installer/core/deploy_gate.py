@@ -6,13 +6,15 @@ is assembled and before any write. It:
 1. **partitions** every gated artifact (rules/skills/commands/agents) by its
    admission record — dropping the record-less (the zero-base mechanism),
    collecting the malformed as violations, keeping the complete;
-2. **sanitizes** each admitted artifact — the ``admission``/``claims`` front
-   matter and any provenance comment are deploy-time inputs, so they are
-   stripped from the bytes that ship (see ``sanitize``);
-3. measures the **surface budget** over the *sanitized admitted* content — the
-   always-on surface per tool and each admitted skill body. Measuring after
-   sanitization is the point: the budget weighs what a reader actually loads,
-   not the governance metadata that enforces the budget;
+2. **rewrites** each admitted artifact's front matter — the
+   ``admission``/``claims`` blocks and any provenance comment are deploy-time
+   inputs, so they are stripped from the bytes that ship, and capability keys
+   the target tool's loader does not define are projected out (see
+   ``sanitize`` and ``capabilities``);
+3. measures the **surface budget** over the *rewritten admitted* content — the
+   always-on surface per tool and each admitted skill body. Measuring after the
+   rewrite is the point: the budget weighs what a reader actually loads, not
+   the governance metadata that enforces the budget;
 4. runs the **conflict audit** over the admitted artifacts' claims.
 
 Any violation makes ``GateResult.ok`` false; the caller reports each and aborts
@@ -38,10 +40,12 @@ from installer.core.admission import (
     is_gated,
     record_source_text,
 )
+from installer.core.capabilities import is_user_invoked
 from installer.core.conflict_audit import conflict_violations
 from installer.core.frontmatter import split_frontmatter
-from installer.core.sanitize import sanitize_text
+from installer.core.sanitize import project_capabilities, sanitize_text
 from installer.core.surface_budget import (
+    SkillBodySource,
     SkillMeasure,
     SurfaceMeasure,
     always_on_violations,
@@ -129,7 +133,7 @@ def run_admission_gate(plans: dict[Tool, StagingPlan]) -> GateResult:
     skipped: list[str] = []
     violations: list[str] = []
     claims_by_artifact: list[tuple[str, dict[str, str]]] = []
-    skill_bodies: list[tuple[str, str]] = []
+    skill_bodies: list[SkillBodySource] = []
 
     for tool, plan in plans.items():
         kept: dict[Path, StagedItem] = {}
@@ -152,10 +156,22 @@ def run_admission_gate(plans: dict[Tool, StagingPlan]) -> GateResult:
                 continue
 
             # Admitted: ship the artifact without its deploy-time governance
-            # metadata. A file item carries its own bytes; a directory item is
-            # opaque, so the rewritten entry file rides the dir_overrides side
-            # channel the sync already overlays on top of the source tree.
-            sanitized = sanitize_text(text) if text is not None else None
+            # metadata and without capability keys this tool cannot read. A file
+            # item carries its own bytes; a directory item is opaque, so the
+            # rewritten entry file rides the dir_overrides side channel the sync
+            # already overlays on top of the source tree.
+            #
+            # The invocation mode is read from the SOURCE front matter, before
+            # the projection removes the key for a tool that does not define it.
+            # Reading it after would make one artifact's cap depend on which
+            # tool is being staged, so the same repo would pass on a Claude-only
+            # machine and fail wherever a second tool is detected.
+            user_invoked = is_user_invoked(text) if text is not None else False
+            sanitized = (
+                project_capabilities(sanitize_text(text), tool=tool.value)
+                if text is not None
+                else None
+            )
             if sanitized is not None:
                 if item.content is not None:
                     item = replace(item, content=sanitized.encode("utf-8"))
@@ -165,7 +181,13 @@ def run_admission_gate(plans: dict[Tool, StagingPlan]) -> GateResult:
 
             claims_by_artifact.append((label, verdict.claims))
             if item.namespace == "skills":
-                skill_bodies.append((label, _skill_body(sanitized or "")))
+                skill_bodies.append(
+                    SkillBodySource(
+                        label=label,
+                        body=_skill_body(sanitized or ""),
+                        user_invoked=user_invoked,
+                    )
+                )
 
         # Drop override bytes for any item the gate removed, then lay each
         # admitted dir's sanitized entry file over what survives.

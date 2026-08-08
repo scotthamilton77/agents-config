@@ -8,11 +8,16 @@ bead state directly, so a test builds a partially-delivered tree, runs the
 recovery, and asserts the final state.
 
 Fidelity choices that matter for recovery correctness:
-- `query()`/`ready()`/`search()` return *lean* Items (`children == []`,
-  `deps == []`), mirroring bd `list`, which carries no children/dependents key
-  (adapters/bd/parse.py). `reconcile` re-`get()`s every candidate precisely
-  because of this; the fake preserves that seam, so a regression that trusts a
-  query result's children is caught rather than masked.
+- `query()`/`ready()`/`search()` report only what the bd command behind each
+  can express, and name the rest in `unknown_relations` (the table in
+  adapters/bd/parse.py, captured from bd 1.0.3). `list`/`ready` carry a parent
+  and raw dependency edge rows but no dependents key at all, so children are
+  unknown and every edge's far-end status is unavailable without a second
+  fetch; `search` carries none of the three. `reconcile` re-`get()`s every
+  candidate precisely because of this, and the fake preserves that seam so a
+  regression that trusts a query result's children is caught rather than
+  masked. A fake that answered any of these from its own complete state would
+  hide exactly the class of defect this seam exists to catch.
 - `Item` is frozen and carries no `acceptance` field, so `get()` rebuilds a
   fresh snapshot per read, and acceptance -- which bd stores but the normalized
   Item drops -- is exposed for assertions via `acceptance_of()`.
@@ -38,6 +43,10 @@ from workcli.model import (
     SyncResult,
     UpdateFields,
 )
+
+# What each read cannot express, mirroring the parser's own per-command table.
+_QUERY_UNKNOWN = frozenset({"children", "deps"})
+_SEARCH_UNKNOWN = frozenset({"parent", "deps", "children"})
 
 
 @dataclass
@@ -115,7 +124,13 @@ class FakeBackend:
     def _children_of(self, item_id: str) -> list[str]:
         return [rec.id for rec in self._items.values() if rec.parent == item_id]
 
-    def _snapshot(self, rec: _Rec, *, lean: bool) -> Item:
+    def _snapshot(self, rec: _Rec, *, unknown: frozenset[str] = frozenset()) -> Item:
+        """One item as the named read would report it, unknowns emptied.
+
+        An unknown field holds its empty value here, exactly as the parser
+        leaves it -- the point is that the emptiness is declared, so nothing
+        downstream can read it as an answer.
+        """
         return Item(
             id=rec.id,
             title=rec.title,
@@ -123,13 +138,14 @@ class FakeBackend:
             status=rec.status,
             priority=rec.priority,
             labels=list(rec.labels),
-            parent=rec.parent,
-            deps=[] if lean else list(rec.deps),
-            children=[] if lean else self._children_of(rec.id),
+            parent=None if "parent" in unknown else rec.parent,
+            deps=[] if "deps" in unknown else list(rec.deps),
+            children=[] if "children" in unknown else self._children_of(rec.id),
             description=rec.description,
             notes=rec.notes,
             created=None,
             updated=None,
+            unknown_relations=unknown,
         )
 
     # -- Backend protocol --
@@ -141,7 +157,7 @@ class FakeBackend:
         )
 
     def get(self, item_id: str) -> Item:
-        return self._snapshot(self._require(item_id), lean=False)
+        return self._snapshot(self._require(item_id))
 
     def batch_get(self, ids: Sequence[str]) -> list[Item]:
         return [self.get(item_id) for item_id in ids]
@@ -217,14 +233,14 @@ class FakeBackend:
                 continue
             if filters.type is not None and rec.type != filters.type:
                 continue
-            out.append(self._snapshot(rec, lean=True))
+            out.append(self._snapshot(rec, unknown=_QUERY_UNKNOWN))
         if filters.limit is not None:
             out = out[: filters.limit]
         return out
 
     def ready(self, label: str | None) -> list[Item]:
         return [
-            self._snapshot(rec, lean=True)
+            self._snapshot(rec, unknown=_QUERY_UNKNOWN)
             for rec in self._items.values()
             if rec.status == "open" and (label is None or label in rec.labels)
         ]
@@ -269,7 +285,9 @@ class FakeBackend:
 
     def search(self, query: str) -> list[Item]:
         return [
-            self._snapshot(rec, lean=True) for rec in self._items.values() if query in rec.title
+            self._snapshot(rec, unknown=_SEARCH_UNKNOWN)
+            for rec in self._items.values()
+            if query in rec.title
         ]
 
     def sync(self, pull: bool) -> SyncResult:

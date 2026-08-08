@@ -3,6 +3,7 @@
 **Date:** 2026-07-24
 **Status:** Child spec of `docs/specs/2026-07-21-harness-rework-way-forward.md` (S5 slice; implements D1/D2/D18, discharges AC4 and the `writing-plans` clause of AC5)
 **Tracker:** `agents-config-9k9.15`
+**Amended:** 2026-08-07 — S5-D3's portability clause is reversed; see §5.
 
 The readiness gate needs an authoring path that cannot emit a goals-only
 spec. S5 installs that path: admit the two grilling skills and `to-spec`
@@ -66,6 +67,11 @@ The user-invoked-only intent is expressed portably in the description
 ("invoke when the user asks to turn the conversation into a spec"); if a
 Claude-side invocation hard-stop proves necessary later, that is a
 Claude-tree override admitted separately.
+
+> **Reversed 2026-08-07 — see §5.** The portability clause above no longer
+> holds: the shared tree carries the flag and the installer projects it per
+> tool. The rest of S5-D3 (the output-contract replacement, the dropped
+> tracker-publish step) stands.
 
 **S5-D4 — Drift policy flips to local-fork at graft time.** All three
 skills keep their provenance headers but change `Drift policy:` to
@@ -178,3 +184,46 @@ sweeping admission records onto the rest of the deployed catalog (AC3
 closure), deletion of `wait-for-pr-comments` / `reply-and-resolve-pr-threads`
 / `monitor-pr` (S8, per D13/AC5), and any redesign of the grill skills'
 interview mechanics beyond the exit-criterion graft.
+
+## 5. Amendment 2026-08-07 — S5-D3's portability clause is reversed
+
+**What changes.** A shared-tree skill may now carry
+`disable-model-invocation: true`. S5-D3's ruling that the flag is a
+Claude-specific capability field which shared content must not carry, with the
+user-invoked intent expressed in description prose instead, no longer holds.
+S5-A3's corresponding clause — "the frontmatter carries no Claude-specific
+field" — is retired with it; it recorded a check that was correct when the
+slice shipped and would now fail a conforming artifact.
+
+**Why.** S5-D3 was right that the key is Claude-specific and wrong that the
+only remedy is to omit it, because at the time the installer had no way to make
+one source file deploy differently per tool. It now does: the admission gate
+projects capability front matter per target tool, so Claude receives the key
+and Codex, Gemini and OpenCode receive the artifact without it. The placement
+rule S5-D3 invoked is unchanged — placement follows what an artifact's
+*procedure* depends on, and front matter is no longer evidence of that.
+
+Two things made the reversal worth making rather than merely possible. The flag
+is measurably load-bearing: a deployed skill carrying it is absent from a
+Claude session's skills catalog while every other deployed skill is present, so
+it does not merely suppress auto-firing — it removes the description from the
+agent's context, which the intent expressed as description prose bought none
+of. And the invocation axis is now a design rule the charter admits (D18),
+which the incoming skill wave applies as its default; expressing it in prose
+per skill scales worse the more skills carry it.
+
+**What replaces it.** The installer holds one table of capability keys and the
+tools whose loaders define them; the gate drops, per tool, the keys that tool
+does not define. The projection is removal rather than translation, since no
+other supported tool exposes a per-artifact invocation control to translate
+onto. The same flag additionally selects which body cap measures the skill —
+5,000 tokens user-invoked, 2,000 model-invoked — read from the source front
+matter before projection, so one artifact is measured against one cap on every
+tool. The raised ceiling is relief for a body already split into `references/`,
+not permission to skip the split.
+
+**Prerequisite.** The behaviour is in `packages/installer`
+(`core/capabilities.py`, `core/sanitize.py`, `core/surface_budget.py`,
+`core/deploy_gate.py`) and gated by `make ci`. The `admit-request` gate
+document states the same rule. Tracked as `agents-config-9k9.149`, which also
+subsumes the per-tool half of `agents-config-9k9.68`.

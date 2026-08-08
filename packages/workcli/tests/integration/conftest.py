@@ -3,6 +3,12 @@
 Every install is a throwaway .beads under pytest tmp_path, bound to bd via
 BEADS_DIR so bd's upward .beads discovery can never reach the repo's real DB.
 The suite skips wholesale when bd is not on PATH.
+
+Two separate bindings keep an install isolated, and they isolate different
+things. BEADS_DIR binds the bd SUBPROCESS to this install's database. The
+`--config` path `driver_for` puts on every call binds the IN-PROCESS track
+layer to this suite's own config -- see `_write_track_config` for why the
+second one is not redundant.
 """
 
 from __future__ import annotations
@@ -17,10 +23,23 @@ from pathlib import Path
 
 import pytest
 
-from workcli.adapters.bd.runner import SubprocessBdRunner
+from workcli.adapters.bd.runner import BdRunner, SubprocessBdRunner
 from workcli.cli import main
 
 _SEED_PREFIX = "itest"
+
+# The one track name this suite may create under. It is the fixture's OWN
+# vocabulary, not the ambient repository's -- `_write_track_config` explains
+# the distinction and why it matters. Tests name it explicitly on every
+# `work create <noun>`; import it rather than spelling the string again.
+ITEST_TRACK = "itest-track"
+
+_TRACK_CONFIG = f"""\
+# Written per-install by the integration conftest. Owned by this suite.
+[tracks]
+names = ["{ITEST_TRACK}"]
+enforcement = "required"
+"""
 
 
 def resolve_bd() -> str:
@@ -85,17 +104,55 @@ def _bd_init(bd_binary: str, install: Path) -> None:
     _run_bd(bd_binary, install, "init", "--prefix", _SEED_PREFIX)
 
 
-def _make_driver(bd_binary: str, install: Path) -> Callable[[Sequence[str]], dict]:
+def _write_track_config(install: Path) -> Path:
+    """Write this install's OWN project-config.toml and return its path.
+
+    WHERE THIS SUITE'S TRACK COMES FROM: this file, named explicitly as
+    `--config` on every `work` call, and never the ambient repository's
+    project-config.toml. The distinction is load-bearing. The track layer
+    resolves its config by walking UP from `Path.cwd()`, and this suite drives
+    production `main()` IN-PROCESS -- so that walk starts at pytest's own
+    working directory, inside this repository, however completely bd itself is
+    bound to an off-repo install by BEADS_DIR. Left alone the suite silently
+    adopts the repository's own [tracks] table: its track names and its
+    enforcement setting would decide what these tests are allowed to create,
+    and editing that table would turn this suite red. `--config` overrides the
+    upward search outright, which closes it.
+
+    Enforcement is pinned to "required" deliberately. The create gate must be
+    LIVE here, so every `work create <noun>` in this suite has to name its
+    track exactly as a real caller does; relaxing it to "advisory" would let
+    the suite pass without ever exercising the gate.
+    """
+    config_path = install / "project-config.toml"
+    config_path.write_text(_TRACK_CONFIG, encoding="utf-8")
+    return config_path
+
+
+def driver_for(runner: BdRunner, install: Path) -> Callable[[Sequence[str]], dict]:
     """Return a callable that drives the PRODUCTION main() against this install
-    and returns the parsed stdout envelope."""
-    runner = SubprocessBdRunner(bd_binary=bd_binary, cwd=str(install), env=_bd_env(install))
+    and returns the parsed stdout envelope.
+
+    Every call carries this install's own `--config`, so no `work` invocation
+    in this suite can reach the ambient repository's track configuration.
+    Public because the crash-recovery tests wrap the real runner in a
+    fault-injecting one and need the same binding on their own calls.
+    """
+    config_path = _write_track_config(install)
 
     def drive(argv: Sequence[str]) -> dict:
         out, err = io.StringIO(), io.StringIO()
-        main(list(argv), runner=runner, out=out, err=err)
+        main(["--config", str(config_path), *argv], runner=runner, out=out, err=err)
         return json.loads(out.getvalue())
 
     return drive
+
+
+def _make_driver(bd_binary: str, install: Path) -> Callable[[Sequence[str]], dict]:
+    return driver_for(
+        SubprocessBdRunner(bd_binary=bd_binary, cwd=str(install), env=_bd_env(install)),
+        install,
+    )
 
 
 @pytest.fixture

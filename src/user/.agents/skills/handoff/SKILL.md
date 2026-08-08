@@ -13,10 +13,10 @@ admission:
 <!--
 Source: skills/productivity/handoff/ (pristine upstream); promoted project-extended fork
 Upstream: https://github.com/mattpocock/skills @ ed37663cc5fbef691ddfecd080dff42f7e7e350d
-Local extensions: Claude-specific frontmatter (disable-model-invocation, allowed-tools), !-command working-tree snapshot prelude, 8-section required document structure, redaction constraints
+Local extensions: allowed-tools, !-command working-tree snapshot prelude, 8-section required document structure, redaction constraints. Upstream already carries argument-hint and disable-model-invocation; they are not ours.
 Last sync: 2026-05-23
 Drift policy: rewrite-and-divorce (project-extended, Claude-specific; do not re-sync from upstream)
-Placement: Claude-dependent (!-command syntax, disable-model-invocation/allowed-tools) but staged from the shared tree, so it also lands in Codex/Gemini/OpenCode where those keys do nothing. Deliberate and temporary — agents-config-9k9.68 resolves it with per-tool exemption support or by moving this back under src/user/.claude/skills/.
+Placement: shared tree. The Claude-only front matter (disable-model-invocation, allowed-tools, argument-hint) is dropped per tool at deploy, so Codex/Gemini/OpenCode receive neither the keys nor the capability. The !-command prelude still ships everywhere and is inert outside Claude.
 -->
 
 ## Working-tree snapshot

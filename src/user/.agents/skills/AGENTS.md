@@ -73,7 +73,9 @@ Update this table whenever a skill is added, replaced, retired, or amalgamated f
 
 `Upstream` and `Path in upstream` together fetch the exact reference bytes. `Last sync` is a different fact — when the deployed copy was last reconciled against upstream — so it can legitimately predate the pinned commit, and does for two rows here.
 
-`handoff` is the standing exception to the placement rule: it carries Claude-only front matter but sits in the shared tree, so it stages into Codex, Gemini and OpenCode where those keys do nothing. Deliberate and temporary — `agents-config-9k9.68` resolves it, either with per-tool exemption support or by moving the skill back.
+Claude-only front matter is no longer a reason to leave the shared tree. The installer projects capability keys per target tool at deploy: `disable-model-invocation`, `allowed-tools` and `argument-hint` are kept for Claude and dropped for Codex, Gemini and OpenCode, which have no equivalent to translate onto. `handoff` was the standing exception to the placement rule and is now the ordinary case.
+
+Placement still turns on capability-dependency, but of the skill's *procedure* rather than its front matter. A skill whose steps require a Claude-only mechanism belongs in the Claude tree. So does one whose admission record depends on behaviour the other tools cannot reproduce — dropping a key removes the bytes, not the gap, so a skill that must not fire unprompted is still model-invocable wherever the flag is unsupported.
 
 ## Common pitfall — extracted helpers must be wired in
 
