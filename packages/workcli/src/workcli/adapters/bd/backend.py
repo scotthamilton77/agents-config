@@ -129,8 +129,10 @@ class BdBackend:
 
     def query(self, filters: QueryFilters) -> list[Item]:
         argv = ["list", "--json"]
-        if filters.status is not None:
-            argv += ["--status", filters.status]
+        # The seam's "every status" is the absent filter; bd's listing spells
+        # it as a flag of its own, exactly as the description/notes search
+        # legs already ask for it.
+        argv += ["--all"] if filters.status is None else ["--status", filters.status]
         if filters.label is not None:
             argv += ["--label", filters.label]
         if filters.parent is not None:

@@ -3,7 +3,7 @@ name: diagnosing-bugs
 description: Diagnosis loop for hard bugs and performance regressions. Use when the user says "diagnose"/"debug this", or reports something broken/throwing/failing/slow.
 admission:
   prevents: An agent reading code to build a theory before it holds a command that goes red on the reported bug, then shipping a fix nothing can falsify — and, when a fix fails, stacking further attempts on a hypothesis space the evidence has already exhausted.
-  cost: One model-invoked catalog line and a body paid on invocation, plus a hard stop before hypothesising that spends a loop-building pass even on bugs whose cause turns out to be obvious.
+  cost: A hard stop before hypothesising that spends a loop-building pass even on bugs whose cause turns out to be obvious.
   remove_when: The executor refuses a fix unaccompanied by a named command observed red before the change and green after, so the gate no longer has to be read to be applied.
 ---
 

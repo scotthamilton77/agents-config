@@ -1,7 +1,7 @@
 ---
 admission:
   provides: Standing authorization to delegate to subagents and workflows without being asked each time, the boundary between orchestrator work and delegated work, the pointer to the delegate-selection skill, a consult gate before spawning a Fable subagent, and the no-reply rule for post-report idle notifications.
-  cost: Always-on rule loaded into every Claude Code session; biases toward spawning subagents, spending dispatch overhead on work the main loop could have done inline.
+  cost: Biases toward spawning subagents, spending dispatch overhead on work the main loop could have done inline.
   remove_when: The harness stops shipping a built-in prohibition on unrequested delegation, and unaided sessions hold the orchestrator/delegated boundary without being told.
 ---
 

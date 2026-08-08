@@ -16,6 +16,25 @@ _SECTION_HEADER = "## Continuations"
 _NONE_LITERAL = "none"
 _AC_SEPARATOR = " — AC: "
 
+# The grammar, stated for whoever tripped over it. Every refusal that fires
+# because the section is absent, blank, or holds a bullet this grammar does not
+# recognise carries it, because at that moment the author is reading the error
+# rather than the parser.
+#
+# It leads with the item form and closes on the declining form, and the second
+# half is the load-bearing one: a spec that genuinely leaves no follow-on work
+# still has to resolve its sibling placeholder, so `- none` is the sentence that
+# says "considered, and there are none" -- the one thing an absent section
+# cannot distinguish from an oversight. An author who never learns the form has
+# only one visible way out of the refusal, which is to mint a section that says
+# nothing.
+_NOUNS = ", ".join(noun.value for noun in Noun)
+_GRAMMAR_HELP = (
+    f"each item bullet is `- <noun>: <title> — AC: <acceptance>` (noun one of: {_NOUNS}); "
+    "a spec that leaves no follow-on work says so with the single bullet "
+    "`- none — <why there is none>`"
+)
+
 
 @dataclass(frozen=True)
 class ManifestItem:
@@ -35,7 +54,11 @@ def _section_body(spec_text: str) -> list[str]:
     try:
         start = lines.index(_SECTION_HEADER)
     except ValueError:
-        raise WorkError(ErrorCode.MANIFEST, "spec has no ## Continuations manifest") from None
+        raise WorkError(
+            ErrorCode.MANIFEST,
+            f"spec has no `{_SECTION_HEADER}` section: add one to the spec, under which "
+            f"{_GRAMMAR_HELP}",
+        ) from None
 
     body: list[str] = []
     for line in lines[start + 1 :]:
@@ -85,7 +108,7 @@ def _parse_item_bullet(text: str) -> ManifestItem:
     if ": " not in text:
         raise WorkError(
             ErrorCode.MANIFEST,
-            f"manifest item must be `<noun>: <title> — AC: <acceptance>`: {text!r}",
+            f"manifest bullet {text!r} is neither an item nor a declination: {_GRAMMAR_HELP}",
         )
     noun_token, rest = text.split(": ", 1)
     noun_token = noun_token.strip()
@@ -94,7 +117,8 @@ def _parse_item_bullet(text: str) -> ManifestItem:
     except ValueError:
         raise WorkError(
             ErrorCode.MANIFEST,
-            f"manifest item noun must be a bare noun (got {noun_token!r}): {text!r}",
+            f"manifest item noun must be a bare noun, one of: {_NOUNS} "
+            f"(got {noun_token!r}): {text!r}",
         ) from None
 
     if _AC_SEPARATOR not in rest:
@@ -122,7 +146,10 @@ def parse_continuations(spec_text: str) -> Manifest:
     if none_bullets:
         return Manifest(items=(), none_reason=_none_reason(none_bullets[0]))
     if not item_bullets:
-        raise WorkError(ErrorCode.MANIFEST, "empty manifest")
+        raise WorkError(
+            ErrorCode.MANIFEST,
+            f"`{_SECTION_HEADER}` section has no bullets: {_GRAMMAR_HELP}",
+        )
 
     items = tuple(_parse_item_bullet(bullet) for bullet in item_bullets)
     _reject_duplicate_titles(items)
@@ -153,7 +180,7 @@ def serialize_manifest(manifest: Manifest) -> str:
     Recorded in-band as the `[work] manifest:` note's payload at first design
     `deliver`, so recovery replays toward this frozen target instead of
     re-reading the (mutable) spec file. Single-line (no literal newlines, even
-    across a multi-line title/AC — JSON escapes them) so it survives as one bd
+    across a multi-line title/AC — JSON escapes them) so it survives as one
     note line the marker parser reads.
     """
     payload = {
@@ -177,9 +204,9 @@ def _snapshot_drift(text: str) -> WorkError:
 def deserialize_manifest(text: str) -> Manifest:
     """Inverse of `serialize_manifest`: the recorded snapshot back to a `Manifest`.
 
-    The snapshot lives in a bd note -- shared, dolt-synced state a human or
-    another agent can hand-edit -- so a truncated, malformed, or tampered payload
-    is *expected* corruption, not an internal bug. It surfaces as a typed
+    The snapshot lives in a note -- shared state, replicated across machines,
+    that a human or another agent can hand-edit -- so a truncated, malformed,
+    or tampered payload is *expected* corruption, not an internal bug. It surfaces as a typed
     `E_BACKEND_DRIFT` carrying the offending text, so `reconcile` can report one
     poisoned placeholder as a single attention finding instead of a raw
     `JSONDecodeError`/`KeyError` aborting the whole sweep as `E_INTERNAL`.

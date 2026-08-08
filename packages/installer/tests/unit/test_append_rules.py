@@ -7,6 +7,8 @@ Each test pins a coded decision in the append-merge contract for
 - Order is ``existing`` THEN ``incoming`` (deterministic, append-only).
 - The synthesised item carries merged bytes but takes ``provenance`` and
   ``source_path`` from ``incoming`` while preserving the shared key fields.
+- Each side is recorded as a ``Contribution``, so the destination stays
+  decomposable: the admission bar judges one authored file at a time.
 - Empty-content edges never emit a doubled/stray separator or a trailing
   blank-line artefact.
 
@@ -19,7 +21,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from installer.core.merge.strategies.append_rules import AppendRulesStrategy
-from installer.core.model import FileKind, Provenance, StagedItem
+from installer.core.model import Contribution, FileKind, Provenance, StagedItem
 
 _SEP = b"\n---\n"
 
@@ -130,3 +132,47 @@ def test_merged_item_preserves_shared_key_fields() -> None:
     assert merged.dest_relpath == Path("rules/foo.md")
     assert merged.kind == FileKind.NAMESPACED_MD
     assert merged.namespace == "rules"
+
+
+def test_each_side_is_recorded_as_a_contribution_in_content_order() -> None:
+    """The merged bytes are one blob, and every later reader of a rule's front
+    matter is asking about one authored file. Recording each side is what lets the
+    admission bar judge them separately instead of judging whichever leads."""
+    existing = _item("/src/a/foo.md", b"alpha")
+    incoming = _item("/src/b/foo.md", b"beta")
+
+    merged = AppendRulesStrategy().merge(existing, incoming)
+
+    assert merged.contributions == (
+        Contribution(source_path=Path("/src/a/foo.md"), content=b"alpha"),
+        Contribution(source_path=Path("/src/b/foo.md"), content=b"beta"),
+    )
+
+
+def test_a_chained_merge_flattens_into_one_contribution_per_file() -> None:
+    """Three rules colliding merge pairwise. The result names three authored
+    files in content order, not a nested pair — a reader of the list wants the
+    files, not the shape of the merge tree that produced them."""
+    strategy = AppendRulesStrategy()
+
+    first_two = strategy.merge(_item("/src/first.md", b"first"), _item("/src/second.md", b"second"))
+    all_three = strategy.merge(first_two, _item("/src/third.md", b"third"))
+
+    assert [part.source_path for part in all_three.contributions] == [
+        Path("/src/first.md"),
+        Path("/src/second.md"),
+        Path("/src/third.md"),
+    ]
+
+
+def test_a_side_that_contributed_no_bytes_contributes_no_identity() -> None:
+    """An empty rule adds nothing to the merged content, so listing it as a
+    contributor would put a file with no bytes on the admission bar's report and
+    fail the destination over a record nothing needed."""
+    merged = AppendRulesStrategy().merge(
+        _item("/src/a/empty.md", b""), _item("/src/b/foo.md", b"beta")
+    )
+
+    assert merged.contributions == (
+        Contribution(source_path=Path("/src/b/foo.md"), content=b"beta"),
+    )

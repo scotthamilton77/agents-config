@@ -25,6 +25,7 @@ from installer.core.installignore import InstallIgnore
 from installer.core.merge.base import CollisionError
 from installer.core.merge.registry import default_registry
 from installer.core.model import (
+    Contribution,
     FileKind,
     Provenance,
     StagedItem,
@@ -35,6 +36,12 @@ from installer.core.overlay import overlay_plugins
 from installer.plugins.generic import GenericPluginAdapter
 from installer.tools.claude import ClaudeAdapter
 from installer.tools.opencode import OpenCodeAdapter
+
+
+def _override_bytes(overrides: dict[Path, Contribution]) -> dict[Path, bytes]:
+    """The override map as plain bytes, for the assertions about what a carrier
+    merge carries rather than about where it came from."""
+    return {inner: part.content for inner, part in overrides.items()}
 
 
 @dataclass(frozen=True, slots=True)
@@ -351,7 +358,27 @@ def test_carrier_merge_records_plugin_file_bytes_in_dir_overrides(
     )
 
     dest = Path("skills/demo-skill")
-    assert plan.dir_overrides[dest] == {Path("SKILL.md"): b"plugin"}
+    assert _override_bytes(plan.dir_overrides[dest]) == {Path("SKILL.md"): b"plugin"}
+
+
+def test_a_carried_file_names_the_plugin_file_it_came_from(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
+    """The carrier DIR item's source_path names the tree that does NOT hold the
+    carried bytes, so without a per-file origin the admission gate has nothing to
+    report a record-less carried entry file against — and would either blame the
+    carrier or say nothing."""
+    plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
+    plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md"])
+
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
+
+    carried = plan.dir_overrides[Path("skills/demo-skill")][Path("SKILL.md")]
+    assert carried.source_path == (
+        plugin.source_path / ".agents" / "skills" / "demo-skill" / "SKILL.md"
+    )
 
 
 def test_carrier_merge_preserves_existing_overrides_for_the_same_dest(
@@ -365,14 +392,16 @@ def test_carrier_merge_preserves_existing_overrides_for_the_same_dest(
     plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
     dest = Path("skills/demo-skill")
     # A prior producer (stand-in for F.5) already recorded a file at this dest.
-    plan.dir_overrides[dest] = {Path("PATCHED.md"): b"prior"}
+    plan.dir_overrides[dest] = {
+        Path("PATCHED.md"): Contribution(source_path=Path("/prior/PATCHED.md"), content=b"prior")
+    }
     plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md"])
 
     overlay_plugins(
         plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
     )
 
-    assert plan.dir_overrides[dest] == {
+    assert _override_bytes(plan.dir_overrides[dest]) == {
         Path("PATCHED.md"): b"prior",
         Path("SKILL.md"): b"plugin",
     }
@@ -389,7 +418,7 @@ def test_carrier_merge_carries_every_plugin_file(tmp_path: Path, ignore: Install
         plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
     )
 
-    assert plan.dir_overrides[Path("skills/demo-skill")] == {
+    assert _override_bytes(plan.dir_overrides[Path("skills/demo-skill")]) == {
         Path("SKILL.md"): b"plugin",
         Path("ref.md"): b"plugin",
         Path("helper.py"): b"plugin",
@@ -410,7 +439,7 @@ def test_carrier_merge_override_holds_only_plugin_files_not_carrier_own(
     )
 
     overrides = plan.dir_overrides[Path("skills/demo-skill")]
-    assert overrides == {Path("SKILL.md"): b"plugin"}
+    assert _override_bytes(overrides) == {Path("SKILL.md"): b"plugin"}
     assert Path("_test.sh") not in overrides
     assert Path("README.md") not in overrides
 
@@ -429,7 +458,9 @@ def test_carrier_merge_does_not_carry_top_level_dotfiles(
         plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
     )
 
-    assert plan.dir_overrides[Path("skills/demo-skill")] == {Path("SKILL.md"): b"plugin"}
+    assert _override_bytes(plan.dir_overrides[Path("skills/demo-skill")]) == {
+        Path("SKILL.md"): b"plugin"
+    }
 
 
 def test_carrier_merge_carries_nested_subdirectory_files(
@@ -451,7 +482,7 @@ def test_carrier_merge_carries_nested_subdirectory_files(
         plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
     )
 
-    assert plan.dir_overrides[Path("skills/demo-skill")] == {
+    assert _override_bytes(plan.dir_overrides[Path("skills/demo-skill")]) == {
         Path("SKILL.md"): b"top",
         Path("lib/util.py"): b"nested",
         Path("lib/.keep"): b"dot-nested",
@@ -480,7 +511,9 @@ def test_carrier_merge_skips_top_level_symlinked_file(
         plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
     )
 
-    assert plan.dir_overrides[Path("skills/demo-skill")] == {Path("SKILL.md"): b"real"}
+    assert _override_bytes(plan.dir_overrides[Path("skills/demo-skill")]) == {
+        Path("SKILL.md"): b"real"
+    }
 
 
 def test_carrier_merge_does_not_descend_symlinked_subdir(
@@ -504,7 +537,9 @@ def test_carrier_merge_does_not_descend_symlinked_subdir(
         plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
     )
 
-    assert plan.dir_overrides[Path("skills/demo-skill")] == {Path("SKILL.md"): b"real"}
+    assert _override_bytes(plan.dir_overrides[Path("skills/demo-skill")]) == {
+        Path("SKILL.md"): b"real"
+    }
 
 
 def test_carrier_merge_skips_symlinked_file_nested_in_real_subdir(
@@ -528,7 +563,9 @@ def test_carrier_merge_skips_symlinked_file_nested_in_real_subdir(
         plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
     )
 
-    assert plan.dir_overrides[Path("skills/demo-skill")] == {Path("lib/real.py"): b"real"}
+    assert _override_bytes(plan.dir_overrides[Path("skills/demo-skill")]) == {
+        Path("lib/real.py"): b"real"
+    }
 
 
 def test_carrier_merge_overlapping_files_is_fatal(tmp_path: Path, ignore: InstallIgnore) -> None:

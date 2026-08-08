@@ -18,12 +18,31 @@ def test_show_returns_exact_seeded_fields(read_only_driver):
     alpha_id = next(i["id"] for i in listing["data"]["items"] if i["title"] == "seed-alpha")
     env = read_only_driver(["show", alpha_id])
     assert env["ok"] is True
-    item = env["data"]  # single-id show → item object directly
+    item = env["data"]["items"][0]  # show → {"items": [...]}
     assert item["id"] == alpha_id
     assert item["title"] == "seed-alpha"
     assert item["status"] == "open"
     assert item["priority"] == "P2"  # priority is a string, not int
     assert "seed" in item["labels"]  # value-level: label round-trips
+
+
+def test_show_answers_one_id_in_the_same_shape_as_many(read_only_driver):
+    """The uniform-shape contract, on the wire against a real backend.
+
+    The hermetic suite pins the same thing over a scripted runner. This is the
+    half that scripting cannot vouch for: whatever the backend hands back for
+    one id versus several, the envelope a consumer parses is the same shape.
+    """
+    listing = read_only_driver(["list"])["data"]["items"]
+    alpha_id = next(i["id"] for i in listing if i["title"] == "seed-alpha")
+    child_id = next(i["id"] for i in listing if i["title"] == "seed-child")
+
+    singular = read_only_driver(["show", alpha_id])
+    plural = read_only_driver(["show", alpha_id, child_id])
+
+    assert list(singular["data"]) == list(plural["data"]) == ["items"]
+    assert [i["id"] for i in singular["data"]["items"]] == [alpha_id]
+    assert {i["id"] for i in plural["data"]["items"]} == {alpha_id, child_id}
 
 
 def test_list_filter_by_label(read_only_driver):
@@ -35,7 +54,7 @@ def test_list_filter_by_label(read_only_driver):
 def test_show_child_reports_seeded_parent(read_only_driver):
     listing = read_only_driver(["list"])
     child_id = next(i["id"] for i in listing["data"]["items"] if i["title"] == "seed-child")
-    item = read_only_driver(["show", child_id])["data"]  # single-id show → item directly
+    item = read_only_driver(["show", child_id])["data"]["items"][0]  # show → {"items": [...]}
     assert item["parent"] is not None  # value-level: parent edge survives
 
 
@@ -63,16 +82,16 @@ def test_create_raw_update_note_close_reopen_roundtrip(driver):
     item_id = created["data"]["id"]  # create → {"id": ...}
 
     driver(["update", item_id, "--set-title", "wv-one-renamed"])
-    assert driver(["show", item_id])["data"]["title"] == "wv-one-renamed"  # value-level
+    assert driver(["show", item_id])["data"]["items"][0]["title"] == "wv-one-renamed"  # value-level
 
     driver(["note", item_id, "a durable note"])
-    assert "a durable note" in driver(["show", item_id])["data"]["notes"]
+    assert "a durable note" in driver(["show", item_id])["data"]["items"][0]["notes"]
 
     assert driver(["close", item_id])["ok"] is True
-    assert driver(["show", item_id])["data"]["status"] == "closed"
+    assert driver(["show", item_id])["data"]["items"][0]["status"] == "closed"
 
     assert driver(["reopen", item_id])["ok"] is True
-    assert driver(["show", item_id])["data"]["status"] == "open"
+    assert driver(["show", item_id])["data"]["items"][0]["status"] == "open"
 
 
 def test_label_add_list_remove(driver):
@@ -104,5 +123,5 @@ def test_claim_and_release(driver):
         ["create", "--raw", "--title", "wv-claim", "--type", "task", "--priority", "2"]
     )["data"]["id"]
     assert driver(["claim", item_id])["ok"] is True
-    assert driver(["show", item_id])["data"]["status"] == "in_progress"
+    assert driver(["show", item_id])["data"]["items"][0]["status"] == "in_progress"
     assert driver(["release", item_id])["ok"] is True

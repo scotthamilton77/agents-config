@@ -27,7 +27,9 @@ def test_create_claim_deliver_trivial_then_reconcile_noop(driver):
     # A leaf delivery with trivial evidence closes it.
     delivered = driver(["deliver", item_id, "--trivial"])
     assert delivered["ok"] is True
-    assert driver(["show", item_id])["data"]["status"] == "closed"  # single-id show
+    assert (
+        driver(["show", item_id])["data"]["items"][0]["status"] == "closed"
+    )  # show → {"items": [...]}
     # reconcile with nothing recoverable is a clean no-op.
     swept = driver(["reconcile"])
     assert swept["ok"] is True
@@ -55,7 +57,7 @@ def test_plan_add_then_done(driver):
     added = driver(["plan", item_id, "--done"])
     assert added["ok"] is True
     assert added["data"]["planned"] is True
-    assert "planned" in driver(["show", item_id])["data"]["labels"]
+    assert "planned" in driver(["show", item_id])["data"]["items"][0]["labels"]
     # Idempotent replay: PLANNED_LABEL already present short-circuits to the
     # same result rather than erroring or double-adding the label.
     replayed = driver(["plan", item_id, "--done"])
@@ -82,4 +84,6 @@ def test_promote_leaf_to_spec_container(driver):
     promoted = driver(["promote", leaf])
     assert promoted["ok"] is True
     assert promoted["data"]["promoted"] == "spec"
-    assert "shape-spec" in driver(["show", leaf])["data"]["labels"]  # single-id show
+    assert (
+        "shape-spec" in driver(["show", leaf])["data"]["items"][0]["labels"]
+    )  # show → {"items": [...]}

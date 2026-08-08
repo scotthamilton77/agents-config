@@ -86,6 +86,27 @@ class InstallIgnore:
             for p in self.patterns
         )
 
+    def excludes_path(self, rel: Path) -> bool:
+        """Whether ``rel`` — a file path relative to a DIR item's root — is pruned.
+
+        The whole-path form of ``excludes``, for the one scope a DIR item has:
+        every component up to (not including) the file is tested as a directory
+        name, the file's own basename as a file name, all at nested scope. An
+        excluded directory therefore prunes everything beneath it, which is what
+        ``shutil.copytree``'s ``ignore=`` callback does for free by not recursing.
+
+        Two consumers need this same answer and must never disagree about it: the
+        sync's idempotency check, which re-derives from scratch what the filtered
+        copy placed at dest, and the deploy gate's scan of a directory item's
+        interior, which must not report a file that never deploys. Deriving it
+        once here is what keeps the pruning rule from being written twice.
+        """
+        parts = rel.parts
+        last = len(parts) - 1
+        return any(
+            self.excludes(part, is_dir=(i != last), at_root=False) for i, part in enumerate(parts)
+        )
+
 
 def load_installignore(path: Path) -> InstallIgnore:
     """Parse ``.installignore`` at ``path``; return an ``InstallIgnore``.

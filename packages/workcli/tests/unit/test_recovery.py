@@ -306,6 +306,32 @@ def test_reconcile_dry_run_reports_findings_without_mutating():
     assert {"id": "p", "kind": "unreconciled_placeholder", "repaired": False} in findings
 
 
+def test_reconcile_ignores_closed_items_that_still_carry_a_completion_handle():
+    # The listing every sweep enumerates through answers each status, so a
+    # handle left on a CLOSED item is inside the candidate set the backend
+    # returns. Recovery repairs what was interrupted, and closed work was not:
+    # replaying either handle would mint children under, or stamp labels onto,
+    # an item somebody finished.
+    backend = FakeBackend()
+    backend.add(
+        "closed-placeholder",
+        type="feature",
+        status="closed",
+        labels=[IMPL_PLACEHOLDER_LABEL],
+        notes=_snapshot_note(_single()),
+    )
+    backend.add(
+        "closed-container",
+        type="feature",
+        status="closed",
+        labels=[CREATING_SPEC_LABEL],
+    )
+
+    assert _reconcile(backend) == []
+    assert IMPL_PLACEHOLDER_LABEL in backend.get("closed-placeholder").labels
+    assert CREATING_SPEC_LABEL in backend.get("closed-container").labels
+
+
 def test_reconcile_over_a_healed_tree_finds_nothing():
     backend = FakeBackend()
     _spec_tree(backend, design_status="in_progress", placeholder_notes=_snapshot_note(_single()))

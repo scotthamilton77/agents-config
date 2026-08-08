@@ -222,7 +222,12 @@ def sync_plan(
             _install_dir(
                 dest,
                 item.source_path,
-                plan.dir_overrides.get(item.dest_relpath, {}),
+                # Unwrapped here: the origin a contribution carries is for the
+                # admission gate's reporting, and sync only ever writes bytes.
+                {
+                    inner: part.content
+                    for inner, part in plan.dir_overrides.get(item.dest_relpath, {}).items()
+                },
                 ignore=ignore,
                 io=io,
                 dry_run=dry_run,
@@ -430,24 +435,6 @@ def _copytree_ignore(ignore: InstallIgnore) -> Callable[[str, list[str]], set[st
     return _callback
 
 
-def _nested_path_is_excluded(rel: Path, ignore: InstallIgnore) -> bool:
-    """Whether any component of ``rel`` (a DIR item-relative file path) would be
-    pruned by ``ignore`` at nested (non-anchored) scope.
-
-    Mirrors what `_copytree_ignore` prunes during the real copy: every path
-    component up to (not including) the file itself is tested as a directory
-    name, the file's own basename as a file name. Needed because
-    ``Path.rglob`` — unlike ``copytree`` — does not stop descending into a
-    directory a caller has decided to exclude, so `_dir_is_unchanged`'s
-    expected-file walk must re-derive the same pruning from scratch.
-    """
-    parts = rel.parts
-    last = len(parts) - 1
-    return any(
-        ignore.excludes(part, is_dir=(i != last), at_root=False) for i, part in enumerate(parts)
-    )
-
-
 def _dir_is_unchanged(
     dest: Path, source_path: Path, overrides: Mapping[Path, bytes], ignore: InstallIgnore
 ) -> bool:
@@ -456,9 +443,11 @@ def _dir_is_unchanged(
 
     The expected file map is the source tree with ``overrides`` overlaid (override
     wins on a name collision — dump-time semantics), compared against the actual
-    dest tree. Files ``ignore`` excludes at nested scope (`_nested_path_is_excluded`)
+    dest tree. Files ``ignore`` excludes at nested scope (`InstallIgnore.excludes_path`)
     are dropped from the expected map at every depth, matching what
-    `_install_dir`'s filtered ``copytree`` actually places at dest — without
+    `_install_dir`'s filtered ``copytree`` actually places at dest — ``Path.rglob``,
+    unlike ``copytree``, does not stop descending into an excluded directory, so
+    the expected-file walk has to re-derive the same pruning. Without
     this, a skill carrying a test file would never compare equal and every
     re-install would back up and re-copy for no real change. Bytes are read
     through symlinks to match ``copytree``'s dereferencing; only files
@@ -466,7 +455,7 @@ def _dir_is_unchanged(
     expected = {
         p.relative_to(source_path): p.read_bytes()
         for p in source_path.rglob("*")
-        if p.is_file() and not _nested_path_is_excluded(p.relative_to(source_path), ignore)
+        if p.is_file() and not ignore.excludes_path(p.relative_to(source_path))
     }
     expected.update(overrides)
     actual = {p.relative_to(dest): p.read_bytes() for p in dest.rglob("*") if p.is_file()}

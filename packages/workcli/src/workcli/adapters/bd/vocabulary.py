@@ -25,12 +25,21 @@ from __future__ import annotations
 import re
 
 # The tokens that identify this backend: the binary, the project it belongs
-# to (which names its environment variable and its storage directory too), and
-# the storage engine underneath it. Word edges are spelled out rather than
-# left to `\b` so that `BEADS_DIR` and `.beads` are matched -- `_` and a
-# leading `.` are word characters to `\b`, which would let both through.
+# to (which names its environment variable and its storage directory too), the
+# singular noun it calls one item by, and the storage engine underneath it.
+# Word edges are spelled out rather than left to `\b` so that `BEADS_DIR` and
+# `.beads` are matched -- `_` and a leading `.` are word characters to `\b`,
+# which would let both through.
+#
+# The singular noun earns its place the same way the plural does, and is the
+# easiest of the four to leave out: it names no file and no environment
+# variable, so it reads as domain vocabulary rather than as a name. It is the
+# backend's word for an item, it is authored throughout the backend's own
+# user-facing prose, and removing it from this facade's vocabulary was the
+# whole of an earlier piece of work -- which a sentence carrying it back
+# outward would undo silently.
 _BACKEND_IDENTITY = re.compile(
-    r"(?<![A-Za-z0-9])\.?(?:beads|bd|dolt)(?![A-Za-z0-9])",
+    r"(?<![A-Za-z0-9])\.?(?:beads?|bd|dolt)(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
 

@@ -285,7 +285,7 @@ def _create_spec_container(
         CreateFields(
             title=args.title,
             description=args.description,
-            type=template.bd_type,
+            type=template.item_type,
             priority=args.priority,
             parent=parent,
             labels=(template.shape_label, CREATING_SPEC_LABEL)
@@ -312,10 +312,10 @@ def create_noun(backend: Backend, args: Namespace) -> JsonValue:
     """`work create <noun> --title T (--parent ID | --orphan) [...]`.
 
     NOUN and --priority are validated together, before any backend call --
-    same precedence discover's aggregate holds, and the same reason: a caller
-    who gets both wrong learns about both from one invocation, and an invalid
-    NOUN never reaches bd. `args.priority` is reassigned to the validated,
-    canonicalized value so every downstream read (here and in
+    the same precedence `discover`'s aggregate holds, and for the same reason:
+    a caller who gets both wrong learns about both from one invocation, and an
+    invalid NOUN never reaches the backend. `args.priority` is reassigned to
+    the validated, canonicalized value so every downstream read (here and in
     `_create_spec_container`) sees the same notation `discover` would have
     produced for the same input, without threading a second parameter through
     both call sites.
@@ -351,7 +351,7 @@ def create_noun(backend: Backend, args: Namespace) -> JsonValue:
         CreateFields(
             title=args.title,
             description=args.description,
-            type=template.bd_type,
+            type=template.item_type,
             priority=args.priority,
             parent=parent,
             labels=tuple(labels),

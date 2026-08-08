@@ -173,6 +173,23 @@ stderr markers. It reads the message argument of an error and nothing else,
 which is what keeps the first case above out of its reach by construction
 rather than by an exemption someone has to maintain.
 
+The redactor's own coverage is pinned separately, in
+`tests/unit/test_backend_redaction.py`, which names each spelling of the
+backend's identity one at a time and then measures the widened pattern against
+this package's captured backend output to show it eats nothing else. The
+singular noun is the spelling most easily left out — it names no file and no
+environment variable, so it reads as domain vocabulary rather than as a name.
+
+The scan over the layers above the adapter carries exactly one exemption, and
+it marks the one place the wall genuinely bends. The superseded spelling of a
+config key contains the backend's singular noun and cannot be renamed without
+silently ceasing to read `project-config.toml` files already on disk: its
+bytes are a value the facade matches a user's keys against, not vocabulary the
+facade chose. It is exempted by the name it is bound to rather than by its
+text, so no second literal inherits the exemption, and a companion check fails
+if the binding ever stops needing one. An exemption outliving its subject is
+how a scan like this goes quiet.
+
 ## Tests
 
 - Behavioural, not tautological — each test pins a coded decision (an
