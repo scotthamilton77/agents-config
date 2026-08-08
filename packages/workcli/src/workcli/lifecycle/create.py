@@ -26,6 +26,7 @@ from workcli.lifecycle.nouns import (
     NounTemplate,
 )
 from workcli.lifecycle.park import PARKED_LABEL
+from workcli.lifecycle.validate import combine_errors, validate_noun, validate_priority
 from workcli.model import CreateFields
 from workcli.tracks import TRACK_PREFIX, derive_track, require_known_track, track_label
 
@@ -121,6 +122,38 @@ def finalize_spec_instantiation(
     backend.label_mutate("add", container_id, [PLANNED_LABEL])
     backend.label_mutate("remove", container_id, [CREATING_SPEC_LABEL])
     return design_child_id, placeholder_id
+
+
+def _validate_noun_and_priority(args: Namespace) -> tuple[Noun, str | None]:
+    """Validate the NOUN positional and --priority together, in one pass.
+
+    Same two-pass shape as `discover`'s validator, over the same shared
+    `validate.validate_noun`/`validate.validate_priority` primitives: both
+    validators run before either is allowed to raise, so a caller with both
+    fields wrong learns about both from one invocation. Unlike `discover`,
+    `create` accepts every noun (not just leaf nouns) and --priority stays
+    optional -- omitted, it passes through as `None` unchanged, exactly as
+    before this validator existed.
+    """
+    noun_result: Noun | WorkError
+    try:
+        noun_result = validate_noun(args.noun)
+    except WorkError as noun_error:
+        noun_result = noun_error
+
+    priority_result: str | None | WorkError
+    try:
+        priority_result = None if args.priority is None else validate_priority(args.priority)
+    except WorkError as priority_error:
+        priority_result = priority_error
+
+    if isinstance(noun_result, WorkError) and isinstance(priority_result, WorkError):
+        raise combine_errors([noun_result, priority_result])
+    if isinstance(noun_result, WorkError):
+        raise noun_result
+    if isinstance(priority_result, WorkError):
+        raise priority_result
+    return noun_result, priority_result
 
 
 def _validate_usage(args: Namespace, noun: Noun) -> None:
@@ -258,8 +291,19 @@ def _create_spec_container(
 
 
 def create_noun(backend: Backend, args: Namespace) -> JsonValue:
-    """`work create <noun> --title T (--parent ID | --orphan) [...]`."""
-    noun = Noun(args.noun)
+    """`work create <noun> --title T (--parent ID | --orphan) [...]`.
+
+    NOUN and --priority are validated together, before any backend call --
+    same precedence discover's aggregate holds, and the same reason: a caller
+    who gets both wrong learns about both from one invocation, and an invalid
+    NOUN never reaches bd. `args.priority` is reassigned to the validated,
+    canonicalized value so every downstream read (here and in
+    `_create_spec_container`) sees the same notation `discover` would have
+    produced for the same input, without threading a second parameter through
+    both call sites.
+    """
+    noun, priority = _validate_noun_and_priority(args)
+    args.priority = priority
     template = NOUN_TEMPLATES[noun]
 
     _validate_usage(args, noun)

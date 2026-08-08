@@ -10,12 +10,15 @@
 *.njsproj
 *.sln
 *.sw?
+
+# Harness scratch
 .worktrees/
 .claude/worktrees/
 .ralf/
 .crit.json
 .superpowers/
 .grind
+.claude-scratch/
 
 # Local settings
 settings.local.json
