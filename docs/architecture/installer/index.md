@@ -15,7 +15,7 @@
 | Installer | The Python package at `packages/installer/` that replaces the 1788-line `scripts/install.sh`. A short-lived CLI: parse argv → stage in memory → merge → sync to disk → optional prune → exit. |
 | Tool | One of the four supported AI coding assistants — **Claude Code**, **Codex CLI**, **Gemini CLI**, **OpenCode** — each with its own destination store and its own `ToolAdapter`. |
 | `ToolAdapter` | The protocol abstracting everything the engine needs to know about a tool: source dir, dest dir, detection, scoped namespaces, namespace filtering, post-staging transforms. Per-tool adapters live in `tools/`. |
-| `PluginAdapter` | The protocol for an optional plugin (e.g. `beads`) that overlays extra content onto the staging plan. Discovered dynamically by scanning `src/plugins/<name>/`; string-keyed (NOT enumerated). |
+| `PluginAdapter` | The protocol for an optional plugin that overlays extra content onto the staging plan. Discovered dynamically by scanning `src/plugins/<name>/`; string-keyed (NOT enumerated). |
 | `StagingPlan` | The **in-memory** replacement for `install.sh`'s temp-dir staging: a `dict[Path, StagedItem]` plus provenance. Built per tool, mutated by plugin overlay + transforms, then flushed to disk by `sync`. Never an on-disk container in the operational path (`--dump-stage` materialises it for debugging only). |
 | `StagedItem` | One planned destination file: its content, `FileKind`, namespace, and `Provenance`. The unit the merge + sync engines operate on. |
 | `MergeStrategy` | A collision-resolution class (append-rules, JSON-union, fatal, last-wins-warn, last-wins-silent), each in its own module, dispatched by the registry on `(FileKind, namespace)`. |
@@ -23,7 +23,7 @@
 | `Provenance` | `(kind: "tool" \| "plugin", name: str)` on each `StagedItem` — preserves tool-vs-plugin origin through the plan. |
 | `IOPort` | The single injectable I/O abstraction (`info`/`warn`/`show_diff`/`confirm`/…). `TerminalIO` is real (via `rich`); `ScriptedIO` is the test fake. No module calls `print`/`input` directly. |
 | DYNAMIC-INCLUDE | The directive form (`<!-- DYNAMIC-INCLUDE: path -->` and the ALL-RULES variant) that flattens shared template fragments into assembled per-tool instruction files at staging time. |
-| Namespace | The managed sub-directory a file belongs to (`commands` / `skills` / `agents` / `rules` / `formulas`) — second component of the merge-dispatch key; drives append-vs-fatal collision behaviour. |
+| Namespace | The managed sub-directory a file belongs to (`commands` / `skills` / `agents` / `rules` / `hooks` / `workflows`) — second component of the merge-dispatch key; drives append-vs-fatal collision behaviour. |
 | Parity gate | The point at which the golden-master suite proves the Python installer byte-matches `install.sh`, after which `install.sh` collapses to a `uv run` wrapper and deliberate divergence is allowed. |
 | Golden-master | The **transitional** bash-vs-python parity suite; retires once parity is confirmed and the cutover lands. |
 

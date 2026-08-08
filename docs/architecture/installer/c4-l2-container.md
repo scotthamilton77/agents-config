@@ -12,7 +12,7 @@
 | Container (C4 sense) | A separately runnable process or persistent data store — NOT a Linux / Docker container. |
 | Component | A code module inside a container; appears at C4 L3, not L2. |
 | Source tree | The repo's `src/user/` (shared `.agents/` + per-tool `.claude/`, `.codex/`, `.gemini/`, `.opencode/`) and `src/plugins/<name>/`. The installer's **read-only** input. |
-| Destination store | A per-tool config directory the installer writes into (`~/.claude/`, `~/.codex/`, `~/.gemini/`, `~/.config/opencode/`, `~/.beads/`). |
+| Destination store | A per-tool config directory the installer writes into (`~/.claude/`, `~/.codex/`, `~/.gemini/`, `~/.config/opencode/`). |
 | `StagingPlan` | The installer's **in-memory** `dict[Path, StagedItem]`. It is process-internal state, NOT a container — it appears at L3 / [data-view](data-view.md), never on this diagram. `--dump-stage` materialises it to disk for debugging only. |
 | `installer.toml` | The installer's structured config file — a single `[tools]` table of optional per-tool dest-dir overrides, parsed by `core/installer_toml.py`. **Designed, parsed, not yet wired**: nothing in the live install path calls the loader, so a declared override has no runtime effect — dest resolution always goes through `adapter.dest_dir(home)`. |
 | Install receipt | `~/.config/agents-config/install-receipt.json` — the installer's persisted record of every wholesale-authored entry it wrote, plus its sibling `install-receipt.lock`. The sole prune authority; read at prune start, rewritten (mirrors disk) at run end. |
@@ -52,12 +52,10 @@ C4Container
         ContainerDb(codex, "~/.codex/", "files on local FS", "Codex CLI config: assembled AGENTS.md + shared content.")
         ContainerDb(gemini, "~/.gemini/", "files on local FS", "Gemini CLI config: assembled GEMINI.md + frontmatter-transformed content.")
         ContainerDb(opencode, "~/.config/opencode/", "files on local FS (XDG)", "OpenCode config: flattened skeleton; skips shared agents/ per its adapter rule.")
-        ContainerDb(beads, "~/.beads/", "files on local FS", "beads plugin destination: formulas/ + scripts/ (chmod +x). Written only when the beads plugin is active.")
         ContainerDb(backups, "Backup dirs", "timestamped copies on local FS", "Path-aware: namespaced items back up to a parent-level <namespace>-backup/ sibling; top-level files back up in place. Written before any overwrite or prune.")
     }
 
     System_Ext(assistants, "AI coding assistants", "Claude Code / Codex CLI / Gemini CLI / OpenCode — each reads ITS OWN destination store at the assistant's runtime, asynchronously, long after install exits.")
-    System_Ext(bd_cli, "bd (beads CLI)", "Reads ~/.beads/ formulas + scripts at its own runtime.")
 
     Rel(operator, proc, "python3 scripts/install.py or python -m installer [--tools=] [--plugins=] [--prune] [--dry-run] [--dump-stage]", "CLI invocation")
 
@@ -69,14 +67,12 @@ C4Container
     Rel(proc, codex, "Hash-compare → write", "FS write")
     Rel(proc, gemini, "Hash-compare → write (post frontmatter transform)", "FS write")
     Rel(proc, opencode, "Hash-compare → write", "FS write")
-    Rel(proc, beads, "Write formulas + scripts (chmod +x)", "FS write")
     Rel(proc, backups, "Copy destination file before overwrite / prune", "FS write")
 
     Rel(assistants, claude, "Reads deployed config at runtime", "FS read (async)")
     Rel(assistants, codex, "Reads deployed config at runtime", "FS read (async)")
     Rel(assistants, gemini, "Reads deployed config at runtime", "FS read (async)")
     Rel(assistants, opencode, "Reads deployed config at runtime", "FS read (async)")
-    Rel(bd_cli, beads, "Reads formulas + scripts at runtime", "FS read (async)")
 
     UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 ```
@@ -96,19 +92,19 @@ The installer's entry points are `python3 scripts/install.py` (a thin stub: `fro
 
 ### Destination stores (installer-written)
 
-One store per tool (`~/.claude`, `~/.codex`, `~/.gemini`, `~/.config/opencode`) plus `~/.beads` when the beads plugin is active. The installer writes each store via the hash-compare `sync` engine: unchanged files are skipped, changed files are diffed and (interactively) confirmed, and any file about to be overwritten is first copied to a **path-aware backup**. Which stores are written depends on tool auto-detection (claude always; others when their config dir exists or `--tools=` forces them) and plugin activation.
+One store per tool: `~/.claude`, `~/.codex`, `~/.gemini`, `~/.config/opencode`. The installer writes each store via the hash-compare `sync` engine: unchanged files are skipped, changed files are diffed and (interactively) confirmed, and any file about to be overwritten is first copied to a **path-aware backup**. Which stores are written depends on tool auto-detection (claude always; others when their config dir exists or `--tools=` forces them). An active plugin adds content to a detected tool's store rather than bringing a store of its own — its content overlays into each tool's tree. The one path that writes outside every tool tree is the plugin-route pass, and no discovered plugin declares a route, so a user install has no such store.
 
 ### Backup dirs
 
-Not a single directory but a routing rule: a file inside a managed namespace (`commands` / `skills` / `agents` / `rules` / `formulas`) backs up to a parent-level `<namespace>-backup/` sibling — deliberately **outside** the namespace so the assistant's discovery walk does not pick the backup up as a real item — while a top-level file backs up in place. Backups are written before overwrite (`sync`) and before prune (`prune`).
+Not a single directory but a routing rule: a file inside a managed namespace (`commands` / `skills` / `agents` / `rules` / `hooks` / `workflows`) backs up to a parent-level `<namespace>-backup/` sibling — deliberately **outside** the namespace so the assistant's discovery walk does not pick the backup up as a real item — while a top-level file backs up in place. Backups are written before overwrite (`sync`) and before prune (`prune`).
 
 ### Install receipt (installer-owned, persisted between runs)
 
-`~/.config/agents-config/install-receipt.json` is the installer's **one** piece of persisted state — a tool-neutral state dir deliberately outside every destination tree, so the receipt is never itself installed or pruned. It records every wholesale-authored entry the installer wrote (namespaced `commands`/`skills`/`agents`/`rules` + plugin route dests) and is the **sole prune authority**: a recorded entry no longer in this run's desired plan, in scope, is an orphan. The receipt is read at the start of the prune step, validated against its own `integrity` digest, and atomically rewritten to mirror disk at run end — the whole read → install → prune → write section held under a single-writer advisory lock (the sibling `install-receipt.lock`). It never records a merge-target (`settings.json`, the assembled instruction files), so it adds no new deletion surface.
+`~/.config/agents-config/install-receipt.json` is the installer's **one** piece of persisted state — a tool-neutral state dir deliberately outside every destination tree, so the receipt is never itself installed or pruned. It records every wholesale-authored entry the installer wrote (namespaced `commands`/`skills`/`agents`/`rules`/`hooks`/`workflows` + plugin route dests) and is the **sole prune authority**: a recorded entry no longer in this run's desired plan, in scope, is an orphan. The receipt is read at the start of the prune step, validated against its own `integrity` digest, and atomically rewritten to mirror disk at run end — the whole read → install → prune → write section held under a single-writer advisory lock (the sibling `install-receipt.lock`). It never records a merge-target (`settings.json`, the assembled instruction files), so it adds no new deletion surface.
 
 ### External consumers
 
-The four AI coding assistants and the `bd` CLI are **external systems** that read their deployed stores at **their own runtime**, asynchronously, long after the installer has exited. The installer has no live relationship with them — it deposits files and leaves. This asynchrony is why the installer needs no notion of a running tool; it only needs to know each tool's destination path and content-shaping rules, both supplied by the `ToolAdapter`.
+The four AI coding assistants are **external systems** that read their deployed stores at **their own runtime**, asynchronously, long after the installer has exited. The installer has no live relationship with them — it deposits files and leaves. This asynchrony is why the installer needs no notion of a running tool; it only needs to know each tool's destination path and content-shaping rules, both supplied by the `ToolAdapter`.
 
 ## Container-relationship discipline (worth memorising)
 

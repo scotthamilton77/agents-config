@@ -207,7 +207,7 @@ T_E5="E.5 — strategies/last_wins_warn.py + last_wins_silent.py"
 T_F1="F.1 — plugins/base + plugins/registry + synthetic test-plugin fixture"
 T_F2="F.2 — Phase 6 plugin overlay (alphabetical, full collision matrix exercised)"
 T_F3="F.3 — carrier-merge logic (in-memory metadata)"
-T_F4="F.4 — plugins/beads.py (~/.beads/ destination + chmod +x)"
+T_F4="F.4 — plugin routes to a bespoke destination outside every tool tree"
 
 T_G1="G.1 — path-aware backup placement in core/sync.py"
 T_G2="G.2 — installer.toml schema + loader"
@@ -285,7 +285,7 @@ fi
 if epic_enabled F; then
     EPIC_F=$(bd_ensure "$T_EPIC_F" \
       --type epic --parent "$FEATURE" --priority 1 \
-      --description "PluginAdapter protocol + registry; Phase 6 overlay; carrier-merge via in-memory metadata; beads plugin. See ${SPEC} (Epic F).")
+      --description "PluginAdapter protocol + registry; Phase 6 overlay; carrier-merge via in-memory metadata; plugin routes. See ${SPEC} (Epic F).")
     echo "    EPIC_F=$EPIC_F"
 fi
 if epic_enabled G; then
@@ -494,7 +494,7 @@ if epic_enabled F && [[ -n "$EPIC_F" ]]; then
 
     bd_ensure "$T_F1" \
       --type story --parent "$EPIC_F" --priority 1 \
-      --description "PluginAdapter protocol; plugins/registry.py; tests/fixtures/sources/test-plugin/ for exercise. Auto-detect honours beads / test-plugin probes per the registry." \
+      --description "PluginAdapter protocol; plugins/registry.py; tests/fixtures/sources/test-plugin/ for exercise. Auto-detect honours each discovered plugin's probe per the registry." \
       --acceptance "- PluginAdapter protocol defined.
 - Registry enumerates plugins; --plugins= override works.
 - tests/fixtures/sources/test-plugin/ exists and is the canonical exercise plugin." > /dev/null
@@ -520,10 +520,10 @@ if epic_enabled F && [[ -n "$EPIC_F" ]]; then
 
     bd_ensure "$T_F4" \
       --type story --parent "$EPIC_F" --priority 1 \
-      --description "BeadsPlugin: source = src/plugins/beads/; destinations = ~/.beads/formulas/ and ~/.beads/scripts/ with executable bit set on scripts." \
-      --acceptance "- Beads plugin detection probes bd-on-PATH OR ~/.beads/ existence.
-- Formulas land at ~/.beads/formulas/.
-- Scripts land at ~/.beads/scripts/ with mode 0755." > /dev/null
+      --description "PluginRoute + install_plugin_routes: a specialized adapter declares bespoke source-to-destination routes for content landing outside every tool tree, and the routes install in their own pass after the tool sync. The registry's specialized-adapter map is the extension point; the generic adapter declares no routes." \
+      --acceptance "- A specialized adapter's detection probe may go beyond the generic home-footprint convention.
+- Routed files land under the route's declared destination directory.
+- A route marked executable writes its files with mode 0755." > /dev/null
     echo "    F.4=$(lookup_id "$T_F4")"
 fi
 
@@ -533,8 +533,8 @@ if epic_enabled G && [[ -n "$EPIC_G" ]]; then
 
     bd_ensure "$T_G1" \
       --type story --parent "$EPIC_G" --priority 1 \
-      --description "Items in scoped namespaces (commands, skills, agents, rules, formulas) back up to sibling namespace-backup/ directories with timestamp. Other items get in-place .backup-<ts> suffix." \
-      --acceptance "- Files inside commands/skills/agents/rules/formulas backed up to sibling -backup/ dir with timestamp.
+      --description "Items in scoped namespaces (commands, skills, agents, rules, hooks, workflows) back up to sibling namespace-backup/ directories with timestamp. Other items get in-place .backup-<ts> suffix." \
+      --acceptance "- Files inside commands/skills/agents/rules/hooks/workflows backed up to sibling -backup/ dir with timestamp.
 - Other files get in-place .backup-<ts> suffix.
 - Backup created BEFORE write, recoverable on failure.
 - Timestamp matches install.sh format YYYYMMDD-HHMMSS." > /dev/null
