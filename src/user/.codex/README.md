@@ -10,7 +10,7 @@ because `~/.codex/` already exists.
   `DYNAMIC-INCLUDE` of the shared zero-based core in
   `src/user/.agents/USER-CORE.md.template`, which the installer flattens in at
   deploy time; it carries no text of its own. There is no Codex-specific
-  instruction content, so this is the whole of the Codex tree's prose.
+  instruction content.
 
 ## Where it installs
 

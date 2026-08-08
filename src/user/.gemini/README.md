@@ -10,7 +10,7 @@ exists or when the user passes `--tools=gemini`.
   `DYNAMIC-INCLUDE` of the shared zero-based core in
   `src/user/.agents/USER-CORE.md.template`, which the installer flattens in at
   deploy time; it carries no text of its own. There is no Gemini-specific
-  instruction content, so this is the whole of the Gemini tree's prose.
+  instruction content.
 
 ## Where it installs
 
