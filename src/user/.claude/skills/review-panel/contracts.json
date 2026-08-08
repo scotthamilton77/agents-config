@@ -35,7 +35,7 @@
       },
       {
         "lens": "documentation-quality",
-        "mandate": "Judge whether the change's comments and documentation are right-sized: nothing over-documented, no identifiers a reader has no context for, and no narrated history that belongs in the commit log.",
+        "mandate": "Judge whether the change's comments and documentation are right-sized: nothing over-documented, no identifiers a reader has no context for, and no narrated history that belongs in the commit log. A refuted alternative stated in the present tense — the plausible wrong design and what breaks under it — is current rationale and stays, so a finding names the episode, not the reason.",
         "acs_hint": "criteria describing what the change must explain and to whom",
         "tier": "mid",
         "rescope": "diff",
