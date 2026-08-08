@@ -62,6 +62,9 @@ carries its own provenance header with it wherever it goes, and git holds the re
 | `writing-skills` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/writing-skills/` | 2026-05-17 | accept-periodic-resync |
 | `writing-skills` | shared | `anthropics/skills @ f458cee` | `skills/skill-creator/` | 2026-05-17 | accept-periodic-resync |
 | `grill-with-docs` | shared | `mattpocock/skills @ ed37663c` | `skills/engineering/grill-with-docs/` | 2026-05-23 | local-fork |
+| `codebase-design` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/codebase-design/` | 2026-08-07 | accept-periodic-resync |
+| `domain-modeling` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/domain-modeling/` | 2026-08-07 | local-fork |
+| `wait-what` | shared | `mattpocock/skills @ 84fdeffd` | `skills/productivity/wait-what/` | 2026-08-07 | accept-periodic-resync |
 | `grilling` | shared | `mattpocock/skills @ ed37663c` | `skills/productivity/grilling/` | 2026-07-24 | local-fork |
 | `to-spec` | shared | `mattpocock/skills @ ed37663c` | `skills/engineering/to-spec/` | 2026-07-24 | local-fork |
 | `handoff` | shared *(see below)* | `mattpocock/skills @ ed37663c` | `skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
