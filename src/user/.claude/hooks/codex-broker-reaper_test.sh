@@ -7,9 +7,11 @@
 # hook looks for `app-server-broker.mjs serve`, so the fixture's command line
 # has to be exactly that shape.
 #
-# Every run is scoped to its own temp directory via CODEX_BROKER_REAPER_SCOPE,
-# so no test can reach a broker belonging to a real session, and the age gate
-# is lowered so a freshly spawned fixture is judged rather than deferred.
+# Every run is scoped to its own temp directory: CODEX_BROKER_REAPER_SCOPE keeps
+# the sweep to this run's own fixtures, and the hook's state roots are all
+# redirected beneath that directory, so neither a real session's broker nor a
+# real session's record can reach a test. The age gate is lowered so a freshly
+# spawned fixture is judged rather than deferred.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -43,6 +45,17 @@ export CODEX_BROKER_REAPER_SCOPE="$WORK"
 export CODEX_BROKER_REAPER_MIN_AGE_SECONDS=0
 export CLAUDE_PLUGIN_DATA="$WORK/plugin-data"
 STATE="$CLAUDE_PLUGIN_DATA/state"; mkdir -p "$STATE"
+
+# CLAUDE_PLUGIN_DATA is one of three state roots the hook reads. The other two —
+# `~/.claude/plugins/data/*/state` and `$TMPDIR/codex-companion` — are
+# machine-wide, and between them hold a record for every broker any session or
+# plugin test on the machine has ever started. A fixture that draws a pid one of
+# those records names is judged reachable and is not reaped, so under the real
+# HOME and TMPDIR this suite's verdict turns on the machine's history and on
+# where the pid counter has wrapped to rather than on the hook's behaviour.
+# Handing the hook a home and a temp directory of this run's own leaves the
+# records the suite itself writes as the only ones it can see.
+HOOK_HOME="$WORK/home"; HOOK_TMPDIR="$WORK/tmp"; mkdir -p "$HOOK_HOME" "$HOOK_TMPDIR"
 
 # Stands in for the plugin's broker: binds the endpoint socket, writes its pid
 # file, then idles. Its filename is load-bearing — see the header.
@@ -91,7 +104,7 @@ record_broker() { # $1 = state slug, $2 = pid, $3 = sockpath
   printf '{"endpoint":"unix:%s","pid":%s}\n' "$3" "$2" > "$STATE/$1/broker.json"
 }
 
-run_hook() { OUT="$(printf '{}' | python3 "$HOOK" "$@" 2>&1)"; RC=$?; }
+run_hook() { OUT="$(printf '{}' | HOME="$HOOK_HOME" TMPDIR="$HOOK_TMPDIR" python3 "$HOOK" "$@" 2>&1)"; RC=$?; }
 
 # --- setsid must be available, or the fixtures are not group leaders ---------
 if ! command -v setsid >/dev/null 2>&1; then
