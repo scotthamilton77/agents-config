@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from tests.conftest import only_item
 from tests.fake_backend import FakeBackend, ReadOnlyFakeBackend
 from workcli.envelope import ErrorCode, WorkError
 from workcli.lifecycle.defer import (
@@ -167,10 +168,8 @@ def test_a_read_envelope_tells_a_deferred_item_from_a_parked_one():
     defer(backend, _defer_args("idea"))
     park(backend, _park_args("stuck", "ci-failure"))
 
-    idea = show(backend, Namespace(ids=["idea"]))
-    stuck = show(backend, Namespace(ids=["stuck"]))
-    assert isinstance(idea, dict)
-    assert isinstance(stuck, dict)
+    idea = only_item(show(backend, Namespace(ids=["idea"])))
+    stuck = only_item(show(backend, Namespace(ids=["stuck"])))
     assert idea["status"] == "deferred"
     assert stuck["status"] == "blocked"
     assert PARKED_LABEL not in idea["labels"]
@@ -188,11 +187,9 @@ def test_the_two_states_stay_legible_apart_with_every_note_removed():
     backend.add("idea", status=DEFERRED_STATUS, notes="")
     backend.add("stuck", status="blocked", labels=[PARKED_LABEL], notes="")
 
-    idea = show(backend, Namespace(ids=["idea"]))
-    stuck = show(backend, Namespace(ids=["stuck"]))
+    idea = only_item(show(backend, Namespace(ids=["idea"])))
+    stuck = only_item(show(backend, Namespace(ids=["stuck"])))
 
-    assert isinstance(idea, dict)
-    assert isinstance(stuck, dict)
     assert idea["notes"] == stuck["notes"] == ""
     assert idea["status"] != stuck["status"]
     assert (idea["status"], PARKED_LABEL in idea["labels"]) == ("deferred", False)

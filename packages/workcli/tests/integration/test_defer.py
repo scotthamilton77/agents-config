@@ -30,17 +30,17 @@ def test_defer_drops_a_real_item_out_of_ready_and_undefer_brings_it_back(driver)
     deferred = driver(["defer", item_id, "--note", "nobody has picked this up"])
     assert deferred["ok"] is True
     assert deferred["data"] == {"id": item_id, "status": "deferred"}
-    assert driver(["show", item_id])["data"]["status"] == "deferred"
+    assert driver(["show", item_id])["data"]["items"][0]["status"] == "deferred"
     assert item_id not in _ready_ids(driver)
 
     returned = driver(["undefer", item_id])
     assert returned["ok"] is True
     assert returned["data"] == {"id": item_id, "status": "open"}
-    assert driver(["show", item_id])["data"]["status"] == "open"
+    assert driver(["show", item_id])["data"]["items"][0]["status"] == "open"
     assert item_id in _ready_ids(driver)
 
     # One marker per transition, and both survived the round trip.
-    notes = driver(["show", item_id])["data"]["notes"]
+    notes = driver(["show", item_id])["data"]["items"][0]["notes"]
     assert notes.count("[work] deferred") == 1
     assert notes.count("[work] undeferred") == 1
 
@@ -65,8 +65,8 @@ def test_a_read_envelope_tells_a_deferred_item_from_a_parked_one(driver):
     assert driver(["claim", stuck])["ok"] is True
     assert driver(["park", stuck, "--reason", "ci-failure"])["ok"] is True
 
-    idea_item = driver(["show", idea])["data"]
-    stuck_item = driver(["show", stuck])["data"]
+    idea_item = driver(["show", idea])["data"]["items"][0]
+    stuck_item = driver(["show", stuck])["data"]["items"][0]
 
     assert idea_item["status"] == "deferred"
     assert "parked" not in idea_item["labels"]
@@ -80,9 +80,9 @@ def test_the_transitions_replay_idempotently_against_real_state(driver):
     first = driver(["defer", item_id])
     second = driver(["defer", item_id])
     assert first["data"] == second["data"] == {"id": item_id, "status": "deferred"}
-    assert driver(["show", item_id])["data"]["notes"].count("[work] deferred") == 1
+    assert driver(["show", item_id])["data"]["items"][0]["notes"].count("[work] deferred") == 1
 
     third = driver(["undefer", item_id])
     fourth = driver(["undefer", item_id])
     assert third["data"] == fourth["data"] == {"id": item_id, "status": "open"}
-    assert driver(["show", item_id])["data"]["notes"].count("[work] undeferred") == 1
+    assert driver(["show", item_id])["data"]["items"][0]["notes"].count("[work] undeferred") == 1

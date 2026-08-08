@@ -15,16 +15,17 @@ from argparse import Namespace
 from workcli.backend import Backend
 from workcli.config import TrackLayerConfig
 from workcli.envelope import ErrorCode, JsonValue, WorkError
-from workcli.model import Item, QueryFilters
+from workcli.model import Item, QueryFilters, not_closed
 from workcli.tracks import TRACK_PREFIX, derive_track
 
 NO_MILESTONE_EXEMPT_LABEL = "lint-exempt:no-milestone"
 
 
 def _sweep(backend: Backend) -> list[Item]:
-    """All non-closed items. bd list already omits closed; the filter makes
-    the verb correct against any backend that returns them anyway."""
-    return [item for item in backend.query(QueryFilters()) if item.status != "closed"]
+    """All non-closed items. A listing answers every status, so what these
+    three verbs report on is the narrowing they state here: closed work
+    breaches no invariant and exerts no extraction pressure."""
+    return not_closed(backend.query(QueryFilters()))
 
 
 def _track_violations(non_milestone: list[Item], config: TrackLayerConfig) -> list[JsonValue]:

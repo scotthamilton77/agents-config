@@ -49,7 +49,7 @@ _NOT_FOUND = 127
 # mismatch rather than risk mis-parsing mid-run -- and for a mutating consumer
 # the timing is the point: checking a reply is too late, because an
 # incompatible facade may already have acted.
-_TRACKER_PROTOCOL_MAJOR = "1"
+_TRACKER_PROTOCOL_MAJOR = "2"
 # The one exit code that carries a verdict rather than an outcome: `grind
 # check` exits 1 on a stale grind while emitting `ok: true`.
 _STALE_EXIT = 1

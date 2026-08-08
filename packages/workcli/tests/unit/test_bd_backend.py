@@ -172,7 +172,7 @@ def test_query_defaults_to_limit_zero_meaning_unbounded():
     items = backend.query(QueryFilters())
 
     assert len(items) == 5
-    assert runner.calls == [("list", "--json", "--limit", "0")]
+    assert runner.calls == [("list", "--json", "--all", "--limit", "0")]
 
 
 def test_query_passes_through_a_positive_limit_and_the_status_filter():
@@ -208,6 +208,7 @@ def test_query_passes_through_the_label_parent_and_type_filters():
         (
             "list",
             "--json",
+            "--all",
             "--label",
             "tech-debt",
             "--parent",

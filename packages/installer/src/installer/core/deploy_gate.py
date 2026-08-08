@@ -57,6 +57,7 @@ from typing import TYPE_CHECKING
 from installer.core.admission import (
     DIR_RECORD_FILE,
     AdmissionOutcome,
+    AdmissionRecord,
     classify,
     entry_file_text,
     is_gated,
@@ -145,6 +146,14 @@ class GateResult:
     which files were weighed or where an assembled destination's bytes came
     from. Reporting the answer alongside the findings is what stops a consumer
     reconstructing it from staging leftovers.
+
+    ``records`` maps the label of every artifact that *cleared* the bar to the
+    record that cleared it, and is returned for the same reason ``sources`` is:
+    the gate reads each record and then strips it from the bytes that deploy, so
+    afterwards there is nowhere else to read one from. It carries no deploy-time
+    consequence — nothing here judges a record's prose, and a caller that does
+    (the repo-side content lint) is enforcing an authoring standard that must not
+    be able to abort someone's install.
     """
 
     plans: dict[Tool, StagingPlan]
@@ -153,6 +162,7 @@ class GateResult:
     surfaces: list[SurfaceMeasure] = field(default_factory=list)
     skills: list[SkillMeasure] = field(default_factory=list)
     sources: dict[str, Path] = field(default_factory=dict)
+    records: dict[str, AdmissionRecord] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -189,7 +199,7 @@ def _catalog_entry(text: str) -> bytes:
     return f"{mapping.get('name', '')}: {mapping.get('description', '')}".encode()
 
 
-def _record_bearers(item: StagedItem, overrides: dict[Path, Contribution]) -> list[Contribution]:
+def record_bearers(item: StagedItem, overrides: dict[Path, Contribution]) -> list[Contribution]:
     """Every source whose admission record governs part of what ``item`` deploys.
 
     A file item is judged per contributor, in the order its bytes appear. A
@@ -211,6 +221,13 @@ def _record_bearers(item: StagedItem, overrides: dict[Path, Contribution]) -> li
     bears no record either, but it is a file, it is the file that is wrong, and
     it is the one the reader opens. So the two are told apart by ``None`` against
     ``""`` rather than by falsiness, which conflates them.
+
+    Public for the same reason as ``contributor_label``: the repo-side content
+    lint judges the same bearers against the provenance rule, and that rule is a
+    property of the source bytes the gate is about to sanitize. A second
+    derivation of "which files speak for this item" would let the two disagree
+    about what was examined — and would reintroduce, one consumer over, exactly
+    the leading-contributor-only reading this function exists to end.
     """
     if item.content is not None:
         return list(contributions_of(item))
@@ -329,6 +346,7 @@ class _Admitted:
     text: str
     user_invoked: bool
     claims: dict[str, str]
+    record: AdmissionRecord
 
 
 def _judge(
@@ -355,10 +373,13 @@ def _judge(
     """
     text = contribution.content.decode("utf-8", errors="replace")
     verdict = classify(text)
-    if verdict.outcome is AdmissionOutcome.NO_RECORD:
+    # A record is populated on the COMPLETE verdict and on no other, so this is
+    # the outcome test written where the type checker can also read it.
+    record = verdict.record
+    if record is None:
+        if verdict.outcome is AdmissionOutcome.MALFORMED:
+            return None, f"{label}: incomplete admission record — {verdict.detail}"
         return None, None
-    if verdict.outcome is AdmissionOutcome.MALFORMED:
-        return None, f"{label}: incomplete admission record — {verdict.detail}"
     deployed = project_capabilities(sanitize_text(text), tool=tool.value)
     return (
         _Admitted(
@@ -367,6 +388,7 @@ def _judge(
             text=deployed,
             user_invoked=is_user_invoked(deployed),
             claims=verdict.claims,
+            record=record,
         ),
         None,
     )
@@ -386,6 +408,7 @@ def run_admission_gate(
     skipped: list[str] = []
     violations: list[str] = []
     sources: dict[str, Path] = {}
+    records: dict[str, AdmissionRecord] = {}
     claims_by_artifact: list[tuple[str, dict[str, str]]] = []
     skill_bodies: list[SkillBodySource] = []
     # Per tool, because a catalog is a property of one runtime: the same skill
@@ -402,7 +425,7 @@ def run_admission_gate(
                 kept[dest] = item
                 continue
             overrides = plan.dir_overrides.get(dest, {})
-            bearers = _record_bearers(item, overrides)
+            bearers = record_bearers(item, overrides)
             if not bearers:
                 # Nothing to read at all — a directory item with no entry file.
                 # The directory is the only thing there is to name.
@@ -423,6 +446,7 @@ def run_admission_gate(
                 else:
                     admitted.append(verdict)
                     claims_by_artifact.append((label, verdict.claims))
+                    records[label] = verdict.record
             if not admitted:
                 continue
 
@@ -522,4 +546,5 @@ def run_admission_gate(
         surfaces=surfaces,
         skills=measure_skill_bodies(skill_bodies),
         sources=sources,
+        records=records,
     )

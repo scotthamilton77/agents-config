@@ -3,7 +3,7 @@ name: tdd
 description: The red-to-green loop and the discipline that keeps it honest. Use when implementing a feature or bugfix test-first, when failing tests have been handed over to be made green, when the user says "red-green-refactor" or "test-first", or when about to write production code that no test yet demands.
 admission:
   prevents: The two model defaults that make a test suite prove nothing — writing the implementation first and back-filling tests that pass on arrival, and editing a handed-over failing test until it agrees with the code that was written instead of the contract it encodes.
-  cost: One model-invoked catalog line; a body paid only when an implementation cycle invokes it, plus a shared quality reference in a sibling skill, paid only when followed.
+  cost: A hard stop that waits for the user whenever a handed-over test looks wrong, rather than editing it.
   remove_when: The executor enforces the loop mechanically — refusing work whose tests did not fail before the implementation existed — so the discipline no longer has to be read to be obeyed.
 ---
 

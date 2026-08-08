@@ -62,7 +62,7 @@ which spans every run rather than resetting per migration.
 
 ## Tests
 
-    cd scripts/track-backfill && python3 -m unittest test_reconcile test_payload_keys test_apply_contract test_gen_expected_mismatches test_verify_c1
+    cd scripts/track-backfill && python3 -m unittest test_reconcile test_payload_keys test_apply_contract test_gen_expected_mismatches test_verify_c1 test_show_shape
 
 `test_apply_contract.py` pins `set_track`'s failure classification by substituting
 the backend. It exists because a regression shipped here: the shared `work()`
@@ -76,6 +76,15 @@ deliberately **non-empty** fixtures. That is not incidental: a wrong key was
 shipped and survived a live run precisely because the list it indexed was empty,
 so the loop body never executed. An empty fixture cannot tell a right key from a
 wrong one.
+
+`test_show_shape.py` pins that `context.show` reads **both** `work show` reply
+shapes. These scripts shell out to whichever `work` is on PATH, which is not
+necessarily the one built in the checkout they run from: protocol 2.0 made
+`work show ID` answer `{"items": [...]}` where earlier versions answered a
+single id with the item object directly, so a helper written for either shape
+alone breaks against half the installations in existence. The same hazard, one
+verb over, is what verify.py's C1 comment records about the `work list` status
+default.
 
 ## Recovery
 

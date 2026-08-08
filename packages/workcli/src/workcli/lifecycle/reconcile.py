@@ -31,7 +31,7 @@ from workcli.lifecycle.nouns import (
     DESIGN_CHILD_LABEL,
     IMPL_PLACEHOLDER_LABEL,
 )
-from workcli.model import Item, QueryFilters
+from workcli.model import Item, QueryFilters, not_closed
 
 
 def _finding(item_id: str, kind: str, *, repaired: bool) -> dict[str, JsonValue]:
@@ -62,9 +62,13 @@ def _sweep_pending_placeholders(backend: Backend, *, dry_run: bool) -> list[Json
     surfaces as an attention finding without auto-repair. A corrupt snapshot is
     one poisoned item, reported as its own finding rather than aborting recovery
     of every healthy placeholder -- the typed drift `manifest_snapshot`
-    raises is caught per-item here."""
+    raises is caught per-item here.
+
+    A listing answers every status, so the candidates are narrowed to live
+    items: a closed placeholder is one this sweep would re-open work under,
+    and recovery repairs what was interrupted, never what was finished."""
     findings: list[JsonValue] = []
-    for candidate in backend.query(QueryFilters(label=IMPL_PLACEHOLDER_LABEL)):
+    for candidate in not_closed(backend.query(QueryFilters(label=IMPL_PLACEHOLDER_LABEL))):
         placeholder = backend.get(candidate.id)
         try:
             snapshot = manifest_snapshot(placeholder.notes)
@@ -136,9 +140,11 @@ def _sweep_interrupted_instantiations(backend: Backend, *, dry_run: bool) -> lis
     leaf is healed by stripping the leaked handle, never finalized as a
     container -- finalizing a leaf would mint grandchildren under it and stamp
     it `planned`. A second sweep over a healed tree finds no
-    handle -- idempotent."""
+    handle -- idempotent. Candidates are narrowed to live items for the same
+    reason the placeholder sweep above narrows its own: a closed container is
+    not an instantiation still in flight."""
     findings: list[JsonValue] = []
-    candidates = list(backend.query(QueryFilters(label=CREATING_SPEC_LABEL)))
+    candidates = not_closed(backend.query(QueryFilters(label=CREATING_SPEC_LABEL)))
     items = backend.batch_get([candidate.id for candidate in candidates])
     for item in items:
         if DESIGN_CHILD_LABEL in item.labels or IMPL_PLACEHOLDER_LABEL in item.labels:

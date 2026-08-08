@@ -6,7 +6,7 @@ disable-model-invocation: true
 allowed-tools: Write Bash(git status *) Bash(git log *) Bash(date *) Bash(pwd)
 admission:
   provides: Mechanism to capture the current conversation and working-tree snapshot into a handoff document for a fresh agent to resume work in a new session.
-  cost: None
+  cost: A document left in the user's temp directory once the session ends, carrying whatever that session held — hence the redaction constraint — and nothing deletes it afterwards.
   remove_when: Agents can resume work in a new session without a handoff document, can safely compact on their own (in a way the user trusts) or can cheaply handle large contexts without context rot.
 ---
 
@@ -51,7 +51,7 @@ After writing, print the absolute file path on its own line so the user can pass
 4. **Lessons learned** — anything the next agent should know to avoid pitfalls or dead ends that isn't already in the agent memory or easily discoverable in the artifacts
 5. **Open questions and blockers** — anything the next agent needs to resolve before progress
 6. **Next concrete steps** — ordered, actionable
-7. **References** — paths and URLs only; do NOT duplicate content from PRDs, plans, ADRs, issues/beads, commits, or diffs
+7. **References** — paths and URLs only; do NOT duplicate content from PRDs, plans, ADRs, tracker items, commits, or diffs
 8. **Suggested skills** — skills the next agent should invoke (e.g. `grilling`, `prototype`, `diagnosing-bugs`)
 
 ## Constraints

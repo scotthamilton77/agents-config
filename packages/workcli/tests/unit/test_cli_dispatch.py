@@ -129,3 +129,23 @@ def test_a_timeout_envelope_names_the_verb_that_resolves_it():
     assert envelope["error"]["code"] == "E_TIMEOUT"
     assert "may have partially applied" in envelope["error"]["message"]
     assert "work reconcile" in envelope["error"]["message"]
+
+
+def test_the_readme_counts_the_verbs_the_cli_actually_dispatches() -> None:
+    # The README's verb table opened with a hand-written count that said
+    # "Twelve" while `VERBS` held 31 -- nineteen verbs' worth of drift in the
+    # one sentence a reader meets before the table. A number nobody recomputes
+    # decays silently, and the sentence is worse than no sentence once it does,
+    # because it reads as a deliberate statement of scope.
+    import re
+    from pathlib import Path
+
+    from workcli.verbs import VERBS
+
+    readme = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
+    match = re.search(r"^(\d+) verbs; each is a subcommand", readme, re.MULTILINE)
+
+    assert match, "the README's verb table states no count; this check has nothing to hold"
+    assert int(match.group(1)) == len(VERBS), (
+        f"README says {match.group(1)} verbs, the CLI dispatches {len(VERBS)}"
+    )

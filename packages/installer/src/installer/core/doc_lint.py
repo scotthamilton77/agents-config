@@ -214,6 +214,28 @@ ASSET_KINDS: dict[str, str] = {kind: kind + "s" for kind in ("skill", "rule", "c
 _ASSET_AFTER_RE = re.compile(r"`([^`\n]+)`\s+(skill|rule|command|agent)s?\b")
 _ASSET_BEFORE_RE = re.compile(r"\b(skill|rule|agent)s?\s+`([^`\n]+)`(?![A-Za-z])")
 
+# The third frame, and the one a rename actually strands: this repo's requirement
+# marker, as ``writing-skills``' anatomy reference defines it and two skills write
+# it — ``REQUIRED SUB-SKILL: Use `x` `` and ``REQUIRED BACKGROUND: You MUST
+# understand `x` before using this skill``. Neither is reachable by adjacency, and
+# the second shows why no widening of adjacency reaches it: the word "skill" in it
+# names the *containing* document, not the thing cited, so the nearest kind word is
+# about something else entirely. The marker takes over both jobs the adjacent word
+# was doing — it says the span is a skill, and it says to go read it.
+#
+# **Distance is not the mechanism, and that was measured.** Letting a kind word
+# anywhere in its sentence bind to a citation yields 60 candidates over this
+# repository and not one is a citation: ``rules``/``skills``/``agents`` listed as
+# the gated namespaces, ``scripts`` after "this skill's", ``gh`` after "the fix
+# agent", a word already bound to the citation next door. A two-word bound still
+# yields eleven, all wrong. The word is this repo's most-used noun; the marker is
+# unambiguous, so the marker is the frame.
+#
+# Shouty, and punctuated. The colon is what separates the marker from the ordinary
+# adjective — "a required skill" is prose — and only the two forms the convention
+# defines are admitted, because a third would be a guess at prose nobody writes.
+_REQUIREMENT_MARKER_RE = re.compile(r"\bREQUIRED (?:SUB-SKILL|BACKGROUND):")
+
 # An asset name as this repo writes them: lowercase kebab-case. Anything else —
 # an underscore, a capital, a space — is a code identifier or a config key that
 # happened to sit next to the word "rule", which is the noisiest false positive
@@ -247,11 +269,16 @@ class CitationContext:
     ``near_miss`` — this sentence does not, but a neighbouring one does. That is
     the most likely honest mistake, and naming it is the difference between a
     finding an author can act on and one they reverse-engineer by rephrasing.
+    ``required`` — a requirement marker frames it, so it is a skill citation
+    whatever sits beside it. That marker is an instruction on its own, which is why
+    ``directive`` is true whenever this is: "You MUST understand ``x``" carries no
+    verb the directive set has, and needs none.
     """
 
     directive: bool
     negated: bool
     near_miss: bool
+    required: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -708,13 +735,22 @@ def _asset_name(token: str) -> str | None:
     return name if _ASSET_NAME_RE.match(name) else None
 
 
-def _asset_citations(line: str) -> list[tuple[str, str, str, str]]:
+def _asset_citations(line: str, marked: frozenset[str]) -> list[tuple[str, str, str, str]]:
     """``(kind, namespace, name, token)`` for every asset this line names.
 
     ``command`` is accepted only in its slash form. Unqualified, the word means a
     shell command far more often than a deployed one — ``the `gh` command``,
     ``the `bd` commands``, ``the `status` command`` — and admitting it would make
     this the noisiest check in the module rather than one of the sharpest.
+
+    ``marked`` holds the spans on this line that a requirement marker frames, and
+    they are skills: both marker forms the convention defines cite one. The set
+    arrives from the caller rather than being read off the line here because a
+    marker leads a paragraph and Markdown wraps it, so the marker and the name it
+    requires need not share a line — only a sentence, which is what
+    ``citation_contexts`` walks. A span an adjacent word already claimed is not
+    claimed a second time: ``REQUIRED SUB-SKILL: Use the `x` skill`` names one
+    thing and earns one finding.
 
     The author's raw ``token`` rides along because the same span can be read two
     ways: ``the `writing-skills/SKILL.md` skill`` is path-shaped *and* an asset
@@ -734,6 +770,16 @@ def _asset_citations(line: str) -> list[tuple[str, str, str, str]]:
         name = _asset_name(token)
         if name is not None:
             found.append((kind, ASSET_KINDS[kind], name, token))
+    claimed = {token for _kind, _namespace, _name, token in found}
+    # Walked in the line's own order, not the set's, so the report is the same on
+    # every run over the same file.
+    for _column, token in _code_spans(line):
+        if token not in marked or token in claimed:
+            continue
+        claimed.add(token)
+        name = _asset_name(token)
+        if name is not None:
+            found.append(("skill", ASSET_KINDS["skill"], name, token))
     return found
 
 
@@ -880,12 +926,14 @@ def citation_contexts(
                     position = sentence.find(quoted)
                     if position < 0:
                         continue
+                    required = _REQUIREMENT_MARKER_RE.search(sentence[:position]) is not None
                     contexts.setdefault(
                         (number, token),
                         CitationContext(
-                            directive=_directive_before(sentence, position),
+                            directive=required or _directive_before(sentence, position),
                             negated=negations[index],
                             near_miss=not negations[index] and any(neighbours),
+                            required=required,
                         ),
                     )
     return contexts
@@ -894,7 +942,7 @@ def citation_contexts(
 # A citation no sentence claimed — inside a table cell the block walk split
 # differently, say. Neither directive nor negated, so the asset check stays quiet
 # and the path and symbol checks stay live, which is the conservative reading.
-_NO_CONTEXT = CitationContext(directive=False, negated=False, near_miss=False)
+_NO_CONTEXT = CitationContext(directive=False, negated=False, near_miss=False, required=False)
 
 
 def _asset_reason(kind: str, context: CitationContext) -> str:
@@ -951,8 +999,13 @@ def lint_markdown_text(
         if fenced:
             continue
 
+        marked = frozenset(
+            token
+            for _column, token in _code_spans(line)
+            if contexts.get((number, token), _NO_CONTEXT).required
+        )
         claimed: set[str] = set()
-        for kind, namespace, name, token in _asset_citations(line):
+        for kind, namespace, name, token in _asset_citations(line, marked):
             claimed.add(token)
             context = contexts.get((number, token), _NO_CONTEXT)
             # Only an instruction to reach for the asset. A mention misleads
