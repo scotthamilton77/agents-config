@@ -73,7 +73,7 @@ behind it and children that are the live statement of progress. A milestone
 tracks no progress itself — its charter states decisions and acceptance
 criteria, and the children say where things stand.
 
-Work does not enter the tracker outside a milestone.
+Work items are expected to have a milestone ancestor; `work lint` reports non-milestone orphans unless they carry the `lint-exempt:no-milestone` label.
 
 ## Park
 
