@@ -113,14 +113,6 @@ def acceptance(backend: Backend, args: Namespace) -> JsonValue:
     why = _require_single_line_reason(args.why)
     item = backend.get(args.id)
 
-    if item.status not in _UNSTARTED_STATUSES and why is None:
-        raise WorkError(
-            ErrorCode.FIELD_CLOBBER_GUARD,
-            f"{args.id}: work has started ({item.status}); moving the criteria a claim is "
-            "checked against now requires --why, which is recorded on the item",
-            detail={"field": "acceptance", "status": item.status},
-        )
-
     payload: JsonValue = {
         "id": args.id,
         "acceptance": text,
@@ -129,8 +121,21 @@ def acceptance(backend: Backend, args: Namespace) -> JsonValue:
     }
     if item.acceptance == text:
         # Replay safety: converge on the state already there rather than mint a
-        # trail entry for a change nobody made.
+        # trail entry for a change nobody made. This is checked BEFORE the
+        # started-work gate below, and the order is the point: that gate exists
+        # to stop a contract moving unremarked, and a no-op moves nothing.
+        # Gating it would refuse the retry that follows a crash -- the one call
+        # a caller makes precisely because it does not know whether the first
+        # attempt landed, and the one that must be safe to repeat.
         return payload
+
+    if item.status not in _UNSTARTED_STATUSES and why is None:
+        raise WorkError(
+            ErrorCode.FIELD_CLOBBER_GUARD,
+            f"{args.id}: work has started ({item.status}); moving the criteria a claim is "
+            "checked against now requires --why, which is recorded on the item",
+            detail={"field": "acceptance", "status": item.status},
+        )
 
     backend.append_note(args.id, _trail(item.acceptance, args.now(), item.status, why))
     backend.set_acceptance(args.id, text)

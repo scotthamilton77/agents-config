@@ -182,6 +182,23 @@ def test_a_started_item_refuses_a_restatement_that_states_no_reason(status: str)
 
 
 @pytest.mark.parametrize("status", ["in_progress", "blocked", "closed"])
+def test_a_started_item_replaying_the_criteria_already_in_force_needs_no_reason(
+    status: str,
+) -> None:
+    # The retry after a crash is the whole point: a caller re-issues the same
+    # command precisely because it does not know whether the first attempt
+    # landed. Gating the no-op behind --why would refuse that retry on every
+    # started item, so the one call that exists to be safely repeatable would
+    # be the one call that fails. The --why gate guards a contract MOVING;
+    # nothing moves here, and `ReadOnlyFakeBackend` proves nothing is written.
+    backend = ReadOnlyFakeBackend().add("w1", acceptance=_OLD, status=status)
+
+    data = acceptance(backend, _args("w1", _OLD))
+
+    assert data == {"id": "w1", "acceptance": _OLD, "previous": _OLD, "status": status}
+
+
+@pytest.mark.parametrize("status", ["in_progress", "blocked", "closed"])
 def test_a_started_item_takes_a_stated_restatement_and_the_note_says_so(status: str) -> None:
     backend = FakeBackend().add("w1", acceptance=_OLD, status=status)
 
