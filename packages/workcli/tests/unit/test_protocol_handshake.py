@@ -130,7 +130,20 @@ def test_protocol_wire_value_is_pinned() -> None:
     # Nothing here touches 1.10's close-walk narrowing: a deferred child is
     # not a closed one, so it stops the walk on the not-yet-exhausted branch
     # exactly as an open child does, and never reaches the `held` report.
-    assert PROTOCOL_VERSION == "1.11"
+    #
+    # 1.12 adds `acceptance set`, the first way a caller can correct the
+    # criteria an item was created with, and a refusal on `update
+    # --set-acceptance` that names it. A new verb is 1.11's case exactly: it
+    # takes nothing away from an existing one, and its envelope is a new
+    # `data` shape rather than a change to any existing one. The refusal is
+    # additive in the same sense the 1.6 refusals were -- the flag it rejects
+    # was never accepted, so it replaces an unknown-flag error with a named
+    # one and no consumer had correct behaviour to lose. What a reader of an
+    # existing shape can newly see is a note line the facade wrote, on an item
+    # whose criteria moved; `notes` has always carried facade-authored markers
+    # (the park family's, the defer pair's), so this is one more of a kind
+    # that already existed.
+    assert PROTOCOL_VERSION == "1.12"
 
 
 def test_the_readme_states_the_protocol_version_the_code_emits() -> None:

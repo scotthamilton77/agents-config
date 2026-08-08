@@ -25,6 +25,7 @@ from workcli.lifecycle.discover import discover
 from workcli.lifecycle.park import abandon, park, parked, redispatch
 from workcli.lifecycle.reconcile import reconcile
 from workcli.lifecycle.transitions import claim, plan, promote, release
+from workcli.verbs.acceptance import acceptance
 from workcli.verbs.groom import groom
 from workcli.verbs.read import list_, ready, search, show
 from workcli.verbs.relations import dep, label
@@ -112,6 +113,7 @@ VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
     "discover": discover,
     "dep": dep,
     "label": label,
+    "acceptance": acceptance,
     "sync": sync,
     "track": track,
     "lint": lint,
