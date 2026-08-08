@@ -416,16 +416,36 @@ def _skill_payloads(
 
     One entry per skill *directory*, not per tool. A shared skill stages into
     every plan out of one source tree, and the payload is a property of that
-    tree — so the trees are collected first and read once, and a plugin
-    extension's override files union in from whichever tools received them.
-    Skills with nothing beside their entry are left out entirely: a line reading
-    zero is noise in a report whose whole purpose is to show where the weight is.
+    tree — so the trees are collected first and read once, with each tool's
+    override files laid over the result. Skills with nothing beside their entry
+    are left out entirely: a line reading zero is noise in a report whose whole
+    purpose is to show where the weight is.
+
+    **That collection resolves rather than unions, and the difference is worth
+    stating.** Overrides accumulate per inner path, so a path one tool alone
+    receives is added and a path several tools receive identically is
+    idempotent — but a path two tools receive with *different* bytes takes
+    whichever plan is iterated last. Exactly one mechanism can produce that: a
+    tool-scoped extension patch against an inner file of a shared skill. A
+    carrier merge cannot, because it contributes one plugin's bytes to every
+    tool holding that plugin. No extension exists anywhere in the tree, so the
+    case has no occupant — and the one per-tool divergence that *is* live, the
+    entry file capability projection genuinely rewrites per target, is popped
+    below before anything is weighed.
+
+    When the first such extension lands, the repair is to report per tool rather
+    than to fold the tools together — the same shape ``_group_skill_bodies``
+    takes by keying on the cap. Taking a max across targets is the cheaper edit
+    and the wrong one: it would invent a number no target loads, which is the
+    error this whole measurement exists to end.
     """
     trees: dict[Path, dict[Path, Contribution]] = {}
     for plan in plans.values():
         for dest, item in plan.items.items():
             if item.namespace != "skills" or item.content is not None:
                 continue
+            # Per inner path, last plan wins on a collision. See the docstring
+            # for what could produce one and why nothing does.
             trees.setdefault(item.source_path, {}).update(plan.dir_overrides.get(dest, {}))
 
     payloads: list[SkillPayloadMeasure] = []
