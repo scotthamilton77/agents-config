@@ -1,5 +1,8 @@
 # `.beads/`
 
+Do NOT edit or read contents in this file without EXPLICIT instruction from the user.
+Do NOT attempt to execute `bd` CLI commands without EXPLICIT instruction from the user.
+
 Work tracking for this project is addressed through the **`work` CLI**. Run
 `work --help` for the verb list; every verb returns a JSON envelope.
 `work show agents-config-9k9` is the milestone this repo's harness work hangs
