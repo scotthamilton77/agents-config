@@ -1,9 +1,8 @@
 """`show` verb normalization.
 
-A single id must yield an object (never a single-element array), with lean
-dep edges (`{id, type, status}`) and `string[]` labels. Multiple ids must
-yield `data == {"items": [...]}`. Both drive the real CLI end-to-end through
-`ScriptedBdRunner`.
+`data == {"items": [...]}` for one id and for many alike, and each row is a
+lean item: dep edges as `{id, type, status}`, labels as bare `string[]`.
+Every test here drives the real CLI end-to-end through `ScriptedBdRunner`.
 """
 
 from __future__ import annotations
@@ -11,7 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tests.conftest import run_cli, run_cli_with_runner
+from tests.conftest import only_item, run_cli, run_cli_with_runner
 from tests.fakes import ScriptedBdRunner, ScriptedStep
 from workcli.adapters.bd.runner import BdResult
 from workcli.envelope import ErrorCode
@@ -23,7 +22,7 @@ def _read(name: str) -> str:
     return (FIXTURES / name).read_text()
 
 
-def test_show_single_id_returns_a_lean_object_not_an_array():
+def test_show_single_id_returns_a_lean_item():
     exit_code, envelope, stderr_text = run_cli(
         ["show", "agents-config-wgclw.9.1"],
         steps=[
@@ -36,17 +35,16 @@ def test_show_single_id_returns_a_lean_object_not_an_array():
 
     assert exit_code == 0
     assert stderr_text == ""
-    data = envelope["data"]
-    assert isinstance(data, dict)
-    assert data["id"] == "agents-config-wgclw.9.1"
+    item = only_item(envelope["data"])
+    assert item["id"] == "agents-config-wgclw.9.1"
     # Lean labels: bare string[], not embedded objects.
-    assert data["labels"] == ["implementation-ready", "shape-feat", "vision-85-5-10"]
+    assert item["labels"] == ["implementation-ready", "shape-feat", "vision-85-5-10"]
     # The fixture's one `dependencies[]` entry is parent-child (filtered out
     # of `deps`, since it's the item's own parent edge, not a real
     # dependency); its one `dependents[]` entry is `dependency_type: blocks`,
     # not parent-child, so it is not a child either.
-    assert data["deps"] == []
-    assert data["children"] == []
+    assert item["deps"] == []
+    assert item["children"] == []
 
 
 def test_show_single_id_with_a_real_dependency_yields_a_lean_dep_edge():
@@ -67,11 +65,49 @@ def test_show_single_id_with_a_real_dependency_yields_a_lean_dep_edge():
 
     assert exit_code == 0
     assert stderr_text == ""
-    data = envelope["data"]
-    assert isinstance(data, dict)
-    assert data["deps"] == [
+    assert only_item(envelope["data"])["deps"] == [
         {"id": "agents-config-fca6.12", "type": "discovered-from", "status": "closed"}
     ]
+
+
+def test_show_answers_one_id_in_the_same_shape_it_answers_many():
+    # The uniform-shape contract, and the reason the two tests above read
+    # through `items[0]`. One id used to answer with the item itself and two
+    # or more with `{"items": [...]}`, so a consumer could not write one
+    # accessor for the verb -- and the argument count is frequently not a
+    # literal at the call site: a script showing whatever ids a previous verb
+    # returned got one shape on a one-result day and another on a two-result
+    # day. The two answers now differ in the length of `items` and in nothing
+    # else, which is what this asserts rather than the singular case alone.
+    raw = {
+        "id": "x.1",
+        "title": "First",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+        "labels": [],
+        "dependencies": [],
+        "dependents": [],
+    }
+    singular = run_cli(
+        ["show", "x.1"],
+        steps=[
+            ScriptedStep(("show",), BdResult(returncode=0, stdout=json.dumps([raw]), stderr=""))
+        ],
+    )[1]
+    plural = run_cli(
+        ["show", "x.1", "x.2"],
+        steps=[
+            ScriptedStep(
+                ("show",),
+                BdResult(returncode=0, stdout=json.dumps([raw, {**raw, "id": "x.2"}]), stderr=""),
+            )
+        ],
+    )[1]
+
+    assert list(singular["data"].keys()) == list(plural["data"].keys()) == ["items"]
+    assert [item["id"] for item in singular["data"]["items"]] == ["x.1"]
+    assert [item["id"] for item in plural["data"]["items"]] == ["x.1", "x.2"]
 
 
 def test_show_two_ids_returns_an_items_array():

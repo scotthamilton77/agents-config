@@ -51,15 +51,25 @@ def update(backend: Backend, args: Namespace) -> JsonValue:
     parent-child edge is replaced, never added beside. `dep add` refuses a
     second parent and names this flag.
 
-    `--set-notes` is recognized by argparse only so it reaches this named
-    clobber-guard rather than a generic `E_USAGE` — notes only ever move
-    through `work note`. (Suppressed from `--help`; rationale at its
-    `add_argument` site in `cli.py`.)
+    `--set-notes` and `--set-acceptance` are recognized by argparse only so
+    they reach this named clobber-guard rather than a generic `E_USAGE`. Notes
+    only ever move through `work note`, and the criteria a claim is checked
+    against only through `work acceptance set`, which records what they were —
+    a replace here would leave neither the history nor the contract. (Both are
+    suppressed from `--help`; rationale at their `add_argument` sites in
+    `cli.py`.)
     """
     if args.set_notes is not None:
         raise WorkError(
             ErrorCode.FIELD_CLOBBER_GUARD,
             "notes are append-only; use `work note ID TEXT` instead of --set-notes",
+        )
+    if args.set_acceptance is not None:
+        raise WorkError(
+            ErrorCode.FIELD_CLOBBER_GUARD,
+            "acceptance criteria are the contract a claim is checked against; use "
+            "`work acceptance set ID TEXT` instead of --set-acceptance, which records "
+            "the criteria it supersedes",
         )
     if args.set_parent is not None and not args.set_parent:
         # An empty parent reads as "remove the parent" at the backend, and an

@@ -21,7 +21,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from context import HERE, data, resolve_root
+from context import HERE, data, resolve_root, show
 
 # child -> intended parent. Each item's own description names this milestone.
 ANCHORS = {
@@ -45,7 +45,7 @@ LABEL = "lint-exempt:no-milestone"
 
 def anchor(root, apply: bool) -> None:
     for child, parent in ANCHORS.items():
-        item = data(root, "show", child)
+        item = show(root, child)["data"]
         if item["status"] == "closed":
             raise SystemExit(
                 f"ABORT {child}: closed since the artifact was generated — "
@@ -68,7 +68,7 @@ def anchor(root, apply: bool) -> None:
 
 def exempt(root, apply: bool) -> None:
     for item_id in EXEMPT:
-        item = data(root, "show", item_id)
+        item = show(root, item_id)["data"]
         if item["status"] == "closed":
             print(f"  SKIP {item_id}: closed since generation, no exemption needed")
             continue
@@ -86,11 +86,11 @@ def verify(root) -> None:
     """Assert the exact intended mapping — printing parents is not verifying."""
     failures: list[str] = []
     for child, parent in ANCHORS.items():
-        got = data(root, "show", child)["parent"]
+        got = show(root, child)["data"]["parent"]
         if got != parent:
             failures.append(f"{child} parent is {got}, expected {parent}")
     for item_id in EXEMPT:
-        item = data(root, "show", item_id)
+        item = show(root, item_id)["data"]
         if item["status"] != "closed" and LABEL not in item["labels"]:
             failures.append(f"{item_id} is live but not exempt")
     if failures:

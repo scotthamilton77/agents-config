@@ -49,15 +49,27 @@ def _serialize_items(items: list[Item]) -> JsonValue:
 
 
 def show(backend: Backend, args: Namespace) -> JsonValue:
-    """`work show ID...` — one id -> object, 2+ ids -> `{"items": [...]}`."""
-    items = backend.batch_get(args.ids)
-    if len(items) == 1:
-        return _serialize_item(items[0])
-    return _serialize_items(items)
+    """`work show ID...` — always `{"items": [...]}`, one id or many.
+
+    One shape per verb, matching `list`, `ready` and `search`. The count of
+    ids is frequently not a literal at the call site, so a shape that
+    followed it made a consumer branch on its own argument list to parse the
+    reply -- and got the singular case wrong by iterating null rather than by
+    failing at the source. The single item stays reachable as `items[0]`;
+    nothing about the item object itself changed.
+    """
+    return _serialize_items(backend.batch_get(args.ids))
 
 
 def list_(backend: Backend, args: Namespace) -> JsonValue:
     """`work list [--status --label --parent --type --limit --track]`.
+
+    Every status by default, closed included, for the same reason the bound
+    is unbounded by default: a listing narrowed by nobody comes back short
+    and reads exactly like a complete one, and a caller who has not read the
+    flag list has nothing to tell the two apart by. Every narrowing a listing
+    carries is therefore one the caller typed. The queue question -- what
+    should I work on -- is `ready`'s, and it keeps its own narrow view.
 
     `--track` filters on the DERIVED `Item.track` (never raw label presence),
     so filter and envelope field always agree: zero-or-multi-label items

@@ -16,15 +16,13 @@ from installer.core import namespaces
 
 def test_all_is_the_full_namespace_universe() -> None:
     assert (
-        frozenset({"commands", "skills", "agents", "rules", "hooks", "workflows", "formulas"})
-        == namespaces.ALL
+        frozenset({"commands", "skills", "agents", "rules", "hooks", "workflows"}) == namespaces.ALL
     )
 
 
 def test_tool_scoped_view() -> None:
     # Namespaces a tool stages into its own config tree (staging Phase 4);
-    # ClaudeAdapter.scoped_namespaces() returns exactly this. formulas excluded —
-    # it is plugin-routed to a non-tool root, never a tool-tree dir.
+    # ClaudeAdapter.scoped_namespaces() returns exactly this.
     assert namespaces.TOOL_SCOPED == (
         "commands",
         "skills",
@@ -57,18 +55,17 @@ def test_plugin_tool_scoped_view() -> None:
 
 def test_prune_view() -> None:
     # Receipt-recorded, prune-eligible tool-tree namespaces. hooks included — see
-    # test_hooks_is_staged_and_pruned_and_backed_up. formulas absent: it is
-    # plugin-routed and tracked via the plugin-route receipt path, not this set.
+    # test_hooks_is_staged_and_pruned_and_backed_up. Routed content is tracked via
+    # the plugin-route receipt path, which never consults this set.
     assert namespaces.PRUNE == ("commands", "skills", "agents", "rules", "hooks", "workflows")
 
 
 def test_backup_view() -> None:
     # Namespaces whose backups route to a sibling <ns>-backup/ dir (else an
-    # in-place suffix). formulas included — overwritten plugin-route content still
-    # gets a sibling-dir backup; hooks included — an overwritten hook is backed up
-    # too, not lost.
+    # in-place suffix). hooks included — an overwritten hook is backed up too, not
+    # lost.
     assert (
-        frozenset({"commands", "skills", "agents", "rules", "hooks", "formulas", "workflows"})
+        frozenset({"commands", "skills", "agents", "rules", "hooks", "workflows"})
         == namespaces.BACKUP
     )
 
@@ -103,14 +100,22 @@ def test_hooks_is_staged_and_pruned_and_backed_up() -> None:
     assert "hooks" in namespaces.BACKUP
 
 
-def test_formulas_is_plugin_routed_backup_only() -> None:
-    """formulas is a plugin-routed namespace (beads -> ~/.beads/formulas), never a
-    tool-tree dir: absent from TOOL_SCOPED and PRUNE, present in BACKUP so an
-    overwritten route file still gets a sibling-dir backup.
+def test_backup_carries_no_namespace_the_installer_does_not_stage() -> None:
+    """Every backup-routed namespace is one this installer actually stages.
+
+    ``core/backup.py`` matches BACKUP by the target's parent DIRECTORY NAME, so a
+    member with no staged namespace behind it silently relocates the backup of any
+    file that happens to sit under a directory of that name — for a directory this
+    installer never creates. The vocabulary held exactly one such member (a
+    namespace a since-deleted plugin adapter routed to a non-tool root); nothing
+    replaced it, and this pins that BACKUP does not re-acquire an unstaged member
+    without the reasoning being restated.
+
+    What removes this guard: a route producer whose ``dest_dir`` names a directory
+    that genuinely wants sibling-dir backups rather than in-place ones. Then this
+    assertion is the wrong shape, not merely failing.
     """
-    assert "formulas" not in namespaces.TOOL_SCOPED
-    assert "formulas" not in namespaces.PRUNE
-    assert "formulas" in namespaces.BACKUP
+    assert set(namespaces.TOOL_SCOPED) == namespaces.BACKUP
 
 
 def test_claude_scoped_namespaces_consumes_canonical_tool_scoped() -> None:

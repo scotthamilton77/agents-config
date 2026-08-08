@@ -169,7 +169,7 @@ def test_ready_bd_call_log_is_two_reads_and_nothing_else():  # S9T1-P2
     assert exit_code == 0
     assert envelope["data"] == {"items": [], "parked_stale": []}
     assert runner.calls == [
-        ("list", "--json", "--label", PARKED_LABEL, "--limit", "0"),
+        ("list", "--json", "--all", "--label", PARKED_LABEL, "--limit", "0"),
         ("ready", "--json", "--limit", "0"),
     ]
 
@@ -329,7 +329,7 @@ def test_ready_never_issues_its_own_listing_once_the_parked_read_fails():  # S9T
 
     assert exit_code == 1
     assert envelope["data"] is None
-    assert runner.calls == [("list", "--json", "--label", PARKED_LABEL, "--limit", "0")]
+    assert runner.calls == [("list", "--json", "--all", "--label", PARKED_LABEL, "--limit", "0")]
 
 
 # --- S9T1-P5: an unreadable marker surfaces, it does not exempt ------------

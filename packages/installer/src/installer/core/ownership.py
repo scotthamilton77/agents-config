@@ -14,7 +14,7 @@ from installer.core.model import FileKind, StagedItem
 from installer.core.receipt import ReceiptEntry
 
 # The prune-eligible namespaces, sourced from the canonical vocabulary. Its
-# membership (notably the formulas exclusion) is documented at the
+# membership, and why routed content is not part of it, are documented at the
 # ``namespaces.PRUNE`` definition.
 PRUNE_NAMESPACES: tuple[str, ...] = namespaces.PRUNE
 

@@ -2,7 +2,7 @@
 description: Adjudicate which git worktrees and branches to delete. Presents one dated table with each worktree paired to its branch, every unproven candidate already investigated, and what each deletion would spend — then waits for your call before touching anything.
 admission:
   provides: A cleanup a human can decide from consequences instead of git internals. Invoking it produces one dated table — worktrees paired with their branches, the trunk absent unless it has news, each unproven candidate investigated before it is shown, and the cost of each deletion stated on its own row — followed by a stop for ratification. It never deletes anything the operator has not named back.
-  cost: One Claude-scoped command. Nothing is always-on — the body and the investigation are paid solely when someone types it. The investigation is the expensive part — a merge-base diff per candidate carrying no merge proof, plus at most one tracker lookup for each whose name happens to carry an identifier.
+  cost: The investigation is the expensive part — a merge-base diff per candidate carrying no merge proof, plus at most one tracker lookup for each whose name happens to carry an identifier.
   remove_when: Two consecutive cleanups in which the operator makes every keep-or-delete call straight from `gitclean --report --format human` without asking a follow-up question.
 ---
 

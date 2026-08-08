@@ -42,14 +42,24 @@ def test_routes_install_matched_files_with_their_exec_bit(tmp_path: Path) -> Non
     Then both files land at their dest_dir; the script carries an exec bit and the
     formula does not; both count as created.
 
-    Pins AC: routes place files at ~/.beads/{formulas,scripts}; the scripts route's
-    exec bit is honored (install.sh:1086 chmod +x), the formulas route's is not.
+    Pins: each route places its glob matches under its own ``dest_dir``, and the
+    exec bit is the route's, not the source file's — the executable route's files
+    get 0o755, the non-executable route's do not.
+
+    The source modes are inverted against their routes on purpose — the ``.toml``
+    is seeded executable and the ``.sh`` is not — so neither mode assertion can
+    pass by coincidence between a source's mode and its route's flag.
+
+    That the route wins is structural rather than fixture-dependent: ``_install_file``
+    takes ``content`` and ``executable`` and never the source path, so a source mode
+    has no route to the dest unless somebody plumbs one through. The inversion is
+    what turns red if anybody does.
     """
     src = tmp_path / "src"
     dest_formulas = tmp_path / "home" / ".beads" / "formulas"
     dest_scripts = tmp_path / "home" / ".beads" / "scripts"
-    _seed_file(src / "formulas" / "a.toml", b"x = 1\n")
-    _seed_file(src / "scripts" / "go.sh", b"#!/bin/sh\necho hi\n", mode=0o755)
+    _seed_file(src / "formulas" / "a.toml", b"x = 1\n", mode=0o755)
+    _seed_file(src / "scripts" / "go.sh", b"#!/bin/sh\necho hi\n")
     routes = [
         PluginRoute(src / "formulas", dest_formulas, "*.toml", executable=False),
         PluginRoute(src / "scripts", dest_scripts, "*.sh", executable=True),

@@ -15,14 +15,23 @@ sanitization, the always-on and skill-body token counts, and the conflict audit
 — so the check and the installer cannot drift apart about what deploys or what
 it weighs. Staging is pure and writes nothing; the installer is never invoked.
 
-Two things are decided here instead, and neither is a number the installer also
-computes, so neither can drift from the other side's answer. A skill's reference
-payload (``_skill_payloads``) is measured here because it has no failure
-condition, and so no business in the deploy path. The provenance rule
-(``_provenance_findings``) is judged here because the deploy *cannot* judge it:
-it strips the header rather than reading it, so the evidence is gone by the time
-the installed bytes exist. The invariant guarding the shared measurements is
-intact and narrower than it once read.
+Three judgements are this module's own, and each is here because the deploy path
+is the wrong place for it. A skill's reference payload (``_skill_payloads``) is
+measured here because it has no failure condition anywhere — a report has no
+business aborting a deploy. The ``cost:`` content rule (``_cost_violations``) is
+enforced here because its failure condition belongs to *this repository's
+authoring standard*: a deploy runs on someone else's machine, and a record whose
+prose restates a number this gate already prints is not a reason to abort their
+install. The provenance rule (``_provenance_findings``) is judged here because
+the deploy *cannot* judge it — it strips the header rather than reading it, so
+the evidence is gone by the time the installed bytes exist. That is also why it
+alone reads the staged plans rather than the gate's: the gate returns a filtered
+copy, and the header is exactly what the filter removes.
+
+None is a second derivation of anything the installer computes — the payload is
+a number only one side takes, the cost rule reads the record the gate already
+read, and the header exists on only one side. The invariant that guards the
+shared measurements is therefore intact and narrower than it once read.
 
 Staging every tool with every plugin rather than whatever the current machine
 has installed is deliberate: the question the lint answers is "is this content
@@ -82,9 +91,12 @@ append-merged destination is seen, exactly as its record is.
 Two report classes, mirroring the gate's own three-valued verdict:
 
 - **violations** — a malformed record, an over-cap skill body, an over-cap
-  always-on surface, a claim conflict, or a provenance header naming no upstream.
-  Fatal; the first four exactly as at deploy, the last one here only, since at
-  deploy the header is stripped rather than refused.
+  always-on surface, or a claim conflict, each fatal exactly as at deploy; plus
+  the three findings that are fatal only here, because only here is there a
+  repository to hold to a standard: an unaccounted directory, a ``cost:`` value
+  that states what a gate already measures or states nothing at all, and a
+  provenance header naming no upstream, which at deploy is stripped rather than
+  refused.
 - **unadmitted** — an artifact carrying no ``admission`` record at all. At
   deploy this is a silent drop; in ``src/`` it means content that can never
   reach an agent. Fatal under ``src/user/``, the tree this repo declares to be
@@ -98,6 +110,7 @@ trend rather than as a cliff nobody saw coming.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -122,6 +135,7 @@ from installer.tools.registry import get_adapter, known_tools
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from installer.core.admission import AdmissionRecord
     from installer.core.io_port import IOPort
     from installer.core.model import Contribution, StagingPlan, Tool
     from installer.plugins.base import PluginAdapter
@@ -163,6 +177,21 @@ _ROUTE_PROBE_HOME = Path("/nonexistent-home-route-inspection-only")
 # kits themselves: ``stage_kits`` mirrors arbitrary files with no namespace
 # concept, so a kit contains no gated artifact class for the bar to judge.
 UNGATED_ROOTS: dict[Path, str] = {}
+
+# A ``cost:`` value naming this repository's own unit of account. The gate
+# prints every token number that exists — the always-on surface per tool, each
+# skill body against its cap, each payload — at the moment they are true, so a
+# record restating one duplicates a gate output at a location nothing updates.
+# Deliberately unconditional: the word is banned rather than the redundancy,
+# because a rule that tried to tell "the tokens this costs you" from "the API
+# tokens you pay for" would be a second heuristic free to drift from the first,
+# and a cost that is really money can always say money.
+_TOKEN_WORD = re.compile(r"\btokens?\b", re.IGNORECASE)
+
+# Values that state no cost at all. A closed list rather than a shape test: the
+# defect is a specific vocabulary an author reaches for when there is nothing to
+# say, and anything wider would start rejecting short true answers.
+_VACUOUS_COSTS = frozenset({"none", "nothing", "n/a", "na", "minimal", "negligible", "zero", "low"})
 
 # Finding kinds, used only as the first element of a grouping key so that two
 # findings of different kinds can never land in one bucket.
@@ -485,6 +514,45 @@ def _skill_payloads(
     return sorted(payloads, key=lambda m: (-m.largest_tokens, m.label))
 
 
+def _cost_violations(
+    records: Mapping[str, AdmissionRecord], *, sources: Mapping[str, Path]
+) -> list[str]:
+    """Report every admitted artifact whose ``cost:`` states nothing this gate
+    cannot already state for it.
+
+    The field's whole job is to record what no gate measures — the user's time
+    or money, a runtime dependency, disk, other model runs, an upkeep obligation
+    tied to something outside this repository, a step the artifact blocks,
+    reading that scales with the target rather than with the skill, a downside it
+    introduces. Two values fail that: one restating a number this gate prints,
+    which is a hand-copy that drifts the moment the text it measures is edited,
+    and one saying there is no cost, which the deploy-time check cannot catch
+    because it tests only that the field is non-empty.
+
+    Keyed on the source file rather than the label. A shared artifact carries one
+    record and stages into every tool's plan, so the label set reports the same
+    authored defect once per target; the file is what a reader edits and the one
+    thing that can be wrong.
+    """
+    by_source: dict[Path, str] = {}
+    for label, record in records.items():
+        by_source.setdefault(sources[label], record.cost)
+
+    violations: list[str] = []
+    for source, cost in sorted(by_source.items()):
+        if _TOKEN_WORD.search(cost):
+            violations.append(
+                f"{source}: cost mentions tokens — content-lint measures every token number "
+                "there is; state only what it cannot, and name real spend as money rather "
+                "than as tokens"
+            )
+        if cost.lower() in _VACUOUS_COSTS:
+            violations.append(
+                f'{source}: cost is vacuous ("{cost}") — state a cost, or use the sentinel'
+            )
+    return violations
+
+
 def _is_admitted_only(source: Path, repo_root: Path) -> bool:
     """True when ``source`` sits under the repo's admitted-content-only tree.
 
@@ -792,6 +860,7 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
         sources=sources,
         tool_values=frozenset(tool.value for tool in known_tools()),
     )
+    violations.extend(_cost_violations(gate.records, sources=sources))
     # Appended after the gate's own findings, and never in place of them: an
     # unaccounted directory says nothing about the content that WAS staged, so
     # both reports have to survive the same run.

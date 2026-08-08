@@ -3,7 +3,7 @@ name: instructing-subagents
 description: Use when writing the prompt for any delegated agent — a subagent, a workflow stage, a background worker, or a nested harness. Apply whenever you are about to hand work to an agent, split a task across agents, or draft a brief, spec, or dispatch for delegated work; and whenever a delegated agent built the wrong thing, returned noise, went idle without delivering its report, or argued with its brief.
 admission:
   prevents: Delegated work that returns noise or loses its result — briefs missing an objective, constraints, acceptance criteria, or a commanded report delivery; briefs that prescribe the orchestrator's implementation instead of the outcome; and finished judgement lost to an agent that went idle holding a good report.
-  cost: One skill body loaded at dispatch time; each brief carries a criteria section and a reporting contract.
+  cost: Context footprint only, bounded by the caps content-lint enforces.
   remove_when: A run of dispatches shows well-formed briefs — criteria, boundaries, delivered reports — written without loading this skill.
 ---
 

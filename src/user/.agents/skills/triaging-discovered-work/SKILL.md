@@ -3,7 +3,7 @@ name: triaging-discovered-work
 description: Use when a task, test, review, or implementation reveals new work requiring a scope, filing, or deferral decision, including bugs, missing requirements, scope expansions, and mid-task follow-ups that could be incorrectly filed, orphaned, or deferred.
 admission:
   prevents: Discovered work used as a deferral channel for work already in scope, and discoveries filed where nothing will find them again — under the in-flight item, or with a provenance edge and no roadmap placement. The pressure at discovery time is a nearly-finished PR, and it bends every judgement the same way.
-  cost: One catalog description, always-on across every tool that installs it. The body and the adjudication are paid only when a discovery actually surfaces.
+  cost: A tracker item, with its parentage and provenance edges, that someone has to groom or close later.
   remove_when: Agents mid-task, with this skill unloaded, run the sibling test and name an escape hatch before filing in two consecutive sessions — or the tracker facade starts adjudicating scope rather than form.
 ---
 
