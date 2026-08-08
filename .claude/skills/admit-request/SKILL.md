@@ -125,13 +125,29 @@ Mechanical caps the installer enforces at deploy:
 - each **user-invoked** skill body: **5k tokens**
 
 A skill is user-invoked when its front matter carries
-`disable-model-invocation: true`. That keeps its description out of the model's
-catalog entirely, so it costs zero always-on tokens and its body is reached
-only when the user names it — a cost asked for, at a moment chosen for it. A
-model-invoked body is loaded on the model's own judgement, mid-task, against
-whatever the context is already carrying, which is what the tighter number
-prices. The flag is carried in the shared tree and projected per tool by the
-installer, so it is not a reason to move a skill into `src/user/.claude/`.
+`disable-model-invocation: true`. On a host that honours the flag, that keeps
+its description out of the model's catalog entirely, so it costs zero always-on
+tokens and its body is reached only when the user names it — a cost asked for,
+at a moment chosen for it. A model-invoked body is loaded on the model's own
+judgement, mid-task, against whatever the context is already carrying, which is
+what the tighter number prices.
+
+**Only Claude honours the flag today.** The installer drops it for Codex, Gemini
+and OpenCode, which have no equivalent to translate onto — so on those three the
+skill stays model-invocable and its description does load into their catalog.
+The cap is keyed on the artifact's authored flag and applied uniformly anyway,
+because a per-tool cap would make this verdict depend on which tools are
+installed on the machine you are running it from. Two consequences to hold:
+
+- The 5k number is Claude-shaped. A 4,900-token body is a model-invoked body on
+  three of four tools, against a 2k intent. That is the price of a uniform cap,
+  and it is another reason the ceiling is relief rather than permission.
+- Carrying the flag is not by itself a reason to leave the shared tree, since it
+  is projected out cleanly. But dropping a key removes the bytes, not the gap: a
+  skill whose worth claim *depends* on never firing unprompted is still
+  model-invocable wherever the flag is unsupported, and belongs in
+  `src/user/.claude/` where the claim holds. Check 5 decides this; check 4 only
+  tells you which number to measure against.
 
 **The raised ceiling is relief, not permission.** Progressive disclosure applies
 to every skill regardless of which cap measures it. Where a body exceeds 2k the
