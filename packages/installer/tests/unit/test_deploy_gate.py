@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from installer.core.deploy_gate import GateResult, item_label, run_admission_gate
+from installer.core.installignore import InstallIgnore, load_installignore
 from installer.core.merge.strategies.append_rules import AppendRulesStrategy
 from installer.core.model import (
     Contribution,
@@ -581,3 +582,155 @@ def test_what_deployed_is_exactly_what_the_contributions_say_contributed() -> No
         Path("/src/shared/a.md"),
         Path("/src/plugin/a.md"),
     ]
+
+
+# --- A skill directory's interior -------------------------------------------
+#
+# The gate reads and rewrites exactly one file per directory item; the copy takes
+# everything else verbatim. These pin that the rest of the interior is read too,
+# and that reading it is all the gate does to it.
+
+_SIBLING_RECORD = b"---\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\nnotes\n"
+
+
+def _skill_dir(tmp_path: Path, name: str, entry: bytes = _COMPLETE) -> StagedItem:
+    skill = tmp_path / "skills" / name
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_bytes(entry)
+    return StagedItem(
+        source_path=skill,
+        dest_relpath=Path("skills") / name,
+        kind=FileKind.DIR,
+        namespace="skills",
+        provenance=Provenance(kind="tool", name="claude"),
+        content=None,
+    )
+
+
+def _ignore(tmp_path: Path, *patterns: str) -> InstallIgnore:
+    manifest = tmp_path / ".installignore"
+    manifest.write_text("".join(f"{p}\n" for p in patterns))
+    return load_installignore(manifest)
+
+
+def test_a_sibling_carrying_a_record_is_reported(tmp_path: Path) -> None:
+    """The entry file is not the artifact — the directory is. A record on any other
+    file in it is read by nothing and stripped by nothing, so left unreported it
+    reaches the installed copy exactly as authored."""
+    item = _skill_dir(tmp_path, "noted")
+    (item.source_path / "extra.md").write_bytes(_SIBLING_RECORD)
+
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert not result.ok
+    label = item_label(Tool.CLAUDE, Path("skills/noted/extra.md"))
+    assert [v for v in result.violations if v.startswith(f"{label}:")]
+    assert "admission" in result.violations[0]
+    # Reported against the file itself, so the lint can bucket it by source.
+    assert result.sources[label] == item.source_path / "extra.md"
+
+
+def test_a_sibling_below_the_top_level_is_reported(tmp_path: Path) -> None:
+    """The scan descends. A references tree is where the extra files actually are,
+    so a check that read only direct children would miss the common case."""
+    item = _skill_dir(tmp_path, "deep")
+    nested = item.source_path / "references" / "vendor"
+    nested.mkdir(parents=True)
+    (nested / "note.md").write_bytes(b"<!--\nSource: oss-snapshots/x/\n-->\n\nnotes\n")
+
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert not result.ok
+    label = item_label(Tool.CLAUDE, Path("skills/deep/references/vendor/note.md"))
+    assert [v for v in result.violations if v.startswith(f"{label}:")]
+    assert "provenance comment" in result.violations[0]
+
+
+def test_a_reported_sibling_is_not_rewritten(tmp_path: Path) -> None:
+    """Reported, not cleaned. The gate's only channel for interior bytes is
+    dir_overrides, and writing one here would both destroy an author's text and —
+    since the sync overlays overrides after the filtered copy — deploy files the
+    manifest excludes. So the scan adds nothing to what ships."""
+    item = _skill_dir(tmp_path, "untouched")
+    (item.source_path / "extra.md").write_bytes(_SIBLING_RECORD)
+
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    overrides = result.plans[Tool.CLAUDE].dir_overrides[Path("skills/untouched")]
+    assert set(overrides) == {Path("SKILL.md")}
+    assert (item.source_path / "extra.md").read_bytes() == _SIBLING_RECORD
+
+
+def test_an_excluded_sibling_is_not_reported(tmp_path: Path) -> None:
+    """A file .installignore prunes never deploys, so it cannot leak. Failing a
+    deploy over it would be failing over bytes nobody receives."""
+    item = _skill_dir(tmp_path, "pruned")
+    (item.source_path / "AGENTS.md").write_bytes(_SIBLING_RECORD)
+    docs = item.source_path / "scripts"
+    docs.mkdir()
+    (docs / "note.md").write_bytes(_SIBLING_RECORD)
+
+    result = run_admission_gate(
+        {Tool.CLAUDE: _plan(_instruction(b"laws"), item)},
+        ignore=_ignore(tmp_path, "AGENTS.md", "scripts/"),
+    )
+
+    assert result.ok, result.violations
+    assert result.plans[Tool.CLAUDE].dir_overrides[Path("skills/pruned")].keys() == {
+        Path("SKILL.md")
+    }
+
+
+def test_a_sibling_with_nothing_to_find_passes(tmp_path: Path) -> None:
+    """Front matter is not the defect — governance front matter is. A reference
+    file with its own metadata keeps it."""
+    item = _skill_dir(tmp_path, "clean")
+    (item.source_path / "extra.md").write_bytes(b"---\nname: extra\n---\n\nnotes\n")
+
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert result.ok, result.violations
+
+
+def test_a_non_markdown_sibling_is_not_scanned(tmp_path: Path) -> None:
+    """Both recognised shapes are markdown conventions — a leading `---` fence and
+    a leading HTML comment. A script cannot open with either, so a line in one that
+    merely reads like a record is its own content."""
+    item = _skill_dir(tmp_path, "scripted")
+    (item.source_path / "run.py").write_bytes(b"admission = {'cost': 'c'}\n")
+    (item.source_path / "data.yaml").write_bytes(b"admission:\n  cost: c\n")
+
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert result.ok, result.violations
+
+
+def test_a_sibling_arriving_as_an_override_is_scanned(tmp_path: Path) -> None:
+    """A plugin's carrier-merge contributes files the directory's own source tree
+    does not hold, and the sync writes them unconditionally. They deploy, so they
+    are read — and reported against the plugin file they came from."""
+    item = _skill_dir(tmp_path, "extended")
+    plan = _plan(_instruction(b"laws"), item)
+    origin = Path("/plugin/skills/extended/references/extra.md")
+    plan.dir_overrides[Path("skills/extended")] = {
+        Path("references/extra.md"): Contribution(source_path=origin, content=_SIBLING_RECORD)
+    }
+
+    result = run_admission_gate({Tool.CLAUDE: plan})
+
+    assert not result.ok
+    label = item_label(Tool.CLAUDE, Path("skills/extended/references/extra.md"))
+    assert [v for v in result.violations if v.startswith(f"{label}:")]
+    assert result.sources[label] == origin
+
+
+def test_the_interior_of_a_dropped_directory_is_not_scanned(tmp_path: Path) -> None:
+    """A record-less skill deploys nothing, so nothing in it can leak. Scanning it
+    would fail the deploy over a directory the gate had already thrown away."""
+    item = _skill_dir(tmp_path, "recordless", entry=b"---\nname: recordless\n---\nbody\n")
+    (item.source_path / "extra.md").write_bytes(_SIBLING_RECORD)
+
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert result.ok, result.violations
+    assert result.skipped == [item_label(Tool.CLAUDE, Path("skills/recordless"))]

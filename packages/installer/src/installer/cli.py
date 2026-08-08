@@ -355,7 +355,7 @@ def _run(
     # a malformed record, an over-cap surface, or a claim conflict aborts the
     # whole deploy before any write. Runs on the user-home path only; the
     # --project fork returned above is ungated by design.
-    gate = run_admission_gate(plans)
+    gate = run_admission_gate(plans, ignore=ignore)
     for label in gate.skipped:
         io.info(f"admission: not admitted (no admission record): {label}", verbose=True)
     if gate.skipped:

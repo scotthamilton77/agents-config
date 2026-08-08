@@ -27,6 +27,13 @@ reporting nothing against the file that actually lacked a record. So each
 contributor is classified and sanitized on its own, and the destination is
 reassembled from the survivors.
 
+One artifact is not one file either. A skill directory copies verbatim, so
+rewriting its entry file leaves every other file in it shipping as authored —
+including an ``admission`` block or a provenance comment, which is exactly what
+step 2 exists to keep out of a deploy. So the interior is scanned as well, down
+every level and through the overrides, and a file carrying that metadata is
+**reported rather than cleaned** (``_interior_violations`` states why).
+
 Any violation makes ``GateResult.ok`` false; the caller reports each and aborts
 with a non-zero exit *before* the write block, so a breach never half-deploys.
 The returned ``plans`` are the admission-filtered plans the caller installs —
@@ -53,9 +60,10 @@ from installer.core.admission import (
 from installer.core.capabilities import is_user_invoked
 from installer.core.conflict_audit import conflict_violations
 from installer.core.frontmatter import split_frontmatter
+from installer.core.installignore import InstallIgnore
 from installer.core.merge.strategies.append_rules import SEPARATOR
 from installer.core.model import Contribution, contributions_of
-from installer.core.sanitize import project_capabilities, sanitize_text
+from installer.core.sanitize import governance_findings, project_capabilities, sanitize_text
 from installer.core.surface_budget import (
     SkillBodySource,
     SkillMeasure,
@@ -67,11 +75,26 @@ from installer.core.surface_budget import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from installer.core.model import StagedItem, StagingPlan, Tool
 
 # The always-on instruction file each tool deploys (Claude/Codex/OpenCode emit
 # AGENTS.md; Gemini emits GEMINI.md). Used to weigh the surface budget.
 _INSTRUCTION_DESTS = (Path("AGENTS.md"), Path("GEMINI.md"))
+
+# Exclude nothing — the default for callers that have not loaded a manifest
+# (the unit tests, chiefly). It over-reports rather than under-reports: with no
+# manifest the interior scan reads files a real install would have pruned, so a
+# caller who forgets to pass one gets a finding too many, never a leak too few.
+_EMPTY_IGNORE = InstallIgnore()
+
+# The files inside a directory item the interior scan reads. Both shapes
+# ``governance_findings`` recognises are markdown conventions — a leading ``---``
+# YAML fence and a leading HTML comment — so a ``.py``, ``.sh``, ``.json`` or
+# ``.yaml`` sibling has nowhere to carry either, and scanning one would be
+# looking for a shape that cannot occur there.
+_SCANNED_SUFFIXES = frozenset({".md"})
 
 
 def item_label(tool: Tool, dest: Path) -> str:
@@ -182,6 +205,87 @@ def _record_bearers(item: StagedItem, overrides: dict[Path, Contribution]) -> li
     ]
 
 
+def _deployed_interior(
+    item: StagedItem, overrides: Mapping[Path, Contribution], ignore: InstallIgnore
+) -> dict[Path, Contribution]:
+    """Every file a directory item deploys *below* its entry file, by relative path.
+
+    The source tree filtered the way the copy filters it, then the overrides laid
+    on top — the same construction the sync's idempotency check makes, and for
+    the same reason: what matters is what reaches disk, not what is authored.
+    Overrides are deliberately not filtered, because the sync writes them
+    unconditionally after the filtered copy; a name the manifest excludes still
+    deploys when an override supplies its bytes.
+
+    The entry file is dropped at the top level only. It is the one file the gate
+    already reads and rewrites, so nothing is left in it to find; a ``SKILL.md``
+    nested deeper is a different file, which nothing reads and nothing strips.
+    """
+    interior = {
+        path.relative_to(item.source_path): Contribution(
+            source_path=path, content=path.read_bytes()
+        )
+        for path in sorted(item.source_path.rglob("*"))
+        if path.is_file() and not ignore.excludes_path(path.relative_to(item.source_path))
+    }
+    interior.update(overrides)
+    interior.pop(Path(DIR_RECORD_FILE), None)
+    return interior
+
+
+def _interior_violations(
+    item: StagedItem,
+    overrides: Mapping[Path, Contribution],
+    *,
+    tool: Tool,
+    dest: Path,
+    ignore: InstallIgnore,
+    sources: dict[str, Path],
+) -> list[str]:
+    """Report every file beside a directory item's entry that ships governance metadata.
+
+    A skill directory copies verbatim, so the gate reading exactly one file per
+    directory means every other file in it ships as authored — including the
+    ``admission`` block or the provenance comment the sanitizer exists to keep
+    out of a deploy. This is the scan that closes that, and it reads the same
+    interior the sync will write.
+
+    **Reported, never rewritten**, and the asymmetry with the entry file is the
+    decision rather than an omission. The entry file's record is *consumed*: the
+    bar reads it, then the sanitizer removes what it read, so the removal
+    completes a transaction. Nothing reads a record on any other file in the
+    directory, so stripping one would complete nothing — it would delete an
+    author's text and leave them believing a record there had done something. A
+    file asserting what the gate never asked is an authoring defect, and naming
+    it is the repair.
+
+    Rewriting would also be the more dangerous half. A references tree is where
+    a mirror of somebody else's document lives, and a mirror's whole value is
+    being byte-exact; a cleaner cannot tell one from a mistake. And the only
+    channel for rewritten interior bytes is ``dir_overrides``, which the sync
+    overlays *after* the filtered copy — so cleaning a file the manifest excludes
+    would deploy the file the manifest excluded. Reading and reporting can do
+    neither.
+    """
+    violations: list[str] = []
+    for rel, contribution in sorted(_deployed_interior(item, overrides, ignore).items()):
+        if rel.suffix not in _SCANNED_SUFFIXES:
+            continue
+        found = governance_findings(contribution.content.decode("utf-8", errors="replace"))
+        if not found:
+            continue
+        label = item_label(tool, dest / rel)
+        sources[label] = contribution.source_path
+        violations.append(
+            f"{label}: carries deploy-time metadata ({', '.join(found)}) that nothing "
+            "reads and nothing strips. Only the entry file's record is consumed and "
+            "removed, so on any other file in the directory this governs nothing and "
+            "reaches the installed copy as authored. Move it to the entry file, or "
+            "delete it from this one"
+        )
+    return violations
+
+
 @dataclass(frozen=True, slots=True)
 class _Admitted:
     """One contributor that cleared the bar, and the bytes it will deploy."""
@@ -228,8 +332,16 @@ def _judge(
     )
 
 
-def run_admission_gate(plans: dict[Tool, StagingPlan]) -> GateResult:
-    """Partition, budget, and conflict-audit ``plans`` in one pass."""
+def run_admission_gate(
+    plans: dict[Tool, StagingPlan], *, ignore: InstallIgnore = _EMPTY_IGNORE
+) -> GateResult:
+    """Partition, budget, and conflict-audit ``plans`` in one pass.
+
+    ``ignore`` is the ``.installignore`` manifest the same run stages with. The
+    gate needs it because a directory item's interior is scanned, and a file that
+    manifest prunes never deploys — reporting one would fail a deploy over bytes
+    nobody would have received.
+    """
     filtered: dict[Tool, StagingPlan] = {}
     skipped: list[str] = []
     violations: list[str] = []
@@ -304,6 +416,13 @@ def run_admission_gate(plans: dict[Tool, StagingPlan]) -> GateResult:
                 entry = admitted[0]
                 sanitized_entries[dest] = Contribution(
                     source_path=entry.source, content=entry.text.encode("utf-8")
+                )
+                # Only now, and only for a directory that is actually going to
+                # deploy. A record-less skill was dropped above, and its interior
+                # ships nothing — reporting it would fail a deploy over bytes no
+                # one receives.
+                violations += _interior_violations(
+                    item, overrides, tool=tool, dest=dest, ignore=ignore, sources=sources
                 )
             kept[dest] = item
 
