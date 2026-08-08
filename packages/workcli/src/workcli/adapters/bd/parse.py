@@ -108,6 +108,16 @@ _OPEN_BLOCKERS_PATTERN = re.compile(
 )
 
 
+# Captured live from bd 1.0.3 against a directory with no install: every
+# command this adapter drives refuses with this wording and exit 1, before it
+# looks at anything the caller asked for. The backend cannot tell a workspace
+# that was never created from one whose database was removed underneath it --
+# it emits the same sentence for both -- and neither can this adapter, which
+# is why the code below states the absence rather than a cause. The remedy is
+# the same either way.
+_MISSING_WORKSPACE_STDERR_MARKER = "no beads database found"
+
+
 def _drift(message: str, detail: dict[str, JsonValue]) -> WorkError:
     return WorkError(ErrorCode.BACKEND_DRIFT, message, detail=detail)
 
@@ -482,12 +492,13 @@ def map_bd_failure(result: BdResult) -> WorkError:
     """Translate a nonzero bd exit into a typed error.
 
     Two classes come out of here, and the difference decides what travels.
-    A *classified* failure -- NOT_FOUND, OPEN_BLOCKERS, TYPE_WALL, DEP_CYCLE
-    -- means this adapter understood what bd said, so the typed code and a
-    message in the facade's own words are the complete answer; bd's sentence
-    would add nothing but bd's vocabulary, and is dropped. An *unclassified*
-    failure is the drift alarm, and there the sentence is the only content
-    there is -- so it travels, scrubbed of bd's identity.
+    A *classified* failure -- NO_WORKSPACE, NOT_FOUND, OPEN_BLOCKERS,
+    TYPE_WALL, DEP_CYCLE -- means this adapter understood what bd said, so the
+    typed code and a message in the facade's own words are the complete
+    answer; bd's sentence would add nothing but bd's vocabulary, and is
+    dropped. An *unclassified* failure is the drift alarm, and there the
+    sentence is the only content there is -- so it travels, scrubbed of bd's
+    identity.
 
     TYPE_WALL/DEP_CYCLE are a fallback safety net only: `dep`'s verb layer
     pre-checks the type wall via two `Backend.get` reads before ever calling
@@ -500,6 +511,15 @@ def map_bd_failure(result: BdResult) -> WorkError:
     without knowing the backend is not a diagnostic, it is a disclosure, and
     the surest way not to publish one is not to be holding it.
     """
+    # First, because it is the failure that precedes every other one: with no
+    # workspace to read, nothing the caller asked for was ever attempted, and
+    # the answer is about their configuration rather than about their request.
+    if _MISSING_WORKSPACE_STDERR_MARKER in result.stderr:
+        return WorkError(
+            ErrorCode.NO_WORKSPACE,
+            "no tracker workspace is configured for this directory; create one here, "
+            "or run from a directory that already has one",
+        )
     if _NOT_FOUND_STDERR_MARKER in result.stderr or _NOT_FOUND_ALT_STDERR_MARKER in result.stderr:
         return WorkError(ErrorCode.NOT_FOUND, "no item matches the requested id")
     if _OPEN_BLOCKERS_STDERR_MARKER in result.stderr:

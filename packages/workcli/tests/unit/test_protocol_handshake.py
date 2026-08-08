@@ -77,7 +77,14 @@ def test_protocol_wire_value_is_pinned() -> None:
     # envelope every other rejection already does. Both refusals only ever
     # rejected a call whose success was the defect, so no consumer had correct
     # behaviour to lose.
-    assert PROTOCOL_VERSION == "1.6"
+    #
+    # 1.7 adds `E_NO_WORKSPACE`, which takes a failure that used to arrive as
+    # `E_BACKEND_DRIFT` -- a directory with no tracker workspace configured.
+    # The envelope and every `data` shape are untouched, so the major holds. A
+    # consumer branching on the drift alarm loses only a case it could not have
+    # handled correctly anyway: it was being told the facade's model of its
+    # backend had broken, when what was missing was a workspace.
+    assert PROTOCOL_VERSION == "1.7"
 
 
 def test_the_readme_states_the_protocol_version_the_code_emits() -> None:

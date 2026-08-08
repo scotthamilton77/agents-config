@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from tests.integration.conftest import ITEST_TRACK, _bd_env
+from tests.integration.conftest import ITEST_TRACK, _bd_env, assert_off_repo, driver_for
 from workcli.adapters.bd.runner import SubprocessBdRunner
 
 
@@ -128,6 +128,25 @@ def test_close_with_an_open_blocker_is_a_typed_refusal_naming_the_blocker(driver
     assert env["error"]["code"] == "E_OPEN_BLOCKERS"
     assert env["error"]["detail"]["blocked_by"] == [blocker]
     assert blocker in env["error"]["message"]
+
+
+def test_a_missing_workspace_is_a_configuration_failure_not_a_drift_alarm(bd_binary, tmp_path):
+    # The one failure that needs an install nobody created, so it takes the raw
+    # tmp_path rather than the `driver` fixture's initialized one. Only a real
+    # backend can prove the marker still matches: if this sentence is reworded,
+    # a missing workspace silently goes back to reporting as drift, and a
+    # scripted stderr would keep asserting the old wording forever.
+    assert_off_repo(tmp_path)
+    runner = SubprocessBdRunner(bd_binary=bd_binary, cwd=str(tmp_path), env=_bd_env(tmp_path))
+
+    env = driver_for(runner, tmp_path)(["show", "itest-nope-xyz"])
+
+    assert env["ok"] is False
+    assert env["error"]["code"] == "E_NO_WORKSPACE"
+    assert env["error"]["detail"] == {}
+    published = json.dumps(env["error"])
+    for name in ("bd", "beads", "dolt", "BEADS_DIR"):
+        assert name not in published, f"the error envelope names the backend: {published}"
 
 
 def test_a_real_backend_refusal_reaches_the_consumer_naming_no_backend(driver):

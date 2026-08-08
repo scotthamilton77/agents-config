@@ -20,6 +20,19 @@ from workcli.adapters.bd.parse import parse_dep_edges, parse_items, parse_labels
 from workcli.adapters.bd.runner import BdResult
 from workcli.envelope import ErrorCode, WorkError
 
+# Captured live from bd 1.0.3 against a directory with no install: every
+# command this adapter drives -- show, list, ready, search, create, update,
+# close, dep, label -- refuses with this same sentence and exit 1. Restated
+# here rather than imported from the quarantine's own corpus: that file holds
+# it to prove the sentence is scrubbed on the way out, this one to prove it is
+# recognized on the way in, and neither claim should go quiet because the
+# other file was edited.
+_MISSING_WORKSPACE_STDERR = (
+    "Error: no beads database found\n"
+    "Hint: run 'bd where' to inspect the resolved workspace, or 'bd init' to create a new "
+    "database\n      or set BEADS_DIR to point to your .beads directory\n"
+)
+
 
 def test_missing_required_key_raises_backend_drift_naming_the_key():
     raw_item = {"id": "x.1", "title": "t", "issue_type": "task", "priority": 2}
@@ -552,6 +565,49 @@ def test_non_object_dependent_entry_raises_backend_drift_not_a_silent_drop():
     assert error.code == ErrorCode.BACKEND_DRIFT
     assert error.detail["reason"] == "element_not_an_object"
     assert error.detail["field"] == "dependents"
+
+
+def test_a_missing_workspace_is_a_configuration_failure_not_a_drift_alarm():
+    # The backend understood the request and refused it because there is no
+    # database where it looked. Nothing about the facade's model of the backend
+    # has broken, so answering with the drift alarm sends the reader hunting
+    # for a defect in the tracker when what is missing is a workspace they can
+    # create.
+    exit_code, envelope, _ = run_cli(
+        ["show", "x.1"],
+        steps=[
+            ScriptedStep(
+                ("show",),
+                BdResult(returncode=1, stdout="", stderr=_MISSING_WORKSPACE_STDERR),
+            )
+        ],
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.NO_WORKSPACE)
+
+
+def test_a_classified_missing_workspace_publishes_no_backend_diagnostic():
+    # The excerpt exists for failures this adapter cannot classify, where the
+    # backend's sentence is the only content there is. This one is classified,
+    # so the code and its message are the whole answer and the sentence -- three
+    # lines naming the binary, its environment variable and its storage
+    # directory -- would add only the backend's vocabulary.
+    _, envelope, _ = run_cli(
+        ["show", "x.1"],
+        steps=[
+            ScriptedStep(
+                ("show",),
+                BdResult(returncode=1, stdout="", stderr=_MISSING_WORKSPACE_STDERR),
+            )
+        ],
+    )
+
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["detail"] == {}
 
 
 def test_show_verb_end_to_end_surfaces_backend_drift_envelope_on_garbage_shape():
