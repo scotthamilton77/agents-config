@@ -53,13 +53,19 @@ That makes each row's accuracy load-bearing in a way it was not while a local co
 
 ## Skill provenance registry
 
-One row per OSS-derived or OSS-influenced artifact that is **here now** — skills, and any
+One row per OSS-derived or OSS-influenced artifact on the deployed surface — skills, and any
 command or rule that came from the same sources, since the admission gate sends all of them
 to this one table. Artifacts built from scratch in-repo do not appear. When one is retired,
 delete its row — the file carries its own provenance header with it wherever it goes, and
 git holds the rest.
 
-| Skill | Location | Upstream | Path in upstream | Last sync | Drift policy |
+**The table tracks `src/`, not the branch it is sitting on.** A wave of admissions arriving
+as several PRs consolidates its rows here first, so that one file is not the conflict every
+later merge has to resolve by hand. A row may therefore name an artifact that has not landed
+on this branch yet. The obligation runs the other way and is unaffected: a retired artifact's
+row goes, and a row for something that will never land is a defect, not a forward reference.
+
+| Artifact | Location | Upstream | Path in upstream | Last sync | Drift policy |
 |-------|----------|----------|------------------|-----------|--------------|
 | `writing-skills` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/writing-skills/` | 2026-05-17 | selective-amalgamation |
 | `writing-skills` | shared | `anthropics/skills @ f458cee` | `skills/skill-creator/` | 2026-05-17 | selective-amalgamation |
@@ -74,7 +80,7 @@ git holds the rest.
 | `tdd` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/test-driven-development/` | 2026-08-07 | selective-amalgamation |
 | `test-review` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/test-driven-development/testing-anti-patterns.md` | 2026-08-07 | selective-amalgamation |
 | `grilling` | shared | `mattpocock/skills @ 84fdeffd` | `skills/productivity/grilling/` | 2026-08-07 | selective-amalgamation |
-| `zoom-out` | Claude command | `mattpocock/skills @ e74f0061` | `skills/engineering/zoom-out/` (deleted upstream after this commit) | 2026-08-07 | rewrite-and-divorce |
+| `zoom-out` | claude (command) | `mattpocock/skills @ e74f0061` | `skills/engineering/zoom-out/` (deleted upstream after this commit) | 2026-08-07 | rewrite-and-divorce |
 | `to-spec` | shared | `mattpocock/skills @ ed37663c` | `skills/engineering/to-spec/` | 2026-07-24 | local-fork |
 | `handoff` | shared *(see below)* | `mattpocock/skills @ ed37663c` | `skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
 | `improve-codebase-architecture` | shared | `mattpocock/skills @ e74f006` | `skills/engineering/improve-codebase-architecture/` | 2026-05-23 | rewrite-and-divorce (project-extended fork) |
@@ -84,9 +90,9 @@ git holds the rest.
 | `prototype` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/prototype/` (SKILL.md, LOGIC.md, UI.md — the latter two deployed under `references/`) | 2026-08-07 | local-fork |
 | `using-git-worktrees` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/using-git-worktrees/` | 2026-08-07 | rewrite-and-divorce (detection moved into a shipped script; consent prompt removed) |
 | `caveman` | claude | `mattpocock/skills @ e74f006` | `skills/productivity/caveman/` (present at the pin, removed upstream since — the pin is the only reference copy) | 2026-05-23 | rewrite-and-divorce (project-extended, user-invoked only) |
-| `explain-diff` | claude | `scotthamilton77/claude-code-sidekick @ 44e57b6` | `assets/sidekick/personas/` — 17 of the upstream's 48 files, trimmed and re-emitted; the rest of the skill is authored in-repo | 2026-07-10 | local-fork |
+| `explain-diff` | claude | `scotthamilton77/claude-code-sidekick @ 44e57b6` | `assets/sidekick/personas/` — 17 of the upstream's 48 persona files, trimmed and re-emitted; the rest of the skill is authored in-repo | 2026-07-10 | local-fork |
 
-Update this table whenever a skill is added, replaced, retired, or amalgamated from an OSS source.
+Update this table whenever an artifact is added, replaced, retired, or amalgamated from an OSS source.
 
 `Upstream` and `Path in upstream` together fetch the exact reference bytes. `Last sync` is a different fact — when the deployed copy was last reconciled against upstream — so it can legitimately predate the pinned commit, as `handoff`'s does. `zoom-out` is the opposite case: its path is gone from upstream's head, so the pin is the last commit that still holds the reference bytes and no later pin exists to move to.
 
