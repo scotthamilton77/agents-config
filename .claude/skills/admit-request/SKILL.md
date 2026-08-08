@@ -95,9 +95,14 @@ aborts the deploy.
   body. A file left behind, a record written to a tracker, a change committed to
   the user's repository, a dependency that must already be installed, a human
   round-trip, or a fan-out of model runs are none of those, and belong here.
-  Beware the opposite failure: "the agent must read and follow this skill" is
-  true of every skill, and restating it per artifact rebuilds the defect the
-  narrowing removed.
+  Invocation mode decides one of these: a round-trip a **user-invoked** artifact
+  produces is the thing the user typed for, while the same round-trip in a
+  model-invoked one is their time spent on their behalf, and only the second is
+  a cost. Reading is the other close call — it counts when it scales with the
+  target rather than with the artifact, so widening to a whole codebase is a
+  cost and a fixed handful of lookups is not. Beware the opposite failure: "the
+  agent must read and follow this skill" is true of every skill, and restating
+  it per artifact rebuilds the defect the narrowing removed.
 - **`remove_when`** MUST describe something observable. If nothing could ever
   retire the artifact, it is a belief, not a control.
 

@@ -3,7 +3,7 @@ name: post-merge-cleanup
 description: What should be true once a pull request merges — its branch, its worktree and the server's copy gone, and nothing unmerged gone with them — and the tool that proves it before deleting. Use after a merge lands, when a branch's work has shipped, or when asked to tidy up finished work. Not for merge conflicts, and not for deleting one branch the user already named.
 admission:
   provides: Knowledge that `gitclean` exists and settles this question in one call. Measured over nine headless trials on a fixture built to break hand-rolled ancestry reasoning, agents reached the correct end state eight times in nine unaided and reached for `gitclean` zero times in nine, with it on PATH throughout. What they lack is not the reasoning, which they reinvented in every trial, but knowing the tool is there — plus the one discipline they did drop, which was describing a worktree they never surveyed.
-  cost: Inert unless `gitclean` is on the user's PATH — the skill names the tool and cannot supply it.
+  cost: Inert unless `gitclean` is on the user's PATH, which the skill names and cannot supply, plus one round of user agreement before the server's copy of a branch goes.
   remove_when: An agent handed a merged pull request, with this skill unloaded, reaches for `gitclean` unprompted in two consecutive sessions — or `gitclean` stops being installed. The nine-trial baseline that returned zero is the measurement to repeat.
 ---
 
