@@ -42,6 +42,13 @@ class Item:
     notes: str
     created: str | None  # ISO strings as bd emits them; no datetime parsing in v1
     updated: str | None
+    # The criteria a claim on this item is checked against. `None` is the
+    # backend's own answer -- this item carries none -- and is why the field
+    # takes no default: an item built without one would report "no criteria"
+    # for an item nobody asked about, which is the silence this field exists
+    # to end. Optional rather than `str` because "none" is a real state here,
+    # unlike `description`/`notes`, where the empty string says the same thing.
+    acceptance: str | None
     # Which of `RELATIONSHIP_FIELDS` the source read could not express. The
     # fields themselves hold their empty value when named here, and the verb
     # layer drops them from the envelope rather than publishing an empty

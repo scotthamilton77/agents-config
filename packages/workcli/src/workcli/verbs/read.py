@@ -33,6 +33,11 @@ def _serialize_item(item: Item) -> dict[str, JsonValue]:
     for field in unknown:
         del serialized[field]
     serialized["unknown_relations"] = cast("list[JsonValue]", unknown)
+    # `acceptance` deliberately stays out of that mechanism. Every read the
+    # backend offers carries the criteria, so the field is always present and
+    # `null` says the item has none; an absent key would say this read never
+    # fetched them, which is a state no read is in. Same principle, different
+    # conclusion: the distinction is what matters, not the list.
     # Derived in the verb layer, config-free, so every read envelope carries
     # it regardless of config state (the 1.1 additive field).
     serialized["track"] = derive_track(item.labels)
