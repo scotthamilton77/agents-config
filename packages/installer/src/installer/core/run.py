@@ -327,7 +327,8 @@ def install_plugin_routes(
     timestamp: str | None = None,
     outcomes_by_plugin: dict[str, list[InstallOutcome]] | None = None,
 ) -> dict[str, Counters]:
-    """Install every active plugin's bespoke routes (e.g. beads' ``~/.beads/...``).
+    """Install every active plugin's bespoke routes (e.g. a project's selected
+    kits, routed via ``core/kits.py``'s per-kit adapters).
 
     The plugin-side analog of ``install_pipeline``: it walks each plugin's
     ``routes(home)`` through ``sync_routes`` and returns a per-plugin mapping

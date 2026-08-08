@@ -435,8 +435,8 @@ def _run(
                             ignore=ignore,
                         ),
                     )
-                    # Plugin routes (e.g. beads' ~/.beads/formulas + scripts) land
-                    # outside any tool tree, so they install in a dedicated pass after
+                    # Plugin routes (a specialized adapter's bespoke destination,
+                    # outside any tool tree) install in a dedicated pass after
                     # the tool sync. Same consent gate; --prune-only skips it.
                     _merge_into(
                         counters,

@@ -554,8 +554,8 @@ def _staged_dirs(
             )
         # Routes are the third staging channel, and the one a map built from the
         # tool overlay alone cannot see: a specialized adapter places content
-        # outside every tool tree, as beads does by sending .beads/formulas and
-        # .beads/scripts to ~/.beads/. Missing them does not merely under-report,
+        # outside every tool tree, as a kit adapter does by sending its files
+        # into the project tree. Missing them does not merely under-report,
         # it inverts the claim — the gate calls content that deploys correctly
         # "content that deploys nowhere" and offers three remedies that would
         # each break it.

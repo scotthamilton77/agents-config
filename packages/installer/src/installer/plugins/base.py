@@ -7,19 +7,21 @@ from typing import Protocol, runtime_checkable
 
 @dataclass(frozen=True, slots=True)
 class PluginRoute:
-    """One bespoke source→destination route for a plugin whose content does
-    NOT overlay into a tool tree.
+    """One bespoke source→destination route for content that does NOT overlay
+    into a tool tree.
 
     Generic plugins have no routes — their content installs through the
-    per-tool namespace overlay (F.2). A specialized adapter like beads, whose
-    formulas and scripts land outside any tool tree (`~/.beads/`), declares its
-    destinations here so the sync engine can place files without embedding
-    plugin-specific knowledge.
+    per-tool namespace overlay (F.2). A specialized plugin adapter whose
+    content lands outside any tool tree declares its destinations here so the
+    sync engine can place files without embedding plugin-specific knowledge;
+    `core/kits.py`'s per-kit adapters are the live example, routing a kit's
+    files into a project tree.
 
     `source_dir` and `dest_dir` are absolute (the adapter joins `source_path`
-    and `home` respectively). `glob` selects the files to route from
-    `source_dir` (e.g. `*.toml`). `executable` requests the 0o755 mode bit on
-    each written file — beads scripts need it, formulas do not."""
+    and `home`/`project_root` respectively). `glob` selects the files to route
+    from `source_dir` (e.g. `*.toml`). `executable` requests the 0o755 mode bit
+    on each written file — a kit's own file mode decides it (see
+    `kit_routes`)."""
 
     source_dir: Path
     dest_dir: Path
@@ -36,7 +38,7 @@ class PluginAdapter(Protocol):
     `source_path` rather than reconstructing it from `repo_root`.
 
     `name` / `source_path` / `is_detected` are the F.1 core. `routes` was added
-    additively in F.4 for plugins (beads) whose content lands at a bespoke
+    additively in F.4 for a specialized plugin whose content lands at a bespoke
     destination outside any tool tree. Namespace overlay into tool trees stays
     a separate concern (F.2): it reuses the *tool* adapter's namespace rules and
     does not flow through `routes`."""
@@ -50,14 +52,14 @@ class PluginAdapter(Protocol):
     def name(self) -> str: ...  # pragma: no cover
 
     # Absolute path to the plugin's source tree, set by the registry at
-    # discovery time (e.g. `<repo>/src/plugins/beads`).
+    # discovery time (e.g. `<repo>/src/plugins/<name>`).
     @property
     def source_path(self) -> Path: ...  # pragma: no cover
 
     def is_detected(self, home: Path) -> bool: ...  # pragma: no cover
 
     # Bespoke source→destination routes for content that does NOT overlay into
-    # a tool tree. Empty for generic plugins; beads returns its `~/.beads/`
-    # formulas and scripts routes. `home` is injected so destinations resolve
-    # against the caller's home (critical under test).
+    # a tool tree. Empty for generic plugins; a specialized adapter returns its
+    # own bespoke routes (see `PluginRoute`). `home` is injected so destinations
+    # resolve against the caller's home (critical under test).
     def routes(self, home: Path) -> tuple[PluginRoute, ...]: ...  # pragma: no cover

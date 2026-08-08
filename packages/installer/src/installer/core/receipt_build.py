@@ -65,7 +65,7 @@ def entries_from_outcomes(
 def entries_from_route_outcomes(
     outcomes: list[InstallOutcome], *, plugin: str, home: Path
 ) -> list[ReceiptEntry]:
-    """Receipt entries for a plugin's routed-file writes (e.g. ~/.beads/...).
+    """Receipt entries for a plugin's routed-file writes (e.g. a kit's files).
 
     Excludes DECLINED outcomes. Each entry's ``root`` is derived from the file's
     own parent dir (its top segment under home), so multiple routes with

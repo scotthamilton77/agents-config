@@ -184,8 +184,8 @@ class Orphan:
     """One destination-side entry not present in this run's staging plan.
 
     One record per orphan. `tool` is `str` rather than `Tool`
-    because the orphan bucket includes plugin namespaces (e.g. ``beads``)
-    that are not tools."""
+    because the orphan bucket includes plugin namespaces (e.g. a kit's own
+    routed-file root) that are not tools."""
 
     tool: str
     namespace: str

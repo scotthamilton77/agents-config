@@ -18,7 +18,7 @@ from installer.core.model import InstallOutcome, Outcome
 from installer.core.receipt import Receipt, ReceiptEntry
 from installer.core.receipt_store import ReadStatus, read_receipt
 from installer.core.run import install_plugin_routes, record_receipt
-from installer.plugins.beads import BeadsPlugin
+from tests.unit.plugin_double import RoutedPluginDouble
 
 _FIXED_TS = "20260613-120000"
 
@@ -96,24 +96,25 @@ def test_record_receipt_writes_real_outcomes_excludes_declined_drops_pruned(
 
 
 def test_beads_script_route_recorded_and_installed_executable(tmp_path: Path) -> None:
-    """Spec safety scenario 4: a beads ``scripts/*.sh`` route installs executable
-    and the receipt records it owned by ``beads`` under root ``.beads``.
+    """Spec safety scenario 4: a routed plugin's ``scripts/*.sh`` route installs
+    executable and the receipt records it owned by ``beads`` under root ``.beads``.
 
     Drives the real ``install_plugin_routes`` -> ``record_receipt`` seam (no main):
-    install a BeadsPlugin shipping ``scripts/x.sh``, capture its outcomes, then
-    record. The on-disk file carries the exec bit (0o111 mask) and the written
-    receipt entry is ``.beads/scripts/x.sh`` owned by ``beads``.
+    install a routed plugin double (standing in for a specialized adapter)
+    shipping ``scripts/x.sh``, capture its outcomes, then record. The on-disk file
+    carries the exec bit (0o111 mask) and the written receipt entry is
+    ``.beads/scripts/x.sh`` owned by ``beads``.
 
-    Pins: scripts route executable (BeadsPlugin marks the scripts route
-    ``executable=True``) AND the receipt captures plugin-routed writes from real
-    install outcomes, owner=beads, root=.beads.
+    Pins: a specialized adapter's scripts route installs executable AND the
+    receipt captures plugin-routed writes from real install outcomes,
+    owner=beads, root=.beads.
     """
     home = tmp_path / "home"
     src = tmp_path / "plugin-src"
     scripts = src / ".beads" / "scripts"
     scripts.mkdir(parents=True)
     (scripts / "x.sh").write_bytes(b"#!/bin/sh\necho hi\n")
-    beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
+    beads = RoutedPluginDouble(name="beads", source_path=src)
 
     plugin_outcomes: dict[str, list[InstallOutcome]] = {}
     install_plugin_routes(

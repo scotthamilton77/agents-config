@@ -1,13 +1,14 @@
 """Unit tests for installer.core.run.install_plugin_routes (G2 — plugin-route dispatch).
 
 The core bug this dispatch fixes: ``PluginRoute.routes()`` had zero call sites; ``core/run.py``
-iterated only tool adapters, never plugin routes, so every Python install with the
-beads plugin silently dropped all ``~/.beads`` content. ``install_plugin_routes``
+iterated only tool adapters, never plugin routes, so a Python install with a specialized
+plugin adapter silently dropped all of its routed content. ``install_plugin_routes``
 is the missing dispatch — the plugin-side analog of ``install_pipeline``, driving
 each active plugin's ``routes(home)`` through ``sync_routes``.
 
-These pin the composition's end-state: real plugin adapters, the real filesystem
-under ``tmp_path``.
+These pin the composition's end-state: a real ``PluginAdapter`` (``RoutedPluginDouble``,
+standing in for a specialized adapter — see ``tests/unit/plugin_double.py``), the real
+filesystem under ``tmp_path``.
 """
 
 from __future__ import annotations
@@ -17,8 +18,8 @@ from pathlib import Path
 from installer.core.io_port import ScriptedIO
 from installer.core.model import InstallOutcome
 from installer.core.run import install_plugin_routes
-from installer.plugins.beads import BeadsPlugin
 from installer.plugins.generic import GenericPluginAdapter
+from tests.unit.plugin_double import RoutedPluginDouble
 
 _FIXED_TS = "20260613-120000"
 
@@ -34,7 +35,7 @@ def _seed_beads_source(src: Path) -> None:
 
 def test_install_plugin_routes_dispatches_beads_formulas_and_scripts(tmp_path: Path) -> None:
     """
-    Given a BeadsPlugin whose source carries a formula and a script
+    Given a routed plugin double whose source carries a formula and a script
     When install_plugin_routes runs
     Then the formula lands at home/.beads/formulas (non-exec) and the script at
     home/.beads/scripts (exec) — the routes are dispatched, not dropped.
@@ -45,7 +46,7 @@ def test_install_plugin_routes_dispatches_beads_formulas_and_scripts(tmp_path: P
     home = tmp_path / "home"
     src = tmp_path / "plugin-src"
     _seed_beads_source(src)
-    beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
+    beads = RoutedPluginDouble(name="beads", source_path=src)
 
     per_plugin = install_plugin_routes([beads], home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
 
@@ -61,8 +62,8 @@ def test_install_plugin_routes_dispatches_beads_formulas_and_scripts(tmp_path: P
 
 def test_install_plugin_routes_captures_per_plugin_outcomes(tmp_path: Path) -> None:
     """
-    Given an ``outcomes_by_plugin`` accumulator and a BeadsPlugin with one formula
-    and one script
+    Given an ``outcomes_by_plugin`` accumulator and a routed plugin double with one
+    formula and one script
     When install_plugin_routes runs
     Then the accumulator is keyed by the plugin name and holds the real per-item
     InstallOutcomes (a WRITTEN formula and a WRITTEN script, each with a sha256) —
@@ -76,7 +77,7 @@ def test_install_plugin_routes_captures_per_plugin_outcomes(tmp_path: Path) -> N
     home = tmp_path / "home"
     src = tmp_path / "plugin-src"
     _seed_beads_source(src)
-    beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
+    beads = RoutedPluginDouble(name="beads", source_path=src)
 
     outcomes_by_plugin: dict[str, list[InstallOutcome]] = {}
     install_plugin_routes(
@@ -95,7 +96,7 @@ def test_install_plugin_routes_captures_per_plugin_outcomes(tmp_path: Path) -> N
 
 def test_install_plugin_routes_dry_run_collects_no_outcomes(tmp_path: Path) -> None:
     """
-    Given a BeadsPlugin whose routes a real install WOULD write
+    Given a routed plugin double whose routes a real install WOULD write
     When install_plugin_routes runs with dry_run=True and an outcomes_by_plugin dict
     Then the plugin's key maps to an EMPTY list — no phantom WRITTEN outcomes.
 
@@ -107,7 +108,7 @@ def test_install_plugin_routes_dry_run_collects_no_outcomes(tmp_path: Path) -> N
     home = tmp_path / "home"
     src = tmp_path / "plugin-src"
     _seed_beads_source(src)
-    beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
+    beads = RoutedPluginDouble(name="beads", source_path=src)
 
     outcomes_by_plugin: dict[str, list[InstallOutcome]] = {}
     install_plugin_routes(
@@ -128,7 +129,7 @@ def test_generic_plugin_contributes_no_routes(tmp_path: Path) -> None:
     Given a generic plugin (routes() == ())
     When install_plugin_routes runs
     Then nothing is installed — only specialized adapters with bespoke
-    destinations (beads) route content outside a tool tree.
+    destinations route content outside a tool tree.
 
     Pins: the dispatch is route-driven, so a routes-free plugin is a clean no-op.
     """

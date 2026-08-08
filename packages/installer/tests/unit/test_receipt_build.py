@@ -17,7 +17,7 @@ from installer.core.receipt_build import (
     entries_from_route_outcomes,
     merge_receipt,
 )
-from installer.plugins.beads import BeadsPlugin
+from tests.unit.plugin_double import RoutedPluginDouble
 
 
 def _plan(entries: list[tuple[str, FileKind]]) -> StagingPlan:
@@ -139,7 +139,7 @@ def test_desired_route_keys_includes_shipped_route_files(tmp_path: Path) -> None
     (src / ".beads" / "formulas" / "a.toml").write_text("x")
     home = tmp_path / "home"
     home.mkdir()
-    beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
+    beads = RoutedPluginDouble(name="beads", source_path=src)
     keys = desired_route_keys([beads], home=home)
     assert ("beads", Path(".beads/formulas/a.toml")) in keys
 

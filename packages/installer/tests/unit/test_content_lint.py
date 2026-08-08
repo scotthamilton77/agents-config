@@ -12,10 +12,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from installer.core.content_lint import UNGATED_ROOTS, lint_content
+from installer.core.content_lint import UNGATED_ROOTS, _staged_dirs, _unaccounted_dirs, lint_content
+from installer.core.installignore import load_installignore
 from installer.core.io_port import ScriptedIO
 from installer.core.surface_budget import SKILL_BODY_TOKEN_CAP
 from installer.tools.registry import known_tools
+from tests.unit.plugin_double import RoutedPluginDouble
 
 _RECORD = "---\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\n"
 
@@ -640,35 +642,48 @@ def test_an_exemption_naming_a_missing_directory_is_a_violation(tmp_path: Path) 
 
 def test_a_plugins_bespoke_routes_are_accounted(tmp_path: Path) -> None:
     """Routes are a third staging channel, and the one a map built from the tool overlay
-    cannot see: BeadsPlugin sends .beads/formulas and .beads/scripts to ~/.beads/, outside
-    every tool tree. Missing them did not under-report, it inverted the claim — the gate
-    called correctly-wired content "content that deploys nowhere" and offered three
-    remedies that would each break it. Uses the beads name deliberately: it is the one
-    entry in the specialized-adapter registry, and every other plugin fixture here is
-    generic, whose routes() is empty and so exercises none of this.
-    """
-    repo = _repo(tmp_path, plugin_rules={"beads/beads.md": _RECORD + "body\n"})
-    beads = repo / "src" / "plugins" / "beads" / ".beads"
-    (beads / "formulas").mkdir(parents=True)
-    (beads / "scripts").mkdir(parents=True)
-    result = _lint(repo)
+    cannot see: a specialized adapter can send content to a bespoke destination outside
+    every tool tree, as the one this codebase used to ship did. Missing them did not
+    under-report, it inverted the claim — the gate called correctly-wired content "content
+    that deploys nowhere" and offered three remedies that would each break it.
 
-    assert result.ok
-    assert result.violations == []
+    No specialized adapter ships in production today (``_SPECIALIZED`` is empty), so this
+    drives ``_staged_dirs``/``_unaccounted_dirs`` directly with an injected
+    ``RoutedPluginDouble`` rather than going through ``discover()``/``lint_content()`` —
+    the completeness algorithm under test does not care where its ``PluginAdapter`` came
+    from, only that its declared routes get accounted for.
+    """
+    repo = _repo(tmp_path)
+    plugins_root = repo / "src" / "plugins"
+    source_path = plugins_root / "widget"
+    (source_path / ".widget" / "formulas").mkdir(parents=True)
+    (source_path / ".widget" / "scripts").mkdir(parents=True)
+    plugin = RoutedPluginDouble(name="widget", source_path=source_path)
+
+    staged = _staged_dirs(repo, plugins_root=plugins_root, plugins=[plugin])
+    ignore = load_installignore(repo / ".installignore")
+
+    assert _unaccounted_dirs(repo, staged=staged, ignore=ignore) == []
 
 
 def test_a_directory_beside_a_route_that_no_route_names_is_a_violation(tmp_path: Path) -> None:
-    """Accounting for a route's own source must not bless its siblings. .beads is reached
-    because routes point into it, not because it is wholly covered — the same distinction
-    between "a root is on the path" and "staging reads this" that the tool trees answer."""
-    repo = _repo(tmp_path, plugin_rules={"beads/beads.md": _RECORD + "body\n"})
-    beads = repo / "src" / "plugins" / "beads" / ".beads"
-    (beads / "formulas").mkdir(parents=True)
-    (beads / "notaroute").mkdir(parents=True)
-    result = _lint(repo)
+    """Accounting for a route's own source must not bless its siblings. ``.widget`` is
+    reached because routes point into it, not because it is wholly covered — the same
+    distinction between "a root is on the path" and "staging reads this" that the tool
+    trees answer. Same injected-double approach as
+    ``test_a_plugins_bespoke_routes_are_accounted`` — see its docstring for why."""
+    repo = _repo(tmp_path)
+    plugins_root = repo / "src" / "plugins"
+    source_path = plugins_root / "widget"
+    (source_path / ".widget" / "formulas").mkdir(parents=True)
+    (source_path / ".widget" / "notaroute").mkdir(parents=True)
+    plugin = RoutedPluginDouble(name="widget", source_path=source_path)
 
-    assert not result.ok
-    assert [v for v in result.violations if v.startswith("src/plugins/beads/.beads/notaroute:")]
+    staged = _staged_dirs(repo, plugins_root=plugins_root, plugins=[plugin])
+    ignore = load_installignore(repo / ".installignore")
+
+    unaccounted = _unaccounted_dirs(repo, staged=staged, ignore=ignore)
+    assert [p for p in unaccounted if p == Path("src/plugins/widget/.widget/notaroute")]
 
 
 def test_a_build_directory_is_not_reported(tmp_path: Path) -> None:
@@ -685,17 +700,22 @@ def test_a_build_directory_is_not_reported(tmp_path: Path) -> None:
 
 
 def test_every_specialized_adapters_routes_are_accounted(tmp_path: Path) -> None:
-    """The completeness check, generalised over the registry rather than over beads.
+    """The completeness check, generalised over the registry rather than over one adapter.
 
-    Three review rounds each found the same shape: a staging channel the accounting map
-    did not model, reported as content that deploys nowhere. Naming beads pins the one
-    that exists; iterating _SPECIALIZED pins the next one, so adding an adapter with
-    bespoke routes cannot silently reintroduce the defect — the fixture builds whatever
-    routes that adapter declares and fails if the map does not reach them.
+    Three review rounds each found the same shape: a staging channel the accounting map did
+    not model, reported as content that deploys nowhere. This iterates whatever
+    ``_SPECIALIZED`` holds and fails if the map does not reach a registered adapter's
+    declared routes, so registering one cannot silently reintroduce that defect.
+
+    ``_SPECIALIZED`` is empty today, so this body iterates nothing: the guard is dormant,
+    not dead, and arms itself the moment the extension point is used. It deliberately does
+    NOT assert the registry is non-empty — that assertion is what an empty extension point
+    breaks, and it would have to be deleted on every green run. The sibling tests above pin
+    the accounting algorithm itself through an injected double; this one exists for the
+    registry-mediated path they cannot reach, because ``lint_content`` discovers plugins
+    internally and offers no seam to inject through.
     """
     from installer.plugins.registry import _SPECIALIZED
-
-    assert _SPECIALIZED, "no specialized adapters: this test would be vacuously green"
 
     for name, factory in _SPECIALIZED.items():
         root = tmp_path / name
