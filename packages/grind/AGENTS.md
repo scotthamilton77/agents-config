@@ -154,9 +154,9 @@ must pass before push.
   `tests/unit/test_fold_blocking.py`.
 - **`item_waiting_human` is legal from `blocked`, not just the four
   "normal" active statuses.** Easy to miss reading the transition table
-  informally — row `blocked`, column `waiting_human` is `waiting-human`, not
-  a dash. A human can be asked to intervene on a dependency that isn't
-  resolving on its own.
+  informally — the `blocked` row sends `item_waiting_human` to
+  `waiting-human`, not to a dash. A human can be asked to intervene on a
+  dependency that isn't resolving on its own.
 - **Lane status excludes `done` items when the lane still has in-flight
   work.** "All done -> done; any in flight -> the most advanced active
   state" reads ambiguously for a mixed lane (one item done, one still

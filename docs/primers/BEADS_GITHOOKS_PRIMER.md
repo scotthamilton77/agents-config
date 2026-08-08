@@ -131,7 +131,7 @@ bd config set export.auto true                 # opt back in to JSONL export, if
 
 **Without `sync.remote` configured:**
 - Hooks print a warning on the relevant operation: no Dolt remote
-  configured, `.beads/issues.jsonl` is an export, not sync or source of
+  configured, `issues.jsonl` is an export, not sync or source of
   truth — with a suggested repair (`bd dolt remote add origin <url> && bd
   dolt push`).
 - `import.auto=true` (default) still runs the legacy JSONL import path, so

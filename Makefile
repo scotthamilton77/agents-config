@@ -21,11 +21,13 @@ GRIND := packages/grind
 GITCLEAN := packages/gitclean
 EXECUTOR := packages/executor
 
-# `doc-lint` is deliberately absent: it reports live staleness in prose that is
-# being corrected right now, so adding it here would turn every unrelated build
-# red until that sweep lands. Add it once the tree is clean.
+# `doc-lint` gates here because the tree is clean. It reports live staleness in
+# prose nobody is editing, so a finding can turn an unrelated build red — and the
+# remedy for that is to correct the prose, never to exempt the file. An exemption
+# silences the one class of drift that has no reviewer, which is the whole reason
+# the check exists.
 ci: ci-installer ci-prgroom ci-workcli ci-grind ci-gitclean ci-executor \
-    lint-actions spec-lint content-lint content-tests
+    lint-actions spec-lint content-lint content-tests doc-lint
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
               cov-installer audit-installer verify-entry-installer
@@ -79,7 +81,7 @@ content-tests:
 # roster comes from the same staging-and-gate path content-lint uses, so the two
 # cannot disagree about what deploys. Repo-root invocation (no `cd`) so it
 # resolves the tracked set and every cited path against the repo; it writes
-# nothing and never invokes the installer. NOT in `ci` — see the note there.
+# nothing and never invokes the installer. In `ci` — see the note there.
 doc-lint:
 	uv --project $(INSTALLER) run python -m installer.doc_lint_cli .
 
