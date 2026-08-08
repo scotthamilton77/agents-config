@@ -721,6 +721,36 @@ def test_a_requirement_marker_frames_only_what_follows_it(tmp_path: Path) -> Non
     assert _lint(tmp_path, after) == []
 
 
+def test_a_retirement_note_survives_a_name_far_from_the_word(tmp_path: Path) -> None:
+    """The composition that a looser citation rule would break.
+
+    Real prose from the configuration guide, hard wrap and all. ``merge-authorization``
+    is kebab-case, is nothing that deploys, sits nowhere near a kind word, and shares
+    its sentence with three directive verbs — so the only thing standing between it and
+    a finding is the non-existence rule, which reaches it across the wrap. A rule that
+    let a distant kind word claim a span would turn this correct retirement note into a
+    finding, and the note is the *remedy* for stale documentation, not the disease.
+    """
+    text = (
+        "**Nothing enforces this.** The `merge-guard` skill that read it has been\n"
+        "retired, no code reads `merge-authorization`, and nothing polls for reviews, so\n"
+        "`[review-expectations]` has no effect either.\n"
+    )
+    assert _lint(tmp_path, text) == []
+
+
+def test_the_non_existence_rule_reaches_a_marked_citation_too(tmp_path: Path) -> None:
+    """A requirement marker does not exempt its citation from the rule that silences a
+    retirement note. Otherwise the correct way to record that a required skill is gone
+    would be the one sentence this gate refuses to accept, and there would be no way to
+    write the remedy — which is how a gate gets worked around rather than used."""
+    text = (
+        "**REQUIRED BACKGROUND:** You MUST understand `retired-thing` before using "
+        "this skill, but that skill is now archived.\n"
+    )
+    assert _lint(tmp_path, text) == []
+
+
 def test_a_marker_does_not_make_every_span_after_it_a_skill_name(tmp_path: Path) -> None:
     """The marker says where to look for a citation, and the kebab-case filter still
     says whether there is one. Otherwise a marker pointing at a document or a flag
