@@ -152,7 +152,22 @@ def test_protocol_wire_value_is_pinned() -> None:
     # item was acting on a listing that had been narrowed for it without being
     # told. `ready` is deliberately untouched: it answers the queue question,
     # and closed work is not in a queue.
-    assert PROTOCOL_VERSION == "1.13"
+    #
+    # 2.0 is the first MAJOR, and the first bump none of the notes above could
+    # have carried: `show` answered a single id with the item object and two or
+    # more with `{"items": [...]}`, and it now answers `{"items": [...]}` in
+    # both cases. That is a breaking change to an existing `data` shape -- the
+    # one thing the rule reserves the major for. Unlike every case from 1.5 on,
+    # there is correct behaviour to lose: the old singular answer was a true
+    # answer to the call, just a differently-shaped one, so a consumer reading
+    # `data.id` off a one-id `show` was right and now reads a key that is not
+    # there. It moves to `data.items[0]`. Why the shape had to move at all: the
+    # argument count is frequently not a literal at the call site, so a caller
+    # had to branch on its own arguments to parse the reply, and the singular
+    # case failed by iterating null rather than at the source. The major is
+    # what makes that survivable -- a consumer pinning it refuses an
+    # unrecognised facade at adapter init, before it mis-parses anything.
+    assert PROTOCOL_VERSION == "2.0"
 
 
 def test_the_readme_states_the_protocol_version_the_code_emits() -> None:

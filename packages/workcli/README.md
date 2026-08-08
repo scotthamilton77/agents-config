@@ -96,12 +96,28 @@ quote are criteria the replacement never reached. Once work has started the
 call additionally requires `--why`, which lands on the marker line beside the
 status the item was in. Setting the criteria already in force writes nothing.
 
-Protocol is `"1.13"` — additive-only bumps (new `ErrorCode` members, the
-derived `Item.track` field and the `acceptance` field beside it, the
+Protocol is `"2.0"`. **MAJOR** is reserved for a breaking change to the
+envelope or to an existing `data` shape, and 2.0 is the first one: `show`
+answered a single id with the item object itself and two or more ids with
+`{"items": [...]}`, and it now answers `{"items": [...]}` for any number of
+ids. A consumer that read `data.id` off a one-id `show` reads
+`data.items[0].id` from 2.0 on, and one that already handled the multi-id
+reply needs no change at all. Nothing else moved: the item object is
+identical, and every other verb answers exactly what it did before. The shape
+had to move because the argument count is frequently not a literal at the call
+site — a script showing whatever ids a previous verb returned got one shape on
+a one-result day and another on a two-result day, and the singular case failed
+by iterating null in the consumer rather than at the source. Pinning the major
+is what makes the break survivable: a consumer refuses an unrecognised facade
+at adapter init rather than mis-parsing a reply mid-run.
+
+Every bump before it was a **MINOR** — additive-only (new `ErrorCode` members,
+the derived `Item.track` field and the `acceptance` field beside it, the
 capability-disposition model, `partial_progress` detail below, `search`'s
 optional narrowing flags, the close-walk's `held` key, the `defer`/`undefer`
-pair, and `acceptance set`) never change an existing envelope or data shape. A
-bump can still change what an unchanged call *answers*, in either direction:
+pair, and `acceptance set`), never changing an existing envelope or data
+shape. A minor can still change what an unchanged call *answers*, in either
+direction:
 1.8 makes `search` read descriptions and notes as well as titles, stop
 excluding closed items, and stop stopping at the first page, so a query that
 used to return nothing may now return matches — and `create <noun>` refuses a
@@ -155,13 +171,13 @@ second, human-readable rendering on stderr.
 Success:
 
 ```json
-{"protocol": "1.13", "ok": true, "data": {"id": "x.1", "title": "..."}, "error": null}
+{"protocol": "2.0", "ok": true, "data": {"items": [{"id": "x.1", "title": "..."}]}, "error": null}
 ```
 
 Failure:
 
 ```json
-{"protocol": "1.13", "ok": false, "data": null,
+{"protocol": "2.0", "ok": false, "data": null,
  "error": {"code": "E_TYPE_WALL", "message": "blocks: epic may not block task",
            "detail": {"from": "x.1", "to": "y.1", "dep_type": "blocks"}}}
 ```
@@ -195,7 +211,7 @@ component; refuse to run against a mismatched facade rather than risk
 mis-parsing mid-run:
 
 ```json
-{"protocol": "1.13", "ok": true, "data": {"protocol": "1.13"}, "error": null}
+{"protocol": "2.0", "ok": true, "data": {"protocol": "2.0"}, "error": null}
 ```
 
 Every other verb's envelope carries the same `protocol` field at the top
@@ -204,9 +220,9 @@ are the same value, always.
 
 ## Data-shape contract
 
-- `show` with one id → `data` IS the item object (never a single-element
-  array). `show` with 2+ ids, `list`, `ready`, `search` → `data =
-  {"items": [...]}`.
+- `show`, `list`, `ready`, `search` → `data = {"items": [...]}`. `show`
+  answers in that shape for one id and for many alike, so a single item is
+  `data.items[0]` and a consumer never branches on its own argument count.
 - Every read item carries `acceptance`: the criteria the item was created
   with, or `null` when it has none. The key is always present on `show`,
   `list`, `ready` and `search` alike, so `null` reads as "this item has no
@@ -233,7 +249,7 @@ are the same value, always.
 - `sync` → `{"synced": ..., "mode": "push" | "pull" | "noop"}`. `"noop"` is
   reserved for server-authoritative backends (the CLI contract spec §6's
   declared no-op); the bd adapter only ever emits `"push"` or `"pull"`.
-- `--protocol-version` → `{"protocol": "1.13"}`.
+- `--protocol-version` → `{"protocol": "2.0"}`.
 
 Human-readable output is opt-in only (`--format human`): it renders the
 envelope's `data` (or `error`) to **stderr**, for direct human use at a

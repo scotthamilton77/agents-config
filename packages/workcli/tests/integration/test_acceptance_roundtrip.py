@@ -42,7 +42,7 @@ def _create(driver, title: str, *argv: str) -> str:
 def test_show_returns_the_acceptance_the_item_was_created_with(driver):
     item_id = _create(driver, "ac-roundtrip", "--acceptance", _CRITERIA)
 
-    shown = driver(["show", item_id])["data"]  # single-id show → item directly
+    shown = driver(["show", item_id])["data"]["items"][0]  # show → {"items": [...]}
 
     assert shown["acceptance"] == _CRITERIA
 
@@ -50,7 +50,7 @@ def test_show_returns_the_acceptance_the_item_was_created_with(driver):
 def test_an_item_created_without_acceptance_reports_none_rather_than_omitting_it(driver):
     item_id = _create(driver, "ac-roundtrip-none")
 
-    shown = driver(["show", item_id])["data"]
+    shown = driver(["show", item_id])["data"]["items"][0]
 
     assert "acceptance" in shown, "an absent key would say this read never fetched the criteria"
     assert shown["acceptance"] is None
@@ -85,7 +85,7 @@ def test_a_correction_replaces_the_criteria_and_leaves_the_old_text_readable(dri
 
     assert corrected["ok"] is True, corrected
     assert corrected["data"]["previous"] == _CRITERIA
-    shown = driver(["show", item_id])["data"]
+    shown = driver(["show", item_id])["data"]["items"][0]
     assert shown["acceptance"] == _CORRECTED
     assert _CRITERIA not in shown["acceptance"]
     assert f"> {_CRITERIA}" in shown["notes"]
@@ -100,7 +100,7 @@ def test_multi_line_criteria_survive_the_round_trip_quoted_line_by_line(driver):
 
     driver(["acceptance", "set", item_id, _CORRECTED])
 
-    notes = driver(["show", item_id])["data"]["notes"]
+    notes = driver(["show", item_id])["data"]["items"][0]["notes"]
     assert "> AC1 the first thing." in notes
     assert "> AC2 the second thing." in notes
 
@@ -113,11 +113,11 @@ def test_a_claimed_item_refuses_a_silent_correction_and_records_a_stated_one(dri
 
     assert refused["ok"] is False
     assert refused["error"]["code"] == "E_FIELD_CLOBBER_GUARD"
-    assert driver(["show", item_id])["data"]["acceptance"] == _CRITERIA
+    assert driver(["show", item_id])["data"]["items"][0]["acceptance"] == _CRITERIA
 
     stated = driver(["acceptance", "set", item_id, _CORRECTED, "--why", "AC1 was ambiguous"])
 
     assert stated["ok"] is True, stated
-    shown = driver(["show", item_id])["data"]
+    shown = driver(["show", item_id])["data"]["items"][0]
     assert shown["acceptance"] == _CORRECTED
     assert "while in_progress: AC1 was ambiguous" in shown["notes"]

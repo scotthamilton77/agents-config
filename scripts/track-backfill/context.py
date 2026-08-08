@@ -97,3 +97,30 @@ def work(root: pathlib.Path, *argv: str, require_ok: bool = True) -> dict:
 def data(root: pathlib.Path, *argv: str) -> dict:
     """`work(...)` unwrapped to its data payload."""
     return work(root, *argv)["data"]
+
+
+def show(root: pathlib.Path, item_id: str, *, require_ok: bool = True) -> dict:
+    """`work show ID`'s envelope, with `data` normalized to the item itself.
+
+    The verb answers `{"items": [...]}` from protocol 2.0 on, where every
+    earlier version answered a single id with the item object directly. These
+    scripts run against whichever `work` is on PATH, which is not necessarily
+    the one in this checkout, so both shapes must parse — the same hazard the
+    `work list` status default moved under, one verb over (see verify.py's C1).
+    An `items` key is the discriminator: an item object has no such field.
+
+    The unwrap is here rather than in `data()` because `data()` serves every
+    verb, and the list-shaped reads mean their `items` wrapper.
+    """
+    envelope = work(root, "show", item_id, require_ok=require_ok)
+    payload = envelope.get("data")
+    if isinstance(payload, dict) and "items" in payload:
+        items = payload["items"]
+        # A one-id show returns one row. Anything else means the reply is not
+        # what was asked for, and taking the first row would hide that.
+        if len(items) != 1:
+            raise SystemExit(
+                f"`work show {item_id}` returned {len(items)} item(s); expected exactly one"
+            )
+        envelope = {**envelope, "data": items[0]}
+    return envelope

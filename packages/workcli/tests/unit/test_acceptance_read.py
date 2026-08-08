@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import run_cli
+from tests.conftest import only_item, run_cli
 from tests.fake_backend import FakeBackend
 from tests.fakes import ScriptedStep
 from workcli.adapters.bd.parse import parse_item
@@ -170,9 +170,8 @@ def test_show_returns_the_acceptance_an_item_was_created_with() -> None:
     backend = FakeBackend()
     new_id = _created(backend, acceptance=_CRITERIA)
 
-    shown = show(backend, _read_args(ids=[new_id]))
+    shown = only_item(show(backend, _read_args(ids=[new_id])))
 
-    assert isinstance(shown, dict)
     assert shown["acceptance"] == _CRITERIA
 
 
@@ -180,9 +179,8 @@ def test_show_reports_null_for_an_item_created_without_acceptance() -> None:
     backend = FakeBackend()
     new_id = _created(backend, acceptance=None)
 
-    shown = show(backend, _read_args(ids=[new_id]))
+    shown = only_item(show(backend, _read_args(ids=[new_id])))
 
-    assert isinstance(shown, dict)
     assert "acceptance" in shown, (
         "an absent key means this read did not fetch the criteria; an item that "
         "has none must say so with a value"
