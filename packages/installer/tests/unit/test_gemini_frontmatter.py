@@ -80,8 +80,8 @@ def test_description_block_scalar_preserved_while_stripping_and_wrapping() -> No
     # The headline parity guarantee: a `description: |-` block scalar survives
     # byte-for-byte even as color: is stripped and tools: is wrapped. The pyyaml
     # round-trip reflowed the block (quoting/spacing/style); the line port leaves
-    # every untouched line verbatim. Mirrors install.sh transform_gemini_agent_
-    # frontmatter (the surgical awk).
+    # every untouched line verbatim. Mirrors the bash installer's
+    # transform_gemini_agent_frontmatter (the surgical awk).
     block = "description: |-\n  Line one.\n\n  Line two with: a colon and  weird   spacing.\n"
     src = ("---\nname: a\n" + block + "tools: Read, Grep\ncolor: purple\n---\nbody\n").encode()
     out = transform_agent_frontmatter(src).decode("utf-8")

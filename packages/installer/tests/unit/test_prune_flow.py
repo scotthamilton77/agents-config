@@ -1,8 +1,8 @@
 """Unit tests for installer.core.prune_flow (G.4 — interactive prune flow).
 
 Each test pins a coded decision in ``run_prune``, the port of the bash
-``prune_orphans`` (``scripts/install.sh:1602-1687``). The engine is driven
-through ``ScriptedIO`` and asserted against real filesystem end-state plus the
+``prune_orphans``. The engine is driven through ``ScriptedIO`` and asserted
+against real filesystem end-state plus the
 returned per-target ``dict[str, Counters]`` (keyed by ``Orphan.tool``) — never
 against which IOPort method was called. A no-deletion path returns ``{}``; a
 deleting path returns one bucket per pruned orphan's tool.
@@ -323,7 +323,7 @@ def test_empty_orphan_list_is_noop() -> None:
     Then it returns pruned == 0 without consulting any prompt.
 
     Note: the empty fast-path sits AFTER the non-interactive guard (bash
-    ordering, scripts/install.sh:1603-1620), so this exercises the empty path
+    ordering), so this exercises the empty path
     only once the guard has been cleared — see
     test_non_interactive_prune_only_without_auth_raises for the guard-first case.
     """
@@ -342,7 +342,7 @@ def test_backup_precedes_delete_into_sibling_namespace_dir(tmp_path: Path) -> No
     and backed_up == 1.
 
     Pins the path-aware routing reuse: a scoped-namespace orphan's backup lands
-    in <grandparent>/<namespace>-backup/, not in-place (scripts/install.sh:369).
+    in <grandparent>/<namespace>-backup/, not in-place.
     """
     o1 = _file_orphan(tmp_path, "claude", "skills", "retired", body="precious")
     io = ScriptedIO(interactive=False)

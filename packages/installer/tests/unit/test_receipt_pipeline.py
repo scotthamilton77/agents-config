@@ -582,10 +582,12 @@ def test_cross_tree_relocation_prunes_stale_fanout_copies(tmp_path: Path) -> Non
     owner's desired keys, and root-valid, so all three are pruned; Claude's copy matches
     its desired key and is kept.
 
-    Pins the per-owner ``(owner, path)`` diff against a cross-tree relocation — the
-    receipt model's structural answer to the bash-era merged-source orphan gap (design
-    relocation scenario, case c). A regression here would mean a relocated-and-narrowed
-    skill leaves stale copies littering the tools it no longer ships to.
+    Pins the per-owner ``(owner, path)`` diff against a cross-tree relocation. A
+    merged-source install cannot attribute an orphan to its owner — the four copies
+    are one logical source, so a copy an owner no longer ships is indistinguishable
+    from one it still ships — which is why the receipt diff is keyed per owner. A
+    regression here would mean a relocated-and-narrowed skill leaves stale copies
+    littering the tools it no longer ships to.
     """
     home = tmp_path
     claude = home / ".claude" / "skills" / "zoom-out"

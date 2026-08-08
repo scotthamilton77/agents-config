@@ -1,6 +1,6 @@
 """Unit tests for installer.core.templates.flatten_plan_templates — the plan-level
 Phase 6.5/6.75 port: flatten the instruction templates in a StagingPlan, then drop
-the include-only templates they inline (bash install.sh:849-890).
+the include-only templates they inline.
 """
 
 from __future__ import annotations

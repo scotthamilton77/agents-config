@@ -1,12 +1,11 @@
 """Unit tests for installer.core.sync.sync_routes (F.4 / G2 — plugin-route install).
 
 ``sync_routes`` is the in-memory port of the bash installer's
-``stage_and_install_beads`` (``scripts/install.sh:948-1124``): it walks a plugin's
-``PluginRoute`` set, globs each route's ``source_dir``, and installs the matched
-files at its ``dest_dir`` with the route's exec bit. Unlike the tool-file path, a
-route restores a *lost* exec bit on a hash-equal skip
-(``scripts/install.sh:1096``) — that restore is route-scoped, since bash carries
-no general executable-file mode reconcile.
+``stage_and_install_beads``: it walks a plugin's ``PluginRoute`` set, globs each
+route's ``source_dir``, and installs the matched files at its ``dest_dir`` with the
+route's exec bit. Unlike the tool-file path, a route restores a *lost* exec bit on a
+hash-equal skip — that restore is route-scoped, since bash carries no general
+executable-file mode reconcile.
 
 Each test pins a coded decision and drives the engine through ``ScriptedIO`` + the
 real filesystem under ``tmp_path``. ``PluginRoute`` carries absolute source/dest
@@ -80,7 +79,7 @@ def test_routes_install_only_glob_matches(tmp_path: Path) -> None:
     When sync_routes runs with glob *.toml
     Then only the .toml is installed; the README is left behind.
 
-    Pins: the route glob filters the source dir (install.sh:971 `for ... *.toml`),
+    Pins: the route glob filters the source dir (bash iterates `for ... *.toml`),
     so unrelated files in the plugin's route dir are not routed.
     """
     src = tmp_path / "src" / "formulas"
@@ -102,8 +101,8 @@ def test_route_with_missing_source_dir_installs_nothing(tmp_path: Path) -> None:
     When sync_routes runs
     Then nothing is installed, the dest is not created, and no error is raised.
 
-    Pins: bash guards each plugin's route dir with `[[ -d ... ]] || continue`
-    (install.sh:969,1056); a plugin without that subtree contributes no files.
+    Pins: bash guards each plugin's route dir with `[[ -d ... ]] || continue`;
+    a plugin without that subtree contributes no files.
     """
     src = tmp_path / "src" / "absent"
     dest = tmp_path / "home" / ".beads" / "formulas"
@@ -125,8 +124,9 @@ def test_route_unchanged_script_is_skipped_but_lost_exec_bit_is_restored(
     Then no rewrite/backup happens (content matches), but the exec bit is restored
     to 0o755 and the item counts as skipped.
 
-    Pins install.sh:1096 — "content matches but exec bit may have been lost;
-    restore it without a full copy" — route-scoped (bash has no general reconcile).
+    Pins the bash installer's rule — content matches but the exec bit may have been
+    lost, so restore it without a full copy — route-scoped (bash has no general
+    reconcile).
     """
     src = tmp_path / "src" / "scripts"
     dest = tmp_path / "home" / ".beads" / "scripts"
@@ -149,8 +149,8 @@ def test_route_lost_exec_restore_emits_verbose_detail_but_clean_skip_does_not(
     (0o644 -> repaired) and one whose dest already carries it (0o755 -> untouched)
     When sync_routes runs
     Then ONLY the repaired one emits a verbose-tagged "Restored +x" line — the
-    parity equivalent of bash ``vinfo "Restored +x on scripts/X"``
-    (scripts/install.sh:1096), which fires only when the repair actually happens.
+    parity equivalent of bash ``vinfo "Restored +x on scripts/X"``, which fires only
+    when the repair actually happens.
 
     Pins: the exec-bit repair on a hash-equal skip is announced under --verbose
     (and silent without it), and a skip that does no repair stays quiet on that
@@ -185,7 +185,7 @@ def test_route_restore_adds_exec_without_widening_existing_rw_bits(tmp_path: Pat
     a fixed 0o755 — bash's ``chmod +x`` preserves read/write bits and never widens
     group/other read.
 
-    Pins faithfulness to ``install.sh:1096`` ``chmod +x`` semantics (add exec,
+    Pins faithfulness to the bash installer's ``chmod +x`` semantics (add exec,
     preserve the rest), so a user-tightened file is not silently re-opened.
     """
     src = tmp_path / "src" / "scripts"
@@ -228,8 +228,8 @@ def test_route_skips_a_directory_that_matches_the_glob(tmp_path: Path) -> None:
     When sync_routes runs
     Then only the file is installed; the glob-matching directory is skipped.
 
-    Pins bash's `[[ -f "$formula" ]] || continue` (install.sh:972) — the glob can
-    match a directory, and only regular files are routed.
+    Pins bash's `[[ -f "$formula" ]] || continue` — the glob can match a directory,
+    and only regular files are routed.
     """
     src = tmp_path / "src" / "formulas"
     dest = tmp_path / "home" / ".beads" / "formulas"
@@ -274,8 +274,8 @@ def test_route_changed_file_is_backed_up_then_overwritten(tmp_path: Path) -> Non
     Then the original is backed up under <name>.backup-<ts>, the new bytes are
     written, the exec bit is set, and the item counts as an update + backup.
 
-    Pins: a changed route file is backed up before overwrite (install.sh:1109-1111
-    backup; cp; chmod +x), matching the tool-file overwrite contract.
+    Pins: a changed route file is backed up before overwrite (bash: backup; cp;
+    chmod +x), matching the tool-file overwrite contract.
     """
     src = tmp_path / "src" / "scripts"
     dest = tmp_path / "home" / ".beads" / "scripts"
@@ -298,7 +298,7 @@ def test_route_dry_run_previews_without_writing(tmp_path: Path) -> None:
     Then nothing is written to disk, but the would-be create is counted.
 
     Pins: dry_run previews and touches nothing, reusing the file installer's
-    dry-run contract (install.sh:1083 "Would install").
+    dry-run contract (bash's "Would install").
     """
     src = tmp_path / "src" / "scripts"
     dest = tmp_path / "home" / ".beads" / "scripts"
@@ -319,7 +319,7 @@ def test_route_dry_run_does_not_restore_a_lost_exec_bit(tmp_path: Path) -> None:
     Then the bit is NOT restored — a dry run mutates nothing, including mode.
 
     Pins the ``not dry_run`` term of the restore guard, mirroring bash's
-    ``[[ "$DRY_RUN" == true ]] ||`` on the line-1096 restore (install.sh:1096).
+    ``[[ "$DRY_RUN" == true ]] ||`` on the exec-bit restore.
     """
     src = tmp_path / "src" / "scripts"
     dest = tmp_path / "home" / ".beads" / "scripts"

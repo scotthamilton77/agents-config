@@ -57,7 +57,7 @@ def test_empty_override_installs_no_plugins(tmp_path: Path) -> None:
     Given an empty --plugins= value (and a whitespace-only value)
     When resolve_plugins is called
     Then the result is empty — the deliberate asymmetry with resolve_tools,
-    which raises on empty --tools= (install.sh:298-300).
+    which raises on empty --tools=.
     """
     root = _sources_with_two_plugins(tmp_path)
     home = tmp_path / "home"

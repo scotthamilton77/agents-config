@@ -4,8 +4,7 @@ Python installer's staged output, using the REAL repo-root .installignore.
 The leaker paths are HARDCODED here, deliberately NOT sourced from .installignore:
 a manifest-sourced check would go blind to the exact regression it must catch —
 someone deleting an entry from .installignore. This test goes red on a manifest
-mis-edit OR a staging-logic regression, and survives the parity gate (it tests
-Python, the permanent installer, not the bash↔python comparison)."""
+mis-edit OR a staging-logic regression."""
 
 from __future__ import annotations
 

@@ -163,12 +163,7 @@ def test_prune_only_drops_retired_cli_through_real_receipt_path(tmp_path: Path) 
     Then the deploy half never fires, the uninstall does, and the rewritten
     receipt no longer carries the entry.
 
-    Pins the --prune-only convergence rule. NOTE: requires a
-    nonzero RETIRED_CLIS in the test — monkeypatch installer.core.run's
-    retired source or pass through a seam; the implementer wires
-    prune_clis(retired=frozenset(RETIRED_CLIS)) in cli.py, so monkeypatch
-    installer.cli.RETIRED_CLIS (import it into cli.py namespace for
-    patchability).
+    Pins the --prune-only convergence rule.
     """
     repo = _hermetic_repo(tmp_path)
     home = tmp_path / "home"

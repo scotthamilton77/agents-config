@@ -244,7 +244,7 @@ def test_main_autodetect_empty_home_dry_run_selects_claude_returns_zero(
     Then it returns 0 — auto-detect falls back to claude and proceeds.
 
     Pins: a bare home does not take a no-tools exit-2 guard; claude is the
-    auto-detect floor, matching install.sh's unconditional `TOOLS=(claude)`.
+    auto-detect floor, matching the bash installer's unconditional `TOOLS=(claude)`.
     """
     repo = _hermetic_repo(tmp_path)
     rc = main(["--dry-run"], home=tmp_path, io=ScriptedIO(interactive=False), repo_root=repo)
@@ -544,9 +544,9 @@ def test_explicit_plugins_override_warns_about_excluded_plugin(tmp_path: Path) -
     Then a warning naming 'widget' and the non-prune guidance is emitted.
 
     Pins: an explicit --plugins= override that drops a discovered plugin warns the
-    operator the already-installed files are NOT removed — bash
-    scripts/install.sh:325. Fails while the Python installer drops excluded plugins
-    silently (resolve_plugins returns the resolved set with no exclusion warning).
+    operator the already-installed files are NOT removed, matching bash. Fails while
+    the Python installer drops excluded plugins silently (resolve_plugins returns
+    the resolved set with no exclusion warning).
     """
     repo = _repo_with_widget_plugin(tmp_path)
     io = ScriptedIO(interactive=False)
@@ -570,7 +570,7 @@ def test_explicit_plugins_override_with_prune_warns_orphan_wording(tmp_path: Pat
     Given a discoverable 'widget' plugin excluded via --plugins= AND --prune-only
     When main runs
     Then the exclusion warning uses the prune wording (excluded files become
-    orphans and may be removed) — bash scripts/install.sh:323.
+    orphans and may be removed), matching bash.
 
     Pins: the wording branches on whether a prune phase is active. Fails if the
     warning is unconditional (always the non-prune text) or absent under --prune.
@@ -599,7 +599,7 @@ def test_autodetect_does_not_warn_about_excluded_plugins(tmp_path: Path) -> None
     Then NO exclusion warning is emitted.
 
     Pins: the exclusion warning fires only under an EXPLICIT --plugins= override
-    (bash gates it on PLUGINS_FLAG_SET, scripts/install.sh:308). Auto-detect
+    (bash gates it on PLUGINS_FLAG_SET). Auto-detect
     dropping an undetected plugin is normal, not warn-worthy. Fails if the warning
     keys on the discovered-vs-resolved delta regardless of how plugins were
     resolved.
@@ -703,7 +703,7 @@ def test_verbose_flag_constructs_terminal_io_verbose(
 
     Pins: args.verbose is parsed (both spellings) and threaded into the
     TerminalIO construction in main — the plumbing the bash installer's
-    VERBOSE=true wiring (scripts/install.sh:110) ports to. A spy on the lazily
+    VERBOSE=true wiring ports to. A spy on the lazily
     imported TerminalIO captures the kwarg without touching a real terminal.
     Fails while the flag is unparsed (argparse SystemExit) or constructed with a
     hard-coded verbose=False.
@@ -1074,7 +1074,7 @@ def test_main_quiet_reinstall_renders_all_up_to_date(tmp_path: Path) -> None:
     --tools=claude --yes (quiet)
     When main runs again
     Then it emits exactly the em-dash 'All files up to date — no changes made.'
-    line — every item is a skip, so nothing changed (scripts/install.sh:1863).
+    line — every item is a skip, so nothing changed.
 
     Pins: the all-zero quiet branch reaches the renderer from a real re-install.
     """
@@ -1145,9 +1145,9 @@ def test_main_dry_run_summary_reports_would_be_installs(tmp_path: Path) -> None:
     Given --tools=claude --dry-run against a hermetic repo (a claude create)
     When main runs in preview mode
     Then the summary still reports the would-be install — bash tallies counters
-    on a dry-run too (e.g. scripts/install.sh:1154-1160 increments
-    tool_installed inside the DRY_RUN branch) and renders the Summary
-    unconditionally at the end. The quiet 'claude: N installed' line appears.
+    on a dry-run too (it increments tool_installed inside the DRY_RUN branch) and
+    renders the Summary unconditionally at the end. The quiet
+    'claude: N installed' line appears.
 
     Pins: the summary renders on a dry-run with the previewed counts, matching
     bash — it is NOT gated to real writes only.

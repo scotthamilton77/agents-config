@@ -1,7 +1,7 @@
 """Unit tests for installer.core.staging.classify_file — C.1.
 
-Each test pins a row of the bash classify_file() truth table
-(scripts/install.sh:486-505) as mirrored onto FileKind.
+Each test pins a row of the bash classify_file() truth table as mirrored onto
+FileKind.
 """
 
 from __future__ import annotations
