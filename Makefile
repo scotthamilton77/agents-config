@@ -81,7 +81,7 @@ content-tests:
 # roster comes from the same staging-and-gate path content-lint uses, so the two
 # cannot disagree about what deploys. Repo-root invocation (no `cd`) so it
 # resolves the tracked set and every cited path against the repo; it writes
-# nothing and never invokes the installer. NOT in `ci` — see the note there.
+# nothing and never invokes the installer. In `ci` — see the note there.
 doc-lint:
 	uv --project $(INSTALLER) run python -m installer.doc_lint_cli .
 
