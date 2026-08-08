@@ -1,8 +1,8 @@
 """Shapes shared across the verb layer and every Backend adapter.
 
-Normalized, backend-agnostic dataclasses: `Item`/`DepEdge` are what the bd
-adapter's parser (`adapters/bd/parse.py`) produces from raw bd JSON, and what
-the verb layer serializes into envelope `data` via `dataclasses.asdict`.
+Normalized, backend-agnostic dataclasses: `Item`/`DepEdge` are what an
+adapter's parser produces from the backend's raw payload, and what the verb
+layer serializes into envelope `data` via `dataclasses.asdict`.
 """
 
 from __future__ import annotations
@@ -18,11 +18,11 @@ RELATIONSHIP_FIELDS = ("parent", "deps", "children")
 class DepEdge:
     id: str
     # An open `str`, deliberately, and NOT the closed set `dep add` enforces
-    # (`verbs/relations.py::DEP_TYPES`, bd's own documented vocabulary). bd
-    # validates no type at all and stores whatever it is handed, so edges
-    # carrying an unsanctioned type already exist; a read that could not
-    # express one would misreport the very edges the write-side check now
-    # exists to stop being made. Closed on write, open on read.
+    # (`verbs/relations.py::DEP_TYPES`). A backend need not validate the type
+    # it is handed -- bd stores whatever it is given -- so edges carrying an
+    # unsanctioned type already exist; a read that could not express one would
+    # misreport the very edges the write-side check now exists to stop being
+    # made. Closed on write, open on read.
     type: str
     status: str  # status of the item at the other end
 
@@ -40,7 +40,7 @@ class Item:
     children: list[str]
     description: str
     notes: str
-    created: str | None  # ISO strings as bd emits them; no datetime parsing in v1
+    created: str | None  # ISO strings as the backend emits them; no datetime parsing in v1
     updated: str | None
     # The criteria a claim on this item is checked against. `None` is the
     # backend's own answer -- this item carries none -- and is why the field
@@ -60,12 +60,13 @@ class Item:
 
 @dataclass(frozen=True)
 class DepListing:
-    # `bd dep list --direction` semantics read backward from intuition: the
-    # default ("down") lists what this item depends on; "up" lists what
-    # depends on this item. Naming the fields after bd's own directions
-    # would silently re-encode that ambiguity into every caller, so these
-    # are named for the relationship instead (verified against golden
-    # fixtures in adapters/bd/backend.py::BdBackend.dep_list).
+    # Named for the relationship, never for a backend's own direction words:
+    # "up" and "down" invert depending on who is speaking, and a field named
+    # after one would re-encode that ambiguity into every caller. bd is the
+    # case that established it -- its `dep list --direction` default ("down")
+    # lists what this item depends on, while "up" lists what depends on this
+    # item (verified against golden fixtures in
+    # adapters/bd/backend.py::BdBackend.dep_list).
     depends_on: list[DepEdge]
     dependents: list[DepEdge]
 
@@ -86,8 +87,8 @@ class CreateFields:
     priority: str | None = None
     parent: str | None = None
     labels: tuple[str, ...] = ()
-    acceptance: str | None = None  # NEW — bd `--acceptance`
-    blocked_by: str | None = None  # NEW — bd `--deps <id>` (bare; atomic blocks-edge at creation)
+    acceptance: str | None = None  # the criteria to stamp at creation
+    blocked_by: str | None = None  # one bare blocks-edge, applied atomically at creation
 
 
 @dataclass(frozen=True)
@@ -97,8 +98,9 @@ class UpdateFields:  # replace-semantics fields ONLY; notes never appear here
     description: str | None = None
     # The parent is single-valued, so a move belongs here with the other
     # replace-semantics fields rather than on `dep add`, which only ever adds.
-    # bd's `update --parent` replaces the old parent-child edge outright, so
-    # one call moves the item with no window in which it has two parents.
+    # Reparenting through the seam replaces the old parent-child edge outright
+    # (verified against bd's atomic `update --parent`), so one call moves the
+    # item with no window in which it has two parents.
     parent: str | None = None
 
 

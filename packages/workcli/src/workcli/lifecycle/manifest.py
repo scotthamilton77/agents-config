@@ -153,7 +153,7 @@ def serialize_manifest(manifest: Manifest) -> str:
     Recorded in-band as the `[work] manifest:` note's payload at first design
     `deliver`, so recovery replays toward this frozen target instead of
     re-reading the (mutable) spec file. Single-line (no literal newlines, even
-    across a multi-line title/AC — JSON escapes them) so it survives as one bd
+    across a multi-line title/AC — JSON escapes them) so it survives as one
     note line the marker parser reads.
     """
     payload = {
@@ -177,9 +177,9 @@ def _snapshot_drift(text: str) -> WorkError:
 def deserialize_manifest(text: str) -> Manifest:
     """Inverse of `serialize_manifest`: the recorded snapshot back to a `Manifest`.
 
-    The snapshot lives in a bd note -- shared, dolt-synced state a human or
-    another agent can hand-edit -- so a truncated, malformed, or tampered payload
-    is *expected* corruption, not an internal bug. It surfaces as a typed
+    The snapshot lives in a note -- shared state, replicated across machines,
+    that a human or another agent can hand-edit -- so a truncated, malformed,
+    or tampered payload is *expected* corruption, not an internal bug. It surfaces as a typed
     `E_BACKEND_DRIFT` carrying the offending text, so `reconcile` can report one
     poisoned placeholder as a single attention finding instead of a raw
     `JSONDecodeError`/`KeyError` aborting the whole sweep as `E_INTERNAL`.

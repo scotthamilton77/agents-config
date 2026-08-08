@@ -3,11 +3,11 @@
 Candidate sets are enumerated **only** through removable completion handles
 (labels), never inferred from external state such as a design child's status or
 a spec file's contents. Because `query()`/`list`-sourced Items always have
-`children == []` and no deps (bd `list` has no `dependents` key -- see
-`adapters/bd/parse.py`), every candidate is re-fetched via `get()` before its
-children/deps/notes are read. Recovery replays toward the in-band
-`[work] manifest:` snapshot recorded at first delivery, so the spec file is
-never re-read here. `--dry-run` performs zero mutating bd calls; repairs are
+`children == []` and no deps -- a listing carries less than a full read, and
+an adapter says so through `unknown_relations` -- every candidate is re-fetched
+via `get()` before its children/deps/notes are read. Recovery replays toward
+the in-band `[work] manifest:` snapshot recorded at first delivery, so the spec
+file is never re-read here. `--dry-run` performs zero mutating backend calls; repairs are
 idempotent (a second sweep over a healed tree finds nothing).
 """
 
@@ -131,8 +131,8 @@ def _sweep_interrupted_instantiations(backend: Backend, *, dry_run: bool) -> lis
     tail the write paths run, so a crashed `promote` gets its `shape-feat`->`shape-spec`
     swap reconstructed, not just create-spec's tail replayed. Each candidate is
     re-`get()`d for its labels first: a container's own design child /
-    placeholder can carry a LEAKED `creating-spec` (bd inherited the parent's
-    labels at mint, before the adapter's `--no-inherit-labels` opt-out); such a
+    placeholder can carry a LEAKED `creating-spec` (a child inherited the
+    parent's labels at mint, before the adapter opted out); such a
     leaf is healed by stripping the leaked handle, never finalized as a
     container -- finalizing a leaf would mint grandchildren under it and stamp
     it `planned`. A second sweep over a healed tree finds no

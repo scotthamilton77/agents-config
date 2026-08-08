@@ -66,12 +66,12 @@ def list_(backend: Backend, args: Namespace) -> JsonValue:
     E_UNKNOWN_TRACK, not a silently-empty result. Ordering matters twice:
     config loads BEFORE the backend query (E_NOT_CONFIGURED must precede any
     backend error, and an unconfigured call must not read the tracker), and
-    --limit applies AFTER the track filter (a bd-side limit would truncate
-    the candidate set before filtering and undercount matches). `--limit 0`
-    is the existing unbounded sentinel (mirrored from the bd adapter, which
-    sends "0" for both an omitted limit and an explicit 0) -- it must not
-    slice the filtered set down to zero items. A negative limit is never
-    meaningful either -- unlike bd-side slicing, Python's `items[:n]` with a
+    --limit applies AFTER the track filter (a backend-side limit would
+    truncate the candidate set before filtering and undercount matches).
+    `--limit 0` is the existing unbounded sentinel (mirrored from the bd
+    adapter, which sends "0" for both an omitted limit and an explicit 0) --
+    it must not slice the filtered set down to zero items. A negative limit is
+    never meaningful either -- unlike backend-side slicing, `items[:n]` with a
     negative `n` silently drops trailing items rather than erroring, so
     zero-or-negative both mean unbounded here.
     """
