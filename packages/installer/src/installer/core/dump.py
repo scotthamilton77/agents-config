@@ -62,7 +62,12 @@ def dump_plan(plans: Mapping[Tool, StagingPlan], target: Path, *, io: IOPort) ->
     for tool, plan in plans.items():
         tool_root = target / tool.value
         for item in plan.items.values():
-            overrides = plan.dir_overrides.get(item.dest_relpath, {})
+            # Unwrapped to bytes: a dump writes the staged tree, and a
+            # contribution's origin is the admission gate's concern, not its.
+            overrides = {
+                inner: part.content
+                for inner, part in plan.dir_overrides.get(item.dest_relpath, {}).items()
+            }
             _write_item(tool_root, item, overrides)
     io.info(f"staging plan written to {target}")
 

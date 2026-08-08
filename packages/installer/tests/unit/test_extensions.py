@@ -14,7 +14,15 @@ from pathlib import Path
 
 import pytest
 
-from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
+from installer.core.merge.strategies.append_rules import AppendRulesStrategy
+from installer.core.model import (
+    Contribution,
+    FileKind,
+    Provenance,
+    StagedItem,
+    StagingPlan,
+    Tool,
+)
 from installer.plugins.extensions import ExtensionError, apply_extensions
 
 
@@ -178,6 +186,62 @@ def test_direct_file_item_is_patched_in_place(tmp_path: Path) -> None:
     assert plan.dir_overrides == {}
 
 
+def test_a_patched_file_item_contributes_the_patched_bytes_under_its_own_name(
+    tmp_path: Path,
+) -> None:
+    """A patch changes what the item's source contributes; it does not add a
+    second contributor. The recorded contribution has to move with the bytes —
+    the admission gate reassembles a destination from its contributions, so one
+    still holding the pre-patch text would judge bytes that never deploy and
+    then discard the patch on the way out."""
+    plugin = _plugin(tmp_path, "p")
+    _write(plugin.source_path / ".agents" / "extensions" / "00.yaml", _ext_yaml())
+
+    plan = apply_extensions(_plan_with_agent_md(), [plugin])
+
+    item = plan.items[Path("agents/reviewer.md")]
+    assert item.contributions == (
+        Contribution(
+            source_path=Path("/base/agents/reviewer.md"),
+            content=b"# Reviewer\n\n## Boundaries\nbase\npatched\n",
+        ),
+    )
+
+
+def test_patching_a_destination_assembled_from_several_sources_is_refused(
+    tmp_path: Path,
+) -> None:
+    """A whole-file patch over an assembled destination cannot say which of its
+    sources it belongs to. Collapsing them would ship whichever governance front
+    matter the patch left behind, so the patch is refused and names what to
+    patch instead."""
+    plugin = _plugin(tmp_path, "p")
+    _write(
+        plugin.source_path / ".agents" / "extensions" / "00.yaml",
+        _ext_yaml(target_file="rules/x.md", target_section="S"),
+    )
+    merged = AppendRulesStrategy().merge(_rule("/shared/x.md"), _rule("/claude/x.md"))
+    plan = StagingPlan(items={merged.dest_relpath: merged}, tool=Tool.CLAUDE)
+
+    with pytest.raises(ExtensionError) as exc:
+        apply_extensions(plan, [plugin])
+
+    assert "assembled from 2 sources" in exc.value.reason
+    assert "/shared/x.md" in exc.value.reason
+    assert "/claude/x.md" in exc.value.reason
+
+
+def _rule(source: str) -> StagedItem:
+    return StagedItem(
+        source_path=Path(source),
+        dest_relpath=Path("rules/x.md"),
+        kind=FileKind.NAMESPACED_MD,
+        namespace="rules",
+        provenance=Provenance(kind="tool", name="claude"),
+        content=b"# X\n\n## S\nbase\n",
+    )
+
+
 def test_file_inside_dir_item_patches_into_dir_overrides(tmp_path: Path) -> None:
     """SKILL.md inside an opaque DIR item: patched bytes land in
     dir_overrides keyed by (dir dest, inner relpath); the DIR item itself
@@ -193,7 +257,7 @@ def test_file_inside_dir_item_patches_into_dir_overrides(tmp_path: Path) -> None
     plan = apply_extensions(plan, [plugin])
 
     patched = plan.dir_overrides[Path("skills/demo")][Path("SKILL.md")]
-    assert patched == b"# Demo\n\n## Usage\nbase\npatched\n"
+    assert patched.content == b"# Demo\n\n## Usage\nbase\npatched\n"
     assert plan.items[Path("skills/demo")].content is None
 
 
@@ -215,7 +279,7 @@ def test_second_patch_sees_first_patch_result_in_dir_overrides(tmp_path: Path) -
     plan = apply_extensions(plan, [plugin])
 
     patched = plan.dir_overrides[Path("skills/demo")][Path("SKILL.md")]
-    assert patched == b"# Demo\n\n## Usage\nbase\nfirst\nsecond\n"
+    assert patched.content == b"# Demo\n\n## Usage\nbase\nfirst\nsecond\n"
 
 
 def test_carrier_merge_contribution_for_other_inner_file_survives(tmp_path: Path) -> None:
@@ -228,13 +292,17 @@ def test_carrier_merge_contribution_for_other_inner_file_survives(tmp_path: Path
     )
     item = _skill_dir_item(tmp_path, "demo", "# Demo\n\n## Usage\nbase\n")
     plan = StagingPlan(items={item.dest_relpath: item}, tool=Tool.CLAUDE)
-    plan.dir_overrides[Path("skills/demo")] = {Path("cheats.md"): b"carried"}
+    plan.dir_overrides[Path("skills/demo")] = {
+        Path("cheats.md"): Contribution(
+            source_path=tmp_path / "plugins" / "p" / "cheats.md", content=b"carried"
+        )
+    }
 
     plan = apply_extensions(plan, [plugin])
 
     overrides = plan.dir_overrides[Path("skills/demo")]
-    assert overrides[Path("cheats.md")] == b"carried"
-    assert overrides[Path("SKILL.md")].endswith(b"patched\n")
+    assert overrides[Path("cheats.md")].content == b"carried"
+    assert overrides[Path("SKILL.md")].content.endswith(b"patched\n")
 
 
 @pytest.mark.parametrize(

@@ -17,6 +17,16 @@ is assembled and before any write. It:
    the governance metadata that enforces the budget;
 4. runs the **conflict audit** over the admitted artifacts' claims.
 
+The unit judged is the **contributor**, not the destination. A rule destination
+can be assembled from several source files by the append-merge, and judging the
+assembled bytes reads exactly one record — the leading contributor's — for all
+of them. That is wrong in both directions: a trailing contributor's governance
+front matter ships (charged against the always-on budget the record polices),
+and a record-less leading contributor drops the admitted rule it merged with,
+reporting nothing against the file that actually lacked a record. So each
+contributor is classified and sanitized on its own, and the destination is
+reassembled from the survivors.
+
 Any violation makes ``GateResult.ok`` false; the caller reports each and aborts
 with a non-zero exit *before* the write block, so a breach never half-deploys.
 The returned ``plans`` are the admission-filtered plans the caller installs —
@@ -37,12 +47,14 @@ from installer.core.admission import (
     DIR_RECORD_FILE,
     AdmissionOutcome,
     classify,
+    entry_file_text,
     is_gated,
-    record_source_text,
 )
 from installer.core.capabilities import is_user_invoked
 from installer.core.conflict_audit import conflict_violations
 from installer.core.frontmatter import split_frontmatter
+from installer.core.merge.strategies.append_rules import SEPARATOR
+from installer.core.model import Contribution, contributions_of
 from installer.core.sanitize import project_capabilities, sanitize_text
 from installer.core.surface_budget import (
     SkillBodySource,
@@ -63,14 +75,27 @@ _INSTRUCTION_DESTS = (Path("AGENTS.md"), Path("GEMINI.md"))
 
 
 def item_label(tool: Tool, dest: Path) -> str:
-    """The gate's stable name for one staged artifact.
+    """The gate's stable name for one staged destination.
 
     Every ``skipped`` entry, ``violations`` message, and measurement label is
-    keyed this way, so a caller holding the pre-gate plans can join the gate's
-    findings back to the ``StagedItem`` (and thus the source file) they came
-    from. Sharing the one construction is what keeps that join from rotting.
+    keyed this way, so a caller can join the gate's findings back to what
+    produced them. Sharing the one construction is what keeps that join from
+    rotting.
     """
     return f"{tool.value}:{dest}"
+
+
+def contributor_label(tool: Tool, dest: Path, source: Path, *, sole: bool) -> str:
+    """The gate's name for one contributor to a destination.
+
+    A sole contributor is named by its destination alone: that is the whole of
+    what a reader needs, and a destination with one source is the overwhelming
+    case. Where several files assemble one destination the label carries the
+    source too, because the label is a primary key — two contributors sharing
+    one would fold two findings into one and lose whichever arrived second.
+    """
+    label = item_label(tool, dest)
+    return label if sole else f"{label} <{source}>"
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +111,13 @@ class GateResult:
     the way to those violations — every tool and every admitted skill, whether
     or not it breached. The gate computes them regardless; returning them lets
     a caller report headroom as a trend instead of only reporting the cliff.
+
+    ``sources`` maps every label the gate emitted to the file it judged. Only
+    the gate knows this: by the time it has partitioned the plans, the dropped
+    contributors are gone, and no consumer can recover from the surviving plan
+    which files were weighed or where an assembled destination's bytes came
+    from. Reporting the answer alongside the findings is what stops a consumer
+    reconstructing it from staging leftovers.
     """
 
     plans: dict[Tool, StagingPlan]
@@ -93,6 +125,7 @@ class GateResult:
     violations: list[str]
     surfaces: list[SurfaceMeasure] = field(default_factory=list)
     skills: list[SkillMeasure] = field(default_factory=list)
+    sources: dict[str, Path] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -113,18 +146,73 @@ def _skill_body(text: str) -> str:
     return body
 
 
-def _entry_text(item: StagedItem, overrides: dict[Path, bytes]) -> str | None:
-    """The gated item's front-matter-bearing text, as it will deploy.
+def _record_bearers(item: StagedItem, overrides: dict[Path, Contribution]) -> list[Contribution]:
+    """Every source whose admission record governs part of what ``item`` deploys.
 
-    A directory item's entry file may have been patched into ``dir_overrides``
-    by a plugin extension; those bytes win over the file under ``source_path``,
-    because they are the ones that reach disk.
+    A file item is judged per contributor, in the order its bytes appear. A
+    directory item has exactly one record bearer — its canonical entry file —
+    which arrives either through ``dir_overrides`` (a carrier merge contributing
+    the entry, or a plugin extension patching it) or from the source tree. The
+    override wins, because those are the bytes that reach disk.
+
+    A directory with no readable entry file bears no record and is reported
+    against the directory itself, which is the only thing there is to name.
     """
-    if item.content is None:
-        patched = overrides.get(Path(DIR_RECORD_FILE))
-        if patched is not None:
-            return patched.decode("utf-8", errors="replace")
-    return record_source_text(item)
+    if item.content is not None:
+        return list(contributions_of(item))
+    entry = overrides.get(Path(DIR_RECORD_FILE))
+    if entry is not None:
+        return [entry]
+    text = entry_file_text(item)
+    return (
+        [Contribution(source_path=item.source_path, content=text.encode("utf-8"))] if text else []
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _Admitted:
+    """One contributor that cleared the bar, and the bytes it will deploy."""
+
+    source: Path
+    label: str
+    text: str
+    user_invoked: bool
+    claims: dict[str, str]
+
+
+def _judge(
+    contribution: Contribution, *, label: str, tool: Tool
+) -> tuple[_Admitted | None, str | None]:
+    """Classify one contributor, returning ``(admitted, violation)``.
+
+    Both ``None`` is the record-less verdict — dropped and reported, not fatal.
+
+    The rewrite happens here rather than after the partition so that admission
+    and sanitization read the same bytes: what the bar judged is what deploys,
+    minus only the governance metadata the bar itself consumed.
+
+    The invocation mode is read from the SOURCE front matter, before the
+    projection removes the key for a tool that does not define it. Reading it
+    after would make one artifact's cap depend on which tool is being staged, so
+    the same repo would pass on a Claude-only machine and fail wherever a second
+    tool is detected.
+    """
+    text = contribution.content.decode("utf-8", errors="replace")
+    verdict = classify(text)
+    if verdict.outcome is AdmissionOutcome.NO_RECORD:
+        return None, None
+    if verdict.outcome is AdmissionOutcome.MALFORMED:
+        return None, f"{label}: incomplete admission record — {verdict.detail}"
+    return (
+        _Admitted(
+            source=contribution.source_path,
+            label=label,
+            text=project_capabilities(sanitize_text(text), tool=tool.value),
+            user_invoked=is_user_invoked(text),
+            claims=verdict.claims,
+        ),
+        None,
+    )
 
 
 def run_admission_gate(plans: dict[Tool, StagingPlan]) -> GateResult:
@@ -132,6 +220,7 @@ def run_admission_gate(plans: dict[Tool, StagingPlan]) -> GateResult:
     filtered: dict[Tool, StagingPlan] = {}
     skipped: list[str] = []
     violations: list[str] = []
+    sources: dict[str, Path] = {}
     claims_by_artifact: list[tuple[str, dict[str, str]]] = []
     skill_bodies: list[SkillBodySource] = []
 
@@ -139,61 +228,80 @@ def run_admission_gate(plans: dict[Tool, StagingPlan]) -> GateResult:
         kept: dict[Path, StagedItem] = {}
         # Sanitized entry-file bytes per admitted directory item, overlaid onto
         # that dir's surviving overrides once the partition is known.
-        sanitized_entries: dict[Path, bytes] = {}
+        sanitized_entries: dict[Path, Contribution] = {}
         for dest, item in plan.items.items():
             if not is_gated(item):
                 kept[dest] = item
                 continue
-            label = item_label(tool, dest)
             overrides = plan.dir_overrides.get(dest, {})
-            text = _entry_text(item, overrides)
-            verdict = classify(item, text=text)
-            if verdict.outcome is AdmissionOutcome.NO_RECORD:
-                skipped.append(label)
-                continue
-            if verdict.outcome is AdmissionOutcome.MALFORMED:
-                violations.append(f"{label}: incomplete admission record — {verdict.detail}")
+            bearers = _record_bearers(item, overrides)
+            if not bearers:
+                # Nothing to read at all — a directory item with no entry file.
+                # The directory is the only thing there is to name.
+                sources[item_label(tool, dest)] = item.source_path
+                skipped.append(item_label(tool, dest))
                 continue
 
-            # Admitted: ship the artifact without its deploy-time governance
-            # metadata and without capability keys this tool cannot read. A file
-            # item carries its own bytes; a directory item is opaque, so the
-            # rewritten entry file rides the dir_overrides side channel the sync
-            # already overlays on top of the source tree.
-            #
-            # The invocation mode is read from the SOURCE front matter, before
-            # the projection removes the key for a tool that does not define it.
-            # Reading it after would make one artifact's cap depend on which
-            # tool is being staged, so the same repo would pass on a Claude-only
-            # machine and fail wherever a second tool is detected.
-            user_invoked = is_user_invoked(text) if text is not None else False
-            sanitized = (
-                project_capabilities(sanitize_text(text), tool=tool.value)
-                if text is not None
-                else None
-            )
-            if sanitized is not None:
-                if item.content is not None:
-                    item = replace(item, content=sanitized.encode("utf-8"))
+            sole = len(bearers) == 1
+            admitted: list[_Admitted] = []
+            for bearer in bearers:
+                label = contributor_label(tool, dest, bearer.source_path, sole=sole)
+                sources[label] = bearer.source_path
+                verdict, defect = _judge(bearer, label=label, tool=tool)
+                if defect is not None:
+                    violations.append(defect)
+                elif verdict is None:
+                    skipped.append(label)
                 else:
-                    sanitized_entries[dest] = sanitized.encode("utf-8")
+                    admitted.append(verdict)
+                    claims_by_artifact.append((label, verdict.claims))
+            if not admitted:
+                continue
+
+            # Reassemble the destination from the contributors that cleared the
+            # bar, joined the way the merge that assembled them joins — a
+            # destination the gate has taken a contributor out of is a different
+            # file, and it is the one that has to reach disk. A file item carries
+            # its own bytes; a directory item is opaque, so its rewritten entry
+            # file rides the dir_overrides side channel the sync already overlays
+            # on top of the source tree.
+            if item.content is not None:
+                merged = SEPARATOR.join(part.text.encode("utf-8") for part in admitted)
+                item = replace(
+                    item,
+                    content=merged,
+                    # Restated only where it was already carried: an item that
+                    # was its own sole contributor still is one, and recording
+                    # that would be the same fact written twice.
+                    contributions=()
+                    if sole
+                    else tuple(
+                        Contribution(source_path=part.source, content=part.text.encode("utf-8"))
+                        for part in admitted
+                    ),
+                )
+            else:
+                entry = admitted[0]
+                sanitized_entries[dest] = Contribution(
+                    source_path=entry.source, content=entry.text.encode("utf-8")
+                )
             kept[dest] = item
 
-            claims_by_artifact.append((label, verdict.claims))
             if item.namespace == "skills":
-                skill_bodies.append(
+                skill_bodies += [
                     SkillBodySource(
-                        label=label,
-                        body=_skill_body(sanitized or ""),
-                        user_invoked=user_invoked,
+                        label=part.label,
+                        body=_skill_body(part.text),
+                        user_invoked=part.user_invoked,
                     )
-                )
+                    for part in admitted
+                ]
 
         # Drop override bytes for any item the gate removed, then lay each
         # admitted dir's sanitized entry file over what survives.
         kept_overrides = {d: dict(ov) for d, ov in plan.dir_overrides.items() if d in kept}
-        for dest, entry in sanitized_entries.items():
-            kept_overrides.setdefault(dest, {})[Path(DIR_RECORD_FILE)] = entry
+        for dest, entry_contribution in sanitized_entries.items():
+            kept_overrides.setdefault(dest, {})[Path(DIR_RECORD_FILE)] = entry_contribution
         filtered[tool] = replace(plan, items=kept, dir_overrides=kept_overrides)
 
     surfaces: list[SurfaceMeasure] = []
@@ -219,4 +327,5 @@ def run_admission_gate(plans: dict[Tool, StagingPlan]) -> GateResult:
         violations=violations,
         surfaces=surfaces,
         skills=measure_skill_bodies(skill_bodies),
+        sources=sources,
     )

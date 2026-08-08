@@ -20,7 +20,7 @@ import pytest
 
 from installer.core import namespaces
 from installer.core.installignore import InstallIgnore
-from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
+from installer.core.model import Contribution, FileKind, Provenance, StagedItem, StagingPlan, Tool
 from installer.core.profiles import (
     IncludeEntry,
     Manifest,
@@ -38,6 +38,12 @@ from installer.core.profiles import (
 )
 from installer.core.staging import build_plan
 from installer.tools.registry import get_adapter
+
+
+def _carried(content: bytes) -> Contribution:
+    """An override contribution whose origin no assertion here depends on."""
+    return Contribution(source_path=Path("/plugin/carried"), content=content)
+
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _PROV = Provenance(kind="tool", name="claude")
@@ -894,12 +900,12 @@ def test_filter_plan_to_scope_carries_over_kept_dir_overrides() -> None:
     plan = StagingPlan(
         items={Path("skills/foo"): dir_item},
         tool=Tool.CLAUDE,
-        dir_overrides={Path("skills/foo"): {Path("extra.txt"): b"data"}},
+        dir_overrides={Path("skills/foo"): {Path("extra.txt"): _carried(b"data")}},
     )
 
     filtered = filter_plan_to_scope(plan, [Path("skills/foo")])
 
-    assert filtered.dir_overrides == {Path("skills/foo"): {Path("extra.txt"): b"data"}}
+    assert filtered.dir_overrides == {Path("skills/foo"): {Path("extra.txt"): _carried(b"data")}}
 
 
 # ---------------------------------------------------------------------------

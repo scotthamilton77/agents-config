@@ -1,7 +1,9 @@
 """Pure data model for the installer engine.
 
-No behaviour beyond construction, equality, and immutability where called
-for. Every type here is consumed by later engine modules (`staging`,
+No behaviour beyond construction, equality, immutability where called for,
+and the one derivation that states what an empty `contributions` tuple means
+— which belongs with the field it interprets, not in whichever consumer
+happened to need it first. Every type here is consumed by later engine modules (`staging`,
 `sync`, `merge`, `prune`, `templates`); this module imports only from
 the standard library so it remains the foundation, not a consumer.
 
@@ -100,6 +102,27 @@ every call site rather than silently passing through."""
 
 
 @dataclass(frozen=True, slots=True)
+class Contribution:
+    """One source file's bytes inside a staged item's content.
+
+    A destination is not always one file. Two rules of the same name append-merge
+    into a single item, and the deploy gate has to judge each of them on its own
+    record: a destination judged as one artifact either ships a contributor's
+    governance metadata it never read, or drops an admitted contributor because
+    something it merged with carried none. Carrying `(source_path, content)` per
+    side is what makes both questions answerable at the gate — the alternative is
+    reconstructing, downstream, an origin the merge already destroyed.
+
+    Also the value type of `StagingPlan.dir_overrides`, where the same problem
+    appears one level down: bytes destined for a file inside an opaque directory
+    item, arriving from a source the directory's own `source_path` does not name.
+    """
+
+    source_path: Path
+    content: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class StagedItem:
     """In-memory record of one entry destined for a tool's install root.
 
@@ -124,14 +147,12 @@ class StagedItem:
     a second plugin colliding on the same dir is a true plugin-plugin collision
     (fatal).
 
-    `merged_head` is set only on an item synthesised by a content-combining
-    merge (today: the rule append-merge), and names the source whose bytes lead
-    the merged content. The synthesised item takes `source_path` from the
-    *incoming* side while the *existing* side's bytes go first, so for anything
-    reading the head of the content — front matter, most obviously —
-    `source_path` names the wrong file. A reader that needs to attribute
-    leading content to its origin must consult this instead. `None` means the
-    item is not a merge product and `source_path` is authoritative.
+    `contributions` names the source of every byte in `content`, in the order
+    those bytes appear, and is set by any producer that makes `content` stop
+    being one file's bytes: the rule append-merge, and a plugin extension patch.
+    Empty — the common case — means the item is its own sole contributor, so
+    `contributions_of` reads it as `(source_path, content)` rather than making
+    every construction site restate what the two fields already say.
     """
 
     source_path: Path
@@ -142,7 +163,23 @@ class StagedItem:
     content: bytes | None = None
     executable: bool = False
     shared_carrier: bool = False
-    merged_head: Path | None = None
+    contributions: tuple[Contribution, ...] = ()
+
+
+def contributions_of(item: StagedItem) -> tuple[Contribution, ...]:
+    """Every source whose bytes are in `item.content`, in the order they appear.
+
+    An item with no recorded contributions is its own: the pair `(source_path,
+    content)` says the same thing, and defaulting to it keeps every producer that
+    never merges anything from having to restate it. A directory item carries no
+    bytes of its own, so it contributes none — its interior is attributed through
+    `StagingPlan.dir_overrides` and its own source tree instead.
+    """
+    if item.contributions:
+        return item.contributions
+    if item.content is None:
+        return ()
+    return (Contribution(source_path=item.source_path, content=item.content),)
 
 
 @dataclass(slots=True)
@@ -161,8 +198,10 @@ class StagingPlan:
     `dir_overrides` is the side channel for bytes that cannot be expressed
     through a single-`source_path` DIR `StagedItem`. It is keyed by the DIR
     item's `dest_relpath`, then by each inner file's relpath (relative to the
-    dir), to that file's bytes. Two producers write here, both targeting an
-    existing DIR item rather than replacing it:
+    dir), to that file's `Contribution` — the bytes and the file they came from,
+    since the DIR item's own `source_path` names a tree that does not contain
+    them. Two producers write here, both targeting an existing DIR item rather
+    than replacing it:
 
     - the Phase 6 plugin carrier-merge (overlay) records the plugin's disjoint
       added files, since a DIR item has only one `source_path` and two source
@@ -176,7 +215,7 @@ class StagingPlan:
 
     items: dict[Path, StagedItem]
     tool: Tool
-    dir_overrides: dict[Path, dict[Path, bytes]] = field(default_factory=dict)
+    dir_overrides: dict[Path, dict[Path, Contribution]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

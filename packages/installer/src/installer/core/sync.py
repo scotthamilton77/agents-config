@@ -222,7 +222,12 @@ def sync_plan(
             _install_dir(
                 dest,
                 item.source_path,
-                plan.dir_overrides.get(item.dest_relpath, {}),
+                # Unwrapped here: the origin a contribution carries is for the
+                # admission gate's reporting, and sync only ever writes bytes.
+                {
+                    inner: part.content
+                    for inner, part in plan.dir_overrides.get(item.dest_relpath, {}).items()
+                },
                 ignore=ignore,
                 io=io,
                 dry_run=dry_run,
