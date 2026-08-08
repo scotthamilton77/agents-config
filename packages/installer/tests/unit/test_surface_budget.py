@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from installer.core.surface_budget import (
     ALWAYS_ON_TOKEN_CAP,
     SKILL_BODY_TOKEN_CAP,
@@ -11,6 +13,7 @@ from installer.core.surface_budget import (
     approx_tokens,
     measure_always_on,
     measure_skill_bodies,
+    measure_skill_payload,
     skill_body_violations,
 )
 
@@ -29,14 +32,14 @@ def test_approx_tokens_is_ceil_of_bytes_over_four() -> None:
 
 def test_zero_base_surface_passes() -> None:
     # ~1670 bytes ≈ 418 tokens, far under the cap.
-    assert always_on_violations(tool="claude", instruction=b"x" * 1670, rules=[]) == []
+    assert always_on_violations(tool="claude", instruction=b"x" * 1670, rules=[], catalog=[]) == []
 
 
 def test_boundary_at_cap_passes_and_one_over_fails() -> None:
     at_cap = b"x" * (ALWAYS_ON_TOKEN_CAP * 4)  # exactly 10_000 tokens
-    assert always_on_violations(tool="claude", instruction=at_cap, rules=[]) == []
+    assert always_on_violations(tool="claude", instruction=at_cap, rules=[], catalog=[]) == []
     over = b"x" * (ALWAYS_ON_TOKEN_CAP * 4 + 1)  # 10_001 tokens (ceil)
-    violations = always_on_violations(tool="claude", instruction=over, rules=[])
+    violations = always_on_violations(tool="claude", instruction=over, rules=[], catalog=[])
     assert len(violations) == 1
     assert "claude" in violations[0]
     assert str(ALWAYS_ON_TOKEN_CAP) in violations[0]
@@ -44,12 +47,16 @@ def test_boundary_at_cap_passes_and_one_over_fails() -> None:
 
 def test_rules_count_toward_always_on_surface() -> None:
     half = b"x" * (ALWAYS_ON_TOKEN_CAP * 2)  # 5_000 tokens each
-    violations = always_on_violations(tool="codex", instruction=half, rules=[half, b"y" * 8])
+    violations = always_on_violations(
+        tool="codex", instruction=half, rules=[half, b"y" * 8], catalog=[]
+    )
     assert len(violations) == 1  # 5000 + 5000 + 2 > 10000
 
 
 def test_no_instruction_file_counts_only_rules() -> None:
-    assert always_on_violations(tool="gemini", instruction=None, rules=[b"x" * 16]) == []
+    assert (
+        always_on_violations(tool="gemini", instruction=None, rules=[b"x" * 16], catalog=[]) == []
+    )
 
 
 def test_skill_body_over_cap_is_named() -> None:
@@ -101,7 +108,9 @@ def test_measurement_carries_the_rule_count_beside_the_token_total() -> None:
     """Tokens and rule count move for different reasons — rising tokens against a
     flat rule count is one rule bloating, both rising is the surface accreting. A
     reader watching for drift needs to tell those apart."""
-    measure = measure_always_on(tool="claude", instruction=b"x" * 8, rules=[b"y" * 4, b"z" * 4])
+    measure = measure_always_on(
+        tool="claude", instruction=b"x" * 8, rules=[b"y" * 4, b"z" * 4], catalog=[]
+    )
     assert (measure.tool, measure.tokens, measure.rules) == ("claude", 4, 2)
 
 
@@ -109,8 +118,8 @@ def test_the_violation_verdict_is_the_measurement_it_reports() -> None:
     """The two callers must never disagree about what the surface weighs: the lint
     reports headroom from the same number the gate fails on."""
     over = b"x" * (ALWAYS_ON_TOKEN_CAP * 4 + 1)
-    measure = measure_always_on(tool="claude", instruction=over, rules=[])
-    violations = always_on_violations(tool="claude", instruction=over, rules=[])
+    measure = measure_always_on(tool="claude", instruction=over, rules=[], catalog=[])
+    violations = always_on_violations(tool="claude", instruction=over, rules=[], catalog=[])
     assert str(measure.tokens) in violations[0]
 
 
@@ -127,3 +136,59 @@ def test_skill_bodies_are_measured_whether_or_not_they_breach() -> None:
         ("claude:skills/small", 2),
         ("claude:skills/big", 1),
     ]
+
+
+def test_catalog_entries_are_charged_to_the_always_on_surface() -> None:
+    """A skill's name and description load before the user types, so they belong
+    in the same aggregate as the instruction file — the component that grows with
+    every admission, charged against the ceiling that already exists."""
+    entry = b"x" * 40  # 10 tokens
+    measure = measure_always_on(
+        tool="claude", instruction=b"y" * 8, rules=[], catalog=[entry, entry]
+    )
+    assert (measure.tokens, measure.catalog_entries) == (22, 2)
+
+
+def test_a_catalog_alone_can_breach_the_always_on_cap() -> None:
+    """No new ceiling: the entries are measured by the one that was already there,
+    over a domain that now includes them."""
+    over = b"x" * (ALWAYS_ON_TOKEN_CAP * 4 + 4)
+    violations = always_on_violations(tool="opencode", instruction=None, rules=[], catalog=[over])
+    assert len(violations) == 1
+    assert str(ALWAYS_ON_TOKEN_CAP) in violations[0]
+
+
+def test_the_payload_report_splits_prose_from_what_is_never_read() -> None:
+    """Executed code and indexed data are disk weight, not context weight. Folding
+    them into the prose total would report a skill that moved work into code as
+    one that grew, and price this repo's own code-over-prose principle as a cost."""
+    measure = measure_skill_payload(
+        label="skills/example",
+        files={
+            Path("references/a.md"): b"x" * 40,
+            Path("references/b.txt"): b"y" * 8,
+            Path("scripts/run.py"): b"z" * 400,
+            Path("evals/corpus.json"): b"w" * 4,
+        },
+    )
+    assert (measure.prose_tokens, measure.prose_files) == (12, 2)
+    assert measure.other_tokens == 101
+
+
+def test_the_payload_report_names_the_largest_single_readable_file() -> None:
+    """The unit a reader pays is one file chosen mid-task, never the tree — so the
+    number that would decide anything is the largest one file, not the total."""
+    measure = measure_skill_payload(
+        label="skills/example",
+        files={
+            Path("references/small.md"): b"x" * 4,
+            Path("references/big.md"): b"y" * 40,
+            Path("assets/huge.json"): b"z" * 4_000,
+        },
+    )
+    assert (measure.largest_file, measure.largest_tokens) == ("references/big.md", 10)
+
+
+def test_a_skill_with_no_payload_measures_zero() -> None:
+    measure = measure_skill_payload(label="skills/bare", files={})
+    assert (measure.prose_tokens, measure.other_tokens, measure.largest_file) == (0, 0, "")

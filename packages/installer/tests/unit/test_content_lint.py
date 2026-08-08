@@ -14,10 +14,14 @@ from pathlib import Path
 
 import pytest
 
+from installer.core.capabilities import models_skill_loading
 from installer.core.content_lint import UNGATED_ROOTS, _staged_dirs, _unaccounted_dirs, lint_content
 from installer.core.installignore import load_installignore
 from installer.core.io_port import ScriptedIO
-from installer.core.surface_budget import SKILL_BODY_TOKEN_CAP
+from installer.core.surface_budget import (
+    SKILL_BODY_TOKEN_CAP,
+    USER_INVOKED_SKILL_BODY_TOKEN_CAP,
+)
 from installer.tools.registry import known_tools
 from tests.unit.plugin_double import RoutedPluginDouble
 
@@ -63,14 +67,18 @@ def _repo(
         skill_dir = shared / "skills" / name
         skill_dir.mkdir(parents=True, exist_ok=True)
         for filename, text in files.items():
-            (skill_dir / filename).write_text(text, encoding="utf-8")
+            target = skill_dir / filename
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
 
     for relpath, files in (plugin_skill_files or {}).items():
         plugin, name = relpath.split("/", 1)
         skill_dir = tmp_path / "src" / "plugins" / plugin / ".agents" / "skills" / name
         skill_dir.mkdir(parents=True, exist_ok=True)
         for filename, text in files.items():
-            (skill_dir / filename).write_text(text, encoding="utf-8")
+            target = skill_dir / filename
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
 
     for relpath, text in (plugin_rules or {}).items():
         plugin, filename = relpath.split("/", 1)
@@ -126,8 +134,9 @@ def test_over_cap_skill_body_in_real_src_is_a_violation(tmp_path: Path) -> None:
     """The regression this module exists for: an over-cap body reaching main with
     CI green because nothing measured the tree the installer would actually read.
 
-    Reported once for the one file, naming every tool it would have deployed to —
-    four lines and a count of four would read as four separate defects.
+    Reported once for the one file, naming every tool that measured it — a line
+    per tool and a count to match would read as several separate defects. Gemini
+    is not among them: its skill loading is not modelled, so it weighs no body.
     """
     oversize = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
     repo = _repo(tmp_path, skills={"bloated": _RECORD + oversize})
@@ -138,7 +147,8 @@ def test_over_cap_skill_body_in_real_src_is_a_violation(tmp_path: Path) -> None:
     assert "skills/bloated" in result.violations[0]
     assert "over the" in result.violations[0]
     for tool in known_tools():
-        assert tool.value in result.violations[0]
+        measured = tool.value in result.violations[0]
+        assert measured is models_skill_loading(tool.value)
 
 
 def test_a_violation_carrying_no_tool_prefix_passes_through_whole() -> None:
@@ -842,3 +852,73 @@ def test_a_header_on_a_trailing_contributor_is_seen(tmp_path: Path) -> None:
     flagged = [v for v in result.violations if "naming no upstream" in v]
     assert len(flagged) == 1
     assert str(repo / "src/plugins/p/.agents/rules/x.md") in flagged[0]
+
+
+def test_the_payload_report_prints_on_a_pass_and_fails_nothing(tmp_path: Path) -> None:
+    """The number with no ceiling. A reader cannot otherwise see what a skill costs
+    when they follow one of its pointers, and the unit they pay is one file — so the
+    report names the largest and the verdict is untouched by it."""
+    repo = _repo(
+        tmp_path,
+        skills={"heavy": _RECORD + "short\n"},
+        shared_skill_files={
+            "heavy": {
+                "references/long.md": "p" * 4_000,
+                "references/short.md": "p" * 40,
+                "scripts/run.py": "c" * 8_000,
+            }
+        },
+    )
+    result = _lint(repo)
+
+    assert result.ok
+    assert [(p.prose_files, p.largest_file, p.largest_tokens) for p in result.payloads] == [
+        (2, "references/long.md", 1_000)
+    ]
+    # Executed code is counted apart and costed at nothing: it never enters a
+    # context window, and charging it would price code-over-prose as a cost.
+    assert [p.prose_tokens for p in result.payloads] == [1_010]
+    assert [p.other_tokens for p in result.payloads] == [2_000]
+
+
+def test_the_payload_walk_counts_what_deploys_not_what_is_authored(tmp_path: Path) -> None:
+    """A file the manifest prunes never reaches a user, so weighing it would report
+    a cost nobody pays. The manifest's own path rule answers this, rather than a
+    second copy of it here."""
+    repo = _repo(
+        tmp_path,
+        skills={"heavy": _RECORD + "short\n"},
+        shared_skill_files={"heavy": {"references/keep.md": "p" * 40, "README.md": "p" * 4_000}},
+    )
+    result = _lint(repo)
+
+    assert result.ok
+    assert [(p.prose_files, p.largest_file) for p in result.payloads] == [(1, "references/keep.md")]
+
+
+def test_a_skill_entry_file_is_not_charged_to_its_own_payload(tmp_path: Path) -> None:
+    """The body is already weighed against the skill body cap; counting it here
+    would charge one artifact's bytes to two different numbers."""
+    repo = _repo(
+        tmp_path,
+        skills={"lonely": _RECORD + "x" * 400},
+        shared_skill_files={"lonely": {"references/tiny.md": "p" * 4}},
+    )
+    result = _lint(repo)
+
+    assert [(p.prose_files, p.prose_tokens) for p in result.payloads] == [(1, 1)]
+
+
+def test_a_user_invoked_shared_skill_reports_one_line_per_ceiling(tmp_path: Path) -> None:
+    """Grouping folds a repeated finding into one line naming its tools, but the
+    ceiling now varies by target — so folding on the token count alone would print
+    whichever cap arrived first and hide the tools it does not apply to."""
+    flagged = _RECORD.replace("---\n", "---\ndisable-model-invocation: true\n", 1)
+    repo = _repo(tmp_path, skills={"quiet": flagged + "short\n"})
+    result = _lint(repo)
+
+    assert result.ok
+    assert [(body.cap, body.tools) for body in result.skills] == [
+        (SKILL_BODY_TOKEN_CAP, ("codex", "opencode")),
+        (USER_INVOKED_SKILL_BODY_TOKEN_CAP, ("claude",)),
+    ]

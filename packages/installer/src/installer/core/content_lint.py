@@ -9,12 +9,20 @@ with CI green.
 
 This module closes that hole. It stages the repo's own ``src/`` for **every**
 known tool with **every** discovered plugin, then hands the resulting plans to
-the same ``run_admission_gate`` the installer calls. Almost nothing is measured
-here: classification, sanitization, token counts, and the conflict audit are all
-the gate's, so the check and the installer cannot drift apart. The one exception
-is the provenance rule below, which the deploy cannot enforce — and it still
-borrows the sanitizer's recognizer rather than deciding for itself. Staging is
-pure and writes nothing — the installer is never invoked.
+the same ``run_admission_gate`` the installer calls. Every number the installer
+also computes is the gate's and not this module's — classification,
+sanitization, the always-on and skill-body token counts, and the conflict audit
+— so the check and the installer cannot drift apart about what deploys or what
+it weighs. Staging is pure and writes nothing; the installer is never invoked.
+
+Two things are decided here instead, and neither is a number the installer also
+computes, so neither can drift from the other side's answer. A skill's reference
+payload (``_skill_payloads``) is measured here because it has no failure
+condition, and so no business in the deploy path. The provenance rule
+(``_provenance_findings``) is judged here because the deploy *cannot* judge it:
+it strips the header rather than reading it, so the evidence is gone by the time
+the installed bytes exist. The invariant guarding the shared measurements is
+intact and narrower than it once read.
 
 Staging every tool with every plugin rather than whatever the current machine
 has installed is deliberate: the question the lint answers is "is this content
@@ -95,14 +103,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from installer.core import namespaces
-from installer.core.admission import is_gated
+from installer.core.admission import DIR_RECORD_FILE, is_gated
 from installer.core.content_tests import BUILD_DIRS
 from installer.core.deploy_gate import contributor_label, record_bearers, run_admission_gate
 from installer.core.installignore import InstallIgnore, load_installignore
 from installer.core.orchestrator import stage_and_transform
 from installer.core.sanitize import provenance_keys
 from installer.core.staging import shared_source_dir
-from installer.core.surface_budget import SkillMeasure, SurfaceMeasure
+from installer.core.surface_budget import (
+    SkillMeasure,
+    SkillPayloadMeasure,
+    SurfaceMeasure,
+    measure_skill_payload,
+)
 from installer.plugins.registry import discover, is_plugin_dir
 from installer.tools.registry import get_adapter, known_tools
 
@@ -110,7 +123,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from installer.core.io_port import IOPort
-    from installer.core.model import StagingPlan, Tool
+    from installer.core.model import Contribution, StagingPlan, Tool
     from installer.plugins.base import PluginAdapter
 
 # The subtree the repo declares to be admitted content only, so a record-less
@@ -262,10 +275,11 @@ class SkillBody:
     """One admitted skill body's measured weight, in repo coordinates.
 
     ``where`` is the source file when the plan records one and the destination
-    otherwise. ``tools`` names every tool the body was measured for: a shared
-    skill stages into every plan, so ungrouped it reports the same number four
-    times. ``cap`` is the ceiling that measured it — a property of the source
-    front matter, so every tool in ``tools`` agrees on it.
+    otherwise. ``tools`` names every tool measured against the same ceiling: a
+    shared skill stages into every plan, so ungrouped it reports the same number
+    once per tool. ``cap`` is the ceiling that measured it, and it is a property
+    of the *target* rather than of the source — so one skill can produce two
+    entries, one per group of tools that agree about it.
     """
 
     where: str
@@ -289,6 +303,7 @@ class ContentLintResult:
     unadmitted: list[Unadmitted] = field(default_factory=list)
     surfaces: list[SurfaceMeasure] = field(default_factory=list)
     skills: list[SkillBody] = field(default_factory=list)
+    payloads: list[SkillPayloadMeasure] = field(default_factory=list)
 
     @property
     def fatal_unadmitted(self) -> list[Unadmitted]:
@@ -387,20 +402,87 @@ def _group_skill_bodies(
 
     ``tokens`` is part of the key rather than an attribute of the group because a
     per-tool transform can change one source's deployed weight, and one file
-    reporting two different numbers is precisely the thing worth seeing. The cap
-    is not: it is decided by the source front matter, which every tool staging
-    that artifact read, so the first measure in a group speaks for all of them.
+    reporting two different numbers is precisely the thing worth seeing. So is
+    ``cap``: the ceiling is chosen from the projected front matter, so a skill
+    declaring itself user-invoked is measured against the loose cap on the one
+    tool that honours the declaration and the strict cap everywhere else. Folding
+    those into one group would print whichever ceiling happened to arrive first
+    and hide the tools it does not apply to — the failure this grouping exists
+    to avoid, one column over.
     """
-    grouped: dict[tuple[str, int], tuple[int, list[str]]] = {}
+    grouped: dict[tuple[str, int, int], list[str]] = {}
     for measure in measures:
-        _cap, tools = grouped.setdefault(
-            (str(sources[measure.label]), measure.tokens), (measure.cap, [])
-        )
+        tools = grouped.setdefault((str(sources[measure.label]), measure.tokens, measure.cap), [])
         tools.append(measure.label.partition(":")[0])
     return [
         SkillBody(where=where, tokens=tokens, cap=cap, tools=tuple(sorted(set(tools))))
-        for (where, tokens), (cap, tools) in sorted(grouped.items())
+        for (where, tokens, cap), tools in sorted(grouped.items())
     ]
+
+
+def _skill_payloads(
+    plans: Mapping[Tool, StagingPlan], *, ignore: InstallIgnore
+) -> list[SkillPayloadMeasure]:
+    """Weigh what each admitted skill deploys beside its entry file.
+
+    The number with no ceiling, and the only one this module computes rather
+    than reads off the gate — a report has no failure condition, so it has no
+    business on the deploy path, where it would also widen the gate's disk
+    access from one entry file to a whole directory interior.
+
+    **What deploys, not what is authored.** The source tree is filtered through
+    the same manifest the copy filters with (``excludes_path``, the one
+    definition of that rule), then the tool's overrides are laid on top, exactly
+    as the sync writes them. The entry file is dropped: its body is already
+    weighed against the skill body cap.
+
+    One entry per skill *directory*, not per tool. A shared skill stages into
+    every plan out of one source tree, and the payload is a property of that
+    tree — so the trees are collected first and read once, with each tool's
+    override files laid over the result. Skills with nothing beside their entry
+    are left out entirely: a line reading zero is noise in a report whose whole
+    purpose is to show where the weight is.
+
+    **That collection resolves rather than unions, and the difference is worth
+    stating.** Overrides accumulate per inner path, so a path one tool alone
+    receives is added and a path several tools receive identically is
+    idempotent — but a path two tools receive with *different* bytes takes
+    whichever plan is iterated last. Exactly one mechanism can produce that: a
+    tool-scoped extension patch against an inner file of a shared skill. A
+    carrier merge cannot, because it contributes one plugin's bytes to every
+    tool holding that plugin. No extension exists anywhere in the tree, so the
+    case has no occupant — and the one per-tool divergence that *is* live, the
+    entry file capability projection genuinely rewrites per target, is popped
+    below before anything is weighed.
+
+    When the first such extension lands, the repair is to report per tool rather
+    than to fold the tools together — the same shape ``_group_skill_bodies``
+    takes by keying on the cap. Taking a max across targets is the cheaper edit
+    and the wrong one: it would invent a number no target loads, which is the
+    error this whole measurement exists to end.
+    """
+    trees: dict[Path, dict[Path, Contribution]] = {}
+    for plan in plans.values():
+        for dest, item in plan.items.items():
+            if item.namespace != "skills" or item.content is not None:
+                continue
+            # Per inner path, last plan wins on a collision. See the docstring
+            # for what could produce one and why nothing does.
+            trees.setdefault(item.source_path, {}).update(plan.dir_overrides.get(dest, {}))
+
+    payloads: list[SkillPayloadMeasure] = []
+    for root, overrides in sorted(trees.items()):
+        files = {
+            rel: path.read_bytes()
+            for path, rel in ((path, path.relative_to(root)) for path in sorted(root.rglob("*")))
+            if path.is_file() and not ignore.excludes_path(rel)
+        }
+        files.update({rel: part.content for rel, part in overrides.items()})
+        files.pop(Path(DIR_RECORD_FILE), None)
+        measure = measure_skill_payload(label=str(root), files=files)
+        if measure.prose_tokens or measure.other_tokens:
+            payloads.append(measure)
+    return sorted(payloads, key=lambda m: (-m.largest_tokens, m.label))
 
 
 def _is_admitted_only(source: Path, repo_root: Path) -> bool:
@@ -734,4 +816,7 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
         unadmitted=unadmitted,
         surfaces=list(gate.surfaces),
         skills=_group_skill_bodies(gate.skills, sources=sources),
+        # The gate's filtered plans, so a skill the bar dropped is not weighed:
+        # a payload that never deploys is not a cost anyone pays.
+        payloads=_skill_payloads(gate.plans, ignore=staged.ignore),
     )

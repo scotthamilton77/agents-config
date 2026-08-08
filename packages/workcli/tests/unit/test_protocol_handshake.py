@@ -116,7 +116,21 @@ def test_protocol_wire_value_is_pinned() -> None:
     # acting on a completion nothing had established, so there is no correct
     # behaviour to lose, and the envelope and every `data` shape are
     # untouched.
-    assert PROTOCOL_VERSION == "1.10"
+    #
+    # 1.11 adds the `defer`/`undefer` verb pair, which sets an item aside as
+    # not-now and brings it back. Additive on both counts the rule scores: a
+    # new verb takes nothing away from an existing one, and its envelope is
+    # the `{"id", "status"}` shape the other transitions already answer with.
+    # What is new in a read envelope is that `status` can now hold `deferred`
+    # on an item the facade itself set aside -- but that was always a value
+    # the backend could hold and the item model already declared, so no
+    # consumer had a closed set of four to lose. `claim` additionally names
+    # the new state in its refusal instead of reporting a dependency that
+    # does not exist, which replaces a wrong answer rather than a right one.
+    # Nothing here touches 1.10's close-walk narrowing: a deferred child is
+    # not a closed one, so it stops the walk on the not-yet-exhausted branch
+    # exactly as an open child does, and never reaches the `held` report.
+    assert PROTOCOL_VERSION == "1.11"
 
 
 def test_the_readme_states_the_protocol_version_the_code_emits() -> None:

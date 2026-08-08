@@ -19,6 +19,7 @@ from collections.abc import Callable
 from workcli.backend import Backend, Capabilities, ReadySupport, SyncSupport
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle.create import create_noun
+from workcli.lifecycle.defer import defer, undefer
 from workcli.lifecycle.deliver import deliver
 from workcli.lifecycle.discover import discover
 from workcli.lifecycle.park import abandon, park, parked, redispatch
@@ -102,6 +103,8 @@ VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
     "redispatch": redispatch,
     "abandon": abandon,
     "parked": parked,
+    "defer": defer,
+    "undefer": undefer,
     "plan": plan,
     "promote": promote,
     "deliver": deliver,
