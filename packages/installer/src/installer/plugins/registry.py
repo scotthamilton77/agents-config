@@ -4,14 +4,17 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from installer.plugins.base import PluginAdapter
-from installer.plugins.beads import BeadsPlugin
 from installer.plugins.generic import GenericPluginAdapter
 
 # name -> factory for plugins needing behaviour the generic adapter cannot
 # express. A factory is `(name, source_path) -> PluginAdapter` — a concrete
 # class whose __init__ matches that shape satisfies it (typing it as
 # `type[PluginAdapter]` would wrongly imply instantiating the Protocol).
-_SPECIALIZED: dict[str, Callable[[str, Path], PluginAdapter]] = {"beads": BeadsPlugin}
+# Empty since the one plugin that needed it (beads) was archived out of the
+# repo — `discover` never sees a `beads` directory to dispatch. Stays as a
+# named extension point: a future plugin needing bespoke `is_detected`/
+# `routes` registers here.
+_SPECIALIZED: dict[str, Callable[[str, Path], PluginAdapter]] = {}
 
 
 class UnknownPluginError(ValueError):

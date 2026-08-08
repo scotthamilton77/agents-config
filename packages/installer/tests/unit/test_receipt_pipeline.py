@@ -178,7 +178,7 @@ def test_retired_plugin_formula_pruned_via_receipt(tmp_path: Path) -> None:
 def test_active_plugin_shipped_formula_survives_retired_pruned(tmp_path: Path) -> None:
     import hashlib
 
-    from installer.plugins.beads import BeadsPlugin
+    from tests.unit.plugin_double import RoutedPluginDouble
 
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
@@ -186,7 +186,7 @@ def test_active_plugin_shipped_formula_survives_retired_pruned(tmp_path: Path) -
     src = tmp_path / "src" / "plugins" / "beads"
     (src / ".beads" / "formulas").mkdir(parents=True)
     (src / ".beads" / "formulas" / "current.toml").write_bytes(b"shipped\n")
-    beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
+    beads = RoutedPluginDouble(name="beads", source_path=src)
     # on-disk dest holds current.toml AND a retired.toml
     formulas = home / ".beads" / "formulas"
     formulas.mkdir(parents=True)
@@ -241,7 +241,7 @@ def test_active_plugin_missing_route_source_preserves_recorded_files(tmp_path: P
     recorded files. Distinct from a fully *retired* plugin (``plugins=()``), which IS
     pruned via prior-receipt scope (test_retired_plugin_formula_pruned_via_receipt).
     """
-    from installer.plugins.beads import BeadsPlugin
+    from tests.unit.plugin_double import RoutedPluginDouble
 
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
@@ -249,7 +249,7 @@ def test_active_plugin_missing_route_source_preserves_recorded_files(tmp_path: P
     # (source_path exists; the .beads/formulas route source does not).
     src = tmp_path / "src" / "plugins" / "beads"
     src.mkdir(parents=True)
-    beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
+    beads = RoutedPluginDouble(name="beads", source_path=src)
     # On-disk dest still holds a file we installed on a prior run, with our bytes.
     formulas = home / ".beads" / "formulas"
     formulas.mkdir(parents=True)

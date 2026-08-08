@@ -10,9 +10,9 @@ from installer.plugins.base import PluginRoute
 class GenericPluginAdapter:
     """Default `PluginAdapter` for a discovered plugin with no specialized
     class. Auto-detects on its home footprint: `~/.<name>/` present as a
-    directory. A specialized adapter (e.g. beads in F.4) overrides
-    `is_detected` to add probes the generic convention cannot express, such
-    as `shutil.which("bd")`."""
+    directory. A specialized adapter overrides `is_detected` to add probes
+    the generic convention cannot express, such as a PATH lookup — the
+    registry's `_SPECIALIZED` map is the extension point, currently empty."""
 
     name: str
     source_path: Path

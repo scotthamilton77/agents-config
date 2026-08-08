@@ -277,7 +277,7 @@ def sync_routes(
         if not route.source_dir.is_dir():
             continue
         # ``route.glob`` is a trusted, non-recursive, in-repo adapter pattern
-        # (e.g. ``*.toml``/``*.sh`` from ``beads.py``), so the dest needs no
+        # (e.g. a kit file's own name, from ``core/kits.py``), so the dest needs no
         # ``is_safe_relpath`` guard like the tool path: every match is a direct
         # child of ``source_dir`` and ``src.name`` is a pure basename, so
         # ``dest_dir / src.name`` cannot escape ``dest_dir``. A future recursive
@@ -337,8 +337,8 @@ def _install_file(
 
     ``restore_exec_on_skip`` (default ``False``) opts the *skip* path into
     restoring a lost exec bit without a rewrite — route-scoped, since exec-bit
-    restore applies only to plugin routes (e.g. beads scripts). Off for tool files
-    by default; ``sync_routes`` turns it on.
+    restore applies only to plugin routes (e.g. a kit's own executable scripts).
+    Off for tool files by default; ``sync_routes`` turns it on.
 
     A dest already occupied by a non-file (a directory) is rejected with
     `ValueError` rather than crashing the walk with a raw ``IsADirectoryError`` —
