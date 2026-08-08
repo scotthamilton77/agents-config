@@ -62,6 +62,9 @@ carries its own provenance header with it wherever it goes, and git holds the re
 | `writing-skills` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/writing-skills/` | 2026-05-17 | accept-periodic-resync |
 | `writing-skills` | shared | `anthropics/skills @ f458cee` | `skills/skill-creator/` | 2026-05-17 | accept-periodic-resync |
 | `grill-with-docs` | shared | `mattpocock/skills @ ed37663c` | `skills/engineering/grill-with-docs/` | 2026-05-23 | local-fork |
+| `codebase-design` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/codebase-design/` | 2026-08-07 | accept-periodic-resync |
+| `domain-modeling` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/domain-modeling/` | 2026-08-07 | local-fork |
+| `wait-what` | shared | `mattpocock/skills @ 84fdeffd` | `skills/productivity/wait-what/` | 2026-08-07 | accept-periodic-resync |
 | `grilling` | shared | `mattpocock/skills @ ed37663c` | `skills/productivity/grilling/` | 2026-07-24 | local-fork |
 | `to-spec` | shared | `mattpocock/skills @ ed37663c` | `skills/engineering/to-spec/` | 2026-07-24 | local-fork |
 | `handoff` | shared *(see below)* | `mattpocock/skills @ ed37663c` | `skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
@@ -70,7 +73,9 @@ Update this table whenever a skill is added, replaced, retired, or amalgamated f
 
 `Upstream` and `Path in upstream` together fetch the exact reference bytes. `Last sync` is a different fact — when the deployed copy was last reconciled against upstream — so it can legitimately predate the pinned commit, and does for two rows here.
 
-`handoff` is the standing exception to the placement rule: it carries Claude-only front matter but sits in the shared tree, so it stages into Codex, Gemini and OpenCode where those keys do nothing. Deliberate and temporary — `agents-config-9k9.68` resolves it, either with per-tool exemption support or by moving the skill back.
+Claude-only front matter is no longer a reason to leave the shared tree. The installer projects capability keys per target tool at deploy: `disable-model-invocation`, `allowed-tools` and `argument-hint` are kept for Claude and dropped for Codex, Gemini and OpenCode, which have no equivalent to translate onto. `handoff` was the standing exception to the placement rule and is now the ordinary case.
+
+Placement still turns on capability-dependency, but of the skill's *procedure* rather than its front matter. A skill whose steps require a Claude-only mechanism belongs in the Claude tree. So does one whose admission record depends on behaviour the other tools cannot reproduce — dropping a key removes the bytes, not the gap, so a skill that must not fire unprompted is still model-invocable wherever the flag is unsupported.
 
 ## Common pitfall — extracted helpers must be wired in
 

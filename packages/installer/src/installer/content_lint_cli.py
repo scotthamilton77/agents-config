@@ -18,7 +18,11 @@ from installer.core.content_lint import ContentLintResult, lint_content
 from installer.core.io_port import TerminalIO
 from installer.core.merge.base import CollisionError
 from installer.core.merge.registry import UnknownMergeKeyError
-from installer.core.surface_budget import ALWAYS_ON_TOKEN_CAP, SKILL_BODY_TOKEN_CAP
+from installer.core.surface_budget import (
+    ALWAYS_ON_TOKEN_CAP,
+    SKILL_BODY_TOKEN_CAP,
+    USER_INVOKED_SKILL_BODY_TOKEN_CAP,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -50,9 +54,18 @@ def _report_budgets(result: ContentLintResult) -> None:
     # because it is the only thing distinguishing two entries whose origin the
     # staging plan never recorded: those are keyed per tool and so share a
     # printed location.
-    sys.stdout.write(f"content-lint: admitted skill bodies (cap {SKILL_BODY_TOKEN_CAP} tokens)\n")
+    #
+    # Each line also carries its own cap rather than inheriting the header's:
+    # with a looser ceiling for user-invoked skills, one header number would say
+    # nothing about the headroom on the lines it does not apply to.
+    sys.stdout.write(
+        f"content-lint: admitted skill bodies (cap {SKILL_BODY_TOKEN_CAP} tokens, "
+        f"{USER_INVOKED_SKILL_BODY_TOKEN_CAP} when user-invoked)\n"
+    )
     for body in result.skills:
-        sys.stdout.write(f"  {body.tokens:>6} tokens  {body.where}  [{', '.join(body.tools)}]\n")
+        sys.stdout.write(
+            f"  {body.tokens:>6} / {body.cap:<5} tokens  {body.where}  [{', '.join(body.tools)}]\n"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
