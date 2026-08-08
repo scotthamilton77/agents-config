@@ -12,8 +12,9 @@ Source: skills/engineering/domain-modeling/
 Upstream: https://github.com/mattpocock/skills @ 84fdeffd12f2ee307994d1eb6feb48173b6e0502
 Last sync: 2026-08-07
 Drift policy: local-fork — CONTEXT-FORMAT.md carries local additions, do not re-sync it
-Note: SKILL.md and ADR-FORMAT.md are byte-identical to the pinned commit apart from
-this header and the admission record. CONTEXT-FORMAT.md is a local superset (relationships,
+Note: ADR-FORMAT.md is byte-identical to the pinned commit. SKILL.md is too, once this
+header and the admission record are stripped — they are the only local additions to it, and
+the installer strips both at deploy. CONTEXT-FORMAT.md is a local superset (relationships,
 example dialogue, flagged ambiguities) carried over from grill-with-docs, which inlined
 this skill's content until 2026-08-07; a blind resync would revert those sections.
 -->

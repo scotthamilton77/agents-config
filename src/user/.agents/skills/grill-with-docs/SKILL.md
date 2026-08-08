@@ -31,7 +31,7 @@ If a question can be answered by exploring the codebase, explore the codebase in
 
 What separates this session from a plain grilling is that it maintains the project's domain model as it goes, and the `domain-modeling` skill carries the mechanics for that: where the glossary and the decision records live in single- and multi-context repos, how to challenge a stated term against the recorded one, how to sharpen fuzzy language into a canonical term, and the three-part test a decision must pass before it earns an ADR.
 
-**Invoke `domain-modeling` at the start of codebase exploration, before the first interview question.** Glossary entries and ADRs get written the moment a term or a decision crystallises rather than batched at the end, so the mechanics have to be in hand before the interview begins — not fetched partway through an answer.
+**Invoke `domain-modeling` before you ask the first interview question.** Glossary entries and ADRs get written the moment a term or a decision crystallises rather than batched at the end, so the mechanics have to be in hand before the interview begins — not fetched partway through an answer.
 
 ## Exit criterion
 
