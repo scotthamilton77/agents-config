@@ -71,9 +71,28 @@ but the full gate must pass before push.
 
 ## Do not run the installer automatically
 
-Never invoke `scripts/install.sh` or `scripts/install.py` to "try it out" —
-only the user runs the installer, and only when they explicitly ask. The gate's
-`install.py --help` entry-verify is the only sanctioned automatic invocation.
+Only the user runs the installer, and only when they explicitly ask. The
+prohibition is on the act of deploying, not on the names of the entry points,
+so it covers `scripts/install.sh`, `scripts/install.py`,
+`python -m installer`, `installer.cli.main()`, `install_pipeline`, anything
+reaching `core.clis`, and any route added after this paragraph was written.
+Deploying writes into the user's home directory and mutates their system-wide
+`uv` tooling, so there is no such thing as a harmless trial run to "try it
+out".
+
+The gate's entry-verify is the sanctioned exception: `--help` on both entry
+points, `scripts/install.py` and `python -m installer`. It parses the argument
+table and exits before anything is staged.
+
+To observe install behaviour instead, inject every seam. `main()` takes `home`,
+`repo_root`, `io` and `cli_deploy`, and each one silently defaults to the real
+thing — `home` to `Path.home()`, `repo_root` to this repository, `cli_deploy`
+to the live `uv tool install` subprocess port. A partial injection is the more
+dangerous mistake, because it looks contained and is not: faking `cli_deploy`
+alone stops the `uv` mutation and still lets the file-deploy half write into
+the live `~/.claude/`, and `--dry-run` is a suppression inside the run rather
+than a boundary around it. `tests/unit/test_cli_deploy_wiring.py` is the
+worked example of a full hermetic call with all four seams supplied.
 
 ## Reference
 

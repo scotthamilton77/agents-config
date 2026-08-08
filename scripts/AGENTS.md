@@ -14,6 +14,10 @@ directory holds only thin entry points into it.
   the installer + beads on a fresh machine.
 
 All installer behaviour, design principles, and the mandatory quality gate are
-documented in `packages/installer/AGENTS.md`. Never run any of these scripts
-automatically — only the user runs the installer, and only when they explicitly
-ask.
+documented in `packages/installer/AGENTS.md`, along with the prohibition on
+running the installer automatically and the sanctioned way to observe its
+behaviour without deploying. Only the user runs the installer, and only when
+they explicitly ask. That prohibition is on the act of deploying rather than on
+the files in this directory, so picking a different route into it does not
+escape it — the `python -m installer` form noted above is the same act as
+`install.sh`.
