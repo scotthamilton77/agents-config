@@ -96,7 +96,15 @@ def test_protocol_wire_value_is_pinned() -> None:
     # result was acting on a false negative. What changes is the answer, not
     # its shape, and a wider true answer is what the verb always claimed to
     # give.
-    assert PROTOCOL_VERSION == "1.8"
+    #
+    # 1.9 adds `acceptance` to every read item -- the criteria a claim on the
+    # item is checked against, which the write path has always stored and no
+    # read could return. A new key on an existing object is the same additive
+    # case as `track` in 1.1: nothing an existing consumer reads changes value
+    # or shape, and one that ignores the key sees exactly what it saw before.
+    # The field is always present, `null` where the item has none, so the
+    # answer never arrives as a missing key a consumer would have to interpret.
+    assert PROTOCOL_VERSION == "1.9"
 
 
 def test_the_readme_states_the_protocol_version_the_code_emits() -> None:

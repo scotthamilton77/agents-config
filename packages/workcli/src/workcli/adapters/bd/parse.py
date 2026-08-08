@@ -256,6 +256,27 @@ def _string_field(
     return str(value)
 
 
+def _optional_string_field(raw: dict[str, JsonValue], key: str, item_id: str) -> str | None:
+    """Return `raw[key]` as a `str`, or `None` where the backend reports nothing.
+
+    The opposite discipline to `_string_field`, and for a field the normalized
+    model types as optional: absence is an answer here, not a gap. bd omits any
+    key whose value is empty, so an absent key, an explicit `null` and `""` are
+    one answer arriving three ways -- all normalize to `None`, because
+    publishing three spellings of "none" would make every consumer handle each.
+    A non-string value is still drift: the model types this as text.
+    """
+    value = raw.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise _drift(
+            f"the backend returned an item whose {key} field is not a string",
+            {"reason": "unexpected_field_type", "field": key, "id": item_id},
+        )
+    return value or None
+
+
 def _string_list_field(raw: dict[str, JsonValue], key: str, item_id: str) -> list[str]:
     """Return `raw[key]` as a `list[str]`, alarming on any non-string element.
 
@@ -368,6 +389,11 @@ def parse_item(raw: dict[str, JsonValue], *, unknown: frozenset[str] = frozenset
         notes=_string_field(raw, "notes", item_id, default=""),
         created=str(raw["created_at"]) if raw.get("created_at") is not None else None,
         updated=str(raw["updated_at"]) if raw.get("updated_at") is not None else None,
+        # Every read command carries this field (captured from bd 1.0.3
+        # against an isolated scratch install: show, list, ready and search
+        # all report it), so no read has to declare it unavailable the way
+        # the relationships below are declared -- see `_UNKNOWN_RELATIONS`.
+        acceptance=_optional_string_field(raw, "acceptance_criteria", item_id),
         # An unanswerable relationship is empty here AND travels declared, so
         # neither layer can mistake it for an answer: in-package callers reading
         # the Item see nothing to misread, and the verb layer drops the field

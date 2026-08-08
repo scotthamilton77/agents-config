@@ -18,9 +18,10 @@ Fidelity choices that matter for recovery correctness:
   regression that trusts a query result's children is caught rather than
   masked. A fake that answered any of these from its own complete state would
   hide exactly the class of defect this seam exists to catch.
-- `Item` is frozen and carries no `acceptance` field, so `get()` rebuilds a
-  fresh snapshot per read, and acceptance -- which bd stores but the normalized
-  Item drops -- is exposed for assertions via `acceptance_of()`.
+- `Item` is frozen, so `get()` rebuilds a fresh snapshot per read. The record
+  holds acceptance the way bd stores it (`""` for an item that has none) and
+  the snapshot collapses that to `None`, exactly as the parser does;
+  `acceptance_of()` reads the stored text for write-path assertions.
 
 `add()`/`acceptance_of()`/`note_lines()` are test-facing scaffolding, not part
 of the `Backend` protocol; structural conformance to `Backend` is enforced by
@@ -146,6 +147,9 @@ class FakeBackend:
             notes=rec.notes,
             created=None,
             updated=None,
+            # Stored as the backend stores it, reported as the parser reports
+            # it: no criteria is `None` on the way out, never `""`.
+            acceptance=rec.acceptance or None,
             unknown_relations=unknown,
         )
 

@@ -30,6 +30,7 @@ def _item(**overrides: object) -> Item:
         notes="",
         created=None,
         updated=None,
+        acceptance=None,
     )
     base.update(overrides)
     return Item(**base)  # type: ignore[arg-type]
