@@ -14,7 +14,6 @@ on the `impl-placeholder` label's absence.
 from __future__ import annotations
 
 from argparse import Namespace
-from typing import cast
 
 from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
@@ -27,7 +26,7 @@ from workcli.lifecycle import (
     manifest_snapshot,
     spec_path,
 )
-from workcli.lifecycle.closewalk import close_walk
+from workcli.lifecycle.closewalk import close_walk, walk_payload
 from workcli.lifecycle.manifest import Manifest, parse_continuations, serialize_manifest
 from workcli.lifecycle.nouns import (
     CREATING_SPEC_LABEL,
@@ -189,14 +188,14 @@ def _leaf_evidence(backend: Backend, args: Namespace) -> str:
 def _walked_leaf_result(backend: Backend, item_id: str) -> JsonValue:
     """Close-walk from a closed leaf, then the leaf's `closed` envelope.
 
-    Same walk as `work close`: delivering the last open leaf
-    of a container closes the container -- this module's long-standing
-    "closes via close-walk" promise, now code.
+    Same walk as `work close` -- one implementation, so a parent held on one
+    path is held on the other: delivering the last open leaf of a container
+    closes the container (this module's long-standing "closes via close-walk"
+    promise, now code), and a parent carrying scope of its own is reported
+    held instead.
     """
-    walked = close_walk(backend, [item_id])
     result: dict[str, JsonValue] = {"id": item_id, "status": "closed"}
-    if walked:
-        result["walked"] = cast("list[JsonValue]", list(walked))
+    result.update(walk_payload(close_walk(backend, [item_id])))
     return result
 
 
