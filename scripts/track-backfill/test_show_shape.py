@@ -12,6 +12,7 @@ default that MOVED between protocol versions, read by a script that does not
 control which version it gets.
 """
 
+import pathlib
 import unittest
 from unittest import mock
 
@@ -38,7 +39,7 @@ _NOT_FOUND = {
 class TestShowReadsBothShapes(unittest.TestCase):
     def _shown(self, envelope, **kwargs):
         with mock.patch.object(context, "work", return_value=envelope) as ran:
-            got = context.show("/repo", "agents-config-x1", **kwargs)
+            got = context.show(pathlib.Path("/repo"), "agents-config-x1", **kwargs)
         self.assertEqual(ran.call_args.args[1:], ("show", "agents-config-x1"))
         return got
 
