@@ -107,7 +107,7 @@ def test_clean_tree_passes_and_still_reports_its_numbers(tmp_path: Path) -> None
 
     assert result.ok
     assert result.violations == []
-    assert [b.tokens for b in result.skills if b.where.endswith("skills/tidy")]
+    assert [b.tokens for b in result.skills if b.where.endswith("skills/tidy/SKILL.md")]
     assert all(s.tokens > 0 for s in result.surfaces)
 
 
@@ -391,7 +391,9 @@ def test_record_less_artifact_under_src_user_is_fatal(tmp_path: Path) -> None:
 
     assert not result.ok
     assert result.violations == []  # the failure is the omission, not a gate breach
-    assert [u.source.name for u in result.fatal_unadmitted] == ["orphan"]
+    assert [str(u.source.relative_to(repo)) for u in result.fatal_unadmitted] == [
+        "src/user/.agents/skills/orphan/SKILL.md"
+    ]
 
 
 def test_record_less_plugin_rule_is_reported_but_not_fatal(tmp_path: Path) -> None:
@@ -636,3 +638,31 @@ def test_a_carrier_supplied_entry_file_is_blamed_on_the_plugin_that_supplied_it(
     supplier = repo / "src/plugins/p/.agents/skills/foo/SKILL.md"
     assert [u.source for u in result.unadmitted] == [supplier]
     assert result.fatal_unadmitted == []  # src/plugins is reported, not fatal
+
+
+def test_a_finding_on_an_ordinary_skill_names_its_entry_file(tmp_path: Path) -> None:
+    """The bar reads a directory item's record out of its entry file, so that file
+    is what a finding has to name: it is the one the reader edits, and it is the
+    one whose bytes were judged. Naming the directory reports at a coarser grain
+    than the plan knows — and disagrees with the entry file arriving through the
+    override channel, which names the contributing file exactly.
+
+    """
+    both = "---\nadmission:\n  prevents: p\n  provides: q\n  cost: c\n  remove_when: r\n---\nb\n"
+    repo = _repo(tmp_path, skills={"confused": both})
+    result = _lint(repo)
+
+    assert len(result.violations) == 1
+    assert str(repo / "src/user/.agents/skills/confused/SKILL.md") in result.violations[0]
+
+
+def test_an_admitted_skill_is_weighed_under_the_file_that_was_weighed(
+    tmp_path: Path,
+) -> None:
+    """The trend report answers the same identity question as the findings, so it
+    gets the same answer: the number is the entry file's body, so the entry file is
+    what the line names."""
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "a short body\n"})
+    result = _lint(repo)
+
+    assert [b.where for b in result.skills] == [str(repo / "src/user/.agents/skills/tidy/SKILL.md")]

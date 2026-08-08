@@ -155,8 +155,16 @@ def _record_bearers(item: StagedItem, overrides: dict[Path, Contribution]) -> li
     the entry, or a plugin extension patching it) or from the source tree. The
     override wins, because those are the bytes that reach disk.
 
-    A directory with no readable entry file bears no record and is reported
-    against the directory itself, which is the only thing there is to name.
+    Either way the bearer names the **entry file**, never the directory holding
+    it. A contribution's ``source_path`` is where its bytes came from, and the
+    bytes here are the entry file's; naming the directory would report a grain
+    coarser than the one that was read, send a reader to something they cannot
+    edit, and answer differently for the two routes to identical bytes.
+
+    A directory with no readable entry file is the one case where the directory
+    is the right answer, and it is returned as no bearer at all — there is no
+    file to name because there is no file, which the caller reports against the
+    directory itself.
     """
     if item.content is not None:
         return list(contributions_of(item))
@@ -164,9 +172,11 @@ def _record_bearers(item: StagedItem, overrides: dict[Path, Contribution]) -> li
     if entry is not None:
         return [entry]
     text = entry_file_text(item)
-    return (
-        [Contribution(source_path=item.source_path, content=text.encode("utf-8"))] if text else []
-    )
+    if not text:
+        return []
+    return [
+        Contribution(source_path=item.source_path / DIR_RECORD_FILE, content=text.encode("utf-8"))
+    ]
 
 
 @dataclass(frozen=True, slots=True)
