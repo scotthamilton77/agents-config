@@ -76,11 +76,11 @@ you are judging a test double or a skip.
 
 - [ ] Fakes preferred to stubs, stubs to spies, spies to mocks
 - [ ] Every mock carries a one-sentence justification for existing
-- [ ] Mock data mirrors the complete real schema — a partial mock hides the
-      field downstream code will reach for
-- [ ] Nothing the unit under test owns is mocked
-- [ ] Mocked side effects are understood; no doubling "to be safe"
-- [ ] Five or more mocks in one test — the finding is against the production
+- [ ] A double's data mirrors the complete real schema — a partial double
+      hides the field downstream code will reach for
+- [ ] Nothing the unit under test owns is doubled
+- [ ] Doubled side effects are understood; nothing is doubled "to be safe"
+- [ ] Five or more doubles in one test — the finding is against the production
       code, not the test
 
 ### Isolation and structure
@@ -114,7 +114,7 @@ you are judging a test double or a skip.
 These say the design is the problem. Reporting them as test defects sends the
 author to fix the wrong file.
 
-- Five or more dependencies must be mocked to reach the code
+- Five or more dependencies need test doubles to reach the code
 - Setup exceeds twenty lines of configuration
 - The function under test has ten or more conditionals or early returns
 - Behaviour can only be verified by asserting on internal calls
@@ -140,12 +140,12 @@ and a concrete fix.
 
 | Smell | Signal | Fix |
 |---|---|---|
-| Asserting on a double | The assertion checks a mock is present | Unmock it, or assert on real behaviour |
+| Asserting on a double | The assertion checks a double is present | Drop the double, or assert on real behaviour |
 | Implementation testing | A "was called with" assertion is the main one | Assert on output or state |
 | Tautology | Expected value restates the implementation | Independent literal, worked example, or delete |
 | Test-only production method | The method has no caller outside tests | Move it to test utilities |
-| Partial mock | Response object omits fields real callers read | Mirror the complete schema |
-| Over-mocking | Five or more mocks; setup outweighs the test | Refactor the production code |
+| Partial double | Response object omits fields real callers read | Mirror the complete schema |
+| Too many doubles | Five or more doubles; setup outweighs the test | Refactor the production code |
 | Shared mutable state | Tests fail in isolation or in a different order | Fresh state per test |
 | Mystery skip | A skip with no reason or tracking reference | Document it or delete it |
 | Copy-paste tests | Near-identical blocks, one parameter apart | Parameterise |

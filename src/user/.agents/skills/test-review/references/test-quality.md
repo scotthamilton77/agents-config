@@ -9,7 +9,7 @@ one someone else wrote.
 - [The one question](#the-one-question) — the tautology filter
 - [Behaviour versus implementation](#behaviour-versus-implementation)
 - [Test doubles](#test-doubles) — fake over stub over spy over mock
-- [Where to mock, and how to design for it](#where-to-mock-and-how-to-design-for-it)
+- [Where doubles belong, and how to design for them](#where-doubles-belong-and-how-to-design-for-them)
 - [Refusal criteria](#refusal-criteria) — when not to write the test at all
 - [Skip hygiene](#skip-hygiene)
 - [Worked examples](#worked-examples)
@@ -95,19 +95,20 @@ A mock asserts on *how*, which is the thing a test is supposed not to care
 about. Every mock in a test needs a one-sentence justification for why nothing
 above it in the table would do.
 
-**Mock the complete structure, not the fields your test happens to read.** A
-partial mock hides a structural assumption: downstream code reaches for a field
-you omitted, the test passes, and the integration fails. If you are mocking a
-response, you are claiming to understand the whole response.
+**Mirror the complete structure, not the fields your test happens to read.** A
+partial double hides a structural assumption: downstream code reaches for a
+field you omitted, the test passes, and the integration fails. If your double
+returns a response, you are claiming to understand the whole response.
 
-## Where to mock, and how to design for it
+## Where doubles belong, and how to design for them
 
-Mock at **system boundaries** only: external APIs, time, randomness, sometimes
-the filesystem, sometimes the database — though a real test database usually
-beats mocking one.
+Substitute at **system boundaries** only: external APIs, time, randomness,
+sometimes the filesystem, sometimes the database — though a real test database
+usually beats doubling one.
 
-Do not mock your own classes, internal collaborators, or anything you control.
-Mocking something you own is a design signal, not a testing technique.
+Do not double your own classes, internal collaborators, or anything you
+control. Substituting something you own is a design signal, not a testing
+technique.
 
 Two habits make a boundary easy to double:
 
@@ -124,7 +125,7 @@ which is a second implementation you now have to debug.
 
 **Refuse to write the test** when any of these hold:
 
-- The function needs **five or more** dependencies mocked
+- The function needs test doubles for **five or more** dependencies
 - The function has ten or more conditionals or early returns
 - Test setup would exceed twenty lines of double configuration
 - You would be asserting "did method X get called" rather than "did it produce
@@ -135,7 +136,7 @@ which is a second implementation you now have to debug.
 **Say so, in these terms:** "This code is not testable in its current form.
 Let us decompose it into smaller units first, then test each one simply."
 
-Five is the line in both directions: five mocks is where a test stops being
+Five is the line in both directions: five doubles is where a test stops being
 worth writing, and it is also the point at which the *production* code, not the
 test, is what needs to change.
 
@@ -145,7 +146,7 @@ If a constraint forbids the refactor — a separate ticket, a frozen API, a
 pending review — and the code meets a refusal criterion:
 
 1. **Do not ship anti-pattern tests to satisfy a coverage gate.** Coverage from
-   a mock forest is theatre. It cements the design and buys permanent
+   a forest of doubles is theatre. It cements the design and buys permanent
    maintenance cost.
 2. **Escalate.** File the blocker, ask for the refactor to be unblocked, or get
    an explicit waiver from whoever owns the code.
