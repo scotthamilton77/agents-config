@@ -28,7 +28,7 @@ change.
 | `work note ID TEXT` | append-only |
 | `work close IDS... [--disposition TEXT]` | disposition = one appended note per id |
 | `work reopen ID` | — |
-| `work list [--status S] [--label L] [--parent ID] [--type T] [--limit N]` | unbounded unless `--limit` |
+| `work list [--status S] [--label L] [--parent ID] [--type T] [--limit N]` | every status, closed included, and unbounded — `--status` and `--limit` are the only things that narrow either axis |
 | `work ready [--label L]` | unbounded |
 | `work dep {add,remove,list} ID [TARGET] [--type blocks]` | `dep add A B` = A depends on B |
 | `work label {add,remove,list} ID [LABELS...]` | multi-label in one call |
@@ -96,7 +96,7 @@ quote are criteria the replacement never reached. Once work has started the
 call additionally requires `--why`, which lands on the marker line beside the
 status the item was in. Setting the criteria already in force writes nothing.
 
-Protocol is `"1.12"` — additive-only bumps (new `ErrorCode` members, the
+Protocol is `"1.13"` — additive-only bumps (new `ErrorCode` members, the
 derived `Item.track` field and the `acceptance` field beside it, the
 capability-disposition model, `partial_progress` detail below, `search`'s
 optional narrowing flags, the close-walk's `held` key, the `defer`/`undefer`
@@ -112,7 +112,14 @@ named. 1.11 widens again, mildly: `status` can report `deferred` on an item
 the facade itself set aside, a value the backend always could hold and this
 contract always declared. 1.12 adds `acceptance set`, whose only visible mark
 on an existing shape is a facade-authored marker line in `notes`, beside the
-ones the park family and the `defer`/`undefer` pair already write.
+ones the park family and the `defer`/`undefer` pair already write. 1.13 is
+1.8's case again, on `list`: a listing used to carry whatever statuses the
+backend returned unasked, which was live work only, so an id that exists
+could be absent from a complete-looking listing. It now carries every
+status, closed included, and `--status` is the only thing that narrows it.
+`ready` is unchanged — it answers the queue question, where closed work has
+no place, and a caller wanting the queue view of a listing asks
+`list --status open` for it.
 `Capabilities` splits `ready` and `sync` into a `ReadySupport`/
 `SyncSupport` disposition each (`NATIVE` | `EMULATED`/`SERVER_AUTHORITATIVE`
 | `UNSUPPORTED`) instead of a single boolean, and `dep` gates only typed
@@ -148,13 +155,13 @@ second, human-readable rendering on stderr.
 Success:
 
 ```json
-{"protocol": "1.12", "ok": true, "data": {"id": "x.1", "title": "..."}, "error": null}
+{"protocol": "1.13", "ok": true, "data": {"id": "x.1", "title": "..."}, "error": null}
 ```
 
 Failure:
 
 ```json
-{"protocol": "1.12", "ok": false, "data": null,
+{"protocol": "1.13", "ok": false, "data": null,
  "error": {"code": "E_TYPE_WALL", "message": "blocks: epic may not block task",
            "detail": {"from": "x.1", "to": "y.1", "dep_type": "blocks"}}}
 ```
@@ -188,7 +195,7 @@ component; refuse to run against a mismatched facade rather than risk
 mis-parsing mid-run:
 
 ```json
-{"protocol": "1.12", "ok": true, "data": {"protocol": "1.12"}, "error": null}
+{"protocol": "1.13", "ok": true, "data": {"protocol": "1.13"}, "error": null}
 ```
 
 Every other verb's envelope carries the same `protocol` field at the top
@@ -226,7 +233,7 @@ are the same value, always.
 - `sync` → `{"synced": ..., "mode": "push" | "pull" | "noop"}`. `"noop"` is
   reserved for server-authoritative backends (the CLI contract spec §6's
   declared no-op); the bd adapter only ever emits `"push"` or `"pull"`.
-- `--protocol-version` → `{"protocol": "1.12"}`.
+- `--protocol-version` → `{"protocol": "1.13"}`.
 
 Human-readable output is opt-in only (`--format human`): it renders the
 envelope's `data` (or `error`) to **stderr**, for direct human use at a

@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 
 from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
-from workcli.model import Item, QueryFilters
+from workcli.model import Item, QueryFilters, not_closed
 
 PARKED_LABEL = "parked"
 PARKED_MARKER = "[work] parked"  # full: "[work] parked <ISO-8601> <code>: <text>"
@@ -237,8 +237,13 @@ def _read_parked_items(backend: Backend) -> list[Item]:
     re-read via one `batch_get` -- the same re-get seam `reconcile` uses on
     its candidates. Reads only; a caller of either surface issues no write on
     account of it (S9T1-P2).
+
+    A listing answers every status, so the handle alone is not the parked
+    set: an item can be closed with the label still on it, and closed work is
+    not stuck work. Nothing would ever clear such a row from the report,
+    which is the whole thing the report is for.
     """
-    lean = backend.query(QueryFilters(label=PARKED_LABEL))
+    lean = not_closed(backend.query(QueryFilters(label=PARKED_LABEL)))
     return backend.batch_get([entry.id for entry in lean])
 
 

@@ -77,7 +77,7 @@ def test_claim_on_open_unblocked_leaf_sends_claim_and_returns_in_progress():
     assert runner.calls == [
         ("show", "x.1", "--json"),
         ("ready", "--json", "--limit", "0"),
-        ("list", "--json", "--label", "parked", "--limit", "0"),
+        ("list", "--json", "--all", "--label", "parked", "--limit", "0"),
         ("update", "x.1", "--claim"),
     ]
 
@@ -159,7 +159,7 @@ def test_claim_on_already_in_progress_is_a_noop_with_no_claim_call():
     assert envelope["data"] == {"id": "x.1", "status": "in_progress", "parked_stale": []}
     assert runner.calls == [
         ("show", "x.1", "--json"),
-        ("list", "--json", "--label", "parked", "--limit", "0"),
+        ("list", "--json", "--all", "--label", "parked", "--limit", "0"),
     ]
     assert not any(call[:1] == ("update",) for call in runner.calls)
 
