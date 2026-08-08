@@ -1,7 +1,7 @@
 """build_plan Phase 2 marks shared skills/agents DIR items as carrier dirs.
 
 The ``shared_carrier`` flag is the in-memory replacement for the bash
-``.carrier-from-user-shared`` sentinel file (scripts/install.sh:517-529): it
+``.carrier-from-user-shared`` sentinel file: it
 records that a skills/agents directory was first staged from the shared carrier
 tree, so the Phase 6 plugin overlay can distinguish an allowed carrier-merge
 from a forbidden plugin-plugin directory collision. These tests pin *where*

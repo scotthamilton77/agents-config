@@ -2,7 +2,7 @@
 
 Each test pins a behaviour the B.4 story contract requires
 (docs/specs/2026-05-31-w1qls.2.4-dynamic-include-file-form.md). The behavioural
-reference is the bash installer's flatten_agents_md (scripts/install.sh).
+reference is the bash installer's flatten_agents_md.
 """
 
 from __future__ import annotations

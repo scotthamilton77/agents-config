@@ -75,7 +75,8 @@ def test_build_plan_stages_hooks_namespace_with_exec_bit(
     tmp_path: Path, ignore: InstallIgnore
 ) -> None:
     """The Claude installer stages src/user/.claude/hooks/ -> hooks/ and preserves
-    the +x bit on hook scripts (8.7 parity with install.sh's hooks/ support)."""
+    the +x bit on hook scripts (8.7 parity with the bash installer's hooks/
+    support)."""
     repo = _make_repo(tmp_path)
     plan = build_plan(ClaudeAdapter(), repo_root=repo, ignore=ignore)
     assert Path("hooks/ruff-postedit.py") in plan.items

@@ -1,13 +1,13 @@
 """Unit tests for installer.core.summary.render_summary (8.18 — install summary).
 
-The renderer is the in-memory port of the bash install Summary
-(``scripts/install.sh:1801-1869``). It is pure: it takes the per-target merged
-``Counters``, the active tool/plugin lists, the ALL_* universes, and a verbose
-flag, and emits through the injected ``IOPort``. These tests drive it with
+The renderer is the in-memory port of the bash install Summary. It is pure: it
+takes the per-target merged ``Counters``, the active tool/plugin lists, the ALL_*
+universes, and a verbose flag, and emits through the injected ``IOPort``. These
+tests drive it with
 ``ScriptedIO`` and assert the recorded transcript STRINGS and the per-target
 grouping decisions — never which method fired, and never a Counters default.
 
-Covered decisions (bash spec line refs in each test):
+Covered decisions:
 - verbose per-tool block with the six fields in bash order,
 - the DIM '(not detected, skipped)' footer for an ALL_* target absent from the
   active/report set,
@@ -35,7 +35,7 @@ def test_verbose_block_lists_six_fields_in_bash_order() -> None:
     skipped spread, under verbose
     When render_summary runs
     Then its block lists the six fields in EXACT bash order — Installed, Updated,
-    Merged, Backed up, Pruned, Skipped (scripts/install.sh:1820-1825) — with
+    Merged, Backed up, Pruned, Skipped — with
     'Installed' sourced from Counters.created.
     """
     io = ScriptedIO()
@@ -72,8 +72,7 @@ def test_verbose_names_the_target_in_its_block_header() -> None:
     """
     Given an active tool, under verbose
     When render_summary runs
-    Then a header naming the tool ('-- claude --') is emitted before its fields
-    (scripts/install.sh:1819).
+    Then a header naming the tool ('-- claude --') is emitted before its fields.
     """
     io = ScriptedIO()
     render_summary(
@@ -95,7 +94,7 @@ def test_verbose_emits_not_detected_footer_for_inactive_all_tool() -> None:
     Given ALL_TOOLS={claude,codex} but only claude active, under verbose
     When render_summary runs
     Then a DIM '-- codex (not detected, skipped) --' footer is emitted for the
-    inactive tool (scripts/install.sh:1832-1834) and claude gets a real block.
+    inactive tool, and claude gets a real block.
     """
     io = ScriptedIO()
     render_summary(
@@ -120,8 +119,8 @@ def test_verbose_plugin_pruned_outside_active_set_gets_real_block_not_footer() -
     verbose
     When render_summary runs
     Then beads gets a real '-- beads --' block (its pruned tally), NOT a
-    '(not detected, skipped)' footer — bash AC#19 (scripts/install.sh:1808-1812,
-    keyed off REPORT_TARGETS so it is not double-printed).
+    '(not detected, skipped)' footer — bash AC#19, keyed off REPORT_TARGETS so it
+    is not double-printed.
     """
     io = ScriptedIO()
     render_summary(
@@ -146,7 +145,7 @@ def test_quiet_one_line_per_nonzero_target() -> None:
     under quiet (verbose=False)
     When render_summary runs
     Then claude gets a one-line summary naming its non-zero parts and codex is
-    omitted (scripts/install.sh:1847-1858).
+    omitted.
     """
     io = ScriptedIO()
     render_summary(
@@ -170,7 +169,7 @@ def test_quiet_all_zero_prints_up_to_date_em_dash_line() -> None:
     Given every active target all-zero (only skips), under quiet
     When render_summary runs
     Then it prints exactly 'All files up to date — no changes made.' (note the
-    em-dash) and no per-target lines (scripts/install.sh:1862-1863).
+    em-dash) and no per-target lines.
     """
     io = ScriptedIO()
     render_summary(
@@ -193,9 +192,9 @@ def test_quiet_skipped_is_not_a_change_but_verbose_still_prints_the_block() -> N
     Given an all-skips target, comparing quiet vs verbose
     When render_summary runs each way
     Then quiet omits it from the per-target lines (skips are not 'changes':
-    installed+updated+merged+pruned == 0, scripts/install.sh:1848) BUT verbose
-    still prints its full all-but-skipped block (scripts/install.sh:1818 iterates
-    every REPORT_TARGET regardless of activity).
+    installed+updated+merged+pruned == 0) BUT verbose still prints its full
+    all-but-skipped block — bash iterates every REPORT_TARGET regardless of
+    activity.
     """
     counters = {"claude": Counters(skipped=7)}
 
@@ -231,7 +230,7 @@ def test_quiet_reports_pruned_and_backed_up_parts() -> None:
     Given a target whose only activity is a prune (pruned + backed_up), under quiet
     When render_summary runs
     Then its one-line summary names 'pruned' and 'backed up' (pruned counts as a
-    change; scripts/install.sh:1855-1856) so a --prune run surfaces in the quiet
+    change) so a --prune run surfaces in the quiet
     summary.
     """
     io = ScriptedIO()
@@ -254,7 +253,7 @@ def test_verbose_summary_header_is_dash_wrapped_with_leading_blank() -> None:
     Given any verbose run
     When render_summary runs
     Then the 'Summary' header byte-matches bash header() — wrapped '-- Summary --'
-    (NOT bare 'Summary') and preceded by a blank line (scripts/install.sh:162,1816).
+    (NOT bare 'Summary') and preceded by a blank line.
     A bare 'Summary' or a missing leading blank is a parity regression.
     """
     io = ScriptedIO()
@@ -281,7 +280,7 @@ def test_verbose_block_and_footer_headers_are_dash_wrapped_with_leading_blank() 
     When render_summary runs
     Then each per-tool block header and each '(not detected, skipped)' footer is
     '-- ... --' wrapped and immediately preceded by a blank line, byte-matching
-    bash's leading-'\\n' printf (scripts/install.sh:1819,1833).
+    bash's leading-'\\n' printf.
     """
     io = ScriptedIO()
     render_summary(
@@ -307,7 +306,7 @@ def test_verbose_emits_blank_line_before_done() -> None:
     Given any verbose run
     When render_summary runs
     Then the final 'Done.' is immediately preceded by a blank line, matching
-    bash's ``echo ""`` before ``ok "Done."`` (scripts/install.sh:1844-1845).
+    bash's ``echo ""`` before ``ok "Done."``.
     """
     io = ScriptedIO()
     render_summary(
@@ -330,7 +329,7 @@ def test_quiet_emits_blank_line_before_outcome() -> None:
     Given a quiet run that changed nothing
     When render_summary runs
     Then a blank line precedes the 'up to date' line, matching bash's ``echo ""``
-    ahead of the quiet outcome branch (scripts/install.sh:1859).
+    ahead of the quiet outcome branch.
     """
     io = ScriptedIO()
     render_summary(

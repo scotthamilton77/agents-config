@@ -1,8 +1,8 @@
 """sync_plan unions a staged settings.json with the user's existing dest file.
 
-Ports the bash installer's ``sync_settings_file`` (``scripts/install.sh:1268-1335``):
-a settings.json install is not a blind overwrite — the staged template is
-union-merged into the user's current file so user values survive. A blind
+Ports the bash installer's ``sync_settings_file``: a settings.json install is not
+a blind overwrite — the staged template is union-merged into the user's current
+file so user values survive. A blind
 overwrite would leave the user's keys only in the backup; these tests pin the
 union semantics.
 """
@@ -82,7 +82,7 @@ def test_sync_settings_union_over_existing_counts_merged_not_updated(tmp_path: P
     """A settings.json union that changes an existing user file is tallied as a
     *merge*, not a plain update — bash increments ``tool_merged`` (not
     ``tool_updated``) when ``sync_settings_file`` applies a changed union over an
-    existing dest (``scripts/install.sh:1366``). The 'Merged' summary line counts
+    existing dest. The 'Merged' summary line counts
     exactly these. Pins: the changed-existing settings path increments
     ``Counters.merged`` and leaves created/updated at zero. Fails while the merge
     path tallies through ``_record_write`` (created/updated) and ``merged`` stays 0."""
@@ -105,8 +105,8 @@ def test_sync_settings_union_over_existing_counts_merged_not_updated(tmp_path: P
 
 def test_sync_fresh_settings_counts_created_not_merged(tmp_path: Path) -> None:
     """A first settings.json install (no existing dest) is a plain create, not a
-    merge — bash increments ``tool_installed`` on the new-file branch
-    (``scripts/install.sh:1303``), never ``tool_merged``. Pins: the no-existing-dest
+    merge — bash increments ``tool_installed`` on the new-file branch, never
+    ``tool_merged``. Pins: the no-existing-dest
     settings path increments ``created`` and leaves ``merged`` at zero. Fails if the
     merge tally fires on a fresh install (e.g. keyed on kind alone, not on an
     existing dest)."""
@@ -129,7 +129,7 @@ def test_sync_fresh_settings_counts_created_not_merged(tmp_path: Path) -> None:
 def test_sync_preserves_and_skips_invalid_existing_settings(tmp_path: Path) -> None:
     """An existing settings.json that is not valid JSON is left untouched and
     reported as an error, not overwritten — matching bash, which refuses to touch a
-    file it cannot parse (``scripts/install.sh:1299-1304``: err + skip + return, the
+    file it cannot parse (err + skip + return, the
     file left in place). Clobbering it with the template would leave the user's
     content only in a backup; these assertions pin the skip-and-preserve
     contract."""

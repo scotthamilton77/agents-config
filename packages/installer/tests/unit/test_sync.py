@@ -370,12 +370,11 @@ def test_write_to_read_only_destination_surfaces_permission_error(tmp_path: Path
 # ─────────────────────── G.1: path-aware backup ───────────────────────
 #
 # These tests pin the path-aware backup contract ported from the bash
-# installer's backup() (scripts/install.sh:352-388): an existing
-# destination that is about to be overwritten is copied to a timestamped
-# backup BEFORE the write. The routing decision is coded — a scoped
-# namespace dir routes to a sibling <ns>-backup/, everything else gets an
-# in-place .backup-<ts> suffix — so each test pins that decision, not
-# Path/shutil semantics.
+# installer's backup(): an existing destination that is about to be
+# overwritten is copied to a timestamped backup BEFORE the write. The
+# routing decision is coded — a scoped namespace dir routes to a sibling
+# <ns>-backup/, everything else gets an in-place .backup-<ts> suffix — so
+# each test pins that decision, not Path/shutil semantics.
 
 _FIXED_TS = "20260613-120000"
 

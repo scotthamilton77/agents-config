@@ -52,7 +52,7 @@ def test_autodetect_includes_claude_when_settings_json_absent(
     Then the result is (Tool.CLAUDE,).
 
     Pins: claude is unconditionally selected under auto-detect, matching
-    install.sh's `TOOLS=(claude)` ("claude always; others if ~/.<tool>/").
+    the bash installer's `TOOLS=(claude)` ("claude always; others if ~/.<tool>/").
     A fresh machine with no ~/.claude/settings.json still installs claude.
     """
     assert resolve_tools(home=tmp_path, override_csv=None) == (Tool.CLAUDE,)

@@ -533,7 +533,7 @@ def test_unchanged_dir_item_is_skipped_without_backup(tmp_path: Path) -> None:
     When sync_plan re-runs into the same dest
     Then the unchanged dir is skipped — no backup is created and skipped is
     counted — mirroring bash sync_directory's ``src_hash == dest_hash`` "up to
-    date" branch (scripts/install.sh:1230) so a re-install is idempotent.
+    date" branch, so a re-install is idempotent.
     """
     src = tmp_path / "src_skill"
     (src / "sub").mkdir(parents=True)
@@ -936,11 +936,10 @@ def test_interactive_decline_keeps_existing_file_and_counts_skipped(tmp_path: Pa
 # ── 8.13: verbose per-file detail (bash parity) ──
 #
 # The bash installer emits per-file chatter via ``vok`` at the real-install
-# outcomes — "Installed X (new)" / "X is up to date" / "Updated X"
-# (scripts/install.sh:1158,1166,1180,1224,1237,1255). The Python port routes
-# these through the IOPort with ``verbose=True`` so ``TerminalIO`` suppresses
-# them unless constructed with ``verbose=True`` — matching ``vok``'s
-# silent-unless-``--verbose`` contract (scripts/install.sh:166-168). These tests
+# outcomes — "Installed X (new)" / "X is up to date" / "Updated X". The Python
+# port routes these through the IOPort with ``verbose=True`` so ``TerminalIO``
+# suppresses them unless constructed with ``verbose=True`` — matching ``vok``'s
+# silent-unless-``--verbose`` contract. These tests
 # assert the emission AND its ``verbose=True`` tag at the ScriptedIO transcript
 # boundary; the suppression direction itself is pinned in test_io_port.py.
 
