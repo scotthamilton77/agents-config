@@ -105,7 +105,19 @@ def test_protocol_wire_value_is_pinned() -> None:
     # The field is always present, `null` where the item has none, so the
     # answer never arrives as a missing key a consumer would have to interpret.
     #
-    # 1.10 adds the `defer`/`undefer` verb pair, which sets an item aside as
+    # 1.10 stops the close-walk closing a parent that carries scope of its
+    # own, and gives `close` and `deliver` a `held` key naming each parent it
+    # declined and why. The key is the additive half and takes the same
+    # verdict as `acceptance` in 1.9. The behavioural half narrows `walked`:
+    # a consumer that saw a parent listed there now sees it under `held`
+    # instead. That is 1.8's case with the sign flipped -- `walked` has always
+    # claimed to list what the walk closed, and it now lists fewer because
+    # fewer should ever have closed. A consumer acting on the old entry was
+    # acting on a completion nothing had established, so there is no correct
+    # behaviour to lose, and the envelope and every `data` shape are
+    # untouched.
+    #
+    # 1.11 adds the `defer`/`undefer` verb pair, which sets an item aside as
     # not-now and brings it back. Additive on both counts the rule scores: a
     # new verb takes nothing away from an existing one, and its envelope is
     # the `{"id", "status"}` shape the other transitions already answer with.
@@ -115,7 +127,10 @@ def test_protocol_wire_value_is_pinned() -> None:
     # consumer had a closed set of four to lose. `claim` additionally names
     # the new state in its refusal instead of reporting a dependency that
     # does not exist, which replaces a wrong answer rather than a right one.
-    assert PROTOCOL_VERSION == "1.10"
+    # Nothing here touches 1.10's close-walk narrowing: a deferred child is
+    # not a closed one, so it stops the walk on the not-yet-exhausted branch
+    # exactly as an open child does, and never reaches the `held` report.
+    assert PROTOCOL_VERSION == "1.11"
 
 
 def test_the_readme_states_the_protocol_version_the_code_emits() -> None:

@@ -51,10 +51,10 @@ selected by whether a noun positional or `--raw` is given.
 
 | Verb | Args/flags |
 |---|---|
-| `work create NOUN --title T (--parent ID \| --orphan) [--description D] [--priority P] [--acceptance AC] [--spec REF] [--trivial]` | `NOUN` one of `spike\|chore\|decision\|feat\|bugfix\|spec\|epic`; placement is required-exactly-one; `--spec`/`--trivial` mutually exclusive |
+| `work create NOUN --title T (--parent ID \| --orphan) [--description D] [--priority P] [--acceptance AC] [--spec REF] [--trivial]` | `NOUN` one of `spike\|chore\|decision\|feat\|bugfix\|spec\|epic\|milestone`; placement is required-exactly-one; `--spec`/`--trivial` mutually exclusive |
 | `work claim ID` | open, unblocked, unclaimed leaf → `in_progress`; refuses containers and blocked leaves |
 | `work release ID` | `in_progress` → `open`, no phase advance |
-| `work deliver ID [--spec PATH] [--pr REF] [--items ID,ID] [--trivial]` | on a design child: parses the merged spec's `## Continuations` manifest and reconciles the sibling placeholder; on a leaf: evidence-gated close |
+| `work deliver ID [--spec PATH] [--pr REF] [--items ID,ID] [--trivial]` | on a design child: parses the merged spec's `## Continuations` manifest — one `- <noun>: <title> — AC: <acceptance>` bullet per follow-on item, or the single bullet `- none — <why there is none>` when the spec leaves no follow-on work (the reason is optional — a bare `- none` parses, and the reason is what lands as a note on the closed placeholder) — and reconciles the sibling placeholder; on a leaf: evidence-gated close |
 | `work plan ID (--done \| --undo) [--force]` | stamps/revokes the `planned` label (Planning-queue membership) |
 | `work promote ID` | a `shape-feat` leaf becomes a `shape-spec` container |
 | `work defer ID [--note TEXT]` | sets an item aside as not-now → `deferred`; leaves `ready`, claims no obstruction, and never enters the parked staleness report |
@@ -66,20 +66,26 @@ selected by whether a noun positional or `--raw` is given.
 cannot merge and ages into a staleness report. A read envelope tells the two
 apart on `status` alone — `deferred` versus a parked item's `blocked` beside
 its `parked` label — so a consumer never parses a note to distinguish an idea
-from an obstruction. Both `defer` and `undefer` are idempotent on replay.
+from an obstruction. Both `defer` and `undefer` are idempotent on replay. A
+deferred child is not a closed one: it holds its parent open in the
+close-walk exactly as an open child does, and never reaches the `held`
+report, which is for parents whose children *are* all closed.
 
-Protocol is `"1.10"` — additive-only bumps (new `ErrorCode` members, the
+Protocol is `"1.11"` — additive-only bumps (new `ErrorCode` members, the
 derived `Item.track` field and the `acceptance` field beside it, the
 capability-disposition model, `partial_progress` detail below, `search`'s
-optional narrowing flags, and the `defer`/`undefer` pair) never change an
-existing envelope or data shape. A
-bump can still widen what an unchanged call *answers*: 1.8 makes `search`
-read descriptions and notes as well as titles, stop excluding closed items,
-and stop stopping at the first page, so a query that used to return nothing
-may now return matches — and `create <noun>` refuses a title a closed item
-already carries. 1.10 is the same case in a smaller form: `status` can report
-`deferred` on an item the facade itself set aside, a value the backend always
-could hold and this contract always declared. `Capabilities` splits `ready` and `sync` into a `ReadySupport`/
+optional narrowing flags, the close-walk's `held` key, and the
+`defer`/`undefer` pair) never change an existing envelope or data shape. A
+bump can still change what an unchanged call *answers*, in either direction:
+1.8 makes `search` read descriptions and notes as well as titles, stop
+excluding closed items, and stop stopping at the first page, so a query that
+used to return nothing may now return matches — and `create <noun>` refuses a
+title a closed item already carries. 1.10 narrows instead: the close-walk
+stops closing a parent that carries scope of its own, so a parent that used
+to appear under `walked` now appears under `held` with what is unfinished
+named. 1.11 widens again, mildly: `status` can report `deferred` on an item
+the facade itself set aside, a value the backend always could hold and this
+contract always declared. `Capabilities` splits `ready` and `sync` into a `ReadySupport`/
 `SyncSupport` disposition each (`NATIVE` | `EMULATED`/`SERVER_AUTHORITATIVE`
 | `UNSUPPORTED`) instead of a single boolean, and `dep` gates only typed
 writes via `supports_dep_write` — `dep list` is never gated, even when
@@ -114,13 +120,13 @@ second, human-readable rendering on stderr.
 Success:
 
 ```json
-{"protocol": "1.10", "ok": true, "data": {"id": "x.1", "title": "..."}, "error": null}
+{"protocol": "1.11", "ok": true, "data": {"id": "x.1", "title": "..."}, "error": null}
 ```
 
 Failure:
 
 ```json
-{"protocol": "1.10", "ok": false, "data": null,
+{"protocol": "1.11", "ok": false, "data": null,
  "error": {"code": "E_TYPE_WALL", "message": "blocks: epic may not block task",
            "detail": {"from": "x.1", "to": "y.1", "dep_type": "blocks"}}}
 ```
@@ -154,7 +160,7 @@ component; refuse to run against a mismatched facade rather than risk
 mis-parsing mid-run:
 
 ```json
-{"protocol": "1.10", "ok": true, "data": {"protocol": "1.10"}, "error": null}
+{"protocol": "1.11", "ok": true, "data": {"protocol": "1.11"}, "error": null}
 ```
 
 Every other verb's envelope carries the same `protocol` field at the top
@@ -175,11 +181,20 @@ are the same value, always.
   inverted `--direction` naming is translated to these names).
 - `create --raw` → an object carrying the new item's `id` (see
   `verbs/write.py` for the exact shape).
-- `update` / `note` / `close` / `reopen` → `data: null` (no return payload).
+- `update` / `note` / `reopen` → `data: null` (no return payload).
+- `close` and `deliver` report the close-walk under two optional keys, each
+  present only when it has something to say (`close` → `data: null` when
+  neither does). `walked` is the ids the walk closed, in walk order. `held`
+  is the exhausted parents it declined to close because they carry scope of
+  their own — each entry carrying that item's `id`, `title`, `acceptance` (or
+  `null`), the `reason`, and the `resolve` naming the two ways out, so a
+  caller can act on the hold without re-reading the item. The ids a caller
+  names on `close` are closed unconditionally; the walk's rules govern only
+  what it infers.
 - `sync` → `{"synced": ..., "mode": "push" | "pull" | "noop"}`. `"noop"` is
   reserved for server-authoritative backends (the CLI contract spec §6's
   declared no-op); the bd adapter only ever emits `"push"` or `"pull"`.
-- `--protocol-version` → `{"protocol": "1.10"}`.
+- `--protocol-version` → `{"protocol": "1.11"}`.
 
 Human-readable output is opt-in only (`--format human`): it renders the
 envelope's `data` (or `error`) to **stderr**, for direct human use at a

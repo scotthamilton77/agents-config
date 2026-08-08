@@ -32,6 +32,7 @@ from workcli.lifecycle.defer import (
 from workcli.lifecycle.park import PARKED_LABEL, park, parked
 from workcli.lifecycle.transitions import claim
 from workcli.verbs.read import list_, ready, show
+from workcli.verbs.write import close
 
 _NOW = datetime(2026, 8, 7, 12, 0, 0, tzinfo=UTC)
 _ISO = _NOW.isoformat()
@@ -378,6 +379,54 @@ def test_a_deferred_item_is_not_claimable_and_the_refusal_names_undefer():
     assert excinfo.value.code is ErrorCode.NOT_CLAIMABLE
     assert "deferred" in excinfo.value.message
     assert "undefer" in excinfo.value.message
+
+
+# --- the close-walk: a deferred child is not a closed one -------------------
+
+
+def test_a_deferred_sibling_holds_its_parent_open_in_the_close_walk():
+    """Setting an idea aside is not finishing it, and the walk must not read it so.
+
+    The walk closes a parent whose children are exhausted. A deferred child
+    is live work nobody has started, so the parent is not exhausted and must
+    stay open -- reading `deferred` as "does not count" would auto-close a
+    container with real work still in it, on the strength of a decision to
+    postpone.
+
+    It stops on the not-yet-exhausted branch, not the held one: `held` is for
+    a parent whose children ARE all closed and whose own scope is unfinished,
+    which is a different claim and would misreport this parent as looking
+    finished.
+    """
+    backend = (
+        FakeBackend()
+        .add("E", type="epic", labels=["shape-epic"])
+        .add("idea", parent="E", status="open")
+        .add("work", parent="E", status="open")
+    )
+    defer(backend, _defer_args("idea"))
+
+    data = close(backend, Namespace(ids=["work"], disposition=None))
+
+    assert backend.get("E").status == "open"
+    assert data is None  # neither walked nor held: nothing to report
+
+
+def test_undeferring_the_last_child_then_closing_it_lets_the_walk_through():
+    """The inverse, so the hold above is the deferral's doing and not the fixture's."""
+    backend = (
+        FakeBackend()
+        .add("E", type="epic", labels=["shape-epic"])
+        .add("idea", parent="E", status="open")
+        .add("work", parent="E", status="closed")
+    )
+    defer(backend, _defer_args("idea"))
+    undefer(backend, _id_args("idea"))
+
+    data = close(backend, Namespace(ids=["idea"], disposition=None))
+
+    assert backend.get("E").status == "closed"
+    assert data == {"walked": ["E"]}
 
 
 # --- CLI wiring (argparse surface, envelope, and mutation order) ------------
