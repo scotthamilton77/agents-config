@@ -12,6 +12,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
+
 from installer.core.content_lint import UNGATED_ROOTS, _staged_dirs, _unaccounted_dirs, lint_content
 from installer.core.installignore import load_installignore
 from installer.core.io_port import ScriptedIO
@@ -727,3 +729,158 @@ def test_every_specialized_adapters_routes_are_accounted(tmp_path: Path) -> None
         result = _lint(repo)
 
         assert result.violations == [], f"{name}: {result.violations}"
+
+
+# --- The provenance header rule ------------------------------------------------
+# Fixtures are real content, not invented shapes: the failing cases are the headers
+# that actually drifted into the tree, and the passing ones are the headers that
+# legitimately live there. An invented fixture would pin whatever the check happens
+# to do rather than what the tree contains.
+
+# Verbatim from the four artifacts that carried them until the sweep at cc3e76c9 —
+# a rule, two skills and a plugin skill. Each recorded its own authoring date, which
+# is history git already holds, and each passed human review; the last was written
+# one day after this defect was filed and measured.
+_SELF_AUTHORED_HEADERS = (
+    "<!--\nSource: authored 2026-07-26.\n-->",
+    "<!--\nSource: authored 2026-07-31, replacing dispatching-subagents (archived).\n-->",
+    "<!--\nSource: authored 2026-08-01.\n-->",
+    "<!--\nSource: authored 2026-08-02.\n-->",
+)
+
+# The genuinely-mixed case, two lines verbatim from explain-diff's header: an
+# in-repo authoring line naming the files with no upstream, and the upstream for
+# the ones that have it. This is what a partly-derived artifact is supposed to look
+# like, so it is the case a check must not break.
+_MIXED_HEADER = (
+    "<!--\n"
+    "Source: authored in-repo 2026-07-10 — SKILL.md, assets/theme.css, assets/quiz.js "
+    "and assets/palette.md have no upstream.\n"
+    "Upstream: https://github.com/scotthamilton77/claude-code-sidekick @ "
+    "44e57b67beceb29825fb7be95b07520ec5445ad9\n"
+    "-->"
+)
+
+# Indented keys, from writing-skills: its keys sit inside the comment rather than at
+# column zero, and three artifacts in the tree are written this way.
+_INDENTED_HEADER = (
+    "<!--\n"
+    "Amalgam of three upstreams, one Source/Upstream pair each.\n\n"
+    "  Source: skills/writing-skills/\n"
+    "  Upstream: https://github.com/obra/superpowers @ "
+    "f2cbfbefebbfef77321e4c9abc9e949826bea9d7 (v5.1.0)\n"
+    "-->"
+)
+
+# The two shapes above crossed: indentation with nothing derived. Constructed, since
+# the tree has never carried one — it is the gap between the two real shapes, and the
+# one a column-anchored pattern passes without a word.
+_INDENTED_SELF_AUTHORED = "<!--\nAuthored here.\n\n  Source: authored 2026-08-02.\n-->"
+
+
+def _skill_carrying(header: str) -> str:
+    """An admitted skill whose body opens with ``header``, laid out as the real
+    artifacts are: the header one blank line below the fence, the body below it."""
+    return _RECORD + "\n" + header + "\n\nbody\n"
+
+
+@pytest.mark.parametrize("header", _SELF_AUTHORED_HEADERS)
+def test_a_self_authored_provenance_header_is_a_violation(header: str, tmp_path: Path) -> None:
+    """The drift that made this mechanical rather than reviewed. A provenance header
+    asserts that an outside party exists at a known commit whose changes could collide
+    with ours; a header recording only our own authoring date makes that assertion
+    falsely, and a reader has to open the upstream to find out there is none.
+
+    Reported once for the one file, naming every tool it would have deployed to — four
+    lines and a count of four would read as four separate defects.
+    """
+    repo = _repo(tmp_path, skills={"drifted": _skill_carrying(header)})
+    result = _lint(repo)
+
+    assert not result.ok
+    assert len(result.violations) == 1
+    assert "skills/drifted" in result.violations[0]
+    assert "naming no upstream" in result.violations[0]
+    for tool in known_tools():
+        assert tool.value in result.violations[0]
+
+
+@pytest.mark.parametrize("header", [_MIXED_HEADER, _INDENTED_HEADER])
+def test_a_header_naming_an_upstream_passes(header: str, tmp_path: Path) -> None:
+    """An outside party at a known commit is what the header is for, so the check has
+    to leave one alone — including the mixed case, where the artifact is partly ours
+    and the header scopes itself to the files that are derived. Failing that case would
+    push authors to delete a header doing exactly its job."""
+    repo = _repo(tmp_path, skills={"derived": _skill_carrying(header)})
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_an_indented_key_is_seen_where_it_sits(tmp_path: Path) -> None:
+    """A key-at-column-zero pattern reads an indented key as no key at all, so it
+    passes this artifact in silence — the same miss that undercounted the tree's
+    legitimate headers by three when the census was taken by hand. The recognizer's
+    leading-whitespace tolerance is what the deploy strips by, and this is the
+    direction in which getting it wrong is invisible."""
+    repo = _repo(tmp_path, skills={"drifted": _skill_carrying(_INDENTED_SELF_AUTHORED)})
+    result = _lint(repo)
+
+    assert not result.ok
+    assert "naming no upstream" in result.violations[0]
+
+
+def test_a_leading_comment_that_is_not_provenance_is_left_alone(tmp_path: Path) -> None:
+    """Only a header carrying provenance keys is bookkeeping; any other leading comment
+    is content. A check that fired on every leading comment would fail artifacts that
+    never claimed provenance at all."""
+    repo = _repo(tmp_path, skills={"noted": _skill_carrying("<!--\nTODO: rewrite this.\n-->")})
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_a_provenance_key_below_prose_is_not_a_header(tmp_path: Path) -> None:
+    """Where the header may sit is the sanitizer's decision, and this check inherits it
+    rather than scanning the file for a key. A comment below prose is content the deploy
+    ships untouched, so failing the build over it would report a defect in bytes that
+    were never bookkeeping — which is what a whole-file search for a Source: line
+    without an Upstream: line would do."""
+    body = _RECORD + "\nprose first.\n\n<!--\nSource: authored 2026-08-02.\n-->\n"
+    repo = _repo(tmp_path, skills={"prosefirst": body})
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_a_plugin_artifact_gets_no_location_exemption(tmp_path: Path) -> None:
+    """One of the four drifted artifacts was a plugin skill, so the rule cannot stop at
+    src/user. It is also independent of the admission verdict: a record-less plugin rule
+    is reported without failing the build, and the header it carries fails it anyway —
+    an artifact can be wrong in both ways at once and should hear about both."""
+    repo = _repo(
+        tmp_path,
+        plugin_rules={"graphify/graphify.md": "<!--\nSource: authored 2026-08-01.\n-->\n\nbody\n"},
+    )
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if "naming no upstream" in v]
+    assert [u.source.name for u in result.unadmitted if u.source is not None] == ["graphify.md"]
+    assert result.fatal_unadmitted == []
+
+
+def test_a_directory_with_no_entry_file_is_not_a_provenance_question(tmp_path: Path) -> None:
+    """A skill directory carrying no SKILL.md has no front matter and no header to
+    judge, so the provenance check has nothing to ask of it. The gate already reports
+    it as record-less; asking a header question of bytes that do not exist would turn a
+    reported omission into a crash."""
+    repo = _repo(tmp_path, skills={"tidy": _RECORD + "body\n"})
+    (repo / "src" / "user" / ".agents" / "skills" / "empty").mkdir()
+    result = _lint(repo)
+
+    assert result.violations == []
+    assert [u.source.name for u in result.fatal_unadmitted if u.source is not None] == ["empty"]

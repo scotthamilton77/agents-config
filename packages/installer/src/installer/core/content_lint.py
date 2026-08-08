@@ -9,10 +9,12 @@ with CI green.
 
 This module closes that hole. It stages the repo's own ``src/`` for **every**
 known tool with **every** discovered plugin, then hands the resulting plans to
-the same ``run_admission_gate`` the installer calls. It measures nothing itself:
-classification, sanitization, token counts, and the conflict audit are all the
-gate's, so the check and the installer cannot drift apart. Staging is pure and
-writes nothing — the installer is never invoked.
+the same ``run_admission_gate`` the installer calls. Almost nothing is measured
+here: classification, sanitization, token counts, and the conflict audit are all
+the gate's, so the check and the installer cannot drift apart. The one exception
+is the provenance rule below, which the deploy cannot enforce — and it still
+borrows the sanitizer's recognizer rather than deciding for itself. Staging is
+pure and writes nothing — the installer is never invoked.
 
 Staging every tool with every plugin rather than whatever the current machine
 has installed is deliberate: the question the lint answers is "is this content
@@ -56,10 +58,26 @@ the fail-open it replaced was not, which is why the enumeration is worth wanting
 and not worth blocking on. No test closes it, because no test knows about a
 channel nobody has written yet.
 
+**The one judgement this module makes itself.** Everything above is the gate's;
+the provenance check is not. A provenance header states that an outside party
+exists, at a known commit, whose future changes could collide with ours — so an
+artifact nobody derived must not carry one, and one that is partly derived scopes
+the header to the files that are. The deploy cannot enforce that, because it
+*strips* the header rather than judging it, which makes the rule a property of the
+source bytes. The staged tree is where those bytes still are: ``stage_src``
+preserves them and ``run_admission_gate`` sanitizes only the plans it returns, so
+the pre-gate plans this module already holds are the last place the header exists.
+What the check does not own is the recognition — ``sanitize.provenance_keys``
+decides what a provenance comment is and which keys it carries, because a check
+answering that for itself would fail builds over headers the deploy quietly
+removes, or miss ones it does not.
+
 Two report classes, mirroring the gate's own three-valued verdict:
 
 - **violations** — a malformed record, an over-cap skill body, an over-cap
-  always-on surface, or a claim conflict. Fatal, exactly as at deploy.
+  always-on surface, a claim conflict, or a provenance header naming no upstream.
+  Fatal; the first four exactly as at deploy, the last one here only, since at
+  deploy the header is stripped rather than refused.
 - **unadmitted** — an artifact carrying no ``admission`` record at all. At
   deploy this is a silent drop; in ``src/`` it means content that can never
   reach an agent. Fatal under ``src/user/``, the tree this repo declares to be
@@ -78,11 +96,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from installer.core import namespaces
-from installer.core.admission import DIR_RECORD_FILE
+from installer.core.admission import DIR_RECORD_FILE, is_gated
 from installer.core.content_tests import BUILD_DIRS
-from installer.core.deploy_gate import item_label, run_admission_gate
+from installer.core.deploy_gate import entry_text, item_label, run_admission_gate
 from installer.core.installignore import InstallIgnore, load_installignore
 from installer.core.orchestrator import stage_and_transform
+from installer.core.sanitize import provenance_keys
 from installer.core.staging import shared_source_dir
 from installer.core.surface_budget import SkillMeasure, SurfaceMeasure
 from installer.plugins.registry import discover, is_plugin_dir
@@ -675,6 +694,55 @@ def _unaccounted_dirs(
     return sorted(unaccounted)
 
 
+# What a self-authored header costs the reader, and the two ways out of it. Stated
+# as the remedy rather than as the rule, because the reader of this line is someone
+# who has just been failed by it and needs to know which edit ends the failure.
+_SELF_AUTHORED_HEADER = (
+    "a provenance header naming no upstream. The header means one thing — an outside "
+    "party, at a known commit, whose future changes could collide with ours — so an "
+    "artifact authored here carries none at all; git already holds the authoring "
+    "history. Delete it, or, if part of this artifact really is derived, name the "
+    "upstream and scope the header to the files that have one"
+)
+
+
+def _provenance_findings(plans: Mapping[Tool, StagingPlan]) -> list[str]:
+    """One finding per gated artifact whose provenance header names no upstream.
+
+    Labelled in the gate's own ``tool:dest`` form, so these fold through
+    ``_collapse_findings`` exactly as the gate's own do: shared content stages into
+    every plan, and a header would otherwise report once per tool.
+
+    ``plans`` must be the **pre-gate** plans. That is not a preference — it is where
+    the header still exists, since ``run_admission_gate`` strips it from the bytes
+    it returns.
+
+    Every gated item, not only the admitted ones. A record-less artifact carrying a
+    self-authored header is still a repo-side defect, and asking before the partition
+    keeps this verdict independent of the admission one — an artifact can be wrong in
+    both ways at once and should hear about both.
+
+    Gated artifacts are the population, and today that is no narrowing at all: every
+    provenance comment in the tree sits in one's entry file, which is also the only
+    place the sanitizer would strip one. A header on ungated staged content would
+    deploy rather than be stripped, and is a different defect with a different
+    remedy.
+    """
+    findings: list[str] = []
+    for tool, plan in plans.items():
+        for dest, item in plan.items.items():
+            if not is_gated(item):
+                continue
+            text = entry_text(item, plan.dir_overrides.get(dest, {}))
+            if text is None:
+                continue
+            keys = provenance_keys(text)
+            if keys is None or "upstream" in keys:
+                continue
+            findings.append(f"{item_label(tool, dest)}: {_SELF_AUTHORED_HEADER}")
+    return findings
+
+
 def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
     """Stage ``repo_root``'s ``src/`` for every tool and plugin, run the deploy
     gate over it, and report what it found — plus any directory under ``src/``
@@ -728,7 +796,11 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
     ]
 
     violations = _collapse_findings(
-        gate.violations,
+        # This module's own finding is collapsed alongside the gate's, not after
+        # them: it is keyed the same way and attributable to the same file, so a
+        # separate pass would render one artifact's defects in two coordinate
+        # systems.
+        gate.violations + _provenance_findings(plans),
         sources=sources,
         tool_values=frozenset(tool.value for tool in known_tools()),
     )

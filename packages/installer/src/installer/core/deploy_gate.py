@@ -113,12 +113,16 @@ def _skill_body(text: str) -> str:
     return body
 
 
-def _entry_text(item: StagedItem, overrides: dict[Path, bytes]) -> str | None:
+def entry_text(item: StagedItem, overrides: dict[Path, bytes]) -> str | None:
     """The gated item's front-matter-bearing text, as it will deploy.
 
     A directory item's entry file may have been patched into ``dir_overrides``
     by a plugin extension; those bytes win over the file under ``source_path``,
     because they are the ones that reach disk.
+
+    Public for the same reason as ``item_label``: the repo-side content lint asks
+    its own question of these bytes, and a second derivation of "which file speaks
+    for this item" would let the two disagree about what was examined.
     """
     if item.content is None:
         patched = overrides.get(Path(DIR_RECORD_FILE))
@@ -146,7 +150,7 @@ def run_admission_gate(plans: dict[Tool, StagingPlan]) -> GateResult:
                 continue
             label = item_label(tool, dest)
             overrides = plan.dir_overrides.get(dest, {})
-            text = _entry_text(item, overrides)
+            text = entry_text(item, overrides)
             verdict = classify(item, text=text)
             if verdict.outcome is AdmissionOutcome.NO_RECORD:
                 skipped.append(label)

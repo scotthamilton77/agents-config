@@ -26,6 +26,14 @@ a couple of keys. Dropping the keys' lines preserves the rest exactly.
 A provenance comment is recognized narrowly: an HTML comment standing before
 any prose, carrying a ``Source:`` or ``Upstream:`` line. An arbitrary leading
 comment is content and survives.
+
+That recognition has a second consumer: the repo-side content lint reports a
+provenance header on an artifact nobody derived, which is a judgement about
+source bytes this module is about to delete. ``provenance_keys`` answers it from
+the same pattern and the same block-location rule, because a check that decided
+for itself what a provenance comment is would disagree with what actually gets
+stripped — and then either fail a build over a header the deploy removes anyway,
+or pass one it does not recognize.
 """
 
 from __future__ import annotations
@@ -92,31 +100,62 @@ def _drop_keys(lines: list[str], keys: frozenset[str]) -> list[str]:
     return out
 
 
-def _strip_provenance(body: str) -> str:
-    """``body`` with a leading provenance comment (and its trailing blanks) gone.
+def _find_provenance(body: str) -> tuple[tuple[str, ...], str] | None:
+    """``(keys, body without the comment)`` for a leading provenance comment.
 
-    Returns ``body`` unchanged when the leading block is not a comment, is
-    unterminated, or carries no provenance marker.
+    ``None`` in the three cases nothing is stripped: the leading block is not a
+    comment, it is unterminated, or it carries no provenance marker.
+
+    ``keys`` are the marker keys the block carries, lower-cased and in the order
+    they appear. They are reported alongside the strip rather than left to the
+    caller to re-derive, so asking *which* keys a block carries cannot be
+    answered by a second copy of the pattern that decides what a key is.
     """
     lines = body.splitlines(keepends=True)
     start = 0
     while start < len(lines) and not lines[start].strip():
         start += 1
     if start >= len(lines) or not lines[start].lstrip().startswith("<!--"):
-        return body
+        return None
     for end in range(start, len(lines)):
         if "-->" not in lines[end]:
             continue
         block = "".join(lines[start : end + 1])
-        if not any(_PROVENANCE_MARKER.match(line) for line in block.splitlines()):
-            return body
+        matches = (_PROVENANCE_MARKER.match(line) for line in block.splitlines())
+        keys = tuple(match.group(1).lower() for match in matches if match is not None)
+        if not keys:
+            return None
         rest = lines[end + 1 :]
         while rest and not rest[0].strip():
             rest.pop(0)
         # Keep the original blank separation that preceded the comment so the
         # body still opens one blank line below the fence.
-        return "".join(lines[:start]) + "".join(rest)
-    return body
+        return keys, "".join(lines[:start]) + "".join(rest)
+    return None
+
+
+def _strip_provenance(body: str) -> str:
+    """``body`` with a leading provenance comment (and its trailing blanks) gone."""
+    found = _find_provenance(body)
+    return body if found is None else found[1]
+
+
+def _split_scope(text: str) -> tuple[list[str] | None, str]:
+    """``(front_matter_lines, the region a provenance comment can lead)``.
+
+    A provenance comment leads the *body* when the artifact opens with parseable
+    front matter, and the whole text when it does not. Both the strip and the
+    ``provenance_keys`` query ask that question, so it is decided in one place:
+    a caller that answered it differently would look for a header somewhere the
+    sanitizer never strips one.
+    """
+    mapping, _body = split_frontmatter(text)
+    if mapping is None:
+        return None, text
+    fm_lines, body = _split_raw(text)
+    if fm_lines is None:  # pragma: no cover - split_frontmatter already agreed
+        return None, text
+    return fm_lines, body
 
 
 def _reassemble(text: str, kept: list[str], body: str) -> str:
@@ -137,15 +176,25 @@ def _reassemble(text: str, kept: list[str], body: str) -> str:
 
 def sanitize_text(text: str) -> str:
     """``text`` with governance front matter and a provenance comment removed."""
-    mapping, _body = split_frontmatter(text)
-    if mapping is None:
-        return _strip_provenance(text)
-
-    fm_lines, body = _split_raw(text)
-    if fm_lines is None:  # pragma: no cover - split_frontmatter already agreed
-        return _strip_provenance(text)
+    fm_lines, body = _split_scope(text)
+    if fm_lines is None:
+        return _strip_provenance(body)
 
     return _reassemble(text, _drop_keys(fm_lines, GOVERNANCE_KEYS), _strip_provenance(body))
+
+
+def provenance_keys(text: str) -> tuple[str, ...] | None:
+    """The keys carried by the provenance comment :func:`sanitize_text` would strip
+    from ``text``, lower-cased in the order they appear; ``None`` when there is none.
+
+    The query behind the repo's rule that a provenance header means an outside
+    party at a known commit: a header naming no ``upstream`` records authoring
+    history instead, which git already holds. Answered here so that a caller
+    deciding whether a header is legitimate and the deploy deciding whether to
+    strip it read the same bytes by the same rule.
+    """
+    found = _find_provenance(_split_scope(text)[1])
+    return None if found is None else found[0]
 
 
 def project_capabilities(text: str, *, tool: str) -> str:
