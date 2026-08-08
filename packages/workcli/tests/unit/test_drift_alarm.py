@@ -182,9 +182,9 @@ def test_explicit_null_labels_field_raises_backend_drift_not_a_raw_type_error():
 
 
 def test_explicit_null_title_field_raises_backend_drift_not_the_literal_string_none():
-    # Codex review finding on PR #314: title/issue_type are required scalars
-    # that shared the same unguarded `str(raw["title"])` gap the null-vs-
-    # absent discipline was meant to close everywhere.
+    # title/issue_type are required scalars, and an unguarded
+    # `str(raw["title"])` coerces an explicit null instead of alarming -- the
+    # null-vs-absent discipline closes that everywhere.
     raw_item = {
         "id": "x.1",
         "title": None,
@@ -221,9 +221,9 @@ def test_explicit_null_issue_type_field_raises_backend_drift_not_the_literal_str
 
 
 def test_explicit_null_dependency_edge_status_raises_backend_drift_not_the_literal_string_none():
-    # Codex review finding on PR #314: the show-shape dependency edge's
-    # `status` field went through an unguarded `str(entry.get("status", ""))`
-    # that coerced an explicit null to the literal string "None".
+    # The show-shape dependency edge's `status` field must not go through an
+    # unguarded `str(entry.get("status", ""))`, which coerces an explicit null
+    # to the literal string "None".
     raw_item = {
         "id": "x.1",
         "title": "t",
@@ -525,9 +525,9 @@ def test_parent_child_dependent_missing_id_raises_backend_drift():
 
 def test_non_object_dependency_entry_raises_backend_drift_not_a_silent_drop():
     # A `dependencies[]` entry that isn't a JSON object (e.g. a bare string)
-    # was previously filtered out silently by `isinstance(entry, dict)` and
-    # continued with a partially-mangled Item -- that is bd shape drift, not
-    # something to drop and carry on from.
+    # filtered out silently by `isinstance(entry, dict)` would continue with a
+    # partially-mangled Item -- that is bd shape drift, not something to drop
+    # and carry on from.
     raw_item = {
         "id": "x.1",
         "title": "t",

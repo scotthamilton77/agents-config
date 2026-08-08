@@ -1,7 +1,7 @@
 """`BdBackend.batch_get` edge cases.
 
-Empty `ids` -> `[]` with zero bd calls (a new guard -- previously an empty
-request still built and sent a `show --json` argv). Duplicate/extra-record
+Empty `ids` -> `[]` with zero bd calls (without that guard, an empty request
+still builds and sends a `show --json` argv). Duplicate/extra-record
 handling is already the contract (proven in test_bd_backend.py); pinned here
 too as part of the same edge-case suite.
 """

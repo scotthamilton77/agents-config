@@ -156,8 +156,8 @@ def test_show_still_reports_all_three_relationships() -> None:
 def test_no_read_verb_reports_an_empty_child_set_for_an_item_that_has_children(
     argv: list[str], steps: list[ScriptedStep]
 ) -> None:
-    # The defect in one assertion: `shp-23p` has two children, and every one of
-    # these reads used to answer `children: []` for it.
+    # The defect in one assertion: `shp-23p` has two children, and a read
+    # publishing the empty stand-in would answer `children: []` for it.
     item = _items_by_id(argv, steps)[_PARENT_ID]
 
     assert "children" not in item

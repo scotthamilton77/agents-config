@@ -369,7 +369,7 @@ def test_own_posted_reply_is_not_ingested_as_new_item() -> None:
 
 
 def test_ingest_skips_marker_bearing_comment_without_ledger_entry() -> None:
-    # Verb-atomicity §6 / behavior 9 — the PR #211 recursive-echo regression guard
+    # Verb-atomicity §6 / behavior 9 — the recursive-echo regression guard
     # (the ledger-lost window): a crash after a POST but before persist loses
     # own_reply_id, so the ledger set cannot exclude the posted comment. The
     # idempotency marker in its body is the state-independent backstop: never
@@ -1163,8 +1163,8 @@ def test_list_reads_request_pagination() -> None:
 
 def test_ingests_reviews_beyond_the_first_thirty() -> None:
     # Regression guard (acceptance-mandated): gh --paginate concatenates pages into
-    # one array, so poll must ingest every item, not cap at 30. (PR #234 froze because
-    # a re-review landed on page 4 and was never seen.)
+    # one array, so poll must ingest every item, not cap at 30. (A re-review
+    # landing on page 4 is otherwise never seen, and the run freezes.)
     many = [_review(1000 + i) for i in range(35)]
     runner = RecordedRunner(_poll_reads(reviews=many, trailing=[_check_runs_ok([_check_run()])]))
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")

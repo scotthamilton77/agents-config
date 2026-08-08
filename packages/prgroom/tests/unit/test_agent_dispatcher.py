@@ -728,7 +728,7 @@ def test_fix_dispatcher_satisfies_fix_contract() -> None:
 
 
 def test_fallback_success_carries_winner_and_failures() -> None:
-    # The root regression guard for decided_by misattribution: the ladder now
+    # The root regression guard for decided_by misattribution: the ladder
     # returns WHO won and what failed on the way, not the bare parsed output.
     fallback = AgentSpec("claude", "haiku")
     runner = FakeAgentRunner([TimesOut(), Succeeds(CLUSTER_OK)])

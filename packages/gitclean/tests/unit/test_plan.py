@@ -63,8 +63,8 @@ def plan_for(
     selectors: list[str] | None = None,
 ) -> Plan:
     # Always a plan. An objection belongs to the selector it is about and rides
-    # in `Plan.refused`, so there is no longer a return value that stands in
-    # for the whole run having stopped.
+    # in `Plan.refused`, so there is no return value that stands in for the
+    # whole run having stopped.
     return build_plan(
         targets,
         survey if survey is not None else make_survey(),
@@ -224,9 +224,9 @@ def test_a_selector_matching_nothing_states_both_readings() -> None:
 
 
 def test_one_absent_name_does_not_abort_the_names_beside_it() -> None:
-    """This is the whole cost of the old refusal. Selector refusals are
-    plan-level, so a single name that had already been dealt with stopped every
-    other deletion the caller asked for in the same breath."""
+    """Selector refusals are plan-level, so aborting the run over one of them
+    would let a single name already dealt with stop every other deletion the
+    caller asked for in the same breath."""
     targets = (target("branch:x"), target("branch:y"))
     result = plan_for(targets, selectors=["x", "gone-already", "y"])
     assert isinstance(result, Plan)
@@ -235,10 +235,10 @@ def test_one_absent_name_does_not_abort_the_names_beside_it() -> None:
 
 
 def test_a_refused_name_takes_only_itself_out_of_the_run() -> None:
-    """The whole cost of the old whole-run refusal. One name this tool would
-    not act on stopped every other deletion asked for in the same breath, and
-    the only way forward was to re-run with the offender removed -- a round
-    trip spent teaching the tool something it had already worked out.
+    """A whole-run refusal costs everything beside it. One name this tool will
+    not act on would stop every other deletion asked for in the same breath,
+    and the only way forward would be a re-run with the offender removed -- a
+    round trip spent teaching the tool something it has already worked out.
 
     A refusal is about the selector it names. What resolved beside it is still
     the caller's to have, and the run reports both."""
@@ -500,21 +500,19 @@ def test_a_ref_that_could_not_be_split_stops_a_miss_meaning_absence() -> None:
 
 def test_a_failed_split_cannot_change_what_a_bare_name_deletes() -> None:
     """An unanswered probe must never *widen* what a run deletes, and that is
-    now true by construction rather than by a refusal.
+    true by construction here rather than by a refusal.
 
-    It used to be enforced the hard way. With the remote list read,
-    `refs/remotes/origin/feat/x` became a target whose bare alias was `feat/x`,
-    so the name matched two things and was refused as ambiguous; with the read
-    failed, that ref never became a target and the same name matched exactly
-    one. The number of things a name meant therefore moved with a probe that
-    had measured nothing about the repository, and refusing was how that was
-    kept from turning into a deletion.
+    A bare alias on a server ref is what would put it at risk. With the remote
+    list read, `refs/remotes/origin/feat/x` would be a target whose bare alias
+    is `feat/x`, so the name would match two things and be refused as ambiguous;
+    with the read failed, that ref never becomes a target and the same name
+    matches exactly one. The number of things a name means would then move with
+    a probe that measured nothing about the repository.
 
-    A bare name no longer reaches a server ref under either reading, so the ref
+    A bare name does not reach a server ref under either reading, so the ref
     never joins the match and the local branch is the only thing `feat/x` can
-    mean. The two fixtures below agree, which is precisely the property the
-    refusal was buying -- and nothing is lost with it, because the server's copy
-    is still unreachable without its full spelling either way."""
+    mean. The two fixtures below agree, and nothing is lost, because the
+    server's copy is unreachable without its full spelling either way."""
     both_read = plan_for(
         (
             target("branch:feat/x"),
@@ -746,10 +744,9 @@ def test_ambiguous_bare_name_is_refused_with_the_candidates() -> None:
     at once, and nothing but the caller knows which. Guessing is how the wrong
     one gets deleted, so the refusal names both and asks for an `id`.
 
-    A local branch beside the server's copy of it is no longer this case, and
-    it was much the commoner one: a bare name does not reach a server ref, so
-    that pair does not collide any more. What is left is a collision between
-    the two listings."""
+    A local branch beside the server's copy of it is not this case: a bare name
+    does not reach a server ref, so that pair does not collide. What is left is
+    a collision between the two listings."""
     targets = (
         target("branch:feat"),
         target("worktree:/repo/wt/feat", kind=TargetKind.WORKTREE),
@@ -772,11 +769,11 @@ def test_exact_id_disambiguates() -> None:
 
 
 def test_the_bare_name_a_server_ref_answers_to_is_the_one_the_remote_knows() -> None:
-    """A bare name no longer *selects* a server ref, but it is still matched
-    against one to tell a caller the ref is there -- and which name it is
-    matched against is the same question it always was. The remote knows
-    `team/origin/feat/x` as `feat/x`, so that is the name the refusal answers
-    to and the full spelling is what its remedy quotes.
+    """A bare name does not *select* a server ref, but it is still matched
+    against one to tell a caller the ref is there -- and it has to be matched
+    against the right name. The remote knows `team/origin/feat/x` as `feat/x`,
+    so that is the name the refusal answers to and the full spelling is what its
+    remedy quotes.
 
     Dropping everything before the first slash would answer to `origin/feat/x`
     instead: a name nothing in this repository has. Reporting that one as
@@ -826,12 +823,12 @@ def test_ambiguity_refuses_that_name_and_nothing_else() -> None:
     """A miss is a job done; ambiguity is a question. Two real things match and
     picking one destroys the other, so this is the refusal that stays.
 
-    What it no longer does is take the rest of the command with it. The
-    question is about one name -- the others were unambiguous, and the caller
-    is going to re-issue only the offending one with an `id`. Discarding their
-    resolved targets meant the re-run had to repeat every name that had already
-    worked, and a caller who edits that line under time pressure is the one who
-    drops a name they meant to keep."""
+    What it does not do is take the rest of the command with it. The question
+    is about one name -- the others were unambiguous, and the caller is going
+    to re-issue only the offending one with an `id`. Discarding their resolved
+    targets would make the re-run repeat every name that already worked, and a
+    caller who edits that line under time pressure is the one who drops a name
+    they meant to keep."""
     targets = (
         target("branch:feat"),
         target("worktree:/repo/wt/feat", kind=TargetKind.WORKTREE),

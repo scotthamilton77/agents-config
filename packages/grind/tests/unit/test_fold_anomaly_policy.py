@@ -330,7 +330,7 @@ def test_an_explicit_null_reason_is_present_garbage_not_an_absent_field() -> Non
 
 
 def test_a_pre_charter_log_replays_with_its_parks_still_typed() -> None:
-    # The old writer emitted the field `kind`, never `reason`. Delete-and-refold
+    # A log can carry the field `kind` and never `reason`. Delete-and-refold
     # is the whole recovery story, so an upgrade must not grey out history.
     state = fold(
         [
@@ -348,7 +348,7 @@ def test_a_pre_charter_log_replays_with_its_parks_still_typed() -> None:
     assert survived is not None
     assert survived.reason == "later-wave"
     assert survived.axis == "scheduling"
-    # `human-gated` was retired into the reason that names the same state.
+    # `human-gated` decodes to the reason that names the same state.
     retired = state.items["wgclw.2"].parked
     assert retired is not None
     assert retired.reason == "approval-required"

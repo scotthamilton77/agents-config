@@ -175,9 +175,9 @@ def test_dir_orphan_content_drift_is_relinquished(tmp_path: Path) -> None:
 
 
 def test_dir_orphan_legacy_no_digest_falls_back_to_type_check(tmp_path: Path) -> None:
-    """A legacy DIR entry recorded before digests existed (digest is None) keeps the
-    pre-feature behavior: prunable while still a real directory, regardless of
-    contents."""
+    """A legacy DIR entry recorded before digests existed (digest is None) falls back
+    to the type-check-only guard: prunable while still a real directory, regardless
+    of contents."""
     d = tmp_path / ".claude" / "skills" / "foo"
     d.mkdir(parents=True)
     (d / "SKILL.md").write_text("anything")

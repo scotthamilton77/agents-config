@@ -213,7 +213,7 @@ def test_close_refused_for_open_blockers_is_a_refusal_not_a_drift_alarm():
     # The backend understood the request perfectly and declined it: the item
     # has an open blocker. Reporting that through the drift catch-all would
     # tell the caller their tracker is broken when their graph is working,
-    # which is a worse answer than the leak it used to arrive with. The
+    # which is a worse answer than leaking the backend's own words. The
     # blockers come back itemised, because "which ones" is the whole of what
     # the caller does next.
     exit_code, envelope, _ = run_cli(

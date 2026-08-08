@@ -609,12 +609,11 @@ def test_project_universe_normalization_pin_against_real_universe(ignore: Instal
     and `instructions` matches the tool-root instruction templates — both
     asserted directly via `project_universe` keys built from the real repo root.
 
-    The `.md`-suffix-strip arm of normalization no longer has a real-repo
-    example: every artifact in the `rules`/`agents`/`commands` namespaces was
-    record-less and moved to `archive/`, so those namespaces stage nothing.
-    That arm stays covered synthetically by
-    `test_project_universe_strips_md_suffix_for_namespaced_items`; restore a
-    real-repo assertion here when a namespaced `.md` artifact is readmitted.
+    The `.md`-suffix-strip arm of normalization has no real-repo example: the
+    `rules`/`agents`/`commands` namespaces stage nothing. That arm stays covered
+    synthetically by `test_project_universe_strips_md_suffix_for_namespaced_items`;
+    restore a real-repo assertion here when a namespaced `.md` artifact is
+    readmitted.
     """
     plans = [build_plan(get_adapter(tool), repo_root=_REPO_ROOT, ignore=ignore) for tool in Tool]
 

@@ -27,8 +27,8 @@ def _serialize_item(item: Item) -> dict[str, JsonValue]:
     # sorted, and present on every read item so "this verb does not report
     # children" is legible without knowing which verb produced the item. The
     # empty stand-in is the thing being removed: a consumer could not tell it
-    # from a true answer, so `search` reported every item as an unparented
-    # leaf and `list` reported every epic as childless.
+    # from a true answer, so `search` would report every item as an unparented
+    # leaf and `list` every epic as childless.
     unknown = sorted(item.unknown_relations)
     for field in unknown:
         del serialized[field]

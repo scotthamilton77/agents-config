@@ -171,9 +171,9 @@ def test_protocol_wire_value_is_pinned() -> None:
 
 
 def test_the_readme_states_the_protocol_version_the_code_emits() -> None:
-    # The README documents the wire contract, and it had drifted four
-    # versions behind the code before anyone noticed -- exactly the class of
-    # rot that a reader is trusted to catch and never does. The version is
+    # The README documents the wire contract, and unchecked it drifts whole
+    # versions behind the code -- exactly the class of rot that a reader is
+    # trusted to catch and never does. The version is
     # quoted in prose and in every sample envelope, so this reads them all
     # rather than one blessed line: a bump that updates the headline and
     # leaves the samples stale is the same defect in a smaller form.

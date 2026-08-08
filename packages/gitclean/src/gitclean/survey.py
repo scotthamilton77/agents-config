@@ -225,9 +225,9 @@ def _consulted_remotes(remotes: tuple[str, ...] | None) -> tuple[str, ...]:
 
     An unreadable remote list is not an empty one, and it is not a licence to
     ask more widely either: nothing can be enumerated, so this asks `origin` and
-    no further, which is exactly the reach it had before any other remote could
-    be consulted. A transient failure to list remotes therefore costs nothing
-    that was working, and widens nothing on the strength of what nobody read."""
+    no further, which is the reach any repository with an `origin` gets anyway.
+    A transient failure to list remotes therefore costs nothing, and widens
+    nothing on the strength of what nobody read."""
     return ("origin",) if remotes is None or "origin" in remotes else remotes
 
 
@@ -245,19 +245,19 @@ def resolve_default_branch(
     repository.
 
     A remote's published HEAD first, then a local main/master -- **each verified
-    to resolve**. Returning the literal `main` when nothing answers used to
-    look harmless: every merge probe against a ref that is not there fails, so
-    nothing could be proven merged. But protection is assigned by *name*, and
+    to resolve**. Returning the literal `main` when nothing answers looks
+    harmless: every merge probe against a ref that is not there fails, so
+    nothing can be proven merged. But protection is assigned by *name*, and
     a repository whose trunk is `trunk` then has no protected branch at all:
     the real trunk is left indistinguishable from cruft, deletable like any
     other branch.
 
     Which remote is asked is decided from the configured list rather than
-    spelled `origin` in the question. A repository whose remote is called
-    anything else -- and which has no local `main` or `master` either -- used to
-    reach no tier at all, so no trunk resolved, nothing could be proven merged,
-    and the tool was inert in it. See the two helpers above for which remotes
-    get a say and what settles a disagreement between them.
+    spelled `origin` in the question. Spelling it `origin` reaches no tier at
+    all in a repository whose remote is called anything else -- and which has no
+    local `main` or `master` either -- so no trunk resolves, nothing can be
+    proven merged, and the tool is inert there. See the two helpers above for
+    which remotes get a say and what settles a disagreement between them.
 
     The remote is handed back so that what merges are measured against can be
     that same remote's copy of the trunk rather than a second, independent
@@ -267,9 +267,9 @@ def resolve_default_branch(
 
     The published-HEAD tier is the one most likely to be stale -- a dangling
     `origin/HEAD -> origin/master` is the standard leftover after a
-    server-side rename -- and taking it on trust was worse than guessing,
-    because the guess was then recorded as knowledge and suppressed the
-    warning that would have said no branch is protected. An unproven name is
+    server-side rename -- and taking it on trust is worse than guessing,
+    because the guess is then recorded as knowledge and suppresses the
+    warning that would otherwise say no branch is protected. An unproven name is
     not a default branch, whichever tier produced it.
 
     A tier git errored on is reported as unread rather than as absent. The
@@ -765,9 +765,9 @@ def read_worktrees(
             # says prunable whenever the path is merely UNREACHABLE -- moved
             # aside, or on a volume that is not mounted right now -- and the
             # tree, with its .env and its afternoon of uncommitted work, is
-            # sitting intact wherever it went. Asserting (0, 0, 0) here was
-            # the one place an unknown was manufactured into the answer that
-            # authorises deletion. Nothing can be probed and nothing is known.
+            # sitting intact wherever it went. Asserting (0, 0, 0) here would
+            # manufacture an unknown into the answer that authorises deletion.
+            # Nothing can be probed and nothing is known.
             dirt: tuple[int, int, int] | None = None
             warnings.append(
                 f"git reports the worktree at {path} as prunable, which means only that its "
@@ -823,7 +823,7 @@ def _count_dirt(port: CommandPort, path: Path) -> tuple[int, int, int] | None:
     ``matching`` any directory matching an ignore pattern re-collapses to its
     own line whatever the untracked mode says, and only ``traditional`` defers
     to ``=all``. Measured on a 2.5 GB checkout the pair costs ~0.15s against
-    ~0.02s, and returns 47,620 ignored files where the old pair returned 90."""
+    ~0.02s, and returns 47,620 ignored files where the weaker pair returns 90."""
     status = port.git(
         git_argv("status", "--porcelain=v1", "--untracked-files=all", "--ignored=traditional"),
         cwd=path,
@@ -1186,8 +1186,8 @@ def _pr_covers_tip(port: CommandPort, cwd: Path | None, pr: PullRequest, head: s
     frequently absent locally once the remote branch is gone, and an
     unanswerable question falls through to the tiers that read content.
 
-    Falling through is the same for both, which is why the two used to share an
-    answer. The report is not: False is git saying the merged head does not
+    Falling through is the same for both, which is what tempts a single answer
+    for the two. The report is not: False is git saying the merged head does not
     contain this tip, and None is git never having compared them. Printing the
     first for the second asserts a comparison of two commits as the reason a
     branch was held back, when one of them was not even here to compare."""
@@ -1484,12 +1484,12 @@ def read_branches(
         # what the *server* calls the branch, which for a remote-tracking ref
         # is the half of the path the remote's name does not account for.
         pr = None if is_default else prs.get(ref_name)
-        # The trunk is measured like every other branch. It used to be handed
-        # zeroes and a merge verdict on the reasoning that probing it against
-        # itself is noise, but both halves of that were wrong: the counts are
+        # The trunk is measured like every other branch. Handing it zeroes and a
+        # merge verdict is tempting, on the reasoning that probing it against
+        # itself is noise, but both halves of that are wrong: the counts are
         # the most useful ones in the report -- `origin/main..main` is the
         # commits on the trunk that have not been pushed -- and asserting a
-        # measurement nobody took is the exact habit that made this tool
+        # measurement nobody took is the exact habit that makes this tool
         # dangerous. Nothing needs the shortcut: the trunk is kept out of the
         # sweep by identity, not by carrying a manufactured verdict.
         #

@@ -6,9 +6,7 @@ content under `src/`, **this is real code with a real quality gate.**
 
 `prgroom` is a deterministic PR-grooming CLI: it polls a PR's review feedback,
 clusters it, dispatches fixes, pushes, replies, and resolves threads — as
-locked, resumable lifecycle verbs rather than model-driven prose. It was built
-to replace the `wait-for-pr-comments` and `reply-and-resolve-pr-threads` skills,
-both now archived along with the `monitor-pr` skill that used to drive it.
+locked, resumable lifecycle verbs rather than model-driven prose.
 
 **Nothing drives it today.** Per charter D13 this package is carved, not
 finished (slice S8); no deployed asset invokes it and no harness path depends on

@@ -137,12 +137,11 @@ def test_s5_b3_every_slice_citing_a_defined_id_passes() -> None:
 
 
 def test_codex_review_regression_s5_b2_fenced_example_entry_is_inert() -> None:
-    """codex-review regression (S5-B2 gaming case) — an Acceptance-criteria
-    section containing ONLY a fenced ```markdown block with
-    ``- **AC1** only an example`` inside it must still fail: the fenced
-    example is not a real definition entry, so no AC id is actually
-    defined. Before the fence fix, the parser was blind to fences and
-    counted the fenced line as a structured entry, passing incorrectly."""
+    """The S5-B2 gaming case — an Acceptance-criteria section containing ONLY
+    a fenced ```markdown block with ``- **AC1** only an example`` inside it
+    must still fail: the fenced example is not a real definition entry, so no
+    AC id is actually defined. A fence-blind parser counts the fenced line as
+    a structured entry and passes incorrectly."""
     path = Path("docs/specs/2026-07-25-example.md")
     violations = lint_spec_text(path, _FENCED_EXAMPLE_ONLY)
     assert len(violations) == 1
@@ -150,26 +149,25 @@ def test_codex_review_regression_s5_b2_fenced_example_entry_is_inert() -> None:
 
 
 def test_codex_review_regression_s5_b3_fenced_slice_heading_is_inert() -> None:
-    """codex-review regression (S5-B3 inverse case) — a real
-    ``- **AC1** criterion`` entry plus a fenced code block containing
-    ``### Slice Example`` must pass: the fenced line is not a real slice
-    heading and must not be parsed as one. Before the fence fix, the
-    parser treated the fenced heading as real, prematurely closing the
-    genuine "Slice A" section and reporting a spurious "slice cites no AC
+    """The S5-B3 inverse case — a real ``- **AC1** criterion`` entry plus a
+    fenced code block containing ``### Slice Example`` must pass: the fenced
+    line is not a real slice heading and must not be parsed as one. A
+    fence-blind parser treats the fenced heading as real, prematurely closing
+    the genuine "Slice A" section and reporting a spurious "slice cites no AC
     ID from the defined set" violation against the phantom section."""
     path = Path("docs/specs/2026-07-25-example.md")
     assert lint_spec_text(path, _FENCED_SLICE_HEADING_IS_INERT) == []
 
 
 def test_codex_round_2_s5_b2_longer_nested_fence_char_is_inert() -> None:
-    """codex round-2 regression (S5-B2) — a fence closes only on a marker of
+    """S5-B2, nested fences — a fence closes only on a marker of
     the SAME character with length >= the opener's. A 4-backtick outer
     fence wrapping a 3-backtick inner marker and a fake '## Acceptance
     criteria' + '- **AC1** example only' entry must stay entirely fenced:
     there is no real AC heading or entry outside it, so the lint must fail
-    with the no-heading (or no-entry) violation, not pass. Before this fix,
-    the mask toggled closed on the inner 3-backtick line, un-fencing the
-    fake heading/entry and passing incorrectly."""
+    with the no-heading (or no-entry) violation, not pass. A mask that
+    toggled closed on the inner 3-backtick line would un-fence the fake
+    heading/entry and pass incorrectly."""
     path = Path("x.md")
     text = (
         "# Demo\n\n````markdown\n```python\n## Acceptance criteria\n- **AC1** example only\n````\n"

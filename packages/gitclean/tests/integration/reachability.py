@@ -1,8 +1,8 @@
 """The invariant every mutating run is measured against.
 
 An example-based test only ever asserts the topology its author already
-imagined, which is how a suite at 98% branch coverage still shipped defects
-that destroyed commits. This asserts the property instead: snapshot every
+imagined, so a suite can sit at 98% branch coverage and still miss a defect
+that destroys commits. This asserts the property instead: snapshot every
 commit reachable from a ref before the run, and afterwards demand that each one
 still is. A run that strands a commit nobody thought to write a test about
 fails the test that never mentions it.

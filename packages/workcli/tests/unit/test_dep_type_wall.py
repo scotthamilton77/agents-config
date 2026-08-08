@@ -170,9 +170,9 @@ def test_dep_add_epic_task_still_detects_the_wall_when_the_combined_show_returns
 
 
 def test_dep_add_with_relates_to_type_skips_the_wall_check_entirely():
-    # `relates-to` is bd's own spelling. This test used to say `related-to`,
-    # which is in no vocabulary bd documents -- it was a string this package
-    # invented and only ever fed to its own fake, so nothing caught it.
+    # `relates-to` is bd's own spelling. `related-to` is in no vocabulary bd
+    # documents -- a string this package would only ever feed to its own fake,
+    # so nothing would catch it.
     runner = ScriptedBdRunner(steps=[ScriptedStep(("dep", "add"), _OK)])
 
     exit_code, _, _ = run_cli_with_runner(

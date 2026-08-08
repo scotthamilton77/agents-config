@@ -4,10 +4,8 @@ The installer logic lives in the Python package `packages/installer/`. This
 directory holds only thin entry points into it.
 
 - **`install.sh`** — a 6-line `exec uv run --project packages/installer python -m
-  installer "$@"` stub. It is **not** the behavioural spec anymore; the earlier
-  74 KB bash implementation (and its golden-master parity suite) was retired once
-  the Python port reached parity. Do not add logic here — it belongs in
-  `packages/installer/`.
+  installer "$@"` stub. It is **not** the behavioural spec. Do not add logic
+  here — it belongs in `packages/installer/`.
 - **`install.py`** — the Python entry point (`from installer.cli import main`);
   also invocable as `uv run python -m installer`.
 - **`bootstrap-installer-beads.sh`** — one-time bootstrap helper for standing up

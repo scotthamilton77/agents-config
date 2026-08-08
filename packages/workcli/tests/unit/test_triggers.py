@@ -72,7 +72,7 @@ def test_backlog_counts_cover_every_configured_track() -> None:
 
 
 def test_cross_track_edges_densified_to_every_configured_track() -> None:
-    # REGRESSION PIN (Codex finding): a track with zero cross-track edges
+    # REGRESSION PIN: a track with zero cross-track edges
     # must report 0, not an absent key -- callers triaging a
     # pressured-ineligible track need the actual count, not just the
     # three-state status reduction.

@@ -2,12 +2,12 @@
 
 The enumerated matrix beside this file asserts one thing per row a reviewer had
 to think of first, which is exactly its weakness: a defect living in a shape
-nobody pictured passes the whole suite, and the suite that shipped commit-
-destroying defects was at 98% branch coverage while it did. This builds the
-shapes instead of imagining them -- a repository assembled from a random draw
-over a small alphabet of real git operations -- and then asks the oracle the
-only question that does not require knowing the answer in advance: after a bare
-sweep, is every commit that was reachable still reachable?
+nobody pictured passes the whole suite, and 98% branch coverage is no protection
+against it. This builds the shapes instead of imagining them -- a repository
+assembled from a random draw over a small alphabet of real git operations --
+and then asks the oracle the only question that does not require knowing the
+answer in advance: after a bare sweep, is every commit that was reachable still
+reachable?
 
 **Why that question needs no prediction.** A bare sweep -- ``--cleanup`` with no
 target named on the command line -- deletes only what cleared all six of the

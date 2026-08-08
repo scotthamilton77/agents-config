@@ -704,12 +704,12 @@ test("classifies and repairs a CRLF-delimited stream instead of passing it throu
 
 // ─── createSSEFixer: completion is not synthesized for a truncated stream ──
 //
-// Before this fix, replay() unconditionally appended message_stop + [DONE].
-// That dressed up a provider-side truncation as a complete response, so the
-// caller consumed partial output instead of retrying. Test A drives the
-// truncation case; Test B is a required regression guard — without it, a
-// broken fix that simply never emits terminators (even for complete
-// streams) would pass Test A alone.
+// Appending message_stop + [DONE] unconditionally in replay() dresses up a
+// provider-side truncation as a complete response, so the caller consumes
+// partial output instead of retrying. Test A drives the truncation case;
+// Test B is a required regression guard — without it, an implementation that
+// simply never emits terminators (even for complete streams) would pass
+// Test A alone.
 
 test("does not synthesize message_stop or [DONE] for a stream that ends without an upstream message_stop", () => {
   const text = streamText([

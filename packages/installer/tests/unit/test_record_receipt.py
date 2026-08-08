@@ -1,8 +1,8 @@
-"""Unit tests for ``record_receipt`` — the hoisted receipt write.
+"""Unit tests for ``record_receipt`` — the receipt write.
 
 The receipt is written on every non-dry-run install (not only ``--prune``), so
-the write moved out of ``prune_pipeline`` into ``record_receipt``, which the CLI
-calls after install+prune inside the lock. ``record_receipt`` builds ``installed``
+the write lives in ``record_receipt`` rather than in ``prune_pipeline``; the CLI
+calls it after install+prune inside the lock. ``record_receipt`` builds ``installed``
 from the real per-item install outcomes (DECLINED excluded, real sha256) and
 mirrors disk: a declined overwrite of a previously-recorded path relinquishes it,
 pruned paths drop, untouched prior entries survive.

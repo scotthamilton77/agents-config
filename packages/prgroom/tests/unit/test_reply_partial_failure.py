@@ -58,8 +58,8 @@ def _state(items: list[ReviewItem], pending: list[RoutedMemory] | None = None):
 
 
 def test_partial_failure_rerun_does_not_duplicate_posted_reply() -> None:
-    # §10.1 behavior 1 — THE bead's required partial-failure regression test (the
-    # PR #211 duplicate-reply shape). Run 1: item A's POST succeeds (id 91), item
+    # §10.1 behavior 1 — the required partial-failure regression test (the
+    # duplicate-reply shape). Run 1: item A's POST succeeds (id 91), item
     # B's POST raises transient → reply_pr raises; its return value is discarded
     # exactly as _execute_step discards a raising verb's deepcopy. Run 2 from the
     # UNCHANGED pre-call state: the pre-flight scan finds A's marker on GitHub and

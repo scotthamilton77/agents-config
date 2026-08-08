@@ -182,9 +182,8 @@ def test_install_pipeline_real_install_still_collects_outcomes(tmp_path: Path) -
     Then the tool's key holds the real WRITTEN outcome — the dry-run guard must
     not suppress collection on a real install.
 
-    Regression guard for the dry-run-only fix: ``collect`` must be True when
-    not dry_run, so a real install still feeds record_receipt. Fails if the
-    guard over-broadly drops the live collector.
+    ``collect`` must be True when not dry_run, so a real install still feeds
+    record_receipt. Fails if the guard over-broadly drops the live collector.
     """
     home = tmp_path / "home"
     claude = get_adapter(Tool.CLAUDE)

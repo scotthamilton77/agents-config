@@ -1,11 +1,11 @@
 """`work search QUERY` — the corpus, the statuses, and the bound.
 
-Three narrowings used to be wired in and none of them was askable: the verb
-read titles alone, skipped closed items, and stopped at the backend's own
-default page. Each one turns a match into an empty result that a caller
-cannot tell from a true negative, which is how a search for prior art
-becomes a duplicate filing. The tests here pin the wide default and the
-caller's ability to narrow it back down deliberately.
+Three narrowings, none of them applied unasked: reading titles alone, skipping
+closed items, and stopping at the backend's own default page. Each one turns a
+match into an empty result that a caller cannot tell from a true negative,
+which is how a search for prior art becomes a duplicate filing. The tests here
+pin the wide default and the caller's ability to narrow it back down
+deliberately.
 """
 
 from __future__ import annotations
@@ -71,8 +71,8 @@ def test_search_reads_title_description_and_notes_by_default():
 
 
 def test_search_returns_an_item_whose_only_match_is_in_its_description():
-    # The first narrowing: a word that appears only in a description used to
-    # return nothing at all.
+    # The first narrowing: reading titles alone returns nothing at all for a
+    # word that appears only in a description.
     runner = ScriptedBdRunner(
         steps=_legs(
             _EMPTY,
@@ -117,8 +117,8 @@ def test_search_returns_a_closed_item():
 
 
 def test_search_defaults_to_unbounded_and_every_row_surfaces():
-    # The third narrowing: the backend's own default page is 50, so a match
-    # set of 60 used to arrive clipped with nothing to say it had been.
+    # The third narrowing: the backend's own default page is 50, so deferring
+    # to it clips a match set of 60 with nothing to say it was clipped.
     matches = [_raw(f"x.{i}") for i in range(60)]
     runner = ScriptedBdRunner(steps=_legs(_found(*matches), _EMPTY, _EMPTY))
 

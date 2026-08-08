@@ -886,10 +886,10 @@ def test_label_mutate_wraps_a_mid_sequence_failure_with_partial_progress():
 
 
 def test_label_mutate_wraps_retry_exhaustion_with_partial_progress():
-    # Codex review finding on PR #319: run_with_retry itself raises WorkError
-    # on retry exhaustion (E_LOCK_CONTENTION/E_TIMEOUT) rather than returning
-    # a BdResult -- that path bypassed the `returncode != 0` branch entirely,
-    # so a label already applied before it went unreported.
+    # run_with_retry itself raises WorkError on retry exhaustion
+    # (E_LOCK_CONTENTION/E_TIMEOUT) rather than returning a BdResult -- that
+    # path never reaches the `returncode != 0` branch, so without this
+    # wrapping a label already applied would go unreported.
     locked = BdResult(returncode=1, stdout="", stderr="database is locked")
     runner = ScriptedBdRunner(
         steps=[
@@ -1124,10 +1124,10 @@ def test_sync_push_failure_wraps_with_partial_progress_commit_completed():
 
 
 def test_sync_wraps_push_retry_exhaustion_with_partial_progress():
-    # Codex review finding on PR #319: run_with_retry itself raises WorkError
-    # on retry exhaustion rather than returning a BdResult -- that path
-    # bypassed the `returncode != 0` branch, leaving out `completed:["commit"]`
-    # even though the commit had already succeeded.
+    # run_with_retry itself raises WorkError on retry exhaustion rather than
+    # returning a BdResult -- that path never reaches the `returncode != 0`
+    # branch, so without this wrapping `completed:["commit"]` is left out even
+    # though the commit already succeeded.
     locked = BdResult(returncode=1, stdout="", stderr="database is locked")
     runner = ScriptedBdRunner(
         steps=[

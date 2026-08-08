@@ -222,7 +222,7 @@ def test_fix_applies_per_cluster_not_state_wide_gh_id(tmp_path: Path) -> None:
     # Two items share gh_id "dup" but differ in kind (the natural key is
     # (kind, gh_id), not gh_id alone). The clustered-unprocessed one must receive the
     # disposition; the already-processed sibling sharing the gh_id must be untouched —
-    # a state-wide gh_id map would mis-target the sibling (PR #152 comment 3408284563).
+    # a state-wide gh_id map would mis-target the sibling.
     target = _item("dup", cluster_id="c-1")  # REVIEW_THREAD, unprocessed
     prior = Disposition(
         kind=DispositionKind.SKIPPED, decided_at=_T0, decided_by="x", rationale="kept"

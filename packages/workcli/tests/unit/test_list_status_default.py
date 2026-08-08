@@ -1,10 +1,10 @@
 """`work list` answers every status unless the caller narrows it.
 
-The default used to be whatever set of statuses the backend listed when it
-was not asked, which is live work only: measured on this repository's own
-tracker, 89 items where 277 exist. A caller reading that envelope could not
-tell it from a complete listing -- the same failure the unbounded `--limit`
-already closed on the row-count axis, and `search` on this one.
+Deferring to whatever set of statuses the backend lists when it is not asked
+answers live work only: measured on this repository's own tracker, 89 items
+where 277 exist. A caller reading that envelope could not tell it from a
+complete listing -- the same failure the unbounded `--limit` closes on the
+row-count axis, and `search` on this one.
 
 What the unit level can pin is the argv the adapter sends and the argv it
 does not send. A scripted runner returns whatever it was scripted with, so

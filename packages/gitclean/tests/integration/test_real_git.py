@@ -546,9 +546,9 @@ def test_a_refusal_beside_a_merged_branch_still_leaves_the_branch_deleted(repo: 
 
     Two names in one command: `feat/done`, provably merged, and the worktree
     the process is executing in, which can never go while it is standing there.
-    Aborting the selection over the second used to spend the first as well, and
-    the caller's remedy was to re-run with the offender removed -- a round trip
-    over a name the tool had already worked out it could not act on.
+    Aborting the selection over the second would spend the first as well, and
+    the caller's remedy would be to re-run with the offender removed -- a round
+    trip over a name the tool has already worked out it cannot act on.
 
     Both halves have to be true at once, and each is what stops the other being
     read wrong: a caller who sees only exit 1 must not conclude the deletion
@@ -754,17 +754,16 @@ def test_the_pairing_holds_when_the_remote_s_own_name_holds_a_slash(
 
 
 def test_the_pairing_holds_for_a_path_holding_a_newline(repo: Path, tmp_path: Path) -> None:
-    """The one value in this group that used to be untestable, not because git
-    refuses it but because the pieces needed to prove it landed on separate
-    branches: `-z` framing, which keeps a newline inside the worktree listing
-    whole, and the pairing fields themselves. Neither alone says the relation
-    holds for this value -- a truncated path and an untruncated one would key
-    the same rows either way if the framing had not landed, and a test written
-    before it had would have pinned that truncation rather than this relation.
+    """Proving the pairing for this value takes two things at once: `-z`
+    framing, which keeps a newline inside the worktree listing whole, and the
+    pairing fields themselves. Neither alone says the relation holds for this
+    value -- without the framing a truncated path and an untruncated one key the
+    same rows either way, and a test written against that would pin the
+    truncation rather than the relation.
 
-    Both are on this branch now, so the pairing is asked to key both directions
-    by a path that contains the one character `worktree list --porcelain`
-    prints raw and does not frame with anything but `-z`."""
+    So the pairing is asked to key both directions by a path that contains the
+    one character `worktree list --porcelain` prints raw and does not frame with
+    anything but `-z`."""
     _with_remote(repo, tmp_path)
     work = tmp_path / "wt\nnewlined"
     git(repo, "worktree", "add", "-q", str(work), "-b", "feat/newlined")
@@ -1090,7 +1089,8 @@ def test_a_remote_whose_name_holds_a_slash_is_never_split_at_the_wrong_one(
 
     assert code == EXIT_OK
     deletion = payload["execution"]["deletions"][0]
-    # The defect's signature: `already_absent` on a branch the server holds.
+    # The wrong answer's signature: `already_absent` on a branch the server
+    # holds.
     assert deletion["already_absent"] is False
     assert deletion["deleted"] is True
     assert "feat/gone" not in git(repo, "ls-remote", "--heads", "team/origin")
@@ -1147,8 +1147,8 @@ def test_a_ref_reachable_only_through_a_custom_refspec_belongs_to_who_fetches_it
 
     assert code == EXIT_OK
     deletion = payload["execution"]["deletions"][0]
-    # The defect's signature: `already_absent` on a branch the server holds,
-    # settled by asking a remote that never had it.
+    # The wrong answer's signature: `already_absent` on a branch the server
+    # holds, settled by asking a remote that never had it.
     assert deletion["already_absent"] is False
     assert deletion["deleted"] is True
     assert "feat/live" not in git(repo, "ls-remote", "--heads", "upstream")
@@ -1163,15 +1163,15 @@ def test_a_ref_reachable_only_through_a_custom_refspec_belongs_to_who_fetches_it
 def test_two_remotes_fetching_into_one_path_is_refused_rather_than_misattributed(
     repo: Path, tmp_path: Path
 ) -> None:
-    """The configuration the defect was reported against: `origin` present and
-    fetching normally, `upstream` configured to fetch into the same namespace,
-    and the branch live only on upstream. Nothing can say which of them holds a
-    given ref there.
+    """The configuration that makes attribution unanswerable: `origin` present
+    and fetching normally, `upstream` configured to fetch into the same
+    namespace, and the branch live only on upstream. Nothing can say which of
+    them holds a given ref there.
 
-    The old answer was the worst available one -- attribute it to `origin`,
-    find nothing, and report a live branch as already gone while prescribing a
-    prune that would drop its tracking ref. A refusal costs a round trip; that
-    answer costs the ref."""
+    The worst available answer is to attribute it to `origin`, find nothing,
+    and report a live branch as already gone while prescribing a prune that
+    would drop its tracking ref. A refusal costs a round trip; that answer
+    costs the ref."""
     origin_bare = tmp_path / "origin.git"
     upstream_bare = tmp_path / "upstream.git"
     for path in (origin_bare, upstream_bare):
@@ -1213,18 +1213,18 @@ def test_two_remotes_fetching_into_one_path_is_refused_rather_than_misattributed
 def test_a_trunk_published_by_the_only_remote_is_found_whatever_it_is_called(
     repo: Path, tmp_path: Path, remote: str
 ) -> None:
-    """Discovery used to ask `refs/remotes/origin/HEAD` and then a local
-    main/master, so a trunk published only through a differently-named remote
-    was found by no tier: none was verified, the ref merges would be measured
-    against did not resolve either, and the tool was inert in that repository.
-    The branch below is genuinely merged -- the setup insists on it -- and used
-    to be left alone in two of these three rows.
+    """Asking `refs/remotes/origin/HEAD` and then a local main/master finds no
+    tier at all for a trunk published only through a differently-named remote:
+    nothing is verified, the ref merges would be measured against does not
+    resolve either, and the tool is inert in that repository. The branch below
+    is genuinely merged -- the setup insists on it -- and two of these three
+    rows would leave it alone.
 
-    The remote's name is the only thing varying, and none of it matters now: the
+    The remote's name is the only thing varying, and none of it matters: the
     question is asked of whichever remotes are configured. The slash in
     `team/origin` earns its own row because a remote name may contain one, so a
     path under `refs/remotes/` does not say on its own where the name stops. The
-    `origin` row is the behaviour-preservation control."""
+    `origin` row is the control for the ordinary case."""
     bare = tmp_path / "server.git"
     SubprocessCommands().git(["init", "-q", "--bare", "-b", "trunk", str(bare)])
     git(repo, "branch", "-m", "main", "trunk")
@@ -1512,8 +1512,8 @@ def test_a_branch_named_like_an_option_is_swept_not_misread(repo: Path) -> None:
 def test_a_squash_merged_branch_named_like_an_option_is_proven(repo: Path) -> None:
     """The one case the test above does not cover: an ancestor or patch-id
     merge never reaches the squash tier at all, and that tier's own `git`
-    calls used to lose the argv terminator that protects every other probe
-    here. Two commits are used deliberately, as in
+    calls are their own chance to lose the argv terminator that protects every
+    other probe here. Two commits are used deliberately, as in
     `test_a_real_squash_merge_is_detected` -- with one, patch-id equivalence
     would settle it before the squash tier ran, and this would prove nothing
     about its argv."""
@@ -1745,10 +1745,10 @@ def _moved_aside_merged_worktree(repo: Path) -> Topology:
     uncommitted work.
 
     Nothing here is unreachable, so the guard has nothing to say: the loss this
-    shape used to cause is a directory of files, not a commit. It is the case
-    that isolates the working-tree question, because every other one is settled
-    -- and it is the case where `prunable` was read as "the directory is gone"
-    and the tree asserted empty on no measurement at all."""
+    shape risks is a directory of files, not a commit. It is the case that
+    isolates the working-tree question, because every other one is settled --
+    and it is the case where reading `prunable` as "the directory is gone"
+    asserts an empty tree on no measurement at all."""
     _merged_branch_beside(repo, "feat/beside-held")
     path = repo.parent / "wt-held"
     git(repo, "worktree", "add", "-q", str(path), "-b", "feat/held")

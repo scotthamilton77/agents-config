@@ -295,7 +295,7 @@ def test_filename_falls_back_to_poll_sha(tmp_path: Path) -> None:
 
 
 def test_filename_ignores_stale_pushed_head_sha_after_external_push(tmp_path: Path) -> None:
-    # Regression (PR #274 review): after prgroom pushes head "oldpush", an EXTERNAL
+    # Regression: after prgroom pushes head "oldpush", an EXTERNAL
     # push moves the head to "newhead". poll.py advances last_poll_sha and
     # last_review_invalidated_sha to "newhead" but leaves last_pushed_head_sha stale
     # at "oldpush". The export MUST pin to the current head, never the stale push.

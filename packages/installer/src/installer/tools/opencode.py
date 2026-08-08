@@ -49,7 +49,7 @@ class OpenCodeAdapter:
         io: IOPort,  # noqa: ARG002  # protocol parameter; OpenCode has no transform
     ) -> StagingPlan:
         """No-op. OpenCode has no standalone rules/ destination, but the loose
-        rules/ drop is no longer OpenCode-specific: flatten_plan_templates drops
+        rules/ drop is not OpenCode-specific: flatten_plan_templates drops
         the inlined rules from EVERY plan whose instruction file carries the
         DYNAMIC-INCLUDE-ALL-RULES marker (OpenCode's AGENTS.md does), and that runs
         earlier in stage_and_transform. Kept as a no-op only to satisfy the

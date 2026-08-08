@@ -74,9 +74,7 @@ class InstallIgnore:
         - ``content_lint``'s accounting walk, for a direct child of a staged
           *root*. The declaring role — the pattern says an unread directory is
           source-side on purpose rather than content nobody wired up. Staging
-          never reads at that depth, so there is nothing there to prune; before
-          that gate existed there was also nothing there to answer, which is why
-          this contract once named only the first scope.
+          never reads at that depth, so there is nothing there to prune.
 
         The two do not overlap: the lint stops at a namespace and never descends,
         so it never asks at the depth staging asks about, and vice versa.

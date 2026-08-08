@@ -24,7 +24,7 @@ from gitclean.model import Branch, MergeEvidence, NotOffered, PullRequest, Surve
 NOW = datetime(2026, 7, 25, 12, 0, 0, tzinfo=UTC)
 
 _UNSET = "\x00unset"
-"""Sentinel for timestamp arguments, because None is now a meaningful value:
+"""Sentinel for timestamp arguments, because None is a meaningful value:
 `last_activity=None` means "git did not answer", which is a case tests must be
 able to build. Defaulting on None would make that case unreachable."""
 

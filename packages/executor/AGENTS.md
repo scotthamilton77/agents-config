@@ -97,8 +97,7 @@ ports.py  →  state.py  →  rules.py  →  pairing.py  →  enact.py  →  cli
 
 `S9T1-D12` closes the pairing universe over *which* verb maps to which event
 and which tracker call. It answers none of the three questions each row also
-has to, and every one was discovered a cell per review round before being
-enumerated. **`src/executor/rules.py` is the source of truth**; the tables
+has to. **`src/executor/rules.py` is the source of truth**; the tables
 below are the orientation, and `tests/unit/test_rules_matrices.py` walks all
 three from the table itself. A fourth table, the attempt budgets, sits beside
 them and is documented after.
@@ -134,11 +133,10 @@ compares an event's PR against nothing**, so only `PR_MATCHES_ITEM` stops a
 delayed notification for a superseded PR being recorded as fact — and for
 `pr-closed`, tearing down the live review cycle. It is strict about absence:
 an item holding no reference matches no PR. A requirement named "the PR
-matches" that passed vacuously when there was none would be a trap for the
-next row to use it, which is how `pr-closed` came to accept an invented
-closure against a `waiting-human` item that had never opened one. Rows wanting
-the clearer `E_NO_OPEN_PR` for that case pair it with `PR_REFERENCE`, which is
-why the two stay separate.
+matches" that passes vacuously when there is none is a trap for the next row to
+use it: `pr-closed` would accept an invented closure against a `waiting-human`
+item that never opened one. Rows wanting the clearer `E_NO_OPEN_PR` for that
+case pair it with `PR_REFERENCE`, which is why the two stay separate.
 
 **`OPEN_PR` is strictly stronger than `PR_REFERENCE` and the two are not
 interchangeable.** A closure leaves the reference behind and marks it closed,
@@ -230,11 +228,11 @@ Three traps worth keeping:
 - **A closure to `parked` leaves the review status alone** and sets the park
   instead, so comparing status would make such a closure refuse its own retry.
 - **`abandon`'s evidence is the cleared reference, and nothing weaker.**
-  Position, the surviving reference and ledger membership alone were each
-  tried and each matches a state another command produces — an ordinary
-  `pr-closed --next queued` looks identical under every one of them. The
-  evidence is the *conjunction*: a cleared reference **and** a closure for
-  that PR, which only `S9T1-B7`'s fold produces.
+  Position, the surviving reference and ledger membership alone each match a
+  state another command produces — an ordinary `pr-closed --next queued` looks
+  identical under every one of them. The evidence is the *conjunction*: a
+  cleared reference **and** a closure for that PR, which only `S9T1-B7`'s
+  fold produces.
 
 ### Matrix C — the payload rules
 
@@ -353,10 +351,9 @@ outcomes and stay on every path; the verb block is not.
   reads as "no budget spent", which switches enforcement off). Before adding a
   lenient read, ask which way its degraded value points.
 
-  **Ask it of an absence too, not only of a wrong type.** The `conditions`
-  case is the one that got past a first pass: absent looked like a benign
-  "nothing to report" until the question was put the other way round — the
-  runtime already encodes that as the empty list, so absent can only be a
+  **Ask it of an absence too, not only of a wrong type.** `conditions` is the
+  case where that matters: absent reads as a benign "nothing to report", but
+  the runtime already encodes that as the empty list, so absent can only be a
   reply this package cannot read. `parse_state` takes `conditions` as a
   **required** argument for that reason; a default would be a value meaning
   "the runtime said nothing about budgets", and there is no such reading.

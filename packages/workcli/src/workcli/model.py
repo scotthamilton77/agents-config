@@ -141,8 +141,8 @@ SEARCH_FIELDS = ("title", "description", "notes")
 @dataclass(frozen=True)
 class SearchFilters:
     query: str
-    # Every field by default. The three narrowings this verb used to apply
-    # silently -- corpus, status, bound -- are each askable now, and each
+    # Every field by default. The three narrowings this verb could apply
+    # silently -- corpus, status, bound -- are each askable instead, and each
     # defaults to the wide answer: a narrowing nobody chose returns an empty
     # result a caller cannot tell from a true "nothing like this exists".
     corpus: frozenset[str] = frozenset(SEARCH_FIELDS)

@@ -285,7 +285,7 @@ def triggers(backend: Backend, args: Namespace) -> JsonValue:
     # Densify to every configured track (same shape as backlog_counts) so a
     # track with zero cross-track edges reports 0, not an absent key --
     # callers triaging a pressured-ineligible track need the actual count,
-    # not just the three-state reduction (Codex finding).
+    # not just the three-state reduction.
     cross_track_edges = {name: edge_counts.get(name, 0) for name in config.names}
 
     statuses: dict[str, JsonValue] = {}

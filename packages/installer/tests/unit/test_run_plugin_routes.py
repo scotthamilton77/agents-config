@@ -40,8 +40,8 @@ def test_install_plugin_routes_dispatches_beads_formulas_and_scripts(tmp_path: P
     Then the formula lands at home/.beads/formulas (non-exec) and the script at
     home/.beads/scripts (exec) — the routes are dispatched, not dropped.
 
-    Pins the fix for the parity BLOCKER: routes(home) is now wired into the
-    install pipeline (was a zero-call-site dead end).
+    Pins routes(home) being wired into the install pipeline: unwired it is a
+    zero-call-site dead end, and no route is ever dispatched.
     """
     home = tmp_path / "home"
     src = tmp_path / "plugin-src"

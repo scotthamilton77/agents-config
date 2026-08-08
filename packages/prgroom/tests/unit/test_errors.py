@@ -162,8 +162,8 @@ def test_blocking_error_codes_is_the_exact_documented_set() -> None:
 
 
 def test_pr_review_exhausted_registry_speaks_retry_budget_vocabulary() -> None:
-    # 8.25 reframe: the operator-facing what/why/how must direct to the retry-budget
-    # knob, not the retired hard-cap vocabulary.
+    # The operator-facing what/why/how must direct to the retry-budget knob,
+    # never the hard-cap vocabulary.
     entry = ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.registry_entry()
     assert "--pr-review-retries" in entry.how
     assert "hard cap" not in (entry.what + entry.why + entry.how).lower()
@@ -171,7 +171,7 @@ def test_pr_review_exhausted_registry_speaks_retry_budget_vocabulary() -> None:
 
 @pytest.mark.parametrize("absent", ["STATE_LOCK_STALE", "NOTICE_LOCK_STALE_CLEANED"])
 def test_removed_lock_codes_are_not_in_the_registry(absent: str) -> None:
-    # §3.7: these were removed to match the flock(2) mechanism (kernel-released on
+    # §3.7: these have no place under the flock(2) mechanism (kernel-released on
     # death). Their presence would signal a regression to an fcntl-style protocol.
     assert absent not in ErrorCode.__members__
 

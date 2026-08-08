@@ -34,7 +34,7 @@ def spec_path(notes: str) -> str | None:
     """The path recorded after the first `[work] spec:` marker, or None.
 
     Used by `deliver`'s drift guard to validate a re-run's `--spec` against the
-    path recorded at first delivery. `reconcile` no longer reads it -- it replays
+    path recorded at first delivery. `reconcile` does not read it -- it replays
     toward the in-band `[work] manifest:` snapshot instead of re-reading the spec.
     """
     return _first_marker_payload(notes, SPEC_MARKER)

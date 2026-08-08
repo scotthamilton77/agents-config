@@ -107,7 +107,7 @@ def test_limit_applies_after_track_filtering() -> None:
 
 
 def test_limit_zero_is_the_unbounded_sentinel() -> None:
-    # REGRESSION PIN (Codex finding): the bd adapter sends "--limit 0" for
+    # REGRESSION PIN: the bd adapter sends "--limit 0" for
     # both an omitted limit and an explicit `--limit 0`, so 0 is the
     # existing unbounded sentinel repo-wide -- it must not slice the
     # track-filtered set down to zero items.
@@ -125,7 +125,7 @@ def test_limit_zero_is_the_unbounded_sentinel() -> None:
 
 
 def test_limit_negative_is_also_unbounded() -> None:
-    # REGRESSION PIN (Codex finding): argparse accepts negative ints, and
+    # REGRESSION PIN: argparse accepts negative ints, and
     # Python's items[:-1] silently drops the last element rather than
     # erroring -- a negative --limit must mean unbounded here too, same as 0.
     backend = FakeBackend()

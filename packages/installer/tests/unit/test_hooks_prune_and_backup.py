@@ -1,13 +1,13 @@
 """End-to-end pins for hooks joining the prune-tracked, sibling-backed-up
 namespaces (``namespaces.PRUNE`` / ``namespaces.BACKUP``).
 
-Before this fix, a hooks item was staged and deployed (``TOOL_SCOPED``) but
-never receipt-recorded and never sibling-backed-up: ``entries_from_outcomes``
-dropped every hooks write (namespace not in ``PRUNE_NAMESPACES``), so a
-removed-source hook had no receipt entry to trigger its deletion, and an
-overwritten hook's prior bytes landed as an in-place ``<name>.backup-<ts>``
-sibling instead of a recoverable ``hooks-backup/`` dir. Mirrors
-test_workflows_namespace.py, the reference fix for the identical gap.
+Outside those two views a hooks item is staged and deployed (``TOOL_SCOPED``) but
+neither receipt-recorded nor sibling-backed-up: ``entries_from_outcomes`` drops
+every hooks write, so a removed-source hook has no receipt entry to trigger its
+deletion, and an overwritten hook's prior bytes land as an in-place
+``<name>.backup-<ts>`` sibling instead of a recoverable ``hooks-backup/`` dir.
+Mirrors test_workflows_namespace.py, which pins the identical contract for
+``workflows``.
 """
 
 from __future__ import annotations
@@ -40,11 +40,11 @@ def test_hook_with_removed_source_is_pruned_on_next_install(tmp_path: Path) -> N
 
     Builds the prior receipt via ``entries_from_outcomes`` — the real recording
     path a full install run uses — rather than hand-authoring a ``ReceiptEntry``,
-    so the test actually exercises the namespace-membership gate this fix closes.
-    Before the fix, ``entries_from_outcomes`` drops the hooks write (namespace
-    not in ``PRUNE_NAMESPACES``), so ``prior.entries`` never gets an entry for it,
-    no orphan is ever detected, and the hook survives; after the fix the entry is
-    recorded and the now-sourceless hook is diffed out and deleted.
+    so the test actually exercises the namespace-membership gate. With ``hooks``
+    outside ``namespaces.PRUNE``, ``entries_from_outcomes`` drops the hooks write,
+    ``prior.entries`` never gets an entry for it, no orphan is ever detected, and
+    the hook survives; inside it the entry is recorded and the sourceless hook is
+    diffed out and deleted.
     """
     home = _claude_home(tmp_path)
     hook_path = home / ".claude" / "hooks" / "old-hook.py"

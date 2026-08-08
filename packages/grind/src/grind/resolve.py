@@ -1,10 +1,9 @@
 """Which grind directory a command acts on -- the `--dir` resolution rule.
 
-`--dir` used to carry `default="."` on every subcommand, which made the
-omitted-flag path *silently* different from the explicit-flag path: create
-with `--dir run/`, omit the flag on a later `status`, and the CLI folded an
-empty cwd and reported an empty board as fact. Nothing failed; the run looked
-like lost work.
+A `default="."` on every subcommand would make the omitted-flag path
+*silently* different from the explicit-flag path: create with `--dir run/`,
+omit the flag on a later `status`, and the CLI folds an empty cwd and reports
+an empty board as fact. Nothing fails; the run looks like lost work.
 
 The rule here removes that class of failure by construction. For every verb
 that reads or appends to an existing grind, the omitted-flag path either

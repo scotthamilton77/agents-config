@@ -51,7 +51,7 @@ def refusals(payload: dict[str, object]) -> list[dict[str, object]]:
     Read out of the plan rather than out of the envelope's `refusal` field.
     That field is the run as a whole having nothing to act on -- a survey that
     failed, or an --after-merge whose authorising fact could not be read -- and
-    a cleanup no longer produces one: whatever resolved cleanly is still
+    a cleanup does not produce one: whatever resolved cleanly is still
     deleted, so there is always a plan."""
     plan = payload["plan"]
     assert isinstance(plan, dict)
@@ -405,7 +405,7 @@ def _phantom_remote_port() -> ScriptedCommands:
 
 
 def test_naming_a_ref_the_server_dropped_says_what_is_actually_the_matter() -> None:
-    """The survey no longer offers it, so the full spelling lands on the
+    """The survey does not offer it, so the full spelling lands on the
     exclusion rather than on a deletion -- and the reason is the whole value of
     the refusal: nothing on the server, a tracking ref a fetch left here, and
     the prune that clears it."""
@@ -493,22 +493,20 @@ def _colliding_names_port(*, remote_list: str | None = "origin\n") -> ScriptedCo
 
 
 def test_a_failed_split_cannot_change_what_a_bare_name_selects() -> None:
-    """The defect this pins ran the wrong way round: the probe that FAILED made
-    the tool more willing to delete. Read the remote list and origin's copy of
-    `feat/x` became a target whose bare alias was `feat/x`, so the name reached
-    two things and the run refused. Fail that read and the same ref never
-    became a target at all, the name reached one thing, and the local branch
-    went. Same repository, same command, and the only difference was a question
-    git declined to answer.
+    """The hazard here runs the wrong way round: the probe that FAILS is the one
+    that would make the tool more willing to delete. Give a bare name a claim on
+    a server ref and reading the remote list makes origin's copy of `feat/x` a
+    target whose bare alias is `feat/x`, so the name reaches two things and the
+    run refuses; fail that read and the same ref never becomes a target at all,
+    the name reaches one thing, and the local branch goes. Same repository, same
+    command, and the only difference a question git declined to answer.
 
-    A bare name no longer reaches a server ref under any splitting, so the
-    answer to that question is not consulted when this selection is made. Both
-    runs resolve `feat/x` to the local branch, both delete it, and neither goes
-    anywhere near the copy on the server -- which is the same invariant the
-    refusal used to enforce, held by construction instead. That is the stronger
-    way to hold it: there is no longer a path along which the unanswered
-    question could widen anything, so nothing has to notice that it went
-    unanswered."""
+    A bare name does not reach a server ref under any splitting, so the answer
+    to that question is not consulted when this selection is made. Both runs
+    resolve `feat/x` to the local branch, both delete it, and neither goes
+    anywhere near the copy on the server. That is the stronger way to hold the
+    invariant: no path exists along which the unanswered question could widen
+    anything, so nothing has to notice that it went unanswered."""
     outcomes: list[tuple[int, list[object]]] = []
     for port in (_colliding_names_port(), _colliding_names_port(remote_list=None)):
         code, payload = invoke(["--cleanup", "feat/x"], port)
@@ -527,9 +525,9 @@ def test_a_bare_name_deletes_the_local_branch_and_leaves_the_servers_copy() -> N
     """The command this whole rule exists for: the branch whose work just
     merged, named the way everybody names it, in a repository where origin
     still holds a copy under the same name. That is the commonest cleanup
-    there is, and it used to answer E_AMBIGUOUS_TARGET -- the tool declining to
-    choose between a local ref and a copy on a server that it will not delete
-    unnamed anyway, which made the ambiguity one it had already resolved.
+    there is, and answering E_AMBIGUOUS_TARGET to it would be the tool declining
+    to choose between a local ref and a copy on a server that it will not delete
+    unnamed anyway -- an ambiguity it has already resolved.
 
     Both halves are asserted, because dropping the server ref from the
     selection is only right if it is also left alone: the run deletes the local
@@ -750,8 +748,8 @@ def _absent_remote_port() -> ScriptedCommands:
     It advertises the branch when the survey asks what it holds -- so the
     target is offered -- and holds nothing by the time the executor asks after
     that one ref. That race is what the check before the delete is for, and it
-    is the only route to this outcome now that a ref the survey found missing
-    never becomes a target at all."""
+    is the only route to this outcome: a ref the survey found missing never
+    becomes a target at all."""
     return make_port(
         refs=[
             ref_at("refs/heads/main", "main", "a" * 40, head="*"),
@@ -775,8 +773,9 @@ def test_naming_something_already_gone_is_a_clean_exit() -> None:
 
 
 def test_an_absent_name_does_not_take_the_names_beside_it_down() -> None:
-    """A selector refusal is plan-level, so before this the one name that had
-    already been dealt with aborted every other deletion in the command."""
+    """A selector refusal is plan-level, so aborting the run over one would let
+    the one name already dealt with take every other deletion in the command
+    with it."""
     code, payload = invoke(["--cleanup", "done", "not-a-thing"], merged_branch_port())
     assert code == EXIT_OK
     execution = payload["execution"]
@@ -786,12 +785,12 @@ def test_an_absent_name_does_not_take_the_names_beside_it_down() -> None:
 
 
 def test_a_refused_name_does_not_take_the_names_beside_it_down() -> None:
-    """The change this is all for. `worktree:/repo` is the directory the
-    process is executing in and can never be removed by the run standing in it;
-    `done` is provably merged and was asked for in the same breath. Aborting
-    the selection over the first spent the second too, and the caller's only
-    way out was to re-run with the offender removed -- a round trip spent
-    teaching the tool something it had already worked out.
+    """`worktree:/repo` is the directory the process is executing in and can
+    never be removed by the run standing in it; `done` is provably merged and
+    was asked for in the same breath. Aborting the selection over the first
+    would spend the second too, and the caller's only way out would be a re-run
+    with the offender removed -- a round trip spent teaching the tool something
+    it has already worked out.
 
     The deletion is asserted twice over, in the port's transcript and in the
     run's own account of itself. The transcript is what git was really asked;
@@ -817,7 +816,7 @@ def test_a_refusal_about_one_name_does_not_fill_the_run_wide_refusal_field() -> 
     a different fact, and populating both fields would tell a reader checking
     either one that the whole command was declined.
 
-    So a reader still on the old field sees a null. That is the honest answer
+    So a reader of the envelope's field sees a null. That is the honest answer
     to the question that field asks, and it is the reason the two are not
     interchangeable."""
     code, payload = invoke(["--cleanup", "done", "worktree:/repo"], merged_branch_port())

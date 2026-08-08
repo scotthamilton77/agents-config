@@ -172,7 +172,7 @@ def _snapshot_note(manifest: Manifest) -> str:
 
 
 def _reconcile(backend: FakeBackend, *, dry_run: bool = False) -> dict:
-    # reconcile no longer reads the spec file (it replays toward the in-band
+    # reconcile does not read the spec file (it replays toward the in-band
     # snapshot); the injected reader is present only to satisfy the handler
     # signature and must never be consulted.
     args = Namespace(dry_run=dry_run, read_file=_reader("UNREAD"))
@@ -739,9 +739,9 @@ def test_reconcile_heals_promote_crash_before_the_shape_feat_to_spec_swap():
 # --- wgclw.9.8: leaked creating-spec on a container's own children ---
 #
 # bd copies a parent's current labels onto a `--parent` child by default, so
-# before the adapter opted out (`--no-inherit-labels`), a design child /
-# placeholder minted while their container still carried `creating-spec`
-# (removed from the container STRICTLY LAST, after both children exist) came
+# without the adapter's `--no-inherit-labels` opt-out, a design child /
+# placeholder minted while their container still carries `creating-spec`
+# (removed from the container STRICTLY LAST, after both children exist) comes
 # back from bd carrying `creating-spec` themselves -- verified against real
 # bd 1.0.3. `_sweep_interrupted_instantiations` must never mistake such a
 # leaf for a mid-instantiation container: it heals the leaked handle instead
@@ -750,11 +750,12 @@ def test_reconcile_heals_promote_crash_before_the_shape_feat_to_spec_swap():
 
 def _legacy_spec_tree_with_leaked_creating_spec(backend: FakeBackend) -> None:
     """A fully instantiated, already-`planned` spec tree as a live bd install
-    left it BEFORE the adapter disabled label inheritance: the container's own
-    `creating-spec` is off (removed last, per `finalize_spec_instantiation`),
-    but the design child and placeholder it minted while that label was still
-    on the container inherited it -- unlike `_spec_tree()` above, which models
-    the label set the fixed adapter now guarantees."""
+    leaves it WITHOUT the adapter's label-inheritance opt-out: the container's
+    own `creating-spec` is off (removed last, per
+    `finalize_spec_instantiation`), but the design child and placeholder it
+    minted while that label was still on the container inherited it -- unlike
+    `_spec_tree()` above, which models the label set the opted-out adapter
+    guarantees."""
     backend.add("c", title="Objective", type="feature", labels=["shape-spec", "planned"])
     backend.add(
         "d",

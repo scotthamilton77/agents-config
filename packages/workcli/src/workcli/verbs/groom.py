@@ -32,7 +32,7 @@ _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 # the future, and treating that as invalid would fail a groom that just
 # happened. A marker further in the future than this isn't drift -- it's
 # invalid state (clock misconfiguration or a bad raw write) -- and is
-# rejected the same way a malformed marker is (Codex finding, round 3).
+# rejected the same way a malformed marker is.
 _FUTURE_SKEW_TOLERANCE = timedelta(hours=24)
 
 
@@ -58,22 +58,21 @@ def _latest_marker(
     process computes its timestamp, stalls before `append_note`, and appends
     after a later completion already wrote a newer one) -- trusting note
     order in that case would regress the persisted reset time and could fire
-    the nag prematurely (Codex finding, round 4).
+    the nag prematurely.
 
     A candidate is untrustworthy when it fails to parse OR sits further in
-    the future than `_FUTURE_SKEW_TOLERANCE` explains (round 3's skew check,
-    folded in HERE rather than applied only to the selected marker after the
-    fact -- a garbage far-future timestamp would otherwise always sort as
-    "latest" and permanently mask a real, valid `--done` reset underneath it,
-    defeating the reset `--done` is meant to guarantee (Codex finding, round
-    5)). Untrustworthy candidates are SKIPPED, not fatal, as long as at least
-    one trustworthy marker exists elsewhere in history: notes are
-    append-only, so a corrupted line can never be deleted, and hard-failing
-    on the first bad candidate would brick `--status` forever even after a
-    hundred valid `--done` appends. Fail-loud (round 1) governs the case
-    where no trustworthy answer exists at all -- it doesn't demand refusing
-    a trustworthy answer because a corpse is also in the room (round 4
-    refinement)."""
+    the future than `_FUTURE_SKEW_TOLERANCE` explains (the skew check folded
+    in HERE rather than applied only to the selected marker after the fact --
+    a garbage far-future timestamp would otherwise always sort as "latest"
+    and permanently mask a real, valid `--done` reset underneath it,
+    defeating the reset `--done` is meant to guarantee). Untrustworthy
+    candidates are SKIPPED, not fatal, as long as at least one trustworthy
+    marker exists elsewhere in history: notes are append-only, so a corrupted
+    line can never be deleted, and hard-failing on the first bad candidate
+    would brick `--status` forever even after a hundred valid `--done`
+    appends. Fail-loud governs the case where no trustworthy answer exists at
+    all -- it doesn't demand refusing a trustworthy answer because a corpse
+    is also in the room."""
     matches = _NOTE_LINE_PATTERN.findall(backend.get(groom_state_item).notes)
     if not matches:
         return None

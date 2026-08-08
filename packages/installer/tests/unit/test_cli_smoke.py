@@ -28,7 +28,7 @@ def _seed_receipt_with_orphan(home: Path, relpath: str) -> Path:
     """Write a prior install receipt recording ``relpath`` (home-relative) as a
     claude-owned dir entry. The receipt is the sole prune authority, so an
     on-disk dir only becomes an orphan when a prior receipt records it and the
-    current plan omits it — globs no longer drive pruning."""
+    current plan omits it — globs do not drive pruning."""
     receipt_path = home / ".config" / "agents-config" / "install-receipt.json"
     write_receipt(
         receipt_path,
@@ -243,7 +243,7 @@ def test_main_autodetect_empty_home_dry_run_selects_claude_returns_zero(
     When main(["--dry-run"], home=that_home) is invoked
     Then it returns 0 — auto-detect falls back to claude and proceeds.
 
-    Pins: a bare home no longer takes a no-tools exit-2 guard; claude is the
+    Pins: a bare home does not take a no-tools exit-2 guard; claude is the
     auto-detect floor, matching install.sh's unconditional `TOOLS=(claude)`.
     """
     repo = _hermetic_repo(tmp_path)
@@ -304,8 +304,7 @@ def test_prune_plugin_discovery_honors_injected_repo_root(tmp_path: Path) -> Non
     Pins: main resolves plugins against the injected repo_root
     (repo_root / "src" / "plugins"), not the module-level _REPO_ROOT, builds the
     staging plans with them, and passes those plans to prune_pipeline — so
-    repo_root is fully authoritative for plugin discovery (PR #151 comment
-    3408271853).
+    repo_root is fully authoritative for plugin discovery.
     With a repo_root lacking src/plugins, discover() returns {} — proving the
     real repo's plugins are not consulted.
     """
@@ -883,12 +882,12 @@ def _hermetic_repo_with_skill(tmp_path: Path) -> Path:
 
 
 def test_plain_install_writes_receipt(tmp_path: Path) -> None:
-    """A plain install (NO --prune) now writes the receipt.
+    """A plain install (NO --prune) writes the receipt.
 
-    Pins the core new behaviour: the receipt write hoisted out of prune_pipeline
-    into record_receipt, run on every non-dry-run install. Before this change a
-    plain install recorded nothing. The hermetic repo stages a skills/foo dir, so
-    the receipt records that wholesale-owned entry with its real sha256.
+    Pins the receipt write living in record_receipt rather than prune_pipeline, so
+    it runs on every non-dry-run install: driven from prune_pipeline, a plain
+    install records nothing. The hermetic repo stages a skills/foo dir, so the
+    receipt records that wholesale-owned entry with its real sha256.
     """
     repo = _hermetic_repo_with_skill(tmp_path)
     home = _home_with_claude_settings(tmp_path)

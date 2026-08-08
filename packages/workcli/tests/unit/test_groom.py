@@ -185,7 +185,7 @@ def test_status_takes_the_last_of_multiple_note_lines() -> None:
 
 
 def test_status_selects_newest_timestamp_not_physically_last_line() -> None:
-    # REGRESSION PIN (Codex finding, round 4): concurrent `--done` calls can
+    # REGRESSION PIN: concurrent `--done` calls can
     # append out of chronological order -- a process that computed an
     # earlier timestamp can stall before append_note and write it AFTER a
     # later completion already appended a newer one. Selection must be by
@@ -214,7 +214,7 @@ def test_status_ignores_non_matching_note_lines() -> None:
 
 
 def test_status_malformed_timestamp_fails_loud_not_e_internal() -> None:
-    # REGRESSION PIN (Codex finding): notes stay append-only and raw bd
+    # REGRESSION PIN: notes stay append-only and raw bd
     # writes remain possible outside `work groom --done`, so a corrupted
     # marker (`\S+` matches non-timestamp garbage too) must surface as a
     # typed E_NOT_CONFIGURED naming the bad value, never crash into
@@ -231,7 +231,7 @@ def test_status_malformed_timestamp_fails_loud_not_e_internal() -> None:
 
 
 def test_status_skips_malformed_line_when_a_valid_marker_exists() -> None:
-    # REGRESSION PIN (round 4 refinement): notes are append-only -- a bad
+    # REGRESSION PIN: notes are append-only -- a bad
     # line written months ago can never be deleted -- so a single corrupted
     # candidate coexisting with later VALID markers must not permanently
     # brick --status. Only the all-invalid case (above) is fail-loud.
@@ -251,13 +251,13 @@ def test_status_skips_malformed_line_when_a_valid_marker_exists() -> None:
 
 
 def test_status_detects_empty_marker_value_as_malformed() -> None:
-    # REGRESSION PIN (Codex finding, round 5): the note-line pattern used to
-    # require \S+ (at least one non-whitespace char) after the prefix, so a
-    # raw append like "backlog_last_groomed: " (trailing space, empty value)
-    # matched NOTHING and was silently invisible -- if it were the only
-    # marker, --status would wrongly report never-groomed instead of
-    # surfacing the corruption. The pattern now captures the full value
-    # (including empty), which strptime then rejects as malformed.
+    # REGRESSION PIN: a note-line pattern requiring \S+ (at least one
+    # non-whitespace char) after the prefix would not match a raw append like
+    # "backlog_last_groomed: " (trailing space, empty value) at all, leaving it
+    # silently invisible -- as the only marker, --status would wrongly report
+    # never-groomed instead of surfacing the corruption. The pattern captures
+    # the full value (including empty), which strptime then rejects as
+    # malformed.
     backend = _backend(notes="backlog_last_groomed: ")
     with pytest.raises(WorkError) as exc_info:
         groom(backend, _args(status=True))
@@ -266,14 +266,13 @@ def test_status_detects_empty_marker_value_as_malformed() -> None:
 
 
 def test_done_recovers_from_a_stale_future_skewed_marker() -> None:
-    # REGRESSION PIN (Codex finding, round 5): a garbage far-future marker
-    # (clock misconfiguration or a bad raw write) always sorts numerically
-    # "latest" by timestamp value alone -- if the future-skew check were
-    # applied only to the already-selected marker (as it was before this
-    # fix), the garbage entry would keep winning selection forever and
-    # `--done` could never actually recover the state it claims to reset.
-    # Folding the skew check into candidate selection means a fresh --done
-    # append is now correctly preferred over the untrustworthy future entry.
+    # REGRESSION PIN: a garbage far-future marker (clock misconfiguration or a
+    # bad raw write) always sorts numerically "latest" by timestamp value alone
+    # -- a future-skew check applied only to the already-selected marker would
+    # let the garbage entry keep winning selection forever, and `--done` could
+    # never actually recover the state it claims to reset. Folding the skew
+    # check into candidate selection means a fresh --done append is preferred
+    # over the untrustworthy future entry.
     now = datetime(2026, 7, 18, 12, 0, 0, tzinfo=UTC)
     backend = _backend(notes="backlog_last_groomed: 2099-01-01T00:00:00Z")
     groom(backend, _args(done=True, now=now))
@@ -282,7 +281,7 @@ def test_done_recovers_from_a_stale_future_skewed_marker() -> None:
     assert result["breached"] is False
 
 
-# -- round-3 Codex finding: clock skew across dolt-synced machines --
+# -- clock skew across dolt-synced machines --
 # backlog_last_groomed is synced via dolt; a marker written from a
 # fast-clocked machine can land slightly in the future. <=24h is ordinary
 # NTP drift and clamps to days_since=0; beyond that is invalid state.

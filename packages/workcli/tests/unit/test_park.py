@@ -453,7 +453,7 @@ def test_cli_parked_with_no_parked_items_is_an_empty_report():
     assert envelope["data"] == {"items": [], "stale_days": 7}
 
 
-# --- unpark crash-window replays (Codex P2 on PR #371) -----------------------
+# --- unpark crash-window replays ---------------------------------------------
 
 
 def test_unpark_replay_after_marker_but_before_label_drop_converges():
