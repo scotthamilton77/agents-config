@@ -4,7 +4,7 @@ description: Scan a codebase for deepening opportunities, present them as a visu
 disable-model-invocation: true
 admission:
   provides: A bounded architectural survey that ends in a decision — at most five deepening candidates, each with a before/after visualisation and a recommendation strength, then a grilling loop over the one the user picks. Unprompted, the model reviews the code in front of it; this reads commit history for hot spots, applies the deletion test, and refuses to propose interfaces before the user has chosen a candidate.
-  cost: Zero always-on tokens — user-invoked, so the description is absent from the session catalog. On invoke it costs the body, an HTML report, and one subagent walk of the codebase.
+  cost: On invoke it costs an HTML report and one subagent walk of the codebase.
   remove_when: A survey pass returns no candidate above Speculative in two consecutive runs, meaning the spec contract and the grilling path are catching architectural friction before it accumulates.
 ---
 

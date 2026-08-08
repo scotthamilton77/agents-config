@@ -49,7 +49,7 @@ def test_list_defaults_to_unbounded_and_every_row_surfaces():
     data = envelope["data"]
     assert isinstance(data, dict)
     assert len(data["items"]) == 60
-    assert runner.calls == [("list", "--json", "--limit", "0")]
+    assert runner.calls == [("list", "--json", "--all", "--limit", "0")]
 
 
 def test_list_limit_flag_passes_through_a_positive_limit():
@@ -60,7 +60,7 @@ def test_list_limit_flag_passes_through_a_positive_limit():
     exit_code, _, _ = run_cli_with_runner(["list", "--limit", "7"], runner)
 
     assert exit_code == 0
-    assert runner.calls == [("list", "--json", "--limit", "7")]
+    assert runner.calls == [("list", "--json", "--all", "--limit", "7")]
 
 
 def test_list_status_label_parent_type_filters_map_to_bd_flags():
@@ -120,7 +120,7 @@ def test_ready_defaults_to_unbounded_and_every_row_surfaces():
     assert isinstance(data, dict)
     assert len(data["items"]) == 120
     assert runner.calls == [
-        ("list", "--json", "--label", "parked", "--limit", "0"),
+        ("list", "--json", "--all", "--label", "parked", "--limit", "0"),
         ("ready", "--json", "--limit", "0"),
     ]
 
@@ -139,6 +139,6 @@ def test_ready_label_flag_passes_through():
     # `--label` reaches `bd ready` only; the parked read is never re-scoped by
     # it -- the surfacing is the whole parking lot regardless of the filter.
     assert runner.calls == [
-        ("list", "--json", "--label", "parked", "--limit", "0"),
+        ("list", "--json", "--all", "--label", "parked", "--limit", "0"),
         ("ready", "--json", "--label", "tech-debt", "--limit", "0"),
     ]

@@ -5,7 +5,7 @@ argument-hint: "[lite|full|ultra]"
 disable-model-invocation: true
 admission:
   provides: A compression mode the user switches on by name — an explicit rule set for what gets dropped, three intensity levels, and a suppression rule that returns to plain prose wherever compressing would itself create ambiguity. The basis is user preference, not a prevented failure. Asking for brevity in prose already works; it drifts back into filler after a few turns and carries no boundary saying where terseness is unsafe.
-  cost: Nothing always-on. The `disable-model-invocation` flag keeps the skill out of the skills catalog entirely, so not even a description is loaded until the user types /caveman; the ~850-token body is read only at that moment. While the mode is on, replies are harder to skim for anyone who did not ask for it.
+  cost: While the mode is on, replies are harder to skim for anyone who did not ask for it.
   remove_when: The user stops invoking it, or a plain-prose request for brevity holds for a whole session without drifting back into filler.
 ---
 

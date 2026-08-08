@@ -104,7 +104,70 @@ def test_protocol_wire_value_is_pinned() -> None:
     # or shape, and one that ignores the key sees exactly what it saw before.
     # The field is always present, `null` where the item has none, so the
     # answer never arrives as a missing key a consumer would have to interpret.
-    assert PROTOCOL_VERSION == "1.9"
+    #
+    # 1.10 stops the close-walk closing a parent that carries scope of its
+    # own, and gives `close` and `deliver` a `held` key naming each parent it
+    # declined and why. The key is the additive half and takes the same
+    # verdict as `acceptance` in 1.9. The behavioural half narrows `walked`:
+    # a consumer that saw a parent listed there now sees it under `held`
+    # instead. That is 1.8's case with the sign flipped -- `walked` has always
+    # claimed to list what the walk closed, and it now lists fewer because
+    # fewer should ever have closed. A consumer acting on the old entry was
+    # acting on a completion nothing had established, so there is no correct
+    # behaviour to lose, and the envelope and every `data` shape are
+    # untouched.
+    #
+    # 1.11 adds the `defer`/`undefer` verb pair, which sets an item aside as
+    # not-now and brings it back. Additive on both counts the rule scores: a
+    # new verb takes nothing away from an existing one, and its envelope is
+    # the `{"id", "status"}` shape the other transitions already answer with.
+    # What is new in a read envelope is that `status` can now hold `deferred`
+    # on an item the facade itself set aside -- but that was always a value
+    # the backend could hold and the item model already declared, so no
+    # consumer had a closed set of four to lose. `claim` additionally names
+    # the new state in its refusal instead of reporting a dependency that
+    # does not exist, which replaces a wrong answer rather than a right one.
+    # Nothing here touches 1.10's close-walk narrowing: a deferred child is
+    # not a closed one, so it stops the walk on the not-yet-exhausted branch
+    # exactly as an open child does, and never reaches the `held` report.
+    #
+    # 1.12 adds `acceptance set`, the first way a caller can correct the
+    # criteria an item was created with, and a refusal on `update
+    # --set-acceptance` that names it. A new verb is 1.11's case exactly: it
+    # takes nothing away from an existing one, and its envelope is a new
+    # `data` shape rather than a change to any existing one. The refusal is
+    # additive in the same sense the 1.6 refusals were -- the flag it rejects
+    # was never accepted, so it replaces an unknown-flag error with a named
+    # one and no consumer had correct behaviour to lose. What a reader of an
+    # existing shape can newly see is a note line the facade wrote, on an item
+    # whose criteria moved; `notes` has always carried facade-authored markers
+    # (the park family's, the defer pair's), so this is one more of a kind
+    # that already existed.
+    #
+    # 1.13 widens what `list` answers: every status, closed included, where it
+    # used to carry whatever set the backend returned when nobody asked, which
+    # was live work only. That is 1.8's case on a second read verb and takes
+    # the same verdict -- the envelope and the `data` shape are untouched, the
+    # answer is wider and truer, and a consumer that acted on the absence of an
+    # item was acting on a listing that had been narrowed for it without being
+    # told. `ready` is deliberately untouched: it answers the queue question,
+    # and closed work is not in a queue.
+    #
+    # 2.0 is the first MAJOR, and the first bump none of the notes above could
+    # have carried: `show` answered a single id with the item object and two or
+    # more with `{"items": [...]}`, and it now answers `{"items": [...]}` in
+    # both cases. That is a breaking change to an existing `data` shape -- the
+    # one thing the rule reserves the major for. Unlike every case from 1.5 on,
+    # there is correct behaviour to lose: the old singular answer was a true
+    # answer to the call, just a differently-shaped one, so a consumer reading
+    # `data.id` off a one-id `show` was right and now reads a key that is not
+    # there. It moves to `data.items[0]`. Why the shape had to move at all: the
+    # argument count is frequently not a literal at the call site, so a caller
+    # had to branch on its own arguments to parse the reply, and the singular
+    # case failed by iterating null rather than at the source. The major is
+    # what makes that survivable -- a consumer pinning it refuses an
+    # unrecognised facade at adapter init, before it mis-parses anything.
+    assert PROTOCOL_VERSION == "2.0"
 
 
 def test_the_readme_states_the_protocol_version_the_code_emits() -> None:

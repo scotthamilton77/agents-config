@@ -13,6 +13,7 @@ from installer.core.admission import (
     GATED_NAMESPACES,
     AdmissionOutcome,
     classify,
+    entry_file_text,
     is_gated,
 )
 from installer.core.model import FileKind, Provenance, StagedItem
@@ -26,6 +27,13 @@ _COMPLETE = (
     b"---\n"
     b"rule body\n"
 )
+
+
+def _text(namespace: str, content: bytes, name: str = "thing.md") -> str:
+    """The markdown the bar judges. The namespace and name are irrelevant to it
+    and kept only so each case still reads as the artifact it stands for."""
+    del namespace, name
+    return content.decode("utf-8")
 
 
 def _file_item(namespace: str, content: bytes, name: str = "thing.md") -> StagedItem:
@@ -72,17 +80,17 @@ def test_gated_namespaces_are_the_four() -> None:
 
 def test_file_no_frontmatter_is_no_record() -> None:
     # Rules ship with no front matter at all today (e.g. "# Delegation").
-    v = classify(_file_item("rules", b"# Delegation\n\ntext\n"))
+    v = classify(_text("rules", b"# Delegation\n\ntext\n"))
     assert v.outcome is AdmissionOutcome.NO_RECORD
 
 
 def test_file_frontmatter_without_admission_is_no_record() -> None:
-    v = classify(_file_item("agents", b"---\nname: quality-reviewer\n---\nbody\n"))
+    v = classify(_text("agents", b"---\nname: quality-reviewer\n---\nbody\n"))
     assert v.outcome is AdmissionOutcome.NO_RECORD
 
 
 def test_complete_record_admits_and_captures_fields() -> None:
-    v = classify(_file_item("rules", _COMPLETE))
+    v = classify(_text("rules", _COMPLETE))
     assert v.outcome is AdmissionOutcome.COMPLETE
     assert v.record is not None
     assert v.record.prevents == "a concrete failure"
@@ -92,32 +100,34 @@ def test_complete_record_admits_and_captures_fields() -> None:
 
 def test_missing_field_is_malformed_and_names_it() -> None:
     partial = b"---\nadmission:\n  prevents: x\n  cost: y\n---\nbody\n"
-    v = classify(_file_item("commands", partial))
+    v = classify(_text("commands", partial))
     assert v.outcome is AdmissionOutcome.MALFORMED
     assert "remove_when" in v.detail
 
 
 def test_empty_field_is_malformed() -> None:
     empty = b"---\nadmission:\n  prevents: x\n  cost: '  '\n  remove_when: z\n---\nb\n"
-    v = classify(_file_item("rules", empty))
+    v = classify(_text("rules", empty))
     assert v.outcome is AdmissionOutcome.MALFORMED
     assert "cost" in v.detail
 
 
 def test_non_mapping_admission_is_malformed() -> None:
-    v = classify(_file_item("rules", b"---\nadmission: just-a-string\n---\nb\n"))
+    v = classify(_text("rules", b"---\nadmission: just-a-string\n---\nb\n"))
     assert v.outcome is AdmissionOutcome.MALFORMED
     assert "not a mapping" in v.detail
 
 
 def test_skill_dir_reads_record_from_skill_md(tmp_path: Path) -> None:
-    v = classify(_skill_dir_item(tmp_path, _COMPLETE))
-    assert v.outcome is AdmissionOutcome.COMPLETE
+    text = entry_file_text(_skill_dir_item(tmp_path, _COMPLETE))
+    assert text is not None
+    assert classify(text).outcome is AdmissionOutcome.COMPLETE
 
 
-def test_skill_dir_without_skill_md_is_no_record(tmp_path: Path) -> None:
-    v = classify(_skill_dir_item(tmp_path, None))
-    assert v.outcome is AdmissionOutcome.NO_RECORD
+def test_skill_dir_without_skill_md_has_no_record_to_read(tmp_path: Path) -> None:
+    """A directory with no entry file bears no record at all — there is no text
+    to classify, which is what the gate reports it as."""
+    assert entry_file_text(_skill_dir_item(tmp_path, None)) is None
 
 
 def test_complete_record_captures_claims() -> None:
@@ -133,7 +143,7 @@ def test_complete_record_captures_claims() -> None:
         b"---\n"
         b"body\n"
     )
-    v = classify(_file_item("rules", with_claims))
+    v = classify(_text("rules", with_claims))
     assert v.outcome is AdmissionOutcome.COMPLETE
     # Scalars are stringified; non-scalar/None claims are dropped.
     assert v.claims == {"pr-review-medium": "verdict-artifact", "attempts": "2"}
@@ -151,7 +161,7 @@ def test_provides_record_admits_and_captures_it() -> None:
         b"---\n"
         b"skill body\n"
     )
-    verdict = classify(_file_item("rules", content))
+    verdict = classify(_text("rules", content))
     assert verdict.outcome is AdmissionOutcome.COMPLETE
     assert verdict.record is not None
     assert verdict.record.provides == "a repeatable release procedure"
@@ -160,7 +170,7 @@ def test_provides_record_admits_and_captures_it() -> None:
 
 def test_record_stating_neither_worth_field_is_malformed() -> None:
     content = b"---\nadmission:\n  cost: c\n  remove_when: r\n---\nbody\n"
-    verdict = classify(_file_item("rules", content))
+    verdict = classify(_text("rules", content))
     assert verdict.outcome is AdmissionOutcome.MALFORMED
     assert "states neither" in verdict.detail
 
@@ -178,13 +188,13 @@ def test_record_stating_both_worth_fields_is_malformed() -> None:
         b"---\n"
         b"body\n"
     )
-    verdict = classify(_file_item("rules", content))
+    verdict = classify(_text("rules", content))
     assert verdict.outcome is AdmissionOutcome.MALFORMED
     assert "states both" in verdict.detail
 
 
 def test_missing_cost_is_still_malformed_with_provides() -> None:
     content = b"---\nadmission:\n  provides: a capability\n  remove_when: r\n---\nbody\n"
-    verdict = classify(_file_item("rules", content))
+    verdict = classify(_text("rules", content))
     assert verdict.outcome is AdmissionOutcome.MALFORMED
     assert "cost" in verdict.detail

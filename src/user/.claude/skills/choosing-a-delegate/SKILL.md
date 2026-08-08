@@ -3,7 +3,7 @@ name: choosing-a-delegate
 description: Use when handing work to anyone but yourself — a second opinion, an independent review, an adversarial critique, or any task you are about to delegate. Apply whenever you think "find someone to look at this", "get another perspective", "poke holes in it", or "have someone check this before I commit", and whenever a judgement must be independent of whoever produced the work. Not for writing the brief once the delegate is known, and not for vendor CLI setup.
 admission:
   provides: The decision of who does delegated work, and standing permission to reach another vendor for it unasked. An orchestrator that is not told this treats a foreign-model dispatch as something the user must request by name, and answers "get me a second opinion" with a larger model from the same vendor as the work under review.
-  cost: One description line always-on; the body only when a dispatch is actually in hand. The vendor pointers need revisiting whenever a delegation route is added or retired.
+  cost: The vendor pointers need revisiting whenever a delegation route is added or retired.
   remove_when: Sessions that were never given this reach cross-vendor on their own judgement when independence is what the task needs.
 ---
 

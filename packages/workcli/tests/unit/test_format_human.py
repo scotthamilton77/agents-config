@@ -41,6 +41,20 @@ def test_format_human_stdout_is_byte_identical_to_json_default_and_stderr_is_non
     assert human_stderr != ""
 
 
+def test_a_one_id_show_renders_through_the_same_items_list_as_any_read() -> None:
+    # The renderer is deliberately generic: it walks whatever `data` holds and
+    # knows no verb names. So `show` moving to `{"items": [...]}` moves the
+    # human view with it, and a one-id show now reads like the listing verbs
+    # rather than like a special case. Teaching the renderer that `show` with
+    # one row should be flattened would put a verb's identity into a module
+    # that has none, and would make the human view disagree with the JSON
+    # envelope printed beside it.
+    _, _, stderr_text = _run(["--format", "human", "show", "x.1"])
+
+    assert stderr_text.splitlines()[:3] == ["ok", "items:", "  -"]
+    assert "    id: x.1" in stderr_text
+
+
 def test_format_json_default_never_writes_to_stderr() -> None:
     _, _, stderr_text = _run(["show", "x.1"])
 

@@ -22,11 +22,24 @@ from installer.core.surface_budget import (
 _RECORD = "---\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\n"
 
 
-def _repo(tmp_path: Path, *, skill: str, name: str = "tidy") -> Path:
+def _repo(
+    tmp_path: Path,
+    *,
+    skill: str,
+    name: str = "tidy",
+    tree: str = ".agents",
+    payload: dict[str, str] | None = None,
+) -> Path:
+    """A repo root carrying one skill. ``tree`` picks the tool subdirectory, which
+    decides whether a user-invoked declaration survives the projection."""
     (tmp_path / ".installignore").write_text("AGENTS.md\n", encoding="utf-8")
-    skill_dir = tmp_path / "src" / "user" / ".agents" / "skills" / name
+    skill_dir = tmp_path / "src" / "user" / tree / "skills" / name
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(skill, encoding="utf-8")
+    for filename, text in (payload or {}).items():
+        target = skill_dir / filename
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
     return tmp_path
 
 
@@ -51,13 +64,50 @@ def test_a_user_invoked_skill_reports_against_the_raised_ceiling(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A body between the two caps deploys, and the trend line says which ceiling
-    let it through."""
+    let it through.
+
+    The Claude-only tree is the fixture because that is where the looser ceiling
+    is earned: the same declaration in the shared tree is stripped for three of
+    four tools, and the body is measured against the strict cap on each of them.
+    """
     body = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
     flagged = _RECORD.replace("---\n", "---\ndisable-model-invocation: true\n", 1)
-    repo = _repo(tmp_path, skill=flagged + body)
+    repo = _repo(tmp_path, skill=flagged + body, tree=".claude")
 
     assert main([str(repo)]) == 0
     assert f"/ {USER_INVOKED_SKILL_BODY_TOKEN_CAP}" in capsys.readouterr().out
+
+
+def test_the_payload_block_prints_on_a_pass_and_changes_no_verdict(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A report, not a ceiling. It exists because a reader cannot otherwise see
+    what a skill costs when they follow one of its pointers — and its header says
+    there is no cap, so the number is not read as a third one."""
+    repo = _repo(
+        tmp_path,
+        skill=_RECORD + "short\n",
+        payload={"references/long.md": "p" * 40_000, "scripts/run.py": "c" * 4},
+    )
+
+    assert main([str(repo)]) == 0
+
+    out = capsys.readouterr().out
+    assert "no cap" in out
+    assert "10000 prose" in out
+    assert "references/long.md" in out
+    assert "1 non-prose" in out
+
+
+def test_a_skill_with_nothing_beside_its_body_prints_no_payload_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A line reading zero is noise in a report whose whole purpose is to show
+    where the weight is."""
+    repo = _repo(tmp_path, skill=_RECORD + "short\n")
+
+    assert main([str(repo)]) == 0
+    assert "reference payloads" not in capsys.readouterr().out
 
 
 def test_over_cap_body_exits_one_and_names_the_skill_on_stderr(
@@ -96,20 +146,25 @@ def test_record_less_plugin_rule_is_announced_but_exits_zero(
     assert "will not deploy" in out
 
 
-def test_each_unattributable_entry_names_the_destination_it_was_heading_for(
+def test_each_record_less_entry_names_the_file_a_reader_has_to_edit(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Bytes reaching the gate through the override channel carry no recorded
-    origin. Bucketing them all under that absent origin reported every one of them
-    as one anonymous artifact with a merged tool list; keyed on the gate's own
-    label they stay distinct, and each says where it was going instead of nowhere.
-    """
+    """Every entry prints the source file, including one that reached the gate
+    through the directory-override channel: those bytes now name the file that
+    supplied them, so nothing is reported as an anonymous destination a reader
+    cannot open."""
     from installer.core.content_lint import ContentLintResult, Unadmitted
 
     result = ContentLintResult(
         unadmitted=[
-            Unadmitted(source=None, dest=Path("skills/foo"), tools=("claude",), fatal=False),
-            Unadmitted(source=None, dest=Path("skills/bar"), tools=("gemini",), fatal=False),
+            Unadmitted(
+                source=Path("src/plugins/p/.agents/skills/foo/SKILL.md"),
+                tools=("claude",),
+                fatal=False,
+            ),
+            Unadmitted(
+                source=Path("src/user/.agents/rules/bar.md"), tools=("gemini",), fatal=False
+            ),
         ]
     )
     monkeypatch.setattr("installer.content_lint_cli.lint_content", lambda *_a, **_k: result)
@@ -117,8 +172,8 @@ def test_each_unattributable_entry_names_the_destination_it_was_heading_for(
     assert main([str(tmp_path)]) == 0
 
     out = capsys.readouterr().out
-    assert "<merged entry at skills/foo, source unrecorded>" in out
-    assert "<merged entry at skills/bar, source unrecorded>" in out
+    assert "src/plugins/p/.agents/skills/foo/SKILL.md" in out
+    assert "src/user/.agents/rules/bar.md" in out
     assert "2 artifact(s)" in out
 
 

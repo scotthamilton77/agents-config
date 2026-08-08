@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 
 from installer.core import namespaces
 from installer.core.merge.place import place_resolved
-from installer.core.model import FileKind, Provenance
+from installer.core.model import Contribution, FileKind, Provenance
 from installer.core.staging import stage_namespace, stage_settings
 
 if TYPE_CHECKING:
@@ -149,9 +149,12 @@ def _visible_names(directory: Path) -> set[str]:
     return {entry.name for entry in directory.iterdir() if not entry.name.startswith(".")}
 
 
-def _carry_files(directory: Path) -> dict[Path, bytes]:
+def _carry_files(directory: Path) -> dict[Path, Contribution]:
     """The plugin DIR's disjoint files, keyed by their relpath under
-    ``directory`` to their bytes — the file-carry payload of a carrier-merge.
+    ``directory`` to their contribution — the file-carry payload of a
+    carrier-merge. The contribution names the plugin file the bytes came from,
+    which the carrier DIR item's own ``source_path`` cannot: it names the tree
+    that does *not* contain them.
 
     Iterates dot-excluded TOP-LEVEL entries, recursing into subdirs. A top-level
     dotfile is dropped — matching the same dotfile exclusion the disjoint check
@@ -159,21 +162,21 @@ def _carry_files(directory: Path) -> dict[Path, bytes]:
     subdir is kept. Keys are relpaths so a nested file lands at
     ``subdir/file`` under the carrier DIR's destination.
 
-    Only files are recorded; ``dir_overrides`` maps relpaths to bytes and so has
-    no representation for a directory entry. A *truly empty* subdir that
+    Only files are recorded; ``dir_overrides`` maps relpaths to one file's
+    contribution and so has no representation for a directory entry. A *truly empty* subdir that
     ``cp -R`` would have created is therefore not carried — a deliberate gap, not
     an oversight: plugin source trees are git-tracked, and git cannot store an
     empty directory, so an empty subdir cannot reach this function in the first
     place (an intentional empty dir ships a ``.keep`` placeholder, which IS a
     file and IS carried)."""
-    carried: dict[Path, bytes] = {}
+    carried: dict[Path, Contribution] = {}
     for entry in sorted(directory.iterdir()):
         if entry.name.startswith("."):
             continue
         if entry.is_symlink():
             # Bash `cp -R` (macOS) copies a symlink as a link, not its target's
-            # bytes; dir_overrides maps relpaths to bytes and has no
-            # representation for a link. Skip it rather than dereference — both
+            # bytes; dir_overrides maps relpaths to one file's contribution
+            # and has no representation for a link. Skip it rather than dereference — both
             # a top-level link-to-file (read-through under the link name) and a
             # link-to-dir (rglob descends from the link) would otherwise carry
             # bytes from outside the plugin tree, diverging from bash.
@@ -190,7 +193,9 @@ def _carry_files(directory: Path) -> dict[Path, bytes]:
             # is already excluded here; the per-file `not p.is_symlink()` guards
             # the remaining case — a link-to-FILE nested in a real subdir.
             for nested in sorted(p for p in entry.rglob("*") if p.is_file() and not p.is_symlink()):
-                carried[nested.relative_to(directory)] = nested.read_bytes()
+                carried[nested.relative_to(directory)] = Contribution(
+                    source_path=nested, content=nested.read_bytes()
+                )
         else:
-            carried[Path(entry.name)] = entry.read_bytes()
+            carried[Path(entry.name)] = Contribution(source_path=entry, content=entry.read_bytes())
     return carried

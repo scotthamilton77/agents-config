@@ -16,12 +16,13 @@ from workcli.envelope import ErrorCode, JsonValue, WorkError
 _DEFAULT_DEP_TYPE = "blocks"
 _PARENT_DEP_TYPE = "parent-child"
 
-# bd's own documented edge vocabulary, read off `bd dep add --help` (bd 1.0.3)
-# and confirmed one type at a time against a scratch install. bd itself
-# enforces none of it: every string in that probe -- including a deliberate
-# nonsense one -- was stored verbatim as a real edge, so a typo'd `--type`
-# produces an edge that exists, renders, and participates in nothing. This
-# frozenset is the enforcement bd declines to do, and it gates `dep add` ONLY.
+# The facade's own closed edge vocabulary, read off bd's documented set
+# (`bd dep add --help`, bd 1.0.3) and confirmed one type at a time against a
+# scratch install. A backend is not obliged to enforce it, and bd does not:
+# every string in that probe -- including a deliberate nonsense one -- was
+# stored verbatim as a real edge, so a typo'd type produces an edge that
+# exists, renders, and participates in nothing. This frozenset is where that
+# enforcement lives instead, and it gates `dep add` ONLY.
 #
 # `dep remove` stays open to any type on purpose: edges carrying an
 # unsanctioned type already exist in the wild, and a closed set on the removal
@@ -45,10 +46,10 @@ DEP_TYPES = frozenset(
 
 
 def _dep_type_check(dep_type: str) -> None:
-    """Reject a type outside bd's documented vocabulary, before any backend call.
+    """Reject a type outside `DEP_TYPES`, before any backend call.
 
     Pure: no read is needed to know the type is nonsense, so this runs first
-    and a rejected `dep add` costs zero bd invocations.
+    and a rejected `dep add` costs zero backend invocations.
     """
     if dep_type in DEP_TYPES:
         return
@@ -62,24 +63,25 @@ def _dep_type_check(dep_type: str) -> None:
 def _parent_arity_check(backend: Backend, from_id: str, to_id: str, dep_type: str) -> None:
     """Refuse a second parent for an item that already has one.
 
-    An item's parent is single-valued, but bd reports it from two sources that
-    a second `parent-child` edge drives apart: the `parent` scalar is bd's own
-    field, while `children` is derived from reverse edges. bd accepts the
-    second edge silently, so the item ends up with two parent-child edges and
-    one scalar -- and the field most readers check is the one that then omits a
-    parent the tree still walks from. Anything counting an epic's children
-    counts that item twice.
+    An item's parent is single-valued, but the backend reports it from two
+    sources that a second `parent-child` edge drives apart: the `parent`
+    scalar is the backend's own field, while `children` is derived from
+    reverse edges. A backend need not refuse the second edge -- bd accepts it
+    silently -- so the item ends up with two parent-child edges and one scalar,
+    and the field most readers check is the one that then omits a parent the
+    tree still walks from. Anything counting an epic's children counts that
+    item twice.
 
-    Redirecting to `work update --set-parent` (bd's own atomic `--parent`
-    reparent, verified to REPLACE the old edge rather than add beside it) is
+    Redirecting to `work update --set-parent` (the seam's atomic reparent,
+    verified to REPLACE the old edge rather than add beside it) is
     what makes the recovery discoverable at the moment it is needed. Same
     guard shape and error code as `update`'s append-only notes tripwire: a
     write that would corrupt a single-valued field is refused by name, and
     names the verb that expresses the intent properly.
 
     Re-adding the parent an item ALREADY has is not a violation -- the
-    postcondition the caller asked for already holds, bd treats the repeat as a
-    no-op (verified against bd 1.0.3), and erroring would fail a correct
+    postcondition the caller asked for already holds, a repeat is a no-op at
+    the backend (verified against bd 1.0.3), and erroring would fail a correct
     request and break retry-safety after a timeout.
     """
     if dep_type != _PARENT_DEP_TYPE:
@@ -100,10 +102,9 @@ def _type_wall_check(backend: Backend, from_id: str, to_id: str, dep_type: str) 
 
     `blocks` requires both items epic, or both non-epic (a milestone counts
     as non-epic). One order-preserving `Backend.batch_get` read pays for
-    this certainty; a
-    violation raises before `dep_mutate` (the mutating bd call) is ever
-    invoked -- the fake's call log must show zero `dep`-mutation
-    invocations in that case.
+    this certainty; a violation raises before `dep_mutate` (the mutating
+    backend call) is ever invoked -- the fake's call log must show zero
+    `dep`-mutation invocations in that case.
     """
     if dep_type != _DEFAULT_DEP_TYPE:
         return
@@ -126,7 +127,7 @@ def dep(backend: Backend, args: Namespace) -> JsonValue:
 
     `dep add A B` = A depends on B. `add` is an add primitive and stays one:
     it validates and refuses, and never silently relocates an edge to make a
-    request succeed. `list` maps bd's own inverted `--direction` naming into
+    request succeed. `list` maps the backend's own direction vocabulary into
     `{depends_on, dependents}` (the ruling that kills that ambiguity
     permanently -- see `model.DepListing`).
     """
@@ -145,7 +146,7 @@ def dep(backend: Backend, args: Namespace) -> JsonValue:
 
     dep_type = args.type if args.type is not None else _DEFAULT_DEP_TYPE
     if args.action == "add":
-        # Every pre-check raises before `dep_mutate` (the mutating bd call) is
+        # Every pre-check raises before `dep_mutate` (the mutating backend call) is
         # reached, cheapest first: the vocabulary check needs no read at all,
         # and the two that do need one are mutually exclusive by type.
         _dep_type_check(dep_type)
@@ -166,11 +167,10 @@ def dep(backend: Backend, args: Namespace) -> JsonValue:
 def label(backend: Backend, args: Namespace) -> JsonValue:
     """`work label {add,remove,list} ID [LABELS...]`.
 
-    bd's own `label add`/`label remove` accept exactly one label per call
-    (orchestrator ruling) -- `add`/`remove` fan a multi-label request out
-    into one bd invocation per label, still one envelope. `list` returns
-    the flat `string[]` bd itself emits ("labels are always
-    `string[]`").
+    `add`/`remove` accept many labels and still emit one envelope: where the
+    backend takes exactly one label per call (bd does), the adapter fans the
+    request out into one invocation per label. `list` returns a flat
+    `string[]` -- the shape the seam promises, whatever the backend's own.
     """
     if args.action in ("add", "remove") and not args.labels:
         raise WorkError(ErrorCode.USAGE, f"label {args.action} requires at least one LABEL")

@@ -34,7 +34,7 @@ def _children_edges(driver, item_id: str) -> list[str]:
 
 def _assert_parent_is(driver, item_id: str, expected: str) -> None:
     """The scalar and the edges must agree, and there must be exactly one edge."""
-    assert driver(["show", item_id])["data"]["parent"] == expected
+    assert driver(["show", item_id])["data"]["items"][0]["parent"] == expected
     assert _parent_edges(driver, item_id) == [expected]
 
 

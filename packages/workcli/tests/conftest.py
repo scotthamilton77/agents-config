@@ -40,6 +40,23 @@ def _no_config_loads(_explicit_path: str | None) -> TrackLayerConfig:
     raise AssertionError("config loader unexpectedly invoked; inject config_loader= explicitly")
 
 
+def only_item(data: JsonValue) -> dict[str, JsonValue]:
+    """The single row of a one-id `show` payload, with its arity asserted.
+
+    `show` answers `{"items": [...]}` whatever its argument count, so a test
+    that shows one id says so here rather than by indexing blind: a payload
+    that came back with a different number of rows fails on that fact instead
+    of on whatever the wrong row happens to hold.
+    """
+    assert isinstance(data, dict)
+    items = data["items"]
+    assert isinstance(items, list)
+    assert len(items) == 1, f"expected exactly one row, got {items!r}"
+    row = items[0]
+    assert isinstance(row, dict)
+    return row
+
+
 def run_cli(
     argv: Sequence[str],
     steps: Sequence[ScriptedStep],

@@ -10,7 +10,12 @@ from __future__ import annotations
 
 import pytest
 
-from installer.core.sanitize import project_capabilities, sanitize_bytes, sanitize_text
+from installer.core.sanitize import (
+    governance_findings,
+    project_capabilities,
+    sanitize_bytes,
+    sanitize_text,
+)
 
 _RECORD = "admission:\n  prevents: p\n  cost: c\n  remove_when: r\n"
 _FLAGGED = "---\nname: handoff\ndisable-model-invocation: true\n---\nbody\n"
@@ -185,3 +190,39 @@ def test_projecting_twice_is_a_no_op() -> None:
 def test_projection_keeps_crlf_endings() -> None:
     text = "---\r\nname: a\r\ndisable-model-invocation: true\r\n---\r\nbody\r\n"
     assert project_capabilities(text, tool="gemini") == "---\r\nname: a\r\n---\r\nbody\r\n"
+
+
+# --- Naming the metadata instead of removing it ------------------------------
+#
+# The same two recognisers, asked rather than acted on — for the files the deploy
+# gate reads but has no mandate to rewrite.
+
+
+def test_findings_name_every_governance_key_present() -> None:
+    text = f"---\nname: a\n{_RECORD}claims:\n  k: v\n---\nbody\n"
+    assert governance_findings(text) == ("admission", "claims")
+
+
+def test_findings_name_a_provenance_comment_with_no_front_matter() -> None:
+    assert governance_findings("<!--\nSource: oss-snapshots/x/\n-->\n\nbody\n") == (
+        "provenance comment",
+    )
+
+
+def test_a_file_with_ordinary_front_matter_yields_no_findings() -> None:
+    assert governance_findings("---\nname: a\n---\n\n<!-- an ordinary note -->\nbody\n") == ()
+
+
+def test_findings_ignore_a_fence_quirk_that_reassembly_would_normalise() -> None:
+    """Not implemented as a byte-compare against `sanitize_text`. A fence carrying
+    trailing whitespace round-trips to a different byte string, and reporting that
+    under a message about governance metadata would name the wrong defect."""
+    text = "---  \nname: a\n---\nbody\n"
+    assert sanitize_text(text) != text
+    assert governance_findings(text) == ()
+
+
+def test_what_findings_name_is_what_sanitizing_removes() -> None:
+    text = f"---\nname: a\n{_RECORD}---\n\n<!--\nSource: x/\n-->\n\nbody\n"
+    assert governance_findings(text) == ("admission", "provenance comment")
+    assert governance_findings(sanitize_text(text)) == ()
