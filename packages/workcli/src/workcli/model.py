@@ -17,7 +17,13 @@ RELATIONSHIP_FIELDS = ("parent", "deps", "children")
 @dataclass(frozen=True)
 class DepEdge:
     id: str
-    type: str  # "blocks" | "related-to" | "parent-child" | "discovered-from" | ...
+    # An open `str`, deliberately, and NOT the closed set `dep add` enforces
+    # (`verbs/relations.py::DEP_TYPES`, bd's own documented vocabulary). bd
+    # validates no type at all and stores whatever it is handed, so edges
+    # carrying an unsanctioned type already exist; a read that could not
+    # express one would misreport the very edges the write-side check now
+    # exists to stop being made. Closed on write, open on read.
+    type: str
     status: str  # status of the item at the other end
 
 
@@ -82,6 +88,11 @@ class UpdateFields:  # replace-semantics fields ONLY; notes never appear here
     title: str | None = None
     priority: str | None = None
     description: str | None = None
+    # The parent is single-valued, so a move belongs here with the other
+    # replace-semantics fields rather than on `dep add`, which only ever adds.
+    # bd's `update --parent` replaces the old parent-child edge outright, so
+    # one call moves the item with no window in which it has two parents.
+    parent: str | None = None
 
 
 @dataclass(frozen=True)

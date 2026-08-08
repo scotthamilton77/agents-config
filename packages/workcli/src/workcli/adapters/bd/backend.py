@@ -187,6 +187,13 @@ class BdBackend:
             argv += ["--priority", fields.priority]
         if fields.description is not None:
             argv += ["--description", fields.description]
+        if fields.parent is not None:
+            # bd's own reparent, verified against bd 1.0.3 to REPLACE: after
+            # `update C --parent B`, C's only parent-child edge is to B, the
+            # edge to the old parent is gone from both ends' `dep list`, and
+            # the `parent` scalar agrees. One call, so no window exists in
+            # which the item carries two parents.
+            argv += ["--parent", fields.parent]
 
         self._update_and_check(argv)
 

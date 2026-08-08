@@ -525,6 +525,44 @@ def test_set_fields_sends_description_when_provided():
     assert runner.calls == [("update", "x.1", "--description", "New description")]
 
 
+def test_set_fields_sends_bds_own_reparent_flag_when_a_parent_is_provided():
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("update",), BdResult(returncode=0, stdout="", stderr=""))]
+    )
+    backend = BdBackend(runner)
+
+    backend.set_fields("x.1", UpdateFields(parent="p.2"))
+
+    # bd's `--parent` REPLACES the existing parent-child edge, so the move is
+    # this one call and never a remove-then-add with a window between them.
+    assert runner.calls == [("update", "x.1", "--parent", "p.2")]
+
+
+def test_set_fields_maps_bds_reparent_not_found_wording_to_not_found_error():
+    # The reparent path emits "not found: issue X", not the "no issue found
+    # matching X" every other command uses -- a second marker, or this lands
+    # in the unrecognized-failure bucket as E_BACKEND_DRIFT.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("update",),
+                BdResult(
+                    returncode=1,
+                    stdout="",
+                    stderr="Error getting parent p.2: not found: issue p.2\n",
+                ),
+            )
+        ]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.set_fields("x.1", UpdateFields(parent="p.2"))
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.NOT_FOUND
+
+
 def test_set_fields_maps_no_issue_found_stderr_to_not_found_error():
     runner = ScriptedBdRunner(
         steps=[

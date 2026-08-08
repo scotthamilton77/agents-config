@@ -169,16 +169,20 @@ def test_dep_add_epic_task_still_detects_the_wall_when_the_combined_show_returns
     assert error["detail"] == {"from": "epic.1", "to": "task.1", "dep_type": "blocks"}
 
 
-def test_dep_add_with_related_to_type_skips_the_wall_check_entirely():
+def test_dep_add_with_relates_to_type_skips_the_wall_check_entirely():
+    # `relates-to` is bd's own spelling. This test used to say `related-to`,
+    # which is in no vocabulary bd documents -- it was a string this package
+    # invented and only ever fed to its own fake, so nothing caught it.
     runner = ScriptedBdRunner(steps=[ScriptedStep(("dep", "add"), _OK)])
 
     exit_code, _, _ = run_cli_with_runner(
-        ["dep", "add", "epic.1", "task.1", "--type", "related-to"], runner
+        ["dep", "add", "epic.1", "task.1", "--type", "relates-to"], runner
     )
 
     assert exit_code == 0
-    # No `show` reads at all -- the pre-check never runs for a non-blocks type.
-    assert runner.calls == [("dep", "add", "epic.1", "task.1", "--type", "related-to")]
+    # No `show` reads at all -- neither pre-check reads for a type that is
+    # neither `blocks` nor `parent-child`.
+    assert runner.calls == [("dep", "add", "epic.1", "task.1", "--type", "relates-to")]
 
 
 def test_dep_remove_sends_exactly_one_bd_call_with_no_type_flag():
