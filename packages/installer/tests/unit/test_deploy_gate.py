@@ -513,3 +513,71 @@ def test_a_directory_with_no_entry_file_is_reported_against_the_directory(
     label = item_label(Tool.CLAUDE, Path("skills/hollow"))
     assert result.skipped == [label]
     assert result.sources[label] == skill
+
+
+_RECORD_ONLY = b"---\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\n"
+
+
+def test_an_empty_entry_file_is_reported_against_the_file_that_is_empty(
+    tmp_path: Path,
+) -> None:
+    """An entry file that exists and is empty is not the same as no entry file.
+    Both bear no record, but only one of them has nothing to name — here there is
+    a file, it is the file that is wrong, and it is the file the reader opens."""
+    skill = tmp_path / "skills" / "blank"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("")
+    item = StagedItem(
+        source_path=skill,
+        dest_relpath=Path("skills") / "blank",
+        kind=FileKind.DIR,
+        namespace="skills",
+        provenance=Provenance(kind="tool", name="claude"),
+        content=None,
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert result.ok
+    label = item_label(Tool.CLAUDE, Path("skills/blank"))
+    assert result.skipped == [label]
+    assert result.sources[label] == skill / "SKILL.md"
+
+
+def test_a_contributor_that_sanitizes_to_nothing_emits_no_separator() -> None:
+    """A rule that is all record and no body sanitizes away entirely. Joining it
+    anyway pads the deployed file with a separator standing for content that is
+    not there — which the append-merge itself refuses to do, so reassembly would
+    be breaking an invariant its own merge upholds."""
+    item = _merged_rule(
+        "a.md",
+        ("shared/a.md", _RECORD_ONLY),
+        ("claude/a.md", _COMPLETE),
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert result.ok, result.violations
+    deployed = result.plans[Tool.CLAUDE].items[Path("rules/a.md")].content
+    assert deployed == b"body\n"
+
+
+def test_what_deployed_is_exactly_what_the_contributions_say_contributed() -> None:
+    """The recorded contributions and the deployed bytes are two statements about
+    one file, and this slice exists to stop them disagreeing. Rejoining the record
+    has to reproduce the bytes — a contributor listed as having contributed
+    nothing is the divergence in miniature."""
+    item = _merged_rule(
+        "a.md",
+        ("shared/a.md", _COMPLETE),
+        ("claude/a.md", _RECORD_ONLY),
+        ("plugin/a.md", _COMPLETE),
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    kept = result.plans[Tool.CLAUDE].items[Path("rules/a.md")]
+    assert kept.content is not None
+    assert b"\n---\n\n---\n" not in kept.content  # no separator standing for nothing
+    assert b"\n---\n".join(part.content for part in kept.contributions) == kept.content
+    assert [part.source_path for part in kept.contributions] == [
+        Path("/src/shared/a.md"),
+        Path("/src/plugin/a.md"),
+    ]

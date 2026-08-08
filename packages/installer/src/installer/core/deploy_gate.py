@@ -161,10 +161,13 @@ def _record_bearers(item: StagedItem, overrides: dict[Path, Contribution]) -> li
     coarser than the one that was read, send a reader to something they cannot
     edit, and answer differently for the two routes to identical bytes.
 
-    A directory with no readable entry file is the one case where the directory
-    is the right answer, and it is returned as no bearer at all — there is no
-    file to name because there is no file, which the caller reports against the
-    directory itself.
+    A directory with **no entry file at all** is the one case where the directory
+    is the right answer, and it is returned as no bearer — there is no file to
+    name because there is no file, which the caller reports against the directory
+    itself. An entry file that exists and is *empty* is a different thing: it
+    bears no record either, but it is a file, it is the file that is wrong, and
+    it is the one the reader opens. So the two are told apart by ``None`` against
+    ``""`` rather than by falsiness, which conflates them.
     """
     if item.content is not None:
         return list(contributions_of(item))
@@ -172,7 +175,7 @@ def _record_bearers(item: StagedItem, overrides: dict[Path, Contribution]) -> li
     if entry is not None:
         return [entry]
     text = entry_file_text(item)
-    if not text:
+    if text is None:
         return []
     return [
         Contribution(source_path=item.source_path / DIR_RECORD_FILE, content=text.encode("utf-8"))
@@ -276,19 +279,26 @@ def run_admission_gate(plans: dict[Tool, StagingPlan]) -> GateResult:
             # file rides the dir_overrides side channel the sync already overlays
             # on top of the source tree.
             if item.content is not None:
-                merged = SEPARATOR.join(part.text.encode("utf-8") for part in admitted)
+                # One filtered tuple, both outputs — the same shape the merge
+                # strategy uses, and for the same two reasons. A contributor
+                # whose whole content was its record sanitizes away to nothing,
+                # and joining it would pad the file with a separator standing
+                # for content that is not there. Deriving the recorded
+                # contributions from that same tuple is what keeps the record of
+                # what contributed equal to what deployed; two tuples built from
+                # two lists is exactly the divergence this gate exists to end.
+                parts = tuple(
+                    Contribution(source_path=part.source, content=part.text.encode("utf-8"))
+                    for part in admitted
+                    if part.text
+                )
                 item = replace(
                     item,
-                    content=merged,
+                    content=SEPARATOR.join(part.content for part in parts),
                     # Restated only where it was already carried: an item that
                     # was its own sole contributor still is one, and recording
                     # that would be the same fact written twice.
-                    contributions=()
-                    if sole
-                    else tuple(
-                        Contribution(source_path=part.source, content=part.text.encode("utf-8"))
-                        for part in admitted
-                    ),
+                    contributions=() if sole else parts,
                 )
             else:
                 entry = admitted[0]
