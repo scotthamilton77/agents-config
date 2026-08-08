@@ -199,7 +199,7 @@ def _catalog_entry(text: str) -> bytes:
     return f"{mapping.get('name', '')}: {mapping.get('description', '')}".encode()
 
 
-def _record_bearers(item: StagedItem, overrides: dict[Path, Contribution]) -> list[Contribution]:
+def record_bearers(item: StagedItem, overrides: dict[Path, Contribution]) -> list[Contribution]:
     """Every source whose admission record governs part of what ``item`` deploys.
 
     A file item is judged per contributor, in the order its bytes appear. A
@@ -221,6 +221,13 @@ def _record_bearers(item: StagedItem, overrides: dict[Path, Contribution]) -> li
     bears no record either, but it is a file, it is the file that is wrong, and
     it is the one the reader opens. So the two are told apart by ``None`` against
     ``""`` rather than by falsiness, which conflates them.
+
+    Public for the same reason as ``contributor_label``: the repo-side content
+    lint judges the same bearers against the provenance rule, and that rule is a
+    property of the source bytes the gate is about to sanitize. A second
+    derivation of "which files speak for this item" would let the two disagree
+    about what was examined — and would reintroduce, one consumer over, exactly
+    the leading-contributor-only reading this function exists to end.
     """
     if item.content is not None:
         return list(contributions_of(item))
@@ -418,7 +425,7 @@ def run_admission_gate(
                 kept[dest] = item
                 continue
             overrides = plan.dir_overrides.get(dest, {})
-            bearers = _record_bearers(item, overrides)
+            bearers = record_bearers(item, overrides)
             if not bearers:
                 # Nothing to read at all — a directory item with no entry file.
                 # The directory is the only thing there is to name.
