@@ -48,8 +48,12 @@ def _add_read_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser])
     show_parser = subparsers.add_parser("show", help="show one or more items by id")
     show_parser.add_argument("ids", nargs="+", metavar="ID")
 
-    list_parser = subparsers.add_parser("list", help="list items, unbounded unless --limit")
-    list_parser.add_argument("--status")
+    list_parser = subparsers.add_parser(
+        "list", help="list items: every status, unbounded unless narrowed"
+    )
+    list_parser.add_argument(
+        "--status", help="restrict to one status; default every status, closed included"
+    )
     list_parser.add_argument("--label")
     list_parser.add_argument("--parent")
     list_parser.add_argument("--type")

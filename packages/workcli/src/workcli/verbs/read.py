@@ -59,6 +59,13 @@ def show(backend: Backend, args: Namespace) -> JsonValue:
 def list_(backend: Backend, args: Namespace) -> JsonValue:
     """`work list [--status --label --parent --type --limit --track]`.
 
+    Every status by default, closed included, for the same reason the bound
+    is unbounded by default: a listing narrowed by nobody comes back short
+    and reads exactly like a complete one, and a caller who has not read the
+    flag list has nothing to tell the two apart by. Every narrowing a listing
+    carries is therefore one the caller typed. The queue question -- what
+    should I work on -- is `ready`'s, and it keeps its own narrow view.
+
     `--track` filters on the DERIVED `Item.track` (never raw label presence),
     so filter and envelope field always agree: zero-or-multi-label items
     derive to null and match nothing. Validated against the

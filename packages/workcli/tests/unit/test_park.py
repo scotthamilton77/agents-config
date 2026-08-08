@@ -333,6 +333,28 @@ def test_parked_report_lists_reason_category_staleness_read_only():  # S2-B7
     }
 
 
+def test_parked_report_omits_a_closed_item_that_still_carries_the_handle():
+    # The listing behind this report answers every status, so the label alone
+    # is not the parked set. A closed item is not stuck work, and nothing
+    # would ever clear such a row: `redispatch`/`abandon` are the only things
+    # that take the label off, and neither is reachable once the work is done.
+    backend = ReadOnlyFakeBackend()
+    _parked_item(backend, "still-stuck", parked_at=_ISO, reason="ci-failure")
+    backend.add(
+        "finished-anyway",
+        status="closed",
+        labels=[PARKED_LABEL],
+        notes=f"{PARKED_MARKER} {_ISO} ci-failure: CI red",
+    )
+
+    data = parked(backend, _parked_args())
+
+    assert isinstance(data, dict)
+    items = data["items"]
+    assert isinstance(items, list)
+    assert [row["id"] for row in items if isinstance(row, dict)] == ["still-stuck"]
+
+
 def test_parked_report_degrades_an_unparseable_marker_to_nulls():  # S2-B7 (dep failure)
     backend = ReadOnlyFakeBackend()
     backend.add("w1", status="blocked", labels=[PARKED_LABEL], notes="hand-written note")
@@ -421,7 +443,7 @@ def test_cli_parked_with_no_parked_items_is_an_empty_report():
         ["parked"],
         steps=[
             ScriptedStep(
-                ("list", "--json", "--label", PARKED_LABEL),
+                ("list", "--json", "--all", "--label", PARKED_LABEL),
                 BdResult(returncode=0, stdout="[]", stderr=""),
             )
         ],

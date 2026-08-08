@@ -143,7 +143,16 @@ def test_protocol_wire_value_is_pinned() -> None:
     # whose criteria moved; `notes` has always carried facade-authored markers
     # (the park family's, the defer pair's), so this is one more of a kind
     # that already existed.
-    assert PROTOCOL_VERSION == "1.12"
+    #
+    # 1.13 widens what `list` answers: every status, closed included, where it
+    # used to carry whatever set the backend returned when nobody asked, which
+    # was live work only. That is 1.8's case on a second read verb and takes
+    # the same verdict -- the envelope and the `data` shape are untouched, the
+    # answer is wider and truer, and a consumer that acted on the absence of an
+    # item was acting on a listing that had been narrowed for it without being
+    # told. `ready` is deliberately untouched: it answers the queue question,
+    # and closed work is not in a queue.
+    assert PROTOCOL_VERSION == "1.13"
 
 
 def test_the_readme_states_the_protocol_version_the_code_emits() -> None:
