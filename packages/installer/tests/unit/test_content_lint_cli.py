@@ -96,20 +96,25 @@ def test_record_less_plugin_rule_is_announced_but_exits_zero(
     assert "will not deploy" in out
 
 
-def test_each_unattributable_entry_names_the_destination_it_was_heading_for(
+def test_each_record_less_entry_names_the_file_a_reader_has_to_edit(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Bytes reaching the gate through the override channel carry no recorded
-    origin. Bucketing them all under that absent origin reported every one of them
-    as one anonymous artifact with a merged tool list; keyed on the gate's own
-    label they stay distinct, and each says where it was going instead of nowhere.
-    """
+    """Every entry prints the source file, including one that reached the gate
+    through the directory-override channel: those bytes now name the file that
+    supplied them, so nothing is reported as an anonymous destination a reader
+    cannot open."""
     from installer.core.content_lint import ContentLintResult, Unadmitted
 
     result = ContentLintResult(
         unadmitted=[
-            Unadmitted(source=None, dest=Path("skills/foo"), tools=("claude",), fatal=False),
-            Unadmitted(source=None, dest=Path("skills/bar"), tools=("gemini",), fatal=False),
+            Unadmitted(
+                source=Path("src/plugins/p/.agents/skills/foo/SKILL.md"),
+                tools=("claude",),
+                fatal=False,
+            ),
+            Unadmitted(
+                source=Path("src/user/.agents/rules/bar.md"), tools=("gemini",), fatal=False
+            ),
         ]
     )
     monkeypatch.setattr("installer.content_lint_cli.lint_content", lambda *_a, **_k: result)
@@ -117,8 +122,8 @@ def test_each_unattributable_entry_names_the_destination_it_was_heading_for(
     assert main([str(tmp_path)]) == 0
 
     out = capsys.readouterr().out
-    assert "<merged entry at skills/foo, source unrecorded>" in out
-    assert "<merged entry at skills/bar, source unrecorded>" in out
+    assert "src/plugins/p/.agents/skills/foo/SKILL.md" in out
+    assert "src/user/.agents/rules/bar.md" in out
     assert "2 artifact(s)" in out
 
 

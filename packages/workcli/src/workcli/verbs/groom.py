@@ -1,7 +1,7 @@
 """`work groom --done` / `work groom --status` -- Backlog Grooming state.
 
-Its own module, not `report.py`: `--done` MUTATES state (bd's own
-per-item state, on a note field) unlike the read-only aggregations
+Its own module, not `report.py`: `--done` MUTATES state (tracker state,
+on a note field) unlike the read-only aggregations
 `lint`/`graph`/`triggers` compute, so it's closer in shape to
 `verbs/tracks.py`'s single mutating verb than to the report family.
 
@@ -9,7 +9,7 @@ Persistence mechanism: the `Backend` protocol has no metadata primitive
 (only `get`/`append_note`), so state lives as a parseable note line
 (`backlog_last_groomed: <iso8601>`) on the designated
 `[operating-model].groom-state-item` -- the spec's named fallback. Notes are
-append-only (bd's `--append-notes`, same discipline as `work note`), so
+append-only (the seam's `append_note`, same discipline as `work note`), so
 `--done` never edits an existing line; `--status` selects the marker with
 the latest PARSED timestamp, not the physically last line -- concurrent
 `--done` calls can append out of chronological order.
@@ -27,7 +27,7 @@ from workcli.envelope import ErrorCode, JsonValue, WorkError
 
 _NOTE_LINE_PATTERN = re.compile(r"^backlog_last_groomed: (.*)$", re.MULTILINE)
 _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
-# backlog_last_groomed is dolt-synced across machines: ordinary
+# backlog_last_groomed is shared across machines: ordinary
 # NTP drift on a fast clock can leave a freshly-written marker slightly in
 # the future, and treating that as invalid would fail a groom that just
 # happened. A marker further in the future than this isn't drift -- it's
@@ -98,8 +98,8 @@ def _latest_marker(
 
 
 def _invalid_marker(groom_state_item: str, last_groomed: str, problem: str) -> WorkError:
-    """Notes are append-only and raw `bd note`/`bd label` writes stay possible
-    outside `work groom --done` -- any marker this module cannot trust must
+    """Notes are append-only and raw tracker writes stay possible outside
+    `work groom --done` -- any marker this module cannot trust must
     fail loud as a typed error here, never crash into E_INTERNAL (which would
     silently drop the nag rather than surfacing the broken state)."""
     return WorkError(
@@ -134,7 +134,7 @@ def _status(
         }
     last_groomed, parsed = latest
     # A small future skew (<= tolerance, already accepted by _latest_marker)
-    # is ordinary NTP drift on a fast clock across dolt-synced machines:
+    # is ordinary NTP drift on a fast clock across machines sharing the state:
     # clamp to 0 rather than reporting a negative days_since, so an honest
     # cross-machine groom never falsely reports breached=True.
     days_since = max((now - parsed).days, 0)

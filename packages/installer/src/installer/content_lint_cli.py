@@ -51,9 +51,8 @@ def _report_budgets(result: ContentLintResult) -> None:
     # Already one entry per artifact, grouped by the lint on the same identity
     # rule as the violations — a shared skill stages into every tool and would
     # otherwise print its number once per tool. The tool list stays on the line
-    # because it is the only thing distinguishing two entries whose origin the
-    # staging plan never recorded: those are keyed per tool and so share a
-    # printed location.
+    # because a per-tool transform can change one source's deployed weight, and
+    # then the same file legitimately prints two numbers.
     #
     # Each line also carries its own cap rather than inheriting the header's:
     # with a looser ceiling for user-invoked skills, one header number would say
@@ -94,15 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     for entry in result.unadmitted:
         stream = sys.stderr if entry.fatal else sys.stdout
         verdict = "carries no admission record" if entry.fatal else "not admitted (no record)"
-        # A None source is an entry file supplied through the override channel,
-        # which records no origin. Name the destination it was heading for and
-        # say the origin is unrecorded, rather than printing an anonymous line.
-        where = (
-            str(entry.source)
-            if entry.source is not None
-            else f"<merged entry at {entry.dest}, source unrecorded>"
-        )
-        stream.write(f"content-lint: {where}: {verdict} [{', '.join(entry.tools)}]\n")
+        stream.write(f"content-lint: {entry.source}: {verdict} [{', '.join(entry.tools)}]\n")
     if result.unadmitted:
         sys.stdout.write(
             f"content-lint: {len(result.unadmitted)} artifact(s) in src/ carry no admission "

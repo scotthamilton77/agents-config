@@ -12,7 +12,15 @@ from pathlib import Path
 import pytest
 
 from installer.core.deploy_gate import GateResult, item_label, run_admission_gate
-from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
+from installer.core.merge.strategies.append_rules import AppendRulesStrategy
+from installer.core.model import (
+    Contribution,
+    FileKind,
+    Provenance,
+    StagedItem,
+    StagingPlan,
+    Tool,
+)
 from installer.core.surface_budget import (
     ALWAYS_ON_TOKEN_CAP,
     SKILL_BODY_TOKEN_CAP,
@@ -218,7 +226,7 @@ def test_admitted_dir_entry_is_sanitized_through_dir_overrides(tmp_path: Path) -
     result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
     assert result.ok
     overrides = result.plans[Tool.CLAUDE].dir_overrides[Path("skills/grilling")]
-    assert overrides[Path("SKILL.md")] == b"---\nname: grilling\n---\n\nbody\n"
+    assert overrides[Path("SKILL.md")].content == b"---\nname: grilling\n---\n\nbody\n"
 
 
 def test_dir_overrides_of_dropped_items_are_discarded(tmp_path: Path) -> None:
@@ -234,7 +242,9 @@ def test_dir_overrides_of_dropped_items_are_discarded(tmp_path: Path) -> None:
         content=None,
     )
     plan = _plan(_instruction(b"laws"), item)
-    plan.dir_overrides[Path("skills/plain")] = {Path("extra.md"): b"x"}
+    plan.dir_overrides[Path("skills/plain")] = {
+        Path("extra.md"): Contribution(source_path=Path("/plugin/extra.md"), content=b"x")
+    }
     result = run_admission_gate({Tool.CLAUDE: plan})
     assert result.ok
     assert result.plans[Tool.CLAUDE].dir_overrides == {}
@@ -255,12 +265,19 @@ def test_patched_entry_bytes_are_the_ones_gated_and_sanitized(tmp_path: Path) ->
         content=None,
     )
     plan = _plan(_instruction(b"laws"), item)
-    plan.dir_overrides[Path("skills/patched")] = {Path("SKILL.md"): _COMPLETE}
+    patch_origin = Path("/plugin/skills/patched/SKILL.md")
+    plan.dir_overrides[Path("skills/patched")] = {
+        Path("SKILL.md"): Contribution(source_path=patch_origin, content=_COMPLETE)
+    }
     result = run_admission_gate({Tool.CLAUDE: plan})
     assert result.ok
     assert result.skipped == []  # source file has no record; the patched bytes do
     overrides = result.plans[Tool.CLAUDE].dir_overrides[Path("skills/patched")]
-    assert overrides[Path("SKILL.md")] == b"body\n"
+    assert overrides[Path("SKILL.md")].content == b"body\n"
+    # And the gate reports against the file those bytes came from, not the
+    # directory that merely carries them.
+    assert overrides[Path("SKILL.md")].source_path == patch_origin
+    assert result.sources[item_label(Tool.CLAUDE, Path("skills/patched"))] == patch_origin
 
 
 def test_gate_returns_the_budget_numbers_it_measured() -> None:
@@ -309,7 +326,7 @@ def _shared_skill(tmp_path: Path, name: str, text: str) -> StagedItem:
 
 
 def _deployed_entry(result: GateResult, tool: Tool, name: str) -> bytes:
-    return result.plans[tool].dir_overrides[Path("skills") / name][Path("SKILL.md")]
+    return result.plans[tool].dir_overrides[Path("skills") / name][Path("SKILL.md")].content
 
 
 @pytest.mark.parametrize("tool", list(Tool))
@@ -401,3 +418,166 @@ def test_item_label_is_the_join_key_the_gate_reports_under() -> None:
     result = run_admission_gate(plans)
 
     assert result.skipped == [item_label(Tool.CLAUDE, Path("rules/a.md"))]
+
+
+# ---------------------------------------------------------------------------
+# Per-contributor gating: a rule destination assembled from two source files
+# ---------------------------------------------------------------------------
+
+
+def _merged_rule(name: str, *sides: tuple[str, bytes]) -> StagedItem:
+    """One rule destination assembled from several sources, exactly as staging
+    assembles it: through the append-merge strategy, in the order given."""
+    strategy = AppendRulesStrategy()
+    items = [
+        StagedItem(
+            source_path=Path("/src") / source,
+            dest_relpath=Path("rules") / name,
+            kind=FileKind.NAMESPACED_MD,
+            namespace="rules",
+            provenance=Provenance(kind="tool", name="claude"),
+            content=content,
+        )
+        for source, content in sides
+    ]
+    merged = items[0]
+    for incoming in items[1:]:
+        merged = strategy.merge(merged, incoming)
+    return merged
+
+
+def test_a_trailing_contributor_s_governance_front_matter_never_ships() -> None:
+    """Sanitization strips the governance block of EVERY contributor to a merged
+    rule, not only the one whose front matter leads the merged bytes. A record
+    that ships is charged against the very always-on budget it exists to police."""
+    item = _merged_rule(
+        "a.md",
+        ("shared/a.md", _COMPLETE),
+        (
+            "claude/a.md",
+            b"---\nadmission:\n  provides: q\n  cost: c2\n  remove_when: r2\n"
+            b"claims:\n  k: v\n---\ntrailing body\n",
+        ),
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert result.ok, result.violations
+    deployed = result.plans[Tool.CLAUDE].items[Path("rules/a.md")].content
+    assert deployed is not None
+    assert b"admission:" not in deployed
+    assert b"claims:" not in deployed
+    assert b"remove_when" not in deployed
+    assert b"trailing body" in deployed
+
+
+def test_a_record_less_contributor_does_not_drop_its_admitted_co_contributor() -> None:
+    """A destination is not one artifact when two files assemble it. Judging the
+    merged bytes off the leading front matter drops an admitted rule because
+    something it merged with carried no record — and reports nothing against the
+    file that actually lacked one."""
+    item = _merged_rule(
+        "a.md",
+        ("shared/a.md", b"# no front matter at all\n"),
+        ("claude/a.md", _COMPLETE),
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert result.ok, result.violations
+    kept = result.plans[Tool.CLAUDE].items.get(Path("rules/a.md"))
+    assert kept is not None, "the admitted contributor was dropped with the record-less one"
+    assert kept.content is not None
+    assert b"body" in kept.content
+    assert b"no front matter at all" not in kept.content
+    assert [result.sources[label] for label in result.skipped] == [Path("/src/shared/a.md")]
+
+
+def test_a_directory_with_no_entry_file_is_reported_against_the_directory(
+    tmp_path: Path,
+) -> None:
+    """There is no text to classify, so the record-less verdict has nothing finer
+    than the directory to name — and naming it is what keeps the drop visible."""
+    skill = tmp_path / "skills" / "hollow"
+    skill.mkdir(parents=True)
+    item = StagedItem(
+        source_path=skill,
+        dest_relpath=Path("skills") / "hollow",
+        kind=FileKind.DIR,
+        namespace="skills",
+        provenance=Provenance(kind="tool", name="claude"),
+        content=None,
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert result.ok
+    assert Path("skills/hollow") not in result.plans[Tool.CLAUDE].items
+    label = item_label(Tool.CLAUDE, Path("skills/hollow"))
+    assert result.skipped == [label]
+    assert result.sources[label] == skill
+
+
+_RECORD_ONLY = b"---\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\n"
+
+
+def test_an_empty_entry_file_is_reported_against_the_file_that_is_empty(
+    tmp_path: Path,
+) -> None:
+    """An entry file that exists and is empty is not the same as no entry file.
+    Both bear no record, but only one of them has nothing to name — here there is
+    a file, it is the file that is wrong, and it is the file the reader opens."""
+    skill = tmp_path / "skills" / "blank"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("")
+    item = StagedItem(
+        source_path=skill,
+        dest_relpath=Path("skills") / "blank",
+        kind=FileKind.DIR,
+        namespace="skills",
+        provenance=Provenance(kind="tool", name="claude"),
+        content=None,
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert result.ok
+    label = item_label(Tool.CLAUDE, Path("skills/blank"))
+    assert result.skipped == [label]
+    assert result.sources[label] == skill / "SKILL.md"
+
+
+def test_a_contributor_that_sanitizes_to_nothing_emits_no_separator() -> None:
+    """A rule that is all record and no body sanitizes away entirely. Joining it
+    anyway pads the deployed file with a separator standing for content that is
+    not there — which the append-merge itself refuses to do, so reassembly would
+    be breaking an invariant its own merge upholds."""
+    item = _merged_rule(
+        "a.md",
+        ("shared/a.md", _RECORD_ONLY),
+        ("claude/a.md", _COMPLETE),
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    assert result.ok, result.violations
+    deployed = result.plans[Tool.CLAUDE].items[Path("rules/a.md")].content
+    assert deployed == b"body\n"
+
+
+def test_what_deployed_is_exactly_what_the_contributions_say_contributed() -> None:
+    """The recorded contributions and the deployed bytes are two statements about
+    one file, and this slice exists to stop them disagreeing. Rejoining the record
+    has to reproduce the bytes — a contributor listed as having contributed
+    nothing is the divergence in miniature."""
+    item = _merged_rule(
+        "a.md",
+        ("shared/a.md", _COMPLETE),
+        ("claude/a.md", _RECORD_ONLY),
+        ("plugin/a.md", _COMPLETE),
+    )
+    result = run_admission_gate({Tool.CLAUDE: _plan(_instruction(b"laws"), item)})
+
+    kept = result.plans[Tool.CLAUDE].items[Path("rules/a.md")]
+    assert kept.content is not None
+    assert b"\n---\n\n---\n" not in kept.content  # no separator standing for nothing
+    assert b"\n---\n".join(part.content for part in kept.contributions) == kept.content
+    assert [part.source_path for part in kept.contributions] == [
+        Path("/src/shared/a.md"),
+        Path("/src/plugin/a.md"),
+    ]

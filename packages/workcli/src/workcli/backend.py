@@ -1,8 +1,9 @@
 """The Backend seam: one protocol per the verb set's primitive needs.
 
 The verb layer owns normalization, typed errors, and retries; adapters own
-only backend I/O and concept mapping (spec section 6). v1 ships the bd
-adapter (`adapters/bd/backend.py`) alone.
+only backend I/O and concept mapping (spec section 6). v1 ships exactly one
+adapter (`adapters/bd/backend.py`); everything above this file is written so
+a second one needs no change here.
 """
 
 from __future__ import annotations
@@ -54,7 +55,7 @@ class Backend(Protocol):
 
     def create(self, fields: CreateFields) -> str: ...  # returns new item id  # pragma: no cover
     def set_fields(self, item_id: str, fields: UpdateFields) -> None: ...  # pragma: no cover
-    def claim(self, item_id: str) -> None: ...  # bd `update --claim`  # pragma: no cover
+    def claim(self, item_id: str) -> None: ...  # atomic; never set_status  # pragma: no cover
     def set_status(self, item_id: str, status: str) -> None: ...  # pragma: no cover
     def set_type(self, item_id: str, item_type: str) -> None: ...  # pragma: no cover
     def set_acceptance(self, item_id: str, text: str) -> None: ...  # pragma: no cover

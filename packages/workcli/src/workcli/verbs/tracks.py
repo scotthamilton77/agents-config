@@ -78,6 +78,6 @@ def track(backend: Backend, args: Namespace) -> JsonValue:
         "skipped": len(skipped),
         # list() wrap: a NAMED list[str] local is not assignable to a
         # JsonValue slot under mypy --strict (invariance); the constructor
-        # call re-infers from context. Same idiom as the bd adapter.
+        # call re-infers from context. Same idiom as the adapter layer.
         "skipped_ids": list(skipped),
     }

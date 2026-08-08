@@ -45,7 +45,7 @@ def resolve_noun(value: str) -> Noun | None:
 
 @dataclass(frozen=True)
 class NounTemplate:
-    bd_type: str  # bd --type value
+    item_type: str  # the `Item.type` this noun is stamped with at creation
     shape_label: str  # birth shape label, e.g. "shape-feat"
     is_container: bool  # True for spec/epic
     expects_evidence: bool  # True for feat/bugfix (evidence rule applies)

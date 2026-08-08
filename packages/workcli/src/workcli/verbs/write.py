@@ -48,7 +48,7 @@ def update(backend: Backend, args: Namespace) -> JsonValue:
     Replace semantics only; status never moves through this verb
     (lifecycle verbs own claiming/status). `--set-parent` is the move
     operation: a parent is single-valued, which is exactly the contract this
-    verb already declares, and it maps to bd's own atomic reparent — the old
+    verb already declares, and it maps to the seam's atomic reparent — the old
     parent-child edge is replaced, never added beside. `dep add` refuses a
     second parent and names this flag.
 
@@ -63,7 +63,7 @@ def update(backend: Backend, args: Namespace) -> JsonValue:
             "notes are append-only; use `work note ID TEXT` instead of --set-notes",
         )
     if args.set_parent is not None and not args.set_parent:
-        # bd reads an empty `--parent` as "remove the parent", and an
+        # An empty parent reads as "remove the parent" at the backend, and an
         # unset shell variable expands to exactly that. Orphaning an item is
         # not what anyone typing a move means, and this verb replaces a value
         # with a value; detaching a parent is deliberately unexpressible here.
@@ -99,10 +99,10 @@ def close(backend: Backend, args: Namespace) -> JsonValue:
     """`work close IDS... [--disposition TEXT]` -- close + close-walk + note,
     one call.
 
-    Batch `bd close` for all ids first, then one `--append-notes` call per
-    id carrying the disposition text (orchestrator ruling: `bd close
-    --reason` lands in the wrong field; the disposition is an appended note),
-    then the close-walk: exhausted non-milestone parents close with a walk
+    One batched `Backend.close` for all ids first, then one `append_note` per
+    id carrying the disposition text (orchestrator ruling: the backend's own
+    close-reason field is the wrong home; the disposition is an appended
+    note), then the close-walk: exhausted non-milestone parents close with a walk
     note. `data` stays None when nothing walked (legacy envelope shape).
     """
     backend.close(args.ids)

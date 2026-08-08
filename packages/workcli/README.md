@@ -37,7 +37,8 @@ Twelve verbs; each is a subcommand of `work`.
 | global | `--format {json,human}` (human renders to **stderr**; stdout envelope unchanged), `--protocol-version`, `--config PATH` (explicit `project-config.toml`; overrides the upward search — track-layer surfaces only, see below) |
 
 `epic`/`stats`/`compact`/`delete` are deliberately out of scope for v1 — no
-programmatic consumer observed; use `bd` directly for those.
+programmatic consumer observed. A consumer that needs one adds it here; the
+facade does not expose a way around itself.
 
 ## Lifecycle verbs
 

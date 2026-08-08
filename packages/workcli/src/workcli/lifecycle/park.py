@@ -2,7 +2,7 @@
 work.
 
 A work item whose PR won't merge parks with a typed reason and the machine
-disengages: parked is bd's `blocked` status (drops the item out of `ready`,
+disengages: parked is the backend's `blocked` status (drops it out of `ready`,
 so `claim` refuses it) + the `parked` label (the cheap queryable handle) + a
 timestamped `[work] parked` marker note carrying the reason. The two human
 verbs walk it back to `open` with distinct recorded intent -- recut is

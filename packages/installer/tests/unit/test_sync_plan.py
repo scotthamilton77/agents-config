@@ -22,8 +22,14 @@ import pytest
 from installer.core.consent import ConsentRequiredError
 from installer.core.installignore import InstallIgnore, load_installignore
 from installer.core.io_port import IOPort, ScriptedIO, TranscriptEntry
-from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
+from installer.core.model import Contribution, FileKind, Provenance, StagedItem, StagingPlan, Tool
 from installer.core.sync import sync_plan
+
+
+def _carried(content: bytes) -> Contribution:
+    """An override contribution whose origin no assertion here depends on."""
+    return Contribution(source_path=Path("/plugin/carried"), content=content)
+
 
 _FIXED_TS = "20260613-120000"
 
@@ -479,7 +485,10 @@ def test_dir_overrides_are_overlaid_and_win_on_collision(tmp_path: Path) -> None
         items={Path("skills/s"): _dir_item(Path("skills/s"), src)},
         tool=Tool.CLAUDE,
         dir_overrides={
-            Path("skills/s"): {Path("extra.md"): b"added\n", Path("shared.md"): b"from-override\n"}
+            Path("skills/s"): {
+                Path("extra.md"): _carried(b"added\n"),
+                Path("shared.md"): _carried(b"from-override\n"),
+            }
         },
     )
 
@@ -565,7 +574,7 @@ def test_unchanged_dir_item_with_overrides_is_skipped(tmp_path: Path) -> None:
     plan = StagingPlan(
         items={Path("skills/s"): _dir_item(Path("skills/s"), src)},
         tool=Tool.CLAUDE,
-        dir_overrides={Path("skills/s"): {Path("extra.md"): b"added\n"}},
+        dir_overrides={Path("skills/s"): {Path("extra.md"): _carried(b"added\n")}},
     )
 
     sync_plan(
@@ -614,7 +623,7 @@ def test_unsafe_dir_override_relpath_is_rejected(tmp_path: Path) -> None:
     plan = StagingPlan(
         items={Path("skills/s"): _dir_item(Path("skills/s"), src)},
         tool=Tool.CLAUDE,
-        dir_overrides={Path("skills/s"): {Path("../evil.md"): b"evil\n"}},
+        dir_overrides={Path("skills/s"): {Path("../evil.md"): _carried(b"evil\n")}},
     )
 
     with pytest.raises(ValueError, match="escape"):
@@ -638,7 +647,7 @@ def test_dry_run_still_rejects_unsafe_dir_override(tmp_path: Path) -> None:
     plan = StagingPlan(
         items={Path("skills/s"): _dir_item(Path("skills/s"), src)},
         tool=Tool.CLAUDE,
-        dir_overrides={Path("skills/s"): {Path("../evil.md"): b"evil\n"}},
+        dir_overrides={Path("skills/s"): {Path("../evil.md"): _carried(b"evil\n")}},
     )
 
     with pytest.raises(ValueError, match="escape"):
@@ -665,7 +674,7 @@ def test_unsafe_dir_override_does_not_touch_an_existing_dest(tmp_path: Path) -> 
     plan = StagingPlan(
         items={Path("skills/s"): _dir_item(Path("skills/s"), src)},
         tool=Tool.CLAUDE,
-        dir_overrides={Path("skills/s"): {Path("../evil.md"): b"evil\n"}},
+        dir_overrides={Path("skills/s"): {Path("../evil.md"): _carried(b"evil\n")}},
     )
 
     with pytest.raises(ValueError, match="escape"):
@@ -727,7 +736,7 @@ def test_dir_override_with_a_file_in_its_inner_parent_path_is_rejected(tmp_path:
     plan = StagingPlan(
         items={Path("skills/s"): _dir_item(Path("skills/s"), src)},
         tool=Tool.CLAUDE,
-        dir_overrides={Path("skills/s"): {Path("a/deep.md"): b"deep\n"}},
+        dir_overrides={Path("skills/s"): {Path("a/deep.md"): _carried(b"deep\n")}},
     )
 
     with pytest.raises(ValueError, match="parent path"):

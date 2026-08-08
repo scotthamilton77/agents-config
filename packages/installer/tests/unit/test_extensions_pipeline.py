@@ -54,7 +54,7 @@ def test_extension_round_trip_injects_content_at_logical_position(
         expected = (
             "# Demo\n\n## Usage\nbase usage\n" + CHEAT_BLOCK + "\n\n## Reference\nsee docs\n"
         ).encode()
-        assert patched == expected
+        assert patched.content == expected
 
 
 def test_extension_targets_a_carrier_merged_plugin_file(
@@ -81,4 +81,4 @@ def test_extension_targets_a_carrier_merged_plugin_file(
     )
 
     patched = plans[Tool.CLAUDE].dir_overrides[Path("skills/demo")][Path("cheats.md")]
-    assert patched == b"## Cheats\nraw\nappended-after-merge\n"
+    assert patched.content == b"## Cheats\nraw\nappended-after-merge\n"
