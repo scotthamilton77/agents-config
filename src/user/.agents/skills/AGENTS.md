@@ -4,7 +4,7 @@ Source-of-truth for every skill that gets staged into each detected tool's user-
 
 Staging is gated on admission: a `SKILL.md` without a complete `admission:` record (`prevents` **or** `provides`, plus `cost` and `remove_when`) in its front matter is dropped at deploy and pruned from every tool. Only admitted skills live in this folder; a skill awaiting admission, or retired after it, is not here at all.
 
-An admission record is necessary but not sufficient — a skill can hold a complete record and still fail a mechanical staging check, in which case it deploys nothing. Before telling anyone a skill is available, list the tool's own config directory and confirm it landed. `writing-skills` is in exactly that state today (it exceeds the file-size limit and carries an `exemption:` key the installer does not yet honour); `agents-config-9k9.68` tracks it.
+An admission record is necessary but not sufficient — a skill can hold a complete record and still fail a mechanical staging check, in which case it deploys nothing. Before telling anyone a skill is available, list the tool's own config directory and confirm it landed.
 
 ## Layout — flat, depth-1 only
 
@@ -36,7 +36,7 @@ description: ...
 Source: <path to the skill inside the upstream repository>
 Upstream: https://github.com/<owner>/<repo> @ <commit-sha>
 Last sync: YYYY-MM-DD
-Drift policy: <accept-periodic-resync | rewrite-and-divorce | local-fork | track-upstream | ...>
+Drift policy: <accept-periodic-resync | rewrite-and-divorce | local-fork | track-upstream | selective-amalgamation | ...>
 -->
 
 # My Skill
@@ -53,22 +53,42 @@ That makes each row's accuracy load-bearing in a way it was not while a local co
 
 ## Skill provenance registry
 
-One row per OSS-derived or OSS-influenced skill that is **here now**. Skills built from
-scratch in-repo do not appear. When a skill is retired, delete its row — the SKILL.md
-carries its own provenance header with it wherever it goes, and git holds the rest.
+One row per OSS-derived or OSS-influenced artifact that is **here now** — skills, and any
+command or rule that came from the same sources, since the admission gate sends all of them
+to this one table. Artifacts built from scratch in-repo do not appear. When one is retired,
+delete its row — the file carries its own provenance header with it wherever it goes, and
+git holds the rest.
 
 | Skill | Location | Upstream | Path in upstream | Last sync | Drift policy |
 |-------|----------|----------|------------------|-----------|--------------|
-| `writing-skills` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/writing-skills/` | 2026-05-17 | accept-periodic-resync |
-| `writing-skills` | shared | `anthropics/skills @ f458cee` | `skills/skill-creator/` | 2026-05-17 | accept-periodic-resync |
-| `grill-with-docs` | shared | `mattpocock/skills @ ed37663c` | `skills/engineering/grill-with-docs/` | 2026-05-23 | local-fork |
-| `grilling` | shared | `mattpocock/skills @ ed37663c` | `skills/productivity/grilling/` | 2026-07-24 | local-fork |
+| `writing-skills` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/writing-skills/` | 2026-05-17 | selective-amalgamation |
+| `writing-skills` | shared | `anthropics/skills @ f458cee` | `skills/skill-creator/` | 2026-05-17 | selective-amalgamation |
+| `writing-skills` | shared | `mattpocock/skills @ 4aaccb58` | `skills/productivity/writing-for-agents/` | 2026-08-07 | selective-amalgamation |
+| `diagnosing-bugs` | shared | `mattpocock/skills @ bda79a3c` | `skills/engineering/diagnosing-bugs/` | 2026-08-07 | selective-amalgamation |
+| `diagnosing-bugs` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/systematic-debugging/` (two patterns only) | 2026-08-07 | selective-amalgamation |
+| `grill-with-docs` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/grill-with-docs/` | 2026-08-07 | selective-amalgamation |
+| `codebase-design` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/codebase-design/` | 2026-08-07 | accept-periodic-resync |
+| `domain-modeling` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/domain-modeling/` | 2026-08-07 | local-fork |
+| `wait-what` | shared | `mattpocock/skills @ 84fdeffd` | `skills/productivity/wait-what/` | 2026-08-07 | accept-periodic-resync |
+| `tdd` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/tdd/` | 2026-08-07 | selective-amalgamation |
+| `tdd` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/test-driven-development/` | 2026-08-07 | selective-amalgamation |
+| `test-review` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/test-driven-development/testing-anti-patterns.md` | 2026-08-07 | selective-amalgamation |
+| `grilling` | shared | `mattpocock/skills @ 84fdeffd` | `skills/productivity/grilling/` | 2026-08-07 | selective-amalgamation |
+| `zoom-out` | Claude command | `mattpocock/skills @ e74f0061` | `skills/engineering/zoom-out/` (deleted upstream after this commit) | 2026-08-07 | rewrite-and-divorce |
 | `to-spec` | shared | `mattpocock/skills @ ed37663c` | `skills/engineering/to-spec/` | 2026-07-24 | local-fork |
 | `handoff` | shared *(see below)* | `mattpocock/skills @ ed37663c` | `skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
+| `improve-codebase-architecture` | shared | `mattpocock/skills @ e74f006` | `skills/engineering/improve-codebase-architecture/` | 2026-05-23 | rewrite-and-divorce (project-extended fork) |
+| `to-tickets` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/to-tickets/` | 2026-08-07 | local-fork |
+| `research` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/research/` | 2026-08-07 | local-fork |
+| `wayfinder` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/wayfinder/` | 2026-08-07 | local-fork |
+| `prototype` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/prototype/` (SKILL.md, LOGIC.md, UI.md — the latter two deployed under `references/`) | 2026-08-07 | local-fork |
+| `using-git-worktrees` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/using-git-worktrees/` | 2026-08-07 | rewrite-and-divorce (detection moved into a shipped script; consent prompt removed) |
+| `caveman` | claude | `mattpocock/skills @ e74f006` | `skills/productivity/caveman/` (present at the pin, removed upstream since — the pin is the only reference copy) | 2026-05-23 | rewrite-and-divorce (project-extended, user-invoked only) |
+| `explain-diff` | claude | `scotthamilton77/claude-code-sidekick @ 44e57b6` | `assets/sidekick/personas/` — 17 of the upstream's 48 files, trimmed and re-emitted; the rest of the skill is authored in-repo | 2026-07-10 | local-fork |
 
 Update this table whenever a skill is added, replaced, retired, or amalgamated from an OSS source.
 
-`Upstream` and `Path in upstream` together fetch the exact reference bytes. `Last sync` is a different fact — when the deployed copy was last reconciled against upstream — so it can legitimately predate the pinned commit, and does for two rows here.
+`Upstream` and `Path in upstream` together fetch the exact reference bytes. `Last sync` is a different fact — when the deployed copy was last reconciled against upstream — so it can legitimately predate the pinned commit, as `handoff`'s does. `zoom-out` is the opposite case: its path is gone from upstream's head, so the pin is the last commit that still holds the reference bytes and no later pin exists to move to.
 
 `handoff` is the standing exception to the placement rule: it carries Claude-only front matter but sits in the shared tree, so it stages into Codex, Gemini and OpenCode where those keys do nothing. Deliberate and temporary — `agents-config-9k9.68` resolves it, either with per-tool exemption support or by moving the skill back.
 
