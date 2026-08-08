@@ -132,6 +132,11 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
     # help=SUPPRESS hides it from --help entirely: it's a tripwire, not an
     # advertised option, so it never invites the attempt it then rejects.
     update_parser.add_argument("--set-notes", help=SUPPRESS)
+    # The same tripwire, for the same reason, over the criteria a claim is
+    # checked against: they move only through their own verb, which records
+    # what they were. A guess at this flag reaches that answer by name rather
+    # than an unknown-flag error that leaves the caller hunting.
+    update_parser.add_argument("--set-acceptance", help=SUPPRESS)
 
     note_parser = subparsers.add_parser("note", help="append a note (append-only)")
     note_parser.add_argument("id", metavar="ID")
@@ -257,6 +262,24 @@ def _add_relations_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentPar
     label_parser.add_argument("labels", nargs="*", metavar="LABELS")
 
 
+def _add_acceptance_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    acceptance_parser = subparsers.add_parser(
+        "acceptance",
+        help="restate the criteria a claim is checked against: acceptance set ID TEXT",
+    )
+    acceptance_parser.add_argument("action", choices=["set"])
+    acceptance_parser.add_argument("id", metavar="ID")
+    acceptance_parser.add_argument("text", metavar="TEXT")
+    acceptance_parser.add_argument(
+        "--why",
+        metavar="REASON",
+        help=(
+            "why the criteria change; required once work has started, and recorded "
+            "on the item beside the criteria it supersedes"
+        ),
+    )
+
+
 def _add_track_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
     track_parser = subparsers.add_parser(
         "track", help="track assignment: track set ID NAME [--cascade]"
@@ -326,6 +349,7 @@ def _build_parser() -> _EnvelopeArgumentParser:
     _add_transition_subparsers(subparsers)
     _add_discover_subparser(subparsers)
     _add_relations_subparsers(subparsers)
+    _add_acceptance_subparser(subparsers)
     _add_track_subparsers(subparsers)
     _add_report_subparsers(subparsers)
     _add_sync_subparser(subparsers)

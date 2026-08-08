@@ -24,7 +24,7 @@ Twelve verbs; each is a subcommand of `work`.
 |---|---|
 | `work show IDS...` | — |
 | `work create --raw --title T [--description D] [--type task] [--priority P2] [--parent ID] [--label L ...]` | `--label` repeatable |
-| `work update ID [--set-title T] [--set-priority P] [--set-description D]` | ≥1 `--set-*` required; `--set-notes` → `E_FIELD_CLOBBER_GUARD` (suppressed from `--help`) |
+| `work update ID [--set-title T] [--set-priority P] [--set-description D]` | ≥1 `--set-*` required; `--set-notes` and `--set-acceptance` → `E_FIELD_CLOBBER_GUARD` (both suppressed from `--help`) |
 | `work note ID TEXT` | append-only |
 | `work close IDS... [--disposition TEXT]` | disposition = one appended note per id |
 | `work reopen ID` | — |
@@ -59,6 +59,7 @@ selected by whether a noun positional or `--raw` is given.
 | `work promote ID` | a `shape-feat` leaf becomes a `shape-spec` container |
 | `work defer ID [--note TEXT]` | sets an item aside as not-now → `deferred`; leaves `ready`, claims no obstruction, and never enters the parked staleness report |
 | `work undefer ID` | `deferred` → `open` |
+| `work acceptance set ID TEXT [--why REASON]` | restates the criteria a claim is checked against; `--why` is required once work has started (any status but `open`/`deferred`) |
 | `work reconcile [--dry-run]` | recovery sweep over the states the tracker can still observe: interrupted delivers, unreconciled placeholders, interrupted expansions — idempotent, safe to run from any session or cron |
 
 `defer`/`undefer` are deliberately not the park family (`work park
@@ -71,11 +72,25 @@ deferred child is not a closed one: it holds its parent open in the
 close-walk exactly as an open child does, and never reaches the `held`
 report, which is for parents whose children *are* all closed.
 
-Protocol is `"1.11"` — additive-only bumps (new `ErrorCode` members, the
+`acceptance set` is the only way criteria move after create: `update` refuses
+`--set-acceptance` with `E_FIELD_CLOBBER_GUARD` and names this verb. The
+criteria are the termination condition a claim is checked against, so a silent
+replace would let a check pass because the contract moved rather than because
+the work met it — and the two things that stop that are the verb's whole
+content. The superseded text is quoted into a note (`> ` per line, under a
+`[work] acceptance restated <ISO-8601>` marker; `[work] acceptance first set`
+where the item carried none) and that note is written **before** the
+replacement, so a failure between the two writes can only leave a trail
+without a change, never a change without a trail — criteria still equal to the
+quote are criteria the replacement never reached. Once work has started the
+call additionally requires `--why`, which lands on the marker line beside the
+status the item was in. Setting the criteria already in force writes nothing.
+
+Protocol is `"1.12"` — additive-only bumps (new `ErrorCode` members, the
 derived `Item.track` field and the `acceptance` field beside it, the
 capability-disposition model, `partial_progress` detail below, `search`'s
-optional narrowing flags, the close-walk's `held` key, and the
-`defer`/`undefer` pair) never change an existing envelope or data shape. A
+optional narrowing flags, the close-walk's `held` key, the `defer`/`undefer`
+pair, and `acceptance set`) never change an existing envelope or data shape. A
 bump can still change what an unchanged call *answers*, in either direction:
 1.8 makes `search` read descriptions and notes as well as titles, stop
 excluding closed items, and stop stopping at the first page, so a query that
@@ -85,7 +100,10 @@ stops closing a parent that carries scope of its own, so a parent that used
 to appear under `walked` now appears under `held` with what is unfinished
 named. 1.11 widens again, mildly: `status` can report `deferred` on an item
 the facade itself set aside, a value the backend always could hold and this
-contract always declared. `Capabilities` splits `ready` and `sync` into a `ReadySupport`/
+contract always declared. 1.12 adds `acceptance set`, whose only visible mark
+on an existing shape is a facade-authored marker line in `notes`, beside the
+ones the park family and the `defer`/`undefer` pair already write.
+`Capabilities` splits `ready` and `sync` into a `ReadySupport`/
 `SyncSupport` disposition each (`NATIVE` | `EMULATED`/`SERVER_AUTHORITATIVE`
 | `UNSUPPORTED`) instead of a single boolean, and `dep` gates only typed
 writes via `supports_dep_write` — `dep list` is never gated, even when
@@ -120,13 +138,13 @@ second, human-readable rendering on stderr.
 Success:
 
 ```json
-{"protocol": "1.11", "ok": true, "data": {"id": "x.1", "title": "..."}, "error": null}
+{"protocol": "1.12", "ok": true, "data": {"id": "x.1", "title": "..."}, "error": null}
 ```
 
 Failure:
 
 ```json
-{"protocol": "1.11", "ok": false, "data": null,
+{"protocol": "1.12", "ok": false, "data": null,
  "error": {"code": "E_TYPE_WALL", "message": "blocks: epic may not block task",
            "detail": {"from": "x.1", "to": "y.1", "dep_type": "blocks"}}}
 ```
@@ -138,7 +156,7 @@ Failure:
 | `E_NOT_FOUND` | the id(s) requested do not exist |
 | `E_TYPE_WALL` | a `blocks` dep between an epic and a non-epic (pre-checked before any mutation reaches the backend) |
 | `E_DEP_CYCLE` | the backend rejected a dep edge as a cycle |
-| `E_FIELD_CLOBBER_GUARD` | an attempt to replace notes via `update` instead of appending via `note` |
+| `E_FIELD_CLOBBER_GUARD` | a field-protecting guard refused the write: notes replaced via `update` instead of appended via `note`; acceptance criteria moved via `update --set-acceptance` instead of `acceptance set`; or `acceptance set` on an item work has started, with no `--why` — `detail` names the `field` and, for the last, the `status` |
 | `E_LOCK_CONTENTION` | backend lock contention survived the bounded retry — from `label_mutate`/`sync`, may carry `detail.partial_progress` |
 | `E_SYNC_BEHIND` | `sync --pull` with uncommitted local changes |
 | `E_OPEN_BLOCKERS` | `close` refused: items blocking this one are still open — `detail.blocked_by` names them |
@@ -160,7 +178,7 @@ component; refuse to run against a mismatched facade rather than risk
 mis-parsing mid-run:
 
 ```json
-{"protocol": "1.11", "ok": true, "data": {"protocol": "1.11"}, "error": null}
+{"protocol": "1.12", "ok": true, "data": {"protocol": "1.12"}, "error": null}
 ```
 
 Every other verb's envelope carries the same `protocol` field at the top
@@ -176,6 +194,10 @@ are the same value, always.
   with, or `null` when it has none. The key is always present on `show`,
   `list`, `ready` and `search` alike, so `null` reads as "this item has no
   criteria" and never as "this verb did not fetch them".
+- `acceptance set` → `{"id", "acceptance", "previous", "status"}`: the criteria
+  now in force, the ones superseded (`null` where the item had none), and the
+  status the item was in when they moved. `previous == acceptance` is the
+  no-op case — the criteria were already those, and nothing was written.
 - `label list` → a bare `string[]` (never embedded objects).
 - `dep list` → `data = {"depends_on": [...], "dependents": [...]}` (bd's own
   inverted `--direction` naming is translated to these names).
@@ -194,7 +216,7 @@ are the same value, always.
 - `sync` → `{"synced": ..., "mode": "push" | "pull" | "noop"}`. `"noop"` is
   reserved for server-authoritative backends (the CLI contract spec §6's
   declared no-op); the bd adapter only ever emits `"push"` or `"pull"`.
-- `--protocol-version` → `{"protocol": "1.11"}`.
+- `--protocol-version` → `{"protocol": "1.12"}`.
 
 Human-readable output is opt-in only (`--format human`): it renders the
 envelope's `data` (or `error`) to **stderr**, for direct human use at a
