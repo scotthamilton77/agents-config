@@ -153,6 +153,13 @@ class StagedItem:
     Empty — the common case — means the item is its own sole contributor, so
     `contributions_of` reads it as `(source_path, content)` rather than making
     every construction site restate what the two fields already say.
+
+    The invariant is that the contributions rejoin to `content`. It is not
+    checked anywhere, and it is load-bearing: the admission gate reassembles a
+    gated file item out of its contributions, so an item whose `content` was
+    rewritten without restating them deploys the pre-rewrite bytes — the later
+    edit is silently undone rather than rejected. Any producer that rewrites
+    `content` therefore owns `contributions` too.
     """
 
     source_path: Path

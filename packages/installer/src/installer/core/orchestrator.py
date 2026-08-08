@@ -16,6 +16,17 @@ DYNAMIC-INCLUDE flatten (6.5/6.75) then inlines the include-only templates and
 drops their standalone copies, so an ALL-RULES marker sees plugin-contributed
 rules; and all of this runs BEFORE ``post_staging_transforms`` (the Gemini
 frontmatter transform at 6.95), so a transform sees flattened content.
+
+**A transform that rewrites an item's bytes owns its contributions.** The
+admission gate runs after this function returns and reassembles each gated file
+item from ``StagedItem.contributions``, so a transform that sets ``content``
+and leaves them alone has its rewrite silently reverted in the deployed output.
+No transform can hit that today, which is why nothing guards it: the only one
+is Gemini's, it touches ``agents/`` alone, and an ``agents`` item can acquire
+contributions only from a plugin extension patch — the append-merge is
+registered for ``rules`` and an ``agents`` collision is fatal. A second
+transform, or a transform reaching a namespace that merges, is what would make
+this reachable.
 """
 
 from __future__ import annotations
