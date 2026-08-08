@@ -132,6 +132,14 @@ addressed through the `work` CLI that the installer puts on your PATH — `work`
 is a facade over `bd`, so you need `bd` installed and a `bd init` in your
 project for any of it to function.
 
+That `bd init` is a one-time, per-project setup step, and it is something
+`work` deliberately has no verb for: a workspace carries storage, remote and
+id-prefix decisions that belong to the tracker rather than to the facade over
+it. Run any `work` verb where no workspace has been created and it refuses with
+`E_NO_WORKSPACE`, telling you to run from a directory that already has one and
+pointing here for the rest. Running `bd init` at the root of your project is
+that rest — do it once, and every `work` verb below that root then resolves.
+
 Be aware of what does **not** ship: no installed rule or skill instructs your
 assistant to file an issue before writing code, to claim one when it starts, or
 to close one when it finishes. That discipline was carried by rules that have

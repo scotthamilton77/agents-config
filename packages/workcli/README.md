@@ -40,6 +40,16 @@ Twelve verbs; each is a subcommand of `work`.
 programmatic consumer observed. A consumer that needs one adds it here; the
 facade does not expose a way around itself.
 
+**Creating a tracker workspace is out of scope for a different reason, and
+permanently: it is not a facade operation.** A workspace is a directory-shaped
+thing carrying storage-engine, remote and id-prefix decisions, and a backend
+whose items live on a server rather than in a directory has nothing for such a
+verb to mean. Setting one up is a per-project setup step, documented alongside
+the tracker rather than offered here — which is why `E_NO_WORKSPACE` advises
+running where a workspace already exists and says plainly that creation happens
+elsewhere. This is the only gap the facade declares permanent — everything else
+it omits is waiting on a consumer, and this is not.
+
 ## Lifecycle verbs
 
 The lifecycle layer sits over the transport verbs above, on the same
@@ -160,7 +170,7 @@ Failure:
 | `E_LOCK_CONTENTION` | backend lock contention survived the bounded retry — from `label_mutate`/`sync`, may carry `detail.partial_progress` |
 | `E_SYNC_BEHIND` | `sync --pull` with uncommitted local changes |
 | `E_OPEN_BLOCKERS` | `close` refused: items blocking this one are still open — `detail.blocked_by` names them |
-| `E_NO_WORKSPACE` | no tracker workspace is configured for the directory the verb ran in, so nothing was attempted — a configuration failure to fix, not a defect to report |
+| `E_NO_WORKSPACE` | no tracker workspace is configured for the directory the verb ran in, so nothing was attempted — a configuration failure to fix, not a defect to report. No verb creates one; see the scope note under the verb table |
 | `E_BACKEND_DRIFT` | the backend's output or behavior failed the facade's own model — the drift alarm; `detail.backend_diagnostic` carries what the backend reported, scrubbed of its identity and carrying no contract to match on |
 | `E_UNSUPPORTED_CAPABILITY` | the verb is not supported by the active backend's declared `Capabilities` |
 | `E_USAGE` | invalid CLI usage — bad flags, missing required args, or a rejected flag combination (e.g. `create` given neither `--raw` nor a noun; noun creation given `--type`/`--label`; `deliver` given flags for the wrong shape) |

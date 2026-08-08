@@ -540,11 +540,18 @@ def map_bd_failure(result: BdResult) -> WorkError:
     # First, because it is the failure that precedes every other one: with no
     # workspace to read, nothing the caller asked for was ever attempted, and
     # the answer is about their configuration rather than about their request.
+    # The remedy names only what the facade can honour, which is running where
+    # a workspace already exists. Creating one is not a facade operation: it
+    # carries storage, remote and id-prefix decisions the facade would have to
+    # take a position on, and it has no referent at all for a backend whose
+    # items do not live in a directory. So the message states that boundary
+    # instead of issuing an instruction with no verb behind it.
     if _MISSING_WORKSPACE_STDERR_MARKER in result.stderr:
         return WorkError(
             ErrorCode.NO_WORKSPACE,
-            "no tracker workspace is configured for this directory; create one here, "
-            "or run from a directory that already has one",
+            "no tracker workspace is configured for this directory; run from a directory "
+            "that already has one. Creating a workspace is a setup step outside this tool, "
+            "covered by your project's tracker setup documentation",
         )
     if _NOT_FOUND_STDERR_MARKER in result.stderr or _NOT_FOUND_ALT_STDERR_MARKER in result.stderr:
         return WorkError(ErrorCode.NOT_FOUND, "no item matches the requested id")
