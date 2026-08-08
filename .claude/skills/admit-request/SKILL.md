@@ -53,7 +53,7 @@ admission:
   prevents: <the failure this stops>        # preventative case
   # -- or --
   provides: <the capability this supplies>  # assistive case
-  cost: <what it costs, in work or tokens or latency>
+  cost: <what it spends that no gate measures>
   remove_when: <the observation that would retire it>
 ```
 
@@ -73,8 +73,18 @@ aborts the deploy.
   say what invoking it produces. "Provides guidance on testing" is not a
   capability; "produces a dated spec with red-test-convertible criteria" is.
   If the model already does it unprompted, there is nothing to provide.
-- **`cost`** MUST be concrete and MUST name the surface it is paid on — see
-  check 4 for which. "Minimal" is not a cost.
+- **`cost`** MUST name what the artifact spends that no gate measures: the
+  user's time or money, a runtime dependency, disk, other model runs, an upkeep
+  obligation tied to a fact outside this repo, a step it blocks, reading that
+  scales with the target rather than with the skill, or a downside it
+  introduces. It MUST NOT state a token count or a byte count of its own text,
+  and MUST NOT restate the always-on / on-invoke split — `content-lint` prints
+  the surface totals (catalog descriptions included) and every body against its
+  cap, and a hand-copy drifts the moment the text it measures is edited. An
+  artifact whose only cost is its own footprint carries the sentinel verbatim:
+  `Context footprint only, bounded by the caps content-lint enforces.`
+  "Minimal", "None" and their synonyms are not costs; `content-lint` rejects
+  those and any mention of tokens.
 - **`remove_when`** MUST describe something observable. If nothing could ever
   retire the artifact, it is a belief, not a control.
 
@@ -172,8 +182,17 @@ Choosing the invocation mode is a catalog-design decision, not a budget one:
 every model-invoked description is one more entry the agent must disambiguate
 before the user types anything. Do not set the flag to buy the looser cap.
 
-Known gap: the installer does not currently count skill/command/agent
-descriptions in the always-on surface, so that cost is on you to police.
+A skill's catalog entry — its `name` and `description` — is charged to the
+always-on surface of every tool whose runtime publishes it, so description
+sprawl reads as a number here rather than as something you had to notice.
+
+Two descriptions are still charged nothing, for two different reasons. A command
+is in no catalog, so there is nothing to charge. An agent would be in one, and
+the charge counts the `skills` namespace alone — no agent is in the tree today,
+so nothing is mispriced now, but admit one and its description is yours to
+police. Either way, police a description by reading it and cutting it, never by
+recording its size in `cost:`, where the number drifts the next time the
+description is edited and where `content-lint` now rejects it.
 
 ### 5. Placement
 

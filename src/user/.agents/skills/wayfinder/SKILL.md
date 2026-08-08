@@ -4,7 +4,7 @@ description: Chart work too big for one agent session as a map of decision quest
 disable-model-invocation: true
 admission:
   provides: A durable map on the tracker for an effort larger than one agent session — the destination, the open decisions, their blocking edges, and what has been decided so far — so a fresh session orients from the tracker instead of from the previous session's context.
-  cost: A catalog entry of 103 always-on tokens on Codex and OpenCode, which strip the user-invoked declaration and publish the description regardless — zero on Claude, which honours it, and unmeasured on Gemini. Per effort, one container plus one tracker item per decision, and a standing rule of one ticket resolved per session.
+  cost: Per effort, one container plus one tracker item per decision, and a standing rule of one ticket resolved per session.
   remove_when: A session's context reliably spans a whole effort, so the decisions and their order no longer need an artifact to outlive it.
 ---
 

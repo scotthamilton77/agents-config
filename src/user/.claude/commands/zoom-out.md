@@ -2,7 +2,7 @@
 description: Map the code in view to the layer above it — the relevant modules, their callers, and the project's own vocabulary for them. For when you do not know this part of the codebase.
 admission:
   provides: A fixed request for the layer above the code in view. Invoking it produces a map of the relevant modules and their callers, named in the project's glossary vocabulary rather than in whatever terms the model reaches for first — so the altitude and the vocabulary are both settled by typing the command instead of being renegotiated in prose each time.
-  cost: One Claude-scoped command. Nothing is always-on — the two-line body is paid only when someone types it, and the exploration behind the map is paid then too.
+  cost: The exploration behind the map is paid when someone types it.
   remove_when: Asking about an unfamiliar area of code in plain words, with no command typed, already returns a module-and-caller map in the project's glossary vocabulary on two consecutive occasions.
 ---
 

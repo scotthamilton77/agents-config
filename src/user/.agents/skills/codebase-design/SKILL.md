@@ -3,7 +3,7 @@ name: codebase-design
 description: Shared vocabulary for designing deep modules. Use when the user wants to design or improve a module's interface, find deepening opportunities, decide where a seam goes, make code more testable or AI-navigable, or when another skill needs the deep-module vocabulary.
 admission:
   provides: A fixed vocabulary for module design — module, interface, implementation, depth, seam, adapter, leverage, locality — each pinned against the near-synonyms it must not be swapped for, so callers designing or restructuring code name the same distinctions the same way instead of re-deriving them per session.
-  cost: One model-invoked catalog line; a body paid only when a design question invokes it, plus two reference files paid only when followed.
+  cost: Context footprint only, bounded by the caps content-lint enforces.
   remove_when: No more than one caller cites the vocabulary, or the spec contract carries the term definitions directly.
 ---
 

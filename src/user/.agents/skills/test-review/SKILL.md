@@ -3,7 +3,7 @@ name: test-review
 description: Judge whether a test suite would actually fail if the behaviour it covers broke. Use when reviewing test code in a change or pull request, auditing test quality across a package or codebase, investigating flaky or brittle tests, or when a test failure looks caused by the test's design rather than by a bug in the code under test.
 admission:
   provides: A test-adequacy lens — the criteria that separate a test which would fail if the required behaviour broke from one that passes regardless, plus the smells whose remedy is the production code rather than the test. Produces findings ranked by severity, each naming the file, the line, and the concrete fix.
-  cost: One model-invoked catalog line; a body paid only when a review invokes it, plus a quality reference it hosts for itself and one other skill, paid only when followed.
+  cost: Context footprint only, bounded by the caps content-lint enforces.
   remove_when: A mechanical check decides test adequacy — mutation testing gating the same claim — so the judgement no longer needs a reviewer.
 ---
 
