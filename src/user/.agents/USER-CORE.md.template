@@ -31,7 +31,7 @@ Narrow "when in doubt, do the safe thing" rules (merge authorization, destructiv
 
 <conventions>
 - Minimal, surgical edits: touch only what the task requires; nothing speculative.
-- Artifacts state the current decision, not its history — git is the changelog. This reaches code comments and docstrings as much as skills, rules, commands, AGENTS.md and README.md. Keep the refuted alternative — the plausible wrong design and what breaks under it — in the present tense; cut the episode, including who got it wrong and when. Exempt: changelogs, ADRs, plan or spec files that must state a before-state to plan the transition, and third-party provenance headers.
+- Artifacts state the current decision, not its history — git is the changelog. This reaches code comments and docstrings as much as skills, rules, commands, AGENTS.md and README.md. Keep the refuted alternative — the plausible wrong design and what breaks under it — in the present tense; cut the episode, including who got it wrong and when. Exempt: changelogs, ADRs, plan or spec files that must state a before-state to plan the transition, and third-party content vendored at a pin along with its provenance header — a pinned copy has to reproduce its source, so it stands as written, and where it disagrees with these rules, these rules win.
 - If the repo has a CONTEXT.md glossary, use its terminology.
 </conventions>
 
