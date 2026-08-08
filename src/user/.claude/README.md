@@ -13,13 +13,12 @@ by default.
 - `rules/` — Claude-specific workflow rules, under that same gate. Each rules
   directory carries its own `AGENTS.md` saying what is currently in it; read
   that rather than counting files here.
-- `AGENTS.md.template` — Top-level instruction file that pulls in the shared
-  personas and session-primer, and `CLAUDE-EXTENSIONS.md`. Does not yet pull
-  in the shared zero-based `AGENTS.md.template` survivor — see that file's
-  entry in `src/user/.agents/README.md` (`agents-config-9k9.10`).
+- `AGENTS.md.template` — Top-level instruction file. It is a single
+  `DYNAMIC-INCLUDE` of the shared zero-based core in
+  `src/user/.agents/USER-CORE.md.template`, which the installer flattens in at
+  deploy time; it carries no text of its own. Claude-specific workflow lives in
+  `rules/`.
 - `CLAUDE.md.template` — Thin wrapper pointing at `AGENTS.md`.
-- `CLAUDE-EXTENSIONS.md.template` — Stub header kept for compatibility;
-  Claude-specific workflow now lives in `rules/`.
 - `settings.json.template` — Permission allowlists, hooks, and experimental
   features. The installer union-merges this into any existing
   `~/.claude/settings.json`.
@@ -31,9 +30,10 @@ Into `~/.claude/` (user-scoped Claude Code config). The installer strips the
 
 ## Who it's for
 
-Claude Code users who want to adopt this repo's agents, skills, rules, and
-slash commands. Shared content from `src/user/.agents/` also installs into
-`~/.claude/` alongside the files in this folder.
+Claude Code users who want to adopt this repo's skills, rules, and slash
+commands. No agent definitions ship, so `~/.claude/agents/` gets nothing from
+here. Shared content from `src/user/.agents/` also installs into `~/.claude/`
+alongside the files in this folder.
 
 See the [root README](../../../README.md) for install flow and customization
 pointers.

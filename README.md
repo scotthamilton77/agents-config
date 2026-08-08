@@ -25,7 +25,9 @@ The five load-bearing convictions behind this:
 
 ### Current state — mid-rebuild
 
-**The harness is being rebuilt, and much of what the vision above describes is not in the tree.** There is no completion gate, no merge guard, no PR-feedback skill and no role-based agent definition; their replacements are specified but mostly not built. What ships today is a much smaller set: the always-on instruction core (laws, decision matrix, hard lines), the design and spec-writing path (`grilling`, `to-spec`, `ac-attack`), the review contracts (`review-panel`, `review-verdict`), the delegation skills, and git cleanup.
+**The harness is being rebuilt, and much of what the vision above describes is not in the tree.** There is no completion gate, no merge guard, no PR-feedback skill and no role-based agent definition; their replacements are specified but mostly not built.
+
+What does ship spans the always-on instruction core (laws, decision matrix, hard lines, conventions); skills for design and spec-writing, review contracts, delegation, test-first implementation, diagnosis, codebase navigation and session handoff; a few slash commands; the Claude hooks; and the CLIs the installer puts on PATH. The inventory itself is the directories under [What actually deploys](#what-actually-deploys) — read those, because any list written here is wrong by the next commit that adds a skill.
 
 The plan of record is [`docs/specs/2026-07-21-harness-rework-way-forward.md`](./docs/specs/2026-07-21-harness-rework-way-forward.md) — decisions, acceptance criteria, and the ordered slice list. Read it before building on anything here. Live status lives in the tracker, not in this file.
 

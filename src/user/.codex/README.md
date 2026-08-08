@@ -6,25 +6,26 @@ because `~/.codex/` already exists.
 
 ## What lives here
 
-- `AGENTS.md.template` — Top-level instruction file that pulls in the shared
-  personas, session-primer, and all rules; and `CODEX-EXTENSIONS.md`. Does not
-  yet pull in the shared zero-based `AGENTS.md.template` survivor — see that
-  file's entry in `src/user/.agents/README.md` (`agents-config-9k9.10`).
-- `CODEX-EXTENSIONS.md.template` — Placeholder for Codex-specific workflow
-  additions. Currently empty; populate as Codex-specific conventions emerge.
+- `AGENTS.md.template` — Top-level instruction file. It is a single
+  `DYNAMIC-INCLUDE` of the shared zero-based core in
+  `src/user/.agents/USER-CORE.md.template`, which the installer flattens in at
+  deploy time; it carries no text of its own. There is no Codex-specific
+  instruction content, so this is the whole of the Codex tree's prose.
 
 ## Where it installs
 
 Into `~/.codex/` (user-scoped Codex CLI config). The installer strips the
 `.template` suffix on copy.
 
-Shared content from `src/user/.agents/` also installs into `~/.codex/`
-(agents, skills, personas).
+Shared content from `src/user/.agents/` also installs into `~/.codex/` — the
+skills, and the rules directory, which is empty today. No agent definitions and
+no persona templates exist to install: the always-on surface is zero-based and
+carries no identity content.
 
 ## Who it's for
 
-OpenAI Codex CLI users who want the same agents, skills, and persona setup
-they'd get under Claude Code, adapted to Codex's conventions.
+OpenAI Codex CLI users who want the same skills and the same shared instruction
+core they'd get under Claude Code.
 
 See the [root README](../../../README.md) for install flow and customization
 pointers.
