@@ -49,12 +49,12 @@ Apply the **deletion test** to anything you suspect is shallow: would deleting i
 
 **Take at most five candidates into the report.** More friction than that always exists, so an unbounded pass has no reason to stop and produces a list nobody acts on. Rank what you found by the deletion test and recommendation strength, carry the top five, and say in one line how many you set aside. If fewer than five clear the bar, report fewer — a short honest list beats a padded one.
 
-Ask the helper where the file goes, so nothing lands in the repo and the platform's opener is not re-derived:
+Ask the helper where the file goes, so nothing lands in the repo and the platform's opener is not re-derived. Run it from this skill's `scripts` directory; the path it prints is absolute, so the report itself can be written from anywhere:
 
 ```bash
-uv run scripts/report_target.py            # prints a fresh absolute path
+uv run report_target.py            # prints a fresh absolute path
 # ... write the HTML there ...
-uv run scripts/report_target.py --open <path>
+uv run report_target.py --open <path>
 ```
 
 Tell the user the absolute path either way.
