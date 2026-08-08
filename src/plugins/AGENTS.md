@@ -41,8 +41,13 @@ Each plugin directory follows this layout (all subdirs are optional):
 | `.md` in `rules/` | Append (base first, plugins alphabetically) |
 | `.md` in `commands/`, `skills/`, `agents/` | **Fatal error** |
 | `settings.json.template` | Union-merge (base first, plugins alphabetically) |
-| `.toml` (formulas) | Last-wins alphabetically + warn |
+| `.toml` (any directory) | Last-wins alphabetically + warn |
 | Directories | **Fatal error** (plugin vs base OR plugin vs plugin) |
+
+The `.toml` row keys on the extension alone. Unlike the `.md` rows above it, the
+directory is not part of the dispatch key: `.toml` is registered as a
+non-namespaced kind, so the namespace is discarded on both sides of the lookup and
+one registration serves every directory.
 
 ## Adding a New Plugin
 
