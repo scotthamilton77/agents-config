@@ -41,10 +41,7 @@ for Claude, is content that deploys nowhere and that this check reports.
 **Where the walk stops.** A namespace stages whole, so the walk stops at one and
 does not descend. Everything below that line — files *and* directories — is
 outside this check: a skill's own ``scripts/`` interior is not measured here, and
-should not be, or every skill would report. That reason is sufficient on its own.
-A second one bars the obvious way of going deeper: the plan records no origin for
-several staging channels (see the attribution note below), so per-file accounting
-built on it reports directories that *are* read as if they were not.
+should not be, or every skill would report.
 
 **The standing residual.** ``_staged_dirs`` is a hand-maintained model of what
 reads ``src/``. The readers are ``build_plan``'s phases, ``overlay_plugins``,
@@ -78,9 +75,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from installer.core import namespaces
-from installer.core.admission import DIR_RECORD_FILE
 from installer.core.content_tests import BUILD_DIRS
-from installer.core.deploy_gate import item_label, run_admission_gate
+from installer.core.deploy_gate import run_admission_gate
 from installer.core.installignore import InstallIgnore, load_installignore
 from installer.core.orchestrator import stage_and_transform
 from installer.core.staging import shared_source_dir
@@ -92,7 +88,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from installer.core.io_port import IOPort
-    from installer.core.model import StagedItem, StagingPlan, Tool
+    from installer.core.model import StagingPlan, Tool
     from installer.plugins.base import PluginAdapter
 
 # The subtree the repo declares to be admitted content only, so a record-less
@@ -231,14 +227,9 @@ class Unadmitted:
     ``tools`` names every tool whose plan dropped it — a shared skill is staged
     once per tool, so without grouping the same file reports four times.
     ``fatal`` records whether its location makes the omission a failure.
-    ``source`` is ``None`` when the classified bytes arrived through the
-    directory-override channel, which records no origin; ``dest`` then carries
-    the destination so the entry still has a location to print, and is ``None``
-    whenever ``source`` is set.
     """
 
-    source: Path | None
-    dest: Path | None
+    source: Path
     tools: tuple[str, ...]
     fatal: bool
 
@@ -287,63 +278,17 @@ class ContentLintResult:
 
 # ---------------------------------------------------------------------------
 # Attribution: the gate reports in deploy coordinates (tool, dest); this module
-# has to report in repo coordinates (the file a reader edits). That transform is
-# the whole difficulty here, so the channels that can break it are enumerated in
-# full rather than handled one at a time — an enumeration is what makes the
-# class closed instead of the next instance patched.
-#
-# Every way bytes are transformed between a source file and what the gate
-# classifies:
-#
-#   1. append-rules merge — the existing side's bytes (and so its front matter)
-#      lead the merge product while ``source_path`` names the incoming side.
-#      ``merged_head`` records the side that was actually read.
-#   2. a carrier merge contributing a directory's entry file — the bytes arrive
-#      through ``dir_overrides``, which is ``dict[Path, dict[Path, bytes]]``:
-#      bytes with no recorded origin.
-#   3. a plugin extension patching a DIR item's entry file — same channel as (2).
-#   4. a plugin extension patching a FILE item — the bytes are replaced in place
-#      and ``source_path`` is retained, so the item stays uniquely identified and
-#      nothing is swallowed; the pointer is merely incomplete. Owned by the
-#      gate-before-merge rework.
-#   5. Gemini's agent front-matter transform — strips ``skills:``/``color:``/
-#      ``memory:`` only, so the ``admission:`` record survives it. Benign.
-#   6. this module's own trend report — the same identity question asked on the
-#      success path, and answered by the same rule (see ``_group_skill_bodies``).
-#
-# Channels (2) and (3) destroyed the origin upstream. Attribution there is not
-# hard, it is impossible: the information does not exist in the plan. So this
-# module never guesses a file for them, and never lets the absence of one make a
-# finding fatal. Restoring the origin means gating each contributor before the
-# merge, which is the rework that will delete ``merged_head`` and everything
-# below that reads it.
+# has to report in repo coordinates (the file a reader edits). The gate answers
+# that itself — every label it emits comes with the file it judged, because a
+# staged destination is assembled from contributions that each name their
+# source. This module reads that answer; it does not reconstruct one. A second
+# derivation here would be a guess about bytes it never saw, and would be wrong
+# exactly where it matters — on the destinations that took content from more
+# than one file.
 # ---------------------------------------------------------------------------
 
 
-def _classified_source(item: StagedItem, *, overrides: dict[Path, bytes]) -> Path | None:
-    """The file whose front matter the gate actually read for ``item``.
-
-    Normally that is ``source_path``. Two cases where it is not:
-
-    - An item synthesised by the rule append-merge keeps ``source_path`` from
-      the incoming side while placing the existing side's bytes — and therefore
-      its front matter — first. ``merged_head`` names the side that was read.
-    - A directory item whose entry file arrives through ``dir_overrides`` (a
-      carrier merge contributing the entry, or a plugin extension patching it):
-      the gate deliberately classifies those bytes, and the plan records no
-      origin for them. There is no file to name, so this returns ``None``
-      rather than guessing ``source_path``.
-
-    Blaming ``source_path`` in either case sends a reader to a file whose record
-    was never examined — and, for the override case, would apply the
-    admitted-content-only rule to a path that contributed nothing.
-    """
-    if item.content is None and Path(DIR_RECORD_FILE) in overrides:
-        return None
-    return item.merged_head if item.merged_head is not None else item.source_path
-
-
-def _matching_label(message: str, sources: dict[str, Path | None]) -> str | None:
+def _matching_label(message: str, sources: Mapping[str, Path]) -> str | None:
     """The artifact label a violation message is prefixed with, if any.
 
     Matched against the known label set rather than by splitting on punctuation,
@@ -354,36 +299,8 @@ def _matching_label(message: str, sources: dict[str, Path | None]) -> str | None
     return max(candidates, key=len) if candidates else None
 
 
-def _identity(label: str, source: Path | None) -> tuple[str, str]:
-    """The grouping key and the printed location for one labelled gate finding.
-
-    This is the one place the deploy→repo coordinate transform is decided, so
-    that findings, record-less artifacts and the trend report cannot answer it
-    three different ways.
-
-    With a recorded source the answer is that file for both: it is the finest
-    identity available and it is what a reader has to edit. Without one
-    (channels 2 and 3 above) the identity is the gate's own ``tool:dest``
-    label — **the finest identity the system possesses**, because that label is
-    the gate's primary key, so two distinct findings can never share it. The
-    printed location drops the tool, which the ``[...]`` prefix already carries.
-
-    Keying the unattributable branch on the destination alone would be the same
-    mistake one level up: two tool-scoped artifacts staging to one destination
-    would still fold into a single finding with a wrong count. Keying on the
-    label instead costs an over-report — a genuinely shared unattributable
-    artifact fans out to one line per tool — in a channel with no occupants
-    today. That is the deliberate direction to be wrong in: a gate that says a
-    thing twice is strictly safer than one that never says it at all.
-    """
-    if source is not None:
-        return str(source), str(source)
-    _tool, _sep, dest = label.partition(":")
-    return label, dest
-
-
 def _collapse_findings(
-    violations: list[str], *, sources: dict[str, Path | None], tool_values: frozenset[str]
+    violations: list[str], *, sources: Mapping[str, Path], tool_values: frozenset[str]
 ) -> list[str]:
     """Fold a violation repeated once per tool into one line naming the tools.
 
@@ -394,28 +311,25 @@ def _collapse_findings(
     target; the lint reports on one source tree, so it groups. The verdict is
     unchanged either way — only the rendering differs.
 
-    Grouping is by **artifact identity**, never by the rendered message, because
-    two distinct tool-scoped artifacts can share a destination path and a
-    measured size — their messages would then be identical after the tool prefix
-    came off, and folding them would report one defect where there are two.
-    ``_identity`` decides what that identity is; the message is only its
-    rendering.
+    Grouping is by **source file**, never by the rendered message, because two
+    distinct tool-scoped artifacts can share a destination path and a measured
+    size — their messages would then be identical after the tool prefix came
+    off, and folding them would report one defect where there are two. The file
+    is the thing a reader edits and the finest identity the gate reports.
 
     A finding with a tool prefix but no artifact behind it (the always-on
     surface, which is a property of the tool) groups on its text. A finding with
     no tool prefix at all (the conflict audit's, which spans artifacts) passes
     through whole.
     """
-    # Key is (kind, identity, printed location, text). The location is carried
-    # in the key rather than recomputed at render time because it is a function
-    # of the identity — two entries with one identity cannot want two locations.
-    tools_by_finding: dict[tuple[str, str, str, str], list[str]] = {}
+    # Key is (kind, source, text). Two entries with one source cannot want two
+    # printed locations, so the location is that source and not a fourth column.
+    tools_by_finding: dict[tuple[str, str, str], list[str]] = {}
     for message in violations:
         label = _matching_label(message, sources)
         if label is not None:
             tool, _sep, _dest = label.partition(":")
-            identity, where = _identity(label, sources[label])
-            key = (_ARTIFACT, identity, where, message[len(label) + 1 :].strip())
+            key = (_ARTIFACT, str(sources[label]), message[len(label) + 1 :].strip())
         else:
             head, _sep, tail = message.partition(":")
             if head not in tool_values or not tail.strip():
@@ -423,13 +337,13 @@ def _collapse_findings(
                 # different kinds must never share a bucket, or the one that
                 # carries no tool is absorbed into the one that does and
                 # disappears from the report.
-                tools_by_finding.setdefault((_WHOLE, "", "", message), [])
+                tools_by_finding.setdefault((_WHOLE, "", message), [])
                 continue
-            tool, key = head, (_SURFACE, "", "", tail.strip())
+            tool, key = head, (_SURFACE, "", tail.strip())
         tools_by_finding.setdefault(key, []).append(tool)
 
     rendered: list[str] = []
-    for (_kind, _identity_key, where, text), tools in tools_by_finding.items():
+    for (_kind, where, text), tools in tools_by_finding.items():
         if not tools:
             rendered.append(text)
             continue
@@ -439,7 +353,7 @@ def _collapse_findings(
 
 
 def _group_skill_bodies(
-    measures: list[SkillMeasure], *, sources: dict[str, Path | None]
+    measures: list[SkillMeasure], *, sources: Mapping[str, Path]
 ) -> list[SkillBody]:
     """Fold the gate's per-tool skill measurements into one entry per artifact.
 
@@ -454,16 +368,15 @@ def _group_skill_bodies(
     is not: it is decided by the source front matter, which every tool staging
     that artifact read, so the first measure in a group speaks for all of them.
     """
-    grouped: dict[tuple[str, int], tuple[str, int, list[str]]] = {}
+    grouped: dict[tuple[str, int], tuple[int, list[str]]] = {}
     for measure in measures:
-        identity, where = _identity(measure.label, sources.get(measure.label))
-        _where, _cap, tools = grouped.setdefault(
-            (identity, measure.tokens), (where, measure.cap, [])
+        _cap, tools = grouped.setdefault(
+            (str(sources[measure.label]), measure.tokens), (measure.cap, [])
         )
         tools.append(measure.label.partition(":")[0])
     return [
         SkillBody(where=where, tokens=tokens, cap=cap, tools=tuple(sorted(set(tools))))
-        for (_identity_key, tokens), (where, cap, tools) in sorted(grouped.items())
+        for (where, tokens), (cap, tools) in sorted(grouped.items())
     ]
 
 
@@ -687,44 +600,22 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
     the caller surfaces, not something to swallow into a clean result.
     """
     staged = stage_src(repo_root, io=io)
-    plans = staged.plans
+    gate = run_admission_gate(staged.plans)
+    sources = gate.sources
 
-    # Built from the PRE-gate plans: run_admission_gate returns a filtered copy
-    # with the dropped items already gone, so this is the only place the skipped
-    # labels can still be joined back to the file they came from. A label whose
-    # entry file arrives through dir_overrides maps to None — see
-    # _classified_source; the gate read bytes that no single source file owns.
-    sources = {
-        item_label(tool, dest): _classified_source(item, overrides=plan.dir_overrides.get(dest, {}))
-        for tool, plan in plans.items()
-        for dest, item in plan.items.items()
-    }
-
-    gate = run_admission_gate(plans)
-
-    # Bucketed on ``_identity``, not on the source path: bucketing on the path
-    # put every unattributable entry into one anonymous ``None`` bucket, so two
-    # record-less overrides at different destinations reported as one artifact
-    # with a wrong tool list.
-    buckets: dict[str, tuple[Path | None, str, list[str]]] = {}
+    # Bucketed on the source file: one authored file that four tools each staged
+    # and dropped is one defect with four tools against it, not four defects.
+    buckets: dict[Path, list[str]] = {}
     for label in gate.skipped:
-        source = sources.get(label)
-        identity, where = _identity(label, source)
-        buckets.setdefault(identity, (source, where, []))[2].append(label.partition(":")[0])
+        buckets.setdefault(sources[label], []).append(label.partition(":")[0])
 
     unadmitted = [
         Unadmitted(
             source=source,
-            dest=None if source is not None else Path(where),
             tools=tuple(sorted(set(tools))),
-            # An unattributable entry is never fatal: the admitted-content-only
-            # rule is about which tree a FILE lives in, and here the classified
-            # bytes came from an override whose origin the plan does not record.
-            # Failing the build against a path that was never read would blame
-            # the carrier for its contributor's missing record.
-            fatal=source is not None and _is_admitted_only(source, repo_root),
+            fatal=_is_admitted_only(source, repo_root),
         )
-        for _identity_key, (source, where, tools) in sorted(buckets.items())
+        for source, tools in sorted(buckets.items())
     ]
 
     violations = _collapse_findings(
