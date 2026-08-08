@@ -84,7 +84,19 @@ def test_protocol_wire_value_is_pinned() -> None:
     # consumer branching on the drift alarm loses only a case it could not have
     # handled correctly anyway: it was being told the facade's model of its
     # backend had broken, when what was missing was a workspace.
-    assert PROTOCOL_VERSION == "1.7"
+    #
+    # 1.8 gives `search` optional narrowing flags and widens what it answers
+    # without them: descriptions and notes join the corpus, closed items stop
+    # being filtered out, and the result stops ending at the backend's own
+    # first page. `create <noun>` correspondingly refuses a title a CLOSED
+    # item already carries. Same rule as 1.6 and the same verdict: the
+    # envelope and the `data` shape are untouched -- `search` still answers
+    # `{"items": [...]}` of the same item objects, declaring the same
+    # relationships unknown -- and a consumer that acted on the old empty
+    # result was acting on a false negative. What changes is the answer, not
+    # its shape, and a wider true answer is what the verb always claimed to
+    # give.
+    assert PROTOCOL_VERSION == "1.8"
 
 
 def test_the_readme_states_the_protocol_version_the_code_emits() -> None:

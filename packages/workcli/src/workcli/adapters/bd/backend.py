@@ -38,7 +38,27 @@ from workcli.adapters.bd.retry import run_with_retry
 from workcli.adapters.bd.runner import BdRunner
 from workcli.backend import Capabilities, DepOp, ReadySupport, SyncSupport
 from workcli.envelope import ErrorCode, JsonValue, StepProgress, WorkError, with_progress
-from workcli.model import CreateFields, DepListing, Item, QueryFilters, SyncResult, UpdateFields
+from workcli.model import (
+    SEARCH_FIELDS,
+    CreateFields,
+    DepListing,
+    Item,
+    QueryFilters,
+    SearchFilters,
+    SyncResult,
+    UpdateFields,
+)
+
+# The backend's substring filter for each searchable field other than the
+# title, which has a command of its own (see `BdBackend._search_legs`).
+_TEXT_FILTER_FLAGS = {"description": "--desc-contains", "notes": "--notes-contains"}
+
+# Every leg of one search is parsed at the disclosure the weakest leg can
+# support, so a single result set never mixes disclosure levels: a consumer
+# reading `unknown_relations` off the first item would otherwise generalize
+# it to the rest and take an unknown parent for an absent one. The leg that
+# reads titles reports no relationship at all, so it sets the floor.
+_SEARCH_DISCLOSURE = "search"
 
 # Exact stderr wording per an orchestrator ruling, not a golden capture
 # -- `bd dolt` is never run mutating against a real DB in this project. `bd
@@ -135,13 +155,48 @@ class BdBackend:
             raise map_bd_failure(result)
         return parse_items(result.stdout, command="ready")
 
-    def search(self, query: str) -> list[Item]:
-        argv = ["search", query, "--json"]
+    def _search_legs(self, filters: SearchFilters) -> list[list[str]]:
+        """One backend read per requested field, in `SEARCH_FIELDS` order.
 
-        result = run_with_retry(self._runner, argv, sleep=self._sleep)
-        if result.returncode != 0:
-            raise map_bd_failure(result)
-        return parse_items(result.stdout, command="search")
+        The backend has no single call that answers "title OR description":
+        its text filters intersect with its text query rather than union
+        with it, and the query itself only ever reads titles (and ids).
+        Composing the union is therefore this adapter's job -- a backend
+        that could answer it in one call would implement `search` in one.
+        Every leg is asked unbounded: the caller's bound belongs to the
+        merged set, and a bound applied here would clip each field's matches
+        before they were merged.
+        """
+        legs: list[list[str]] = []
+        for field in SEARCH_FIELDS:
+            if field not in filters.corpus:
+                continue
+            if field == "title":
+                # The text-query command, which also matches on id -- which
+                # is why this leg leads: an exact id is the sharpest thing a
+                # caller can type. Its own default drops closed items, so
+                # every status has to be asked for by name.
+                leg = ["search", filters.query, "--json"]
+                leg += ["--status", filters.status if filters.status is not None else "all"]
+            else:
+                # The listing command carries a substring filter per text
+                # field, and spells "every status" as its own flag.
+                leg = ["list", "--json", _TEXT_FILTER_FLAGS[field], filters.query]
+                leg += ["--all"] if filters.status is None else ["--status", filters.status]
+            legs.append([*leg, "--limit", "0"])
+        return legs
+
+    def search(self, filters: SearchFilters) -> list[Item]:
+        merged: dict[str, Item] = {}
+        for argv in self._search_legs(filters):
+            result = run_with_retry(self._runner, argv, sleep=self._sleep)
+            if result.returncode != 0:
+                raise map_bd_failure(result)
+            for item in parse_items(result.stdout, command=_SEARCH_DISCLOSURE):
+                # First field to match sets an item's rank; a later leg
+                # re-reporting it changes nothing.
+                merged.setdefault(item.id, item)
+        return list(merged.values())
 
     def create(self, fields: CreateFields) -> str:
         argv = ["create", "--json", "--title", fields.title]

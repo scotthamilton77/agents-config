@@ -17,7 +17,7 @@ from workcli.adapters.bd.backend import BdBackend
 from workcli.adapters.bd.runner import BdResult
 from workcli.backend import ReadySupport, SyncSupport
 from workcli.envelope import ErrorCode, WorkError
-from workcli.model import CreateFields, DepEdge, QueryFilters, UpdateFields
+from workcli.model import CreateFields, DepEdge, QueryFilters, SearchFilters, UpdateFields
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
@@ -295,10 +295,10 @@ def test_search_sends_the_query_and_returns_normalized_items():
     )
     backend = BdBackend(runner)
 
-    items = backend.search("quarantine")
+    items = backend.search(SearchFilters(query="quarantine", corpus=frozenset({"title"})))
 
     assert len(items) == 5
-    assert runner.calls == [("search", "quarantine", "--json")]
+    assert runner.calls == [("search", "quarantine", "--json", "--status", "all", "--limit", "0")]
 
 
 def test_search_maps_an_unrecognized_nonzero_exit_to_backend_drift():
@@ -313,7 +313,7 @@ def test_search_maps_an_unrecognized_nonzero_exit_to_backend_drift():
     backend = BdBackend(runner)
 
     try:
-        backend.search("x")
+        backend.search(SearchFilters(query="x"))
         raise AssertionError("expected WorkError")
     except WorkError as error:
         assert error.code == ErrorCode.BACKEND_DRIFT

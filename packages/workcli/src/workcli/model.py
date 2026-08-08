@@ -102,3 +102,24 @@ class QueryFilters:
     parent: str | None = None
     type: str | None = None
     limit: int | None = None
+
+
+# The `Item` fields a search may read, in the order a result set reports them
+# -- a title match ranks above a description match, which ranks above a note.
+# Ordering is contract, not incidental: it is what a caller's `--limit` keeps.
+SEARCH_FIELDS = ("title", "description", "notes")
+
+
+@dataclass(frozen=True)
+class SearchFilters:
+    query: str
+    # Every field by default. The three narrowings this verb used to apply
+    # silently -- corpus, status, bound -- are each askable now, and each
+    # defaults to the wide answer: a narrowing nobody chose returns an empty
+    # result a caller cannot tell from a true "nothing like this exists".
+    corpus: frozenset[str] = frozenset(SEARCH_FIELDS)
+    status: str | None = None  # None = every status, closed included
+    # No limit here on purpose. A search spans several fields, and a bound
+    # pushed down per field would truncate each one before they are merged
+    # and undercount the union; the verb layer applies it to the merged set
+    # instead (same ordering `list --track` already enforces).
