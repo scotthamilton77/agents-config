@@ -157,7 +157,7 @@ erDiagram
     ReceiptEntry {
         Path   path    "HOME-relative dest path (the diff key)"
         string owner   "tool name (claude/codex/gemini/opencode) or plugin name — diff-scope tag"
-        Path   root    "HOME-relative install root the entry lives under (.claude, .config/opencode)"
+        Path   root    "HOME-relative install root — a tool root (.claude, .config/opencode) for a synced entry, or the dest dir's first segment for a plugin-routed one"
         string kind    "Literal[file | dir] — top-level skill/agent dirs are one dir entry"
         string sha256  "hex digest of a file's bytes (ownership-drift gate); null for a dir entry"
     }
