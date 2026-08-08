@@ -463,17 +463,24 @@ _ADAPTERS = _SRC / "adapters"
 
 # The names that would tell a consumer which tracker is behind the seam: the
 # binary, the project that names its environment variable and its storage
-# directory, and the storage engine under it. Word edges are spelled out
-# rather than left to `\b` so `BEADS_DIR` and `.beads` are caught — `_` and a
-# leading `.` are word characters, and `\b` would wave both through.
+# directory, the singular noun it calls one item by, and the storage engine
+# under it. Word edges are spelled out rather than left to `\b` so `BEADS_DIR`
+# and `.beads` are caught — `_` and a leading `.` are word characters, and
+# `\b` would wave both through.
 #
 # Restated here rather than imported from the adapter's own scrubber, on
 # purpose. The adapter's list is a claim about what it knows to hide; a test
 # that imported it would ratify that claim instead of checking it, and would
 # go green the moment someone shortened it. Two independent statements of the
 # same fact: narrow one without the other and this file turns red.
+#
+# Independent is not the same as narrower, though. This is the check that
+# reads the bytes that actually left the process, so a name the scrubber hides
+# and this pattern does not know is a name no behavioural test can catch
+# leaking on a path the scrubber was never applied to. Whatever the scrubber
+# covers, this covers.
 _BACKEND_IDENTITY = re.compile(
-    r"(?<![A-Za-z0-9])\.?(?:beads|bd|dolt)(?![A-Za-z0-9])",
+    r"(?<![A-Za-z0-9])\.?(?:beads?|bd|dolt)(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
 
@@ -564,6 +571,61 @@ def test_real_backend_stderr_never_reaches_a_consumer_intact(stderr: str) -> Non
 
     assert envelope["ok"] is False
     _assert_envelope_is_quarantined(envelope)
+
+
+# The one string above the seam that has to spell a backend name. It is the
+# superseded spelling of a config key, still read so that the
+# `project-config.toml` files already on disk keep working — its bytes are a
+# value the facade matches a user's keys against, not vocabulary the facade
+# chose, and renaming it would stop those files being read. Held to the rule
+# in the only way that costs nothing: it never travels alone, and the sentence
+# it does travel in tells the user to rename the key it names, which is a
+# sentence about their own file.
+#
+# Exempted by the name it is bound to rather than by its text, so a second
+# literal spelling a backend name still fails this scan.
+_SUPERSEDED_CONFIG_KEY_BINDING = "GROOM_STATE_KEY_SUPERSEDED"
+
+
+def test_a_failure_naming_one_item_in_the_backends_own_noun_is_scrubbed_too() -> None:
+    """
+    Given an unrecognised failure written in the backend's word for one item
+    When the facade turns it into an envelope
+    Then that word does not reach the consumer either.
+
+    Kept out of the captured corpus above, because it is not a capture: the
+    corpus is failures this adapter has actually met, and no captured failure
+    uses the singular noun. The vocabulary is the backend's, though — it is
+    how the backend's own help output at version 1.0.3 refers to one item
+    ("Promote a wisp to a permanent bead", "Entity URI or bead ID affected"),
+    so it is a sentence the backend can write, not one invented here.
+
+    That distinction is the whole reason this case is worth a test. The
+    singular noun is the spelling the scrubber is likeliest to be missing at
+    any given moment, precisely because nothing in the corpus forces it.
+    """
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                BdResult(
+                    returncode=3,
+                    stdout="",
+                    stderr=(
+                        "Error: cannot promote a wisp to a permanent bead: storage is read-only\n"
+                    ),
+                ),
+            )
+        ]
+    )
+
+    _, envelope = _assert_stdout_is_exactly_one_envelope(runner, ["show", "x.1"])
+
+    assert envelope["ok"] is False
+    _assert_envelope_is_quarantined(envelope)
+    # The scrub is narrow by design, so the diagnosis has to survive it: an
+    # unrecognised failure has nothing to offer a caller except its sentence.
+    assert "storage is read-only" in json.dumps(envelope["error"])
 
 
 def _adapter_sources() -> list[Path]:
@@ -722,6 +784,8 @@ def test_nothing_above_the_adapter_names_the_backend_in_a_string() -> None:
     purpose: a comment is read by whoever maintains this package, while a
     string literal is liable to be printed, and `work --help` printing the
     backend's name is contract, not commentary.
+
+    One binding is exempt, for the reason recorded where it is named.
     """
     offenders = []
     for path in _generic_sources():
@@ -731,12 +795,55 @@ def test_nothing_above_the_adapter_names_the_backend_in_a_string() -> None:
             for node in ast.walk(tree)
             if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
         }
+        exempt = {
+            id(node.value)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == _SUPERSEDED_CONFIG_KEY_BINDING
+        }
         for node in ast.walk(tree):
             if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
                 continue
-            if id(node) in docstrings:
+            if id(node) in docstrings or id(node) in exempt:
                 continue
             if _BACKEND_IDENTITY.search(node.value):
                 offenders.append(f"{path.relative_to(_SRC)}:{node.lineno}: {node.value!r}")
 
     assert offenders == []
+
+
+def test_the_one_exempt_binding_still_exists_and_still_needs_exempting() -> None:
+    """
+    Given the single binding the scan above waves through
+    When the source is read for it
+    Then it is still there and its value still names the backend.
+
+    An exemption outliving what it exempts is how a scan like this goes quiet:
+    the entry stays, nobody rereads it, and the next literal to be waved
+    through is waved through by a rule nobody can still justify. The superseded
+    config key is expected to die once no `project-config.toml` on disk still
+    carries it — and on the day it does, this fails and the exemption goes with
+    it.
+    """
+    bindings = [
+        node.value.value
+        for path in _generic_sources()
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == _SUPERSEDED_CONFIG_KEY_BINDING
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    ]
+
+    assert len(bindings) == 1, (
+        f"{_SUPERSEDED_CONFIG_KEY_BINDING} is no longer a single string constant above the "
+        "seam; if it is gone, delete its exemption from the scan above"
+    )
+    assert _BACKEND_IDENTITY.search(bindings[0]), (
+        f"{_SUPERSEDED_CONFIG_KEY_BINDING} no longer names the backend, so the scan above "
+        "no longer needs to exempt it — delete the exemption"
+    )
