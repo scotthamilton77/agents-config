@@ -205,12 +205,19 @@ def test_the_trend_report_folds_a_shared_body_but_not_two_bodies_at_one_destinat
     same — under-counting the surface silently, on the run nobody is reading
     closely."""
     from installer.core.content_lint import SkillBody, _group_skill_bodies
-    from installer.core.surface_budget import SkillMeasure
+    from installer.core.surface_budget import SKILL_BODY_TOKEN_CAP, SkillMeasure
 
     shared = Path("src/user/.agents/skills/foo")
-    measures = [SkillMeasure(label=f"{t}:skills/foo", tokens=100) for t in ("claude", "codex")]
+    measures = [
+        SkillMeasure(label=f"{t}:skills/foo", tokens=100, cap=SKILL_BODY_TOKEN_CAP)
+        for t in ("claude", "codex")
+    ]
     folded = _group_skill_bodies(measures, sources={m.label: shared for m in measures})
-    assert folded == [SkillBody(where=str(shared), tokens=100, tools=("claude", "codex"))]
+    assert folded == [
+        SkillBody(
+            where=str(shared), tokens=100, cap=SKILL_BODY_TOKEN_CAP, tools=("claude", "codex")
+        )
+    ]
 
     distinct = _group_skill_bodies(
         measures,
@@ -227,13 +234,13 @@ def test_one_source_measuring_two_weights_reports_both() -> None:
     the source alone would report one of the two numbers and hide the other, which
     is the trend instrument lying about the surface it exists to watch."""
     from installer.core.content_lint import _group_skill_bodies
-    from installer.core.surface_budget import SkillMeasure
+    from installer.core.surface_budget import SKILL_BODY_TOKEN_CAP, SkillMeasure
 
     shared = Path("src/user/.agents/skills/foo")
     bodies = _group_skill_bodies(
         [
-            SkillMeasure(label="claude:skills/foo", tokens=100),
-            SkillMeasure(label="gemini:skills/foo", tokens=80),
+            SkillMeasure(label="claude:skills/foo", tokens=100, cap=SKILL_BODY_TOKEN_CAP),
+            SkillMeasure(label="gemini:skills/foo", tokens=80, cap=SKILL_BODY_TOKEN_CAP),
         ],
         sources={"claude:skills/foo": shared, "gemini:skills/foo": shared},
     )

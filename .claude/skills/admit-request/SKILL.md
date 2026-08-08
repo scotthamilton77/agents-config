@@ -114,20 +114,57 @@ Two surfaces, and an artifact is priced on the one it actually loads into.
 
 **A skill's body is not always-on.** Until something invokes it, a skill costs
 its description line in the catalog and nothing else. So body size is a
-question of whether the body earns its 2k *at the moment of use*, and
+question of whether the body earns its cap *at the moment of use*, and
 description sprawl is the always-on concern — a vague description is worse than
 a long body, because it is paid every session and buys mis-invocation.
 
 Mechanical caps the installer enforces at deploy:
 
 - always-on surface (instruction file + all rules): **10k tokens**
-- each skill body, after front matter: **2k tokens**
+- each **model-invoked** skill body, after front matter: **2k tokens**
+- each **user-invoked** skill body: **5k tokens**
+
+A skill is user-invoked when its front matter carries
+`disable-model-invocation: true`. On a host that honours the flag, that keeps
+its description out of the model's catalog entirely, so it costs zero always-on
+tokens and its body is reached only when the user names it — a cost asked for,
+at a moment chosen for it. A model-invoked body is loaded on the model's own
+judgement, mid-task, against whatever the context is already carrying, which is
+what the tighter number prices.
+
+**Only Claude honours the flag today.** The installer drops it for Codex, Gemini
+and OpenCode, which have no equivalent to translate onto — so on those three the
+skill stays model-invocable and its description does load into their catalog.
+The cap is keyed on the artifact's authored flag and applied uniformly anyway,
+because a per-tool cap would make this verdict depend on which tools are
+installed on the machine you are running it from. Two consequences to hold:
+
+- The 5k number is Claude-shaped. A 4,900-token body is a model-invoked body on
+  three of four tools, against a 2k intent. That is the price of a uniform cap,
+  and it is another reason the ceiling is relief rather than permission.
+- Carrying the flag is not by itself a reason to leave the shared tree, since it
+  is projected out cleanly. But dropping a key removes the bytes, not the gap: a
+  skill whose worth claim *depends* on never firing unprompted is still
+  model-invocable wherever the flag is unsupported, and belongs in
+  `src/user/.claude/` where the claim holds. Check 5 decides this; check 4 only
+  tells you which number to measure against.
+
+**The raised ceiling is relief, not permission.** Progressive disclosure applies
+to every skill regardless of which cap measures it. Where a body exceeds 2k the
+first question is always what belongs in `references/`; the ceiling is what
+catches the residue after that split, not a substitute for making it. A body
+that fits 4,900 tokens only because nothing was ever moved out has failed the
+intent while passing the gate — mark it `ADMIT-WITH-CHANGES` and name the split.
 
 Measure; do not estimate. `wc -c` divided by four is the same approximation the
-installer uses. A skill over the cap is `ADMIT-WITH-CHANGES` at best: delegate
+installer uses. A skill over its cap is `ADMIT-WITH-CHANGES` at best: delegate
 the excess to code, or split it.
 
 **Headroom is not an argument.** The budget is a ceiling, not a target to fill.
+
+Choosing the invocation mode is a catalog-design decision, not a budget one:
+every model-invoked description is one more entry the agent must disambiguate
+before the user types anything. Do not set the flag to buy the looser cap.
 
 Known gap: the installer does not currently count skill/command/agent
 descriptions in the always-on surface, so that cost is on you to police.
@@ -139,6 +176,13 @@ By capability-dependency, never by asset type:
 - works on every supported tool → `src/user/.agents/`
 - needs a tool-specific capability (subagent orchestration, the Skill tool,
   interactive question UI, hooks) → that tool's tree, e.g. `src/user/.claude/`
+
+Capability-dependency is about the artifact's *procedure*, not its front matter.
+The installer projects capability keys per target tool — `allowed-tools`,
+`argument-hint` and `disable-model-invocation` deploy to Claude and are dropped
+for the tools that do not define them — so carrying one of those keys is not by
+itself a reason to leave the shared tree. A skill whose steps only work under
+one tool still belongs in that tool's tree.
 
 Then: does it belong in the **deployed** surface at all? Deployed artifacts run
 in other people's projects. An artifact whose subject is this repo — its
