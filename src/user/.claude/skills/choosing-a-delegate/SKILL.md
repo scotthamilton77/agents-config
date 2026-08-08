@@ -7,10 +7,6 @@ admission:
   remove_when: Sessions that were never given this reach cross-vendor on their own judgement when independence is what the task needs.
 ---
 
-<!--
-Source: authored 2026-08-02.
--->
-
 # Choosing a Delegate
 
 Independence comes from a different **vendor**, not a bigger model from the same one.

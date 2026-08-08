@@ -7,10 +7,6 @@ admission:
   remove_when: A run of dispatches shows well-formed briefs — criteria, boundaries, delivered reports — written without loading this skill.
 ---
 
-<!--
-Source: authored 2026-07-31, replacing dispatching-subagents (archived).
--->
-
 # Instructing Subagents
 
 A subagent inherits none of your context, your conversation, or your intent. The brief is

@@ -7,10 +7,6 @@ admission:
   remove_when: The Codex plugin's runtime selects a model by task profile itself, so a caller that names nothing still gets the right tier.
 ---
 
-<!--
-Source: authored 2026-08-01.
--->
-
 # Delegating to Codex
 
 Reach Codex through the plugin's own runtime — the Codex rescue agent, or the
