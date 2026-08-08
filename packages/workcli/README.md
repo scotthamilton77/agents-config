@@ -51,10 +51,10 @@ selected by whether a noun positional or `--raw` is given.
 
 | Verb | Args/flags |
 |---|---|
-| `work create NOUN --title T (--parent ID \| --orphan) [--description D] [--priority P] [--acceptance AC] [--spec REF] [--trivial]` | `NOUN` one of `spike\|chore\|decision\|feat\|bugfix\|spec\|epic`; placement is required-exactly-one; `--spec`/`--trivial` mutually exclusive |
+| `work create NOUN --title T (--parent ID \| --orphan) [--description D] [--priority P] [--acceptance AC] [--spec REF] [--trivial]` | `NOUN` one of `spike\|chore\|decision\|feat\|bugfix\|spec\|epic\|milestone`; placement is required-exactly-one; `--spec`/`--trivial` mutually exclusive |
 | `work claim ID` | open, unblocked, unclaimed leaf → `in_progress`; refuses containers and blocked leaves |
 | `work release ID` | `in_progress` → `open`, no phase advance |
-| `work deliver ID [--spec PATH] [--pr REF] [--items ID,ID] [--trivial]` | on a design child: parses the merged spec's `## Continuations` manifest and reconciles the sibling placeholder; on a leaf: evidence-gated close |
+| `work deliver ID [--spec PATH] [--pr REF] [--items ID,ID] [--trivial]` | on a design child: parses the merged spec's `## Continuations` manifest — one `- <noun>: <title> — AC: <acceptance>` bullet per follow-on item, or the single bullet `- none — <why there is none>` when the spec leaves no follow-on work (the reason is optional — a bare `- none` parses, and the reason is what lands as a note on the closed placeholder) — and reconciles the sibling placeholder; on a leaf: evidence-gated close |
 | `work plan ID (--done \| --undo) [--force]` | stamps/revokes the `planned` label (Planning-queue membership) |
 | `work promote ID` | a `shape-feat` leaf becomes a `shape-spec` container |
 | `work reconcile [--dry-run]` | recovery sweep over the states the tracker can still observe: interrupted delivers, unreconciled placeholders, interrupted expansions — idempotent, safe to run from any session or cron |

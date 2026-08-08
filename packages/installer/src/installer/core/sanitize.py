@@ -27,13 +27,16 @@ A provenance comment is recognized narrowly: an HTML comment standing before
 any prose, carrying a ``Source:`` or ``Upstream:`` line. An arbitrary leading
 comment is content and survives.
 
-That recognition has a second consumer: the repo-side content lint reports a
-provenance header on an artifact nobody derived, which is a judgement about
-source bytes this module is about to delete. ``provenance_keys`` answers it from
-the same pattern and the same block-location rule, because a check that decided
-for itself what a provenance comment is would disagree with what actually gets
-stripped — and then either fail a build over a header the deploy removes anyway,
-or pass one it does not recognize.
+The same two recognisers also answer the question without acting on it, for two
+callers that report rather than rewrite. ``governance_findings`` names *what*
+metadata a text carries, for the files the gate reads but has no mandate to
+rewrite. ``provenance_keys`` goes one level in on the comment and names *which
+keys* it carries, for the repo-side rule that an artifact nobody derived carries
+no provenance header at all — a judgement about source bytes this module is about
+to delete. Both are here rather than in their callers because a check that
+decided for itself what a provenance comment is would disagree with what actually
+gets stripped, and then either fail a build over a header the deploy removes
+anyway or pass one it does not recognize.
 """
 
 from __future__ import annotations
@@ -172,6 +175,36 @@ def _reassemble(text: str, kept: list[str], body: str) -> str:
         return body.lstrip("\r\n")
     newline = _line_ending(text)
     return f"{_FENCE}{newline}{''.join(kept)}{_FENCE}{newline}{body}"
+
+
+#: How :func:`governance_findings` names the provenance comment. The front-matter
+#: findings name themselves — they are the keys — so only this one needs a word.
+PROVENANCE_FINDING = "provenance comment"
+
+
+def governance_findings(text: str) -> tuple[str, ...]:
+    """Every piece of deploy-time metadata in ``text``, named.
+
+    The question :func:`sanitize_text` answers by removal, asked instead of
+    acted on — for the files the gate reads but does not rewrite, where the
+    answer is a finding to report rather than bytes to strip. Sharing the two
+    recognisers is the point: a second definition of "governance metadata" would
+    drift from the one that actually does the stripping, and the drift would show
+    up as a file reported clean and shipped dirty.
+
+    Deliberately *not* implemented as ``sanitize_text(text) != text``. That
+    compares bytes, so it also fires on the incidental normalisations reassembly
+    performs — a fence line carrying trailing whitespace, say — and would report
+    a formatting quirk under a message about governance metadata.
+
+    Empty means there is nothing here the installer consumes and the deployed
+    artifact does not want.
+    """
+    mapping, body = split_frontmatter(text)
+    found = [key for key in sorted(GOVERNANCE_KEYS) if mapping is not None and key in mapping]
+    if _strip_provenance(body) != body:
+        found.append(PROVENANCE_FINDING)
+    return tuple(found)
 
 
 def sanitize_text(text: str) -> str:

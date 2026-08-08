@@ -239,7 +239,8 @@ def deployed_asset_names(repo_root: Path, *, io: IOPort) -> dict[str, frozenset[
     different question (what is authored) and drift from this one silently, since
     nothing would ever compare the two.
     """
-    return admitted_asset_names(run_admission_gate(stage_src(repo_root, io=io).plans).plans)
+    staged = stage_src(repo_root, io=io)
+    return admitted_asset_names(run_admission_gate(staged.plans, ignore=staged.ignore).plans)
 
 
 @dataclass(frozen=True, slots=True)
@@ -679,7 +680,7 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
     the caller surfaces, not something to swallow into a clean result.
     """
     staged = stage_src(repo_root, io=io)
-    gate = run_admission_gate(staged.plans)
+    gate = run_admission_gate(staged.plans, ignore=staged.ignore)
     sources = gate.sources
 
     # Bucketed on the source file: one authored file that four tools each staged
