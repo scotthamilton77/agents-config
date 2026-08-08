@@ -71,7 +71,7 @@ Concrete results — only if you have them and they're load-bearing.
 Use the skill name with an explicit requirement marker:
 
 - ✅ `REQUIRED SUB-SKILL: Use tdd`
-- ✅ `REQUIRED BACKGROUND: You MUST understand bugfix`
+- ✅ `REQUIRED BACKGROUND: You MUST understand diagnosing-bugs`
 - ❌ `See skills/testing/tdd` — unclear if required
 - ❌ `@skills/testing/tdd/SKILL.md` — force-loads, burns
   context
