@@ -666,6 +666,107 @@ def test_an_internal_role_described_in_passing_is_not_a_directive(tmp_path: Path
     assert _lint(tmp_path, text) == []
 
 
+def test_a_requirement_marker_cites_a_skill_no_word_sits_beside(tmp_path: Path) -> None:
+    """The blind spot, and the shape a rename actually strands.
+
+    Verbatim in form from ``writing-skills``' subagent-testing reference. The word
+    "skill" is four words past the name and refers to the *containing* document —
+    "before using this skill" — so nothing beside the citation identifies it, and a
+    check keyed on adjacency reads the whole sentence as ordinary prose. Six
+    references in that shape survived a skill being amalgamated under a new name
+    and this gate reported none of them. The marker is what makes it a citation.
+    """
+    text = (
+        "**REQUIRED BACKGROUND:** You MUST understand `retired-thing` before using "
+        "this skill. That skill defines the loop.\n"
+    )
+    assert [f.citation for f in _lint(tmp_path, text)] == ["retired-thing"]
+
+
+def test_the_sub_skill_marker_is_read_without_a_directive_verb(tmp_path: Path) -> None:
+    """The marker is itself the instruction, so it does not need one beside it.
+
+    The convention's other form, as ``choosing-a-delegate`` writes it. Adjacency
+    cannot see this one either: what precedes the name is the marker's colon, not
+    whitespace after the bare word.
+    """
+    text = "REQUIRED SUB-SKILL: Use `retired-thing` once you know who is doing the work.\n"
+    assert [f.citation for f in _lint(tmp_path, text)] == ["retired-thing"]
+
+
+def test_a_kind_word_elsewhere_in_the_sentence_claims_nothing(tmp_path: Path) -> None:
+    """Why the marker and not the distance. Measured over this repository: letting
+    a kind word anywhere in the sentence bind to a citation produced 60 candidates
+    and not one of them was a citation. Four real sentences, each a way the word
+    lands near a span it has nothing to do with — a list of the gated namespaces, a
+    possessive pointing into the skill's own directory, a design document naming its
+    dispatch roles, and a word already bound to the citation next door.
+    """
+    namespaces = "Applies to any artifact in a gated namespace: `rules`, `skills`, `agents`.\n"
+    possessive = "Run it from this skill's `scripts` directory; the path it prints is absolute.\n"
+    role = "**The fix agent never calls `gh`** (a locked premise; see the reasons there).\n"
+    next_door = "Route an `openrouter` lens through the `grilling` skill and a `codex` lens on.\n"
+    for text in (namespaces, possessive, role, next_door):
+        assert _lint(tmp_path, text) == [], text
+
+
+def test_a_requirement_marker_frames_only_what_follows_it(tmp_path: Path) -> None:
+    """The same positional rule the directive check has, and for the same reason: a
+    marker is a lead-in, so a name before it or in the next sentence is not the name
+    it requires."""
+    before = "The `also-gone` note came first. REQUIRED SUB-SKILL: Use `grilling` now.\n"
+    assert _lint(tmp_path, before) == []
+
+    after = "REQUIRED SUB-SKILL: Use `grilling`. Separately, `also-gone` is mentioned.\n"
+    assert _lint(tmp_path, after) == []
+
+
+def test_a_retirement_note_survives_a_name_far_from_the_word(tmp_path: Path) -> None:
+    """The composition that a looser citation rule would break.
+
+    Real prose from the configuration guide, hard wrap and all. ``merge-authorization``
+    is kebab-case, is nothing that deploys, sits nowhere near a kind word, and shares
+    its sentence with three directive verbs — so the only thing standing between it and
+    a finding is the non-existence rule, which reaches it across the wrap. A rule that
+    let a distant kind word claim a span would turn this correct retirement note into a
+    finding, and the note is the *remedy* for stale documentation, not the disease.
+    """
+    text = (
+        "**Nothing enforces this.** The `merge-guard` skill that read it has been\n"
+        "retired, no code reads `merge-authorization`, and nothing polls for reviews, so\n"
+        "`[review-expectations]` has no effect either.\n"
+    )
+    assert _lint(tmp_path, text) == []
+
+
+def test_the_non_existence_rule_reaches_a_marked_citation_too(tmp_path: Path) -> None:
+    """A requirement marker does not exempt its citation from the rule that silences a
+    retirement note. Otherwise the correct way to record that a required skill is gone
+    would be the one sentence this gate refuses to accept, and there would be no way to
+    write the remedy — which is how a gate gets worked around rather than used."""
+    text = (
+        "**REQUIRED BACKGROUND:** You MUST understand `retired-thing` before using "
+        "this skill, but that skill is now archived.\n"
+    )
+    assert _lint(tmp_path, text) == []
+
+
+def test_a_marker_does_not_make_every_span_after_it_a_skill_name(tmp_path: Path) -> None:
+    """The marker says where to look for a citation, and the kebab-case filter still
+    says whether there is one. Otherwise a marker pointing at a document or a flag
+    would report it as a skill nothing provides."""
+    text = "REQUIRED BACKGROUND: read `docs/guide/index.md` and pass `--dry-run` first.\n"
+    findings = _lint(tmp_path, text)
+    assert [f.reason for f in findings] == ["path does not exist"]
+
+
+def test_a_marked_citation_is_reported_once(tmp_path: Path) -> None:
+    """Both the marker and the adjacent word claim this span, and a reader gets one
+    finding rather than the same line twice."""
+    text = "REQUIRED SUB-SKILL: Use the `retired-thing` skill first.\n"
+    assert [f.citation for f in _lint(tmp_path, text)] == ["retired-thing"]
+
+
 def test_a_finding_says_how_to_clear_it(tmp_path: Path) -> None:
     """A gate that knows what it wants and will not say gets reverse-engineered
     by trial and error, which is how a gate ends up deleted."""
