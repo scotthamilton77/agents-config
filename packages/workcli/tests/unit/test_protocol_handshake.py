@@ -104,7 +104,18 @@ def test_protocol_wire_value_is_pinned() -> None:
     # or shape, and one that ignores the key sees exactly what it saw before.
     # The field is always present, `null` where the item has none, so the
     # answer never arrives as a missing key a consumer would have to interpret.
-    assert PROTOCOL_VERSION == "1.9"
+    #
+    # 1.10 adds the `defer`/`undefer` verb pair, which sets an item aside as
+    # not-now and brings it back. Additive on both counts the rule scores: a
+    # new verb takes nothing away from an existing one, and its envelope is
+    # the `{"id", "status"}` shape the other transitions already answer with.
+    # What is new in a read envelope is that `status` can now hold `deferred`
+    # on an item the facade itself set aside -- but that was always a value
+    # the backend could hold and the item model already declared, so no
+    # consumer had a closed set of four to lose. `claim` additionally names
+    # the new state in its refusal instead of reporting a dependency that
+    # does not exist, which replaces a wrong answer rather than a right one.
+    assert PROTOCOL_VERSION == "1.10"
 
 
 def test_the_readme_states_the_protocol_version_the_code_emits() -> None:
