@@ -1,7 +1,7 @@
 [project]
 name = "workcli"
 version = "0.1.0"
-description = "work — facade CLI quarantining the issue-tracker backend (bd) behind a stable contract."
+description = "work — facade CLI quarantining the issue-tracker backend behind a stable contract."
 requires-python = ">=3.11"
 dependencies = []
 

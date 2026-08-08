@@ -3,7 +3,7 @@ name: prototype
 description: Build throwaway code that answers a design question — a driveable state model, or several structurally different UI variants to choose between. Use when a state machine, data shape, or interface has to be felt rather than argued about, and the discussion has stopped moving on prose alone.
 admission:
   provides: A cheap concrete artifact to react to — a state model someone can click through, or variants that can be compared side by side — turning a design argument into an observation, plus the discipline that keeps the artifact out of main afterwards.
-  cost: One model-invoked catalog description, always on; per invocation, a throwaway artifact, the branch that keeps it out of main, and the pass that folds the validated decision into real code.
+  cost: Per invocation, a throwaway artifact, the branch that keeps it out of main, and the pass that folds the validated decision into real code.
   remove_when: Design questions about state models and interfaces are settled before implementation often enough that building something runnable stops changing the answer.
 ---
 

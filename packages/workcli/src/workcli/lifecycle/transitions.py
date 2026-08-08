@@ -17,6 +17,7 @@ from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle import is_container
 from workcli.lifecycle.create import finalize_spec_instantiation
+from workcli.lifecycle.defer import DEFERRED_STATUS
 from workcli.lifecycle.nouns import CREATING_SPEC_LABEL, PLANNED_LABEL
 from workcli.lifecycle.park import PARKED_LABEL, parked_stale
 
@@ -26,7 +27,7 @@ def _claimed(item_id: str, block: list[JsonValue]) -> JsonValue:
 
 
 def claim(backend: Backend, args: Namespace) -> JsonValue:
-    """`work claim ID` -- uses bd's own atomic `--claim`; detects stale claims.
+    """`work claim ID` -- uses the seam's atomic `claim`; detects stale claims.
 
     Every SUCCESS carries the read-only `parked_stale` block: taking new work
     is exactly the interaction that must show the stuck work first. A refusal
@@ -50,6 +51,11 @@ def claim(backend: Backend, args: Namespace) -> JsonValue:
             ErrorCode.NOT_CLAIMABLE,
             f"{args.id}: parked; `work redispatch` or `work abandon` first",
         )
+    if item.status == DEFERRED_STATUS:
+        # Same reason as the branch above: a deferred item is absent from
+        # `ready`, so the generic refusal would send its caller hunting for a
+        # blocking dependency that does not exist.
+        raise WorkError(ErrorCode.NOT_CLAIMABLE, f"{args.id}: deferred; `work undefer` first")
 
     ready_ids = {ready_item.id for ready_item in backend.ready(None)}
     if args.id not in ready_ids:

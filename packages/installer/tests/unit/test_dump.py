@@ -17,12 +17,19 @@ import pytest
 from installer.core.dump import dump_plan
 from installer.core.io_port import ScriptedIO
 from installer.core.model import (
+    Contribution,
     FileKind,
     Provenance,
     StagedItem,
     StagingPlan,
     Tool,
 )
+
+
+def _carried(content: bytes) -> Contribution:
+    """An override contribution whose origin no assertion here depends on."""
+    return Contribution(source_path=Path("/plugin/carried"), content=content)
+
 
 _TOOL_PROV = Provenance(kind="tool", name="claude")
 
@@ -94,8 +101,9 @@ def test_dir_overrides_overlay_on_top_of_source_tree(tmp_path: Path) -> None:
         tool=Tool.CLAUDE,
         dir_overrides={
             dest: {
-                Path("SKILL.md"): b"patched body\n",  # override wins over source
-                Path("carried/extra.md"): b"from plugin\n",  # net-new file
+                # override wins over source
+                Path("SKILL.md"): _carried(b"patched body\n"),
+                Path("carried/extra.md"): _carried(b"from plugin\n"),  # net-new file
             }
         },
     )
@@ -156,7 +164,7 @@ def test_dir_override_inner_relpath_escaping_dir_is_rejected(tmp_path: Path) -> 
     plan = StagingPlan(
         items={dest: _dir_item(src, "skills/demo")},
         tool=Tool.CLAUDE,
-        dir_overrides={dest: {Path("../escape.md"): b"nope\n"}},
+        dir_overrides={dest: {Path("../escape.md"): _carried(b"nope\n")}},
     )
 
     with pytest.raises(ValueError, match="escapes the dir"):

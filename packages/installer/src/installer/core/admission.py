@@ -97,16 +97,14 @@ def is_gated(item: StagedItem) -> bool:
     return item.namespace in GATED_NAMESPACES
 
 
-def record_source_text(item: StagedItem) -> str | None:
-    """The markdown whose front matter carries the admission record.
+def entry_file_text(item: StagedItem) -> str | None:
+    """A directory item's record-bearing markdown, read from its source tree.
 
-    File items (rules, commands, ``*.md`` agents) carry their own bytes. A
-    directory item (a skill, or a directory-shaped agent) keeps its record in
-    the canonical ``SKILL.md`` entry file read from ``source_path``; a directory
-    without one has no inspectable record.
+    A directory item (a skill, or a directory-shaped agent) keeps its record in
+    the canonical ``SKILL.md`` entry file under ``source_path``; a directory
+    without one has no inspectable record. File items are not asked — they carry
+    their own bytes, and a caller holding those bytes already has the text.
     """
-    if item.content is not None:
-        return item.content.decode("utf-8", errors="replace")
     entry = item.source_path / DIR_RECORD_FILE
     if entry.is_file():
         return entry.read_text(encoding="utf-8")
@@ -129,18 +127,15 @@ def _coerce_claims(raw: Any) -> dict[str, str]:
     return out
 
 
-def classify(item: StagedItem, *, text: str | None = None) -> ItemAdmission:
-    """Classify one gated item against the admission bar.
+def classify(text: str) -> ItemAdmission:
+    """Classify one gated contributor's markdown against the admission bar.
 
-    ``text`` overrides the record source. The gate passes it for a directory
-    item whose entry file has been patched into ``dir_overrides`` (a plugin
-    extension), so the bar reads the bytes that will actually deploy rather
-    than the unpatched file under ``source_path``.
+    Takes the text rather than the staged item because the bar judges an
+    authored file, and a staged destination is not always one of those: the
+    caller resolves which bytes belong to which source — through the merge
+    contributions, through the directory-override channel, or from the source
+    tree — and asks about each in turn.
     """
-    if text is None:
-        text = record_source_text(item)
-    if text is None:
-        return ItemAdmission(AdmissionOutcome.NO_RECORD)
     mapping, _body = split_frontmatter(text)
     if mapping is None or "admission" not in mapping:
         return ItemAdmission(AdmissionOutcome.NO_RECORD)

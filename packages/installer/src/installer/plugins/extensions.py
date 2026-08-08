@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING
 import yaml
 
 from installer.core.md_patch import PatchError, Precision, apply_patch
-from installer.core.model import FileKind
+from installer.core.model import Contribution, FileKind, contributions_of
 from installer.core.paths import is_safe_relpath
 
 if TYPE_CHECKING:
@@ -175,26 +175,44 @@ def _apply_one(plan: StagingPlan, ext: _Extension) -> None:
 @dataclass(frozen=True, slots=True)
 class _FileTarget:
     """Target staged as its own plan item carrying bytes — patched bytes
-    replace the item's content."""
+    replace the item's content.
+
+    ``origin`` is the file the patched bytes are still attributed to. A patch
+    rewrites a whole file, so it does not add a contributor; it changes what an
+    existing one contributes, and the admission gate has to judge the bytes that
+    result rather than the ones on disk. Leaving the item's recorded
+    contribution unchanged would hand the gate stale text and lose the patch on
+    reassembly."""
 
     dest: Path
+    origin: Path
     current: bytes
 
     def write(self, plan: StagingPlan, data: bytes) -> None:
-        plan.items[self.dest] = dc_replace(plan.items[self.dest], content=data)
+        plan.items[self.dest] = dc_replace(
+            plan.items[self.dest],
+            content=data,
+            contributions=(Contribution(source_path=self.origin, content=data),),
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class _DirTarget:
     """Target is a file inside an opaque DIR item — patched bytes go to the
-    dir_overrides side channel (the DIR item's content stays None)."""
+    dir_overrides side channel (the DIR item's content stays None). ``origin``
+    is the file those bytes are attributed to, for the same reason as on
+    ``_FileTarget``: the source tree, or whoever contributed the override the
+    patch is layered onto."""
 
     dir_dest: Path
     inner: Path
+    origin: Path
     current: bytes
 
     def write(self, plan: StagingPlan, data: bytes) -> None:
-        plan.dir_overrides.setdefault(self.dir_dest, {})[self.inner] = data
+        plan.dir_overrides.setdefault(self.dir_dest, {})[self.inner] = Contribution(
+            source_path=self.origin, content=data
+        )
 
 
 def _resolve(plan: StagingPlan, ext: _Extension) -> _FileTarget | _DirTarget:
@@ -209,7 +227,21 @@ def _resolve(plan: StagingPlan, ext: _Extension) -> _FileTarget | _DirTarget:
     membership, not re-consulted from the adapter."""
     item = plan.items.get(ext.target_file)
     if item is not None and item.kind is not FileKind.DIR and item.content is not None:
-        return _FileTarget(dest=ext.target_file, current=item.content)
+        parts = contributions_of(item)
+        if len(parts) > 1:
+            # A whole-file patch over an assembled destination cannot say which
+            # of its sources it belongs to, and the admission bar judges each of
+            # them separately. Rather than collapse them — which silently ships
+            # whichever governance front matter the patch leaves behind — refuse,
+            # and say what to patch instead.
+            raise ExtensionError(
+                ext.yaml_path,
+                f"target-file is assembled from {len(parts)} sources "
+                f"({', '.join(str(part.source_path) for part in parts)}); patch one of "
+                "them where it is authored, not the file they merge into",
+                target_file=ext.target_file,
+            )
+        return _FileTarget(dest=ext.target_file, origin=parts[0].source_path, current=item.content)
     for ancestor in ext.target_file.parents:
         dir_item = plan.items.get(ancestor)
         if dir_item is None or dir_item.kind is not FileKind.DIR:
@@ -217,10 +249,17 @@ def _resolve(plan: StagingPlan, ext: _Extension) -> _FileTarget | _DirTarget:
         inner = ext.target_file.relative_to(ancestor)
         override = plan.dir_overrides.get(ancestor, {}).get(inner)
         if override is not None:
-            return _DirTarget(dir_dest=ancestor, inner=inner, current=override)
+            return _DirTarget(
+                dir_dest=ancestor,
+                inner=inner,
+                origin=override.source_path,
+                current=override.content,
+            )
         source = dir_item.source_path / inner
         if source.is_file():
-            return _DirTarget(dir_dest=ancestor, inner=inner, current=source.read_bytes())
+            return _DirTarget(
+                dir_dest=ancestor, inner=inner, origin=source, current=source.read_bytes()
+            )
         break  # the innermost DIR item owns this subtree; the file is absent
     raise ExtensionError(
         ext.yaml_path, "target-file not found in staging tree", target_file=ext.target_file

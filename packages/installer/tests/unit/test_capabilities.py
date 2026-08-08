@@ -10,8 +10,10 @@ import pytest
 
 from installer.core.capabilities import (
     CAPABILITY_SUPPORT,
+    UNMODELLED_SKILL_LOADERS,
     USER_INVOKED_KEY,
     is_user_invoked,
+    models_skill_loading,
     unsupported_keys,
 )
 from installer.tools.registry import known_tools
@@ -51,3 +53,18 @@ def test_absent_or_missing_front_matter_reads_as_model_invoked() -> None:
     """The stricter cap is the one to fall back to when nothing says otherwise."""
     assert not is_user_invoked("---\nname: a\n---\nbody\n")
     assert not is_user_invoked("# no front matter\n")
+
+
+def test_every_unmodelled_loader_is_a_known_tool() -> None:
+    """An exemption naming a tool that does not exist grants nothing and hides
+    nothing, so it would sit here unfalsified until someone read the file."""
+    assert {tool.value for tool in known_tools()} >= UNMODELLED_SKILL_LOADERS
+
+
+def test_only_gemini_is_exempt_from_the_skill_measurements() -> None:
+    """The membership is pinned so that exempting a second tool arrives as a
+    reviewable diff. Silence about what a tool loads is a decision, not a default:
+    a tool absent from the set is charged and capped."""
+    assert not models_skill_loading("gemini")
+    assert all(models_skill_loading(tool) for tool in ["claude", "codex", "opencode"])
+    assert models_skill_loading("some-future-tool")

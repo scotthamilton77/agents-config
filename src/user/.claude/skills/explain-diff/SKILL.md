@@ -7,7 +7,7 @@ model: sonnet
 effort: medium
 admission:
   provides: A repeatable format for explaining a change to a human — a shareable HTML page with a skippable beginner background, a diagrams-first intuition section, a story-ordered walkthrough and a five-question comprehension quiz, styled from bundled assets so successive explainers read as one series. The basis is user preference, not a prevented failure. Asked to explain a diff without it, the agent writes competent prose into a transcript that cannot be shared, re-read, or used to check whether the reader actually understood.
-  cost: Nothing always-on. The `disable-model-invocation` flag keeps the skill out of the skills catalog entirely, so not even a description is loaded until the user types /explain-diff. On invocation it costs a ~1,850-token body plus one persona file, `theme.css` and `quiz.js` read into context, and a Sonnet run long enough to read the diff and the code around it. 96 KB of assets sit on disk per install and are read only when invoked.
+  cost: On invocation it costs one persona file, `theme.css` and `quiz.js` read into context, and a Sonnet run long enough to read the diff and the code around it. 96 KB of assets sit on disk per install and are read only when invoked.
   remove_when: The user stops asking for explainers, or reading a diff directly answers what changed and why for the people who currently need the page.
 ---
 

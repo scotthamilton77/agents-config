@@ -250,8 +250,9 @@ def test_the_in_memory_backend_holds_the_same_contract_as_bd(verb: str) -> None:
     # verb-level regression that trusts a search result's parent fails here
     # without a real bd anywhere near it.
     backend = _tree()
-    shown = show(backend, _read_args(ids=["c-1"]))
-    assert isinstance(shown, dict)
+    # `show` answers in the same `{"items": [...]}` shape as the three verbs
+    # under test, so the one row-picker serves all four.
+    shown = _one(show(backend, _read_args(ids=["c-1"])), "c-1")
     reads = {
         "search": lambda: search(backend, _read_args(query="child")),
         "list": lambda: list_(backend, _read_args()),
