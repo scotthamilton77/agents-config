@@ -6,7 +6,7 @@ disable-model-invocation: true
 allowed-tools: Write Bash(git status *) Bash(git log *) Bash(date *) Bash(pwd)
 admission:
   provides: Mechanism to capture the current conversation and working-tree snapshot into a handoff document for a fresh agent to resume work in a new session.
-  cost: Context footprint only, bounded by the caps content-lint enforces.
+  cost: A document left in the user's temp directory once the session ends, carrying whatever that session held — hence the redaction constraint — and nothing deletes it afterwards.
   remove_when: Agents can resume work in a new session without a handoff document, can safely compact on their own (in a way the user trusts) or can cheaply handle large contexts without context rot.
 ---
 

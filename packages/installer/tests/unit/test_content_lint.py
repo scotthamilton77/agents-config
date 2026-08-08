@@ -753,15 +753,25 @@ def _costed(cost: str) -> str:
     return f"---\nadmission:\n  prevents: p\n  cost: {cost}\n  remove_when: r\n---\nbody\n"
 
 
-def test_a_cost_stating_a_token_count_is_a_violation(tmp_path: Path) -> None:
-    """The gate prints every token number that exists, at the moment it is true.
-    A record restating one is a hand-copy at a location nothing updates, and three
-    of the six that lived in this tree had already drifted from what they claimed."""
-    repo = _repo(tmp_path, skills={"priced": _costed("68 always-on tokens, measured")})
+def test_a_cost_mentioning_tokens_is_a_violation_with_or_without_a_number(
+    tmp_path: Path,
+) -> None:
+    """The gate prints every token number that exists, at the moment it is true, so a
+    record restating one is a hand-copy at a location nothing updates — three of the
+    six that lived in this tree had already drifted from what they claimed. The rule
+    bans the word rather than the number: a value that means money can say money, and
+    a second heuristic telling the two apart would be free to drift from the first."""
+    repo = _repo(
+        tmp_path,
+        skills={
+            "priced": _costed("68 always-on tokens, measured"),
+            "wordy": _costed("the tokens a reader spends on it"),
+        },
+    )
     result = _lint(repo)
 
     assert not result.ok
-    assert [v for v in result.violations if "skills/priced/SKILL.md: cost states a token" in v]
+    assert len([v for v in result.violations if "cost mentions tokens" in v]) == 2
 
 
 def test_a_vacuous_cost_is_a_violation_however_it_is_cased(tmp_path: Path) -> None:
@@ -799,4 +809,4 @@ def test_one_shared_artifact_reports_its_cost_defect_once(tmp_path: Path) -> Non
     repo = _repo(tmp_path, skills={"spread": _costed("a 900 token body")})
     result = _lint(repo)
 
-    assert len([v for v in result.violations if "cost states a token" in v]) == 1
+    assert len([v for v in result.violations if "cost mentions tokens" in v]) == 1

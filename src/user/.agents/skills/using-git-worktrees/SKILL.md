@@ -3,7 +3,7 @@ name: using-git-worktrees
 description: Create a git worktree, and find out which workspace you are already standing in before you create anything. Use before starting work that must not touch the branch currently checked out, when a task says to work in an isolated workspace, or when you are unsure whether you are already in one. Not for deleting a worktree or a branch once work has merged — that is post-merge-cleanup.
 admission:
   prevents: Isolation being judged by eye and judged wrong. The obvious check — comparing what `git rev-parse --git-dir` and `--git-common-dir` print — reports "already isolated" from any subdirectory of an ordinary checkout, because git prints one absolute and one relative, so the work lands on the branch the user had open. The obvious ignore check, `git check-ignore -q .worktrees`, answers "not ignored" against the conventional `.worktrees/` pattern whenever the directory does not exist yet, which is the state you are in before the first worktree. Both reproduce on git 2.50, the second against this project's own .gitignore.
-  cost: Context footprint only, bounded by the caps content-lint enforces.
+  cost: A commit to the .gitignore of whatever repository the user is standing in, made before the first worktree is created.
   remove_when: Every supported tool exposes a worktree primitive of its own that reports what it created, so no agent reaches `git worktree add` by hand.
 ---
 

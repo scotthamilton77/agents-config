@@ -517,8 +517,9 @@ def _cost_violations(
     for source, cost in sorted(by_source.items()):
         if _TOKEN_WORD.search(cost):
             violations.append(
-                f"{source}: cost states a token count — content-lint measures the caps; "
-                "state only what it cannot, and name real spend as money rather than as tokens"
+                f"{source}: cost mentions tokens — content-lint measures every token number "
+                "there is; state only what it cannot, and name real spend as money rather "
+                "than as tokens"
             )
         if cost.lower() in _VACUOUS_COSTS:
             violations.append(

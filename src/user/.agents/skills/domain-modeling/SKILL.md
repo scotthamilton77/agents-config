@@ -3,7 +3,7 @@ name: domain-modeling
 description: Build and sharpen a project's domain model. Use when the user wants to pin down domain terminology or a ubiquitous language, record an architectural decision, or when another skill needs to maintain the domain model.
 admission:
   provides: The mechanics of maintaining a domain model during a design session — where the glossary and decision records live in single- and multi-context repos, how to challenge a stated term against the recorded one, and the three-part test a decision must pass before it earns an ADR — reachable by every skill that designs, rather than only by the one session that used to inline them.
-  cost: Context footprint only, bounded by the caps content-lint enforces.
+  cost: A glossary and decision records created in the user's own repository, which they maintain from then on.
   remove_when: Only one skill still invokes it, at which point the content folds back into that caller.
 ---
 

@@ -85,6 +85,19 @@ aborts the deploy.
   `Context footprint only, bounded by the caps content-lint enforces.`
   "Minimal", "None" and their synonyms are not costs; `content-lint` rejects
   those and any mention of tokens.
+
+  **The sentinel is a claim, not a default.** Carry it only when nothing on that
+  list is true of the artifact — not merely when nobody wrote one down, which is
+  how an omission becomes a false assertion. One question settles it: does the
+  spend fall on someone other than the invoking agent, or leave a standing
+  obligation once the invocation ends? Reading, deciding, and running a bounded
+  command are the procedure the invoker asked for by invoking, and belong in the
+  body. A file left behind, a record written to a tracker, a change committed to
+  the user's repository, a dependency that must already be installed, a human
+  round-trip, or a fan-out of model runs are none of those, and belong here.
+  Beware the opposite failure: "the agent must read and follow this skill" is
+  true of every skill, and restating it per artifact rebuilds the defect the
+  narrowing removed.
 - **`remove_when`** MUST describe something observable. If nothing could ever
   retire the artifact, it is a belief, not a control.
 
