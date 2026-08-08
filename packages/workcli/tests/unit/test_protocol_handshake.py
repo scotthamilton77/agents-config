@@ -104,7 +104,19 @@ def test_protocol_wire_value_is_pinned() -> None:
     # or shape, and one that ignores the key sees exactly what it saw before.
     # The field is always present, `null` where the item has none, so the
     # answer never arrives as a missing key a consumer would have to interpret.
-    assert PROTOCOL_VERSION == "1.9"
+    #
+    # 1.10 stops the close-walk closing a parent that carries scope of its
+    # own, and gives `close` and `deliver` a `held` key naming each parent it
+    # declined and why. The key is the additive half and takes the same
+    # verdict as `acceptance` in 1.9. The behavioural half narrows `walked`:
+    # a consumer that saw a parent listed there now sees it under `held`
+    # instead. That is 1.8's case with the sign flipped -- `walked` has always
+    # claimed to list what the walk closed, and it now lists fewer because
+    # fewer should ever have closed. A consumer acting on the old entry was
+    # acting on a completion nothing had established, so there is no correct
+    # behaviour to lose, and the envelope and every `data` shape are
+    # untouched.
+    assert PROTOCOL_VERSION == "1.10"
 
 
 def test_the_readme_states_the_protocol_version_the_code_emits() -> None:
