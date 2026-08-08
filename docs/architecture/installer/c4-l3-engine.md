@@ -14,7 +14,7 @@
 | `core/` | The pure, tool-agnostic engine. Knows nothing about any specific tool; parameterised by a `ToolAdapter` and a source root. Fully unit-testable against a `FakeToolAdapter`. |
 | `orchestrator` | `orchestrator.py`'s `stage_and_transform` — staging only: per detected tool, drives build_plan → plugin overlay → merge-on-collision → post-staging transforms, returning every tool's finished plan. `cli.py`, not `orchestrator.py`, is the true top-level controller — it calls `stage_and_transform` once, then separately drives sync and prune via `core/run.py`. |
 | `ToolAdapter` | Protocol abstracting per-tool behaviour: `source_dir`, `dest_dir`, `is_detected`, `scoped_namespaces`, `should_install_namespace`, `post_staging_transforms`. One implementation per tool. |
-| `PluginAdapter` | Protocol for an optional plugin overlay (e.g. beads). String-keyed registry; dynamically discovered by scanning `src/plugins/`. |
+| `PluginAdapter` | Protocol for an optional plugin overlay. String-keyed registry; dynamically discovered by scanning `src/plugins/`. |
 | `MergeStrategy` | Collision-resolution protocol; one class per strategy module; dispatched by the registry on `(FileKind, namespace)`. |
 | `IOPort` | The single I/O abstraction. `TerminalIO` (real, via `rich`) and `ScriptedIO` (test fake) are the two implementations; no other module calls `print`/`input`. |
 | Protocol seam | A `typing.Protocol` boundary (`ToolAdapter`, `PluginAdapter`, `MergeStrategy`, `IOPort`) across which tests substitute a fake. The four seams are what make the engine unit-testable in isolation. |
@@ -48,7 +48,7 @@ C4Component
             Component(overlay, "overlay.py", "Python", "Phase 6: overlay_plugins — merges each active plugin's content onto the base plan, alphabetical plugin order. Carrier-merges a plugin's disjoint files into a shared_carrier skills/agents DIR; every other collision routes through the merge registry (DIR is fatal).")
             Component(sync, "sync.py", "Python", "Phase 7: require_consent guard -> hash-compare -> diff -> confirm -> path-aware backup -> write. Reports per-item InstallOutcome (WRITTEN / SKIPPED_IDENTICAL / DECLINED). Honours --dry-run.")
             Component(consent, "consent.py", "Python", "require_consent: hard-fails a non-interactive run (no TTY) that passes neither --yes nor --dry-run, before any write. Raises ConsentRequiredError, caught by cli.py as exit 1.")
-            Component(run, "run.py", "Python", "Run-level composition, called directly by cli.py after staging finishes for every tool: install_pipeline + install_plugin_routes (the plugin-route analog, e.g. beads' ~/.beads/formulas + scripts) + deploy_clis / prune_clis (the CLI-deploy stage: uv tool install/uninstall for the work + prgroom + grind console scripts) + prune_pipeline (diff -> partition -> run_prune) + record_receipt (mirrors disk, now including cli deploy/prune outcomes).")
+            Component(run, "run.py", "Python", "Run-level composition, called directly by cli.py after staging finishes for every tool: install_pipeline + install_plugin_routes (the plugin-route analog: the destinations an adapter claims outside any tool tree) + deploy_clis / prune_clis (the CLI-deploy stage: uv tool install/uninstall for the work + prgroom + grind console scripts) + prune_pipeline (diff -> partition -> run_prune) + record_receipt (mirrors disk, now including cli deploy/prune outcomes).")
             Component(clis, "clis.py", "Python", "CLI_PACKAGES registry (workcli -> work, prgroom -> prgroom, grind -> grind) + RETIRED_CLIS allowlist; cli_source_digest (deployable-source hash); the CliDeployPort protocol + UvCliDeploy (real, the only module that shells out for CLI deploys) + ScriptedCliDeploy (test fake).")
             Component(receipt, "receipt.py + receipt_store.py + receipt_lock.py", "Python", "Receipt / ReceiptEntry model + canonical serialization + integrity digest; read (MISSING vs CORRUPT) / atomic write; single-writer advisory flock.")
             Component(rdiff, "receipt_diff.py + receipt_build.py", "Python", "scope_owners + validate_entry + diff_orphans -> Orphan list; desired_staged_keys / desired_route_keys, entry builders, merge_receipt.")
@@ -71,14 +71,14 @@ C4Component
 
         Container_Boundary(plugins, "plugins/ — per-plugin adapters") {
             Component(pbase, "base.py", "Python", "PluginAdapter protocol.")
-            Component(pbeads, "beads.py", "Python", "beads adapter — ~/.beads dest, chmod +x on scripts.")
+            Component(pgeneric, "generic.py", "Python", "GenericPluginAdapter — every discovered plugin's adapter: detects on ~/.<name>/, declares no bespoke routes.")
             Component(pext, "extensions.py", "Python", "apply_extensions(): YAML-patch base markdown assets post-staging (F.5).")
             Component(preg, "registry.py", "Python", "String-keyed plugin registry; dynamic discovery via src/plugins/ scan.")
         }
     }
 
     System_Ext(src_ext, "Source config tree", "src/user/ + src/plugins/ (read-only)")
-    System_Ext(dest_ext, "Destination stores", "~/.claude, ~/.codex, ~/.gemini, ~/.config/opencode, ~/.beads")
+    System_Ext(dest_ext, "Destination stores", "~/.claude, ~/.codex, ~/.gemini, ~/.config/opencode")
     System_Ext(state_ext, "Install receipt", "~/.config/agents-config/install-receipt.json (+ .lock) — persisted prune authority")
     System_Ext(term_ext, "Terminal", "stdin / stdout — diffs + confirmations")
 
@@ -131,7 +131,7 @@ C4Component
     Rel(tcodex, tbase, "implements")
     Rel(tgemini, tbase, "implements")
     Rel(topencode, tbase, "implements")
-    Rel(pbeads, pbase, "implements")
+    Rel(pgeneric, pbase, "implements")
 
     UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="2")
 ```
@@ -157,7 +157,7 @@ The engine knows nothing about any specific tool; it takes a `ToolAdapter` and a
 - **`sync.py`** is Phase 7: `require_consent` guards up front (hard-fails a non-interactive run with neither `--yes` nor `--dry-run`), then for each planned file, hash-compare against the destination; identical → skip; different → diff via `IOPort`, confirm, path-aware backup, write. It reports a per-item `InstallOutcome` (`WRITTEN` / `SKIPPED_IDENTICAL` / `DECLINED`, with the real `sha256`) so the receipt records only what was actually written as our bytes. `--dry-run` short-circuits before any write.
 - **`consent.py`** (`require_consent`) is the non-interactive consent guard: raises `ConsentRequiredError` before any write when stdin is not a TTY and neither `--yes` nor `--dry-run` was passed. Called from `sync.py`'s `sync_plan`/`sync_routes`; `cli.py` catches the exception and exits 1.
 - **The receipt-based prune subsystem** replaces the old glob scan. It is several small, independently-testable engine modules composed in `run.py`:
-  - **`run.py`** is the run-level composition, called directly by `cli.py` (not `orchestrator.py`) once staging has finished for every tool — `install_pipeline` (walk every tool's plan to disk), `install_plugin_routes` (the plugin-side analog: walk every active plugin's bespoke routes, e.g. beads' `~/.beads/formulas` + `scripts`), `prune_pipeline` (diff → partition → `run_prune`), and `record_receipt` (mirror disk into the new receipt). `cli.main` holds the single-writer lock across all of it.
+  - **`run.py`** is the run-level composition, called directly by `cli.py` (not `orchestrator.py`) once staging has finished for every tool — `install_pipeline` (walk every tool's plan to disk), `install_plugin_routes` (the plugin-side analog: walk every active plugin's bespoke routes — the destinations it claims outside any tool tree), `prune_pipeline` (diff → partition → `run_prune`), and `record_receipt` (mirror disk into the new receipt). `cli.main` holds the single-writer lock across all of it. Every plugin discovered under `src/plugins/` uses the generic adapter, which declares no routes, so on a user install this pass writes nothing and returns an all-zero counters bucket per plugin — the bucket is present so a verbose summary can still print the plugin's block. The machinery has a live caller elsewhere: a `--project` run presents each selected kit as a route-declaring adapter (`core/kits.py`) and installs it through this same pass into the project tree.
   - **`receipt.py` / `receipt_store.py` / `receipt_lock.py`** are the persisted-state layer: the `Receipt` / `ReceiptEntry` model with canonical serialization + `integrity` digest; the store that reads (distinguishing `MISSING` → bootstrap empty from `CORRUPT` → fail closed) and atomically writes; and the advisory `flock` that serializes the whole read → install → prune → write section.
   - **`receipt_diff.py`** finds orphans: `scope_owners` (resolved tools ∪ discovered plugins − tool names ∪ prior-receipt plugin owners), `validate_entry` (structural + symlink-aware containment + root legitimacy — live code for tools/discovered plugins, the `roots` allowlist for retired plugins), and `diff_orphans` (in scope ∧ not desired ∧ valid → `Orphan`).
   - **`receipt_build.py`** builds the plan-derived `desired_staged_keys` / `desired_route_keys` and the install-outcome-derived `ReceiptEntry` set, and `merge_receipt` produces the mirrors-disk `(prior − pruned − relinquished) | installed`.
@@ -173,7 +173,7 @@ One module per tool behind the `ToolAdapter` protocol (`base.py`). Each adapter 
 
 ### `plugins/` — per-plugin adapters
 
-One module per plugin behind the `PluginAdapter` protocol (`base.py`), **string-keyed** in `registry.py` and discovered dynamically by scanning `src/plugins/` — adding a plugin requires no change to `model.py`. **`beads.py`** owns the `~/.beads` destination + `chmod +x`. **`extensions.py`** (`apply_extensions()`, story F.5) applies plugin-declared YAML patches to base markdown assets post-staging, once per enabled tool against that tool's plan.
+Plugins sit behind the `PluginAdapter` protocol (`base.py`), **string-keyed** in `registry.py` and discovered dynamically by scanning `src/plugins/` — adding a plugin requires no change to `model.py`. **`generic.py`** holds `GenericPluginAdapter`, the adapter every discovered plugin gets: it detects on the plugin's own `~/.<name>/` footprint and declares no bespoke routes, so its content reaches disk through the per-tool namespace overlay. A plugin needing behaviour that convention cannot express — a detection probe beyond the home footprint, or a destination outside every tool tree — registers a factory in `registry.py`'s specialized-adapter map, which is the named extension point and is empty. **`extensions.py`** (`apply_extensions()`, story F.5) applies plugin-declared YAML patches to base markdown assets post-staging, once per enabled tool against that tool's plan.
 
 ### The four protocol seams
 

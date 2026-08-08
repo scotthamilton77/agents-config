@@ -17,7 +17,7 @@ The harness is being rebuilt. Until the rework milestone closes (charter AC9), o
 Standing implications while the rework runs:
 
 - Where any deployed rule, skill, or doc (including this file) contradicts the charter, the charter wins — and flag the contradiction explicitly so it gets fixed.
-- Address the tracker through the `work` facade (D11). Fall back to `bd` only when the facade cannot express the operation, and record each fallback as a facade gap in a note on `agents-config-9k9`.
+- Address the tracker through the `work` facade (D11), which is the whole of your tracker interface: never invoke `bd`, and never edit `.beads/` by hand. When the facade cannot express what you need, record the gap in a note on `agents-config-9k9` and then ask the human — they are the only escape hatch, and an interruption someone can act on beats a workaround nobody sees. Taking a recovery point before a bulk mutation is the known uncovered case; it routes the same way.
 - New harness work enters only as a child of the milestone, carrying an admission record: what it prevents or provides, what it costs beyond its own token footprint, and what observation would remove it (D16/D20).
 - Any proposal to add a rule/skill/command/agent to `src/`, or to reinstate one that was retired, runs through the `admit-request` skill — a project-scoped gate, not a deployed asset. Its default verdict is DECLINE; there is no grandfathering.
 - **Retired content is not live, and it is no longer in this repository.** The `archive/` tree and the savepoint records live in the private `scotthamilton77/agents-config-ARCHIVE` repository. Nothing there describes current behaviour — do not follow it, cite it as a contract, or invoke a skill found in it. If a workflow you need exists only there, that is the signal to escalate, not to reinstate it by hand.
@@ -66,7 +66,7 @@ Commitments 3 and 4 have no deployed implementation right now; the charter's sli
 - **Code over Prose** — anything code can do better than agents, we move out of prose and into code helpers
 - **Python/Go/Node over Bash** — thin shell script wrappers are fine; any logic that needs testing goes in Python, Go, or Node
 - **Consolidate over conflict** — where assets overlap, merge the best-of-breed into the canonical source; avoid competing instructions
-- **The `work` facade is the tracker interface** — address the tracker through `work` verbs (charter D11); the harness never speaks `bd`. Fall back to `bd` only for operations the facade can't express, and record each fallback as a facade gap (note on `agents-config-9k9`)
+- **The `work` facade is the tracker interface** — address the tracker through `work` verbs (charter D11); the harness never speaks `bd`. A gap in the facade is a question for the human, not a reason to reach past it — record it in a note on `agents-config-9k9` so it gets closed rather than routed around again
 - **Flag confusing context** — if instructions, rules, or skills in this repo are conflicting or unclear, say so explicitly; cleaning up agent context is a first-class priority
 - **Apply backpressure** — if a requested change doesn't clearly align with "cleaning house" or "advancing the vision", push back and ask how it fits before proceeding
 
@@ -106,7 +106,7 @@ This project hosts agent configuration under `src/`, which the install script de
   - `contracts/` — an earlier-stage package. `pdlc/` and `holding-place/` are retired and live in the archive repository; the executor work that would have drawn on their design carries a pointer to them. `vizsuite/` lives in `scotthamilton77/vizsuite`, which holds its history, its design spec and its prototype corpus; only V1 is built, and V2 and V3 are not planned.
   - `workcli`, `prgroom`, `grind`, `executor` and `gitclean` are the packages installed onto PATH (`uv tool install`, receipt-tracked), landing as the `work`, `prgroom`, `grind`, `executor` and `gitclean` commands; `CLI_PACKAGES` in `packages/installer/src/installer/core/clis.py` holds that list. Retiring one is **not** automatic: uninstall authority is bounded by `CLI_PACKAGES | RETIRED_CLIS`, and `RETIRED_CLIS` is empty, so a package dropped from `CLI_PACKAGES` alone leaves its binary on PATH until its name is added to `RETIRED_CLIS` by hand. Being gated by `make ci` is not what earns a place on it — `installer` is gated and stays off. Most packages carry their own `AGENTS.md` with a scoped workflow — read it before changing that package.
 - `project-config.toml` — project-level configuration, and the convention is that **a commented-out key is future work nothing reads**, not a live setting. Uncomment one only in the change that deploys its reader. `.critical-paths` follows the same convention and currently selects nothing.
-- `.beads/` — the tracker's storage layer. Addressed through the `work` CLI, never `bd` and never by hand; see `.beads/AGENTS.md`.
+- `.beads/` — the tracker's storage layer. Addressed through the `work` CLI, never `bd` and never by hand.
 
 Other notes:
 

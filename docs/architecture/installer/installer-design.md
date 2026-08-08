@@ -79,7 +79,7 @@ installer/
 │   └── registry.py
 └── plugins/                     ── plugin adapters
     ├── base.py                  PluginAdapter protocol
-    ├── beads.py                 Owns ~/.beads/ destination, chmod +x on scripts
+    ├── generic.py               GenericPluginAdapter: home-footprint detection, no bespoke routes
     ├── extensions.py            apply_extensions(): YAML-patch base markdown assets post-staging
     └── registry.py
 ```

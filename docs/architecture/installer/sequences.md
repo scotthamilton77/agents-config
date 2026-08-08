@@ -16,7 +16,7 @@
 | Hash-compare | `Sync`'s skip test: if the incoming content hashes equal to the existing destination file, the file is left untouched. |
 | Path-aware backup | Backup routing — namespaced files back up to a parent-level `<namespace>-backup/` sibling, top-level files back up in place — performed before any overwrite or prune. |
 | Orphan | A recorded install-receipt entry whose owner is in scope and whose `(owner, path)` is no longer in this run's desired staged plan, and that passes the path trust boundary — a prune candidate. |
-| Install receipt | `~/.config/agents-config/install-receipt.json` — the record of every wholesale-authored entry the installer wrote (namespaced commands/skills/agents/rules + plugin route dests), the sole prune authority. Carries an `integrity` digest and is held under a single-writer advisory lock across read → install → prune → write. |
+| Install receipt | `~/.config/agents-config/install-receipt.json` — the record of every wholesale-authored entry the installer wrote (namespaced commands/skills/agents/rules/hooks/workflows + plugin route dests), the sole prune authority. Carries an `integrity` digest and is held under a single-writer advisory lock across read → install → prune → write. |
 
 ## Purpose
 
@@ -33,7 +33,7 @@ Together they answer: *who calls whom, in what order, where does state live (in-
 
 ## Sequence 1 — End-to-end install (happy path)
 
-One invocation: `python3 scripts/install.py --tools=claude,gemini`, with the beads plugin active. `cli.py` — not `orchestrator.py` — is the actual top-level driver: it resolves tools/plugins, then runs **two separate whole-fleet passes** over the detected tools — first build every tool's plan (staging + plugin overlay, via `orchestrator.stage_and_transform`), then sync every tool's finished plan to disk — rather than interleaving stage/overlay/sync per tool. The plan never touches disk except through `Sync`.
+One invocation: `python3 scripts/install.py --tools=claude,gemini`, with a discovered plugin active. `cli.py` — not `orchestrator.py` — is the actual top-level driver: it resolves tools/plugins, then runs **two separate whole-fleet passes** over the detected tools — first build every tool's plan (staging + plugin overlay, via `orchestrator.stage_and_transform`), then sync every tool's finished plan to disk — rather than interleaving stage/overlay/sync per tool. The plan never touches disk except through `Sync`.
 
 ```mermaid
 sequenceDiagram
@@ -93,7 +93,7 @@ sequenceDiagram
             end
             Sync-->>CLI: Counters
         end
-        Note over CLI,Sync: Plugin routes (e.g. beads' ~/.beads/formulas + scripts) sync next, via run.install_plugin_routes
+        Note over CLI,Sync: Plugin routes (an adapter's destinations outside any tool tree) sync next, via run.install_plugin_routes
         CLI->>Sync: flush plugin routes to destination
         Sync-->>CLI: Counters
     end

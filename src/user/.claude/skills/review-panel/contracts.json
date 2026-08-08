@@ -107,7 +107,7 @@
       },
       {
         "lens": "standalone-read",
-        "mandate": "Judge whether the text is usable on its own where it is deployed. References to other documents are fine, and an explainer or key section legitimises the identifiers it defines; undefined jargon and cross-references that resolve to nothing are not.",
+        "mandate": "Judge whether the text is usable on its own where it is deployed. References to other documents are fine, and an explainer or key section legitimises the identifiers it defines; undefined jargon and cross-references that resolve to nothing are not. Narrated history fails the same test: the reader cannot resolve an episode they were not present for, so it belongs in the commit log. A refuted alternative the document states in the present tense — the plausible wrong design and what breaks under it — is current rationale and stays, so a finding names the episode, not the reason.",
         "acs_hint": "criteria describing what the deployed text must convey on its own",
         "tier": "mid",
         "rescope": "diff",

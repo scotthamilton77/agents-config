@@ -31,7 +31,7 @@ This is the high-level design reference for the prgroom CLI. It is **lean by int
 ### Non-goals (MVP)
 
 - Create-PR, merge, and worktree cleanup (stay in `finishing-a-development-branch` and `merge-and-cleanup`)
-- Brainstorm / implement-bead formula changes
+- Changes to the upstream brainstorming and implementation workflows
 - Executable-bead primitive (separate sub-design; blocks on this MVP)
 - bd adapter for state (file-only in MVP)
 
