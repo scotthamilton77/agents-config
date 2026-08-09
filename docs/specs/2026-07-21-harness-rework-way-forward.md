@@ -96,6 +96,17 @@ machine-posted comments and approvals use the bot App identity, never Scott's
 auth. The merge gate requires the verdict artifact — broken review machinery
 blocks merges rather than silently passing them.
 
+*Amended 2026-08-09:* until the replacement review path ships, PR comment
+threads remain a review medium, and machine-posted replies continue
+authenticating as Scott's identity rather than the bot App identity — an
+accepted, recorded interim cost, not the target state (the App-identity write
+path is unbuilt and remains unfiled scope; see
+`docs/specs/2026-07-25-agent-comment-authorship.md`). This interim settles only
+where a reply is read, not what one means: a reply rendering under Scott's
+identity is still never evidence of merge authorization, and D9's
+merge-eligibility clause — CI green, verdict artifact, approval — is
+unchanged.
+
 **D10 — Non-merging PRs park; the machine disengages.** Closed = merged, no
 exceptions (dependents key off merge). A work item whose PR won't merge enters
 a parked state with a typed reason:
