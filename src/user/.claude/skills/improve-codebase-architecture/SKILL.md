@@ -13,6 +13,7 @@ Source: skills/engineering/improve-codebase-architecture/
 Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7
 Last sync: 2026-05-23
 Drift policy: rewrite-and-divorce (project-extended fork)
+Placement: Claude tree, because an invocation writes an HTML file and opens it in the user's viewer before the user is asked anything. Claude alone honours disable-model-invocation; where the projection strips it, that report lands on the user's screen unrequested. The procedure is otherwise portable, which is why it looks shareable and is not.
 -->
 
 # Improve Codebase Architecture

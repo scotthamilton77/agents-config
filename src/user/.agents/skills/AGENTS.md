@@ -75,18 +75,18 @@ row goes, and a row for something that will never land is a defect, not a forwar
 | `grill-with-docs` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/grill-with-docs/` | 2026-08-07 | selective-amalgamation |
 | `codebase-design` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/codebase-design/` | 2026-08-07 | accept-periodic-resync |
 | `domain-modeling` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/domain-modeling/` | 2026-08-07 | local-fork |
-| `wait-what` | shared | `mattpocock/skills @ 84fdeffd` | `skills/productivity/wait-what/` | 2026-08-07 | accept-periodic-resync |
+| `wait-what` | claude | `mattpocock/skills @ 84fdeffd` | `skills/productivity/wait-what/` | 2026-08-07 | accept-periodic-resync |
 | `tdd` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/tdd/` | 2026-08-07 | selective-amalgamation |
 | `tdd` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/test-driven-development/` | 2026-08-07 | selective-amalgamation |
 | `test-review` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/test-driven-development/testing-anti-patterns.md` | 2026-08-07 | selective-amalgamation |
 | `grilling` | shared | `mattpocock/skills @ 84fdeffd` | `skills/productivity/grilling/` | 2026-08-07 | selective-amalgamation |
 | `zoom-out` | claude (command) | `mattpocock/skills @ e74f0061` | `skills/engineering/zoom-out/` (deleted upstream after this commit) | 2026-08-07 | rewrite-and-divorce |
 | `to-spec` | shared | `mattpocock/skills @ ed37663c` | `skills/engineering/to-spec/` | 2026-07-24 | local-fork |
-| `handoff` | shared | `mattpocock/skills @ ed37663c` | `skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
-| `improve-codebase-architecture` | shared | `mattpocock/skills @ e74f006` | `skills/engineering/improve-codebase-architecture/` | 2026-05-23 | rewrite-and-divorce (project-extended fork) |
+| `handoff` | claude | `mattpocock/skills @ ed37663c` | `skills/productivity/handoff/` (pristine upstream; local extensions in deployed copy) | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
+| `improve-codebase-architecture` | claude | `mattpocock/skills @ e74f006` | `skills/engineering/improve-codebase-architecture/` | 2026-05-23 | rewrite-and-divorce (project-extended fork) |
 | `to-tickets` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/to-tickets/` | 2026-08-07 | local-fork |
 | `research` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/research/` | 2026-08-07 | local-fork |
-| `wayfinder` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/wayfinder/` | 2026-08-07 | local-fork |
+| `wayfinder` | claude | `mattpocock/skills @ 84fdeffd` | `skills/engineering/wayfinder/` | 2026-08-07 | local-fork |
 | `prototype` | shared | `mattpocock/skills @ 84fdeffd` | `skills/engineering/prototype/` (SKILL.md, LOGIC.md, UI.md — the latter two deployed under `references/`) | 2026-08-07 | local-fork |
 | `using-git-worktrees` | shared | `obra/superpowers @ f2cbfbe` (v5.1.0) | `skills/using-git-worktrees/` | 2026-08-07 | rewrite-and-divorce (detection moved into a shipped script; consent prompt removed) |
 | `caveman` | claude | `mattpocock/skills @ e74f006` | `skills/productivity/caveman/` (present at the pin, removed upstream since — the pin is the only reference copy) | 2026-05-23 | rewrite-and-divorce (project-extended, user-invoked only) |
