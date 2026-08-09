@@ -1,6 +1,6 @@
 ---
 name: review-verdict
-description: The typed JSON envelope a code-review round emits. Use when authoring or validating a review verdict, or when deciding whether a round is complete and a change is terminal-clean.
+description: The typed JSON envelope a code-review round emits. Use when authoring or validating a review verdict, or when deciding whether a round is complete and free of blocking findings.
 admission:
   prevents: Review results that live only in conversation — untyped and unauditable, so a reader cannot tell whether the verdict is stale, was posted by the reviewer it claims, or silently skipped a lens or an unresolved earlier finding.
   cost: Every review round must emit a JSON artifact and validate it against this schema before its result counts.

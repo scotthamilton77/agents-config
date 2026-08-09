@@ -13,7 +13,7 @@ A HITL ticket only resolves through a live exchange with a human who speaks for 
 
 **Research.** Reading documentation, third-party APIs, or local resources like a knowledge base, to surface a fact a decision waits on. Use when knowledge from outside the current working directory is required. These are the one exception to one-ticket-per-session: fire them in parallel.
 
-**Prototype.** Raise the fidelity of the discussion by making a cheap, rough, concrete artifact to react to — an outline, a rough take, a stub, or UI/logic code. Link the prototype from the ticket as an asset rather than pasting it in. Use when "how should it look" or "how should it behave" is the key question.
+**Prototype.** Raise the fidelity of the discussion by making a cheap, rough, concrete artifact to react to — an outline, a rough take, a stub, or UI/logic code. Link the prototype from the ticket as an asset rather than pasting it in — a pasted copy stops tracking the artifact the moment it changes. Use when "how should it look" or "how should it behave" is the key question.
 
 **Grilling.** Conversation. The default case.
 

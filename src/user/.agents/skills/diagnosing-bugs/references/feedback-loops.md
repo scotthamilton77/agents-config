@@ -16,8 +16,6 @@ the bug, or when the one you have is slow, flaky, or vague.
 9. **Differential loop.** Run the same input through old-version vs new-version (or two configs) and diff outputs.
 10. **Human-in-the-loop script.** Last resort — see below.
 
-Build the right feedback loop, and the bug is 90% fixed.
-
 ## Tighten the loop
 
 Treat the loop as a product. Once you have _a_ loop, **tighten** it:

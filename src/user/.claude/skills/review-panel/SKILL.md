@@ -8,7 +8,7 @@ admission:
 ---
 
 A round is a panel of single-lens reviewers. This skill routes: it maps the target to artifact
-classes, picks each class's lenses, fans out one reviewer per lens at the declared grade and
+classes, picks each class's lenses, fans out one reviewer per lens at the declared tier and
 transport, and assembles the reports into the round verdict. It holds no lens expertise itself —
 depth belongs to the reviewer.
 

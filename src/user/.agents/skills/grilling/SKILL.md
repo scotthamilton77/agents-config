@@ -1,6 +1,6 @@
 ---
 name: grilling
-description: Grill the user relentlessly about a plan, decision, or idea. Use when the user wants to stress-test their thinking, or uses any 'grill' trigger phrases.
+description: Grill the user relentlessly about a plan, decision, or idea. Use when the user says "grill me", "grill this", "stress-test this", "poke holes in it", or otherwise wants their thinking challenged before anything gets built. Stress-testing a plan against the project's own glossary and recorded decisions is `grill-with-docs` instead.
 admission:
   prevents: Implementation starting from a goals-only idea whose decisions and edge cases were never resolved, forcing rework and human babysitting downstream.
   cost: Front-loads a multi-round interview — one user round-trip per frontier, plus subagent fact-finding — and a terminal acceptance-criteria enumeration, before any building begins.
@@ -18,7 +18,7 @@ Interview the user relentlessly until you reach a shared understanding. Map this
 
 Work the tree in **rounds**. The **question frontier** is every decision whose prerequisites are already settled — the questions you can ask *now* without guessing at answers you have not heard yet. Ask the whole question frontier in one round: number each question and give your recommended answer. Then wait for the user's answers before the next round. (The qualifier matters: this frontier is *questions that are answerable*, not work that is startable.)
 
-Format each question like this, as Markdown in your reply rather than inside a code block:
+Format each question like this, as Markdown in your reply rather than inside a code block — the numbered marker is what lets the user answer several questions in one reply without quoting each back, and a code block would render it literally:
 
 ❓ **Q1** - **Question title**: question body, possibly several paragraphs, including any multiple choices.
 

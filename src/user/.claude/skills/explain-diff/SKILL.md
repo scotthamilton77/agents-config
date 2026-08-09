@@ -115,7 +115,8 @@ in that voice for the entire page — one narrator, start to finish.
 
 - **One self-contained HTML file** — all CSS and JS inlined (from `assets/`), no
   external requests. One long page with section headers and a `.toc` table of
-  contents. No tabs for top-level structure. Responsive (theme.css handles it).
+  contents. No tabs for top-level structure — a reader scanning or searching the
+  page never sees what a tab has hidden. Responsive (theme.css handles it).
 - **Save location:** if the user named a destination (a directory or a full path),
   honor it — write there, keeping the `YYYY-MM-DD-explanation-<slug>.html` filename
   when they gave only a directory. Otherwise **default** to a global place outside the
@@ -126,7 +127,8 @@ in that voice for the entire page — one narrator, start to finish.
   Useful kinds: a simplified app-UI mock for UI changes (`.uimock`), a data-flow /
   component system diagram with example data (`.flow` + `.node` + `.data-tag`),
   and simple flow/sequence diagrams highlighting the changed step (`.node.hot`).
-  **HTML diagrams only — never ASCII art.** Lists of things use HTML lists.
+  **HTML diagrams only — never ASCII art**, which loses its alignment the moment
+  the page reflows to a narrower width. Lists of things use HTML lists.
 - **Callouts** (`.callout` note/key/warn/def) for key concepts, definitions, and edge cases.
 
 ## Self-check before you're done

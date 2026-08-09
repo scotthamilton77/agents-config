@@ -80,8 +80,6 @@ you are judging a test double or a skip.
       hides the field downstream code will reach for
 - [ ] Nothing the unit under test owns is doubled
 - [ ] Doubled side effects are understood; nothing is doubled "to be safe"
-- [ ] Five or more doubles in one test — the finding is against the production
-      code, not the test
 
 ### Isolation and structure
 
@@ -104,7 +102,6 @@ you are judging a test double or a skip.
 
 ### Readability
 
-- [ ] Setup is roughly ten lines or fewer per test
 - [ ] The intent is clear within five seconds of reading
 - [ ] Arrange-act-assert is evident
 - [ ] Helpers are named for what they set up
@@ -115,7 +112,8 @@ These say the design is the problem. Reporting them as test defects sends the
 author to fix the wrong file.
 
 - Five or more dependencies need test doubles to reach the code
-- Setup exceeds twenty lines of configuration
+- Setup exceeds twenty lines of configuration — past that the test documents
+  the wiring rather than the behaviour, and no rewrite of it fixes that
 - The function under test has ten or more conditionals or early returns
 - Behaviour can only be verified by asserting on internal calls
 - Several tests need the same elaborate setup — a fixture or factory is missing
@@ -145,7 +143,6 @@ and a concrete fix.
 | Tautology | Expected value restates the implementation | Independent literal, worked example, or delete |
 | Test-only production method | The method has no caller outside tests | Move it to test utilities |
 | Partial double | Response object omits fields real callers read | Mirror the complete schema |
-| Too many doubles | Five or more doubles; setup outweighs the test | Refactor the production code |
 | Shared mutable state | Tests fail in isolation or in a different order | Fresh state per test |
 | Mystery skip | A skip with no reason or tracking reference | Document it or delete it |
 | Copy-paste tests | Near-identical blocks, one parameter apart | Parameterise |

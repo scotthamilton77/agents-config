@@ -1,6 +1,6 @@
 ---
 name: wayfinder
-description: Chart work too big for one agent session as a map of decision questions on the tracker, then resolve them one at a time until the way to the destination is clear. Use when the destination is fogged and what to decide comes before what to build — a ticket here is resolved by answering it. Work whose decisions are already made and only needs slicing into build tickets goes to `to-tickets` instead.
+description: A tracker-held map of the open decisions for work too big for one agent session. Use when the destination is fogged and what to decide comes before what to build — a ticket here is resolved by answering it. Work whose decisions are already made and only needs slicing into build tickets goes to `to-tickets` instead.
 disable-model-invocation: true
 admission:
   provides: A durable map on the tracker for an effort larger than one agent session — the destination, the open decisions, their blocking edges, and what has been decided so far — so a fresh session orients from the tracker instead of from the previous session's context.
@@ -62,7 +62,7 @@ Fog is in scope and merely unsharp, so it lives in the map's **Not yet specified
 
 ## Invocation
 
-Two modes. Either way, **never resolve more than one ticket per session** — with the exception of research tickets.
+Two modes. Either way, **never resolve more than one ticket per session** — with the exception of research tickets. Resolving one clears fog and can invalidate other tickets, so a second worked before the map is written back is decided against a frontier that has already moved.
 
 ### Chart the map
 

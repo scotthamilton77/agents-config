@@ -92,7 +92,7 @@ work dep add <blocked-ticket> <blocking-ticket>
 
 Read it as "the first depends on the second". One call per edge.
 
-Do NOT close or modify the container or any parent item.
+Do NOT close or modify the container or any parent item — it holds the rest of the effort's slices, and closing it drops every one of them out of the ticket frontier.
 
 ### 6. Hand off the ticket frontier
 

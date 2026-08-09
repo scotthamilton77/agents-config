@@ -32,7 +32,7 @@ Mandates are data in `lenses.json`, each lens's `tier` naming the model capabili
 `openrouter-claude-subagent` skill, a `codex` lens through the codex command-line tool. When one
 transport is down, run its lenses over the other — the panel has then lost its vendor diversity,
 and blind spots correlate within a vendor. No field records that substitution and the checker
-cannot see it, so state it wherever the round's verdict is reported or it is lost. One attacker runs per lens, alone, exhaustive within
+cannot see it, so say so in your own report to the user or it is lost. One attacker runs per lens, alone, exhaustive within
 it and silent outside: asked for everything, one attacker satisfices, returning two holes where a
 panel returns seven.
 
@@ -88,7 +88,7 @@ can return, and what each one means, is in `errors.md`.
 system this document describes has been claimed. Revising the document is not that. The checker
 reads the record, the document, that declaration, and its own lens registry — read live, so a
 record is judged against the lens set in force now: adding a lens reopens rounds that never faced
-it, while retiring one leaves the rounds it ran in closed, holding coverage they did obtain. It consults no tracker and writes nothing, and over one tree it answers the same way every time — the volume's own answer about whether two spellings are one name is part of what it reads, so a tree copied onto a volume that folds differently is different input.
+it, while retiring one leaves the rounds it ran in closed, holding coverage they did obtain. It consults no tracker and writes nothing, and over one tree it answers the same way every time — the volume's own answer about whether two spellings differing only in case are one name is part of what it reads, so a tree copied onto a volume that folds case differently is different input.
 
 The record **attests** that the round happened as written; the checker does not verify that it did.
 It can see the document is at the revision an acceptance names, never that the criterion is in it —
