@@ -20,9 +20,10 @@ resolution.
 
 ## Skills
 
-OpenCode scans `~/.claude/skills/**/SKILL.md` natively. Shared skills are
-available without duplication. Skills use bare names (e.g. `review-verdict`)
-and are installed from this repo's `src/` directory.
+Shared skills stage into `~/.config/opencode/skills/` the same way they stage
+into every other tool's tree (one directory per skill, bare names like
+`review-verdict`). `opencode.jsonc.template`'s `skills.paths` names that
+directory explicitly; OpenCode also scans it as a default location on its own.
 
 ## Agents and commands
 

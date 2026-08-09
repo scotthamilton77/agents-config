@@ -3,9 +3,10 @@ OpenCodeAdapter — this is where OpenCodeAdapter.should_install_namespace
 earns behavioural coverage.
 
 Pins the key OpenCode divergence from Claude/Codex: the shared agents/
-namespace is NOT staged (frontmatter format differs; see
-OPENCODE-EXTENSIONS.md), while shared skills/ and rules/ ARE staged
-(rules remain available for DYNAMIC-INCLUDE-ALL-RULES inlining).
+namespace is NOT staged (OpenCode's agent frontmatter uses provider-prefixed
+model IDs plus mode:/permission: keys, unlike the shared format), while shared
+skills/ and rules/ ARE staged (rules remain available for
+DYNAMIC-INCLUDE-ALL-RULES inlining).
 """
 
 from __future__ import annotations

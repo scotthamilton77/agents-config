@@ -5,7 +5,6 @@ This directory contains source templates for OpenCode (`opencode`) support.
 ## Contents
 
 - `AGENTS.md.template` — Skeleton with dynamic-include markers for the flat instruction file
-- `OPENCODE-EXTENSIONS.md.template` — OpenCode-specific notes and conventions
 - `opencode.jsonc.template` — Settings (model, permissions, skills paths)
 
 ## How it works

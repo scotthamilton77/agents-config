@@ -12,9 +12,10 @@ if TYPE_CHECKING:
 class OpenCodeAdapter:
     """Adapter for OpenCode. Two divergences from the dot-dir tools:
     it installs under the XDG config dir (~/.config/opencode/, not ~/.opencode/),
-    and it skips the shared agents/ namespace (frontmatter format differs;
-    see OPENCODE-EXTENSIONS.md). Detected when opencode is on PATH OR the XDG
-    config dir (~/.config/opencode) exists."""
+    and it skips the shared agents/ namespace (OpenCode's agent frontmatter uses
+    provider-prefixed model IDs plus mode:/permission: keys, unlike the shared
+    format). Detected when opencode is on PATH OR the XDG config dir
+    (~/.config/opencode) exists."""
 
     name: str = "opencode"
 
@@ -40,7 +41,8 @@ class OpenCodeAdapter:
 
     def should_install_namespace(self, namespace: str, source: str) -> bool:
         # Skip the shared agents/ namespace: OpenCode's agent frontmatter format
-        # differs from the shared format (see OPENCODE-EXTENSIONS.md).
+        # differs from the shared format (provider-prefixed model IDs plus
+        # mode:/permission: keys).
         return not (namespace == "agents" and source == "shared")
 
     def post_staging_transforms(
