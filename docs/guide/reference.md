@@ -18,10 +18,17 @@ A reference can only be written once the surface it describes stops moving. Four
 pieces of the rebuild are still open, and each one decides entries this page
 would have to carry:
 
-- **The review contracts** — the verdict schema and the review roles that
-  replace the old completion-gate tables.
-- **The scaffold pipeline** — what replaces the retired planning and test-first
-  skills in the implementation phase.
+- **The review contracts** — the verdict schema (`review-verdict`) and the
+  class-specific review roles (`review-panel`) already ship and replace the
+  old completion-gate tables; what's still open is the self-managed
+  invocation (triggering automatically when an artifact claims readiness) and
+  the bot identity the charter calls for.
+- **The scaffold pipeline** — `tdd` and `test-review` already cover the
+  hand-invoked implementation-phase discipline the retired planning and
+  test-first skills used to; what's still open is the automated half the
+  charter designs — machine-generated stubs and failing tests from a spec's
+  acceptance criteria, the contract-only lint, the AC↔test bijection check,
+  and foreign-model scaffold review.
 - **The PR-grooming carve** — which delivery and merge-eligibility behaviour
   survives, and in what form.
 - **The executor loop** — the run loop that ties the phases together; today the
