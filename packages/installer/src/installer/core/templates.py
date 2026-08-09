@@ -212,10 +212,10 @@ def _text_inlines_rules(text: str) -> bool:
 def _flatten_with_plan_rules(text: str, *, plan: StagingPlan, repo_root: Path, io: IOPort) -> str:
     """Flatten ``text``, sourcing ALL-RULES from the plan's staged ``rules/``.
 
-    The on-disk staging tree is the source for ALL-RULES in the original design; the Python
-    installer stages in memory, so when (and only when) the template needs rules
-    they are materialised to a temp dir for ``flatten_template`` to read —
-    matching ``find $staging/rules -name '*.md' | sort``.
+    The Python installer stages in memory rather than to an on-disk tree, so
+    when (and only when) the template needs rules, the plan's staged
+    ``rules/`` items are materialised to a temp dir for ``flatten_template``
+    to read — matching ``find $staging/rules -name '*.md' | sort``.
     """
     if not _text_inlines_rules(text):
         return flatten_template(text, base_dir=repo_root, io=io, rules_dir=None)
