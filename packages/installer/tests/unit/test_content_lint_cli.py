@@ -16,6 +16,7 @@ from installer.core.merge.base import CollisionError
 from installer.core.surface_budget import (
     ALWAYS_ON_TOKEN_CAP,
     SKILL_BODY_TOKEN_CAP,
+    USER_CORE_TOKEN_CAP,
     USER_INVOKED_SKILL_BODY_TOKEN_CAP,
 )
 
@@ -43,7 +44,7 @@ def _repo(
     return tmp_path
 
 
-def test_clean_tree_exits_zero_and_prints_both_budgets(
+def test_clean_tree_exits_zero_and_prints_the_budget_numbers(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, skill=_RECORD + "short\n")
@@ -52,6 +53,11 @@ def test_clean_tree_exits_zero_and_prints_both_budgets(
 
     out = capsys.readouterr().out
     assert f"cap {ALWAYS_ON_TOKEN_CAP} tokens" in out
+    # The core answers to a ceiling over twelve times tighter than the surface
+    # cap, so its own number and its own ceiling both have to print: a core that
+    # had doubled would otherwise leave the surface total looking comfortable.
+    assert f"core {USER_CORE_TOKEN_CAP}" in out
+    assert "(core 0," in out
     # Both ceilings on the header, and the one that applied on the body's own
     # line: with two caps in play a lone number says nothing about headroom.
     assert f"cap {SKILL_BODY_TOKEN_CAP} tokens" in out

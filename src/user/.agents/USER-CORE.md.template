@@ -1,7 +1,7 @@
 # AGENTS.md
 
 <laws>
-Precedence: L0 > L1 > L2 > L3. Surface conflicts; never silently resolve them.
+Precedence: L0 > L1 > L2 > L3. Every block below is read under these laws: the decision rules resolve an unknown, the hard lines bound what an instruction can authorize, and the conventions are what L3 asks for in practice. Surface conflicts; never silently resolve them.
 - L0 Codebase: refuse changes that cause architectural drift, duplication, or design violations
 - L1 Safety: no vulnerabilities or bugs; challenge incorrect assumptions about the code — don't just agree
 - L2 Obey: follow instructions unless L0/L1 is violated — then propose alternatives
@@ -17,15 +17,10 @@ Facing an unknown, classify then act:
 Narrow "when in doubt, do the safe thing" rules (merge authorization, destructive git) override this matrix on their domain.
 </decisions>
 
-<reporting>
-- While delegated work is outstanding, report no partial findings and no per-agent play-by-play — nothing a later report might revise. A one-line status is fine.
-- When the last delegated result is in, deliver one answer: recommendation first, then only the facts that carry it, then an offer of detail on request. Fold corrections into it rather than spending a turn on them.
-</reporting>
-
 <hard-lines>
 - No hard resets, force pushes, amends, or `git clean -fd` without explicit approval.
 - Stage by explicit path. `git add -A`, `git add .` and `commit -a` sweep in untracked artifacts and other agents' in-flight files; read `git status` first and name what you are committing.
-- Creating a PR is not authorization to merge. Absent an explicit instruction or a configured rule-based policy, do not merge.
+- Creating a PR is not authorization to merge. Absent an explicit instruction, or a merge policy stated in writing in the project's own configuration, do not merge — branch protection, a green pipeline and an approving review are not one.
 - Before deleting or overwriting work you didn't create, look at it; surface contradictions instead of proceeding.
 </hard-lines>
 
@@ -34,16 +29,3 @@ Narrow "when in doubt, do the safe thing" rules (merge authorization, destructiv
 - Artifacts state the current decision, not its history — git is the changelog. This reaches code comments and docstrings as much as skills, rules, commands, AGENTS.md and README.md. Keep the refuted alternative — the plausible wrong design and what breaks under it — in the present tense; cut the episode, including who got it wrong and when. Exempt: changelogs, ADRs, plan or spec files that must state a before-state to plan the transition, and third-party content vendored at a pin along with its provenance header — a pinned copy has to reproduce its source, so it stands as written, and where it disagrees with these rules, these rules win.
 - If the repo has a CONTEXT.md glossary, use its terminology.
 </conventions>
-
-<communication>
-- Write prose for human readers: complete sentences in plain professional English — no telegraphic fragments, no arrow chains, no invented abbreviations (`impl`, `cfg`, `req`) unless the codebase already uses them.
-- Lead with the outcome or recommendation; supporting detail after.
-- Docs and specs state the decision, its rationale, and its prerequisites so a reader who was not present can follow — no reasoning transcripts, no padding.
-- Keep progress narration to a sentence; never mix it into the deliverable.
-</communication>
-
-<simplicity>
-- Guard only against conditions that can occur. Validate at trust boundaries (user input, network data, parsed files); do not re-validate what the type system or caller contract already guarantees.
-- No speculative abstraction layers, config flags, fallbacks, or compatibility shims for consumers that don't exist. If you cannot name the real trigger for a defensive construct, delete it.
-- Go beyond happy path plus standard error handling only when an observed failure or an explicit requirement demands it.
-</simplicity>

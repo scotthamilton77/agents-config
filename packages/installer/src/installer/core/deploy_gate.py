@@ -13,12 +13,13 @@ is assembled and before any write. It:
    ``sanitize`` and ``capabilities``);
 3. measures the **surface budget** over the *rewritten admitted* content — the
    always-on surface per tool, which now includes the catalog entry of every
-   skill that tool's runtime publishes to the model, and each admitted skill
-   body against the cap that fits the target it is deploying to. Measuring
-   after the rewrite is the point twice over: the budget weighs what a reader
-   actually loads rather than the governance metadata that enforces it, and it
-   reads the projected front matter rather than the source, so a declaration
-   the target's loader cannot honour prices nothing;
+   skill that tool's runtime publishes to the model, the instruction file alone
+   against the core sub-budget inside it, and each admitted skill body against
+   the cap that fits the target it is deploying to. Measuring after the rewrite
+   is the point twice over: the budget weighs what a reader actually loads
+   rather than the governance metadata that enforces it, and it reads the
+   projected front matter rather than the source, so a declaration the target's
+   loader cannot honour prices nothing;
 4. runs the **conflict audit** over the admitted artifacts' claims.
 
 The unit judged is the **contributor**, not the destination. A rule destination
@@ -77,6 +78,7 @@ from installer.core.surface_budget import (
     measure_always_on,
     measure_skill_bodies,
     skill_body_violations,
+    user_core_violations,
 )
 
 if TYPE_CHECKING:
@@ -536,6 +538,7 @@ def run_admission_gate(
         violations += always_on_violations(
             tool=tool.value, instruction=instruction, rules=rule_bytes, catalog=entries
         )
+        violations += user_core_violations(tool=tool.value, instruction=instruction)
     violations += skill_body_violations(skill_bodies)
     violations += conflict_violations(claims_by_artifact)
 
