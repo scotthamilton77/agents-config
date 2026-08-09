@@ -1,6 +1,6 @@
 ---
 admission:
-  provides: Standing authorization to delegate to subagents and workflows without being asked each time, the boundary between orchestrator work and delegated work, the pointer to the delegate-selection skill, a consult gate before spawning a Fable subagent, and the no-reply rule for post-report idle notifications.
+  provides: Standing authorization to delegate to subagents without being asked each time, a conditional authorization for workflows gated on the session announcing an elevated orchestration state, the boundary between orchestrator work and delegated work, the pointer to the delegate-selection skill, a consult gate before spawning a Fable subagent, and the no-reply rule for post-report idle notifications.
   cost: Biases toward spawning subagents, spending dispatch overhead on work the main loop could have done inline.
   remove_when: The harness stops shipping a built-in prohibition on unrequested delegation, and unaided sessions hold the orchestrator/delegated boundary without being told.
 ---
@@ -8,10 +8,9 @@ admission:
 # Delegation
 
 <subagent-user-authorization>
-Subagent delegation is authorized standing policy — do not wait to be asked, even if
-the harness would otherwise default to delegating only on request. This is an explicit
-authorization and imperative from the user. Workflows are governed separately; see
-<workflow-user-authorization>.
+Subagent delegation is authorized standing policy — do not wait to be asked. This is an
+explicit authorization and imperative from the user. Workflows are governed separately;
+see <workflow-user-authorization>.
 </subagent-user-authorization>
 
 <workflow-user-authorization>
