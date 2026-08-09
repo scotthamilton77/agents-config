@@ -16,6 +16,7 @@
 | Namespace | The managed sub-dir (`commands` / `skills` / `agents` / `rules` / `hooks` / `workflows`) or `None` when the tool root itself owns the file. The **secondary** merge-dispatch key. |
 | `IncludeDirective` | A discriminated union (`FileInclude` \| `AllRulesInclude` \| `NamedRulesInclude`) produced **transiently** while flattening DYNAMIC-INCLUDE markers; consumed during staging, not persisted on the `StagedItem`. |
 | `Orphan` | A prune candidate: a recorded receipt entry, in scope, no longer in the desired staged plan, that passes the path trust boundary. |
+| `Contribution` | `(source_path, content)` — one source file's bytes inside a staged item's merged/patched content. Also the value type of `StagingPlan.dir_overrides`. |
 | `Receipt` / `ReceiptEntry` | The install receipt and its per-entry record — the persisted-between-runs prune authority (`~/.config/agents-config/install-receipt.json`). Distinct from the in-memory shapes: the receipt is the installer's only persistent state. |
 | `Counters` | The per-run tally (`staged` / `created` / `updated` / `merged` / `skipped` / `pruned` / `backed_up`) surfaced in the exit summary. |
 | Canonical ownership | Which actor is the source of truth for a piece of data: the human (source tree), the installer (plan + writes), or the tool (deployed store at runtime). |
@@ -38,7 +39,9 @@ This is the current entity model. Field names mirror the dataclasses in `package
 erDiagram
     Config      ||--o{ StagingPlan      : "one built per detected Tool"
     StagingPlan ||--o{ StagedItem       : "items: dict keyed by dest_relpath"
+    StagingPlan ||--o{ Contribution     : "dir_overrides: 0..N override bytes for a DIR item a single source_path can't express"
     StagedItem  ||--|| Provenance        : "has 1 (origin)"
+    StagedItem  ||--o{ Contribution     : "contributions: 0..N sources that rejoin to content (merge/patch provenance)"
     StagedItem  ||--o{ FileInclude       : "content flattened from 0..N (transient)"
     StagedItem  ||--o| AllRulesInclude   : "content flattened from ALL-RULES marker (transient; no fields)"
     StagedItem  ||--o{ NamedRulesInclude : "content flattened from 0..N named-subset markers (transient)"
@@ -54,7 +57,7 @@ erDiagram
     StagingPlan {
         Map  items          "dict[Path, StagedItem] — IN-MEMORY; silently overwrites on dup dest_relpath (caller routes to merge)"
         Tool tool           "which tool this plan targets"
-        Map  dir_overrides  "dict[Path, dict[Path, bytes]] — carrier-merge / extension-patch bytes for a DIR item that a single source_path can't express"
+        Map  dir_overrides  "dict[Path, dict[Path, Contribution]] — carrier-merge / extension-patch bytes for a DIR item that a single source_path can't express"
     }
 
     StagedItem {
@@ -65,11 +68,18 @@ erDiagram
         Provenance provenance  "tool vs plugin origin marker"
         bytes    content       "post-flatten bytes; null when kind == DIR (derived at sync)"
         bool     executable    "sync-phase mode bit 0o755 vs 0o644, mirrored from the source file's own mode (e.g. a hook script)"
+        bool     shared_carrier "True only on skills/agents DIR items first staged from the shared carrier tree; enables a disjoint plugin overlay to carrier-merge; cleared once merged"
+        Contribution contributions "0..N sources whose bytes are in content, in order; empty means content is its own sole contributor. Unchecked rejoin-to-content invariant — load-bearing for the admission gate"
     }
 
     Provenance {
         string kind  "Literal[tool | plugin] — disambiguates the flat name field"
         string name  "Tool enum value (tool) or plugin name string (plugin)"
+    }
+
+    Contribution {
+        Path  source_path  "the source file these bytes came from"
+        bytes content      "this source's slice of the merged/patched result"
     }
 
     FileInclude {
@@ -119,7 +129,7 @@ The collision matrix — the dispatch contract `core/merge/registry.py` implemen
 | `JSONC` | — | `last_wins_warn` | Replace, with a warning that an existing file was overwritten. |
 | `TOML` | — | `last_wins_warn` | Replace, with a warning. |
 | `OTHER` | — | `last_wins_silent` | Replace silently. |
-| `DIR` | — | (n/a) | Directories are created, not merged. |
+| `DIR` | — | `fatal` | **Raise** — a DIR collision at base staging, or a second plugin colliding on an already-merged carrier, is an authoring error. (The plugin-overlay carrier-merge — a disjoint file set merging into a `shared_carrier` skills/agents dir — is intercepted before this dispatch; see `overlay.py`.) |
 
 > Being a managed namespace and being a merge namespace are independent properties. `hooks` is a managed namespace for **backup / prune** routing (it is in the path-aware namespace set) yet never appears as a merge key: a hook is an executable rather than a `.md` file, so it classifies as `FileKind.OTHER` and the namespace component of its key is normalized away. The only `NAMESPACED_MD` namespaces that change the strategy are `rules` (append) and `commands`/`skills`/`agents` (fatal); every other kind is registered under the `None` namespace, so a `.toml` file routes via `(TOML, —) → last_wins_warn` wherever it sits. The dispatch is data: adding a `(FileKind, namespace)` row is a registry change, not an engine change.
 

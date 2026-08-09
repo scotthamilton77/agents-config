@@ -57,7 +57,7 @@ C4Container
 
     System_Ext(assistants, "AI coding assistants", "Claude Code / Codex CLI / Gemini CLI / OpenCode — each reads ITS OWN destination store at the assistant's runtime, asynchronously, long after install exits.")
 
-    Rel(operator, proc, "python3 scripts/install.py or python -m installer [--tools=] [--plugins=] [--prune] [--dry-run] [--dump-stage]", "CLI invocation")
+    Rel(operator, proc, "python3 scripts/install.py or python -m installer [--tools=] [--plugins=] [--project] [--profiles=] [--prune|--prune-only] [--dry-run] [--yes] [--verbose] [--dump-stage] [--help] — full grammar in installer-design.md §CLI surface", "CLI invocation")
 
     Rel(proc, source, "Walks + reads source files; flattens DYNAMIC-INCLUDE; strips .template suffix", "FS read")
     Rel(proc, toml, "Parser exists (core/installer_toml.py) but has no caller in the live path", "FS read (unused)")
@@ -113,6 +113,7 @@ The four AI coding assistants are **external systems** that read their deployed 
 - **Consumption is asynchronous.** The assistants read their stores whenever *they* run, not when the installer runs. The installer has no runtime coupling to any tool — only a path + content contract via the adapter.
 - **`installer.toml` is config, not state — and not yet wired.** Its loader (`core/installer_toml.py`) has no caller in the live install path today; a declared `[tools]` override has no effect until a future story threads it into dest resolution. Once wired, it will be read, never written, by the install path. The installer's persisted *state* lives separately in the **install receipt** (`~/.config/agents-config/install-receipt.json`) — read at prune start and rewritten at run end — not in `installer.toml`.
 - **Tool set and plugin set are resolved once, up front.** `resolve_tools`/`resolve_plugins` (auto-detection + argv) fix the tool/plugin set before staging begins; `installer.toml` plays no part in this today — its loader is unwired.
+- **`--project <dir>` forks into a project-scoped install that skips the admission gate.** It installs into the given directory instead of user space, resolving which kits/profiles apply (`core/kits.py` + `core/profiles.py`); this path is ungated by design — see [`c4-l3-engine.md`](c4-l3-engine.md)'s `cli.py` component note.
 
 ## What this diagram does NOT show
 

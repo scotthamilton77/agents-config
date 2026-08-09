@@ -92,7 +92,7 @@ installer/
 ```
 
 This tree names the modules central to the design narrative below, not the
-package's full module set — `core/` alone carries roughly 35 files today, and
+package's full module set — `core/` alone carries several dozen files, and
 a hand-copied list here goes stale the moment one is added or split. Read
 `packages/installer/src/installer/` directly for the current roster.
 
@@ -105,7 +105,8 @@ class ToolAdapter(Protocol):
     def dest_dir(self, home: Path) -> Path: ...
     def is_detected(self, home: Path) -> bool: ...
     def scoped_namespaces(self) -> tuple[str, ...]: ...
-    def should_install_namespace(self, ns: str, source: str) -> bool: ...  # OpenCode: False for shared agents/
+    def project_namespaces(self) -> tuple[str, ...]: ...  # namespaces a --project install may select
+    def should_install_namespace(self, namespace: str, source: str) -> bool: ...  # OpenCode: False for shared agents/
     def post_staging_transforms(self, plan: StagingPlan, io: IOPort) -> StagingPlan: ...  # Gemini frontmatter
 ```
 
@@ -129,7 +130,7 @@ The installer is a `uv`-managed Python project. `pyproject.toml` declares deps; 
 **Runtime deps (targeted, not stdlib-only):**
 
 - `pyyaml` — for the Gemini frontmatter transform.
-- `tomli-w` — to write `installer.toml` updates (3.11 stdlib reads TOML; it does not write).
+- `tomli-w` — to write `project-config.toml`'s `[install].profiles` key (`write_project_profiles`, `config.py`); 3.11 stdlib reads TOML, it does not write.
 - `rich` — pretty diffs, colored output, prompt formatting.
 
 The dependency list is deliberately tight, but we no longer refuse a library that exists and solves the problem.
@@ -194,7 +195,7 @@ each module tests in isolation. Examples by module:
 - `core/io_port.py` (`ScriptedIO`) — consumes scripts in order; raises on exhaustion; records transcript faithfully.
 - `tools/<name>.py` — each adapter's `is_detected`, `dest_dir`, `should_install_namespace` rules tested independently.
 
-**Behaviour-driven, not implementation-driven.** Fixtures live in `tests/fixtures/states/` and represent versioned snapshots of *user-state-before-install*: clean home, normal-user-with-existing-config, conflicting-rules, orphans-present, corrupted-settings, legacy-backups-present, plugin-overlay-active, etc. Each fixture is a real directory tree the test can `shutil.copytree` into `tmp_path`.
+**Behaviour-driven, not implementation-driven.** Each test builds the pre-install user-state it needs directly against pytest's `tmp_path` — an existing settings file, a conflicting rule, a stale receipt entry, etc. — rather than asserting how the installer got there.
 
 Tests assert **end-state goals**, not how those goals were achieved:
 
@@ -207,9 +208,9 @@ Test names describe the contract, e.g. `test_user_modified_settings_keys_are_pre
 
 ### Fixture strategy
 
-- `tests/fixtures/states/` — versioned, on-disk, hand-curated snapshots of pre-install user-state (one subdir per scenario). Committed to git so reviewers can inspect them.
-- `tests/fixtures/sources/` — synthetic source trees (one per scenario) that exercise specific behaviours without depending on the real `src/user/`.
-- Builder functions in `conftest.py` for ad-hoc fixture composition.
+- `tests/fixtures/sources/test-plugin/` — the one committed synthetic source tree (a rule, a command, a skill), exercising plugin-overlay behaviour without depending on the real `src/user/`. There is no separate `tests/fixtures/states/` tree; no such directory has ever existed in this suite.
+- `conftest.py` carries autouse hermetic-environment fixtures (OpenCode PATH-probe neutralisation, CLI-deploy stubbing) plus the shared `ignore` fixture — pre-install user-state is built inline, per test, against `tmp_path`, not composed from on-disk builders.
+- `test_golden_full_profile_is_byte_identical_to_todays_install` (`tests/unit/test_profiles.py`) is the one test that runs staging against the real repo's `src/user/` tree directly, pinning that the unfiltered ("full") profile selection stages byte-identical to today's install.
 
 ## CLI surface
 
