@@ -83,12 +83,12 @@ src/
 │   ├── .codex/                     # Codex-specific (→ ~/.codex/)
 │   ├── .gemini/                    # Gemini-specific (→ ~/.gemini/)
 │   └── .opencode/                  # OpenCode-specific (→ ~/.config/opencode/), + opencode.jsonc.template
-└── plugins/                        # Optional plugin content (auto-discovered, installed when detected)
+└── plugins/                        # Optional plugin content (auto-discovered, active when detected or via `--plugins=`)
     └── codex/                      # codex plugin: model-routing skill for a Codex run (Claude-only)
 ```
 
 > Not everything under `src/` is a wrapper around a single tool: shared content
-> in `.agents/` installs to **all** detected tools; `.claude/`, `.codex/`,
+> in `.agents/` installs to **every active tool**; `.claude/`, `.codex/`,
 > `.gemini/`, and `.opencode/` add tool-specific pieces. The `packages/` are real
 > code, not installed configuration.
 
@@ -111,7 +111,7 @@ the authoritative inventory:
 | Claude-only skills | [`src/user/.claude/skills/`](./src/user/.claude/skills/) | `~/.claude/skills/` |
 | Claude-only rules | [`src/user/.claude/rules/`](./src/user/.claude/rules/) | `~/.claude/rules/` |
 | Slash commands | [`src/user/.claude/commands/`](./src/user/.claude/commands/) | `~/.claude/commands/` |
-| Plugin content | [`src/plugins/`](./src/plugins/) | matching tools, when detected |
+| Plugin content | [`src/plugins/`](./src/plugins/) | matching active tools |
 
 Each `rules/` directory carries its own `AGENTS.md` stating what currently lives
 there. For a walkthrough of what the installed set does and where the gaps are,

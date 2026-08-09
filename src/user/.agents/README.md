@@ -36,9 +36,9 @@ entirely and installs to any named tool regardless.
 ## Who it's for
 
 Fork-and-install users who want a ready-made set of skills and shared
-instruction text to drop into their `~/.<tool>/` config. Not a library for
-programmatic consumption — these are prose files meant to be read by an LLM at
-runtime.
+instruction text to drop into their tool's config (`~/.<tool>/`, or
+`~/.config/opencode/` for OpenCode). Not a library for programmatic
+consumption — these are prose files meant to be read by an LLM at runtime.
 
 See the [root README](../../../README.md) for install flow and customization
 pointers. Do not duplicate install instructions here.
