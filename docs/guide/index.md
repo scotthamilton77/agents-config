@@ -30,7 +30,7 @@ The mental model has four kinds of pieces. Three of them ship today:
 |-------|---------|--------|
 | **Rules** | the *always-on* contract | Ships. The laws, the decide-vs-escalate matrix, and the hard lines install as your assistant's instruction file; one further rule covers delegation. |
 | **Skills** | *how* to do a thing | Ships, in a much smaller set than before — design and spec-writing, review, delegation, git cleanup, handoff. |
-| **Commands** | a thing you invoke by name | Ships. One slash command, Claude Code only. |
+| **Commands** | a thing you invoke by name | Ships. Two slash commands, Claude Code only: `/clean-up-git`, `/zoom-out`. |
 | **Agents** | *who* does a thing | **Nothing ships.** The role-based agent definitions were retired and have no replacement yet. |
 | **Gates** | *proof* before "done" | **No deployed implementation.** The completion gate and merge guard were retired; the contracts that replace them are still being built. |
 

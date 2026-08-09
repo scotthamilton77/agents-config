@@ -1,6 +1,6 @@
 # ADR-0001: Holding Place is a peer subsystem of the PDLC Orchestrator
 
-**Status**: Accepted (2026-05-25)
+**Status**: Accepted (2026-05-25) — **Retired.** The PDLC Orchestrator and Holding Place subsystems this decision governs were retired out of this repository; their design lives on in the archive repository (`scotthamilton77/agents-config-ARCHIVE`). This record stands as history, not as a description of anything currently built.
 
 ## Context
 
