@@ -13,7 +13,7 @@ still outstanding.
 
 ## Envelope
 
-All fields are required.
+All fields are required except `halt`.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ All fields are required.
 | `base_sha` | 40-hex | Commit the reviewed diff was taken against. |
 | `head_sha` | 40-hex | Reviewed head commit. The verdict is valid only for this commit. |
 | `claim_id` | non-blank string | The completion claim this round adjudicates. |
-| `retained_categories` | array of strings | Categories carried forward from earlier rounds. May be empty, but must be present — an empty array asserts "nothing retained". |
+| `retained_categories` | array of strings | Categories carried forward from earlier rounds. Always present; an empty array asserts "nothing retained". |
 | `lenses` | array | One entry per lens the artifact class declares, green ones included, each recording what actually ran it. At least one, unless the round halted first. |
 | `prior_dispositions` | array | What happened to each earlier mechanical finding. May be empty on round 1. |
 | `verdict` | `"clean"`, `"findings"`, or `"halted"` | Round-level result. |
@@ -40,6 +40,7 @@ All fields are required.
                   "transport_error": "401 Missing bearer authentication"}}
 ```
 
+A lens's own `verdict` is `clean` or `findings` — only the round halts, never a single lens.
 `vendor`, `transport` and `model` record what **actually** produced the report, never what the
 lens registry declared for it. A lens reports exactly once: a lens re-dispatched after a failure
 carries one entry describing the attempt that produced the report it holds, and a second entry for
@@ -94,8 +95,13 @@ for `rebutted` — a rebuttal without evidence is just a disagreement.
  "abandoned_lenses": ["test-adequacy", "documentation-quality"]}
 ```
 
-A halted round ran out of transports: a dispatch died on its route and the failover to the other
-route died too. It is never clean and never complete, and `verdict` says so outright rather than
+Both keys are required. `failures` carries at least two entries — a dispatch died on its route and
+the failover to the other route died too — each naming its `lens`, `transport` and the verbatim
+`error`; a failure a successful failover recovered from belongs on that lens's `substitution`
+instead. `abandoned_lenses` names the declared lenses the round never dispatched, and is present
+even when empty.
+
+A halted round is never clean and never complete, and `verdict` says so outright rather than
 leaving it inferred from a missing lens entry — a silent check guarding the merge gate is one
 nobody notices passing. Its findings are real and still not a verdict on the change: most of it was
 never opened.
@@ -126,23 +132,17 @@ against the pull request:
    empty one meaning nothing was retained.
 3. **Live and authentic** — the verdict is schema-valid, App-posted, and its `head_sha` equals the
    current head.
-4. **Lens coverage** — `lenses` covers the full lens set the artifact class declares, green lenses
-   included, each carrying what ran it. Coverage is read off the artifact; silence never counts as
-   a clean lens, and a lens that died and was never re-dispatched leaves the round incomplete.
+4. **Lens coverage** — `lenses` covers the full set the artifact class declares. Coverage is read
+   off the artifact; silence never counts as a clean lens, and a lens that died and was never
+   re-dispatched leaves the round incomplete.
 5. **Ledger coverage** — `prior_dispositions` accounts for every `mechanical` finding from every
    prior round's posted verdict.
 
 **Terminal-clean** = a complete round whose `verdict` is `clean`, carrying zero `mechanical`
-findings. Advisory findings never block; they go to the backlog. A halted round is never
-terminal-clean, however few findings it holds.
+findings. A halted round is never terminal-clean, however few findings it holds.
 
-Completeness and diversity are separate: a round every lens reported on is complete even on one
-vendor — see above on reporting, not blocking, the collapse.
-
-The schema checks the shape of a single artifact. The five conditions above are cross-artifact —
-they compare the verdict against the pull request and against earlier verdicts — so today a person
-checks them by hand. The merge-eligibility evaluator in the pull-request grooming toolchain will
-consume this same schema and check them mechanically.
+The schema checks the shape of a single artifact; the five conditions above compare it against the
+pull request and against earlier verdicts, so a person checks them by hand today.
 
 ## Validating
 

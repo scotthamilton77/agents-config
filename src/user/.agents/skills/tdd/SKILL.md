@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: The red-to-green loop and the discipline that keeps it honest. Use when implementing a feature or bugfix test-first, when failing tests have been handed over to be made green, when the user says "red-green-refactor" or "test-first", or when about to write production code that no test yet demands.
+description: The red-to-green loop and the discipline that keeps it honest. Use when implementing a feature or bugfix test-first, when failing tests have been handed over to be made green, when the user says "red-green-refactor" or "test-first", or when about to write production code that no test yet demands. A handed-over test that looks wrong escalates here rather than being edited; `test-review` governs only when judging a suite is itself the job.
 admission:
   prevents: The two model defaults that make a test suite prove nothing — writing the implementation first and back-filling tests that pass on arrival, and editing a handed-over failing test until it agrees with the code that was written instead of the contract it encodes.
   cost: A hard stop that waits for the user whenever a handed-over test looks wrong, rather than editing it.
@@ -76,8 +76,9 @@ a bug in.
 1. **RED** — one test, one behaviour, a name that says what the behaviour is.
 2. **Verify RED** — run it. It MUST fail, and fail *because the behaviour is
    missing*, not because of a typo or a missing import. A test that passes on
-   arrival is pinning something that already works: fix the test. A test that
-   errors is not yet a test: fix the error and re-run until it fails cleanly.
+   arrival is pinning something that already works; a test that errors is not
+   yet a test. Fix either one only if you wrote it — a handed-over test is the
+   contract, so report it and wait.
 3. **GREEN** — the simplest code that passes it. No speculative parameters, no
    options object, nothing the next test might want.
 4. **Verify GREEN** — run it, then run the rest of the suite. All green, output

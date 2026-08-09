@@ -1,6 +1,6 @@
 ---
 name: test-review
-description: Judge whether a test suite would actually fail if the behaviour it covers broke. Use when reviewing test code in a change or pull request, auditing test quality across a package or codebase, investigating flaky or brittle tests, or when a test failure looks caused by the test's design rather than by a bug in the code under test.
+description: Judge whether a test suite would actually fail if the behaviour it covers broke. Use when reviewing test code in a change or pull request, auditing test quality across a package or codebase, investigating flaky or brittle tests, or when a test failure looks caused by the test's design rather than by a bug in the code under test. `tdd` governs instead when you are implementing against the tests, where a suspect test escalates rather than being fixed.
 admission:
   provides: A test-adequacy lens — the criteria that separate a test which would fail if the required behaviour broke from one that passes regardless, plus the smells whose remedy is the production code rather than the test. Produces findings ranked by severity, each naming the file, the line, and the concrete fix.
   cost: A read of the production code behind the tests, widening from the named files to the package and, where the scope says so, to the whole codebase.

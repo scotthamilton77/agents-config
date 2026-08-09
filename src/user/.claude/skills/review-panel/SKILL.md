@@ -10,7 +10,7 @@ admission:
 A round is a panel of single-lens reviewers. This skill routes: it maps the target to artifact
 classes, picks each class's lenses, fans out one reviewer per lens at the declared grade and
 transport, and assembles the reports into the round verdict. It holds no lens expertise itself —
-depth belongs to the reviewer, and to a dedicated skill where a lens names one.
+depth belongs to the reviewer.
 
 ## Artifact classes
 
@@ -25,9 +25,7 @@ and transports are data in `contracts.json`:
 
 A target spanning classes gets one round per class, each judging the files of that class and
 carrying its own verdict. A target no class fits is refused (`unknown-class`): pick the nearest
-contract explicitly or extend `contracts.json` — never improvise a lens set. A lens entry may
-carry a `skill` field naming a skill the reviewer must apply; the mandate then only scopes the
-lens, and the named skill supplies the depth.
+contract explicitly or extend `contracts.json` — never improvise a lens set.
 
 Each panel mixes model tiers — hard-reasoning lenses on frontier models, mechanical walks on
 mid-tier — and spans two vendors, because blind spots correlate inside a vendor. A lens's declared
@@ -88,6 +86,7 @@ The emitter refuses rather than producing a prompt it knows is unsound. Refusals
 | `bad-prior-verdict` | An earlier verdict is unreadable, fails the verdict schema, or is for another claim, class, or a non-earlier round. |
 | `ledger-gap` | An earlier mechanical finding has no disposition, or a disposition is outside the closed set. |
 | `unsupported-rebuttal` | A finding is marked rebutted with no evidence. A rebuttal without evidence is a disagreement. |
+| `emitter-failure` | Any other fault while emitting — an unreadable contracts file, a schema that will not parse. The message carries what broke; no prompt is written. |
 
 ## What a prompt contains
 
@@ -98,8 +97,10 @@ reviewed content, and the exact-JSON contract for one lens report. Supporting da
 the target pointer, retained categories, prior findings — follows inside a marked section the
 instructions declare to be data, not instructions. That section is context, never the whole
 review: the reviewer reads the target itself, and whatever surrounding material its scope
-requires, directly from the repository. No other lens's mandate appears, and no house rulebook
-text does either.
+requires, directly from the repository. No other lens's mandate appears, and no ambient house
+context does either — no laws, no decision matrix, no hard lines. A lens's own mandate is the only
+route by which a house-specific standard reaches the reviewer, because a lens that states no test
+has nothing decidable to judge against.
 
 ## Assembling the round verdict
 
