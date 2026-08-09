@@ -10,9 +10,8 @@ exists; or `--tools=` selects any of them).
 - `USER-CORE.md.template` — this directory's only top-level template, and
   include-only: each tool's own `AGENTS.md.template` (or `GEMINI.md.template`
   for Gemini) pulls it in with a `DYNAMIC-INCLUDE` marker, and the
-  installer's template-flattening phase (Phase 6.5/6.75) drops the
-  standalone copy during staging, so it never lands on its own as
-  `~/.<tool>/USER-CORE.md`.
+  installer's template-flattening step drops the standalone copy during
+  staging, so it never lands on its own as `~/.<tool>/USER-CORE.md`.
 - `skills/` — each top-level entry copied; **names must be unique** across the
   combined tree (shared + tool-specific + active plugins). Collisions are a
   **fatal install error**.
