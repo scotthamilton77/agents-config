@@ -57,7 +57,7 @@ installer/
 │   ├── templates.py             DYNAMIC-INCLUDE flattening (all three directive forms)
 │   ├── staging.py               Phases 1–6.9: source-walk → StagingPlan; parameterised by ToolAdapter
 │   ├── sync.py                  Phase 7: hash-compare, diff, prompt, backup, write; reports per-item InstallOutcome
-│   ├── run.py                   Run composition: install_pipeline + prune_pipeline + record_receipt
+│   ├── run.py                   Run composition: install_pipeline + install_plugin_routes + deploy_clis/prune_clis + prune_pipeline + record_receipt
 │   ├── deploy_gate.py           run_admission_gate: partitions staged content by admission record, weighs the surface budget, runs the conflict audit — called directly from cli.py, on the live install path
 │   ├── admission.py             Admission-record parsing/validation that deploy_gate.py runs against
 │   ├── ownership.py             Wholesale-vs-merge-target classifier (which items the receipt records)

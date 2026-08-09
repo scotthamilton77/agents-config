@@ -10,7 +10,7 @@
 | Term | Meaning |
 |---|---|
 | `StagingPlan` | The aggregate root of the in-memory model: a `dict[Path, StagedItem]` (plus the target `Tool`). One is built per detected tool. **In-memory only** — it has no on-disk form in the operational path. |
-| `StagedItem` | One planned destination file. The unit the merge + sync engines operate on. |
+| `StagedItem` | One planned destination entry — a file, or, when `kind == DIR`, a directory. The unit the merge + sync engines operate on. |
 | `Provenance` | `(kind: "tool" \| "plugin", name: str)` — preserves whether a `StagedItem` came from a tool's source tree or a plugin overlay, through the tool-vs-plugin registry asymmetry. |
 | `FileKind` | The enum classifying a staged file. The **primary** merge-dispatch key. |
 | Namespace | The managed sub-dir (`commands` / `skills` / `agents` / `rules` / `hooks` / `workflows`) or `None` when the tool root itself owns the file. The **secondary** merge-dispatch key. |

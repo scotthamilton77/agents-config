@@ -16,7 +16,7 @@
 | `ToolAdapter` | The protocol abstracting everything the engine needs to know about a tool: source dir, dest dir, detection, scoped namespaces, namespace filtering, post-staging transforms. Per-tool adapters live in `tools/`. |
 | `PluginAdapter` | The protocol for an optional plugin that overlays extra content onto the staging plan. Discovered dynamically by scanning `src/plugins/<name>/`; string-keyed (NOT enumerated). |
 | `StagingPlan` | The **in-memory** replacement for `install.sh`'s temp-dir staging: a `dict[Path, StagedItem]` plus provenance. Built per tool, mutated by plugin overlay + transforms, then flushed to disk by `sync`. Never an on-disk container in the operational path (`--dump-stage` materialises it for debugging only). |
-| `StagedItem` | One planned destination file: its content, `FileKind`, namespace, and `Provenance`. The unit the merge + sync engines operate on. |
+| `StagedItem` | One planned destination entry — a file, or, when `kind == DIR`, a directory: its content, `FileKind`, namespace, and `Provenance`. The unit the merge + sync engines operate on. |
 | `MergeStrategy` | A collision-resolution class (append-rules, JSON-union, fatal, last-wins-warn, last-wins-silent), each in its own module, dispatched by the registry on `(FileKind, namespace)`. |
 | `FileKind` | The enum classifying a staged file (`NAMESPACED_MD`, `SETTINGS_JSON`, `JSONC`, `TOML`, `OTHER`, `DIR`) — the primary merge-dispatch key. |
 | `Provenance` | `(kind: "tool" \| "plugin", name: str)` on each `StagedItem` — preserves tool-vs-plugin origin through the plan. |
