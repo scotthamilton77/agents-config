@@ -56,8 +56,12 @@ ships from its own repository and is installed separately — see
 setup:
 
 ```bash
-work create --raw --title "..." --description "..." --type feature --priority P2
+work create feat --title "..." --description "..." --priority P2 --parent <parent-id>
 ```
+
+`feat`, `bugfix`, and `chore` are this repo's item nouns (`work create --help`
+lists yours). A tracked parent supplies the track by inheritance; with no
+parent, use `--orphan --track <name>` instead.
 
 Tracked work carries dependencies and survives context compaction, so it
 resurfaces intact across sessions and agent handoffs. In-session step tracking is

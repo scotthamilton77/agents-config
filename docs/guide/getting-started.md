@@ -15,17 +15,18 @@ as prerequisites are now optional:
 - **[steveyegge/beads](https://github.com/steveyegge/beads)** — the `bd` work
   tracker. The `work` CLI, which ships from its own repository and is not
   installed by this one, is a facade over `bd`; every substantive `work` verb
-  refuses with `E_NO_WORKSPACE` until `bd` is installed and initialized. Five
-  deployed skills reach for `work`, four of them shipping to every detected
-  tool (`to-tickets`, `where-does-this-fit`, `triaging-discovered-work`,
-  `prototype`) and one Claude Code only (`wayfinder`). Each degrades
-  gracefully without a tracker: `to-tickets` and `wayfinder` fall back to a
-  local markdown file, `where-does-this-fit` falls back to reading whatever
-  tracker is actually in use or asking you directly, `triaging-discovered-work`
-  falls back to a dated backlog-file entry, and `prototype` falls back to
-  recording its verdict in the commit message. Nothing else in the installed
-  instruction surface reaches for `work`. Skip the tracker if you don't want
-  one; see [Configuration](./configuration.md) for setup once you do.
+  — anything but `init` and `guide` — refuses with `E_NO_WORKSPACE` until `bd`
+  is installed and initialized. Five deployed skills reach for `work`, four of
+  them shipping to every detected tool (`to-tickets`, `where-does-this-fit`,
+  `triaging-discovered-work`, `prototype`) and one Claude Code only
+  (`wayfinder`). Each degrades gracefully without a tracker: `to-tickets` and
+  `wayfinder` fall back to a local markdown file, `where-does-this-fit` falls
+  back to reading whatever tracker is actually in use or asking you directly,
+  `triaging-discovered-work` falls back to a dated backlog-file entry, and
+  `prototype` falls back to recording its verdict in the commit message.
+  Nothing else in the installed instruction surface reaches for `work`. Skip
+  the tracker if you don't want one; see [Configuration](./configuration.md)
+  for setup once you do.
 - **[obra/superpowers](https://github.com/obra/superpowers)** — no longer a
   dependency. The rules and skills that referenced its process skills have been
   retired; nothing that installs today calls into it.
