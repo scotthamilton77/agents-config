@@ -186,7 +186,7 @@ Beyond copying rule files into each tool's `rules/` directory, the installer can
 
 The mechanism is implemented in `templates.py`, and the design it encodes is that Claude keeps a loose `rules/` tree while Codex, Gemini and OpenCode receive their rules inlined. **No tool template carries either marker today** — every one of them includes only the shared `USER-CORE.md.template` — so nothing is inlined and nothing is dropped, and a shared rule currently lands as a loose file in three config directories whose tools the installer's own comments say do not read one.
 
-The practical consequence for an author: a shared rule reliably reaches Claude Code, and reaching the other three depends on wiring that is not in place. Read the `*.md.template` files before claiming otherwise; two comments in the installer describe the intended state rather than the current one.
+The practical consequence for an author: a shared rule reliably reaches Claude Code, and reaching the other three depends on wiring that is not in place. Read the `*.md.template` files before claiming otherwise — the marker grammar exists and is fully implemented in the installer (`templates.py`), independent of whether any shipped template currently carries it.
 
 ---
 
