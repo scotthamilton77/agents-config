@@ -50,12 +50,19 @@ handing work to a subagent standing policy rather than something to ask about.
 ## 1. Capture — tooling, not enforcement
 
 Durable work belongs in a tracker that outlives the session. This repo uses
-[beads](https://github.com/steveyegge/beads) through the `work` CLI, which the
-installer puts on your PATH:
+[beads](https://github.com/steveyegge/beads) through the `work` CLI, which
+ships from its own repository and is installed separately — see
+[Configuration](./configuration.md#4-wire-up-work-tracking-optional) for
+setup:
 
 ```bash
-work create --raw --title "..." --description "..." --type feature --priority P2
+work create feat --title "..." --description "..." --priority P2 --parent <parent-id>
 ```
+
+`feat` is one of this repo's item nouns — `work create --help` lists yours,
+and `.work/config.toml`'s `[taxonomy.nouns.*]` is the authority for this repo.
+A tracked parent supplies the track by inheritance; with no parent, use
+`--orphan --track <name>` instead.
 
 Tracked work carries dependencies and survives context compaction, so it
 resurfaces intact across sessions and agent handoffs. In-session step tracking is

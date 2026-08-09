@@ -40,7 +40,7 @@ Where this README and the source tree disagree, believe the source tree.
 
 Nothing else is required. Two related tools are optional:
 
-- **[steveyegge/beads](https://github.com/steveyegge/beads)** — the `bd` tracker. The `work` CLI, which ships from its own repository and is a facade over `bd`, needs it to function; this repo installs neither, and nothing in the installed instruction surface requires either.
+- **[steveyegge/beads](https://github.com/steveyegge/beads)** — the `bd` tracker. The `work` CLI, which ships from its own repository and is a facade over `bd`, refuses every substantive verb until `bd` is installed and initialized; this repo installs neither. Five deployed skills reach for `work` and each degrades to its own fallback without a tracker instead of failing — see [Getting Started](./docs/guide/getting-started.md#prerequisites) for what each fallback is.
 - **[obra/superpowers](https://github.com/obra/superpowers)** — not a dependency. Nothing installed invokes its process skills.
 
 The `codex` plugin under `src/plugins/` is auto-detected when `~/.codex/` exists — a `codex` binary on PATH alone will not trigger it — and its skill assumes the [Codex CLI](https://github.com/openai/codex) is available.
@@ -132,6 +132,9 @@ tool-scoped namespace with no shared variant:
 - `/clean-up-git [filter]` - Adjudicate which git worktrees and branches to
   delete: one dated table with each worktree paired to its branch and every
   deletion's cost stated, then a stop for your call before anything is touched
+- `/zoom-out [area]` - Map the code in view (or a named area) to the layer
+  above it: relevant modules, their callers, in the project's own glossary
+  vocabulary
 
 See [`src/user/.claude/commands/`](./src/user/.claude/commands/) for the
 authoritative set.
