@@ -51,10 +51,8 @@ inherits that user identity. There is no App-token path in any write call site.
 **No write path exists** in `src/**`, `scripts/**`, `packages/installer/**`,
 `packages/workcli/**`, `packages/grind/**`, or `packages/pdlc/**`: a grep for
 `gh`, `GH_TOKEN`, and `GITHUB_TOKEN` across those trees returns nothing.
-`.github/copilot-instructions.md` (moved there from the inert
-`.github/instructions/*.instructions.md` by `agents-config-9k9.215.14`) is a
-single line of reviewer guidance ("search around for other instances of the
-issue") and grants nothing.
+`.github/copilot-instructions.md` is a single line of reviewer guidance
+("search around for other instances of the issue") and grants nothing.
 
 **Count: eight owner-credentialed write paths, one App-attested path.** Three of
 the eight carry a machine-emitted marker — the `_post_reply` issue comment or
