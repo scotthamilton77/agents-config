@@ -18,5 +18,5 @@
   {"query": "review this PR using the quality-reviewer agent", "should_trigger": false},
   {"query": "I want to add a new model to the routing table you keep for anthropic model selection in claude-api docs", "should_trigger": false},
   {"query": "can you dispatch three parallel subagents to review different files", "should_trigger": false},
-  {"query": "just answer this quick question about kimi's context window, no need to run anything", "should_trigger": false}
+  {"query": "just answer this quick question about kimi's context window, no need to run anything", "should_trigger": true}
 ]

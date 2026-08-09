@@ -20,7 +20,7 @@ This skill takes the current conversation context and codebase understanding and
 
 1. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout the spec, and respect any ADRs in the area you're touching.
 
-2. Sketch out the seams at which you're going to test the feature. Existing seams should be preferred to new ones. Use the highest seam possible. If new seams are needed, propose them at the highest point you can. The fewer seams across the codebase, the better — the ideal number is one.
+2. Sketch out the seams at which you're going to test the feature. Existing seams should be preferred to new ones. Use the highest seam possible. If new seams are needed, propose them at the highest point you can — every seam you add is a permanent interface each caller and test has to learn, so add one only when nothing existing reaches the behaviour.
 
 Check with the user that these seams match their expectations.
 
@@ -58,7 +58,7 @@ For every criterion, apply the edge-case taxonomy — resolve or explicitly rule
 
 An ordered list of slices. Each slice is the **smallest independently mergeable** unit of work and **cites the acceptance-criterion IDs it satisfies**. Order so each slice's dependencies land before it.
 
-**Size tripwire:** if the spec exceeds **400 lines** or **8 slices**, split it into a parent spec plus child specs (one child per coherent slice group), each child carrying its own Acceptance Criteria and Ordered Slice List.
+**Size tripwire:** if the spec exceeds **400 lines** or **8 slices**, split it into a parent spec plus child specs (one child per coherent slice group), each child carrying its own Acceptance Criteria and Ordered Slice List. Past roughly that size the implementer of one slice can no longer hold the whole document in a single session, and criteria start being satisfied against a half-remembered spec.
 
 ## Out of Scope
 

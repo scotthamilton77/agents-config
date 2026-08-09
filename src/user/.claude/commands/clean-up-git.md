@@ -162,7 +162,7 @@ adding that worktree to the cleanup, and taking that step yourself would delete
 a directory nobody named. Where a remedy would add a target the user did not
 name, relay it and stop. Otherwise follow it. Clearing the rest of the selection
 is never the remedy: a refusal takes only its own name out of the run, so
-everything else named was deleted on the first call.
+everything else named was already deleted by the `--cleanup` run that hit it.
 
 **Exit 0 is a claim, not a result.** State what was deleted and what was
 verified. **Exit 1 does not mean nothing happened** — report the deletions that

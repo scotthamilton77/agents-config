@@ -1,6 +1,6 @@
 ---
 name: improve-codebase-architecture
-description: Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick.
+description: Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever candidate the user picks. Use when the user asks for an architecture review, or for the refactors that would make a codebase more testable.
 disable-model-invocation: true
 admission:
   provides: A bounded architectural survey that ends in a decision — at most five deepening candidates, each with a before/after visualisation and a recommendation strength, then a grilling loop over the one the user picks. Unprompted, the model reviews the code in front of it; this reads commit history for hot spots, applies the deletion test, and refuses to propose interfaces before the user has chosen a candidate.

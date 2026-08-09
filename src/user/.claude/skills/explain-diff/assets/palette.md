@@ -33,7 +33,7 @@ at the top of `theme.css`.
 - Diff lines inside a `<pre>`: wrap a line in `<span class="diff-add">…</span>` or
   `<span class="diff-del">…</span>` (each renders as a full-width tinted line).
 
-## Diagrams (HTML only — never ASCII)
+## Diagrams
 - `.diagram` — framed figure box; add a `<div class="caption">` at the bottom.
 - `.flow` — horizontal row of steps. Children: `.node` boxes and `.arrow`
   separators (`.arrow.down` for vertical). Mark the changed step `.node.hot`.

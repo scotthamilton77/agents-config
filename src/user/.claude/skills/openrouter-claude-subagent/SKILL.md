@@ -1,6 +1,6 @@
 ---
 name: openrouter-claude-subagent
-description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, GPT), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, and not for Codex or Gemini CLI. When instructing-subagents' brief mandates a written report file, extend this skill's read-only default with a Write grant scoped to that one path.
+description: Use when launching a run on an OpenRouter-hosted model, or when working out which one fits a task and what it costs. Apply when the user names OpenRouter or a model it hosts (Kimi, GLM, Gemini, GPT mini tiers), when another skill sends a dispatch here, or when a model's price, context window, or effort support needs looking up rather than recalling. Not for deciding whether to leave Claude in the first place, not for Codex or Gemini CLI, and not for the Claude models and large GPT tiers this transport refuses. When instructing-subagents' brief mandates a written report file, extend this skill's read-only default with a Write grant scoped to that one path.
 admission:
   provides: A nested Claude Code harness whose model traffic is repointed at a non-Anthropic model, plus the stream repair that makes the reply actually arrive — so a task runs on another vendor's weights while keeping this harness's tool loop, permission system, and file editing.
   cost: A local proxy process for the life of each nested run, and an OpenRouter API key the user must supply and pay against. Node must be installed, and the model routing table needs a refresh whenever OpenRouter reprices or retires a model.
@@ -115,11 +115,6 @@ Not every model accepts every level. `references/model-routing.md` lists the
 levels each one takes — pick from that list, since two of the listed models
 accept no level at all and others are missing the middle of the range. Trust
 the recorded value rather than re-verifying at dispatch.
-
-Whether `--effort` actually reaches the model as that level is unverified: it
-travels through an Anthropic-compatible skin that speaks thinking budgets, not
-`reasoning.effort`. Pass it regardless — it costs nothing — and treat model
-*choice* as the reliable capability lever.
 
 ## Example
 

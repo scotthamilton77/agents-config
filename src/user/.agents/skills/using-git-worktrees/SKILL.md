@@ -80,7 +80,8 @@ names it. That refusal is information — go to that worktree rather than around
 it.
 
 If creation fails on permissions, the sandbox blocked it. Say so and work in
-place; do not retry variations.
+place; do not retry variations — the denial is on the operation, not on the
+path you chose, so every variation fails the same way.
 
 ## 3. Working inside one
 

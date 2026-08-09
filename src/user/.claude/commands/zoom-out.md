@@ -17,4 +17,4 @@ Drift policy: rewrite-and-divorce — upstream deleted this skill after the pinn
 
 `$ARGUMENTS` optionally names the area to map; empty means the code already in view.
 
-I don't know this area of code well. Go up a layer of abstraction. Give me a map of all the relevant modules and callers, using the project's domain glossary vocabulary.
+I don't know this area of code well. Go up a layer of abstraction. Give me a map of all the relevant modules and callers, using the project's domain glossary vocabulary — or, if the project has no glossary, the names the code already uses, and say that is what you fell back to.

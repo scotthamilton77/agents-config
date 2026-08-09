@@ -49,7 +49,7 @@ Each candidate is one `<article>`:
 - **Before / After diagram** — the centrepiece. Two columns, side by side. See patterns below.
 - **Problem** — one sentence. What hurts.
 - **Solution** — one sentence. What changes.
-- **Wins** — bullets, ≤6 words each. e.g. "Tests hit one interface", "Pricing logic stops leaking", "Delete 4 shallow wrappers".
+- **Wins** — bullets, ≤6 words each; longer than that and they restate the Solution line instead of naming a distinct gain. e.g. "Tests hit one interface", "Pricing logic stops leaking", "Delete 4 shallow wrappers".
 - **ADR callout** (if applicable) — one line in an amber-tinted box.
 
 No paragraphs of explanation. If the diagram needs a paragraph to be understood, redraw the diagram.
@@ -106,10 +106,6 @@ One larger card. Candidate name, one sentence on why, anchor link to its card. T
 ## Tone
 
 Plain English, concise — but the architectural nouns and verbs come straight from the `/codebase-design` skill. Concision is not an excuse to drift.
-
-**Use exactly:** module, interface, implementation, depth, deep, shallow, seam, adapter, leverage, locality.
-
-**Never substitute:** component, service, unit (for module) · API, signature (for interface) · boundary (for seam) · layer, wrapper (for module, when you mean module).
 
 **Phrasings that fit the style:**
 

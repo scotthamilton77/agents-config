@@ -36,7 +36,7 @@ If the focus above is empty, infer it from the conversation and state your infer
 
 ## Output location
 
-Write the file to `${TMPDIR:-/tmp}/handoff-<UTC-timestamp>-<short-slug>.md` where:
+Write the file to `${TMPDIR:-/tmp}/handoff-<UTC-timestamp>-<short-slug>.md` — outside the repository, so a document carrying the whole session's contents is never swept into a commit. In that name:
 
 - `<UTC-timestamp>` is the value captured in the snapshot above (compact form, e.g. `20260523T143052Z`)
 - `<short-slug>` is a 3–5 word kebab-case summary of the next-session focus

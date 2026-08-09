@@ -1,6 +1,6 @@
 ---
 name: diagnosing-bugs
-description: Diagnosis loop for hard bugs and performance regressions. Use when the user says "diagnose"/"debug this", or reports something broken/throwing/failing/slow.
+description: Diagnosis loop for hard bugs and performance regressions. Use when the user says "diagnose"/"debug this", or reports something broken/throwing/failing/slow whose cause is not already obvious.
 admission:
   prevents: An agent reading code to build a theory before it holds a command that goes red on the reported bug, then shipping a fix nothing can falsify — and, when a fix fails, stacking further attempts on a hypothesis space the evidence has already exhausted.
   cost: A hard stop before hypothesising that spends a loop-building pass even on bugs whose cause turns out to be obvious.
@@ -43,7 +43,7 @@ This skill has you show commands, outputs and captured artifacts. **Redact every
 
 **This is the skill**; everything else is mechanical. A **tight** signal that goes red on _this_ bug finds the cause for you — bisection, hypothesis-testing and instrumentation all just consume it. Without one, staring at code will not save you.
 
-Spend disproportionate effort here. **Be aggressive. Be creative. Refuse to give up.** `references/feedback-loops.md` ranks ten ways to construct a loop, in the order to try them, plus tightening, non-determinism, and what to ask for when no loop is possible.
+Spend disproportionate effort here. `references/feedback-loops.md` ranks ten ways to construct a loop, in the order to try them, plus tightening, non-determinism, and what to ask for when no loop is possible.
 
 ### Completion criterion — a tight loop that goes red
 

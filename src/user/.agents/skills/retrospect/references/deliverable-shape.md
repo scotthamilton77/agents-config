@@ -38,4 +38,4 @@ Section order and table shape for what a retrospective hands back.
 > | Record the newly-seen test-tautology pattern in the existing testing guidance | Agent context | Context gap | The testing doc already read at that decision point | Med | Low | P1 |
 
 Note what the example does *not* contain: a fourth row proposing a new rule that
-restates the AGENTS.md rule already being ignored. That is the dedup test working.
+restates the ignored one — the dedup test working.

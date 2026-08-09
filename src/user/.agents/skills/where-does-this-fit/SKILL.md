@@ -1,6 +1,6 @@
 ---
 name: where-does-this-fit
-description: Use when a user asks for the bigger picture for a context, or how a specific work item (task, epic, story, feature, bug, PR, issue — open, in-progress, or complete) fits into the broader project architecture, goals, or structural context, rather than just the narrow scope of the item itself.
+description: Use when a user asks how a specific work item (task, epic, story, feature, bug, PR, issue — open, in-progress, or complete) fits into the broader project architecture, goals, or structural context, rather than just the narrow scope of the item itself.
 admission:
   provides: A structural situating pass over one work item — which goal it serves, what container owns it, what sibling work surrounds it, what it touches, and what conflicts or stale assumptions a human has to resolve first. Produces the four-layer explanation and an explicit conflict callout, from the tracker and the project's own documents rather than from recall.
   cost: Context footprint only, bounded by the caps content-lint enforces.

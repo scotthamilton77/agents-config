@@ -1,6 +1,6 @@
 ---
 name: retrospect
-description: Use when the user wants to reflect on the current session and make future ones better — a retrospective, retro, or post-mortem on how it went. Apply when they ask what slowed things down, wasted tokens, or caused round-trips, or what to improve about the agent's context (CLAUDE.md, AGENTS.md, memories, code or design docs), tool availability and selection, or how they prompt — and when they want what worked reinforced. Triggers on "retrospect", "retro", "post-mortem", "how did this session go", "how could this have gone smoother", "what should I change". Not for a single in-the-moment correction, and not for a retro on a project unrelated to this session.
+description: Use when the user wants to reflect on the current session and make future ones better — a retrospective, retro, or post-mortem on how it went. Apply when they ask what slowed things down, wasted tokens, or caused round-trips, or what to improve about the agent's context (CLAUDE.md, AGENTS.md, memories, code or design docs), tool availability and selection, or how they prompt — and when they want what worked reinforced. Triggers on "retrospect", "retro", "post-mortem", "how did this session go", "how could this have gone smoother", "what should I change about how we work". Not for a single in-the-moment correction, and not for a retro on a project unrelated to this session.
 disable-model-invocation: true
 admission:
   provides: The only pass that reads the session transcript for cause. Size and budget instruments measure artifacts; review gates measure a change; neither can see that a round-trip happened because context was buried, a tool went unused, or a request was under-specified. Produces a ranked set of fixes, each routed by root cause and each with a landing site that outlives the session.
@@ -82,7 +82,6 @@ tokens. Trace each waste back to one of the three targets.
 ### 4. Root-cause and route each finding
 
 For every problem, name the root cause from the table above, then the correct fix.
-Run the dedup test before proposing any rule, skill, or memory.
 
 ### 5. Mark what went well — and why
 
@@ -106,7 +105,7 @@ say where it lands:
 | Context repair | The file actually read at the decision point — the project's AGENTS.md/CLAUDE.md, a code or design doc. Right content in the wrong home is still a miss. |
 | A lesson that must outlive this session | Durable memory: one fact per entry, with why it matters and how to apply it. |
 | A mechanical gate | A hook, CI check, lint rule, or script — proposed as work to be done, never claimed as done. |
-| A new rule, skill, or command | The project's admission bar, where one exists — state what it prevents or provides, what it costs, and what observation would remove it; default to declining. Where no formal gate exists, put the same record in front of the user for a direct decision instead. Run the dedup test first. |
+| A new rule, skill, or command | The project's admission bar, where one exists — state what it prevents or provides, what it costs, and what observation would remove it; default to declining. Where no formal gate exists, put the same record in front of the user for a direct decision instead. |
 | A prompt pattern | Stated to the user as their lever. Nothing lands in the agent's context. |
 
 Then **offer** to action the approved items. Do not auto-apply; the user decides
@@ -116,16 +115,3 @@ what lands.
 
 See [references/deliverable-shape.md](references/deliverable-shape.md) for the
 section order, the recommendations table, and a worked example.
-
-## Common mistakes
-
-| Mistake | Fix |
-|---|---|
-| Recap instead of retrospective | Every finding must yield a fix or a reinforcement, not just a description |
-| "Write another rule" for a compliance failure | Recommend a mechanical gate; run the dedup test first |
-| A recommendation with no landing site | Name the file, the gate, or the memory — or it did not happen |
-| False praise in "what went well" | Name only genuine wins, each with a why — or say "nothing notable" |
-| Blaming the user for prompting gaps | Frame prompt findings as the user's lever, neutrally |
-| Findings with no priority | Always rank by impact vs effort; lead with the top one |
-| Fabricating session detail after compaction | Work only from what's in context; state the gap honestly |
-| Spotlight swallows the report | Honour the focus, but still sweep everything else briefly |

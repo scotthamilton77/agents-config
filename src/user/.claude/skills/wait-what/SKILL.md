@@ -1,6 +1,6 @@
 ---
 name: wait-what
-description: Stop. That last message did not land — re-pitch it.
+description: Use when the user says the last message did not land — re-pitch it with orienting context, in plain terms, using the project's own language.
 disable-model-invocation: true
 admission:
   prevents: A re-explanation delivered in the register that just failed — same jargon, no orienting context, terms that are not the project's. The default response to "I don't follow" is to restate it at greater length, which fails the same way and costs another round-trip.
