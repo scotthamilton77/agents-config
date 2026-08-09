@@ -12,11 +12,18 @@ Source: skills/engineering/domain-modeling/
 Upstream: https://github.com/mattpocock/skills @ 84fdeffd12f2ee307994d1eb6feb48173b6e0502
 Last sync: 2026-08-07
 Drift policy: local-fork — CONTEXT-FORMAT.md carries local additions, do not re-sync it
-Note: ADR-FORMAT.md is byte-identical to the pinned commit. SKILL.md is too, once this
-header and the admission record are stripped — they are the only local additions to it, and
-the installer strips both at deploy. CONTEXT-FORMAT.md is a local superset (relationships,
-example dialogue, flagged ambiguities) carried over from grill-with-docs, which inlined
-this skill's content until 2026-08-07; a blind resync would revert those sections.
+Note: the pin covers body bytes only; front matter is house-authored. ADR-FORMAT.md is
+byte-identical to the pinned commit, and so is this SKILL.md from the `# Domain Modeling`
+heading down; this header and the admission record are stripped at deploy.
+
+CONTEXT-FORMAT.md is a local superset of the pinned file. Local passages, verified by
+diffing against the pinned commit: in the Structure example, the `## Relationships`,
+`## Example dialogue` and `## Flagged ambiguities` blocks and the term-description
+placeholder; in Rules, the `Flag conflicts explicitly`, `Show relationships` and
+`Write an example dialogue` entries, plus local rewordings of `Be opinionated` and
+`Keep definitions tight`. Everything else in that file reproduces the pin, including
+the whole `Single vs multi-context repos` section. A blind resync would revert the
+local passages.
 -->
 
 # Domain Modeling

@@ -43,15 +43,24 @@ resync, bump the SHAs and the date in the same change.
 
 Bundled resources (scripts/, references/, examples/) were byte-identical
 copies of the upstream artifacts at the SHAs above at initial import.
-Documented divergences since:
+
+Vendoring is per file, and the pin covers body bytes only: front matter and
+the surrounding prose of this skill are house-authored, and a vendored body
+is subordinate to both. Not carried from upstream: skill-creator's
+references/schemas.md, which specifies the evals, grading, metrics and
+benchmark JSON that upstream's eval harness reads — no such harness exists
+here, and the one eval shape this skill uses is defined inline in
+references/testing-methodology.md.
+
+Documented divergences in the vendored bodies that are carried:
   - scripts/render-graphs.js — patched to exit non-zero on render failure
     (upstream bug; not yet fixed in the source repo). Later given a
     `module.exports` and a `require.main === module` guard so its pure
     helpers are reachable from scripts/render-graphs_test.js.
   - references/anthropic-best-practices.md, references/persuasion-principles.md,
-    references/testing-skills-with-subagents.md, references/schemas.md — each
-    gained a "## Contents" TOC near the top per the project skill primer's
-    >100-line requirement; existing content preserved.
+    references/testing-skills-with-subagents.md — each gained a "## Contents"
+    TOC near the top per the project skill primer's >100-line requirement;
+    existing content preserved.
   - references/testing-skills-with-subagents.md — line "Add symptoms of ABOUT
     to violate." repaired to "Add symptoms of when you're ABOUT to violate
     the rule." (upstream truncation typo).
@@ -228,5 +237,7 @@ untested code.
 | `anti-patterns.md` | Reviewing; adding a flowchart or example |
 | `anthropic-best-practices.md` | Anthropic's longer-form guidance |
 | `persuasion-principles.md` | Why discipline prose sticks |
-| `schemas.md` | Eval or grading JSON |
 | `graphviz-conventions.dot` | Flowchart style |
+
+`anthropic-best-practices.md` is vendored at a pin: this skill and your
+standing instructions win wherever it disagrees.

@@ -1,6 +1,6 @@
 ---
 name: codebase-design
-description: Shared vocabulary for designing deep modules. Use when the user wants to design or improve a module's interface, find deepening opportunities, decide where a seam goes, make code more testable or AI-navigable, or when another skill needs the deep-module vocabulary.
+description: Shared vocabulary for designing deep modules. Use when the user wants to design or improve a module's interface, deepen a shallow module against its dependencies, decide where a seam goes, make code more testable through its interface, or when another skill needs the deep-module vocabulary.
 admission:
   provides: A fixed vocabulary for module design — module, interface, implementation, depth, seam, adapter, leverage, locality — each pinned against the near-synonyms it must not be swapped for, so callers designing or restructuring code name the same distinctions the same way instead of re-deriving them per session.
   cost: A parallel subagent run per alternative, whenever a design is worth doing twice.
@@ -12,8 +12,11 @@ Source: skills/engineering/codebase-design/
 Upstream: https://github.com/mattpocock/skills @ 84fdeffd12f2ee307994d1eb6feb48173b6e0502
 Last sync: 2026-08-07
 Drift policy: accept-periodic-resync
-Note: SKILL.md, DEEPENING.md and DESIGN-IT-TWICE.md are byte-identical to the pinned
-commit apart from this header and the admission record, both stripped at deploy.
+Note: the pin covers body bytes only. DEEPENING.md and DESIGN-IT-TWICE.md are
+byte-identical to the pinned commit, and so is this SKILL.md from the `# Codebase
+Design` heading down. Front matter is house-authored: the `description` is tuned to
+what this body serves and is not upstream's. This header and the admission record
+are stripped at deploy.
 -->
 
 # Codebase Design
