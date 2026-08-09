@@ -286,7 +286,7 @@ src/plugins/<plugin>/
   .<tool>/skills/                  # Plugin skills for one tool (e.g. .claude/skills/)
 ```
 
-Where a skill lives decides which tools receive it, and a skill is admitted or dropped the same way in every one of these trees — a plugin can be discovered, activated, and still install nothing. Two differences are worth knowing: `content-lint` treats a record-less artifact as fatal under `src/user/` but only reports it under `src/plugins/`, and a plugin's content deploys only into tools that are themselves detected.
+Where a skill lives decides which tools receive it, and a skill is admitted or dropped the same way in every one of these trees — a plugin can be discovered, activated, and still install nothing. Two differences are worth knowing: `content-lint` treats a record-less artifact as fatal under `src/user/` but only reports it under `src/plugins/`, and a plugin's content deploys only into tools that are themselves detected — by auto-detection. An explicit `--tools=` override bypasses detection entirely: `resolve_tools` (`installer/config.py`) skips the `is_detected` check and returns exactly the tools named, and the install pipeline stages and overlays into every tool in that resolved set regardless of whether it was actually detected.
 
 Skills are discovered exactly one level deep, so every immediate child of a skills root is one skill — never an organizational subfolder. Names must be unique across the combined tree (shared plus tool-specific plus every active plugin); a collision is a fatal install error, unlike the append-merge that rules get.
 
