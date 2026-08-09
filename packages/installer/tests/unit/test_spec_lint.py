@@ -1,9 +1,11 @@
 """The spec structural lint.
 
-Pins the three mechanical checks over ``docs/specs/*.md``: an
-Acceptance-criteria heading, ≥1 structured AC entry under it, and every
-slice heading citing ≥1 defined ID. Malformed fixtures live here, never
-under the repo's real ``docs/specs/``.
+Pins the mechanical checks over ``docs/specs/*.md``: an Acceptance-criteria
+heading, ≥1 structured AC entry under it, and every slice unit — a
+per-slice heading, or a bulleted slice-list item where a spec uses that
+shape instead — citing ≥1 defined ID. The charter's own filename is in
+scope regardless of date. Malformed fixtures live here, never under the
+repo's real ``docs/specs/``.
 """
 
 from __future__ import annotations
@@ -89,6 +91,95 @@ Cites AC1 right here, before any fenced example.
 
 ```markdown
 ### Slice Example
+```
+"""
+
+_BULLETED_SLICE_LIST_MISSING_CITATION = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Ordered slice list
+
+- **S0 — Setup.** Prepares the ground. No AC mentioned here.
+- **S1 — Build.** Does the work, flips AC1.
+"""
+
+_BULLETED_SLICE_LIST_ALL_CITE = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+- **AC2** The other thing works too.
+
+## Ordered slice list
+
+- **S0 — Setup.** Prepares the ground, flips AC1.
+- **S1 — Build.** Does the work, flips AC2.
+"""
+
+_BULLETED_SLICE_LIST_MIXED = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Ordered slice list
+
+- **S0 — Setup.** Prepares the ground. Flips AC1 eventually.
+- **S1 — Build.** Does unrelated infrastructure work with no AC citation.
+"""
+
+_PAREN_ONLY_MENTION_NOT_SLICE_HEADING = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+### Open verifications (first task of their slice)
+
+- **V1** Some prerequisite check with no AC mentioned.
+"""
+
+_SLICE_HEADING_WITH_TRAILING_PAREN_STILL_CHECKED = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+### Slice A — mint completeness (audit rows: mint a/b/c)
+
+No citation here at all.
+"""
+
+_SLICE_LIST_WITH_NESTED_SUBSECTION = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Ordered slice list
+
+- **S0 — Setup.** Flips AC1.
+
+### Open verifications (first task of their slice)
+
+- **V1** A prerequisite check with no AC mentioned, nested under its own heading.
+"""
+
+_SLICE_LIST_FENCED_BULLET_IS_INERT = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Ordered slice list
+
+Some intro prose, citing AC1 directly here.
+
+```markdown
+- **S0 — Example.** An illustrative bullet, not real.
 ```
 """
 
@@ -248,6 +339,90 @@ def test_non_spec_named_files_are_ignored(tmp_path: Path) -> None:
     (specs_dir / "README.md").write_text(_HEADING_ONLY, encoding="utf-8")
     assert discover_spec_files(specs_dir) == []
     assert lint_specs(specs_dir) == []
+
+
+def test_charter_filename_is_in_scope_regardless_of_date(tmp_path: Path) -> None:
+    """The charter's exact filename is in scope even though its date predates
+    ``GATE_START_DATE`` — it states AC4, so it is not exempt from AC4. A
+    different pre-floor filename stays exempt: the carve-in is this one
+    document, not a widened floor."""
+    specs_dir = tmp_path / "docs" / "specs"
+    specs_dir.mkdir(parents=True)
+    (specs_dir / "2026-07-21-harness-rework-way-forward.md").write_text(
+        _HEADING_ONLY, encoding="utf-8"
+    )
+    (specs_dir / "2020-01-01-ancient.md").write_text(_HEADING_ONLY, encoding="utf-8")
+    found = [p.name for p in discover_spec_files(specs_dir)]
+    assert found == ["2026-07-21-harness-rework-way-forward.md"]
+    violations = lint_specs(specs_dir)
+    assert len(violations) == 1
+    assert violations[0].file.name == "2026-07-21-harness-rework-way-forward.md"
+
+
+def test_slice_list_bullet_without_citation_fails_naming_the_bullet() -> None:
+    """The charter's own shape — one bulleted slice unit per slice, no
+    sub-headings — is checked per bullet: a bullet that cites nothing fails,
+    naming the bullet's own label."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _BULLETED_SLICE_LIST_MISSING_CITATION)
+    assert len(violations) == 1
+    assert violations[0].slice == "S0 — Setup."
+    assert "slice item cites no AC ID from the defined set" in violations[0].reason
+
+
+def test_slice_list_bullet_with_citation_passes() -> None:
+    """Inverse pair: every bulleted slice unit citing ≥1 defined ID passes."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert lint_spec_text(path, _BULLETED_SLICE_LIST_ALL_CITE) == []
+
+
+def test_slice_list_bullet_citation_does_not_cover_a_silent_neighbor() -> None:
+    """The cite-only gap the old whole-section check left open: one bulleted
+    slice citing an AC used to satisfy the check for the entire heading,
+    silencing every sibling bullet that itself cited nothing. Each bullet is
+    now its own unit — S0 citing AC1 no longer clears S1's silence."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _BULLETED_SLICE_LIST_MIXED)
+    assert len(violations) == 1
+    assert violations[0].slice == "S1 — Build."
+
+
+def test_heading_with_slice_only_in_parenthetical_is_not_slice_defining() -> None:
+    """A heading naming "slice" only inside a parenthetical qualifier about
+    something else — "Open verifications (first task of their slice)" — is
+    not itself a slice-defining heading and is never checked for a citation,
+    closing the Slice-heading trigger's false-positive case."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert lint_spec_text(path, _PAREN_ONLY_MENTION_NOT_SLICE_HEADING) == []
+
+
+def test_slice_heading_with_leading_slice_text_and_trailing_paren_still_checked() -> None:
+    """Paren-stripping narrows false positives without narrowing true ones: a
+    heading whose lead text says "Slice" is still checked even when it also
+    carries a trailing parenthetical, the real shape child specs use."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _SLICE_HEADING_WITH_TRAILING_PAREN_STILL_CHECKED)
+    assert len(violations) == 1
+    assert violations[0].slice == "Slice A — mint completeness (audit rows: mint a/b/c)"
+
+
+def test_slice_list_bullet_scan_does_not_cross_into_nested_subsection() -> None:
+    """A bullet living under a nested heading must not be swept up as a
+    top-level slice unit of the outer slice-list heading it sits inside —
+    the bullet scan stops at the next heading of any depth, not only a
+    same-or-shallower one. Without this, "V1" here would be misread as a
+    third, uncited slice of the outer "Ordered slice list" heading."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert lint_spec_text(path, _SLICE_LIST_WITH_NESTED_SUBSECTION) == []
+
+
+def test_slice_list_fenced_bullet_is_inert_and_falls_back_to_section_check() -> None:
+    """A fenced example bullet inside a slice-list heading is not a real
+    slice unit; with zero real bullets found, the section falls back to the
+    whole-section citation check exactly as it did before bulleted slice
+    units existed."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert lint_spec_text(path, _SLICE_LIST_FENCED_BULLET_IS_INERT) == []
 
 
 def test_format_violation_includes_slice_when_present() -> None:

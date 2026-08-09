@@ -2,14 +2,23 @@
 
 Enforces the spec output contract mechanically over ``docs/specs/*.md``: a
 spec must declare its acceptance criteria as structured, ID-bearing entries,
-and — if it slices the work — every slice must cite at least one of those
-IDs. This is the spec-structure half of the deploy-time structural checks
-that `admission.py` and `surface_budget.py` already carry; it lives beside
-them.
+and — if it slices the work — every individual slice must cite at least one
+of those IDs. This is the spec-structure half of the deploy-time structural
+checks that `admission.py` and `surface_budget.py` already carry; it lives
+beside them.
 
 Scope: files matching ``docs/specs/YYYY-MM-DD-*.md`` with date ≥
-``GATE_START_DATE``. Earlier dates are exempt by date alone — no allowlist
-file. Three mechanical, gaming-resistant checks:
+``GATE_START_DATE``, plus the exact filenames in ``_ALWAYS_IN_SCOPE``
+regardless of date. Earlier dates are otherwise exempt by date alone — no
+general allowlist file, because a spec is a point-in-time proposal that is
+supposed to name work that does not exist yet. ``_ALWAYS_IN_SCOPE`` is not
+that allowlist: it names, explicitly and narrowly, the one document that
+*states* this criterion (the harness-rework charter) — a document cannot
+state a rule and be exempt from the rule it states, whatever its own date.
+Widening it to any other pre-floor spec needs the same kind of recorded
+ruling this one carries.
+
+Three mechanical, gaming-resistant checks:
 
 1. an "Acceptance criteria" heading exists (case-insensitive, matched as a
    markdown heading line);
@@ -19,16 +28,36 @@ file. Three mechanical, gaming-resistant checks:
    token that is not shaped as a definition entry defines nothing (the
    gaming case: naming an ID in prose without the ``- **ID** text`` shape).
 3. the defined-ID set is extracted from every such entry anywhere under an
-   Acceptance-criteria heading; if any heading contains "Slice" (a slice
-   section), that section must cite ≥ 1 ID **from the defined set** — citing
+   Acceptance-criteria heading; every individual **slice unit** under a
+   slice-defining heading must cite ≥ 1 ID **from the defined set** — citing
    only an undefined ID still fails, naming the slice.
 
-Fenced code blocks (```` ``` ```` or ``~~~``) are inert to all three checks —
-a heading, list-item, or citation that only appears *inside* a fence (e.g. an
-illustrative "here's what a definition entry looks like" example) does not
-count. Fence state is a simple open/close toggle per line starting with the
-fence marker, which covers the gaming cases in practice without a full
-CommonMark parser.
+A heading is slice-defining when "slice" appears in its text with any
+parenthetical qualifier stripped first — "Open verifications (first task of
+their slice)" does not count, since the word only appears inside a
+qualifier about something else, but "Ordered slice list" and "Slice A —
+mint completeness (audit rows: mint a/b/c)" both do, the second because its
+lead text carries the word outside the parenthetical.
+
+The **slice unit** a heading's section checks depends on its shape. When the
+section contains top-level bulleted entries of the form ``- **<label>**
+<text>`` that are not themselves AC definition entries (the charter's own
+"Ordered slice list" is exactly this: ``- **S0 — ...** ...``, one bullet per
+slice, no sub-headings), each such bullet is checked on its own — a citation
+anywhere else in the section does not cover a bullet that itself cites
+nothing, closing the gap where one citation deep in a long section used to
+clear the whole section at once. When a section has no such bullets (a
+child spec's per-slice sub-headings, each already its own slice-defining
+heading and therefore already checked individually), the section's whole
+span is checked as one unit, same as before — the common case is already
+maximally granular without bullets to look inside.
+
+Fenced code blocks (```` ``` ```` or ``~~~``) are inert to all checks — a
+heading, list-item, bullet, or citation that only appears *inside* a fence
+(e.g. an illustrative "here's what a definition entry looks like" example)
+does not count. Fence state is a simple open/close toggle per line starting
+with the fence marker, which covers the gaming cases in practice without a
+full CommonMark parser.
 
 Prose quality stays advisory human review; this module never judges
 content, only structure. Results are data (``Violation``); printing happens
@@ -44,10 +73,25 @@ from pathlib import Path
 
 GATE_START_DATE = date(2026, 7, 24)
 
+# The charter states AC4 itself; a document cannot state a criterion and be
+# exempt from it by predating the gate that enforces it. Named explicitly
+# rather than folded into the date floor, because the floor's exemption for
+# every other pre-2026-07-24 spec is a separate, deliberate decision this
+# does not touch.
+_ALWAYS_IN_SCOPE = frozenset({"2026-07-21-harness-rework-way-forward.md"})
+
 _SPEC_FILENAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-.+\.md$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 _AC_ENTRY_RE = re.compile(r"^\s*-\s+\*\*([A-Z0-9]+-[A-Z]\d+|AC\d+)\*\*\s+(\S.*)$")
+# A top-level (column-0) bulleted entry with a bold lead-in, the shape the
+# charter's own "Ordered slice list" uses for one bullet per slice
+# (``- **S0 — Name.** ...``). Deliberately not indent-tolerant like
+# ``_AC_ENTRY_RE``: a nested continuation bullet inside a slice's own prose
+# must never be mistaken for a sibling slice unit.
+_SLICE_ITEM_RE = re.compile(r"^-\s+\*\*([^*]+)\*\*")
+_BULLET_START_RE = re.compile(r"^-\s+")
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
+_PAREN_RE = re.compile(r"\([^()]*\)")
 
 _AC_HEADING_KEYWORD = "acceptance criteria"
 _SLICE_HEADING_KEYWORD = "slice"
@@ -80,13 +124,17 @@ def _parse_spec_date(filename: str) -> date | None:
 
 def discover_spec_files(specs_dir: Path) -> list[Path]:
     """Spec files under ``specs_dir`` in scope for the lint: dated ≥
-    ``GATE_START_DATE``. A missing or empty directory yields an empty list
+    ``GATE_START_DATE``, plus any exact match in ``_ALWAYS_IN_SCOPE``
+    regardless of date. A missing or empty directory yields an empty list
     — no crash, nothing to lint."""
     if not specs_dir.is_dir():
         return []
     out: list[Path] = []
     for path in sorted(specs_dir.iterdir()):
         if not path.is_file():
+            continue
+        if path.name in _ALWAYS_IN_SCOPE:
+            out.append(path)
             continue
         spec_date = _parse_spec_date(path.name)
         if spec_date is not None and spec_date >= GATE_START_DATE:
@@ -127,6 +175,15 @@ def fence_mask(lines: list[str]) -> list[bool]:
                 continue
         mask.append(open_char is not None)
     return mask
+
+
+def _strip_parens(text: str) -> str:
+    """``text`` with any single-level parenthetical removed, so an incidental
+    mention inside a qualifier — "Open verifications (first task of their
+    slice)" — does not make a heading slice-defining on the strength of a
+    word describing something else. Non-nested is enough: no heading in
+    practice nests parens, and a heading is one line by construction."""
+    return _PAREN_RE.sub("", text)
 
 
 def _headings(lines: list[str], fenced: list[bool]) -> list[_Heading]:
@@ -171,6 +228,42 @@ def _defined_ids(lines: list[str], headings: list[_Heading], fenced: list[bool])
     return ids
 
 
+def _slice_items(
+    lines: list[str], fenced: list[bool], start: int, end: int
+) -> list[tuple[str, int, int]]:
+    """``(label, item_start, item_end)`` for every top-level bulleted slice
+    unit directly in ``lines[start:end]`` — the charter's own "one bullet per
+    slice" shape. A fenced bullet (an illustrative example) never counts,
+    and neither does one shaped like an AC definition entry: that bullet
+    *defines* an ID rather than naming a slice, even though the two shapes
+    look alike. Every top-level bullet, slice-shaped or not, still bounds
+    its neighbours' spans, so an interleaved AC-entry bullet cannot leak
+    into an adjacent slice's citation text."""
+    bullet_lines = [
+        i for i in range(start, end) if not fenced[i] and _BULLET_START_RE.match(lines[i])
+    ]
+    items: list[tuple[str, int, int]] = []
+    for position, line_idx in enumerate(bullet_lines):
+        item_end = bullet_lines[position + 1] if position + 1 < len(bullet_lines) else end
+        match = _SLICE_ITEM_RE.match(lines[line_idx])
+        if match is None or _AC_ENTRY_RE.match(lines[line_idx]):
+            continue
+        items.append((match.group(1).strip(), line_idx, item_end))
+    return items
+
+
+def _cites_any(
+    lines: list[str], fenced: list[bool], start: int, end: int, defined_ids: set[str]
+) -> bool:
+    """Whether the unfenced text of ``lines[start:end]`` cites ≥ 1 id in
+    ``defined_ids``."""
+    span_lines = [
+        line for offset, line in enumerate(lines[start:end]) if not fenced[start + offset]
+    ]
+    span_text = "\n".join(span_lines)
+    return any(re.search(rf"\b{re.escape(id_)}\b", span_text) for id_ in defined_ids)
+
+
 def lint_spec_text(path: Path, text: str) -> list[Violation]:
     """The lint's three checks over one spec's text. ``path`` is carried
     through only for violation labeling — content is never read from disk
@@ -196,20 +289,36 @@ def lint_spec_text(path: Path, text: str) -> list[Violation]:
         ]
 
     violations: list[Violation] = []
-    slice_headings = [h for h in headings if _SLICE_HEADING_KEYWORD in h[2].lower()]
+    slice_headings = [h for h in headings if _SLICE_HEADING_KEYWORD in _strip_parens(h[2]).lower()]
     for idx, (line_idx, level, heading_text) in enumerate(headings):
         if (line_idx, level, heading_text) not in slice_headings:
             continue
         end = _section_end(headings, idx, level, len(lines))
-        # Fenced lines (e.g. a quoted example slice heading) never count
-        # toward a citation — the inverse gaming case where a quoted example
-        # slice heading must not satisfy the citation requirement.
-        section_lines = [
-            line for offset, line in enumerate(lines[line_idx:end]) if not fenced[line_idx + offset]
-        ]
-        section_text = "\n".join(section_lines)
-        cited = any(re.search(rf"\b{re.escape(id_)}\b", section_text) for id_ in defined_ids)
-        if not cited:
+        # Bullets are scanned only up to the *next* heading at any depth, not
+        # the section's full (same-or-shallower) extent: a nested sub-heading
+        # opens its own subsection, and that subsection's bullets (e.g. an
+        # "Open verifications" list nested inside a slice-list heading) are
+        # not top-level slice units of the *outer* heading.
+        own_end = headings[idx + 1][0] if idx + 1 < len(headings) else len(lines)
+        items = _slice_items(lines, fenced, line_idx + 1, own_end)
+        if items:
+            # One bullet per slice (the charter's own shape): each is its own
+            # unit, so a citation elsewhere in the section does not cover a
+            # bullet that itself cites nothing.
+            for label, item_start, item_end in items:
+                if not _cites_any(lines, fenced, item_start, item_end, defined_ids):
+                    violations.append(
+                        Violation(
+                            file=path,
+                            slice=label,
+                            reason="slice item cites no AC ID from the defined set",
+                        )
+                    )
+            continue
+        # No bulleted slice units here — a per-slice sub-heading (already its
+        # own entry in this loop) or plain prose. The whole heading's section
+        # is the unit, as before.
+        if not _cites_any(lines, fenced, line_idx, end, defined_ids):
             violations.append(
                 Violation(
                     file=path,
