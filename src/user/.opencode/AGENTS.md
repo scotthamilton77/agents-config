@@ -16,9 +16,10 @@ PATH or `~/.config/opencode/` exists, or selected via `--tools=opencode`).
 marker (today it pulls in `USER-CORE.md.template`), which the installer
 resolves at staging time, producing a flat `AGENTS.md` with no `@` references.
 This is required because OpenCode does not support `@` include resolution.
-The installer also supports an `ALL-RULES` marker and a named-`RULES` subset
-marker, but this template carries neither today, so no rules content is
-inlined into OpenCode's `AGENTS.md`.
+The installer also supports a `<!-- DYNAMIC-INCLUDE-ALL-RULES -->` marker and
+a named `<!-- DYNAMIC-INCLUDE-RULES: ruleA,ruleB -->` subset marker, but this
+template carries neither today, so no rules content is inlined into
+OpenCode's `AGENTS.md`.
 
 ## Skills
 
