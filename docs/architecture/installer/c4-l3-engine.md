@@ -37,9 +37,9 @@ C4Component
 
         Component(cli, "cli.py", "Python", "The real top-level controller: resolve tools/plugins; load .installignore; drive orchestrator.stage_and_transform, then run the admission gate (deploy_gate.py), then core/run.py's install_pipeline / install_plugin_routes / deploy_clis / prune_pipeline / prune_clis / record_receipt directly. Wires IOPort (TerminalIO). Enforces --dump-stage vs --prune/--prune-only mutual exclusion; catches ConsentRequiredError as exit 1. The --project fork bypasses the gate by design.")
         Component(config, "config.py", "Python", "Frozen Config dataclass (home, tools, auto_yes — the only fields today) plus resolve_tools / resolve_plugins for auto-detection, called once up front by cli.py. Does NOT load installer.toml — core/installer_toml.py's loader is parsed but unwired (see data-view.md).")
-        Component(orch, "orchestrator.py", "Python", "stage_and_transform: per detected tool, build_plan -> overlay_plugins -> apply_extensions -> flatten DYNAMIC-INCLUDE -> adapter.post_staging_transforms; returns every tool's finished StagingPlan to cli.py in one call. Does NOT sync or prune — see sequences.md Sequence 1.")
 
         Container_Boundary(core, "core/ — pure, tool-agnostic engine") {
+            Component(orch, "orchestrator.py", "Python", "stage_and_transform: per detected tool, build_plan -> overlay_plugins -> apply_extensions -> flatten DYNAMIC-INCLUDE -> adapter.post_staging_transforms; returns every tool's finished StagingPlan to cli.py in one call. Does NOT sync or prune — see sequences.md Sequence 1.")
             Component(model, "model.py", "Python", "FileKind, StagedItem, StagingPlan, Provenance, Orphan, IncludeDirective (FileInclude | AllRulesInclude | NamedRulesInclude), Counters, Tool enum. No behaviour — pure data.")
             Component(ioport, "io_port.py", "Python", "IOPort protocol + TerminalIO (rich) + ScriptedIO (test). The only place stdin/stdout is touched.")
             Component(templates, "templates.py", "Python", "DYNAMIC-INCLUDE flattening: file form, ALL-RULES form, and named-subset form (sorted or listed-order, joined with --- separators).")
@@ -140,15 +140,16 @@ C4Component
 
 ## Component notes
 
-### Top layer — `cli` / `config` / `orchestrator`
+### Top layer — `cli` / `config`
 
 - **`cli.py`** is the true top-level controller, not just argv parsing: it resolves tools/plugins (via `config.py`), loads `.installignore` (hard error if missing/unreadable — load-bearing policy), calls `orchestrator.stage_and_transform` **once** to build every tool's `StagingPlan` (a whole-fleet pass), runs the admission gate, builds the frozen `Config`, then drives `core/run.py`'s `install_pipeline` + `install_plugin_routes` — a **second, separate** whole-fleet pass that syncs every tool's / plugin's plan to disk — then `deploy_clis` (the CLI-deploy stage, user-home path only), and, if requested, `prune_pipeline` + `prune_clis`, finally `record_receipt`, all under the single-writer receipt lock. It owns argv-level validation (the `--dump-stage` ⊕ `--prune`/`--prune-only` mutual exclusion) and catches `ConsentRequiredError` as exit 1.
 - **`config.py`** resolves *what will be installed*: `resolve_tools` (auto-detection — claude always; others when their config dir exists or `--tools=` forces them — note this checks for config **directories**, not running binaries) and `resolve_plugins` (scan `src/plugins/`), both called once, up front, by `cli.py`. The frozen `Config` dataclass itself carries only `home`, `tools`, and `auto_yes` today — see [`data-view.md`](data-view.md) for the full field-by-field accounting, including `installer.toml`'s unwired loader.
-- **`orchestrator.py`** (`stage_and_transform`) is staging only, not the full control flow: for each detected tool it builds that tool's `StagingPlan` (`core/staging.py`), overlays active plugins (`core/overlay.py`, Phase 6), applies plugin YAML extensions, flattens DYNAMIC-INCLUDE, and runs the tool's `post_staging_transforms` — returning every tool's finished plan to `cli.py` in one call. It does **not** sync or prune; those run directly from `cli.py` via `core/run.py`, as a separate whole-fleet pass over all tools **after** every tool has finished staging (see [`sequences.md`](sequences.md) Sequence 1).
 
 ### `core/` — the tool-agnostic engine
 
 The engine knows nothing about any specific tool; it takes a `ToolAdapter` and a source root and runs. This is the load-bearing separation in the whole design — it is what lets the bulk of the test suite exercise the engine through a `FakeToolAdapter` without any real tool present (see `installer-design.md` §"Test architecture" for how to get the current count).
+
+- **`orchestrator.py`** (`stage_and_transform`) is staging only, not the full control flow: for each detected tool it builds that tool's `StagingPlan` (`core/staging.py`), overlays active plugins (`core/overlay.py`, Phase 6), applies plugin YAML extensions, flattens DYNAMIC-INCLUDE, and runs the tool's `post_staging_transforms` — returning every tool's finished plan to `cli.py` in one call. It does **not** sync or prune; those run directly from `cli.py` via `core/run.py`, as a separate whole-fleet pass over all tools **after** every tool has finished staging (see [`sequences.md`](sequences.md) Sequence 1).
 
 - **`model.py`** is pure data — the enums and dataclasses every other module passes around (detailed in [`data-view.md`](data-view.md)). No behaviour lives here.
 - **`io_port.py`** is the I/O chokepoint. `sync` and `prune` reach the terminal only through the `IOPort` protocol; tests inject `ScriptedIO` to drive every prompt deterministically.

@@ -23,12 +23,11 @@ A `uv`-managed Python package (`packages/installer`) that installs agent configu
 │       ├── pyproject.toml                   (uv-managed; targeted deps allowed)
 │       ├── installer.toml                   (installer config — [tools] dest-dir overrides; parsed by core/installer_toml.py, not yet wired)
 │       ├── src/installer/
-│       │   ├── core/                        (pure, tool-agnostic engine)
+│       │   ├── core/                        (pure, tool-agnostic engine — includes orchestrator.py)
 │       │   ├── tools/                       (per-tool adapters)
 │       │   ├── plugins/                     (per-plugin adapters)
 │       │   ├── cli.py
-│       │   ├── config.py
-│       │   └── orchestrator.py
+│       │   └── config.py
 │       └── tests/
 │           ├── unit/
 │           └── fixtures/
@@ -44,14 +43,14 @@ A `uv`-managed Python package (`packages/installer`) that installs agent configu
 
 ```
 installer/
-├── cli.py                       Parse argv, build Config, wire IOPort, invoke orchestrator + the admission gate
+├── cli.py                       Parse argv, wire IOPort, invoke orchestrator + the admission gate, build Config
 ├── config.py                    Config dataclass (home, tools, auto_yes); resolve_tools/resolve_plugins for auto-detection
-├── orchestrator.py              Staging only: drives build_plan -> overlay -> extensions -> transforms per tool; cli.py is the true top-level controller
 ├── content_lint_cli.py          Separate entry point (`python -m installer.content_lint_cli`) — stages src/ and runs the admission gate as a repo-side lint; never calls cli.py or the installer
 ├── content_tests_cli.py         Separate entry point — discovers and runs every shipped skill's own test suite
 ├── doc_lint_cli.py          Separate entry point — checks every tracked Markdown citation against the staged asset roster
 ├── spec_lint_cli.py             Separate entry point — lints docs/specs/ structure
 ├── core/                        ── pure, tool-agnostic, fully unit-testable
+│   ├── orchestrator.py          stage_and_transform: drives build_plan -> overlay -> extensions -> transforms per tool; cli.py, not this module, is the top-level controller
 │   ├── model.py                 FileKind, StagedItem, StagingPlan, Orphan, IncludeDirective, Counters
 │   ├── io_port.py               IOPort protocol + TerminalIO + ScriptedIO
 │   ├── templates.py             DYNAMIC-INCLUDE flattening (all three directive forms)

@@ -133,6 +133,11 @@ sequenceDiagram
         CLI->>CLI: prune flow (see Sequence 4), including prune_clis over retired CLI entries
     end
 
+    rect rgb(240, 240, 255)
+        Note over CLI,FS: record_receipt — runs on every non-dry-run install, independent of --prune, merging (prior - pruned - relinquished) | installed, clis field carrying merge_clis' result
+        CLI->>FS: record_receipt (atomic write, integrity recomputed)
+    end
+
     CLI-->>Op: summary (created / updated / skipped / backed-up per tool), exit 0
 ```
 
@@ -145,6 +150,7 @@ sequenceDiagram
 - **The admission gate runs between the two passes, before `Config` is even built.** `run_admission_gate` partitions every staged artifact by its admission record, weighs the surface budget, and runs the conflict audit — record-less content is dropped, and a violation aborts the deploy (exit 1) before `run.py` is ever called. It runs on the user-home path only; a `--project` run never reaches it.
 - **`Config` is built between the two passes, not before the loop.** `resolve_tools` / `resolve_plugins` (pure functions in `config.py`) run once, up front; the frozen `Config` dataclass itself (`home`, `tools`, `auto_yes`) is constructed after the admission gate clears and before the sync pass begins. `installer.toml` plays no part in any of this — its loader is parsed but unwired (see [`data-view.md`](data-view.md)).
 - **The CLI-deploy stage runs third, still inside the receipt lock, and only on the user path.** `deploy_clis` walks the closed `CLI_PACKAGES` registry in its declared order, deciding verify/heal/fresh per CLI from PATH-independent signals (`shim_path`, `tool_list`) rather than trusting `PATH` itself — `which` is consulted only for the reachability invariant after a successful install. A `--project` run never constructs a `CliDeployPort` and never calls `deploy_clis`/`prune_clis` — the user-space CLI deploy is entirely out of scope for project-local installs. Its outcome merges into `record_receipt` via `merge_clis` alongside the file-install/prune outcomes (see [`data-view.md`](data-view.md) §"Install receipt").
+- **`record_receipt` runs unconditionally on every non-dry-run install, whether or not `--prune` was requested.** It is not gated on the `opt --prune requested` block above — a plain install with no prune flag still mirrors disk into the receipt at run end, which is what makes the *next* run's prune diff correct even if this run never pruned anything.
 
 ---
 
