@@ -133,7 +133,8 @@ context compaction. This repo's tracker is [beads](https://github.com/steveyegge
 addressed through the `work` CLI — a facade over `bd` that ships from its own
 repository, [scotthamilton77/workcli](https://github.com/scotthamilton77/workcli),
 and is installed from there rather than by this repo's installer. You need `bd`
-installed and a `bd init` in your project for any of it to function.
+installed and a `bd init` in your project for any substantive `work` verb —
+anything but `init` and `guide` — to function.
 
 That `bd init` is a one-time, per-project setup step, and it is something
 `work` deliberately has no verb for: a workspace carries storage, remote and
