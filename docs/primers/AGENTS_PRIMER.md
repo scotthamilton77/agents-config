@@ -84,7 +84,7 @@ Examples in the description are load-bearing — they establish the agent's ment
 | `opus` | Thoroughness required: code review, security analysis, architectural assessment, adversarial review |
 | `sonnet` | Balanced speed/quality: general implementation, coordination |
 | `haiku` | Fast and mechanical: evidence collection, grep/search, format verification, triage |
-| `fable` | Frontier-tier judgment; the deployed delegation rule requires consulting the user before spawning a subagent on this tier |
+| `fable` | Frontier-tier judgment; `src/user/.claude/rules/delegation.md` requires consulting the user before spawning a subagent on this tier |
 
 Assign the most capable model *needed* for the role — not the most capable available.  Tune the effort similarly.
 
@@ -173,7 +173,8 @@ src/user/.claude/agents/           # Claude-only agents (staged into ~/.claude/ 
   <agent-name>.md
 
 src/plugins/<plugin>/
-  .agents/agents/                  # Plugin-specific agents (installed only when plugin detected)
+  .agents/agents/                  # Plugin agents for every active tool
+  .<tool>/agents/                  # Plugin agents for one tool (e.g. .claude/agents/)
   <agent-name>.md
 ```
 
