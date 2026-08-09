@@ -414,8 +414,8 @@ def test_a_scheduling_axis_park_issues_zero_tracker_calls(reason: str) -> None:
     not even a sync.
 
     The inverse of the failure-axis pair: these are sequencing decisions about
-    work that never had a PR to fail, and the facade deliberately carries no
-    vocabulary for them.
+    work that never had a PR to fail -- run state the event log records,
+    deliberately never written to the tracker.
     """
     runtime = FakeRuntime(run_state(item("it-1", work_id="w-1")))
     tracker = FakeTracker()

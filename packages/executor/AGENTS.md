@@ -91,7 +91,9 @@ ports.py  →  state.py  →  rules.py  →  pairing.py  →  enact.py  →  cli
   runtime and the facade also emit; each of the three pins what it emits, and
   this package's copy is the literal its suite asserts `FAILURE_REASONS`
   against. The scheduling axis is runtime-native and issues zero tracker
-  writes — the facade deliberately has no vocabulary for it.
+  writes — a scheduling decision is run state the event log already records,
+  not item state; the facade's `work defer` covers durable deferral, and
+  pairing onto it would be a policy change, not a missing translation.
 
 ## The matrices
 
