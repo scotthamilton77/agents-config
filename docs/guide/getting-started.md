@@ -73,7 +73,10 @@ exactly this reason.
 
 `*.md.template` files install with the `.template` suffix stripped (e.g.
 `AGENTS.md.template` → `AGENTS.md`). Existing files get a diff preview and a
-timestamped backup before any overwrite.
+timestamped backup before any overwrite. Backups are retained, not kept
+forever: each file's own dated backups beyond the newest 5 are deleted the
+moment a new one is written, so repeated installs don't accumulate an
+unbounded pile of near-identical siblings.
 
 The installer also puts this repo's CLIs on your PATH via `uv tool install`
 (receipt-tracked, pruned on retirement). They are `prgroom`, `grind`,

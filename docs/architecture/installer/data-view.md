@@ -228,7 +228,7 @@ flowchart LR
 | `StagingPlan` / `StagedItem` | **Installer** | One invocation | In-memory; gone when the process exits. `--dump-stage` materialises a throwaway copy. |
 | `Counters` / `Orphan` list | **Installer** | One invocation | Surfaced in the exit summary; not persisted. |
 | Destination stores | **Installer** writes → **Tool** reads | Permanent on disk | Single writer at install time; consumed asynchronously at each tool's runtime. |
-| Backups | **Installer** | Permanent on disk | Write-only recovery; never read back by the installer. |
+| Backups | **Installer** | Newest 5 per target, then pruned | Write-only recovery; never read back by the installer. Older backups of the same target are deleted the moment a new one is written (`core/backup.py`). |
 | Install receipt (`install-receipt.json` + `.lock`) | **Installer** | Permanent on disk (between runs) | The installer's own persisted state — read at prune start, rewritten at run end (mirrors disk). Trusted state behind an `integrity` digest; held under a single-writer advisory lock. |
 
 ### Explicit non-ownership
