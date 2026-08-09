@@ -6,6 +6,10 @@ Human-readable catalog of the AI model IDs this project routes to, their list
 prices, and the use-case tier each one serves. A decision aid for choosing
 routing tiers — **not** a runtime source of truth.
 
+IDs below are each vendor's canonical model ID. A harness invocation surface
+may accept its own aliases or flag forms for the same model (e.g. a CLI's
+`--model` short names); that surface's own docs govern those, not this table.
+
 > **Prices rot.** List prices here are point-in-time and versioned with the code
 > deliberately (they age alongside the routing decisions that cite them). For
 > OpenRouter-routed models specifically, a live user-maintained rate override
