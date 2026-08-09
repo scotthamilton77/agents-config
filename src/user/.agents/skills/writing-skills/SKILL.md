@@ -239,5 +239,5 @@ untested code.
 | `persuasion-principles.md` | Why discipline prose sticks |
 | `graphviz-conventions.dot` | Flowchart style |
 
-`anthropic-best-practices.md` is a verbatim third-party copy: this skill and
-your standing instructions win wherever it disagrees.
+`anthropic-best-practices.md` is vendored at a pin: this skill and your
+standing instructions win wherever it disagrees.
