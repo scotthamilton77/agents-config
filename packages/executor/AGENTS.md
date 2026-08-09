@@ -87,11 +87,11 @@ ports.py  →  state.py  →  rules.py  →  pairing.py  →  enact.py  →  cli
   reaches a decision — see "the budget split" below for the one number it does
   compute and why that is not an exception.
 - **A park reason crosses untranslated.** There is no mapping table in this
-  package and there must not be one. The failure axis lives in
-  `packages/contracts/park-reasons.toml`; this package is its third reader, and
-  its suite asserts against that file rather than a transcription. The
-  scheduling axis is runtime-native and issues zero tracker writes — the facade
-  deliberately has no vocabulary for it.
+  package and there must not be one. The failure axis is the vocabulary the
+  runtime and the facade also emit; each of the three pins what it emits, and
+  this package's copy is the literal its suite asserts `FAILURE_REASONS`
+  against. The scheduling axis is runtime-native and issues zero tracker
+  writes — the facade deliberately has no vocabulary for it.
 
 ## The matrices
 

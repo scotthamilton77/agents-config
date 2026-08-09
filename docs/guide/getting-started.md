@@ -13,9 +13,10 @@ Nothing else is required. Two things that earlier versions of this guide listed
 as prerequisites are now optional:
 
 - **[steveyegge/beads](https://github.com/steveyegge/beads)** — the `bd` work
-  tracker. The `work` CLI the installer puts on your PATH is a facade over `bd`
-  and does nothing useful without it. Nothing in the installed instruction
-  surface requires either one, so skip both if you do not want a tracker.
+  tracker. The `work` CLI, which ships from its own repository and is not
+  installed by this one, is a facade over `bd` and does nothing useful without
+  it. Nothing in the installed instruction surface requires either one, so skip
+  both if you do not want a tracker.
 - **[obra/superpowers](https://github.com/obra/superpowers)** — no longer a
   dependency. The rules and skills that referenced its process skills have been
   retired; nothing that installs today calls into it.
@@ -66,7 +67,7 @@ exactly this reason.
 timestamped backup before any overwrite.
 
 The installer also puts this repo's CLIs on your PATH via `uv tool install`
-(receipt-tracked, pruned on retirement). They are `work`, `prgroom`, `grind`,
+(receipt-tracked, pruned on retirement). They are `prgroom`, `grind`,
 `executor` and `gitclean`; `CLI_PACKAGES` in
 `packages/installer/src/installer/core/clis.py` is the authoritative list. Of
 those, `gitclean` is the one the installed skills actually reach for.

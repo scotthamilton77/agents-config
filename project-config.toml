@@ -1,12 +1,14 @@
 # project-config.toml
 # Per-project configuration, read at the repository root.
 #
-# Only three consumers read this file, and between them they read four sections:
-#   workcli   -- [tracks], [operating-model], [extraction.pressure],
-#                [extraction.eligibility]
+# Only two consumers read this file, and between them they read four sections:
 #   installer -- [install] (the persisted profile selection; absent until the
 #                installer writes it)
-#   scripts/track-backfill -- [tracks]
+#   scripts/track-backfill -- [tracks], [operating-model],
+#                             [extraction.pressure]
+#
+# The `work` facade reads none of it. Its vocabulary lives in
+# .work/config.toml, which `work init` owns.
 #
 # Anything else here is prose for a human, not configuration. Two conventions
 # hold, and they are what keep this file honest:
@@ -76,13 +78,19 @@ merge-authorization = "explicit"
 # trivial_max_loc      = 3   # SKIP ceiling; hard-capped at 20 on load
 
 # ---------------------------------------------------------------------------
-# [tracks] / [operating-model] / [extraction] — work-tracker track partition
-# Read by: workcli (work create gate, work list --track, work track set,
-#          work lint, work graph, work triggers, work groom).
+# [tracks] / [operating-model] / [extraction.pressure] — track-partition inputs
+# Read by: scripts/track-backfill (apply.py checks every assigned track against
+#          [tracks].names; verify.py reads [tracks].organizing-only,
+#          [extraction.pressure].max-track-backlog and [operating-model]).
 # Contract: docs/specs/2026-07-15-workcli-track-partition-design.md §3 — the
 #           track model, the per-track charters, and the §3.1-§3.6 rules that
-#           decide which track an item takes. This file is authoritative for the
-#           names; that section is their charter.
+#           decide which track an item takes.
+#
+# The `work` facade reads its own copy of these from .work/config.toml, and
+# the two are kept in step by hand. Where they disagree, .work/config.toml is
+# what the tracker enforces; the copy here is what the migration scripts check
+# against. [extraction.eligibility] is absent because no reader here has ever
+# needed it — it lives in .work/config.toml alone.
 # ---------------------------------------------------------------------------
 [tracks]
 names = ["installer", "prgroom", "workcli", "pdlc-orchestrator",
@@ -103,9 +111,6 @@ groom-state-item = "agents-config-t8o"   # minted 2026-08-05 per the backfill de
 max-track-backlog = 100
 external-consumer-tracks = []
 independent-release-tracks = []
-
-[extraction.eligibility]
-max-cross-track-edges = 3
 
 # Foreign-CLI model selection is not configured here. The Codex plugin's runtime
 # leaves the model unset unless a caller names one, and the skill that routes a

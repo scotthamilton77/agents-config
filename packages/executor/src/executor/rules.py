@@ -57,10 +57,9 @@ from executor.state import ItemView, RunState
 
 # The park vocabulary, both axes.
 #
-# The failure axis is THE shared contract in `packages/contracts/
-# park-reasons.toml`; this package is its third reader, after the runtime and
-# the facade. A failure reason crosses to `work park --reason` byte-identical,
-# so there is deliberately no mapping table here -- only membership.
+# The failure axis is the vocabulary the runtime and the facade also emit. A
+# failure reason crosses to `work park --reason` byte-identical, so there is
+# deliberately no mapping table here -- only membership.
 FAILURE_REASONS: tuple[str, ...] = (
     "ci-failure",
     "merge-conflict",

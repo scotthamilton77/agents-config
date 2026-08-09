@@ -20,31 +20,30 @@ def _package(tmp_path: Path) -> Path:
     return pkg
 
 
-def test_registry_is_exactly_workcli_prgroom_grind_executor_and_gitclean() -> None:
+def test_registry_is_exactly_prgroom_grind_executor_and_gitclean() -> None:
     """
     Given the shipped registry
     When CLI_PACKAGES is consulted
-    Then it contains exactly workcli->work, prgroom->prgroom, grind->grind,
+    Then it contains exactly prgroom->prgroom, grind->grind,
     executor->executor and gitclean->gitclean, and RETIRED_CLIS is empty.
 
     Pins the closed registry; pdlc/holding-place/vizsuite must NOT
     auto-deploy. Being gated by `make ci` is not what earns a place here —
-    vizsuite is gated and stays off. gitclean earns its place by concluding one
-    thing — whether a merge is proven — and reporting everything else with the
-    measurement that stopped it. A caller who names a target authorizes that
-    deletion outright.
+    vizsuite is gated and stays off. The `work` facade is absent because it
+    ships from its own repository, which owns its distribution; RETIRED_CLIS
+    stays empty because uninstall authority over a binary this repo does not
+    own is not this installer's to claim. gitclean earns its place by
+    concluding one thing — whether a merge is proven — and reporting
+    everything else with the measurement that stopped it. A caller who names a
+    target authorizes that deletion outright.
     """
     assert [s.name for s in CLI_PACKAGES] == [
-        "workcli",
         "prgroom",
         "grind",
         "executor",
         "gitclean",
     ]
     by_name = {s.name: s for s in CLI_PACKAGES}
-    assert by_name["workcli"] == CliSpec(
-        "workcli", "packages/workcli", "work", ("--protocol-version",)
-    )
     assert by_name["prgroom"] == CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",))
     assert by_name["grind"] == CliSpec("grind", "packages/grind", "grind", ("--help",))
     assert by_name["executor"] == CliSpec("executor", "packages/executor", "executor", ("--help",))

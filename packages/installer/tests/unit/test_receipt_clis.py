@@ -7,7 +7,7 @@ from installer.core.receipt import CliReceiptEntry, Receipt, canonical_bytes, co
 from installer.core.receipt_build import merge_clis
 from installer.core.receipt_store import ReadStatus, read_receipt, write_receipt
 
-_ENTRY = CliReceiptEntry(name="workcli", binary="work", digest="sha256:ab")
+_ENTRY = CliReceiptEntry(name="grind", binary="grind", digest="sha256:ab")
 
 
 def test_clis_round_trip(tmp_path: Path) -> None:
@@ -87,22 +87,22 @@ def _e(name: str, digest: str = "sha256:aa") -> CliReceiptEntry:
 
 def test_merge_clis_union_rule() -> None:
     """
-    Given prior entries {workcli, oldtool} and registry {workcli, prgroom}
+    Given prior entries {grind, oldtool} and registry {grind, prgroom}
     When this run deployed prgroom and uninstalled oldtool
-    Then the merge keeps workcli's prior entry (skip retains), adds
+    Then the merge keeps grind's prior entry (skip retains), adds
     prgroom's new entry, and drops oldtool.
 
     Pins the union merge rule (registry -> new-if-deployed else
     retained; non-registry -> dropped iff uninstalled).
     """
     merged = merge_clis(
-        prior_clis=(_e("workcli"), _e("oldtool")),
-        registry_names=frozenset({"workcli", "prgroom"}),
+        prior_clis=(_e("grind"), _e("oldtool")),
+        registry_names=frozenset({"grind", "prgroom"}),
         deployed={"prgroom": _e("prgroom", "sha256:new")},
         uninstalled_names={"oldtool"},
         relinquished_names=set(),
     )
-    assert {c.name for c in merged} == {"workcli", "prgroom"}
+    assert {c.name for c in merged} == {"grind", "prgroom"}
     assert next(c for c in merged if c.name == "prgroom").digest == "sha256:new"
 
 
@@ -117,7 +117,7 @@ def test_merge_clis_declined_uninstall_retained_foreign_relinquished() -> None:
     """
     merged = merge_clis(
         prior_clis=(_e("oldtool"), _e("ruff")),
-        registry_names=frozenset({"workcli"}),
+        registry_names=frozenset({"grind"}),
         deployed={},
         uninstalled_names=set(),
         relinquished_names={"ruff"},

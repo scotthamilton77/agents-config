@@ -9,8 +9,8 @@ precisely when the verifier needs to work.
 These fixtures are non-empty on purpose. A fixture that cannot fail is not a
 test.
 
-The shapes below are copied from packages/workcli/src/workcli/verbs/report.py.
-If workcli changes them, these tests fail and tell you which script to update.
+The shapes below are transcribed from what `work lint` emits. If the facade
+changes them, these tests fail and tell you which script to update.
 """
 import unittest
 

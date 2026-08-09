@@ -1,7 +1,7 @@
 """The park vocabulary contract: two axes, one table, and one exit.
 
 These tests pin decisions, not the language. The failure axis is not grind's
-to choose -- it is the shared park-reason contract that the `work` facade also
+to choose -- it is the park-reason vocabulary the `work` facade also
 implements, and the two must stay member-for-member identical or the executor
 has to translate a reason at the call site, which is the drift this vocabulary
 exists to remove.
@@ -9,31 +9,23 @@ exists to remove.
 
 from __future__ import annotations
 
-import tomllib
-from pathlib import Path
-
 from grind.fold import fold
 from grind.model import PARK_REASONS, ParkingEntry
 from tests.unit.builders import event, seed_event
 
-# The failure axis is not grind's to define: it is the shared park-reason
-# contract, which `packages/workcli` implements as `work park --reason`. The
-# packages are isolated uv projects with no cross-import, so a transcription
-# in either test file would only catch a *forgetful* one-sided edit -- update
-# the other package and its own copied expectation together and both gates
-# stay green while the two runtimes disagree. Reading the one contract file
-# closes that: changing the vocabulary means editing this file plus both
-# tables, and skipping either table fails that table's own gate.
-#
-# Deliberately not guarded with a skip-if-missing: this package's tests are
-# run from the repo, and a silent skip would reopen the hole the file exists
-# to close.
-_CONTRACT = Path(__file__).resolve().parents[3] / "contracts" / "park-reasons.toml"
-
-
-def _contract_reasons() -> dict[str, str]:
-    with _CONTRACT.open("rb") as handle:
-        return dict(tomllib.load(handle)["reasons"])
+# Grind's half of the park-reason pairing, written out rather than derived from
+# the runtime table it checks: a test that computes its expectation from the
+# code under test alarms at nothing. `work` ships from its own repository and
+# pins the same five codes on its side, so each side states what it emits and
+# an edit to the table below -- adding, renaming or recategorising a code --
+# fails here until this literal is edited to agree.
+_FAILURE_AXIS = {
+    "ci-failure": "machine",
+    "merge-conflict": "machine",
+    "approval-required": "human",
+    "bot-declined": "human",
+    "budget-exhausted": "human",
+}
 
 
 def test_failure_axis_matches_the_shared_park_reason_contract() -> None:
@@ -41,7 +33,7 @@ def test_failure_axis_matches_the_shared_park_reason_contract() -> None:
         reason: category for reason, (axis, category) in PARK_REASONS.items() if axis == "failure"
     }
 
-    assert failure_axis == _contract_reasons()
+    assert failure_axis == _FAILURE_AXIS
 
 
 def test_scheduling_axis_holds_the_grind_native_sequencing_reasons() -> None:

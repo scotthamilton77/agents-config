@@ -10,12 +10,12 @@ from installer.core.io_port import ScriptedIO
 from installer.core.receipt import CliReceiptEntry, Receipt
 from installer.core.run import deploy_clis
 
-_SPEC = CliSpec("workcli", "packages/workcli", "work", ("--protocol-version",))
+_SPEC = CliSpec("grind", "packages/grind", "grind", ("--help",))
 _OK = CommandResult(ok=True, output="")
 
 
 def _pkg(tmp_path: Path) -> Path:
-    pkg = tmp_path / "packages" / "workcli"
+    pkg = tmp_path / "packages" / "grind"
     (pkg / "src").mkdir(parents=True, exist_ok=True)  # idempotent: helpers layer on it
     (pkg / "pyproject.toml").write_bytes(b"[project]\n")
     (pkg / "src" / "m.py").write_bytes(b"pass")
@@ -26,7 +26,7 @@ def _prior_with_current_digest(tmp_path: Path) -> Receipt:
     from installer.core.clis import cli_source_digest
 
     digest = cli_source_digest(_pkg(tmp_path))
-    return Receipt(clis=(CliReceiptEntry(name="workcli", binary="work", digest=digest),))
+    return Receipt(clis=(CliReceiptEntry(name="grind", binary="grind", digest=digest),))
 
 
 def test_verify_skip_smokes_and_skips(tmp_path: Path) -> None:
@@ -41,12 +41,12 @@ def test_verify_skip_smokes_and_skips(tmp_path: Path) -> None:
     no install happened).
     """
     prior = _prior_with_current_digest(tmp_path)
-    shim = tmp_path / "bin" / "work"
+    shim = tmp_path / "bin" / "grind"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
-        tool_list={"workcli": frozenset({"work"})},
-        which_map={"work": shim},
+        tool_list={"grind": frozenset({"grind"})},
+        which_map={"grind": shim},
         shims=[shim],
         smokes=[_OK],
     )
@@ -60,7 +60,7 @@ def test_verify_skip_smokes_and_skips(tmp_path: Path) -> None:
         auto_yes=True,
     )
     assert not outcome.any_failed
-    assert outcome.counters["cli:workcli"].skipped == 1
+    assert outcome.counters["cli:grind"].skipped == 1
     assert ("smoke", str(shim)) in deploy.transcript
     assert not any(t[0] == "tool_install" for t in deploy.transcript)
 
@@ -77,12 +77,12 @@ def test_verify_smoke_failure_heals_with_force(tmp_path: Path) -> None:
     + post-install re-read after the successful heal install).
     """
     prior = _prior_with_current_digest(tmp_path)
-    shim = tmp_path / "bin" / "work"
+    shim = tmp_path / "bin" / "grind"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
-        tool_list={"workcli": frozenset({"work"})},
-        which_map={"work": shim},
+        tool_list={"grind": frozenset({"grind"})},
+        which_map={"grind": shim},
         shims=[shim, shim],
         smokes=[CommandResult(ok=False, output="boom"), _OK],
         installs=[_OK],
@@ -98,9 +98,9 @@ def test_verify_smoke_failure_heals_with_force(tmp_path: Path) -> None:
         auto_yes=False,
     )
     assert not outcome.any_failed
-    assert ("tool_install", str(tmp_path / "packages" / "workcli"), True) in deploy.transcript
+    assert ("tool_install", str(tmp_path / "packages" / "grind"), True) in deploy.transcript
     assert not any(e.channel == "confirm" for e in io.transcript)
-    assert "workcli" in outcome.deployed
+    assert "grind" in outcome.deployed
 
 
 def test_heal_missing_shim_reinstalls_without_prompt(tmp_path: Path) -> None:
@@ -114,12 +114,12 @@ def test_heal_missing_shim_reinstalls_without_prompt(tmp_path: Path) -> None:
     Shim budget: 2 (decision None + post-install re-read).
     """
     prior = _prior_with_current_digest(tmp_path)
-    shim = tmp_path / "bin" / "work"
+    shim = tmp_path / "bin" / "grind"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
         tool_list={},  # env absent entirely -> non-forcing heal
-        which_map={"work": shim},
+        which_map={"grind": shim},
         shims=[None, shim],
         installs=[_OK],
         smokes=[_OK],
@@ -134,8 +134,8 @@ def test_heal_missing_shim_reinstalls_without_prompt(tmp_path: Path) -> None:
         dry_run=False,
         auto_yes=False,
     )
-    assert outcome.counters["cli:workcli"].created == 1
-    assert ("tool_install", str(tmp_path / "packages" / "workcli"), False) in deploy.transcript
+    assert outcome.counters["cli:grind"].created == 1
+    assert ("tool_install", str(tmp_path / "packages" / "grind"), False) in deploy.transcript
     assert not any(e.channel == "confirm" for e in io.transcript)
 
 
@@ -149,12 +149,12 @@ def test_fresh_install_no_evidence_no_prompt(tmp_path: Path) -> None:
     Pins the fresh row. Shim budget: 2.
     """
     _pkg(tmp_path)
-    shim = tmp_path / "bin" / "work"
+    shim = tmp_path / "bin" / "grind"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
         tool_list={},
-        which_map={"work": shim},
+        which_map={"grind": shim},
         shims=[None, shim],
         installs=[_OK],
         smokes=[_OK],
@@ -168,9 +168,9 @@ def test_fresh_install_no_evidence_no_prompt(tmp_path: Path) -> None:
         dry_run=False,
         auto_yes=False,
     )
-    assert outcome.counters["cli:workcli"].created == 1
-    assert ("tool_install", str(tmp_path / "packages" / "workcli"), False) in deploy.transcript
-    assert "workcli" in outcome.deployed
+    assert outcome.counters["cli:grind"].created == 1
+    assert ("tool_install", str(tmp_path / "packages" / "grind"), False) in deploy.transcript
+    assert "grind" in outcome.deployed
 
 
 def test_upgrade_consent_accept_and_decline(tmp_path: Path) -> None:
@@ -183,14 +183,14 @@ def test_upgrade_consent_accept_and_decline(tmp_path: Path) -> None:
     Pins the upgrade row. Shim budgets: accept 2, decline 1.
     """
     pkg = _pkg(tmp_path)
-    shim = tmp_path / "bin" / "work"
-    prior = Receipt(clis=(CliReceiptEntry(name="workcli", binary="work", digest="sha256:stale"),))
+    shim = tmp_path / "bin" / "grind"
+    prior = Receipt(clis=(CliReceiptEntry(name="grind", binary="grind", digest="sha256:stale"),))
 
     accept = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
-        tool_list={"workcli": frozenset({"work"})},
-        which_map={"work": shim},
+        tool_list={"grind": frozenset({"grind"})},
+        which_map={"grind": shim},
         shims=[shim, shim],
         installs=[_OK],
         smokes=[_OK],
@@ -205,14 +205,14 @@ def test_upgrade_consent_accept_and_decline(tmp_path: Path) -> None:
         dry_run=False,
         auto_yes=False,
     )
-    assert outcome.counters["cli:workcli"].updated == 1
+    assert outcome.counters["cli:grind"].updated == 1
     assert ("tool_install", str(pkg), True) in accept.transcript
 
     decline = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
-        tool_list={"workcli": frozenset({"work"})},
-        which_map={"work": shim},
+        tool_list={"grind": frozenset({"grind"})},
+        which_map={"grind": shim},
         shims=[shim],
     )
     outcome = deploy_clis(
@@ -224,7 +224,7 @@ def test_upgrade_consent_accept_and_decline(tmp_path: Path) -> None:
         dry_run=False,
         auto_yes=False,
     )
-    assert outcome.counters["cli:workcli"].skipped == 1
+    assert outcome.counters["cli:grind"].skipped == 1
     assert not any(t[0] == "tool_install" for t in decline.transcript)
 
 
@@ -240,10 +240,10 @@ def test_takeover_triggers_all_three_evidence_forms(tmp_path: Path) -> None:
     end shimless, no gate.
     """
     _pkg(tmp_path)
-    shim = tmp_path / "bin" / "work"
+    shim = tmp_path / "bin" / "grind"
     cases: list[dict[str, object]] = [
-        {"shims": [shim], "tool_list": {}, "which_map": {"work": shim}},
-        {"shims": [None], "tool_list": {"workcli": frozenset({"work"})}},
+        {"shims": [shim], "tool_list": {}, "which_map": {"grind": shim}},
+        {"shims": [None], "tool_list": {"grind": frozenset({"grind"})}},
         {"shims": [None], "tool_list": None},
     ]
     for case in cases:
@@ -262,7 +262,7 @@ def test_takeover_triggers_all_three_evidence_forms(tmp_path: Path) -> None:
             dry_run=False,
             auto_yes=False,
         )
-        assert outcome.counters["cli:workcli"].skipped == 1, case
+        assert outcome.counters["cli:grind"].skipped == 1, case
         assert any(e.channel == "confirm" for e in io.transcript), case
         assert not any(t[0] == "tool_install" for t in deploy.transcript), case
 
@@ -279,12 +279,12 @@ def test_fresh_toctou_already_exists_reroutes_to_takeover(tmp_path: Path) -> Non
     install; the FAILED non-forcing install triggers no re-read).
     """
     pkg = _pkg(tmp_path)
-    shim = tmp_path / "bin" / "work"
+    shim = tmp_path / "bin" / "grind"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
         tool_list={},
-        which_map={"work": shim},
+        which_map={"grind": shim},
         shims=[None, shim],
         installs=[CommandResult(ok=False, output="already installed"), _OK],
         smokes=[_OK],
@@ -301,25 +301,25 @@ def test_fresh_toctou_already_exists_reroutes_to_takeover(tmp_path: Path) -> Non
     )
     installs = [t for t in deploy.transcript if t[0] == "tool_install"]
     assert installs == [("tool_install", str(pkg), False), ("tool_install", str(pkg), True)]
-    assert outcome.counters["cli:workcli"].updated == 1
+    assert outcome.counters["cli:grind"].updated == 1
 
 
 def test_stale_receipt_foreign_provenance_requires_takeover(tmp_path: Path) -> None:
     """
     Given a receipt entry but tool_list showing a DIFFERENT tool providing
-    'work' (our env gone)
+    'grind' (our env gone)
     When deploy_clis runs with a declining confirm
     Then no promptless heal fires — takeover consent, decline skips.
 
     Pins the provenance precondition.
     """
-    shim = tmp_path / "bin" / "work"
+    shim = tmp_path / "bin" / "grind"
     prior = _prior_with_current_digest(tmp_path)  # creates the package dir itself
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
-        tool_list={"other-tool": frozenset({"work"})},
-        which_map={"work": shim},
+        tool_list={"other-tool": frozenset({"grind"})},
+        which_map={"grind": shim},
         shims=[shim],
     )
     io = ScriptedIO(confirms=[False])
@@ -332,7 +332,7 @@ def test_stale_receipt_foreign_provenance_requires_takeover(tmp_path: Path) -> N
         dry_run=False,
         auto_yes=False,
     )
-    assert outcome.counters["cli:workcli"].skipped == 1
+    assert outcome.counters["cli:grind"].skipped == 1
     assert not any(t[0] == "tool_install" for t in deploy.transcript)
 
 
@@ -346,7 +346,7 @@ def test_smoke_failure_after_install_fails_run_no_entry(tmp_path: Path) -> None:
     Pins the failure-surfacing rule.
     """
     _pkg(tmp_path)
-    shim = tmp_path / "bin" / "work"
+    shim = tmp_path / "bin" / "grind"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
@@ -365,7 +365,7 @@ def test_smoke_failure_after_install_fails_run_no_entry(tmp_path: Path) -> None:
         dry_run=False,
         auto_yes=False,
     )
-    assert outcome.any_failed and "workcli" not in outcome.deployed
+    assert outcome.any_failed and "grind" not in outcome.deployed
     assert any(e.channel == "err" and "kaboom" in e.message for e in io.transcript)
 
 
@@ -415,14 +415,14 @@ def test_one_broken_cli_does_not_block_the_other(tmp_path: Path) -> None:
     (pkg2 / "src").mkdir(parents=True)
     (pkg2 / "pyproject.toml").write_bytes(b"[project]\n")
     spec2 = CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",))
-    prior = _prior_with_current_digest(tmp_path)  # also creates workcli pkg
-    shim1 = tmp_path / "bin" / "work"
+    prior = _prior_with_current_digest(tmp_path)  # also creates grind pkg
+    shim1 = tmp_path / "bin" / "grind"
     shim2 = tmp_path / "bin" / "prgroom"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
-        tool_list={"workcli": frozenset({"work"})},
-        which_map={"work": shim1, "prgroom": shim2},
+        tool_list={"grind": frozenset({"grind"})},
+        which_map={"grind": shim1, "prgroom": shim2},
         shims=[shim1, None, shim2],
         installs=[CommandResult(ok=False, output="resolver exploded"), _OK],
         smokes=[CommandResult(ok=False, output="stale"), _OK],
@@ -438,7 +438,7 @@ def test_one_broken_cli_does_not_block_the_other(tmp_path: Path) -> None:
         auto_yes=False,
     )
     assert outcome.any_failed
-    assert "prgroom" in outcome.deployed and "workcli" not in outcome.deployed
+    assert "prgroom" in outcome.deployed and "grind" not in outcome.deployed
     assert any(e.channel == "err" and "resolver exploded" in e.message for e in io.transcript)
 
 
@@ -453,10 +453,10 @@ def test_dry_run_previews_every_branch_without_subprocess(tmp_path: Path) -> Non
     """
     prior_current = _prior_with_current_digest(tmp_path)
     prior_stale = Receipt(
-        clis=(CliReceiptEntry(name="workcli", binary="work", digest="sha256:stale"),)
+        clis=(CliReceiptEntry(name="grind", binary="grind", digest="sha256:stale"),)
     )
-    shim = tmp_path / "bin" / "work"
-    prov = {"workcli": frozenset({"work"})}
+    shim = tmp_path / "bin" / "grind"
+    prov = {"grind": frozenset({"grind"})}
     cases: list[tuple[Receipt, list[Path | None], object, str]] = [
         (Receipt(), [None], {}, "would install"),
         (prior_current, [shim], prov, "would skip"),
@@ -526,7 +526,7 @@ def test_reachability_which_none_update_shell_consent(tmp_path: Path) -> None:
     Pins the reachability rule. which_map deliberately empty (miss).
     """
     _pkg(tmp_path)
-    shim = tmp_path / "bin" / "work"
+    shim = tmp_path / "bin" / "grind"
 
     accept = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
@@ -579,13 +579,13 @@ def test_reachability_shadow_is_hard_error(tmp_path: Path) -> None:
     Pins the shadowing rule.
     """
     _pkg(tmp_path)
-    shim = tmp_path / "bin" / "work"
-    foreign = tmp_path / "other" / "work"
+    shim = tmp_path / "bin" / "grind"
+    foreign = tmp_path / "other" / "grind"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
         tool_list={},
-        which_map={"work": foreign},
+        which_map={"grind": foreign},
         shims=[None, shim],
         installs=[_OK],
         smokes=[_OK],
@@ -622,7 +622,7 @@ def test_reachability_memoized_per_bin_dir(tmp_path: Path) -> None:
     (pkg2 / "pyproject.toml").write_bytes(b"[project]\n")
     _pkg(tmp_path)
     spec2 = CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",))
-    shim1, shim2 = tmp_path / "bin" / "work", tmp_path / "bin" / "prgroom"
+    shim1, shim2 = tmp_path / "bin" / "grind", tmp_path / "bin" / "prgroom"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
@@ -657,11 +657,11 @@ def test_reachability_fires_on_steady_state_skip_run(tmp_path: Path) -> None:
     Pins the steady-state enforcement rule.
     """
     prior = _prior_with_current_digest(tmp_path)
-    shim = tmp_path / "bin" / "work"
+    shim = tmp_path / "bin" / "grind"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",
-        tool_list={"workcli": frozenset({"work"})},
+        tool_list={"grind": frozenset({"grind"})},
         shims=[shim],
         smokes=[_OK],
     )
@@ -675,7 +675,7 @@ def test_reachability_fires_on_steady_state_skip_run(tmp_path: Path) -> None:
         dry_run=False,
         auto_yes=False,
     )
-    assert outcome.counters["cli:workcli"].skipped == 1
+    assert outcome.counters["cli:grind"].skipped == 1
     assert outcome.any_failed
     assert any(e.channel == "err" and "PATH" in e.message for e in io.transcript)
 
@@ -693,7 +693,7 @@ def test_reachability_no_tty_without_yes_raises(tmp_path: Path) -> None:
     prune side's test_prune_no_tty_without_yes_raises).
     """
     _pkg(tmp_path)
-    shim = tmp_path / "bin" / "work"
+    shim = tmp_path / "bin" / "grind"
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=tmp_path / "bin",

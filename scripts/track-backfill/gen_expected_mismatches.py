@@ -10,7 +10,7 @@ a function of `assignment.json` and the current parent graph — but it was
 maintained by hand, so a re-decided assignment silently invalidated it and the
 criterion it feeds. Deriving it removes the class.
 
-Mirrors `_track_mismatches` in workcli's report module exactly: an edge exists
+Mirrors the rule `work lint` applies exactly: an edge exists
 when a non-milestone child and its non-milestone parent both resolve to a track
 and those tracks differ. Post-migration track means the artifact's assignment
 where it covers the item, and the item's current track otherwise — which is what

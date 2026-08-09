@@ -1,8 +1,8 @@
 """The six command bodies: `create`, `log`, `status`, `check`, `render`, `finish`.
 
 Each takes the grind directory, and every time-dependent one an injected `now`
-clock (never a bare `datetime.now()` call -- same seam precedent as workcli's
-`read_file`/`now`); `render` needs no clock, since `grind.render` is a pure
+clock (never a bare `datetime.now()` call -- the clock is a caller-injected
+seam); `render` needs no clock, since `grind.render` is a pure
 `State -> str` projection. All return a plain `dict[str, JsonValue]` shaped
 exactly per the spec's CLI contract / emit-back envelope. `cli.py` owns argv
 parsing and stdout/exit-code wiring; this module owns behavior only, so it's
