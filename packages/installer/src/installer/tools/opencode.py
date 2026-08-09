@@ -54,12 +54,12 @@ class OpenCodeAdapter:
         shared rules/ namespace stages into ~/.config/opencode/rules/ the
         same as every other tool (build_plan Phase 2, namespaces.SHARED;
         should_install_namespace only excludes the shared agents/ namespace
-        here) — it is just empty today because the shared source has no rule
-        files yet. The loose rules/ drop that would apply once it isn't is
-        not OpenCode-specific either: flatten_plan_templates drops a plan's
-        standalone rules/ items only when its instruction file carries the
-        DYNAMIC-INCLUDE-ALL-RULES marker, and that runs earlier in
-        stage_and_transform. No current template carries that marker,
-        including OpenCode's, so nothing is dropped for any tool today.
-        Kept as a no-op only to satisfy the ToolAdapter protocol."""
+        here). It is empty today only because the shared rules/ source has
+        no files yet. Dropping standalone rules/ items once that source is
+        populated would not be OpenCode-specific either: flatten_plan_templates
+        drops a plan's standalone rules/ items only when its instruction file
+        carries the DYNAMIC-INCLUDE-ALL-RULES marker, and that runs earlier
+        in stage_and_transform. No current template carries that marker,
+        including OpenCode's, so nothing is dropped for any tool today. Kept
+        as a no-op only to satisfy the ToolAdapter protocol."""
         return plan

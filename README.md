@@ -1,6 +1,6 @@
 # agents-config
 
-Versioned collection of skills, rules, commands, and templates for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, **Google Gemini CLI**, and **OpenCode**. Shared content is installed to all detected tools; tool-specific content goes only where it belongs.
+Versioned collection of skills, rules, commands, and templates for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, **Google Gemini CLI**, and **OpenCode**. Shared content is installed to every active tool — auto-detected, or explicitly selected via `--tools=`; tool-specific content goes only where it belongs.
 
 > **New here and want to _use_ this?** Start with the **[User Guide](./docs/guide/index.md)** — install, configure a project, and run the opinionated agentic SDLC. This README is the project overview and installer reference.
 
@@ -68,7 +68,7 @@ docs/
 └── …                               # Plus reference material and prototypes
 src/
 ├── user/
-│   ├── .agents/                    # Shared content (copied into all detected tools)
+│   ├── .agents/                    # Shared content (copied into every active tool)
 │   │   ├── rules/                  # Shared always-on rules (empty today)
 │   │   ├── skills/                 # Methodology guides with examples
 │   │   └── USER-CORE.md.template   # Zero-based laws, decision matrix, hard lines, conventions
@@ -106,8 +106,8 @@ the authoritative inventory:
 
 | What | Where | Installs to |
 |------|-------|-------------|
-| Shared skills | [`src/user/.agents/skills/`](./src/user/.agents/skills/) | every detected tool |
-| Shared rules | [`src/user/.agents/rules/`](./src/user/.agents/rules/) | every detected tool |
+| Shared skills | [`src/user/.agents/skills/`](./src/user/.agents/skills/) | every active tool |
+| Shared rules | [`src/user/.agents/rules/`](./src/user/.agents/rules/) | every active tool |
 | Claude-only skills | [`src/user/.claude/skills/`](./src/user/.claude/skills/) | `~/.claude/skills/` |
 | Claude-only rules | [`src/user/.claude/rules/`](./src/user/.claude/rules/) | `~/.claude/rules/` |
 | Slash commands | [`src/user/.claude/commands/`](./src/user/.claude/commands/) | `~/.claude/commands/` |
@@ -180,7 +180,7 @@ the always-on surface is zero-based and carries no identity content.
 
 The installer (`scripts/install.sh`) is a thin exec stub backed by a uv-managed Python package (`packages/installer`). It:
 - Auto-detects installed tools (Claude Code, Codex CLI, Gemini CLI, OpenCode) or use `--tools=` to override
-- Copies shared content (`src/user/.agents/`) into all detected tools
+- Copies shared content (`src/user/.agents/`) into every active tool
 - Copies tool-specific content (e.g., `src/user/.claude/`) into the corresponding tool's config directory
 - Copies `*.md.template` files (stripping `.template` suffix), with diff preview and confirmation for existing files
 - Syncs `agents/`, `skills/`, `commands/`, and `rules/` directories using hash comparison per item, and a recursive digest to detect drift inside owned directories
