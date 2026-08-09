@@ -1,15 +1,25 @@
 """The always-on surface budget.
 
-Two mechanical caps, each a hard failure that aborts the deploy before any
+Three mechanical caps, each a hard failure that aborts the deploy before any
 write:
 
 - the **always-on surface** for a tool — the deployed instruction file, every
   admitted always-on rule, and every skill catalog entry that tool's runtime
   publishes to the model — is capped at ``ALWAYS_ON_TOKEN_CAP``;
+- the **user core** inside that surface — the deployed instruction file alone,
+  which is the shared zero-based core after assembly — is capped at
+  ``USER_CORE_TOKEN_CAP``;
 - each admitted **skill body** (the SKILL.md content after its front matter,
   the on-invoke payload) is capped at ``SKILL_BODY_TOKEN_CAP``, or at
   ``USER_INVOKED_SKILL_BODY_TOKEN_CAP`` when the target it deploys to keeps
   that skill out of the model's reach.
+
+The core cap is a sub-budget rather than a second opinion about the same
+bytes. The surface cap prices what a session loads in total, and a surface
+under it can still be one bloated instruction file with nothing else admitted;
+the core cap prices the one component that no admission decision can remove,
+so a line only earns a place in it by being universal. Without it the core can
+grow by an order of magnitude and stay invisible under the wider ceiling.
 
 A ceiling prices bytes the reader cannot decline, and it prices them as the
 target actually loads them. A catalog entry is the unconditional case: a skill's
@@ -62,6 +72,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 ALWAYS_ON_TOKEN_CAP = 10_000
+USER_CORE_TOKEN_CAP = 800
 SKILL_BODY_TOKEN_CAP = 2_000
 USER_INVOKED_SKILL_BODY_TOKEN_CAP = 5_000
 
@@ -80,10 +91,15 @@ class SurfaceMeasure:
     rule count is one rule bloating, both rising is the surface accreting, and a
     rising entry count is the component that grows with every admission while
     the rules stay still.
+
+    ``core_tokens`` is the instruction file's own share of ``tokens``, carried
+    separately because it answers to a cap of its own and because it is the one
+    component a reader cannot decline by admitting less.
     """
 
     tool: str
     tokens: int
+    core_tokens: int
     rules: int
     catalog_entries: int
 
@@ -161,10 +177,17 @@ def measure_always_on(
     the target does with it. An entry the target's runtime never publishes must
     not be in the list.
     """
-    total = approx_tokens(instruction) if instruction is not None else 0
+    core = approx_tokens(instruction) if instruction is not None else 0
+    total = core
     for entry in (*rules, *catalog):
         total += approx_tokens(entry)
-    return SurfaceMeasure(tool=tool, tokens=total, rules=len(rules), catalog_entries=len(catalog))
+    return SurfaceMeasure(
+        tool=tool,
+        tokens=total,
+        core_tokens=core,
+        rules=len(rules),
+        catalog_entries=len(catalog),
+    )
 
 
 def skill_body_cap(*, user_invoked: bool) -> int:
@@ -195,6 +218,25 @@ def always_on_violations(
         return [
             f"{tool}: always-on surface is {measure.tokens} tokens, over the "
             f"{ALWAYS_ON_TOKEN_CAP}-token cap"
+        ]
+    return []
+
+
+def user_core_violations(*, tool: str, instruction: bytes | None) -> list[str]:
+    """Violation messages if a tool's deployed instruction file exceeds the core
+    cap. Returns at most one message.
+
+    Measured on the assembled file rather than on the shared source, because the
+    core a session pays is what a tool's template produced: a template that
+    includes the shared core and then adds to it has grown the core, whatever
+    the shared file weighs. A tool deploying no instruction file has no core.
+    """
+    if instruction is None:
+        return []
+    tokens = approx_tokens(instruction)
+    if tokens > USER_CORE_TOKEN_CAP:
+        return [
+            f"{tool}: always-on core is {tokens} tokens, over the {USER_CORE_TOKEN_CAP}-token cap"
         ]
     return []
 

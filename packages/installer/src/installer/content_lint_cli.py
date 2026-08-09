@@ -21,6 +21,7 @@ from installer.core.merge.registry import UnknownMergeKeyError
 from installer.core.surface_budget import (
     ALWAYS_ON_TOKEN_CAP,
     SKILL_BODY_TOKEN_CAP,
+    USER_CORE_TOKEN_CAP,
     USER_INVOKED_SKILL_BODY_TOKEN_CAP,
 )
 
@@ -42,14 +43,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _report_budgets(result: ContentLintResult) -> None:
     """Print the measured always-on and per-skill numbers to stdout."""
-    sys.stdout.write(f"content-lint: always-on surface (cap {ALWAYS_ON_TOKEN_CAP} tokens)\n")
+    sys.stdout.write(
+        f"content-lint: always-on surface (cap {ALWAYS_ON_TOKEN_CAP} tokens, "
+        f"core {USER_CORE_TOKEN_CAP})\n"
+    )
     for surface in sorted(result.surfaces, key=lambda s: s.tool):
-        # The two components are split because they grow for different reasons:
-        # rules change rarely, and the catalog gains an entry with every skill
-        # admitted. A single total hides which one is moving.
+        # The components are split because they grow for different reasons:
+        # rules change rarely, the catalog gains an entry with every skill
+        # admitted, and the core moves only when the shared zero-base or a tool's
+        # own template does. A single total hides which one is moving, and hides
+        # the core entirely — it is an eighth of the surface cap, so a core that
+        # has doubled still leaves the total looking comfortable.
         sys.stdout.write(
             f"  {surface.tool:<10} {surface.tokens:>6} tokens  "
-            f"({surface.rules} rule(s), {surface.catalog_entries} catalog entr"
+            f"(core {surface.core_tokens}, {surface.rules} rule(s), "
+            f"{surface.catalog_entries} catalog entr"
             f"{'y' if surface.catalog_entries == 1 else 'ies'})\n"
         )
 

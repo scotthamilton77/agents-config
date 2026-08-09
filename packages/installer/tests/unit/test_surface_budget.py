@@ -7,6 +7,7 @@ from pathlib import Path
 from installer.core.surface_budget import (
     ALWAYS_ON_TOKEN_CAP,
     SKILL_BODY_TOKEN_CAP,
+    USER_CORE_TOKEN_CAP,
     USER_INVOKED_SKILL_BODY_TOKEN_CAP,
     SkillBodySource,
     always_on_violations,
@@ -15,6 +16,7 @@ from installer.core.surface_budget import (
     measure_skill_bodies,
     measure_skill_payload,
     skill_body_violations,
+    user_core_violations,
 )
 
 
@@ -57,6 +59,55 @@ def test_no_instruction_file_counts_only_rules() -> None:
     assert (
         always_on_violations(tool="gemini", instruction=None, rules=[b"x" * 16], catalog=[]) == []
     )
+
+
+def test_the_core_boundary_passes_at_the_cap_and_fails_one_over() -> None:
+    """The core sub-budget, pinned at both sides of its edge. The number is the
+    ceiling a line has to fit to earn always-on status, so a change to it is a
+    change to what the shared core may say."""
+    at_cap = b"x" * (USER_CORE_TOKEN_CAP * 4)
+    assert user_core_violations(tool="claude", instruction=at_cap) == []
+    over = b"x" * (USER_CORE_TOKEN_CAP * 4 + 1)
+    violations = user_core_violations(tool="claude", instruction=over)
+    assert len(violations) == 1
+    assert "claude" in violations[0]
+    assert str(USER_CORE_TOKEN_CAP) in violations[0]
+
+
+def test_a_core_many_times_over_its_cap_still_passes_the_surface_cap() -> None:
+    """Why the sub-budget exists at all. The surface ceiling is over ten times the
+    core's, so without a cap of its own the core can grow by an order of magnitude
+    and breach nothing."""
+    bloated = b"x" * (USER_CORE_TOKEN_CAP * 4 * 5)
+    assert always_on_violations(tool="claude", instruction=bloated, rules=[], catalog=[]) == []
+    assert len(user_core_violations(tool="claude", instruction=bloated)) == 1
+
+
+def test_rules_and_catalog_entries_are_not_charged_to_the_core() -> None:
+    """The core is the instruction file alone. Admitted rules and catalog entries
+    answer to the surface cap, and charging them here would fail a core that had
+    not moved — the one number a reader cannot reduce by admitting less."""
+    measure = measure_always_on(
+        tool="claude", instruction=b"x" * 400, rules=[b"y" * 4_000], catalog=[b"z" * 400]
+    )
+    assert (measure.core_tokens, measure.tokens) == (100, 1_200)
+
+
+def test_a_tool_with_no_instruction_file_has_no_core() -> None:
+    """Gemini's rules deploy without one, and a missing file is a core of zero
+    rather than a breach."""
+    assert user_core_violations(tool="gemini", instruction=None) == []
+    measure = measure_always_on(tool="gemini", instruction=None, rules=[b"x" * 16], catalog=[])
+    assert measure.core_tokens == 0
+
+
+def test_the_core_verdict_is_the_core_measurement_it_reports() -> None:
+    """Same contract as the surface cap: the lint reports headroom from the number
+    the gate fails on, so the two can never disagree about what the core weighs."""
+    over = b"x" * (USER_CORE_TOKEN_CAP * 4 + 1)
+    measure = measure_always_on(tool="claude", instruction=over, rules=[], catalog=[])
+    violations = user_core_violations(tool="claude", instruction=over)
+    assert str(measure.core_tokens) in violations[0]
 
 
 def test_skill_body_over_cap_is_named() -> None:

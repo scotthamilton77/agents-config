@@ -26,6 +26,7 @@ from installer.core.model import (
 from installer.core.surface_budget import (
     ALWAYS_ON_TOKEN_CAP,
     SKILL_BODY_TOKEN_CAP,
+    USER_CORE_TOKEN_CAP,
     USER_INVOKED_SKILL_BODY_TOKEN_CAP,
     approx_tokens,
 )
@@ -116,6 +117,26 @@ def test_admitted_surface_over_cap_fails() -> None:
     result = run_admission_gate(plans)
     assert not result.ok
     assert any("always-on surface" in v for v in result.violations)
+
+
+def test_an_oversized_instruction_file_fails_the_core_sub_budget() -> None:
+    """The gate weighs the instruction file twice: once inside the surface total,
+    and once against the core cap. This file breaches only the second, which is
+    the case the surface cap alone would deploy without comment."""
+    plans = {Tool.CLAUDE: _plan(_instruction(b"x" * (USER_CORE_TOKEN_CAP * 4 + 4)))}
+    result = run_admission_gate(plans)
+    assert not result.ok
+    assert any("always-on core" in v for v in result.violations)
+    assert not any("always-on surface" in v for v in result.violations)
+
+
+def test_the_gate_reports_the_core_beside_the_surface_total() -> None:
+    """Both numbers travel with the measurement, so the lint's trend report does
+    not have to re-derive a component the gate already weighed."""
+    plans = {Tool.CLAUDE: _plan(_instruction(b"x" * 400), _rule("a.md", _COMPLETE))}
+    result = run_admission_gate(plans)
+    assert result.ok, result.violations
+    assert [(s.tool, s.core_tokens) for s in result.surfaces] == [("claude", 100)]
 
 
 def test_conflicting_claims_across_admitted_items_fail() -> None:
