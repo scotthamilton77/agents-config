@@ -70,11 +70,12 @@ overage via the API sibling).
 | Opus 5 | `claude-opus-5` | TBD | TBD | Top judgment tier: architecture, impl, final synthesis. |
 | Sonnet 5 | `claude-sonnet-5` | TBD | TBD | Standard impl + review. |
 | Haiku 4.5 | `claude-haiku-4-5-20251001` | TBD | TBD | Mechanical / cheap fan-out. |
-| Fable 5 | `claude-fable-5` | TBD | TBD | Frontier-tier spec closure (fablize window work). |
+| Fable 5 | `claude-fable-5` | TBD | TBD | Frontier-tier spec closure. |
 
-> **TBD prices unverified.** Current Claude 5-era Anthropic list prices were
-> not confirmed at authoring time — fill from console.anthropic.com pricing
-> and re-date this doc. Do not guess.
+> **TBD prices unverified.** Current Claude 5-era Anthropic list prices stand
+> unverified against the vendor page. Re-verify using the route the roster
+> callout above names (console.anthropic.com) and re-date this doc. Do not
+> guess.
 
 ---
 
@@ -134,5 +135,7 @@ Active sidekick profiles (from `llm.defaults.yaml`):
 - The `openrouter-claude-subagent` skill — OpenRouter-hosted model selection and rates.
 - `packages/prgroom/src/prgroom/agent/dispatcher.py` — `_DEFAULT_CHAINS`.
 - `project-config.toml` `[foreign-cli]` — per-stage Codex/Gemini model bindings.
-- Bead `agents-config-uy5wx` — consolidate these duplicated model IDs into a
-  single source of truth; this catalog is the human-readable half of that effort.
+- `agents-config-uy5wx` — archive-era, resolvable in the private archive
+  repository and not through `work`: proposed consolidating these duplicated
+  model IDs into a single source of truth; this catalog is the human-readable
+  half of that effort.
