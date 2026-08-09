@@ -134,7 +134,7 @@ The installer is a `uv`-managed Python project. `pyproject.toml` declares deps; 
 - `tomli-w` — to write `project-config.toml`'s `[install].profiles` key (`write_project_profiles`, `config.py`); 3.11 stdlib reads TOML, it does not write.
 - `rich` — pretty diffs, colored output, prompt formatting.
 
-The dependency list is deliberately tight, but we no longer refuse a library that exists and solves the problem.
+The dependency list is deliberately tight, and a library that exists and solves the problem is an acceptable addition.
 
 **Dev deps:** `pytest`, `pytest-xdist`, `ruff`, `mypy` (strict). `uv tool run` is the local invocation pattern.
 
@@ -236,7 +236,7 @@ that the user-home path does.
 1. **Test plan review** (collaborative, before any code). For the story, co-author a list of unit and integration test cases — names + brief intent + which fixture or scripted-IO scenario each exercises. The list captures the contract the implementation must satisfy. User signs off before red-phase work starts.
 2. **Red phase.** Implement the tests. No production code yet. Tests fail by definition. Commit the red phase.
 3. **Green phase.** Write the minimum production code to make the tests pass. No speculative scope, no extra abstractions beyond what the tests require.
-4. **Refactor + verify.** Run the verification gate: `make ci-installer` — lint, format-check, typecheck, coverage, audit and entry-verify, whose current membership is the `ci-installer` target in the `Makefile`. The gate is mechanical only: this step used to also name a `quality-reviewer` agent and a `simplify` skill, and this repository no longer provides either, so there is no agent-based review gate today.
+4. **Refactor + verify.** Run the verification gate: `make ci-installer` — lint, format-check, typecheck, coverage, audit and entry-verify, whose current membership is the `ci-installer` target in the `Makefile`. The gate is mechanical only; there is no agent-based review gate in this step today.
 
 **Test plan completeness criteria** — before signing off on a test plan, confirm:
 - Every public function/class introduced has at least one unit test.
