@@ -13,6 +13,7 @@ Source: skills/engineering/wayfinder/
 Upstream: https://github.com/mattpocock/skills @ 84fdeffd12f2ee307994d1eb6feb48173b6e0502
 Last sync: 2026-08-07
 Drift policy: local-fork — setup command and local-markdown fallback removed, tracker model rewritten onto work verbs, label scheme reduced to two, map body, frontier-section rules, ticket types and tracker operations split into references/; do not re-sync
+Placement: Claude tree, because both modes below start from what the user invoked with, and charting writes a map plus a ticket per decision onto the tracker with no approval step in front of it. Claude alone honours disable-model-invocation; where the projection strips it, a model invocation has no mode to read and leaves tracker items behind. The procedure is otherwise portable, which is why it looks shareable and is not.
 -->
 
 # Wayfinder
