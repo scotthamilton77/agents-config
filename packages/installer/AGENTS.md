@@ -20,11 +20,14 @@ reports green on code you did not change.
 
 It runs, in order: `ruff check` (lint), `ruff format --check` (formatting),
 `mypy --strict src` (types), `pytest --cov` (tests + coverage),
-`pip-audit` (deps), `install.py --help` (entry verify). `make ci` adds the
-other package gates plus `actionlint`, `spec-lint`, `content-lint`, and
-`content-tests` — the last two are repo-root targets this package owns the
-code for (`core/content_lint.py`, `core/content_tests.py` and their CLI
-edges), so a change to either needs `make ci`, not just `make ci-installer`.
+`pip-audit` (deps), `install.py --help` (entry verify). This is one of
+several package gates `make ci` runs — read the `ci` target in the root
+`Makefile` for the current membership rather than a copy here. Four of the
+repo-root targets in that list — `spec-lint`, `content-lint`, `content-tests`,
+`doc-lint` — are code this package owns (`core/spec_lint.py`,
+`core/content_lint.py`, `core/content_tests.py`, `core/doc_lint.py` and their
+respective CLI entry points), so a change to any of them needs `make ci`, not
+just `make ci-installer`.
 
 Do **not** hand-pick a subset (e.g. `ruff check` alone). `ruff check` (linter)
 and `ruff format` (formatter) are orthogonal — passing one says nothing about

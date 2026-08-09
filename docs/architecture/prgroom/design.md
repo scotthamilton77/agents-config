@@ -30,7 +30,8 @@ This is the high-level design reference for the prgroom CLI. It is **lean by int
 
 ### Non-goals (MVP)
 
-- Create-PR, merge, and worktree cleanup (stay in `finishing-a-development-branch` and `merge-and-cleanup`)
+- Create-PR and merge — no installed skill drives either; both are manual, with merge governed only by the always-on hard line against unauthorized merges
+- Worktree cleanup — covered by the `post-merge-cleanup` skill, the `/clean-up-git` command, and the `gitclean` CLI they drive
 - Changes to the upstream brainstorming and implementation workflows
 - Executable-bead primitive (separate sub-design; blocks on this MVP)
 - bd adapter for state (file-only in MVP)

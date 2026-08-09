@@ -30,7 +30,7 @@ A `uv`-managed Python package (`packages/installer`) that installs agent configu
 │       │   ├── config.py
 │       │   └── orchestrator.py
 │       └── tests/
-│           ├── unit/   integration/   fixtures/
+│           ├── unit/   fixtures/
 ├── scripts/
 │   ├── install.sh                           (thin exec uv run --project packages/installer python -m installer stub)
 │   └── install.py                           (entry stub: `from installer.cli import main`)
@@ -43,9 +43,13 @@ A `uv`-managed Python package (`packages/installer`) that installs agent configu
 
 ```
 installer/
-├── cli.py                       Parse argv, build Config, wire IOPort, invoke orchestrator
+├── cli.py                       Parse argv, build Config, wire IOPort, invoke orchestrator + the admission gate
 ├── config.py                    Config dataclass (home, tools, auto_yes); resolve_tools/resolve_plugins for auto-detection
 ├── orchestrator.py              Top-level controller; composes core engines + adapters
+├── content_lint_cli.py          Separate entry point (`python -m installer.content_lint_cli`) — stages src/ and runs the admission gate as a repo-side lint; never calls cli.py or the installer
+├── content_tests_cli.py         Separate entry point — discovers and runs every shipped skill's own test suite
+├── doc_lint_cli.py          Separate entry point — checks every tracked Markdown citation against the staged asset roster
+├── spec_lint_cli.py             Separate entry point — lints docs/specs/ structure
 ├── core/                        ── pure, tool-agnostic, fully unit-testable
 │   ├── model.py                 FileKind, StagedItem, StagingPlan, Orphan, IncludeDirective, Counters
 │   ├── io_port.py               IOPort protocol + TerminalIO + ScriptedIO
@@ -53,6 +57,8 @@ installer/
 │   ├── staging.py               Phases 1–6.9: source-walk → StagingPlan; parameterised by ToolAdapter
 │   ├── sync.py                  Phase 7: hash-compare, diff, prompt, backup, write; reports per-item InstallOutcome
 │   ├── run.py                   Run composition: install_pipeline + prune_pipeline + record_receipt
+│   ├── deploy_gate.py           run_admission_gate: partitions staged content by admission record, weighs the surface budget, runs the conflict audit — called directly from cli.py, on the live install path
+│   ├── admission.py             Admission-record parsing/validation that deploy_gate.py runs against
 │   ├── ownership.py             Wholesale-vs-merge-target classifier (which items the receipt records)
 │   ├── receipt.py               Receipt / ReceiptEntry model + canonical serialization + integrity digest
 │   ├── receipt_store.py         Read (MISSING vs CORRUPT) / atomic write
@@ -61,6 +67,7 @@ installer/
 │   ├── receipt_build.py         desired_staged_keys / route keys + entry builders + merge_receipt
 │   ├── prune_hash.py            is_prunable + partition_file_orphans (hash/type-aware, TOCTOU re-check)
 │   ├── prune_flow.py            run_prune: interactive backup + consent + delete
+│   ├── content_lint.py, content_tests.py, doc_lint.py, spec_lint.py    Engine halves of the four repo-side lint CLIs above — never called from cli.py, never invoke the installer
 │   └── merge/
 │       ├── registry.py          (FileKind, namespace) → MergeStrategy dispatch
 │       ├── base.py              MergeStrategy protocol
@@ -83,6 +90,11 @@ installer/
     ├── extensions.py            apply_extensions(): YAML-patch base markdown assets post-staging
     └── registry.py
 ```
+
+This tree names the modules central to the design narrative below, not the
+package's full module set — `core/` alone carries roughly 35 files today, and
+a hand-copied list here goes stale the moment one is added or split. Read
+`packages/installer/src/installer/` directly for the current roster.
 
 The `ToolAdapter` protocol abstracts everything the engine needs to know about a tool:
 
@@ -163,11 +175,15 @@ Single injectable abstraction (`info`/`ok`/`warn`/`err`/`header`/verbose variant
 
 ## Test architecture
 
-Three suites under `packages/installer/tests/`. Target ~120–150 tests, full run under one minute.
+All suites live under `packages/installer/tests/unit/` — there is no separate
+integration directory; behaviour-driven, end-state-asserting tests sit
+alongside the pure-function ones in the same tree. The count moves with every
+story, so it is not stated here: run
+`uv run pytest packages/installer/tests -q --collect-only` for the current
+total.
 
-### Unit (`tests/unit/`, ~80–100 tests, <2s)
-
-Pure-function tests against the core engine, exercised through a `FakeToolAdapter` so each module tests in isolation. Examples by module:
+Pure-function tests exercise the core engine through a `FakeToolAdapter` so
+each module tests in isolation. Examples by module:
 
 - `core/templates.py` — directive recognition; ALL-RULES join; trailing-newline preservation; Gemini frontmatter strip + tools-list YAML conversion.
 - `core/merge/strategies/append_rules.py` — empty/non-empty concat; separator placement.
@@ -177,8 +193,6 @@ Pure-function tests against the core engine, exercised through a `FakeToolAdapte
 - `core/receipt_diff.py` / `core/prune_hash.py` — `scope_owners` + `diff_orphans` against the desired staged plan; `validate_entry` trust boundary; `is_prunable` hash/type partition (prune vs relinquish).
 - `core/io_port.py` (`ScriptedIO`) — consumes scripts in order; raises on exhaustion; records transcript faithfully.
 - `tools/<name>.py` — each adapter's `is_detected`, `dest_dir`, `should_install_namespace` rules tested independently.
-
-### Integration (`tests/integration/`, ~30–40 tests, <30s)
 
 **Behaviour-driven, not implementation-driven.** Fixtures live in `tests/fixtures/states/` and represent versioned snapshots of *user-state-before-install*: clean home, normal-user-with-existing-config, conflicting-rules, orphans-present, corrupted-settings, legacy-backups-present, plugin-overlay-active, etc. Each fixture is a real directory tree the test can `shutil.copytree` into `tmp_path`.
 
@@ -201,10 +215,16 @@ Test names describe the contract, e.g. `test_user_modified_settings_keys_are_pre
 
 ```
 python3 scripts/install.py [--dry-run] [--yes] [--verbose] [--tools=TOOLS] [--plugins=PLUGINS]
+                           [--project PATH] [--profiles=PROFILES]
                            [--prune | --prune-only] [--dump-stage <path>] [--help]
 ```
 
-`--dump-stage` is mutually exclusive with `--prune` / `--prune-only`. All other flags are mutually exclusive per the standard install / prune-only split.
+`--dump-stage` is mutually exclusive with `--prune` / `--prune-only`.
+`--profiles` requires `--project`. All other flags are mutually exclusive per
+the standard install / prune-only split. `--project PATH` installs
+project-scoped content into `PATH` instead of user space (`core/kits.py` +
+`core/profiles.py` resolve which kits/profiles apply); this path is ungated by
+design and does not run the admission gate that the user-home path does.
 
 ## Implementation discipline
 
@@ -231,9 +251,11 @@ python3 scripts/install.py [--dry-run] [--yes] [--verbose] [--tools=TOOLS] [--pl
 
 ## Verification
 
-1. **Unit suite:** `uv run pytest packages/installer/tests/unit -q` — green; coverage ≥90% on touched modules.
-2. **Integration suite:** `uv run pytest packages/installer/tests/integration -q` — green; assertions phrased as end-state contracts, not phase mechanics; scripted IOPort scripts fully consumed.
-3. **Lint + typecheck:** `uv run ruff check packages/installer && uv run mypy --strict packages/installer/src` — clean.
-4. **`--dump-stage` sanity:** dump the plan; confirm contents match the expected tree by inspection.
+1. **Suite:** `uv run pytest packages/installer/tests -q` — green; coverage
+   ≥90% on touched modules; the behaviour-driven, end-state-asserting tests
+   live in this same tree, not a separate integration directory; scripted
+   IOPort scripts fully consumed.
+2. **Lint + typecheck:** `uv run ruff check packages/installer && uv run mypy --strict packages/installer/src` — clean.
+3. **`--dump-stage` sanity:** dump the plan; confirm contents match the expected tree by inspection.
 
-Or run all four in one shot: `make ci-installer` from the repo root.
+Or run all three in one shot: `make ci-installer` from the repo root.

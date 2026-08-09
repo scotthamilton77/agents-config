@@ -25,8 +25,9 @@ make ci-prgroom   # the full gate CI enforces
 
 It runs, in order: `ruff check` (lint), `ruff format --check` (formatting),
 `mypy --strict src` (types), `pytest --cov` (tests + coverage), `pip-audit`
-(deps), `prgroom --help` (entry verify). `make ci` runs this alongside
-`ci-installer` and `lint-actions`.
+(deps), `prgroom --help` (entry verify). This is one of several package gates
+`make ci` runs — read the `ci` target in the root `Makefile` for the current
+membership rather than a copy here.
 
 Do **not** hand-pick a subset (e.g. `ruff check` alone). `ruff check` (linter)
 and `ruff format` (formatter) are orthogonal — passing one says nothing about

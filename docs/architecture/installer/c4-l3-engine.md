@@ -35,7 +35,7 @@ C4Component
 
     Container_Boundary(proc, "installer process") {
 
-        Component(cli, "cli.py", "Python", "The real top-level controller: resolve tools/plugins; load .installignore; drive orchestrator.stage_and_transform, then core/run.py's install_pipeline / install_plugin_routes / prune_pipeline / record_receipt directly. Wires IOPort (TerminalIO). Enforces --dump-stage vs --prune/--prune-only mutual exclusion; catches ConsentRequiredError as exit 1.")
+        Component(cli, "cli.py", "Python", "The real top-level controller: resolve tools/plugins; load .installignore; drive orchestrator.stage_and_transform, then run the admission gate (deploy_gate.py), then core/run.py's install_pipeline / install_plugin_routes / prune_pipeline / record_receipt directly. Wires IOPort (TerminalIO). Enforces --dump-stage vs --prune/--prune-only mutual exclusion; catches ConsentRequiredError as exit 1. The --project fork bypasses the gate by design.")
         Component(config, "config.py", "Python", "Frozen Config dataclass (home, tools, auto_yes — the only fields today) plus resolve_tools / resolve_plugins for auto-detection, called once up front by cli.py. Does NOT load installer.toml — core/installer_toml.py's loader is parsed but unwired (see data-view.md).")
         Component(orch, "orchestrator.py", "Python", "stage_and_transform: per detected tool, build_plan -> overlay_plugins -> apply_extensions -> flatten DYNAMIC-INCLUDE -> adapter.post_staging_transforms; returns every tool's finished StagingPlan to cli.py in one call. Does NOT sync or prune — see sequences.md Sequence 1.")
 
@@ -58,6 +58,7 @@ C4Component
             Component(mreg, "merge/registry.py", "Python", "(FileKind, namespace) -> MergeStrategy dispatch. Single lookup table.")
             Component(mbase, "merge/base.py", "Python", "MergeStrategy protocol: merge(existing, incoming) -> StagedItem.")
             Component(strat, "merge/strategies/* (5 modules)", "Python", "append_rules, fatal, json_union, last_wins_warn, last_wins_silent. One class + one test file each.")
+            Component(gate, "deploy_gate.py + admission.py", "Python", "run_admission_gate: partitions every staged artifact by its admission-record front matter, weighs the surface budget, and runs the conflict audit over the admitted set. Record-less content is dropped (zero-base); a malformed record, an over-cap surface, or a claim conflict aborts the deploy before any write. Called directly by cli.py, user-home path only.")
         }
 
         Container_Boundary(tools, "tools/ — per-tool adapters") {
@@ -86,6 +87,7 @@ C4Component
     Rel(cli, config, "resolve_tools / resolve_plugins")
     Rel(cli, ignore, "load .installignore (hard error if missing/unreadable)")
     Rel(cli, orch, "stage_and_transform(tools, plugins) -- builds every tool's plan, whole-fleet, before any sync")
+    Rel(cli, gate, "run_admission_gate(plans) -- user-home path only; aborts (exit 1) on a violation before run.py is called")
     Rel(config, treg, "auto-detect tools")
     Rel(config, preg, "discover plugins")
     Rel(config, src_ext, "probe tool config dirs")
@@ -146,7 +148,7 @@ C4Component
 
 ### `core/` — the tool-agnostic engine
 
-The engine knows nothing about any specific tool; it takes a `ToolAdapter` and a source root and runs. This is the load-bearing separation in the whole design — it is what lets ~80–100 unit tests exercise the engine through a `FakeToolAdapter` without any real tool present.
+The engine knows nothing about any specific tool; it takes a `ToolAdapter` and a source root and runs. This is the load-bearing separation in the whole design — it is what lets the bulk of the test suite exercise the engine through a `FakeToolAdapter` without any real tool present (see `installer-design.md` §"Test architecture" for how to get the current count).
 
 - **`model.py`** is pure data — the enums and dataclasses every other module passes around (detailed in [`data-view.md`](data-view.md)). No behaviour lives here.
 - **`io_port.py`** is the I/O chokepoint. `sync` and `prune` reach the terminal only through the `IOPort` protocol; tests inject `ScriptedIO` to drive every prompt deterministically.
@@ -192,6 +194,7 @@ Every cross-boundary dependency is one of these four protocols. That is the desi
 - **The data shapes** the components pass around (`StagingPlan`, `StagedItem`, `Config`, …) and the merge-dispatch table — see [`data-view.md`](data-view.md).
 - **The per-strategy merge mechanics** (append separator placement, JSON deep-union rules, fatal message format) — specified in `installer-design.md` §"Test architecture".
 - **The container boundary + external stores at process granularity** — see [`c4-l2-container.md`](c4-l2-container.md).
+- **The repo-side lint/gate CLIs** (`content_lint_cli.py`, `content_tests_cli.py`, `doc_lint_cli.py`, `spec_lint_cli.py`, and their `core/content_lint.py` / `core/content_tests.py` / `core/doc_lint.py` / `core/spec_lint.py` engines) — each is its own entry point under `python -m installer.<name>_cli`, never called from `cli.py`, and never invokes the installer. They are out of scope for this diagram because it is scoped to "the installer process" (`python3 scripts/install.py` / `python -m installer`), which they are not part of; see the `Makefile`'s `content-lint`, `content-tests`, `doc-lint`, and `spec-lint` targets for how they run.
 
 ## Cross-references
 

@@ -15,14 +15,14 @@ machine-checkable QA in between.
 | Phase | What backs it today |
 |-------|---------------------|
 | 0. Always-on contract | **Ships** — installed as your instruction file |
-| 1. Capture | Tooling only; no rule enforces the habit |
-| 2. Brainstorm | **Ships** — `grilling`, `grill-with-docs` |
-| 3. Plan | **Ships** — `to-spec`, `ac-attack` |
-| 4. Implement | **Nothing ships** |
+| 1. Capture | Tooling only; no rule enforces the habit. `triaging-discovered-work`, `where-does-this-fit` help with the judgment calls once you're there |
+| 2. Brainstorm | **Ships** — `grilling`, `grill-with-docs`, `domain-modeling` |
+| 3. Plan | **Ships** — `to-spec`, `ac-attack`, `to-tickets`, `wayfinder`, `prototype`, `research` |
+| 4. Implement | **Partly** — `tdd`, `test-review`, `diagnosing-bugs`, `codebase-design`, `using-git-worktrees`; no scaffold-based approach or coverage-floor enforcement beyond them |
 | 5. Review and completion gate | **Partly** — `review-panel`, `review-verdict`; no gate driving them |
 | 6. Deliver | **Nothing ships** for the PR loop; `post-merge-cleanup` covers the tail |
 | 7. Merge | Contract only — the hard line, with nothing enforcing it |
-| 8. Persist | **Partly** — `handoff` |
+| 8. Persist | **Partly** — `handoff`, `retrospect` |
 
 You don't invoke these by hand step by step — the rules and skills fire
 automatically as the work moves. What follows is what's happening, and where you
@@ -66,6 +66,12 @@ What is missing is the discipline: no installed rule tells your assistant to fil
 an item before writing code, claim it, or close it. Ask for it and it happens;
 expect it automatically and it will not.
 
+Two skills support the judgment calls around capture once you're there:
+**`triaging-discovered-work`** scopes a bug, missing requirement, or mid-task
+follow-up into filed, deferred, or in-scope rather than letting it get
+orphaned, and **`where-does-this-fit`** answers how a work item — or the code
+near it — connects to the wider architecture.
+
 ## 2. Brainstorm — the "no, not ready" gate — ships
 
 Before any creative work, the **`grilling`** skill interviews you one question
@@ -76,7 +82,8 @@ implementation** — the skill's exit condition is an enumerated set of acceptan
 criteria, not a shared feeling that you have discussed it enough.
 
 Use **`grill-with-docs`** to stress-test a plan against your project's domain
-model and update `CONTEXT.md`/ADRs as decisions crystallize.
+model and update `CONTEXT.md`/ADRs as decisions crystallize; **`domain-modeling`**
+is the skill that builds and sharpens that model in the first place.
 
 ## 3. Plan — ships
 
@@ -92,18 +99,33 @@ covers — and every proposal it returns gets adjudicated into the criteria or
 rejected on the record. Running it before implementation is the point: once code
 exists, review can only check coverage of the cases you already named.
 
-## 4. Implement — nothing ships
+Three more skills sit alongside these for work that doesn't fit the straight
+line from grilling to spec: **`wayfinder`** (Claude Code only) charts oversized
+work as a map of decision questions when what to decide is still unclear,
+**`to-tickets`** slices an already-decided plan into tracker-sized build
+tickets, **`prototype`** builds throwaway code to answer a design question
+prose can't settle, and **`research`** investigates an external fact — API
+behaviour, a spec detail — a decision is waiting on.
 
-This is the largest gap. The test-first and planning skills that governed
-implementation — red/green/refactor, unit-test quality, the tautology filter,
-the coverage floor — were all retired, and the scaffold-based approach meant to
-replace them is not built. There is currently no installed asset that shapes how
-your assistant writes code.
+## 4. Implement — partly ships
+
+**`tdd`** governs the red-to-green loop — one behaviour at a time, no
+production code without a failing test first, with an explicit split between
+implementing against a handed-over scaffold and writing both the test and the
+code yourself. **`test-review`** judges whether a test suite would actually
+fail if the behaviour it covers broke, which is the tautology-filter and
+unit-test-quality check the earlier retired skills used to do. Neither
+enforces a coverage floor — that stays unbuilt.
+
+**`diagnosing-bugs`** structures the loop for a hard bug or performance
+regression, **`codebase-design`** supplies the shared vocabulary for module
+and seam decisions, and **`using-git-worktrees`** isolates implementation work
+from whatever branch is already checked out.
 
 The always-on contract still applies (the laws, the decision matrix, the hard
 line against committing to the default branch), and it is worth being explicit
-with your assistant about testing expectations in the meantime, because nothing
-in the configuration is being explicit on your behalf.
+with your assistant about testing expectations beyond what these skills cover,
+because nothing else in the configuration is being explicit on your behalf.
 
 ## 5. Review and the completion gate — partly ships
 
@@ -171,9 +193,11 @@ Work isn't done until context is preserved:
   thread.
 - **Memories** — your assistant may have its own memory mechanism; this
   configuration no longer ships a routing rule for it.
-- **Retrospectives and self-improvement** — the skills that turned a correction
-  into a written prevention rule, and that ran an end-of-session retrospective,
-  were retired with no replacement yet.
+- **`retrospect`** reads the session transcript for cause — a round-trip
+  traced to buried context, an unused tool, or an under-specified request —
+  and turns each finding into a fix routed to a file, a gate, or a memory. It
+  is the one pass over what the earlier, retired self-improvement and
+  end-of-session retrospective skills each used to do separately.
 
 ## Delegation, throughout
 
