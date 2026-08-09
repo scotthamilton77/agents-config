@@ -12,7 +12,7 @@ skill-name/
 ├── scripts/           (optional — executable code for deterministic tasks)
 ├── references/        (optional — docs loaded into context as needed)
 ├── assets/            (optional — templates, fonts, icons used in output)
-├── evals/             (optional — trigger-eval and grading JSON; see schemas.md)
+├── evals/             (optional — trigger-eval and grading JSON)
 └── examples/          (optional — worked references)
 ```
 

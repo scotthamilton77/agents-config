@@ -79,9 +79,7 @@ A bad query:
 Automation of this loop (a scripted optimizer that proposes description
 edits, splits train/test, and runs to convergence) is the future home of
 `scripts/run_loop.py` — not yet shipped in this skill. The
-`evals/trigger-eval.json` shape is defined inline above; `schemas.md` covers
-the broader eval/grading JSON shapes the future automation will use
-(`evals/evals.json`, `grading.json`).
+`evals/trigger-eval.json` shape is defined inline above.
 
 ### How triggering actually works
 
