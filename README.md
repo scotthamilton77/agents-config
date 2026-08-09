@@ -40,7 +40,7 @@ Where this README and the source tree disagree, believe the source tree.
 
 Nothing else is required. Two related tools are optional:
 
-- **[steveyegge/beads](https://github.com/steveyegge/beads)** — the `bd` tracker. The `work` CLI this repo installs is a facade over `bd` and needs it to function, but nothing in the installed instruction surface requires either.
+- **[steveyegge/beads](https://github.com/steveyegge/beads)** — the `bd` tracker. The `work` CLI, which ships from its own repository and is a facade over `bd`, needs it to function; this repo installs neither, and nothing in the installed instruction surface requires either.
 - **[obra/superpowers](https://github.com/obra/superpowers)** — not a dependency. Nothing installed invokes its process skills.
 
 The `codex` plugin under `src/plugins/` is auto-detected when `~/.codex/` exists — a `codex` binary on PATH alone will not trigger it — and its skill assumes the [Codex CLI](https://github.com/openai/codex) is available.
@@ -55,12 +55,10 @@ packages/                           # Real Python packages (standalone uv projec
 │                                   #   See the Makefile for which are CI-gated, and
 │                                   #   core/clis.py for which deploy onto PATH
 ├── installer/                      # The installer engine
-├── workcli/                        # The `work` issue-tracker facade CLI
 ├── prgroom/                        # PR-grooming CLI (carved, not finished)
 ├── grind/                          # Event-sourced runtime: event schema + FSM fold
 ├── executor/                       # Verb→event→tracker pairing layer (no dispatch loop yet)
-├── gitclean/                       # Provably-merged branch and worktree sweeper
-└── …                               # Plus earlier-stage packages
+└── gitclean/                       # Provably-merged branch and worktree sweeper
 docs/
 ├── guide/                          # User guide — how to configure a project & run the SDLC
 ├── architecture/                   # Evergreen HLD artifacts (C4, sequence, state machines) per subsystem

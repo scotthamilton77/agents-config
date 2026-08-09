@@ -1,10 +1,7 @@
 """S9T1-A4/A5: the pairing table is total over a closed universe, and the park
-vocabulary is the shared contract's, not a transcription of it."""
+vocabulary is the one the runtime and the facade emit, not a private dialect."""
 
 from __future__ import annotations
-
-import tomllib
-from pathlib import Path
 
 import pytest
 
@@ -27,14 +24,20 @@ from executor.pairing import (
 )
 from tests.unit.fakes import FakeRuntime, FakeTracker, invoke, run_state
 
-# The failure axis is not this package's to define. It lives in the shared
-# park-reason contract that the runtime and the facade also implement; the
-# packages are isolated uv projects with no cross-import, so a transcription
-# here would only catch a *forgetful* one-sided edit. Reading the one contract
-# file makes a vocabulary change a four-file change by construction, with each
-# missing table failing its own gate. Deliberately not skip-guarded: a silent
-# skip reopens the hole the file exists to close.
-_CONTRACT = Path(__file__).resolve().parents[3] / "contracts" / "park-reasons.toml"
+# The failure axis is not this package's to define: the runtime and the facade
+# emit the same five codes, and a reason crosses to `work park --reason`
+# byte-identical. Written out rather than derived from the table under test,
+# which would alarm at nothing -- each side pins what it emits, so an edit to
+# this package's `FAILURE_REASONS` fails here until this literal agrees.
+_FAILURE_VOCABULARY = frozenset(
+    {
+        "ci-failure",
+        "merge-conflict",
+        "approval-required",
+        "bot-declined",
+        "budget-exhausted",
+    }
+)
 
 # The expected tracker action per row, stated here independently of the table
 # under test. Every walked row must appear: a row added without an expectation
@@ -157,22 +160,17 @@ def test_a_verb_outside_the_enumeration_is_refused_not_dispatched() -> None:
     assert tracker.mutations == []
 
 
-def _contract_reasons() -> dict[str, str]:
-    with _CONTRACT.open("rb") as handle:
-        return dict(tomllib.load(handle)["reasons"])
-
-
 def test_the_failure_axis_is_the_shared_contracts_vocabulary() -> None:
     """
-    Given the shared park-reason contract
+    Given the park-reason vocabulary the runtime and the facade emit
     When this package's failure-axis table is compared to it
     Then they hold the same reasons.
 
-    The executor is the contract's third reader. A failure reason crosses to
-    `work park --reason` byte-identical, so this package having its own idea
-    of the vocabulary is what would force a mapping table at the call site.
+    A failure reason crosses to `work park --reason` byte-identical, so this
+    package having its own idea of the vocabulary is what would force a
+    mapping table at the call site.
     """
-    assert set(FAILURE_REASONS) == set(_contract_reasons())
+    assert set(FAILURE_REASONS) == _FAILURE_VOCABULARY
 
 
 def test_the_scheduling_axis_holds_the_runtime_native_reasons() -> None:
@@ -209,7 +207,7 @@ def test_the_exhaustion_reason_is_on_the_axis_its_row_declares_a_tracker_verb_fo
     writing to a facade with no vocabulary for it.
     """
     assert park_axis(BUDGET_EXHAUSTED) is Axis.FAILURE
-    assert BUDGET_EXHAUSTED in _contract_reasons()
+    assert BUDGET_EXHAUSTED in _FAILURE_VOCABULARY
 
 
 def test_an_unknown_park_reason_is_refused_rather_than_defaulted() -> None:

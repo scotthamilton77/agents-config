@@ -28,7 +28,7 @@ def test_retired_allowlisted_cli_uninstalled_with_consent() -> None:
     io = ScriptedIO(confirms=[True])
     outcome = prune_clis(
         _prior("oldtool"),
-        registry_names=frozenset({"workcli"}),
+        registry_names=frozenset({"prgroom"}),
         retired=frozenset({"oldtool"}),
         deploy=deploy,
         io=io,
@@ -52,7 +52,7 @@ def test_declined_uninstall_retains_entry() -> None:
     deploy = ScriptedCliDeploy()
     outcome = prune_clis(
         _prior("oldtool"),
-        registry_names=frozenset({"workcli"}),
+        registry_names=frozenset({"prgroom"}),
         retired=frozenset({"oldtool"}),
         deploy=deploy,
         io=ScriptedIO(confirms=[False]),
@@ -77,7 +77,7 @@ def test_foreign_name_never_uninstalled_relinquished_instead() -> None:
     io = ScriptedIO()
     outcome = prune_clis(
         _prior("ruff"),
-        registry_names=frozenset({"workcli"}),
+        registry_names=frozenset({"prgroom"}),
         retired=frozenset(),
         deploy=deploy,
         io=io,
@@ -101,7 +101,7 @@ def test_uninstall_of_absent_tool_counts_as_success() -> None:
     )
     outcome = prune_clis(
         _prior("oldtool"),
-        registry_names=frozenset({"workcli"}),
+        registry_names=frozenset({"prgroom"}),
         retired=frozenset({"oldtool"}),
         deploy=deploy,
         io=ScriptedIO(),
@@ -123,7 +123,7 @@ def test_dry_run_previews_no_uninstall() -> None:
     io = ScriptedIO()
     outcome = prune_clis(
         _prior("oldtool"),
-        registry_names=frozenset({"workcli"}),
+        registry_names=frozenset({"prgroom"}),
         retired=frozenset({"oldtool"}),
         deploy=deploy,
         io=io,
@@ -149,7 +149,7 @@ def test_prune_no_tty_without_yes_raises() -> None:
     with pytest.raises(ConsentRequiredError):
         prune_clis(
             _prior("oldtool"),
-            registry_names=frozenset({"workcli"}),
+            registry_names=frozenset({"prgroom"}),
             retired=frozenset({"oldtool"}),
             deploy=deploy,
             io=ScriptedIO(interactive=False),

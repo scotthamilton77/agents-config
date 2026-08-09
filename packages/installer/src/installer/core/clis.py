@@ -37,7 +37,6 @@ class CliSpec:
 
 
 CLI_PACKAGES: tuple[CliSpec, ...] = (
-    CliSpec("workcli", "packages/workcli", "work", ("--protocol-version",)),
     CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",)),
     CliSpec("grind", "packages/grind", "grind", ("--help",)),
     CliSpec("executor", "packages/executor", "executor", ("--help",)),

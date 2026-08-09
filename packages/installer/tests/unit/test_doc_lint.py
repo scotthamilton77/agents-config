@@ -394,8 +394,8 @@ def test_a_cross_package_citation_is_not_a_finding(tmp_path: Path) -> None:
 
 
 def test_a_parameter_is_a_name(tmp_path: Path) -> None:
-    _write(tmp_path, "packages/workcli/tests/test_x.py", "def test_it(tmp_path):\n    pass\n")
-    assert _lint(tmp_path, "Use `tmp_path`.\n", relpath="packages/workcli/AGENTS.md") == []
+    _write(tmp_path, "packages/grind/tests/test_x.py", "def test_it(tmp_path):\n    pass\n")
+    assert _lint(tmp_path, "Use `tmp_path`.\n", relpath="packages/grind/AGENTS.md") == []
 
 
 def test_a_data_filename_is_never_read_as_a_symbol(tmp_path: Path) -> None:

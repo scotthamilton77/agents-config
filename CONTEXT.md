@@ -63,8 +63,8 @@ Documents written before 2026-08 call this **Backlog Grooming**, to distinguish
 it from a second, Idea-scoped ceremony that no longer exists. The qualifier is
 now redundant but harmless, and the persisted state field still carries it.
 
-Contract: `packages/workcli/src/workcli/verbs/groom.py`; thresholds in
-`project-config.toml` under `[operating-model]`.
+Contract: the `work groom` verb; thresholds in `.work/config.toml` under
+`[operating-model]`.
 
 ## Milestone
 
@@ -133,8 +133,8 @@ Track names are declared in configuration, and that declaration is
 authoritative: a name that no longer corresponds to anything real is a defect
 in the configuration, not a licence to invent a new one.
 
-Contract: `[tracks]` in `project-config.toml`, read by
-`packages/workcli/src/workcli/verbs/tracks.py`.
+Contract: `[tracks]` in `.work/config.toml`, read by the `work` facade's track
+verbs.
 
 ## Verdict artifact
 
@@ -160,7 +160,9 @@ replaceable, so reaching past it is a defect even when it works.
 Where the facade cannot express an operation, the gap is recorded against the
 milestone rather than worked around silently.
 
-Contract: `packages/workcli/`.
+Contract: the `work` facade CLI, which ships from its own repository
+(`scotthamilton77/workcli`); its configuration for this repo is
+`.work/config.toml`.
 
 ## Worktree branch
 

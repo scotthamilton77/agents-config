@@ -54,8 +54,10 @@ What genuinely reads the file today:
 
 - **`[install]`** — read by the installer, to select project-scoped install
   profiles.
-- **`[tracks]`, `[operating-model]`, `[extraction.*]`** — read by the `work`
-  CLI for its track partition and work-in-progress rules.
+
+The `work` CLI does not read this file. Its track partition and
+work-in-progress rules come from `.work/config.toml`, which `work init`
+scaffolds at your project root.
 
 Everything else is currently inert. The sections below are documented because
 they are the shape the rebuild is expected to restore, and the schema each one
@@ -128,9 +130,10 @@ picks a model from its own routing table rather than from this section.
 
 The workflow treats durable work as issues that outlive a session and survive
 context compaction. This repo's tracker is [beads](https://github.com/steveyegge/beads),
-addressed through the `work` CLI that the installer puts on your PATH — `work`
-is a facade over `bd`, so you need `bd` installed and a `bd init` in your
-project for any of it to function.
+addressed through the `work` CLI — a facade over `bd` that ships from its own
+repository, [scotthamilton77/workcli](https://github.com/scotthamilton77/workcli),
+and is installed from there rather than by this repo's installer. You need `bd`
+installed and a `bd init` in your project for any of it to function.
 
 That `bd init` is a one-time, per-project setup step, and it is something
 `work` deliberately has no verb for: a workspace carries storage, remote and
@@ -140,6 +143,11 @@ it. Run any `work` verb where no workspace has been created and it refuses with
 pointing here for the rest. Running `bd init` at the root of your project is
 that rest — do it once, and every `work` verb below that root then resolves.
 
+`work init` is the second setup step: it writes `.work/config.toml` at your
+project root, which is where `work` reads the vocabulary it validates but does
+not author — your track names, your nouns, and the reasons work parks or is
+deferred.
+
 Be aware of what does **not** ship: no installed rule or skill instructs your
 assistant to file an issue before writing code, to claim one when it starts, or
 to close one when it finishes. That discipline was carried by rules that have
@@ -148,17 +156,20 @@ when either of you reaches for it, not a habit the configuration enforces.
 
 ## Optional: the CLIs on your PATH
 
-A normal install puts five CLIs from this repo on your PATH via `uv tool
-install` — `work`, `prgroom`, `grind`, `executor` and `gitclean` — no separate
-step needed. Only `gitclean` is reached for by an installed skill
+A normal install puts four CLIs from this repo on your PATH via `uv tool
+install` — `prgroom`, `grind`, `executor` and `gitclean` — no separate step
+needed. Only `gitclean` is reached for by an installed skill
 (`post-merge-cleanup`, which uses it to decide safely which branches and
 worktrees a merged PR made disposable) and by the `/clean-up-git` slash command.
 
-The other four are components of the rebuild rather than finished user tools.
+The other three are components of the rebuild rather than finished user tools.
 `prgroom` grooms a PR deterministically but the skills that drove it were
 retired; `grind` and `executor` are runtime pieces with no driver yet. They are
 installed because the repo's own development uses them, and they are harmless if
 you ignore them.
+
+`work` is not among them: it ships from its own repository and is installed
+from there.
 
 If you want one without the installer, `uv tool install ./packages/<name>` from
 this repo is the same command the installer runs.

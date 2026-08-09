@@ -2,8 +2,7 @@
 
 `main()` is the single injectable entry point: argv, stdout/stderr, the wall
 clock, the seed-file reader, the working directory, and the environment all
-arrive as arguments, never a module global (same seam precedent as workcli's
-`cli.py`).
+arrive as arguments, never a module global.
 
 Envelope and exit codes -- the whole contract, since this docstring is what the
 package's other artifacts point at:
@@ -44,8 +43,7 @@ from grind.verbs import cmd_check, cmd_create, cmd_finish, cmd_log, cmd_render, 
 class _RaisingArgumentParser(ArgumentParser):
     """Raises `GrindError` on a parse failure instead of printing usage and
     calling `sys.exit` -- keeps the "stdout is always exactly one JSON
-    envelope" invariant on a bad flag or unknown verb (same precedent as
-    workcli's `_EnvelopeArgumentParser`)."""
+    envelope" invariant on a bad flag or unknown verb."""
 
     def error(self, message: str) -> NoReturn:
         raise GrindError(message)

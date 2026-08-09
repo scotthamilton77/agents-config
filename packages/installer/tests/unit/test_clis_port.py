@@ -26,7 +26,7 @@ def test_scripted_fake_stable_reads_and_stateful_queues(tmp_path: Path) -> None:
     fake = ScriptedCliDeploy(
         uv_version=(0, 10, 4),
         bin_dir=bin_dir,
-        tool_list={"workcli": frozenset({"work"})},
+        tool_list={"grind": frozenset({"grind"})},
         which_map={"work": bin_dir / "work"},
         shims=[bin_dir / "work"],
         installs=[CommandResult(ok=True, output="")],
@@ -36,7 +36,7 @@ def test_scripted_fake_stable_reads_and_stateful_queues(tmp_path: Path) -> None:
     assert fake.uv_version() == (0, 10, 4)  # stable, not consumed
     assert fake.bin_dir() == bin_dir
     assert fake.bin_dir() == bin_dir  # stable, not consumed
-    assert fake.tool_list() == {"workcli": frozenset({"work"})}
+    assert fake.tool_list() == {"grind": frozenset({"grind"})}
     assert fake.which("work") == bin_dir / "work"
     assert fake.which("unknown") is None  # missing key -> not on PATH
     assert fake.shim_path("work") == bin_dir / "work"
@@ -123,11 +123,11 @@ def test_tool_list_parses_names_and_executables(monkeypatch: pytest.MonkeyPatch)
 
     Pins the provenance mapping gating promptless heal.
     """
-    out = "workcli v0.1.0\n- work\nprgroom v0.1.0\n- prgroom\n"
+    out = "grind v0.1.0\n- grind\nprgroom v0.1.0\n- prgroom\n"
     port = UvCliDeploy()
     monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: _FakeCompleted(stdout=out))
     assert port.tool_list() == {
-        "workcli": frozenset({"work"}),
+        "grind": frozenset({"grind"}),
         "prgroom": frozenset({"prgroom"}),
     }
     monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: _FakeCompleted(returncode=2))
@@ -190,7 +190,7 @@ def test_subprocess_failures_map_to_not_ok(monkeypatch: pytest.MonkeyPatch, tmp_
         raise subprocess.TimeoutExpired(cmd="uv", timeout=1)
 
     monkeypatch.setattr(subprocess, "run", _timeout)
-    assert not port.tool_uninstall("workcli").ok
+    assert not port.tool_uninstall("grind").ok
 
     def _missing(*_a: object, **_k: object) -> _FakeCompleted:
         raise FileNotFoundError("no shim")  # noqa: TRY003  # test double
@@ -200,7 +200,7 @@ def test_subprocess_failures_map_to_not_ok(monkeypatch: pytest.MonkeyPatch, tmp_
     monkeypatch.setattr(
         subprocess, "run", lambda *_a, **_k: _FakeCompleted(returncode=1, stderr="boom")
     )
-    result = port.tool_uninstall("workcli")
+    result = port.tool_uninstall("grind")
     assert not result.ok and "boom" in result.output
 
 

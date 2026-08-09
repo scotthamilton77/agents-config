@@ -3,9 +3,6 @@
         verify-entry-installer \
         ci-prgroom test-prgroom lint-prgroom format-check-prgroom \
         typecheck-prgroom cov-prgroom audit-prgroom verify-entry-prgroom \
-        ci-workcli test-workcli lint-workcli format-check-workcli \
-        typecheck-workcli cov-workcli audit-workcli verify-entry-workcli \
-        itest-workcli \
         ci-grind test-grind lint-grind format-check-grind \
         typecheck-grind cov-grind audit-grind verify-entry-grind \
         ci-gitclean test-gitclean lint-gitclean format-check-gitclean \
@@ -16,7 +13,6 @@
 
 INSTALLER := packages/installer
 PRGROOM := packages/prgroom
-WORKCLI := packages/workcli
 GRIND := packages/grind
 GITCLEAN := packages/gitclean
 EXECUTOR := packages/executor
@@ -26,7 +22,7 @@ EXECUTOR := packages/executor
 # remedy for that is to correct the prose, never to exempt the file. An exemption
 # silences the one class of drift that has no reviewer, which is the whole reason
 # the check exists.
-ci: ci-installer ci-prgroom ci-workcli ci-grind ci-gitclean ci-executor \
+ci: ci-installer ci-prgroom ci-grind ci-gitclean ci-executor \
     lint-actions spec-lint content-lint content-tests doc-lint
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
@@ -125,48 +121,7 @@ audit-prgroom:
 verify-entry-prgroom:
 	uv --project $(PRGROOM) run prgroom --help > /dev/null
 
-# ── workcli (mirrors the ci-installer block one-for-one) ──
-
-ci-workcli: lint-workcli format-check-workcli typecheck-workcli \
-            cov-workcli audit-workcli \
-            verify-entry-workcli
-
-test-workcli:
-	cd $(WORKCLI) && uv run pytest -q
-
-lint-workcli:
-	cd $(WORKCLI) && uv run ruff check
-
-format-check-workcli:
-	cd $(WORKCLI) && uv run ruff format --check
-
-typecheck-workcli:
-	cd $(WORKCLI) && uv run mypy --strict src
-
-cov-workcli:
-	cd $(WORKCLI) && uv run pytest --cov --cov-report=term-missing
-
-audit-workcli:
-	cd $(WORKCLI) && uv sync --frozen && uv run pip-audit
-
-# verify-entry-workcli asserts the console-script entry point resolves, the
-# protocol handshake works, and the CLI root parses (`work --help` exits 0).
-# Run via `uv --project` so the workcli venv where the entry point is
-# installed is selected.
-verify-entry-workcli:
-	uv --project $(WORKCLI) run work --protocol-version > /dev/null
-	uv --project $(WORKCLI) run work --help > /dev/null
-
-# itest-workcli is the real-bd integration suite: it stands up an isolated
-# embedded-Dolt bd install per test and drives the production `work` CLI against
-# it. It requires `bd` on PATH and is DELIBERATELY EXCLUDED from `ci-workcli` /
-# `ci` (needs the bd toolchain; ~40s+ serial). Pre-push discipline, not a gate.
-# `-p no:xdist` pins it serial so the session-scoped read_only_install pays its
-# ~1.4s bd init ONCE (under -n auto it would re-init per worker).
-itest-workcli:
-	cd $(WORKCLI) && uv run pytest tests/integration -q -p no:xdist
-
-# ── grind (mirrors the ci-workcli block one-for-one; enforced via the
+# ── grind (mirrors the ci-installer block one-for-one; enforced via the
 # top-level `ci:` aggregate). ──
 ci-grind: lint-grind format-check-grind typecheck-grind \
           cov-grind audit-grind verify-entry-grind

@@ -192,15 +192,14 @@ must pass before push.
     them without lying. `human-gated` was the one old kind that *was*
     failure-shaped, and `approval-required` names the same state — two names
     for one state is the drift the reconciliation removes.
-  - The `failure` axis is not this package's to define: it lives in
-    `packages/contracts/park-reasons.toml`, which `packages/workcli`
-    implements as `work park --reason`. The isolated-project boundary rules
-    out a cross-import, and a transcription in each test file would only catch
-    a *forgetful* one-sided edit — so both suites read that one file instead.
-    Changing the vocabulary is a three-file change by construction: the
-    contract plus both tables, with each missing table failing its own gate.
-    The scheduling axis is grind-native and deliberately absent from the
-    contract; it has no tracker counterpart.
+  - The `failure` axis is not this package's to define: it is the vocabulary
+    the `work` facade implements as `work park --reason`, and `work` ships
+    from its own repository. Each side pins what it emits — grind's copy is
+    the literal in `tests/unit/test_park_vocabulary.py` — so changing the
+    vocabulary means editing both runtime tables and both pinned literals,
+    with a missed edit failing that side's own gate. The scheduling axis is
+    grind-native and has no tracker counterpart, so it is deliberately absent
+    from the pairing.
 - **`pr-open` and `in-review` are parkable, and that is load-bearing.** Every
   failure-axis reason (`ci-failure`, `merge-conflict`, `bot-declined`, …) is
   reached with a PR open, so excluding those statuses from `_PARKABLE` would
@@ -282,8 +281,8 @@ must pass before push.
 
 - Behavioural, not tautological — each test pins a coded transition-table
   decision, a derived-state computation, or an anomaly-policy guarantee,
-  never the language/stdlib. See `../workcli/AGENTS.md` for the shared
-  house standard this mirrors.
+  never the language/stdlib. This is the house standard every package here
+  holds to; `../installer/AGENTS.md` states it for the installer.
 - `tests/unit/builders.py` holds small event-builder helpers (`seed_event`,
   `event`) shared across test modules — not a fixture file, a plain module.
 

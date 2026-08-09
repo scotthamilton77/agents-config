@@ -164,7 +164,7 @@ erDiagram
 
     CliReceiptEntry {
         string name    "registry / uv tool name — the diff key"
-        string binary  "console-script the tool provides; need not match name (workcli provides work)"
+        string binary  "console-script the tool provides; need not match the package name"
         string digest  "cli_source_digest(package_dir) at deploy time — gates verify/heal/fresh"
     }
 ```
