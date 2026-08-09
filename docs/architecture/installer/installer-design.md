@@ -209,7 +209,7 @@ Test names describe the contract, e.g. `test_user_modified_settings_keys_are_pre
 ### Fixture strategy
 
 - `tests/fixtures/sources/test-plugin/` — the one committed synthetic source tree (a rule, a command, a skill), exercising plugin-overlay behaviour without depending on the real `src/user/`. There is no separate `tests/fixtures/states/` tree; no such directory has ever existed in this suite.
-- `conftest.py` carries autouse hermetic-environment fixtures (OpenCode PATH-probe neutralisation, CLI-deploy stubbing) plus the shared `ignore` fixture — pre-install user-state is built inline, per test, against `tmp_path`, not composed from on-disk builders.
+- `tests/unit/conftest.py` carries autouse hermetic-environment fixtures (OpenCode PATH-probe neutralisation, CLI-deploy stubbing) plus the shared `ignore` fixture — pre-install user-state is built inline, per test, against `tmp_path`, not composed from on-disk builders.
 - `test_golden_full_profile_is_byte_identical_to_todays_install` (`tests/unit/test_profiles.py`) is the one test that runs staging against the real repo's `src/user/` tree directly, pinning that the unfiltered ("full") profile selection stages byte-identical to today's install.
 
 ## CLI surface
