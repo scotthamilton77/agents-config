@@ -270,10 +270,10 @@ ACs carry IDs; slice work cites them.
 
 *Amended 2026-08-09 (AC5):* the surface AC5 binds is the repo-owned one —
 `src/`, and everything this repo deploys — not everything a session can see.
-The admission gate has no reach over third-party marketplace plugins, and one
-installed plugin (`superpowers`, primary account only) ships its own
-`writing-plans` skill; that exposure is a known accepted gap outside AC5's
-jurisdiction rather than a breach of it.
+Marketplace plugins install outside that surface and the admission gate has no
+reach over them: the `superpowers` plugin ships a `writing-plans` skill, so the
+retired artifact class can reach a session by a route the gate never sees. That
+exposure is a known gap outside AC5's jurisdiction rather than a breach of it.
 
 ### Outcome (against the 2026-07-20 baseline, over the termination window)
 
