@@ -146,7 +146,17 @@ that rest — do it once, and every `work` verb below that root then resolves.
 `work init` is the second setup step: it writes `.work/config.toml` at your
 project root, which is where `work` reads the vocabulary it validates but does
 not author — your track names, your nouns, and the reasons work parks or is
-deferred.
+deferred. It needs no `bd` workspace to run and touches no backend, so you can
+run it before or independently of `bd init`.
+
+Three deployed skills are the reason to do any of this: `to-tickets`,
+`wayfinder`, and `where-does-this-fit` are built on `work` end to end.
+None of them hard-fails without a tracker — `to-tickets` and `wayfinder` fall
+back to writing their tickets or decision map as a local markdown file instead
+of tracker items, and `where-does-this-fit` falls back to fetching an item's
+container and siblings however the tracker in use exposes them, or asking you
+directly. Skip the setup above and these three degrade to that fallback;
+nothing else in the installed instruction surface reaches for `work`.
 
 Be aware of what does **not** ship: no installed rule or skill instructs your
 assistant to file an issue before writing code, to claim one when it starts, or

@@ -50,8 +50,10 @@ handing work to a subagent standing policy rather than something to ask about.
 ## 1. Capture — tooling, not enforcement
 
 Durable work belongs in a tracker that outlives the session. This repo uses
-[beads](https://github.com/steveyegge/beads) through the `work` CLI, which the
-installer puts on your PATH:
+[beads](https://github.com/steveyegge/beads) through the `work` CLI, which
+ships from its own repository and is installed separately — see
+[Configuration](./configuration.md#4-wire-up-work-tracking-optional) for
+setup:
 
 ```bash
 work create --raw --title "..." --description "..." --type feature --priority P2

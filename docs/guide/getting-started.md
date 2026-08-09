@@ -14,9 +14,15 @@ as prerequisites are now optional:
 
 - **[steveyegge/beads](https://github.com/steveyegge/beads)** — the `bd` work
   tracker. The `work` CLI, which ships from its own repository and is not
-  installed by this one, is a facade over `bd` and does nothing useful without
-  it. Nothing in the installed instruction surface requires either one, so skip
-  both if you do not want a tracker.
+  installed by this one, is a facade over `bd`; every substantive `work` verb
+  refuses with `E_NO_WORKSPACE` until `bd` is installed and initialized. Three
+  deployed skills — `to-tickets`, `wayfinder`, and `where-does-this-fit` — are
+  built on `work` end to end, but each degrades gracefully without a tracker:
+  `to-tickets` and `wayfinder` fall back to a local markdown file, and
+  `where-does-this-fit` falls back to asking you directly. Nothing else in the
+  installed instruction surface reaches for `work`. Skip the tracker if you
+  don't want one; see [Configuration](./configuration.md) for setup once you
+  do.
 - **[obra/superpowers](https://github.com/obra/superpowers)** — no longer a
   dependency. The rules and skills that referenced its process skills have been
   retired; nothing that installs today calls into it.
@@ -70,7 +76,9 @@ The installer also puts this repo's CLIs on your PATH via `uv tool install`
 (receipt-tracked, pruned on retirement). They are `prgroom`, `grind`,
 `executor` and `gitclean`; `CLI_PACKAGES` in
 `packages/installer/src/installer/core/clis.py` is the authoritative list. Of
-those, `gitclean` is the one the installed skills actually reach for.
+those four, `gitclean` is the one the installed skills actually reach for.
+`work`, the separate tracker CLI three other skills are built on (see above),
+ships and installs independently of this list.
 
 ## Verify the install
 
