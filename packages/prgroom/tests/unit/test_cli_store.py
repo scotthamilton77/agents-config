@@ -2,13 +2,15 @@
 
 The store is resolved eagerly in the root callback so an invalid adapter fails
 terminally — rendered 4-line block, exit 2, no traceback — BEFORE any verb body
-runs. A valid `--store file` (or the default) falls through to the verb. The
-probe is `poll` with a deliberately malformed PR ref ("123", no
-`default_repo`): `PRRef.parse` raises `PRECONDITION_BAD_PR_REF` on its first
-line, before any gh/git/store access, so this is a side-effect-free way to
-prove the verb body ran without depending on a skeleton verb (none remain,
-9k9.215.6). These tests exercise ONLY the root-callback store resolution, not
-any verb's own logic.
+runs. A valid `--store file` (or the default) falls through to the verb, which
+then actually reads through the resolved store. The probe is `status` against
+a well-formed PR ref that has never been polled: `status`'s lock-free `_read()`
+calls `store.read(ref)` for real (`file.py::FileStore.read`), which raises
+`StateNotFoundError` for a ref with no state file, converted to
+`PRECONDITION_NO_STATE`. This exercises `ctx.obj` as a genuine, working Store —
+not just "the verb body was reached" — so a broken store resolution (e.g. a
+non-functional object landing on `ctx.obj`) would surface here as an
+uncaught exception rather than a false pass.
 Proves `--store` beats `PRGROOM_STORE` via a set env var.
 """
 
@@ -21,10 +23,12 @@ from prgroom.cli import app
 
 runner = CliRunner()
 
-# A malformed PR ref that fails PRRef.parse deterministically, before any
-# gh/git/store access — used purely to probe the root callback.
-_PROBE = "poll"
-_PROBE_ARG = "123"
+# A well-formed PR ref that (by construction) has no state file on disk, so a
+# working store's `read()` deterministically raises PRECONDITION_NO_STATE —
+# never PRECONDITION_BAD_PR_REF, which would mask a broken store behind a
+# parse failure that never reaches `store.read()`.
+_PROBE = "status"
+_PROBE_ARG = "prgroom-test-fixture/store-probe#999999"
 
 
 def test_invalid_store_bd_exits_two_with_block_before_verb() -> None:
@@ -33,7 +37,7 @@ def test_invalid_store_bd_exits_two_with_block_before_verb() -> None:
     assert "error: PRECONDITION_STORE_UNAVAILABLE" in result.output
     assert "how:" in result.output
     # Terminal store error pre-empts the verb's own precondition check.
-    assert "PRECONDITION_BAD_PR_REF" not in result.output
+    assert "PRECONDITION_NO_STATE" not in result.output
     # A clean typer.Exit (SystemExit), not an uncaught PrgroomError traceback: the
     # error was caught and rendered, not propagated raw. CliRunner records the
     # raw exception when a command raises something other than SystemExit, so a
@@ -50,13 +54,13 @@ def test_unknown_store_name_exits_two() -> None:
 def test_valid_store_file_falls_through_to_verb() -> None:
     result = runner.invoke(app, ["--store", "file", _PROBE, _PROBE_ARG])
     assert result.exit_code == 2
-    assert "PRECONDITION_BAD_PR_REF" in result.output
+    assert "PRECONDITION_NO_STATE" in result.output
 
 
 def test_default_store_falls_through_to_verb() -> None:
     result = runner.invoke(app, [_PROBE, _PROBE_ARG])
     assert result.exit_code == 2
-    assert "PRECONDITION_BAD_PR_REF" in result.output
+    assert "PRECONDITION_NO_STATE" in result.output
 
 
 def test_flag_beats_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -64,7 +68,7 @@ def test_flag_beats_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PRGROOM_STORE", "bd")
     result = runner.invoke(app, ["--store", "file", _PROBE, _PROBE_ARG])
     assert result.exit_code == 2
-    assert "PRECONDITION_BAD_PR_REF" in result.output
+    assert "PRECONDITION_NO_STATE" in result.output
 
 
 def test_env_bd_with_no_flag_errors(monkeypatch: pytest.MonkeyPatch) -> None:

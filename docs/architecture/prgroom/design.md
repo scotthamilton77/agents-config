@@ -45,14 +45,14 @@ This is the high-level design reference for the prgroom CLI. It is **lean by int
 | Pattern | Caller | Invocation |
 |---|---|---|
 | **Interactive** | User in chat, invoking the CLI directly | `prgroom run <pr> --interactive` |
-| **Autonomous** | Cron / `/loop` / GHA | `prgroom run <pr> --autonomous`, or `prgroom sweep <repo>` |
+| **Autonomous** | Cron / `/loop` / GHA | `prgroom run <pr> --autonomous`, or `prgroom sweep <repo>` (design-of-record only; not a registered command) |
 | **Executable-bead** (v2) | bd-side dispatcher | bead payload `prgroom run --pr <n> --autonomous` |
 
 The `monitor-pr` skill that used to drive the interactive pattern was retired, and nothing replaced it. Nothing invokes `prgroom` today — no deployed asset and no harness path — so all three rows describe a designed surface rather than a running one; `packages/prgroom/AGENTS.md` states the package's current standing.
 
 **Locked decisions:**
 
-- **Language:** Python 3.11+, reusing the repo's existing toolchain (`ruff`, `mypy --strict`, `pytest` + coverage, `pip-audit`) verbatim. The state-model / `Protocol` / `StrEnum` shape was modelled on the `pdlc` package, which was retired out of this repository on 2026-08-05; the shape itself is unchanged and the sibling packages carry it too.
+- **Language:** Python 3.11+, reusing the repo's existing toolchain (`ruff`, `mypy --strict`, `pytest` + coverage, `pip-audit`) verbatim. The state model uses `Protocol` (structural interfaces, `mypy --strict`-checked rather than inherited) and `StrEnum` (self-documenting, JSON-serializable values) throughout.
 - **CLI framework:** `typer` (type-hint-driven, pairs with `mypy --strict`).
 - **Placement:** `packages/prgroom/`, one of the packages under `packages/`.
 - **Distribution:** there is no compiled binary and no artifact-transport step. The project installer owns the install — its CLI-deploy stage runs `uv tool install` against `packages/prgroom/`, which places the `prgroom` console-script on `PATH` and records it in the install receipt. The version lives in `packages/prgroom/pyproject.toml` and ships with the repo; there is no independent release cadence, no tags, and no GitHub releases.
@@ -63,7 +63,7 @@ The `monitor-pr` skill that used to drive the interactive pattern was retired, a
 
 ### MVP verb set
 
-These are the user-facing subcommands. `verify` and `cap-guard` are **internal pre-push pipeline steps** (`VerbStep`s threaded by `run`), **not** exposed subcommands.
+These are the user-facing subcommands. `cap-guard` is a built **internal pre-push pipeline step** (a `VerbStep` threaded by `run`), not an exposed subcommand. `verify` is designed as a second internal step (§3.4/§6) but is not built into the pipeline — see §3.3 for the built order of record.
 
 | Verb | Role |
 |---|---|
@@ -78,7 +78,7 @@ These are the user-facing subcommands. `verify` and `cap-guard` are **internal p
 | `wait <pr>` | Sleep/poll until SHA changes or the quiescence threshold trips. |
 | `status <pr>` | Print current state for inspection. |
 | `run <pr>` | Orchestrate the pipeline (§3.3) iterating to quiescence or until the PR-review retry budget is exhausted. |
-| `sweep <repo>` | Cross-PR autonomous mode: list open PRs and `run` each serially with per-PR locks, failure-isolated. (Optional MVP.) |
+| `sweep <repo>` | Cross-PR autonomous mode: list open PRs and `run` each serially with per-PR locks, failure-isolated. Design-of-record only — not a registered command; charter D13 forbids building it. |
 
 ---
 
@@ -165,6 +165,7 @@ class ReviewItem:
     cluster_id: str = ""
     disposition: Disposition | None = None
     replied: bool = False
+    own_reply_id: int = 0
     resolved: bool = False
     duplicate_of_gh_id: str = ""
 
@@ -185,7 +186,7 @@ class Disposition:
     rationale: str = ""
     commits: list[str] = field(default_factory=list)
     response_path: str | None = None
-    gate: str = ""                        # "full"|"lite", validated vs GateStrength (§6)
+    gate: GateStrength | None = None      # None until `fix` disposes the item; §6.2 defines GateStrength
     escalation_filed: bool = False
 ```
 
@@ -215,7 +216,7 @@ class QuiescenceState:
 
 ### Transactional model
 
-Every public verb is a thin locking wrapper: it acquires the per-PR lock via `lock()`, calls a lock-assuming `_`-prefixed internal that does the read-modify-write, and releases on the context manager's `finally`. `run` is the sole exception — it acquires the lock once and threads multiple internals in sequence (§3.3), avoiding nested acquisition.
+Every public verb is a thin locking wrapper: it acquires the per-PR lock via `lock()`, calls a lock-assuming `_`-prefixed internal that does the read-modify-write, and releases on the context manager's `finally`. Two exceptions: `run` acquires the lock once and threads multiple internals in sequence (§3.3), avoiding nested acquisition; `status` (§3.2) is unlocked by default — a single `store.read` that may observe a stale-but-internally-consistent snapshot under a concurrent write — with `--locked` opt-in for a strictly-consistent read.
 
 ### Concurrency posture
 
@@ -534,12 +535,12 @@ ItemDisposition: { gh_id,
                    response_path,                        # optional; verbatim reply text for the reply verb
                    rationale,                            # required for skipped|deferred|wont_fix|escalated|failed
                    recommended_gate: full | lite,        # required for fixed; selects the verify tier (§6)
-                   verify_checklist: [...] }             # required on a FIXED batch; the agent's claim (§6)
+                   verify_checklist: [...] }             # design-of-record only (§6) — not a field on the built FixItemResult
 ```
 
 Audit guards (CLI-side): `fixed` commits fall between pre-cluster SHA and post-cluster HEAD (≥1 each); `already_addressed` commits predate the baseline yet are reachable; the rationale-bearing dispositions carry non-empty rationale; and every commit on the branch is claimed by some item (orphan check). Violations re-classify the item to `failed` and emit an escalation via `EscalationSink`; orphan commits are stash-isolated for inspection.
 
-**Armed for self-verification.** The fix agent is launched top-level (`claude -p`, not a nested sub-agent), so it can safely orchestrate — the await-own-child footgun does not apply. Its allow-list broadens from the muzzled `Read Edit Write Bash(git *)` to the full implementation set (broad `Bash`, `Task`, `Skill`, …), governed by a configurable allow/deny aggregation layer, so it can run the repo's completion gate (tests/build/lint) and spawn sub-agents. It emits a **required** `verify_checklist` in `FixOutput` — what it ran and the result. That is the agent's *claim*; prgroom's `verify` step (§6) is the authoritative confirmation (trust-but-verify). *Security:* a headless `--permission-mode dontAsk` broad-shell agent running on a branch whose threads carry attacker-authored text is a prompt-injection surface — mitigated by operator-trusted worktrees and operator opt-in, documented as an accepted residual risk.
+**Armed for self-verification.** The fix agent is launched top-level (`claude -p`, not a nested sub-agent), so it can safely orchestrate — the await-own-child footgun does not apply. Its allow-list broadens from the muzzled `Read Edit Write Bash(git *)` to the full implementation set (broad `Bash`, `Task`, `Skill`, …), governed by a configurable allow/deny aggregation layer, so it can run the repo's completion gate (tests/build/lint) and spawn sub-agents. In the unbuilt verify design (§6) it would emit a **required** `verify_checklist` in `FixOutput` — what it ran and the result — as the agent's *claim*, confirmed by prgroom's `verify` step (trust-but-verify); neither side is built today. *Security:* a headless `--permission-mode dontAsk` broad-shell agent running on a branch whose threads carry attacker-authored text is a prompt-injection surface — mitigated by operator-trusted worktrees and operator opt-in, documented as an accepted residual risk.
 
 **Repair dispatch.** When the `verify` gate is red and inner retries remain (§3.4), prgroom re-invokes the fix agent in **repair** mode — whole-branch (a gate failure is a property of the branch, not one cluster's), fed the gate output via an optional `verify_failure_path` input and a `fix-repair` prompt. Its orphan/sha audit attributes the repair's new commits to the verify-repair batch, not to any review item.
 

@@ -625,7 +625,7 @@ def run(
     """Aggregate: orchestrate the verbs under one lock until quiescent or human-gated (§3.3).
 
     Acquires the PR lock once and threads ``_poll → _cluster → _fix → [cap] → _push →
-    [_rereview] → _reply → _resolve`` per cycle, blocking in ``_wait`` between cycles
+    _reply → _resolve → [_rereview]`` per cycle, blocking in ``_wait`` between cycles
     (autonomous) until the phase reaches ``quiesced`` / ``human-gated`` / ``merged``,
     then flushes terminal signals and releases. A concurrent run on the same PR exits
     75. Exit code is the propagated tier's sysexits value (0 on a clean terminal). The

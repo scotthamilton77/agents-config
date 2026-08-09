@@ -49,9 +49,17 @@ def test_each_verb_has_its_own_help(verb: str) -> None:
 
 # Every MVP verb above is wired for real; behavior is covered by the per-verb
 # test_cli_*.py suites. ``sweep`` is charter D13's explicit "never build"
-# prohibition (9k9.215.6) — it is not a command and must not become discoverable.
+# prohibition — it is not a command and must not become discoverable.
 
 
 def test_sweep_is_not_registered() -> None:
     result = runner.invoke(app, ["--help"])
     assert "sweep" not in result.output
+
+
+def test_sweep_is_rejected_as_unknown_command() -> None:
+    # Absence from --help alone would also pass for a hidden-but-still-wired
+    # command; invoking it directly proves Typer has no such command at all.
+    result = runner.invoke(app, ["sweep", "octo/demo"])
+    assert result.exit_code != 0
+    assert "no such command" in result.output.lower()
