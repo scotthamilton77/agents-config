@@ -14,10 +14,6 @@
 [workcli]
 config-schema = 1
 
-# Migrated by `work init` from project-config.toml, which keeps its own
-# copy so that an older installed `work` still reads it. Delete the copy
-# there once every `work` in use reads this file.
-
 [tracks]
 names = ["installer", "prgroom", "workcli", "pdlc-orchestrator", "holding-place", "review-and-merge", "pipeline-discipline", "grind-runtime", "ops-meta"]
 organizing-only = ["pipeline-discipline", "ops-meta"]
