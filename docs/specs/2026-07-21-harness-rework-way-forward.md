@@ -114,6 +114,16 @@ are surfaced at the start of any open-new-work interaction — reviewing stuck
 work is the price of pulling new work. The machine never acts on a parked
 item of its own accord; there is no automatic TTL action.
 
+*Amended 2026-08-09:* the park-reason vocabulary spans two axes, and every
+typed park sits on exactly one. The *failure* axis is the PR-bound set above,
+mirrored member for member by the `work` facade. The *scheduling* axis —
+`discovered-work`, `later-wave`, `deferred` — records a sequencing decision
+about work that never failed and may never have had a PR; it is native to the
+grind runtime, and the facade carries no reason for it. Machine-actionable
+versus human-required stays a statement about a park's cause, spent before the
+park: it is not a second axis, neither axis grants an exit, and every parked
+item is walked back by a human verb.
+
 ### Platform
 
 **D11 — workcli first; the harness never speaks bd.** The future harness
@@ -139,16 +149,19 @@ machinery (fixing is the work-loop's job). Never build `verify`/`sweep` —
 scaffold red tests superseded them. Add thin: verdict harvester (parse
 invoked-review output into the verdict artifact) and merge-eligibility
 evaluation. Absorb `abn9.8.33` (classic commit-status), `abn9.8.49` (5xx ≠
-auth failure), `j8pdq` (pagination). Delete the skills
+auth failure), `j8pdq` (pagination) — all three archive-era, resolvable in the
+private archive repository and not through `work`. Delete the skills
 `wait-for-pr-comments`, `reply-and-resolve-pr-threads`, `monitor-pr`, and the
 contradictory completion-gate text. The audits' "finish verify and cut over"
 verdict predates the review-medium decision and is superseded.
 
-**D14 — Grind runtime re-aimed.** `wgclw.30` (event-sourced grind runtime) is
-the one live M0 workstream pointed at the future: it becomes the executor loop
-of the new pipeline (dispatch scaffold→green workers, bounded budgets, typed
-park reasons), not an upgrade to the `orchestrated-grind` skill. Its fit is
-verified against its spec before slice scoping (open verification V1).
+**D14 — Grind runtime re-aimed.** `wgclw.30` (event-sourced grind runtime;
+archive-era, resolvable in the private archive repository and not through
+`work`) is the one live M0 workstream pointed at the future: it becomes the
+executor loop of the new pipeline (dispatch scaffold→green workers, bounded
+budgets, typed park reasons), not an upgrade to the `orchestrated-grind`
+skill. Its fit is verified against its spec before slice scoping (open
+verification V1).
 
 **D15 — Config homes.** Installer deploys to the standard homes only
 (`~/.claude`, `~/.codex`, `~/.gemini`, `~/.config/opencode`), exactly one
@@ -170,6 +183,14 @@ case is first-class: a repeatable procedure earns admission on its own terms,
 and forcing it into failure language produces a fiction rather than a
 justification. Nothing enters by default or nostalgia.
 
+*Amended 2026-08-09:* the skill-body cap is two tiers, not one — **2k tokens**
+for a model-invoked body, **5k** for a user-invoked one. A model-invoked body
+loads on the model's own judgement, mid-task, against whatever the context is
+already carrying, which is what the tighter number prices; a user-invoked body
+is reached only when the user names it, a cost asked for at a moment chosen for
+it. The raised ceiling is relief for a body already split down to its residue,
+never permission to leave one whole.
+
 **D17 — User-scoped AGENTS.md is zero-based.** A line earns always-on status
 only if all four hold: universal across projects; not model-default behavior;
 not owned by pipeline code/contract; fits the ~800-token sub-budget.
@@ -190,7 +211,9 @@ shape (pattern feeds the verdict design, not adopted as a skill);
 design rules. Skipped, re-admissible later: `ask-matt` (a catalog small
 enough to need no router is the goal), `wayfinder` (autopsy scheduled when
 the parent-spec path is designed), `triage`,
-`improve-codebase-architecture`. This discharges `wgclw.24`/`.25`.
+`improve-codebase-architecture`. This discharges `wgclw.24`/`.25`
+(archive-era, resolvable in the private archive repository and not through
+`work`).
 
 *Amended 2026-08-07:* `wayfinder` is admitted, user-invoked, with its tracker
 model rewritten onto `work` verbs and its setup command removed. The autopsy
@@ -199,6 +222,15 @@ tracker binding, and the binding is now the facade. Its open mechanical
 questions — the label scheme, the absence of a mechanical completion condition
 for a map, and whether a map is the retired prose-plan class under a new name —
 are carried by `agents-config-9k9.157`, not by this list.
+
+*Amended 2026-08-09:* `improve-codebase-architecture` is admitted,
+user-invoked, in the Claude tree, with its grafts: the house `codebase-design`
+vocabulary in place of its own terms, a survey bounded at five candidates each
+carrying a recommendation strength, and a `grilling` loop over the one the user
+picks. The Claude-only placement is a condition of the admission rather than a
+convenience — an invocation writes an HTML report and opens it in the user's
+viewer before anything is asked, and only a host honouring
+`disable-model-invocation` can withhold that.
 
 ### Measurement and sequencing
 
@@ -235,6 +267,13 @@ ACs carry IDs; slice work cites them.
 - **AC5** `wait-for-pr-comments`, `reply-and-resolve-pr-threads`,
   `monitor-pr`, `writing-plans`, and the prgroom deleted modules are absent
   from `src/` and from every deploy target; no deployed text references them.
+
+*Amended 2026-08-09 (AC5):* the surface AC5 binds is the repo-owned one —
+`src/`, and everything this repo deploys — not everything a session can see.
+The admission gate has no reach over third-party marketplace plugins, and one
+installed plugin (`superpowers`, primary account only) ships its own
+`writing-plans` skill; that exposure is a known accepted gap outside AC5's
+jurisdiction rather than a breach of it.
 
 ### Outcome (against the 2026-07-20 baseline, over the termination window)
 
