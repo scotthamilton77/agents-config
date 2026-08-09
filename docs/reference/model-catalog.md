@@ -7,11 +7,13 @@ prices, and the use-case tier each one serves. A decision aid for choosing
 routing tiers — **not** a runtime source of truth.
 
 > **Prices rot.** List prices here are point-in-time and versioned with the code
-> deliberately (they age alongside the routing decisions that cite them). At
-> runtime, per-model rates are **user-maintained in user-space config**
-> (`[providers.*.models.*].cost_per_mtok_*`) — that config is authoritative,
-> this doc is reference. When they disagree, trust the user config and update
-> this doc's date.
+> deliberately (they age alongside the routing decisions that cite them). For
+> OpenRouter-routed models specifically, a live user-maintained rate override
+> exists — `~/.config/agents-config/openrouter-model-registry.json`
+> (`input_per_m`/`output_per_m` keys; see the `openrouter-claude-subagent`
+> skill) — and takes precedence over this doc for those models. No equivalent
+> override exists for the other providers below; when a price here goes stale,
+> re-verify against the vendor and update this doc's date.
 
 Prices are USD per million tokens (input / output).
 
@@ -85,7 +87,7 @@ overage via the API sibling).
 |---|---|---|---|---|
 | Gemini CLI | `gemini-3-flash-preview` | 0.50 | — | Foreign-eyes review. |
 | Local | `ollama gemma4` | free | free | Cluster/classify baseline (never counts against budget ceiling). |
-| OpenRouter | `glm-5.2` | 0.60 | 2.20 | Metered peer rung (escalation-ladder example). |
+| OpenRouter | `glm-5.2` | 0.60 | 2.20 | Metered peer rung. |
 
 ---
 
@@ -134,7 +136,6 @@ Active sidekick profiles (from `llm.defaults.yaml`):
 - The `delegating-to-codex` skill — use-case → OpenAI model selection.
 - The `openrouter-claude-subagent` skill — OpenRouter-hosted model selection and rates.
 - `packages/prgroom/src/prgroom/agent/dispatcher.py` — `_DEFAULT_CHAINS`.
-- `project-config.toml` `[foreign-cli]` — per-stage Codex/Gemini model bindings.
 - `agents-config-uy5wx` — archive-era, resolvable in the private archive
   repository and not through `work`: proposed consolidating these duplicated
   model IDs into a single source of truth; this catalog is the human-readable
