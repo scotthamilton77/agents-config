@@ -1,6 +1,6 @@
 # Tracker operations
 
-Every verb this skill uses against the tracker, plus the three that carry a trap. `work` is the tracker, and there is no setup step: never stand up a parallel set of ticket files beside a tracker that exists — a second copy of what the tracker already holds only drifts. If `work` is not installed, or the project has no tracker, keep the map as a single local markdown file instead, with the same sections ([map-body.md](map-body.md)), and skip every verb below.
+Every verb this skill uses against the tracker, plus the three that carry a trap. `work` is the tracker, and once set up it needs no further setup step: never stand up a parallel set of ticket files beside a tracker that exists — a second copy of what the tracker already holds only drifts. If `work` is not installed, or the project has no tracker, keep the map as a single local markdown file instead, with the same sections ([map-body.md](map-body.md)), and skip every verb below.
 
 | What | How |
 |---|---|
