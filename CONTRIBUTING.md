@@ -15,7 +15,7 @@ Good reasons to open an issue:
 - You spotted a bug in `scripts/install.sh` or a drift in the docs.
 - You want to propose a new skill, agent, or command that has broad utility.
 - You want to add support for another AI coding assistant alongside Claude
-  Code, Codex CLI, and Gemini CLI.
+  Code, Codex CLI, Gemini CLI, and OpenCode.
 
 Personal-taste changes (rewording personas, swapping opinions in skills,
 changing the agent persona's personality) are usually better kept in your own

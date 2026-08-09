@@ -132,6 +132,9 @@ tool-scoped namespace with no shared variant:
 - `/clean-up-git [filter]` - Adjudicate which git worktrees and branches to
   delete: one dated table with each worktree paired to its branch and every
   deletion's cost stated, then a stop for your call before anything is touched
+- `/zoom-out [area]` - Map the code in view (or a named area) to the layer
+  above it: relevant modules, their callers, in the project's own glossary
+  vocabulary
 
 See [`src/user/.claude/commands/`](./src/user/.claude/commands/) for the
 authoritative set.
