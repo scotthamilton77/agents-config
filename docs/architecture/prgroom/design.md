@@ -56,7 +56,7 @@ The `monitor-pr` skill that used to drive the interactive pattern was retired, a
 - **CLI framework:** `typer` (type-hint-driven, pairs with `mypy --strict`).
 - **Placement:** `packages/prgroom/`, one of the packages under `packages/`.
 - **Distribution:** there is no compiled binary and no artifact-transport step. The project installer owns the install — its CLI-deploy stage runs `uv tool install` against `packages/prgroom/`, which places the `prgroom` console-script on `PATH` and records it in the install receipt. The version lives in `packages/prgroom/pyproject.toml` and ships with the repo; there is no independent release cadence, no tags, and no GitHub releases.
-- **Agent boundary:** synchronous subprocess shell-out; each invocation is fresh context. The runtime is chosen per-contract in TOML config — the contract is the API, the runtime is swappable.
+- **Agent boundary:** synchronous subprocess shell-out; each invocation is fresh context. The runtime is designed to be chosen per-contract in TOML config — the contract is the API, the runtime is swappable — but no verb resolves a per-repo `.prgroom.toml` path yet (§5), so today every invocation runs the shipped default chain.
 - **Scope:** equivalent of `wait-for-pr-comments` + `reply-and-resolve-pr-threads`; excludes create-PR, merge, cleanup, and bead-lifecycle helpers.
 
 **Precondition gating (cross-cutting):** Every verb checks preconditions before doing work, across three tiers — *self-healable* (the CLI can produce the missing input by running deterministic prework, then re-evaluates; this is the **default**, e.g. `fix` with no state auto-runs `poll` and `cluster`), *user-error* (invalid args, no PR — always terminal, non-zero exit), and *terminal-no-work* (preconditions met but nothing to do — exit `0` as success). `--no-prework` makes self-healable failures terminal instead. Non-self-healable failures emit a structured stderr error (what / why / how / machine-readable code) while stdout stays reserved for verb output so agents can parse each independently. The error-code registry is owned by §3.6.
@@ -603,7 +603,7 @@ Adapter selection is unbuilt: the CLI always constructs the stderr sink. Treat t
 
 ### Contract is the API, runtime is swappable (per-contract TOML)
 
-Each contract is a stable, versioned (`contract_version`) interface; the runtime behind it is selected per-contract in TOML, so `claude -p` / `codex exec` / `opencode run` / `ollama`, models, and fallback chains swap without touching lifecycle code.
+Each contract is a stable, versioned (`contract_version`) interface; the runtime behind it is designed to be selected per-contract in TOML, so `claude -p` / `codex exec` / `opencode run` / `ollama`, models, and fallback chains would swap without touching lifecycle code.
 
 ```toml
 [agents.cluster]
@@ -615,6 +615,8 @@ fallback2 = { cli = "codex",  model = "gpt-5.6-luna" }
 primary   = { cli = "claude", model = "opus[1m]", effort = "xhigh" }
 fallback  = { cli = "codex",  model = "gpt-5.6-terra", write = true }
 ```
+
+**Not yet wired to the CLI:** the table above matches the shipped default chain (`agent/dispatcher.py::_DEFAULT_CHAINS`) exactly, but no verb resolves a `repo_config` path — both dispatcher builders in `cli.py` call `load_chain(..., repo_config=None, ...)` unconditionally — so a `[agents.cluster]`/`[agents.fix]` override in a real `.prgroom.toml` is never read; every invocation runs the default chain shown.
 
 Fallback triggers: primary not on PATH, quota/auth/network exit, or per-contract timeout. If both primary and fallback fail, the verb emits `failed` for affected items and escalates via `EscalationSink`. The PR-review retry budget governs how many full loops `run` may attempt (§3.5). Per-contract prompts live in `agent/prompts/<contract>.tmpl` (overridable via `PRGROOM_PROMPTS_DIR`); per-contract token usage is logged to `$XDG_STATE_HOME/prgroom/usage.jsonl` as MVP baseline-capture only.
 
