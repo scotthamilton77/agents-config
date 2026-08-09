@@ -1,8 +1,8 @@
-"""Tests for the §8.5 memory-channel extension to ``FixOutput`` (additive).
+"""Tests for the §7.5 memory-channel extension to ``FixOutput`` (additive).
 
-The fix contract output grows two channels (§8.5): ``memory_writes`` (scratch
+The fix contract output grows two channels (§7.5): ``memory_writes`` (scratch
 paths declared by the agent) and a classified ``memory`` channel. Parsing is
-deliberately LENIENT — validation is the audit layer's job (§8.6), so a bad
+deliberately LENIENT — validation is the audit layer's job (§7.6), so a bad
 memory entry must survive ``from_dict`` as data and fail later in the audit, not
 trip a parse error that the dispatcher would mistake for a malformed chain link.
 """
@@ -14,7 +14,7 @@ from prgroom.prsession.enums import DispositionKind
 
 
 def test_fix_output_defaults_memory_channels_empty() -> None:
-    # Backward-compat: a pre-§8.5 payload (no memory keys) parses with empty
+    # Backward-compat: a pre-§7.5 payload (no memory keys) parses with empty
     # channels, so the dispatcher + existing tests keep passing.
     out = FixOutput.from_dict(
         {"items": [{"gh_id": "C_1", "disposition": "skipped", "rationale": "x"}]}
@@ -89,7 +89,7 @@ def test_memory_non_list_parses_empty_not_raises() -> None:
 
 
 def test_memory_writes_keeps_only_string_elements() -> None:
-    # A non-string element cannot be a real write path and would crash the §8.6
+    # A non-string element cannot be a real write path and would crash the §7.6
     # containment check (os.path on a non-str); drop it rather than carry a landmine.
     out = FixOutput.from_dict({"items": [], "memory_writes": ["scratch/a.md", 5, None]})
     assert out.memory_writes == ["scratch/a.md"]

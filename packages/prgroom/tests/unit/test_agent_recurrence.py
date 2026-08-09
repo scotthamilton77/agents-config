@@ -1,6 +1,6 @@
-"""Recurrence — the §8.2 derived per-item recurrence signal.
+"""Recurrence — the §7.2 derived per-item recurrence signal.
 
-These tests pin the JSON wire shape the fix agent reads: the five fields §8.2
+These tests pin the JSON wire shape the fix agent reads: the five fields §7.2
 names, and the "omit ``prior_commits`` when empty" rule the spec calls out
 inline. The dataclass is derived data (never persisted state), so the only
 contract worth pinning is its serialization.
@@ -45,7 +45,7 @@ def test_recurrence_is_hashable() -> None:
 
 
 def test_recurrence_omits_prior_commits_when_empty() -> None:
-    # §8.2: prior_commits is "omitted from JSON when empty" — a wont_fix/skipped
+    # §7.2: prior_commits is "omitted from JSON when empty" — a wont_fix/skipped
     # prior disposition carries no SHAs, so the key must not appear at all (an empty
     # tuple is falsy, so the omit-empty rule still holds).
     rec = Recurrence(

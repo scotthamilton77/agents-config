@@ -78,7 +78,7 @@ def test_stash_succeeds_returns_none() -> None:
 
 
 def test_log_returns_raw_output_and_builds_argv() -> None:
-    # `log` is a snapshot read (§8.1 branch_state): the recent-commits text is
+    # `log` is a snapshot read (§7.1 branch_state): the recent-commits text is
     # passed verbatim to the fix agent, so the adapter returns it unparsed.
     runner = RecordedRunner([_ok("abc Subject one\ndef Subject two\n")])
     client = GitCli(runner)
@@ -87,7 +87,7 @@ def test_log_returns_raw_output_and_builds_argv() -> None:
 
 
 def test_diff_stat_returns_raw_output_and_builds_argv() -> None:
-    # `diff_stat` is the §8.1 diff-since-base summary; raw text, no parsing.
+    # `diff_stat` is the §7.1 diff-since-base summary; raw text, no parsing.
     runner = RecordedRunner([_ok(" file.py | 3 +++\n 1 file changed\n")])
     client = GitCli(runner)
     assert client.diff_stat("origin/main..HEAD") == " file.py | 3 +++\n 1 file changed\n"

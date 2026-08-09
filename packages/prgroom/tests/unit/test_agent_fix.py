@@ -1,6 +1,6 @@
 """Tests for ``run_fix`` orchestration (assemble → dispatch → parse → audit → stash).
 
-``run_fix`` is the heart of the 8.7 boundary: it reads git (via the injected
+``run_fix`` is the heart of the compute/apply boundary: it reads git (via the injected
 ``GitClient``), runs the three audits, builds per-item ``Disposition`` objects
 and a list of ``Escalation`` objects, and performs the ``git stash`` isolation
 effect on a hard violation. It returns a :class:`FixRunResult` — it NEVER mutates
@@ -261,7 +261,7 @@ def test_cluster_flip_rationale_carries_the_hard_violation_detail() -> None:
 
 
 def test_swept_item_rationale_is_the_spec_string_with_no_added_prefix() -> None:
-    # §8.6: on a containment sweep each affected item's FAILED rationale is exactly
+    # §7.6: on a containment sweep each affected item's FAILED rationale is exactly
     # "memory containment violation: <path>". The swept-up marker must NOT prepend
     # "cluster failed: " — that diverges from the documented contract string the
     # lifecycle/resolver read as the source of truth for the cause.
@@ -449,7 +449,7 @@ def test_containment_violation_flips_cluster_and_stashes() -> None:
 
 
 def test_warn_memory_violation_surfaces_escalation_without_flip_or_stash() -> None:
-    # §8.6: a soft per-entry WARN (here: unknown classification) means the memory
+    # §7.6: a soft per-entry WARN (here: unknown classification) means the memory
     # bookkeeping is malformed, but the actual fix commits are valid. The cluster
     # MUST NOT flip and MUST NOT stash; the WARN is surfaced as an escalation only.
     req = _req("C_1", "C_2", memory_dir="/run/mem")

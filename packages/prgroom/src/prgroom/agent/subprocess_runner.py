@@ -12,8 +12,8 @@ child when a :class:`threading.Event` cancel-token is set.
 The single OS seam is the :class:`ProcessHandle` Protocol — a thin ``Popen``
 facade — injected as the ``spawn`` callable. Production wires :func:`_popen_spawn`;
 tests inject a fake that returns recorded behavior, so kill-on-timeout and
-kill-on-cancel are proven without spawning a real CLI. This mirrors the
-foundation's ``CommandRunner`` seam (recorded fakes, not mocks).
+kill-on-cancel are proven without spawning a real CLI. This mirrors
+``CommandRunner``'s seam (recorded fakes, not mocks).
 
 The runner is intentionally **classification-free**: it reports the child's
 returncode + stderr faithfully and raises only for timeout/cancel. Mapping a

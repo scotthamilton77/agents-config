@@ -11,8 +11,8 @@ These pin coded decisions the §3.3 run-loop and the resolver depend on:
   ``_push`` and ``_poll``'s external-push branch apply (§3.4).
 
 ``has_queued_fix_commits`` is intentionally NOT here: §3.4 forbids a state field
-for the commit queue, so the queued-commits signal is an effectful git read the
-run-loop bead supplies as a bool to the resolver. The pure spine never computes it.
+for the commit queue, so the queued-commits signal is an effectful git read that
+``lifecycle/run.py`` supplies as a bool to the resolver. The pure spine never computes it.
 """
 
 from __future__ import annotations

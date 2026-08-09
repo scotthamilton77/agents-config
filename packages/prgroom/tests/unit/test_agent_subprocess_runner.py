@@ -9,7 +9,7 @@ and raises a timeout-tagged error on overrun), and terminates the child when a
 The single OS seam is the :class:`~prgroom.agent.subprocess_runner.ProcessHandle`
 Protocol — a thin Popen facade. Tests inject a recorded-behavior fake so
 kill-on-timeout and kill-on-cancel are proven without spawning a real CLI. This
-mirrors the foundation's ``CommandRunner`` seam (recorded fakes, not mocks).
+mirrors ``CommandRunner``'s seam (recorded fakes, not mocks).
 """
 
 from __future__ import annotations

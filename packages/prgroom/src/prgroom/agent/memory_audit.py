@@ -49,7 +49,7 @@ _CONTEXTUAL = "CONTEXTUAL"
 
 @dataclass(frozen=True, slots=True)
 class MemoryAuditResult:
-    """The computed result of a memory audit (8.7 returns; 8.15 applies).
+    """The computed result of a memory audit (the agent layer returns; the lifecycle applies).
 
     ``violations`` are HARD breaches (containment BLOCK + per-entry WARNs);
     ``deferred`` are accepted non-CONTEXTUAL entries the repo-wide router will

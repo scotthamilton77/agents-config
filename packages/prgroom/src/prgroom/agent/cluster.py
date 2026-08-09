@@ -11,7 +11,7 @@ Degenerate output is coverage-complete by construction, so there is no escaping
 the coverage invariant — even a totally-unavailable agent yields a usable
 clustering, built directly without any dispatch.
 
-8.7 boundary: this returns a :class:`ClusterRunResult`; it never mutates
+Compute/apply boundary: this returns a :class:`ClusterRunResult`; it never mutates
 ``PRGroomingState`` or transitions phases.
 """
 
@@ -32,7 +32,7 @@ _DEGENERATE_RATIONALE = "degenerate fallback: agent clustering failed twice; one
 
 @dataclass(frozen=True, slots=True)
 class ClusterRunResult:
-    """The computed result of one ``run_cluster`` call (8.7 returns; 8.15 applies).
+    """The computed result of one ``run_cluster`` call (agent layer returns; lifecycle applies).
 
     ``assignments`` maps each input ``gh_id`` to its final ``cluster_id``;
     ``degenerate`` records whether the per-item fallback was used; ``attempts``

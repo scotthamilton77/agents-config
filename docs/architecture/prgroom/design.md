@@ -266,7 +266,7 @@ The matrix covers the 11 per-PR verbs. The cross-PR `sweep` aggregator iterates 
 | `status` | read-only (lock-free; `--locked` opt-in) | read-only | read-only | read-only | read-only | read-only |
 | `run` | lifecycle loop (§3.3) | lifecycle loop (§3.3) | lifecycle loop (§3.3) | `_poll` once for external transitions; re-enter loop if phase advances out, else return 0 | `_poll` once for external resolutions, then re-evaluate the budgets: if `last_error ∈ {LIFECYCLE_PR_REVIEW_EXHAUSTED, LIFECYCLE_FIX_VERIFY_EXHAUSTED}` and the correspondingly-raised budget (`--pr-review-retries` / `--fix-verify-retries`) no longer trips, clear it → `fixes-pending`; re-enter loop if phase advances out, else return 0 | returns 0 (absorbing) |
 
-`BlockingErrorCodes` = { `LIFECYCLE_PR_REVIEW_EXHAUSTED`, `LIFECYCLE_FIX_VERIFY_EXHAUSTED`, `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN`, `RUNTIME_GH_TERMINAL`, `RUNTIME_PUSH_REJECTED` } — conditions outside `resolve-escalated`'s scope, recoverable only via §3.6.
+`BlockingErrorCodes` = { `LIFECYCLE_PR_REVIEW_EXHAUSTED`, `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN`, `RUNTIME_GH_TERMINAL`, `RUNTIME_GIT_TERMINAL`, `RUNTIME_PUSH_REJECTED` } — conditions outside `resolve-escalated`'s scope, recoverable only via §3.6.
 
 **End-of-cycle phase resolution** (applied by `run` from `fixes-pending`; first match wins):
 

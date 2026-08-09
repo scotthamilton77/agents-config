@@ -455,7 +455,7 @@ def test_review_thread_item_gets_graphql_node_id_as_thread_id() -> None:
 
 def test_review_thread_thread_id_empty_when_unmapped() -> None:
     # A comment absent from the GraphQL map (e.g. beyond the page cap) degrades to
-    # "" rather than mis-keying — the §8.2 floor, applied per-item.
+    # "" rather than mis-keying — the §7.2 floor, applied per-item.
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
     gh = GhCli(
         RecordedRunner(

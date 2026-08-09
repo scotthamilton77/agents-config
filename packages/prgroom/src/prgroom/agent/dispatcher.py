@@ -1,7 +1,7 @@
 """Provider-chain dispatch + fallback ladder (§5 agent-CLI config & fallback).
 
 A :class:`ClusterDispatcher` / :class:`FixDispatcher` is the concrete
-implementation of the foundation's ``ClusterContract`` / ``FixContract`` Protocol.
+implementation of the ``ClusterContract`` / ``FixContract`` Protocol.
 It resolves a per-contract **provider chain** (§5) — a primary plus ordered
 fallbacks — tries the primary, and on a fallback-triggering failure falls to the
 next link:
@@ -16,7 +16,7 @@ a ``RUNTIME_AGENT_UNAVAILABLE`` :class:`~prgroom.errors.PrgroomError` the lifecy
 maps to a ``failed`` disposition + ``EscalationSink`` event (§5), never a crash.
 
 The chain is resolved by :func:`load_chain` from the per-repo ``.prgroom.toml``
-``[agents.cluster]`` / ``[agents.fix]`` sections — read through the foundation TOML
+``[agents.cluster]`` / ``[agents.fix]`` sections — read through the shared TOML
 loader (:func:`prgroom.config.read_toml`) so the agent config shares the one
 ``.prgroom.toml`` parse path — falling back to the shipped default chains. A
 ``model_override`` parameter can swap the primary provider's model, but no CLI
@@ -210,7 +210,7 @@ def load_chain(
     """Resolve the provider chain for ``contract`` (TOML section, else default).
 
     Reads ``[agents.<contract>]`` from the per-repo ``.prgroom.toml`` via the
-    foundation loader; a truly **absent** section (or file) yields the shipped
+    shared TOML loader; a truly **absent** section (or file) yields the shipped
     default chain, while a **present** section — even an empty one — must define
     ``primary`` (else it is rejected). ``model_override`` swaps the **primary**
     provider's model only, leaving its cli and the rest of the chain intact —

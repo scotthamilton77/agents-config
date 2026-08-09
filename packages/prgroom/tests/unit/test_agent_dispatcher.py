@@ -250,7 +250,7 @@ def test_non_table_provider_names_the_full_contract_key_path(tmp_path: Path) -> 
 def test_non_table_section_names_the_full_agents_contract_path(tmp_path: Path) -> None:
     # A present [agents.<contract>] that is not a table at all (e.g. agents.cluster =
     # "...") must name the full agents.<contract> path — consistent with the
-    # per-provider errors — not the foundation subtable's bare-key message.
+    # per-provider errors — not subtable()'s generic bare-key message.
     cfg = tmp_path / ".prgroom.toml"
     cfg.write_text('[agents]\ncluster = "ollama"\n', encoding="utf-8")
     with pytest.raises(ValueError, match=r"agents\.cluster must be a table"):
@@ -706,7 +706,7 @@ def test_usage_hook_records_a_cancelled_attempt_before_the_abort() -> None:
     assert [r.outcome for r in records] == ["cancelled"]
 
 
-# ── structural fit: the concrete dispatchers satisfy the foundation Protocols ──
+# ── structural fit: the concrete dispatchers satisfy the Protocols ──
 
 
 def test_cluster_dispatcher_satisfies_cluster_contract() -> None:
