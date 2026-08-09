@@ -12,11 +12,14 @@ PATH or `~/.config/opencode/` exists, or selected via `--tools=opencode`).
 
 ## Dynamic flattening
 
-`AGENTS.md.template` is special: it contains `<!-- DYNAMIC-INCLUDE: path -->` and
-`<!-- DYNAMIC-INCLUDE-ALL-RULES -->` markers that the installer
-resolves at staging time, producing a single flat `AGENTS.md` with no `@`
-references. This is required because OpenCode does not support `@` include
-resolution.
+`AGENTS.md.template` is special: it is a single `<!-- DYNAMIC-INCLUDE: path -->`
+marker (today it pulls in `USER-CORE.md.template`), which the installer
+resolves at staging time, producing a flat `AGENTS.md` with no `@` references.
+This is required because OpenCode does not support `@` include resolution.
+The installer also supports a `<!-- DYNAMIC-INCLUDE-ALL-RULES -->` marker and
+a named `<!-- DYNAMIC-INCLUDE-RULES: ruleA,ruleB -->` subset marker, but this
+template carries neither today, so no rules content is inlined into
+OpenCode's `AGENTS.md`.
 
 ## Skills
 

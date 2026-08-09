@@ -142,7 +142,10 @@ Structured TOML at `packages/installer/installer.toml`, parsed by `core/installe
 
 ```toml
 [tools]
-# Optional per-tool dest-dir overrides — leave commented to use built-in adapters.
+# Optional per-tool dest-dir overrides. Parsed into `tool_dest_overrides`
+# (installer_toml.py) but not yet consumed by anything — dest resolution
+# always goes through `adapter.dest_dir(home)`, so uncommenting this has no
+# effect today.
 # claude.dest = "~/.claude"
 ```
 

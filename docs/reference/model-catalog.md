@@ -1,17 +1,23 @@
 # Model Catalog
 
-**Last updated: 2026-07-10**
+**Last updated: 2026-08-09**
 
 Human-readable catalog of the AI model IDs this project routes to, their list
 prices, and the use-case tier each one serves. A decision aid for choosing
 routing tiers — **not** a runtime source of truth.
 
+IDs below are each vendor's canonical model ID. A harness invocation surface
+may accept its own aliases or flag forms for the same model (e.g. a CLI's
+`--model` short names); that surface's own docs govern those, not this table.
+
 > **Prices rot.** List prices here are point-in-time and versioned with the code
-> deliberately (they age alongside the routing decisions that cite them). At
-> runtime, per-model rates are **user-maintained in user-space config**
-> (`[providers.*.models.*].cost_per_mtok_*`, see the escalation-ladder spec) — that
-> config is authoritative, this doc is reference. When they disagree, trust the
-> user config and update this doc's date.
+> deliberately (they age alongside the routing decisions that cite them). For
+> OpenRouter-routed models specifically, a live user-maintained rate override
+> exists — `~/.config/agents-config/openrouter-model-registry.json`
+> (`input_per_m`/`output_per_m` keys; see the `openrouter-claude-subagent`
+> skill) — and takes precedence over this doc for those models. No equivalent
+> override exists for the other providers below; when a price here goes stale,
+> re-verify against the vendor and update this doc's date.
 
 Prices are USD per million tokens (input / output).
 
@@ -26,7 +32,7 @@ dispatcher (`packages/prgroom/src/prgroom/agent/dispatcher.py`).
 | Use case | OpenAI (Codex) | Anthropic (Claude) | Local / cheap |
 |---|---|---|---|
 | Mechanical / triage / classify / cluster / finder | `gpt-5.6-luna` | `haiku` (low–high) | `ollama gemma4` |
-| Standard review / implement / fix-chain / RALF cycle1 / merge-judge default | `gpt-5.6-terra` | `sonnet` / `opus` | — |
+| Standard review / implement / fix-chain / merge-judge default | `gpt-5.6-terra` | `sonnet` / `opus` | — |
 | Architecture / security / cross-subsystem / final pre-merge / deep adversarial review / spec-writer | `gpt-5.6-sol` | `opus` (high/xhigh) | — |
 | Deeply code-centric agentic (`--write`) | `gpt-5.3-codex` | — | — |
 
@@ -34,9 +40,9 @@ dispatcher (`packages/prgroom/src/prgroom/agent/dispatcher.py`).
 
 ## OpenAI — Codex CLI
 
-Invoked via the Codex plugin (`codex-companion.mjs task --model <id>`). The
-`gpt-5.6-*` variants are the current review/impl tier; older `5.x` models remain
-available.
+Invoked by dispatching the `codex-rescue` agent (see the `delegating-to-codex`
+skill for the dispatch route and model choice). The `gpt-5.6-*` variants are
+the current review/impl tier; older `5.x` models remain available.
 
 | Model ID | In $/M | Out $/M | Tier / use |
 |---|---|---|---|
@@ -58,18 +64,24 @@ whatever reads this table rather than automatically.
 ## Anthropic — Claude Code CLI
 
 The subscription backbone (billed as subscription until exhausted, then metered
-overage via the API sibling). Model IDs from the Claude 5 / Opus 4.8 family.
+overage via the API sibling).
+
+> **Roster captured 2026-08-09** from the active session's own model
+> enumeration (the Claude Code harness's model list). Anthropic renames and
+> retires tiers without much notice — re-verify against the harness's current
+> model list or console.anthropic.com before routing anything cost-sensitive.
 
 | Name | Model ID | In $/M | Out $/M | Tier / use |
 |---|---|---|---|---|
-| Opus 4.8 | `claude-opus-4-8` | TBD | TBD | Top judgment tier: architecture, impl, final synthesis. |
+| Opus 5 | `claude-opus-5` | TBD | TBD | Top judgment tier: architecture, impl, final synthesis. |
 | Sonnet 5 | `claude-sonnet-5` | TBD | TBD | Standard impl + review. |
 | Haiku 4.5 | `claude-haiku-4-5-20251001` | TBD | TBD | Mechanical / cheap fan-out. |
-| Fable 5 | `claude-fable-5` | TBD | TBD | Frontier-tier spec closure (fablize window work). |
+| Fable 5 | `claude-fable-5` | TBD | TBD | Frontier-tier spec closure. |
 
-> **TBD prices unverified.** Current Opus-4.8-era Anthropic list prices were not
-> confirmed at authoring time — fill from console.anthropic.com pricing and
-> re-date this doc. Do not guess.
+> **TBD prices unverified.** Current Claude 5-era Anthropic list prices stand
+> unverified against the vendor page. Re-verify using the route the roster
+> callout above names (console.anthropic.com) and re-date this doc. Do not
+> guess.
 
 ---
 
@@ -77,9 +89,9 @@ overage via the API sibling). Model IDs from the Claude 5 / Opus 4.8 family.
 
 | Provider | Model ID | In $/M | Out $/M | Use |
 |---|---|---|---|---|
-| Gemini CLI | `gemini-3-flash-preview` | 0.50 | — | RALF-IT iter2 foreign-eyes review. |
+| Gemini CLI | `gemini-3-flash-preview` | 0.50 | — | Foreign-eyes review. |
 | Local | `ollama gemma4` | free | free | Cluster/classify baseline (never counts against budget ceiling). |
-| OpenRouter | `glm-5.2` | 0.60 | 2.20 | Metered peer rung (escalation-ladder example). |
+| OpenRouter | `z-ai/glm-5.2` | 0.76 | 2.39 | Metered peer rung. |
 
 ---
 
@@ -90,7 +102,7 @@ roster, sourced from its `llm.defaults.yaml`. OpenRouter-centric cheap models fo
 persona voice + creative generation, **not** the review/impl routing above.
 
 > **Source-dated 2025-11-09** (upstream `llm.defaults.yaml`). Stale relative to
-> this repo — e.g. it lists Opus/Sonnet 4.5, predating Opus 4.8 / Claude 5. Merged
+> this repo — e.g. it lists Opus/Sonnet 4.5, predating Claude 5. Merged
 > here verbatim for reference; reconcile on next sidekick sync.
 
 | Provider | Model | In $/M | Out $/M | Context | Notes |
@@ -128,6 +140,7 @@ Active sidekick profiles (from `llm.defaults.yaml`):
 - The `delegating-to-codex` skill — use-case → OpenAI model selection.
 - The `openrouter-claude-subagent` skill — OpenRouter-hosted model selection and rates.
 - `packages/prgroom/src/prgroom/agent/dispatcher.py` — `_DEFAULT_CHAINS`.
-- `project-config.toml` `[foreign-cli]` — per-stage Codex/Gemini model bindings.
-- Bead `agents-config-uy5wx` — consolidate these duplicated model IDs into a
-  single source of truth; this catalog is the human-readable half of that effort.
+- `agents-config-uy5wx` — archive-era, resolvable in the private archive
+  repository and not through `work`: proposed consolidating these duplicated
+  model IDs into a single source of truth; this catalog is the human-readable
+  half of that effort.
