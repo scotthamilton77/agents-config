@@ -73,7 +73,7 @@ C4Component
         Container_Boundary(plugins, "plugins/ — per-plugin adapters") {
             Component(pbase, "base.py", "Python", "PluginAdapter protocol.")
             Component(pgeneric, "generic.py", "Python", "GenericPluginAdapter — every discovered plugin's adapter: detects on ~/.<name>/, declares no bespoke routes.")
-            Component(pext, "extensions.py", "Python", "apply_extensions(): YAML-patch base markdown assets post-staging (F.5).")
+            Component(pext, "extensions.py", "Python", "apply_extensions(): YAML-patch base markdown assets post-staging.")
             Component(preg, "registry.py", "Python", "String-keyed plugin registry; dynamic discovery via src/plugins/ scan.")
         }
     }
@@ -190,7 +190,7 @@ Every cross-boundary dependency is one of these four protocols. That is the desi
 
 ## What this diagram does NOT show
 
-- **Execution order across the components** — detect → stage → overlay → merge → sync → prune is the subject of [`sequences.md`](sequences.md).
+- **Execution order across the components** — detect → stage → overlay → merge → admission gate (user-home path) → sync → prune is the subject of [`sequences.md`](sequences.md).
 - **The data shapes** the components pass around (`StagingPlan`, `StagedItem`, `Config`, …) and the merge-dispatch table — see [`data-view.md`](data-view.md).
 - **The per-strategy merge mechanics** (append separator placement, JSON deep-union rules, fatal message format) — specified in `installer-design.md` §"Test architecture".
 - **The container boundary + external stores at process granularity** — see [`c4-l2-container.md`](c4-l2-container.md).

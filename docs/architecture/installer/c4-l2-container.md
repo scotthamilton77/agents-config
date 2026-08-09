@@ -24,7 +24,7 @@ Open the `installer` system boundary and show its runnable / persistent units. A
 
 A **container** here is a C4 container: a separately runnable process or a persistent data store. The installer is a single short-lived **process**; everything else on this diagram is a **data store** it reads or writes. The `core/` engine, the per-tool adapters, the per-plugin adapters, and the merge strategies all live **inside** that one process and are therefore **components** — they appear at L3 ([`c4-l3-engine.md`](c4-l3-engine.md)), not here.
 
-The single most important thing this diagram makes explicit: the installer's central artifact, the `StagingPlan`, is **in-memory** — it is built, merged, and transformed entirely in process memory, and on the operational path only ever touches disk when `sync` flushes individual files to their destinations. (The one exception is the `--dump-stage <path>` debug flag, which materialises the plan to a throwaway directory and exits without touching any real destination — see the discipline note below.) It is **not** a staging container on this diagram. (`install.sh` used a temp directory; the Python rewrite deliberately does not.)
+The single most important thing this diagram makes explicit: the installer's central artifact, the `StagingPlan`, is **in-memory** — it is built, merged, and transformed entirely in process memory, and on the operational path only ever touches disk when `sync` flushes individual files to their destinations. (The one exception is the `--dump-stage <path>` debug flag, which materialises the plan to a throwaway directory and exits without touching any real destination — see the discipline note below.) It is **not** a staging container on this diagram.
 
 ## Diagram
 
@@ -118,7 +118,7 @@ The four AI coding assistants are **external systems** that read their deployed 
 ## What this diagram does NOT show
 
 - **Components inside the installer process** — the `core/` engine, `tools/` + `plugins/` adapters, and merge strategies live in [`c4-l3-engine.md`](c4-l3-engine.md).
-- **Execution order** — detect → stage → overlay → merge → sync → prune is the subject of [`sequences.md`](sequences.md).
+- **Execution order** — detect → stage → overlay → merge → admission gate (user-home path) → sync → prune is the subject of [`sequences.md`](sequences.md).
 - **The `StagingPlan` / `StagedItem` / `Config` data shapes** and the `(FileKind, namespace)` merge-dispatch table — see [`data-view.md`](data-view.md).
 - **DYNAMIC-INCLUDE flattening + the Gemini frontmatter transform mechanics** — surfaced as components at L3; specified in `installer-design.md`.
 
