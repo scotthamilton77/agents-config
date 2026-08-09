@@ -99,21 +99,26 @@ def test_back_up_retention_is_scoped_per_target_within_a_shared_backup_dir(
 ) -> None:
     """
     Given two different targets whose backups route to the same sibling
-    <namespace>-backup/ directory
+    <namespace>-backup/ directory, with one target's backups created in
+    REVERSE timestamp order (newest first, oldest last)
     When one target accumulates more backups than the retention count
-    Then only that target's own excess backups are pruned — the other
-    target's lone backup is untouched.
+    Then only that target's own excess backups are pruned, by timestamp
+    VALUE rather than creation order — the other target's lone backup is
+    untouched.
 
     Pins that pruning is keyed on the backed-up file's own name, not on
     everything sharing its backup directory (a routed backup dir like
     skills-backup/ holds many unrelated skills' backups side by side).
+    Reverse-order creation is deliberate, matching the in-place retention
+    test above: it distinguishes sorting by the filename-embedded timestamp
+    value (correct) from sorting by creation order (wrong).
     """
     busy = tmp_path / ".claude" / "skills" / "busy"
     quiet = tmp_path / ".claude" / "skills" / "quiet"
     busy.parent.mkdir(parents=True)
     quiet.write_text("quiet-v0")
 
-    for ts in _TIMESTAMPS:
+    for ts in reversed(_TIMESTAMPS):
         busy.write_text(f"busy-{ts}")
         back_up(busy, ts)
     back_up(quiet, _TIMESTAMPS[0])
@@ -250,6 +255,13 @@ def test_back_up_never_deletes_the_only_backup_even_with_non_positive_retention(
     target.write_text("v0")
 
     back_up(target, _TIMESTAMPS[0])
+
+    # The lone-backup case, pinned on its own before a second backup exists:
+    # a single backup must never be pruned away, regardless of what a
+    # misconfigured retention count says.
+    first_backup = tmp_path / f"AGENTS.md.backup-{_TIMESTAMPS[0]}"
+    assert list(tmp_path.glob("AGENTS.md.backup-*")) == [first_backup]
+
     target.write_text("v1")
     back_up(target, _TIMESTAMPS[1])
 
@@ -265,12 +277,6 @@ def test_existing_backups_returns_empty_for_a_backup_dir_that_does_not_exist_yet
     Given a backup_dir that has never been created
     When _existing_backups is asked for a target's backups in it
     Then it returns an empty list rather than raising.
-
-    ``back_up`` always creates the backup dir (``mkdir``) before calling this,
-    so the public API never exercises this branch on its own — but
-    ``_existing_backups`` uses ``Path.iterdir``, which raises
-    ``FileNotFoundError`` on a directory that doesn't exist, so this guard is
-    needed to keep the helper safe to call standalone.
     """
     target = tmp_path / "AGENTS.md"
     missing_backup_dir = tmp_path / "does-not-exist"

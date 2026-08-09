@@ -38,9 +38,7 @@ _TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
 _TIMESTAMP_RE = re.compile(r"^\d{8}-\d{6}$")
 
 # Newest backups kept per target; every older one is deleted the moment a new
-# backup is written for that same target. Arbitrary but generous: enough
-# history to recover from a bad install without unbounded per-file
-# accumulation. Stated for operators in docs/guide/getting-started.md.
+# backup is written for that same target.
 BACKUP_RETENTION_COUNT = 5
 
 
