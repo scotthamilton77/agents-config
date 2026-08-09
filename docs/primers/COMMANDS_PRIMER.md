@@ -74,7 +74,7 @@ Because commands run inline, they have access to the full current session contex
 | `~/.claude/commands/` | Available in ALL projects | User-wide workflows (optimize, refresh, audit) |
 | `<project-root>/.claude/commands/` | Available in THIS project only | Project-specific shortcuts |
 
-Commands installed from `src/user/.claude/commands/` land at `~/.claude/commands/` (user-scoped). Commands in `src/plugins/<plugin>/commands/` are plugin-scoped.
+Commands installed from `src/user/.claude/commands/` land at `~/.claude/commands/` (user-scoped). Commands in `src/plugins/<plugin>/.<tool>/commands/` (e.g. `.claude/commands/`) are plugin-scoped.
 
 ---
 
@@ -138,8 +138,8 @@ src/user/.claude/commands/         # Installs to ~/.claude/commands/ (user-scope
   <command-name>.md
 
 src/plugins/<plugin>/
-  commands/                        # Plugin-specific commands
-  <command-name>.md
+  .<tool>/commands/                # Plugin commands for one tool (e.g. .claude/commands/)
+    <command-name>.md
 ```
 
 Commands are a tool-scoped namespace — there is no shared commands tree, so the only names a new command can collide with are the other commands staged into that same tool: its own tree plus every active plugin's. Collisions are a **fatal install error** — check before adding.

@@ -16,7 +16,7 @@ A subagent dispatched via the `Agent` tool runs in parallel with the orchestrato
 
 ### Key constraints (from the official docs)
 
-- **Subagents cannot spawn other subagents.** If a workflow needs nested delegation, use skills or chain subagents from the main conversation.
+- **Subagents can spawn subagents of their own**, by default up to three layers below the main conversation (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` changes the limit). At the depth limit, Claude Code withholds the `Agent` tool from the deepest subagent, so it does the delegated work itself and returns one summary instead of nesting further.
 - **Subagents start in the main conversation's working directory.** `cd` commands do not persist between Bash calls within the subagent and do not affect the parent. Use `isolation: worktree` to give the subagent an isolated copy of the repository.
 - **Subagents receive only their system prompt** (the file body) plus basic environment details — not the full Claude Code system prompt or the parent's CLAUDE.md/AGENTS.md context.  This is important if that context contains information the subagent should know - the main agent will need to specifically provide such or tell the subagent to read it explicitly.
 - **Plugin subagents do not support `hooks`, `mcpServers`, or `permissionMode`** for security reasons. These fields are ignored when an agent is loaded from a plugin.
@@ -42,9 +42,9 @@ description: |-               # required; multi-line allowed; the dispatch trigg
 tools: Read, Grep, Glob, Bash  # NOT recommended except for read-only agents; explicit tool list for this role
 disallowedTools: Write, Edit   # recommended only when explicit prohibitions are necessary (and all other tools are allowed)
 skills: [skill-a, skill-b]     # optional; pre-loaded skills available to this agent
-model: opus[1m]                # optional; options: opus[1m], sonnet[1m], sonnet, haiku
+model: opus                    # optional; options: sonnet, opus, haiku, fable, a full model ID (e.g. claude-opus-5), or inherit (default)
 effort: high                   # optional; low | medium | high | xhigh | max
-memory: project                # optional; project | user | none (default)
+memory: project                # optional; project | user | local (omit for none, the default)
 color: purple                  # optional; display color in UI
 admission:                     # required for deployment (see below)
   provides: <the capability this supplies>   # or `prevents:`, never both
@@ -81,10 +81,10 @@ Examples in the description are load-bearing — they establish the agent's ment
 
 | Model | Use for |
 |-------|---------|
-| `opus[1m]` | Thoroughness required: code review, security analysis, architectural assessment, adversarial review |
-| `sonnet[1m]` | Balanced deep context: coordination requiring long context, complex multi-file analysis |
+| `opus` | Thoroughness required: code review, security analysis, architectural assessment, adversarial review |
 | `sonnet` | Balanced speed/quality: general implementation, coordination |
 | `haiku` | Fast and mechanical: evidence collection, grep/search, format verification, triage |
+| `fable` | Frontier-tier judgment; the deployed delegation rule requires consulting the user before spawning a subagent on this tier |
 
 Assign the most capable model *needed* for the role — not the most capable available.  Tune the effort similarly.
 

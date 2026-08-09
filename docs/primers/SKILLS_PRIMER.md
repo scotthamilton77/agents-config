@@ -87,7 +87,7 @@ this repository rather than for the agent that loads the skill.
 Some skills in this project use additional fields not part of the official spec but interpreted by the Claude Code harness:
 
 ```yaml
-model: opus[1m]      # which model to invoke for this skill
+model: sonnet        # which model to invoke for this skill
 effort: high         # low | medium | high | xhigh | max
 ```
 
