@@ -18,7 +18,7 @@ A subagent dispatched via the `Agent` tool runs in parallel with the orchestrato
 
 - **Subagents can spawn subagents of their own**, by default up to three layers below the main conversation (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` changes the limit). At the depth limit, Claude Code withholds the `Agent` tool from the deepest subagent, so it does the delegated work itself and returns one summary instead of nesting further.
 - **Subagents start in the main conversation's working directory.** `cd` commands do not persist between Bash calls within the subagent and do not affect the parent. Use `isolation: worktree` to give the subagent an isolated copy of the repository.
-- **Subagents receive only their system prompt** (the file body) plus basic environment details — not the full Claude Code system prompt or the parent's CLAUDE.md/AGENTS.md context.  This is important if that context contains information the subagent should know - the main agent will need to specifically provide such or tell the subagent to read it explicitly.
+- **Subagents receive their own system prompt** (the file body) plus basic environment details — not the full Claude Code system prompt. They DO receive the same CLAUDE.md/AGENTS.md hierarchy the main conversation loads (user-level, project-level, `CLAUDE.local.md`, managed policy); the built-in Explore and Plan agents are the only exception and skip it. What a subagent does NOT inherit is the rest of the conversation's state — prior tool outputs, already-invoked skills, conversation history — so restate anything from there it needs.
 - **Plugin subagents do not support `hooks`, `mcpServers`, or `permissionMode`** for security reasons. These fields are ignored when an agent is loaded from a plugin.
 
 ---
