@@ -291,6 +291,8 @@ A `verify` step between `fix` and `cap-guard` — and the cap-guard-after-verify
 
 The cycle repeats; end-of-cycle resolution (§3.2) yields the next phase. On a terminal phase (`quiesced` / `human-gated` / `merged`) `run` returns; on `awaiting-review` it blocks in `_wait` (§4.2) until reviewer activity or quiescence breaks the wait, then loops.
 
+**Entry-probe.** When `run` is invoked while already at a terminal phase (`quiesced` / `human-gated`), it runs `poll` once before deciding whether to re-enter the cycle — the **entry-probe** (`lifecycle/run.py::_entry_probe`) — to catch an external merge or push that already cleared the gate. From `human-gated` specifically, it also re-checks whether a raised `--pr-review-retries` budget (§3.5) no longer trips and, if so, clears the gate and advances to `fixes-pending` for the refused commits to push; the inner fix↔verify cap's entry-probe re-arm (§3.5) is part of the same unbuilt convergence loop (§3.4).
+
 ### 3.4 The fix↔verify convergence loop
 
 The heart of the fix↔verify subsystem. Within one `fixes-pending` cycle, after `fix` produces commits + dispositions (and its `verify_checklist` claim, §5), the `verify` step runs the mechanical gate (§6). The re-fix-or-escalate decision is made **after** verify produces a verdict:
@@ -672,7 +674,7 @@ full               = "make ci"     # command (or list) run for the full tier
 fix_verify_retries = 2             # inner retry budget
 ```
 
-The verify **commands have no built-in default**. Because the needed tier is known only after `fix` selects the strongest `GateStrength`, the precondition is **fail-fast**: `run`/`fix` entry asserts that **both** the `lite` and `full` commands are configured, and the absence of either is a **hard stop** (`PRECONDITION_NO_VERIFY_CONFIG`, exit 2, structured what/why/how) — caught before the expensive fix run, never silently skipped. (Auto-detection is deferred to a `--doctor` bead.) `fix_verify_retries` defaults to `2`; `--fix-verify-retries` / `PRGROOM_FIX_VERIFY_RETRIES` override. This work wires `repo_config` — the repo-root `.prgroom.toml`, currently always passed `None` and never actually read.
+The verify **commands have no built-in default**. Because the needed tier is known only after `fix` selects the strongest `GateStrength`, the precondition is **fail-fast**: `run`/`fix` entry asserts that **both** the `lite` and `full` commands are configured, and the absence of either is a **hard stop** (`PRECONDITION_NO_VERIFY_CONFIG`, exit 2, structured what/why/how) — caught before the expensive fix run, never silently skipped. (Auto-detection is deferred to a `--doctor` bead.) `fix_verify_retries` defaults to `2`; `--fix-verify-retries` / `PRGROOM_FIX_VERIFY_RETRIES` override. **Not yet wired to the CLI:** `repo_config` — the repo-root `.prgroom.toml` — is currently always passed `None`, so this table is never actually read (same gap as §4.3/§5).
 
 ---
 
@@ -707,7 +709,7 @@ The snapshot is captured **immediately before fix dispatch** (not at top-of-cycl
 | Case | Detection | Owner |
 |---|---|---|
 | Same thread reopened ("you said fixed, reviewer says still broken") | Deterministic — prgroom holds disposition history + thread state | **prgroom** computes, fix agent interprets |
-| Fix too narrow ("the pattern recurs in other files") | Judgment, proactive | optional RCA pass |
+| Fix too narrow ("the pattern recurs in other files") | Judgment, proactive | optional root-cause-analysis (RCA) pass |
 | Fix caused new problems ("your commit broke Y") | Judgment, reactive, causal | fix agent / RCA |
 
 prgroom **computes** a deterministic `recurrence` value for each item carrying a prior disposition and includes it in the snapshot. It is **derived from `prsession` disposition history at snapshot-assembly time — not a persisted field** (so §2's schema is unchanged):
