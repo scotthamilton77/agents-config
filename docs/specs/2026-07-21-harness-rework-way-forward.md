@@ -155,11 +155,11 @@ private archive repository and not through `work`. Delete the skills
 contradictory completion-gate text. The audits' "finish verify and cut over"
 verdict predates the review-medium decision and is superseded.
 
-**D14 — Grind runtime re-aimed.** `wgclw.30` (event-sourced grind runtime;
-archive-era, resolvable in the private archive repository and not through
-`work`) is the one live M0 workstream pointed at the future: it becomes the
-executor loop of the new pipeline (dispatch scaffold→green workers, bounded
-budgets, typed park reasons), not an upgrade to the `orchestrated-grind`
+**D14 — Grind runtime re-aimed.** The event-sourced grind runtime — `wgclw.30`,
+an archive-era ID that resolves in the private archive repository and not
+through `work` — is the one live M0 workstream pointed at the future: it
+becomes the executor loop of the new pipeline (dispatch scaffold→green workers,
+bounded budgets, typed park reasons), not an upgrade to the `orchestrated-grind`
 skill. Its fit is verified against its spec before slice scoping (open
 verification V1).
 
