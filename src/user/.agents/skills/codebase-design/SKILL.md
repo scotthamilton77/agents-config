@@ -19,6 +19,11 @@ what this body serves and is not upstream's. This header and the admission recor
 are stripped at deploy.
 -->
 
+DESIGN-IT-TWICE.md and this file's body below are vendored at a pin: your
+standing instructions and the always-on decision rules win wherever they
+disagree — including their unconditional "spawn sub-agents" steps, on a
+harness without subagent dispatch.
+
 # Codebase Design
 
 Design **deep modules**: a lot of behaviour behind a small interface, placed at a clean seam, testable through that interface. Use this language and these principles wherever code is being designed or restructured. The aim is leverage for callers, locality for maintainers, and testability for everyone.

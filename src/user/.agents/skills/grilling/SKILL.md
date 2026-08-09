@@ -26,7 +26,7 @@ Format each question like this, as Markdown in your reply rather than inside a c
 
 Each round of answers reshapes the tree — settled decisions push the question frontier outward and unblock the questions that depended on them. Recompute it, then ask the next round. A question whose answer depends on another question still open in this round belongs to a *later* round, not this one.
 
-Finding *facts* is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, tools, docs), dispatch a subagent to find it rather than asking the user for anything you could look up yourself. Do not block the round on it: a running exploration is an unsettled prerequisite, so only the questions downstream of it wait for that subagent to report — ask the rest of the question frontier now. The *decisions* are the user's: put each one to them and wait.
+Finding *facts* is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, tools, docs), dispatch a subagent to find it if your harness can spawn one, otherwise look it up yourself with the tools you have — either way, never ask the user for anything you could look up. Do not block the round on it: a running lookup is an unsettled prerequisite, so only the questions downstream of it wait for it to finish — ask the rest of the question frontier now. The *decisions* are the user's: put each one to them and wait.
 
 ## Exit criterion
 

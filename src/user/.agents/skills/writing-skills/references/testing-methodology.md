@@ -69,8 +69,10 @@ A bad query:
    ]
    ```
 2. For each query, dispatch a subagent in an environment with the skill
-   available; ask it whether it would invoke the skill, and why. Run each
-   query 3 times to get a reliable trigger rate (model output is stochastic).
+   available if your harness can spawn subagents; otherwise open a fresh
+   session with the skill available and run the query there yourself. Ask
+   whether the skill would trigger, and why. Run each query 3 times to get a
+   reliable trigger rate (model output is stochastic).
 3. Tabulate hit rates: true-positives (correctly triggered),
    false-negatives (should have triggered, didn't), true-negatives
    (correctly skipped), false-positives (incorrectly triggered).
