@@ -36,9 +36,9 @@ dispatcher (`packages/prgroom/src/prgroom/agent/dispatcher.py`).
 
 ## OpenAI — Codex CLI
 
-Invoked via the Codex plugin (`codex-companion.mjs task --model <id>`). The
-`gpt-5.6-*` variants are the current review/impl tier; older `5.x` models remain
-available.
+Invoked by dispatching the `codex-rescue` agent (see the `delegating-to-codex`
+skill for the dispatch route and model choice). The `gpt-5.6-*` variants are
+the current review/impl tier; older `5.x` models remain available.
 
 | Model ID | In $/M | Out $/M | Tier / use |
 |---|---|---|---|
@@ -87,7 +87,7 @@ overage via the API sibling).
 |---|---|---|---|---|
 | Gemini CLI | `gemini-3-flash-preview` | 0.50 | — | Foreign-eyes review. |
 | Local | `ollama gemma4` | free | free | Cluster/classify baseline (never counts against budget ceiling). |
-| OpenRouter | `glm-5.2` | 0.60 | 2.20 | Metered peer rung. |
+| OpenRouter | `z-ai/glm-5.2` | 0.76 | 2.39 | Metered peer rung. |
 
 ---
 
