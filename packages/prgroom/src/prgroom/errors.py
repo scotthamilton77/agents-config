@@ -1,6 +1,6 @@
 """Failure-tier model, structured-error registry, and exit-code mapping.
 
-Implements source spec §3.6 (failure tiers), §3.7 (error-code registry), and the
+Implements design.md §3.6 (failure tiers and the error-code registry) and the
 §3.3 ``exit_code_for_tier`` translation. Every error code carries a
 ``what`` / ``why`` / ``how`` triple per the §1 structured-stderr contract so that
 both humans and agents can parse a precondition failure and act on it.
@@ -49,14 +49,14 @@ class Tier(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class RegistryEntry:
-    """The human/agent-readable description of one error code (§3.7)."""
+    """The human/agent-readable description of one error code (§3.6)."""
 
     what: str
     why: str
     how: str
 
 
-# The "no-work" tier applies ONLY to this explicitly enumerated set (§3.7) — NOT
+# The "no-work" tier applies ONLY to this explicitly enumerated set (§3.6) — NOT
 # by NO_-prefix matching. Codes added later default to PRECONDITION_USER_ERROR
 # and must be added here to gain no-work treatment.
 _NO_WORK_CODES: frozenset[str] = frozenset(
@@ -72,7 +72,7 @@ _NO_WORK_CODES: frozenset[str] = frozenset(
 
 
 class ErrorCode(StrEnum):
-    """Stable ``<CATEGORY>_<SPECIFIC>`` identifiers (§3.7).
+    """Stable ``<CATEGORY>_<SPECIFIC>`` identifiers (§3.6).
 
     The ``.value`` is the wire identifier emitted in stderr for any downstream
     parser (operator, scheduler, or agent) to key on; adding a code is
@@ -122,11 +122,11 @@ class ErrorCode(StrEnum):
     LIFECYCLE_PR_REVIEW_EXHAUSTED = "LIFECYCLE_PR_REVIEW_EXHAUSTED"
 
     def registry_entry(self) -> RegistryEntry:
-        """The §3.7 what/why/how triple for this code."""
+        """The §3.6 what/why/how triple for this code."""
         return _REGISTRY[self]
 
     def precondition_tier(self) -> Tier:
-        """Tier for a PRECONDITION_* code (§3.7 tier-assignment rules).
+        """Tier for a PRECONDITION_* code (§3.6 tier-assignment rules).
 
         Raises :class:`ValueError` if called on a non-precondition code — only
         precondition codes have a tier resolvable from the code alone.
@@ -332,7 +332,7 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
 
 # Codes that gate `resolve-escalated` re-entry (§3.2, §3.6): an operator flipping
 # an escalated disposition cannot clear any of these — they require the recovery
-# paths in §3.6/§3.7 (cap re-arm, state-file inspection, gh/git reconciliation).
+# paths in §3.6 (cap re-arm, state-file inspection, gh/git reconciliation).
 BlockingErrorCodes: frozenset[ErrorCode] = frozenset(
     {
         ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED,
@@ -381,7 +381,7 @@ class PrgroomError(Exception):
 class PreconditionError(PrgroomError):
     """A precondition failure with a structured what/why/how stderr block (§1).
 
-    The tier is derived from the code per the §3.7 precondition tier rules, so a
+    The tier is derived from the code per the §3.6 precondition tier rules, so a
     caller need only name the code.
     """
 

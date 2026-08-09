@@ -63,7 +63,7 @@ The `monitor-pr` skill that used to drive the interactive pattern was retired, a
 
 ### MVP verb set
 
-These are the user-facing subcommands. `cap-guard` is a built **internal pre-push pipeline step** (a `VerbStep` threaded by `run`), not an exposed subcommand. `verify` is designed as a second internal step (§3.4/§6) but is not built into the pipeline — see §3.3 for the built order of record.
+The table below is the MVP verb set (§1); all but `sweep` are user-facing subcommands today — `sweep`'s row states its design-of-record, unregistered status. `cap-guard` is a built **internal pre-push pipeline step** (a `VerbStep` threaded by `run`), not an exposed subcommand. `verify` is designed as a second internal step (§3.4/§6) but is not built into the pipeline — see §3.3 for the built order of record.
 
 | Verb | Role |
 |---|---|
@@ -254,7 +254,7 @@ The matrix covers the 11 per-PR verbs. The cross-PR `sweep` aggregator iterates 
 
 | Verb | `idle` | `awaiting-review` | `fixes-pending` | `quiesced` | `human-gated` | `merged` |
 |------|--------|-------------------|-----------------|------------|---------------|----------|
-| `poll` | first push → `awaiting-review`; reviewer item → `fixes-pending`; else no-op | reviewer item → `fixes-pending`; PR-closed → `merged`; external push → `pr_review_retries_used++` if SHA changed, stay; else no-op | new item → stay (appended); PR-closed → `merged`; external push → `pr_review_retries_used++` if SHA changed, stay; else no-op | new item → `fixes-pending`; PR-closed → `merged`; external push → `awaiting-review` (`pr_review_retries_used++`); else no-op | new item → `fixes-pending`; PR-closed → `merged`; external push → `fixes-pending` (`pr_review_retries_used++`); else no-op | terminal; no-op |
+| `poll` | first push → `awaiting-review`; reviewer item → `fixes-pending`; PR-closed → `merged`; else no-op | reviewer item → `fixes-pending`; PR-closed → `merged`; external push → `pr_review_retries_used++` if SHA changed, stay; else no-op | new item → stay (appended); PR-closed → `merged`; external push → `pr_review_retries_used++` if SHA changed, stay; else no-op | new item → `fixes-pending`; PR-closed → `merged`; external push → `awaiting-review` (`pr_review_retries_used++`); else no-op | new item → `fixes-pending`; PR-closed → `merged`; external push → `fixes-pending` (`pr_review_retries_used++`); else no-op | terminal; no-op |
 | `cluster` | `PRECONDITION_NO_ITEMS` | `PRECONDITION_NO_ITEMS` | sets `cluster_id` on unclustered items; no phase change | terminal; no-op | terminal; no-op | terminal; no-op |
 | `fix` | `PRECONDITION_NO_CLUSTERS` | `PRECONDITION_NO_CLUSTERS` | sets per-item `disposition.kind`; may produce commits; no phase change (resolved at end-of-cycle); audit failures flip the item to `FAILED` → `human-gated` | terminal; no-op | terminal; no-op | terminal; no-op |
 | `push` | `PRECONDITION_NO_COMMITS` | uploads queued commits; `pr_review_retries_used++` if ≥1 pushed; no phase change | uploads queued commits; `pr_review_retries_used++` if ≥1 pushed; no phase change | terminal; no-op | terminal; no-op | terminal; no-op |

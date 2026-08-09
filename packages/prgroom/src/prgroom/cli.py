@@ -119,8 +119,8 @@ def _build_cluster_dispatcher() -> ClusterContract:
     :class:`SubprocessAgentRunner`. It calls :func:`load_chain` with
     ``repo_config=None`` / ``model_override=None``, so the shipped DEFAULT chain is
     used today: no verb resolves the per-repo ``.prgroom.toml`` path yet (poll/status
-    pass ``None`` too — there is no resolver), so ``[agents.cluster]`` overrides and a
-    ``--cluster-model`` flag stay inert pending that cross-verb config-path wiring.
+    pass ``None`` too — there is no resolver), so ``[agents.cluster]`` overrides are
+    never read and no ``--cluster-model`` flag exists.
     """
     chain = load_chain("cluster", repo_config=None, model_override=None)
     return ClusterDispatcher(runner=SubprocessAgentRunner(), chain=chain, usage_hook=append_usage)
@@ -134,8 +134,8 @@ def _build_fix_dispatcher() -> FixContract:
     :class:`SubprocessAgentRunner`. It calls :func:`load_chain` with
     ``repo_config=None`` / ``model_override=None``, so the shipped DEFAULT chain is
     used today: no verb resolves the per-repo ``.prgroom.toml`` path yet (poll/status
-    pass ``None`` too — there is no resolver), so ``[agents.fix]`` overrides and a
-    ``--fix-model`` flag stay inert pending that cross-verb config-path wiring.
+    pass ``None`` too — there is no resolver), so ``[agents.fix]`` overrides are
+    never read and no ``--fix-model`` flag exists.
     """
     chain = load_chain("fix", repo_config=None, model_override=None)
     return FixDispatcher(runner=SubprocessAgentRunner(), chain=chain, usage_hook=append_usage)
@@ -144,8 +144,9 @@ def _build_fix_dispatcher() -> FixContract:
 def _build_sink() -> Sink:
     """Build the default escalation sink (stderr).
 
-    A seam: tests monkeypatch this to record emitted escalations. The ``--bd-bead``
-    / ``--escalation-file`` adapter selection is a later bead; MVP defaults to stderr.
+    A seam: tests monkeypatch this to record emitted escalations. No
+    ``--bd-bead`` / ``--escalation-file`` flag exists; every invocation
+    defaults to stderr.
     """
     return StderrSink()  # pragma: no cover - trivial production default
 

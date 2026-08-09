@@ -8,9 +8,10 @@ content under `src/`, **this is real code with a real quality gate.**
 clusters it, dispatches fixes, pushes, replies, and resolves threads — as
 locked, resumable lifecycle verbs rather than model-driven prose.
 
-**Nothing drives it today.** Per charter D13 this package is carved, not
-finished (slice S8); no deployed asset invokes it and no harness path depends on
-it. Read its lifecycle verbs as a designed surface, not a running one.
+**Nothing drives it today.** Charter D13 ("prgroom is carved, not finished")
+scopes this package to slice S8; no deployed asset invokes it and no harness
+path depends on it. Read its lifecycle verbs as a designed surface, not a
+running one.
 
 ## The quality gate is mandatory — run it, do not approximate it
 
@@ -69,8 +70,8 @@ but the full gate must pass before push.
 `poll`, `cluster`, `fix`, `push`, `rereview`, `reply`, `resolve`,
 `resolve-escalated`, `wait`, `status`, `run`. `run` is the aggregate loop;
 `status` emits the merge-gate envelope. `sweep` (cross-PR autonomous mode) is
-design-of-record only (charter D13 forbids building it) and is not a
-registered command.
+design-of-record only (charter D13, "prgroom is carved, not finished",
+forbids building it) and is not a registered command.
 
 ## Design-only subsystem — do not treat as built
 

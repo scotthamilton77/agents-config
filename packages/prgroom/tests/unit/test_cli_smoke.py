@@ -1,16 +1,18 @@
 """Smoke tests for the typer CLI root.
 
 These pin the *user-facing contract*: every MVP verb is wired, discoverable via
-``--help``, and has its own ``--help``; ``sweep`` (charter D13's explicit
-"never build" prohibition) is neither discoverable nor a registered command.
-They are behavior tests at the CLI boundary, not tautologies — a verb that is
-defined but not registered, registered under the wrong name, or a forbidden
-verb that slips back onto the surface, fails here.
+``--help``, and has its own ``--help``; charter D13 ("prgroom is carved, not
+finished") explicitly forbids building ``sweep``, so it is neither
+discoverable nor a registered command. They are behavior tests at the CLI
+boundary, not tautologies — a verb that is defined but not registered,
+registered under the wrong name, or a forbidden verb that slips back onto the
+surface, fails here.
 """
 
 from __future__ import annotations
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from prgroom.cli import app
@@ -49,9 +51,19 @@ def test_each_verb_has_its_own_help(verb: str) -> None:
     assert result.exit_code == 0
 
 
+def test_registered_commands_match_mvp_verbs_exactly() -> None:
+    # The tests above only check that each expected verb is present; an
+    # unintended extra command (e.g. a stub reintroduced without updating
+    # MVP_VERBS) would still pass them. Comparing the actual registered set
+    # catches that.
+    click_app = typer.main.get_command(app)
+    assert set(click_app.commands) == set(MVP_VERBS)
+
+
 # Every MVP verb above is wired for real; behavior is covered by the per-verb
-# test_cli_*.py suites. ``sweep`` is charter D13's explicit "never build"
-# prohibition — it is not a command and must not become discoverable.
+# test_cli_*.py suites. Charter D13 ("prgroom is carved, not finished")
+# explicitly forbids building ``sweep`` — it is not a command and must not
+# become discoverable.
 
 
 def test_sweep_is_not_registered() -> None:

@@ -2,20 +2,14 @@
 
 The store is resolved eagerly in the root callback so an invalid adapter fails
 terminally — rendered 4-line block, exit 2, no traceback — BEFORE any verb body
-runs. A valid `--store file` (or the default) falls through to the verb, which
-then actually reads through the resolved store. The probe is `status` against
-a well-formed PR ref that has never been polled: `status`'s lock-free `_read()`
-calls `store.read(ref)` for real (`file.py::FileStore.read`), which raises
-`StateNotFoundError` for a ref with no state file, converted to
-`PRECONDITION_NO_STATE`. This exercises `ctx.obj` as a genuine, working Store —
-not just "the verb body was reached" — so a broken store resolution (e.g. a
-non-functional object landing on `ctx.obj`) would surface here as an
-uncaught exception rather than a false pass.
+runs. A valid `--store file` (or the default) falls through to the verb and is
+exercised for real via the `status` probe, which fails with
+`PRECONDITION_NO_STATE` only if the resolved store actually works — a broken
+store resolution would surface as an uncaught exception instead of a false
+pass.
 
-Every test isolates `XDG_STATE_HOME` to `tmp_path`: the real `file` adapter
-reads `$XDG_STATE_HOME/prgroom/...` (`file.py::resolve_state_dir`), so without
-isolation a pre-existing state file for the probe's PR ref on the runner's
-machine would flip `PRECONDITION_NO_STATE` into a real `gh` invocation.
+Every test isolates `XDG_STATE_HOME` to `tmp_path` so the probe never touches
+real user state.
 
 Proves `--store` beats `PRGROOM_STORE` via a set env var.
 """
