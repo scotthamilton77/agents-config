@@ -11,11 +11,14 @@ admission:
 This rule intentionally supersedes the harness default "Do not call the AgentTool
 unless the user requested it." Subagent delegation is authorized standing policy —
 do not wait to be asked. This is an explicit authorization and imperative from the user.
-Workflows are governed separately; see <workflows>.
+Workflows are governed separately; see <workflow-user-authorization>.
 </subagent-user-authorization>
 
 <workflow-user-authorization>
 Workflows spend agents by the fleet, so the standing authorization is conditional.
+Ultracode's state is announced only by the harness Workflow tool's own description;
+when this session has no Workflow tool loaded, nothing announces the state, and the
+default is off.
 - **Ultracode on** — workflows are yours on judgment alone, same as any subagent.
   Orchestrate whenever the work is wide, adversarial, or larger than one context.
   Do not ask; decide, and own the result.
@@ -47,6 +50,11 @@ it warrants no reply — do not explain the notification or restate the report.
 - When your own judgment is strained, a dispatch upward is legitimate: consult an
   advisor agent on a stronger model than your own.
 - **Never spawn a subagent with Fable as the model without first consulting the user.**
+  The rule guards against unconsented multiplication of top-tier token spend: this
+  covers a pinned Fable dispatch, an unpinned dispatch from a Fable session (subagents
+  inherit the session model by default, so that inherited default IS a Fable spawn),
+  and a fork from a Fable session (forks always run the parent model and cannot be
+  pinned to anything else).
 </routing>
 
 <instructions-to-subagents>
