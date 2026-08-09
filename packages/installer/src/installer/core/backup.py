@@ -21,7 +21,6 @@ never left without a recoverable copy.
 
 from __future__ import annotations
 
-import glob
 import re
 import shutil
 from datetime import datetime
@@ -70,23 +69,35 @@ def _backup_path_for(target: Path, timestamp: str) -> Path:
 
 
 def _existing_backups(target: Path, backup_dir: Path) -> list[Path]:
-    """Every backup of ``target`` already sitting in ``backup_dir``, oldest first.
+    """Every retention-eligible backup of ``target`` already sitting in
+    ``backup_dir``, oldest first.
 
-    Matched by filename prefix (``<name>.backup-``), not by directory
-    provenance, so this counts a target's backups regardless of whether they
-    landed in-place or in a routed ``<namespace>-backup/`` dir — whichever
-    ``backup_dir`` the caller resolved. The ``YYYYMMDD-HHMMSS`` suffix sorts
-    lexicographically in chronological order, so a plain name sort is enough.
+    A candidate must start with the literal prefix ``<name>.backup-`` *and*
+    have everything after it satisfy ``valid_timestamp`` — the same contract
+    ``back_up`` enforces on every timestamp it writes. Matching is plain
+    string comparison, not a glob pattern, so a target name carrying a glob
+    metacharacter (``*``, ``?``, ``[...]``) needs no escaping and cannot
+    cross-match another target's backups. The timestamp check additionally
+    rejects two things a looser ``<name>.backup-*`` match would wrongly
+    accept: a hand-placed file that merely resembles a backup name (e.g.
+    ``AGENTS.md.backup-notes``), and a nested-name collision where one
+    target's own name is another target's name plus a backup suffix (target
+    ``X``'s prefix would otherwise also match target ``X.backup-old``'s own
+    backups, named ``X.backup-old.backup-<ts>``).
 
-    ``target.name`` is escaped (``glob.escape``) before it becomes part of the
-    glob pattern: a target whose own name carries a glob metacharacter (``*``,
-    ``?``, ``[...]``) would otherwise have that character interpreted as a
-    wildcard, matching — and in ``_prune_old_backups``, deleting — a different
-    target's backups sharing the same ``backup_dir``. Only the trailing
-    ``.backup-*`` suffix is a deliberate wildcard, over the timestamp.
+    Counts a target's backups regardless of whether they landed in-place or
+    in a routed ``<namespace>-backup/`` dir — whichever ``backup_dir`` the
+    caller resolved. The ``YYYYMMDD-HHMMSS`` suffix sorts lexicographically in
+    chronological order, so a plain name sort is enough.
     """
-    pattern = f"{glob.escape(target.name)}.backup-*"
-    return sorted(backup_dir.glob(pattern))
+    if not backup_dir.is_dir():
+        return []
+    prefix = f"{target.name}.backup-"
+    return sorted(
+        entry
+        for entry in backup_dir.iterdir()
+        if entry.name.startswith(prefix) and valid_timestamp(entry.name[len(prefix) :])
+    )
 
 
 def _prune_old_backups(target: Path, backup_dir: Path, *, keep: int) -> None:

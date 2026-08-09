@@ -155,6 +155,71 @@ def test_back_up_treats_glob_metacharacters_in_a_target_name_literally(
     assert f"noteX.backup-{_TIMESTAMPS[0]}" in all_names
 
 
+def test_back_up_ignores_a_backup_shaped_file_with_a_non_timestamp_suffix(
+    tmp_path: Path,
+) -> None:
+    """
+    Given a hand-placed file that merely resembles a backup name — the text
+    after ``.backup-`` is not a well-formed timestamp
+    When the real target accumulates enough real backups to trigger pruning
+    Then the hand-placed file is never counted toward retention and is never
+    pruned — it survives untouched.
+
+    Pins the timestamp-suffix check: a looser ``<name>.backup-*`` match would
+    treat a file like ``AGENTS.md.backup-notes`` as one of AGENTS.md's own
+    dated backups.
+    """
+    target = tmp_path / "AGENTS.md"
+    target.write_text("v0")
+    decoy = tmp_path / "AGENTS.md.backup-notes"
+    decoy.write_text("hand-written notes, not a backup")
+
+    for ts in _TIMESTAMPS:
+        target.write_text(f"content-{ts}")
+        back_up(target, ts)
+
+    assert decoy.read_text() == "hand-written notes, not a backup"
+    all_backup_like = sorted(p.name for p in tmp_path.glob("AGENTS.md.backup-*"))
+    real_survivors = [n for n in all_backup_like if n != decoy.name]
+    expected = [f"AGENTS.md.backup-{ts}" for ts in _TIMESTAMPS[-BACKUP_RETENTION_COUNT:]]
+    assert real_survivors == expected
+    assert decoy.name in all_backup_like
+
+
+def test_back_up_does_not_cross_match_a_nested_name_collision(tmp_path: Path) -> None:
+    """
+    Given two distinct targets sharing a backup directory, where one target's
+    own name equals another target's name plus a backup suffix (targets
+    "note" and "note.backup-old")
+    When the shorter-named target accumulates enough backups to trigger
+    pruning
+    Then the longer-named target's own backups (named
+    "note.backup-old.backup-<ts>") are never counted toward "note"'s
+    retention and are never pruned by it.
+
+    Without the timestamp-suffix check, "note.backup-old.backup-<ts>" starts
+    with "note"'s own prefix ("note.backup-"), so an unconstrained prefix (or
+    escaped-glob) match would sweep it into "note"'s retention set.
+    """
+    note = tmp_path / ".claude" / "skills" / "note"
+    collider = tmp_path / ".claude" / "skills" / "note.backup-old"
+    note.parent.mkdir(parents=True)
+    collider.write_text("collider-v0")
+    back_up(collider, _TIMESTAMPS[0])
+
+    for ts in _TIMESTAMPS[1:]:
+        note.write_text(f"note-{ts}")
+        back_up(note, ts)
+
+    backup_dir = tmp_path / ".claude" / "skills-backup"
+    all_names = sorted(p.name for p in backup_dir.iterdir())
+    collider_backup = f"note.backup-old.backup-{_TIMESTAMPS[0]}"
+    expected_note_backups = [
+        f"note.backup-{ts}" for ts in _TIMESTAMPS[1:][-BACKUP_RETENTION_COUNT:]
+    ]
+    assert all_names == sorted([collider_backup, *expected_note_backups])
+
+
 @pytest.mark.parametrize("retention_count", [0, -1])
 def test_back_up_never_deletes_the_only_backup_even_with_non_positive_retention(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, retention_count: int
@@ -184,6 +249,27 @@ def test_back_up_never_deletes_the_only_backup_even_with_non_positive_retention(
     survivors = list(tmp_path.glob("AGENTS.md.backup-*"))
     assert survivors == [tmp_path / f"AGENTS.md.backup-{_TIMESTAMPS[1]}"]
     assert survivors[0].read_text() == "v1"
+
+
+def test_existing_backups_returns_empty_for_a_backup_dir_that_does_not_exist_yet(
+    tmp_path: Path,
+) -> None:
+    """
+    Given a backup_dir that has never been created
+    When _existing_backups is asked for a target's backups in it
+    Then it returns an empty list rather than raising.
+
+    ``back_up`` always creates the backup dir (``mkdir``) before calling this,
+    so the public API never exercises this branch on its own — but the helper
+    is documented and used standalone by ``_prune_old_backups``, and must
+    match the previous glob-based implementation's behaviour on a missing
+    directory (``Path.glob`` never raised there either); ``Path.iterdir``
+    would raise ``FileNotFoundError`` without this guard.
+    """
+    target = tmp_path / "AGENTS.md"
+    missing_backup_dir = tmp_path / "does-not-exist"
+
+    assert backup_module._existing_backups(target, missing_backup_dir) == []
 
 
 def test_backup_retention_count_is_5() -> None:
