@@ -1,9 +1,11 @@
 """Smoke tests for the typer CLI root.
 
-These pin the *user-facing contract* that every MVP verb is wired and discoverable
-via ``--help`` (the foundation deliverable: skeletons exist and are listed). They
-are behavior tests at the CLI boundary, not tautologies — a verb that is defined
-but not registered, or registered under the wrong name, fails here.
+These pin the *user-facing contract*: every MVP verb is wired, discoverable via
+``--help``, and has its own ``--help``; ``sweep`` (charter D13's explicit
+"never build" prohibition) is neither discoverable nor a registered command.
+They are behavior tests at the CLI boundary, not tautologies — a verb that is
+defined but not registered, registered under the wrong name, or a forbidden
+verb that slips back onto the surface, fails here.
 """
 
 from __future__ import annotations
