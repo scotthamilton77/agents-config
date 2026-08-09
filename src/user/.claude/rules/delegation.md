@@ -15,8 +15,9 @@ see <workflow-user-authorization>.
 
 <workflow-user-authorization>
 Workflows spend agents by the fleet, so the standing authorization is conditional.
-Ultracode is on only when something in the session announces it; absent that
-announcement, the default is off.
+Ultracode is on only when the session's loaded context, or the operator's own
+instruction, explicitly states so; absent an explicit statement either way, the
+default is off.
 - **Ultracode on** — workflows are yours on judgment alone, same as any subagent.
   Orchestrate whenever the work is wide, adversarial, or larger than one context.
   Do not ask; decide, and own the result.
