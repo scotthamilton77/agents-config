@@ -9,8 +9,7 @@
   suitable Python (≥3.11) on first run. `uv` ≥ 0.10.4 is required for the stage
   that puts this repo's CLIs on your PATH.
 
-Nothing else is required. Two things that earlier versions of this guide listed
-as prerequisites are now optional:
+Nothing else is required. Two more things are optional:
 
 - **[steveyegge/beads](https://github.com/steveyegge/beads)** — the `bd` work
   tracker. The `work` CLI, which ships from its own repository and is not
