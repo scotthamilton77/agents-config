@@ -24,6 +24,12 @@ HERE = Path(__file__).resolve().parent
 EMITTER_PATH = HERE / "emit_prompts.py"
 SKILL_PATH = HERE / "SKILL.md"
 CONTRACTS_PATH = HERE / "contracts.json"
+# Source-tree-only path to the real verdict schema, for exercising strict
+# jsonschema validation explicitly. The emitter itself never assumes this
+# layout — see SCHEMA_CANDIDATES in emit_prompts.py.
+REVIEW_VERDICT_SCHEMA = (
+    HERE / ".." / ".." / ".." / ".agents" / "skills" / "review-verdict" / "verdict.schema.json"
+).resolve()
 
 
 def _load_emitter():
@@ -384,6 +390,21 @@ class TestRoundsAndLedger:
         code, result = run(flat, capsys)
         assert code == 2 and result["errors"][0]["code"] == "bad-prior-verdict"
 
+    def test_b4_explicit_schema_catches_what_the_structural_fallback_misses(
+        self, repo, acs_file, tmp_path, capsys
+    ):
+        """A document that satisfies the structural minimum (findings is a list) can still
+        violate the full verdict schema — for example, a "clean" verdict carrying findings.
+        An explicit --schema catches it even when no schema is co-located with the emitter."""
+        assert REVIEW_VERDICT_SCHEMA.is_file(), "fixture path to the real verdict schema moved"
+        broken = {**verdict_round1(repo), "verdict": "clean"}  # "clean" forbids non-empty findings
+        prior = tmp_path / "verdict-1.json"
+        prior.write_text(json.dumps(broken), encoding="utf-8")
+        flat = argv(repo, acs_file, tmp_path / "out", **{"--round": "2"})
+        flat += ["--prior-verdict", str(prior), "--schema", str(REVIEW_VERDICT_SCHEMA)]
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "bad-prior-verdict"
+
     def test_b1_diff_scope_only_for_a_green_local_lens(self, repo, acs_file, tmp_path, capsys):
         """S6-B1: a diff-scoped lens re-reads everything on round 1 and whenever it had
         findings; it narrows only after reporting green."""
@@ -455,6 +476,12 @@ class TestSurface:
             hits = [line for line in path.read_text(encoding="utf-8").splitlines()
                     if jargon.search(line)]
             assert not hits, f"{path.name}: {hits}"
+
+    def test_b6_deployed_emitter_names_no_repo_source_layout(self):
+        """The deployed emitter's schema discovery may assume the deployed sibling layout
+        only — never this repository's own source-tree nesting."""
+        text = EMITTER_PATH.read_text(encoding="utf-8")
+        assert ".agents" not in text
 
     def test_b6_skill_declares_its_admission_record(self):
         """S6-B6: the deployed skill carries the record the install gate requires."""

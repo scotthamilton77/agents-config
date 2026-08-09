@@ -25,10 +25,12 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 CONTRACTS_PATH = HERE / "contracts.json"
 
-# Deployed layout puts review-verdict beside this skill; source layout keeps it in the shared tree.
+# The deployed layout puts review-verdict beside this skill as a sibling. When
+# no schema is found there (for example, running this script before the
+# skills are installed as siblings), validation falls back to the structural
+# minimum in _validate_prior.
 SCHEMA_CANDIDATES = (
     HERE / ".." / "review-verdict" / "verdict.schema.json",
-    HERE / ".." / ".." / ".." / ".agents" / "skills" / "review-verdict" / "verdict.schema.json",
 )
 
 EXIT_OK = 0

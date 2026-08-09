@@ -1,6 +1,6 @@
 ---
 name: instructing-subagents
-description: Use when writing the prompt for any delegated agent — a subagent, a workflow stage, a background worker, or a nested harness. Apply whenever you are about to hand work to an agent, split a task across agents, or draft a brief, spec, or dispatch for delegated work; and whenever a delegated agent built the wrong thing, returned noise, went idle without delivering its report, or argued with its brief.
+description: Use when writing the prompt for any delegated agent — a subagent, a workflow stage, a background worker, or a nested harness. Apply whenever you are about to hand work to an agent, split a task across agents, or draft a brief, spec, or dispatch for delegated work; and whenever a delegated agent built the wrong thing, returned noise, went idle without delivering its report, or argued with its brief. Dispatching to a restricted-tool subagent such as openrouter-claude-subagent's read-only default needs its mandated report file carved into the tool grant explicitly.
 admission:
   prevents: Delegated work that returns noise or loses its result — briefs missing an objective, constraints, acceptance criteria, or a commanded report delivery; briefs that prescribe the orchestrator's implementation instead of the outcome; and finished judgement lost to an agent that went idle holding a good report.
   cost: Context footprint only, bounded by the caps content-lint enforces.

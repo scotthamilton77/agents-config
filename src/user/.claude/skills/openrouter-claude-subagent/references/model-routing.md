@@ -8,6 +8,13 @@ pages by hand. Re-verify there before routing anything cost-sensitive:
 OpenRouter reprices and retires models without notice, and this table is a
 snapshot that starts decaying immediately.
 
+This launcher also denies two model families outright, independent of price:
+Claude models, and non-`-mini` `gpt-5.5`/`gpt-5.6` tiers (`scripts/proxy.js`'s
+`DENIED_MODEL_PREFIXES` — see `references/proxy-contract.md`'s Denylist
+section). Both run properly through other transports, so the table below
+omits them entirely: every row here is a model this launcher can actually
+start.
+
 Prices are $/M tokens. Rows are sorted by input price.
 
 | Model ID (`--model` value) | Input $/M | Output $/M | Context | Effort levels accepted | Best for |
@@ -16,12 +23,8 @@ Prices are $/M tokens. Rows are sorted by input price.
 | `moonshotai/kimi-k2.6` | $0.65 | $2.72 | 262K | **none** — reasoning on/off only | Cheapest Kimi tier, general/mechanical |
 | `z-ai/glm-5.2` | $0.76 | $2.39 | 1M / 131K out | `high` `xhigh` **only** | Long-horizon agentic coding; cheapest output in its price band |
 | `moonshotai/kimi-k2.7-code` | $0.78 | $3.50 | 262K | **none** — reasoning always on | Code-tuned mid-tier, strong cost/perf for implementation |
-| `openai/gpt-5.6-luna` | $1.00 | $6.00 | 1.05M / 128K out | `none` `low` `medium` `high` `xhigh` `max` | Cheap high-volume classification / lightweight agentic |
 | `google/gemini-3.5-flash` | $1.50 | $9.00 | 1M / 64K out | `minimal` `low` `medium` `high` | Near-Pro coding/reasoning at flash latency |
-| `openai/gpt-5.6-terra` | $2.50 | $15.00 | 1.05M / 128K out | `none` `low` `medium` `high` `xhigh` `max` | Balanced everyday coding/agentic — standard implementation |
 | `moonshotai/kimi-k3` | $3.00 | $15.00 | 1M | `low` `high` `max` — no `medium`, no `xhigh` | Frontier-tier agentic coding, large repos |
-| `anthropic/claude-opus-4.8` | $5.00 | $25.00 | 1M / 128K out | `low` `medium` `high` `xhigh` `max` | Frontier architecture/judgment |
-| `openai/gpt-5.6-sol` | $5.00 | $30.00 | 1.05M / 128K out | `none` `low` `medium` `high` `xhigh` `max` | Flagship complex reasoning/coding, cross-subsystem work |
 
 ## Reading the effort column
 
@@ -47,8 +50,8 @@ before dispatch:
 | Bucket | Default pick | Step down (user said "cheap") | Step up (user said "best"/"most capable") |
 |---|---|---|---|
 | Mechanical / triage | `google/gemini-3.1-flash-lite` | — (already cheapest) | `moonshotai/kimi-k2.6` |
-| Standard implementation | `moonshotai/kimi-k2.7-code` | `google/gemini-3.1-flash-lite` or `z-ai/glm-5.2` | `openai/gpt-5.6-terra` or `moonshotai/kimi-k3` |
-| Architecture / judgment-heavy | `moonshotai/kimi-k3` | `openai/gpt-5.6-terra` | `openai/gpt-5.6-sol` or `anthropic/claude-opus-4.8` |
+| Standard implementation | `moonshotai/kimi-k2.7-code` | `google/gemini-3.1-flash-lite` or `z-ai/glm-5.2` | `moonshotai/kimi-k3` |
+| Architecture / judgment-heavy | `moonshotai/kimi-k3` | `google/gemini-3.5-flash` | none on this transport — Claude and the large GPT tiers are denied here; use the native harness or the GPT transport directly |
 
 `z-ai/glm-5.2` is the cheapest output in its price band and holds a 1M context,
 which keeps it useful for long-horizon agentic work. It is not the all-purpose
