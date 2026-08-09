@@ -68,19 +68,20 @@ GEMINI.md
 # unread directory as a defect, and without a declaration it would fail the build
 # for whoever follows that layout table.
 /rules-readmes/
-# Confirmed live leaker, not defensive coverage — but only because THIS ONE
-# sits at the depth an anchored pattern reaches (ruff-postedit_test.sh is a
-# direct child of the hooks/ namespace dir).
-/ruff-postedit_test.sh
 # Dev-only artifacts that must never deploy, at ANY depth — including inside a
 # DIR item's own interior (a skill's scripts/ subdir, most visibly). The
-# Python patterns mirror the repo gate's suite discovery (*_test.py or
-# test_*.py) deliberately: a file the gate runs as a repo-side suite must not
-# be a file the installer ships. Widening one without the other lets a suite
-# be both executed here and deployed downstream.
+# Python and shell patterns mirror the repo gate's suite discovery (*_test.<ext>
+# or test_*.<ext>) deliberately: a file the gate runs as a repo-side suite must
+# not be a file the installer ships. Widening one without the other lets a
+# suite be both executed here and deployed downstream. Confirmed live leakers:
+# ruff-postedit_test.sh and codex-broker-reaper_test.sh, both direct children
+# of the hooks/ namespace dir — caught by class (below) rather than by name,
+# so a future hook's own *_test.sh suite is covered without a new entry.
 *_test.py
 test_*.py
 *_test.js
+*_test.sh
+test_*.sh
 *.pyc
 __pycache__/
 .pytest_cache/

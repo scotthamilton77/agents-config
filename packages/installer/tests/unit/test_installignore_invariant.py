@@ -76,3 +76,19 @@ def test_readme_stays_anchored_so_a_skill_can_ship_one() -> None:
 
     assert not ignore.excludes_path(Path("some-skill/references/README.md"))
     assert ignore.excludes("README.md", is_dir=False, at_root=True)
+
+
+def test_shell_test_suites_are_excluded_by_class_not_by_name() -> None:
+    """A hook's own ``*_test.sh`` suite must never deploy, using the REAL repo
+    ``.installignore`` and the REAL Claude hooks/ staging (hooks are Claude-only).
+
+    ``ruff-postedit_test.sh`` was once carried as a single named entry; a second
+    shell suite (``codex-broker-reaper_test.sh``) shipped anyway because nothing
+    excluded the class. Both must be caught the same way ``*_test.py`` catches
+    every Python suite, so a third hook's own suite needs no new manifest line."""
+    ignore = load_installignore(_REPO_ROOT / ".installignore")
+    plan = build_plan(get_adapter(Tool.CLAUDE), repo_root=_REPO_ROOT, ignore=ignore)
+
+    for leaker in ("ruff-postedit_test.sh", "codex-broker-reaper_test.sh"):
+        assert Path("hooks") / leaker not in plan.items, f"{leaker} leaked into the Claude plan"
+        assert ignore.excludes(leaker, is_dir=False, at_root=True)
