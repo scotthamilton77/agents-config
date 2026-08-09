@@ -125,7 +125,7 @@ The collision matrix — the dispatch contract `core/merge/registry.py` implemen
 |---|---|---|---|
 | `NAMESPACED_MD` | `rules` | `append_rules` | Join `existing + "\n---\n" + incoming` — rules compose. |
 | `NAMESPACED_MD` | `commands` / `skills` / `agents` | `fatal` | **Raise** — two items with the same name is an authoring error; the message names both files. |
-| `SETTINGS_JSON` | — | `json_union` | Deep union: nested-dict precedence, array union + sort, type-mismatch surfaced. |
+| `SETTINGS_JSON` | — | `json_union` | Deep union: nested-dict precedence, array union + dedupe (first-seen order), type-mismatch surfaced. |
 | `JSONC` | — | `last_wins_warn` | Replace, with a warning that an existing file was overwritten. |
 | `TOML` | — | `last_wins_warn` | Replace, with a warning. |
 | `OTHER` | — | `last_wins_silent` | Replace silently. |

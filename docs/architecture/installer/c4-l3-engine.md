@@ -13,7 +13,7 @@
 |---|---|
 | `core/` | The pure, tool-agnostic engine. Knows nothing about any specific tool; parameterised by a `ToolAdapter` and a source root. Fully unit-testable against a `FakeToolAdapter`. |
 | `orchestrator` | `orchestrator.py`'s `stage_and_transform` — staging only: per detected tool, drives build_plan → plugin overlay → merge-on-collision → post-staging transforms, returning every tool's finished plan. `cli.py`, not `orchestrator.py`, is the true top-level controller — it calls `stage_and_transform` once, then separately drives sync and prune via `core/run.py`. |
-| `ToolAdapter` | Protocol abstracting per-tool behaviour: `source_dir`, `dest_dir`, `is_detected`, `scoped_namespaces`, `should_install_namespace`, `post_staging_transforms`. One implementation per tool. |
+| `ToolAdapter` | Protocol abstracting per-tool behaviour: `source_dir`, `dest_dir`, `is_detected`, `scoped_namespaces`, `project_namespaces`, `should_install_namespace`, `post_staging_transforms`. One implementation per tool. |
 | `PluginAdapter` | Protocol for an optional plugin overlay. String-keyed registry; dynamically discovered by scanning `src/plugins/`. |
 | `MergeStrategy` | Collision-resolution protocol; one class per strategy module; dispatched by the registry on `(FileKind, namespace)`. |
 | `IOPort` | The single I/O abstraction. `TerminalIO` (real, via `rich`) and `ScriptedIO` (test fake) are the two implementations; no other module calls `print`/`input`. |
