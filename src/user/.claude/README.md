@@ -13,6 +13,9 @@ by default.
 - `rules/` — Claude-specific workflow rules, under that same gate. Each rules
   directory carries its own `AGENTS.md` saying what is currently in it; read
   that rather than counting files here.
+- `hooks/` — Python scripts invoked by `settings.json.template`'s hook
+  commands (e.g. `ruff-postedit.py`, `codex-broker-reaper.py`), each paired
+  with its own test script.
 - `AGENTS.md.template` — Top-level instruction file. It is a single
   `DYNAMIC-INCLUDE` of the shared zero-based core in
   `src/user/.agents/USER-CORE.md.template`, which the installer flattens in at

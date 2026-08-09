@@ -2,7 +2,8 @@
 
 Tool-agnostic source content. `scripts/install.sh` stages everything here into
 **every active tool** (Claude always; Codex and Gemini when their `~/.<tool>/`
-dir exists or `--tools=` selects them).
+dir exists; OpenCode when `opencode` is on PATH or `~/.config/opencode/`
+exists; or `--tools=` selects any of them).
 
 ## Install model
 

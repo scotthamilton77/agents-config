@@ -8,9 +8,8 @@ something here is useful to more than one tool, it lives here.
 
 - `USER-CORE.md.template` — the zero-based shared laws, decision matrix, hard
   lines, and conventions (D17). Every tool's instruction template pulls this in
-  with a `DYNAMIC-INCLUDE` marker, so it is the one file whose text reaches all
-  four tools verbatim. It is currently hand-deployed to the standard homes;
-  `agents-config-9k9.10` tracks wiring it into automated per-tool assembly.
+  with a `DYNAMIC-INCLUDE` marker that the installer resolves at staging time,
+  so it is the one file whose text reaches all four tools verbatim.
 - `skills/` — methodology guides, one directory per skill with a `SKILL.md` and
   optional supporting scripts.
 - `rules/` — tool-agnostic always-on rules. Empty today.
