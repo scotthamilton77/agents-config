@@ -53,9 +53,9 @@ def test_clean_tree_exits_zero_and_prints_the_budget_numbers(
 
     out = capsys.readouterr().out
     assert f"cap {ALWAYS_ON_TOKEN_CAP} tokens" in out
-    # The core is an eighth of the surface cap, so its own number and its own
-    # ceiling both have to print: a core that had doubled would otherwise leave
-    # the surface total looking comfortable.
+    # The core answers to a ceiling over twelve times tighter than the surface
+    # cap, so its own number and its own ceiling both have to print: a core that
+    # had doubled would otherwise leave the surface total looking comfortable.
     assert f"core {USER_CORE_TOKEN_CAP}" in out
     assert "(core 0," in out
     # Both ceilings on the header, and the one that applied on the body's own

@@ -7,8 +7,8 @@ write:
   admitted always-on rule, and every skill catalog entry that tool's runtime
   publishes to the model — is capped at ``ALWAYS_ON_TOKEN_CAP``;
 - the **user core** inside that surface — the deployed instruction file alone,
-  which is the shared zero-based core after assembly — is capped at
-  ``USER_CORE_TOKEN_CAP``;
+  which is the shared zero-based core plus whatever the tool's own template
+  adds around it — is capped at ``USER_CORE_TOKEN_CAP``;
 - each admitted **skill body** (the SKILL.md content after its front matter,
   the on-invoke payload) is capped at ``SKILL_BODY_TOKEN_CAP``, or at
   ``USER_INVOKED_SKILL_BODY_TOKEN_CAP`` when the target it deploys to keeps

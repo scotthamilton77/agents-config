@@ -52,8 +52,8 @@ def _report_budgets(result: ContentLintResult) -> None:
         # rules change rarely, the catalog gains an entry with every skill
         # admitted, and the core moves only when the shared zero-base or a tool's
         # own template does. A single total hides which one is moving, and hides
-        # the core entirely — it is an eighth of the surface cap, so a core that
-        # has doubled still leaves the total looking comfortable.
+        # the core entirely — the surface cap is over twelve times the core's, so
+        # a core that has doubled still leaves the total looking comfortable.
         sys.stdout.write(
             f"  {surface.tool:<10} {surface.tokens:>6} tokens  "
             f"(core {surface.core_tokens}, {surface.rules} rule(s), "
