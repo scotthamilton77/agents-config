@@ -106,7 +106,9 @@ accepted, recorded interim cost, not the target state. This interim settles
 only where a reply is read, not what one means: a reply rendering under
 Scott's identity is still never evidence of merge authorization, and D9's
 merge-eligibility clause — CI green, verdict artifact, approval — is
-unchanged.
+unchanged. While clause (b) holds, AC7's bot-identity precondition is unmet
+for every PR, so the AC9 termination window does not open until the
+App-identity write path ships.
 
 **D10 — Non-merging PRs park; the machine disengages.** Closed = merged, no
 exceptions (dependents key off merge). A work item whose PR won't merge enters
