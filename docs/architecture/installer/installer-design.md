@@ -215,16 +215,17 @@ Test names describe the contract, e.g. `test_user_modified_settings_keys_are_pre
 
 ```
 python3 scripts/install.py [--dry-run] [--yes] [--verbose] [--tools=TOOLS] [--plugins=PLUGINS]
-                           [--project PATH] [--profiles=PROFILES]
+                           [--project <dir>] [--profiles=PROFILES]
                            [--prune | --prune-only] [--dump-stage <path>] [--help]
 ```
 
 `--dump-stage` is mutually exclusive with `--prune` / `--prune-only`.
 `--profiles` requires `--project`. All other flags are mutually exclusive per
-the standard install / prune-only split. `--project PATH` installs
-project-scoped content into `PATH` instead of user space (`core/kits.py` +
-`core/profiles.py` resolve which kits/profiles apply); this path is ungated by
-design and does not run the admission gate that the user-home path does.
+the standard install / prune-only split. `--project <dir>` forks into a
+project-scoped install: it installs into the given directory instead of user
+space (`core/kits.py` + `core/profiles.py` resolve which kits/profiles
+apply); this path is ungated by design and does not run the admission gate
+that the user-home path does.
 
 ## Implementation discipline
 
