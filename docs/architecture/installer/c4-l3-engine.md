@@ -11,9 +11,9 @@
 
 | Term | Meaning |
 |---|---|
-| `core/` | The pure, tool-agnostic engine. Knows nothing about any specific tool; parameterised by a `ToolAdapter` and a source root. Fully unit-testable against a `FakeToolAdapter`. |
+| `core/` | The pure, tool-agnostic engine. Knows nothing about any specific tool; parameterised by a `ToolAdapter` and a source root. Fully unit-testable against a private per-file test double (e.g. `_IdentityAdapter`). |
 | `orchestrator` | `orchestrator.py`'s `stage_and_transform` — staging only: per detected tool, drives build_plan → plugin overlay → merge-on-collision → post-staging transforms, returning every tool's finished plan. `cli.py`, not `orchestrator.py`, is the true top-level controller — it calls `stage_and_transform` once, then separately drives sync and prune via `core/run.py`. |
-| `ToolAdapter` | Protocol abstracting per-tool behaviour: `source_dir`, `dest_dir`, `is_detected`, `scoped_namespaces`, `project_namespaces`, `should_install_namespace`, `post_staging_transforms`. One implementation per tool. |
+| `ToolAdapter` | Protocol abstracting per-tool behaviour: `name`, `source_dir`, `dest_dir`, `is_detected`, `scoped_namespaces`, `project_namespaces`, `should_install_namespace`, `post_staging_transforms`. One implementation per tool. |
 | `PluginAdapter` | Protocol for an optional plugin overlay. String-keyed registry; dynamically discovered by scanning `src/plugins/`. |
 | `MergeStrategy` | Collision-resolution protocol; one class per strategy module; dispatched by the registry on `(FileKind, namespace)`. |
 | `IOPort` | The single I/O abstraction. `TerminalIO` (real, via `rich`) and `ScriptedIO` (test fake) are the two implementations; no other module calls `print`/`input`. |
@@ -43,7 +43,7 @@ C4Component
             Component(model, "model.py", "Python", "FileKind, StagedItem, StagingPlan, Provenance, Orphan, IncludeDirective (FileInclude | AllRulesInclude | NamedRulesInclude), Counters, Tool enum. No behaviour — pure data.")
             Component(ioport, "io_port.py", "Python", "IOPort protocol + TerminalIO (rich) + ScriptedIO (test). The only place stdin/stdout is touched.")
             Component(templates, "templates.py", "Python", "DYNAMIC-INCLUDE flattening: file form, ALL-RULES form, and named-subset form (sorted or listed-order, joined with --- separators).")
-            Component(staging, "staging.py", "Python", "Source-walk -> StagingPlan, parameterised by a ToolAdapter. Strips .template suffix; scopes namespaces; consults .installignore; calls adapter.post_staging_transforms.")
+            Component(staging, "staging.py", "Python", "Source-walk -> StagingPlan (Phases 1-5), parameterised by a ToolAdapter. Strips .template suffix; scopes namespaces; consults .installignore.")
             Component(ignore, "installignore.py", "Python", "Loads .installignore, the shared exclusion manifest staging.py and overlay.py both consult. Missing/unreadable/non-UTF-8 is a HARD ERROR (cli.py exit 2) — load-bearing policy, not an optional default.")
             Component(overlay, "overlay.py", "Python", "Phase 6: overlay_plugins — merges each active plugin's content onto the base plan, alphabetical plugin order. Carrier-merges a plugin's disjoint files into a shared_carrier skills/agents DIR; every other collision routes through the merge registry (DIR is fatal).")
             Component(sync, "sync.py", "Python", "Phase 7: require_consent guard -> hash-compare -> diff -> confirm -> path-aware backup -> write. Reports per-item InstallOutcome (WRITTEN / SKIPPED_IDENTICAL / DECLINED). Honours --dry-run.")
@@ -107,7 +107,7 @@ C4Component
     Rel(staging, src_ext, "walk + read source")
     Rel(staging, templates, "flatten DYNAMIC-INCLUDE")
     Rel(staging, treg, "ToolAdapter behaviour (dest, namespaces, filter)")
-    Rel(staging, tgemini, "post_staging_transforms (frontmatter)")
+    Rel(orch, tgemini, "post_staging_transforms (frontmatter)")
     Rel(staging, model, "build StagedItem / StagingPlan")
     Rel(staging, ignore, "consult exclusion set during namespace walk")
     Rel(staging, mreg, "collision -> strategy (base staging)")
@@ -147,14 +147,14 @@ C4Component
 
 ### `core/` — the tool-agnostic engine
 
-The engine knows nothing about any specific tool; it takes a `ToolAdapter` and a source root and runs. This is the load-bearing separation in the whole design — it is what lets the bulk of the test suite exercise the engine through a `FakeToolAdapter` without any real tool present (see `installer-design.md` §"Test architecture" for how to get the current count).
+The engine knows nothing about any specific tool; it takes a `ToolAdapter` and a source root and runs. This is the load-bearing separation in the whole design — it is what lets the bulk of the test suite exercise the engine through a private per-file test double (e.g. `_IdentityAdapter`) without any real tool present (see `installer-design.md` §"Test architecture" for how to get the current count).
 
 - **`orchestrator.py`** (`stage_and_transform`) is staging only, not the full control flow: for each detected tool it builds that tool's `StagingPlan` (`core/staging.py`), overlays active plugins (`core/overlay.py`, Phase 6), applies plugin YAML extensions, flattens DYNAMIC-INCLUDE, and runs the tool's `post_staging_transforms` — returning every tool's finished plan to `cli.py` in one call. It does **not** sync or prune; those run directly from `cli.py` via `core/run.py`, as a separate whole-fleet pass over all tools **after** every tool has finished staging (see [`sequences.md`](sequences.md) Sequence 1).
 
 - **`model.py`** is pure data — the enums and dataclasses every other module passes around (detailed in [`data-view.md`](data-view.md)). No behaviour lives here.
 - **`io_port.py`** is the I/O chokepoint. `sync` and `prune` reach the terminal only through the `IOPort` protocol; tests inject `ScriptedIO` to drive every prompt deterministically.
 - **`templates.py`** does DYNAMIC-INCLUDE flattening. The file form inlines one fragment; the ALL-RULES form expands the staged rules collection sorted + `\n---\n`-joined. (The Gemini frontmatter conversion is invoked here in tests but **lives in `tools/gemini.py`** — the engine stays tool-agnostic.)
-- **`staging.py`** walks the source, strips the `.template` suffix, scopes files into namespaces, consults `.installignore`, builds `StagedItem`s into the `StagingPlan`, and calls the adapter's `post_staging_transforms`. It is parameterised by the `ToolAdapter`, never branching on a tool name itself. A same-dest collision within base staging (shared + per-tool content) routes through the merge registry, same as plugin overlay.
+- **`staging.py`** (Phases 1-5) walks the source, strips the `.template` suffix, scopes files into namespaces, consults `.installignore`, and builds `StagedItem`s into the `StagingPlan`. It is parameterised by the `ToolAdapter`, never branching on a tool name itself. A same-dest collision within base staging (shared + per-tool content) routes through the merge registry, same as plugin overlay. It does **not** call the adapter's `post_staging_transforms` — that call site is `orchestrator.py` (see above), after overlay and extensions have run.
 - **`installignore.py`** loads `.installignore`, the shared exclusion manifest both `staging.py` and `overlay.py` consult while walking a namespace. A missing, unreadable, or non-UTF-8 file is a **hard error** (`cli.py` exit 2) — the manifest is load-bearing policy, not an optional default. A silent empty-exclusion fallback would deploy every namespace's development docs into every destination store, and a run doing that looks exactly like a correct one from the outside.
 - **`overlay.py`** (`overlay_plugins`, Phase 6) merges each active plugin's `.<tool>/` (tool scope) and shared `.agents/` content onto the base plan, in alphabetical plugin order so last-wins collisions resolve deterministically. A plugin directory colliding with a `shared_carrier` skills/agents `DIR` carrier-merges when the two directories' file sets are disjoint (recording the plugin's files in `StagingPlan.dir_overrides`); every other collision — including a second plugin landing on an already-merged carrier — routes through the merge registry, where `FileKind.DIR` is fatal.
 - **`sync.py`** is Phase 7: `require_consent` guards up front (hard-fails a non-interactive run with neither `--yes` nor `--dry-run`), then for each planned file, hash-compare against the destination; identical → skip; different → diff via `IOPort`, confirm, path-aware backup, write. It reports a per-item `InstallOutcome` (`WRITTEN` / `SKIPPED_IDENTICAL` / `DECLINED`, with the real `sha256`) so the receipt records only what was actually written as our bytes. `--dry-run` short-circuits before any write.
@@ -172,7 +172,7 @@ The engine knows nothing about any specific tool; it takes a `ToolAdapter` and a
 
 ### `tools/` — per-tool adapters
 
-One module per tool behind the `ToolAdapter` protocol (`base.py`). Each adapter answers the engine's questions: where is this tool's source, where is its destination, is it detected, which namespaces does it scope, which namespaces a `--project` install may select, should this namespace be installed from this source, and what transforms run post-staging. The non-trivial adapters: **`gemini.py`** owns the frontmatter transform; **`opencode.py`** owns the XDG destination and the "skip shared `agents/`" rule. `registry.py` is the `Tool`-enum-keyed lookup.
+One module per tool behind the `ToolAdapter` protocol (`base.py`). Each adapter declares its own `name`, and answers the engine's questions: where is this tool's source, where is its destination, is it detected, which namespaces does it scope, which namespaces a `--project` install may select, should this namespace be installed from this source, and what transforms run post-staging. The non-trivial adapters: **`gemini.py`** owns the frontmatter transform; **`opencode.py`** owns the XDG destination and the "skip shared `agents/`" rule. `registry.py` is the `Tool`-enum-keyed lookup.
 
 ### `plugins/` — per-plugin adapters
 
@@ -182,7 +182,7 @@ Plugins sit behind the `PluginAdapter` protocol (`base.py`), **string-keyed** in
 
 | Seam | Protocol module | What a test substitutes |
 |---|---|---|
-| Tool behaviour | `tools/base.py` `ToolAdapter` | `FakeToolAdapter` — exercises the core engine with no real tool |
+| Tool behaviour | `tools/base.py` `ToolAdapter` | a private per-file test double (e.g. `_IdentityAdapter`) — exercises the core engine with no real tool |
 | Plugin overlay | `plugins/base.py` `PluginAdapter` | synthetic test-plugin fixture |
 | Collision resolution | `core/merge/base.py` `MergeStrategy` | swap a registry entry to assert dispatch |
 | All I/O | `core/io_port.py` `IOPort` | `ScriptedIO` — drives prompts, records transcript |
@@ -191,7 +191,7 @@ Every cross-boundary dependency is one of these four protocols. That is the desi
 
 ## What this diagram does NOT show
 
-- **Execution order across the components** — detect → stage → overlay → merge → admission gate (user-home path) → sync → CLI-deploy (user-home path) → prune is the subject of [`sequences.md`](sequences.md).
+- **Execution order across the components** — detect → stage → overlay → merge → profile filter (user-home path) → admission gate (user-home path) → sync → CLI-deploy (user-home path) → optional prune → receipt rewrite is the subject of [`sequences.md`](sequences.md).
 - **The data shapes** the components pass around (`StagingPlan`, `StagedItem`, `Config`, …) and the merge-dispatch table — see [`data-view.md`](data-view.md).
 - **The per-strategy merge mechanics** (append separator placement, JSON deep-union rules, fatal message format) — specified in `installer-design.md` §"Test architecture".
 - **The container boundary + external stores at process granularity** — see [`c4-l2-container.md`](c4-l2-container.md).

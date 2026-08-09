@@ -22,7 +22,7 @@
 
 Four sequence diagrams covering one install invocation and its three branching sub-flows:
 
-1. **End-to-end install (happy path)** — detect → stage → overlay → merge → admission gate (user-home path) → sync → CLI-deploy (user-home path) → exit.
+1. **End-to-end install (happy path)** — detect → stage → overlay → merge → profile filter (user-home path) → admission gate (user-home path) → sync → CLI-deploy (user-home path) → optional prune → receipt rewrite → exit.
 2. **Collision merge dispatch** — how two `StagedItem`s for one path resolve through the `(FileKind, namespace)` registry.
 3. **Sync per-item decision** — the hash-skip vs diff → confirm → backup → write branch, including `--dry-run`.
 4. **Prune flow** — read prior receipt → diff against the desired plan → partition by on-disk hash → interactive prune → write new receipt.
@@ -45,6 +45,7 @@ sequenceDiagram
     participant Stage as staging
     participant Plug as plugin overlay
     participant Merge as merge registry
+    participant Prof as profiles.py
     participant Gate as deploy_gate.py
     participant Sync as sync (via run.py)
     participant CliDep as deploy_clis (via run.py)
@@ -75,6 +76,14 @@ sequenceDiagram
             Orch->>Orch: apply_extensions, flatten DYNAMIC-INCLUDE, adapter.post_staging_transforms (gemini: frontmatter)
         end
         Orch-->>CLI: dict[Tool, StagingPlan] — every tool's finished plan
+    end
+
+    rect rgb(255, 250, 230)
+        Note over CLI,Prof: Profile filter (user-home path only; skipped when the staged universe is empty) — narrows every tool plan to the active profile's USER-bound refs
+        CLI->>Prof: load_manifest(repo_root/profiles.toml)
+        CLI->>Prof: resolve(manifest, selection=(), universe, bound_scopes={USER})
+        Prof-->>CLI: resolved refs
+        CLI->>CLI: filter_plan_to_scope per tool (today: selection is always empty, so resolve() matches everything — a no-op filter)
     end
 
     rect rgb(255, 245, 245)
@@ -147,6 +156,7 @@ sequenceDiagram
 - **Staging and sync are two separate whole-fleet passes, not one interleaved per-tool loop.** `orchestrator.stage_and_transform` builds and overlays every tool's plan first, returning the full `dict[Tool, StagingPlan]`; only after that does `cli.py` drive `run.install_pipeline` to sync every tool's plan. `orchestrator.py` never touches `sync.py` — it is staging only.
 - **Tool order is the detection order; tools are independent within each pass.** Each tool gets its own plan and its own sync pass — there is no cross-tool state. A failure shaping one tool's plan does not corrupt another's.
 - **Collisions happen in both base staging and overlay.** Within a single tool's plan, shared + per-tool content can collide (base staging, `staging.py`); the more common case is plugin content landing on a base asset (`overlay.py`). Both route through the same merge registry (Sequence 2), never through `Sync`.
+- **A profile filter runs on the user-home path, before the admission gate.** The repo root's `profiles.toml` is loaded and resolved against the staged universe, and every tool's plan is narrowed to the `USER`-bound refs it resolves to (`filter_plan_to_scope`). Guarded on a non-empty universe (an all-empty synthetic plan has nothing to resolve). The user CLI exposes no `--profiles` flag yet, so the selection is always empty, which `resolve()` treats as the "full" profile — every staged item matches, so today this stage is a no-op filter; the machinery is live, not the narrowing.
 - **The admission gate runs between the two passes, before `Config` is even built.** `run_admission_gate` partitions every staged artifact by its admission record, weighs the surface budget, and runs the conflict audit — record-less content is dropped, and a violation aborts the deploy (exit 1) before `run.py` is ever called. It runs on the user-home path only; a `--project` run never reaches it.
 - **`Config` is built between the two passes, not before the loop.** `resolve_tools` / `resolve_plugins` (pure functions in `config.py`) run once, up front; the frozen `Config` dataclass itself (`home`, `tools`, `auto_yes`) is constructed after the admission gate clears and before the sync pass begins. `installer.toml` plays no part in any of this — its loader is parsed but unwired (see [`data-view.md`](data-view.md)).
 - **The CLI-deploy stage runs third, still inside the receipt lock, and only on the user path.** `deploy_clis` walks the closed `CLI_PACKAGES` registry in its declared order, deciding verify/heal/fresh per CLI from PATH-independent signals (`shim_path`, `tool_list`) rather than trusting `PATH` itself — `which` is consulted only for the reachability invariant after a successful install. A `--project` run never constructs a `CliDeployPort` and never calls `deploy_clis`/`prune_clis` — the user-space CLI deploy is entirely out of scope for project-local installs. Its outcome merges into `record_receipt` via `merge_clis` alongside the file-install/prune outcomes (see [`data-view.md`](data-view.md) §"Install receipt").

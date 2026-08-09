@@ -54,7 +54,7 @@ installer/
 │   ├── model.py                 FileKind, StagedItem, StagingPlan, Orphan, IncludeDirective, Counters
 │   ├── io_port.py               IOPort protocol + TerminalIO + ScriptedIO
 │   ├── templates.py             DYNAMIC-INCLUDE flattening (all three directive forms)
-│   ├── staging.py               Phases 1–6.9: source-walk → StagingPlan; parameterised by ToolAdapter
+│   ├── staging.py               Phases 1–5: source-walk → StagingPlan; parameterised by ToolAdapter
 │   ├── sync.py                  Phase 7: hash-compare, diff, prompt, backup, write; reports per-item InstallOutcome
 │   ├── run.py                   Run composition: install_pipeline + install_plugin_routes + deploy_clis/prune_clis + prune_pipeline + record_receipt
 │   ├── deploy_gate.py           run_admission_gate: partitions staged content by admission record, weighs the surface budget, runs the conflict audit — called directly from cli.py, on the live install path
@@ -111,7 +111,7 @@ class ToolAdapter(Protocol):
     def post_staging_transforms(self, plan: StagingPlan, io: IOPort) -> StagingPlan: ...  # Gemini frontmatter
 ```
 
-The core engine takes a `ToolAdapter` and a source root; tests substitute a `FakeAdapter` to exercise the engine independently of any real tool.
+The core engine takes a `ToolAdapter` and a source root; tests substitute a private per-file test double (e.g. `_IdentityAdapter`) to exercise the engine independently of any real tool.
 
 `MergeStrategy` protocol:
 
@@ -136,7 +136,7 @@ The installer is a `uv`-managed Python project. `pyproject.toml` declares deps; 
 
 The dependency list is deliberately tight, and a library that exists and solves the problem is an acceptable addition.
 
-**Dev deps:** `pytest`, `pytest-xdist`, `ruff`, `mypy` (strict). `uv tool run` is the local invocation pattern.
+**Dev deps:** `pytest`, `pytest-xdist`, `pytest-cov`, `ruff`, `mypy` (strict). `uv tool run` is the local invocation pattern.
 
 ### Configuration — `installer.toml`
 
@@ -184,10 +184,12 @@ story, so it is not stated here: run
 `uv run pytest packages/installer/tests -q --collect-only` for the current
 total.
 
-Pure-function tests exercise the core engine through a `FakeToolAdapter` so
-each module tests in isolation. Examples by module:
+Pure-function tests exercise the core engine through a private per-file
+test double (e.g. `_IdentityAdapter`) so each module tests in isolation.
+Examples by module:
 
-- `core/templates.py` — directive recognition; ALL-RULES join; trailing-newline preservation; Gemini frontmatter strip + tools-list YAML conversion.
+- `core/templates.py` — directive recognition; ALL-RULES join; trailing-newline preservation.
+- `tools/gemini.py` (`test_gemini_frontmatter.py`) — Gemini frontmatter strip + tools-list YAML conversion.
 - `core/merge/strategies/append_rules.py` — empty/non-empty concat; separator placement.
 - `core/merge/strategies/json_union.py` — nested dict precedence; array union+dedupe (first-seen order); type mismatch; key only in incoming.
 - `core/merge/strategies/fatal.py` — raises with informative message including filenames.
@@ -205,7 +207,7 @@ Tests assert **end-state goals**, not how those goals were achieved:
 - "After pruning an orphan under `auto_yes`, the file is gone from its namespace AND its pre-prune content is recoverable from the sibling `<namespace>-backup/` directory."
 - "After install with the test-plugin active, the plugin's rule appears appended to the matching base rule, separated by `\n---\n`."
 
-Test names describe the contract, e.g. `test_user_modified_settings_keys_are_preserved_after_install`. Implementation details (which phase touched what, which strategy fired) are not asserted; the strategy is tested at the unit level.
+Test names describe the contract, e.g. `test_sync_preserves_and_skips_invalid_existing_settings`. Implementation details (which phase touched what, which strategy fired) are not asserted; the strategy is tested at the unit level.
 
 ### Fixture strategy
 
@@ -222,12 +224,12 @@ python3 scripts/install.py [--dry-run] [--yes] [--verbose] [--tools=TOOLS] [--pl
 ```
 
 `--dump-stage` is mutually exclusive with `--prune` / `--prune-only`.
-`--profiles` requires `--project`. All other flags are mutually exclusive per
-the standard install / prune-only split. `--project <dir>` forks into a
-project-scoped install: it installs into the given directory instead of user
-space (`core/kits.py` + `core/profiles.py` resolve which kits/profiles
-apply); this path is ungated by design and does not run the admission gate
-that the user-home path does.
+`--profiles` requires `--project`; every other flag combines freely.
+`--project <dir>` forks into a project-scoped install: it installs into
+the given directory instead of user space (`core/kits.py` +
+`core/profiles.py` resolve which kits/profiles apply); this path is
+ungated by design and does not run the admission gate that the
+user-home path does.
 
 ## Implementation discipline
 
@@ -242,7 +244,7 @@ that the user-home path does.
 - Every public function/class introduced has at least one unit test.
 - Every documented behaviour has a corresponding integration test.
 - Failure modes are covered (malformed input, missing files, collisions, non-interactive guard, etc.).
-- Each test name names the *contract*, not the implementation (`test_user_settings_keys_are_preserved` not `test_json_union_strategy_invokes_recursive_merge`).
+- Each test name names the *contract*, not the implementation (`test_merge_settings_bytes_preserves_order_in_nested_dicts` not `test_json_union_strategy_invokes_recursive_merge`).
 
 ## Critical files
 

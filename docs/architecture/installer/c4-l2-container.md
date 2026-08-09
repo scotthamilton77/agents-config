@@ -40,6 +40,7 @@ C4Container
 
     System_Boundary(repo, "agents-config repo (read-only inputs)") {
         ContainerDb(source, "Source config tree", "files on local FS", "src/user/.agents (shared) + src/user/.{claude,codex,gemini,opencode} (per-tool) + src/plugins/<name>/. The installer NEVER writes here — it is pure input.")
+        ContainerDb(profiles, "profiles.toml", "TOML on local FS", "Repo-root profiles.toml — declares default destination scopes per selector. Loaded and resolved (core/profiles.py) on every real user-home install, before the admission gate, to filter the staged plan. Live and wired, unlike installer.toml below.")
         ContainerDb(toml, "installer.toml", "TOML on local FS", "packages/installer/installer.toml — a single [tools] table of optional per-tool dest-dir overrides. Parsed by core/installer_toml.py; NOT yet read by the live install path — designed, not wired.")
     }
 
@@ -81,14 +82,14 @@ C4Container
 
 ### The installer process
 
-The whole installer runs here. Every invocation is **terminal** — parse argv, build the `StagingPlan`(s), run the admission gate (user-home path), build `Config`, flush to disk, exit. There is no daemon and no background work; on the user-home path the one piece of state that *does* survive a run is the install receipt (read at prune start, rewritten at run end) — a `--project` install also persists its resolved profile selection to `project-config.toml`. Internally — at L3 — this process is composed of a tool-agnostic `core/` engine (`orchestrator`, `model`, `io_port`, `templates`, `staging`, `sync`, the receipt-based prune subsystem `run`/`receipt*`/`prune_hash`/`prune_flow`/`ownership`, `merge/*`), per-tool `tools/` adapters, per-plugin `plugins/` adapters, and a `cli`/`config` top layer. Those components are drawn in [`c4-l3-engine.md`](c4-l3-engine.md).
+The whole installer runs here. Every invocation is **terminal** — parse argv, build the `StagingPlan`(s), run the profile filter and the admission gate (both user-home path), build `Config`, flush to disk, deploy CLIs (user-home path), optionally prune, rewrite the install receipt, exit. There is no daemon and no background work; on the user-home path the one piece of state that *does* survive a run is the install receipt (read at prune start, rewritten at run end) — a `--project` install also persists its resolved profile selection to `project-config.toml`. Internally — at L3 — this process is composed of a tool-agnostic `core/` engine (`orchestrator`, `model`, `io_port`, `templates`, `staging`, `sync`, the receipt-based prune subsystem `run`/`receipt*`/`prune_hash`/`prune_flow`/`ownership`, `merge/*`), per-tool `tools/` adapters, per-plugin `plugins/` adapters, and a `cli`/`config` top layer. Those components are drawn in [`c4-l3-engine.md`](c4-l3-engine.md).
 
 The installer's entry points are `python3 scripts/install.py` (a thin stub: `from installer.cli import main`) and the module form `python -m installer` (requires `packages/installer/src/installer/__main__.py`); both invoke the same `installer.cli.main`.
 
 ### Read-only inputs
 
 - **Source config tree** — `src/user/.agents/` (shared content installed to all tools), `src/user/.{claude,codex,gemini,opencode}/` (per-tool content), and `src/plugins/<name>/` (optional overlay content). The installer **never writes here**; this is the architectural guarantee that makes the source the single canonical authoring surface (the AGENTS.md "always edit source, never deployed artifacts" rule depends on it).
-- **`installer.toml`** — a single `[tools]` table of optional per-tool dest-dir overrides, parsed by `core/installer_toml.py`. **Designed, parsed, but not yet wired**: nothing in the live install path calls the loader, so a declared override has no runtime effect today — dest resolution goes through `adapter.dest_dir(home)` everywhere (including the prune scan). This is the sole installer config file; pruning is **not** configured here (it is driven by the install receipt, below).
+- **`installer.toml`** — a single `[tools]` table of optional per-tool dest-dir overrides, parsed by `core/installer_toml.py`. **Designed, parsed, but not yet wired**: nothing in the live install path calls the loader, so a declared override has no runtime effect today — dest resolution goes through `adapter.dest_dir(home)` everywhere (including the prune scan). The repo-root `profiles.toml` is the installer's other config file — live and wired, unlike this one (see the read-only-inputs boundary above). Pruning is **not** configured in either file (it is driven by the install receipt, below).
 
 ### Destination stores (installer-written)
 
@@ -118,7 +119,7 @@ The four AI coding assistants are **external systems** that read their deployed 
 ## What this diagram does NOT show
 
 - **Components inside the installer process** — the `core/` engine, `tools/` + `plugins/` adapters, and merge strategies live in [`c4-l3-engine.md`](c4-l3-engine.md).
-- **Execution order** — detect → stage → overlay → merge → admission gate (user-home path) → sync → CLI-deploy (user-home path) → prune is the subject of [`sequences.md`](sequences.md).
+- **Execution order** — detect → stage → overlay → merge → profile filter (user-home path) → admission gate (user-home path) → sync → CLI-deploy (user-home path) → optional prune → receipt rewrite is the subject of [`sequences.md`](sequences.md).
 - **The `StagingPlan` / `StagedItem` / `Config` data shapes** and the `(FileKind, namespace)` merge-dispatch table — see [`data-view.md`](data-view.md).
 - **DYNAMIC-INCLUDE flattening + the Gemini frontmatter transform mechanics** — surfaced as components at L3; specified in `installer-design.md`.
 
