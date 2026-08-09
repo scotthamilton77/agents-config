@@ -96,14 +96,15 @@ machine-posted comments and approvals use the bot App identity, never Scott's
 auth. The merge gate requires the verdict artifact — broken review machinery
 blocks merges rather than silently passing them.
 
-*Amended 2026-08-09:* until the replacement review path ships, PR comment
-threads remain a review medium, and machine-posted replies continue
-authenticating as Scott's identity rather than the bot App identity — an
-accepted, recorded interim cost, not the target state (the App-identity write
-path is unbuilt and remains unfiled scope; see
-`docs/specs/2026-07-25-agent-comment-authorship.md`). This interim settles only
-where a reply is read, not what one means: a reply rendering under Scott's
-identity is still never evidence of merge authorization, and D9's
+*Amended 2026-08-09:* the two clauses end on different termini. PR comment
+threads remain a review medium until the replacement review path ships;
+machine-posted replies keep authenticating as Scott's identity, not the bot
+App identity, until the separate App-identity write path ships — its own,
+still-unfiled scope (`docs/specs/2026-07-25-agent-comment-authorship.md`),
+which the replacement review path does not itself close. Both are an
+accepted, recorded interim cost, not the target state. This interim settles
+only where a reply is read, not what one means: a reply rendering under
+Scott's identity is still never evidence of merge authorization, and D9's
 merge-eligibility clause — CI green, verdict artifact, approval — is
 unchanged.
 
@@ -254,8 +255,9 @@ mechanical churn requires an explicit override.
 
 *Amended 2026-08-09:* the separation is target state, not current fact — D9's
 2026-08-09 interim keeps non-verdict machine comments rendering under Scott's
-identity, so the interventions-per-PR proxy has no substrate to read from
-until that interim resolves.
+identity until the App-identity write path ships, a later and separate
+terminus than D9's review-medium clause, so the interventions-per-PR proxy
+has no substrate to read from until then.
 
 **D20 — Roadmap disposition.** M0 closes as superseded, not finished — its
 live surface almost entirely hardens machinery this spec deletes. M3 pauses
