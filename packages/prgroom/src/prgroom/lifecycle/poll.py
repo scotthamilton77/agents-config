@@ -22,7 +22,7 @@ and a conditional combined-status fallback read):
    to flip reviewer engagement (§4.1).
 5a. **GraphQL ``reviewThreads`` thread-id map** — issued only when step 5 returned
    inline comments. It resolves each review-thread item's :attr:`Identity.thread_id`
-   to its ``PRRT_*`` node id (the id ``resolveReviewThread`` consumes and §8.2
+   to its ``PRRT_*`` node id (the id ``resolveReviewThread`` consumes and §7.2
    recurrence keys on); REST exposes only comment databaseIds, so this one GraphQL
    read bridges the key-space. A comment absent from the map degrades to ``""``.
 6. CI for the head SHA — read from **check runs** (``commits/{sha}/check-runs``) and

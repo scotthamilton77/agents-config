@@ -1,4 +1,4 @@
-"""``run_fix`` orchestration — assemble → dispatch → parse → audit → stash (§5, §8.6).
+"""``run_fix`` orchestration — assemble → dispatch → parse → audit → stash (§5, §7.6).
 
 This is the heavy half of the agent layer and the sharpest expression of the 8.7
 boundary: **8.7 computes; the lifecycle (8.15) applies.** ``run_fix`` reads git
@@ -188,7 +188,7 @@ def _build_result(
 ) -> FixRunResult:
     by_gh = _items_by_gh(req)
     # Only orphan commits and a containment breach (Severity.BLOCK) are hard
-    # cluster-flipping violations (§8.6). The other memory violations are soft
+    # cluster-flipping violations (§7.6). The other memory violations are soft
     # per-entry WARNs (unknown/empty classification, neither/both content|path,
     # unknown CONTEXTUAL target_hint): the fix commits are valid, only the memory
     # bookkeeping is malformed — surface them as escalations, never flip or stash.
@@ -293,7 +293,7 @@ def _cluster_flip_marker(row: FixItemResult, *, detail: str) -> AuditViolation:
     """A FAILED marker for an otherwise-clean item swept up by a cluster-wide breach.
 
     ``detail`` is the raw joined hard-violation cause (orphan shas / containment
-    path). It is used VERBATIM as the swept-up item's rationale — §8.6 documents the
+    path). It is used VERBATIM as the swept-up item's rationale — §7.6 documents the
     exact per-item string (e.g. "memory containment violation: <path>") that the
     lifecycle/resolver read as the source of truth for the cause, so no prefix is
     added that would diverge from the contract.

@@ -139,12 +139,12 @@ class GitCli:
         return out.split()
 
     def log(self, range_: str) -> str:
-        # Snapshot read (§8.1 branch_state): recent-commits text, passed to the
+        # Snapshot read (§7.1 branch_state): recent-commits text, passed to the
         # fix agent verbatim — return it unparsed, the caller dumps it to a file.
         return self._run(["git", "log", range_])
 
     def diff_stat(self, range_: str) -> str:
-        # Snapshot read (§8.1 branch_state): the diff-since-base summary. `--stat`
+        # Snapshot read (§7.1 branch_state): the diff-since-base summary. `--stat`
         # keeps the dump bounded (per-file line counts, not full hunks).
         return self._run(["git", "diff", "--stat", range_])
 

@@ -14,11 +14,10 @@ agent. ``{{``/``}}`` escape to literal braces (the format-spec native rule), so 
 template can embed literal JSON.
 
 This is a deliberately minimal loader, not a templating engine: §5 names a single
-shared engine "the same one used for reply rendering", but that reply renderer
-does not exist in the foundation yet (the ``reply`` verb is still a skeleton).
-Rather than invent a heavyweight dependency or a Protocol the foundation does not
-own, this ships the smallest honest mechanism; when the reply renderer lands, its
-bead may lift this into a shared module.
+shared engine "the same one used for reply rendering," and ``lifecycle/reply.py``
+already renders reply bodies through this module's :class:`PromptTemplate` — the
+sharing holds today. This ships the smallest honest mechanism rather than a
+heavyweight templating dependency.
 """
 
 from __future__ import annotations

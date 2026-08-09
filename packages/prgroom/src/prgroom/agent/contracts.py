@@ -136,13 +136,13 @@ class FixItemResult:
 
 @dataclass(frozen=True, slots=True)
 class MemoryEntry:
-    """One classified memory entry on the fix-output ``memory`` channel (§8.5).
+    """One classified memory entry on the fix-output ``memory`` channel (§7.5).
 
     ``classification`` is kept as a RAW string, not enum-parsed: an unknown value
-    must reach the §8.6 audit as data (where it becomes an AUDIT failure), never
+    must reach the §7.6 audit as data (where it becomes an AUDIT failure), never
     raise during parsing (which the dispatcher would mistake for a malformed
     chain link and fall through). Each entry sets EXACTLY ONE of
-    ``content`` | ``path`` — the §8.6 audit enforces that invariant, not the parser.
+    ``content`` | ``path`` — the §7.6 audit enforces that invariant, not the parser.
     """
 
     classification: str
@@ -164,8 +164,8 @@ class MemoryEntry:
 class FixOutput:
     """Output of the fix contract (§5).
 
-    Parsing the ``memory_writes`` / ``memory`` channels (§8.5) is LENIENT — the
-    §8.6 audit owns validation, so a bad memory entry survives ``from_dict`` as
+    Parsing the ``memory_writes`` / ``memory`` channels (§7.5) is LENIENT — the
+    §7.6 audit owns validation, so a bad memory entry survives ``from_dict`` as
     data and fails in the audit, not here. The defaults keep older payloads
     (which omit both keys) backward-compatible.
     """
@@ -181,8 +181,8 @@ class FixOutput:
         # parse error would fall the whole dispatch through the chain (and discard
         # valid item dispositions). A non-list channel becomes empty; a non-string
         # write path / non-dict memory entry is dropped (it cannot be a real write
-        # path or routable entry, and would otherwise land in the §8.6 audit as a
-        # type landmine). The §8.6 audit still owns VALUE validation.
+        # path or routable entry, and would otherwise land in the §7.6 audit as a
+        # type landmine). The §7.6 audit still owns VALUE validation.
         raw_writes = d.get("memory_writes")
         memory_writes = (
             [p for p in raw_writes if isinstance(p, str)] if isinstance(raw_writes, list) else []

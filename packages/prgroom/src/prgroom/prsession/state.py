@@ -127,7 +127,7 @@ class Disposition:
 
 @dataclass(frozen=True, slots=True)
 class RoutedMemory:
-    """A CONTEXTUAL memory entry resolved by ``_fix``, awaiting routing by ``_reply`` (§8.3).
+    """A CONTEXTUAL memory entry resolved by ``_fix``, awaiting routing by ``_reply`` (§7.3).
 
     ``content`` is resolved verbatim (inline content, or the file body for a
     path-form entry). ``(retry, source_item)`` is the Decisions-block dedup key.

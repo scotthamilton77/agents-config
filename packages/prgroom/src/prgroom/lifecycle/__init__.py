@@ -5,7 +5,7 @@ terminal-phase predicates, the §3.4 retry/reviewer predicates, the §4.1
 quiescence predicate, the §3.2 end-of-cycle phase resolver, and the §3.3
 verb-error policy. None of it touches the clock, RNG, or the network directly —
 time and randomness arrive via the injected :class:`~prgroom.deps.Deps` seams and
-every gh/git effect lives behind the verb internals (a later bead).
+every gh/git effect lives behind the verb internals.
 
 The terminal sets distinguish the two notions of "done" (§3.1):
 

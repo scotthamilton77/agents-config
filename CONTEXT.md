@@ -98,9 +98,7 @@ frontier model materialises a slice's acceptance criteria in the repository as
 compilable stubs and failing tests, plus a short dispatch brief. The executing
 agent's job is then to make those tests pass without changing the contract.
 
-Nothing implements this today. The word also appears in
-`packages/prgroom/` in its ordinary sense of a code skeleton, which is
-unrelated.
+Nothing implements this today.
 
 Design: `docs/specs/2026-07-21-harness-rework-way-forward.md`.
 

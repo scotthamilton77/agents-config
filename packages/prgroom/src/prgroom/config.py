@@ -1,4 +1,4 @@
-"""Config surface + loader for prgroom (§3.5, §4.3, §7).
+"""Config surface + loader for prgroom (§3.5, §4.3).
 
 Settings resolve with precedence **CLI flag > env var > per-repo TOML >
 built-in default** (§3.5). Durations are written in TOML as strings

@@ -19,11 +19,14 @@ The chain is resolved by :func:`load_chain` from the per-repo ``.prgroom.toml``
 ``[agents.cluster]`` / ``[agents.fix]`` sections — read through the foundation TOML
 loader (:func:`prgroom.config.read_toml`) so the agent config shares the one
 ``.prgroom.toml`` parse path — falling back to the shipped default chains. A
-``--cluster-model`` / ``--fix-model`` override swaps the primary provider's model.
+``model_override`` parameter can swap the primary provider's model, but no CLI
+flag feeds it today (both dispatcher builders in ``cli.py`` pass
+``model_override=None``).
 
 Audits (cluster coverage, fix commit/disposition checks) are deliberately NOT
-here — they are the agent-audits bead's job. This layer owns only get-valid-JSON-
-or-fall-through; it parses the output shape but does not validate its invariants.
+here — they live in :mod:`prgroom.agent.cluster_audit` / :mod:`prgroom.agent.fix_audit`.
+This layer owns only get-valid-JSON-or-fall-through; it parses the output shape
+but does not validate its invariants.
 """
 
 from __future__ import annotations
@@ -209,9 +212,9 @@ def load_chain(
     Reads ``[agents.<contract>]`` from the per-repo ``.prgroom.toml`` via the
     foundation loader; a truly **absent** section (or file) yields the shipped
     default chain, while a **present** section — even an empty one — must define
-    ``primary`` (else it is rejected). ``model_override`` (``--cluster-model`` /
-    ``--fix-model``) swaps the **primary** provider's model only, leaving its cli
-    and the rest of the chain intact — "same provider, this model".
+    ``primary`` (else it is rejected). ``model_override`` swaps the **primary**
+    provider's model only, leaving its cli and the rest of the chain intact —
+    "same provider, this model" — but no CLI flag feeds it today.
     """
     table = read_toml(repo_config)
     agents = subtable(table, "agents")
