@@ -33,8 +33,11 @@ the repo:
 ## Install & plugin prerequisites
 
 See the root [`README.md`](./README.md) for installation instructions and for
-what the installed content actually depends on. Neither plugin this file used
-to list as a prerequisite is one: `obra/superpowers` was dropped when the rules
-and skills referencing it were retired, and `steveyegge/beads` is needed only
-because the `work` CLI is a facade over `bd` — nothing in the installed
-instruction surface requires either.
+what the installed content actually depends on. Neither `obra/superpowers` nor
+`steveyegge/beads` is a hard prerequisite: nothing installed today calls into
+`superpowers`, and `beads` (via the `work` CLI, a facade over `bd`) is needed
+only by five deployed skills — `to-tickets`, `wayfinder`,
+`where-does-this-fit`, `triaging-discovered-work`, and `prototype` — each of
+which degrades to its own fallback without it. See
+[Getting Started](./docs/guide/getting-started.md#prerequisites) for what
+each fallback is.

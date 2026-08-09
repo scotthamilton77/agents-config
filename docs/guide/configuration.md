@@ -138,10 +138,11 @@ installed and a `bd init` in your project for any of it to function.
 That `bd init` is a one-time, per-project setup step, and it is something
 `work` deliberately has no verb for: a workspace carries storage, remote and
 id-prefix decisions that belong to the tracker rather than to the facade over
-it. Run any `work` verb where no workspace has been created and it refuses with
-`E_NO_WORKSPACE`, telling you to run from a directory that already has one and
-pointing here for the rest. Running `bd init` at the root of your project is
-that rest — do it once, and every `work` verb below that root then resolves.
+it. Run a substantive `work` verb (anything but `init` and `guide`) where no
+workspace has been created and it refuses with `E_NO_WORKSPACE`, telling you
+to run from a directory that already has one and pointing here for the rest.
+Running `bd init` at the root of your project is that rest — do it once, and
+every `work` verb below that root then resolves.
 
 `work init` is the second setup step: it writes `.work/config.toml` at your
 project root, which is where `work` reads the vocabulary it validates but does
@@ -149,14 +150,21 @@ not author — your track names, your nouns, and the reasons work parks or is
 deferred. It needs no `bd` workspace to run and touches no backend, so you can
 run it before or independently of `bd init`.
 
-Three deployed skills are the reason to do any of this: `to-tickets`,
-`wayfinder`, and `where-does-this-fit` are built on `work` end to end.
-None of them hard-fails without a tracker — `to-tickets` and `wayfinder` fall
-back to writing their tickets or decision map as a local markdown file instead
-of tracker items, and `where-does-this-fit` falls back to fetching an item's
-container and siblings however the tracker in use exposes them, or asking you
-directly. Skip the setup above and these three degrade to that fallback;
-nothing else in the installed instruction surface reaches for `work`.
+Five deployed skills are the reason to do any of this, and all five reach for
+`work` verbs directly:
+
+- `to-tickets` and `wayfinder` fall back to writing their tickets or decision
+  map as a local markdown file instead of tracker items.
+- `where-does-this-fit` falls back to fetching an item's container and
+  siblings however the tracker in use exposes them, or asking you directly.
+- `triaging-discovered-work` falls back to a dated entry in a backlog file at
+  the repo root instead of a filed `work discover` item.
+- `prototype` falls back to recording its verdict in the commit message
+  instead of a `work note` on the tracker item.
+
+None of the five hard-fails without a tracker — skip the setup above and each
+degrades to its own fallback instead. Nothing else in the installed
+instruction surface reaches for `work`.
 
 Be aware of what does **not** ship: no installed rule or skill instructs your
 assistant to file an issue before writing code, to claim one when it starts, or
