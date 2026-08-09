@@ -9,7 +9,7 @@
 An **agent definition** is a specialized AI persona — a role file that, when an orchestrating agent dispatches it, instantiates a subagent with a prescribed purpose, skills, tools, model, and memory scope. Agent files exist because some work is best done by a fresh context with a single focused role: a code reviewer should not also be writing tests, and a test writer should not be reviewing security.
 
 Agents differ from skills in a critical way:
-- **Skills' frontmatter** are loaded INTO the main agent's context giving the agent awareness of a skill's purpose, but for subagents configured with specific skills, these are loaded into the subagent's context on spawn; the agent loads and executes the skill when the context implicitly warrants it or the user explicitly asks for it, and follows it in the same session
+- **Skills' frontmatter** (`name` + `description`) is loaded into the main agent's context, giving it awareness of a skill's purpose; the agent loads and follows the full body only when the context implicitly warrants it or the user explicitly asks. A subagent's `skills:` frontmatter field works the opposite way: it injects each named skill's **full content** into the subagent's context at startup, not just its frontmatter — see the skills primer's Invocation Model section
 - **Agents** are DISPATCHED as separate instances — a new context with its own tools, skills, model, and isolation boundary
 
 A subagent dispatched via the `Agent` tool runs in parallel with the orchestrator and reports back when complete.
@@ -17,7 +17,7 @@ A subagent dispatched via the `Agent` tool runs in parallel with the orchestrato
 ### Key constraints (from the official docs)
 
 - **Subagents can spawn subagents of their own**, by default up to three layers below the main conversation (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` changes the limit). At the depth limit, Claude Code withholds the `Agent` tool from the deepest subagent, so it does the delegated work itself and returns one summary instead of nesting further.
-- **Subagents start in the main conversation's working directory.** `cd` commands do not persist between Bash calls within the subagent and do not affect the parent. Use `isolation: worktree` to give the subagent an isolated copy of the repository.
+- **Subagents start in the main conversation's working directory.** The working directory persists between the subagent's own Bash calls, but shell state (env vars, aliases) does not, and a `cd` never affects the parent's working directory. Use `isolation: worktree` to give the subagent an isolated copy of the repository.
 - **Subagents receive their own system prompt** (the file body) plus basic environment details — not the full Claude Code system prompt. They DO receive the same CLAUDE.md/AGENTS.md hierarchy the main conversation loads (user-level, project-level, `CLAUDE.local.md`, managed policy); the built-in Explore and Plan agents are the only exception and skip it. What a subagent does NOT inherit is the rest of the conversation's state — prior tool outputs, already-invoked skills, conversation history — so restate anything from there it needs.
 - **Plugin subagents do not support `hooks`, `mcpServers`, or `permissionMode`** for security reasons. These fields are ignored when an agent is loaded from a plugin.
 
@@ -157,7 +157,7 @@ Keep the body focused on the ROLE — not on the specific task being dispatched.
 | No examples in description | Plain text description, no `<example>` blocks | Add 1-2 concrete dispatch scenarios |
 | Wrong model tier | Haiku reviewing security-critical code; Opus doing a simple grep | Match model to role demands |
 | Body mixes role with task | Body contains task-specific instructions that should be in dispatch prompt | Move task specifics to caller's prompt |
-| Tool- or tracker-specific content in a shared agent | A shared agent names a capability only one tool has, or a tracker CLI | Move it to that tool's tree, or to the owning plugin (`src/plugins/<plugin>/`) |
+| Tool-capability dependence in a shared agent | A shared agent depends on a capability only one tool has (Claude subagent orchestration, the Skill tool, `AskUserQuestion`, hooks) — naming a tracker CLI like `work` does not qualify on its own; it runs from any tool's shell | Move it to that tool's tree, or to the owning plugin (`src/plugins/<plugin>/`) |
 | No `admission:` record | Front matter carries `name` and `description` only | Add a complete record; without one the agent deploys nothing |
 | `skills` lists unused skills | `skills:` field lists skills the body never references or invokes | Remove unused skill references |
 
@@ -166,16 +166,17 @@ Keep the body focused on the ROLE — not on the specific task being dispatched.
 ## File Locations
 
 ```
-src/user/.agents/agents/           # Shared agents (copied to all detected tools)
+src/user/.agents/agents/           # Shared agents (staged into every active tool except OpenCode, which refuses the shared agents namespace)
   <agent-name>.md
 
 src/user/.claude/agents/           # Claude-only agents (staged into ~/.claude/ alone)
   <agent-name>.md
 
 src/plugins/<plugin>/
-  .agents/agents/                  # Plugin agents for every active tool
+  .agents/agents/                  # Plugin agents for every active tool except OpenCode (same exclusion as the shared tree)
+    <agent-name>.md
   .<tool>/agents/                  # Plugin agents for one tool (e.g. .claude/agents/)
-  <agent-name>.md
+    <agent-name>.md
 ```
 
 None of these directories exists in the tree today — this repository ships no agent definitions at all, so the layout above is where one would go rather than where one is. `agents` is nonetheless a live staged namespace, which is why the admission record above is required rather than aspirational.

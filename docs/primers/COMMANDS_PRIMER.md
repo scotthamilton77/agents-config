@@ -126,7 +126,7 @@ Always document what happens when `$ARGUMENTS` is empty. Commands that fail sile
 | Undocumented `$ARGUMENTS` | No description of input format or defaults | Add argument documentation section |
 | No empty-args handling | Silent failure or undefined behavior when user omits args | Add explicit default behavior or usage message |
 | Duplicate of a skill | Command re-implements what a skill already provides | Refactor: command calls the skill |
-| Beads-specific content in a user-scoped command | `bd` commands or bead tracker terminology | Move to plugin commands namespace |
+| Beads-specific content in a user-scoped command | `bd` commands or bead tracker terminology | Rewrite to use the `work` facade instead — `bd` is never invoked directly anywhere in this repo, and no plugin exists to move the content to |
 | Hardcoded paths or assumptions | Command assumes specific directory structure | Parameterize via `$ARGUMENTS` or config |
 
 ---

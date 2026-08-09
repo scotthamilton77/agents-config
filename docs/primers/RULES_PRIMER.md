@@ -101,7 +101,7 @@ User-level rules in `~/.claude/rules/` apply to every project. Project-level rul
 
 ## The Always-On Budget
 
-An always-loaded rule is the most expensive artifact class this repository ships: its bytes sit in every session whether or not they are needed. That cost is capped mechanically. A tool's **always-on surface** — its deployed instruction file plus every admitted rule staged into it — must stay under `ALWAYS_ON_TOKEN_CAP` in `packages/installer/src/installer/core/surface_budget.py`, currently **10,000 tokens**, counted as `ceil(bytes / 4)`. A breach is fatal: the deploy aborts before any write, and `make content-lint` fails the same way in this repository.
+An always-loaded rule is the most expensive artifact class this repository ships: its bytes sit in every session whether or not they are needed. That cost is capped mechanically. A tool's **always-on surface** — its deployed instruction file, every admitted rule staged into it, and every skill's catalog entry (`name` + `description`) that tool's runtime publishes to the model — must stay under `ALWAYS_ON_TOKEN_CAP` in `packages/installer/src/installer/core/surface_budget.py`, currently **10,000 tokens**, counted as `ceil(bytes / 4)`. A breach is fatal: the deploy aborts before any write, and `make content-lint` fails the same way in this repository.
 
 The cap is measured after sanitization, so the record is free and only the rule's own prose is charged. On a pass, `make content-lint` prints each tool's current weight and rule count — read that rather than guessing at headroom, and read a rising token count against a flat rule count as one rule bloating.
 
@@ -178,7 +178,7 @@ The base content always lands first; plugins append alphabetically. The mechanis
 - Plugin additions must be purely additive (new clauses, new contexts) — not replacements
 - Do not duplicate base rule content in plugin additions; the append model handles it
 - Read the base rule before writing a plugin extension to avoid contradictions
-- The merged file's front matter is the base file's; admission is judged on the merged bytes, so an append onto a record-less base still deploys nothing
+- The merged file's front matter is the base file's (a plugin addition is normally pure prose with no front matter of its own). Admission is judged per contributor, not on the merged bytes: each source file in the append chain is classified and sanitized on its own, and the destination is reassembled only from the contributors that clear the bar. A record-less base contributes nothing to the result; a plugin addition with its own valid record still deploys — the append neither sinks it nor exempts it
 
 ### Embedding rules into the instruction file
 
