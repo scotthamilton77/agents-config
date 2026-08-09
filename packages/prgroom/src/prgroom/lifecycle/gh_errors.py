@@ -1,4 +1,4 @@
-"""Shared gh-error -> tagged-error mappings for the lifecycle verbs (§3.6/§3.6).
+"""Shared gh-error -> tagged-error mappings for the lifecycle verbs (§3.6).
 
 A mid-run 404 on a *required* gh read (head-oid/name, PR resource, comment/review,
 reviewer-request) means the PR or repo vanished — a blind retry won't bring it

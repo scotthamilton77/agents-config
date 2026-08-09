@@ -932,7 +932,7 @@ def test_auto_decline_only_poll_does_not_advance_last_activity() -> None:
     assert state.last_activity_at == _T0  # but the idle clock did NOT reset
 
 
-# ── gh error-code mapping (read-only; §3.6/§3.6) ──
+# ── gh error-code mapping (read-only; §3.6) ──
 
 
 def test_transient_gh_failure_propagates_unchanged() -> None:

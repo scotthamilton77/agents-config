@@ -107,7 +107,7 @@ def _merge_paginated_output(out: str) -> Any:
 
 
 def _classify_gh_failure(stdout: str, stderr: str) -> PrgroomError | GhNotFoundError:
-    """Map a failed ``gh`` invocation to its registry error (§3.6/§3.6)."""
+    """Map a failed ``gh`` invocation to its registry error (§3.6)."""
     matches = _HTTP_STATUS.findall(stderr)
     if not matches:
         # No parseable status: cannot prove transient, so treat as terminal
