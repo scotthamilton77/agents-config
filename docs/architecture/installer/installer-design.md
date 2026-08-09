@@ -30,7 +30,8 @@ A `uv`-managed Python package (`packages/installer`) that installs agent configu
 │       │   ├── config.py
 │       │   └── orchestrator.py
 │       └── tests/
-│           ├── unit/   fixtures/
+│           ├── unit/
+│           └── fixtures/
 ├── scripts/
 │   ├── install.sh                           (thin exec uv run --project packages/installer python -m installer stub)
 │   └── install.py                           (entry stub: `from installer.cli import main`)
@@ -171,7 +172,7 @@ Single injectable abstraction (`info`/`ok`/`warn`/`err`/`header`/verbose variant
 - `FileKind` enum keys `MergeStrategy` dispatch in `core/merge/registry.py` on **`(FileKind, namespace)`** because `NAMESPACED_MD` items need their parent-dir namespace to pick the right strategy (e.g. `(NAMESPACED_MD, "rules")` → append-merge; `(NAMESPACED_MD, "commands")` → fatal). For non-namespaced kinds (`SETTINGS_JSON`, `JSONC`, `TOML`, `OTHER`, `DIR`) the namespace component is unused and the lookup degenerates to a `FileKind`-only key.
 - `StagingPlan` is the in-memory staging structure — a `dict[Path, StagedItem]` plus provenance tracking.
 - `Orphan` dataclass carries tool (owner), namespace, path, and kind for each recorded receipt entry that is in scope but no longer in this run's desired staged plan (and passes the path trust boundary).
-- `Receipt` / `ReceiptEntry` are the installer's only persisted-between-runs state: a record of every wholesale-authored dest entry (`path`, `owner`, `root`, `kind`, `sha256`), behind an `integrity` digest, serving as the sole prune authority. Never records a merge-target.
+- `Receipt` / `ReceiptEntry` are the installer's only persisted-between-runs state on the user-home path: a record of every wholesale-authored dest entry (`path`, `owner`, `root`, `kind`, `sha256`), behind an `integrity` digest, serving as the sole prune authority. Never records a merge-target. (A `--project` install also persists its resolved profile selection to `project-config.toml` — see `data-view.md`'s "Install receipt" section.)
 - `Config` is frozen; today it carries only `home`, `tools`, and `auto_yes`, populated from argv + auto-detection probes (which themselves consult adapters). `plugins`, `dry_run`, and `dump_stage` are resolved separately in `cli.py` and threaded directly into pipeline calls rather than through `Config`. `installer.toml` is parsed but not yet wired into `Config` or any consumer (see §"Configuration — installer.toml"). `Config` carries no prune fields — pruning is driven by the `--prune` / `--prune-only` argparse flags and the install receipt.
 
 ## Test architecture
@@ -199,16 +200,16 @@ each module tests in isolation. Examples by module:
 
 Tests assert **end-state goals**, not how those goals were achieved:
 
-- "After install against the `normal-user` fixture, `~/.claude/skills/<name>/SKILL.md` content matches the source."
+- "After install, a staged skill's `SKILL.md` content at the destination matches its source bytes."
 - "After install, the user's pre-existing `settings.json.user-keys` are preserved."
-- "After `--prune --yes` against `orphans-present`, the orphan files are gone AND their pre-prune content is recoverable from a backup directory."
+- "After pruning an orphan under `auto_yes`, the file is gone from its namespace AND its pre-prune content is recoverable from the sibling `<namespace>-backup/` directory."
 - "After install with the test-plugin active, the plugin's rule appears appended to the matching base rule, separated by `\n---\n`."
 
 Test names describe the contract, e.g. `test_user_modified_settings_keys_are_preserved_after_install`. Implementation details (which phase touched what, which strategy fired) are not asserted; the strategy is tested at the unit level.
 
 ### Fixture strategy
 
-- `tests/fixtures/sources/test-plugin/` — the one committed synthetic source tree (a rule, a command, a skill), exercising plugin-overlay behaviour without depending on the real `src/user/`. There is no separate `tests/fixtures/states/` tree; no such directory has ever existed in this suite.
+- `tests/fixtures/sources/test-plugin/` — the one committed synthetic source tree (a rule, a command, a skill), exercising plugin-overlay behaviour without depending on the real `src/user/`. There is no separate `tests/fixtures/states/` tree.
 - `tests/unit/conftest.py` carries autouse hermetic-environment fixtures (OpenCode PATH-probe neutralisation, CLI-deploy stubbing) plus the shared `ignore` fixture — pre-install user-state is built inline, per test, against `tmp_path`, not composed from on-disk builders.
 - `test_golden_full_profile_is_byte_identical_to_todays_install` (`tests/unit/test_profiles.py`) is the one test that runs staging against the real repo's `src/user/` tree directly, pinning that the unfiltered ("full") profile selection stages byte-identical to today's install.
 

@@ -17,7 +17,7 @@
 | `IncludeDirective` | A discriminated union (`FileInclude` \| `AllRulesInclude` \| `NamedRulesInclude`) produced **transiently** while flattening DYNAMIC-INCLUDE markers; consumed during staging, not persisted on the `StagedItem`. |
 | `Orphan` | A prune candidate: a recorded receipt entry, in scope, no longer in the desired staged plan, that passes the path trust boundary. |
 | `Contribution` | `(source_path, content)` — one source file's bytes inside a staged item's merged/patched content. Also the value type of `StagingPlan.dir_overrides`. |
-| `Receipt` / `ReceiptEntry` | The install receipt and its per-entry record — the persisted-between-runs prune authority (`~/.config/agents-config/install-receipt.json`). Distinct from the in-memory shapes: the receipt is the installer's only persistent state. |
+| `Receipt` / `ReceiptEntry` | The install receipt and its per-entry record — the persisted-between-runs prune authority (`~/.config/agents-config/install-receipt.json`). Distinct from the in-memory shapes: on the user-home path, the receipt is the installer's only persistent state (a `--project` install also persists a profile selection — see below). |
 | `Counters` | The per-run tally (`staged` / `created` / `updated` / `merged` / `skipped` / `pruned` / `backed_up`) surfaced in the exit summary. |
 | Canonical ownership | Which actor is the source of truth for a piece of data: the human (source tree), the installer (plan + writes), or the tool (deployed store at runtime). |
 
@@ -149,7 +149,7 @@ Structured config at `packages/installer/installer.toml`, parsed by `core/instal
 
 ## Install receipt — the persisted prune authority
 
-`~/.config/agents-config/install-receipt.json` is the installer's only state persisted **between runs**: a record of every wholesale-authored entry it wrote, so pruning can diff "what we installed" against "what we still want installed". It lives in a tool-neutral state dir outside every destination tree, so it is never itself installed or pruned. It is read at the start of the prune step, validated against its own `integrity` digest, and atomically rewritten (temp + `os.replace`) at the end of every non-dry-run install — the whole read → install → prune → write section held under a single-writer advisory lock (`install-receipt.lock`, `core/receipt_lock.py`).
+`~/.config/agents-config/install-receipt.json` is the installer's only state persisted **between runs** on the user-home path (a `--project` install also persists its resolved profile selection to `project-config.toml`, below): a record of every wholesale-authored entry it wrote, so pruning can diff "what we installed" against "what we still want installed". It lives in a tool-neutral state dir outside every destination tree, so it is never itself installed or pruned. It is read at the start of the prune step, validated against its own `integrity` digest, and atomically rewritten (temp + `os.replace`) at the end of every non-dry-run install — the whole read → install → prune → write section held under a single-writer advisory lock (`install-receipt.lock`, `core/receipt_lock.py`).
 
 ```mermaid
 erDiagram
@@ -242,7 +242,7 @@ flowchart LR
 
 - The installer does **not** own source content — it copies and flattens it, but the human authoring the repo is canonical. A `StagedItem.content` is a *derived* artifact (post-flatten, post-transform), not a source of truth.
 - The installer does **not** own a tool's runtime interpretation of its store. It deposits files matching each tool's path + shape contract; how the tool loads them is the tool's concern.
-- The installer persists exactly **one** piece of its own state between runs: the **install receipt** (plus its lockfile), its record of "what I authored wholesale last time". That record is the prune authority — the next run diffs it against the desired plan to find orphans. For *install* reconciliation the destination store is still the record (hash-compare decides skip vs overwrite); the receipt's job is the deletion side, which on-disk state alone cannot answer (a destination file the source no longer produces is indistinguishable from a user's own file without a record that the installer once wrote it).
+- The installer persists exactly **one** piece of its own state between runs on the user-home path: the **install receipt** (plus its lockfile), its record of "what I authored wholesale last time". That record is the prune authority — the next run diffs it against the desired plan to find orphans. For *install* reconciliation the destination store is still the record (hash-compare decides skip vs overwrite); the receipt's job is the deletion side, which on-disk state alone cannot answer (a destination file the source no longer produces is indistinguishable from a user's own file without a record that the installer once wrote it). A `--project` install persists a second: its resolved profile selection, written to the project's own `project-config.toml` (`write_project_profiles`, `config.py:150-172`).
 
 ## What this diagram does NOT show
 
