@@ -34,7 +34,8 @@ This is the single most important thing to know before reading `design.md`. The
 package is not an unfinished implementation of that document; the document
 describes more than will ever be built. The `verify` gate and its convergence loop
 and the `sweep` verb are not going to be built at all, and the reply, poll, wait,
-snapshot and legacy-export machinery is being removed rather than completed.
+snapshot and legacy-export machinery — while built and wired into the CLI today —
+is slated for removal rather than completion.
 
 `design.md` marks the major cases inline, but the reliable rule is simpler:
 **where the design and `packages/prgroom/src/` disagree about what exists, the code

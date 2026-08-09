@@ -3,9 +3,10 @@
 Each contract is a **stable, versioned interface** between the CLI and an agent
 CLI (``claude -p`` / ``codex exec`` / ``opencode run``). Versioning the contract
 is what lets the runtime be swapped without touching lifecycle code. The
-foundation defines the surfaces; the concrete provider chains (ollama -> haiku
--> codex-mini for cluster; opus[1m] for fix) and the subprocess plumbing arrive
-in later beads.
+concrete provider chains (``ollama`` -> ``claude``/haiku -> ``codex``/gpt-5.6-luna
+for cluster; ``claude``/opus[1m] -> ``codex``/gpt-5.6-terra for fix — see
+``agent/dispatcher.py::_DEFAULT_CHAINS``) and the subprocess plumbing
+(``SubprocessAgentRunner``) are built.
 
 * **Cluster** (cheap) — groups unprocessed items into fix-bundles; decides NO
   disposition.
