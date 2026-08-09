@@ -30,9 +30,9 @@ This is the whole delivery contract:
 
 1. Enter the work in the tracker via `work` verbs, as a child of `agents-config-9k9`, with an admission record **and a track**. Milestones are track-exempt, so a child of the milestone inherits nothing and `work create` fails closed with `E_TRACK_REQUIRED` unless you pass `--track NAME`. That failure names every configured track, so the vocabulary is one wrong create away rather than something to look up; the charters deciding which one an item takes are in the track-partition spec's §3. Nesting under a tracked parent instead inherits its track. Installer work also carries the `install` label; nest it under an install epic beneath the owning milestone.
 2. Implement on a worktree branch; never commit to the default branch.
-3. Verify mechanically before claiming anything. For `packages/**`, and for any skill under `src/` that ships its own tests, that is `make ci` — read the `ci` target in the `Makefile` for its current membership, and note that a single package's gate is not the whole-repo gate. Run it from the root of the tree you are working in: the `Makefile` `cd`s relative to the invoking directory, so a gate run from the main checkout while you are on a worktree branch reports green on code you did not change. Run the gate standalone and read its exit status — never pipe it into a `grep && commit` chain, where the pipeline's status is the grep's and a red gate ships. For prose-only changes, state what you checked and how.
+3. Verify mechanically before claiming anything. For `packages/**`, and for any skill under `src/` that ships its own tests, that is `make ci` — read the `ci` target in the `Makefile` for its current membership, and note that a single package's gate is not the whole-repo gate. Run it from the root of the tree you are working in: the `Makefile` `cd`s relative to the invoking directory, so a gate run from the main checkout while you are on a worktree branch reports green on code you did not change. Run the gate standalone and read its exit status — never pipe it into a `grep && commit` chain, where the pipeline's status is the grep's and a red gate ships. For prose-only changes, run `doc-lint` — the one gate that reads prose outside `docs/specs/`, checking that every backticked citation still resolves — and state what else you checked by hand.
 4. Open a PR and address review to quiescence. Every item gets a disposition in your own inventory; only items that change the code get a reply on the PR. Bookkeeping and meta comments are dispositioned silently — a thread of "no action required" replies is noise the next reader has to wade through.
-5. **Merge only on an explicit human instruction.** No rule-based merge policy is configured here, no implementation of one is deployed, and the repository ruleset requires an approving review that no configured reviewer submits — see `agents-config-9k9.23`. The shared hard-lines permit merging under "a configured rule-based policy"; that clause has nothing here to match. If you believe it does, read `project-config.toml`'s `[merge-policy]` before acting on it, and read anything commented out there as future work rather than permission.
+5. **Merge only on an explicit human instruction.** The shared hard-lines state: "Creating a PR is not authorization to merge. Absent an explicit instruction, or a merge policy stated in writing in the project's own configuration, do not merge — branch protection, a green pipeline and an approving review are not one." `project-config.toml`'s live `[merge-policy]` block is that writing, and it states `merge-authorization = "explicit"` — no rule-based policy is configured, and no implementation of one is deployed, so the written policy and this hard line agree: explicit human instruction only. The repository ruleset also requires an approving review that no configured reviewer submits — see `agents-config-9k9.23`. Read the commented-out `merge-authorization = "rule-based"` line as future work (`agents-config-9k9.64`), not as permission.
 
 ### Why the charter decides as it does
 
@@ -41,7 +41,7 @@ The charter states its decisions without the reasoning underneath them. Four cla
 - **Why acceptance criteria are load-bearing (D1/D3/D8).** An LLM reviewer is a findings generator: given any surface, it emits findings in proportion to that surface, indefinitely. Convergence needs a contract to check against, because taste is inexhaustible. Acceptance criteria are therefore not primarily a defect-prevention device — they are the termination condition that review otherwise lacks.
 - **Why every artifact carries a removal condition (D16).** Without one, the system has an add operator and no delete operator: every failure mints a permanent global rule, and nothing carries a budget, a scope bound, or an obligation to tear down what it replaces. Duplicate deploys, contradictory rules, and two live workflow generations are then one disease, not four.
 - **Why reviewer prompts must not carry the house rulebook (D5/D7).** A reviewer loaded with the full house context reviews the change against the plan — both in-house artifacts, sharing the author's blind spots. A fresh-context reviewer reviews the artifact against the world instead. Inconsistency between a document and the code is invisible to plan-conformance review precisely when the plan is the inconsistent document.
-- **Why a plan states signatures and not bodies (D4).** The signature is the decision and the implementation is its consequence. A plan that embeds bodies promotes consequences into decisions and freezes them before the evidence for them exists.
+- **Why the plan is a scaffold, not prose (D4).** D4 deletes the prose plan as an artifact class; a frontier model materializes the plan instead as compilable stubs and failing tests, and the contract-only rule limits those stubs to the spec's public signatures, never bodies. The signature is the decision the tests pin; embedding an implementation promotes a consequence into the decision before the evidence for it exists.
 
 ## Vision & Mission
 
@@ -59,7 +59,7 @@ The charter states its decisions without the reasoning underneath them. Four cla
 4. **Guardrail every completion claim with mechanical evidence**
 5. **Persist context** (work items, memories) so work survives compaction, agent handoff, and overnight runs
 
-Commitments 3 and 4 have no deployed implementation right now; the charter's slice plan owns what replaces them. Do not go looking for the retired one.
+Commitments 3 and 4 ship as the `review-panel`, `ac-attack`, and `review-verdict` skills — `review-panel` and `ac-attack` from `src/user/.claude/skills/` (Claude-only), `review-verdict` from `src/user/.agents/skills/` (shared to every tool), each carrying a repo-side admission record (stripped from deployed bytes, per above). `review-panel`'s `contracts.json` routes lenses across models (Codex, OpenRouter) for commitment 3; `review-verdict` defines the terminal-clean state that "address review to quiescence" (above) means for commitment 4.
 
 ### Design principles for this repo
 
@@ -86,7 +86,7 @@ This project hosts agent configuration under `src/`, which the install script de
 - `scripts/` — installer entry points and maintenance scripts. `install.sh` is a thin exec stub delegating to the uv-managed Python installer in `packages/installer`; `install.py` is the Python entry point. See `scripts/AGENTS.md`.
 - `src/` — **the deployed surface.** Everything installed into user space is authored here.
   - `src/user/.agents/` — shared content, staged into every active tool: `skills/`, `rules/`, and `USER-CORE.md.template` (the zero-based laws, decision matrix, hard lines, and conventions, D17). See `src/user/.agents/AGENTS.md` for the install model and the name-collision rules.
-  - `src/user/.claude/` — Claude-only: `skills/`, `rules/`, `hooks/`, `AGENTS.md.template`, `CLAUDE.md.template`, `settings.json.template`
+  - `src/user/.claude/` — Claude-only: `skills/`, `rules/`, `commands/`, `hooks/`, `AGENTS.md.template`, `CLAUDE.md.template`, `settings.json.template`
   - `src/user/.codex/`, `src/user/.gemini/`, `src/user/.opencode/` — per-tool instruction templates; OpenCode additionally carries `opencode.jsonc.template` and gets a flat, dynamically-built instruction file rather than `@` includes
   - `src/plugins/` — optional plugin content, auto-detected by a directory scan. A plugin's content deploys only when its tool is detected **and** the artifact clears the admission gate.
   - Each rules directory carries its own `AGENTS.md` stating what currently lives there; read it rather than inferring from the folder's contents.
@@ -129,6 +129,11 @@ Keep responses focused, brief, and concise. Keep disclaimers and caveats short, 
 most of the response on the main answer. When asked to explain something, give a high-level 
 summary unless an in-depth explanation is specifically requested. BLUF - bottom line up 
 front.  
+
+A persona or voice hook shapes voice, not volume: it never adds length or
+overrides these brevity and BLUF rules. A user-invoked compression mode like
+`/caveman` is the user's own instruction, not the persona, and changes length
+by design.
 
 Don't assume the user will recognize work by work-id, document sections by section
 number, etc.  The user needs help connecting dots sometimes, so it's ok to use short

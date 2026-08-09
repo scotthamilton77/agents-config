@@ -177,7 +177,8 @@ and the `merge-guard` skill that enforced it has been retired.
 
 What remains is the contract itself, in the always-on hard lines: **creating a
 PR is not authorization to merge**, and absent an explicit instruction or a
-configured rule-based policy, the agent does not merge. When in doubt, treat the
+merge policy stated in writing in the project's own configuration, the agent
+does not merge. When in doubt, treat the
 PR as not authorized. This is a deliberate risk-asymmetric default: the cost of a
 wrong merge outweighs the cost of waiting. It now rests on the agent honouring a
 line in its instructions rather than on a mechanism, which is a weaker guarantee
