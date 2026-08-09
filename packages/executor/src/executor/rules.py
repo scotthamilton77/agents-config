@@ -68,8 +68,12 @@ FAILURE_REASONS: tuple[str, ...] = (
     "budget-exhausted",
 )
 # The scheduling axis is runtime-native: sequencing decisions about work that
-# never had a PR to fail. The facade carries no vocabulary for it, which is why
-# these rows issue zero tracker writes rather than a translated one.
+# never had a PR to fail. These rows issue zero tracker writes because a
+# scheduling decision is state of the run, not of the item -- the event log
+# already records it, and the item's tracker standing did not change. The
+# facade's `work defer` covers deferral that must outlive a run; pairing a
+# scheduling reason onto it would decide that run-internal sequencing is
+# durable state, which is a policy change, not a missing translation.
 SCHEDULING_REASONS: tuple[str, ...] = ("discovered-work", "later-wave", "deferred")
 
 # The reason an exhausted budget parks under, on both planes (S9T1-D12). A

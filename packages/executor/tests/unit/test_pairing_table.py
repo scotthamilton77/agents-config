@@ -203,8 +203,8 @@ def test_the_exhaustion_reason_is_on_the_axis_its_row_declares_a_tracker_verb_fo
 
     S9T1-D12 gives the exhaustion row a `work park --reason` rather than the
     scheduling axis's none, and that is only correct while the reason it uses
-    is a failure-axis member. Moving it to the other axis would leave the row
-    writing to a facade with no vocabulary for it.
+    is a failure-axis member. Moving it to the other axis would make the row a
+    zero-write, and an exhausted budget would stop being durable tracker state.
     """
     assert park_axis(BUDGET_EXHAUSTED) is Axis.FAILURE
     assert BUDGET_EXHAUSTED in _FAILURE_VOCABULARY
