@@ -22,8 +22,9 @@ resolution.
 
 Shared skills stage into `~/.config/opencode/skills/` the same way they stage
 into every other tool's tree (one directory per skill, bare names like
-`review-verdict`). `opencode.jsonc.template`'s `skills.paths` names that
-directory explicitly; OpenCode also scans it as a default location on its own.
+`review-verdict`). `opencode.jsonc.template`'s `skills.paths` points OpenCode
+at that same directory, so the installed config and the installed content
+agree on where to look.
 
 ## Agents and commands
 
