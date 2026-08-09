@@ -252,6 +252,11 @@ counts, PR diff lines) are tracked as erosion tripwires — watched, never
 targeted. PR diff tripwire (initial, tunable): > 800 changed lines excluding
 mechanical churn requires an explicit override.
 
+*Amended 2026-08-09:* the separation is target state, not current fact — D9's
+2026-08-09 interim keeps non-verdict machine comments rendering under Scott's
+identity, so the interventions-per-PR proxy has no substrate to read from
+until that interim resolves.
+
 **D20 — Roadmap disposition.** M0 closes as superseded, not finished — its
 live surface almost entirely hardens machinery this spec deletes. M3 pauses
 until the minimal readiness gate (D1–D3) exists. The WIP cap of 2 is honored.
