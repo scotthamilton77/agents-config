@@ -60,8 +60,9 @@ but the full gate must pass before push.
   Exit codes follow `sysexits`.
 - Layout: `cli.py` (the 11 verbs), `lifecycle/` (the run-loop, verb-error
   policy, quiescence), `prsession/` (state store + PR ref + memory), `gh/` /
-  `git/` (Protocol adapters + fakes), `agent/` (cluster/fix dispatch), `config.py`,
-  `errors.py`, `escalation.py`, `proc.py` (the single subprocess seam).
+  `git/` (Protocol adapters), `agent/` (cluster/fix dispatch), `deps.py`
+  (clock/randomness injection seam), `config.py`, `errors.py`,
+  `escalation.py`, `proc.py` (the single subprocess seam).
 
 ## Verbs
 

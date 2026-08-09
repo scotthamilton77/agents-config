@@ -8,7 +8,7 @@
 
 This is the high-level design reference for the prgroom CLI. It is **lean by intent** — data structures and contracts are shown; procedural code is not.
 
-**Scope warning.** prgroom is being carved down, not finished. Verbs and subsystems described below — the `verify` gate and its convergence loop, `sweep`, and the reply/poll/wait/snapshot machinery — are design-of-record for a system that will not be built in full. Where this document and `packages/prgroom/src/` disagree about what exists, the code is the authority.
+**Scope warning.** prgroom is being carved down, not finished, and two different fates are in play. The `verify` gate and its convergence loop, and `sweep`, are design-of-record for a system that will not be built at all. The reply/poll/wait/snapshot machinery described below is a different case: it is built and wired into the CLI today, but charter D13 marks it for deletion rather than completion (the in-package fix-dispatch loop moves to the work-loop instead). Where this document and `packages/prgroom/src/` disagree about what exists, the code is the authority.
 
 ## Contents
 
@@ -503,7 +503,7 @@ The cheap agent groups well but decides intent poorly; the heavy agent decides i
 
 ### Cluster contract — `cluster` verb
 
-Cheap grouping of unprocessed review items (`cluster_id == ""`) into fix-bundles. Grouping is non-decisional, so a locally-runnable model suffices. Default provider chain: local `ollama` (Gemma-class small classifier) if installed → `claude -p` model `haiku` / effort `high` → `codex-mini`.
+Cheap grouping of unprocessed review items (`cluster_id == ""`) into fix-bundles. Grouping is non-decisional, so a locally-runnable model suffices. Default provider chain: local `ollama` (Gemma-class small classifier) if installed → `claude -p` model `haiku` / effort `high` → `codex` model `gpt-5.6-luna`.
 
 ```
 Input:  { contract_version, pr{owner,repo,number},

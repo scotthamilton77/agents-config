@@ -535,7 +535,8 @@ def wait(
     Preconditions (§3.2): ``fixes-pending`` → ``PRECONDITION_WAIT_NOT_APPLICABLE`` (exit
     2, it has actionable work); ``merged`` → no-op; a never-polled PR →
     ``PRECONDITION_NO_STATE`` (exit 2). The §4.3 cadence knobs (``poll_interval`` /
-    ``idle_threshold`` / reviewer timeouts) resolve from env / ``.prgroom.toml``.
+    ``idle_threshold`` / reviewer timeouts) resolve from env or default; no verb
+    resolves a ``.prgroom.toml`` path yet, so a per-repo override is never read (§4.3).
     """
     store: Store = ctx.obj
     try:
@@ -629,7 +630,8 @@ def run(
     (autonomous) until the phase reaches ``quiesced`` / ``human-gated`` / ``merged``,
     then flushes terminal signals and releases. A concurrent run on the same PR exits
     75. Exit code is the propagated tier's sysexits value (0 on a clean terminal). The
-    §4.3 cadence knobs resolve from env / ``.prgroom.toml``.
+    §4.3 cadence knobs resolve from env or default; no verb resolves a ``.prgroom.toml``
+    path yet, so a per-repo override is never read (§4.3).
     """
     del no_prework  # parity-only; the aggregate always orchestrates its own prework
     store: Store = ctx.obj
