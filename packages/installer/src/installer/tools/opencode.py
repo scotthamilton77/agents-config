@@ -52,8 +52,8 @@ class OpenCodeAdapter:
     ) -> StagingPlan:
         """No-op. OpenCode has no standalone rules/ destination, but the loose
         rules/ drop is not OpenCode-specific: flatten_plan_templates drops
-        the inlined rules from EVERY plan whose instruction file carries the
-        DYNAMIC-INCLUDE-ALL-RULES marker (OpenCode's AGENTS.md does), and that runs
-        earlier in stage_and_transform. Kept as a no-op only to satisfy the
-        ToolAdapter protocol."""
+        the inlined rules from any plan whose instruction file carries the
+        DYNAMIC-INCLUDE-ALL-RULES marker (no current template does, including
+        OpenCode's), and that runs earlier in stage_and_transform. Kept as a
+        no-op only to satisfy the ToolAdapter protocol."""
         return plan

@@ -66,8 +66,10 @@ _NAMED_RULES_SOURCE_DIR = Path("src/user/.claude/rules")
 # Tool-root instruction files that are flattened, keyed by their
 # ``.template``-stripped dest (how the plan stores them). The dest is per-tool,
 # so ``AGENTS.md`` covers Claude, Codex, AND OpenCode (each installs an
-# ``AGENTS.md``); ``GEMINI.md`` covers Gemini. Only Codex/Gemini/OpenCode carry
-# the ALL-RULES marker — Claude's ``AGENTS.md`` does not, so its rules survive.
+# ``AGENTS.md``); ``GEMINI.md`` covers Gemini. No current template carries the
+# ALL-RULES marker — each of the four is a single DYNAMIC-INCLUDE of
+# USER-CORE.md.template — so every tool's rules currently survive; this list
+# is where a template would need to carry the marker for its rules to inline.
 _FLATTENABLE_DESTS: tuple[Path, ...] = (Path("AGENTS.md"), Path("GEMINI.md"))
 
 
@@ -149,10 +151,11 @@ def flatten_plan_templates(plan: StagingPlan, *, repo_root: Path, io: IOPort) ->
     file includes resolved from ``repo_root``, ALL-RULES from the plan's own
     staged rules — then remove from the plan whatever that flattening inlined so it
     is not also deployed standalone: the include-only file templates always, and —
-    when the instruction file carried an ALL-RULES marker — the loose ``rules/``
-    items too. A tool whose instruction file has no ALL-RULES marker (Claude reads
-    a loose ``~/.claude/rules/`` tree natively) keeps its rules. Mutates ``plan``
-    in place.
+    for a tool whose instruction file carries an ALL-RULES marker — the loose
+    ``rules/`` items too. No current template carries that marker (Claude's
+    ``AGENTS.md`` reads a loose ``~/.claude/rules/`` tree natively, and the
+    other three are each a single DYNAMIC-INCLUDE of USER-CORE.md.template),
+    so every tool keeps its rules today. Mutates ``plan`` in place.
     """
     include_only: set[Path] = set()
     inlines_rules = False

@@ -1,8 +1,9 @@
 # src/user/.agents/ — Shared Content
 
-Tool-agnostic content that `scripts/install.sh` copies into **every detected
-AI coding assistant** (Claude Code, Codex CLI, Gemini CLI, OpenCode). If
-something here is useful to more than one tool, it lives here.
+Tool-agnostic content that `scripts/install.sh` copies into **every active
+tool** (Claude Code, Codex CLI, Gemini CLI, OpenCode — auto-detected, or
+explicitly selected via `--tools=`). If something here is useful to more than
+one tool, it lives here.
 
 ## What lives here
 
@@ -27,8 +28,9 @@ CLI `~/.codex/`, Gemini CLI `~/.gemini/`, OpenCode `~/.config/opencode/`.
 Skills land under `<config>/skills/`, rules under `<config>/rules/`, and the
 instruction text is assembled into each tool's own instruction file.
 
-The installer strips the `.template` suffix on copy and skips tools that aren't
-detected on the system.
+The installer strips the `.template` suffix on copy. Auto-detect skips tools
+that aren't detected on the system, but `--tools=` bypasses detection
+entirely and installs to any named tool regardless.
 
 ## Who it's for
 
