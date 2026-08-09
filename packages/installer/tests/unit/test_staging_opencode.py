@@ -35,8 +35,11 @@ def _make_opencode_repo(tmp_path: Path) -> Path:
     (shared / "INSTRUCTIONS.md.template").write_bytes(b"# shared root tmpl")
     # opencode tool root — templates + settings, no namespace subdirs
     opencode.mkdir(parents=True)
-    # Mirror the real OpenCode template: it carries the ALL-RULES marker, so
-    # flatten_plan_templates inlines the staged rules and drops the loose copies.
+    # Synthetic template exercising the ALL-RULES marker grammar: no current
+    # OpenCode template carries it (the real one is a single DYNAMIC-INCLUDE
+    # of USER-CORE.md.template) — this fixture is what a template WOULD need
+    # for flatten_plan_templates to inline the staged rules and drop the
+    # loose copies.
     (opencode / "AGENTS.md.template").write_bytes(
         b"# opencode root tmpl\n<!-- DYNAMIC-INCLUDE-ALL-RULES -->\n"
     )
@@ -102,16 +105,22 @@ def test_opencode_build_plan_stages_jsonc_settings(tmp_path: Path, ignore: Insta
 
 def test_opencode_flatten_inlines_and_drops_rules(tmp_path: Path, ignore: InstallIgnore) -> None:
     """
-    Given an OpenCode plan that still carries shared rules/ items (build_plan keeps
-    them so the DYNAMIC-INCLUDE-ALL-RULES flatten can inline them)
+    Given an OpenCode plan built from this fixture's synthetic template (which
+    carries the ALL-RULES marker; no current real OpenCode template does) that
+    still carries shared rules/ items (build_plan keeps them so the
+    DYNAMIC-INCLUDE-ALL-RULES flatten can inline them)
     When flatten_plan_templates runs
     Then the rule is inlined into AGENTS.md and every rules/ item is dropped, while
     non-rules items (skills/, templates) survive.
 
-    Pins: OpenCode writes no standalone rules/ namespace — rules live only inline in
-    AGENTS.md. The loose-rules drop is owned by flatten_plan_templates (keyed on the
-    ALL-RULES marker OpenCode's AGENTS.md carries), NOT a per-adapter transform, so
-    the inliner still sees the rules but sync does not.
+    Pins: when a tool's instruction file carries the ALL-RULES marker, its
+    rules live only inline in AGENTS.md instead of a standalone rules/
+    namespace. The loose-rules drop is owned by flatten_plan_templates (keyed
+    on the marker a template carries), NOT a per-adapter transform, so the
+    inliner still sees the rules but sync does not. OpenCode's real rules/
+    destination isn't special-cased away by this mechanism — it's simply
+    unpopulated today because no current template carries the marker (see
+    OpenCodeAdapter.post_staging_transforms).
     """
     repo = _make_opencode_repo(tmp_path)
     plan = build_plan(OpenCodeAdapter(), repo_root=repo, ignore=ignore)

@@ -13,9 +13,13 @@ into `~/.claude/` (Claude is always an active tool; never auto-detected away).
   are a **fatal install error**.
 - `rules/*.md` — collisions are allowed: files with the same name are
   **appended** (base first, plugins alphabetically) with a `---` separator.
+- `hooks/` — Python scripts referenced by `settings.json.template`'s hook
+  commands (invoked as `python3 ~/.claude/hooks/<script>.py`); each script
+  ships a paired test.
 - `settings.json.template` — **union-merged** with any existing
-  `~/.claude/settings.json` via `jq` (user values preserved, arrays
-  deduplicated, new keys added).
+  `~/.claude/settings.json` by the installer's own deep-merge strategy (pure
+  Python, no `jq` dependency): dicts recurse, arrays concatenate and dedupe,
+  a scalar conflict keeps the existing value, and new keys are added.
 
 ## Agent warnings
 

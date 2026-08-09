@@ -109,10 +109,13 @@ def test_all_rules_inline_drops_loose_rules_from_plan(tmp_path: Path) -> None:
     """When the instruction file inlines every rule via ALL-RULES, the loose
     rules/ items are dropped from the plan.
 
-    A tool whose instruction file carries the ALL-RULES marker
-    (codex/gemini/opencode) gets every rule inlined into AGENTS.md/GEMINI.md, so
-    deploying the rules/ files standalone would write redundant copies the tool
-    does not read. They are removed exactly like include-only file templates."""
+    A tool whose instruction file carries the ALL-RULES marker gets every
+    rule inlined into AGENTS.md/GEMINI.md, so deploying the rules/ files
+    standalone would write redundant copies the tool does not read. No
+    current template (Claude/Codex/Gemini/OpenCode) carries this marker —
+    each is a single DYNAMIC-INCLUDE of USER-CORE.md.template — so this test
+    exercises the mechanism via a synthetic GEMINI.md fixture, not any real
+    template. They are removed exactly like include-only file templates."""
     gemini_md = _item(Path("GEMINI.md"), b"top\n<!-- DYNAMIC-INCLUDE-ALL-RULES -->\n")
     r1 = _item(Path("rules/a-first.md"), b"FIRST", namespace="rules")
     r2 = _item(Path("rules/b-second.md"), b"SECOND", namespace="rules")

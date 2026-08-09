@@ -2,13 +2,16 @@
 
 Tool-agnostic source content. `scripts/install.sh` stages everything here into
 **every active tool** (Claude always; Codex and Gemini when their `~/.<tool>/`
-dir exists or `--tools=` selects them).
+dir exists; OpenCode when `opencode` is on PATH or `~/.config/opencode/`
+exists; or `--tools=` selects any of them).
 
 ## Install model
 
-- `*.md.template` — `.template` suffix stripped on copy; lands at
-  `~/.<tool>/<basename>.md` (e.g. `AGENTS.md.template` → `~/.claude/AGENTS.md`,
-  by DYNAMIC-INCLUDE into the per-tool assembled instruction file).
+- `USER-CORE.md.template` — this directory's only top-level template, and
+  include-only: each tool's own `AGENTS.md.template` (or `GEMINI.md.template`
+  for Gemini) pulls it in with a `DYNAMIC-INCLUDE` marker, and the
+  installer's template-flattening step drops the standalone copy during
+  staging, so it never lands on its own as `~/.<tool>/USER-CORE.md`.
 - `skills/` — each top-level entry copied; **names must be unique** across the
   combined tree (shared + tool-specific + active plugins). Collisions are a
   **fatal install error**.
@@ -24,8 +27,9 @@ dir exists or `--tools=` selects them).
 
 - These are **source templates**, not runtime config. Editing a file here
   changes what gets installed into users' real configs on next `install.sh` run.
-- Do not confuse a source file here with its installed copy under `~/.<tool>/` —
-  never edit the installed copy from this repo.
+- Do not confuse a source file here with its installed copy under `~/.<tool>/`
+  (`~/.config/opencode/` for OpenCode) — never edit the installed copy from
+  this repo.
 - Before adding a skill or rule, check for name collisions against
   `src/user/.claude/` and every `src/plugins/*/` — the installer aborts on
   duplicate names.
