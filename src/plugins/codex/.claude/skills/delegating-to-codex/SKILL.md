@@ -9,13 +9,22 @@ admission:
 
 # Delegating to Codex
 
-Reach Codex through the plugin's own runtime — the Codex rescue agent, or the
-companion script that agent wraps. Not the raw `codex` binary.
+Reach Codex by dispatching the `codex-rescue` agent through the Agent tool.
+That agent ships with the separate `openai-codex` plugin, not with this one —
+if it does not appear as an agent type in the session, check whether
+`openai-codex` is installed, and if it is not, stop and tell the user rather
+than falling back to the raw `codex` binary, which stays forbidden either way.
+How the agent reaches Codex once dispatched is its own runtime's contract, not
+this skill's.
 
 ## Which model
 
 A Codex run carries no explicit model by default, and the runtime keeps it that
 way unless the caller names one. Naming it is this skill's whole job.
+
+Captured **2026-08-01** against OpenAI's published Codex tiers at the time.
+OpenAI renames and retires tiers without much notice — re-verify against
+OpenAI's current model documentation before routing anything cost-sensitive.
 
 | Task profile | Model |
 |---|---|

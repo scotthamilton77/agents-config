@@ -13,11 +13,11 @@
   {"query": "delegate this refactor to a cheap model via openrouter, kimi or glm probably", "should_trigger": false},
   {"query": "can you launch the gemini CLI to double-check this output", "should_trigger": false},
   {"query": "whats the actual difference between gpt-5.6-sol and gpt-5.6-terra, just curious, dont run anything", "should_trigger": false},
-  {"query": "can you dispatch three parallel subagents to review different files in packages/installer", "should_trigger": false},
+  {"query": "can you dispatch three parallel subagents to review different files in the payments module", "should_trigger": false},
   {"query": "run /codex:review on this PR", "should_trigger": false},
-  {"query": "fork yourself and go research how the beads schema handles dependency cycles", "should_trigger": false},
+  {"query": "fork yourself and go research how the scheduler handles retry backoff", "should_trigger": false},
   {"query": "my codex CLI auth expired again, how do i re-login", "should_trigger": false},
-  {"query": "write me a subagent brief for the worker thats going to do the workcli migration", "should_trigger": false},
+  {"query": "write me a subagent brief for the worker thats going to do the config migration", "should_trigger": false},
   {"query": "is openai's codex actually any good compared to claude for big refactors? genuine question", "should_trigger": false},
   {"query": "use sonnet with high effort for this subagent instead of opus, its mechanical work", "should_trigger": false}
 ]

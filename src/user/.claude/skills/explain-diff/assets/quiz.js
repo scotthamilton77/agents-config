@@ -1,9 +1,13 @@
 /* explain-diff quiz interaction — inline this verbatim inside a <script> tag.
- * Markup contract (see assets/palette.md):
+ * Markup contract (see assets/palette.md): four options per question — two
+ * plausible-wrong distractors, one correct answer, one `data-comic="true"`
+ * comic foil.
  *   <div class="q">
  *     <div class="stem">Question text?</div>
- *     <button class="opt" data-correct="false" data-fb="why this is wrong">Option A</button>
- *     <button class="opt" data-correct="true"  data-fb="why this is right">Option B</button>
+ *     <button class="opt" data-correct="false" data-fb="why this misconception is wrong">Plausible wrong option A</button>
+ *     <button class="opt" data-correct="false" data-fb="why this misconception is wrong">Plausible wrong option B</button>
+ *     <button class="opt" data-correct="true"  data-fb="why this is right">The answer</button>
+ *     <button class="opt" data-correct="false" data-comic="true" data-fb="why the absurd premise contradicts the change">Obviously impossible comic foil</button>
  *     <div class="feedback"></div>
  *   </div>
  * On click: locks the question, marks correct/incorrect, reveals the clicked
