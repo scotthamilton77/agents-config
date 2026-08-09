@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agents.local/schemas/review-verdict/1",
+  "$id": "https://agents.local/schemas/review-verdict/2",
   "title": "Review verdict",
   "description": "Typed result of one code-review round, keyed to the git head SHA it reviewed.",
   "type": "object",
