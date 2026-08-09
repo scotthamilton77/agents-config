@@ -23,8 +23,9 @@ so confirm against the tool's own config directory rather than assuming.
 
 ## Where it installs
 
-Into every detected tool's config directory — Claude Code `~/.claude/`, Codex
-CLI `~/.codex/`, Gemini CLI `~/.gemini/`, OpenCode `~/.config/opencode/`.
+Into every active tool's config directory (auto-detected, or explicitly
+selected via `--tools=`) — Claude Code `~/.claude/`, Codex CLI `~/.codex/`,
+Gemini CLI `~/.gemini/`, OpenCode `~/.config/opencode/`.
 Skills land under `<config>/skills/`, rules under `<config>/rules/`, and the
 instruction text is assembled into each tool's own instruction file.
 

@@ -7,8 +7,8 @@ loose files like this `AGENTS.md` are skipped). Which discovered plugins are
 **activated** is resolved per run: by default each plugin's adapter
 auto-detects against `$HOME` (`is_detected`); `--plugins=<names>` overrides the
 set (naming an undiscovered plugin is a fast-fail error), and `--plugins=`
-(empty) installs none. A plugin's rules deploy only into the tools that are
-themselves detected.
+(empty) installs none. A plugin's rules deploy into every active tool —
+auto-detected, or explicitly selected via `--tools=` even if undetected.
 
 ## Plugin Structure
 
