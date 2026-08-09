@@ -160,7 +160,7 @@ sequenceDiagram
     else (SETTINGS_JSON, —)
         Reg-->>Caller: JsonUnionStrategy
         Caller->>Strat: merge(existing, incoming)
-        Strat-->>Caller: deep union (nested dict precedence, array union+sort)
+        Strat-->>Caller: deep union (nested dict precedence, array union+dedupe first-seen order)
     else (JSONC | TOML, —)
         Reg-->>Caller: LastWinsWarnStrategy
         Caller->>Strat: merge(existing, incoming)
