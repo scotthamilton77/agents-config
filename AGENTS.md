@@ -32,7 +32,7 @@ This is the whole delivery contract:
 2. Implement on a worktree branch; never commit to the default branch.
 3. Verify mechanically before claiming anything. For `packages/**`, and for any skill under `src/` that ships its own tests, that is `make ci` — read the `ci` target in the `Makefile` for its current membership, and note that a single package's gate is not the whole-repo gate. Run it from the root of the tree you are working in: the `Makefile` `cd`s relative to the invoking directory, so a gate run from the main checkout while you are on a worktree branch reports green on code you did not change. Run the gate standalone and read its exit status — never pipe it into a `grep && commit` chain, where the pipeline's status is the grep's and a red gate ships. For prose-only changes, run `doc-lint` — the one gate that reads prose outside `docs/specs/`, checking that every backticked citation still resolves — and state what else you checked by hand.
 4. Open a PR and address review to quiescence. Every item gets a disposition in your own inventory; only items that change the code get a reply on the PR. Bookkeeping and meta comments are dispositioned silently — a thread of "no action required" replies is noise the next reader has to wade through.
-5. **Merge only on an explicit human instruction.** The shared hard-lines permit merging on an explicit instruction or a merge policy stated in writing in the project's own configuration. `project-config.toml`'s live `[merge-policy]` block is that writing, and it states `merge-authorization = "explicit"` — no rule-based policy is configured, and no implementation of one is deployed, so the written policy and this step agree: explicit human instruction only. The repository ruleset also requires an approving review that no configured reviewer submits — see `agents-config-9k9.23`. Read the commented-out `merge-authorization = "rule-based"` line as future work (`agents-config-9k9.64`), not as permission.
+5. **Merge only on an explicit human instruction.** The shared hard-lines state: "Creating a PR is not authorization to merge. Absent an explicit instruction, or a merge policy stated in writing in the project's own configuration, do not merge — branch protection, a green pipeline and an approving review are not one." `project-config.toml`'s live `[merge-policy]` block is that writing, and it states `merge-authorization = "explicit"` — no rule-based policy is configured, and no implementation of one is deployed, so the written policy and this hard line agree: explicit human instruction only. The repository ruleset also requires an approving review that no configured reviewer submits — see `agents-config-9k9.23`. Read the commented-out `merge-authorization = "rule-based"` line as future work (`agents-config-9k9.64`), not as permission.
 
 ### Why the charter decides as it does
 
@@ -59,7 +59,7 @@ The charter states its decisions without the reasoning underneath them. Four cla
 4. **Guardrail every completion claim with mechanical evidence**
 5. **Persist context** (work items, memories) so work survives compaction, agent handoff, and overnight runs
 
-Commitments 3 and 4 ship as the `review-panel`, `review-verdict`, and `ac-attack` skills, deployed in both homes with admission records. `review-panel`'s `contracts.json` routes lenses across models (Codex, OpenRouter) for commitment 3; `review-verdict` defines the terminal-clean state that "address review to quiescence" (above) means for commitment 4.
+Commitments 3 and 4 ship as the `review-panel`, `ac-attack`, and `review-verdict` skills — `review-panel` and `ac-attack` from `src/user/.claude/skills/` (Claude-only), `review-verdict` from `src/user/.agents/skills/` (shared to every tool), each carrying a repo-side admission record (stripped from deployed bytes, per above). `review-panel`'s `contracts.json` routes lenses across models (Codex, OpenRouter) for commitment 3; `review-verdict` defines the terminal-clean state that "address review to quiescence" (above) means for commitment 4.
 
 ### Design principles for this repo
 
@@ -130,8 +130,10 @@ most of the response on the main answer. When asked to explain something, give a
 summary unless an in-depth explanation is specifically requested. BLUF - bottom line up 
 front.  
 
-When a persona or voice hook is active, it shapes voice, not volume: these brevity
-and BLUF rules still govern length and structure in character exactly as out of it.
+A persona or voice hook shapes voice, not volume: it never adds length or
+overrides these brevity and BLUF rules. A user-invoked compression mode like
+`/caveman` is the user's own instruction, not the persona, and changes length
+by design.
 
 Don't assume the user will recognize work by work-id, document sections by section
 number, etc.  The user needs help connecting dots sometimes, so it's ok to use short
