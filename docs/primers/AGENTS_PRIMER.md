@@ -1,6 +1,7 @@
 # Agent Definitions — Context Primer
 
 > Use this document to orient yourself to agent definition files before auditing or writing agents.
+> Reference: [Claude Code subagents docs](https://code.claude.com/docs/en/sub-agents)
 
 ---
 
