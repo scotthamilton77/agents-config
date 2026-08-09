@@ -15,6 +15,10 @@ Running before the work starts is the point: once code exists, a review can chec
 the failure cases the criteria name, but cannot invent the ones nobody thought of. Those get
 invented here.
 
+Both scripts below run via `uv run`. If `uv` is not installed, run them with plain `python3`
+instead — `emit_prompts.py` has no dependency beyond the standard library; `check_record.py`
+additionally needs `jsonschema` installed first.
+
 ## Attack lenses
 
 | Lens | What it attacks |

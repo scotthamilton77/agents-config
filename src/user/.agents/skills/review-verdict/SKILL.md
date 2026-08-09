@@ -153,6 +153,8 @@ From this directory:
 uv run validate_verdict.py path/to/verdict.json
 ```
 
+No uv: pip install jsonschema, python3
+
 Stdout is JSON: `{"valid": true}` or `{"valid": false, "errors": [{"code", "path", "message"}, …]}`.
 Error codes are `unreadable`, `invalid-json`, `schema`, `duplicate-finding-id`, and
 `duplicate-lens`. Exit status is

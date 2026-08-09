@@ -34,7 +34,7 @@ This pass is _informed_ by the project's domain model and built on a shared desi
 - If the user named a direction — a module, a subsystem, a pain point — take it, and skip the inference below.
 - Otherwise, walk back a good stretch of the commit history (`git log --oneline`) to find the codebase's hot spots — the files and areas that keep coming up — and let those paths pull your attention first. If the changes are scattered with no clear hot spot, widen the net.
 
-Read the project's domain glossary (`CONTEXT.md`) and any ADRs in the area you're touching first.
+Read the project's domain glossary (`CONTEXT.md`), if it has one, and any ADRs in the area you're touching first.
 
 Then walk the codebase — delegate the walk to a subagent if your harness has them, since it keeps the raw file survey out of this context. Don't follow rigid heuristics; explore organically and note where you experience friction:
 
@@ -57,6 +57,9 @@ uv run report_target.py            # prints a fresh absolute path
 # ... write the HTML there ...
 uv run report_target.py --open <path>
 ```
+
+If `uv` is not installed, run these with plain `python3` instead — the script has no
+dependency beyond the standard library.
 
 Tell the user the absolute path either way.
 

@@ -13,6 +13,11 @@ A mid-task discovery — a bug, a missing requirement, a scope expansion — for
 decision before anything else: fix it now, or file it. This skill owns that
 adjudication. `work discover` owns the filing and refuses a malformed one.
 
+If `work` is not installed, or the project has no tracker, the scope adjudication below
+still applies — only the filing changes: record the same title, scope, anchor and
+priority fields as a dated entry in a backlog file (create one at the repo root if none
+exists), and say so in the completion report in place of a filed id.
+
 ## Iron Law
 
 **NO FILING OR DEFERMENT WITHOUT SCOPE ADJUDICATION.**
