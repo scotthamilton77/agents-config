@@ -51,6 +51,10 @@ work show <id> <parent-id>    # the item and its container, in one call
 work list --parent <epic-id>  # the sibling work that surrounds it
 ```
 
+If `work` is not installed, or the item lives on a different tracker, fetch its container
+and siblings the way that tracker exposes them — issues, a project board, a linked ticket —
+or ask the user directly when no tool can reach them.
+
 Then read the project's own orientation file for its stated goals and architecture. Read what it says today rather than what you remember it saying — a project's structure section is exactly the prose that rots.
 
 A knowledge graph, where one exists, surfaces structural relationships grep cannot. Treat it as a **snapshot someone built at some past moment, not an index that follows the tree**: a graph built before a refactor still names the files that refactor deleted. Verify anything it reports against the working tree before asserting it, or rebuild it first.

@@ -106,7 +106,7 @@ say where it lands:
 | Context repair | The file actually read at the decision point — the project's AGENTS.md/CLAUDE.md, a code or design doc. Right content in the wrong home is still a miss. |
 | A lesson that must outlive this session | Durable memory: one fact per entry, with why it matters and how to apply it. |
 | A mechanical gate | A hook, CI check, lint rule, or script — proposed as work to be done, never claimed as done. |
-| A new rule, skill, or command | The project's admission bar. State what it prevents or provides, what it costs, and what observation would remove it; default to declining. Run the dedup test first. |
+| A new rule, skill, or command | The project's admission bar, where one exists — state what it prevents or provides, what it costs, and what observation would remove it; default to declining. Where no formal gate exists, put the same record in front of the user for a direct decision instead. Run the dedup test first. |
 | A prompt pattern | Stated to the user as their lever. Nothing lands in the agent's context. |
 
 Then **offer** to action the approved items. Do not auto-apply; the user decides

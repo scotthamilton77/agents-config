@@ -68,7 +68,7 @@ Iterate until the user approves the breakdown.
 
 ### 5. Publish through the `work` facade
 
-`work` is the tracker, and it needs no setup step. A ticket that is not on the tracker is not a ticket — never write a parallel set of ticket files instead.
+`work` is the tracker, and it needs no setup step. A ticket that is not on the tracker is not a ticket — never write a parallel set of ticket files beside a tracker that exists. If `work` is not installed, or the project has no tracker at all, publish the numbered breakdown from Step 4 as a single markdown file instead — one heading per ticket, blocking edges as a list — and say so in the handoff.
 
 Publish in **two passes**, because a blocking edge needs both ids to exist before it can be drawn.
 

@@ -16,4 +16,4 @@ Drift policy: accept-periodic-resync
 Placement: Claude tree, because the body is the user's own line and only the user is entitled to say it. Claude alone honours disable-model-invocation; where the projection strips it, the model can invoke this and answer a complaint nobody made.
 -->
 
-Wait — I don't understand where you've got to here. Re-pitch that: give me a little bit of context, talk in ASD-STE100 Simplified Technical English, and use the ubiquitous language from `CONTEXT.md`.
+Wait — I don't understand where you've got to here. Re-pitch that: give me a little bit of context, talk in ASD-STE100 Simplified Technical English, and use the ubiquitous language from `CONTEXT.md` — or, if the project has none, the terms already settled in this conversation.

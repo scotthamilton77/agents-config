@@ -53,6 +53,9 @@ uv run emit_prompts.py --class typed-code --claim <claim-id> --round 1 \
   --retained '[]' --out-dir /tmp/round-1
 ```
 
+If `uv` is not installed, install `jsonschema` yourself and run `python3 emit_prompts.py ...`
+instead — that dependency is the script's only one.
+
 `--acs` points at a file the invoker writes before round 1: the acceptance criteria the claim is
 judged against, gathered from wherever the claim is stated — the work item, the governing design
 document, or the change's own description — as a plain list of observable criteria. Every lens of

@@ -136,9 +136,8 @@ against the pull request:
 findings. Advisory findings never block; they go to the backlog. A halted round is never
 terminal-clean, however few findings it holds.
 
-Completeness and diversity are separate questions. A round every lens reported on is complete even
-if all of them ran on one vendor — report the collapse alongside the verdict rather than treating
-it as a defect in the round.
+Completeness and diversity are separate: a round every lens reported on is complete even on one
+vendor — see above on reporting, not blocking, the collapse.
 
 The schema checks the shape of a single artifact. The five conditions above are cross-artifact —
 they compare the verdict against the pull request and against earlier verdicts — so today a person
@@ -152,6 +151,8 @@ From this directory:
 ```bash
 uv run validate_verdict.py path/to/verdict.json
 ```
+
+No `uv`? `python3 -m pip install jsonschema`, then `python3 validate_verdict.py path/to/verdict.json`.
 
 Stdout is JSON: `{"valid": true}` or `{"valid": false, "errors": [{"code", "path", "message"}, …]}`.
 Error codes are `unreadable`, `invalid-json`, `schema`, `duplicate-finding-id`, and
