@@ -13,7 +13,7 @@
 | C4 | A model for visualising software architecture in four levels (Context, Container, Component, Code); see [c4model.com](https://c4model.com). This folder uses **L2** and **L3** only — see "Why no L1 / Deployment" below. |
 | Installer | The Python package at `packages/installer/`, reached through `scripts/install.sh` — a thin `exec` stub that delegates to it. A short-lived CLI: parse argv → stage in memory → merge → admission gate (user-home path) → sync to disk → optional prune → exit. |
 | Tool | One of the four supported AI coding assistants — **Claude Code**, **Codex CLI**, **Gemini CLI**, **OpenCode** — each with its own destination store and its own `ToolAdapter`. |
-| `ToolAdapter` | The protocol abstracting everything the engine needs to know about a tool: source dir, dest dir, detection, scoped namespaces, namespace filtering, post-staging transforms. Per-tool adapters live in `tools/`. |
+| `ToolAdapter` | The protocol abstracting everything the engine needs to know about a tool: source dir, dest dir, detection, scoped namespaces, project-scoped namespaces, namespace filtering, post-staging transforms. Per-tool adapters live in `tools/`. |
 | `PluginAdapter` | The protocol for an optional plugin that overlays extra content onto the staging plan. Discovered dynamically by scanning `src/plugins/<name>/`; string-keyed (NOT enumerated). |
 | `StagingPlan` | The **in-memory** staging structure: a `dict[Path, StagedItem]` plus provenance. Built per tool, mutated by plugin overlay + transforms, then flushed to disk by `sync`. Never an on-disk container in the operational path (`--dump-stage` materialises it for debugging only). |
 | `StagedItem` | One planned destination entry — a file, or, when `kind == DIR`, a directory: its content, `FileKind`, namespace, and `Provenance`. The unit the merge + sync engines operate on. |
@@ -22,7 +22,7 @@
 | `Provenance` | `(kind: "tool" \| "plugin", name: str)` on each `StagedItem` — preserves tool-vs-plugin origin through the plan. |
 | `IOPort` | The single injectable I/O abstraction (`info`/`warn`/`show_diff`/`confirm`/…). `TerminalIO` is real (via `rich`); `ScriptedIO` is the test fake. No module calls `print`/`input` directly. |
 | DYNAMIC-INCLUDE | The directive form (`<!-- DYNAMIC-INCLUDE: path -->` and the ALL-RULES variant) that flattens shared template fragments into assembled per-tool instruction files at staging time. |
-| Namespace | The managed sub-directory a file belongs to (`commands` / `skills` / `agents` / `rules` / `hooks` / `workflows`) — second component of the merge-dispatch key; drives append-vs-fatal collision behaviour. |
+| Namespace | The managed sub-directory a file belongs to (`commands` / `skills` / `agents` / `rules` / `hooks` / `workflows`) — second component of the merge-dispatch key for `.md` content. Only `rules` (append) and `commands`/`skills`/`agents` (fatal) change the merge strategy; see [`data-view.md`](data-view.md) for the full dispatch table, including `hooks`' OTHER-classified exception. |
 
 Each artifact file in this folder carries its **own short glossary** at the top, listing the terms used in that specific file.
 
