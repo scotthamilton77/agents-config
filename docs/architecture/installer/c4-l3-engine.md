@@ -3,7 +3,7 @@
 > **Up**: [index](index.md)
 > **Previous (reading order)**: [Sequences](sequences.md)
 > **Next (reading order)**: [Data View](data-view.md)
-> **Source bead**: `agents-config-w1qls.9`
+> **Source item**: `agents-config-w1qls.9` — archive-era, resolvable in the private archive repository and not through `work`
 > **Source spec**: [`installer-design.md`](installer-design.md) — §"Package layout", §"Data model highlights"
 > **Container**: the `installer` process (see [`c4-l2-container.md`](c4-l2-container.md))
 
@@ -190,7 +190,7 @@ Every cross-boundary dependency is one of these four protocols. That is the desi
 
 ## What this diagram does NOT show
 
-- **Execution order across the components** — detect → stage → overlay → merge → admission gate (user-home path) → sync → prune is the subject of [`sequences.md`](sequences.md).
+- **Execution order across the components** — detect → stage → overlay → merge → admission gate (user-home path) → sync → CLI-deploy (user-home path) → prune is the subject of [`sequences.md`](sequences.md).
 - **The data shapes** the components pass around (`StagingPlan`, `StagedItem`, `Config`, …) and the merge-dispatch table — see [`data-view.md`](data-view.md).
 - **The per-strategy merge mechanics** (append separator placement, JSON deep-union rules, fatal message format) — specified in `installer-design.md` §"Test architecture".
 - **The container boundary + external stores at process granularity** — see [`c4-l2-container.md`](c4-l2-container.md).

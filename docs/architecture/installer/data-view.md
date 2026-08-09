@@ -2,7 +2,7 @@
 
 > **Up**: [index](index.md)
 > **Previous (reading order)**: [C4 L3 — Engine](c4-l3-engine.md)
-> **Source bead**: `agents-config-w1qls.9`
+> **Source item**: `agents-config-w1qls.9` — archive-era, resolvable in the private archive repository and not through `work`
 > **Source spec**: [`installer-design.md`](installer-design.md) — §"Data model highlights", §"Configuration — installer.toml"
 
 ## Glossary

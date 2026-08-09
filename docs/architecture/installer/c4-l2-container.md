@@ -2,7 +2,7 @@
 
 > **Up**: [index](index.md)
 > **Next (reading order)**: [Sequences](sequences.md)
-> **Source bead**: `agents-config-w1qls.9`
+> **Source item**: `agents-config-w1qls.9` — archive-era, resolvable in the private archive repository and not through `work`
 > **Source spec**: [`installer-design.md`](installer-design.md)
 
 ## Glossary
@@ -81,7 +81,7 @@ C4Container
 
 ### The installer process
 
-The whole installer runs here. Every invocation is **terminal** — parse argv, build `Config`, build the `StagingPlan`(s), flush to disk, exit. There is no daemon and no background work; on the user-home path the one piece of state that *does* survive a run is the install receipt (read at prune start, rewritten at run end) — a `--project` install also persists its resolved profile selection to `project-config.toml`. Internally — at L3 — this process is composed of a tool-agnostic `core/` engine (`model`, `io_port`, `templates`, `staging`, `sync`, the receipt-based prune subsystem `run`/`receipt*`/`prune_hash`/`prune_flow`/`ownership`, `merge/*`), per-tool `tools/` adapters, per-plugin `plugins/` adapters, and a `cli`/`config`/`orchestrator` top layer. Those components are drawn in [`c4-l3-engine.md`](c4-l3-engine.md).
+The whole installer runs here. Every invocation is **terminal** — parse argv, build the `StagingPlan`(s), run the admission gate (user-home path), build `Config`, flush to disk, exit. There is no daemon and no background work; on the user-home path the one piece of state that *does* survive a run is the install receipt (read at prune start, rewritten at run end) — a `--project` install also persists its resolved profile selection to `project-config.toml`. Internally — at L3 — this process is composed of a tool-agnostic `core/` engine (`model`, `io_port`, `templates`, `staging`, `sync`, the receipt-based prune subsystem `run`/`receipt*`/`prune_hash`/`prune_flow`/`ownership`, `merge/*`), per-tool `tools/` adapters, per-plugin `plugins/` adapters, and a `cli`/`config`/`orchestrator` top layer. Those components are drawn in [`c4-l3-engine.md`](c4-l3-engine.md).
 
 The installer's entry points are `python3 scripts/install.py` (a thin stub: `from installer.cli import main`) and the module form `python -m installer` (requires `packages/installer/src/installer/__main__.py`); both invoke the same `installer.cli.main`.
 
@@ -118,7 +118,7 @@ The four AI coding assistants are **external systems** that read their deployed 
 ## What this diagram does NOT show
 
 - **Components inside the installer process** — the `core/` engine, `tools/` + `plugins/` adapters, and merge strategies live in [`c4-l3-engine.md`](c4-l3-engine.md).
-- **Execution order** — detect → stage → overlay → merge → admission gate (user-home path) → sync → prune is the subject of [`sequences.md`](sequences.md).
+- **Execution order** — detect → stage → overlay → merge → admission gate (user-home path) → sync → CLI-deploy (user-home path) → prune is the subject of [`sequences.md`](sequences.md).
 - **The `StagingPlan` / `StagedItem` / `Config` data shapes** and the `(FileKind, namespace)` merge-dispatch table — see [`data-view.md`](data-view.md).
 - **DYNAMIC-INCLUDE flattening + the Gemini frontmatter transform mechanics** — surfaced as components at L3; specified in `installer-design.md`.
 

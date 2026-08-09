@@ -46,7 +46,7 @@ A `uv`-managed Python package (`packages/installer`) that installs agent configu
 installer/
 ├── cli.py                       Parse argv, build Config, wire IOPort, invoke orchestrator + the admission gate
 ├── config.py                    Config dataclass (home, tools, auto_yes); resolve_tools/resolve_plugins for auto-detection
-├── orchestrator.py              Top-level controller; composes core engines + adapters
+├── orchestrator.py              Staging only: drives build_plan -> overlay -> extensions -> transforms per tool; cli.py is the true top-level controller
 ├── content_lint_cli.py          Separate entry point (`python -m installer.content_lint_cli`) — stages src/ and runs the admission gate as a repo-side lint; never calls cli.py or the installer
 ├── content_tests_cli.py         Separate entry point — discovers and runs every shipped skill's own test suite
 ├── doc_lint_cli.py          Separate entry point — checks every tracked Markdown citation against the staged asset roster
@@ -212,7 +212,7 @@ Test names describe the contract, e.g. `test_user_modified_settings_keys_are_pre
 
 - `tests/fixtures/sources/test-plugin/` — a committed synthetic source tree (a rule, a command, a skill), exercising plugin-overlay behaviour without depending on the real `src/user/`. There is no separate `tests/fixtures/states/` tree.
 - `tests/unit/conftest.py` carries autouse hermetic-environment fixtures (OpenCode PATH-probe neutralisation, CLI-deploy stubbing) plus the shared `ignore` fixture — pre-install user-state is built inline, per test, against `tmp_path`, not composed from on-disk builders.
-- `test_golden_full_profile_is_byte_identical_to_todays_install` (`tests/unit/test_profiles.py`) runs staging against the real repo's `src/user/` tree directly, pinning that the unfiltered ("full") profile selection stages byte-identical to today's install.
+- `test_golden_full_profile_is_byte_identical_to_todays_install` (`tests/unit/test_profiles.py`) runs staging against the real repo's `src/user/` tree directly, pinning that the unfiltered ("full") profile selection stages byte-identical to the current tree's staged output at test time.
 
 ## CLI surface
 

@@ -3,7 +3,7 @@
 > **Up**: [index](index.md)
 > **Previous (reading order)**: [C4 L2 — Container](c4-l2-container.md)
 > **Next (reading order)**: [C4 L3 — Engine](c4-l3-engine.md)
-> **Source bead**: `agents-config-w1qls.9`
+> **Source item**: `agents-config-w1qls.9` — archive-era, resolvable in the private archive repository and not through `work`
 > **Source spec**: [`installer-design.md`](installer-design.md)
 
 ## Glossary
@@ -22,7 +22,7 @@
 
 Four sequence diagrams covering one install invocation and its three branching sub-flows:
 
-1. **End-to-end install (happy path)** — detect → stage → overlay → merge → admission gate (user-home path) → sync → exit.
+1. **End-to-end install (happy path)** — detect → stage → overlay → merge → admission gate (user-home path) → sync → CLI-deploy (user-home path) → exit.
 2. **Collision merge dispatch** — how two `StagedItem`s for one path resolve through the `(FileKind, namespace)` registry.
 3. **Sync per-item decision** — the hash-skip vs diff → confirm → backup → write branch, including `--dry-run`.
 4. **Prune flow** — read prior receipt → diff against the desired plan → partition by on-disk hash → interactive prune → write new receipt.
