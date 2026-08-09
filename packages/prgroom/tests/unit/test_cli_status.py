@@ -1,8 +1,8 @@
-"""Tests for the wired ``status`` CLI verb (§3.3 carve-out, §4.6 envelope).
+"""Tests for the wired ``status`` CLI verb (§3.3 carve-out, §4.5 envelope).
 
 ``status`` is the lock-free carve-out: the default path runs a single ``store.read``
 without acquiring the lock, then enriches with a live gh fetch (labels + reviews) and
-renders the §4.6 envelope. ``--locked`` wraps the read in ``with_lock`` and exits 75
+renders the §4.5 envelope. ``--locked`` wraps the read in ``with_lock`` and exits 75
 under contention. The two seams (``_build_store`` / ``_build_gh``) are monkeypatched
 to an InMemoryStore + a recorded-gh fake, mirroring ``test_cli_poll``.
 """

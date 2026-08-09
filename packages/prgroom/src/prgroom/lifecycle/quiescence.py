@@ -30,7 +30,7 @@ _REVIEWER_DONE: frozenset[ReviewerStatus] = frozenset(
     {ReviewerStatus.REVIEW_FOUND, ReviewerStatus.DECLINED}
 )
 # Dispositions that block auto-merge progress — the §4.1 quiescence sanity gate
-# (G_NO_BLOCKERS) AND the §4.6 status envelope's ``no_blocker_items`` both screen on
+# (G_NO_BLOCKERS) AND the §4.5 status envelope's ``no_blocker_items`` both screen on
 # this single set, so a future blocker-disposition addition cannot silently diverge
 # the two. PUBLIC and shared (imported by ``status.py``) — one source of truth.
 BLOCKER_DISPOSITIONS: frozenset[DispositionKind] = frozenset(

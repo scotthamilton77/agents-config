@@ -23,11 +23,11 @@ class StateNotFoundError(LookupError):
 
 
 class StateCorruptError(ValueError):
-    """Raised when persisted state fails to parse (maps to STATE_CORRUPT, §3.7)."""
+    """Raised when persisted state fails to parse (maps to STATE_CORRUPT, §3.6)."""
 
 
 class SchemaUnknownError(ValueError):
-    """Raised when persisted ``schema_version`` is unrecognized (STATE_SCHEMA_UNKNOWN, §3.7)."""
+    """Raised when persisted ``schema_version`` is unrecognized (STATE_SCHEMA_UNKNOWN, §3.6)."""
 
 
 @runtime_checkable

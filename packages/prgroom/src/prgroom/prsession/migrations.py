@@ -1,4 +1,4 @@
-"""Schema-migration registry for persisted state (§2, §3.7).
+"""Schema-migration registry for persisted state (§2, §3.6).
 
 A migrator upgrades a serialized state blob from one ``schema_version`` to the
 current one. The registry is keyed by the **from** version. It is EMPTY in the

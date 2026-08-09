@@ -1,4 +1,4 @@
-"""Terminal-signal flush hooks for the run-loop (§3.3, §4.7).
+"""Terminal-signal flush hooks for the run-loop (§3.3, §4.6).
 
 The run-loop emits its terminal signals through two parallel best-effort hooks,
 fired at exactly two dedup-safe sites (the loop-top terminal-for-CLI check and
@@ -9,7 +9,7 @@ immediately before each ``PROPAGATE`` re-raise):
   ``last_error``, deduped by the per-item ``escalation_filed`` flag and the lifecycle
   ``lifecycle_escalation_filed`` flag.
 - :func:`request_human_review_if_needed` — adds the GitHub ``human-review-required``
-  label once per gating event (§4.7), deduped by ``human_review_label_added``, and
+  label once per gating event (§4.6), deduped by ``human_review_label_added``, and
   ONLY for review-content gates (cap-trip, ESCALATED/FAILED items) — never for infra
   gates (auth expiry, state corruption, push rejection).
 
@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     from prgroom.prsession.state import PRGroomingState
     from prgroom.prsession.store import Store
 
-# §4.7 literal label string — the GitHub-visible "automation gave up here" marker.
+# §4.6 literal label string — the GitHub-visible "automation gave up here" marker.
 HUMAN_REVIEW_LABEL = "human-review-required"
 
 
@@ -109,7 +109,7 @@ def _emit(sink: Sink, escalation: Escalation, warn: Callable[[str], None]) -> bo
     A failed emit (stderr write error, bd-adapter blip) returns ``False`` so the caller
     leaves the dedup flag unset and the next pass retries — best-effort, never blocking
     lifecycle progression. The swallowed failure is logged via ``warn`` (symmetric with
-    the §4.7 label-add hook) so a persistently-unreachable Sink surfaces in stderr
+    the §4.6 label-add hook) so a persistently-unreachable Sink surfaces in stderr
     instead of failing silently.
     """
     try:
@@ -121,11 +121,11 @@ def _emit(sink: Sink, escalation: Escalation, warn: Callable[[str], None]) -> bo
 
 
 def should_request_human_review(state: PRGroomingState) -> bool:
-    """True iff a review-content gate is active (§4.7): budget-trip or an ESCALATED/FAILED item.
+    """True iff a review-content gate is active (§4.6): budget-trip or an ESCALATED/FAILED item.
 
     Deliberately narrower than :func:`escalate_if_needed`'s lifecycle trigger: only the
     retry-budget ``last_error`` counts here. Infra gates (``RUNTIME_TERMINAL_USER``,
-    ``STATE_CORRUPT``, ``RUNTIME_PUSH_REJECTED``, …) are §4.7 non-triggers — they are
+    ``STATE_CORRUPT``, ``RUNTIME_PUSH_REJECTED``, …) are §4.6 non-triggers — they are
     operator-infra problems, not review-content problems, so they never add the label.
     """
     if state.last_error == ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value:
@@ -145,7 +145,7 @@ def request_human_review_if_needed(
     auto_request: bool,
     warn: Callable[[str], None] = default_warn,
 ) -> PRGroomingState:
-    """Add the ``human-review-required`` label once per gating event (§4.7).
+    """Add the ``human-review-required`` label once per gating event (§4.6).
 
     Short-circuits when auto-request is off, no review-content gate is active, or the
     label was already added this gating event (which preserves an operator's deliberate

@@ -1,4 +1,4 @@
-"""Tests for the §4.6 ``status --json`` envelope builder.
+"""Tests for the §4.5 ``status --json`` envelope builder.
 
 These pin the stable merge-gate handoff contract: the envelope shape, each of the
 four ``merge_gates`` bools, the ``auto_merge_eligible`` AND truth table, the

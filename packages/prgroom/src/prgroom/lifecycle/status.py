@@ -1,9 +1,9 @@
-"""The §4.6 ``status --json`` envelope — the stable merge-gate handoff contract.
+"""The §4.5 ``status --json`` envelope — the stable merge-gate handoff contract.
 
 :func:`build_status` assembles the envelope from the in-memory :class:`PRGroomingState`
 plus the derived §4.4 :class:`HumanReview` block. The four ``merge_gates`` bools and
 ``auto_merge_eligible`` are derived **per-query** and NEVER persisted — a future
-merge-gate (``gmxo`` / ``td39``) consumes this shape. Per §4.6's stability commitment:
+merge-gate (``gmxo`` / ``td39``) consumes this shape. Per §4.5's stability commitment:
 adding fields is non-breaking; renaming or removing a field is breaking and requires a
 version-bumped envelope.
 """
@@ -27,7 +27,7 @@ def _last_error_clear(state: PRGroomingState) -> bool:
 
 
 def _no_blocker_items(state: PRGroomingState) -> bool:
-    # §4.6 no_blocker_items screens on the SAME set the §4.1 quiescence predicate
+    # §4.5 no_blocker_items screens on the SAME set the §4.1 quiescence predicate
     # uses (BLOCKER_DISPOSITIONS) — one source of truth, never a parallel notion.
     return not any(
         item.disposition is not None and item.disposition.kind in BLOCKER_DISPOSITIONS
@@ -87,7 +87,7 @@ def _reviewers(state: PRGroomingState) -> list[JsonObj]:
 
 
 def build_status(state: PRGroomingState, human_review: HumanReview) -> JsonObj:
-    """Build the §4.6 ``status --json`` envelope (pure; never persists).
+    """Build the §4.5 ``status --json`` envelope (pure; never persists).
 
     ``auto_merge_eligible`` is the AND of the four ``merge_gates`` bools, each derived
     from current state + the live-derived human-review block.

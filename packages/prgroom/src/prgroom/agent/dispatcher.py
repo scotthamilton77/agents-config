@@ -134,7 +134,7 @@ class AllProvidersFailedError(PrgroomError):
     """
 
     def __init__(self, *, detail: str) -> None:
-        # §3.7 pins RUNTIME_AGENT_UNAVAILABLE to RUNTIME_TRANSIENT (exit 75): the
+        # §3.6 pins RUNTIME_AGENT_UNAVAILABLE to RUNTIME_TRANSIENT (exit 75): the
         # scheduler retries on the next cadence, preserving §3.6 restart-safety for
         # the un-dispositioned items. A terminal tier would human-gate and break it.
         super().__init__(

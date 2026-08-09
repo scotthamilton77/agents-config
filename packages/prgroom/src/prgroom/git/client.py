@@ -92,7 +92,7 @@ def _transient(detail: str) -> PrgroomError:
 
 
 def _classify_git_failure(stderr: str) -> PrgroomError:
-    """Map a failed ``git`` invocation to its registry error (§3.6/§3.7)."""
+    """Map a failed ``git`` invocation to its registry error (§3.6/§3.6)."""
     if any(marker in stderr for marker in _PUSH_REJECTED_MARKERS):
         return PrgroomError(
             tier=Tier.RUNTIME_TERMINAL_USER,

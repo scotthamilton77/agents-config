@@ -101,7 +101,7 @@ def test_rest_with_fields_passes_each_as_field_flag() -> None:
 
 
 def test_add_label_posts_labels_array_field(ref: PRRef) -> None:
-    # §4.7: the human-review auto-label add. POSTs to the issue's labels collection
+    # §4.6: the human-review auto-label add. POSTs to the issue's labels collection
     # with gh's array placeholder syntax (`labels[]=<name>`), which the server treats
     # idempotently — a label already present is a no-op, never an error.
     runner = RecordedRunner([_ok('[{"name": "human-review-required"}]')])

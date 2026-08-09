@@ -1,4 +1,4 @@
-"""Tests for the failure-tier model and structured-error registry (§3.3, §3.6, §3.7).
+"""Tests for the failure-tier model and structured-error registry (§3.3, §3.6, §3.6).
 
 These pin *coded decisions*: the tier -> sysexits exit-code mapping, the
 signal-aware cancellation code, and the 4-line ``what/why/how`` stderr contract
@@ -112,7 +112,7 @@ def test_no_work_precondition_codes_get_no_work_tier() -> None:
 
 
 def test_no_auth_despite_no_substring_is_user_error_not_no_work() -> None:
-    # §3.7: PRECONDITION_NO_AUTH has the NO_ substring but is a user error.
+    # §3.6: PRECONDITION_NO_AUTH has the NO_ substring but is a user error.
     assert PreconditionError(ErrorCode.PRECONDITION_NO_AUTH).tier == Tier.PRECONDITION_USER_ERROR
 
 
@@ -171,7 +171,7 @@ def test_pr_review_exhausted_registry_speaks_retry_budget_vocabulary() -> None:
 
 @pytest.mark.parametrize("absent", ["STATE_LOCK_STALE", "NOTICE_LOCK_STALE_CLEANED"])
 def test_removed_lock_codes_are_not_in_the_registry(absent: str) -> None:
-    # §3.7: these have no place under the flock(2) mechanism (kernel-released on
+    # §3.6: these have no place under the flock(2) mechanism (kernel-released on
     # death). Their presence would signal a regression to an fcntl-style protocol.
     assert absent not in ErrorCode.__members__
 

@@ -464,7 +464,7 @@ def _execute_step(step: VerbStep, ctx: RunContext) -> None:
 
 
 def _flush_terminal_signals(ctx: RunContext) -> None:
-    """Fire both terminal-signal hooks (§3.3, §4.7); each is idempotent + best-effort."""
+    """Fire both terminal-signal hooks (§3.3, §4.6); each is idempotent + best-effort."""
     escalate_if_needed(ctx.state, sink=ctx.sink, store=ctx.store, ref=ctx.ref)
     request_human_review_if_needed(
         ctx.state,

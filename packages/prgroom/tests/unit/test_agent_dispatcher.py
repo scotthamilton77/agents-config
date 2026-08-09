@@ -448,7 +448,7 @@ def test_all_providers_fail_raises_caller_mappable_error() -> None:
 
 
 def test_all_providers_fail_is_transient_exit_75() -> None:
-    # §3.7 registry pins RUNTIME_AGENT_UNAVAILABLE to RUNTIME_TRANSIENT (exit 75):
+    # §3.6 registry pins RUNTIME_AGENT_UNAVAILABLE to RUNTIME_TRANSIENT (exit 75):
     # the scheduler retries on the next cadence, preserving restart-safety for the
     # un-dispositioned items. A terminal tier (77) would human-gate and break that.
     runner = FakeAgentRunner([BinaryMissing(), TimesOut()])

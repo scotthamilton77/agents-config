@@ -3,7 +3,7 @@
 Persists one PR's state as JSON at ``$XDG_STATE_HOME/prgroom/<slug>.json``
 (fallback ``~/.local/state/prgroom/``). Concurrency is ``fcntl.flock(LOCK_EX)``
 on a sidecar lock file (kernel-released on process death, so there is no
-stale-lock code path — §3.7). Atomicity is a tempfile + ``os.replace`` on the
+stale-lock code path — §3.6). Atomicity is a tempfile + ``os.replace`` on the
 same filesystem, so a reader always sees either the complete prior file or the
 complete new file. Structurally satisfies the
 :class:`~prgroom.prsession.store.Store` Protocol.
@@ -126,7 +126,7 @@ class FileStore:
             raise StateCorruptError(f"{path}: {exc}") from exc  # noqa: TRY003  # single call-site; message names the offending file
         if not isinstance(payload, dict):
             # Valid JSON whose root is not an object ([], "text", 42) — a parse
-            # failure per §3.7, caught before any key access can raise raw.
+            # failure per §3.6, caught before any key access can raise raw.
             raise StateCorruptError(  # noqa: TRY003  # single call-site; names the file + root type
                 f"{path}: state root must be a JSON object, got {type(payload).__name__}"
             )
@@ -136,7 +136,7 @@ class FileStore:
         try:
             return PRGroomingState.from_dict(payload)
         except (AttributeError, KeyError, TypeError, ValueError) as exc:
-            # Valid JSON whose shape from_dict rejects is a parse failure per §3.7:
+            # Valid JSON whose shape from_dict rejects is a parse failure per §3.6:
             # a pre-rename key set (KeyError), a wrongly-typed scalar (ValueError/
             # TypeError), or a nested field of the wrong container type — e.g.
             # "quiescence": [] — whose .get/.items access raises AttributeError.
@@ -150,7 +150,7 @@ class FileStore:
         the file byte-identical), then re-parse and return the upgraded payload.
         A raising migrator maps to :class:`StateCorruptError` (its registry
         ``how`` — move aside, rebuild — fits a failed migration). No migrator:
-        :class:`SchemaUnknownError` (the §3.7 ``STATE_SCHEMA_UNKNOWN`` path).
+        :class:`SchemaUnknownError` (the §3.6 ``STATE_SCHEMA_UNKNOWN`` path).
 
         NOTE for the status/locking beads: this rewrites the file in place, so
         ``read`` is no longer side-effect-free once a migrator is registered. The

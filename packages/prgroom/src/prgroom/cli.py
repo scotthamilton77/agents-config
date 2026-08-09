@@ -555,14 +555,14 @@ def wait(
 def status(
     ctx: typer.Context,
     pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
-    json_out: bool = typer.Option(False, "--json", help="Emit the §4.6 status envelope as JSON."),
+    json_out: bool = typer.Option(False, "--json", help="Emit the §4.5 status envelope as JSON."),
     locked: bool = typer.Option(
         False,
         "--locked",
         help="Acquire the PR lock for a strictly-consistent read (exit 75 under contention).",
     ),
 ) -> None:
-    """Print current grooming state + the §4.6 merge-gate envelope (read-only).
+    """Print current grooming state + the §4.5 merge-gate envelope (read-only).
 
     The §3.3 carve-out: the default path is LOCK-FREE — a single ``store.read`` that
     may observe a stale-but-internally-consistent snapshot under a concurrent write,
@@ -659,7 +659,7 @@ def run(
 
 
 def _render_status(envelope: dict[str, object], *, json_out: bool) -> None:
-    """Render the §4.6 status envelope as JSON (``--json``) or a human summary.
+    """Render the §4.5 status envelope as JSON (``--json``) or a human summary.
 
     ``--json`` emits the stable merge-gate handoff contract verbatim (indented). The
     default human view surfaces the operator-relevant fields — phase, CI, items,
