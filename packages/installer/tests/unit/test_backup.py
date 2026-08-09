@@ -99,29 +99,40 @@ def test_back_up_retention_is_scoped_per_target_within_a_shared_backup_dir(
 ) -> None:
     """
     Given two different targets whose backups route to the same sibling
-    <namespace>-backup/ directory, with one target's backups created in
-    REVERSE timestamp order (newest first, oldest last)
-    When one target accumulates more backups than the retention count
-    Then only that target's own excess backups are pruned, by timestamp
-    VALUE rather than creation order — the other target's lone backup is
-    untouched.
+    <namespace>-backup/ directory — quiet's lone backup (at the globally
+    OLDEST timestamp used anywhere in this test) already exists before busy
+    accumulates its own backups in REVERSE timestamp order (newest first,
+    oldest last)
+    When busy is pruned repeatedly as it accumulates more backups than the
+    retention count
+    Then only busy's own excess backups are pruned, by timestamp VALUE
+    rather than creation order — quiet's backup, present throughout every
+    one of busy's prune cycles and old enough to be an easy target, is
+    never touched.
 
     Pins that pruning is keyed on the backed-up file's own name, not on
     everything sharing its backup directory (a routed backup dir like
     skills-backup/ holds many unrelated skills' backups side by side).
-    Reverse-order creation is deliberate, matching the in-place retention
-    test above: it distinguishes sorting by the filename-embedded timestamp
-    value (correct) from sorting by creation order (wrong).
+    Quiet's backup is created FIRST specifically so it is exposed to every
+    one of busy's prune cycles, not created only after busy has finished
+    pruning — an implementation that scoped pruning to the shared directory
+    as a whole, rather than to the target's own name, would otherwise have
+    nothing else in the directory to wrongly sweep up when it ran. Giving
+    quiet the globally oldest timestamp makes it the first casualty such an
+    unscoped implementation would take. Reverse-order creation of busy's own
+    backups is separately deliberate: it distinguishes sorting by the
+    filename-embedded timestamp value (correct) from sorting by creation
+    order (wrong).
     """
     busy = tmp_path / ".claude" / "skills" / "busy"
     quiet = tmp_path / ".claude" / "skills" / "quiet"
     busy.parent.mkdir(parents=True)
     quiet.write_text("quiet-v0")
+    back_up(quiet, _TIMESTAMPS[0])
 
     for ts in reversed(_TIMESTAMPS):
         busy.write_text(f"busy-{ts}")
         back_up(busy, ts)
-    back_up(quiet, _TIMESTAMPS[0])
 
     backup_dir = tmp_path / ".claude" / "skills-backup"
     busy_survivors = sorted(p.name for p in backup_dir.glob("busy.backup-*"))
