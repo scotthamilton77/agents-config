@@ -68,17 +68,24 @@ def test_back_up_with_valid_timestamp_writes_recoverable_copy(tmp_path: Path) ->
 
 def test_back_up_prunes_in_place_backups_beyond_retention_count(tmp_path: Path) -> None:
     """
-    Given a target whose backups land in-place (parent not a BACKUP namespace)
+    Given a target whose backups land in-place (parent not a BACKUP namespace),
+    created in REVERSE timestamp order (newest first, oldest last)
     When back_up is called more times than BACKUP_RETENTION_COUNT
-    Then only the newest BACKUP_RETENTION_COUNT backups survive.
+    Then only the backups with the newest BACKUP_RETENTION_COUNT timestamp
+    VALUES survive — regardless of the order they were created in.
 
     Pins the retention policy on the in-place branch — a flat instruction file
     like AGENTS.md must not accumulate one dated sibling per install forever.
+    Creating in reverse order is deliberate: it distinguishes sorting by the
+    filename-embedded timestamp value (correct) from sorting by directory
+    iteration or creation order (wrong) — under creation-order sorting, this
+    exact input would keep the OLDEST timestamps and discard the newest,
+    the opposite of what's asserted below.
     """
     target = tmp_path / "AGENTS.md"
     target.write_text("v0")
 
-    for ts in _TIMESTAMPS:
+    for ts in reversed(_TIMESTAMPS):
         target.write_text(f"content-{ts}")
         back_up(target, ts)
 
@@ -260,11 +267,10 @@ def test_existing_backups_returns_empty_for_a_backup_dir_that_does_not_exist_yet
     Then it returns an empty list rather than raising.
 
     ``back_up`` always creates the backup dir (``mkdir``) before calling this,
-    so the public API never exercises this branch on its own — but the helper
-    is documented and used standalone by ``_prune_old_backups``, and must
-    match the previous glob-based implementation's behaviour on a missing
-    directory (``Path.glob`` never raised there either); ``Path.iterdir``
-    would raise ``FileNotFoundError`` without this guard.
+    so the public API never exercises this branch on its own — but
+    ``_existing_backups`` uses ``Path.iterdir``, which raises
+    ``FileNotFoundError`` on a directory that doesn't exist, so this guard is
+    needed to keep the helper safe to call standalone.
     """
     target = tmp_path / "AGENTS.md"
     missing_backup_dir = tmp_path / "does-not-exist"
