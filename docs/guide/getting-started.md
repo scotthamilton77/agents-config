@@ -16,14 +16,16 @@ as prerequisites are now optional:
   tracker. The `work` CLI, which ships from its own repository and is not
   installed by this one, is a facade over `bd`; every substantive `work` verb
   refuses with `E_NO_WORKSPACE` until `bd` is installed and initialized. Five
-  deployed skills reach for `work`, and each degrades gracefully without a
-  tracker: `to-tickets` and `wayfinder` fall back to a local markdown file,
-  `where-does-this-fit` falls back to reading whatever tracker is actually in
-  use or asking you directly, `triaging-discovered-work` falls back to a dated
-  backlog-file entry, and `prototype` falls back to recording its verdict in
-  the commit message. Nothing else in the installed instruction surface
-  reaches for `work`. Skip the tracker if you don't want one; see
-  [Configuration](./configuration.md) for setup once you do.
+  deployed skills reach for `work`, four of them shipping to every detected
+  tool (`to-tickets`, `where-does-this-fit`, `triaging-discovered-work`,
+  `prototype`) and one Claude Code only (`wayfinder`). Each degrades
+  gracefully without a tracker: `to-tickets` and `wayfinder` fall back to a
+  local markdown file, `where-does-this-fit` falls back to reading whatever
+  tracker is actually in use or asking you directly, `triaging-discovered-work`
+  falls back to a dated backlog-file entry, and `prototype` falls back to
+  recording its verdict in the commit message. Nothing else in the installed
+  instruction surface reaches for `work`. Skip the tracker if you don't want
+  one; see [Configuration](./configuration.md) for setup once you do.
 - **[obra/superpowers](https://github.com/obra/superpowers)** — no longer a
   dependency. The rules and skills that referenced its process skills have been
   retired; nothing that installs today calls into it.
@@ -78,7 +80,7 @@ The installer also puts this repo's CLIs on your PATH via `uv tool install`
 `executor` and `gitclean`; `CLI_PACKAGES` in
 `packages/installer/src/installer/core/clis.py` is the authoritative list. Of
 those four, `gitclean` is the one the installed skills actually reach for.
-`work`, the separate tracker CLI five other skills reach for (see above),
+`work`, the separate tracker CLI that five other skills reach for (see above),
 ships and installs independently of this list.
 
 ## Verify the install

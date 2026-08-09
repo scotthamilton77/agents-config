@@ -151,7 +151,8 @@ deferred. It needs no `bd` workspace to run and touches no backend, so you can
 run it before or independently of `bd init`.
 
 Five deployed skills are the reason to do any of this, and all five reach for
-`work` verbs directly:
+`work` verbs directly. Four ship to every detected tool; `wayfinder` is
+Claude Code only:
 
 - `to-tickets` and `wayfinder` fall back to writing their tickets or decision
   map as a local markdown file instead of tracker items.
