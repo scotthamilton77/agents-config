@@ -188,9 +188,9 @@ def poll(
     malformed ref, lock contention, or a gh failure renders through
     :func:`handle_cli_error` with the tier's exit code — never a raw traceback.
 
-    Accepts ``owner/repo#n`` or a full PR URL. A bare ``<n>`` is NOT yet resolvable
-    (it needs a current-repo context seam — git remote → owner/repo — deferred to a
-    later bead), so ``PRRef.parse`` is called without a ``default_repo`` here.
+    Accepts ``owner/repo#n`` or a full PR URL. A bare ``<n>`` is not yet resolvable
+    (it would need a current-repo context seam — git remote → owner/repo — that
+    does not exist), so ``PRRef.parse`` is called without a ``default_repo`` here.
     """
     store: Store = ctx.obj
     try:

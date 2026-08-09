@@ -8,7 +8,7 @@ both humans and agents can parse a precondition failure and act on it.
 The tier determines the process exit code (a serialization contract a scheduler
 reads), whether the phase transitions to ``human-gated``, and whether an
 ``EscalationSink`` event is filed. This module owns only the first concern; the
-phase/escalation effects live in the lifecycle (later beads).
+phase/escalation effects live in the lifecycle.
 """
 
 from __future__ import annotations

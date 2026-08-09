@@ -56,10 +56,10 @@ The `monitor-pr` skill that used to drive the interactive pattern was retired, a
 - **CLI framework:** `typer` (type-hint-driven, pairs with `mypy --strict`).
 - **Placement:** `packages/prgroom/`, one of the packages under `packages/`.
 - **Distribution:** there is no compiled binary and no artifact-transport step. The project installer owns the install — its CLI-deploy stage runs `uv tool install` against `packages/prgroom/`, which places the `prgroom` console-script on `PATH` and records it in the install receipt. The version lives in `packages/prgroom/pyproject.toml` and ships with the repo; there is no independent release cadence, no tags, and no GitHub releases.
-- **Agent boundary:** synchronous subprocess shell-out; each invocation is fresh context. The runtime is designed to be chosen per-contract in TOML config — the contract is the API, the runtime is swappable — but no verb resolves a per-repo `.prgroom.toml` path yet (§5), so today every invocation runs the shipped default chain.
+- **Agent boundary:** synchronous subprocess shell-out; each invocation is fresh context. The runtime is designed to be chosen per-contract in TOML config — the contract is the API, the runtime is swappable — but no verb resolves a per-repo `.prgroom.toml` path yet (§§4.3/6.3), so today every invocation runs the shipped default chain.
 - **Scope:** equivalent of `wait-for-pr-comments` + `reply-and-resolve-pr-threads`; excludes create-PR, merge, cleanup, and bead-lifecycle helpers.
 
-**Precondition gating (cross-cutting):** Every verb checks preconditions before doing work, across three tiers — *self-healable* (the CLI can produce the missing input by running deterministic prework, then re-evaluates; this is the **default**, e.g. `fix` with no state auto-runs `poll` and `cluster`), *user-error* (invalid args, no PR — always terminal, non-zero exit), and *terminal-no-work* (preconditions met but nothing to do — exit `0` as success). `--no-prework` makes self-healable failures terminal instead. Non-self-healable failures emit a structured stderr error (what / why / how / machine-readable code) while stdout stays reserved for verb output so agents can parse each independently. The error-code registry is owned by §3.6.
+**Precondition gating (cross-cutting):** Every verb checks preconditions before doing work. Direct invocation is terminal on a missing precondition today — e.g. `fix` with no state exits `PRECONDITION_NO_STATE` (exit 2) rather than auto-running `poll`/`cluster` — and *terminal-no-work* (preconditions met but nothing to do — exit `0` as success) is the other built outcome. A third tier, *self-healable* (a verb auto-running its own missing prework, gated by a per-verb `--no-prework` flag), is design-of-record only: no direct verb registers that flag, and `run`'s own `--no-prework` is an accepted-but-no-op parity stub — the aggregate always orchestrates its own prework by running the whole pipeline (§3.3) rather than self-healing a single verb's precondition. Non-terminal-no-work failures emit a structured stderr error (what / why / how / machine-readable code) while stdout stays reserved for verb output so agents can parse each independently. The error-code registry is owned by §3.6.
 
 ### MVP verb set
 
@@ -248,7 +248,7 @@ The transition matrix in §3.2 carries the same edges in table form.
 
 ### 3.2 Phase × verb transition matrix
 
-Each cell gives the next phase and side effects for `(verb, current phase)` on **direct** invocation. Default is self-heal (`PRECONDITION_SELFHEAL`): a verb missing its prework auto-runs it and re-evaluates; **precondition fail** cells show the `--no-prework` terminal outcome; **no-op** means exit 0, no state change. `run` (§3.3) orchestrates prework itself and does not exercise this self-heal path.
+Each cell gives the next phase and side effects for `(verb, current phase)` on **direct** invocation. Self-heal (a verb auto-running its own missing prework, gated by `--no-prework`) is design-of-record only (§1) — no direct verb has that flag today, so every precondition cell below is the actual, unconditional outcome, not a `--no-prework`-gated one; **no-op** means exit 0, no state change. `run` (§3.3) orchestrates the whole pipeline itself and never exercises these per-verb preconditions.
 
 The matrix covers the 11 per-PR verbs. The cross-PR `sweep` aggregator iterates open PRs serially and invokes `run` per PR with isolated per-PR failures; it has no phase semantics of its own.
 
@@ -403,7 +403,7 @@ The wait exits on exactly these triggers:
 
 ### 4.3 Configuration surface
 
-`PrgroomConfig.load` (`config.py`) resolves each knob below with precedence **CLI-flag parameter > env var > per-repo `.prgroom.toml` `[quiescence]` table > built-in default** (§3.5) — implemented and unit-tested at the loader. Durations parse `30s`/`10m`/`1h30m` syntax. (The `[verify]` table is owned by §6.3, which notes the same gap below.)
+`PrgroomConfig.load` (`config.py`) resolves each knob below with precedence **CLI-flag parameter > env var > per-repo `.prgroom.toml` `[quiescence]` table > built-in default** — implemented and unit-tested at the loader. Durations parse `30s`/`10m`/`1h30m` syntax. (The `[verify]` table is owned by §6.3, which notes the same gap below.)
 
 **Not yet wired to the CLI:** no `prgroom` verb exposes a flag for any of the five settings below, and no verb passes `load()` a `repo_config` path — every production call site in `cli.py` takes the `None` default, so `.prgroom.toml` is never actually read outside tests. `pr_review_retries` is the one config knob with a real CLI flag today (`run --pr-review-retries`, §3.5) — a separate top-level TOML key, not part of the `[quiescence]` table below.
 
@@ -649,7 +649,7 @@ class GateStrength(StrEnum):
 
 `Disposition.gate` is typed/validated against `GateStrength`; a `FIXED` item whose `gate` is absent or not a valid `GateStrength` is a `CONTRACT_FIX_AUDIT_FAILED` (the item flips to `FAILED`) — this makes `recommended_gate` load-bearing.
 
-The verify verdict is persisted at **batch level** on `PRGroomingState` (not per-item — `FAILED` drops the gate field, and verification is whole-branch):
+The verify verdict would be persisted at **batch level** on `PRGroomingState` (not per-item — `FAILED` drops the gate field, and verification is whole-branch):
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -661,7 +661,7 @@ class VerifyVerdict:
     decided_at: datetime   # UTC
 ```
 
-Added as `verify: VerifyVerdict | None` on `PRGroomingState` — **additive, omit-when-`None`**, so old state files load `None` and `schema_version` stays `1` (parallels the `pending_memory` precedent). `prgroom status --json` gains an additive `verify` block (`result` / `tier` / `retries_used` / `last_error`); `last_error` continues to surface the exhaustion code at top level too.
+Design-of-record only: none of this is built. `PRGroomingState` (`prsession/state.py`) has no `verify` field and `prgroom status --json` has no `verify` block. If built, the addition would follow the additive, omit-when-`None` pattern the built `pending_memory` field already uses — `verify: VerifyVerdict | None` on `PRGroomingState`, an additive `verify` block (`result` / `tier` / `retries_used` / `last_error`) on the status envelope, `schema_version` unchanged — but today `last_error` is the only place an exhaustion code surfaces.
 
 ### 6.3 Configuration surface
 
