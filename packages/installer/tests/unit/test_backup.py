@@ -4,9 +4,9 @@ Each test pins a coded decision in ``back_up`` / ``valid_timestamp``, the shared
 path-aware backup placement used by both sync and prune. The focus here is the
 safe-by-default validation boundary: ``back_up`` rejects a malformed timestamp
 itself, so a caller cannot interpolate a path-traversing value into the backup
-path by forgetting to pre-validate. The retention tests below pin the second
-coded decision: repeated backups of the same target do not accumulate without
-bound, and the newest backup of a target is never the one deleted.
+path by forgetting to pre-validate. The retention tests below pin retention
+itself: repeated backups of the same target do not accumulate without bound,
+and the newest backup of a target is never the one deleted.
 """
 
 from __future__ import annotations
@@ -72,9 +72,8 @@ def test_back_up_prunes_in_place_backups_beyond_retention_count(tmp_path: Path) 
     When back_up is called more times than BACKUP_RETENTION_COUNT
     Then only the newest BACKUP_RETENTION_COUNT backups survive.
 
-    Pins the retention policy on the in-place branch — an instruction file like
-    a flat AGENTS.md, the exact shape the deployed-surface finding named, must
-    not accumulate one dated sibling per install forever.
+    Pins the retention policy on the in-place branch — a flat instruction file
+    like AGENTS.md must not accumulate one dated sibling per install forever.
     """
     target = tmp_path / "AGENTS.md"
     target.write_text("v0")
@@ -119,20 +118,62 @@ def test_back_up_retention_is_scoped_per_target_within_a_shared_backup_dir(
     assert (backup_dir / f"quiet.backup-{_TIMESTAMPS[0]}").exists()
 
 
+def test_back_up_treats_glob_metacharacters_in_a_target_name_literally(
+    tmp_path: Path,
+) -> None:
+    """
+    Given a target whose own name contains a glob metacharacter (``*``),
+    sharing a backup directory with an unrelated target whose name that
+    wildcard would incorrectly also match
+    When the metacharacter-bearing target's backups are pruned
+    Then only its own literal name is matched — the unrelated target's
+    backup, which an unescaped ``*`` wildcard would sweep in as a false
+    match, survives untouched.
+
+    Not a hypothetical input: this repo ships a real file named
+    ``*.instructions.md`` (`.github/instructions/`). ``_existing_backups``
+    must treat ``target.name`` as a literal string, not a pattern.
+    """
+    weird = tmp_path / ".claude" / "skills" / "note*"
+    decoy = tmp_path / ".claude" / "skills" / "noteX"
+    weird.parent.mkdir(parents=True)
+    # An unescaped "note*.backup-*" pattern also matches "noteX.backup-<ts>",
+    # so the decoy must exist *before* weird's retention-triggering loop runs
+    # for the false match to have anything to sweep up.
+    decoy.write_text("decoy-v0")
+    back_up(decoy, _TIMESTAMPS[0])
+
+    for ts in _TIMESTAMPS[1:]:
+        weird.write_text(f"weird-{ts}")
+        back_up(weird, ts)
+
+    backup_dir = tmp_path / ".claude" / "skills-backup"
+    all_names = sorted(p.name for p in backup_dir.iterdir())
+    weird_survivors = [n for n in all_names if n.startswith("note*.backup-")]
+    expected = [f"note*.backup-{ts}" for ts in _TIMESTAMPS[1:][-BACKUP_RETENTION_COUNT:]]
+    assert weird_survivors == expected
+    assert f"noteX.backup-{_TIMESTAMPS[0]}" in all_names
+
+
+@pytest.mark.parametrize("retention_count", [0, -1])
 def test_back_up_never_deletes_the_only_backup_even_with_non_positive_retention(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, retention_count: int
 ) -> None:
     """
     Given a target with exactly one backup and a misconfigured non-positive
-    retention count
+    retention count (zero, or negative)
     When back_up is called again for that same target
     Then the newest backup still survives — the floor of 1 holds regardless of
     the configured count.
 
-    Pins the safety floor: a target must never be left with zero recoverable
-    backups, even if BACKUP_RETENTION_COUNT were set to 0 or negative.
+    Pins the safety floor (``max(keep, 1)`` in ``_prune_old_backups``): a
+    target must never be left with zero recoverable backups, whether
+    ``BACKUP_RETENTION_COUNT`` were misconfigured to exactly 0 or to something
+    negative. Without the floor either value would prune every existing
+    backup (``len(existing) <= keep`` is false for both, so the loop would
+    run and take everything), so both are covered here rather than only 0.
     """
-    monkeypatch.setattr(backup_module, "BACKUP_RETENTION_COUNT", 0)
+    monkeypatch.setattr(backup_module, "BACKUP_RETENTION_COUNT", retention_count)
     target = tmp_path / "AGENTS.md"
     target.write_text("v0")
 
@@ -143,6 +184,16 @@ def test_back_up_never_deletes_the_only_backup_even_with_non_positive_retention(
     survivors = list(tmp_path.glob("AGENTS.md.backup-*"))
     assert survivors == [tmp_path / f"AGENTS.md.backup-{_TIMESTAMPS[1]}"]
     assert survivors[0].read_text() == "v1"
+
+
+def test_backup_retention_count_is_5() -> None:
+    """
+    Pins the retention policy's actual number. The other retention tests
+    derive their expected survivor counts from ``BACKUP_RETENTION_COUNT``
+    itself, so a change to that constant would pass them silently; this test
+    is the one place a change to the number is itself a visible pin.
+    """
+    assert BACKUP_RETENTION_COUNT == 5
 
 
 def test_back_up_prunes_stale_directory_backups_recursively(tmp_path: Path) -> None:

@@ -21,6 +21,7 @@ never left without a recoverable copy.
 
 from __future__ import annotations
 
+import glob
 import re
 import shutil
 from datetime import datetime
@@ -39,10 +40,8 @@ _TIMESTAMP_RE = re.compile(r"^\d{8}-\d{6}$")
 
 # Newest backups kept per target; every older one is deleted the moment a new
 # backup is written for that same target. Arbitrary but generous: enough
-# history to recover from a bad install without the unbounded per-file
-# accumulation the deployed surface showed (some instruction files had
-# collected dozens of dated siblings). Stated for operators in
-# docs/guide/getting-started.md.
+# history to recover from a bad install without unbounded per-file
+# accumulation. Stated for operators in docs/guide/getting-started.md.
 BACKUP_RETENTION_COUNT = 5
 
 
@@ -78,8 +77,16 @@ def _existing_backups(target: Path, backup_dir: Path) -> list[Path]:
     landed in-place or in a routed ``<namespace>-backup/`` dir — whichever
     ``backup_dir`` the caller resolved. The ``YYYYMMDD-HHMMSS`` suffix sorts
     lexicographically in chronological order, so a plain name sort is enough.
+
+    ``target.name`` is escaped (``glob.escape``) before it becomes part of the
+    glob pattern: a target whose own name carries a glob metacharacter (``*``,
+    ``?``, ``[...]``) would otherwise have that character interpreted as a
+    wildcard, matching — and in ``_prune_old_backups``, deleting — a different
+    target's backups sharing the same ``backup_dir``. Only the trailing
+    ``.backup-*`` suffix is a deliberate wildcard, over the timestamp.
     """
-    return sorted(backup_dir.glob(f"{target.name}.backup-*"))
+    pattern = f"{glob.escape(target.name)}.backup-*"
+    return sorted(backup_dir.glob(pattern))
 
 
 def _prune_old_backups(target: Path, backup_dir: Path, *, keep: int) -> None:
