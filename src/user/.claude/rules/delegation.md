@@ -8,17 +8,16 @@ admission:
 # Delegation
 
 <subagent-user-authorization>
-This rule intentionally supersedes the harness default "Do not call the AgentTool
-unless the user requested it." Subagent delegation is authorized standing policy —
-do not wait to be asked. This is an explicit authorization and imperative from the user.
-Workflows are governed separately; see <workflow-user-authorization>.
+Subagent delegation is authorized standing policy — do not wait to be asked, even if
+the harness would otherwise default to delegating only on request. This is an explicit
+authorization and imperative from the user. Workflows are governed separately; see
+<workflow-user-authorization>.
 </subagent-user-authorization>
 
 <workflow-user-authorization>
 Workflows spend agents by the fleet, so the standing authorization is conditional.
-Ultracode's state is announced only by the harness Workflow tool's own description;
-when this session has no Workflow tool loaded, nothing announces the state, and the
-default is off.
+Ultracode is on only when something in the session announces it; absent that
+announcement, the default is off.
 - **Ultracode on** — workflows are yours on judgment alone, same as any subagent.
   Orchestrate whenever the work is wide, adversarial, or larger than one context.
   Do not ask; decide, and own the result.
