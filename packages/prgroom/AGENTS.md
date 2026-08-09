@@ -58,7 +58,7 @@ but the full gate must pass before push.
   (`PrgroomError` tiers, precondition errors with a structured what/why/how
   stderr block, `GhNotFoundError` as a typed-but-not-fatal 404 signal).
   Exit codes follow `sysexits`.
-- Layout: `cli.py` (the 12 verbs), `lifecycle/` (the run-loop, verb-error
+- Layout: `cli.py` (the 11 verbs), `lifecycle/` (the run-loop, verb-error
   policy, quiescence), `prsession/` (state store + PR ref + memory), `gh/` /
   `git/` (Protocol adapters + fakes), `agent/` (cluster/fix dispatch), `config.py`,
   `errors.py`, `escalation.py`, `proc.py` (the single subprocess seam).
@@ -66,9 +66,10 @@ but the full gate must pass before push.
 ## Verbs
 
 `poll`, `cluster`, `fix`, `push`, `rereview`, `reply`, `resolve`,
-`resolve-escalated`, `wait`, `status`, `run`, `sweep`. `run` is the aggregate
-loop; `status` emits the merge-gate envelope. **`sweep` (cross-PR autonomous
-mode) is still a stub** — it exits the skeleton code (69), not implemented.
+`resolve-escalated`, `wait`, `status`, `run`. `run` is the aggregate loop;
+`status` emits the merge-gate envelope. `sweep` (cross-PR autonomous mode) is
+design-of-record only (charter D13 forbids building it) and is not a
+registered command.
 
 ## Design-only subsystem — do not treat as built
 
@@ -119,7 +120,7 @@ must do what with it** — not by severity, not by module:
 | Channel | Job | Writers | Reader |
 |---|---|---|---|
 | `usage.jsonl` (`append_usage`) | Durable, machine-readable, **per-attempt** dispatch telemetry: what ran, how long, what outcome | the dispatcher's `usage_hook` | post-hoc analysis; cost/routing tuning (sibling `spend.jsonl` holds per-**dispatch** cost) |
-| `EscalationSink` (`escalation.py`) | **Human-judgment events**: something a human or external watcher must eventually act on — blocker dispositions, chain exhaustion, audit violations, lifecycle gates | `agent/fix.py`, `lifecycle/escalation.py` | operator / monitor-pr / future `bd` adapter |
+| `EscalationSink` (`escalation.py`) | **Human-judgment events**: something a human or external watcher must eventually act on — blocker dispositions, chain exhaustion, audit violations, lifecycle gates | `agent/fix.py`, `lifecycle/escalation.py` | operator (stderr — the only sink `_build_sink` wires today; the design doc's §5 covers the unbuilt file/bd adapters) |
 | stdlib logging → stderr | **Operational diagnostics**: noteworthy but requiring no tracked action — config-key warnings, best-effort bridge failures, partial-fallback events | module-level `getLogger(__name__)`; root config in `main()` only | whoever watches the process (human or driving agent) |
 | `warn` callbacks (`lifecycle/warn.py`) | Grandfathered injected-callable variant of the logging channel, used by lifecycle verbs as a test seam | existing lifecycle code only | same as logging |
 

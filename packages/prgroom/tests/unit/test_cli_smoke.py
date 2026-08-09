@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from typer.testing import CliRunner
 
-from prgroom.cli import SKELETON_EXIT_CODE, app
+from prgroom.cli import app
 
 runner = CliRunner()
 
@@ -27,7 +27,6 @@ MVP_VERBS = [
     "wait",
     "status",
     "run",
-    "sweep",
 ]
 
 
@@ -48,14 +47,11 @@ def test_each_verb_has_its_own_help(verb: str) -> None:
     assert result.exit_code == 0
 
 
-# The MVP verbs are now all wired for real except ``sweep``: ``poll`` (8.9a),
-# ``status`` (8.11), ``cluster`` + ``fix`` (8.15), ``push`` + ``rereview`` + ``resolve``
-# (8.16), ``run`` + ``wait`` (8.10), ``reply`` + ``resolve-escalated`` (8.12) — their
-# behavior is covered by the per-verb test_cli_*.py suites. ``sweep`` remains the lone
-# foundation skeleton, exercised by ``test_sweep_skeleton_exits_nonzero`` below.
+# Every MVP verb above is wired for real; behavior is covered by the per-verb
+# test_cli_*.py suites. ``sweep`` is charter D13's explicit "never build"
+# prohibition (9k9.215.6) — it is not a command and must not become discoverable.
 
 
-def test_sweep_skeleton_exits_nonzero() -> None:
-    result = runner.invoke(app, ["sweep", "octo/demo"])
-    assert result.exit_code == SKELETON_EXIT_CODE
-    assert "not yet implemented" in result.output
+def test_sweep_is_not_registered() -> None:
+    result = runner.invoke(app, ["--help"])
+    assert "sweep" not in result.output

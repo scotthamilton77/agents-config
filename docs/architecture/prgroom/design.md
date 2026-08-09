@@ -137,10 +137,9 @@ class PRGroomingState:
     human_review_label_added: bool = False
     reviewers: dict[str, ReviewerState] = field(default_factory=dict)
     items: list[ReviewItem] = field(default_factory=list)
-    pending_memory: list[RoutedMemory] = field(default_factory=list)  # durable memory queue, drained by _reply (§7.3)
-    verify: VerifyVerdict | None = None   # see §6 — the fix↔verify subsystem
     last_error: str | None = None
     lifecycle_escalation_filed: bool = False
+    pending_memory: list[RoutedMemory] = field(default_factory=list)  # durable memory queue, drained by _reply (§7.3)
 
 class PRPhase(StrEnum):
     IDLE = "idle"
@@ -230,7 +229,7 @@ No `crash_recovery` block (replaced by `phase` + `last_error` + lock semantics),
 
 ## 3. Lifecycle state machine
 
-The lifecycle is a six-phase state machine. Verbs drive transitions; `run` (§3.3) threads the whole cycle. The pipeline within an active cycle is **cluster → fix → verify → cap-guard → push → reply → resolve → rereview** — a mechanical `verify` step sits between `fix` and the cap-guard.
+The lifecycle is a six-phase state machine. Verbs drive transitions; `run` (§3.3) threads the whole cycle. The pipeline within an active cycle is **cluster → fix → cap-guard → push → reply → resolve → rereview** (§3.3); a `verify` step between `fix` and the cap-guard is design-of-record only (§3.4/§6), not built.
 
 ### 3.1 Phase state graph
 
@@ -279,17 +278,17 @@ The matrix covers the 11 per-PR verbs. The cross-PR `sweep` aggregator iterates 
 
 ### 3.3 The `run` pipeline
 
-`run` is the aggregate verb: it acquires the per-PR lock **once** and threads the lock-assuming internals in sequence (§2's transactional model) rather than re-locking per verb. From `fixes-pending` it drives one **cycle** through the pipeline:
+`run` is the aggregate verb: it acquires the per-PR lock **once** and threads the lock-assuming internals in sequence (§2's transactional model) rather than re-locking per verb. From `fixes-pending` it drives one **cycle** through the pipeline; `lifecycle/run.py::_build_pipeline` is the built order of record:
 
 ```
-cluster → fix → verify → cap-guard → push → reply → resolve → rereview
+cluster → fix → cap-guard → push → reply → resolve → rereview
 ```
 
-Each step is a `VerbStep` run in order; a step with no work no-ops (`verify` and `push` when there are no queued commits). Two pre-push steps can **refuse the push** by flipping `phase = HUMAN_GATED`: `cap-guard` (PR-review retry budget spent, §3.5) and `verify` (inner retries spent, §3.4 / §6). A post-step terminal check inspects `phase` after each step; on `human-gated` it breaks the pipeline before the remaining steps run, and the loop-top flushes the `EscalationSink` event + the `human-review-required` label (§4.6).
+Each step is a `VerbStep` run in order; a step with no work no-ops (`push` when there are no queued commits). `cap-guard` can **refuse the push** by flipping `phase = HUMAN_GATED` when the PR-review retry budget is spent (§3.5). A post-step terminal check inspects `phase` after each step; on `human-gated` it breaks the pipeline before the remaining steps run, and the loop-top flushes the `EscalationSink` event + the `human-review-required` label (§4.6). `rereview` runs **last** and guarded: only required bot reviewers needing a fresh review are re-requested, and only after a successful push.
 
-`cap-guard` runs **after** `verify` by design — the budget decision needs verify's verdict to know whether the work is even good enough to be worth pushing; a guard placed before verify would escalate (or proceed) blind. `rereview` runs **last** and guarded: only required bot reviewers needing a fresh review are re-requested, and only after a successful push.
+A `verify` step between `fix` and `cap-guard` — and the cap-guard-after-verify ordering that would imply — is design-of-record only (§3.4/§6); it is not part of the pipeline above.
 
-The cycle repeats; end-of-cycle resolution (§3.2) yields the next phase. On a terminal phase (`quiesced` / `human-gated` / `merged`) `run` returns; on `awaiting-review` it blocks in `_wait` (§4.2) until reviewer activity or quiescence breaks the wait, then loops. `lifecycle/run.py::_build_pipeline` is the built order of record.
+The cycle repeats; end-of-cycle resolution (§3.2) yields the next phase. On a terminal phase (`quiesced` / `human-gated` / `merged`) `run` returns; on `awaiting-review` it blocks in `_wait` (§4.2) until reviewer activity or quiescence breaks the wait, then loops.
 
 ### 3.4 The fix↔verify convergence loop
 
@@ -401,15 +400,17 @@ The wait exits on exactly these triggers:
 
 ### 4.3 Configuration surface
 
-Precedence: **CLI flag > env var > per-repo `.prgroom.toml` > built-in default**. Durations parse `30s`/`10m`/`1h30m` syntax. (The `[verify]` table is owned by §6.3.)
+`PrgroomConfig.load` (`config.py`) resolves each knob below with precedence **CLI-flag parameter > env var > per-repo `.prgroom.toml` `[quiescence]` table > built-in default** (§3.5) — implemented and unit-tested at the loader. Durations parse `30s`/`10m`/`1h30m` syntax. (The `[verify]` table is owned by §6.3, which notes the same gap below.)
 
-| Setting | Default | Flag | Env var | TOML key |
-|---------|---------|------|---------|----------|
-| `idle_threshold` | `10m` | `--idle-threshold` | `PRGROOM_IDLE_THRESHOLD` | `quiescence.idle_threshold` |
-| `poll_interval` | `30s` | `--poll-interval` | `PRGROOM_POLL_INTERVAL` | `quiescence.poll_interval` |
-| `review_start_timeout` | `3m` | `--review-start-timeout` | `PRGROOM_REVIEW_START_TIMEOUT` | `quiescence.review_start_timeout` |
-| `review_finish_timeout` | `15m` | `--review-finish-timeout` | `PRGROOM_REVIEW_FINISH_TIMEOUT` | `quiescence.review_finish_timeout` |
-| `auto_request_human_review` | `true` | `--auto-request-human-review[=false]` | `PRGROOM_AUTO_REQUEST_HUMAN_REVIEW` | `quiescence.auto_request_human_review` |
+**Not yet wired to the CLI:** no `prgroom` verb exposes a flag for any of the five settings below, and no verb passes `load()` a `repo_config` path — every production call site in `cli.py` takes the `None` default, so `.prgroom.toml` is never actually read outside tests. `pr_review_retries` is the one config knob with a real CLI flag today (`run --pr-review-retries`, §3.5) — a separate top-level TOML key, not part of the `[quiescence]` table below.
+
+| Setting | Default | Env var | TOML key (`[quiescence]`) |
+|---------|---------|---------|----------|
+| `idle_threshold` | `10m` | `PRGROOM_IDLE_THRESHOLD` | `idle_threshold` |
+| `poll_interval` | `30s` | `PRGROOM_POLL_INTERVAL` | `poll_interval` |
+| `review_start_timeout` | `3m` | `PRGROOM_REVIEW_START_TIMEOUT` | `review_start_timeout` |
+| `review_finish_timeout` | `15m` | `PRGROOM_REVIEW_FINISH_TIMEOUT` | `review_finish_timeout` |
+| `auto_request_human_review` | `true` | `PRGROOM_AUTO_REQUEST_HUMAN_REVIEW` | `auto_request_human_review` |
 
 ### 4.4 Human-review merge constraint (NOT a lifecycle blocker)
 
@@ -729,17 +730,16 @@ The fix contract output gains a classified **`memory`** channel (§5), each entr
 1. **Thread reply** — a CONTEXTUAL note tied to a specific review thread rides out on that thread via the existing `reply` verb. No new mechanism.
 2. **`## Decisions` block** — a CONTEXTUAL note *not* tied to a single thread (a PR-wide decision) is recorded in a prgroom-maintained `## Decisions` section via a `gh` PATCH of the PR description (an API edit, not a git commit), at the same point as `reply`.
 
-**Durability — the `pending_memory` queue.** `_fix` does not route at fix time; it resolves the declared `memory` channel into persisted `RoutedMemory` records appended to `state.pending_memory` (written atomically with the dispositions they derive from). `_reply` drains and routes them, then clears the queue. The persisted queue is what makes routing crash-safe: a cycle that ends before `_reply` — a retry-cap trip, a transient `gh` failure on push — keeps its decision memo for the next cycle instead of losing it (in-memory routing would drop the memo on every such cycle).
+**Durability — the `pending_memory` queue.** `_fix` does not route at fix time; it resolves the declared `memory` channel into persisted `RoutedMemory` records appended to `state.pending_memory` (written atomically with the dispositions they derive from). `_reply` drains and routes them, then clears the queue. The persisted queue is what makes routing crash-safe: a cycle that ends before `_reply` — a retry-cap trip, a transient `gh` failure on push — keeps its decision memo for the next cycle instead of losing it (in-memory routing would drop the memo on every such cycle). Only CONTEXTUAL entries reach this stage (§7.0), so the persisted record carries no classification tag — that lives only on the pre-resolution `MemoryEntry` (§7.5/§7.6).
 
 ```python
 @dataclass(frozen=True, slots=True)
 class RoutedMemory:
-    classification: str          # taxonomy class; MVP routes CONTEXTUAL only
-    content: str = ""            # exactly one of content / path
-    path: str = ""
-    target_hint: str = ""        # optional thread node-id → thread reply; else → ## Decisions
-    retry: int = 0               # (retry, source_item) is the Decisions-block dedup key
-    source_item_gh_id: str = ""
+    content: str                    # resolved verbatim: inline content, or the path-form entry's file body
+    retry: int                      # (retry, source_item) is the Decisions-block dedup key
+    source_item: str
+    decided_by: str
+    target_hint: str | None = None  # thread node-id → thread reply; None → ## Decisions
 ```
 
 prgroom owns the `## Decisions` block between sentinel markers and rewrites it wholesale each time (read-modify-write), making re-runs idempotent without a state flag. Each entry carries the retry it was decided on, a title, a one-line rationale, the deciding agent, and the source item; it is **keyed by `(retry, source-item)`** so a crash-and-re-run never double-appends. Entries accumulate across retries; prgroom never deletes a prior decision — the block is the cross-retry decision ledger any future reader sees in the §7.1 snapshot.

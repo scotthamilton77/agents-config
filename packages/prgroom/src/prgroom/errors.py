@@ -74,8 +74,9 @@ _NO_WORK_CODES: frozenset[str] = frozenset(
 class ErrorCode(StrEnum):
     """Stable ``<CATEGORY>_<SPECIFIC>`` identifiers (§3.7).
 
-    The ``.value`` is the wire identifier emitted in stderr and consumed by the
-    ``monitor-pr`` supervisor; adding a code is non-breaking, renaming is breaking.
+    The ``.value`` is the wire identifier emitted in stderr for any downstream
+    parser (operator, scheduler, or agent) to key on; adding a code is
+    non-breaking, renaming is breaking.
     """
 
     # PRECONDITION_*

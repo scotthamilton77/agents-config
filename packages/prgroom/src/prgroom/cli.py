@@ -1,11 +1,7 @@
-"""prgroom CLI root — typer app with the MVP verb skeletons.
+"""prgroom CLI root — typer app wiring the MVP verb set (§1).
 
-This is the foundation scaffold (bead 8.1). Every MVP verb is *wired and
-discoverable* but carries no business logic yet: each skeleton prints a
-``not-yet-implemented`` notice to stderr and exits with
-:data:`SKELETON_EXIT_CODE`. The lifecycle that fills these in arrives in later
-beads (Phase 1 impl). Argument shapes here are intentionally minimal — they
-exist so ``prgroom <verb> --help`` works and so the entry point resolves.
+Argument shapes here are intentionally minimal — they exist so
+``prgroom <verb> --help`` works and so the entry point resolves.
 
 Verb names with underscores in the function name render as hyphenated commands
 (typer default); ``resolve_escalated`` is registered explicitly as
@@ -65,14 +61,9 @@ from prgroom.prsession.registry import resolve_store
 from prgroom.prsession.state import PRGroomingState, ReviewItem, bootstrap_state
 from prgroom.prsession.store import StateNotFoundError, Store
 
-# Foundation skeletons are not yet implemented; they exit non-zero so a caller
-# never mistakes a skeleton's silence for a successful no-op. EX_UNAVAILABLE
-# (sysexits 69) reads as "the requested service/verb is not available yet".
-SKELETON_EXIT_CODE = 69
-
 app = typer.Typer(
     name="prgroom",
-    help="Deterministic PR-grooming CLI (foundation scaffold; verbs are skeletons).",
+    help="Deterministic PR-grooming CLI.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -182,12 +173,6 @@ def _root(
         ctx.obj = _build_store(store)
     except PrgroomError as err:
         raise typer.Exit(code=handle_cli_error(err)) from err
-
-
-def _skeleton(verb: str) -> None:
-    """Emit the shared not-yet-implemented notice and exit non-zero."""
-    sys.stderr.write(f"prgroom: verb '{verb}' is a foundation skeleton — not yet implemented\n")
-    raise typer.Exit(code=SKELETON_EXIT_CODE)
 
 
 @app.command()
@@ -668,12 +653,6 @@ def run(
     )
     if code != 0:
         raise typer.Exit(code=code)
-
-
-@app.command()
-def sweep(repo: str = typer.Argument(..., help="owner/repo to sweep.")) -> None:
-    """Cross-PR autonomous mode: list open PRs and run each serially."""
-    _skeleton("sweep")
 
 
 def _render_status(envelope: dict[str, object], *, json_out: bool) -> None:
