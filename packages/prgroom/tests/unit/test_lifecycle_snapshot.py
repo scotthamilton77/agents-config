@@ -1,6 +1,6 @@
-"""Tests for §8.1 snapshot assembly + §8.2 recurrence derivation.
+"""Tests for §7.1 snapshot assembly + §7.2 recurrence derivation.
 
-The snapshot module does the gh/git legwork the fix agent must NOT do (§8.1):
+The snapshot module does the gh/git legwork the fix agent must NOT do (§7.1):
 it reads the PR resource (base ref, body's ``## Decisions`` block, labels), the
 review threads with full reply-chains, and the git branch state (recent commits +
 diff-since-base), then dumps everything to two files passed to the fix contract.
@@ -86,7 +86,7 @@ def _state(*items: ReviewItem, retries_: int = 2) -> PRGroomingState:
 
 
 class FakeGit:
-    """A minimal ``GitClient`` fake scripting the §8.1 branch-state reads."""
+    """A minimal ``GitClient`` fake scripting the §7.1 branch-state reads."""
 
     def __init__(self, *, log: str = "log-text", diff_stat: str = "diff-text") -> None:
         self._log = log
@@ -329,7 +329,7 @@ def test_assemble_snapshot_threads_carry_full_reply_chain(tmp_path: Path) -> Non
     )
     detail = json.loads(Path(snap.pr_detail_path).read_text(encoding="utf-8"))
     chains = detail["review_threads"]
-    # Both the top comment and its reply are present (full reply-chain, §8.1).
+    # Both the top comment and its reply are present (full reply-chain, §7.1).
     bodies = [c["body"] for thread in chains for c in thread["comments"]]
     assert "top" in bodies
     assert "reply" in bodies

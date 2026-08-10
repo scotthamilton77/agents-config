@@ -1,10 +1,10 @@
-"""Tests for ``fix_pr`` — the lock-held ``_fix`` lifecycle internal (§3.2, §5, §8).
+"""Tests for ``fix_pr`` — the lock-held ``_fix`` lifecycle internal (§3.2, §5, §7).
 
-``fix_pr`` is the APPLY side of the fix path: it assembles the §8.1 snapshot per
-cluster, calls 8.7's pure ``run_fix`` compute, and APPLIES the results to a
+``fix_pr`` is the APPLY side of the fix path: it assembles the §7.1 snapshot per
+cluster, calls the agent layer's pure ``run_fix`` compute, and APPLIES the results to a
 deepcopy of state — setting each ``item.disposition``, emitting each returned
 ``Escalation`` via the injected ``Sink``, and logging soft warnings. It makes NO
-phase change (§3.2 fix row: phase resolution is end-of-cycle, bead 8.10) and does
+phase change (§3.2 fix row: phase resolution is end-of-cycle) and does
 NOT set ``state.last_error``. The fix dispatcher, gh, git, and sink are fakes at
 the boundaries; the clock is the injected frozen fake. No code we own is mocked.
 """
@@ -194,7 +194,7 @@ def _count_clusters(state: PRGroomingState) -> int:
 def test_fix_applies_dispositions_from_result(tmp_path: Path) -> None:
     a, b = _item("a"), _item("b")
     # "a" is a clean FIXED claiming a commit the FakeGit reports in pre..post (so
-    # the 8.7 commit audit passes); "b" is a clean SKIPPED (rationale only).
+    # the agent layer's commit audit passes); "b" is a clean SKIPPED (rationale only).
     dispatcher = FixDispatcherStub(
         [
             _out(
@@ -334,7 +334,7 @@ def test_fix_processes_clusters_serially(tmp_path: Path) -> None:
 
 
 def test_fix_logs_deferred_memory_via_warn_seam(tmp_path: Path) -> None:
-    # A non-CONTEXTUAL memory entry is accepted-but-deferred (§8.3): fix_pr logs it
+    # A non-CONTEXTUAL memory entry is accepted-but-deferred (§7.3): fix_pr logs it
     # through the injected warn seam (MVP does not route it) without flipping the
     # item or escalating. The warn seam is injectable so this is asserted directly,
     # not by scraping stderr.
@@ -364,7 +364,7 @@ def test_fix_logs_deferred_memory_via_warn_seam(tmp_path: Path) -> None:
 
 
 def test_fix_logs_unwritten_paths_via_warn_seam(tmp_path: Path) -> None:
-    # A declared-but-unwritten memory_writes path is a soft warning (§8.6): logged,
+    # A declared-but-unwritten memory_writes path is a soft warning (§7.6): logged,
     # never a cluster failure. Forced here by passing a known_thread_ids-independent
     # output; the warn seam records the soft warning.
     a = _item("a")

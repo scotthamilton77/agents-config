@@ -110,7 +110,8 @@ def test_resolve_skips_an_already_resolved_thread() -> None:
 
 
 def test_resolve_rerun_reissues_idempotent_mutation_after_midloop_failure() -> None:
-    # Verb-atomicity §3 audit / behavior 11: resolveReviewThread is idempotent
+    # Per the verb-atomicity spec (archive-era, resolvable in the private archive
+    # repository) — audit / behavior 11: resolveReviewThread is idempotent
     # server-side, so resolve needs no markers — a mid-loop failure discards the
     # deepcopy, and the rerun harmlessly re-issues BOTH mutations. This pins the
     # reasoning resolve.py documents, which had zero retry-path coverage.

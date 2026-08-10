@@ -214,7 +214,7 @@ def test_execute_step_propagate_flushes_then_raises() -> None:
     assert excinfo.value.code is ErrorCode.RUNTIME_GH_TERMINAL
     assert ctx.state.phase is PRPhase.HUMAN_GATED  # handle_verb_error gated it
     assert len(sink.emitted) == 1  # escalate fired before re-raise (last_error set)
-    assert gh.added == []  # RUNTIME_GH_TERMINAL is a §4.7 non-trigger — no label
+    assert gh.added == []  # RUNTIME_GH_TERMINAL is a §4.6 non-trigger — no label
 
 
 # ── _cap_guard_step + _rereview_guard ───────────────────────────────────────
@@ -480,7 +480,7 @@ def test_run_cap_trip_gates_and_labels() -> None:
     assert out.phase is PRPhase.HUMAN_GATED
     assert out.last_error == ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value
     assert len(sink.emitted) == 1  # one lifecycle escalation
-    assert gh.added == [(_REF, "human-review-required")]  # §4.7 label added
+    assert gh.added == [(_REF, "human-review-required")]  # §4.6 label added
 
 
 def test_run_rereview_runs_after_push_uploads() -> None:

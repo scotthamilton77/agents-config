@@ -12,8 +12,8 @@ child when a :class:`threading.Event` cancel-token is set.
 The single OS seam is the :class:`ProcessHandle` Protocol — a thin ``Popen``
 facade — injected as the ``spawn`` callable. Production wires :func:`_popen_spawn`;
 tests inject a fake that returns recorded behavior, so kill-on-timeout and
-kill-on-cancel are proven without spawning a real CLI. This mirrors the
-foundation's ``CommandRunner`` seam (recorded fakes, not mocks).
+kill-on-cancel are proven without spawning a real CLI. This mirrors
+``CommandRunner``'s seam (recorded fakes, not mocks).
 
 The runner is intentionally **classification-free**: it reports the child's
 returncode + stderr faithfully and raises only for timeout/cancel. Mapping a
@@ -100,7 +100,9 @@ class AgentInvocation:
 
 @dataclass(frozen=True, slots=True)
 class UsageFigures:
-    """Token/cost figures parsed from an agent CLI's own output (§3 token capture).
+    """Token/cost figures parsed from an agent CLI's own output (per the
+    cost-telemetry spec — archive-era, resolvable in the private archive
+    repository).
 
     Population is per-CLI and best-effort: claude's JSON envelope fills
     ``tokens_in`` (ALL input-side tokens — uncached + cache-creation + cache-read;
@@ -247,7 +249,7 @@ _CLAUDE_WRITE_ALLOWED_TOOLS = "Read Edit Write Bash(git *)"
 def _invocation_for_claude(spec: AgentSpec, prompt: str) -> AgentInvocation:
     # `claude -p <prompt>` runs headless. The contract input path is already inside
     # `prompt` (the agent reads the file) — claude has no --input-file flag.
-    # --output-format json wraps stdout in the §3.1 result envelope; the runner
+    # --output-format json wraps stdout in the §5 result envelope; the runner
     # unwraps it post-run (see _unwrap_claude_envelope) to expose the payload and
     # capture token usage.
     argv = ["claude", "-p", prompt, "--model", spec.model, "--output-format", "json"]
@@ -329,7 +331,7 @@ def _unwrap_claude_envelope(result: AgentRunResult) -> AgentRunResult:
     LAST top-level JSON object in stdout, which with the flag is the envelope
     itself, not the contract payload. Unwrap and usage capture run regardless of
     the envelope's ``is_error``/``subtype`` — classification stays the
-    dispatcher's job (§3.1 rule 2).
+    dispatcher's job (§5).
     """
     try:
         envelope = json.loads(result.stdout)
@@ -364,12 +366,12 @@ def _unwrap_claude_envelope(result: AgentRunResult) -> AgentRunResult:
     )
 
 
-# codex's stderr trailer count: comma-grouped (`21,631`) or bare (`950`) — §3.2.
+# codex's stderr trailer count: comma-grouped (`21,631`) or bare (`950`) — §5.
 _CODEX_TOKENS_RE = re.compile(r"^(\d{1,3}(?:,\d{3})*|\d+)$")
 
 
 def _parse_codex_usage(result: AgentRunResult) -> AgentRunResult:
-    """Read codex exec's stderr ``tokens used`` trailer into ``usage`` (§3.2).
+    """Read codex exec's stderr ``tokens used`` trailer into ``usage`` (§5).
 
     The trailer is a ``tokens used`` line followed by an integer with optional
     comma grouping. codex provides no in/out split in exec mode, so only
@@ -377,7 +379,7 @@ def _parse_codex_usage(result: AgentRunResult) -> AgentRunResult:
     ``usage=None`` — telemetry never fails a dispatch.
     """
     lines = [line.strip() for line in result.stderr.splitlines() if line.strip()]
-    # The trailer is terminal (§3.2): scan backward so the LAST adjacent
+    # The last such pair wins: scan backward so the LAST adjacent
     # "tokens used" + integer pair wins. An earlier diagnostic occurrence must
     # never shadow the real CLI usage trailer.
     for i in range(len(lines) - 2, -1, -1):
@@ -512,8 +514,9 @@ class SubprocessAgentRunner:
             prompt = prompt_template.render({**render_data, INPUT_SECTION_KEY: section})
             invocation = build_invocation(spec, prompt=prompt)
             result = self._spawn_and_wait(invocation, time_budget_s=time_budget_s, cancel=cancel)
-            # §3 token capture — per-CLI, best-effort post-processing; the runner
-            # stays classification-free (returncode/stderr pass through untouched).
+            # Per the cost-telemetry spec — per-CLI, best-effort post-processing;
+            # the runner stays classification-free (returncode/stderr pass through
+            # untouched).
             if spec.cli == "claude":
                 result = _unwrap_claude_envelope(result)
             elif spec.cli == "codex":

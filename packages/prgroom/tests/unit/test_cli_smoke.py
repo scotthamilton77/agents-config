@@ -1,17 +1,21 @@
 """Smoke tests for the typer CLI root.
 
-These pin the *user-facing contract* that every MVP verb is wired and discoverable
-via ``--help`` (the foundation deliverable: skeletons exist and are listed). They
-are behavior tests at the CLI boundary, not tautologies — a verb that is defined
-but not registered, or registered under the wrong name, fails here.
+These pin the *user-facing contract*: every MVP verb is wired, discoverable via
+``--help``, and has its own ``--help``; charter D13 ("prgroom is carved, not
+finished") explicitly forbids building ``sweep``, so it is neither
+discoverable nor a registered command. They are behavior tests at the CLI
+boundary, not tautologies — a verb that is defined but not registered,
+registered under the wrong name, or a forbidden verb that slips back onto the
+surface, fails here.
 """
 
 from __future__ import annotations
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
-from prgroom.cli import SKELETON_EXIT_CODE, app
+from prgroom.cli import app
 
 runner = CliRunner()
 
@@ -27,7 +31,6 @@ MVP_VERBS = [
     "wait",
     "status",
     "run",
-    "sweep",
 ]
 
 
@@ -48,14 +51,29 @@ def test_each_verb_has_its_own_help(verb: str) -> None:
     assert result.exit_code == 0
 
 
-# The MVP verbs are now all wired for real except ``sweep``: ``poll`` (8.9a),
-# ``status`` (8.11), ``cluster`` + ``fix`` (8.15), ``push`` + ``rereview`` + ``resolve``
-# (8.16), ``run`` + ``wait`` (8.10), ``reply`` + ``resolve-escalated`` (8.12) — their
-# behavior is covered by the per-verb test_cli_*.py suites. ``sweep`` remains the lone
-# foundation skeleton, exercised by ``test_sweep_skeleton_exits_nonzero`` below.
+def test_registered_commands_match_mvp_verbs_exactly() -> None:
+    # The tests above only check that each expected verb is present; an
+    # unintended extra command (e.g. a stub reintroduced without updating
+    # MVP_VERBS) would still pass them. Comparing the actual registered set
+    # catches that.
+    click_app = typer.main.get_command(app)
+    assert set(click_app.commands) == set(MVP_VERBS)
 
 
-def test_sweep_skeleton_exits_nonzero() -> None:
+# Every MVP verb above is wired for real; behavior is covered by the per-verb
+# test_cli_*.py suites. Charter D13 ("prgroom is carved, not finished")
+# explicitly forbids building ``sweep`` — it is not a command and must not
+# become discoverable.
+
+
+def test_sweep_is_not_registered() -> None:
+    result = runner.invoke(app, ["--help"])
+    assert "sweep" not in result.output
+
+
+def test_sweep_is_rejected_as_unknown_command() -> None:
+    # Absence from --help alone would also pass for a hidden-but-still-wired
+    # command; invoking it directly proves Typer has no such command at all.
     result = runner.invoke(app, ["sweep", "octo/demo"])
-    assert result.exit_code == SKELETON_EXIT_CODE
-    assert "not yet implemented" in result.output
+    assert result.exit_code != 0
+    assert "no such command" in result.output.lower()

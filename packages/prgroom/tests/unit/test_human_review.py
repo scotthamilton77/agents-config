@@ -1,4 +1,4 @@
-"""Tests for the §4.4/§4.6 human-review merge-constraint derivation.
+"""Tests for the §4.4/§4.5 human-review merge-constraint derivation.
 
 The precedence (label > approval > None) and the load-bearing bot-filter are pinned
 here against the pure :func:`derive_human_review`. The thin gh fetch is exercised

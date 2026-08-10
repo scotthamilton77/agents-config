@@ -1,9 +1,9 @@
-"""Tests for the run-loop terminal-signal flush hooks (§3.3, §4.7).
+"""Tests for the run-loop terminal-signal flush hooks (§3.3, §4.6).
 
 Two best-effort hooks fired at the run-loop's two terminal sites:
 ``escalate_if_needed`` (one Sink event per un-filed ESCALATED/FAILED item + one per
 lifecycle gate, deduped by ``escalation_filed`` / ``lifecycle_escalation_filed``) and
-``request_human_review_if_needed`` (the §4.7 ``human-review-required`` label add,
+``request_human_review_if_needed`` (the §4.6 ``human-review-required`` label add,
 deduped by ``human_review_label_added``). Both swallow Sink/label failures so the
 lifecycle never blocks; a failed emit leaves the dedup flag unset for the next pass.
 
@@ -63,7 +63,7 @@ class RaisingSink:
 
 
 class FakeGh:
-    """Records ``add_label`` calls; optionally raises to drive the §4.7 swallow path."""
+    """Records ``add_label`` calls; optionally raises to drive the §4.6 swallow path."""
 
     def __init__(self, *, fail: bool = False) -> None:
         self.added: list[tuple[PRRef, str]] = []
@@ -196,7 +196,7 @@ def test_escalate_no_work_does_not_write(store: InMemoryStore) -> None:
         (_state(last_error=ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value), True),
         (_state(_item(disposition=_disp(DispositionKind.ESCALATED))), True),
         (_state(_item(disposition=_disp(DispositionKind.FAILED))), True),
-        (_state(last_error=ErrorCode.RUNTIME_GH_TERMINAL.value), False),  # §4.7 non-trigger
+        (_state(last_error=ErrorCode.RUNTIME_GH_TERMINAL.value), False),  # §4.6 non-trigger
         (_state(_item(disposition=_disp(DispositionKind.FIXED))), False),
         (_state(), False),
     ],
@@ -225,7 +225,7 @@ def test_request_human_review_short_circuits_when_disabled(store: InMemoryStore)
 
 
 def test_request_human_review_short_circuits_when_already_added(store: InMemoryStore) -> None:
-    # Operator-removed-label intent: once added this gating event, do not re-add (§4.7).
+    # Operator-removed-label intent: once added this gating event, do not re-add (§4.6).
     gh = FakeGh()
     state = _state(_item(disposition=_disp(DispositionKind.FAILED)), label_added=True)
     request_human_review_if_needed(state, gh=gh, store=store, ref=_REF, auto_request=True)

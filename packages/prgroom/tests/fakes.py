@@ -1,4 +1,4 @@
-"""Test fakes for the subprocess and gh-protocol boundaries (§7.6).
+"""Test fakes for the subprocess and gh-protocol boundaries.
 
 The gh/git adapters reach the outside world through a single seam — the
 :class:`~prgroom.proc.CommandRunner` Protocol. These fakes structurally satisfy

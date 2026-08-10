@@ -1,7 +1,8 @@
-"""``run_fix`` orchestration — assemble → dispatch → parse → audit → stash (§5, §8.6).
+"""``run_fix`` orchestration — assemble → dispatch → parse → audit → stash (§5, §7.6).
 
-This is the heavy half of the agent layer and the sharpest expression of the 8.7
-boundary: **8.7 computes; the lifecycle (8.15) applies.** ``run_fix`` reads git
+This is the heavy half of the agent layer and the sharpest expression of the
+compute/apply boundary: **the agent layer computes; the lifecycle applies.**
+``run_fix`` reads git
 through the injected :class:`~prgroom.git.client.GitClient`, runs the three pure
 audits (:func:`~prgroom.agent.fix_audit.audit_fix_items`,
 :func:`~prgroom.agent.fix_audit.audit_orphans`,
@@ -61,7 +62,7 @@ _BOTH_FAIL_DECIDED_BY = "prgroom"
 
 @dataclass(frozen=True, slots=True)
 class FixRunResult:
-    """The computed result of one ``run_fix`` call (8.7 returns; 8.15 applies).
+    """The computed result of one ``run_fix`` call (the agent layer returns; the lifecycle applies).
 
     ``dispositions`` has one entry per gh_id in the cluster; ``escalations`` are
     the events the lifecycle will emit; ``stashed`` records whether the isolation
@@ -69,8 +70,8 @@ class FixRunResult:
     repo-wide router will later home; ``contextual_memory`` are valid CONTEXTUAL
     entries the lifecycle (``_reply``) will route; ``unwritten`` are
     declared-but-unwritten memory paths — a SOFT warning the lifecycle logs (not an
-    escalation). Logging is an *effect*, so it stays on the 8.15 side of the
-    boundary; 8.7 only carries the data. In the MVP (declared==written) this is
+    escalation). Logging is an *effect*, so it stays on the lifecycle side of the
+    boundary; the agent layer only carries the data. In the MVP (declared==written) this is
     always empty.
     """
 
@@ -124,7 +125,7 @@ def run_fix(
     # MVP passes ``written_paths = declared`` to the memory audit, so
     # ``memory.unwritten`` is empty by construction here (no false soft-warnings).
     # The pure audit still computes it for a future caller that stats the dir; the
-    # data rides on the result for 8.15 to log (logging is an effect — 8.15's job).
+    # data rides on the result for the lifecycle to log — logging is the lifecycle's job.
     return _build_result(
         req,
         out,
@@ -188,7 +189,7 @@ def _build_result(
 ) -> FixRunResult:
     by_gh = _items_by_gh(req)
     # Only orphan commits and a containment breach (Severity.BLOCK) are hard
-    # cluster-flipping violations (§8.6). The other memory violations are soft
+    # cluster-flipping violations (§7.6). The other memory violations are soft
     # per-entry WARNs (unknown/empty classification, neither/both content|path,
     # unknown CONTEXTUAL target_hint): the fix commits are valid, only the memory
     # bookkeeping is malformed — surface them as escalations, never flip or stash.
@@ -293,7 +294,7 @@ def _cluster_flip_marker(row: FixItemResult, *, detail: str) -> AuditViolation:
     """A FAILED marker for an otherwise-clean item swept up by a cluster-wide breach.
 
     ``detail`` is the raw joined hard-violation cause (orphan shas / containment
-    path). It is used VERBATIM as the swept-up item's rationale — §8.6 documents the
+    path). It is used VERBATIM as the swept-up item's rationale — §7.6 documents the
     exact per-item string (e.g. "memory containment violation: <path>") that the
     lifecycle/resolver read as the source of truth for the cause, so no prefix is
     added that would diverge from the contract.

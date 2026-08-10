@@ -51,7 +51,7 @@ inherits that user identity. There is no App-token path in any write call site.
 **No write path exists** in `src/**`, `scripts/**`, `packages/installer/**`,
 `packages/workcli/**`, `packages/grind/**`, or `packages/pdlc/**`: a grep for
 `gh`, `GH_TOKEN`, and `GITHUB_TOKEN` across those trees returns nothing.
-`.github/instructions/*.instructions.md` is a single line of reviewer guidance
+`.github/copilot-instructions.md` is a single line of reviewer guidance
 ("search around for other instances of the issue") and grants nothing.
 
 **Count: eight owner-credentialed write paths, one App-attested path.** Three of

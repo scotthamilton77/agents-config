@@ -139,7 +139,10 @@ Structured config at `packages/installer/installer.toml`, parsed by `core/instal
 
 ```toml
 [tools]
-# Optional per-tool dest-dir overrides — leave commented to use the built-in adapters.
+# Optional per-tool dest-dir overrides. Parsed into `tool_dest_overrides`
+# (installer_toml.py) but not yet consumed by anything — dest resolution
+# always goes through `adapter.dest_dir(home)`, so uncommenting this has no
+# effect today.
 # claude.dest = "~/.claude"
 ```
 
@@ -236,7 +239,7 @@ flowchart LR
 | `StagingPlan` / `StagedItem` | **Installer** | One invocation | In-memory; gone when the process exits. `--dump-stage` materialises a throwaway copy. |
 | `Counters` / `Orphan` list | **Installer** | One invocation | Surfaced in the exit summary; not persisted. |
 | Destination stores | **Installer** writes → **Tool** reads | Permanent on disk | Single writer at install time; consumed asynchronously at each tool's runtime. |
-| Backups | **Installer** | Permanent on disk | Write-only recovery; never read back by the installer. |
+| Backups | **Installer** | Newest 5 per target, then pruned | Write-only recovery; never read back by the installer. Older backups of the same target are deleted the moment a new one is written (`core/backup.py`). |
 | Install receipt (`install-receipt.json` + `.lock`) | **Installer** | Permanent on disk (between runs) | The installer's own persisted state — read at prune start, rewritten at run end (mirrors disk) on every non-dry-run install. Trusted state behind an `integrity` digest; held under a single-writer advisory lock on that path — `--dry-run` takes no lock or write at all. A `--project` install uses a second, project-local instance (`<project-root>/.agents-config/install-receipt.json`) instead of this one. |
 
 ### Explicit non-ownership

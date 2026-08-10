@@ -99,7 +99,7 @@ def test_merge_appends_distinct_same_retry_keys() -> None:
 
 def test_thread_hint_routes_via_graphql_and_clears() -> None:
     # Uses the shared RecordingGh: a target-hinted entry triggers the pre-flight
-    # review-comments scan, and the posted body carries the §4 memory marker.
+    # review-comments scan, and the posted body carries the §7.3 memory marker.
     gh = RecordingGh()
     rm = RoutedMemory(
         content="why", retry=1, source_item="c1#0", decided_by="a", target_hint="PRRT_abc"

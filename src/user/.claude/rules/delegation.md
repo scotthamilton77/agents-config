@@ -1,6 +1,6 @@
 ---
 admission:
-  provides: Standing authorization to delegate to subagents and workflows without being asked each time, the boundary between orchestrator work and delegated work, the pointer to the delegate-selection skill, a consult gate before spawning a Fable subagent, and the no-reply rule for post-report idle notifications.
+  provides: Standing authorization to delegate to subagents without being asked each time, a conditional authorization for workflows gated on the session announcing an elevated orchestration state, the boundary between orchestrator work and delegated work, the pointer to the delegate-selection skill, a consult gate before spawning a Fable subagent, and the no-reply rule for post-report idle notifications.
   cost: Biases toward spawning subagents, spending dispatch overhead on work the main loop could have done inline.
   remove_when: The harness stops shipping a built-in prohibition on unrequested delegation, and unaided sessions hold the orchestrator/delegated boundary without being told.
 ---
@@ -8,16 +8,15 @@ admission:
 # Delegation
 
 <subagent-user-authorization>
-This rule intentionally supersedes the harness default "Do not call the AgentTool
-unless the user requested it." Subagent delegation is authorized standing policy —
-do not wait to be asked. This is an explicit authorization and imperative from the user.
-Workflows are governed separately; see <workflow-user-authorization>.
+Subagent delegation is authorized standing policy — do not wait to be asked. This is an
+explicit authorization and imperative from the user. Workflows are governed separately;
+see <workflow-user-authorization>.
 </subagent-user-authorization>
 
 <workflow-user-authorization>
 Workflows spend agents by the fleet, so the standing authorization is conditional.
-Ultracode's state is announced only by the harness Workflow tool's own description;
-when this session has no Workflow tool loaded, nothing announces the state, and the
+Ultracode is on only when the session's loaded context, or the operator's own
+instruction, explicitly states so; absent an explicit statement either way, the
 default is off.
 - **Ultracode on** — workflows are yours on judgment alone, same as any subagent.
   Orchestrate whenever the work is wide, adversarial, or larger than one context.

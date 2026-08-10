@@ -31,7 +31,7 @@ class PRRef:
 
     @classmethod
     def parse(cls, text: str, *, default_repo: tuple[str, str] | None = None) -> PRRef:
-        """Parse a CLI PR-ref string into a :class:`PRRef` (§1, §3.7).
+        """Parse a CLI PR-ref string into a :class:`PRRef` (§1, §3.6).
 
         Accepts ``owner/repo#<n>``, a full ``https://github.com/owner/repo/pull/<n>``
         URL (with an optional trailing path), or a bare ``<n>`` when ``default_repo``

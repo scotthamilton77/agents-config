@@ -3,7 +3,7 @@
 The CLI never calls ``bd label add`` directly from contract code; escalation
 routing goes through a :class:`Sink` so prgroom works with or without beads.
 Three adapters are envisaged (§5): ``stderr`` (default), ``file`` (JSONL for
-external watchers), and ``bd`` (v2, deferred). The foundation ships stderr + file.
+external watchers), and ``bd`` (v2, deferred). ``stderr`` and ``file`` ship today.
 """
 
 from __future__ import annotations

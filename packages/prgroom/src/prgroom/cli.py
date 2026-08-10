@@ -1,11 +1,7 @@
-"""prgroom CLI root — typer app with the MVP verb skeletons.
+"""prgroom CLI root — typer app wiring the MVP verb set (§1).
 
-This is the foundation scaffold (bead 8.1). Every MVP verb is *wired and
-discoverable* but carries no business logic yet: each skeleton prints a
-``not-yet-implemented`` notice to stderr and exits with
-:data:`SKELETON_EXIT_CODE`. The lifecycle that fills these in arrives in later
-beads (Phase 1 impl). Argument shapes here are intentionally minimal — they
-exist so ``prgroom <verb> --help`` works and so the entry point resolves.
+Argument shapes here are intentionally minimal — they exist so
+``prgroom <verb> --help`` works and so the entry point resolves.
 
 Verb names with underscores in the function name render as hyphenated commands
 (typer default); ``resolve_escalated`` is registered explicitly as
@@ -65,14 +61,9 @@ from prgroom.prsession.registry import resolve_store
 from prgroom.prsession.state import PRGroomingState, ReviewItem, bootstrap_state
 from prgroom.prsession.store import StateNotFoundError, Store
 
-# Foundation skeletons are not yet implemented; they exit non-zero so a caller
-# never mistakes a skeleton's silence for a successful no-op. EX_UNAVAILABLE
-# (sysexits 69) reads as "the requested service/verb is not available yet".
-SKELETON_EXIT_CODE = 69
-
 app = typer.Typer(
     name="prgroom",
-    help="Deterministic PR-grooming CLI (foundation scaffold; verbs are skeletons).",
+    help="Deterministic PR-grooming CLI.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -128,8 +119,8 @@ def _build_cluster_dispatcher() -> ClusterContract:
     :class:`SubprocessAgentRunner`. It calls :func:`load_chain` with
     ``repo_config=None`` / ``model_override=None``, so the shipped DEFAULT chain is
     used today: no verb resolves the per-repo ``.prgroom.toml`` path yet (poll/status
-    pass ``None`` too — there is no resolver), so ``[agents.cluster]`` overrides and a
-    ``--cluster-model`` flag stay inert pending that cross-verb config-path wiring.
+    pass ``None`` too — there is no resolver), so ``[agents.cluster]`` overrides are
+    never read and no ``--cluster-model`` flag exists.
     """
     chain = load_chain("cluster", repo_config=None, model_override=None)
     return ClusterDispatcher(runner=SubprocessAgentRunner(), chain=chain, usage_hook=append_usage)
@@ -143,8 +134,8 @@ def _build_fix_dispatcher() -> FixContract:
     :class:`SubprocessAgentRunner`. It calls :func:`load_chain` with
     ``repo_config=None`` / ``model_override=None``, so the shipped DEFAULT chain is
     used today: no verb resolves the per-repo ``.prgroom.toml`` path yet (poll/status
-    pass ``None`` too — there is no resolver), so ``[agents.fix]`` overrides and a
-    ``--fix-model`` flag stay inert pending that cross-verb config-path wiring.
+    pass ``None`` too — there is no resolver), so ``[agents.fix]`` overrides are
+    never read and no ``--fix-model`` flag exists.
     """
     chain = load_chain("fix", repo_config=None, model_override=None)
     return FixDispatcher(runner=SubprocessAgentRunner(), chain=chain, usage_hook=append_usage)
@@ -153,8 +144,9 @@ def _build_fix_dispatcher() -> FixContract:
 def _build_sink() -> Sink:
     """Build the default escalation sink (stderr).
 
-    A seam: tests monkeypatch this to record emitted escalations. The ``--bd-bead``
-    / ``--escalation-file`` adapter selection is a later bead; MVP defaults to stderr.
+    A seam: tests monkeypatch this to record emitted escalations. No
+    ``--bd-bead`` / ``--escalation-file`` flag exists; every invocation
+    defaults to stderr.
     """
     return StderrSink()  # pragma: no cover - trivial production default
 
@@ -184,12 +176,6 @@ def _root(
         raise typer.Exit(code=handle_cli_error(err)) from err
 
 
-def _skeleton(verb: str) -> None:
-    """Emit the shared not-yet-implemented notice and exit non-zero."""
-    sys.stderr.write(f"prgroom: verb '{verb}' is a foundation skeleton — not yet implemented\n")
-    raise typer.Exit(code=SKELETON_EXIT_CODE)
-
-
 @app.command()
 def poll(
     ctx: typer.Context,
@@ -202,9 +188,9 @@ def poll(
     malformed ref, lock contention, or a gh failure renders through
     :func:`handle_cli_error` with the tier's exit code — never a raw traceback.
 
-    Accepts ``owner/repo#n`` or a full PR URL. A bare ``<n>`` is NOT yet resolvable
-    (it needs a current-repo context seam — git remote → owner/repo — deferred to a
-    later bead), so ``PRRef.parse`` is called without a ``default_repo`` here.
+    Accepts ``owner/repo#n`` or a full PR URL. A bare ``<n>`` is not yet resolvable
+    (it would need a current-repo context seam — git remote → owner/repo — that
+    does not exist), so ``PRRef.parse`` is called without a ``default_repo`` here.
     """
     store: Store = ctx.obj
     try:
@@ -229,7 +215,7 @@ def poll(
 def _read_or_no_state(store: Store, ref: PRRef) -> PRGroomingState:
     """Read the PR's state, raising ``PRECONDITION_NO_STATE`` if it was never polled.
 
-    Direct invocation does NOT self-heal (the ``--no-prework`` column, §3.2): a
+    Direct invocation does NOT self-heal (§3.2): a
     missing state is a terminal user error (exit 2), not an auto-run-``poll`` path.
     The self-heal/prework chaining is the ``run`` aggregate's job (§3.3).
     """
@@ -257,7 +243,7 @@ def cluster(
     """Group unprocessed items into fix-bundles for cohesive fix work.
 
     A locked verb: ``read → cluster_pr → write`` under the §2 ``with_lock`` wrapper.
-    Direct-invocation preconditions (the ``--no-prework`` column, §3.2): no state →
+    Direct-invocation preconditions (§3.2): no state →
     ``PRECONDITION_NO_STATE`` (exit 2); a terminal phase, an already-clustered state,
     or all items already processed → idempotent no-op exit 0; zero items in state →
     ``PRECONDITION_NO_ITEMS`` (no-work exit 0). Cluster decides no disposition and
@@ -306,7 +292,7 @@ def fix(
     """Dispatch the fix agent per cluster: decide disposition AND implement (local).
 
     A locked verb: ``read → fix_pr → write`` under the §2 ``with_lock`` wrapper.
-    Direct-invocation preconditions (the ``--no-prework`` column, §3.2), in order:
+    Direct-invocation preconditions (§3.2), in order:
     no state → ``PRECONDITION_NO_STATE`` (exit 2); a terminal phase or an
     all-dispositioned state (work already done) → idempotent no-op exit 0; items
     remain but none are clustered-unprocessed → ``PRECONDITION_NO_CLUSTERS``
@@ -550,7 +536,8 @@ def wait(
     Preconditions (§3.2): ``fixes-pending`` → ``PRECONDITION_WAIT_NOT_APPLICABLE`` (exit
     2, it has actionable work); ``merged`` → no-op; a never-polled PR →
     ``PRECONDITION_NO_STATE`` (exit 2). The §4.3 cadence knobs (``poll_interval`` /
-    ``idle_threshold`` / reviewer timeouts) resolve from env / ``.prgroom.toml``.
+    ``idle_threshold`` / reviewer timeouts) resolve from env or default; no verb
+    resolves a ``.prgroom.toml`` path yet, so a per-repo override is never read (§4.3).
     """
     store: Store = ctx.obj
     try:
@@ -568,16 +555,16 @@ def wait(
 def status(
     ctx: typer.Context,
     pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
-    json_out: bool = typer.Option(False, "--json", help="Emit the §4.6 status envelope as JSON."),
+    json_out: bool = typer.Option(False, "--json", help="Emit the §4.5 status envelope as JSON."),
     locked: bool = typer.Option(
         False,
         "--locked",
         help="Acquire the PR lock for a strictly-consistent read (exit 75 under contention).",
     ),
 ) -> None:
-    """Print current grooming state + the §4.6 merge-gate envelope (read-only).
+    """Print current grooming state + the §4.5 merge-gate envelope (read-only).
 
-    The §3.3 carve-out: the default path is LOCK-FREE — a single ``store.read`` that
+    The §2 carve-out: the default path is LOCK-FREE — a single ``store.read`` that
     may observe a stale-but-internally-consistent snapshot under a concurrent write,
     never a partial one (writes are file-atomic). ``--locked`` acquires the PR lock
     via :func:`with_lock` for a strictly-consistent read and exits 75 under
@@ -640,11 +627,12 @@ def run(
     """Aggregate: orchestrate the verbs under one lock until quiescent or human-gated (§3.3).
 
     Acquires the PR lock once and threads ``_poll → _cluster → _fix → [cap] → _push →
-    [_rereview] → _reply → _resolve`` per cycle, blocking in ``_wait`` between cycles
+    _reply → _resolve → [_rereview]`` per cycle, blocking in ``_wait`` between cycles
     (autonomous) until the phase reaches ``quiesced`` / ``human-gated`` / ``merged``,
     then flushes terminal signals and releases. A concurrent run on the same PR exits
     75. Exit code is the propagated tier's sysexits value (0 on a clean terminal). The
-    §4.3 cadence knobs resolve from env / ``.prgroom.toml``.
+    §4.3 cadence knobs resolve from env or default; no verb resolves a ``.prgroom.toml``
+    path yet, so a per-repo override is never read (§4.3).
     """
     del no_prework  # parity-only; the aggregate always orchestrates its own prework
     store: Store = ctx.obj
@@ -670,14 +658,8 @@ def run(
         raise typer.Exit(code=code)
 
 
-@app.command()
-def sweep(repo: str = typer.Argument(..., help="owner/repo to sweep.")) -> None:
-    """Cross-PR autonomous mode: list open PRs and run each serially."""
-    _skeleton("sweep")
-
-
 def _render_status(envelope: dict[str, object], *, json_out: bool) -> None:
-    """Render the §4.6 status envelope as JSON (``--json``) or a human summary.
+    """Render the §4.5 status envelope as JSON (``--json``) or a human summary.
 
     ``--json`` emits the stable merge-gate handoff contract verbatim (indented). The
     default human view surfaces the operator-relevant fields — phase, CI, items,
@@ -700,7 +682,7 @@ def _render_status(envelope: dict[str, object], *, json_out: bool) -> None:
 
 
 def handle_cli_error(err: PrgroomError, *, stderr: IO[str] | None = None) -> int:
-    """Render a tier-tagged error and return its process exit code (§1, §3.3, §7.6).
+    """Render a tier-tagged error and return its process exit code (§1, §3.6).
 
     Every tier-tagged error renders the registry ``what/why/how`` block (plus the
     raw ``detail`` when present) so a user-resolvable failure carries the richest

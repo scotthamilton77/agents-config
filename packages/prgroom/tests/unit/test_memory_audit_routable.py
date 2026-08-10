@@ -1,4 +1,4 @@
-"""§8.3 routability: valid CONTEXTUAL entries surface in ``MemoryAuditResult.routable``.
+"""§7.3 routability: valid CONTEXTUAL entries surface in ``MemoryAuditResult.routable``.
 
 A CONTEXTUAL entry that clears every gate (valid class, exactly-one-of
 content|path, known/absent ``target_hint``) is the set the lifecycle (``_reply``)

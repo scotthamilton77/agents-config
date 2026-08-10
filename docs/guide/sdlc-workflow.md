@@ -50,12 +50,19 @@ handing work to a subagent standing policy rather than something to ask about.
 ## 1. Capture — tooling, not enforcement
 
 Durable work belongs in a tracker that outlives the session. This repo uses
-[beads](https://github.com/steveyegge/beads) through the `work` CLI, which the
-installer puts on your PATH:
+[beads](https://github.com/steveyegge/beads) through the `work` CLI, which
+ships from its own repository and is installed separately — see
+[Configuration](./configuration.md#4-wire-up-work-tracking-optional) for
+setup:
 
 ```bash
-work create --raw --title "..." --description "..." --type feature --priority P2
+work create feat --title "..." --description "..." --priority P2 --parent <parent-id>
 ```
+
+`feat` is one of this repo's item nouns — `work create --help` lists yours,
+and `.work/config.toml`'s `[taxonomy.nouns.*]` is the authority for this repo.
+A tracked parent supplies the track by inheritance; with no parent, use
+`--orphan --track <name>` instead.
 
 Tracked work carries dependencies and survives context compaction, so it
 resurfaces intact across sessions and agent handoffs. In-session step tracking is
@@ -177,7 +184,8 @@ and the `merge-guard` skill that enforced it has been retired.
 
 What remains is the contract itself, in the always-on hard lines: **creating a
 PR is not authorization to merge**, and absent an explicit instruction or a
-configured rule-based policy, the agent does not merge. When in doubt, treat the
+merge policy stated in writing in the project's own configuration, the agent
+does not merge. When in doubt, treat the
 PR as not authorized. This is a deliberate risk-asymmetric default: the cost of a
 wrong merge outweighs the cost of waiting. It now rests on the agent honouring a
 line in its instructions rather than on a mechanism, which is a weaker guarantee

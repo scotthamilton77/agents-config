@@ -1,10 +1,10 @@
-"""Tests for ``poll_pr`` — the read-only ``_poll`` lifecycle internal (§3.2/§3.4/§4.1).
+"""Tests for ``poll_pr`` — the read-only ``_poll`` lifecycle internal (§3.2/§4.1).
 
 The single mocked seam is the subprocess boundary: ``GhCli`` is driven by a
 ``RecordedRunner`` queuing the gh REST responses in the exact order ``poll_pr``
 issues them — head OID, PR resource, issue comments, reviews, review comments,
 CI status. Everything else (state, clock, config) is real. No code we own is
-mocked (§7.6).
+mocked.
 
 ``poll_pr`` is read-only: it mutates a returned ``PRGroomingState`` copy and never
 writes to GitHub. The caller owns ``store.write``.
@@ -152,7 +152,7 @@ def _required_reviewer(status: ReviewerStatus) -> dict[str, ReviewerState]:
 
 
 def test_bootstrap_non_empty_head_costs_no_retry_and_reaches_awaiting_review() -> None:
-    # The initial observed push anchors the 0-indexed counter at 0 (§3.4): the
+    # The initial observed push anchors the 0-indexed counter at 0 (§3.2): the
     # first review-eliciting push is free; only subsequent pushes consume retries.
     state = poll_pr(_idle_state(), ref=_REF, gh=_gh(head_oid="abc"), deps=_deps(), config=_config())
     assert state.pr_review_retries_used == 0
@@ -172,7 +172,7 @@ def test_bootstrap_empty_head_leaves_counter_zero_and_idle() -> None:
 def test_bootstrap_does_not_count_retries_spent_by_prior_pushes() -> None:
     # _push bootstrap (initial, free) plus one CLI retry may precede the first
     # successful poll; the poll bootstrap only anchors last_poll_sha — it never
-    # touches the counter (§3.4: the two bootstrap branches are mutually exclusive
+    # touches the counter (§3.2: the two bootstrap branches are mutually exclusive
     # with attribution, and the initial-push anchor costs nothing).
     start = _state(phase=PRPhase.IDLE, retries_=1, last_poll_sha="", last_pushed_head_sha="abc")
     state = poll_pr(start, ref=_REF, gh=_gh(head_oid="abc"), deps=_deps(), config=_config())
@@ -369,7 +369,8 @@ def test_own_posted_reply_is_not_ingested_as_new_item() -> None:
 
 
 def test_ingest_skips_marker_bearing_comment_without_ledger_entry() -> None:
-    # Verb-atomicity §6 / behavior 9 — the recursive-echo regression guard
+    # Per the verb-atomicity spec (archive-era, resolvable in the private archive
+    # repository) — behavior 9, the recursive-echo regression guard
     # (the ledger-lost window): a crash after a POST but before persist loses
     # own_reply_id, so the ledger set cannot exclude the posted comment. The
     # idempotency marker in its body is the state-independent backstop: never
@@ -389,7 +390,8 @@ def test_ingest_skips_marker_bearing_comment_without_ledger_entry() -> None:
 
 
 def test_ingest_keeps_marker_free_comments_from_any_author() -> None:
-    # Verb-atomicity §6 / behavior 10: strict full-grammar matching — a comment
+    # Per the verb-atomicity spec (archive-era, resolvable in the private archive
+    # repository) — behavior 10: strict full-grammar matching — a comment
     # merely MENTIONING "prgroom:reply" in prose (any author) still ingests.
     # Exclusion stays content-keyed, never author-keyed.
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
@@ -455,7 +457,7 @@ def test_review_thread_item_gets_graphql_node_id_as_thread_id() -> None:
 
 def test_review_thread_thread_id_empty_when_unmapped() -> None:
     # A comment absent from the GraphQL map (e.g. beyond the page cap) degrades to
-    # "" rather than mis-keying — the §8.2 floor, applied per-item.
+    # "" rather than mis-keying — the §7.2 floor, applied per-item.
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
     gh = GhCli(
         RecordedRunner(
@@ -932,7 +934,7 @@ def test_auto_decline_only_poll_does_not_advance_last_activity() -> None:
     assert state.last_activity_at == _T0  # but the idle clock did NOT reset
 
 
-# ── gh error-code mapping (read-only; §3.6/§3.7) ──
+# ── gh error-code mapping (read-only; §3.6) ──
 
 
 def test_transient_gh_failure_propagates_unchanged() -> None:

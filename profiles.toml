@@ -21,16 +21,16 @@ include = ["**"]
 
 # A deliberately tiny user install. Selectors must match the staged universe —
 # a dead selector fails the install loud — so this lists only what exists.
-# `rules/**`, `agents/**`, and `commands/**` are absent from the universe today:
-# every artifact in them was record-less and was retired out of the repository.
-# Re-add the selectors here in the same change that readmits content into those
-# namespaces.
+# `agents/**` and `workflows/**` are the namespaces absent from the universe
+# today: nothing stages into them. `rules/**` and `commands/**` are populated —
+# this profile just doesn't select them.
+# Re-add the `agents/**` selector here in the same change that readmits content
+# into that namespace.
 [profiles.minimal-user]
 include = ["instructions"]
 
-# The SDLC discipline content. `workflows/**` is absent from the universe today:
-# the last workflow (quality-gate.js) was retired out of the repository on 2026-07-25
-# (revisit tracked as agents-config-9k9.17.6). Re-add the selector here in the
-# same change that readmits content into that namespace.
+# The SDLC discipline content. `workflows/**` is absent from the universe
+# today: nothing stages into it. Re-add the selector here in the same change
+# that readmits content into that namespace.
 [profiles.sdlc]
 include = ["skills/**"]
