@@ -62,7 +62,7 @@ tool.
 | `src/user/.codex/` | `~/.codex/` | Codex instruction file |
 | `src/user/.gemini/` | `~/.gemini/` | Gemini instruction file |
 | `src/user/.opencode/` | `~/.config/opencode/` | OpenCode instruction file + settings |
-| `src/plugins/<name>/` | matching active tools | optional plugin content |
+| `src/plugins/<name>/` | matching active tools, if the plugin is itself active | optional plugin content |
 
 Two things decide whether a given skill, rule, command, or agent actually lands.
 It has to be in the source tree, and its front matter has to carry a complete

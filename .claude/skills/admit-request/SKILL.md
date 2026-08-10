@@ -138,52 +138,71 @@ the idea, decline the shape.
 
 ### 4. Budget
 
-Two surfaces, and an artifact is priced on the one it actually loads into.
+Two surfaces, and an artifact is priced on the one it actually loads into. The
+always-on one is worth getting exactly right, because it is the cost a reader
+cannot decline.
+
+**The always-on surface is three things, summed per tool**: the deployed
+instruction file, every admitted rule's bytes, and one catalog entry — `name`
+plus `description` — for each skill that tool's runtime publishes to the model.
+Nothing else is charged to it. The rest of this section is that list's
+consequences.
 
 | Artifact | Always-on cost | On-invoke cost |
 |---|---|---|
 | Rule | its whole body — it is always loaded | — |
-| Skill / agent | its front-matter `description` only | its body, paid when invoked |
+| Model-invoked skill | its catalog entry (`name` + `description`) | its body, paid when invoked |
+| User-invoked skill | none, on a tool that honours the flag — it is in no catalog there | its body, paid when the user names it |
+| Agent | none — the catalog charge counts the `skills` namespace alone | its body, paid when dispatched |
 | Command | none — it appears in no catalog | its body, paid when the user types it |
 
-**A skill's body is not always-on.** Until something invokes it, a skill costs
-its description line in the catalog and nothing else. So body size is a
-question of whether the body earns its cap *at the moment of use*, and
+Three rows are worth spelling out, because each is a place a plausible reading
+goes wrong.
+
+**A skill's body is never always-on.** Until something invokes it, a
+model-invoked skill costs its catalog entry and nothing else. So body size is a
+question of whether the body earns its cap *at the moment of use*, while
 description sprawl is the always-on concern — a vague description is worse than
 a long body, because it is paid every session and buys mis-invocation.
 
-**A command is not in any catalog at all.** Neither its body nor its
-description reaches a session until the user types it, so a command has no
-always-on figure to state and its whole cost is one the user asked for. Do not
-ask a command to justify a context cost it does not impose.
+**A command is in no catalog at all.** Neither its body nor its description
+reaches a session until the user types it, so a command has no always-on figure
+to state and its whole cost is one the user asked for. Do not ask a command to
+justify a context cost it does not impose.
+
+**An agent's description is charged nothing today**, because the catalog charge
+counts the `skills` namespace alone. No agent is in the tree, so nothing is
+mispriced now — but admit one and its description is yours to police. Police a
+description by reading it and cutting it, never by recording its size in
+`cost:`, where the number drifts the next time the description is edited and
+where `content-lint` rejects it.
 
 Mechanical caps the installer enforces at deploy, each a hard abort before any
 write:
 
-- always-on surface (instruction file + every admitted rule + every skill
-  catalog entry that tool's runtime publishes): **10k tokens**
+- the always-on surface, all three components together: **10k tokens**
 - the deployed instruction file alone, a sub-budget inside that surface:
   **800 tokens**
 - each **model-invoked** skill body, after front matter: **2k tokens**
 - each **user-invoked** skill body: **5k tokens**
 
+Every one of those is measured per tool, on the bytes that tool deploys. That
+is what makes the invocation mode a property of a deployed copy rather than of
+the source.
+
 A skill is user-invoked **on a given tool** when the front matter it deploys
-with there carries `disable-model-invocation: true` — a property of each
-deployed copy rather than of the source, since the projection strips the key
-for any tool whose loader does not define it. Where the key survives, it keeps
-that skill's description out of the model's catalog entirely, so the skill
-costs zero always-on tokens on that tool and its body is reached only when the
-user names it — a cost asked for, at a moment chosen for it. A model-invoked
-body is loaded on the model's own judgement, mid-task, against whatever the
-context is already carrying, which is what the tighter number prices.
+with there carries `disable-model-invocation: true`. Where the key survives,
+that tool publishes no catalog entry for the skill at all: it costs zero
+always-on tokens there, and its body is reached only when the user names it — a
+cost asked for, at a moment chosen for it. Where the key is stripped, the model
+reaches that body on its own judgement, mid-task, against whatever the context
+is already carrying, which is what the tighter number prices.
 
 **Only Claude honours the flag today.** The installer strips it for Codex,
-Gemini and OpenCode, which have no equivalent to translate onto. The cap is
-then keyed on the **deployed** front matter, one measurement per target, so
-losing the key costs more than the exemption: on Codex and OpenCode the skill
-is model-invocable whatever its author declared, which puts that tool's copy
-under the strict cap and its description back into that tool's catalog. Two
-consequences to hold:
+Gemini and OpenCode, which have no equivalent to translate onto — so on Codex
+and OpenCode the skill is model-invocable whatever its author declared, which
+puts that tool's copy under the strict body cap and its description into that
+tool's catalog. Two consequences to hold:
 
 - The 5k number is Claude-shaped, and it is Claude-only. A 4,900-token
   user-invoked body passes on Claude and **aborts the deploy** on Codex and
@@ -216,18 +235,6 @@ the excess to code, or split it.
 Choosing the invocation mode is a catalog-design decision, not a budget one:
 every model-invoked description is one more entry the agent must disambiguate
 before the user types anything. Do not set the flag to buy the looser cap.
-
-A skill's catalog entry — its `name` and `description` — is charged to the
-always-on surface of every tool whose runtime publishes it, so description
-sprawl reads as a number here rather than as something you had to notice.
-
-Two descriptions are still charged nothing, for two different reasons. A command
-is in no catalog, so there is nothing to charge. An agent would be in one, and
-the charge counts the `skills` namespace alone — no agent is in the tree today,
-so nothing is mispriced now, but admit one and its description is yours to
-police. Either way, police a description by reading it and cutting it, never by
-recording its size in `cost:`, where the number drifts the next time the
-description is edited and where `content-lint` now rejects it.
 
 ### 5. Placement
 

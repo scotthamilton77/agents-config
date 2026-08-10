@@ -111,7 +111,7 @@ the authoritative inventory:
 | Claude-only skills | [`src/user/.claude/skills/`](./src/user/.claude/skills/) | `~/.claude/skills/` |
 | Claude-only rules | [`src/user/.claude/rules/`](./src/user/.claude/rules/) | `~/.claude/rules/` |
 | Slash commands | [`src/user/.claude/commands/`](./src/user/.claude/commands/) | `~/.claude/commands/` |
-| Plugin content | [`src/plugins/`](./src/plugins/) | matching active tools |
+| Plugin content | [`src/plugins/`](./src/plugins/) | matching active tools, if the plugin is itself active |
 
 Each `rules/` directory carries its own `AGENTS.md` stating what currently lives
 there. For a walkthrough of what the installed set does and where the gaps are,
