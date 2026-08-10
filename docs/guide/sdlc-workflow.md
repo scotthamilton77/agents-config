@@ -24,9 +24,12 @@ machine-checkable QA in between.
 | 7. Merge | Contract only — the hard line, with nothing enforcing it |
 | 8. Persist | **Partly** — `handoff`, `retrospect` |
 
-You don't invoke these by hand step by step — the rules and skills fire
-automatically as the work moves. What follows is what's happening, and where you
-stay in control.
+Only phase 0 loads by itself. Everything else in the table is a skill, and a
+skill runs when it is invoked — by your agent, when it judges one relevant to
+what you just asked for, or by you naming it. No installed rule makes a phase
+happen on its own, so the habits that carry work between phases are yours to
+keep. What follows is which of the two each phase is, and where you stay in
+control.
 
 ## 0. The always-on contract — ships
 
