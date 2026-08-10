@@ -242,7 +242,7 @@ idle | awaiting-review | fixes-pending | quiesced | human-gated | merged
 
 A PR starts in `idle` on first invocation. `poll` advances it to `awaiting-review` once the first push lands, and to `fixes-pending` when a reviewer item appears. Within `fixes-pending` the cycle does its work; at end-of-cycle the phase resolves to `awaiting-review` (commits pushed), `quiesced` (no commits, quiescence trips), or `human-gated` (a gate trips). Every non-terminal phase transitions to `merged` when `poll` observes the PR closed via merge.
 
-**Terminal-for-CLI:** `quiesced`, `human-gated`, `merged`. The CLI takes no further autonomous action in these phases. **Re-enters the loop:** both `quiesced` and `human-gated` can return to `fixes-pending` — on new reviewer activity, an external push, an operator `resolve-escalated`, or (for a budget-gated PR) a raised PR-review retry budget. **Graph-terminal:** `merged` only (absorbing).
+**Terminal-for-CLI:** `quiesced`, `human-gated`, `merged`. The CLI takes no further autonomous action in these phases. **Re-enters the loop:** both `quiesced` and `human-gated` can return to `fixes-pending` — on new reviewer activity, an operator `resolve-escalated`, or (for a budget-gated PR) a raised PR-review retry budget; an external push also re-enters the loop from either phase, landing at `awaiting-review` from `quiesced` and at `fixes-pending` from `human-gated` (§3.2 `poll` row). **Graph-terminal:** `merged` only (absorbing).
 
 The transition matrix in §3.2 carries the same edges in table form.
 
@@ -615,7 +615,7 @@ fallback  = { cli = "claude", model = "haiku", effort = "high" }
 fallback2 = { cli = "codex",  model = "gpt-5.6-luna" }
 
 [agents.fix]
-primary   = { cli = "claude", model = "opus[1m]", effort = "xhigh" }
+primary   = { cli = "claude", model = "opus[1m]", effort = "xhigh", write = true }
 fallback  = { cli = "codex",  model = "gpt-5.6-terra", write = true }
 ```
 
