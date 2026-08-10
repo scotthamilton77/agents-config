@@ -50,7 +50,7 @@ installer/
 ├── doc_lint_cli.py          Separate entry point — checks backticked citations in in-scope tracked Markdown (excludes docs/specs/, dated filenames, build dirs) against three targets: cited repo paths on disk, cited Python symbols via an AST index of packages/, and cited skill/rule/command/agent names against the staged asset roster
 ├── spec_lint_cli.py             Separate entry point — lints docs/specs/ structure
 ├── core/                        ── pure, tool-agnostic, fully unit-testable
-│   ├── orchestrator.py          stage_and_transform: drives build_plan -> overlay -> extensions -> transforms per tool; cli.py, not this module, is the top-level controller
+│   ├── orchestrator.py          stage_and_transform: drives build_plan -> overlay -> extensions -> flatten -> transforms per tool; cli.py, not this module, is the top-level controller
 │   ├── model.py                 FileKind, StagedItem, StagingPlan, Orphan, IncludeDirective, Counters
 │   ├── io_port.py               IOPort protocol + TerminalIO + ScriptedIO
 │   ├── templates.py             DYNAMIC-INCLUDE flattening (all three directive forms)
@@ -136,7 +136,7 @@ The installer is a `uv`-managed Python project. `pyproject.toml` declares deps; 
 
 The dependency list is deliberately tight, and a library that exists and solves the problem is an acceptable addition.
 
-**Dev deps:** the `[dependency-groups].dev` table in `pyproject.toml` is the roster — a hand-copied list here goes stale the moment an entry is added (as this one has, twice); it currently covers the test runner, lint/type/format tooling, and the audit and `lint-actions` gates. `uv tool run` is the local invocation pattern.
+**Dev deps:** the `[dependency-groups].dev` table in `pyproject.toml` is the roster — a hand-copied list here goes stale the moment an entry is added; it currently covers the test runner, lint/type/format tooling, and the audit and `lint-actions` gates. `uv tool run` is the local invocation pattern.
 
 ### Configuration — `installer.toml`
 

@@ -237,7 +237,7 @@ flowchart LR
 | `Counters` / `Orphan` list | **Installer** | One invocation | Surfaced in the exit summary; not persisted. |
 | Destination stores | **Installer** writes → **Tool** reads | Permanent on disk | Single writer at install time; consumed asynchronously at each tool's runtime. |
 | Backups | **Installer** | Permanent on disk | Write-only recovery; never read back by the installer. |
-| Install receipt (`install-receipt.json` + `.lock`) | **Installer** | Permanent on disk (between runs) | The installer's own persisted state — read at prune start, rewritten at run end (mirrors disk). Trusted state behind an `integrity` digest; held under a single-writer advisory lock on a non-dry-run install — `--dry-run` takes no lock at all. A `--project` install uses a second, project-local instance (`<project-root>/.agents-config/install-receipt.json`) instead of this one. |
+| Install receipt (`install-receipt.json` + `.lock`) | **Installer** | Permanent on disk (between runs) | The installer's own persisted state — read at prune start, rewritten at run end (mirrors disk) on every non-dry-run install. Trusted state behind an `integrity` digest; held under a single-writer advisory lock on that path — `--dry-run` takes no lock or write at all. A `--project` install uses a second, project-local instance (`<project-root>/.agents-config/install-receipt.json`) instead of this one. |
 
 ### Explicit non-ownership
 
