@@ -125,7 +125,7 @@ The collision matrix — the dispatch contract `core/merge/registry.py` implemen
 |---|---|---|---|
 | `NAMESPACED_MD` | `rules` | `append_rules` | Join `existing + "\n---\n" + incoming` — rules compose. |
 | `NAMESPACED_MD` | `commands` / `skills` / `agents` | `fatal` | **Raise** — two items with the same name is an authoring error; the message names both files. |
-| `SETTINGS_JSON` | — | `json_union` | Deep union: nested-dict precedence, array union + dedupe (first-seen order), type-mismatch surfaced. |
+| `SETTINGS_JSON` | — | `json_union` | Deep union: nested-dict precedence, array union + dedupe (first-seen order), scalar conflict and type mismatch both keep existing silently (no warning). |
 | `JSONC` | — | `last_wins_warn` | Replace, with a warning that an existing file was overwritten. |
 | `TOML` | — | `last_wins_warn` | Replace, with a warning. |
 | `OTHER` | — | `last_wins_silent` | Replace silently. |
@@ -159,17 +159,18 @@ erDiagram
     Receipt {
         int    schema_version  "gates forward-compatible evolution; unknown -> CORRUPT"
         string integrity       "sha256: digest over canonical (schema_version + roots + entries [+ clis when non-empty]); recomputed on read, mismatch -> CORRUPT"
-        Roots  roots           "persisted install-root allowlist (prior | this run's live roots); retired-plugin root validation"
+        Roots  roots           "persisted install-root allowlist (prior | this run's live roots); plugin (active or retired) root validation fallback when live code lacks the root"
         Entry  entries         "the recorded wholesale-authored entries"
         Cli    clis            "the recorded installer-deployed uv tools, one per registry entry; empty on every pre-CLI-deploy receipt"
     }
 
     ReceiptEntry {
-        Path   path    "HOME-relative dest path (the diff key)"
-        string owner   "tool name (claude/codex/gemini/opencode) or plugin name — diff-scope tag"
-        Path   root    "HOME-relative install root — a tool root (.claude, .config/opencode) for a synced entry, or the dest dir's first segment for a plugin-routed one"
-        string kind    "Literal[file | dir] — top-level skill/agent dirs are one dir entry"
-        string sha256  "hex digest of a file's bytes (ownership-drift gate); null for a dir entry"
+        Path   path       "HOME-relative dest path (the diff key)"
+        string owner      "tool name (claude/codex/gemini/opencode) or plugin name — diff-scope tag"
+        Path   root       "HOME-relative install root — a tool root (.claude, .config/opencode) for a synced entry, or the dest dir's first segment for a plugin-routed one"
+        string kind       "Literal[file | dir] — top-level skill/agent dirs are one dir entry"
+        string sha256     "hex digest of a file's bytes (ownership-drift gate); null for a dir entry"
+        string dir_digest "sha256:<hex> recursive content fingerprint of a dir entry's files (dir_content_digest); null for files and for legacy dir entries recorded before this field existed"
     }
 
     CliReceiptEntry {
@@ -181,8 +182,8 @@ erDiagram
 
 - **It records only wholesale-authored entries** — namespaced `commands`/`skills`/`agents`/`rules`/`hooks`/`workflows` and plugin route dests. It **never** records a merge-target (`settings.json` via `JsonUnionStrategy`, the assembled `AGENTS.md`/`GEMINI.md`/`opencode.jsonc`): dropping a partial contribution must never delete the whole file. The `core/ownership.py` classifier (`is_prunable(StagedItem)`) makes this decision, keyed on the item's namespace and merge strategy.
 - **`path` is the diff key, `owner` the scope tag.** Orphan detection is `{ e ∈ prior : e.owner ∈ scope ∧ (e.owner, e.path) ∉ desired_staged_keys ∧ validate_entry(e) }`. `desired_staged_keys` is the owned dest paths in this run's staging plan (built even under `--prune-only`) plus the active plugins' currently-shipped route files.
-- **`sha256` is ownership-drift protection.** A file orphan whose on-disk bytes no longer match the recorded digest is the user's now — it is relinquished, not deleted. `dir` entries carry `sha256: null` (recursive content-drift protection is a deliberate v1 limitation, deferred).
-- **`integrity` + `roots` make the receipt a trusted deletion-authority input.** `integrity` is recomputed on read; any accidental change fails closed (prune disabled, file untouched). `roots` is the persisted allowlist used to validate a *retired* plugin's recorded root (tool and discovered-plugin roots come from live code instead). See [`sequences.md`](sequences.md) §"Sequence 4 — Prune flow" for the full lifecycle.
+- **`sha256` and `dir_digest` are ownership-drift protection.** A file orphan whose on-disk bytes no longer match the recorded `sha256` is the user's now — it is relinquished, not deleted. `dir` entries carry `sha256: null` and instead carry `dir_digest` — a recursive content fingerprint (`dir_content_digest`) over every file under the directory; a dir orphan whose live digest no longer matches the recorded one is likewise relinquished. A legacy dir entry recorded before `dir_digest` existed (`dir_digest: null`) degrades to the type-check-only guard (still a real directory, or relinquished).
+- **`integrity` + `roots` make the receipt a trusted deletion-authority input.** `integrity` is recomputed on read; any accidental change fails closed (prune disabled, file untouched). `roots` is the persisted allowlist used to validate a **plugin** owner's recorded root — active or retired: a plugin's route roots can retire while old routed files remain to prune, so a plugin root is legitimate via a current live route root **or** a previously-recorded entry in `roots`. A **tool** owner's root must come from live code and is never checked against `roots`, so a forged tool root can't be laundered through it. See [`sequences.md`](sequences.md) §"Sequence 4 — Prune flow" for the full lifecycle.
 - **`clis` is additive and omitted-when-empty for integrity compatibility.** `canonical_bytes` serializes the `clis` key into the integrity payload only when `receipt.clis` is non-empty, so a receipt written before this field existed — or one where the CLI-deploy stage never ran — hashes byte-identically to today's code and its persisted `integrity` still validates on read (no forced re-hash, no downgrade caveat: an OLDER installer reading a NEWER receipt with a non-empty `clis` simply ignores the unknown key via its own dict-based parser, and ignores CLIs it never shipped). Merged by `merge_clis` (`receipt_build.py`): a name still in the registry keeps the run's freshly deployed entry when deployed, else its retained prior entry (skip/decline/failure); a non-registry (retired) name drops once its uninstall completes or it is relinquished as foreign, else it is retained so retirement retries next prune.
 
 ## Canonical-ownership boundaries
