@@ -210,7 +210,8 @@ def build_plan(
     ``adapter.scoped_namespaces()`` (4), and tool settings (5). Each namespace
     is gated by ``adapter.should_install_namespace(ns, source)`` so a tool can
     opt out (e.g. OpenCode skips shared agents). Plugin overlay (Phase 6) and
-    DYNAMIC-INCLUDE flatten (Phase 6.5) are later stories.
+    DYNAMIC-INCLUDE flatten (Phase 6.5) run after this call, in
+    ``orchestrator.stage_and_transform``, over the plan returned here.
 
     A same-dest collision routes through ``registry`` (the orchestrator passes
     the shared ``default_registry()`` it also hands to the overlay); when omitted
