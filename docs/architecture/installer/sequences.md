@@ -33,7 +33,7 @@ Together they answer: *who calls whom, in what order, where does state live (in-
 
 ## Sequence 1 — End-to-end install (happy path)
 
-One invocation: `python3 scripts/install.py --tools=claude,gemini`, with a discovered plugin active. `cli.py` — not `orchestrator.py` — is the actual top-level driver: it resolves tools/plugins, then runs **two separate whole-fleet passes** over the detected tools — first build every tool's plan (staging + plugin overlay, via `orchestrator.stage_and_transform`), then sync every tool's finished plan to disk — rather than interleaving stage/overlay/sync per tool. The plan never touches disk except through `Sync`.
+One invocation: `python3 scripts/install.py --tools=claude,gemini`, with a discovered plugin active. `cli.py` — not `orchestrator.py` — is the actual top-level driver: it resolves tools/plugins, then runs **two separate whole-fleet passes** over the active tools — first build every tool's plan (staging + plugin overlay, via `orchestrator.stage_and_transform`), then sync every tool's finished plan to disk — rather than interleaving stage/overlay/sync per tool. The plan never touches disk except through `Sync`.
 
 ```mermaid
 sequenceDiagram
@@ -55,14 +55,14 @@ sequenceDiagram
     Op->>CLI: python3 scripts/install.py --tools=claude,gemini
     CLI->>Cfg: resolve_tools + resolve_plugins (auto-detect / --tools / --plugins)
     Cfg->>FS: probe tool config dirs
-    FS-->>Cfg: detected tools, plugins
+    FS-->>Cfg: config-dir probe results (tools, plugins)
     Cfg-->>CLI: resolved tools + plugins
     CLI->>FS: load .installignore (hard error if missing/unreadable/non-UTF-8)
 
     rect rgb(245, 245, 255)
         Note over CLI,Merge: Phase 1 — build + overlay EVERY tool's plan (whole-fleet), before any sync
         CLI->>Orch: stage_and_transform(tools, plugins)
-        loop per detected tool (claude, then gemini)
+        loop per active tool (claude, then gemini)
             Orch->>Stage: build_plan(adapter)
             Stage->>FS: walk + read source (shared .agents/ + per-tool)
             FS-->>Stage: source bytes
@@ -101,7 +101,7 @@ sequenceDiagram
 
     rect rgb(245, 255, 245)
         Note over CLI,FS: Phase 2 — sync EVERY tool's plan to disk (separate whole-fleet pass, via run.install_pipeline)
-        loop per detected tool (claude, then gemini)
+        loop per active tool (claude, then gemini)
             CLI->>Sync: flush(plan) to destination
             loop per StagedItem in plan
                 Sync->>FS: hash-compare vs destination (see Sequence 3)
