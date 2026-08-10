@@ -212,7 +212,7 @@ them, and not as a description of anything current.
 - **Proposed Rule** — a third review finding class. The verdict schema accepts
   two; see *Verdict artifact*.
 - **`wait-for-pr-comments`**, **`reply-and-resolve-pr-threads`**,
-  **`monitor-pr`** — the PR-grooming skills. The first two name work that now
+  **`monitor-pr`** — the PR-grooming skills. The first two name work that
   belongs to the `prgroom` CLI (`packages/prgroom/`), which nothing invokes
   today; `monitor-pr`'s interactive polling has no successor at all.
 - **Decomposition**, **Decomposition Architect**, **Decomposition Plan**,

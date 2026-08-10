@@ -163,13 +163,15 @@ write:
 - each **model-invoked** skill body, after front matter: **2k tokens**
 - each **user-invoked** skill body: **5k tokens**
 
-A skill is user-invoked when its front matter carries
-`disable-model-invocation: true`. On a host that honours the flag, that keeps
-its description out of the model's catalog entirely, so it costs zero always-on
-tokens and its body is reached only when the user names it — a cost asked for,
-at a moment chosen for it. A model-invoked body is loaded on the model's own
-judgement, mid-task, against whatever the context is already carrying, which is
-what the tighter number prices.
+A skill is user-invoked **on a given tool** when the front matter it deploys
+with there carries `disable-model-invocation: true` — a property of each
+deployed copy rather than of the source, since the projection strips the key
+for any tool whose loader does not define it. Where the key survives, it keeps
+that skill's description out of the model's catalog entirely, so the skill
+costs zero always-on tokens on that tool and its body is reached only when the
+user names it — a cost asked for, at a moment chosen for it. A model-invoked
+body is loaded on the model's own judgement, mid-task, against whatever the
+context is already carrying, which is what the tighter number prices.
 
 **Only Claude honours the flag today.** The installer strips it for Codex,
 Gemini and OpenCode, which have no equivalent to translate onto. The cap is
@@ -190,7 +192,7 @@ consequences to hold:
 - Carrying the flag is not by itself a reason to leave the shared tree, since it
   is projected out cleanly. But dropping a key removes the bytes, not the gap: a
   skill whose worth claim *depends* on never firing unprompted is still
-  model-invocable wherever the flag is unsupported, and belongs in
+  model-invocable on Codex and OpenCode, and belongs in
   `src/user/.claude/` where the claim holds. Check 5 decides this; check 4 only
   tells you which number to measure against.
 
