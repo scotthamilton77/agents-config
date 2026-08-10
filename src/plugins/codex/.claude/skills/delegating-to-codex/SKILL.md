@@ -10,10 +10,12 @@ admission:
 # Delegating to Codex
 
 Reach Codex by dispatching the `codex-rescue` agent through the Agent tool.
-That agent ships with the separate `openai-codex` plugin, not with this one —
-if it does not appear as an agent type in the session, check whether
-`openai-codex` is installed, and if it is not, stop and tell the user rather
-than falling back to the raw `codex` binary, which stays forbidden either way.
+That agent ships with a separate plugin, not with this one: the plugin is named
+`codex`, and it is published by the `openai-codex` marketplace — install the
+former from the latter. If the agent does not appear as an agent type in the
+session, check whether the `codex` plugin is installed, and if it is not, stop
+and tell the user rather than falling back to the raw `codex` binary, which
+stays forbidden either way.
 How the agent reaches Codex once dispatched is its own runtime's contract, not
 this skill's.
 
