@@ -124,9 +124,13 @@ relevant. It earns that only if **all five** hold:
    activity should be **a skill invoked at that moment**, where it is paid for
    only when it is relevant. This is the most common reason a plausible rule is
    the wrong shape.
-5. **Fits the sub-budget** — 800 tokens across the whole always-on instruction
-   file, exactly, and a hard deploy abort past it, so a rule is a paragraph,
-   not a page.
+5. **Fits the always-on budget** — a rule's bytes are charged to the 10k
+   always-on surface, in every session, on every tool that stages it. That is
+   the cap a rule can breach: the 800-token sub-budget beside it weighs the
+   assembled instruction file, which no rule's bytes enter. So no single rule
+   trips a cap and fifteen reasonable ones breach a ceiling none of them
+   approaches — the discipline is proportion, not a number to check against.
+   A rule is a paragraph, not a page.
 
 Failing (3) but genuinely needed → a work item against the code. Failing (4)
 → re-scope as a skill and re-run this evaluation from check 1; do not decline
