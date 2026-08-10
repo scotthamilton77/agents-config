@@ -124,8 +124,9 @@ relevant. It earns that only if **all five** hold:
    activity should be **a skill invoked at that moment**, where it is paid for
    only when it is relevant. This is the most common reason a plausible rule is
    the wrong shape.
-5. **Fits the sub-budget** — roughly 800 tokens across the whole always-on
-   instruction file, so a rule is a paragraph, not a page.
+5. **Fits the sub-budget** — 800 tokens across the whole always-on instruction
+   file, exactly, and a hard deploy abort past it, so a rule is a paragraph,
+   not a page.
 
 Failing (3) but genuinely needed → a work item against the code. Failing (4)
 → re-scope as a skill and re-run this evaluation from check 1; do not decline
@@ -152,9 +153,13 @@ description reaches a session until the user types it, so a command has no
 always-on figure to state and its whole cost is one the user asked for. Do not
 ask a command to justify a context cost it does not impose.
 
-Mechanical caps the installer enforces at deploy:
+Mechanical caps the installer enforces at deploy, each a hard abort before any
+write:
 
-- always-on surface (instruction file + all rules): **10k tokens**
+- always-on surface (instruction file + every admitted rule + every skill
+  catalog entry that tool's runtime publishes): **10k tokens**
+- the deployed instruction file alone, a sub-budget inside that surface:
+  **800 tokens**
 - each **model-invoked** skill body, after front matter: **2k tokens**
 - each **user-invoked** skill body: **5k tokens**
 
@@ -168,14 +173,18 @@ what the tighter number prices.
 
 **Only Claude honours the flag today.** The installer drops it for Codex, Gemini
 and OpenCode, which have no equivalent to translate onto — so on those three the
-skill stays model-invocable and its description does load into their catalog.
-The cap is keyed on the artifact's authored flag and applied uniformly anyway,
-because a per-tool cap would make this verdict depend on which tools are
-installed on the machine you are running it from. Two consequences to hold:
+skill stays model-invocable. The cap is then keyed on the **deployed** front
+matter, one measurement per target, so dropping the key does not merely lose the
+exemption: it moves that tool's copy under the strict cap and puts its
+description back into that tool's catalog. Two consequences to hold:
 
-- The 5k number is Claude-shaped. A 4,900-token body is a model-invoked body on
-  three of four tools, against a 2k intent. That is the price of a uniform cap,
-  and it is another reason the ceiling is relief rather than permission.
+- The 5k number is Claude-shaped, and it is Claude-only. A 4,900-token
+  user-invoked body passes on Claude and **aborts the deploy** on Codex and
+  OpenCode, where the same bytes are weighed against 2k. The looser ceiling is
+  relief on one target, never permission across four. Gemini is the exception
+  in both directions: this project does not model what its runtime does with a
+  deployed skill, so a skill there is charged no catalog entry and its body
+  meets no cap at all.
 - Carrying the flag is not by itself a reason to leave the shared tree, since it
   is projected out cleanly. But dropping a key removes the bytes, not the gap: a
   skill whose worth claim *depends* on never firing unprompted is still
