@@ -4,7 +4,7 @@
 
 ## Purpose
 
-A `uv`-managed Python package (`packages/installer`) that installs agent configuration from this repo into AI coding assistant homes (`~/.claude/`, `~/.codex/`, `~/.gemini/`, OpenCode XDG). User-facing entry point is `scripts/install.sh`, a thin `exec uv run --project packages/installer python -m installer` stub. This repo is the first Python subproject in a modular monorepo; its layout is the template for future Python subprojects. On the user path, the same install run also deploys every CLI named in `core/clis.py`'s `CLI_PACKAGES` registry onto PATH via `uv tool install` — a closed registry, receipt-tracked, healed/pruned on later runs — through the CLI-deploy stage (`core/clis.py` + `core/run.py`'s `deploy_clis`/`prune_clis`). The registry is the roster; a copy of it here would go stale the first time a package graduates.
+A `uv`-managed Python package (`packages/installer`) that installs agent configuration from this repo into AI coding assistant homes (`~/.claude/`, `~/.codex/`, `~/.gemini/`, OpenCode XDG). User-facing entry point is `scripts/install.sh`, a thin `exec uv run --project packages/installer python -m installer` stub. On the user path, the same install run also deploys every CLI named in `core/clis.py`'s `CLI_PACKAGES` registry onto PATH via `uv tool install` — a closed registry, receipt-tracked, healed/pruned on later runs — through the CLI-deploy stage (`core/clis.py` + `core/run.py`'s `deploy_clis`/`prune_clis`). The registry is the roster; a copy of it here would go stale the first time a package graduates.
 
 ## Architecture
 
@@ -23,14 +23,14 @@ A `uv`-managed Python package (`packages/installer`) that installs agent configu
 │       ├── pyproject.toml                   (uv-managed; targeted deps allowed)
 │       ├── installer.toml                   (installer config — [tools] dest-dir overrides; parsed by core/installer_toml.py, not yet wired)
 │       ├── src/installer/
-│       │   ├── core/                        (pure, tool-agnostic engine)
+│       │   ├── core/                        (pure, tool-agnostic engine — includes orchestrator.py)
 │       │   ├── tools/                       (per-tool adapters)
 │       │   ├── plugins/                     (per-plugin adapters)
 │       │   ├── cli.py
-│       │   ├── config.py
-│       │   └── orchestrator.py
+│       │   └── config.py
 │       └── tests/
-│           ├── unit/   fixtures/
+│           ├── unit/
+│           └── fixtures/
 ├── scripts/
 │   ├── install.sh                           (thin exec uv run --project packages/installer python -m installer stub)
 │   └── install.py                           (entry stub: `from installer.cli import main`)
@@ -43,20 +43,20 @@ A `uv`-managed Python package (`packages/installer`) that installs agent configu
 
 ```
 installer/
-├── cli.py                       Parse argv, build Config, wire IOPort, invoke orchestrator + the admission gate
+├── cli.py                       Parse argv, wire IOPort, invoke orchestrator + the admission gate, build Config
 ├── config.py                    Config dataclass (home, tools, auto_yes); resolve_tools/resolve_plugins for auto-detection
-├── orchestrator.py              Top-level controller; composes core engines + adapters
 ├── content_lint_cli.py          Separate entry point (`python -m installer.content_lint_cli`) — stages src/ and runs the admission gate as a repo-side lint; never calls cli.py or the installer
 ├── content_tests_cli.py         Separate entry point — discovers and runs every shipped skill's own test suite
-├── doc_lint_cli.py          Separate entry point — checks every tracked Markdown citation against the staged asset roster
+├── doc_lint_cli.py          Separate entry point — checks backticked citations in in-scope tracked Markdown (excludes docs/specs/, dated filenames, build dirs) against three targets: cited repo paths on disk, cited Python symbols via an AST index of packages/, and cited skill/rule/command/agent names against the staged asset roster
 ├── spec_lint_cli.py             Separate entry point — lints docs/specs/ structure
 ├── core/                        ── pure, tool-agnostic, fully unit-testable
+│   ├── orchestrator.py          stage_and_transform: drives build_plan -> overlay -> extensions -> flatten -> transforms per tool; cli.py, not this module, is the top-level controller
 │   ├── model.py                 FileKind, StagedItem, StagingPlan, Orphan, IncludeDirective, Counters
 │   ├── io_port.py               IOPort protocol + TerminalIO + ScriptedIO
 │   ├── templates.py             DYNAMIC-INCLUDE flattening (all three directive forms)
-│   ├── staging.py               Phases 1–6.9: source-walk → StagingPlan; parameterised by ToolAdapter
+│   ├── staging.py               Phases 1–5: source-walk → StagingPlan; parameterised by ToolAdapter
 │   ├── sync.py                  Phase 7: hash-compare, diff, prompt, backup, write; reports per-item InstallOutcome
-│   ├── run.py                   Run composition: install_pipeline + prune_pipeline + record_receipt
+│   ├── run.py                   Run composition: install_pipeline + install_plugin_routes + deploy_clis/prune_clis + prune_pipeline + record_receipt
 │   ├── deploy_gate.py           run_admission_gate: partitions staged content by admission record, weighs the surface budget, runs the conflict audit — called directly from cli.py, on the live install path
 │   ├── admission.py             Admission-record parsing/validation that deploy_gate.py runs against
 │   ├── ownership.py             Wholesale-vs-merge-target classifier (which items the receipt records)
@@ -65,7 +65,7 @@ installer/
 │   ├── receipt_lock.py          Single-writer advisory flock (read → install → prune → write)
 │   ├── receipt_diff.py          scope_owners + validate_entry + diff_orphans → Orphan list
 │   ├── receipt_build.py         desired_staged_keys / route keys + entry builders + merge_receipt
-│   ├── prune_hash.py            is_prunable + partition_file_orphans (hash/type-aware, TOCTOU re-check)
+│   ├── prune_hash.py            is_safe_to_prune + partition_file_orphans (hash/digest/type-aware, TOCTOU re-check)
 │   ├── prune_flow.py            run_prune: interactive backup + consent + delete
 │   ├── content_lint.py, content_tests.py, doc_lint.py, spec_lint.py    Engine halves of the four repo-side lint CLIs above — never called from cli.py, never invoke the installer
 │   └── merge/
@@ -92,9 +92,10 @@ installer/
 ```
 
 This tree names the modules central to the design narrative below, not the
-package's full module set — `core/` alone carries roughly 35 files today, and
-a hand-copied list here goes stale the moment one is added or split. Read
-`packages/installer/src/installer/` directly for the current roster.
+package's full module set — `core/` alone carries far more files than are
+named here, and a hand-copied list here goes stale the moment one is added
+or split. Read `packages/installer/src/installer/` directly for the
+current roster.
 
 The `ToolAdapter` protocol abstracts everything the engine needs to know about a tool:
 
@@ -105,11 +106,12 @@ class ToolAdapter(Protocol):
     def dest_dir(self, home: Path) -> Path: ...
     def is_detected(self, home: Path) -> bool: ...
     def scoped_namespaces(self) -> tuple[str, ...]: ...
-    def should_install_namespace(self, ns: str, source: str) -> bool: ...  # OpenCode: False for shared agents/
+    def project_namespaces(self) -> tuple[str, ...]: ...  # namespaces a --project install may select
+    def should_install_namespace(self, namespace: str, source: str) -> bool: ...  # OpenCode: False for shared agents/
     def post_staging_transforms(self, plan: StagingPlan, io: IOPort) -> StagingPlan: ...  # Gemini frontmatter
 ```
 
-The core engine takes a `ToolAdapter` and a source root; tests substitute a `FakeAdapter` to exercise the engine independently of any real tool.
+The core engine takes a `ToolAdapter` and a source root; tests substitute a private per-file test double (e.g. `_IdentityAdapter`) to exercise the engine independently of any real tool.
 
 `MergeStrategy` protocol:
 
@@ -128,13 +130,13 @@ The installer is a `uv`-managed Python project. `pyproject.toml` declares deps; 
 
 **Runtime deps (targeted, not stdlib-only):**
 
-- `pyyaml` — for the Gemini frontmatter transform.
-- `tomli-w` — to write `installer.toml` updates (3.11 stdlib reads TOML; it does not write).
+- `pyyaml` — for `core/frontmatter.py`, `core/md_patch.py`, and `plugins/extensions.py`. Not the Gemini frontmatter transform: `tools/gemini.py` deliberately does not import `yaml` — it edits frontmatter byte-for-byte with a fence-counting state machine specifically to avoid a round-trip reflowing a `description: |-` block scalar.
+- `tomli-w` — to write `project-config.toml`'s `[install].profiles` key (`write_project_profiles`, `config.py`); 3.11 stdlib reads TOML, it does not write.
 - `rich` — pretty diffs, colored output, prompt formatting.
 
-The dependency list is deliberately tight, but we no longer refuse a library that exists and solves the problem.
+The dependency list is deliberately tight, and a library that exists and solves the problem is an acceptable addition.
 
-**Dev deps:** `pytest`, `pytest-xdist`, `ruff`, `mypy` (strict). `uv tool run` is the local invocation pattern.
+**Dev deps:** the `[dependency-groups].dev` table in `pyproject.toml` is the roster — a hand-copied list here goes stale the moment an entry is added; it currently covers the test runner, lint/type/format tooling, and the audit and `lint-actions` gates. `uv tool run` is the local invocation pattern.
 
 ### Configuration — `installer.toml`
 
@@ -173,7 +175,7 @@ Single injectable abstraction (`info`/`ok`/`warn`/`err`/`header`/verbose variant
 - `FileKind` enum keys `MergeStrategy` dispatch in `core/merge/registry.py` on **`(FileKind, namespace)`** because `NAMESPACED_MD` items need their parent-dir namespace to pick the right strategy (e.g. `(NAMESPACED_MD, "rules")` → append-merge; `(NAMESPACED_MD, "commands")` → fatal). For non-namespaced kinds (`SETTINGS_JSON`, `JSONC`, `TOML`, `OTHER`, `DIR`) the namespace component is unused and the lookup degenerates to a `FileKind`-only key.
 - `StagingPlan` is the in-memory staging structure — a `dict[Path, StagedItem]` plus provenance tracking.
 - `Orphan` dataclass carries tool (owner), namespace, path, and kind for each recorded receipt entry that is in scope but no longer in this run's desired staged plan (and passes the path trust boundary).
-- `Receipt` / `ReceiptEntry` are the installer's only persisted-between-runs state: a record of every wholesale-authored dest entry (`path`, `owner`, `root`, `kind`, `sha256`), behind an `integrity` digest, serving as the sole prune authority. Never records a merge-target.
+- `Receipt` / `ReceiptEntry` are the installer's only persisted-between-runs state on the user-home path: a record of every wholesale-authored dest entry (`path`, `owner`, `root`, `kind`, `sha256`, `dir_digest`), behind an `integrity` digest, serving as the sole prune authority. Never records a merge-target. (A `--project` install persists two more: its own project-local install receipt and its resolved profile selection to `project-config.toml` — see `data-view.md`'s "Install receipt" section.)
 - `Config` is frozen; today it carries only `home`, `tools`, and `auto_yes`, populated from argv + auto-detection probes (which themselves consult adapters). `plugins`, `dry_run`, and `dump_stage` are resolved separately in `cli.py` and threaded directly into pipeline calls rather than through `Config`. `installer.toml` is parsed but not yet wired into `Config` or any consumer (see §"Configuration — installer.toml"). `Config` carries no prune fields — pruning is driven by the `--prune` / `--prune-only` argparse flags and the install receipt.
 
 ## Test architecture
@@ -185,34 +187,36 @@ story, so it is not stated here: run
 `uv run pytest packages/installer/tests -q --collect-only` for the current
 total.
 
-Pure-function tests exercise the core engine through a `FakeToolAdapter` so
-each module tests in isolation. Examples by module:
+Pure-function tests exercise the core engine through a private per-file
+test double (e.g. `_IdentityAdapter`) so each module tests in isolation.
+Examples by module:
 
-- `core/templates.py` — directive recognition; ALL-RULES join; trailing-newline preservation; Gemini frontmatter strip + tools-list YAML conversion.
+- `core/templates.py` — directive recognition; ALL-RULES join; trailing-newline preservation.
+- `tools/gemini.py` (`test_gemini_frontmatter.py`) — Gemini frontmatter strip + tools-list YAML conversion.
 - `core/merge/strategies/append_rules.py` — empty/non-empty concat; separator placement.
 - `core/merge/strategies/json_union.py` — nested dict precedence; array union+dedupe (first-seen order); type mismatch; key only in incoming.
 - `core/merge/strategies/fatal.py` — raises with informative message including filenames.
 - `core/merge/registry.py` — `(FileKind, namespace)` dispatch correctness; unknown key raises.
-- `core/receipt_diff.py` / `core/prune_hash.py` — `scope_owners` + `diff_orphans` against the desired staged plan; `validate_entry` trust boundary; `is_prunable` hash/type partition (prune vs relinquish).
+- `core/receipt_diff.py` / `core/prune_hash.py` — `scope_owners` + `diff_orphans` against the desired staged plan; `validate_entry` trust boundary; `is_safe_to_prune` hash/digest/type partition (prune vs relinquish). (`is_prunable` is a different function, in `ownership.py` — the wholesale-vs-merge-target `StagedItem` classifier, not this pair's prune-vs-relinquish predicate.)
 - `core/io_port.py` (`ScriptedIO`) — consumes scripts in order; raises on exhaustion; records transcript faithfully.
 - `tools/<name>.py` — each adapter's `is_detected`, `dest_dir`, `should_install_namespace` rules tested independently.
 
-**Behaviour-driven, not implementation-driven.** Fixtures live in `tests/fixtures/states/` and represent versioned snapshots of *user-state-before-install*: clean home, normal-user-with-existing-config, conflicting-rules, orphans-present, corrupted-settings, legacy-backups-present, plugin-overlay-active, etc. Each fixture is a real directory tree the test can `shutil.copytree` into `tmp_path`.
+**Behaviour-driven, not implementation-driven.** Each test builds the pre-install user-state it needs directly against pytest's `tmp_path` — an existing settings file, a conflicting rule, a stale receipt entry, etc. — rather than asserting how the installer got there.
 
 Tests assert **end-state goals**, not how those goals were achieved:
 
-- "After install against the `normal-user` fixture, `~/.claude/skills/<name>/SKILL.md` content matches the source."
+- "After install, a staged skill's `SKILL.md` content at the destination matches its source bytes."
 - "After install, the user's pre-existing `settings.json.user-keys` are preserved."
-- "After `--prune --yes` against `orphans-present`, the orphan files are gone AND their pre-prune content is recoverable from a backup directory."
+- "After pruning an orphan under `auto_yes`, the file is gone from its namespace AND its pre-prune content is recoverable from the sibling `<namespace>-backup/` directory."
 - "After install with the test-plugin active, the plugin's rule appears appended to the matching base rule, separated by `\n---\n`."
 
-Test names describe the contract, e.g. `test_user_modified_settings_keys_are_preserved_after_install`. Implementation details (which phase touched what, which strategy fired) are not asserted; the strategy is tested at the unit level.
+Test names describe the contract, e.g. `test_sync_preserves_and_skips_invalid_existing_settings`. Implementation details (which phase touched what, which strategy fired) are not asserted; the strategy is tested at the unit level.
 
 ### Fixture strategy
 
-- `tests/fixtures/states/` — versioned, on-disk, hand-curated snapshots of pre-install user-state (one subdir per scenario). Committed to git so reviewers can inspect them.
-- `tests/fixtures/sources/` — synthetic source trees (one per scenario) that exercise specific behaviours without depending on the real `src/user/`.
-- Builder functions in `conftest.py` for ad-hoc fixture composition.
+- `tests/fixtures/sources/test-plugin/` — a committed synthetic source tree (a rule, a command, a skill), exercising plugin-overlay behaviour without depending on the real `src/user/`. There is no separate `tests/fixtures/states/` tree.
+- `tests/unit/conftest.py` carries autouse hermetic-environment fixtures (OpenCode PATH-probe neutralisation, CLI-deploy stubbing) plus the shared `ignore` fixture — pre-install user-state is built inline, per test, against `tmp_path`, not composed from on-disk builders.
+- `test_golden_full_profile_is_byte_identical_to_todays_install` (`tests/unit/test_profiles.py`) runs staging against the real repo's `src/user/` tree directly, pinning that the unfiltered ("full") profile selection stages byte-identical to the current tree's staged output at test time.
 
 ## CLI surface
 
@@ -223,12 +227,13 @@ python3 scripts/install.py [--dry-run] [--yes] [--verbose] [--tools=TOOLS] [--pl
 ```
 
 `--dump-stage` is mutually exclusive with `--prune` / `--prune-only`.
-`--profiles` requires `--project`. All other flags are mutually exclusive per
-the standard install / prune-only split. `--project <dir>` forks into a
-project-scoped install: it installs into the given directory instead of user
-space (`core/kits.py` + `core/profiles.py` resolve which kits/profiles
-apply); this path is ungated by design and does not run the admission gate
-that the user-home path does.
+Among the remaining flags, only `--profiles` carries a dependency (it
+requires `--project`) — everything else combines freely.
+`--project <dir>` forks into a project-scoped install: it installs into
+the given directory instead of user space (`core/kits.py` +
+`core/profiles.py` resolve which kits/profiles apply); this path is
+ungated by design and does not run the admission gate that the
+user-home path does.
 
 ## Implementation discipline
 
@@ -237,13 +242,13 @@ that the user-home path does.
 1. **Test plan review** (collaborative, before any code). For the story, co-author a list of unit and integration test cases — names + brief intent + which fixture or scripted-IO scenario each exercises. The list captures the contract the implementation must satisfy. User signs off before red-phase work starts.
 2. **Red phase.** Implement the tests. No production code yet. Tests fail by definition. Commit the red phase.
 3. **Green phase.** Write the minimum production code to make the tests pass. No speculative scope, no extra abstractions beyond what the tests require.
-4. **Refactor + verify.** Run the verification gate: `make ci-installer` — lint, format-check, typecheck, coverage, audit and entry-verify, whose current membership is the `ci-installer` target in the `Makefile`. The gate is mechanical only: this step used to also name a `quality-reviewer` agent and a `simplify` skill, and this repository no longer provides either, so there is no agent-based review gate today.
+4. **Refactor + verify.** Run the verification gate: `make ci-installer` — lint, format-check, typecheck, coverage, audit and entry-verify, whose current membership is the `ci-installer` target in the `Makefile`. The gate is mechanical only; there is no agent-based review gate in this step today.
 
 **Test plan completeness criteria** — before signing off on a test plan, confirm:
 - Every public function/class introduced has at least one unit test.
 - Every documented behaviour has a corresponding integration test.
 - Failure modes are covered (malformed input, missing files, collisions, non-interactive guard, etc.).
-- Each test name names the *contract*, not the implementation (`test_user_settings_keys_are_preserved` not `test_json_union_strategy_invokes_recursive_merge`).
+- Each test name names the *contract*, not the implementation (`test_merge_settings_bytes_preserves_order_in_nested_dicts` not `test_json_union_strategy_invokes_recursive_merge`).
 
 ## Critical files
 

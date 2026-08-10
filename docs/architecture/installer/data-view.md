@@ -2,7 +2,7 @@
 
 > **Up**: [index](index.md)
 > **Previous (reading order)**: [C4 L3 — Engine](c4-l3-engine.md)
-> **Source bead**: `agents-config-w1qls.9`
+> **Source item**: `agents-config-w1qls.9` — archive-era, resolvable in the private archive repository and not through `work`
 > **Source spec**: [`installer-design.md`](installer-design.md) — §"Data model highlights", §"Configuration — installer.toml"
 
 ## Glossary
@@ -10,13 +10,14 @@
 | Term | Meaning |
 |---|---|
 | `StagingPlan` | The aggregate root of the in-memory model: a `dict[Path, StagedItem]` (plus the target `Tool`). One is built per detected tool. **In-memory only** — it has no on-disk form in the operational path. |
-| `StagedItem` | One planned destination file. The unit the merge + sync engines operate on. |
+| `StagedItem` | One planned destination entry — a file, or, when `kind == DIR`, a directory. The unit the merge + sync engines operate on. |
 | `Provenance` | `(kind: "tool" \| "plugin", name: str)` — preserves whether a `StagedItem` came from a tool's source tree or a plugin overlay, through the tool-vs-plugin registry asymmetry. |
 | `FileKind` | The enum classifying a staged file. The **primary** merge-dispatch key. |
 | Namespace | The managed sub-dir (`commands` / `skills` / `agents` / `rules` / `hooks` / `workflows`) or `None` when the tool root itself owns the file. The **secondary** merge-dispatch key. |
 | `IncludeDirective` | A discriminated union (`FileInclude` \| `AllRulesInclude` \| `NamedRulesInclude`) produced **transiently** while flattening DYNAMIC-INCLUDE markers; consumed during staging, not persisted on the `StagedItem`. |
 | `Orphan` | A prune candidate: a recorded receipt entry, in scope, no longer in the desired staged plan, that passes the path trust boundary. |
-| `Receipt` / `ReceiptEntry` | The install receipt and its per-entry record — the persisted-between-runs prune authority (`~/.config/agents-config/install-receipt.json`). Distinct from the in-memory shapes: the receipt is the installer's only persistent state. |
+| `Contribution` | `(source_path, content)` — one source file's bytes inside a staged item's merged/patched content. Also the value type of `StagingPlan.dir_overrides`. |
+| `Receipt` / `ReceiptEntry` | The install receipt and its per-entry record — the persisted-between-runs prune authority (`~/.config/agents-config/install-receipt.json`). Distinct from the in-memory shapes: on the user-home path, the receipt is the installer's only persistent state (a `--project` install persists its own project-local receipt plus a profile selection — see below). |
 | `Counters` | The per-run tally (`staged` / `created` / `updated` / `merged` / `skipped` / `pruned` / `backed_up`) surfaced in the exit summary. |
 | Canonical ownership | Which actor is the source of truth for a piece of data: the human (source tree), the installer (plan + writes), or the tool (deployed store at runtime). |
 
@@ -38,7 +39,9 @@ This is the current entity model. Field names mirror the dataclasses in `package
 erDiagram
     Config      ||--o{ StagingPlan      : "one built per detected Tool"
     StagingPlan ||--o{ StagedItem       : "items: dict keyed by dest_relpath"
+    StagingPlan ||--o{ Contribution     : "dir_overrides: 0..N override bytes for a DIR item a single source_path can't express"
     StagedItem  ||--|| Provenance        : "has 1 (origin)"
+    StagedItem  ||--o{ Contribution     : "contributions: 0..N sources that rejoin to content (merge/patch provenance)"
     StagedItem  ||--o{ FileInclude       : "content flattened from 0..N (transient)"
     StagedItem  ||--o| AllRulesInclude   : "content flattened from ALL-RULES marker (transient; no fields)"
     StagedItem  ||--o{ NamedRulesInclude : "content flattened from 0..N named-subset markers (transient)"
@@ -54,7 +57,7 @@ erDiagram
     StagingPlan {
         Map  items          "dict[Path, StagedItem] — IN-MEMORY; silently overwrites on dup dest_relpath (caller routes to merge)"
         Tool tool           "which tool this plan targets"
-        Map  dir_overrides  "dict[Path, dict[Path, bytes]] — carrier-merge / extension-patch bytes for a DIR item that a single source_path can't express"
+        Map  dir_overrides  "dict[Path, dict[Path, Contribution]] — carrier-merge / extension-patch bytes for a DIR item that a single source_path can't express"
     }
 
     StagedItem {
@@ -65,11 +68,18 @@ erDiagram
         Provenance provenance  "tool vs plugin origin marker"
         bytes    content       "post-flatten bytes; null when kind == DIR (derived at sync)"
         bool     executable    "sync-phase mode bit 0o755 vs 0o644, mirrored from the source file's own mode (e.g. a hook script)"
+        bool     shared_carrier "True only on skills/agents DIR items first staged from the shared carrier tree; enables a disjoint plugin overlay to carrier-merge; cleared once merged"
+        Contribution contributions "0..N sources whose bytes are in content, in order; empty means content is its own sole contributor. Unchecked rejoin-to-content invariant — load-bearing for the admission gate"
     }
 
     Provenance {
         string kind  "Literal[tool | plugin] — disambiguates the flat name field"
         string name  "Tool enum value (tool) or plugin name string (plugin)"
+    }
+
+    Contribution {
+        Path  source_path  "the source file these bytes came from"
+        bytes content      "this source's slice of the merged/patched result"
     }
 
     FileInclude {
@@ -100,9 +110,9 @@ erDiagram
 
 ### Cardinality + shape notes
 
-- **`StagingPlan` is the aggregate root of the install path; `Config` is the run root.** One `Config` per invocation drives one `StagingPlan` per detected tool, one `Counters` tally, and (with `--prune`) a list of `Orphan`s. There are no cross-plan relationships — each tool's plan is independent.
+- **`StagingPlan` is the aggregate root of the install path; `Config` is the run root on the user-home sync path.** On that path, one `Config` per invocation is associated with one `StagingPlan` per detected tool, one `Counters` tally, and (with `--prune`) a list of `Orphan`s. Two paths never reach this `Config`: `--dump-stage` exits before it is built, and a `--project` install runs an entirely separate project-scoped flow that never constructs it. There are no cross-plan relationships — each tool's plan is independent.
 - **`Config` today carries only three fields: `home`, `tools`, `auto_yes`.** `home` and `tools` anchor the tool-selection scope; `auto_yes` controls the interaction model (auto-accept vs prompt). `plugins`, `dry_run`, and `dump_stage` are **not** `Config` fields — `cli.py` resolves/reads them as local values (`resolve_plugins(...)`, `args.dry_run`, `args.dump_stage`) and threads them directly into the pipeline calls (`stage_and_transform`, `install_pipeline`, `dump_plan`, …) rather than through `Config`. A `Config.tool_overrides` field does not exist at all: `core/installer_toml.py` parses an optional `[tools]` dest-override table into its own `InstallerToml` type, but nothing in the live path calls that loader — it is **designed, not wired**. Pruning is likewise **not** a `Config` field — it is driven by the argparse flags `args.prune` / `args.prune_only`, and the prune authority is the persisted install receipt, not a config-loaded glob list.
-- **`items` is a `dict[Path, StagedItem]`, not a list.** The `dest_relpath` is the key, which is exactly why collisions are detectable: a second item mapping to a key already present triggers the merge dispatch (Sequence 2). The dict is **in-memory** — the single most load-bearing fact in this model. `install.sh` materialised this as a temp directory tree; the Python rewrite keeps it in process memory and only `sync` writes individual files. (The bare dict silently overwrites on a duplicate key; the staging caller checks `dest_relpath in items` and routes to the merge registry — collision detection is the caller's job, not the dataclass's.)
+- **`items` is a `dict[Path, StagedItem]`, not a list.** The `dest_relpath` is the key, which is exactly why collisions are detectable: a second item mapping to a key already present triggers the merge dispatch (Sequence 2). The dict is **in-memory** — the single most load-bearing fact in this model: it lives in process memory for the run's whole life, and only `sync` writes individual files to disk. (The bare dict silently overwrites on a duplicate key; the staging caller checks `dest_relpath in items` and routes to the merge registry — collision detection is the caller's job, not the dataclass's.)
 - **`Provenance` carries the tool-vs-plugin asymmetry.** Tools are enum-keyed (`Tool` enum + adapter registry); plugins are string-keyed (dynamic discovery, no enum). `Provenance(kind, name)` lets a single `StagedItem` record either origin uniformly — the `kind` discriminator disambiguates the flat `name` (a plugin named after a tool would otherwise be ambiguous), so the merge engine can reason about "base asset vs plugin overlay" without caring which registry the item came from.
 - **`IncludeDirective` is a transient `TypeAlias` union of three forms.** `FileInclude | AllRulesInclude | NamedRulesInclude`, produced while `templates.py` flattens a `<!-- DYNAMIC-INCLUDE: … -->` marker, then consumed immediately — the flattened text lands in `StagedItem.content`; the directive objects do not survive on the `StagedItem`. `FileInclude` carries the fragment `path`. `AllRulesInclude` carries no fields — it expands the plan's already-staged rules collection, sorted and joined with a `\n---\n` separator. `NamedRulesInclude` carries the verbatim comma-list capture (`names`) and inlines a **named subset** of rules, resolved from the fixed `src/user/.claude/rules/` source dir (not the staged tree), split/trimmed/empty-skipped at flatten time, in the author's listed order, also `\n---\n`-joined.
 - **`FileKind` is an enum, not an entity.** Its six values are shown inline on `StagedItem.kind`. It is the primary merge-dispatch key; `namespace` is the secondary key (see the dispatch table). Note `Orphan.kind` is a *different*, coarser `Literal["dir", "file"]` — orphan classification only needs dir-vs-file, not the full merge taxonomy — and `Orphan.tool` is a plain `str` (not the `Tool` enum) because the orphan bucket includes plugin owners, which are not tools.
@@ -115,11 +125,11 @@ The collision matrix — the dispatch contract `core/merge/registry.py` implemen
 |---|---|---|---|
 | `NAMESPACED_MD` | `rules` | `append_rules` | Join `existing + "\n---\n" + incoming` — rules compose. |
 | `NAMESPACED_MD` | `commands` / `skills` / `agents` | `fatal` | **Raise** — two items with the same name is an authoring error; the message names both files. |
-| `SETTINGS_JSON` | — | `json_union` | Deep union: nested-dict precedence, array union + sort, type-mismatch surfaced. |
+| `SETTINGS_JSON` | — | `json_union` | Deep union: nested-dict precedence, array union + dedupe (first-seen order), scalar conflict and type mismatch both keep existing silently (no warning). |
 | `JSONC` | — | `last_wins_warn` | Replace, with a warning that an existing file was overwritten. |
 | `TOML` | — | `last_wins_warn` | Replace, with a warning. |
 | `OTHER` | — | `last_wins_silent` | Replace silently. |
-| `DIR` | — | (n/a) | Directories are created, not merged. |
+| `DIR` | — | `fatal` | **Raise** — a DIR collision at base staging, or a second plugin colliding on an already-merged carrier, is an authoring error. (The plugin-overlay carrier-merge — a disjoint file set merging into a `shared_carrier` skills/agents dir — is intercepted before this dispatch; see `overlay.py`.) |
 
 > Being a managed namespace and being a merge namespace are independent properties. `hooks` is a managed namespace for **backup / prune** routing (it is in the path-aware namespace set) yet never appears as a merge key: a hook is an executable rather than a `.md` file, so it classifies as `FileKind.OTHER` and the namespace component of its key is normalized away. The only `NAMESPACED_MD` namespaces that change the strategy are `rules` (append) and `commands`/`skills`/`agents` (fatal); every other kind is registered under the `None` namespace, so a `.toml` file routes via `(TOML, —) → last_wins_warn` wherever it sits. The dispatch is data: adding a `(FileKind, namespace)` row is a registry change, not an engine change.
 
@@ -142,7 +152,7 @@ Structured config at `packages/installer/installer.toml`, parsed by `core/instal
 
 ## Install receipt — the persisted prune authority
 
-`~/.config/agents-config/install-receipt.json` is the installer's only state persisted **between runs**: a record of every wholesale-authored entry it wrote, so pruning can diff "what we installed" against "what we still want installed". It lives in a tool-neutral state dir outside every destination tree, so it is never itself installed or pruned. It is read at the start of the prune step, validated against its own `integrity` digest, and atomically rewritten (temp + `os.replace`) at the end of every non-dry-run install — the whole read → install → prune → write section held under a single-writer advisory lock (`install-receipt.lock`, `core/receipt_lock.py`).
+`~/.config/agents-config/install-receipt.json` is the installer's only state persisted **between runs** on the user-home path (a `--project` install persists its own project-local receipt, plus its resolved profile selection to `project-config.toml` — both below): a record of every wholesale-authored entry it wrote, so pruning can diff "what we installed" against "what we still want installed". It lives in a tool-neutral state dir outside every destination tree, so it is never itself installed or pruned. It is read at the start of the prune step, validated against its own `integrity` digest, and atomically rewritten (temp + `os.replace`) at the end of every non-dry-run install — the whole read → install → prune → write section held under a single-writer advisory lock (`install-receipt.lock`, `core/receipt_lock.py`) on that non-dry-run path; `--dry-run` takes no lock at all (`nullcontext()` in `cli.py`), since acquiring one would itself create the lock file and violate "writes nothing".
 
 ```mermaid
 erDiagram
@@ -152,17 +162,18 @@ erDiagram
     Receipt {
         int    schema_version  "gates forward-compatible evolution; unknown -> CORRUPT"
         string integrity       "sha256: digest over canonical (schema_version + roots + entries [+ clis when non-empty]); recomputed on read, mismatch -> CORRUPT"
-        Roots  roots           "persisted install-root allowlist (prior | this run's live roots); retired-plugin root validation"
+        Roots  roots           "persisted install-root allowlist (prior | this run's live roots); plugin (active or retired) root validation fallback when live code lacks the root"
         Entry  entries         "the recorded wholesale-authored entries"
         Cli    clis            "the recorded installer-deployed uv tools, one per registry entry; empty on every pre-CLI-deploy receipt"
     }
 
     ReceiptEntry {
-        Path   path    "HOME-relative dest path (the diff key)"
-        string owner   "tool name (claude/codex/gemini/opencode) or plugin name — diff-scope tag"
-        Path   root    "HOME-relative install root — a tool root (.claude, .config/opencode) for a synced entry, or the dest dir's first segment for a plugin-routed one"
-        string kind    "Literal[file | dir] — top-level skill/agent dirs are one dir entry"
-        string sha256  "hex digest of a file's bytes (ownership-drift gate); null for a dir entry"
+        Path   path       "HOME-relative dest path (the diff key)"
+        string owner      "tool name (claude/codex/gemini/opencode) or plugin name — diff-scope tag"
+        Path   root       "HOME-relative install root — a tool root (.claude, .config/opencode) for a synced entry, or the dest dir's first segment for a plugin-routed one"
+        string kind       "Literal[file | dir] — top-level skill/agent dirs are one dir entry"
+        string sha256     "hex digest of a file's bytes (ownership-drift gate); null for a dir entry"
+        string dir_digest "sha256:<hex> recursive content fingerprint of a dir entry's files (dir_content_digest); null for files and for legacy dir entries recorded before this field existed"
     }
 
     CliReceiptEntry {
@@ -172,10 +183,10 @@ erDiagram
     }
 ```
 
-- **It records only wholesale-authored entries** — namespaced `commands`/`skills`/`agents`/`rules`/`hooks`/`workflows` and plugin route dests. It **never** records a merge-target (`settings.json` via `JsonUnionStrategy`, the assembled `AGENTS.md`/`GEMINI.md`/`opencode.jsonc`): dropping a partial contribution must never delete the whole file. The `core/ownership.py` classifier (`is_prunable(StagedItem)`) makes this decision, keyed on the item's namespace and merge strategy.
+- **It records only wholesale-authored entries** — namespaced `commands`/`skills`/`agents`/`rules`/`hooks`/`workflows` and plugin route dests. It **never** records a merge-target (`settings.json` via `JsonUnionStrategy`, the assembled `AGENTS.md`/`GEMINI.md`/`opencode.jsonc`): dropping a partial contribution must never delete the whole file. The `core/ownership.py` classifier (`is_prunable(StagedItem)`) makes this decision, keyed on the item's namespace and `FileKind`.
 - **`path` is the diff key, `owner` the scope tag.** Orphan detection is `{ e ∈ prior : e.owner ∈ scope ∧ (e.owner, e.path) ∉ desired_staged_keys ∧ validate_entry(e) }`. `desired_staged_keys` is the owned dest paths in this run's staging plan (built even under `--prune-only`) plus the active plugins' currently-shipped route files.
-- **`sha256` is ownership-drift protection.** A file orphan whose on-disk bytes no longer match the recorded digest is the user's now — it is relinquished, not deleted. `dir` entries carry `sha256: null` (recursive content-drift protection is a deliberate v1 limitation, deferred).
-- **`integrity` + `roots` make the receipt a trusted deletion-authority input.** `integrity` is recomputed on read; any accidental change fails closed (prune disabled, file untouched). `roots` is the persisted allowlist used to validate a *retired* plugin's recorded root (tool and discovered-plugin roots come from live code instead). See [`sequences.md`](sequences.md) §"Sequence 4 — Prune flow" for the full lifecycle.
+- **`sha256` and `dir_digest` are ownership-drift protection.** A file orphan whose on-disk bytes no longer match the recorded `sha256` is the user's now — it is relinquished, not deleted. `dir` entries carry `sha256: null` and instead carry `dir_digest` — a recursive content fingerprint (`dir_content_digest`) over every file under the directory; a dir orphan whose live digest no longer matches the recorded one is likewise relinquished. A legacy dir entry recorded before `dir_digest` existed (`dir_digest: null`) degrades to the type-check-only guard (still a real directory, or relinquished).
+- **`integrity` + `roots` make the receipt a trusted deletion-authority input.** `integrity` is recomputed on read; any accidental change fails closed (prune disabled, file untouched). `roots` is the persisted allowlist used to validate a **plugin** owner's recorded root — active or retired: a plugin's route roots can retire while old routed files remain to prune, so a plugin root is legitimate via a current live route root **or** a previously-recorded entry in `roots`. A **tool** owner's root must come from live code and is never checked against `roots`, so a forged tool root can't be laundered through it. See [`sequences.md`](sequences.md) §"Sequence 4 — Prune flow" for the full lifecycle.
 - **`clis` is additive and omitted-when-empty for integrity compatibility.** `canonical_bytes` serializes the `clis` key into the integrity payload only when `receipt.clis` is non-empty, so a receipt written before this field existed — or one where the CLI-deploy stage never ran — hashes byte-identically to today's code and its persisted `integrity` still validates on read (no forced re-hash, no downgrade caveat: an OLDER installer reading a NEWER receipt with a non-empty `clis` simply ignores the unknown key via its own dict-based parser, and ignores CLIs it never shipped). Merged by `merge_clis` (`receipt_build.py`): a name still in the registry keeps the run's freshly deployed entry when deployed, else its retained prior entry (skip/decline/failure); a non-registry (retired) name drops once its uninstall completes or it is relinquished as foreign, else it is retained so retirement retries next prune.
 
 ## Canonical-ownership boundaries
@@ -229,13 +240,13 @@ flowchart LR
 | `Counters` / `Orphan` list | **Installer** | One invocation | Surfaced in the exit summary; not persisted. |
 | Destination stores | **Installer** writes → **Tool** reads | Permanent on disk | Single writer at install time; consumed asynchronously at each tool's runtime. |
 | Backups | **Installer** | Newest 5 per target, then pruned | Write-only recovery; never read back by the installer. Older backups of the same target are deleted the moment a new one is written (`core/backup.py`). |
-| Install receipt (`install-receipt.json` + `.lock`) | **Installer** | Permanent on disk (between runs) | The installer's own persisted state — read at prune start, rewritten at run end (mirrors disk). Trusted state behind an `integrity` digest; held under a single-writer advisory lock. |
+| Install receipt (`install-receipt.json` + `.lock`) | **Installer** | Permanent on disk (between runs) | The installer's own persisted state — read at prune start, rewritten at run end (mirrors disk) on every non-dry-run install. Trusted state behind an `integrity` digest; held under a single-writer advisory lock on that path — `--dry-run` takes no lock or write at all. A `--project` install uses a second, project-local instance (`<project-root>/.agents-config/install-receipt.json`) instead of this one. |
 
 ### Explicit non-ownership
 
 - The installer does **not** own source content — it copies and flattens it, but the human authoring the repo is canonical. A `StagedItem.content` is a *derived* artifact (post-flatten, post-transform), not a source of truth.
 - The installer does **not** own a tool's runtime interpretation of its store. It deposits files matching each tool's path + shape contract; how the tool loads them is the tool's concern.
-- The installer persists exactly **one** piece of its own state between runs: the **install receipt** (plus its lockfile), its record of "what I authored wholesale last time". That record is the prune authority — the next run diffs it against the desired plan to find orphans. For *install* reconciliation the destination store is still the record (hash-compare decides skip vs overwrite); the receipt's job is the deletion side, which on-disk state alone cannot answer (a destination file the source no longer produces is indistinguishable from a user's own file without a record that the installer once wrote it).
+- The installer persists exactly **one** piece of its own state between runs on the user-home path: the **install receipt** (plus its lockfile), its record of "what I authored wholesale last time". That record is the prune authority — the next run diffs it against the desired plan to find orphans. For *install* reconciliation the destination store is still the record (hash-compare decides skip vs overwrite); the receipt's job is the deletion side, which on-disk state alone cannot answer (a destination file the source no longer produces is indistinguishable from a user's own file without a record that the installer once wrote it). A `--project` install persists two more: its own project-local install receipt (`<project-root>/.agents-config/install-receipt.json`, `cli.py:707`) — the same kind of record, a separate file — and its resolved profile selection, written to the project's own `project-config.toml` (`write_project_profiles`, `config.py:150-172`).
 
 ## What this diagram does NOT show
 

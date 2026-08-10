@@ -4,7 +4,7 @@
 > **Subsystem**: prgroom — the PR-grooming CLI
 > **Role**: the evergreen, consolidated design — amended in place as the design evolves
 > **Companion artifacts**: none in this repository. The C4, sequence, state-machine, data and deployment views that once rendered this design were retired to the `scotthamilton77/agents-config-ARCHIVE` repository, where they keep their original paths under `docs/architecture/prgroom/`. They describe a subsystem substantially larger than the one being kept — read them as history, never as a contract.
-> **Historical proposals**: the dated proposals that seeded this design are in the same archive repository under `docs/plans/` and `docs/specs/`; this document is the living source of truth.
+> **Historical proposals**: the dated proposals that seeded this design are under `scotthamilton77/agents-config-ARCHIVE/docs/plans/` and its `docs/specs/`; this document is the living source of truth.
 
 This is the high-level design reference for the prgroom CLI. It is **lean by intent** — data structures and contracts are shown; procedural code is not.
 
@@ -768,4 +768,4 @@ prgroom owns the `## Decisions` block between sentinel markers and rewrites it w
 - **Non-CONTEXTUAL** — accepted, logged as deferred, not an error.
 - **Declared-but-missing `memory_writes` path** — soft warning (stderr), not a cluster failure.
 
-`memory_dir` containment is the only hard cluster-flipping memory breach (orphan commits, §5, are the other). A worked 3-retry example — a first-retry decision surviving two fresh-context dispatches via the `## Decisions` block, preventing re-litigation and silent regression — lives in the source proposal, now in the `scotthamilton77/agents-config-ARCHIVE` repository under `docs/plans/`.
+`memory_dir` containment is the only hard cluster-flipping memory breach (orphan commits, §5, are the other). A worked 3-retry example — a first-retry decision surviving two fresh-context dispatches via the `## Decisions` block, preventing re-litigation and silent regression — lives in the source proposal, now at `scotthamilton77/agents-config-ARCHIVE/docs/plans/`.

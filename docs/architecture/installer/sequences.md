@@ -3,7 +3,7 @@
 > **Up**: [index](index.md)
 > **Previous (reading order)**: [C4 L2 — Container](c4-l2-container.md)
 > **Next (reading order)**: [C4 L3 — Engine](c4-l3-engine.md)
-> **Source bead**: `agents-config-w1qls.9`
+> **Source item**: `agents-config-w1qls.9` — archive-era, resolvable in the private archive repository and not through `work`
 > **Source spec**: [`installer-design.md`](installer-design.md)
 
 ## Glossary
@@ -16,13 +16,13 @@
 | Hash-compare | `Sync`'s skip test: if the incoming content hashes equal to the existing destination file, the file is left untouched. |
 | Path-aware backup | Backup routing — namespaced files back up to a parent-level `<namespace>-backup/` sibling, top-level files back up in place — performed before any overwrite or prune. |
 | Orphan | A recorded install-receipt entry whose owner is in scope and whose `(owner, path)` is no longer in this run's desired staged plan, and that passes the path trust boundary — a prune candidate. |
-| Install receipt | `~/.config/agents-config/install-receipt.json` — the record of every wholesale-authored entry the installer wrote (namespaced commands/skills/agents/rules/hooks/workflows + plugin route dests), the sole prune authority. Carries an `integrity` digest and is held under a single-writer advisory lock across read → install → prune → write. |
+| Install receipt | `~/.config/agents-config/install-receipt.json` — the record of every wholesale-authored entry the installer wrote (namespaced commands/skills/agents/rules/hooks/workflows + plugin route dests), the sole prune authority. Carries an `integrity` digest and is held under a single-writer advisory lock across read → install → prune → write on a non-dry-run install; `--dry-run` takes no lock at all. |
 
 ## Purpose
 
 Four sequence diagrams covering one install invocation and its three branching sub-flows:
 
-1. **End-to-end install (happy path)** — detect → stage → overlay → merge → sync → exit.
+1. **End-to-end install (happy path)** — detect → stage → overlay → merge → profile filter (user-home path) → admission gate (user-home path) → sync → CLI-deploy (user-home path) → optional prune → receipt rewrite → exit.
 2. **Collision merge dispatch** — how two `StagedItem`s for one path resolve through the `(FileKind, namespace)` registry.
 3. **Sync per-item decision** — the hash-skip vs diff → confirm → backup → write branch, including `--dry-run`.
 4. **Prune flow** — read prior receipt → diff against the desired plan → partition by on-disk hash → interactive prune → write new receipt.
@@ -45,6 +45,8 @@ sequenceDiagram
     participant Stage as staging
     participant Plug as plugin overlay
     participant Merge as merge registry
+    participant Prof as profiles.py
+    participant Gate as deploy_gate.py
     participant Sync as sync (via run.py)
     participant CliDep as deploy_clis (via run.py)
     participant Port as CliDeployPort
@@ -74,6 +76,25 @@ sequenceDiagram
             Orch->>Orch: apply_extensions, flatten DYNAMIC-INCLUDE, adapter.post_staging_transforms (gemini: frontmatter)
         end
         Orch-->>CLI: dict[Tool, StagingPlan] — every tool's finished plan
+    end
+
+    rect rgb(255, 250, 230)
+        Note over CLI,Prof: Profile filter (user-home path only; skipped when the staged universe is empty) — narrows every tool plan to the active profile's USER-bound refs
+        CLI->>Prof: load_manifest(repo_root/profiles.toml)
+        CLI->>Prof: resolve(manifest, selection=(), universe, bound_scopes={USER}) — USER is `Scope.USER` (`core/profiles.py`)
+        Prof-->>CLI: resolved refs
+        CLI->>CLI: filter_plan_to_scope per tool (today: selection is always empty, so resolve() matches everything — a no-op filter)
+    end
+
+    rect rgb(255, 245, 245)
+        Note over CLI,Gate: Admission gate (user-home path only; a --project run skips this entirely) — partitions plans by admission record, weighs the surface budget, runs the conflict audit
+        CLI->>Gate: run_admission_gate(plans, ignore)
+        alt admission-bar violation
+            Gate-->>CLI: violations
+            CLI-->>Op: "admission gate: <violation>" per violation; "deploy aborted"; exit 1
+        else admitted (record-less content dropped)
+            Gate-->>CLI: gate.plans
+        end
     end
 
     CLI->>CLI: build frozen Config (home, tools, auto_yes); resolve adapters
@@ -121,17 +142,25 @@ sequenceDiagram
         CLI->>CLI: prune flow (see Sequence 4), including prune_clis over retired CLI entries
     end
 
+    rect rgb(240, 240, 255)
+        Note over CLI,FS: record_receipt — runs on every non-dry-run install, independent of --prune, merging (prior - pruned - relinquished) | installed, clis field carrying merge_clis' result
+        CLI->>FS: record_receipt (atomic write, integrity recomputed)
+    end
+
     CLI-->>Op: summary (created / updated / skipped / backed-up per tool), exit 0
 ```
 
 ### Notes on the happy path
 
-- **The plan is in-memory for its whole life.** `Stage` returns a `dict[Path, StagedItem]`; overlay mutates it; only `Sync` writes to disk, one file at a time. There is no temp-dir staging tree (the deliberate departure from `install.sh`). `--dump-stage` is the sole path that materialises the plan, and it exits before any destination write (and before `Config` is even built).
+- **The plan is in-memory for its whole life.** `Stage` returns a `dict[Path, StagedItem]`; overlay mutates it; only `Sync` writes to disk, one file at a time. There is no temp-dir staging tree. `--dump-stage` is the sole path that materialises the plan, and it exits before any destination write (and before `Config` is even built).
 - **Staging and sync are two separate whole-fleet passes, not one interleaved per-tool loop.** `orchestrator.stage_and_transform` builds and overlays every tool's plan first, returning the full `dict[Tool, StagingPlan]`; only after that does `cli.py` drive `run.install_pipeline` to sync every tool's plan. `orchestrator.py` never touches `sync.py` — it is staging only.
 - **Tool order is the detection order; tools are independent within each pass.** Each tool gets its own plan and its own sync pass — there is no cross-tool state. A failure shaping one tool's plan does not corrupt another's.
 - **Collisions happen in both base staging and overlay.** Within a single tool's plan, shared + per-tool content can collide (base staging, `staging.py`); the more common case is plugin content landing on a base asset (`overlay.py`). Both route through the same merge registry (Sequence 2), never through `Sync`.
-- **`Config` is built between the two passes, not before the loop.** `resolve_tools` / `resolve_plugins` (pure functions in `config.py`) run once, up front; the frozen `Config` dataclass itself (`home`, `tools`, `auto_yes`) is constructed after staging finishes and before the sync pass begins. `installer.toml` plays no part in any of this — its loader is parsed but unwired (see [`data-view.md`](data-view.md)).
-- **The CLI-deploy stage runs third, still inside the receipt lock, and only on the user path.** `deploy_clis` walks the closed `CLI_PACKAGES` registry in its declared order, deciding verify/heal/fresh per CLI from PATH-independent signals (`shim_path`, `tool_list`) rather than trusting `PATH` itself — `which` is consulted only for the reachability invariant after a successful install. A `--project` run never constructs a `CliDeployPort` and never calls `deploy_clis`/`prune_clis` — the user-space CLI deploy is entirely out of scope for project-local installs. Its outcome merges into `record_receipt` via `merge_clis` alongside the file-install/prune outcomes (see [`data-view.md`](data-view.md) §"Install receipt").
+- **A profile filter runs on the user-home path, before the admission gate.** The repo root's `profiles.toml` is loaded and resolved against the staged universe, and every tool's plan is narrowed to the `USER`-bound refs it resolves to (`filter_plan_to_scope`). Guarded on a non-empty universe (an all-empty synthetic plan has nothing to resolve). `--profiles` exists as a flag, but only takes effect on `--project` installs (validated to require `--project`); the user-home path never reads it and always resolves an empty selection, which `resolve()` treats as the "full" profile — every staged item matches, so today this stage is a no-op filter on the user-home path; the machinery is live, not the narrowing.
+- **The admission gate runs between the two passes, before `Config` is even built.** `run_admission_gate` partitions every staged artifact by its admission record, weighs the surface budget, and runs the conflict audit — record-less content is dropped, and a violation aborts the deploy (exit 1) before `run.py` is ever called. It runs on the user-home path only; a `--project` run never reaches it.
+- **`Config` is built between the two passes, not before the loop.** `resolve_tools` / `resolve_plugins` (pure functions in `config.py`) run once, up front; the frozen `Config` dataclass itself (`home`, `tools`, `auto_yes`) is constructed after the admission gate clears and before the sync pass begins. `installer.toml` plays no part in any of this — its loader is parsed but unwired (see [`data-view.md`](data-view.md)).
+- **The CLI-deploy stage runs third, still inside the receipt lock, and only on the user path.** `deploy_clis` walks the closed `CLI_PACKAGES` registry in its declared order, deciding verify/heal/fresh per CLI from PATH-independent signals (`shim_path`, `tool_list`) rather than trusting `PATH` itself. The whole stage is skipped up front when the installed `uv` fails the `MIN_UV_VERSION` guard (`run.py:399-407`); per CLI, the verify branch skips `uv tool install` outright when the recorded digest matches and a smoke check passes (`run.py:477-485`) — `uv tool install` runs only for a CLI the decision table finds needs installing or healing. `which` is consulted only for the reachability invariant, on a non-dry-run run whenever a shim ends up present (`run.py:433`) — that covers both a successful install/heal and a verify pass that leaves an already-present shim untouched. A `--project` run never constructs a `CliDeployPort` and never calls `deploy_clis`/`prune_clis` — the user-space CLI deploy is entirely out of scope for project-local installs. Its outcome merges into `record_receipt` via `merge_clis` alongside the file-install/prune outcomes (see [`data-view.md`](data-view.md) §"Install receipt").
+- **`record_receipt` runs unconditionally on every non-dry-run install, whether or not `--prune` was requested.** It is not gated on the `opt --prune requested` block above — a plain install with no prune flag still mirrors disk into the receipt at run end, which is what makes the *next* run's prune diff correct even if this run never pruned anything.
 
 ---
 
@@ -160,7 +189,7 @@ sequenceDiagram
     else (SETTINGS_JSON, —)
         Reg-->>Caller: JsonUnionStrategy
         Caller->>Strat: merge(existing, incoming)
-        Strat-->>Caller: deep union (nested dict precedence, array union+sort)
+        Strat-->>Caller: deep union (nested dict precedence, array union+dedupe first-seen order)
     else (JSONC | TOML, —)
         Reg-->>Caller: LastWinsWarnStrategy
         Caller->>Strat: merge(existing, incoming)
@@ -214,8 +243,8 @@ sequenceDiagram
                 Sync->>FS: write incoming
                 Note over Sync: Counters.updated++ + backed_up++
             else --dry-run
-                Sync->>IO: show_diff(dest, incoming)
-                Note over Sync: preview only, Counters.updated++ (no write)
+                Sync->>IO: info "would update FILE"
+                Note over Sync: preview only, Counters.updated++ (no write, no diff)
             else interactive
                 Sync->>IO: show_diff(dest, incoming)
                 Sync->>IO: confirm("overwrite FILE?")
@@ -235,8 +264,8 @@ sequenceDiagram
 ### Notes on the sync decision
 
 - **Hash-compare is the skip gate.** Unchanged files are never rewritten, so re-running the installer is cheap and quiet — the common case (most files identical) produces no prompts and no backups.
-- **Three modes govern the hashes-differ branch.** `--yes` (auto_yes): backup and write unconditionally, no diff or prompt. `--dry-run`: show diff, no write. Interactive: show diff, prompt, write only on confirmation.
-- **`--dry-run` short-circuits before every write but still shows diffs.** It is the preview mode: the operator sees exactly what *would* change (created / updated counts + diffs) without touching disk.
+- **Three modes govern the hashes-differ branch.** `--yes` (auto_yes): backup and write unconditionally, no diff or prompt. `--dry-run`: preview only (an info line naming the action), no diff, no write. Interactive: show diff, prompt, write only on confirmation.
+- **`--dry-run` short-circuits before every write and shows no diff.** `sync.py`'s only `show_diff` call is inside the interactive consent branch, unreachable under `dry_run`; the dry-run preview is an `io.info` line ("would create/update/merge …") emitted by `_record_write`. It is the preview mode: the operator sees exactly what *would* change (created / updated counts, per-item preview lines) without touching disk.
 - **Backup precedes overwrite, always** — including under `--yes`. No destination file is overwritten without first being copied to its path-aware backup location. The backup routing keeps namespaced backups out of the assistant's discovery walk.
 - **All prompting is through `IOPort`.** `show_diff` and `confirm` never call the terminal directly; `ScriptedIO` drives them in tests, so every branch above is unit-testable without a TTY.
 
@@ -262,7 +291,7 @@ sequenceDiagram
     participant IO as IOPort
     participant Bak as backup
 
-    Orch->>Lock: acquire single-writer lock (read -> install -> prune -> write)
+    Orch->>Lock: acquire single-writer lock (read -> install -> prune -> write; skipped entirely under --dry-run)
     Orch->>Store: read_receipt(path)
     alt MISSING
         Store-->>Orch: bootstrap empty receipt (clean-break adoption)
@@ -286,8 +315,12 @@ sequenceDiagram
     else --yes or interactive consent (all / one-by-one / cancel)
         loop per Orphan
             Flow->>Flow: revalidate at deletion boundary (TOCTOU re-check) — skip if drifted
-            Flow->>Bak: path-aware backup (always, even under --yes)
-            Bak->>FS: copy orphan -> backup
+            alt orphan.path exists
+                Flow->>Bak: path-aware backup, even under --yes
+                Bak->>FS: copy orphan -> backup
+            else path already gone (e.g. a broken symlink) -- nothing recoverable
+                Note over Flow: no backup
+            end
             Flow->>FS: remove orphan
         end
     end
@@ -319,12 +352,12 @@ sequenceDiagram
 ### Notes on the prune flow
 
 - **The receipt is the sole prune authority.** An orphan is a *recorded* entry, in scope, no longer in the desired staged plan — there is no glob list. `scope_owners` = `resolved_tools ∪ (discovered_plugins − tool names) ∪ prior-receipt plugin owners`, so an untargeted tool is untouched, an excluded plugin's entries are pruned, and a *retired* plugin (source gone, no longer discovered) still gets its recorded route files pruned rather than left as litter. A like-named discovered plugin never pulls a tool's entries into scope.
-- **Every orphan is path-validated before deletion (`validate_entry`).** `path` and `root` must be relative with no `..`; containment is checked on fully-resolved paths (symlink-aware, so a symlinked install root prunes within its real target but a symlink-escape is rejected); the root must be legitimate for the owner — tool/discovered-plugin roots come from live code, retired-plugin roots from the persisted `roots` allowlist behind the `integrity` gate. A failing entry is skipped, never emitted as an orphan, so a damaged receipt prunes less, never wild.
-- **File pruning is hash-aware; directories are backup-and-delete.** A file orphan is pruned only while its on-disk bytes match the recorded `sha256` (or it is genuinely absent); a user-modified, unreadable, or now-a-directory file is **relinquished** — kept on disk, dropped from the receipt. A directory orphan still a real directory goes through backup-and-delete (recoverable from the path-aware backup); recursive directory **content-drift** protection is a deliberate v1 limitation, deferred. Cheap *type* drift (a recorded dir path that is now a file/symlink) is guarded — it relinquishes.
-- **Backup-before-delete always, and a TOCTOU re-check at the boundary.** Every removal is preceded by a path-aware backup, including under `--yes`. The ownership decision is **re-validated immediately before backup/delete** (`revalidate` → `is_safe_to_prune`), so a path that drifted between the up-front partition and the actual delete (the interactive-confirm window) is skipped and left in place.
+- **Every orphan is path-validated before deletion (`validate_entry`).** `path` and `root` must be relative with no `..`; containment is checked on fully-resolved paths (symlink-aware, so a symlinked install root prunes within its real target but a symlink-escape is rejected); the root must be legitimate for the owner, and that check is owner-kind aware — a **tool** owner's root must come from live code and is never checked against the persisted `roots` allowlist (so a forged root can't be laundered through it); a **plugin** owner's root, active or retired, is legitimate if it's a current live route root **or** a previously-recorded root in the integrity-gated allowlist (the fallback exists so an active plugin that dropped a route root doesn't strand its old files). A failing entry is skipped, never emitted as an orphan, so a damaged receipt prunes less, never wild.
+- **File pruning is hash-aware; directory pruning is content-digest-aware.** A file orphan is pruned only while its on-disk bytes match the recorded `sha256` (or it is genuinely absent); a user-modified, unreadable, or now-a-directory file is **relinquished** — kept on disk, dropped from the receipt. A directory orphan is pruned only while it is still a real directory **and**, when a digest was recorded, its recursive content digest (`dir_content_digest`) still matches the receipt's `dir_digest`; a dir that drifted to a file/symlink, or whose contents changed, is relinquished. A legacy dir entry recorded before `dir_digest` existed degrades to the type-check-only guard.
+- **Backup-before-delete when there is something to back up, and a TOCTOU re-check at the boundary.** Every removal whose path still exists is preceded by a path-aware backup, including under `--yes`; a broken symlink (or a path that vanished mid-run) has nothing recoverable, so it is unlinked with no backup. The ownership decision is **re-validated immediately before backup/delete** (`revalidate` → `is_safe_to_prune`), so a path that drifted between the up-front partition and the actual delete (the interactive-confirm window) is skipped and left in place.
 - **Missing bootstraps; corrupt fails closed.** A *missing* receipt bootstraps empty (clean-break adoption — no migration, no legacy sweep); a *corrupt* / integrity-mismatch / unknown-`schema_version` receipt disables pruning and is left untouched, so a scoped run never overwrites the central record with a partial view.
-- **Single-writer over the whole mutation section.** An advisory `flock` (`receipt_lock`) is held across read → install → prune → write; a second concurrent run fails fast (`ReceiptLockBusy`). Locking only the receipt I/O would let a concurrent install resurrect a stale entry the lock exists to prevent.
-- **`--dry-run` writes nothing.** No deletion and no receipt write — preview only. The receipt is otherwise written on **every** non-dry-run install (not only `--prune`), so the record never goes stale; pruning the diff stays gated behind `--prune`/`--prune-only`.
+- **Single-writer over the whole mutation section — on a non-dry-run install.** An advisory `flock` (`receipt_lock`) is held across read → install → prune → write; a second concurrent run fails fast (`ReceiptLockBusy`). Locking only the receipt I/O would let a concurrent install resurrect a stale entry the lock exists to prevent.
+- **`--dry-run` takes no lock and writes nothing.** `cli.py` substitutes `nullcontext()` for `receipt_lock(...)` under `--dry-run`: acquiring the real lock would itself create `~/.config/agents-config/` and the `.lock` file, violating "writes nothing," and reading the prior receipt unlocked is safe for a preview since `read_receipt` never mutates. No deletion and no receipt write — preview only. The receipt is otherwise written on **every** non-dry-run install (not only `--prune`), so the record never goes stale; pruning the diff stays gated behind `--prune`/`--prune-only`.
 - **`prune_clis`'s uninstall authority is bounded by `CLI_PACKAGES | RETIRED_CLIS`, not the receipt.** The receipt's `integrity` digest is tamper-evidence, not authentication — a prior `clis` entry naming a tool the registry never shipped (a tampered or hand-edited receipt) is warned about and relinquished, **never uninstalled**, even under `--yes`. Only a name both absent from the live registry and present in the historical `RETIRED_CLIS` allowlist is eligible for `tool_uninstall`, and a declined or non-interactive-without-`--yes` prune retains the entry so retirement retries next run (`ConsentRequiredError`, same convention as the file-prune consent gate). `prune_clis` runs on `--prune`/`--prune-only` alongside the file prune half, unlike `deploy_clis` which runs only on the install half — so `--prune-only` retires CLIs without touching the install-half decision table.
 
 ---
