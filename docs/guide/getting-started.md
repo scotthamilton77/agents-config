@@ -16,7 +16,7 @@ Nothing else is required. Two more things are optional:
   installed by this one, is a facade over `bd`; every substantive `work` verb
   — anything but `init` and `guide` — refuses with `E_NO_WORKSPACE` until `bd`
   is installed and initialized. Five deployed skills reach for `work`, four of
-  them shipping to every detected tool (`to-tickets`, `where-does-this-fit`,
+  them shipping to every active tool (`to-tickets`, `where-does-this-fit`,
   `triaging-discovered-work`, `prototype`) and one Claude Code only
   (`wayfinder`). Each degrades gracefully without a tracker: `to-tickets` and
   `wayfinder` fall back to a local markdown file, `where-does-this-fit` falls
@@ -51,8 +51,9 @@ for the full flag list and pruning semantics.
 
 ## What lands where
 
-Shared content installs into **every** detected tool; tool-specific content only
-into its own tool.
+Shared content installs into **every** active tool — auto-detected, or
+explicitly selected via `--tools=`; tool-specific content only into its own
+tool.
 
 | Source | Installs to | Contains |
 |--------|-------------|----------|
@@ -61,7 +62,7 @@ into its own tool.
 | `src/user/.codex/` | `~/.codex/` | Codex instruction file |
 | `src/user/.gemini/` | `~/.gemini/` | Gemini instruction file |
 | `src/user/.opencode/` | `~/.config/opencode/` | OpenCode instruction file + settings |
-| `src/plugins/<name>/` | matching tools, when detected | optional plugin content |
+| `src/plugins/<name>/` | matching active tools, if the plugin is itself active | optional plugin content |
 
 Two things decide whether a given skill, rule, command, or agent actually lands.
 It has to be in the source tree, and its front matter has to carry a complete

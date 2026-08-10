@@ -24,9 +24,14 @@ machine-checkable QA in between.
 | 7. Merge | Contract only — the hard line, with nothing enforcing it |
 | 8. Persist | **Partly** — `handoff`, `retrospect` |
 
-You don't invoke these by hand step by step — the rules and skills fire
-automatically as the work moves. What follows is what's happening, and where you
-stay in control.
+Two rows load by themselves, and both are contract rather than machinery:
+phase 0's laws and decision matrix, and phase 7's merge hard line, which ship
+together in the always-on instruction file every session reads. Everything
+else is something you or your agent reaches for — a skill, invoked when your
+agent judges one relevant or when you name it, or a CLI you run yourself. No
+installed rule makes a phase happen on its own, so the habits that carry work
+between phases are yours to keep. What follows is which of those each phase
+is, and where you stay in control.
 
 ## 0. The always-on contract — ships
 
@@ -195,8 +200,9 @@ line in its instructions rather than on a mechanism, which is a weaker guarantee
 
 Work isn't done until context is preserved:
 
-- **`handoff`** compacts the session into a handoff document — the conversation
-  plus a working-tree snapshot — so a fresh agent can resume in a new session.
+- **`handoff`** (Claude Code only) compacts the session into a handoff document
+  — the conversation plus a working-tree snapshot — so a fresh agent can resume
+  in a new session.
   This ships, and is the main thing standing between an overnight run and a lost
   thread.
 - **Memories** — your assistant may have its own memory mechanism; this

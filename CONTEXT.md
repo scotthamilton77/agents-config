@@ -211,6 +211,10 @@ them, and not as a description of anything current.
   this vocabulary *instead of that structure* will fail `make spec-lint`.
 - **Proposed Rule** — a third review finding class. The verdict schema accepts
   two; see *Verdict artifact*.
+- **`wait-for-pr-comments`**, **`reply-and-resolve-pr-threads`**,
+  **`monitor-pr`** — the PR-grooming skills. The first two name work that
+  belongs to the `prgroom` CLI (`packages/prgroom/`), which nothing invokes
+  today; `monitor-pr`'s interactive polling has no successor at all.
 - **Decomposition**, **Decomposition Architect**, **Decomposition Plan**,
   **Assembly Graph** — the container-slicing design. Superseded by *slice*.
 - **Dreaming Process** — a speculative background capability. Never designed

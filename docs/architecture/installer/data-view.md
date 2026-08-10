@@ -9,7 +9,7 @@
 
 | Term | Meaning |
 |---|---|
-| `StagingPlan` | The aggregate root of the in-memory model: a `dict[Path, StagedItem]` (plus the target `Tool`). One is built per detected tool. **In-memory only** — it has no on-disk form in the operational path. |
+| `StagingPlan` | The aggregate root of the in-memory model: a `dict[Path, StagedItem]` (plus the target `Tool`). One is built per active tool. **In-memory only** — it has no on-disk form in the operational path. |
 | `StagedItem` | One planned destination entry — a file, or, when `kind == DIR`, a directory. The unit the merge + sync engines operate on. |
 | `Provenance` | `(kind: "tool" \| "plugin", name: str)` — preserves whether a `StagedItem` came from a tool's source tree or a plugin overlay, through the tool-vs-plugin registry asymmetry. |
 | `FileKind` | The enum classifying a staged file. The **primary** merge-dispatch key. |
@@ -37,7 +37,7 @@ This is the current entity model. Field names mirror the dataclasses in `package
 
 ```mermaid
 erDiagram
-    Config      ||--o{ StagingPlan      : "one built per detected Tool"
+    Config      ||--o{ StagingPlan      : "one built per active Tool"
     StagingPlan ||--o{ StagedItem       : "items: dict keyed by dest_relpath"
     StagingPlan ||--o{ Contribution     : "dir_overrides: 0..N override bytes for a DIR item a single source_path can't express"
     StagedItem  ||--|| Provenance        : "has 1 (origin)"
@@ -110,7 +110,7 @@ erDiagram
 
 ### Cardinality + shape notes
 
-- **`StagingPlan` is the aggregate root of the install path; `Config` is the run root on the user-home sync path.** On that path, one `Config` per invocation is associated with one `StagingPlan` per detected tool, one `Counters` tally, and (with `--prune`) a list of `Orphan`s. Two paths never reach this `Config`: `--dump-stage` exits before it is built, and a `--project` install runs an entirely separate project-scoped flow that never constructs it. There are no cross-plan relationships — each tool's plan is independent.
+- **`StagingPlan` is the aggregate root of the install path; `Config` is the run root on the user-home sync path.** On that path, one `Config` per invocation is associated with one `StagingPlan` per active tool, one `Counters` tally, and (with `--prune`) a list of `Orphan`s. Two paths never reach this `Config`: `--dump-stage` exits before it is built, and a `--project` install runs an entirely separate project-scoped flow that never constructs it. There are no cross-plan relationships — each tool's plan is independent.
 - **`Config` today carries only three fields: `home`, `tools`, `auto_yes`.** `home` and `tools` anchor the tool-selection scope; `auto_yes` controls the interaction model (auto-accept vs prompt). `plugins`, `dry_run`, and `dump_stage` are **not** `Config` fields — `cli.py` resolves/reads them as local values (`resolve_plugins(...)`, `args.dry_run`, `args.dump_stage`) and threads them directly into the pipeline calls (`stage_and_transform`, `install_pipeline`, `dump_plan`, …) rather than through `Config`. A `Config.tool_overrides` field does not exist at all: `core/installer_toml.py` parses an optional `[tools]` dest-override table into its own `InstallerToml` type, but nothing in the live path calls that loader — it is **designed, not wired**. Pruning is likewise **not** a `Config` field — it is driven by the argparse flags `args.prune` / `args.prune_only`, and the prune authority is the persisted install receipt, not a config-loaded glob list.
 - **`items` is a `dict[Path, StagedItem]`, not a list.** The `dest_relpath` is the key, which is exactly why collisions are detectable: a second item mapping to a key already present triggers the merge dispatch (Sequence 2). The dict is **in-memory** — the single most load-bearing fact in this model: it lives in process memory for the run's whole life, and only `sync` writes individual files to disk. (The bare dict silently overwrites on a duplicate key; the staging caller checks `dest_relpath in items` and routes to the merge registry — collision detection is the caller's job, not the dataclass's.)
 - **`Provenance` carries the tool-vs-plugin asymmetry.** Tools are enum-keyed (`Tool` enum + adapter registry); plugins are string-keyed (dynamic discovery, no enum). `Provenance(kind, name)` lets a single `StagedItem` record either origin uniformly — the `kind` discriminator disambiguates the flat `name` (a plugin named after a tool would otherwise be ambiguous), so the merge engine can reason about "base asset vs plugin overlay" without caring which registry the item came from.

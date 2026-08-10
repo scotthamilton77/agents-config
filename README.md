@@ -111,7 +111,7 @@ the authoritative inventory:
 | Claude-only skills | [`src/user/.claude/skills/`](./src/user/.claude/skills/) | `~/.claude/skills/` |
 | Claude-only rules | [`src/user/.claude/rules/`](./src/user/.claude/rules/) | `~/.claude/rules/` |
 | Slash commands | [`src/user/.claude/commands/`](./src/user/.claude/commands/) | `~/.claude/commands/` |
-| Plugin content | [`src/plugins/`](./src/plugins/) | matching active tools |
+| Plugin content | [`src/plugins/`](./src/plugins/) | matching active tools, if the plugin is itself active |
 
 Each `rules/` directory carries its own `AGENTS.md` stating what currently lives
 there. For a walkthrough of what the installed set does and where the gaps are,
@@ -186,7 +186,7 @@ The installer (`scripts/install.sh`) is a thin exec stub backed by a uv-managed 
 - Copies shared content (`src/user/.agents/`) into every active tool
 - Copies tool-specific content (e.g., `src/user/.claude/`) into the corresponding tool's config directory
 - Copies `*.md.template` files (stripping `.template` suffix), with diff preview and confirmation for existing files
-- Syncs `agents/`, `skills/`, `commands/`, and `rules/` directories using hash comparison per item, and a recursive digest to detect drift inside owned directories
+- Syncs `agents/`, `skills/`, `commands/`, `rules/`, `hooks/`, and `workflows/` directories using hash comparison per item, and a recursive digest to detect drift inside owned directories
 - Enforces the **admission bar**: drops (and prunes) any rule, skill, command or agent whose front matter lacks a complete `admission:` record, and strips that repo-side bookkeeping from the bytes it deploys
 - Deploys this repo's CLIs onto PATH via `uv tool install` (receipt-tracked, pruned on retirement); `CLI_PACKAGES` in `packages/installer/src/installer/core/clis.py` is the authoritative list
 - Union-merges `settings.json.template` into existing `settings.json` via a pluggable per-key merge registry (preserves your values, adds new keys/entries)
@@ -222,7 +222,7 @@ previously owned but no longer ships — useful for keeping your install in sync
 after files are renamed or deleted upstream.
 
 - **Receipt-based, not glob-based:** each install writes an **install receipt** recording exactly what it owns (a roots allowlist plus a per-entry digest). Pruning diffs the current staging plan against that receipt, so it removes precisely the items the repo dropped — not whatever happens to sit in a namespace directory. Files you added yourself outside the owned set are not touched.
-- **Scope:** the managed namespaces (`commands` / `skills` / `agents` / `rules` under each tool's config dir, plus any bespoke routes an active plugin declares outside the tool trees). Top-level `*.md`, `settings.json`, and `hooks/` are never pruned.
+- **Scope:** the managed namespaces (`commands` / `skills` / `agents` / `rules` / `hooks` / `workflows` under each tool's config dir, plus any bespoke routes an active plugin declares outside the tool trees). Top-level `*.md` and `settings.json` are never pruned.
 - **Backups:** orphans are moved to a `<namespace>-backup/<basename>.backup-<timestamp>` sibling before deletion; those `*-backup/` siblings are excluded from future scans.
 - **Modes:**
   - `--dry-run` lists orphans and exits without changes.

@@ -1,6 +1,6 @@
 # src/user/.agents/skills/ — Shared Skill Sources
 
-Source-of-truth for every skill that gets staged into each detected tool's user-space skills directory by `scripts/install.sh`. Edits here are what land in `~/.claude/skills/`, `~/.codex/skills/`, `~/.gemini/skills/`, and `~/.config/opencode/skills/` on the next install run.
+Source-of-truth for every skill that gets staged into each active tool's user-space skills directory by `scripts/install.sh`. Edits here are what land in `~/.claude/skills/`, `~/.codex/skills/`, `~/.gemini/skills/`, and `~/.config/opencode/skills/` on the next install run.
 
 Staging is gated on admission: a `SKILL.md` without a complete `admission:` record (`prevents` **or** `provides`, plus `cost` and `remove_when`) in its front matter is dropped at deploy and pruned from every tool. Only admitted skills live in this folder; a skill awaiting admission, or retired after it, is not here at all.
 
@@ -100,7 +100,7 @@ Update this table whenever an artifact is added, replaced, retired, or amalgamat
 
 Claude-only front matter is not a reason to leave the shared tree. The installer projects capability keys per target tool at deploy: `disable-model-invocation`, `allowed-tools` and `argument-hint` are kept for Claude and dropped for Codex, Gemini and OpenCode, which have no equivalent to translate onto.
 
-Placement still turns on capability-dependency, but of the skill's *procedure* rather than its front matter. A skill whose steps require a Claude-only mechanism belongs in the Claude tree. So does one whose admission record depends on behaviour the other tools cannot reproduce — dropping a key removes the bytes, not the gap, so a skill that must not fire unprompted is still model-invocable wherever the flag is unsupported.
+Placement still turns on capability-dependency, but of the skill's *procedure* rather than its front matter. A skill whose steps require a Claude-only mechanism belongs in the Claude tree. So does one whose admission record depends on behaviour the other tools cannot reproduce — dropping a key removes the bytes, not the gap, so a skill that must not fire unprompted is still model-invocable on Codex and OpenCode.
 
 ## Common pitfall — extracted helpers must be wired in
 
