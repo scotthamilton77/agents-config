@@ -1,4 +1,4 @@
-"""The subprocess-runner injection seam (§7.6).
+"""The subprocess-runner injection seam.
 
 The gh and git adapters do not call :func:`subprocess.run` directly. Every
 external command goes through the :class:`CommandRunner` Protocol, so the single

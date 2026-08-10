@@ -1,4 +1,4 @@
-"""``poll_pr`` — the read-only ``_poll`` lifecycle internal (§3.2, §3.4, §4.1).
+"""``poll_pr`` — the read-only ``_poll`` lifecycle internal (§3.2, §4.1).
 
 ``poll_pr`` is the lock-assuming poll internal: the caller holds the per-ref lock,
 hands in the current in-memory :class:`PRGroomingState`, and gets back the mutated
@@ -9,7 +9,7 @@ push, no review re-request, no resolve.
 One poll issues these REST reads in a fixed order (plus one conditional GraphQL read,
 and a conditional combined-status fallback read):
 
-1. ``head_ref_oid`` — the remote HEAD SHA. Drives the §3.4 bootstrap / attribution
+1. ``head_ref_oid`` — the remote HEAD SHA. Drives the §3.2 bootstrap / attribution
    / push-detection math. An empty HEAD short-circuits the rest (a PR with no
    commits yet).
 2. PR resource (``pulls/{n}``) — ``state`` + ``merged_at`` drive the closed-via-merge
@@ -99,7 +99,7 @@ def poll_pr(
     deps: Deps,
     config: PrgroomConfig,
 ) -> PRGroomingState:
-    """Read-only poll: ingest gh review state, apply §3.4/§3.2/§4.1, return new state.
+    """Read-only poll: ingest gh review state, apply §3.2/§4.1, return new state.
 
     Caller must hold the per-ref lock (see ``lock()``). Works on a copy of ``state``
     so the caller's object is never mutated; returns the copy for the caller to
@@ -237,7 +237,8 @@ def _ingest_items(
                 # prgroom's own posted effect — never ingest, ledger or no ledger.
                 # The state-independent backstop for the crash window where a POST
                 # landed but the persist recording own_reply_id was discarded
-                # (verb-atomicity §6). Content-keyed, never author-keyed.
+                # (per the verb-atomicity spec — archive-era, resolvable in the
+                # private archive repository). Content-keyed, never author-keyed.
                 continue
             item = _to_item(kind, entry, ts_field, now=now, thread_id_map=thread_id_map)
             if item.identity.gh_id in own_replies:
@@ -305,7 +306,7 @@ def _parse_ts(raw: object, *, now: datetime) -> datetime:
     """Parse a gh ISO-8601 timestamp; fall back to the injected ``now`` when absent.
 
     The fallback uses the run-loop's clock reading (never ``datetime.now``) so the
-    §7.6 no-stdlib-singleton discipline holds and the seam stays deterministic.
+    seam stays deterministic and never reaches for a stdlib singleton.
     """
     from datetime import datetime
 
@@ -444,7 +445,7 @@ def _combined_status_state(gh: GhClient, ref: PRRef, head_sha: str) -> str:
 
 
 def _apply_sha_attribution(state: PRGroomingState, new_head: str) -> bool:
-    """Apply §3.4 retry counting/attribution for the observed HEAD; return external-push flag.
+    """Apply §3.2 retry counting/attribution for the observed HEAD; return external-push flag.
 
     Bootstrap (``last_poll_sha == ""``): set ``last_poll_sha``, no reviewer flip,
     counter untouched — the initial observed push consumes no retry (the counter

@@ -1,9 +1,9 @@
 """Provider-chain dispatch + fallback ladder (§5 agent-CLI config & fallback).
 
-The dispatcher resolves a per-contract provider chain (from TOML, with a
-``--cluster-model`` / ``--fix-model`` override), tries the primary, and on a
-fallback-triggering failure (binary absent, quota/auth/network exit, or timeout)
-falls to the next link. If the whole chain fails it raises a single
+The dispatcher resolves a per-contract provider chain (from TOML, with an
+optional programmatic ``model_override`` — no CLI flag feeds it today), tries
+the primary, and on a fallback-triggering failure (binary absent, quota/auth/network
+exit, or timeout) falls to the next link. If the whole chain fails it raises a single
 caller-mappable error so the lifecycle can file a ``failed`` disposition +
 escalate rather than crash.
 
@@ -346,8 +346,9 @@ def test_provider_timeout_must_be_a_positive_number(tmp_path: Path) -> None:
 
 
 def test_model_override_replaces_the_primary_model_only() -> None:
-    # --cluster-model / --fix-model swaps the primary provider's model, keeping its
-    # cli + the rest of the chain (operator wants "the same provider, this model").
+    # model_override swaps the primary provider's model, keeping its cli + the
+    # rest of the chain (operator wants "the same provider, this model"). No CLI
+    # flag feeds this parameter today.
     chain = load_chain("fix", repo_config=None, model_override="opus")
     assert chain.providers[0].cli == "claude"
     assert chain.providers[0].model == "opus"

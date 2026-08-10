@@ -112,7 +112,7 @@ def test_absent_usage_is_a_noop_not_an_error(
 def test_additive_token_fields_serialize_in_the_jsonl_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # §3.3 additive JSONL evolution: tokens_total (codex path) and
+    # §5 additive JSONL evolution: tokens_total (codex path) and
     # reported_cost_usd (claude path) join the line schema as nullable fields —
     # readers tolerate absent keys, writers always emit them.
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))

@@ -1,4 +1,4 @@
-"""Fit-test for the gh adapter (§7.6).
+"""Fit-test for the gh adapter.
 
 Exercises the full public surface of ``GhCli`` against a ``RecordedRunner`` —
 the subprocess boundary is the only mock point. Each failure-classification arm

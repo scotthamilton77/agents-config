@@ -1,4 +1,4 @@
-"""Fit-test for the git adapter (§7.6).
+"""Fit-test for the git adapter.
 
 Exercises the full public surface of ``GitCli`` against a ``RecordedRunner`` /
 ``TimeoutRunner`` — the subprocess boundary is the only mock point. Each

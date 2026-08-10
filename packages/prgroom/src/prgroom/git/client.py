@@ -1,4 +1,4 @@
-"""The git adapter — worktree plumbing via the ``git`` subprocess (§3.4, §7.6).
+"""The git adapter — worktree plumbing via the ``git`` subprocess.
 
 ``GitCli`` shells out to ``git`` (rev-parse, rev-list, push, stash) through the
 injected :class:`~prgroom.proc.CommandRunner` boundary and maps failures onto
@@ -66,7 +66,7 @@ _GIT_TERMINAL_MARKERS = (
 
 @runtime_checkable
 class GitClient(Protocol):
-    """The worktree-git surface the lifecycle verbs depend on (§3.4)."""
+    """The worktree-git surface the lifecycle verbs depend on."""
 
     def head_sha(self) -> str: ...  # pragma: no cover
 

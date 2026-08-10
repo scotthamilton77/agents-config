@@ -249,7 +249,7 @@ _CLAUDE_WRITE_ALLOWED_TOOLS = "Read Edit Write Bash(git *)"
 def _invocation_for_claude(spec: AgentSpec, prompt: str) -> AgentInvocation:
     # `claude -p <prompt>` runs headless. The contract input path is already inside
     # `prompt` (the agent reads the file) — claude has no --input-file flag.
-    # --output-format json wraps stdout in the §3.1 result envelope; the runner
+    # --output-format json wraps stdout in the §5 result envelope; the runner
     # unwraps it post-run (see _unwrap_claude_envelope) to expose the payload and
     # capture token usage.
     argv = ["claude", "-p", prompt, "--model", spec.model, "--output-format", "json"]
@@ -331,7 +331,7 @@ def _unwrap_claude_envelope(result: AgentRunResult) -> AgentRunResult:
     LAST top-level JSON object in stdout, which with the flag is the envelope
     itself, not the contract payload. Unwrap and usage capture run regardless of
     the envelope's ``is_error``/``subtype`` — classification stays the
-    dispatcher's job (§3.1 rule 2).
+    dispatcher's job (§5).
     """
     try:
         envelope = json.loads(result.stdout)
@@ -366,12 +366,12 @@ def _unwrap_claude_envelope(result: AgentRunResult) -> AgentRunResult:
     )
 
 
-# codex's stderr trailer count: comma-grouped (`21,631`) or bare (`950`) — §3.2.
+# codex's stderr trailer count: comma-grouped (`21,631`) or bare (`950`) — §5.
 _CODEX_TOKENS_RE = re.compile(r"^(\d{1,3}(?:,\d{3})*|\d+)$")
 
 
 def _parse_codex_usage(result: AgentRunResult) -> AgentRunResult:
-    """Read codex exec's stderr ``tokens used`` trailer into ``usage`` (§3.2).
+    """Read codex exec's stderr ``tokens used`` trailer into ``usage`` (§5).
 
     The trailer is a ``tokens used`` line followed by an integer with optional
     comma grouping. codex provides no in/out split in exec mode, so only
@@ -379,7 +379,7 @@ def _parse_codex_usage(result: AgentRunResult) -> AgentRunResult:
     ``usage=None`` — telemetry never fails a dispatch.
     """
     lines = [line.strip() for line in result.stderr.splitlines() if line.strip()]
-    # The trailer is terminal (§3.2): scan backward so the LAST adjacent
+    # The last such pair wins: scan backward so the LAST adjacent
     # "tokens used" + integer pair wins. An earlier diagnostic occurrence must
     # never shadow the real CLI usage trailer.
     for i in range(len(lines) - 2, -1, -1):

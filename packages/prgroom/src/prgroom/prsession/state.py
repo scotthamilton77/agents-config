@@ -368,7 +368,7 @@ class PRGroomingState:
 
 
 def bootstrap_state(pr: PRRef, *, now: datetime) -> PRGroomingState:
-    """The zero-value state a first ``run`` invocation starts from (§3.3).
+    """The zero-value state a first ``run`` invocation starts from (§3.1).
 
     Every non-default field is set explicitly so the result round-trips cleanly:
     ``schema_version=1`` (a default 0 would fail STATE_SCHEMA_UNKNOWN on the next

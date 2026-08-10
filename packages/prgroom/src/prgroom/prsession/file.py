@@ -154,7 +154,7 @@ class FileStore:
 
         NOTE for the status/locking beads: this rewrites the file in place, so
         ``read`` is no longer side-effect-free once a migrator is registered. The
-        lock-free ``status`` reader (§3.3 carve-out) must either migrate in memory
+        lock-free ``status`` reader (§2 carve-out) must either migrate in memory
         without writing, or take the lock before a migrating read — do not ship an
         unlocked migrating reader. (Latent today: ``MIGRATIONS`` is empty.)
         """

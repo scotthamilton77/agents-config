@@ -1,4 +1,4 @@
-"""The gh adapter — GitHub access via the ``gh`` subprocess (§1, §3, §7.6).
+"""The gh adapter — GitHub access via the ``gh`` subprocess (§1, §3).
 
 ``GhCli`` shells out to ``gh`` (REST via ``gh api``, GraphQL via
 ``gh api graphql``, head-OID via ``gh pr view``) through the injected

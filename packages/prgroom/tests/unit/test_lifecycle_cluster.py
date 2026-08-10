@@ -5,7 +5,7 @@
 returned assignments by setting each item's ``cluster_id``. It decides NO
 disposition and makes NO phase change (the §3.2 cluster row). The dispatcher is a
 small ``ClusterContract`` fake; gh/git are fakes at the boundary; the clock is the
-injected frozen fake. No code we own is mocked (§7.6).
+injected frozen fake. No code we own is mocked.
 """
 
 from __future__ import annotations

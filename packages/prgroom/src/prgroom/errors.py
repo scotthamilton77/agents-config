@@ -1,7 +1,7 @@
 """Failure-tier model, structured-error registry, and exit-code mapping.
 
-Implements design.md §3.6 (failure tiers and the error-code registry) and the
-§3.3 ``exit_code_for_tier`` translation. Every error code carries a
+Implements design.md §3.6 (failure tiers and the error-code registry), including the
+``exit_code_for_tier`` translation. Every error code carries a
 ``what`` / ``why`` / ``how`` triple per the §1 structured-stderr contract so that
 both humans and agents can parse a precondition failure and act on it.
 
@@ -411,7 +411,7 @@ def lock_held_error(ref: PRRef, *, pid: int | None = None) -> PreconditionError:
 
 
 def exit_code_for_tier(err: PrgroomError) -> int:
-    """Translate a tier-tagged error into its documented sysexits code (§3.3).
+    """Translate a tier-tagged error into its documented sysexits code (§3.6).
 
     Every case inspects ``err.tier`` only, EXCEPT ``RUNTIME_CANCELLED`` which
     reads ``err.signum`` to produce ``128 + signum``.
@@ -436,7 +436,7 @@ def exit_code_for_tier(err: PrgroomError) -> int:
         case Tier.LIFECYCLE_CAP:
             return 0  # graceful terminal exit
         case _:  # pragma: no cover - exhaustiveness guard for future Tier members
-            # §7.6 closed-match safety: a newly added Tier with no arm above fails
+            # Closed-match safety: a newly added Tier with no arm above fails
             # loudly here rather than silently returning a bogus code. The match
             # is exhaustive over the current Tier set, so mypy --strict proves
             # this arm unreachable — assert_never is the documented idiom that

@@ -1,4 +1,4 @@
-"""Tests for the audit-result value type + the violation→effect helpers (§7.6).
+"""Tests for the audit-result value type + the violation→effect helpers (§5 audit guards).
 
 The agent layer *computes*; it never mutates state. So these helpers turn an
 :class:`AuditViolation` into the two value objects the lifecycle

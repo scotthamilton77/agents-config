@@ -1,4 +1,4 @@
-"""Audit-result value type + the violation→effect helpers (§7.6).
+"""Audit-result value type + the violation→effect helpers (§5 audit guards).
 
 This is the pure audit + dispatch-orchestration layer: it *computes* what the
 lifecycle applies. An :class:`AuditViolation` is the unit of
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class AuditViolation:
-    """One contract-invariant breach found by an audit (§7.6).
+    """One contract-invariant breach found by an audit (§5 audit guards).
 
     ``gh_id is None`` marks a structural/cluster-level breach (e.g. an orphan
     commit) that has no single owning item; the caller decides which items it
@@ -47,7 +47,7 @@ class AuditViolation:
 
 
 def failed_disposition(v: AuditViolation, *, now: datetime, decided_by: str) -> Disposition:
-    """Build the FAILED :class:`Disposition` a violation produces (§7.6).
+    """Build the FAILED :class:`Disposition` a violation produces (§5 audit guards).
 
     The violation ``detail`` becomes the disposition rationale (the cause the
     end-of-cycle resolver reads when it promotes a FAILED item to
@@ -59,7 +59,7 @@ def failed_disposition(v: AuditViolation, *, now: datetime, decided_by: str) -> 
 
 
 def escalation_for(v: AuditViolation, *, pr: PRRef, item: ReviewItem | None = None) -> Escalation:
-    """Build the :class:`Escalation` a violation produces (§7.6).
+    """Build the :class:`Escalation` a violation produces (§5 audit guards).
 
     The violation ``detail`` becomes the escalation reason and its ``severity``
     rides through. The caller supplies the triggering ``item`` when one applies.

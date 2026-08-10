@@ -19,7 +19,7 @@ from prgroom.prsession.state import PRGroomingState
 
 
 class StateNotFoundError(LookupError):
-    """Raised by :meth:`Store.read` when no state exists for the given PR (§2, §7.6)."""
+    """Raised by :meth:`Store.read` when no state exists for the given PR (§2)."""
 
 
 class StateCorruptError(ValueError):

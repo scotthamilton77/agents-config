@@ -8,7 +8,7 @@
 
 This is the high-level design reference for the prgroom CLI. It is **lean by intent** — data structures and contracts are shown; procedural code is not.
 
-**Scope warning.** prgroom is being carved down, not finished, and two different fates are in play. The `verify` gate and its convergence loop, and `sweep`, are design-of-record for a system that will not be built at all. The reply/poll/wait/snapshot machinery described below is a different case: it is built and wired into the CLI today, but charter D13 marks it for deletion rather than completion (the in-package fix-dispatch loop moves to the work-loop instead). Where this document and `packages/prgroom/src/` disagree about what exists, the code is the authority.
+**Scope warning.** prgroom is being carved down, not finished, and two different fates are in play. The `verify` gate and its convergence loop, and `sweep`, are design-of-record for a system that will not be built at all. The reply/poll/wait/snapshot machinery described below is a different case: it is built and wired into the CLI today, but charter D13 marks it for deletion rather than completion (the in-package fix-dispatch loop moves to the work-loop instead — the repo-level `grind`/`executor` pipeline charter D14 nominates for that role). Where this document and `packages/prgroom/src/` disagree about what exists, the code is the authority.
 
 ## Contents
 
@@ -46,7 +46,7 @@ This is the high-level design reference for the prgroom CLI. It is **lean by int
 |---|---|---|
 | **Interactive** | User in chat, invoking the CLI directly | `prgroom run <pr> --interactive` |
 | **Autonomous** | Cron / `/loop` / GHA | `prgroom run <pr> --autonomous`, or `prgroom sweep <repo>` (design-of-record only; not a registered command) |
-| **Executable-bead** (v2) | bd-side dispatcher | bead payload `prgroom run --pr <n> --autonomous` |
+| **Executable-bead** (v2) | bd-side dispatcher | bead payload `prgroom run <n> --autonomous` |
 
 The `monitor-pr` skill that used to drive the interactive pattern was retired, and nothing replaced it. Nothing invokes `prgroom` today — no deployed asset and no harness path — so all three rows describe a designed surface rather than a running one; `packages/prgroom/AGENTS.md` states the package's current standing.
 
@@ -305,17 +305,17 @@ The loop is bounded by `fix_verify_retries` (§3.5), independent of the PR-revie
 
 ### 3.5 The two retry caps
 
-Both budgets are **retry caps**: on exhaustion they escalate to `human-gated`, surface a blocking `LIFECYCLE_*_EXHAUSTED` code, and re-arm identically (raise the budget via the §3.3 entry-probe, or `poll` observes an external fix). They bound orthogonal loops.
+Both are designed as **retry caps** that, on exhaustion, escalate to `human-gated` and surface a blocking `LIFECYCLE_*_EXHAUSTED` code. Only the outer, PR-review cap is built; the inner, fix↔verify cap is design-of-record only (§3.4) — no counter, no exhaustion code, and no re-arm path exist for it today. They bound orthogonal loops.
 
-| | **Inner — fix↔verify loop** | **Outer — PR-review loop** |
+| | **Inner — fix↔verify loop** *(design-of-record only, §3.4 — not built)* | **Outer — PR-review loop** |
 |---|---|---|
 | Bounds | repair re-fixes within one cycle (no push between) | review-eliciting pushes across cycles |
 | Knob | `fix_verify_retries` | `pr_review_retries` |
 | Default | **2** (⇒ max 3 `opus[1m]` fix spends/cycle) | **5** (initial push + 5 fix-pushes = 6 pushes) |
-| Counter | new, 0-indexed retry count | `pr_review_retries_used`, 0-indexed |
-| Exhaustion code | `LIFECYCLE_FIX_VERIFY_EXHAUSTED` | `LIFECYCLE_PR_REVIEW_EXHAUSTED` |
+| Counter | none — not built | `pr_review_retries_used`, 0-indexed |
+| Exhaustion code | `LIFECYCLE_FIX_VERIFY_EXHAUSTED` — not a registered `ErrorCode` | `LIFECYCLE_PR_REVIEW_EXHAUSTED` |
 | Tier / exit | `LIFECYCLE_CAP` / 0 (graceful terminal) | `LIFECYCLE_CAP` / 0 (graceful terminal) |
-| Re-arm | raise `--fix-verify-retries` (entry-probe) or `poll` | raise `--pr-review-retries` (entry-probe) or `poll` |
+| Re-arm | none — no `--fix-verify-retries` flag or entry-probe exists | raise `--pr-review-retries` (entry-probe) or `poll` |
 
 **At the outer boundary:** a *verified-good* batch is still escalated when `pr_review_retries` is spent — the outer cap bounds review *iteration*, not mechanical quality (a green push still elicits another review that may surface fresh comments). The inner cap governs mechanical convergence; the outer governs how many review rounds run before a human confirms. The cap is checked **pre-push**, so the budget-tripping push is refused, not uploaded.
 
@@ -594,7 +594,8 @@ Adapter selection is unbuilt: the CLI always constructs the stderr sink. Treat t
 | `poll` | none | gh API (comments, reviews, CI); update state |
 | `cluster` | Cluster | persist `cluster_id` per item |
 | `fix` | Fix | dump gh detail; serial dispatch; per-subagent audit; orphan check; stash-isolate on fail |
-| `verify` *(internal step)* | none | mechanical re-check of fix output (see §6) |
+| `verify` *(internal step — design-of-record only, §3.4, not built)* | none | mechanical re-check of fix output (see §6) |
+| `cap-guard` *(internal step)* | none | check the PR-review retry budget; refuse the push and flip `phase = HUMAN_GATED` if spent (§3.3/§3.5) |
 | `push` | none | `git push` accumulated commits |
 | `rereview` | none | reviewer remove/add dance to coerce a fresh `review_requested` |
 | `reply` | none | render templates + `response_path` files; post via gh |

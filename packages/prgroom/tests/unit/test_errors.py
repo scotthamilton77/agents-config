@@ -1,4 +1,4 @@
-"""Tests for the failure-tier model and structured-error registry (§3.3, §3.6, §3.6).
+"""Tests for the failure-tier model and structured-error registry (§1, §3.6).
 
 These pin *coded decisions*: the tier -> sysexits exit-code mapping, the
 signal-aware cancellation code, and the 4-line ``what/why/how`` stderr contract
@@ -58,7 +58,7 @@ def test_cancelled_sigterm_exits_143() -> None:
 
 
 def test_unknown_tier_value_fails_loudly_via_exhaustiveness_guard() -> None:
-    # §7.6 closed-match safety: a tier the match does not enumerate must hit the
+    # Closed-match safety: a tier the match does not enumerate must hit the
     # `case _:` assert_never guard and raise, never silently return a bogus code.
     # We fabricate an out-of-band tier (bypassing the type system) to prove the
     # guard fires — this is what catches a future Tier member with no arm.

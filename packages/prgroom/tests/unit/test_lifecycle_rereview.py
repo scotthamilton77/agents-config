@@ -1,4 +1,4 @@
-"""Tests for ``rereview_pr`` — the lock-held ``_rereview`` lifecycle internal (§3.2/§3.4).
+"""Tests for ``rereview_pr`` — the lock-held ``_rereview`` lifecycle internal (§3.2/§3.3).
 
 After a push invalidates prior reviews, ``_rereview`` re-requests every required
 reviewer in ``{not_requested, declined}`` via the gh "remove + re-add" dance (the

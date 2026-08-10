@@ -215,7 +215,7 @@ def poll(
 def _read_or_no_state(store: Store, ref: PRRef) -> PRGroomingState:
     """Read the PR's state, raising ``PRECONDITION_NO_STATE`` if it was never polled.
 
-    Direct invocation does NOT self-heal (the ``--no-prework`` column, §3.2): a
+    Direct invocation does NOT self-heal (§3.2): a
     missing state is a terminal user error (exit 2), not an auto-run-``poll`` path.
     The self-heal/prework chaining is the ``run`` aggregate's job (§3.3).
     """
@@ -243,7 +243,7 @@ def cluster(
     """Group unprocessed items into fix-bundles for cohesive fix work.
 
     A locked verb: ``read → cluster_pr → write`` under the §2 ``with_lock`` wrapper.
-    Direct-invocation preconditions (the ``--no-prework`` column, §3.2): no state →
+    Direct-invocation preconditions (§3.2): no state →
     ``PRECONDITION_NO_STATE`` (exit 2); a terminal phase, an already-clustered state,
     or all items already processed → idempotent no-op exit 0; zero items in state →
     ``PRECONDITION_NO_ITEMS`` (no-work exit 0). Cluster decides no disposition and
@@ -292,7 +292,7 @@ def fix(
     """Dispatch the fix agent per cluster: decide disposition AND implement (local).
 
     A locked verb: ``read → fix_pr → write`` under the §2 ``with_lock`` wrapper.
-    Direct-invocation preconditions (the ``--no-prework`` column, §3.2), in order:
+    Direct-invocation preconditions (§3.2), in order:
     no state → ``PRECONDITION_NO_STATE`` (exit 2); a terminal phase or an
     all-dispositioned state (work already done) → idempotent no-op exit 0; items
     remain but none are clustered-unprocessed → ``PRECONDITION_NO_CLUSTERS``
@@ -564,7 +564,7 @@ def status(
 ) -> None:
     """Print current grooming state + the §4.5 merge-gate envelope (read-only).
 
-    The §3.3 carve-out: the default path is LOCK-FREE — a single ``store.read`` that
+    The §2 carve-out: the default path is LOCK-FREE — a single ``store.read`` that
     may observe a stale-but-internally-consistent snapshot under a concurrent write,
     never a partial one (writes are file-atomic). ``--locked`` acquires the PR lock
     via :func:`with_lock` for a strictly-consistent read and exits 75 under
@@ -682,7 +682,7 @@ def _render_status(envelope: dict[str, object], *, json_out: bool) -> None:
 
 
 def handle_cli_error(err: PrgroomError, *, stderr: IO[str] | None = None) -> int:
-    """Render a tier-tagged error and return its process exit code (§1, §3.3, §7.6).
+    """Render a tier-tagged error and return its process exit code (§1, §3.6).
 
     Every tier-tagged error renders the registry ``what/why/how`` block (plus the
     raw ``detail`` when present) so a user-resolvable failure carries the richest
