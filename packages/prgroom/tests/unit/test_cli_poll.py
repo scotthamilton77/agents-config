@@ -106,8 +106,9 @@ def test_poll_malformed_ref_exits_two_with_block(monkeypatch: pytest.MonkeyPatch
 def test_poll_bare_number_is_bad_ref_pending_repo_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The poll verb parses without a default_repo (current-repo resolution is a
-    # later bead), so a bare `<n>` is a bad ref, not a silent success.
+    # The poll verb parses without a default_repo (it would need a current-repo
+    # context seam — git remote -> owner/repo — that does not exist), so a bare
+    # `<n>` is a bad ref, not a silent success.
     monkeypatch.setattr(cli, "_build_gh", lambda: _gh_with_head("abc"))
     result = runner.invoke(cli.app, ["poll", "123"])
     assert result.exit_code == 2

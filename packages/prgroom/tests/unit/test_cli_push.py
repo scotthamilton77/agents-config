@@ -58,7 +58,7 @@ class FakeGit:
 
 def _state(*, phase: PRPhase = PRPhase.FIXES_PENDING, retries: int = 0) -> PRGroomingState:
     # last_poll_sha is non-empty: the initial push has been observed, so a CLI
-    # push from here consumes a retry (§3.4).
+    # push from here consumes a retry (§3.5).
     return PRGroomingState(
         pr=_REF,
         phase=phase,

@@ -1,17 +1,17 @@
-"""``push_pr`` — the lock-held ``_push`` lifecycle internal (§3.2/§3.4/§3.5).
+"""``push_pr`` — the lock-held ``_push`` lifecycle internal (§3.2/§3.5).
 
 ``push_pr`` uploads the fix agent's queued commits to the PR's head branch — the
 first verb that mutates the remote. It first guards the mutation: the design pins
-the upload to the **local PR-branch HEAD** (§3.4), so it refuses with
+the upload to the **local PR-branch HEAD** (§3.6), so it refuses with
 ``PRECONDITION_WRONG_BRANCH`` unless the worktree is actually checked out on the PR
 head branch (``gh.head_ref_name``) — an ambient checkout or detached HEAD would
 otherwise publish the wrong commits. Then the remote tip is the source of truth for
-the commit queue (§3.4 forbids a state field for it): it reads the authoritative
-remote HEAD via ``gh.head_ref_oid`` and lists local commits ahead of it with
-``git.rev_list``. With ≥1 queued commit it pushes ``HEAD:<head-branch>`` to
+the commit queue (the state schema carries no field for it): it reads the
+authoritative remote HEAD via ``gh.head_ref_oid`` and lists local commits ahead of
+it with ``git.rev_list``. With ≥1 queued commit it pushes ``HEAD:<head-branch>`` to
 ``origin``, then counts the consumed PR-review retry (the initial observed push is
 free — the counter is 0-indexed), records ``last_pushed_head_sha`` (the SHA this
-CLI pushed, distinguishing CLI from external pushes for §3.4 attribution), and
+CLI pushed, distinguishing CLI from external pushes for §3.2 attribution), and
 flips stale required reviews to ``not_requested`` so the post-push ``_rereview``
 re-asks them.
 
@@ -22,7 +22,7 @@ are queued. This makes a state-write crash after a successful push safe — the 
 invocation's ``rev_list`` finds the commits already on the remote and re-pushes
 nothing, so the retry counter is never double-bumped. (The one-retry under-count
 the lost write leaves behind is reconciled by the next ``_poll`` via its
-external-push attribution, §3.4.) Makes **no** phase change (§3.2 push row; phase
+external-push attribution, §3.2.) Makes **no** phase change (§3.2 push row; phase
 resolution is the run aggregate's job) and sets no ``state.last_error``. A failed
 ``git push`` propagates its tagged error without mutating state — the counter and
 the reviewer set are touched only after the push succeeds.
@@ -52,11 +52,12 @@ _REMOTE = "origin"
 
 
 def has_queued_fix_commits(gh: GhClient, git: GitClient, ref: PRRef) -> bool:
-    """True iff the local PR-branch HEAD has ≥1 commit not yet on the remote (§3.4).
+    """True iff the local PR-branch HEAD has ≥1 commit not yet on the remote.
 
-    The remote tip is the source of truth for the commit queue (§3.4 forbids a state
-    field): it reads the authoritative remote HEAD via ``gh.head_ref_oid`` and lists
-    local commits ahead of it with ``git.rev_list``. Shared by :func:`push_pr` (its
+    The remote tip is the source of truth for the commit queue (the state schema
+    carries no field for it): it reads the authoritative remote HEAD via
+    ``gh.head_ref_oid`` and lists local commits ahead of it with ``git.rev_list``.
+    Shared by :func:`push_pr` (its
     no-op guard) and the run-loop's §3.5 pre-push cap check, so the cap decision and
     the push agree on exactly what "queued" means. A 404 (vanished PR/repo) is mapped
     to a terminal :class:`~prgroom.errors.PrgroomError` here — never re-raised as a raw
@@ -85,13 +86,13 @@ def push_pr(
 
     Caller must hold the per-ref lock (see ``lock()``). Works on a deepcopy of
     ``state``; returns the copy for the caller to persist. A no-op when no commits
-    are queued (§3.4). No phase change (§3.2 push row), no ``state.last_error``.
+    are queued. No phase change (§3.2 push row), no ``state.last_error``.
     """
     state = copy.deepcopy(state)
     try:
         branch = gh.head_ref_name(ref)
 
-        # Guard the live mutation: `_push` uploads the local PR-branch HEAD (§3.4).
+        # Guard the live mutation: `_push` uploads the local PR-branch HEAD (§3.6).
         # An ambient checkout on some other branch (or a detached HEAD, which reads
         # as the literal "HEAD") would publish the wrong commits, so refuse before
         # the queued-commit read and the push that could publish, rather than trust
@@ -104,9 +105,9 @@ def push_pr(
             )
 
         if not has_queued_fix_commits(gh, git, ref):
-            return state  # nothing queued — idempotent no-op (§3.4)
+            return state  # nothing queued — idempotent no-op
 
-        # The initial review-eliciting push is free (§3.4: the 0-indexed counter
+        # The initial review-eliciting push is free (§3.5: the 0-indexed counter
         # counts fix-push retries, not pushes). Evaluate before mutating the SHAs —
         # a set last_poll_sha (poll observed a HEAD) or last_pushed_head_sha (a
         # prior CLI push) means the initial push is already spent.

@@ -1,9 +1,9 @@
 """Provider-chain dispatch + fallback ladder (§5 agent-CLI config & fallback).
 
-The dispatcher resolves a per-contract provider chain (from TOML, with a
-``--cluster-model`` / ``--fix-model`` override), tries the primary, and on a
-fallback-triggering failure (binary absent, quota/auth/network exit, or timeout)
-falls to the next link. If the whole chain fails it raises a single
+The dispatcher resolves a per-contract provider chain (from TOML, with an
+optional programmatic ``model_override`` — no CLI flag feeds it today), tries
+the primary, and on a fallback-triggering failure (binary absent, quota/auth/network
+exit, or timeout) falls to the next link. If the whole chain fails it raises a single
 caller-mappable error so the lifecycle can file a ``failed`` disposition +
 escalate rather than crash.
 
@@ -250,7 +250,7 @@ def test_non_table_provider_names_the_full_contract_key_path(tmp_path: Path) -> 
 def test_non_table_section_names_the_full_agents_contract_path(tmp_path: Path) -> None:
     # A present [agents.<contract>] that is not a table at all (e.g. agents.cluster =
     # "...") must name the full agents.<contract> path — consistent with the
-    # per-provider errors — not the foundation subtable's bare-key message.
+    # per-provider errors — not subtable()'s generic bare-key message.
     cfg = tmp_path / ".prgroom.toml"
     cfg.write_text('[agents]\ncluster = "ollama"\n', encoding="utf-8")
     with pytest.raises(ValueError, match=r"agents\.cluster must be a table"):
@@ -346,8 +346,9 @@ def test_provider_timeout_must_be_a_positive_number(tmp_path: Path) -> None:
 
 
 def test_model_override_replaces_the_primary_model_only() -> None:
-    # --cluster-model / --fix-model swaps the primary provider's model, keeping its
-    # cli + the rest of the chain (operator wants "the same provider, this model").
+    # model_override swaps the primary provider's model, keeping its cli + the
+    # rest of the chain (operator wants "the same provider, this model"). No CLI
+    # flag feeds this parameter today.
     chain = load_chain("fix", repo_config=None, model_override="opus")
     assert chain.providers[0].cli == "claude"
     assert chain.providers[0].model == "opus"
@@ -448,7 +449,7 @@ def test_all_providers_fail_raises_caller_mappable_error() -> None:
 
 
 def test_all_providers_fail_is_transient_exit_75() -> None:
-    # §3.7 registry pins RUNTIME_AGENT_UNAVAILABLE to RUNTIME_TRANSIENT (exit 75):
+    # §3.6 registry pins RUNTIME_AGENT_UNAVAILABLE to RUNTIME_TRANSIENT (exit 75):
     # the scheduler retries on the next cadence, preserving restart-safety for the
     # un-dispositioned items. A terminal tier (77) would human-gate and break that.
     runner = FakeAgentRunner([BinaryMissing(), TimesOut()])
@@ -706,7 +707,7 @@ def test_usage_hook_records_a_cancelled_attempt_before_the_abort() -> None:
     assert [r.outcome for r in records] == ["cancelled"]
 
 
-# ── structural fit: the concrete dispatchers satisfy the foundation Protocols ──
+# ── structural fit: the concrete dispatchers satisfy the Protocols ──
 
 
 def test_cluster_dispatcher_satisfies_cluster_contract() -> None:
@@ -724,7 +725,8 @@ def test_fix_dispatcher_satisfies_fix_contract() -> None:
     assert isinstance(dispatcher, FixContract)
 
 
-# ── winner provenance: the Dispatched envelope (observability spec §3) ──
+# ── winner provenance: the Dispatched envelope (per the observability spec —
+# archive-era, resolvable in the private archive repository) ──
 
 
 def test_fallback_success_carries_winner_and_failures() -> None:

@@ -112,7 +112,7 @@ def test_fixed_claiming_pre_baseline_sha_is_audit_failed() -> None:
 
 
 def test_fixed_with_empty_gate_is_audit_failed() -> None:
-    # §6.1: recommended_gate is load-bearing — a FIXED item must carry a valid tier.
+    # fix-verify spec §6.1: recommended_gate is load-bearing — a FIXED item must carry a valid tier.
     req = _req("C_1")
     out = FixOutput(items=[_row("C_1", DispositionKind.FIXED, commit_shas=["new1"])])
     v = audit_fix_items(req, out, ancestors_of_pre={"base"}, new_in_cluster={"new1"})

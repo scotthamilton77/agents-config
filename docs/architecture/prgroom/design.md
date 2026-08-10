@@ -8,7 +8,7 @@
 
 This is the high-level design reference for the prgroom CLI. It is **lean by intent** — data structures and contracts are shown; procedural code is not.
 
-**Scope warning.** prgroom is being carved down, not finished. Verbs and subsystems described below — the `verify` gate and its convergence loop, `sweep`, and the reply/poll/wait/snapshot machinery — are design-of-record for a system that will not be built in full. Where this document and `packages/prgroom/src/` disagree about what exists, the code is the authority.
+**Scope warning.** prgroom is being carved down, not finished, and two different fates are in play. The `verify` gate and its convergence loop, and `sweep`, are design-of-record for a system that will not be built at all. The reply/poll/wait/snapshot machinery described below is a different case: it is built and wired into the CLI today, but charter D13 marks it for deletion rather than completion (the in-package fix-dispatch loop moves to the work-loop instead — the repo-level `grind`/`executor` pipeline charter D14 nominates for that role). Where this document and `packages/prgroom/src/` disagree about what exists, the code is the authority.
 
 ## Contents
 
@@ -45,25 +45,25 @@ This is the high-level design reference for the prgroom CLI. It is **lean by int
 | Pattern | Caller | Invocation |
 |---|---|---|
 | **Interactive** | User in chat, invoking the CLI directly | `prgroom run <pr> --interactive` |
-| **Autonomous** | Cron / `/loop` / GHA | `prgroom run <pr> --autonomous`, or `prgroom sweep <repo>` |
-| **Executable-bead** (v2) | bd-side dispatcher | bead payload `prgroom run --pr <n> --autonomous` |
+| **Autonomous** | Cron / `/loop` / GHA | `prgroom run <pr> --autonomous`, or `prgroom sweep <repo>` (design-of-record only; not a registered command) |
+| **Executable-bead** (v2) | bd-side dispatcher | bead payload `prgroom run <n> --autonomous` |
 
 The `monitor-pr` skill that used to drive the interactive pattern was retired, and nothing replaced it. Nothing invokes `prgroom` today — no deployed asset and no harness path — so all three rows describe a designed surface rather than a running one; `packages/prgroom/AGENTS.md` states the package's current standing.
 
 **Locked decisions:**
 
-- **Language:** Python 3.11+, reusing the repo's existing toolchain (`ruff`, `mypy --strict`, `pytest` + coverage, `pip-audit`) verbatim. The state-model / `Protocol` / `StrEnum` shape was modelled on the `pdlc` package, which was retired out of this repository on 2026-08-05; the shape itself is unchanged and the sibling packages carry it too.
+- **Language:** Python 3.11+, reusing the repo's existing toolchain (`ruff`, `mypy --strict`, `pytest` + coverage, `pip-audit`) verbatim. The state model uses `Protocol` (structural interfaces, `mypy --strict`-checked rather than inherited) and `StrEnum` (self-documenting, JSON-serializable values) throughout.
 - **CLI framework:** `typer` (type-hint-driven, pairs with `mypy --strict`).
 - **Placement:** `packages/prgroom/`, one of the packages under `packages/`.
 - **Distribution:** there is no compiled binary and no artifact-transport step. The project installer owns the install — its CLI-deploy stage runs `uv tool install` against `packages/prgroom/`, which places the `prgroom` console-script on `PATH` and records it in the install receipt. The version lives in `packages/prgroom/pyproject.toml` and ships with the repo; there is no independent release cadence, no tags, and no GitHub releases.
-- **Agent boundary:** synchronous subprocess shell-out; each invocation is fresh context. The runtime is chosen per-contract in TOML config — the contract is the API, the runtime is swappable.
+- **Agent boundary:** synchronous subprocess shell-out; each invocation is fresh context. The runtime is designed to be chosen per-contract in TOML config — the contract is the API, the runtime is swappable — but no verb resolves a per-repo `.prgroom.toml` path yet (§§4.3/6.3), so today every invocation runs the shipped default chain.
 - **Scope:** equivalent of `wait-for-pr-comments` + `reply-and-resolve-pr-threads`; excludes create-PR, merge, cleanup, and bead-lifecycle helpers.
 
-**Precondition gating (cross-cutting):** Every verb checks preconditions before doing work, across three tiers — *self-healable* (the CLI can produce the missing input by running deterministic prework, then re-evaluates; this is the **default**, e.g. `fix` with no state auto-runs `poll` and `cluster`), *user-error* (invalid args, no PR — always terminal, non-zero exit), and *terminal-no-work* (preconditions met but nothing to do — exit `0` as success). `--no-prework` makes self-healable failures terminal instead. Non-self-healable failures emit a structured stderr error (what / why / how / machine-readable code) while stdout stays reserved for verb output so agents can parse each independently. The error-code registry is owned by §3.6.
+**Precondition gating (cross-cutting):** Every verb checks preconditions before doing work. Direct invocation is terminal on a missing precondition today — e.g. `fix` with no state exits `PRECONDITION_NO_STATE` (exit 2) rather than auto-running `poll`/`cluster` — and *terminal-no-work* (preconditions met but nothing to do — exit `0` as success) is the other built outcome. A third tier, *self-healable* (a verb auto-running its own missing prework, gated by a per-verb `--no-prework` flag), is design-of-record only: no direct verb registers that flag, and `run`'s own `--no-prework` is an accepted-but-no-op parity stub — the aggregate always orchestrates its own prework by running the whole pipeline (§3.3) rather than self-healing a single verb's precondition. Non-terminal-no-work failures emit a structured stderr error (what / why / how / machine-readable code) while stdout stays reserved for verb output so agents can parse each independently. The error-code registry is owned by §3.6.
 
 ### MVP verb set
 
-These are the user-facing subcommands. `verify` and `cap-guard` are **internal pre-push pipeline steps** (`VerbStep`s threaded by `run`), **not** exposed subcommands.
+The table below is the MVP verb set (§1); all but `sweep` are user-facing subcommands today — `sweep`'s row states its design-of-record, unregistered status. `cap-guard` is a built **internal pre-push pipeline step** (a `VerbStep` threaded by `run`), not an exposed subcommand. `verify` is designed as a second internal step (§3.4/§6) but is not built into the pipeline — see §3.3 for the built order of record.
 
 | Verb | Role |
 |---|---|
@@ -78,7 +78,7 @@ These are the user-facing subcommands. `verify` and `cap-guard` are **internal p
 | `wait <pr>` | Sleep/poll until SHA changes or the quiescence threshold trips. |
 | `status <pr>` | Print current state for inspection. |
 | `run <pr>` | Orchestrate the pipeline (§3.3) iterating to quiescence or until the PR-review retry budget is exhausted. |
-| `sweep <repo>` | Cross-PR autonomous mode: list open PRs and `run` each serially with per-PR locks, failure-isolated. (Optional MVP.) |
+| `sweep <repo>` | Cross-PR autonomous mode: list open PRs and `run` each serially with per-PR locks, failure-isolated. Design-of-record only — not a registered command; charter D13 forbids building it. |
 
 ---
 
@@ -137,10 +137,9 @@ class PRGroomingState:
     human_review_label_added: bool = False
     reviewers: dict[str, ReviewerState] = field(default_factory=dict)
     items: list[ReviewItem] = field(default_factory=list)
-    pending_memory: list[RoutedMemory] = field(default_factory=list)  # durable memory queue, drained by _reply (§7.3)
-    verify: VerifyVerdict | None = None   # see §6 — the fix↔verify subsystem
     last_error: str | None = None
     lifecycle_escalation_filed: bool = False
+    pending_memory: list[RoutedMemory] = field(default_factory=list)  # durable memory queue, drained by _reply (§7.3)
 
 class PRPhase(StrEnum):
     IDLE = "idle"
@@ -151,7 +150,7 @@ class PRPhase(StrEnum):
     MERGED = "merged"
 ```
 
-`pending_memory` (the durable CONTEXTUAL-memory queue, §7.3) and the two resumable-rereview SHA markers are **additive, omit-when-empty** — old state files load empty defaults, so `schema_version` stays `1` (the same pattern as `verify`).
+`pending_memory` (the durable CONTEXTUAL-memory queue, §7.3) and the two resumable-rereview SHA markers are **additive, omit-when-empty** — old state files load empty defaults, so `schema_version` stays `1`.
 
 `awaiting-initial-review` and `awaiting-rereview` collapse into one `awaiting-review`; `pr_review_retries_used` (0-indexed) disambiguates initial from re-review iterations (see §3.5 — The two retry caps). Any phase may transition to `human-gated` on an `escalated` disposition (interactive / no-autodefer), an exhausted PR-review retry budget (§3.5), or an irrecoverable fix-agent audit failure. `quiesced` is a terminal that does **not** require human action — it is auto-merge-eligible when policy (CI/coverage) is satisfied; `human-gated` is terminal-requiring-human. `human-gated` exits to `fixes-pending` or `merged`.
 
@@ -166,6 +165,7 @@ class ReviewItem:
     cluster_id: str = ""
     disposition: Disposition | None = None
     replied: bool = False
+    own_reply_id: int = 0
     resolved: bool = False
     duplicate_of_gh_id: str = ""
 
@@ -186,7 +186,7 @@ class Disposition:
     rationale: str = ""
     commits: list[str] = field(default_factory=list)
     response_path: str | None = None
-    gate: str = ""                        # "full"|"lite", validated vs GateStrength (§6)
+    gate: GateStrength | None = None      # None until `fix` disposes the item; §6.2 defines GateStrength
     escalation_filed: bool = False
 ```
 
@@ -216,7 +216,7 @@ class QuiescenceState:
 
 ### Transactional model
 
-Every public verb is a thin locking wrapper: it acquires the per-PR lock via `lock()`, calls a lock-assuming `_`-prefixed internal that does the read-modify-write, and releases on the context manager's `finally`. `run` is the sole exception — it acquires the lock once and threads multiple internals in sequence (§3.3), avoiding nested acquisition.
+Every public verb is a thin locking wrapper: it acquires the per-PR lock via `lock()`, calls a lock-assuming `_`-prefixed internal that does the read-modify-write, and releases on the context manager's `finally`. Two exceptions: `run` acquires the lock once and threads multiple internals in sequence (§3.3), avoiding nested acquisition; `status` (§3.2) is unlocked by default — a single `store.read` that may observe a stale-but-internally-consistent snapshot under a concurrent write — with `--locked` opt-in for a strictly-consistent read.
 
 ### Concurrency posture
 
@@ -230,7 +230,7 @@ No `crash_recovery` block (replaced by `phase` + `last_error` + lock semantics),
 
 ## 3. Lifecycle state machine
 
-The lifecycle is a six-phase state machine. Verbs drive transitions; `run` (§3.3) threads the whole cycle. The pipeline within an active cycle is **cluster → fix → verify → cap-guard → push → reply → resolve → rereview** — a mechanical `verify` step sits between `fix` and the cap-guard.
+The lifecycle is a six-phase state machine. Verbs drive transitions; `run` (§3.3) threads the whole cycle. The pipeline within an active cycle is **cluster → fix → cap-guard → push → reply → resolve → rereview** (§3.3); a `verify` step between `fix` and the cap-guard is design-of-record only (§3.4/§6), not built.
 
 ### 3.1 Phase state graph
 
@@ -242,31 +242,31 @@ idle | awaiting-review | fixes-pending | quiesced | human-gated | merged
 
 A PR starts in `idle` on first invocation. `poll` advances it to `awaiting-review` once the first push lands, and to `fixes-pending` when a reviewer item appears. Within `fixes-pending` the cycle does its work; at end-of-cycle the phase resolves to `awaiting-review` (commits pushed), `quiesced` (no commits, quiescence trips), or `human-gated` (a gate trips). Every non-terminal phase transitions to `merged` when `poll` observes the PR closed via merge.
 
-**Terminal-for-CLI:** `quiesced`, `human-gated`, `merged`. The CLI takes no further autonomous action in these phases. **Re-enters the loop:** both `quiesced` and `human-gated` can return to `fixes-pending` — on new reviewer activity, an external push, an operator `resolve-escalated`, or (for a budget-gated PR) a raised PR-review retry budget. **Graph-terminal:** `merged` only (absorbing).
+**Terminal-for-CLI:** `quiesced`, `human-gated`, `merged`. The CLI takes no further autonomous action in these phases. **Re-enters the loop:** both `quiesced` and `human-gated` can return to `fixes-pending` — on new reviewer activity, an operator `resolve-escalated`, or (for a budget-gated PR) a raised PR-review retry budget; an external push also re-enters the loop from either phase, landing at `awaiting-review` from `quiesced` and at `fixes-pending` from `human-gated` (§3.2 `poll` row). **Graph-terminal:** `merged` only (absorbing).
 
 The transition matrix in §3.2 carries the same edges in table form.
 
 ### 3.2 Phase × verb transition matrix
 
-Each cell gives the next phase and side effects for `(verb, current phase)` on **direct** invocation. Default is self-heal (`PRECONDITION_SELFHEAL`): a verb missing its prework auto-runs it and re-evaluates; **precondition fail** cells show the `--no-prework` terminal outcome; **no-op** means exit 0, no state change. `run` (§3.3) orchestrates prework itself and does not exercise this self-heal path.
+Each cell gives the next phase and side effects for `(verb, current phase)` on **direct** invocation. Self-heal (a verb auto-running its own missing prework, gated by `--no-prework`) is design-of-record only (§1) — no direct verb has that flag today, so every precondition cell below is the actual, unconditional outcome, not a `--no-prework`-gated one; **no-op** means exit 0, no state change. `run` (§3.3) orchestrates the whole pipeline itself and never exercises these per-verb preconditions.
 
 The matrix covers the 11 per-PR verbs. The cross-PR `sweep` aggregator iterates open PRs serially and invokes `run` per PR with isolated per-PR failures; it has no phase semantics of its own.
 
 | Verb | `idle` | `awaiting-review` | `fixes-pending` | `quiesced` | `human-gated` | `merged` |
 |------|--------|-------------------|-----------------|------------|---------------|----------|
-| `poll` | first push → `awaiting-review`; reviewer item → `fixes-pending`; else no-op | reviewer item → `fixes-pending`; PR-closed → `merged`; external push → `pr_review_retries_used++` if SHA changed, stay; else no-op | new item → stay (appended); PR-closed → `merged`; external push → `pr_review_retries_used++` if SHA changed, stay; else no-op | new item → `fixes-pending`; PR-closed → `merged`; external push → `awaiting-review` (`pr_review_retries_used++`); else no-op | new item → `fixes-pending`; PR-closed → `merged`; external push → `fixes-pending` (`pr_review_retries_used++`); else no-op | terminal; no-op |
+| `poll` | first push → `awaiting-review`; reviewer item → `fixes-pending`; PR-closed → `merged`; else no-op | reviewer item → `fixes-pending`; PR-closed → `merged`; external push → `pr_review_retries_used++` if SHA changed, stay; else no-op | new item → stay (appended); PR-closed → `merged`; external push → `pr_review_retries_used++` if SHA changed, stay; else no-op | new item → `fixes-pending`; PR-closed → `merged`; external push → `awaiting-review` (`pr_review_retries_used++`); else no-op | new item → `fixes-pending`; PR-closed → `merged`; external push → `fixes-pending` (`pr_review_retries_used++`); else no-op | terminal; no-op |
 | `cluster` | `PRECONDITION_NO_ITEMS` | `PRECONDITION_NO_ITEMS` | sets `cluster_id` on unclustered items; no phase change | terminal; no-op | terminal; no-op | terminal; no-op |
 | `fix` | `PRECONDITION_NO_CLUSTERS` | `PRECONDITION_NO_CLUSTERS` | sets per-item `disposition.kind`; may produce commits; no phase change (resolved at end-of-cycle); audit failures flip the item to `FAILED` → `human-gated` | terminal; no-op | terminal; no-op | terminal; no-op |
 | `push` | `PRECONDITION_NO_COMMITS` | uploads queued commits; `pr_review_retries_used++` if ≥1 pushed; no phase change | uploads queued commits; `pr_review_retries_used++` if ≥1 pushed; no phase change | terminal; no-op | terminal; no-op | terminal; no-op |
-| `reply` | `PRECONDITION_NO_ITEMS` | no-op unless replies pending (`PRECONDITION_NO_UNREPLIED` only under `--no-prework`) | posts replies; marks `replied`; no phase change | re-applies idempotently | re-applies idempotently | terminal; no-op |
-| `resolve` | `PRECONDITION_NO_ITEMS` | no-op (`PRECONDITION_NO_UNRESOLVED` only under `--no-prework`) | resolves threads for `FIXED`/`ALREADY_ADDRESSED` items; marks `resolved`; no phase change | re-applies idempotently | re-applies idempotently | terminal; no-op |
+| `reply` | no-op (no items yet) | no-op unless replies pending (`PRECONDITION_NO_UNREPLIED` is registered but never raised — no `--no-prework` flag exists for `reply`) | posts replies; marks `replied`; no phase change | re-applies idempotently | re-applies idempotently | terminal; no-op |
+| `resolve` | no-op (no items yet) | no-op (`PRECONDITION_NO_UNRESOLVED` is registered but never raised — no `--no-prework` flag exists for `resolve`) | resolves threads for `FIXED`/`ALREADY_ADDRESSED` items; marks `resolved`; no phase change | re-applies idempotently | re-applies idempotently | terminal; no-op |
 | `rereview` | `PRECONDITION_NO_ITEMS` | re-requests review for required reviewers in `{not_requested, declined}`; no-op exit 0 if none match; no phase change | runs after a successful push for the same reviewers; no phase change | re-requests if reviewer state stale | re-applies idempotently | terminal; no-op |
 | `wait` | sleeps; returns on `_wait` contract break (phase change, quiescence, signal-cancel) | sleeps; returns on `_wait` contract break; PR-review budget NOT checked here (§3.5) | `PRECONDITION_WAIT_NOT_APPLICABLE` (exit 2) — actionable work exists; use `run` | sleeps; returns on contract break (usually → `fixes-pending`/`merged`) | sleeps; returns on contract break (usually → out) | terminal; no-op |
 | `resolve-escalated` | `PRECONDITION_NO_ESCALATIONS` | `PRECONDITION_NO_ESCALATIONS` | flips one item from `escalated` to a terminal disposition; phase unchanged | `PRECONDITION_NO_ESCALATIONS` | flips one item; clears only the `escalated` gate. → `fixes-pending` iff no `escalated` items remain, no `failed` items, and `last_error ∉ BlockingErrorCodes`; else stays `human-gated`. Does NOT clear `LIFECYCLE_PR_REVIEW_EXHAUSTED` (needs budget raise + re-run), `STATE_CORRUPT`, or `failed`-items gating | terminal; no-op |
 | `status` | read-only (lock-free; `--locked` opt-in) | read-only | read-only | read-only | read-only | read-only |
-| `run` | lifecycle loop (§3.3) | lifecycle loop (§3.3) | lifecycle loop (§3.3) | `_poll` once for external transitions; re-enter loop if phase advances out, else return 0 | `_poll` once for external resolutions, then re-evaluate the budgets: if `last_error ∈ {LIFECYCLE_PR_REVIEW_EXHAUSTED, LIFECYCLE_FIX_VERIFY_EXHAUSTED}` and the correspondingly-raised budget (`--pr-review-retries` / `--fix-verify-retries`) no longer trips, clear it → `fixes-pending`; re-enter loop if phase advances out, else return 0 | returns 0 (absorbing) |
+| `run` | lifecycle loop (§3.3) | lifecycle loop (§3.3) | lifecycle loop (§3.3) | `_poll` once for external transitions; re-enter loop if phase advances out, else return 0 | `_poll` once for external resolutions, then re-evaluate the budget: if `last_error == LIFECYCLE_PR_REVIEW_EXHAUSTED` and the raised `--pr-review-retries` budget no longer trips, clear it → `fixes-pending`; re-enter loop if phase advances out, else return 0. (The fix↔verify sibling — `LIFECYCLE_FIX_VERIFY_EXHAUSTED` / `--fix-verify-retries` — is design-of-record only, §3.4; neither exists to re-arm.) | returns 0 (absorbing) |
 
-`BlockingErrorCodes` = { `LIFECYCLE_PR_REVIEW_EXHAUSTED`, `LIFECYCLE_FIX_VERIFY_EXHAUSTED`, `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN`, `RUNTIME_GH_TERMINAL`, `RUNTIME_PUSH_REJECTED` } — conditions outside `resolve-escalated`'s scope, recoverable only via §3.6.
+`BlockingErrorCodes` = { `LIFECYCLE_PR_REVIEW_EXHAUSTED`, `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN`, `RUNTIME_GH_TERMINAL`, `RUNTIME_GIT_TERMINAL`, `RUNTIME_PUSH_REJECTED` } — conditions outside `resolve-escalated`'s scope, recoverable only via §3.6.
 
 **End-of-cycle phase resolution** (applied by `run` from `fixes-pending`; first match wins):
 
@@ -279,17 +279,19 @@ The matrix covers the 11 per-PR verbs. The cross-PR `sweep` aggregator iterates 
 
 ### 3.3 The `run` pipeline
 
-`run` is the aggregate verb: it acquires the per-PR lock **once** and threads the lock-assuming internals in sequence (§2's transactional model) rather than re-locking per verb. From `fixes-pending` it drives one **cycle** through the pipeline:
+`run` is the aggregate verb: it acquires the per-PR lock **once** and threads the lock-assuming internals in sequence (§2's transactional model) rather than re-locking per verb. From `fixes-pending` it drives one **cycle** through the pipeline; `lifecycle/run.py::_build_pipeline` is the built order of record:
 
 ```
-cluster → fix → verify → cap-guard → push → reply → resolve → rereview
+cluster → fix → cap-guard → push → reply → resolve → rereview
 ```
 
-Each step is a `VerbStep` run in order; a step with no work no-ops (`verify` and `push` when there are no queued commits). Two pre-push steps can **refuse the push** by flipping `phase = HUMAN_GATED`: `cap-guard` (PR-review retry budget spent, §3.5) and `verify` (inner retries spent, §3.4 / §6). A post-step terminal check inspects `phase` after each step; on `human-gated` it breaks the pipeline before the remaining steps run, and the loop-top flushes the `EscalationSink` event + the `human-review-required` label (§4.6).
+Each step is a `VerbStep` run in order; a step with no work no-ops (`push` when there are no queued commits). `cap-guard` can **refuse the push** by flipping `phase = HUMAN_GATED` when the PR-review retry budget is spent (§3.5). A post-step terminal check inspects `phase` after each step; on `human-gated` it breaks the pipeline before the remaining steps run, and the loop-top flushes the `EscalationSink` event + the `human-review-required` label (§4.6). `rereview` runs **last** and guarded: only required bot reviewers needing a fresh review are re-requested, and only after a successful push.
 
-`cap-guard` runs **after** `verify` by design — the budget decision needs verify's verdict to know whether the work is even good enough to be worth pushing; a guard placed before verify would escalate (or proceed) blind. `rereview` runs **last** and guarded: only required bot reviewers needing a fresh review are re-requested, and only after a successful push.
+A `verify` step between `fix` and `cap-guard` — and the cap-guard-after-verify ordering that would imply — is design-of-record only (§3.4/§6); it is not part of the pipeline above.
 
-The cycle repeats; end-of-cycle resolution (§3.2) yields the next phase. On a terminal phase (`quiesced` / `human-gated` / `merged`) `run` returns; on `awaiting-review` it blocks in `_wait` (§4.2) until reviewer activity or quiescence breaks the wait, then loops. `lifecycle/run.py::_build_pipeline` is the built order of record.
+The cycle repeats; end-of-cycle resolution (§3.2) yields the next phase. On a terminal phase (`quiesced` / `human-gated` / `merged`) `run` returns; on `awaiting-review` it blocks in `_wait` (§4.2) until reviewer activity or quiescence breaks the wait, then loops.
+
+**Entry-probe.** When `run` is invoked while already at a terminal phase (`quiesced` / `human-gated`), it runs `poll` once before deciding whether to re-enter the cycle — the **entry-probe** (`lifecycle/run.py::_entry_probe`) — to catch an external merge or push that already cleared the gate. From `human-gated` specifically, it also re-checks whether a raised `--pr-review-retries` budget (§3.5) no longer trips and, if so, clears the gate and advances to `fixes-pending` for the refused commits to push; the inner fix↔verify cap's entry-probe re-arm (§3.5) is part of the same unbuilt convergence loop (§3.4).
 
 ### 3.4 The fix↔verify convergence loop
 
@@ -303,17 +305,17 @@ The loop is bounded by `fix_verify_retries` (§3.5), independent of the PR-revie
 
 ### 3.5 The two retry caps
 
-Both budgets are **retry caps**: on exhaustion they escalate to `human-gated`, surface a blocking `LIFECYCLE_*_EXHAUSTED` code, and re-arm identically (raise the budget via the §3.3 entry-probe, or `poll` observes an external fix). They bound orthogonal loops.
+Both are designed as **retry caps** that, on exhaustion, escalate to `human-gated` and surface a blocking `LIFECYCLE_*_EXHAUSTED` code. Only the outer, PR-review cap is built; the inner, fix↔verify cap is design-of-record only (§3.4) — no counter, no exhaustion code, and no re-arm path exist for it today. They bound orthogonal loops.
 
-| | **Inner — fix↔verify loop** | **Outer — PR-review loop** |
+| | **Inner — fix↔verify loop** *(design-of-record only, §3.4 — not built)* | **Outer — PR-review loop** |
 |---|---|---|
 | Bounds | repair re-fixes within one cycle (no push between) | review-eliciting pushes across cycles |
 | Knob | `fix_verify_retries` | `pr_review_retries` |
 | Default | **2** (⇒ max 3 `opus[1m]` fix spends/cycle) | **5** (initial push + 5 fix-pushes = 6 pushes) |
-| Counter | new, 0-indexed retry count | `pr_review_retries_used`, 0-indexed |
-| Exhaustion code | `LIFECYCLE_FIX_VERIFY_EXHAUSTED` | `LIFECYCLE_PR_REVIEW_EXHAUSTED` |
+| Counter | none — not built | `pr_review_retries_used`, 0-indexed |
+| Exhaustion code | `LIFECYCLE_FIX_VERIFY_EXHAUSTED` — not a registered `ErrorCode` | `LIFECYCLE_PR_REVIEW_EXHAUSTED` |
 | Tier / exit | `LIFECYCLE_CAP` / 0 (graceful terminal) | `LIFECYCLE_CAP` / 0 (graceful terminal) |
-| Re-arm | raise `--fix-verify-retries` (entry-probe) or `poll` | raise `--pr-review-retries` (entry-probe) or `poll` |
+| Re-arm | none — no `--fix-verify-retries` flag or entry-probe exists | raise `--pr-review-retries` (entry-probe) or `poll` |
 
 **At the outer boundary:** a *verified-good* batch is still escalated when `pr_review_retries` is spent — the outer cap bounds review *iteration*, not mechanical quality (a green push still elicits another review that may surface fresh comments). The inner cap governs mechanical convergence; the outer governs how many review rounds run before a human confirms. The cap is checked **pre-push**, so the budget-tripping push is refused, not uploaded.
 
@@ -401,15 +403,17 @@ The wait exits on exactly these triggers:
 
 ### 4.3 Configuration surface
 
-Precedence: **CLI flag > env var > per-repo `.prgroom.toml` > built-in default**. Durations parse `30s`/`10m`/`1h30m` syntax. (The `[verify]` table is owned by §6.3.)
+`PrgroomConfig.load` (`config.py`) resolves each knob below with precedence **CLI-flag parameter > env var > per-repo `.prgroom.toml` `[quiescence]` table > built-in default** — implemented and unit-tested at the loader. Durations parse `30s`/`10m`/`1h30m` syntax. (The `[verify]` table is owned by §6.3, which notes the same gap below.)
 
-| Setting | Default | Flag | Env var | TOML key |
-|---------|---------|------|---------|----------|
-| `idle_threshold` | `10m` | `--idle-threshold` | `PRGROOM_IDLE_THRESHOLD` | `quiescence.idle_threshold` |
-| `poll_interval` | `30s` | `--poll-interval` | `PRGROOM_POLL_INTERVAL` | `quiescence.poll_interval` |
-| `review_start_timeout` | `3m` | `--review-start-timeout` | `PRGROOM_REVIEW_START_TIMEOUT` | `quiescence.review_start_timeout` |
-| `review_finish_timeout` | `15m` | `--review-finish-timeout` | `PRGROOM_REVIEW_FINISH_TIMEOUT` | `quiescence.review_finish_timeout` |
-| `auto_request_human_review` | `true` | `--auto-request-human-review[=false]` | `PRGROOM_AUTO_REQUEST_HUMAN_REVIEW` | `quiescence.auto_request_human_review` |
+**Not yet wired to the CLI:** no `prgroom` verb exposes a flag for any of the five settings below, and no verb passes `load()` a `repo_config` path — every production call site in `cli.py` takes the `None` default, so `.prgroom.toml` is never actually read outside tests. `pr_review_retries` is the one config knob with a real CLI flag today (`run --pr-review-retries`, §3.5) — a separate top-level TOML key, not part of the `[quiescence]` table below.
+
+| Setting | Default | Env var | TOML key (`[quiescence]`) |
+|---------|---------|---------|----------|
+| `idle_threshold` | `10m` | `PRGROOM_IDLE_THRESHOLD` | `idle_threshold` |
+| `poll_interval` | `30s` | `PRGROOM_POLL_INTERVAL` | `poll_interval` |
+| `review_start_timeout` | `3m` | `PRGROOM_REVIEW_START_TIMEOUT` | `review_start_timeout` |
+| `review_finish_timeout` | `15m` | `PRGROOM_REVIEW_FINISH_TIMEOUT` | `review_finish_timeout` |
+| `auto_request_human_review` | `true` | `PRGROOM_AUTO_REQUEST_HUMAN_REVIEW` | `auto_request_human_review` |
 
 ### 4.4 Human-review merge constraint (NOT a lifecycle blocker)
 
@@ -483,7 +487,7 @@ Four properties of the envelope are load-bearing rather than incidental:
 
 ### 4.6 Auto-request human review on lifecycle gating
 
-When `_run` reaches `human-gated` for a reason that warrants human review, prgroom adds the `human-review-required` label, complementing the `EscalationSink` event with a GitHub-visible marker. Triggers (any one): `last_error == LIFECYCLE_PR_REVIEW_EXHAUSTED` (outer PR-review budget — §3.5) or `last_error == LIFECYCLE_FIX_VERIFY_EXHAUSTED` (inner fix↔verify budget — §3.4) — the two sibling caps gate identically, and §3.3 flushes the label on either `human-gated` break — or any item disposition of `ESCALATED` or `FAILED`. Explicit non-triggers are infra/state failures (`RUNTIME_TERMINAL_USER`, `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN`, `RUNTIME_PUSH_REJECTED`, `RUNTIME_GH_TERMINAL`) — those are not review problems.
+When `_run` reaches `human-gated` for a reason that warrants human review, prgroom adds the `human-review-required` label, complementing the `EscalationSink` event with a GitHub-visible marker. Triggers (any one): `last_error == LIFECYCLE_PR_REVIEW_EXHAUSTED` (outer PR-review budget — §3.5) or `last_error == LIFECYCLE_FIX_VERIFY_EXHAUSTED` (inner fix↔verify budget — §3.4) — the two sibling caps gate identically, and §3.3 flushes the label on either `human-gated` break — or any item disposition of `ESCALATED` or `FAILED`. Explicit non-triggers are infra/state failures (`RUNTIME_GH_TERMINAL`, `RUNTIME_GIT_TERMINAL`, `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN`, `RUNTIME_PUSH_REJECTED`) — those are not review problems.
 
 The add is idempotent and best-effort: gated by `auto_request_human_review`, deduped by `human_review_label_added`, label-add failures log a stderr warning without tier-tagging, blocking, or propagating. The dedup flag resets on the same condition that clears `last_error` (successful end-of-cycle resolution to any phase but `human-gated`), so a recurring gate re-adds the label. An operator who manually removes the label while the flag is still set is respected — prgroom does not re-add until the reset path fires AND the gate recurs. When later satisfied via §4.4, the `human-review-required` label persists as historical record ("constraint raised AND satisfied") rather than being removed.
 
@@ -499,7 +503,7 @@ The cheap agent groups well but decides intent poorly; the heavy agent decides i
 
 ### Cluster contract — `cluster` verb
 
-Cheap grouping of unprocessed review items (`cluster_id == ""`) into fix-bundles. Grouping is non-decisional, so a locally-runnable model suffices. Default provider chain: local `ollama` (Gemma-class small classifier) if installed → `claude -p` model `haiku` / effort `high` → `codex-mini`.
+Cheap grouping of unprocessed review items (`cluster_id == ""`) into fix-bundles. Grouping is non-decisional, so a locally-runnable model suffices. Default provider chain: local `ollama` (Gemma-class small classifier) if installed → `claude -p` model `haiku` / effort `high` → `codex` model `gpt-5.6-luna`.
 
 ```
 Input:  { contract_version, pr{owner,repo,number},
@@ -533,12 +537,12 @@ ItemDisposition: { gh_id,
                    response_path,                        # optional; verbatim reply text for the reply verb
                    rationale,                            # required for skipped|deferred|wont_fix|escalated|failed
                    recommended_gate: full | lite,        # required for fixed; selects the verify tier (§6)
-                   verify_checklist: [...] }             # required on a FIXED batch; the agent's claim (§6)
+                   verify_checklist: [...] }             # design-of-record only (§6) — not a field on the built FixItemResult
 ```
 
 Audit guards (CLI-side): `fixed` commits fall between pre-cluster SHA and post-cluster HEAD (≥1 each); `already_addressed` commits predate the baseline yet are reachable; the rationale-bearing dispositions carry non-empty rationale; and every commit on the branch is claimed by some item (orphan check). Violations re-classify the item to `failed` and emit an escalation via `EscalationSink`; orphan commits are stash-isolated for inspection.
 
-**Armed for self-verification.** The fix agent is launched top-level (`claude -p`, not a nested sub-agent), so it can safely orchestrate — the await-own-child footgun does not apply. Its allow-list broadens from the muzzled `Read Edit Write Bash(git *)` to the full implementation set (broad `Bash`, `Task`, `Skill`, …), governed by a configurable allow/deny aggregation layer, so it can run the repo's completion gate (tests/build/lint) and spawn sub-agents. It emits a **required** `verify_checklist` in `FixOutput` — what it ran and the result. That is the agent's *claim*; prgroom's `verify` step (§6) is the authoritative confirmation (trust-but-verify). *Security:* a headless `--permission-mode dontAsk` broad-shell agent running on a branch whose threads carry attacker-authored text is a prompt-injection surface — mitigated by operator-trusted worktrees and operator opt-in, documented as an accepted residual risk.
+**Armed for self-verification.** The fix agent is launched top-level (`claude -p`, not a nested sub-agent), so it can safely orchestrate — the await-own-child footgun does not apply. Its allow-list broadens from the muzzled `Read Edit Write Bash(git *)` to the full implementation set (broad `Bash`, `Task`, `Skill`, …), governed by a configurable allow/deny aggregation layer, so it can run the repo's completion gate (tests/build/lint) and spawn sub-agents. In the unbuilt verify design (§6) it would emit a **required** `verify_checklist` in `FixOutput` — what it ran and the result — as the agent's *claim*, confirmed by prgroom's `verify` step (trust-but-verify); neither side is built today. *Security:* a headless `--permission-mode dontAsk` broad-shell agent running on a branch whose threads carry attacker-authored text is a prompt-injection surface — mitigated by operator-trusted worktrees and operator opt-in, documented as an accepted residual risk.
 
 **Repair dispatch.** When the `verify` gate is red and inner retries remain (§3.4), prgroom re-invokes the fix agent in **repair** mode — whole-branch (a gate failure is a property of the branch, not one cluster's), fed the gate output via an optional `verify_failure_path` input and a `fix-repair` prompt. Its orphan/sha audit attributes the repair's new commits to the verify-repair batch, not to any review item.
 
@@ -590,7 +594,8 @@ Adapter selection is unbuilt: the CLI always constructs the stderr sink. Treat t
 | `poll` | none | gh API (comments, reviews, CI); update state |
 | `cluster` | Cluster | persist `cluster_id` per item |
 | `fix` | Fix | dump gh detail; serial dispatch; per-subagent audit; orphan check; stash-isolate on fail |
-| `verify` *(internal step)* | none | mechanical re-check of fix output (see §6) |
+| `verify` *(internal step — design-of-record only, §3.4, not built)* | none | mechanical re-check of fix output (see §6) |
+| `cap-guard` *(internal step)* | none | check the PR-review retry budget; refuse the push and flip `phase = HUMAN_GATED` if spent (§3.3/§3.5) |
 | `push` | none | `git push` accumulated commits |
 | `rereview` | none | reviewer remove/add dance to coerce a fresh `review_requested` |
 | `reply` | none | render templates + `response_path` files; post via gh |
@@ -601,7 +606,7 @@ Adapter selection is unbuilt: the CLI always constructs the stderr sink. Treat t
 
 ### Contract is the API, runtime is swappable (per-contract TOML)
 
-Each contract is a stable, versioned (`contract_version`) interface; the runtime behind it is selected per-contract in TOML, so `claude -p` / `codex exec` / `opencode run` / `ollama`, models, and fallback chains swap without touching lifecycle code.
+Each contract is a stable, versioned (`contract_version`) interface; the runtime behind it is designed to be selected per-contract in TOML, so `claude -p` / `codex exec` / `opencode run` / `ollama`, models, and fallback chains would swap without touching lifecycle code.
 
 ```toml
 [agents.cluster]
@@ -610,9 +615,11 @@ fallback  = { cli = "claude", model = "haiku", effort = "high" }
 fallback2 = { cli = "codex",  model = "gpt-5.6-luna" }
 
 [agents.fix]
-primary   = { cli = "claude", model = "opus[1m]", effort = "xhigh" }
+primary   = { cli = "claude", model = "opus[1m]", effort = "xhigh", write = true }
 fallback  = { cli = "codex",  model = "gpt-5.6-terra", write = true }
 ```
+
+**Not yet wired to the CLI:** the table above matches the shipped default chain (`agent/dispatcher.py::_DEFAULT_CHAINS`) exactly, but no verb resolves a `repo_config` path — both dispatcher builders in `cli.py` call `load_chain(..., repo_config=None, ...)` unconditionally — so a `[agents.cluster]`/`[agents.fix]` override in a real `.prgroom.toml` is never read; every invocation runs the default chain shown.
 
 Fallback triggers: primary not on PATH, quota/auth/network exit, or per-contract timeout. If both primary and fallback fail, the verb emits `failed` for affected items and escalates via `EscalationSink`. The PR-review retry budget governs how many full loops `run` may attempt (§3.5). Per-contract prompts live in `agent/prompts/<contract>.tmpl` (overridable via `PRGROOM_PROMPTS_DIR`); per-contract token usage is logged to `$XDG_STATE_HOME/prgroom/usage.jsonl` as MVP baseline-capture only.
 
@@ -643,7 +650,7 @@ class GateStrength(StrEnum):
 
 `Disposition.gate` is typed/validated against `GateStrength`; a `FIXED` item whose `gate` is absent or not a valid `GateStrength` is a `CONTRACT_FIX_AUDIT_FAILED` (the item flips to `FAILED`) — this makes `recommended_gate` load-bearing.
 
-The verify verdict is persisted at **batch level** on `PRGroomingState` (not per-item — `FAILED` drops the gate field, and verification is whole-branch):
+The verify verdict would be persisted at **batch level** on `PRGroomingState` (not per-item — `FAILED` drops the gate field, and verification is whole-branch):
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -655,7 +662,7 @@ class VerifyVerdict:
     decided_at: datetime   # UTC
 ```
 
-Added as `verify: VerifyVerdict | None` on `PRGroomingState` — **additive, omit-when-`None`**, so old state files load `None` and `schema_version` stays `1` (parallels the `pending_memory` precedent). `prgroom status --json` gains an additive `verify` block (`result` / `tier` / `retries_used` / `last_error`); `last_error` continues to surface the exhaustion code at top level too.
+Design-of-record only: none of this is built. `PRGroomingState` (`prsession/state.py`) has no `verify` field and `prgroom status --json` has no `verify` block. If built, the addition would follow the additive, omit-when-`None` pattern the built `pending_memory` field already uses — `verify: VerifyVerdict | None` on `PRGroomingState`, an additive `verify` block (`result` / `tier` / `retries_used` / `last_error`) on the status envelope, `schema_version` unchanged — but today `last_error` is the only place an exhaustion code surfaces.
 
 ### 6.3 Configuration surface
 
@@ -668,7 +675,7 @@ full               = "make ci"     # command (or list) run for the full tier
 fix_verify_retries = 2             # inner retry budget
 ```
 
-The verify **commands have no built-in default**. Because the needed tier is known only after `fix` selects the strongest `GateStrength`, the precondition is **fail-fast**: `run`/`fix` entry asserts that **both** the `lite` and `full` commands are configured, and the absence of either is a **hard stop** (`PRECONDITION_NO_VERIFY_CONFIG`, exit 2, structured what/why/how) — caught before the expensive fix run, never silently skipped. (Auto-detection is deferred to a `--doctor` bead.) `fix_verify_retries` defaults to `2`; `--fix-verify-retries` / `PRGROOM_FIX_VERIFY_RETRIES` override. This work wires `repo_config` — the repo-root `.prgroom.toml`, currently always passed `None` and never actually read.
+The verify **commands have no built-in default**. Because the needed tier is known only after `fix` selects the strongest `GateStrength`, the precondition is **fail-fast**: `run`/`fix` entry asserts that **both** the `lite` and `full` commands are configured, and the absence of either is a **hard stop** (`PRECONDITION_NO_VERIFY_CONFIG`, exit 2, structured what/why/how) — caught before the expensive fix run, never silently skipped. (Auto-detection is deferred to a `--doctor` bead.) `fix_verify_retries` defaults to `2`; `--fix-verify-retries` / `PRGROOM_FIX_VERIFY_RETRIES` override. **Not yet wired to the CLI:** `repo_config` — the repo-root `.prgroom.toml` — is currently always passed `None`, so this table is never actually read (same gap as §4.3/§5).
 
 ---
 
@@ -703,7 +710,7 @@ The snapshot is captured **immediately before fix dispatch** (not at top-of-cycl
 | Case | Detection | Owner |
 |---|---|---|
 | Same thread reopened ("you said fixed, reviewer says still broken") | Deterministic — prgroom holds disposition history + thread state | **prgroom** computes, fix agent interprets |
-| Fix too narrow ("the pattern recurs in other files") | Judgment, proactive | optional RCA pass |
+| Fix too narrow ("the pattern recurs in other files") | Judgment, proactive | optional root-cause-analysis (RCA) pass |
 | Fix caused new problems ("your commit broke Y") | Judgment, reactive, causal | fix agent / RCA |
 
 prgroom **computes** a deterministic `recurrence` value for each item carrying a prior disposition and includes it in the snapshot. It is **derived from `prsession` disposition history at snapshot-assembly time — not a persisted field** (so §2's schema is unchanged):
@@ -729,17 +736,16 @@ The fix contract output gains a classified **`memory`** channel (§5), each entr
 1. **Thread reply** — a CONTEXTUAL note tied to a specific review thread rides out on that thread via the existing `reply` verb. No new mechanism.
 2. **`## Decisions` block** — a CONTEXTUAL note *not* tied to a single thread (a PR-wide decision) is recorded in a prgroom-maintained `## Decisions` section via a `gh` PATCH of the PR description (an API edit, not a git commit), at the same point as `reply`.
 
-**Durability — the `pending_memory` queue.** `_fix` does not route at fix time; it resolves the declared `memory` channel into persisted `RoutedMemory` records appended to `state.pending_memory` (written atomically with the dispositions they derive from). `_reply` drains and routes them, then clears the queue. The persisted queue is what makes routing crash-safe: a cycle that ends before `_reply` — a retry-cap trip, a transient `gh` failure on push — keeps its decision memo for the next cycle instead of losing it (in-memory routing would drop the memo on every such cycle).
+**Durability — the `pending_memory` queue.** `_fix` does not route at fix time; it resolves the declared `memory` channel into persisted `RoutedMemory` records appended to `state.pending_memory` (written atomically with the dispositions they derive from). `_reply` drains and routes them, then clears the queue. The persisted queue is what makes routing crash-safe: a cycle that ends before `_reply` — a retry-cap trip, a transient `gh` failure on push — keeps its decision memo for the next cycle instead of losing it (in-memory routing would drop the memo on every such cycle). Only CONTEXTUAL entries reach this stage (§7.0), so the persisted record carries no classification tag — that lives only on the pre-resolution `MemoryEntry` (§7.5/§7.6).
 
 ```python
 @dataclass(frozen=True, slots=True)
 class RoutedMemory:
-    classification: str          # taxonomy class; MVP routes CONTEXTUAL only
-    content: str = ""            # exactly one of content / path
-    path: str = ""
-    target_hint: str = ""        # optional thread node-id → thread reply; else → ## Decisions
-    retry: int = 0               # (retry, source_item) is the Decisions-block dedup key
-    source_item_gh_id: str = ""
+    content: str                    # resolved verbatim: inline content, or the path-form entry's file body
+    retry: int                      # (retry, source_item) is the Decisions-block dedup key
+    source_item: str
+    decided_by: str
+    target_hint: str | None = None  # thread node-id → thread reply; None → ## Decisions
 ```
 
 prgroom owns the `## Decisions` block between sentinel markers and rewrites it wholesale each time (read-modify-write), making re-runs idempotent without a state flag. Each entry carries the retry it was decided on, a title, a one-line rationale, the deciding agent, and the source item; it is **keyed by `(retry, source-item)`** so a crash-and-re-run never double-appends. Entries accumulate across retries; prgroom never deletes a prior decision — the block is the cross-retry decision ledger any future reader sees in the §7.1 snapshot.

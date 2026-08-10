@@ -1,4 +1,5 @@
-"""Partial-failure crash-idempotency for ``reply_pr`` (verb-atomicity spec §5/§10.1).
+"""Partial-failure crash-idempotency for ``reply_pr`` (per the verb-atomicity
+spec — archive-era, resolvable in the private archive repository).
 
 The single-persist contract discards a raising verb's progress; these tests pin the
 marker + pre-flight-adoption mechanism that makes every remote reply effect safe to
@@ -58,7 +59,7 @@ def _state(items: list[ReviewItem], pending: list[RoutedMemory] | None = None):
 
 
 def test_partial_failure_rerun_does_not_duplicate_posted_reply() -> None:
-    # §10.1 behavior 1 — the required partial-failure regression test (the
+    # behavior 1 — the required partial-failure regression test (the
     # duplicate-reply shape). Run 1: item A's POST succeeds (id 91), item
     # B's POST raises transient → reply_pr raises; its return value is discarded
     # exactly as _execute_step discards a raising verb's deepcopy. Run 2 from the
@@ -95,7 +96,7 @@ def test_partial_failure_rerun_does_not_duplicate_posted_reply() -> None:
 
 
 def test_posted_reply_body_carries_item_marker() -> None:
-    # §10.1 behavior 2: the wire contract the scan and the poll backstop both
+    # behavior 2: the wire contract the scan and the poll backstop both
     # depend on — every posted reply body ends with the full-grammar marker.
     # Contract-pinning, not tautology.
     thread = ReviewItem(
@@ -117,7 +118,7 @@ def test_posted_reply_body_carries_item_marker() -> None:
 
 
 def test_adoption_recovers_reply_id_lost_to_malformed_post_response() -> None:
-    # §10.1 behavior 3: run 1's POST response had no usable id (own_reply_id
+    # behavior 3: run 1's POST response had no usable id (own_reply_id
     # degraded to 0, the ledger blind spot); run 2's listing carries the marker
     # with the real id → adoption records it without a POST.
     state = _state([_item(ItemKind.ISSUE_COMMENT, "12", DispositionKind.FIXED)])
@@ -130,7 +131,7 @@ def test_adoption_recovers_reply_id_lost_to_malformed_post_response() -> None:
 
 
 def test_noop_reply_makes_zero_gh_calls() -> None:
-    # §10.1 behavior 4 (cost pin): all items replied, no pending memory → no GET,
+    # behavior 4 (cost pin): all items replied, no pending memory → no GET,
     # no POST, no GraphQL — the no-op contract survives the pre-flight scan.
     item = _item(ItemKind.ISSUE_COMMENT, "12", DispositionKind.FIXED)
     item.replied = True
@@ -141,7 +142,7 @@ def test_noop_reply_makes_zero_gh_calls() -> None:
 
 
 def test_scan_fetches_only_needed_surfaces() -> None:
-    # §10.1 behavior 5: the scan reads exactly the surfaces this invocation posts to.
+    # behavior 5: the scan reads exactly the surfaces this invocation posts to.
     issue_only = RecordingGh(post_reply_id=1)
     reply_pr(
         _state([_item(ItemKind.ISSUE_COMMENT, "12", DispositionKind.FIXED)]),
@@ -166,7 +167,7 @@ def test_scan_fetches_only_needed_surfaces() -> None:
 
 
 def test_partial_failure_rerun_does_not_duplicate_memory_thread_reply() -> None:
-    # §10.1 behavior 6: two target-hinted entries; run 1's second GraphQL mutation
+    # behavior 6: two target-hinted entries; run 1's second GraphQL mutation
     # raises → pending_memory survives on the pre-call state; run 2 with the first
     # entry's marker visible fires GraphQL only for the second entry.
     def fresh_pending() -> list[RoutedMemory]:
@@ -195,7 +196,7 @@ def test_partial_failure_rerun_does_not_duplicate_memory_thread_reply() -> None:
 
 
 def test_memory_thread_reply_body_carries_memory_marker() -> None:
-    # §10.1 behavior 7: the GraphQL body is with_marker(content, memory_marker(rm))
+    # behavior 7: the GraphQL body is with_marker(content, memory_marker(rm))
     # and round-trips through the scanner grammar.
     from prgroom.lifecycle.idempotency import carries_own_marker
 
@@ -208,7 +209,7 @@ def test_memory_thread_reply_body_carries_memory_marker() -> None:
 
 
 def test_colliding_batch_keys_with_distinct_content_both_post() -> None:
-    # §10.1 behavior 13: two entries sharing (retry, source_item) — the §4 batch-key
+    # behavior 13: two entries sharing (retry, source_item) — the batch-key
     # collision (ordinal restart + LLM-reused cluster id) — but distinct content.
     # The first already posted → the second must still fire. Regression guard
     # against silent adopt-skip of a never-posted reply.
@@ -224,7 +225,7 @@ def test_colliding_batch_keys_with_distinct_content_both_post() -> None:
 
 
 def test_scan_markers_maps_first_occurrence_and_ignores_non_grammar() -> None:
-    # §10.1 behavior 12: earliest comment claims the marker (the original — listing
+    # behavior 12: earliest comment claims the marker (the original — listing
     # order is ascending); non-grammar marker-like prose never matches; entries with
     # a missing or zero id are skipped.
     marker = "<!-- prgroom:reply:issue_comment:12 -->"
@@ -249,9 +250,9 @@ def test_scan_markers_merges_multiple_listings() -> None:
 
 
 def test_memory_marker_digest_distinguishes_content() -> None:
-    # §4: (retry, source_item) is only batch-unique — two distinct entries can share
-    # the batch key; the content digest restores global uniqueness, and identical
-    # entries collide by construction (correct dedup).
+    # Per the verb-atomicity spec: (retry, source_item) is only batch-unique — two
+    # distinct entries can share the batch key; the content digest restores global
+    # uniqueness, and identical entries collide by construction (correct dedup).
     a = RoutedMemory(content="A", retry=1, source_item="c1#0", decided_by="x", target_hint="T")
     b = RoutedMemory(content="B", retry=1, source_item="c1#0", decided_by="x", target_hint="T")
     a2 = RoutedMemory(content="A", retry=1, source_item="c1#0", decided_by="y", target_hint="T")

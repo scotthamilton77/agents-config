@@ -1,4 +1,4 @@
-"""The subprocess-runner injection seam (§7.6).
+"""The subprocess-runner injection seam.
 
 The gh and git adapters do not call :func:`subprocess.run` directly. Every
 external command goes through the :class:`CommandRunner` Protocol, so the single
@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 # Default wall-clock budget for one external gh/git call. Bounds a hung
-# subprocess so it cannot block forever while holding the PR lock. A later
-# config bead may make this per-call or operator-overridable; for now it is a
+# subprocess so it cannot block forever while holding the PR lock. A future
+# config knob may make this per-call or operator-overridable; today it is a
 # single conservative default shared by both adapters.
 DEFAULT_SUBPROCESS_TIMEOUT = 30.0
 

@@ -1,4 +1,4 @@
-"""Clock and randomness injection seam (§7.6).
+"""Clock and randomness injection seam.
 
 The lifecycle reaches for **no** stdlib singleton directly. ``datetime.now(UTC)``
 and any RNG arrive through these injected Protocols so the quiescence predicate

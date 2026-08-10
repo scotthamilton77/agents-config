@@ -1,4 +1,4 @@
-"""Human-review merge-constraint derivation (§4.4, §4.6).
+"""Human-review merge-constraint derivation (§4.4, §4.5).
 
 The ``human-review-required`` PR label is a **merge** constraint, not a lifecycle
 gate — it never blocks quiescence. This module answers, per status-query, "is the
@@ -41,7 +41,7 @@ _BOT_LOGIN_SUFFIX = "[bot]"
 
 @dataclass(frozen=True, slots=True)
 class ApprovalCandidate:
-    """One examined PR-approval review with its bot-filter outcome (§4.6).
+    """One examined PR-approval review with its bot-filter outcome (§4.5).
 
     ``counted`` is whether this approval could satisfy the constraint (a non-bot
     APPROVED with a login); ``reason`` is ``"bot"`` for a filtered bot approval,
@@ -66,7 +66,7 @@ class ApprovalCandidate:
 
 @dataclass(frozen=True, slots=True)
 class HumanReview:
-    """The derived §4.6 human-review block. NEVER persisted to state."""
+    """The derived §4.5 human-review block. NEVER persisted to state."""
 
     required: bool
     satisfied_by: str | None
@@ -74,7 +74,7 @@ class HumanReview:
 
     @property
     def satisfied(self) -> bool:
-        """§4.6 ``merge_gates.human_review_satisfied``: unconstrained, or satisfied."""
+        """§4.5 ``merge_gates.human_review_satisfied``: unconstrained, or satisfied."""
         return not self.required or self.satisfied_by is not None
 
     def to_dict(self) -> JsonObj:
@@ -100,7 +100,7 @@ def _is_bot(review: JsonObj) -> bool:
 
 
 def derive_human_review(*, labels: list[str], reviews: list[JsonObj]) -> HumanReview:
-    """Derive the §4.6 human-review block from fetched labels + reviews (pure).
+    """Derive the §4.5 human-review block from fetched labels + reviews (pure).
 
     ``required`` = the ``human-review-required`` label is present (case-insensitive).
     ``satisfied_by`` resolves in PRECEDENCE order: ``"label"`` (a ``human-approved``

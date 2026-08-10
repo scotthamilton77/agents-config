@@ -7,7 +7,7 @@ applies the returned :class:`ResolvedPhase` (phase + optional ``last_error`` +
 optional ``quiesced_at``) to state.
 
 The two effectful inputs — whether a cap-tripping push is queued (a git read,
-§3.4) and whether the §4.1 quiescence predicate is satisfied — are passed in as
+§3.5) and whether the §4.1 quiescence predicate is satisfied — are passed in as
 booleans by the run-loop, keeping this function gh/git/clock-free. ``now`` is used
 only to stamp ``quiesced_at`` on the priority-5 transition.
 

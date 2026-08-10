@@ -1,4 +1,4 @@
-"""The gh adapter — GitHub access via the ``gh`` subprocess (§1, §3, §7.6).
+"""The gh adapter — GitHub access via the ``gh`` subprocess (§1, §3).
 
 ``GhCli`` shells out to ``gh`` (REST via ``gh api``, GraphQL via
 ``gh api graphql``, head-OID via ``gh pr view``) through the injected
@@ -14,7 +14,7 @@ existing :class:`~prgroom.errors.ErrorCode` registry:
   (a local config gap a retry won't fix)
 * 404                                            -> :class:`GhNotFoundError`
   (a typed signal; the caller's startup precondition owns
-  ``PRECONDITION_REPO_UNREACHABLE`` per §3.7 — the adapter does not guess)
+  ``PRECONDITION_REPO_UNREACHABLE`` per §3.6 — the adapter does not guess)
 * GraphQL request returns 200 but carries ``errors[]`` -> ``RUNTIME_GRAPHQL_FAILED``
 
 Every call passes a bounded ``DEFAULT_SUBPROCESS_TIMEOUT`` so a hung ``gh``
@@ -52,7 +52,7 @@ _RATE_LIMIT_PHRASE = "rate limit exceeded"
 
 
 class GhNotFoundError(Exception):
-    """A gh API 404. A typed signal, NOT a :class:`PrgroomError` (§3.7).
+    """A gh API 404. A typed signal, NOT a :class:`PrgroomError` (§3.6).
 
     404 is ambiguous at the boundary — repo-unreachable (a startup precondition,
     ``PRECONDITION_REPO_UNREACHABLE``) versus a PR/thread that vanished mid-run.
@@ -107,7 +107,7 @@ def _merge_paginated_output(out: str) -> Any:
 
 
 def _classify_gh_failure(stdout: str, stderr: str) -> PrgroomError | GhNotFoundError:
-    """Map a failed ``gh`` invocation to its registry error (§3.6/§3.7)."""
+    """Map a failed ``gh`` invocation to its registry error (§3.6)."""
     matches = _HTTP_STATUS.findall(stderr)
     if not matches:
         # No parseable status: cannot prove transient, so treat as terminal
@@ -224,9 +224,9 @@ class GhCli:
     def add_label(self, ref: PRRef, label: str) -> None:
         # POST to the issue's labels collection with gh's array placeholder syntax
         # (`labels[]=<name>`). The server treats a label already present as a no-op,
-        # so this is idempotent — §4.7's auto-add re-issues it safely every gating
+        # so this is idempotent — §4.6's auto-add re-issues it safely every gating
         # event. Routed through `rest` so a failure arrives as the registry-tagged
-        # PrgroomError the §4.7 hook swallows (best-effort label add).
+        # PrgroomError the §4.6 hook swallows (best-effort label add).
         self.rest(
             "POST",
             f"repos/{ref.owner}/{ref.repo}/issues/{ref.number}/labels",

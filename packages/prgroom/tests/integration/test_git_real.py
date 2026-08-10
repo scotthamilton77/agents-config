@@ -1,4 +1,4 @@
-"""Integration test: the git adapter against real ``git`` on a fixture repo (§7.6).
+"""Integration test: the git adapter against real ``git`` on a fixture repo.
 
 The unit fit-test proves classification against recorded boundary output; this
 narrower integration test proves the happy-path adapter actually drives real

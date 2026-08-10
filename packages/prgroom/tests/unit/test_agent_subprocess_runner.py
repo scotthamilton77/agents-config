@@ -9,7 +9,7 @@ and raises a timeout-tagged error on overrun), and terminates the child when a
 The single OS seam is the :class:`~prgroom.agent.subprocess_runner.ProcessHandle`
 Protocol — a thin Popen facade. Tests inject a recorded-behavior fake so
 kill-on-timeout and kill-on-cancel are proven without spawning a real CLI. This
-mirrors the foundation's ``CommandRunner`` seam (recorded fakes, not mocks).
+mirrors ``CommandRunner``'s seam (recorded fakes, not mocks).
 """
 
 from __future__ import annotations
@@ -151,7 +151,7 @@ def test_claude_invocation_shape() -> None:
 
 
 def test_claude_invocation_requests_json_envelope() -> None:
-    # Token capture (§3.1): every claude dispatch asks for the JSON envelope so
+    # Token capture (cost-telemetry spec): every claude dispatch asks for the JSON envelope so
     # the runner can unwrap the result payload and read the usage block.
     inv = build_invocation(_spec("claude", "haiku"), prompt="P")
     assert "--output-format" in inv.argv
@@ -620,9 +620,10 @@ def test_cancel_escalates_to_sigkill_when_child_survives_sigterm(tmp_path: Path)
     assert proc.terminated and proc.killed and proc.reaped
 
 
-# ── token capture (§3): claude envelope unwrap + codex stderr trailer ──
+# ── token capture (cost-telemetry spec): claude envelope unwrap + codex stderr trailer ──
 #
-# Fixtures are the live-captured probe outputs from the cost-telemetry spec §3
+# Fixtures are the live-captured probe outputs from the cost-telemetry spec
+# (archive-era, resolvable in the private archive repository)
 # (2026-07-04) — verified formats, not stipulations.
 
 _CLAUDE_ENVELOPE = json.dumps(
@@ -655,7 +656,7 @@ def _run_cli(runner: SubprocessAgentRunner, cli: str) -> AgentRunResult:
 
 
 def test_claude_envelope_is_unwrapped_and_usage_captured(tmp_path: Path) -> None:
-    # §3.1: the envelope's `result` field IS the contract payload the dispatcher
+    # Cost-telemetry spec: the envelope's `result` field IS the contract payload the dispatcher
     # must see; tokens_in sums ALL input-side fields (uncached + cache-creation +
     # cache-read — the bare input_tokens alone undercounts by orders of magnitude).
     runner = SubprocessAgentRunner(
@@ -672,7 +673,7 @@ def test_claude_envelope_is_unwrapped_and_usage_captured(tmp_path: Path) -> None
 
 
 def test_claude_plain_text_stdout_passes_through_with_no_usage(tmp_path: Path) -> None:
-    # §3.1 rule 3: envelope parse failure (plain-text stdout) falls back to
+    # Cost-telemetry spec: envelope parse failure (plain-text stdout) falls back to
     # current behavior — raw stdout through, usage=None. Telemetry never fails
     # a dispatch.
     runner = SubprocessAgentRunner(
@@ -698,7 +699,7 @@ def test_claude_non_envelope_json_passes_through(tmp_path: Path) -> None:
 
 
 def test_claude_error_envelope_still_unwraps_and_captures_usage(tmp_path: Path) -> None:
-    # §3.1 rule 2: unwrap + usage capture happen regardless of is_error/subtype.
+    # Cost-telemetry spec: unwrap + usage capture happen regardless of is_error/subtype.
     # The envelope's error flag never short-circuits classification — the
     # dispatcher decides from returncode and parseability, not from the flag.
     envelope = json.dumps(
@@ -724,7 +725,7 @@ def test_claude_error_envelope_still_unwraps_and_captures_usage(tmp_path: Path) 
 
 
 def test_codex_stderr_trailer_yields_tokens_total(tmp_path: Path) -> None:
-    # §3.2: codex exec emits the reply on stdout and a stderr trailer
+    # Cost-telemetry spec: codex exec emits the reply on stdout and a stderr trailer
     # "tokens used\n21,631" (comma-grouped). No in/out split in this mode.
     runner = SubprocessAgentRunner(
         spawn=lambda argv, *, stdin: FakeProcess(  # noqa: ARG005
@@ -766,7 +767,7 @@ def test_codex_trailer_without_comma_grouping_parses(tmp_path: Path) -> None:
 
 
 def test_codex_usage_reads_final_trailer_not_earlier_diagnostic(tmp_path: Path) -> None:
-    # §3.2: the usage trailer is the FINAL "tokens used" pair. An earlier
+    # Cost-telemetry spec: the usage trailer is the FINAL "tokens used" pair. An earlier
     # diagnostic "tokens used\n100" must not shadow the real CLI trailer —
     # scan backward so the last adjacent pair wins.
     runner = SubprocessAgentRunner(
@@ -783,7 +784,7 @@ def test_codex_usage_reads_final_trailer_not_earlier_diagnostic(tmp_path: Path) 
 
 
 def test_claude_envelope_contract_reaches_dispatcher_parse(tmp_path: Path) -> None:
-    # The §3.1 interaction trap, end-to-end: the dispatcher's lenient parse takes
+    # The cost-telemetry spec's interaction trap, end-to-end: the dispatcher's lenient parse takes
     # the LAST top-level JSON object in stdout — with --output-format json that
     # would be the envelope, not the contract payload. The runner's unwrap must
     # happen first, or every claude dispatch classifies malformed. A real

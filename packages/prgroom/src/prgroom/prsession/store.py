@@ -19,15 +19,15 @@ from prgroom.prsession.state import PRGroomingState
 
 
 class StateNotFoundError(LookupError):
-    """Raised by :meth:`Store.read` when no state exists for the given PR (§2, §7.6)."""
+    """Raised by :meth:`Store.read` when no state exists for the given PR (§2)."""
 
 
 class StateCorruptError(ValueError):
-    """Raised when persisted state fails to parse (maps to STATE_CORRUPT, §3.7)."""
+    """Raised when persisted state fails to parse (maps to STATE_CORRUPT, §3.6)."""
 
 
 class SchemaUnknownError(ValueError):
-    """Raised when persisted ``schema_version`` is unrecognized (STATE_SCHEMA_UNKNOWN, §3.7)."""
+    """Raised when persisted ``schema_version`` is unrecognized (STATE_SCHEMA_UNKNOWN, §3.6)."""
 
 
 @runtime_checkable

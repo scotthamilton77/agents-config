@@ -1,4 +1,4 @@
-"""Tests for ``PRRef.parse`` — PR-ref string parsing for the CLI (§1, §3.7).
+"""Tests for ``PRRef.parse`` — PR-ref string parsing for the CLI (§1, §3.6).
 
 The CLI verbs receive the PR ref as a raw string (``123``, ``owner/repo#123``,
 or a full URL). ``PRRef.parse`` turns it into the typed key the Store uses, or

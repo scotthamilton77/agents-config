@@ -1,4 +1,4 @@
-"""Tests for routable-memory resolution in ``fix_pr`` (§8.3).
+"""Tests for routable-memory resolution in ``fix_pr`` (§7.3).
 
 Two layers:
 
@@ -94,7 +94,7 @@ def test_path_form_read_verbatim(tmp_path: Path) -> None:
 
 
 def test_relative_path_is_anchored_to_memory_dir_not_cwd(tmp_path: Path) -> None:
-    # The agent declares entry.path RELATIVE to memory_dir (§8.5). A relative path must
+    # The agent declares entry.path RELATIVE to memory_dir (§7.5). A relative path must
     # anchor to memory_dir, NOT resolve against CWD — else it false-BLOCKs (cluster-flip)
     # and reads the wrong file. Regression for the bare-realpath(entry.path) bug.
     (tmp_path / "note.md").write_text("anchored body", encoding="utf-8")

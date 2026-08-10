@@ -1,7 +1,7 @@
 [project]
 name = "prgroom"
 version = "0.1.0"
-description = "prgroom — deterministic PR-grooming CLI that replaces the wait-for-pr-comments and reply-and-resolve-pr-threads skills."
+description = "prgroom — deterministic PR-grooming CLI: polls PR review feedback, clusters it, dispatches fixes, pushes, replies, and resolves threads."
 requires-python = ">=3.11"
 dependencies = ["typer"]
 
@@ -45,11 +45,6 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
-# Every verb in cli.py is a foundation skeleton: the typer arguments are
-# load-bearing (they shape `--help` and the parse surface) but the body
-# intentionally ignores them until the lifecycle lands. ARG001 would fire on
-# all 12 verbs with one identical rationale, so it is scoped off here.
-"src/prgroom/cli.py" = ["ARG001"]
 
 [tool.ruff.format]
 docstring-code-format = true

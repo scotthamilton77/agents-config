@@ -1,7 +1,7 @@
 """Tests for the agent-dispatch contract surfaces (§5).
 
 The contracts are stable, versioned interfaces between the CLI and the agent
-CLI. The foundation pins:
+CLI. This pins:
 
 * ``CONTRACT_VERSION`` is the wire integer (1) emitted in every contract JSON.
 * The Cluster contract's *input* serializes to the §5 shape (contract_version,

@@ -1,6 +1,6 @@
 """``cluster_pr`` — the lock-held ``_cluster`` lifecycle internal (§3.2, §5).
 
-``cluster_pr`` is the APPLY side of the cluster path: 8.7's pure
+``cluster_pr`` is the APPLY side of the cluster path: the agent layer's pure
 :func:`~prgroom.agent.cluster.run_cluster` computes the clustering; this internal
 calls it and APPLIES the result by setting each item's ``cluster_id``. It mirrors
 :func:`~prgroom.lifecycle.poll.poll_pr`'s shape — works on a deepcopy of the

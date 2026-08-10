@@ -1,4 +1,4 @@
-"""Fit-test: the foundation pieces compose (§7.6 fit-test commitment).
+"""Fit-test: the state/Store/Deps core pieces compose.
 
 Exercises the public surfaces together against the shared conftest fakes — a
 deterministic clock, an in-memory Store — to prove the seams line up: a verb-

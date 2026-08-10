@@ -1,4 +1,5 @@
-"""Idempotency markers for remote reply effects (verb-atomicity spec §4).
+"""Idempotency markers for remote reply effects (per the verb-atomicity spec —
+archive-era, resolvable in the private archive repository).
 
 Pure helpers, no I/O. Every non-idempotent comment-creating call in ``reply_pr``
 appends a hidden, content-stable HTML-comment marker to the posted body; a
@@ -66,7 +67,8 @@ def scan_markers(*comment_lists: list[JsonObj]) -> dict[str, int]:
     """Map each full marker string found in any comment body to that comment's id.
 
     First occurrence wins — the earliest (original) comment claims the marker;
-    listing order is ascending (§11 ledger). Entries with a missing/zero/unusable
+    listing order is ascending (per the verb-atomicity spec's ledger rule).
+    Entries with a missing/zero/unusable
     ``id`` are skipped: an adoption must record a real comment id or not happen.
     """
     found: dict[str, int] = {}

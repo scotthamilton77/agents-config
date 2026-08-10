@@ -1,4 +1,4 @@
-"""Integration tests for FileStore's schema-migration read branch (§2, §3.7).
+"""Integration tests for FileStore's schema-migration read branch (§2, §3.6).
 
 Real filesystem, real atomic rewrite, a synthetic migrator injected via the
 constructor seam (no global monkeypatching). Pins three coded decisions: a

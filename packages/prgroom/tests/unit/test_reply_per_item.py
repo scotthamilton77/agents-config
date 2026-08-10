@@ -134,7 +134,8 @@ def test_empty_rendered_body_skips_post_and_keeps_replied_false() -> None:
     # SKIPPED/DEFERRED/WONT_FIX render from rationale; an empty rationale (reachable via
     # `resolve-escalated --as skipped` with no --rationale) renders "". Posting "" fails the
     # GitHub API — skip the POST and leave replied False so a later rationale can still reply.
-    # The pre-flight surface GET still fires (tolerated over-fetch, §11 ledger).
+    # The pre-flight surface GET still fires (tolerated over-fetch, per the
+    # verb-atomicity spec's ledger rule).
     gh = RecordingGh()
     out = reply_pr(
         _state([_item(ItemKind.REVIEW_THREAD, "9", DispositionKind.SKIPPED, rationale="")]),
