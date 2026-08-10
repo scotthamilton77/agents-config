@@ -1,14 +1,15 @@
 """The sync engine: the half of an install that writes.
 
-Three entry points, each resolving its destinations through a `ToolAdapter`.
+Three entry points. Two resolve their destinations through a `ToolAdapter`:
 `sync` copies one source file to one destination, and refuses a
 `settings.json` source outright — a raw byte-copy there would clobber the
-user's file instead of union-merging into it. `sync_plan` walks a whole
-`StagingPlan`: FILE items are hash-compared, DIR items materialise their
+user's file instead of union-merging into it; `sync_plan` walks a whole
+`StagingPlan`, where FILE items are hash-compared, DIR items materialise their
 source tree with `dir_overrides` overlaid, and a `settings.json` over an
 existing user file is union-merged (`_effective_content`), which is what makes
-it the merge-aware path `sync` redirects to. `sync_routes` installs the
-bespoke destinations an active plugin declares outside every tool tree.
+it the merge-aware path `sync` redirects to. The third, `sync_routes`, takes no
+adapter: a plugin route's destinations sit outside every tool tree, so each
+`PluginRoute` carries its own absolute `dest_dir`.
 
 Path-aware backup: before overwriting an existing destination, the original is
 copied to a timestamped backup so a failed write leaves it recoverable. The
