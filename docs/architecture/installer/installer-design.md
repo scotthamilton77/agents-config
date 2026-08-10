@@ -136,7 +136,7 @@ The installer is a `uv`-managed Python project. `pyproject.toml` declares deps; 
 
 The dependency list is deliberately tight, and a library that exists and solves the problem is an acceptable addition.
 
-**Dev deps:** `pytest`, `pytest-xdist`, `pytest-cov`, `ruff`, `mypy` (strict). `uv tool run` is the local invocation pattern.
+**Dev deps:** the `[dependency-groups].dev` table in `pyproject.toml` is the roster — a hand-copied list here goes stale the moment an entry is added (as this one has, twice); it currently covers the test runner, lint/type/format tooling, and the audit and `lint-actions` gates. `uv tool run` is the local invocation pattern.
 
 ### Configuration — `installer.toml`
 
@@ -224,7 +224,8 @@ python3 scripts/install.py [--dry-run] [--yes] [--verbose] [--tools=TOOLS] [--pl
 ```
 
 `--dump-stage` is mutually exclusive with `--prune` / `--prune-only`.
-`--profiles` requires `--project`; every other flag combines freely.
+Among the remaining flags, only `--profiles` carries a dependency (it
+requires `--project`) — everything else combines freely.
 `--project <dir>` forks into a project-scoped install: it installs into
 the given directory instead of user space (`core/kits.py` +
 `core/profiles.py` resolve which kits/profiles apply); this path is
