@@ -44,7 +44,7 @@ def _items_summary(state: PRGroomingState) -> JsonObj:
 
 
 def _item_row(item: ReviewItem) -> JsonObj:
-    # The disposition-contract §3.1 projection — a deliberate subset, not a state
+    # The §4.5 items[] projection — a deliberate subset, not a state
     # dump: body_excerpt, rationale, commits, response_path, gate, escalation_filed,
     # and cluster bookkeeping stay private to the store.
     disposition: JsonObj | None = None

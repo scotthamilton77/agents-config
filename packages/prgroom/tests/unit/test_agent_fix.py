@@ -553,7 +553,8 @@ def test_explicit_known_thread_ids_override_item_thread_ids() -> None:
     assert res.dispositions["C_1"].kind is DispositionKind.SKIPPED  # override resolved the hint
 
 
-# ── winner provenance stamps dispositions (observability spec §3, behaviors 7-9) ──
+# ── winner provenance stamps dispositions (per the observability spec — archive-era,
+# resolvable in the private archive repository; behaviors 7-9) ──
 
 
 def _dispatched_stub(out: FixOutput, winner: AgentSpec, *failures: LinkFailure) -> Any:

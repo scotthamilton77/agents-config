@@ -100,7 +100,9 @@ class AgentInvocation:
 
 @dataclass(frozen=True, slots=True)
 class UsageFigures:
-    """Token/cost figures parsed from an agent CLI's own output (§3 token capture).
+    """Token/cost figures parsed from an agent CLI's own output (per the
+    cost-telemetry spec — archive-era, resolvable in the private archive
+    repository).
 
     Population is per-CLI and best-effort: claude's JSON envelope fills
     ``tokens_in`` (ALL input-side tokens — uncached + cache-creation + cache-read;
@@ -512,8 +514,9 @@ class SubprocessAgentRunner:
             prompt = prompt_template.render({**render_data, INPUT_SECTION_KEY: section})
             invocation = build_invocation(spec, prompt=prompt)
             result = self._spawn_and_wait(invocation, time_budget_s=time_budget_s, cancel=cancel)
-            # §3 token capture — per-CLI, best-effort post-processing; the runner
-            # stays classification-free (returncode/stderr pass through untouched).
+            # Per the cost-telemetry spec — per-CLI, best-effort post-processing;
+            # the runner stays classification-free (returncode/stderr pass through
+            # untouched).
             if spec.cli == "claude":
                 result = _unwrap_claude_envelope(result)
             elif spec.cli == "codex":

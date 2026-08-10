@@ -724,7 +724,8 @@ def test_fix_dispatcher_satisfies_fix_contract() -> None:
     assert isinstance(dispatcher, FixContract)
 
 
-# ── winner provenance: the Dispatched envelope (observability spec §3) ──
+# ── winner provenance: the Dispatched envelope (per the observability spec —
+# archive-era, resolvable in the private archive repository) ──
 
 
 def test_fallback_success_carries_winner_and_failures() -> None:
