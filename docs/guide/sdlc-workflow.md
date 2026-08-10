@@ -200,8 +200,9 @@ line in its instructions rather than on a mechanism, which is a weaker guarantee
 
 Work isn't done until context is preserved:
 
-- **`handoff`** compacts the session into a handoff document — the conversation
-  plus a working-tree snapshot — so a fresh agent can resume in a new session.
+- **`handoff`** (Claude Code only) compacts the session into a handoff document
+  — the conversation plus a working-tree snapshot — so a fresh agent can resume
+  in a new session.
   This ships, and is the main thing standing between an overnight run and a lost
   thread.
 - **Memories** — your assistant may have its own memory mechanism; this
