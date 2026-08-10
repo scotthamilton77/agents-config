@@ -24,12 +24,14 @@ machine-checkable QA in between.
 | 7. Merge | Contract only — the hard line, with nothing enforcing it |
 | 8. Persist | **Partly** — `handoff`, `retrospect` |
 
-Only phase 0 loads by itself. Everything else in the table is a skill, and a
-skill runs when it is invoked — by your agent, when it judges one relevant to
-what you just asked for, or by you naming it. No installed rule makes a phase
-happen on its own, so the habits that carry work between phases are yours to
-keep. What follows is which of the two each phase is, and where you stay in
-control.
+Two rows load by themselves, and both are contract rather than machinery:
+phase 0's laws and decision matrix, and phase 7's merge hard line, which ship
+together in the always-on instruction file every session reads. Everything
+else is something you or your agent reaches for — a skill, invoked when your
+agent judges one relevant or when you name it, or a CLI you run yourself. No
+installed rule makes a phase happen on its own, so the habits that carry work
+between phases are yours to keep. What follows is which of those each phase
+is, and where you stay in control.
 
 ## 0. The always-on contract — ships
 

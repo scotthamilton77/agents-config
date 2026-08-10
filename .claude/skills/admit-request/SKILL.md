@@ -171,20 +171,22 @@ at a moment chosen for it. A model-invoked body is loaded on the model's own
 judgement, mid-task, against whatever the context is already carrying, which is
 what the tighter number prices.
 
-**Only Claude honours the flag today.** The installer drops it for Codex, Gemini
-and OpenCode, which have no equivalent to translate onto — so on those three the
-skill stays model-invocable. The cap is then keyed on the **deployed** front
-matter, one measurement per target, so dropping the key does not merely lose the
-exemption: it moves that tool's copy under the strict cap and puts its
-description back into that tool's catalog. Two consequences to hold:
+**Only Claude honours the flag today.** The installer strips it for Codex,
+Gemini and OpenCode, which have no equivalent to translate onto. The cap is
+then keyed on the **deployed** front matter, one measurement per target, so
+losing the key costs more than the exemption: on Codex and OpenCode the skill
+is model-invocable whatever its author declared, which puts that tool's copy
+under the strict cap and its description back into that tool's catalog. Two
+consequences to hold:
 
 - The 5k number is Claude-shaped, and it is Claude-only. A 4,900-token
   user-invoked body passes on Claude and **aborts the deploy** on Codex and
   OpenCode, where the same bytes are weighed against 2k. The looser ceiling is
-  relief on one target, never permission across four. Gemini is the exception
-  in both directions: this project does not model what its runtime does with a
-  deployed skill, so a skill there is charged no catalog entry and its body
-  meets no cap at all.
+  relief on one target, never permission on the rest. Gemini is not a third
+  case: no vendor documentation establishes whether a deployed skill reaches
+  its runtime at all, so this project models its skill loading not at all
+  rather than guessing at it — no catalog charge, no body cap, and no claim
+  here about how it invokes.
 - Carrying the flag is not by itself a reason to leave the shared tree, since it
   is projected out cleanly. But dropping a key removes the bytes, not the gap: a
   skill whose worth claim *depends* on never firing unprompted is still

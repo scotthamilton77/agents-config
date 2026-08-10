@@ -54,8 +54,8 @@ sequenceDiagram
 
     Op->>CLI: python3 scripts/install.py --tools=claude,gemini
     CLI->>Cfg: resolve_tools + resolve_plugins (auto-detect / --tools / --plugins)
-    Cfg->>FS: probe tool config dirs
-    FS-->>Cfg: config-dir probe results (tools, plugins)
+    Cfg->>FS: probe plugin footprints (--tools= names the tools, so no tool probe)
+    FS-->>Cfg: detected plugins
     Cfg-->>CLI: resolved tools + plugins
     CLI->>FS: load .installignore (hard error if missing/unreadable/non-UTF-8)
 
