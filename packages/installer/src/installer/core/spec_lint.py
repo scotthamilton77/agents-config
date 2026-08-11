@@ -29,9 +29,9 @@ Three mechanical, gaming-resistant checks:
    gaming case: naming an ID in prose without the ``- **ID** text`` shape).
 3. every individual **slice unit** under a slice-defining heading cites ≥ 1
    **discharge unit the spec itself defines** — an AC entry from check 2, or a
-   Decision stated as a bold lead-in (``**D3 — …**``, the shape the charter
-   and its child specs use for one). Citing only an ID the spec never defines
-   still fails, naming the slice.
+   Decision stated as a top-level bold lead-in, as a paragraph or as a bullet
+   (``**D3 — …**``, ``- **D3 — …**``, and the spec-scoped ``**S2-D2 — …**``).
+   Citing only an ID the spec never defines still fails, naming the slice.
 
 Both kinds count because both are contracts a slice can be held to, which is
 the whole of what the criterion asks for: a slice that names neither has no
@@ -52,12 +52,12 @@ section contains top-level bulleted entries of the form ``- **<label>**
 "Ordered slice list" is exactly this: ``- **S0 — ...** ...``, one bullet per
 slice, no sub-headings), each such bullet is checked on its own — a citation
 anywhere else in the section does not cover a bullet that itself cites
-nothing, closing the gap where one citation deep in a long section used to
-clear the whole section at once. When a section has no such bullets (a
-child spec's per-slice sub-headings, each already its own slice-defining
-heading and therefore already checked individually), the section's whole
-span is checked as one unit, same as before — the common case is already
-maximally granular without bullets to look inside.
+nothing. Checking such a section as one span would let one citation buried in
+a long slice list clear every silent sibling in it. When a section has no
+such bullets (a child spec's per-slice sub-headings, each already its own
+slice-defining heading and therefore already checked individually), the
+section's whole span is the unit — with no bullets to look inside, that span
+is already as granular as the section gets.
 
 Fenced code blocks (```` ``` ```` or ``~~~``) are inert to all checks — a
 heading, list-item, bullet, or citation that only appears *inside* a fence
@@ -90,11 +90,14 @@ _ALWAYS_IN_SCOPE = frozenset({"2026-07-21-harness-rework-way-forward.md"})
 _SPEC_FILENAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-.+\.md$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 _AC_ENTRY_RE = re.compile(r"^\s*-\s+\*\*([A-Z0-9]+-[A-Z]\d+|AC\d+)\*\*\s+(\S.*)$")
-# A Decision definition: a bold lead-in opening a paragraph, ``**D3 — text.**``
-# or the spec-scoped ``**S2-D2 — text.**``. Column-0 only, because a Decision is
-# stated at the top level of a spec's own decision section and never nested
-# inside another entry's prose.
-_DECISION_DEF_RE = re.compile(r"^\*\*((?:[A-Z0-9]+-)?D\d+)\b")
+# A Decision definition: a bold lead-in, ``**D3 — text.**`` or the spec-scoped
+# ``**S2-D2 — text.**``, opening either a paragraph or a top-level bullet. Both
+# shapes are in the tree — the charter states its decisions as paragraphs, the
+# gitclean redesign as a bulleted list — and a definition-shape set narrower
+# than the shapes specs actually use would call a real Decision undefined and
+# fail the slice citing it. Top-level only: a bold lead-in nested inside another
+# entry's prose is that entry's emphasis, not the spec's decision.
+_DECISION_DEF_RE = re.compile(r"^(?:-\s+)?\*\*((?:[A-Z0-9]+-)?D\d+)\b")
 # A top-level (column-0) bulleted entry with a bold lead-in, the shape the
 # charter's own "Ordered slice list" uses for one bullet per slice
 # (``- **S0 — Name.** ...``). Deliberately not indent-tolerant like

@@ -190,8 +190,10 @@ _NONEXISTENCE_RE = re.compile(
 # archive" is what makes it foreign, which is also how the tree already writes
 # it.
 _ELSEWHERE_RE = re.compile(
-    r"\b(?:in|into|from|under|to)\s+(?:the\s+|a\s+|another\s+)?(?:private\s+|public\s+)?"
-    r"(?:`?[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+`?|archive)\s+(?:repo|repository)\b",
+    r"\b(?:in|into|from|under|to)\s+(?:the\s+|a\s+|another\s+)?"
+    r"(?:(?:private\s+|public\s+)?`?[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+`?"
+    r"|(?:private|public)\s+archive)"
+    r"\s+(?:repo|repository)\b",
     re.IGNORECASE,
 )
 

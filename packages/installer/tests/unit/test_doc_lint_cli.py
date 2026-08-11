@@ -116,6 +116,23 @@ def test_a_clean_tree_exits_zero(
     assert "0 citation(s) not judged" in printed
 
 
+def test_the_reported_reach_counts_what_was_actually_silenced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The number is the audit trail for a rule that can hide a real finding, so
+    it has to move with the fileset. A CLI wired to a constant, or to a reach
+    computed over the wrong files, prints a reassuring zero forever."""
+    repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
+    (repo / "README.md").write_text(
+        "The `merge-guard` skill has been retired.\nRead the `grilling` skill.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(doc_lint_cli, "tracked_files", lambda _root: [Path("README.md")])
+
+    assert doc_lint_cli.main([str(repo)]) == 0
+    assert "1 citation(s) not judged" in capsys.readouterr().out
+
+
 def test_findings_exit_one_and_are_grouped_by_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

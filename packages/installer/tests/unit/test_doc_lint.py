@@ -138,6 +138,32 @@ def test_the_charter_is_read_despite_the_exemptions_that_cover_it() -> None:
     assert not in_scope(Path("docs/specs/2026-07-22-workcli-completion-s2.md"))
 
 
+def test_the_charter_reaches_a_lint_run_through_selection(tmp_path: Path) -> None:
+    """Membership in the carve-out is not coverage. What matters is that the
+    charter survives the selection the CLI actually performs and gets read: a
+    regression anywhere on tracked-set → ``select_markdown`` → ``lint_markdown``
+    would leave the scope predicate telling the truth and the document unread.
+    """
+    charter = next(iter(ALWAYS_IN_SCOPE))
+    _write(tmp_path, "README.md", "Nothing to see.\n")
+    _write(tmp_path, str(charter), "The runtime is `wgclw.30`, and see `docs/gone.md`.\n")
+
+    paths = select_markdown([Path("README.md"), charter])
+    assert charter in paths
+
+    findings, _suppressed = lint_markdown(
+        paths,
+        repo_root=tmp_path,
+        assets=_ASSETS,
+        index=_index(tmp_path),
+        tracker_prefix="widget-shop",
+    )
+    assert sorted(f.citation for f in findings if f.file == charter) == [
+        "docs/gone.md",
+        "wgclw.30",
+    ]
+
+
 def test_a_carve_out_with_no_document_behind_it_is_reported(tmp_path: Path) -> None:
     """A carve-out naming a file that is not there fires on nothing, so it fails
     silent — the retirement condition every exemption here carries. The charter
@@ -772,6 +798,14 @@ def test_a_path_the_sentence_puts_in_another_repository_is_not_a_claim_here(
         "(raw verdicts).\n"
     )
     assert _lint(tmp_path, text) == []
+
+
+def test_an_unnamed_archive_is_not_a_foreign_repository(tmp_path: Path) -> None:
+    """A qualifier is what names the destination. "The archive repository" could
+    be this repo's own archive of anything, so it resolves nowhere a reader can
+    check and cannot stand in for saying where the thing went."""
+    text = "The report is held only in the archive repository, at `docs/audits/gone.md`.\n"
+    assert [f.citation for f in _lint(tmp_path, text)] == ["docs/audits/gone.md"]
 
 
 def test_this_repository_is_not_another_repository(tmp_path: Path) -> None:

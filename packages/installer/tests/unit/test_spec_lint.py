@@ -231,6 +231,41 @@ _FENCED_DECISION_DEFINITION_IS_INERT = """# A spec
 - **S0 — Setup.** Discharges D3.
 """
 
+_BULLETED_DECISION_DEFINITION = """# A spec
+
+## Decisions
+
+- **D1 — Two outcomes, not two verdicts.** A target is either provably merged
+  or reported with measured facts.
+- **D2 — Proof means merge evidence and nothing else.** The tiers stay as they
+  are.
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Ordered slice list
+
+- **S0 — Carve.** Discharges D1.
+- **S1 — Report.** Discharges D2.
+"""
+
+_NESTED_BOLD_LEAD_IS_NOT_A_DEFINITION = """# A spec
+
+## Decisions
+
+- **D1 — The one decision.** With reasoning, and a nested elaboration:
+  - **D9 — not a decision of this spec**, an emphasis inside D1's own prose.
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Ordered slice list
+
+- **S0 — Carve.** Discharges D9.
+"""
+
 _PREFIXED_DECISION_DEFINITION = """# A spec
 
 ## Decisions
@@ -440,10 +475,10 @@ def test_slice_list_bullet_with_citation_passes() -> None:
 
 
 def test_slice_list_bullet_citation_does_not_cover_a_silent_neighbor() -> None:
-    """The cite-only gap the old whole-section check left open: one bulleted
-    slice citing an AC used to satisfy the check for the entire heading,
-    silencing every sibling bullet that itself cited nothing. Each bullet is
-    now its own unit — S0 citing AC1 no longer clears S1's silence."""
+    """Each bulleted slice is its own unit, and this is the case that decides
+    it: S0's citation of AC1 must not clear S1, which cites nothing. A check
+    reading the whole heading as one span would pass this spec on the strength
+    of one citation and silence every sibling bullet in it."""
     path = Path("docs/specs/2026-07-25-example.md")
     violations = lint_spec_text(path, _BULLETED_SLICE_LIST_MIXED)
     assert len(violations) == 1
@@ -480,10 +515,10 @@ def test_slice_list_bullet_scan_does_not_cross_into_nested_subsection() -> None:
 
 
 def test_slice_list_fenced_bullet_is_inert_and_falls_back_to_section_check() -> None:
-    """A fenced example bullet inside a slice-list heading is not a real
-    slice unit; with zero real bullets found, the section falls back to the
-    whole-section citation check exactly as it did before bulleted slice
-    units existed."""
+    """A fenced example bullet inside a slice-list heading is not a real slice
+    unit. With zero real bullets found, the whole section is the unit and its
+    own citation carries it — a fenced illustration must neither define a slice
+    nor strand the section with nothing to check."""
     path = Path("docs/specs/2026-07-25-example.md")
     assert lint_spec_text(path, _SLICE_LIST_FENCED_BULLET_IS_INERT) == []
 
@@ -523,6 +558,25 @@ def test_fenced_decision_definition_defines_nothing() -> None:
     violations = lint_spec_text(path, _FENCED_DECISION_DEFINITION_IS_INERT)
     assert len(violations) == 1
     assert violations[0].slice == "S0 — Setup."
+
+
+def test_a_bulleted_decision_is_a_definition_too() -> None:
+    """Specs state decisions in two shapes — the charter as paragraphs, the
+    gitclean redesign as a bulleted list — and both are the spec stating a
+    decision. A definition-shape set narrower than the shapes in the tree calls
+    a real Decision undefined and fails the slice discharging it."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert lint_spec_text(path, _BULLETED_DECISION_DEFINITION) == []
+
+
+def test_a_bold_lead_nested_inside_an_entry_defines_nothing() -> None:
+    """Top-level is what separates a spec's decision from emphasis inside some
+    other entry's prose. Reading an indented bold lead-in as a definition would
+    let any nested phrase mint a discharge unit for a slice to point at."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _NESTED_BOLD_LEAD_IS_NOT_A_DEFINITION)
+    assert len(violations) == 1
+    assert violations[0].slice == "S0 — Carve."
 
 
 def test_prefixed_decision_definition_is_a_discharge_unit() -> None:
