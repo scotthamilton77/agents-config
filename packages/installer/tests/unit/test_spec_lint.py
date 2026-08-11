@@ -279,6 +279,51 @@ _DECISION_BULLET_UNDER_A_SLICE_HEADING = """# A spec
 - **S0 — Setup.** Prepares the ground, flips AC1.
 """
 
+_CITES_A_PREFIXED_ID_THAT_CONTAINS_A_DEFINED_ONE = """# A spec
+
+## Decisions
+
+**D2 — The decision this spec states.** With reasoning.
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Ordered slice list
+
+- **S0 — Setup.** Discharges S2-D2, which belongs to another spec.
+"""
+
+_CITES_A_BARE_ID_INSIDE_A_DEFINED_PREFIXED_ONE = """# A spec
+
+## Decisions
+
+**S2-D2 — The decision this spec states.** With reasoning.
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Ordered slice list
+
+- **S0 — Setup.** Discharges D2, which this spec never states.
+"""
+
+_DEFINITION_LABEL_CONTINUES_PAST_THE_ID = """# A spec
+
+## Decisions
+
+**D2-alpha — A label that is not the ID it opens with.** With reasoning.
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Ordered slice list
+
+- **S0 — Setup.** Discharges D2.
+"""
+
 _BULLETED_DECISION_DEFINITION = """# A spec
 
 ## Decisions
@@ -646,6 +691,38 @@ def test_a_slice_section_may_list_the_decisions_it_rests_on() -> None:
     them. The obligation to cite belongs to the slice, and here that is S0."""
     path = Path("docs/specs/2026-07-25-example.md")
     assert lint_spec_text(path, _DECISION_BULLET_UNDER_A_SLICE_HEADING) == []
+
+
+def test_a_defined_id_inside_a_longer_one_is_not_a_citation() -> None:
+    """An ID ends where its token ends, and a hyphen continues a token rather
+    than ending it. `S2-D2` names another spec's decision; reading the `D2`
+    inside it as a citation of this spec's `D2` lets a slice discharge itself
+    against a contract nobody here stated."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _CITES_A_PREFIXED_ID_THAT_CONTAINS_A_DEFINED_ONE)
+    assert len(violations) == 1
+    assert violations[0].slice == "S0 — Setup."
+
+
+def test_a_bare_id_does_not_cite_the_prefixed_id_that_contains_it() -> None:
+    """The mirror, and the reason the boundary is symmetric: a spec that states
+    `S2-D2` has not stated `D2`, so a slice naming `D2` names nothing."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _CITES_A_BARE_ID_INSIDE_A_DEFINED_PREFIXED_ONE)
+    assert len(violations) == 1
+    assert violations[0].slice == "S0 — Setup."
+
+
+def test_a_definition_label_that_continues_past_the_id_defines_nothing() -> None:
+    """The same boundary on the defining side. `**D2-alpha — …**` states a
+    decision called `D2-alpha`; registering the `D2` prefix of it would define
+    an ID this spec never stated and hand a slice a contract to cite. Defining
+    nothing is the safe direction — the slice is reported, not quietly
+    cleared."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _DEFINITION_LABEL_CONTINUES_PAST_THE_ID)
+    assert len(violations) == 1
+    assert violations[0].slice == "S0 — Setup."
 
 
 def test_a_bulleted_decision_is_a_definition_too() -> None:

@@ -31,7 +31,9 @@ Three mechanical, gaming-resistant checks:
    **discharge unit the spec itself defines** — an AC entry from check 2, or a
    Decision stated as a top-level bold lead-in, as a paragraph or as a bullet
    (``**D3 — …**``, ``- **D3 — …**``, and the spec-scoped ``**S2-D2 — …**``).
-   Citing only an ID the spec never defines still fails, naming the slice.
+   Citing only an ID the spec never defines still fails, naming the slice —
+   and an ID is matched as a whole token, so the ``D2`` inside another spec's
+   ``S2-D2`` is not a citation of this spec's ``D2``.
 
 Both kinds count because both are contracts a slice can be held to, which is
 the whole of what the criterion asks for: a slice that names neither has no
@@ -88,6 +90,13 @@ GATE_START_DATE = date(2026, 7, 24)
 # does not touch.
 _ALWAYS_IN_SCOPE = frozenset({"2026-07-21-harness-rework-way-forward.md"})
 
+# Where an ID token starts and stops. ``\b`` will not do it: a hyphen is not a
+# word character, so ``\bD2\b`` matches inside ``S2-D2`` and a spec stating one
+# of the two would accept a citation of the other. Every rule that decides which
+# ID a string carries uses these instead.
+_ID_EDGE_BEFORE = r"(?<![\w-])"
+_ID_EDGE_AFTER = r"(?![\w-])"
+
 _SPEC_FILENAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-.+\.md$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 _AC_ENTRY_RE = re.compile(r"^\s*-\s+\*\*([A-Z0-9]+-[A-Z]\d+|AC\d+)\*\*\s+(\S.*)$")
@@ -97,8 +106,11 @@ _AC_ENTRY_RE = re.compile(r"^\s*-\s+\*\*([A-Z0-9]+-[A-Z]\d+|AC\d+)\*\*\s+(\S.*)$
 # gitclean redesign as a bulleted list — and a definition-shape set narrower
 # than the shapes specs actually use would call a real Decision undefined and
 # fail the slice citing it. Top-level only: a bold lead-in nested inside another
-# entry's prose is that entry's emphasis, not the spec's decision.
-_DECISION_DEF_RE = re.compile(r"^(?:-\s+)?\*\*((?:[A-Z0-9]+-)?D\d+)\b")
+# entry's prose is that entry's emphasis, not the spec's decision. The label has
+# to *end* at the ID as well as start with it — ``**D2-alpha — …**`` states a
+# decision called ``D2-alpha``, and registering the ``D2`` in front of it would
+# define an ID the spec never stated.
+_DECISION_DEF_RE = re.compile(rf"^(?:-\s+)?\*\*((?:[A-Z0-9]+-)?D\d+){_ID_EDGE_AFTER}")
 # A top-level (column-0) bulleted entry with a bold lead-in, the shape the
 # charter's own "Ordered slice list" uses for one bullet per slice
 # (``- **S0 — Name.** ...``). Deliberately not indent-tolerant like
@@ -109,6 +121,11 @@ _SLICE_ITEM_RE = re.compile(r"^-\s+\*\*([^*]+)\*\*")
 # shape) or the word itself (``Slice A — …``, the shape its child specs use for
 # a heading). Anything else in a slice list is a note about the plan rather than
 # a unit of it.
+#
+# ``\b`` is the right boundary here and the wrong one for an ID, because this
+# asks how a label *opens* rather than which ID a string carries: a label may
+# legitimately continue past the number it starts with, and ``S2-D2`` is kept
+# out by being a Decision definition rather than by this rule.
 _SLICE_LABEL_RE = re.compile(r"^(?:S\d+\b|slice\b)", re.IGNORECASE)
 _BULLET_START_RE = re.compile(r"^-\s+")
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
@@ -314,11 +331,19 @@ def _slice_items(
 
 
 def _citation_re(discharge_ids: set[str]) -> re.Pattern[str]:
-    """One word-bounded alternation over every discharge unit the spec defines
-    — the question each slice unit asks, compiled once per document rather than
-    once per unit per id. Callers hold a non-empty set: ``lint_spec_text``
-    returns before this on a spec that defines nothing."""
-    return re.compile(rf"\b(?:{'|'.join(re.escape(id_) for id_ in sorted(discharge_ids))})\b")
+    """One alternation over every discharge unit the spec defines — the question
+    each slice unit asks, compiled once per document rather than once per unit
+    per id. Callers hold a non-empty set: ``lint_spec_text`` returns before this
+    on a spec that defines nothing.
+
+    ``\\b`` is the wrong boundary here, because a hyphen is not a word character
+    and IDs in this vocabulary are hyphen-joined: ``\\bD2\\b`` matches inside
+    ``S2-D2``, so a spec stating ``D2`` would accept a slice citing another
+    spec's ``S2-D2`` as discharging it. ``_ID_EDGE`` treats the hyphen as
+    part of the token, which is what makes the match the whole ID and not a
+    fragment of a longer one."""
+    alternation = "|".join(re.escape(id_) for id_ in sorted(discharge_ids))
+    return re.compile(rf"{_ID_EDGE_BEFORE}(?:{alternation}){_ID_EDGE_AFTER}")
 
 
 def _cites_any(
