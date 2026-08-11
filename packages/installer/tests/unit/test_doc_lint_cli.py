@@ -155,6 +155,28 @@ def test_findings_exit_one_and_are_grouped_by_file(
     assert "2 unresolved citation(s) in 2 file(s)" in err
 
 
+def test_the_namespace_reaches_the_check_from_the_project_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The one seam no pure-lint test can pin: the CLI reading the project's own
+    name and handing it to the check. Passing a namespace in by hand exercises
+    the rule and not the wiring, so the CLI could stop reading the file
+    altogether and the identifier check would go quietly silent."""
+    repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
+    (repo / "project-config.toml").write_text('[project]\nname = "widget-shop"\n', encoding="utf-8")
+    charter = next(iter(ALWAYS_IN_SCOPE))
+    (repo / charter).write_text(
+        "The runtime is `wgclw.30`, and `widget-shop-qq7.30` carries the rest.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(doc_lint_cli, "tracked_files", lambda _root: [charter])
+
+    assert doc_lint_cli.main([str(repo)]) == 1
+    err = capsys.readouterr().err
+    assert "`wgclw.30` — names a work item outside this repo's `widget-shop`" in err
+    assert "widget-shop-qq7.30" not in err
+
+
 def test_a_stale_exemption_fails_the_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

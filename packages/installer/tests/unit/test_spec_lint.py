@@ -231,6 +231,54 @@ _FENCED_DECISION_DEFINITION_IS_INERT = """# A spec
 - **S0 — Setup.** Discharges D3.
 """
 
+_SLICE_LIST_WITH_AN_ORDINARY_BULLET = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Ordered slice list
+
+- **S0 — Setup.** Prepares the ground, flips AC1.
+- **Close-out:** the observation window, then milestone close.
+"""
+
+_SLICE_SECTION_OF_ORDINARY_BULLETS_ONLY = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+### Slice A
+
+- **Boundary.** What this slice does not touch.
+- **Risk.** What could go wrong.
+"""
+
+_AC_ENTRIES_UNDER_A_SLICE_HEADING = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Slice B — the criteria it flips
+
+- **S5-B1** Does the first part.
+- **S5-B2** Does the second part.
+"""
+
+_DECISION_BULLET_UNDER_A_SLICE_HEADING = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+### Slice A — the decisions it rests on
+
+- **S2-D2 — Typed reason vocabulary.** Fixed codes, category derived.
+- **S0 — Setup.** Prepares the ground, flips AC1.
+"""
+
 _BULLETED_DECISION_DEFINITION = """# A spec
 
 ## Decisions
@@ -534,8 +582,8 @@ def test_format_violation_includes_slice_when_present() -> None:
 
 def test_slice_discharging_a_defined_decision_passes() -> None:
     """A slice unit citing a Decision the spec states discharges its unit as
-    surely as one citing an AC: the discharge unit is the AC *or* the
-    Decision (charter AC4, amended 2026-08-11)."""
+    surely as one citing an AC: charter AC4's discharge unit is the AC *or* the
+    Decision."""
     path = Path("docs/specs/2026-07-25-example.md")
     assert lint_spec_text(path, _SLICE_CITES_DEFINED_DECISION) == []
 
@@ -558,6 +606,46 @@ def test_fenced_decision_definition_defines_nothing() -> None:
     violations = lint_spec_text(path, _FENCED_DECISION_DEFINITION_IS_INERT)
     assert len(violations) == 1
     assert violations[0].slice == "S0 — Setup."
+
+
+def test_an_ordinary_bullet_beside_a_slice_is_not_a_slice() -> None:
+    """A slice list holds more than slices. The charter's own ends with
+    "**Close-out:** the AC9 observation window", a note about the plan rather
+    than a unit of it — and a rule reading every bold bullet as a slice would
+    demand that note cite a criterion it does not discharge."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert lint_spec_text(path, _SLICE_LIST_WITH_AN_ORDINARY_BULLET) == []
+
+
+def test_a_section_of_ordinary_bullets_is_checked_whole() -> None:
+    """With no slice-shaped bullet to look inside, the section is the unit —
+    the same span check a prose section gets. Ignoring the bullets must not
+    leave the section unchecked: it cites nothing, so it fails once, named for
+    its heading rather than for a bullet that is not a slice."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _SLICE_SECTION_OF_ORDINARY_BULLETS_ONLY)
+    assert len(violations) == 1
+    assert violations[0].slice == "Slice A"
+
+
+def test_a_slice_carrying_its_own_criteria_is_judged_as_one_slice() -> None:
+    """The shape the spec-contract spec uses: a slice heading whose bullets are
+    that slice's own AC entries. They define what the slice is held to, so the
+    slice is the unit and answers once. Reading each entry as a slice of its own
+    reports the criteria rather than the slice — two findings naming `S5-B1` and
+    `S5-B2`, neither of which is a slice, in place of the one true statement
+    that this slice discharges nothing the spec defines."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _AC_ENTRIES_UNDER_A_SLICE_HEADING)
+    assert len(violations) == 1
+    assert violations[0].slice == "Slice B — the criteria it flips"
+
+
+def test_a_slice_section_may_list_the_decisions_it_rests_on() -> None:
+    """A slice section that opens by stating its decisions is not reported for
+    them. The obligation to cite belongs to the slice, and here that is S0."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert lint_spec_text(path, _DECISION_BULLET_UNDER_A_SLICE_HEADING) == []
 
 
 def test_a_bulleted_decision_is_a_definition_too() -> None:

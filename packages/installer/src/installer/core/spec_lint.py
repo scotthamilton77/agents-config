@@ -47,17 +47,18 @@ mint completeness (audit rows: mint a/b/c)" both do, the second because its
 lead text carries the word outside the parenthetical.
 
 The **slice unit** a heading's section checks depends on its shape. When the
-section contains top-level bulleted entries of the form ``- **<label>**
-<text>`` that are not themselves AC definition entries (the charter's own
-"Ordered slice list" is exactly this: ``- **S0 — ...** ...``, one bullet per
-slice, no sub-headings), each such bullet is checked on its own — a citation
-anywhere else in the section does not cover a bullet that itself cites
-nothing. Checking such a section as one span would let one citation buried in
-a long slice list clear every silent sibling in it. When a section has no
-such bullets (a child spec's per-slice sub-headings, each already its own
-slice-defining heading and therefore already checked individually), the
-section's whole span is the unit — with no bullets to look inside, that span
-is already as granular as the section gets.
+section carries top-level bullets whose bold label opens like a slice's — a
+slice number or the word itself (the charter's own "Ordered slice list" is
+exactly this: ``- **S0 — ...** ...``, one bullet per slice, no sub-headings) —
+each such bullet is checked on its own, and a citation anywhere else in the
+section does not cover a bullet that itself cites nothing. Checking such a
+section as one span would let one citation buried in a long slice list clear
+every silent sibling in it. When a section carries no bullet of that shape —
+a child spec's per-slice sub-headings, each already its own slice-defining
+heading and therefore already checked individually, or a slice section whose
+bullets are notes rather than units — the section's whole span is the unit,
+which is as granular as a section with nothing slice-shaped inside it gets.
+``_slice_items`` states which bullets are notes and why.
 
 Fenced code blocks (```` ``` ```` or ``~~~``) are inert to all checks — a
 heading, list-item, bullet, or citation that only appears *inside* a fence
@@ -104,6 +105,11 @@ _DECISION_DEF_RE = re.compile(r"^(?:-\s+)?\*\*((?:[A-Z0-9]+-)?D\d+)\b")
 # ``_AC_ENTRY_RE``: a nested continuation bullet inside a slice's own prose
 # must never be mistaken for a sibling slice unit.
 _SLICE_ITEM_RE = re.compile(r"^-\s+\*\*([^*]+)\*\*")
+# How a slice's own label opens: a slice number (``S0 — …``, the charter's
+# shape) or the word itself (``Slice A — …``, the shape its child specs use for
+# a heading). Anything else in a slice list is a note about the plan rather than
+# a unit of it.
+_SLICE_LABEL_RE = re.compile(r"^(?:S\d+\b|slice\b)", re.IGNORECASE)
 _BULLET_START_RE = re.compile(r"^-\s+")
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 _PAREN_RE = re.compile(r"\([^()]*\)")
@@ -265,35 +271,65 @@ def _slice_items(
 ) -> list[tuple[str, int, int]]:
     """``(label, item_start, item_end)`` for every top-level bulleted slice
     unit directly in ``lines[start:end]`` — the charter's own "one bullet per
-    slice" shape. A fenced bullet (an illustrative example) never counts,
-    and neither does one shaped like an AC definition entry: that bullet
-    *defines* an ID rather than naming a slice, even though the two shapes
-    look alike. Every top-level bullet, slice-shaped or not, still bounds
-    its neighbours' spans, so an interleaved AC-entry bullet cannot leak
-    into an adjacent slice's citation text."""
+    slice" shape. A fenced bullet (an illustrative example) never counts.
+
+    Plenty of bullets sit in a slice list without being a slice, and a rule
+    reading every bold-lead bullet as one demands a citation from each. Two
+    kinds are excluded by what they are: an AC definition entry and a Decision
+    definition both *state* a discharge unit rather than discharging one — the
+    spec-contract spec lists its per-slice ACs as exactly such bullets under
+    each slice heading. The rest are excluded by their label, because a slice
+    list holds notes as well as slices: the charter's own ends with
+    "**Close-out:** the AC9 observation window", a remark about the plan rather
+    than a unit of it. So a bullet is a slice unit only when it defines nothing
+    and its label opens the way a slice's label opens — with a slice number, or
+    with the word itself.
+
+    A spec numbering its slices some third way loses granularity rather than
+    correctness — with no bullet recognised, the section falls to the whole-span
+    check, which is where a section with no bullets at all already sits.
+
+    The label rule also closes a self-citation route: a slice number is not a
+    shape any AC or Decision ID can take, so a slice unit can never satisfy the
+    citation check with its own label.
+
+    Every top-level bullet, slice unit or not, still bounds its neighbours'
+    spans, so an interleaved note cannot leak into an adjacent slice's citation
+    text."""
     bullet_lines = [
         i for i in range(start, end) if not fenced[i] and _BULLET_START_RE.match(lines[i])
     ]
     items: list[tuple[str, int, int]] = []
     for position, line_idx in enumerate(bullet_lines):
         item_end = bullet_lines[position + 1] if position + 1 < len(bullet_lines) else end
-        match = _SLICE_ITEM_RE.match(lines[line_idx])
-        if match is None or _AC_ENTRY_RE.match(lines[line_idx]):
+        line = lines[line_idx]
+        match = _SLICE_ITEM_RE.match(line)
+        if match is None or _AC_ENTRY_RE.match(line) or _DECISION_DEF_RE.match(line):
             continue
-        items.append((match.group(1).strip(), line_idx, item_end))
+        label = match.group(1).strip()
+        if _SLICE_LABEL_RE.match(label) is None:
+            continue
+        items.append((label, line_idx, item_end))
     return items
 
 
+def _citation_re(discharge_ids: set[str]) -> re.Pattern[str]:
+    """One word-bounded alternation over every discharge unit the spec defines
+    — the question each slice unit asks, compiled once per document rather than
+    once per unit per id. Callers hold a non-empty set: ``lint_spec_text``
+    returns before this on a spec that defines nothing."""
+    return re.compile(rf"\b(?:{'|'.join(re.escape(id_) for id_ in sorted(discharge_ids))})\b")
+
+
 def _cites_any(
-    lines: list[str], fenced: list[bool], start: int, end: int, defined_ids: set[str]
+    lines: list[str], fenced: list[bool], start: int, end: int, citation_re: re.Pattern[str]
 ) -> bool:
-    """Whether the unfenced text of ``lines[start:end]`` cites ≥ 1 id in
-    ``defined_ids``."""
+    """Whether the unfenced text of ``lines[start:end]`` cites a discharge
+    unit."""
     span_lines = [
         line for offset, line in enumerate(lines[start:end]) if not fenced[start + offset]
     ]
-    span_text = "\n".join(span_lines)
-    return any(re.search(rf"\b{re.escape(id_)}\b", span_text) for id_ in defined_ids)
+    return citation_re.search("\n".join(span_lines)) is not None
 
 
 def lint_spec_text(path: Path, text: str) -> list[Violation]:
@@ -323,12 +359,11 @@ def lint_spec_text(path: Path, text: str) -> list[Violation]:
     # Check 2 is satisfied by AC entries alone — a spec with decisions and no
     # acceptance criteria has not declared what it will be held to. Decisions
     # widen only what a slice may cite to discharge itself.
-    discharge_ids = defined_ids | _defined_decision_ids(lines, fenced)
+    citation_re = _citation_re(defined_ids | _defined_decision_ids(lines, fenced))
 
     violations: list[Violation] = []
-    slice_headings = [h for h in headings if _SLICE_HEADING_KEYWORD in _strip_parens(h[2]).lower()]
     for idx, (line_idx, level, heading_text) in enumerate(headings):
-        if (line_idx, level, heading_text) not in slice_headings:
+        if _SLICE_HEADING_KEYWORD not in _strip_parens(heading_text).lower():
             continue
         end = _section_end(headings, idx, level, len(lines))
         # Bullets are scanned only up to the *next* heading at any depth, not
@@ -343,7 +378,7 @@ def lint_spec_text(path: Path, text: str) -> list[Violation]:
             # unit, so a citation elsewhere in the section does not cover a
             # bullet that itself cites nothing.
             for label, item_start, item_end in items:
-                if not _cites_any(lines, fenced, item_start, item_end, discharge_ids):
+                if not _cites_any(lines, fenced, item_start, item_end, citation_re):
                     violations.append(
                         Violation(
                             file=path,
@@ -353,9 +388,9 @@ def lint_spec_text(path: Path, text: str) -> list[Violation]:
                     )
             continue
         # No bulleted slice units here — a per-slice sub-heading (already its
-        # own entry in this loop) or plain prose. The whole heading's section
-        # is the unit, as before.
-        if not _cites_any(lines, fenced, line_idx, end, discharge_ids):
+        # own entry in this loop), plain prose, or bullets that are notes. The
+        # whole heading's section is the unit.
+        if not _cites_any(lines, fenced, line_idx, end, citation_re):
             violations.append(
                 Violation(
                     file=path,
