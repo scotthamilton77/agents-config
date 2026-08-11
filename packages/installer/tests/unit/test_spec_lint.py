@@ -324,6 +324,54 @@ _DEFINITION_LABEL_CONTINUES_PAST_THE_ID = """# A spec
 - **S0 — Setup.** Discharges D2.
 """
 
+_BOLD_REFERENCE_IS_NOT_A_DEFINITION = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Notes
+
+**D9 is written wider than this spec can deliver**, a contradiction recorded
+in the charter rather than decided here.
+
+## Ordered slice list
+
+- **S0 — Setup.** Discharges D9.
+"""
+
+_DEFINITION_TITLE_WRAPS_TO_THE_NEXT_LINE = """# A spec
+
+## Decisions
+
+**S2-D3 — `redispatch` and `abandon` are the un-park verbs; recut is not a
+verb at all.** The reasoning continues here.
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Ordered slice list
+
+- **S0 — Setup.** Discharges S2-D3.
+"""
+
+_DECISION_HIDDEN_BEHIND_A_FALSE_FENCE_CLOSE = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+````markdown
+````not-a-close
+**D9 — hidden inside the fence.** Not a decision of this spec.
+````
+
+## Ordered slice list
+
+- **S0 — Setup.** Discharges D9.
+"""
+
 _BULLETED_DECISION_DEFINITION = """# A spec
 
 ## Decisions
@@ -721,6 +769,36 @@ def test_a_definition_label_that_continues_past_the_id_defines_nothing() -> None
     cleared."""
     path = Path("docs/specs/2026-07-25-example.md")
     violations = lint_spec_text(path, _DEFINITION_LABEL_CONTINUES_PAST_THE_ID)
+    assert len(violations) == 1
+    assert violations[0].slice == "S0 — Setup."
+
+
+def test_a_bold_cross_reference_is_not_a_decision() -> None:
+    """Prose opens a sentence in bold, and the tree does it: one spec begins a
+    paragraph "**S6-D2 is written wider than S6 can deliver**". A rule that reads
+    the opening as a definition mints a contentless ID, and the slice citing it
+    discharges against nothing. A definition states a title after its ID."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _BOLD_REFERENCE_IS_NOT_A_DEFINITION)
+    assert len(violations) == 1
+    assert violations[0].slice == "S0 — Setup."
+
+
+def test_a_definition_whose_title_wraps_is_still_a_definition() -> None:
+    """Most decisions in this repo's specs carry a title too long for one line,
+    so the bold closes on a later one. Requiring the whole definition on a single
+    line would call the majority of the tree's real decisions undefined."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert lint_spec_text(path, _DEFINITION_TITLE_WRAPS_TO_THE_NEXT_LINE) == []
+
+
+def test_a_fence_closes_only_on_a_bare_marker() -> None:
+    """CommonMark closes a fence on a marker with nothing but whitespace after
+    it. Closing on the marker alone lets a line inside a longer fence end it, so
+    the rest of the block — a Decision definition here — is read as prose and
+    mints an ID nothing stated."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _DECISION_HIDDEN_BEHIND_A_FALSE_FENCE_CLOSE)
     assert len(violations) == 1
     assert violations[0].slice == "S0 — Setup."
 

@@ -326,6 +326,18 @@ def test_an_identifier_in_this_repo_namespace_is_never_judged(tmp_path: Path) ->
     assert _lint(tmp_path, text, relpath=charter, tracker_prefix="agents-config") == []
 
 
+def test_a_namespace_this_one_only_prefixes_is_a_different_namespace(tmp_path: Path) -> None:
+    """Local means the identifier's own namespace, not a namespace this one
+    happens to start. A sibling project called ``agents-config-tools`` mints
+    ``agents-config-tools-abc.1``, which no ``work`` here can address — reading
+    the shared prefix as ownership would wave through every neighbour whose name
+    begins the same way."""
+    charter = str(next(iter(ALWAYS_IN_SCOPE)))
+    text = "The rest is carried by `agents-config-tools-abc.1`, elsewhere.\n"
+    findings = _lint(tmp_path, text, relpath=charter, tracker_prefix="agents-config")
+    assert [f.citation for f in findings] == ["agents-config-tools-abc.1"]
+
+
 def test_dotted_numbers_that_are_not_identifiers_stay_silent(tmp_path: Path) -> None:
     """The shape has to separate an identifier from every other dotted token a
     spec carries — a version, a release, a date — or the check reports the

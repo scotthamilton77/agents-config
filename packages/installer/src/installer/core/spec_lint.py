@@ -109,7 +109,19 @@ _AC_ENTRY_RE = re.compile(r"^\s*-\s+\*\*([A-Z0-9]+-[A-Z]\d+|AC\d+)\*\*\s+(\S.*)$
 # to *end* at the ID as well as start with it — ``**D2-alpha — …**`` states a
 # decision called ``D2-alpha``, and registering the ``D2`` in front of it would
 # define an ID the spec never stated.
-_DECISION_DEF_RE = re.compile(rf"^(?:-\s+)?\*\*((?:[A-Z0-9]+-)?D\d+){_ID_EDGE_AFTER}")
+#
+# The dash is what separates a definition from a bold cross-reference, and prose
+# does open sentences in bold: one spec begins a paragraph "**S6-D2 is written
+# wider than S6 can deliver**", which states no decision and must mint no ID for
+# a slice to point at. The title itself is not required to close on this line —
+# most decisions here carry one too long for that, so the bold runs on.
+# The separator between a decision's ID and its title: an em dash in this
+# tree, with the en dash and the hyphen admitted so a spec is not failed over
+# which dash its author typed.
+_TITLE_SEPARATOR = r"\s*[—\u2013-]\s"
+_DECISION_DEF_RE = re.compile(
+    rf"^(?:-\s+)?\*\*((?:[A-Z0-9]+-)?D\d+){_ID_EDGE_AFTER}{_TITLE_SEPARATOR}"
+)
 # A top-level (column-0) bulleted entry with a bold lead-in, the shape the
 # charter's own "Ordered slice list" uses for one bullet per slice
 # (``- **S0 — Name.** ...``). Deliberately not indent-tolerant like
@@ -183,14 +195,15 @@ def fence_mask(lines: list[str]) -> list[bool]:
     """``True`` for every line that is inert to Markdown prose parsing because it
     sits inside a fenced code block — including the fence marker lines
     themselves. A fence opens on any run of ``>= 3`` backticks or tildes and
-    records that marker's character and run length; while open, a line
-    closes the fence only if it starts with a run of the SAME character of
-    length ``>=`` the opener's (CommonMark's closing-fence rule) — a
-    shorter or different-character run nested inside (e.g. a 3-backtick
-    fence quoted inside a 4-backtick outer fence) is inert content, not a
-    real close. Full CommonMark indentation/info-string rules are out of
-    scope; this char+length rule is enough to cover the gaming cases (an
-    example definition entry or slice heading quoted inside a fence).
+    records that marker's character and run length; while open, a line closes
+    the fence only if it starts with a run of the SAME character of length
+    ``>=`` the opener's **and carries nothing but whitespace after it**, which
+    is CommonMark's closing-fence rule. A shorter or different-character run
+    nested inside (a 3-backtick fence quoted inside a 4-backtick outer fence) is
+    inert content; so is a long-enough run with text after it, since an info
+    string is what opens a fence and never what closes one. Without that second
+    half, a line inside the block ends it and everything below leaks out as
+    prose. Full CommonMark indentation rules are out of scope.
 
     Public because ``doc_lint`` masks the same way, for the same reason: a code
     block is illustration, so nothing inside one is a claim about the repo. One
@@ -206,7 +219,8 @@ def fence_mask(lines: list[str]) -> list[bool]:
                 open_char, open_len = marker[0], len(marker)
                 mask.append(True)
                 continue
-            if marker[0] == open_char and len(marker) >= open_len:
+            closes = marker[0] == open_char and len(marker) >= open_len
+            if closes and not line[m.end() :].strip():
                 open_char, open_len = None, 0
                 mask.append(True)
                 continue

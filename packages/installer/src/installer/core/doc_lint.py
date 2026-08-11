@@ -179,10 +179,10 @@ _NONEXISTENCE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# The second way prose says a thing is not here: it is somewhere else. Retired
-# content in this repository was not deleted but moved to a private archive
-# repository, and the charter names its companion documents there — so a path
-# under that heading is not a claim about this tree at all.
+# The second way prose says a thing is not here: it is somewhere else. This
+# repository's retired content resolves in a private archive repository, and the
+# charter names its companion documents there — so a path under that heading is
+# not a claim about this tree at all.
 #
 # The marker names a *foreign* repository and never the bare noun: "in this
 # repository" opens half the orientation prose here, and reading that as an
@@ -821,18 +821,23 @@ def _line_module(line: str, repo_root: Path, index: RepoIndex) -> Path | None:
 def _foreign_identifier(token: str, tracker_prefix: str) -> bool:
     """Whether ``token`` is a work-item identifier no local ``work`` can address.
 
-    Local means minted under this repository's own namespace, prefix and all.
-    Anything else — an identifier from the tracker generation this repo archived,
-    or from another project's tracker entirely — resolves somewhere a reader
-    here cannot reach by the route they are told to use.
+    Local means the identifier's namespace *is* this repository's, not merely
+    starts with it. A sibling project named ``agents-config-tools`` mints
+    ``agents-config-tools-abc.1``, which no ``work`` here can address; reading a
+    shared prefix as ownership would wave through every neighbour whose name
+    begins the same way. Everything else — an identifier from the tracker
+    generation this repo archived, or from another project's tracker entirely —
+    resolves somewhere a reader here cannot reach by the route they are told to
+    use.
     """
     match = _TRACKER_ID_RE.match(token)
     if match is None:
         return False
     prefix = match.group("prefix")
-    if _MINT_RE.match(prefix.rsplit("-", 1)[-1]) is None:
+    mint_at = prefix.rfind("-")
+    if _MINT_RE.match(prefix[mint_at + 1 :]) is None:
         return False
-    return prefix != tracker_prefix and not prefix.startswith(f"{tracker_prefix}-")
+    return prefix[:mint_at] != tracker_prefix if mint_at > 0 else True
 
 
 def _asset_name(token: str) -> str | None:
@@ -967,16 +972,12 @@ class _Sentence:
     begin: int
     covered: tuple[tuple[int, int], ...]
 
-    def position_of(self, number: int, column: int) -> int | None:
-        """Where the span at ``column`` on line ``number`` sits inside this
-        sentence, or ``None`` when the sentence does not reach it."""
-        for line_number, line_start in self.covered:
-            if line_number != number:
-                continue
-            position = line_start + column - self.begin
-            if 0 <= position < len(self.text):
-                return position
-        return None
+    def position_of(self, line_start: int, column: int) -> int | None:
+        """Where the span at ``column`` sits inside this sentence, or ``None``
+        when the sentence does not reach it. ``line_start`` is that line's offset
+        from ``covered``, which every caller is already holding."""
+        position = line_start + column - self.begin
+        return position if 0 <= position < len(self.text) else None
 
 
 def _sentences(lines: Sequence[str], fenced: Sequence[bool]) -> list[list[_Sentence]]:
@@ -1080,9 +1081,9 @@ def citation_contexts(
         negations = [_negates_existence(sentence.text) for sentence in block]
         for index, sentence in enumerate(block):
             neighbours = negations[max(index - 1, 0) : index + 2]
-            for number, _start in sentence.covered:
+            for number, start in sentence.covered:
                 for column, token in _code_spans(lines[number - 1]):
-                    position = sentence.position_of(number, column)
+                    position = sentence.position_of(start, column)
                     if position is None:
                         continue
                     required = _REQUIREMENT_MARKER_RE.search(sentence.text[:position]) is not None
