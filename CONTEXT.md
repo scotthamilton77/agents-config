@@ -19,7 +19,9 @@ they are what lets a review round terminate rather than generating findings
 indefinitely.
 
 Criteria carry short IDs so that slices and tests can cite them. The ID format
-and the per-slice citation requirement are mechanically enforced.
+and the per-slice citation requirement are mechanically enforced; a slice
+discharges a criterion or one of the spec's own decisions, and cites whichever
+it discharges.
 
 Contract: `packages/installer/src/installer/core/spec_lint.py`, run as
 `make spec-lint` over `docs/specs/`.
@@ -106,7 +108,9 @@ Design: `docs/specs/2026-07-21-harness-rework-way-forward.md`.
 
 The smallest change that flips a defined set of acceptance criteria from red to
 green and is separately mergeable. A slice carries its own criteria and cites
-them; it is the unit that gets dispatched, reviewed and merged.
+them — or cites the decision it discharges, where a decision rather than a
+criterion is what mints it; it is the unit that gets dispatched, reviewed and
+merged.
 
 Decomposing a spec into an ordered slice list is the spec author's deliverable,
 not a later step — a spec is not ready until it is sliced.

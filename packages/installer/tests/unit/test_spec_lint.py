@@ -183,6 +183,69 @@ Some intro prose, citing AC1 directly here.
 ```
 """
 
+_SLICE_CITES_DEFINED_DECISION = """# A spec
+
+## Decisions
+
+**D3 — The thing is decided.** With the reasoning under it.
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Ordered slice list
+
+- **S0 — Setup.** Discharges D3.
+- **S1 — Build.** Flips AC1.
+"""
+
+_SLICE_CITES_UNDEFINED_DECISION = """# A spec
+
+## Decisions
+
+**D3 — The thing is decided.** With the reasoning under it.
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Ordered slice list
+
+- **S0 — Setup.** Discharges D9, which this spec never states.
+"""
+
+_FENCED_DECISION_DEFINITION_IS_INERT = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Decisions
+
+```markdown
+**D3 — An illustrative decision.** Example shape only.
+```
+
+## Ordered slice list
+
+- **S0 — Setup.** Discharges D3.
+"""
+
+_PREFIXED_DECISION_DEFINITION = """# A spec
+
+## Decisions
+
+**S2-D2 — Typed reason vocabulary.** Fixed codes, category derived.
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+### Slice A
+
+Discharges S2-D2.
+"""
+
 
 def test_s5_b1_missing_heading_fails_naming_file() -> None:
     """S5-B1 — no Acceptance-criteria heading at all fails, naming the file."""
@@ -218,7 +281,7 @@ def test_s5_b3_slice_citing_only_undefined_id_fails_naming_slice() -> None:
     violations = lint_spec_text(path, _SLICE_CITES_UNDEFINED)
     assert len(violations) == 1
     assert violations[0].slice == "Slice B"
-    assert "cites no AC ID from the defined set" in violations[0].reason
+    assert "cites no AC or Decision ID the spec defines" in violations[0].reason
 
 
 def test_s5_b3_every_slice_citing_a_defined_id_passes() -> None:
@@ -367,7 +430,7 @@ def test_slice_list_bullet_without_citation_fails_naming_the_bullet() -> None:
     violations = lint_spec_text(path, _BULLETED_SLICE_LIST_MISSING_CITATION)
     assert len(violations) == 1
     assert violations[0].slice == "S0 — Setup."
-    assert "slice item cites no AC ID from the defined set" in violations[0].reason
+    assert "slice item cites no AC or Decision ID the spec defines" in violations[0].reason
 
 
 def test_slice_list_bullet_with_citation_passes() -> None:
@@ -432,3 +495,53 @@ def test_format_violation_includes_slice_when_present() -> None:
     with_slice = Violation(file=Path("docs/specs/x.md"), reason="uncited", slice="Slice B")
     assert "[slice:" not in format_violation(file_only)
     assert "[slice: Slice B]" in format_violation(with_slice)
+
+
+def test_slice_discharging_a_defined_decision_passes() -> None:
+    """A slice unit citing a Decision the spec states discharges its unit as
+    surely as one citing an AC: the discharge unit is the AC *or* the
+    Decision (charter AC4, amended 2026-08-11)."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert lint_spec_text(path, _SLICE_CITES_DEFINED_DECISION) == []
+
+
+def test_slice_citing_an_undefined_decision_still_fails() -> None:
+    """Widening the discharge unit to Decisions does not widen it to any
+    D-shaped token: a Decision the spec never states defines nothing, so the
+    slice cites nothing checkable and fails, naming itself."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _SLICE_CITES_UNDEFINED_DECISION)
+    assert len(violations) == 1
+    assert violations[0].slice == "S0 — Setup."
+
+
+def test_fenced_decision_definition_defines_nothing() -> None:
+    """A Decision definition that only appears inside a fence is an
+    illustration, so a slice citing it cites an undefined ID — the same
+    gaming case the AC-entry check already refuses."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _FENCED_DECISION_DEFINITION_IS_INERT)
+    assert len(violations) == 1
+    assert violations[0].slice == "S0 — Setup."
+
+
+def test_prefixed_decision_definition_is_a_discharge_unit() -> None:
+    """A spec-scoped Decision (``S2-D2``, the child-spec shape) defines a
+    unit too — the ID's prefix is scoping, not a different artifact class."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert lint_spec_text(path, _PREFIXED_DECISION_DEFINITION) == []
+
+
+def test_the_real_charter_passes_the_gate_that_states_it(tmp_path: Path) -> None:
+    """Self-hosting — the charter states AC4 and is in scope regardless of
+    date, so the document stating the criterion must satisfy it. Its founding
+    slice list discharges D-numbers, which is what AC4's amended discharge
+    unit names."""
+    repo_root = Path(__file__).resolve().parents[4]
+    charter = repo_root / "docs" / "specs" / "2026-07-21-harness-rework-way-forward.md"
+    assert charter.is_file(), f"expected the charter at {charter}"
+    specs_dir = tmp_path / "docs" / "specs"
+    specs_dir.mkdir(parents=True)
+    (specs_dir / charter.name).write_bytes(charter.read_bytes())
+    violations = lint_specs(specs_dir)
+    assert violations == [], [format_violation(v) for v in violations]

@@ -38,6 +38,13 @@ rather than repair it. Evergreen prose — a README, a guide, a primer, an
 orientation file — carries no date precisely because it claims to describe the
 present, so it is exactly what this gate reads.
 
+One dated document is read anyway, named in ``ALWAYS_IN_SCOPE``: the
+harness-rework charter is amended in place rather than superseded, and the root
+``AGENTS.md`` sends every reader to it as the current orientation. A document
+that is maintained as the present tense makes claims about the present whatever
+its filename says, and ``spec_lint`` carves the same file out of its own date
+floor for the same reason.
+
 **Tracker identifiers are not judged, and a check for them has a harder
 question to settle first.** A token like ``widget-shop-qq7.30.1`` matches none of
 the shapes above and its leading part names nothing in the tree, so it is
@@ -53,12 +60,24 @@ which the local one cannot adjudicate at all. Against all of that, the class doe
 not accumulate: stale identifiers are rare here, and ordinary editing of the
 prose around them removes them. Evidence that they accumulate is what earns the
 check.
+
+Inside ``ALWAYS_IN_SCOPE`` the identifiers *are* judged, and the check is a
+narrower one that answers none of the questions above. It never asks whether an
+item exists, so no tracker is consulted and no out-of-process call is made: it
+asks only whether the identifier is in the namespace this repo's own tracker
+addresses, and if it is not, whether the sentence says where it does resolve. An
+identifier from a retired tracker generation, cited bare in the one document a
+reader is told to orient by, sends them to a lookup that returns nothing and
+gives them no way to tell that from having looked it up wrong. That is a
+dangling pointer on the face of the prose, which is the only kind this gate has
+ever claimed to find.
 """
 
 from __future__ import annotations
 
 import ast
 import re
+import tomllib
 from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from pathlib import Path
@@ -92,6 +111,18 @@ EXEMPT_TREES: dict[Path, str] = {
         "a spec is a point-in-time proposal and is supposed to name what does not exist yet"
     ),
 }
+
+# The documents read in spite of the rules above, mapped to nothing because the
+# reason is one sentence: this repository maintains the charter as its current
+# orientation, so it is present-tense prose wearing a dated name.
+#
+# An entry naming a file that is not there is itself a finding, the same
+# retirement condition ``EXEMPT_TREES`` carries: the charter retires when the
+# rework milestone closes, and a carve-out outliving its document would fire on
+# nothing while reading as coverage.
+ALWAYS_IN_SCOPE: frozenset[Path] = frozenset(
+    {Path("docs/specs/2026-07-21-harness-rework-way-forward.md")}
+)
 
 # A dated filename declares the file a record of a moment; see the module
 # docstring. Matched anywhere in the name rather than only as a prefix, because a
@@ -145,6 +176,22 @@ _NONEXISTENCE_RE = re.compile(
     r"|retired to\b"
     r"|used to (?:be|live|drive|exist|call|name)"
     r")",
+    re.IGNORECASE,
+)
+
+# The second way prose says a thing is not here: it is somewhere else. Retired
+# content in this repository was not deleted but moved to a private archive
+# repository, and the charter names its companion documents there — so a path
+# under that heading is not a claim about this tree at all.
+#
+# The marker names a *foreign* repository and never the bare noun: "in this
+# repository" opens half the orientation prose here, and reading that as an
+# elsewhere-claim would silence the tree. An ``owner/name`` slug or "the private
+# archive" is what makes it foreign, which is also how the tree already writes
+# it.
+_ELSEWHERE_RE = re.compile(
+    r"\b(?:in|into|from|under|to)\s+(?:the\s+|a\s+|another\s+)?(?:private\s+|public\s+)?"
+    r"(?:`?[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+`?|archive)\s+(?:repo|repository)\b",
     re.IGNORECASE,
 )
 
@@ -258,6 +305,21 @@ _REQUIREMENT_MARKER_RE = re.compile(r"\bREQUIRED (?:SUB-SKILL|BACKGROUND):")
 # the asset check has.
 _ASSET_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
+# A work-item identifier: a lowercase slug, then a dotted path of child numbers
+# — ``agents-config-9k9.215.8``, ``wgclw.30``, ``abn9.8.33``. Three narrowings
+# keep it from reading every other dotted token in a spec as one, since the
+# neighbours it sits beside are versions, releases and dates:
+#
+# * the dotted tail is numeric and mandatory, so ``pyproject.toml`` and
+#   ``installer.core`` are other shapes entirely;
+# * the token is lowercase, which is how the tracker mints them and is what
+#   separates them from a spec's own ``AC4``/``S2``/``D1`` numbering;
+# * the mint — the last hyphen-separated part before the tail — is 3 to 6
+#   characters and carries a letter, so ``3.11``, ``0.1.0``, ``2026.07.21`` and
+#   ``python3.11`` are all out.
+_TRACKER_ID_RE = re.compile(r"^(?P<prefix>[a-z0-9]+(?:-[a-z0-9]+)*)(?:\.\d+)+$")
+_MINT_RE = re.compile(r"^(?=.*[a-z])[a-z0-9]{3,6}$")
+
 # Symbol shapes strong enough to be a claim on their own. Each demands structure
 # that ordinary prose does not have — a call's parentheses, an underscore, or an
 # internal capital — which is what keeps ``done``, ``queued`` and ``blocked`` out.
@@ -328,6 +390,8 @@ def in_scope(relpath: Path) -> bool:
     """Whether a repo-relative path is prose this gate judges."""
     if relpath.suffix != ".md":
         return False
+    if relpath in ALWAYS_IN_SCOPE:
+        return True
     if any(relpath.is_relative_to(tree) for tree in EXEMPT_TREES):
         return False
     if _DATED_BASENAME_RE.search(relpath.name):
@@ -347,12 +411,22 @@ def select_markdown(tracked: Iterable[Path]) -> list[Path]:
 
 
 def stale_exemptions(repo_root: Path) -> list[str]:
-    """``EXEMPT_TREES`` entries naming a directory that is not there."""
+    """Scope entries naming content that is not there — an exemption over a
+    directory that is gone, or a carve-out over a document that is gone. Both
+    fail silent, and both are found only by someone reading this file."""
     return sorted(
-        f"{tree}: exempt from doc-lint, but no such directory exists — an exemption "
-        "outliving its content is a standing authorisation for whatever lands there next"
-        for tree in EXEMPT_TREES
-        if not (repo_root / tree).is_dir()
+        [
+            f"{tree}: exempt from doc-lint, but no such directory exists — an exemption "
+            "outliving its content is a standing authorisation for whatever lands there next"
+            for tree in EXEMPT_TREES
+            if not (repo_root / tree).is_dir()
+        ]
+        + [
+            f"{relpath}: carved into doc-lint scope, but no such file exists — a carve-out "
+            "outliving its document reads as coverage while checking nothing"
+            for relpath in ALWAYS_IN_SCOPE
+            if not (repo_root / relpath).is_file()
+        ]
     )
 
 
@@ -735,6 +809,23 @@ def _line_module(line: str, repo_root: Path, index: RepoIndex) -> Path | None:
 # ---------------------------------------------------------------------------
 
 
+def _foreign_identifier(token: str, tracker_prefix: str) -> bool:
+    """Whether ``token`` is a work-item identifier no local ``work`` can address.
+
+    Local means minted under this repository's own namespace, prefix and all.
+    Anything else — an identifier from the tracker generation this repo archived,
+    or from another project's tracker entirely — resolves somewhere a reader
+    here cannot reach by the route they are told to use.
+    """
+    match = _TRACKER_ID_RE.match(token)
+    if match is None:
+        return False
+    prefix = match.group("prefix")
+    if _MINT_RE.match(prefix.rsplit("-", 1)[-1]) is None:
+        return False
+    return prefix != tracker_prefix and not prefix.startswith(f"{tracker_prefix}-")
+
+
 def _asset_name(token: str) -> str | None:
     """The asset name a code span carries, normalised, or ``None``.
 
@@ -810,7 +901,9 @@ def _code_spans(line: str) -> list[tuple[int, str]]:
 
 
 def _negates_existence(sentence: str) -> bool:
-    """Whether ``sentence`` asserts that something is not there.
+    """Whether ``sentence`` asserts that something is not there — either gone, or
+    resolving in a named foreign repository, which is not-here in the sense that
+    decides whether a citation is a claim about this tree.
 
     Three families are deliberately **absent** from the marker set, each because
     the tree contains a counter-example:
@@ -827,7 +920,9 @@ def _negates_existence(sentence: str) -> bool:
       is the opposite of saying it is absent — the root ``AGENTS.md`` uses one
       about ``project-config.toml``, a file that is very much there.
     """
-    return _NONEXISTENCE_RE.search(sentence) is not None
+    return (
+        _NONEXISTENCE_RE.search(sentence) is not None or _ELSEWHERE_RE.search(sentence) is not None
+    )
 
 
 def _directive_before(sentence: str, position: int) -> bool:
@@ -996,10 +1091,15 @@ def lint_markdown_text(
     repo_root: Path,
     assets: Mapping[str, frozenset[str]],
     index: RepoIndex,
+    tracker_prefix: str | None = None,
 ) -> list[Finding]:
     """Both checks over one file's text. Pure: nothing is read from disk for
-    ``relpath`` itself, so a caller can drive this from fixtures."""
+    ``relpath`` itself, so a caller can drive this from fixtures.
+
+    ``tracker_prefix`` is this repository's work-item namespace; without it, or
+    outside ``ALWAYS_IN_SCOPE``, identifiers are not judged at all."""
     scope = index.package_of(relpath)
+    judged_namespace = tracker_prefix if relpath in ALWAYS_IN_SCOPE else None
     # Prose under ``src/`` deploys into *other* people's projects, where a path
     # from this repo's root resolves to nothing — which is why this repo forbids
     # citing one there in the first place. Every path-shaped span in that tree is
@@ -1042,6 +1142,20 @@ def lint_markdown_text(
         module = _line_module(line, repo_root, index)
         for _column, token in _code_spans(line):
             if token in claimed or contexts.get((number, token), _NO_CONTEXT).negated:
+                continue
+            if judged_namespace is not None and _foreign_identifier(token, judged_namespace):
+                findings.append(
+                    Finding(
+                        file=relpath,
+                        line=number,
+                        citation=token,
+                        reason=(
+                            f"names a work item outside this repo's `{judged_namespace}` tracker "
+                            "namespace — a reader is told to resolve it with `work` and "
+                            "cannot; say in this sentence where it does resolve"
+                        ),
+                    )
+                )
                 continue
             located = _SYMBOL_LOCATOR_RE.match(token)
             if located is not None:
@@ -1207,6 +1321,29 @@ def project_asset_names(repo_root: Path) -> dict[str, frozenset[str]]:
     return found
 
 
+def project_tracker_prefix(repo_root: Path) -> str | None:
+    """The namespace this repository's own work items are minted under, read off
+    ``project-config.toml``'s project name, or ``None`` when there is nothing to
+    read it from.
+
+    Derived rather than written down here, because a gate carrying its own copy
+    of the project's name is one rename away from judging every local identifier
+    foreign. ``None`` is a working answer and not a failure: without a namespace
+    the check cannot tell local from foreign, so it does not run — the same
+    silence every other rule here defaults to.
+    """
+    path = repo_root / "project-config.toml"
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return None
+    project = data.get("project")
+    if not isinstance(project, dict):
+        return None
+    name = project.get("name")
+    return name if isinstance(name, str) and name else None
+
+
 def merge_rosters(*rosters: Mapping[str, frozenset[str]]) -> dict[str, frozenset[str]]:
     """Union asset rosters per namespace."""
     merged: dict[str, frozenset[str]] = {}
@@ -1233,6 +1370,7 @@ def lint_markdown(
     repo_root: Path,
     assets: Mapping[str, frozenset[str]],
     index: RepoIndex,
+    tracker_prefix: str | None = None,
 ) -> tuple[list[Finding], int]:
     """Lint every path in ``paths``, which must be repo-relative and in scope.
 
@@ -1252,6 +1390,13 @@ def lint_markdown(
             continue
         suppressed += count_suppressed(text)
         findings.extend(
-            lint_markdown_text(relpath, text, repo_root=repo_root, assets=assets, index=index)
+            lint_markdown_text(
+                relpath,
+                text,
+                repo_root=repo_root,
+                assets=assets,
+                index=index,
+                tracker_prefix=tracker_prefix,
+            )
         )
     return findings, suppressed

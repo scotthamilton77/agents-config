@@ -27,10 +27,17 @@ Three mechanical, gaming-resistant checks:
    ``[A-Z0-9]+-[A-Z]\\d+|AC\\d+`` and ``<text>`` is non-empty. A bare ID
    token that is not shaped as a definition entry defines nothing (the
    gaming case: naming an ID in prose without the ``- **ID** text`` shape).
-3. the defined-ID set is extracted from every such entry anywhere under an
-   Acceptance-criteria heading; every individual **slice unit** under a
-   slice-defining heading must cite ≥ 1 ID **from the defined set** — citing
-   only an undefined ID still fails, naming the slice.
+3. every individual **slice unit** under a slice-defining heading cites ≥ 1
+   **discharge unit the spec itself defines** — an AC entry from check 2, or a
+   Decision stated as a bold lead-in (``**D3 — …**``, the shape the charter
+   and its child specs use for one). Citing only an ID the spec never defines
+   still fails, naming the slice.
+
+Both kinds count because both are contracts a slice can be held to, which is
+the whole of what the criterion asks for: a slice that names neither has no
+termination condition, and a slice discharging a Decision has one that is
+checkable. The charter's own founding slice list is the worked example —
+several of its slices are minted by a Decision and cite no AC.
 
 A heading is slice-defining when "slice" appears in its text with any
 parenthetical qualifier stripped first — "Open verifications (first task of
@@ -83,6 +90,11 @@ _ALWAYS_IN_SCOPE = frozenset({"2026-07-21-harness-rework-way-forward.md"})
 _SPEC_FILENAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-.+\.md$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 _AC_ENTRY_RE = re.compile(r"^\s*-\s+\*\*([A-Z0-9]+-[A-Z]\d+|AC\d+)\*\*\s+(\S.*)$")
+# A Decision definition: a bold lead-in opening a paragraph, ``**D3 — text.**``
+# or the spec-scoped ``**S2-D2 — text.**``. Column-0 only, because a Decision is
+# stated at the top level of a spec's own decision section and never nested
+# inside another entry's prose.
+_DECISION_DEF_RE = re.compile(r"^\*\*((?:[A-Z0-9]+-)?D\d+)\b")
 # A top-level (column-0) bulleted entry with a bold lead-in, the shape the
 # charter's own "Ordered slice list" uses for one bullet per slice
 # (``- **S0 — Name.** ...``). Deliberately not indent-tolerant like
@@ -228,6 +240,23 @@ def _defined_ids(lines: list[str], headings: list[_Heading], fenced: list[bool])
     return ids
 
 
+def _defined_decision_ids(lines: list[str], fenced: list[bool]) -> set[str]:
+    """Every Decision id the spec states, from anywhere in the document.
+
+    Not scoped to a heading, unlike the AC entries: a spec states its decisions
+    wherever it structures them, and the heading over them carries no fixed
+    word to match on. The definition shape is what makes it a statement — a
+    fenced example (the same gaming case check 2 refuses) defines nothing."""
+    ids: set[str] = set()
+    for offset, line in enumerate(lines):
+        if fenced[offset]:
+            continue
+        m = _DECISION_DEF_RE.match(line)
+        if m:
+            ids.add(m.group(1))
+    return ids
+
+
 def _slice_items(
     lines: list[str], fenced: list[bool], start: int, end: int
 ) -> list[tuple[str, int, int]]:
@@ -288,6 +317,11 @@ def lint_spec_text(path: Path, text: str) -> list[Violation]:
             )
         ]
 
+    # Check 2 is satisfied by AC entries alone — a spec with decisions and no
+    # acceptance criteria has not declared what it will be held to. Decisions
+    # widen only what a slice may cite to discharge itself.
+    discharge_ids = defined_ids | _defined_decision_ids(lines, fenced)
+
     violations: list[Violation] = []
     slice_headings = [h for h in headings if _SLICE_HEADING_KEYWORD in _strip_parens(h[2]).lower()]
     for idx, (line_idx, level, heading_text) in enumerate(headings):
@@ -306,24 +340,24 @@ def lint_spec_text(path: Path, text: str) -> list[Violation]:
             # unit, so a citation elsewhere in the section does not cover a
             # bullet that itself cites nothing.
             for label, item_start, item_end in items:
-                if not _cites_any(lines, fenced, item_start, item_end, defined_ids):
+                if not _cites_any(lines, fenced, item_start, item_end, discharge_ids):
                     violations.append(
                         Violation(
                             file=path,
                             slice=label,
-                            reason="slice item cites no AC ID from the defined set",
+                            reason="slice item cites no AC or Decision ID the spec defines",
                         )
                     )
             continue
         # No bulleted slice units here — a per-slice sub-heading (already its
         # own entry in this loop) or plain prose. The whole heading's section
         # is the unit, as before.
-        if not _cites_any(lines, fenced, line_idx, end, defined_ids):
+        if not _cites_any(lines, fenced, line_idx, end, discharge_ids):
             violations.append(
                 Violation(
                     file=path,
                     slice=heading_text,
-                    reason="slice cites no AC ID from the defined set",
+                    reason="slice cites no AC or Decision ID the spec defines",
                 )
             )
     return violations

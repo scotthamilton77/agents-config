@@ -297,6 +297,12 @@ reach over them: the `superpowers` plugin ships a `writing-plans` skill, so the
 retired artifact class can reach a session by a route the gate never sees. That
 exposure is a known gap outside AC5's jurisdiction rather than a breach of it.
 
+*Amended 2026-08-11 (AC4):* the unit a slice cites is the AC **or the
+Decision** it discharges. Both are contracts the slice can be held to, which is
+all the criterion asks for — a slice naming neither has no termination
+condition, and the founding slice list in §3 is minted by Decisions throughout.
+The spec lint reads both, and an ID the spec never states discharges nothing.
+
 ### Outcome (against the 2026-07-20 baseline, over the termination window)
 
 - **AC6** Config-prose PRs converge like typed code: median bot-review rounds

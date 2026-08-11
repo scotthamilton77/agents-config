@@ -26,6 +26,7 @@ from installer.core.doc_lint import (
     lint_markdown,
     merge_rosters,
     project_asset_names,
+    project_tracker_prefix,
     select_markdown,
     stale_exemptions,
 )
@@ -144,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         repo_root=repo_root,
         assets=assets,
         index=build_index(repo_root, tracked=tracked),
+        tracker_prefix=project_tracker_prefix(repo_root),
     )
     findings = drop_ignored(repo_root, findings)
 

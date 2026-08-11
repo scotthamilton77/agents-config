@@ -69,7 +69,9 @@ content-lint:
 content-tests:
 	uv --project $(INSTALLER) run python -m installer.content_tests_cli .
 
-# doc-lint reads every tracked Markdown file outside docs/specs/ and reports the
+# doc-lint reads every tracked Markdown file outside docs/specs/ — plus the
+# harness-rework charter inside it, which is maintained as current orientation
+# rather than as a record of a moment — and reports the
 # backticked citations that no longer resolve — a path, a Python symbol, or a
 # named skill/rule/command/agent. It is the only gate over prose nobody is
 # editing, which is the prose that rots: review catches a false sentence in a

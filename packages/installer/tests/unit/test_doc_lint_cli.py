@@ -16,7 +16,7 @@ import pytest
 
 from installer import doc_lint_cli
 from installer.core.content_lint import admitted_asset_names, deployed_asset_names
-from installer.core.doc_lint import Finding
+from installer.core.doc_lint import ALWAYS_IN_SCOPE, EXEMPT_TREES, Finding
 from installer.core.io_port import ScriptedIO
 
 _RECORD = "---\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\n"
@@ -25,8 +25,19 @@ _INSTALLIGNORE = "AGENTS.md\nCLAUDE.md\nGEMINI.md\nREADME.md\nrules-readmes/\n"
 
 def _repo(tmp_path: Path, *, skills: dict[str, str]) -> Path:
     """A minimal repo root the installer can stage, mirroring the content-lint
-    fixture so both gates are exercised against the same shape."""
+    fixture so both gates are exercised against the same shape.
+
+    Carries the scope entries the gate reports on when they are empty — the
+    exempt tree and every carved-in document — so a fixture is a repo the gate
+    recognises rather than one reporting its own scope back at itself."""
     (tmp_path / ".installignore").write_text(_INSTALLIGNORE, encoding="utf-8")
+    for relpath in [*EXEMPT_TREES, *ALWAYS_IN_SCOPE]:
+        target = tmp_path / relpath
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if relpath in ALWAYS_IN_SCOPE:
+            target.write_text("# a carved-in document\n", encoding="utf-8")
+        else:
+            target.mkdir(exist_ok=True)
     shared = tmp_path / "src" / "user" / ".agents"
     shared.mkdir(parents=True)
     (shared / "AGENTS.md.template").write_text("# laws\n", encoding="utf-8")
@@ -93,7 +104,6 @@ def test_a_clean_tree_exits_zero(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
-    (repo / "docs" / "specs").mkdir(parents=True)
     (repo / "README.md").write_text("Read the `grilling` skill.\n", encoding="utf-8")
     monkeypatch.setattr(doc_lint_cli, "tracked_files", lambda _root: [Path("README.md")])
 
@@ -112,7 +122,6 @@ def test_findings_exit_one_and_are_grouped_by_file(
     """Grouped because that is how they get fixed: one file is one editing
     session, and a flat list makes a reader hop between documents."""
     repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
-    (repo / "docs" / "specs").mkdir(parents=True)
     (repo / "README.md").write_text("Run the `gone-skill` skill.\n", encoding="utf-8")
     (repo / "CONTRIBUTING.md").write_text("See `docs/missing.md`.\n", encoding="utf-8")
     monkeypatch.setattr(
@@ -134,6 +143,10 @@ def test_a_stale_exemption_fails_the_run(
 ) -> None:
     repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
     (repo / "README.md").write_text("Nothing to see.\n", encoding="utf-8")
+    for relpath in ALWAYS_IN_SCOPE:
+        (repo / relpath).unlink()
+    for tree in EXEMPT_TREES:
+        (repo / tree).rmdir()
     monkeypatch.setattr(doc_lint_cli, "tracked_files", lambda _root: [Path("README.md")])
 
     assert doc_lint_cli.main([str(repo)]) == 1
@@ -154,7 +167,6 @@ def test_a_git_failure_exits_two(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
-    (repo / "docs" / "specs").mkdir(parents=True)
 
     def _boom(_root: Path) -> list[Path]:
         raise subprocess.CalledProcessError(128, "git")
@@ -192,7 +204,6 @@ def test_module_is_runnable_as_python_dash_m(
     """``python -m installer.doc_lint_cli`` is the make-target invocation shape;
     pins the ``__main__`` guard."""
     repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
-    (repo / "docs" / "specs").mkdir(parents=True)
     (repo / "README.md").write_text("Read the `grilling` skill.\n", encoding="utf-8")
 
     # ``run_module`` executes a fresh copy, so a patch on the imported module
