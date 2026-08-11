@@ -117,8 +117,10 @@ _AC_ENTRY_RE = re.compile(r"^\s*-\s+\*\*([A-Z0-9]+-[A-Z]\d+|AC\d+)\*\*\s+(\S.*)$
 # most decisions here carry one too long for that, so the bold runs on.
 # The separator between a decision's ID and its title: an em dash in this
 # tree, with the en dash and the hyphen admitted so a spec is not failed over
-# which dash its author typed.
-_TITLE_SEPARATOR = r"\s*[—\u2013-]\s"
+# which dash its author typed. A title has to follow it, and the closing bold is
+# not one — ``**D1 — **`` states a decision as empty as the bold cross-reference
+# the separator exists to exclude.
+_TITLE_SEPARATOR = r"\s*[—\u2013-]\s+[^\s*]"
 _DECISION_DEF_RE = re.compile(
     rf"^(?:-\s+)?\*\*((?:[A-Z0-9]+-)?D\d+){_ID_EDGE_AFTER}{_TITLE_SEPARATOR}"
 )

@@ -68,9 +68,13 @@ asks only whether the identifier is in the namespace this repo's own tracker
 addresses, and if it is not, whether the sentence says where it does resolve. An
 identifier from a retired tracker generation, cited bare in the one document a
 reader is told to orient by, sends them to a lookup that returns nothing and
-gives them no way to tell that from having looked it up wrong. That is a
-dangling pointer on the face of the prose, which is the only kind this gate has
-ever claimed to find.
+gives them no way to tell that from having looked it up wrong. A dangling
+pointer on the face of the prose is what this gate finds, and that is one.
+
+Saying the item is closed does not answer it. The finding is that the pointer
+has no destination, so only prose supplying one clears it — which is why the
+identifier check reads the resolves-elsewhere claim alone, where the path and
+asset checks read the whole of not-here.
 """
 
 from __future__ import annotations
@@ -352,7 +356,14 @@ class CitationContext:
     """What the sentence around one citation says about it.
 
     ``directive`` — the clause before it tells a reader to reach for it.
-    ``negated`` — the sentence says the thing is not there.
+    ``negated`` — the sentence says the thing is not there, in either sense:
+    gone, or resolving somewhere else.
+    ``elsewhere`` — the narrower half, and the only one that answers a dangling
+    tracker identifier. The finding against one is that its pointer has no
+    destination, so only prose supplying a destination clears it; "was retired"
+    tells a reader what became of an item and still leaves them with a lookup
+    that returns nothing. For a path or an asset the broader claim is the right
+    one, because there the question is existence rather than where to look.
     ``near_miss`` — this sentence does not, but a neighbouring one does. That is
     the most likely honest mistake, and naming it is the difference between a
     finding an author can act on and one they reverse-engineer by rephrasing.
@@ -364,6 +375,7 @@ class CitationContext:
 
     directive: bool
     negated: bool
+    elsewhere: bool
     near_miss: bool
     required: bool
 
@@ -1081,6 +1093,7 @@ def citation_contexts(
         negations = [_negates_existence(sentence.text) for sentence in block]
         for index, sentence in enumerate(block):
             neighbours = negations[max(index - 1, 0) : index + 2]
+            elsewhere = _ELSEWHERE_RE.search(sentence.text) is not None
             for number, start in sentence.covered:
                 for column, token in _code_spans(lines[number - 1]):
                     position = sentence.position_of(start, column)
@@ -1090,6 +1103,7 @@ def citation_contexts(
                     contexts[(number, column, token)] = CitationContext(
                         directive=required or _directive_before(sentence.text, position),
                         negated=negations[index],
+                        elsewhere=elsewhere,
                         near_miss=not negations[index] and any(neighbours),
                         required=required,
                     )
@@ -1099,7 +1113,9 @@ def citation_contexts(
 # A citation no sentence claimed — inside a table cell the block walk split
 # differently, say. Neither directive nor negated, so the asset check stays quiet
 # and the path and symbol checks stay live, which is the conservative reading.
-_NO_CONTEXT = CitationContext(directive=False, negated=False, near_miss=False, required=False)
+_NO_CONTEXT = CitationContext(
+    directive=False, negated=False, elsewhere=False, near_miss=False, required=False
+)
 
 
 def _asset_reason(kind: str, context: CitationContext) -> str:
@@ -1187,9 +1203,15 @@ def lint_markdown_text(
 
         module = _line_module(line, repo_root, index)
         for column, token in _code_spans(line):
-            if token in claimed or contexts.get((number, column, token), _NO_CONTEXT).negated:
-                continue
-            if judged_namespace is not None and _foreign_identifier(token, judged_namespace):
+            context = contexts.get((number, column, token), _NO_CONTEXT)
+            # The identifier check reads its own half of not-here and is asked
+            # first, because the broader claim does not answer it: a retired item
+            # is still an item a reader cannot resolve from here.
+            if (
+                judged_namespace is not None
+                and not context.elsewhere
+                and _foreign_identifier(token, judged_namespace)
+            ):
                 findings.append(
                     Finding(
                         file=relpath,
@@ -1202,6 +1224,8 @@ def lint_markdown_text(
                         ),
                     )
                 )
+                continue
+            if token in claimed or context.negated:
                 continue
             located = _SYMBOL_LOCATOR_RE.match(token)
             if located is not None:

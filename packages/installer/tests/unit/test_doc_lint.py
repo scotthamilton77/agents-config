@@ -317,6 +317,29 @@ def test_two_sentences_on_one_line_are_read_separately(tmp_path: Path) -> None:
     assert [f.citation for f in findings] == ["wgclw.30"]
 
 
+def test_retirement_wording_does_not_clear_a_foreign_identifier(tmp_path: Path) -> None:
+    """Saying an item is closed says nothing about where a reader resolves it.
+    The finding is that the pointer has no destination, and only prose giving one
+    answers it — "was retired" leaves the reader with the same failed lookup and
+    the same inability to tell that from having looked it up wrong."""
+    charter = str(next(iter(ALWAYS_IN_SCOPE)))
+    retired = "The item `wgclw.30` was retired.\n"
+    findings = _lint(tmp_path, retired, relpath=charter, tracker_prefix="agents-config")
+    assert [f.citation for f in findings] == ["wgclw.30"]
+
+    located = "The item `wgclw.30` is resolvable in the private archive repository.\n"
+    assert _lint(tmp_path, located, relpath=charter, tracker_prefix="agents-config") == []
+
+
+def test_retirement_wording_still_clears_a_path(tmp_path: Path) -> None:
+    """The identifier check gets the narrower rule; every other check keeps the
+    broader one. "The `docs/gone.md` report was deleted" is the sentence that
+    repairs stale documentation, and reporting it would fire on its own remedy.
+    """
+    text = "The `docs/gone.md` report was deleted in the sweep.\n"
+    assert _lint(tmp_path, text) == []
+
+
 def test_an_identifier_in_this_repo_namespace_is_never_judged(tmp_path: Path) -> None:
     """Existence stays the wrong question. An identifier ``work`` can address is
     addressable whatever its item's state, and asking a tracker would make a

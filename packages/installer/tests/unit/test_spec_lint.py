@@ -340,6 +340,21 @@ in the charter rather than decided here.
 - **S0 — Setup.** Discharges D9.
 """
 
+_SEPARATOR_WITH_NO_TITLE_AFTER_IT = """# A spec
+
+## Decisions
+
+**D1 — ** and then the paragraph carries on about something else.
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+
+## Ordered slice list
+
+- **S0 — Setup.** Discharges D1.
+"""
+
 _DEFINITION_TITLE_WRAPS_TO_THE_NEXT_LINE = """# A spec
 
 ## Decisions
@@ -780,6 +795,16 @@ def test_a_bold_cross_reference_is_not_a_decision() -> None:
     discharges against nothing. A definition states a title after its ID."""
     path = Path("docs/specs/2026-07-25-example.md")
     violations = lint_spec_text(path, _BOLD_REFERENCE_IS_NOT_A_DEFINITION)
+    assert len(violations) == 1
+    assert violations[0].slice == "S0 — Setup."
+
+
+def test_a_separator_with_no_title_after_it_defines_nothing() -> None:
+    """The rule is that a definition states a title, so the separator alone does
+    not make one. Accepting the dash and stopping there mints an ID as empty as
+    the bold cross-reference the dash exists to exclude."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _SEPARATOR_WITH_NO_TITLE_AFTER_IT)
     assert len(violations) == 1
     assert violations[0].slice == "S0 — Setup."
 
