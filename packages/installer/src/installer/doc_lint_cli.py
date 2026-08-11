@@ -159,7 +159,8 @@ def main(argv: list[str] | None = None) -> int:
     # how far it reached is a number on the output rather than a property of the
     # source that only its author knows.
     sys.stdout.write(
-        f"doc-lint: {suppressed} citation(s) not judged — the sentence says the thing is gone\n"
+        f"doc-lint: {suppressed} citation(s) not judged — the sentence says the thing is "
+        "gone, or that it lives in another repository\n"
     )
     if findings or stale:
         sys.stderr.write(

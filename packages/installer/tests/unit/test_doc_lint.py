@@ -295,6 +295,28 @@ def test_an_identifier_that_says_where_it_resolves_is_not_a_finding(tmp_path: Pa
     assert _lint(tmp_path, text, relpath=charter, tracker_prefix="agents-config") == []
 
 
+def test_two_sentences_on_one_line_are_read_separately(tmp_path: Path) -> None:
+    """The claim is sentence-scoped, and a line is not a sentence. When the same
+    name appears twice on one line — once bare, once in a sentence saying where
+    it resolves — one occurrence is a finding and the other is not, whichever
+    order they come in. Reading the line as a single context reports both or
+    neither, and which one depends on nothing the author can see."""
+    charter = str(next(iter(ALWAYS_IN_SCOPE)))
+    bare_first = (
+        "The loop is `wgclw.30`. The runtime `wgclw.30` is resolvable in the "
+        "private archive repository and not through `work`.\n"
+    )
+    findings = _lint(tmp_path, bare_first, relpath=charter, tracker_prefix="agents-config")
+    assert [f.citation for f in findings] == ["wgclw.30"]
+
+    elsewhere_first = (
+        "The runtime `wgclw.30` is resolvable in the private archive repository "
+        "and not through `work`. The loop is `wgclw.30`.\n"
+    )
+    findings = _lint(tmp_path, elsewhere_first, relpath=charter, tracker_prefix="agents-config")
+    assert [f.citation for f in findings] == ["wgclw.30"]
+
+
 def test_an_identifier_in_this_repo_namespace_is_never_judged(tmp_path: Path) -> None:
     """Existence stays the wrong question. An identifier ``work`` can address is
     addressable whatever its item's state, and asking a tracker would make a
@@ -823,6 +845,13 @@ def test_the_reach_of_the_rule_is_reported() -> None:
     assert count_suppressed("The `old-skill` skill has been retired.\n") == 1
     both = "The `old-skill` skill and `docs/gone.md` are now archived.\n"
     assert count_suppressed(both) == 2
+
+    # Both forms of not-here are silencing rules, so both are on the count. A
+    # reach that reported only retirements would understate itself by exactly
+    # the class the reader has no other way to see.
+    elsewhere = "The companions live in the private archive repository: `SAVEPOINTS/x.md`.\n"
+    assert count_suppressed(elsewhere) == 1
+    assert count_suppressed("The companions live in this repository: `SAVEPOINTS/x.md`.\n") == 0
 
 
 # --------------------------------------------------------------------------

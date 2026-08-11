@@ -31,9 +31,8 @@ Three mechanical, gaming-resistant checks:
    **discharge unit the spec itself defines** — an AC entry from check 2, or a
    Decision stated as a top-level bold lead-in, as a paragraph or as a bullet
    (``**D3 — …**``, ``- **D3 — …**``, and the spec-scoped ``**S2-D2 — …**``).
-   Citing only an ID the spec never defines still fails, naming the slice —
-   and an ID is matched as a whole token, so the ``D2`` inside another spec's
-   ``S2-D2`` is not a citation of this spec's ``D2``.
+   Citing only an ID the spec never defines still fails, naming the slice; an
+   ID matches as a whole token, never as a fragment of a longer one.
 
 Both kinds count because both are contracts a slice can be held to, which is
 the whole of what the criterion asks for: a slice that names neither has no
@@ -333,15 +332,9 @@ def _slice_items(
 def _citation_re(discharge_ids: set[str]) -> re.Pattern[str]:
     """One alternation over every discharge unit the spec defines — the question
     each slice unit asks, compiled once per document rather than once per unit
-    per id. Callers hold a non-empty set: ``lint_spec_text`` returns before this
-    on a spec that defines nothing.
-
-    ``\\b`` is the wrong boundary here, because a hyphen is not a word character
-    and IDs in this vocabulary are hyphen-joined: ``\\bD2\\b`` matches inside
-    ``S2-D2``, so a spec stating ``D2`` would accept a slice citing another
-    spec's ``S2-D2`` as discharging it. ``_ID_EDGE`` treats the hyphen as
-    part of the token, which is what makes the match the whole ID and not a
-    fragment of a longer one."""
+    per id. Bounded by ``_ID_EDGE_BEFORE``/``_ID_EDGE_AFTER``, which state why
+    a word boundary will not do here. Callers hold a non-empty set:
+    ``lint_spec_text`` returns before this on a spec that defines nothing."""
     alternation = "|".join(re.escape(id_) for id_ in sorted(discharge_ids))
     return re.compile(rf"{_ID_EDGE_BEFORE}(?:{alternation}){_ID_EDGE_AFTER}")
 

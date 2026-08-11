@@ -124,13 +124,17 @@ def test_the_reported_reach_counts_what_was_actually_silenced(
     computed over the wrong files, prints a reassuring zero forever."""
     repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
     (repo / "README.md").write_text(
-        "The `merge-guard` skill has been retired.\nRead the `grilling` skill.\n",
+        "The `merge-guard` skill has been retired.\n"
+        "The notes live in the private archive repository: `SAVEPOINTS/x.md`.\n"
+        "Read the `grilling` skill.\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(doc_lint_cli, "tracked_files", lambda _root: [Path("README.md")])
 
+    # Both silencing forms reach the count — a retirement and a citation that
+    # resolves in another repository.
     assert doc_lint_cli.main([str(repo)]) == 0
-    assert "1 citation(s) not judged" in capsys.readouterr().out
+    assert "2 citation(s) not judged" in capsys.readouterr().out
 
 
 def test_findings_exit_one_and_are_grouped_by_file(

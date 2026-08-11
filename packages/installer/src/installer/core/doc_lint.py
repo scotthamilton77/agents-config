@@ -340,6 +340,13 @@ _LITERAL_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 _MAX_LITERAL_LENGTH = 64
 
 
+# One backticked span at one place on the page: line (1-based), column, and the
+# author's own text. The column is what makes it an occurrence rather than a
+# name — the same name twice on one line is two citations, and the sentence
+# around each may say opposite things about it.
+Occurrence = tuple[int, int, str]
+
+
 @dataclass(frozen=True, slots=True)
 class CitationContext:
     """What the sentence around one citation says about it.
@@ -844,8 +851,12 @@ def _asset_name(token: str) -> str | None:
     return name if _ASSET_NAME_RE.match(name) else None
 
 
-def _asset_citations(line: str, marked: frozenset[str]) -> list[tuple[str, str, str, str]]:
-    """``(kind, namespace, name, token)`` for every asset this line names.
+def _asset_citations(line: str, marked: frozenset[str]) -> list[tuple[str, str, str, str, int]]:
+    """``(kind, namespace, name, token, column)`` for every asset this line names.
+
+    The column rides along for the same reason the context map is keyed by one:
+    the sentence around an occurrence is what decides whether naming an asset is
+    an instruction or a retirement note, and one line can carry both.
 
     ``command`` is accepted only in its slash form. Unqualified, the word means a
     shell command far more often than a deployed one — ``the `gh` command``,
@@ -866,29 +877,32 @@ def _asset_citations(line: str, marked: frozenset[str]) -> list[tuple[str, str, 
     name, and without knowing the asset check claimed it, the path check would
     report the entry file as a missing path on top.
     """
-    found: list[tuple[str, str, str, str]] = []
+    found: list[tuple[str, str, str, str, int]] = []
     for match in _ASSET_AFTER_RE.finditer(line):
         token, kind = match.group(1), match.group(2)
         if kind == "command" and not token.startswith("/"):
             continue
         name = _asset_name(token)
         if name is not None:
-            found.append((kind, ASSET_KINDS[kind], name, token))
+            found.append((kind, ASSET_KINDS[kind], name, token, match.start()))
     for match in _ASSET_BEFORE_RE.finditer(line):
         kind, token = match.group(1), match.group(2)
         name = _asset_name(token)
         if name is not None:
-            found.append((kind, ASSET_KINDS[kind], name, token))
-    claimed = {token for _kind, _namespace, _name, token in found}
+            # The span opens at its backtick, one before the captured text —
+            # the same column ``_code_spans`` reports, so both sides of the
+            # context map agree on where an occurrence is.
+            found.append((kind, ASSET_KINDS[kind], name, token, match.start(2) - 1))
+    claimed = {token for _kind, _namespace, _name, token, _column in found}
     # Walked in the line's own order, not the set's, so the report is the same on
     # every run over the same file.
-    for _column, token in _code_spans(line):
+    for column, token in _code_spans(line):
         if token not in marked or token in claimed:
             continue
         claimed.add(token)
         name = _asset_name(token)
         if name is not None:
-            found.append(("skill", ASSET_KINDS["skill"], name, token))
+            found.append(("skill", ASSET_KINDS["skill"], name, token, column))
     return found
 
 
@@ -937,13 +951,44 @@ def _directive_before(sentence: str, position: int) -> bool:
     return _DIRECTIVE_RE.search(sentence[:position]) is not None
 
 
-def _sentences(lines: Sequence[str], fenced: Sequence[bool]) -> list[list[tuple[str, list[int]]]]:
-    """The prose as blocks of sentences, each paired with the lines it spans.
+@dataclass(frozen=True, slots=True)
+class _Sentence:
+    """One assertion, and where on the page its characters came from.
+
+    ``covered`` pairs every line the sentence spans with that line's offset
+    inside the joined block, which is what turns a citation's column on the page
+    into a position inside this sentence — and, for a citation this sentence
+    does not reach, into no position at all. Knowing which is the difference
+    between reading a line as one context and reading each assertion on it as
+    its own.
+    """
+
+    text: str
+    begin: int
+    covered: tuple[tuple[int, int], ...]
+
+    def position_of(self, number: int, column: int) -> int | None:
+        """Where the span at ``column`` on line ``number`` sits inside this
+        sentence, or ``None`` when the sentence does not reach it."""
+        for line_number, line_start in self.covered:
+            if line_number != number:
+                continue
+            position = line_start + column - self.begin
+            if 0 <= position < len(self.text):
+                return position
+        return None
+
+
+def _sentences(lines: Sequence[str], fenced: Sequence[bool]) -> list[list[_Sentence]]:
+    """The prose as blocks of sentences, each carrying the lines it spans.
 
     Markdown hard-wraps, so a sentence is not a line: ``packages/prgroom/AGENTS.md``
     names a skill on one line and says it is archived on the next, and a
     line-scoped rule cannot see the two together. A block is joined across its
-    wrapped lines and then split, which is why the pairing is a *list* of lines.
+    wrapped lines and then split, which is why a sentence carries a *list* of
+    lines. The reverse is just as true and is why it carries their offsets —
+    one line can hold several sentences, and a citation on it belongs to exactly
+    one of them.
 
     Blocks end at a blank line, a fence, or a structural marker, so a citation
     and a marker are only ever read together when they sit in one assertion.
@@ -951,13 +996,13 @@ def _sentences(lines: Sequence[str], fenced: Sequence[bool]) -> list[list[tuple[
     look at its sentence's *neighbours* — the near-miss an author is most likely
     to hit, where the name is in one sentence and its retirement in the next.
     """
-    out: list[list[tuple[str, list[int]]]] = []
+    out: list[list[_Sentence]] = []
     block: list[tuple[int, str]] = []
 
     def flush() -> None:
         if not block:
             return
-        sentences: list[tuple[str, list[int]]] = []
+        sentences: list[_Sentence] = []
         # Offsets of each line's first character within the joined block, so a
         # sentence's span can be mapped back to the lines it came from.
         joined = " ".join(text for _number, text in block)
@@ -973,12 +1018,12 @@ def _sentences(lines: Sequence[str], fenced: Sequence[bool]) -> list[list[tuple[
             if begin < 0:  # pragma: no cover - split output always occurs in order
                 begin = position
             end = begin + len(sentence)
-            covered = [
-                number
+            covered = tuple(
+                (number, starts[index])
                 for index, (number, text) in enumerate(block)
                 if starts[index] < end and starts[index] + len(text) > begin
-            ]
-            sentences.append((sentence, covered))
+            )
+            sentences.append(_Sentence(text=sentence, begin=begin, covered=covered))
             position = end
         out.append(sentences)
         block.clear()
@@ -993,8 +1038,8 @@ def _sentences(lines: Sequence[str], fenced: Sequence[bool]) -> list[list[tuple[
     return out
 
 
-def suppressed_citations(lines: Sequence[str], fenced: Sequence[bool]) -> set[tuple[int, str]]:
-    """``(line, span text)`` for every citation inside a non-existence claim.
+def suppressed_citations(lines: Sequence[str], fenced: Sequence[bool]) -> set[Occurrence]:
+    """Every citation occurrence inside a non-existence claim.
 
     Prose that names a thing in order to say the thing is gone must not be
     reported as prose naming a thing that is gone. That sentence is the *correct*
@@ -1016,38 +1061,36 @@ def suppressed_citations(lines: Sequence[str], fenced: Sequence[bool]) -> set[tu
 
 def citation_contexts(
     lines: Sequence[str], fenced: Sequence[bool]
-) -> dict[tuple[int, str], CitationContext]:
+) -> dict[Occurrence, CitationContext]:
     """What the prose around each citation says about it.
 
     One traversal answering both questions the checks ask — is this sentence
     telling me to use the thing, and does it say the thing is gone — so the two
     can never be computed from different readings of the same paragraph.
 
-    Keyed by ``(line, span text)``. A token repeated on one line in two different
-    sentences collapses to one entry; the first sentence's reading wins. Rare
-    enough to be worth the simple key, and the direction it errs in depends on
-    which sentence came first, so it is recorded here rather than relied upon.
+    Keyed by the *occurrence* — line, column, span text — because the claim is
+    scoped to a sentence and a line can hold several. "The loop is ``x``. The
+    runtime ``x`` is archived." is one line making two different assertions
+    about the same name, and answering for the line would report both or
+    neither. Each occurrence's column places it inside exactly one sentence, so
+    each gets that sentence's reading and no other's.
     """
-    contexts: dict[tuple[int, str], CitationContext] = {}
+    contexts: dict[Occurrence, CitationContext] = {}
     for block in _sentences(lines, fenced):
-        negations = [_negates_existence(sentence) for sentence, _covered in block]
-        for index, (sentence, covered) in enumerate(block):
+        negations = [_negates_existence(sentence.text) for sentence in block]
+        for index, sentence in enumerate(block):
             neighbours = negations[max(index - 1, 0) : index + 2]
-            for number in covered:
-                for _column, token in _code_spans(lines[number - 1]):
-                    quoted = f"`{token}`"
-                    position = sentence.find(quoted)
-                    if position < 0:
+            for number, _start in sentence.covered:
+                for column, token in _code_spans(lines[number - 1]):
+                    position = sentence.position_of(number, column)
+                    if position is None:
                         continue
-                    required = _REQUIREMENT_MARKER_RE.search(sentence[:position]) is not None
-                    contexts.setdefault(
-                        (number, token),
-                        CitationContext(
-                            directive=required or _directive_before(sentence, position),
-                            negated=negations[index],
-                            near_miss=not negations[index] and any(neighbours),
-                            required=required,
-                        ),
+                    required = _REQUIREMENT_MARKER_RE.search(sentence.text[:position]) is not None
+                    contexts[(number, column, token)] = CitationContext(
+                        directive=required or _directive_before(sentence.text, position),
+                        negated=negations[index],
+                        near_miss=not negations[index] and any(neighbours),
+                        required=required,
                     )
     return contexts
 
@@ -1119,13 +1162,13 @@ def lint_markdown_text(
 
         marked = frozenset(
             token
-            for _column, token in _code_spans(line)
-            if contexts.get((number, token), _NO_CONTEXT).required
+            for column, token in _code_spans(line)
+            if contexts.get((number, column, token), _NO_CONTEXT).required
         )
         claimed: set[str] = set()
-        for kind, namespace, name, token in _asset_citations(line, marked):
+        for kind, namespace, name, token, column in _asset_citations(line, marked):
             claimed.add(token)
-            context = contexts.get((number, token), _NO_CONTEXT)
+            context = contexts.get((number, column, token), _NO_CONTEXT)
             # Only an instruction to reach for the asset. A mention misleads
             # nobody — and the mention is what a retirement note is made of, so
             # firing on it made the check fire on its own remedy.
@@ -1142,8 +1185,8 @@ def lint_markdown_text(
                 )
 
         module = _line_module(line, repo_root, index)
-        for _column, token in _code_spans(line):
-            if token in claimed or contexts.get((number, token), _NO_CONTEXT).negated:
+        for column, token in _code_spans(line):
+            if token in claimed or contexts.get((number, column, token), _NO_CONTEXT).negated:
                 continue
             if judged_namespace is not None and _foreign_identifier(token, judged_namespace):
                 findings.append(
