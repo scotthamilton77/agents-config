@@ -1,8 +1,8 @@
-"""``rereview_pr`` — the lock-held ``_rereview`` lifecycle internal (§3.2/§3.4).
+"""``rereview_pr`` — the lock-held ``_rereview`` lifecycle internal (§3.2/§3.3).
 
 After ``_push`` uploads new commits, prior reviews are bound to a superseded SHA;
 ``_push`` already flipped stale required ``review_found`` reviewers to
-``not_requested`` (§3.4). ``_rereview`` then re-asks every required reviewer in
+``not_requested`` (§3.3). ``_rereview`` then re-asks every required reviewer in
 ``{not_requested, declined}`` for a fresh review.
 
 GitHub will not re-trigger a bot reviewer (e.g. Copilot) that is already attached to
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from prgroom.prsession.pr_ref import PRRef
     from prgroom.prsession.state import PRGroomingState
 
-# Required reviewers in these statuses need a fresh ask (§3.4). After ``_push``'s
+# Required reviewers in these statuses need a fresh ask (§3.3). After ``_push``'s
 # flip, stale ``review_found`` reviewers have already moved into ``not_requested``.
 _REFRESHABLE = frozenset({ReviewerStatus.NOT_REQUESTED, ReviewerStatus.DECLINED})
 

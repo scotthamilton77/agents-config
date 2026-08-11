@@ -1,7 +1,7 @@
 """Tests for the EscalationSink abstraction (§5).
 
 The CLI routes every escalation through a Sink so it works with or without
-beads. Two adapters ship in the foundation: stderr (default) and file (append a
+beads. Two adapters ship today: stderr (default) and file (append a
 JSON line per escalation, for external watchers / cron). These pin the
 *observable output* of each adapter — the stderr line content and the file's
 JSONL contract — not that ``emit`` was called.

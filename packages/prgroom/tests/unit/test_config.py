@@ -1,4 +1,4 @@
-"""Tests for the TOML config loader and duration parser (§3.5, §4.3, §7).
+"""Tests for the TOML config loader and duration parser (§3.5, §4.3).
 
 These pin coded decisions: the duration-string grammar (``30s`` / ``10m`` /
 ``1h30m`` -> timedelta), the built-in defaults (pr_review_retries=5 per §3.5), the

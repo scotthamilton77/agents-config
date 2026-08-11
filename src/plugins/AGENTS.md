@@ -7,8 +7,13 @@ loose files like this `AGENTS.md` are skipped). Which discovered plugins are
 **activated** is resolved per run: by default each plugin's adapter
 auto-detects against `$HOME` (`is_detected`); `--plugins=<names>` overrides the
 set (naming an undiscovered plugin is a fast-fail error), and `--plugins=`
-(empty) installs none. A plugin's rules deploy only into the tools that are
-themselves detected.
+(empty) installs none. A plugin's two rule scopes route differently: shared
+`.agents/rules/` content deploys into every active tool — auto-detected, or
+explicitly selected via `--tools=` even if undetected — the same as base
+shared content; tool-scoped `.<tool>/rules/` content deploys only into that
+one matching tool (`overlay_plugins` stages a plugin's `.<adapter.name>/`
+tree once per active tool, so a `.codex/rules/` file is only ever staged
+into Codex's plan).
 
 ## Plugin Structure
 

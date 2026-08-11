@@ -1,4 +1,4 @@
-"""Tests for InMemoryStore — the test-only Store adapter (§2, §7.6).
+"""Tests for InMemoryStore — the test-only Store adapter (§2).
 
 These pin the adapter's *behavior* as a Store: read-after-write, the
 StateNotFoundError contract on a missing read, lock exclusivity + guaranteed

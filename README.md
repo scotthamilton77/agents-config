@@ -1,6 +1,6 @@
 # agents-config
 
-Versioned collection of skills, rules, commands, and templates for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, **Google Gemini CLI**, and **OpenCode**. Shared content is installed to all detected tools; tool-specific content goes only where it belongs.
+Versioned collection of skills, rules, commands, and templates for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, **Google Gemini CLI**, and **OpenCode**. Shared content is installed to every active tool — auto-detected, or explicitly selected via `--tools=`; tool-specific content goes only where it belongs.
 
 > **New here and want to _use_ this?** Start with the **[User Guide](./docs/guide/index.md)** — install, configure a project, and run the opinionated agentic SDLC. This README is the project overview and installer reference.
 
@@ -40,7 +40,7 @@ Where this README and the source tree disagree, believe the source tree.
 
 Nothing else is required. Two related tools are optional:
 
-- **[steveyegge/beads](https://github.com/steveyegge/beads)** — the `bd` tracker. The `work` CLI, which ships from its own repository and is a facade over `bd`, needs it to function; this repo installs neither, and nothing in the installed instruction surface requires either.
+- **[steveyegge/beads](https://github.com/steveyegge/beads)** — the `bd` tracker. The `work` CLI, which ships from its own repository and is a facade over `bd`, refuses every substantive verb until `bd` is installed and initialized; this repo installs neither. Five deployed skills reach for `work` and each degrades to its own fallback without a tracker instead of failing — see [Getting Started](./docs/guide/getting-started.md#prerequisites) for what each fallback is.
 - **[obra/superpowers](https://github.com/obra/superpowers)** — not a dependency. Nothing installed invokes its process skills.
 
 The `codex` plugin under `src/plugins/` is auto-detected when `~/.codex/` exists — a `codex` binary on PATH alone will not trigger it — and its skill assumes the [Codex CLI](https://github.com/openai/codex) is available.
@@ -68,7 +68,7 @@ docs/
 └── …                               # Plus reference material and prototypes
 src/
 ├── user/
-│   ├── .agents/                    # Shared content (copied into all detected tools)
+│   ├── .agents/                    # Shared content (copied into every active tool)
 │   │   ├── rules/                  # Shared always-on rules (empty today)
 │   │   ├── skills/                 # Methodology guides with examples
 │   │   └── USER-CORE.md.template   # Zero-based laws, decision matrix, hard lines, conventions
@@ -83,12 +83,12 @@ src/
 │   ├── .codex/                     # Codex-specific (→ ~/.codex/)
 │   ├── .gemini/                    # Gemini-specific (→ ~/.gemini/)
 │   └── .opencode/                  # OpenCode-specific (→ ~/.config/opencode/), + opencode.jsonc.template
-└── plugins/                        # Optional plugin content (auto-discovered, installed when detected)
+└── plugins/                        # Optional plugin content (auto-discovered, active when detected or via `--plugins=`)
     └── codex/                      # codex plugin: model-routing skill for a Codex run (Claude-only)
 ```
 
 > Not everything under `src/` is a wrapper around a single tool: shared content
-> in `.agents/` installs to **all** detected tools; `.claude/`, `.codex/`,
+> in `.agents/` installs to **every active tool**; `.claude/`, `.codex/`,
 > `.gemini/`, and `.opencode/` add tool-specific pieces. The `packages/` are real
 > code, not installed configuration.
 
@@ -106,12 +106,12 @@ the authoritative inventory:
 
 | What | Where | Installs to |
 |------|-------|-------------|
-| Shared skills | [`src/user/.agents/skills/`](./src/user/.agents/skills/) | every detected tool |
-| Shared rules | [`src/user/.agents/rules/`](./src/user/.agents/rules/) | every detected tool |
+| Shared skills | [`src/user/.agents/skills/`](./src/user/.agents/skills/) | every active tool |
+| Shared rules | [`src/user/.agents/rules/`](./src/user/.agents/rules/) | every active tool |
 | Claude-only skills | [`src/user/.claude/skills/`](./src/user/.claude/skills/) | `~/.claude/skills/` |
 | Claude-only rules | [`src/user/.claude/rules/`](./src/user/.claude/rules/) | `~/.claude/rules/` |
 | Slash commands | [`src/user/.claude/commands/`](./src/user/.claude/commands/) | `~/.claude/commands/` |
-| Plugin content | [`src/plugins/`](./src/plugins/) | matching tools, when detected |
+| Plugin content | [`src/plugins/`](./src/plugins/) | matching active tools, if the plugin is itself active |
 
 Each `rules/` directory carries its own `AGENTS.md` stating what currently lives
 there. For a walkthrough of what the installed set does and where the gaps are,
@@ -132,6 +132,9 @@ tool-scoped namespace with no shared variant:
 - `/clean-up-git [filter]` - Adjudicate which git worktrees and branches to
   delete: one dated table with each worktree paired to its branch and every
   deletion's cost stated, then a stop for your call before anything is touched
+- `/zoom-out [area]` - Map the code in view (or a named area) to the layer
+  above it: relevant modules, their callers, in the project's own glossary
+  vocabulary
 
 See [`src/user/.claude/commands/`](./src/user/.claude/commands/) for the
 authoritative set.
@@ -180,10 +183,10 @@ the always-on surface is zero-based and carries no identity content.
 
 The installer (`scripts/install.sh`) is a thin exec stub backed by a uv-managed Python package (`packages/installer`). It:
 - Auto-detects installed tools (Claude Code, Codex CLI, Gemini CLI, OpenCode) or use `--tools=` to override
-- Copies shared content (`src/user/.agents/`) into all detected tools
+- Copies shared content (`src/user/.agents/`) into every active tool
 - Copies tool-specific content (e.g., `src/user/.claude/`) into the corresponding tool's config directory
 - Copies `*.md.template` files (stripping `.template` suffix), with diff preview and confirmation for existing files
-- Syncs `agents/`, `skills/`, `commands/`, and `rules/` directories using hash comparison per item, and a recursive digest to detect drift inside owned directories
+- Syncs `agents/`, `skills/`, `commands/`, `rules/`, `hooks/`, and `workflows/` directories using hash comparison per item, and a recursive digest to detect drift inside owned directories
 - Enforces the **admission bar**: drops (and prunes) any rule, skill, command or agent whose front matter lacks a complete `admission:` record, and strips that repo-side bookkeeping from the bytes it deploys
 - Deploys this repo's CLIs onto PATH via `uv tool install` (receipt-tracked, pruned on retirement); `CLI_PACKAGES` in `packages/installer/src/installer/core/clis.py` is the authoritative list
 - Union-merges `settings.json.template` into existing `settings.json` via a pluggable per-key merge registry (preserves your values, adds new keys/entries)
@@ -219,7 +222,7 @@ previously owned but no longer ships — useful for keeping your install in sync
 after files are renamed or deleted upstream.
 
 - **Receipt-based, not glob-based:** each install writes an **install receipt** recording exactly what it owns (a roots allowlist plus a per-entry digest). Pruning diffs the current staging plan against that receipt, so it removes precisely the items the repo dropped — not whatever happens to sit in a namespace directory. Files you added yourself outside the owned set are not touched.
-- **Scope:** the managed namespaces (`commands` / `skills` / `agents` / `rules` under each tool's config dir, plus any bespoke routes an active plugin declares outside the tool trees). Top-level `*.md`, `settings.json`, and `hooks/` are never pruned.
+- **Scope:** the managed namespaces (`commands` / `skills` / `agents` / `rules` / `hooks` / `workflows` under each tool's config dir, plus any bespoke routes an active plugin declares outside the tool trees). Top-level `*.md` and `settings.json` are never pruned.
 - **Backups:** orphans are moved to a `<namespace>-backup/<basename>.backup-<timestamp>` sibling before deletion; those `*-backup/` siblings are excluded from future scans.
 - **Modes:**
   - `--dry-run` lists orphans and exits without changes.

@@ -1,6 +1,6 @@
-"""Tests for the §3.4 pure state predicates and the shared reviewer-flip.
+"""Tests for the pure state predicates and the shared reviewer-flip.
 
-These pin coded decisions the §3.3 run-loop and the resolver depend on:
+These pin coded decisions the §3.3 run-loop and the resolver (§3.2) depend on:
 
 - ``has_required_reviewers_to_refresh`` — which reviewer statuses re-arm rereview.
 - ``push_uploaded_commits_this_cycle`` — "did THIS cycle's _push upload commits?",
@@ -8,11 +8,12 @@ These pin coded decisions the §3.3 run-loop and the resolver depend on:
 - ``new_lifecycle_gate_this_cycle`` — one Sink event per fresh gate, by comparing
   the live ``last_error`` to the prior-cycle value.
 - ``flip_stale_required_reviews`` — the shared SHA-invalidation flip that both
-  ``_push`` and ``_poll``'s external-push branch apply (§3.4).
+  ``_push`` and ``_poll``'s external-push branch apply.
 
-``has_queued_fix_commits`` is intentionally NOT here: §3.4 forbids a state field
-for the commit queue, so the queued-commits signal is an effectful git read the
-run-loop bead supplies as a bool to the resolver. The pure spine never computes it.
+``has_queued_fix_commits`` is intentionally NOT here: the state schema carries no
+field for the commit queue, so the queued-commits signal is an effectful git read
+that ``lifecycle/run.py`` supplies as a bool to the resolver. The pure spine never
+computes it.
 """
 
 from __future__ import annotations

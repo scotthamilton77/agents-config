@@ -50,10 +50,16 @@ class OpenCodeAdapter:
         plan: StagingPlan,
         io: IOPort,  # noqa: ARG002  # protocol parameter; OpenCode has no transform
     ) -> StagingPlan:
-        """No-op. OpenCode has no standalone rules/ destination, but the loose
-        rules/ drop is not OpenCode-specific: flatten_plan_templates drops
-        the inlined rules from EVERY plan whose instruction file carries the
-        DYNAMIC-INCLUDE-ALL-RULES marker (OpenCode's AGENTS.md does), and that runs
-        earlier in stage_and_transform. Kept as a no-op only to satisfy the
-        ToolAdapter protocol."""
+        """No-op. OpenCode DOES get a standalone rules/ destination — the
+        shared rules/ namespace stages into ~/.config/opencode/rules/ the
+        same as every other tool (build_plan Phase 2, namespaces.SHARED;
+        should_install_namespace only excludes the shared agents/ namespace
+        here). It is empty today only because the shared rules/ source has
+        no files yet. Dropping standalone rules/ items once that source is
+        populated would not be OpenCode-specific either: flatten_plan_templates
+        drops a plan's standalone rules/ items only when its instruction file
+        carries the DYNAMIC-INCLUDE-ALL-RULES marker, and that runs earlier
+        in stage_and_transform. No current template carries that marker,
+        including OpenCode's, so nothing is dropped for any tool today. Kept
+        as a no-op only to satisfy the ToolAdapter protocol."""
         return plan

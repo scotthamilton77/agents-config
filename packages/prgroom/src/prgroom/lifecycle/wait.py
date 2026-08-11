@@ -66,7 +66,7 @@ class SignalCancelToken:
 
     ``trip`` is called from ``run``'s OS signal handler: it records the observed
     ``signum`` BEFORE setting the event, so a thread waking on the event reads the
-    correct signal number for the §3.7 exit-code mapping. Structurally satisfies
+    correct signal number for the §3.6 exit-code mapping. Structurally satisfies
     :class:`CancelToken`.
     """
 
@@ -86,7 +86,7 @@ class SignalCancelToken:
 
 
 def cancelled_error(signum: int) -> PrgroomError:
-    """Build the ``RUNTIME_CANCELLED`` error for ``signum`` (SIGINT→130, SIGTERM→143; §3.7).
+    """Build the ``RUNTIME_CANCELLED`` error for ``signum`` (SIGINT→130, SIGTERM→143; §3.6).
 
     SIGINT (2) maps to ``RUNTIME_CANCELLED_SIGINT``; any other signal (SIGTERM=15 in
     practice) maps to ``RUNTIME_CANCELLED_SIGTERM``. ``exit_code_for_tier`` reads

@@ -1,8 +1,8 @@
-"""Tests for ``push_pr`` — the lock-held ``_push`` lifecycle internal (§3.2/§3.4/§3.5).
+"""Tests for ``push_pr`` — the lock-held ``_push`` lifecycle internal (§3.2/§3.5).
 
 ``push_pr`` is the first write verb: it uploads the fix agent's queued commits to
 the PR's head branch, counts the consumed PR-review retry (the initial observed
-push is free, §3.4), records ``last_pushed_head_sha``, and flips stale required
+push is free, §3.5), records ``last_pushed_head_sha``, and flips stale required
 reviews so the post-push ``_rereview`` re-asks them. The mocked seam
 is the gh/git adapter surface (duck-typed fakes); state, config, and the reviewer
 flip are real. ``push_pr`` works on a deepcopy and never writes the store (§3.3).
@@ -118,7 +118,7 @@ def _state(
     last_pushed_head_sha: str = "",
 ) -> PRGroomingState:
     # last_poll_sha defaults non-empty: the typical mid-flight state has already
-    # observed the initial push via _poll, so the next CLI push is a retry (§3.4).
+    # observed the initial push via _poll, so the next CLI push is a retry (§3.5).
     return PRGroomingState(
         pr=_REF,
         phase=phase,
@@ -161,7 +161,7 @@ def test_push_stamps_review_invalidated_sha() -> None:
 
 def test_push_no_queued_commits_is_a_noop() -> None:
     # Remote tip already matches local (rev_list empty) → nothing to push: no git
-    # push, counter untouched, last_pushed_head_sha untouched (§3.4 idempotency).
+    # push, counter untouched, last_pushed_head_sha untouched.
     git = FakeGit(queued=[])
     out = push_pr(
         _state(retries_=2),
@@ -178,7 +178,7 @@ def test_push_no_queued_commits_is_a_noop() -> None:
 def test_push_initial_push_consumes_no_retry() -> None:
     # First-ever review-eliciting push on a freshly-opened PR (no SHA observed by
     # either code path): the initial push is free — the 0-indexed counter stays 0
-    # (§3.4 _push bootstrap).
+    # (§3.5 _push bootstrap).
     out = push_pr(
         _state(retries_=0, last_poll_sha="", last_pushed_head_sha=""),
         ref=_REF,
@@ -193,7 +193,7 @@ def test_push_initial_push_consumes_no_retry() -> None:
 def test_push_after_own_prior_push_counts_a_retry() -> None:
     # A second CLI push before any successful poll observation: last_poll_sha is
     # still empty but last_pushed_head_sha marks the initial push as spent, so
-    # this one consumes a retry (§3.4 — the two bootstrap branches are one-shot).
+    # this one consumes a retry (§3.5 — the two bootstrap branches are one-shot).
     out = push_pr(
         _state(retries_=0, last_poll_sha="", last_pushed_head_sha="prior"),
         ref=_REF,
@@ -206,7 +206,7 @@ def test_push_after_own_prior_push_counts_a_retry() -> None:
 
 def test_push_flips_stale_required_review_found_to_not_requested() -> None:
     # A successful push changes HEAD, so a required reviewer's review on the old
-    # SHA is stale → flipped to not_requested for the post-push _rereview (§3.4).
+    # SHA is stale → flipped to not_requested for the post-push _rereview (§3.3).
     reviewers = {
         "copilot": _reviewer(ReviewerStatus.REVIEW_FOUND, required=True),
         "human": _reviewer(ReviewerStatus.REVIEW_FOUND, required=False),
@@ -275,7 +275,7 @@ def test_push_warns_when_it_exhausts_the_retry_budget() -> None:
 
 def test_push_on_the_wrong_branch_raises_and_pushes_nothing() -> None:
     # The first live mutation must not trust the ambient checkout: if the worktree
-    # is on a branch other than the PR head branch (§3.4 "local PR-branch HEAD"),
+    # is on a branch other than the PR head branch (§3.6 "local PR-branch HEAD"),
     # push refuses before any git push rather than publish the wrong commits.
     git = FakeGit(queued=["c1"], branch="main")
     with pytest.raises(PreconditionError) as exc:

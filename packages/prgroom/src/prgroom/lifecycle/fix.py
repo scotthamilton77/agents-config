@@ -1,20 +1,20 @@
-"""``fix_pr`` — the lock-held ``_fix`` lifecycle internal (§3.2, §5, §8).
+"""``fix_pr`` — the lock-held ``_fix`` lifecycle internal (§3.2, §5, §7).
 
 ``fix_pr`` is the APPLY side of the fix path and the sharpest expression of the
 compute/apply boundary: **the agent layer computes; the lifecycle applies.** For
-each cluster it assembles the §8.1 complete PR snapshot (via
+each cluster it assembles the §7.1 complete PR snapshot (via
 :func:`~prgroom.lifecycle.snapshot.assemble_snapshot` — the recurrence map and the
 ephemeral ``memory_dir`` / ``response_outbox_dir` ride on the result), builds the
-:class:`~prgroom.agent.contracts.FixInput`, calls 8.7's pure
+:class:`~prgroom.agent.contracts.FixInput`, calls the agent layer's pure
 :func:`~prgroom.agent.fix.run_fix`, then APPLIES the :class:`FixRunResult`:
 
 * sets each item's :class:`~prgroom.prsession.state.Disposition` from
   ``result.dispositions``;
 * emits every returned :class:`~prgroom.escalation.Escalation` via the injected
   :class:`~prgroom.escalation.Sink`;
-* logs each ``result.unwritten`` path as a soft warning (§8.6 declared-but-missing
+* logs each ``result.unwritten`` path as a soft warning (§7.6 declared-but-missing
   is bookkeeping drift, not a breach) and logs ``result.deferred_memory`` as
-  deferred (MVP routes only CONTEXTUAL→PR; §8.3).
+  deferred (MVP routes only CONTEXTUAL→PR; §7.3).
 
 It mirrors :func:`~prgroom.lifecycle.poll.poll_pr` — works on a deepcopy, never
 touches the store (the caller owns ``store.write``), and returns the mutated copy.
@@ -176,7 +176,7 @@ def _fix_one_cluster(
 
 
 def _deferred_memory_message(entry: MemoryEntry) -> str:
-    """A one-line notice for an accepted-but-deferred non-CONTEXTUAL memory entry (§8.3)."""
+    """A one-line notice for an accepted-but-deferred non-CONTEXTUAL memory entry (§7.3)."""
     return f"fix: deferred non-CONTEXTUAL memory entry (classification={entry.classification})"
 
 
@@ -189,7 +189,7 @@ def resolve_routed_memory(
     cluster_id: str,
     warn: Callable[[str], None],
 ) -> tuple[list[RoutedMemory], str | None]:
-    """Resolve routable CONTEXTUAL entries into RoutedMemory (§8.3). Two-layer containment.
+    """Resolve routable CONTEXTUAL entries into RoutedMemory (§7.3). Two-layer containment.
 
     The audit already lexically anchored each path under ``memory_dir`` (never via
     ``realpath``). This adds the realpath/no-symlink layer immediately before the read:
@@ -204,7 +204,7 @@ def resolve_routed_memory(
     routed: list[RoutedMemory] = []
     for ordinal, entry in enumerate(entries):
         if entry.path is not None:
-            # The agent declares entry.path RELATIVE to memory_dir (§8.5), so anchor it
+            # The agent declares entry.path RELATIVE to memory_dir (§7.5), so anchor it
             # through the SAME lexical model the audit uses (a relative path joins
             # memory_dir; an absolute one resets the join) BEFORE realpath. A bare
             # realpath on a relative path resolves against CWD — a false containment

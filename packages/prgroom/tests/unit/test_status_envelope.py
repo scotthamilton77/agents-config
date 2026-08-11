@@ -1,4 +1,4 @@
-"""Tests for the §4.6 ``status --json`` envelope builder.
+"""Tests for the §4.5 ``status --json`` envelope builder.
 
 These pin the stable merge-gate handoff contract: the envelope shape, each of the
 four ``merge_gates`` bools, the ``auto_merge_eligible`` AND truth table, the
@@ -219,7 +219,7 @@ def test_human_review_block_is_embedded() -> None:
 
 
 def test_items_projection_carries_identity_fields_per_kind() -> None:
-    # Disposition-contract §3.1/§9.1 behavior 1: one item per kind, mixed
+    # §4.5 behavior: one item per kind, mixed
     # disposition states — each row carries kind/gh_id/thread_id/author/
     # replied/resolved exactly as persisted.
     items = [
@@ -274,7 +274,7 @@ def test_items_projection_carries_identity_fields_per_kind() -> None:
 
 
 def test_undispositioned_item_projects_disposition_null() -> None:
-    # §9.1 behavior 2: not yet processed == disposition: null, never a sentinel object.
+    # §4.5 behavior: not yet processed == disposition: null, never a sentinel object.
     bare = ReviewItem(
         kind=ItemKind.ISSUE_COMMENT,
         identity=Identity(gh_id="2718281828"),
@@ -287,7 +287,7 @@ def test_undispositioned_item_projects_disposition_null() -> None:
 
 
 def test_dispositioned_item_projects_only_the_contract_triple() -> None:
-    # §9.1 behavior 3: disposition carries exactly {kind, decided_at, decided_by};
+    # §4.5 behavior: disposition carries exactly {kind, decided_at, decided_by};
     # rationale/commits/body_excerpt (and the other private Disposition fields)
     # never leave the store.
     item = ReviewItem(
@@ -318,7 +318,7 @@ def test_dispositioned_item_projects_only_the_contract_triple() -> None:
 
 
 def test_posted_reply_ids_project_from_the_reply_ledger() -> None:
-    # §9.1 behavior 4: recorded reply ids surface as strings (the reply-ledger
+    # §4.5 behavior: recorded reply ids surface as strings (the reply-ledger
     # own_reply_id, string-coerced per the contract); an item with no recorded
     # reply — including any pre-ledger persisted state, where own_reply_id
     # loads as 0 — emits [] (fail-closed: fewer exclusions).

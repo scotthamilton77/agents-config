@@ -96,6 +96,20 @@ machine-posted comments and approvals use the bot App identity, never Scott's
 auth. The merge gate requires the verdict artifact — broken review machinery
 blocks merges rather than silently passing them.
 
+*Amended 2026-08-09:* the two clauses end on different termini. PR comment
+threads remain a review medium until the replacement review path ships;
+machine-posted replies keep authenticating as Scott's identity, not the bot
+App identity, until the separate App-identity write path ships — its own
+scope, filed and in progress as `agents-config-9k9.42`
+(`docs/specs/2026-07-25-agent-comment-authorship.md`), which the replacement
+review path does not itself close. Both are an accepted, recorded interim
+cost, not the target state. This interim settles only where a reply is read,
+not what one means: a reply rendering under Scott's identity is still never
+evidence of merge authorization, and D9's merge-eligibility clause — CI
+green, verdict artifact, approval — is unchanged. While clause (b) holds,
+AC7's bot-identity precondition is unmet for every PR, so the AC9 termination
+window does not open until the App-identity write path ships.
+
 **D10 — Non-merging PRs park; the machine disengages.** Closed = merged, no
 exceptions (dependents key off merge). A work item whose PR won't merge enters
 a parked state with a typed reason:
@@ -240,6 +254,14 @@ work-item timestamps (claim → PR-open). Size distributions (spec lines, slice
 counts, PR diff lines) are tracked as erosion tripwires — watched, never
 targeted. PR diff tripwire (initial, tunable): > 800 changed lines excluding
 mechanical churn requires an explicit override.
+
+*Amended 2026-08-09:* the separation is target state, not current fact — D9's
+2026-08-09 interim keeps non-verdict machine comments rendering under Scott's
+identity until the App-identity write path ships (`agents-config-9k9.42`), a
+later and separate terminus than D9's review-medium clause. Post-S6,
+App-posted verdict comments are already separable; what the
+interventions-per-PR proxy lacks until then is a reliable authorship signal
+on the owner-credentialed remainder.
 
 **D20 — Roadmap disposition.** M0 closes as superseded, not finished — its
 live surface almost entirely hardens machinery this spec deletes. M3 pauses

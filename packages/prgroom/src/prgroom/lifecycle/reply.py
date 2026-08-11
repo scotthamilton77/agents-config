@@ -1,4 +1,4 @@
-"""``reply_pr`` — render + post per-item replies and route CONTEXTUAL memory (§3.3, §8.3)."""
+"""``reply_pr`` — render + post per-item replies and route CONTEXTUAL memory (§3.3, §7.3)."""
 
 from __future__ import annotations
 
@@ -137,7 +137,7 @@ def _splice_block(body: str, block: str) -> str:
 
 
 def merge_decisions_block(body: str, entries: list[RoutedMemory]) -> str:
-    """Merge thread-less decisions into the sentinel-bounded ``## Decisions`` block (§8.3).
+    """Merge thread-less decisions into the sentinel-bounded ``## Decisions`` block (§7.3).
 
     Pure. Parse existing lines by the leading ``<!-- d:r<retry>:<item> -->`` marker into
     an ordered key->line map (never markdown-prose guessing); for each new entry, skip if

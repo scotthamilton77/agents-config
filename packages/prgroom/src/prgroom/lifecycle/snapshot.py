@@ -1,17 +1,17 @@
-"""§8.1 complete-PR-snapshot assembly + §8.2 recurrence derivation.
+"""§7.1 complete-PR-snapshot assembly + §7.2 recurrence derivation.
 
-The fix agent NEVER calls ``gh`` (§8.1: runtime swappability, auth containment,
+The fix agent NEVER calls ``gh`` (§7.1: runtime swappability, auth containment,
 rate-limit centralisation, reproducibility). prgroom does the gh/git legwork
 **immediately before each cluster's fix dispatch** (minimising staleness) and
 dumps everything to the two files the fix contract already passes —
 ``pr_detail_path`` and ``branch_state_path`` (see :class:`SnapshotPaths`):
 
 * ``pr_detail_path`` (JSON): the PR **description** (with the ``## Decisions``
-  block read (whitespace-trimmed) — writing it is the §8.3 write path, here we only READ it), the PR
+  block read (whitespace-trimmed) — writing it is the §7.3 write path, here we only READ it), the PR
   **labels**, the review threads with their reply-chains, the **prior-retry
   dispositions** for already-processed items (kind / rationale / commits /
-  decided_by, from ``prsession`` state), and the per-item **recurrence** (§8.2).
-  **MVP completeness caveat:** §8.1 promises *every* thread with its *full*
+  decided_by, from ``prsession`` state), and the per-item **recurrence** (§7.2).
+  **MVP completeness caveat:** §7.1 promises *every* thread with its *full*
   reply-chain, but the ``gh`` adapter does not paginate yet, so the comments read
   is capped at the first gh page (~30 comments). On a busy PR the snapshot is
   page-1-complete, not whole-PR-complete; adding ``gh api --paginate`` to the
@@ -23,7 +23,7 @@ dumps everything to the two files the fix contract already passes —
 The two ephemeral working dirs the fix contract needs (``memory_dir`` scratch,
 ``response_outbox_dir``) are created here too and carried on the result.
 
-Detect/interpret boundary: prgroom **detects, it does not interpret** (§8.2). The recurrence
+Detect/interpret boundary: prgroom **detects, it does not interpret** (§7.2). The recurrence
 signal is **derived at snapshot time, not persisted** (§2 schema unchanged). The
 MVP §2 schema retains exactly one :class:`~prgroom.prsession.state.Disposition`
 per item and no first-seen-retry, so ``attempt_count`` reports the schema floor
@@ -51,8 +51,8 @@ if TYPE_CHECKING:
     from prgroom.prsession.pr_ref import PRRef
     from prgroom.prsession.state import PRGroomingState, ReviewItem
 
-# Sentinel markers prgroom owns the ``## Decisions`` block between (§8.3). Here we
-# only READ the block into the snapshot; writing it is the §8.3 write path.
+# Sentinel markers prgroom owns the ``## Decisions`` block between (§7.3). Here we
+# only READ the block into the snapshot; writing it is the §7.3 write path.
 DECISIONS_START = "<!-- prgroom:decisions:start -->"
 DECISIONS_END = "<!-- prgroom:decisions:end -->"
 
@@ -66,7 +66,7 @@ class SnapshotPaths:
     ``pr_detail_path`` / ``branch_state_path`` are the two files the fix contract
     passes to the agent; ``memory_dir`` / ``response_outbox_dir`` are the ephemeral
     working dirs it writes into; ``recurrence`` maps a cluster item's ``gh_id`` to
-    its §8.2 :class:`~prgroom.agent.recurrence.Recurrence` (only items carrying a
+    its §7.2 :class:`~prgroom.agent.recurrence.Recurrence` (only items carrying a
     prior disposition appear). The agent reads recurrence from
     ``pr_detail.json["recurrence"]``; the field is surfaced on the result purely for
     tests + a forward-compat consumer (e.g. an RCA pass), not read by ``fix_pr``.
@@ -99,7 +99,7 @@ class SnapshotPaths:
 def extract_decisions_block(body: str) -> str:
     """Return the ``## Decisions`` block (between sentinels), whitespace-trimmed, else ``""``.
 
-    The block is read-only here (writing it is the §8.3 write path). The inner text
+    The block is read-only here (writing it is the §7.3 write path). The inner text
     is ``.strip()``-ed of surrounding whitespace/newlines before being embedded in
     the snapshot. A body missing either sentinel — or with them out of order — has
     no block, so this returns the empty string rather than guessing a boundary.
@@ -119,7 +119,7 @@ def derive_recurrence(
     *,
     threads: dict[str, list[dict[str, Any]]],
 ) -> Recurrence | None:
-    """Derive the §8.2 recurrence signal for one item, or ``None`` if no prior.
+    """Derive the §7.2 recurrence signal for one item, or ``None`` if no prior.
 
     Returns ``None`` when the item carries no prior disposition (a fresh item has
     no recurrence). Otherwise builds the signal from what the §2 schema actually
@@ -155,7 +155,7 @@ def derive_recurrence(
 def _thread_reopened(
     item: ReviewItem, decided_at: datetime, threads: dict[str, list[dict[str, Any]]]
 ) -> bool:
-    """True iff the item's thread has a reply newer than its disposition (§8.2)."""
+    """True iff the item's thread has a reply newer than its disposition (§7.2)."""
     thread_id = item.identity.thread_id
     if not thread_id:
         return False
@@ -187,13 +187,13 @@ def assemble_snapshot(
     git: GitClient,
     scratch_dir: Path,
 ) -> SnapshotPaths:
-    """Assemble the §8.1 complete snapshot for one cluster's fix dispatch.
+    """Assemble the §7.1 complete snapshot for one cluster's fix dispatch.
 
     Reads the PR resource (base ref, body, labels) + review threads via ``gh``
     (read-only GETs) and the branch state via ``git`` (``log`` + ``diff --stat``
     over ``origin/<base>..HEAD``), then writes ``pr_detail_path`` (JSON) and
     ``branch_state_path`` (text) under ``scratch_dir`` and creates the ephemeral
-    ``memory_dir`` / ``response_outbox_dir``. Returns the paths + per-item §8.2
+    ``memory_dir`` / ``response_outbox_dir``. Returns the paths + per-item §7.2
     recurrence. A 404 on a required read maps to ``RUNTIME_GH_TERMINAL`` (the PR
     or repo vanished mid-run — a blind retry won't bring it back).
     """
@@ -241,7 +241,7 @@ def _build_recurrence(
     cluster_items: list[ReviewItem],
     threads: dict[str, list[dict[str, Any]]],
 ) -> dict[str, Recurrence]:
-    """Per-item §8.2 recurrence for the cluster items that carry a prior disposition."""
+    """Per-item §7.2 recurrence for the cluster items that carry a prior disposition."""
     out: dict[str, Recurrence] = {}
     for item in cluster_items:
         rec = derive_recurrence(item, state, threads=threads)
@@ -251,7 +251,7 @@ def _build_recurrence(
 
 
 def _branch_state(git: GitClient, base_ref: str) -> str:
-    """The §8.1 branch-state text: recent commits + diff-since-base.
+    """The §7.1 branch-state text: recent commits + diff-since-base.
 
     Scoped to ``origin/<base>..HEAD``. A PR resource that omitted ``base.ref``
     (unexpected) degrades to ``HEAD`` so the read never builds a malformed range.
@@ -263,7 +263,7 @@ def _branch_state(git: GitClient, base_ref: str) -> str:
 
 
 def _prior_dispositions(state: PRGroomingState) -> list[dict[str, Any]]:
-    """The §8.1 prior-retry dispositions for every already-processed item."""
+    """The §7.1 prior-retry dispositions for every already-processed item."""
     out: list[dict[str, Any]] = []
     for item in state.items:
         disposition = item.disposition
@@ -282,13 +282,13 @@ def _prior_dispositions(state: PRGroomingState) -> list[dict[str, Any]]:
 
 
 def _fetch_review_threads(gh: GhClient, ref: PRRef) -> dict[str, list[dict[str, Any]]]:
-    """Group every PR review comment into its thread's full reply-chain (§8.1).
+    """Group every PR review comment into its thread's full reply-chain (§7.1).
 
     A top-level inline comment (no ``in_reply_to_id``) anchors a thread; replies
     (``in_reply_to_id`` set) attach under their root. The grouping is built over the
     REST root-comment id, then each thread is **re-keyed by its GraphQL ``PRRT_*``
     node id** (via :func:`~prgroom.gh.review_threads.fetch_thread_id_map`) so the key
-    matches an :class:`Identity`'s ``thread_id`` and §8.2 ``_thread_reopened`` lookups
+    matches an :class:`Identity`'s ``thread_id`` and §7.2 ``_thread_reopened`` lookups
     hit. A root absent from the map (e.g. beyond the GraphQL page cap) degrades to its
     REST root-comment id. poll fetches its own map separately, so at the pagination
     boundary a thread can be mapped at poll time yet unmapped here; that fails safe —

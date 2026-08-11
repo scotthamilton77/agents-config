@@ -1,4 +1,4 @@
-"""Tests for the clock/randomness injection seam (§7.6 determinism requirement).
+"""Tests for the clock/randomness injection seam (determinism requirement).
 
 The lifecycle must never reach a stdlib singleton directly: ``datetime.now`` and
 any RNG arrive through injected Protocols so the quiescence predicate and the

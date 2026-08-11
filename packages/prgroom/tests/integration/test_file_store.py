@@ -106,7 +106,7 @@ def test_corrupt_json_raises_state_corrupt(tmp_path: Path) -> None:
 
 
 def test_non_object_json_root_raises_state_corrupt(tmp_path: Path) -> None:
-    # Valid JSON whose root is not an object ([], "text", 42) must map to the §3.7
+    # Valid JSON whose root is not an object ([], "text", 42) must map to the §3.6
     # STATE_CORRUPT contract — payload.get on a list would otherwise escape as a raw
     # AttributeError before any shape parsing starts.
     ref = PRRef("octo", "demo", 7)
@@ -118,7 +118,7 @@ def test_non_object_json_root_raises_state_corrupt(tmp_path: Path) -> None:
 def test_wrongly_nested_container_raises_state_corrupt(tmp_path: Path) -> None:
     # A JSON object with the current schema_version but a nested field of the wrong
     # container type (quiescence as a list) fails from_dict with AttributeError —
-    # that too is a parse failure per §3.7, never a raw traceback.
+    # that too is a parse failure per §3.6, never a raw traceback.
     ref = PRRef("octo", "demo", 7)
     payload = _state(ref).to_dict()
     payload["quiescence"] = []
@@ -130,7 +130,7 @@ def test_wrongly_nested_container_raises_state_corrupt(tmp_path: Path) -> None:
 def test_stale_shape_with_current_version_raises_state_corrupt(tmp_path: Path) -> None:
     # A valid-JSON file carrying the current schema_version but a stale shape
     # (a 'round' key where 'pr_review_retries_used' belongs) must map to the
-    # §3.7 STATE_CORRUPT contract, never escape as a raw KeyError.
+    # §3.6 STATE_CORRUPT contract, never escape as a raw KeyError.
     ref = PRRef("octo", "demo", 7)
     payload = _state(ref).to_dict()
     payload["round"] = payload.pop("pr_review_retries_used")

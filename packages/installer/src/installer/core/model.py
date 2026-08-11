@@ -216,8 +216,9 @@ class StagingPlan:
     - `apply_extensions` (F.5) records YAML-patched file bytes for a skill/agent
       dir whose opaque DIR item it cannot mutate (`content` stays `None`).
 
-    The future plan-walking DIR-sync emits each carrier DIR's own
-    `source_path` tree first, then overlays `dir_overrides[dest]` on top.
+    The plan-walking DIR-sync (`sync.sync_plan`) emits each carrier DIR's own
+    `source_path` tree first, then overlays `dir_overrides[dest]` on top —
+    an override wins on a name collision.
     Empty by default — the common case stages no override bytes."""
 
     items: dict[Path, StagedItem]

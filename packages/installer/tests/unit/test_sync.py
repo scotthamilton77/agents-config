@@ -1,15 +1,20 @@
-"""Unit tests for installer.core.sync (B.2 — minimal single-file sync).
+"""Unit tests for installer.core.sync's single-file ``sync`` entry point.
 
-Each test pins a behaviour the B.2 story contract requires
-(docs/architecture/installer/installer-design.md, Epic B.2). The sync
-engine is exercised through a minimal identity-pass-through ToolAdapter so
+Each test pins one behaviour of that function: creating an absent destination
+and its parent directories, skipping a hash-identical one without rewriting it,
+backing up before an overwrite and routing that backup by namespace, the
+dry-run branch previewing without writing, and the guards that reject a
+settings.json source, a malformed timestamp, or a destination escaping the
+tree. ``sync_plan`` and ``sync_routes`` have their own suites.
+
+The engine is exercised through a minimal identity-pass-through ToolAdapter so
 the tests are independent of any real tool's path layout; the real
 ClaudeAdapter is driven once, end-to-end, in test_sync_claude.py to cover
 its source_dir/dest_dir behaviourally.
 
 Tautology tests — isinstance(_, ToolAdapter), path-literal assertions like
 adapter.source_dir(r) == r / "src" / "user" / ".claude" — are deliberately
-absent. See the writing-unit-tests skill's Tautology Filter.
+absent. See the ``test-review`` skill's tautology filter.
 """
 
 from __future__ import annotations

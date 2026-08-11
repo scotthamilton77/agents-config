@@ -8,9 +8,10 @@ content under `src/`, **this is real code with a real quality gate.**
 clusters it, dispatches fixes, pushes, replies, and resolves threads — as
 locked, resumable lifecycle verbs rather than model-driven prose.
 
-**Nothing drives it today.** Per charter D13 this package is carved, not
-finished (slice S8); no deployed asset invokes it and no harness path depends on
-it. Read its lifecycle verbs as a designed surface, not a running one.
+**Nothing drives it today.** Charter D13 ("prgroom is carved, not finished")
+scopes this package to slice S8; no deployed asset invokes it and no harness
+path depends on it. Read its lifecycle verbs as a designed surface, not a
+running one.
 
 ## The quality gate is mandatory — run it, do not approximate it
 
@@ -58,17 +59,19 @@ but the full gate must pass before push.
   (`PrgroomError` tiers, precondition errors with a structured what/why/how
   stderr block, `GhNotFoundError` as a typed-but-not-fatal 404 signal).
   Exit codes follow `sysexits`.
-- Layout: `cli.py` (the 12 verbs), `lifecycle/` (the run-loop, verb-error
+- Layout: `cli.py` (the 11 verbs), `lifecycle/` (the run-loop, verb-error
   policy, quiescence), `prsession/` (state store + PR ref + memory), `gh/` /
-  `git/` (Protocol adapters + fakes), `agent/` (cluster/fix dispatch), `config.py`,
-  `errors.py`, `escalation.py`, `proc.py` (the single subprocess seam).
+  `git/` (Protocol adapters), `agent/` (cluster/fix dispatch), `deps.py`
+  (clock/randomness injection seam), `config.py`, `errors.py`,
+  `escalation.py`, `proc.py` (the single subprocess seam).
 
 ## Verbs
 
 `poll`, `cluster`, `fix`, `push`, `rereview`, `reply`, `resolve`,
-`resolve-escalated`, `wait`, `status`, `run`, `sweep`. `run` is the aggregate
-loop; `status` emits the merge-gate envelope. **`sweep` (cross-PR autonomous
-mode) is still a stub** — it exits the skeleton code (69), not implemented.
+`resolve-escalated`, `wait`, `status`, `run`. `run` is the aggregate loop;
+`status` emits the merge-gate envelope. `sweep` (cross-PR autonomous mode) is
+design-of-record only (charter D13, "prgroom is carved, not finished",
+forbids building it) and is not a registered command.
 
 ## Design-only subsystem — do not treat as built
 
@@ -118,8 +121,8 @@ must do what with it** — not by severity, not by module:
 
 | Channel | Job | Writers | Reader |
 |---|---|---|---|
-| `usage.jsonl` (`append_usage`) | Durable, machine-readable, **per-attempt** dispatch telemetry: what ran, how long, what outcome | the dispatcher's `usage_hook` | post-hoc analysis; cost/routing tuning (sibling `spend.jsonl` holds per-**dispatch** cost) |
-| `EscalationSink` (`escalation.py`) | **Human-judgment events**: something a human or external watcher must eventually act on — blocker dispositions, chain exhaustion, audit violations, lifecycle gates | `agent/fix.py`, `lifecycle/escalation.py` | operator / monitor-pr / future `bd` adapter |
+| `usage.jsonl` (`append_usage`) | Durable, machine-readable, **per-attempt** dispatch telemetry: what ran, how long, what outcome | the dispatcher's `usage_hook` | post-hoc analysis; cost/routing tuning (a per-**dispatch** `spend.jsonl` sibling is envisioned — `Dispatched.rung` is already shaped for it — but nothing writes it yet) |
+| `EscalationSink` (`escalation.py`) | **Human-judgment events**: something a human or external watcher must eventually act on — blocker dispositions, chain exhaustion, audit violations, lifecycle gates | `agent/fix.py`, `lifecycle/escalation.py` | operator (stderr — the only sink `_build_sink` wires today; the design doc's §5 covers the built-but-unselectable file adapter and the unbuilt bd adapter) |
 | stdlib logging → stderr | **Operational diagnostics**: noteworthy but requiring no tracked action — config-key warnings, best-effort bridge failures, partial-fallback events | module-level `getLogger(__name__)`; root config in `main()` only | whoever watches the process (human or driving agent) |
 | `warn` callbacks (`lifecycle/warn.py`) | Grandfathered injected-callable variant of the logging channel, used by lifecycle verbs as a test seam | existing lifecycle code only | same as logging |
 

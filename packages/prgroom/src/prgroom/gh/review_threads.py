@@ -1,15 +1,15 @@
-"""Shared REST→GraphQL review-thread key bridge (§8.1, §8.2).
+"""Shared REST→GraphQL review-thread key bridge (§7.1, §7.2).
 
 poll and snapshot both ingest review comments over REST, which exposes only each
 comment's ``databaseId``. But a review item's ``Identity.thread_id`` is defined as
 the GraphQL ``reviewThreads`` node id (``PRRT_*``) — the same id ``resolveReviewThread``
-consumes — and the snapshot must key threads by it for §8.2 recurrence to match.
+consumes — and the snapshot must key threads by it for §7.2 recurrence to match.
 :func:`fetch_thread_id_map` runs the one GraphQL query that bridges the key-spaces:
 it returns each thread's node id with its comments' ``databaseId``s, inverted into
 ``{str(databaseId) -> node id}``. Both callers map their REST comment ids through it.
 
 Pagination: ``first:100`` on threads and on each thread's comments. A comment beyond
-that cap is simply absent from the map, degrading to ``thread_id == ""`` (the §8.2
+that cap is simply absent from the map, degrading to ``thread_id == ""`` (the §7.2
 floor) rather than mis-keying — lifting the cap (``gh api --paginate`` / GraphQL
 cursors) is a tracked cross-layer follow-up.
 """

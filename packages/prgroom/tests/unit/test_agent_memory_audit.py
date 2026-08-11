@@ -1,6 +1,6 @@
-"""Tests for the §8.6 memory-channel + containment audit (pure).
+"""Tests for the §7.6 memory-channel + containment audit (pure).
 
-``audit_memory`` validates the §8.5 memory channel. The containment check is the
+``audit_memory`` validates the §7.5 memory channel. The containment check is the
 security-critical rule: every ``memory_writes`` path must resolve INSIDE
 ``memory_dir`` by a PURE LEXICAL check (no filesystem access, no symlink
 following), and a breach is a HARD ``Severity.BLOCK`` violation that flips the
@@ -82,7 +82,7 @@ def test_sibling_prefix_path_is_a_block_violation() -> None:
 
 
 def test_relative_path_is_anchored_to_memory_dir_and_clean() -> None:
-    # §8.5 examples declare memory_writes RELATIVE to memory_dir ("scratch/a.md").
+    # §7.5 examples declare memory_writes RELATIVE to memory_dir ("scratch/a.md").
     # The containment check must anchor a relative path to memory_dir before the
     # prefix test, else every documented happy-path write is a false BLOCK that
     # flips + stashes a clean run.

@@ -1,4 +1,4 @@
-"""Tests for the CLI's structured-error handling (§1, §7.6).
+"""Tests for the CLI's structured-error handling (§1).
 
 When a verb raises a tier-tagged error, the CLI must render the registry's
 ``what/why/how`` block to stderr — plus the underlying ``detail`` for runtime

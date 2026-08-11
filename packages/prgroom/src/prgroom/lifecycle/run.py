@@ -6,8 +6,9 @@ long-running and blocking for non-terminal phases; when the phase reaches
 ``quiesced`` / ``human-gated`` / ``merged`` it flushes terminal signals and returns,
 releasing the lock so external triggers can act.
 
-The §3.3 pseudocode is an 8x-repeated try/except. This implementation collapses that
-into a **single shared error site** — :func:`_execute_step` — through which every
+The naive approach would repeat a try/except around each of the pipeline's 7 steps
+(§3.3). This implementation collapses that into a **single shared error site** —
+:func:`_execute_step` — through which every
 verb invocation funnels: it runs the verb, persists state (the per-internal write
 discipline, so a crash leaves the on-disk state at the last completed verb), and on a
 tagged error applies :func:`~prgroom.lifecycle.verb_error.handle_verb_error` and either
@@ -104,7 +105,7 @@ class RunContext:
     """The mutable per-invocation context threaded through the run-loop.
 
     ``state`` is reassigned by every step; ``cycle_start_pushed_sha`` / ``cycle_start_error``
-    are the per-cycle snapshots the §3.4 cycle-relative predicates read (the spec keeps
+    are the per-cycle snapshots the cycle-relative predicates read (the spec keeps
     no stored "prior cycle" field — the loop captures them at cycle entry).
     """
 
@@ -293,7 +294,7 @@ def run_lifecycle(
 
 
 def _report(err: PrgroomError) -> int:
-    """Render the §1 what/why/how block to stderr and return the tier's exit code (§3.3).
+    """Render the §1 what/why/how block to stderr and return the tier's exit code (§3.6).
 
     ``run`` / ``wait`` own their terminal reporting (they catch the propagated tagged
     error rather than letting it surface as a raw traceback), so the operator/agent
@@ -437,7 +438,7 @@ def _cap_guard_step(verbs: Verbs) -> Callable[[RunContext], PRGroomingState]:
 
 
 def _rereview_guard(ctx: RunContext) -> bool:
-    """True iff a push awaits rereview AND a required reviewer needs refresh (§3.3, §6)."""
+    """True iff a push awaits rereview AND a required reviewer needs refresh (§3.3)."""
     return push_awaiting_rereview(ctx.state) and has_required_reviewers_to_refresh(ctx.state)
 
 
@@ -464,7 +465,7 @@ def _execute_step(step: VerbStep, ctx: RunContext) -> None:
 
 
 def _flush_terminal_signals(ctx: RunContext) -> None:
-    """Fire both terminal-signal hooks (§3.3, §4.7); each is idempotent + best-effort."""
+    """Fire both terminal-signal hooks (§3.3, §4.6); each is idempotent + best-effort."""
     escalate_if_needed(ctx.state, sink=ctx.sink, store=ctx.store, ref=ctx.ref)
     request_human_review_if_needed(
         ctx.state,

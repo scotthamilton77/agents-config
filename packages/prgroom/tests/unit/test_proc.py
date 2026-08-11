@@ -1,4 +1,4 @@
-"""Boundary test for the CommandRunner seam (§7.6).
+"""Boundary test for the CommandRunner seam.
 
 ``SubprocessRunner`` is the one place we call ``subprocess.run`` — the system
 boundary. We mock ONLY there (monkeypatch ``subprocess.run``) and assert the

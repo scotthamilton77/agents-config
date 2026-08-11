@@ -1,12 +1,11 @@
-"""Behavioural coverage for ClaudeAdapter via the B.2 sync engine.
+"""Behavioural coverage for ClaudeAdapter through the sync engine.
 
-Drives the *real* ClaudeAdapter end-to-end through sync so that its
-source_dir / dest_dir earn behavioural coverage — the ``# pragma: no
-cover`` markers those two methods carried (forward-tracked from
-w1qls.2.1) come off in this story. The engine's own branch behaviour
-(skip / update / dry-run / failure modes) is unit-tested against a fake
-adapter in test_sync.py; this file asserts only that sync wires the real
-adapter's source and destination roots correctly.
+Drives the *real* ClaudeAdapter end-to-end through ``sync`` so that its
+source_dir / dest_dir earn behavioural coverage rather than carrying a
+``# pragma: no cover``. The engine's own branch behaviour (skip / update /
+dry-run / failure modes) is unit-tested against a fake adapter in
+test_sync.py; this file asserts only that sync wires the real adapter's
+source and destination roots correctly.
 """
 
 from __future__ import annotations

@@ -1,8 +1,8 @@
-"""Tests for the audit-result value type + the violation→effect helpers (§8.6).
+"""Tests for the audit-result value type + the violation→effect helpers (§5 audit guards).
 
-8.7 *computes*; it never mutates state. So these helpers turn an
-:class:`AuditViolation` into the two value objects the lifecycle (8.15) will
-apply — a FAILED :class:`Disposition` and an :class:`Escalation` — without
+The agent layer *computes*; it never mutates state. So these helpers turn an
+:class:`AuditViolation` into the two value objects the lifecycle
+applies — a FAILED :class:`Disposition` and an :class:`Escalation` — without
 touching ``PRGroomingState`` or calling ``Sink.emit``.
 """
 

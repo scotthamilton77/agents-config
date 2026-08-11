@@ -1,11 +1,11 @@
-"""§8.6 memory-channel + containment audit (pure).
+"""§7.6 memory-channel + containment audit (pure).
 
-:func:`audit_memory` validates the §8.5 fix-output memory channel. It is pure:
+:func:`audit_memory` validates the §7.5 fix-output memory channel. It is pure:
 the caller supplies ``written_paths`` (what counts as "written" is the caller's
 decision — see :mod:`prgroom.agent.fix`) and ``known_thread_ids``, so the audit
 touches no filesystem and no network.
 
-Rules (§8.6):
+Rules (§7.6):
 
 * **Containment (HARD, security)** — every ``memory_writes`` path must resolve
   INSIDE ``memory_dir``. The check is **purely lexical** (``os.path.normpath`` +
@@ -18,8 +18,8 @@ Rules (§8.6):
 * **Exactly one of content|path** — neither or both set is an audit failure.
 * **CONTEXTUAL routability** — a CONTEXTUAL entry whose ``target_hint`` is set
   must name a thread in ``known_thread_ids``; an unknown hint is an audit failure.
-  A thread-less CONTEXTUAL entry is fine (it routes to the ``## Decisions`` block —
-  that ROUTING is a later bead).
+  A thread-less CONTEXTUAL entry is fine (it routes to the ``## Decisions`` block
+  via ``lifecycle/reply.py``'s ``_route_memory``).
 * **Non-CONTEXTUAL** — accepted, returned in ``deferred``, never an error
   (forward-compat with the repo-wide memory router).
 * **Declared-but-unwritten** — a ``memory_writes`` path not in ``written_paths``
@@ -40,7 +40,7 @@ from prgroom.escalation import Severity
 if TYPE_CHECKING:
     from prgroom.agent.contracts import FixOutput, MemoryEntry
 
-# The project's five-class memory taxonomy (§8.6). Home for the names is here —
+# The project's five-class memory taxonomy (§7.6). Home for the names is here —
 # the design forbids a classification enum in enums.py (it is not a serialization
 # contract prgroom owns; it is forward-compat surface for the repo-wide router).
 _VALID_CLASSES = frozenset({"UNIVERSAL", "PROJECT", "PLANNED", "HISTORICAL", "CONTEXTUAL"})
@@ -49,7 +49,7 @@ _CONTEXTUAL = "CONTEXTUAL"
 
 @dataclass(frozen=True, slots=True)
 class MemoryAuditResult:
-    """The computed result of a memory audit (8.7 returns; 8.15 applies).
+    """The computed result of a memory audit (the agent layer returns; the lifecycle applies).
 
     ``violations`` are HARD breaches (containment BLOCK + per-entry WARNs);
     ``deferred`` are accepted non-CONTEXTUAL entries the repo-wide router will
@@ -67,7 +67,7 @@ class MemoryAuditResult:
 def anchor(path: str, memory_dir: str) -> str:
     """Lexically anchor a (possibly relative) ``path`` to ``memory_dir``. Pure, no fs.
 
-    The agent declares memory_writes RELATIVE to memory_dir (§8.5 examples), so
+    The agent declares memory_writes RELATIVE to memory_dir (§7.5 examples), so
     anchor with PurePath's ``/`` before the lexical normpath collapse. The join
     semantics also keep the escape check correct: an ABSOLUTE path resets the join
     (discards memory_dir, so an absolute escape is still detectable), and a ``..``
@@ -104,7 +104,7 @@ def audit_memory(
     written_paths: set[str],
     known_thread_ids: set[str],
 ) -> MemoryAuditResult:
-    """Validate the §8.5 memory channel. Pure; returns a :class:`MemoryAuditResult`."""
+    """Validate the §7.5 memory channel. Pure; returns a :class:`MemoryAuditResult`."""
     violations: list[AuditViolation] = []
     deferred: list[MemoryEntry] = []
     routable: list[MemoryEntry] = []
@@ -179,5 +179,5 @@ def _audit_entry(
         )
         return
 
-    # Passed every gate — a valid CONTEXTUAL entry the lifecycle will route (§8.3).
+    # Passed every gate — a valid CONTEXTUAL entry the lifecycle will route (§7.3).
     routable.append(entry)

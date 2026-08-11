@@ -74,7 +74,7 @@ Because commands run inline, they have access to the full current session contex
 | `~/.claude/commands/` | Available in ALL projects | User-wide workflows (optimize, refresh, audit) |
 | `<project-root>/.claude/commands/` | Available in THIS project only | Project-specific shortcuts |
 
-Commands installed from `src/user/.claude/commands/` land at `~/.claude/commands/` (user-scoped). Commands in `src/plugins/<plugin>/commands/` are plugin-scoped.
+Commands installed from `src/user/.claude/commands/` land at `~/.claude/commands/` (user-scoped). Commands in `src/plugins/<plugin>/.<tool>/commands/` (e.g. `.claude/commands/`) are plugin-scoped.
 
 ---
 
@@ -126,7 +126,7 @@ Always document what happens when `$ARGUMENTS` is empty. Commands that fail sile
 | Undocumented `$ARGUMENTS` | No description of input format or defaults | Add argument documentation section |
 | No empty-args handling | Silent failure or undefined behavior when user omits args | Add explicit default behavior or usage message |
 | Duplicate of a skill | Command re-implements what a skill already provides | Refactor: command calls the skill |
-| Beads-specific content in a user-scoped command | `bd` commands or bead tracker terminology | Move to plugin commands namespace |
+| Beads-specific content in a user-scoped command | `bd` commands or bead tracker terminology | Rewrite to use the `work` facade instead — agent workflow never invokes `bd` directly, only the tracker's one-time human bootstrap script does (`scripts/bootstrap-installer-beads.sh`), and no plugin exists to move the content to |
 | Hardcoded paths or assumptions | Command assumes specific directory structure | Parameterize via `$ARGUMENTS` or config |
 
 ---
@@ -138,8 +138,8 @@ src/user/.claude/commands/         # Installs to ~/.claude/commands/ (user-scope
   <command-name>.md
 
 src/plugins/<plugin>/
-  commands/                        # Plugin-specific commands
-  <command-name>.md
+  .<tool>/commands/                # Plugin commands for one tool (e.g. .claude/commands/)
+    <command-name>.md
 ```
 
 Commands are a tool-scoped namespace — there is no shared commands tree, so the only names a new command can collide with are the other commands staged into that same tool: its own tree plus every active plugin's. Collisions are a **fatal install error** — check before adding.
