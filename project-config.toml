@@ -1,9 +1,11 @@
 # project-config.toml
 # Per-project configuration, read at the repository root.
 #
-# One consumer reads this file, and it reads one section:
+# Two consumers read this file, and between them they read two sections:
 #   installer -- [install] (the persisted profile selection; absent until the
 #                installer writes it)
+#   doc-lint  -- [project] (the name, as the work-item namespace this repo's
+#                own tracker mints under)
 #
 # The `work` facade reads none of it. Its vocabulary lives in
 # .work/config.toml, which `work init` owns.
@@ -18,6 +20,14 @@
 #   section does not belong here -- the mechanical gates are declared in the
 #   Makefile and nowhere else.
 
+# ---------------------------------------------------------------------------
+# [project] — the project's own name.
+# Read by: doc-lint, which takes it as the prefix this repository's work items
+#          are minted under, and reports an identifier cited outside that
+#          namespace in the charter as a pointer a reader cannot follow. Derived
+#          rather than written into the gate, so a rename cannot leave every
+#          local identifier reading as foreign.
+# ---------------------------------------------------------------------------
 [project]
 name = "agents-config"
 

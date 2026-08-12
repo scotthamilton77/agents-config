@@ -16,7 +16,7 @@ import pytest
 
 from installer import doc_lint_cli
 from installer.core.content_lint import admitted_asset_names, deployed_asset_names
-from installer.core.doc_lint import Finding
+from installer.core.doc_lint import ALWAYS_IN_SCOPE, EXEMPT_TREES, Finding
 from installer.core.io_port import ScriptedIO
 
 _RECORD = "---\nadmission:\n  prevents: p\n  cost: c\n  remove_when: r\n---\n"
@@ -25,8 +25,19 @@ _INSTALLIGNORE = "AGENTS.md\nCLAUDE.md\nGEMINI.md\nREADME.md\nrules-readmes/\n"
 
 def _repo(tmp_path: Path, *, skills: dict[str, str]) -> Path:
     """A minimal repo root the installer can stage, mirroring the content-lint
-    fixture so both gates are exercised against the same shape."""
+    fixture so both gates are exercised against the same shape.
+
+    Carries the scope entries the gate reports on when they are empty — the
+    exempt tree and every carved-in document — so a fixture is a repo the gate
+    recognises rather than one reporting its own scope back at itself."""
     (tmp_path / ".installignore").write_text(_INSTALLIGNORE, encoding="utf-8")
+    for relpath in [*EXEMPT_TREES, *ALWAYS_IN_SCOPE]:
+        target = tmp_path / relpath
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if relpath in ALWAYS_IN_SCOPE:
+            target.write_text("# a carved-in document\n", encoding="utf-8")
+        else:
+            target.mkdir(exist_ok=True)
     shared = tmp_path / "src" / "user" / ".agents"
     shared.mkdir(parents=True)
     (shared / "AGENTS.md.template").write_text("# laws\n", encoding="utf-8")
@@ -93,7 +104,6 @@ def test_a_clean_tree_exits_zero(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
-    (repo / "docs" / "specs").mkdir(parents=True)
     (repo / "README.md").write_text("Read the `grilling` skill.\n", encoding="utf-8")
     monkeypatch.setattr(doc_lint_cli, "tracked_files", lambda _root: [Path("README.md")])
 
@@ -106,13 +116,33 @@ def test_a_clean_tree_exits_zero(
     assert "0 citation(s) not judged" in printed
 
 
+def test_the_reported_reach_counts_what_was_actually_silenced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The number is the audit trail for a rule that can hide a real finding, so
+    it has to move with the fileset. A CLI wired to a constant, or to a reach
+    computed over the wrong files, prints a reassuring zero forever."""
+    repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
+    (repo / "README.md").write_text(
+        "The `merge-guard` skill has been retired.\n"
+        "The notes live in the private archive repository: `SAVEPOINTS/x.md`.\n"
+        "Read the `grilling` skill.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(doc_lint_cli, "tracked_files", lambda _root: [Path("README.md")])
+
+    # Both silencing forms reach the count — a retirement and a citation that
+    # resolves in another repository.
+    assert doc_lint_cli.main([str(repo)]) == 0
+    assert "2 citation(s) not judged" in capsys.readouterr().out
+
+
 def test_findings_exit_one_and_are_grouped_by_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Grouped because that is how they get fixed: one file is one editing
     session, and a flat list makes a reader hop between documents."""
     repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
-    (repo / "docs" / "specs").mkdir(parents=True)
     (repo / "README.md").write_text("Run the `gone-skill` skill.\n", encoding="utf-8")
     (repo / "CONTRIBUTING.md").write_text("See `docs/missing.md`.\n", encoding="utf-8")
     monkeypatch.setattr(
@@ -129,11 +159,37 @@ def test_findings_exit_one_and_are_grouped_by_file(
     assert "2 unresolved citation(s) in 2 file(s)" in err
 
 
+def test_the_namespace_reaches_the_check_from_the_project_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The one seam no pure-lint test can pin: the CLI reading the project's own
+    name and handing it to the check. Passing a namespace in by hand exercises
+    the rule and not the wiring, so the CLI could stop reading the file
+    altogether and the identifier check would go quietly silent."""
+    repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
+    (repo / "project-config.toml").write_text('[project]\nname = "widget-shop"\n', encoding="utf-8")
+    charter = next(iter(ALWAYS_IN_SCOPE))
+    (repo / charter).write_text(
+        "The runtime is `wgclw.30`, and `widget-shop-qq7.30` carries the rest.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(doc_lint_cli, "tracked_files", lambda _root: [charter])
+
+    assert doc_lint_cli.main([str(repo)]) == 1
+    err = capsys.readouterr().err
+    assert "`wgclw.30` — names a work item outside this repo's `widget-shop`" in err
+    assert "widget-shop-qq7.30" not in err
+
+
 def test_a_stale_exemption_fails_the_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
     (repo / "README.md").write_text("Nothing to see.\n", encoding="utf-8")
+    for relpath in ALWAYS_IN_SCOPE:
+        (repo / relpath).unlink()
+    for tree in EXEMPT_TREES:
+        (repo / tree).rmdir()
     monkeypatch.setattr(doc_lint_cli, "tracked_files", lambda _root: [Path("README.md")])
 
     assert doc_lint_cli.main([str(repo)]) == 1
@@ -154,7 +210,6 @@ def test_a_git_failure_exits_two(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
-    (repo / "docs" / "specs").mkdir(parents=True)
 
     def _boom(_root: Path) -> list[Path]:
         raise subprocess.CalledProcessError(128, "git")
@@ -192,7 +247,6 @@ def test_module_is_runnable_as_python_dash_m(
     """``python -m installer.doc_lint_cli`` is the make-target invocation shape;
     pins the ``__main__`` guard."""
     repo = _repo(tmp_path, skills={"grilling": _RECORD + "# body\n"})
-    (repo / "docs" / "specs").mkdir(parents=True)
     (repo / "README.md").write_text("Read the `grilling` skill.\n", encoding="utf-8")
 
     # ``run_module`` executes a fresh copy, so a patch on the imported module

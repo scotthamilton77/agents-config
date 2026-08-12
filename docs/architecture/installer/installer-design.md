@@ -47,7 +47,7 @@ installer/
 ├── config.py                    Config dataclass (home, tools, auto_yes); resolve_tools/resolve_plugins for auto-detection
 ├── content_lint_cli.py          Separate entry point (`python -m installer.content_lint_cli`) — stages src/ and runs the admission gate as a repo-side lint; never calls cli.py or the installer
 ├── content_tests_cli.py         Separate entry point — discovers and runs every shipped skill's own test suite
-├── doc_lint_cli.py          Separate entry point — checks backticked citations in in-scope tracked Markdown (excludes docs/specs/, dated filenames, build dirs) against three targets: cited repo paths on disk, cited Python symbols via an AST index of packages/, and cited skill/rule/command/agent names against the staged asset roster
+├── doc_lint_cli.py          Separate entry point — checks backticked citations in in-scope tracked Markdown (excludes docs/specs/, dated filenames, build dirs; the harness-rework charter is carved back in) against three targets: cited repo paths on disk, cited Python symbols via an AST index of packages/, and cited skill/rule/command/agent names against the staged asset roster
 ├── spec_lint_cli.py             Separate entry point — lints docs/specs/ structure
 ├── core/                        ── pure, tool-agnostic, fully unit-testable
 │   ├── orchestrator.py          stage_and_transform: drives build_plan -> overlay -> extensions -> flatten -> transforms per tool; cli.py, not this module, is the top-level controller

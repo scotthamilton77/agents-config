@@ -54,6 +54,11 @@ What genuinely reads the file today:
 
 - **`[install]`** — read by the installer, to select project-scoped install
   profiles.
+- **`[project]`** — the project's own name, read by this repository's `doc-lint`
+  gate as the namespace its work items are minted under, so prose citing an
+  identifier from outside that namespace can be told from prose citing a local
+  one. That gate runs here and is not deployed, so in your project this section
+  has no reader either.
 
 The `work` CLI does not read this file. Its track partition and
 work-in-progress rules come from `.work/config.toml`, which `work init`

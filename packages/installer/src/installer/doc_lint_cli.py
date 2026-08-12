@@ -26,6 +26,7 @@ from installer.core.doc_lint import (
     lint_markdown,
     merge_rosters,
     project_asset_names,
+    project_tracker_prefix,
     select_markdown,
     stale_exemptions,
 )
@@ -144,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         repo_root=repo_root,
         assets=assets,
         index=build_index(repo_root, tracked=tracked),
+        tracker_prefix=project_tracker_prefix(repo_root),
     )
     findings = drop_ignored(repo_root, findings)
 
@@ -157,7 +159,8 @@ def main(argv: list[str] | None = None) -> int:
     # how far it reached is a number on the output rather than a property of the
     # source that only its author knows.
     sys.stdout.write(
-        f"doc-lint: {suppressed} citation(s) not judged — the sentence says the thing is gone\n"
+        f"doc-lint: {suppressed} citation(s) not judged — the sentence says the thing is "
+        "gone, or that it lives in another repository\n"
     )
     if findings or stale:
         sys.stderr.write(

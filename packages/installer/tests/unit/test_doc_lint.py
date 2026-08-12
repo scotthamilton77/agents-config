@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from installer.core.doc_lint import (
+    ALWAYS_IN_SCOPE,
     EXEMPT_TREES,
     Finding,
     RepoIndex,
@@ -22,6 +23,7 @@ from installer.core.doc_lint import (
     lint_markdown_text,
     merge_rosters,
     project_asset_names,
+    project_tracker_prefix,
     select_markdown,
     stale_exemptions,
 )
@@ -45,6 +47,7 @@ def _lint(
     relpath: str = "README.md",
     tracked: list[str] | None = None,
     assets: dict[str, frozenset[str]] | None = None,
+    tracker_prefix: str | None = None,
 ) -> list[Finding]:
     return lint_markdown_text(
         Path(relpath),
@@ -52,6 +55,7 @@ def _lint(
         repo_root=tmp_path,
         assets=_ASSETS if assets is None else assets,
         index=_index(tmp_path, tracked),
+        tracker_prefix=tracker_prefix,
     )
 
 
@@ -108,17 +112,72 @@ def test_an_exemption_with_no_content_behind_it_is_reported(tmp_path: Path) -> N
     retirement condition ``content_lint`` puts on its own register. It has already
     earned its keep: ``oss-snapshots/`` was extracted while this gate was being
     written, and this is what noticed."""
-    (tmp_path / "docs" / "specs").mkdir(parents=True)
+    for relpath in ALWAYS_IN_SCOPE:
+        _write(tmp_path, str(relpath))
     assert stale_exemptions(tmp_path) == []
 
+    for relpath in ALWAYS_IN_SCOPE:
+        (tmp_path / relpath).unlink()
     (tmp_path / "docs" / "specs").rmdir()
     stale = stale_exemptions(tmp_path)
-    assert len(stale) == 1
-    assert "docs/specs" in stale[0]
+    assert any("docs/specs: exempt from doc-lint" in message for message in stale)
 
 
 def test_every_exemption_states_a_reason() -> None:
     assert all(reason.strip() for reason in EXEMPT_TREES.values())
+
+
+def test_the_charter_is_read_despite_the_exemptions_that_cover_it() -> None:
+    """The one document the date rule and the specs exemption both cover and
+    neither should: it is amended in place and the root ``AGENTS.md`` sends every
+    reader to it as current orientation, so its citations are claims about the
+    present. ``spec_lint`` carves the same file out of its own date floor."""
+    charter = Path("docs/specs/2026-07-21-harness-rework-way-forward.md")
+    assert charter in ALWAYS_IN_SCOPE
+    assert in_scope(charter)
+    assert not in_scope(Path("docs/specs/2026-07-22-workcli-completion-s2.md"))
+
+
+def test_the_charter_reaches_a_lint_run_through_selection(tmp_path: Path) -> None:
+    """Membership in the carve-out is not coverage. What matters is that the
+    charter survives the selection the CLI actually performs and gets read: a
+    regression anywhere on tracked-set → ``select_markdown`` → ``lint_markdown``
+    would leave the scope predicate telling the truth and the document unread.
+    """
+    charter = next(iter(ALWAYS_IN_SCOPE))
+    _write(tmp_path, "README.md", "Nothing to see.\n")
+    _write(tmp_path, str(charter), "The runtime is `wgclw.30`, and see `docs/gone.md`.\n")
+
+    paths = select_markdown([Path("README.md"), charter])
+    assert charter in paths
+
+    findings, _suppressed = lint_markdown(
+        paths,
+        repo_root=tmp_path,
+        assets=_ASSETS,
+        index=_index(tmp_path),
+        tracker_prefix="widget-shop",
+    )
+    assert sorted(f.citation for f in findings if f.file == charter) == [
+        "docs/gone.md",
+        "wgclw.30",
+    ]
+
+
+def test_a_carve_out_with_no_document_behind_it_is_reported(tmp_path: Path) -> None:
+    """A carve-out naming a file that is not there fires on nothing, so it fails
+    silent — the retirement condition every exemption here carries. The charter
+    retires at AC9, and this is what will notice."""
+    for relpath in ALWAYS_IN_SCOPE:
+        _write(tmp_path, str(relpath))
+    (tmp_path / "docs" / "specs").mkdir(parents=True, exist_ok=True)
+    assert stale_exemptions(tmp_path) == []
+
+    for relpath in ALWAYS_IN_SCOPE:
+        (tmp_path / relpath).unlink()
+    stale = stale_exemptions(tmp_path)
+    assert len(stale) == len(ALWAYS_IN_SCOPE)
+    assert "harness-rework-way-forward" in stale[0]
 
 
 # --------------------------------------------------------------------------
@@ -200,6 +259,151 @@ def test_a_tracker_identifier_is_silence_in_every_frame(tmp_path: Path) -> None:
         "**REQUIRED BACKGROUND:** You MUST understand `widget-shop-qq7.30.1`.\n"
     )
     assert _lint(tmp_path, text) == []
+
+
+def test_an_identifier_is_still_silence_when_the_namespace_is_known(tmp_path: Path) -> None:
+    """Knowing this repo's own tracker namespace does not put ordinary prose's
+    identifiers in scope. The carve-out is the whole of the widening: everywhere
+    else, the reasoning above still holds."""
+    text = "The decision behind this lives in `wgclw.30`.\n"
+    assert _lint(tmp_path, text, tracker_prefix="agents-config") == []
+
+
+def test_an_out_of_namespace_identifier_in_the_charter_is_a_dangling_pointer(
+    tmp_path: Path,
+) -> None:
+    """In the one document a reader is told to orient by, an identifier from a
+    tracker this repo's ``work`` cannot address sends them to a lookup that
+    returns nothing — and nothing in the prose distinguishes that from having
+    looked it up wrong. This is a pointer check, not an existence check: no
+    tracker is consulted, only the namespace the identifier is in."""
+    charter = str(next(iter(ALWAYS_IN_SCOPE)))
+    text = "It becomes the executor loop of the new pipeline (`wgclw.30`).\n"
+    findings = _lint(tmp_path, text, relpath=charter, tracker_prefix="agents-config")
+    assert [f.citation for f in findings] == ["wgclw.30"]
+    assert "namespace" in findings[0].reason
+
+
+def test_an_identifier_that_says_where_it_resolves_is_not_a_finding(tmp_path: Path) -> None:
+    """The remedy the finding asks for, and the shape the charter already uses:
+    say where the pointer lands and it points somewhere again."""
+    charter = str(next(iter(ALWAYS_IN_SCOPE)))
+    text = (
+        "The runtime — `wgclw.30`, resolvable in the private archive repository "
+        "and not through `work` — is the one live workstream.\n"
+    )
+    assert _lint(tmp_path, text, relpath=charter, tracker_prefix="agents-config") == []
+
+
+def test_two_sentences_on_one_line_are_read_separately(tmp_path: Path) -> None:
+    """The claim is sentence-scoped, and a line is not a sentence. When the same
+    name appears twice on one line — once bare, once in a sentence saying where
+    it resolves — one occurrence is a finding and the other is not, whichever
+    order they come in. Reading the line as a single context reports both or
+    neither, and which one depends on nothing the author can see."""
+    charter = str(next(iter(ALWAYS_IN_SCOPE)))
+    bare_first = (
+        "The loop is `wgclw.30`. The runtime `wgclw.30` is resolvable in the "
+        "private archive repository and not through `work`.\n"
+    )
+    findings = _lint(tmp_path, bare_first, relpath=charter, tracker_prefix="agents-config")
+    assert [f.citation for f in findings] == ["wgclw.30"]
+
+    elsewhere_first = (
+        "The runtime `wgclw.30` is resolvable in the private archive repository "
+        "and not through `work`. The loop is `wgclw.30`.\n"
+    )
+    findings = _lint(tmp_path, elsewhere_first, relpath=charter, tracker_prefix="agents-config")
+    assert [f.citation for f in findings] == ["wgclw.30"]
+
+
+def test_retirement_wording_does_not_clear_a_foreign_identifier(tmp_path: Path) -> None:
+    """Saying an item is closed says nothing about where a reader resolves it.
+    The finding is that the pointer has no destination, and only prose giving one
+    answers it — "was retired" leaves the reader with the same failed lookup and
+    the same inability to tell that from having looked it up wrong."""
+    charter = str(next(iter(ALWAYS_IN_SCOPE)))
+    retired = "The item `wgclw.30` was retired.\n"
+    findings = _lint(tmp_path, retired, relpath=charter, tracker_prefix="agents-config")
+    assert [f.citation for f in findings] == ["wgclw.30"]
+
+    located = "The item `wgclw.30` is resolvable in the private archive repository.\n"
+    assert _lint(tmp_path, located, relpath=charter, tracker_prefix="agents-config") == []
+
+
+def test_retirement_wording_still_clears_a_path(tmp_path: Path) -> None:
+    """The identifier check gets the narrower rule; every other check keeps the
+    broader one. "The `docs/gone.md` report was deleted" is the sentence that
+    repairs stale documentation, and reporting it would fire on its own remedy.
+    """
+    text = "The `docs/gone.md` report was deleted in the sweep.\n"
+    assert _lint(tmp_path, text) == []
+
+
+def test_an_identifier_in_this_repo_namespace_is_never_judged(tmp_path: Path) -> None:
+    """Existence stays the wrong question. An identifier ``work`` can address is
+    addressable whatever its item's state, and asking a tracker would make a
+    prose gate depend on out-of-process mutable state."""
+    charter = str(next(iter(ALWAYS_IN_SCOPE)))
+    text = "Its open questions are carried by `agents-config-9k9.157`, not by this list.\n"
+    assert _lint(tmp_path, text, relpath=charter, tracker_prefix="agents-config") == []
+
+
+def test_a_namespace_this_one_only_prefixes_is_a_different_namespace(tmp_path: Path) -> None:
+    """Local means the identifier's own namespace, not a namespace this one
+    happens to start. A sibling project called ``agents-config-tools`` mints
+    ``agents-config-tools-abc.1``, which no ``work`` here can address — reading
+    the shared prefix as ownership would wave through every neighbour whose name
+    begins the same way."""
+    charter = str(next(iter(ALWAYS_IN_SCOPE)))
+    text = "The rest is carried by `agents-config-tools-abc.1`, elsewhere.\n"
+    findings = _lint(tmp_path, text, relpath=charter, tracker_prefix="agents-config")
+    assert [f.citation for f in findings] == ["agents-config-tools-abc.1"]
+
+
+def test_dotted_numbers_that_are_not_identifiers_stay_silent(tmp_path: Path) -> None:
+    """The shape has to separate an identifier from every other dotted token a
+    spec carries — a version, a release, a date — or the check reports the
+    charter's own prose at itself."""
+    charter = str(next(iter(ALWAYS_IN_SCOPE)))
+    text = (
+        "Python `3.11`, release `0.1.0`, the `2026.07.21` snapshot and the "
+        "`v1.2.3` tag are all in this sentence.\n"
+    )
+    assert _lint(tmp_path, text, relpath=charter, tracker_prefix="agents-config") == []
+
+
+def test_the_namespace_is_read_off_the_project_and_never_written_down(tmp_path: Path) -> None:
+    """Derived, so a rename cannot leave the gate judging every local identifier
+    foreign. Every way of not having a name to read — no file, a file that will
+    not parse, a file that names no project — answers ``None``, which turns the
+    check off rather than turning it loose."""
+    assert project_tracker_prefix(tmp_path) is None
+
+    config = tmp_path / "project-config.toml"
+    config.write_text('[project]\nname = "widget-shop"\n', encoding="utf-8")
+    assert project_tracker_prefix(tmp_path) == "widget-shop"
+
+    config.write_text("[project\n", encoding="utf-8")
+    assert project_tracker_prefix(tmp_path) is None
+
+    config.write_text('[install]\nprofiles = ["a"]\n', encoding="utf-8")
+    assert project_tracker_prefix(tmp_path) is None
+
+    config.write_text("[project]\nname = 7\n", encoding="utf-8")
+    assert project_tracker_prefix(tmp_path) is None
+
+    config.write_text('project = "not-a-table"\n', encoding="utf-8")
+    assert project_tracker_prefix(tmp_path) is None
+
+
+def test_identifiers_are_unjudged_when_the_namespace_is_unknown(tmp_path: Path) -> None:
+    """No project name to read means no namespace to compare against, and a
+    check that cannot tell local from foreign would report both. Silence is the
+    default here as everywhere else."""
+    charter = str(next(iter(ALWAYS_IN_SCOPE)))
+    text = "It becomes the executor loop of the new pipeline (`wgclw.30`).\n"
+    assert _lint(tmp_path, text, relpath=charter) == []
 
 
 # --------------------------------------------------------------------------
@@ -638,6 +842,37 @@ def test_one_sentence_retiring_and_directing_hides_both(tmp_path: Path) -> None:
     assert _lint(tmp_path, text) == []
 
 
+def test_a_path_the_sentence_puts_in_another_repository_is_not_a_claim_here(
+    tmp_path: Path,
+) -> None:
+    """Not-here has a second form: the thing is somewhere else. The charter names
+    its companion documents in the archive repository, and this repo's own rule
+    sends readers there rather than into this tree — so those paths resolving
+    against this tree is not the question."""
+    text = (
+        "**Companions**, all in the `scotthamilton77/agents-config-ARCHIVE` "
+        "repository: `SAVEPOINTS/handoff.md` (diagnosis), `SAVEPOINTS/NOTES.md` "
+        "(raw verdicts).\n"
+    )
+    assert _lint(tmp_path, text) == []
+
+
+def test_an_unnamed_archive_is_not_a_foreign_repository(tmp_path: Path) -> None:
+    """A qualifier is what names the destination. "The archive repository" could
+    be this repo's own archive of anything, so it resolves nowhere a reader can
+    check and cannot stand in for saying where the thing went."""
+    text = "The report is held only in the archive repository, at `docs/audits/gone.md`.\n"
+    assert [f.citation for f in _lint(tmp_path, text)] == ["docs/audits/gone.md"]
+
+
+def test_this_repository_is_not_another_repository(tmp_path: Path) -> None:
+    """The marker has to name a foreign repository, never the noun alone: "in
+    this repository" is on nearly every orientation page here, and reading it as
+    an elsewhere-claim would silence the tree."""
+    text = "The pipeline lives in this repository, at `packages/gone/loop.py`.\n"
+    assert [f.citation for f in _lint(tmp_path, text)] == ["packages/gone/loop.py"]
+
+
 def test_the_reach_of_the_rule_is_reported() -> None:
     """A silencing rule that leaves no trace is a rule nobody can audit, and this
     one can hide a real finding."""
@@ -645,6 +880,13 @@ def test_the_reach_of_the_rule_is_reported() -> None:
     assert count_suppressed("The `old-skill` skill has been retired.\n") == 1
     both = "The `old-skill` skill and `docs/gone.md` are now archived.\n"
     assert count_suppressed(both) == 2
+
+    # Both forms of not-here are silencing rules, so both are on the count. A
+    # reach that reported only retirements would understate itself by exactly
+    # the class the reader has no other way to see.
+    elsewhere = "The companions live in the private archive repository: `SAVEPOINTS/x.md`.\n"
+    assert count_suppressed(elsewhere) == 1
+    assert count_suppressed("The companions live in this repository: `SAVEPOINTS/x.md`.\n") == 0
 
 
 # --------------------------------------------------------------------------
