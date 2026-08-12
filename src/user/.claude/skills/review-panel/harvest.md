@@ -25,7 +25,7 @@ this directory before every dispatch of a lens, the first one included:
 
 ```bash
 uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
-  --transport codex --model gpt-5.6-terra --reason initial
+  --transport codex --model gpt-5.6-sol --reason initial
 ```
 
 An authorized answer carries the `output_path` this attempt writes its raw output to — one path
@@ -57,7 +57,7 @@ Either way, the next claim declares that reason and the failure verbatim:
 
 ```bash
 uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
-  --transport openrouter --model anthropic/claude-opus-5 \
+  --transport openrouter --model moonshotai/kimi-k2.7-code \
   --reason transport-error --evidence "402 Insufficient credits"
 ```
 

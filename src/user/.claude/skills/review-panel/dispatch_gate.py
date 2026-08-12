@@ -32,7 +32,7 @@ EXIT_REFUSED = 2
 # bound is only as trustworthy as the history it counts, and a read-modify-write
 # ledger loses an attempt whenever two dispatches of one round overlap — which is
 # the normal shape of a panel, not an edge case.
-LEDGER_NAME = "attempts.json"
+LEDGER_NAME = "attempts.jsonl"
 
 # Three dispatches per lens per round, at most one of them recovering a reviewer
 # that produced unusable output. Recovery is a chain of attempts that each

@@ -122,7 +122,7 @@ class TestFirstClaim:
     def test_the_attempt_lands_in_the_rounds_ledger(self, round_dir, capsys):
         authorize(round_dir, capsys)
         claims = kinds(round_dir, "claim")
-        assert (round_dir / "attempts.json").is_file()
+        assert (round_dir / "attempts.jsonl").is_file()
         assert len(claims) == 1
         for field in ("lens", "attempt", "transport", "model", "cwd", "reason", "timestamp"):
             assert field in claims[0], field
@@ -151,17 +151,17 @@ class TestFirstClaim:
 
     def test_the_ledger_is_append_only_across_invocations(self, round_dir, capsys):
         authorize(round_dir, capsys)
-        after_first = (round_dir / "attempts.json").read_bytes()
+        after_first = (round_dir / "attempts.jsonl").read_bytes()
         transport_recovery(round_dir, capsys, "503 upstream")
-        after_second = (round_dir / "attempts.json").read_bytes()
+        after_second = (round_dir / "attempts.jsonl").read_bytes()
         assert after_second.startswith(after_first)
         assert len(after_second) > len(after_first)
 
     def test_a_refused_claim_rewrites_nothing_and_grants_no_attempt(self, round_dir, capsys):
         authorize(round_dir, capsys)
-        after_first = (round_dir / "attempts.json").read_bytes()
+        after_first = (round_dir / "attempts.jsonl").read_bytes()
         refuse(claim_argv(round_dir, **{"--reason": "wishful"}), capsys)
-        assert (round_dir / "attempts.json").read_bytes().startswith(after_first)
+        assert (round_dir / "attempts.jsonl").read_bytes().startswith(after_first)
         assert len(kinds(round_dir, "claim")) == 1
 
 
@@ -469,7 +469,7 @@ class TestGateSurface:
     def test_an_unparseable_ledger_stops_both_verbs(self, round_dir, capsys, argv_tail):
         """A bound cannot be enforced against a history that does not parse, so
         neither verb proceeds on one."""
-        (round_dir / "attempts.json").write_text("{}\nnot a record\n", encoding="utf-8")
+        (round_dir / "attempts.jsonl").write_text("{}\nnot a record\n", encoding="utf-8")
         answer = refuse([*argv_tail, "--out-dir", str(round_dir)], capsys)
         assert codes(answer) == ["unreadable-ledger"]
 
