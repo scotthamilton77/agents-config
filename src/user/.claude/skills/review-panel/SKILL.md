@@ -114,12 +114,11 @@ Terminal-clean means a complete round that came out `clean`, with zero mechanica
 every lens; a halted round is neither.
 
 Every dispatch is authorized first by `dispatch_gate.py claim`, which records the attempt with the
-route that will run it, assigns the output path it writes to, and refuses the ones past the round's
-bounds — the bounds are that script's, not this prose's. Its refusal for a lens that ran out of
-routes carries halt guidance: the round is over, and the `halted` verdict names the routes that
-died and every dispatch abandoned behind them. `dispatch_gate.py ingest` reads what comes back
-through the tolerance ladder; without a report the lens has no entry and the round is incomplete —
-fail closed. Every failover is reported to the operator, not merely recorded in the verdict.
-`harvest.md` holds the rest: how to tell a dead route from a failed reviewer, what each refusal
-obliges, what to do with a mechanical finding carrying no evidence, and the vendor-collapse count
-to make before the verdict is written.
+route running it, assigns its output path, and refuses the ones past the round's bounds — those
+bounds are the script's, not this prose's. A refusal for a lens out of routes carries halt
+guidance: the round is over, and the `halted` verdict names the dead routes and the dispatches
+abandoned behind them. `dispatch_gate.py ingest` reads the reply through the tolerance ladder;
+without a report the lens has no entry and the round is incomplete — fail closed. Every failover
+reaches the operator, not merely the verdict. `harvest.md` holds the rest: telling a dead route
+from a failed reviewer, what each refusal obliges, the mechanical finding carrying no evidence,
+and the vendor-collapse count before the verdict is written.

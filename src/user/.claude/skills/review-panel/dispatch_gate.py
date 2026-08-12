@@ -33,7 +33,6 @@ EXIT_REFUSED = 2
 # ledger loses an attempt whenever two dispatches of one round overlap — which is
 # the normal shape of a panel, not an edge case.
 LEDGER_NAME = "attempts.json"
-ROUND_META_NAME = "round.json"
 
 # Three dispatches per lens per round, at most one of them recovering a reviewer
 # that produced unusable output. Recovery is a chain of attempts that each
@@ -163,9 +162,14 @@ def check_lens(raw: str | None) -> str:
 
 
 def check_route(transport: str | None, model: str | None) -> tuple[str, str]:
-    """Both halves, on every attempt. An attempt recorded without its model cannot
-    say which route is exhausted, and a dead vendor and a saturated model recover
-    in opposite directions."""
+    """Both halves, on every attempt, recorded exactly as declared.
+
+    An attempt recorded without its model cannot say which route is exhausted, and
+    a dead vendor and a saturated model recover in opposite directions. Which
+    route a lens deserves is not this gate's question: it counts attempts and
+    records what ran them, so a route it refused to record would be a dispatch it
+    could not bound.
+    """
     declared_transport, declared_model = (transport or "").strip(), (model or "").strip()
     if not declared_transport or not declared_model:
         raise Refusal(
@@ -212,27 +216,6 @@ def check_evidence(raw: str | None, reason: str) -> str:
     return raw or ""
 
 
-def declared_lenses(out_dir: str) -> frozenset[str] | None:
-    """The lens names this round's metadata declares, or None when it declares none.
-
-    A misspelled lens would otherwise open a second attempt chain under a name no
-    lens holds, spending dispatches against a bound that then guards nothing.
-    """
-    try:
-        meta = json.loads((Path(out_dir) / ROUND_META_NAME).read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return None
-    entries = meta.get("lenses") if isinstance(meta, dict) else None
-    if not isinstance(entries, list):
-        return None
-    names = {
-        entry["lens"]
-        for entry in entries
-        if isinstance(entry, dict) and isinstance(entry.get("lens"), str)
-    }
-    return frozenset(names) or None
-
-
 def failed_routes(prior: list[dict], reason: str, evidence: str) -> list[dict[str, Any]]:
     """Every dispatched attempt paired with the failure the next claim reported for it.
 
@@ -276,12 +259,6 @@ def claim(args: argparse.Namespace) -> dict[str, Any]:
     """Authorize one dispatch of one lens, or refuse and say what closes the lens."""
     lens = check_lens(args.lens)
     transport, model = check_route(args.transport, args.model)
-    declared = declared_lenses(args.out_dir)
-    if declared is not None and lens not in declared:
-        raise Refusal(
-            "unknown-lens",
-            f"this round declares no lens {lens!r}; its lenses are " + ", ".join(sorted(declared)),
-        )
     path = ledger_path(args.out_dir)
     prior = claims_for(read_ledger(path), lens)
     attempt = len(prior) + 1

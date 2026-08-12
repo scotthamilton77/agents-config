@@ -440,17 +440,25 @@ class TestGateSurface:
         answer = refuse(claim_argv(round_dir, **{missing: None}), capsys)
         assert codes(answer) == ["no-route-declaration"]
 
-    def test_a_lens_the_round_does_not_declare_is_refused(self, round_dir, capsys):
+    def test_the_declared_route_is_recorded_and_not_judged(self, round_dir, capsys):
+        """Which route a lens deserves is settled before the claim. The gate counts
+        attempts and records what ran them, whatever the round's metadata declares —
+        a route it refused to record would be a dispatch it could not bound."""
         (round_dir / "round.json").write_text(
-            json.dumps({"lenses": [{"lens": "correctness"}, {"lens": "security"}]}),
+            json.dumps({"lenses": [{"lens": "correctness", "transport": "codex"}]}),
             encoding="utf-8",
         )
-        answer = refuse(claim_argv(round_dir, **{"--lens": "corectness"}), capsys)
-        assert codes(answer) == ["unknown-lens"]
-
-    def test_a_round_declaring_no_lenses_accepts_any_lens_name(self, round_dir, capsys):
-        (round_dir / "round.json").write_text("{not json", encoding="utf-8")
-        assert authorize(round_dir, capsys, **{"--lens": "house-lens"})["attempt"] == 1
+        answer = authorize(
+            round_dir,
+            capsys,
+            **{
+                "--lens": "house-lens",
+                "--transport": "carrier-pigeon",
+                "--model": "unlisted/model-9",
+            },
+        )
+        assert (answer["transport"], answer["model"]) == ("carrier-pigeon", "unlisted/model-9")
+        assert kinds(round_dir, "claim")[0]["model"] == "unlisted/model-9"
 
     @pytest.mark.parametrize(
         "argv_tail",
