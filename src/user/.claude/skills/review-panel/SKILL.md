@@ -8,9 +8,8 @@ admission:
 ---
 
 A round is a panel of single-lens reviewers. This skill routes: it maps the target to artifact
-classes, picks each class's lenses, fans out one reviewer per lens at the declared tier and
-transport, and assembles the reports into the round verdict. It holds no lens expertise itself —
-depth belongs to the reviewer.
+classes, picks each class's lenses, fans out one reviewer per lens, and assembles the reports into
+the round verdict. It holds no lens expertise itself — depth belongs to the reviewer.
 
 ## Artifact classes
 
@@ -29,8 +28,10 @@ contract explicitly or extend `contracts.json` — never improvise a lens set.
 
 Each panel mixes model tiers — hard-reasoning lenses on frontier models, mechanical walks on
 mid-tier — and spans two vendors, because blind spots correlate inside a vendor. A lens's declared
-`transport` is that diversity claim, not a routing guarantee: when it is down the lens fails over to
-the other transport, and the verdict records what actually ran it (`harvest.md`).
+`tier` sets round 1; a declared `re_review_tier` sets every round after. Its declared `transport`
+carries the vendor-diversity claim, not the tier, so a reduced tier still spans both vendors — when
+it is down the lens fails over to the other transport, and the verdict records what ran it
+(`harvest.md`).
 
 Most lenses re-read the whole artifact every round. A lens marked `diff` reviews only the change
 since the head it last judged, and only when it returned green that round; anything judging

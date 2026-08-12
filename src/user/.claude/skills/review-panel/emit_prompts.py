@@ -303,6 +303,14 @@ def lens_scope(lens: dict, round_no: int, verdicts: list[dict]) -> str:
     return "full"
 
 
+def lens_tier(lens: dict, round_no: int) -> str:
+    """Round 1 buys the declared tier; a re-review round buys the declared re_review_tier when
+    the lens names one, else the declared tier stays in force."""
+    if round_no < 2:
+        return lens["tier"]
+    return lens.get("re_review_tier", lens["tier"])
+
+
 def _render_findings(findings: list[dict], ledger: list[dict]) -> str:
     if not findings:
         return "None: this lens raised nothing in an earlier round.\n"
@@ -412,6 +420,7 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
 
     lenses = contracts[args.artifact_class]["lenses"]
     scopes = {lens["lens"]: lens_scope(lens, args.round, verdicts) for lens in lenses}
+    tiers = {lens["lens"]: lens_tier(lens, args.round) for lens in lenses}
     ctx = {
         "artifact_class": args.artifact_class, "round": args.round, "acs": acs,
         "target": args.target or "", "repo_root": args.repo_root or "",
@@ -431,8 +440,9 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
         "artifact_class": args.artifact_class, "claim_id": args.claim, "round": args.round,
         "base_sha": args.base_sha, "head_sha": args.head_sha, "retained_categories": retained,
         "lenses": [
-            {"lens": lens["lens"], "tier": lens["tier"], "rescope": lens["rescope"],
-             "transport": lens["transport"], "scope_this_round": scopes[lens["lens"]]}
+            {"lens": lens["lens"], "tier": lens["tier"], "tier_this_round": tiers[lens["lens"]],
+             "rescope": lens["rescope"], "transport": lens["transport"],
+             "scope_this_round": scopes[lens["lens"]]}
             for lens in lenses
         ],
         "prior_dispositions": ledger,

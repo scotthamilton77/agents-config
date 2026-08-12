@@ -319,6 +319,43 @@ class TestRoundsAndLedger:
             {"round": 1, "id": "f2", "lens": "security", "disposition": "advisory-deferred"},
         ]
 
+    def test_tier_round_one_always_resolves_declared_tier(self, repo, acs_file, tmp_path, capsys):
+        """Round 1 resolves each lens's declared tier, including a lens that also declares a
+        re_review_tier for later rounds."""
+        out_dir = tmp_path / "round-1"
+        run(argv(repo, acs_file, out_dir), capsys)
+        meta = json.loads((out_dir / "round.json").read_text(encoding="utf-8"))
+        by_lens = {entry["lens"]: entry for entry in meta["lenses"]}
+        assert by_lens["security"]["tier"] == "frontier"
+        assert by_lens["security"]["tier_this_round"] == "frontier"
+
+    def test_tier_round_two_resolves_declared_re_review_tier(self, repo, acs_file, tmp_path,
+                                                              capsys):
+        """Round 2 resolves the declared re_review_tier for a lens that declares one, while
+        round.json still carries the lens's unreduced declared tier."""
+        flat, out_dir = round2(tmp_path, repo, acs_file, [
+            {"round": 1, "id": "f1", "disposition": "fixed", "evidence": "regression test added"},
+            {"round": 1, "id": "f2", "disposition": "advisory-deferred"},
+        ])
+        run(flat, capsys)
+        meta = json.loads((out_dir / "round.json").read_text(encoding="utf-8"))
+        by_lens = {entry["lens"]: entry for entry in meta["lenses"]}
+        assert by_lens["security"]["tier"] == "frontier"
+        assert by_lens["security"]["tier_this_round"] == "mid"
+
+    def test_tier_round_two_without_declaration_keeps_declared_tier(self, repo, acs_file,
+                                                                     tmp_path, capsys):
+        """Round 2 keeps a lens's declared tier when the lens declares no re_review_tier."""
+        flat, out_dir = round2(tmp_path, repo, acs_file, [
+            {"round": 1, "id": "f1", "disposition": "fixed", "evidence": "regression test added"},
+            {"round": 1, "id": "f2", "disposition": "advisory-deferred"},
+        ])
+        run(flat, capsys)
+        meta = json.loads((out_dir / "round.json").read_text(encoding="utf-8"))
+        by_lens = {entry["lens"]: entry for entry in meta["lenses"]}
+        assert by_lens["correctness"]["tier"] == "frontier"
+        assert by_lens["correctness"]["tier_this_round"] == "frontier"
+
     def test_b4_unknown_disposition_value_is_refused(self, repo, acs_file, tmp_path, capsys):
         """S6-B4: a disposition outside the closed set cannot settle a mechanical finding."""
         flat, _ = round2(tmp_path, repo, acs_file, [
