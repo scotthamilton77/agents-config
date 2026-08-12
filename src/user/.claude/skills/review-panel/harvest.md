@@ -18,49 +18,70 @@ its declared entry, its verdict entry carries `substitution` with the declared t
 the reason, and — when the swap was forced rather than chosen — the dead route's error verbatim in
 `transport_error`. A round that lost diversity silently is indistinguishable from one that kept it.
 
+## Every dispatch is claimed first
+
+The gate authorizes each dispatch, records it, and refuses the ones past the bound. Run it from
+this directory before every dispatch of a lens, the first one included:
+
+```bash
+uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
+  --transport codex --model gpt-5.6-terra --reason initial
+```
+
+An authorized answer carries the `output_path` this attempt writes its raw output to — one path
+per attempt, so an attempt that wrote nothing reads as nothing rather than as the previous
+attempt's report — and, for a recovery, the `backoff_seconds` to wait first. Run the claim from
+the directory the reviewer will read: the gate records the working directory it was invoked in,
+and a review of the wrong tree is the failure that leaves no trace of itself.
+
+A refusal (exit 2) ends that lens. However many attempts it took, a lens ends with exactly one
+entry, for the attempt that produced the report, carrying the `substitution` record above. Two
+entries for one lens is a validation error, not a fuller record: it double-counts coverage.
+
 ## A dispatch that came back with no report
 
-Two failures look alike from outside and are handled oppositely, so tell them apart first.
+Two failures look alike from outside and recover oppositely, so tell them apart before claiming
+again — the reason you declare is what the gate bounds.
 
-**The route died.** What came back describes the *transport*, not the review: an HTTP status, an
-authentication or credit error, a refused connection, a dead broker or session — or nothing at all.
-The reviewer never ran. Judge this on the body rather than the exit status: a dead route shows up
-as an exit 1 carrying a short provider error, and equally as an exit 0 carrying nothing.
+**The route died** (`transport-error`). What came back describes the *transport*, not the review:
+an HTTP status, an authentication or credit error, a refused connection, a dead broker or session
+— or nothing at all, including no output file where one was claimed. The reviewer never ran. Judge
+this on the body rather than the exit status: a dead route shows up as an exit 1 carrying a short
+provider error, and equally as an exit 0 carrying nothing.
 
-**The reviewer failed.** A body came back that is the model's own output, and it does not survive
-the tolerance ladder below — or the reviewer stalled mid-reasoning. The route worked; what came
-over it is unusable.
+**The reviewer failed** (`unusable-output`). A body came back that is the model's own output, and
+no report survives the ladder below — or the reviewer stalled mid-reasoning. The route worked;
+what came over it is unusable.
 
-### The route died: fail over, once
+Either way, the next claim declares that reason and the failure verbatim:
 
-Fail the lens over to the transport it was **not** declared on — Codex for a lens declared on
-OpenRouter, OpenRouter for a lens declared on Codex — on the same prompt, unchanged. This is not a
-judgement call, and not a retry on the same route: that route has just told you it is down.
+```bash
+uv run dispatch_gate.py claim --out-dir /tmp/round-1 --lens correctness \
+  --transport openrouter --model anthropic/claude-opus-5 \
+  --reason transport-error --evidence "402 Insufficient credits"
+```
 
-The lens ends with exactly one entry, for the attempt that produced the report, carrying the
-`substitution` record above. Two entries for one lens is a validation error, not a fuller record:
-it double-counts coverage.
+Declare a route that has not just failed. A model can sit at capacity for the length of a round
+while another model of the same vendor answers, so the alternative to a dead route is another
+transport **or** another model on it — and a retry of the route that just said it is down is
+neither.
 
-### Both routes died: stop the run
+### When the gate refuses
 
-If the failover also dies on a transport error — any error, any code, either vendor — the round is
-over. Abandon every dispatch not yet made. Do not retry, do not drop to a lesser model, and do not
-quietly finish the round with the lenses that happened to work.
-
-Write the verdict with `verdict: "halted"`, a `halt` block carrying every transport failure the
-round did not recover from — at minimum the declared route and the failover behind it, more when
-parallel dispatches ran out together — and every undispatched lens in `abandoned_lenses`. A failure
-some lens did recover from by failing over belongs on that lens's `substitution`, not here.
+A refusal whose every recorded failure was transport-class carries halt guidance naming each
+exhausted transport and model with its error. **The round is over.** Abandon every dispatch not
+yet made. Do not retry, do not drop to a lesser model, and do not quietly finish the round with
+the lenses that happened to work. Write the verdict with `verdict: "halted"`, a `halt` block
+carrying every transport failure the round did not recover from, and every undispatched lens in
+`abandoned_lenses`. A failure some lens did recover from by failing over belongs on that lens's
+`substitution`, not here.
 
 Stopping forfeits the budget already spent. Continuing forfeits that too, and buys a document that
 reads like a review of a change most of the panel never opened.
 
-### The reviewer failed: re-dispatch, then fail closed
-
-A lens whose reviewer returned unusable output **may be re-dispatched** inside the same round, on
-the same route or another. The round is not restarted and the other lenses are not re-run. If the
-re-dispatch fails too, the lens has **no** entry and the round is incomplete. That is the contract
-working. Fail closed — never write a `clean` entry for a lens that never reported.
+Any other refusal closes that lens alone: it has **no** entry and the round is incomplete. The
+round is not restarted and the other lenses are not re-run. That is the contract working. Fail
+closed — never write a `clean` entry for a lens that never reported.
 
 ## Say a failover out loud
 
@@ -79,17 +100,24 @@ transports died and what they said.
 
 ## Reading a lens report
 
-Models violate an exact-output contract in predictable, harmless ways. Read each report through
-this ladder, in order, and stop at the first step that yields an object:
+Models violate an exact-output contract in predictable, harmless ways, so a report is read through
+the gate rather than by eye:
 
-1. The whole body parses as JSON.
-2. The body is a single fenced code block; strip the fence and parse what is inside.
-3. Decode from the first `{` in the body and ignore any trailing text — this recovers a report
-   behind a prose preamble.
+```bash
+uv run dispatch_gate.py ingest --out-dir /tmp/round-1 \
+  --output /tmp/round-1/correctness.attempt-1.out
+```
 
-Anything else is **unparseable**: the lens has no entry and the round is incomplete unless you
-re-dispatch it. Tolerance stops here on purpose. Reconstructing a report by hand from prose makes
-the harvester the reviewer, and nothing downstream can tell the difference.
+It walks the tolerance ladder — the whole body as JSON, then a single fenced block, then the first
+object in the body with any trailing text ignored — and prints the report it recovered. Output
+from a dispatch it never authorized is refused rather than read, so a dispatch that went around
+the gate shows up as a hole in the ledger instead of as a lens entry. A claimed path holding no
+file at all is refused as a transport failure, not a reviewer one: the route wrote nothing.
+
+Past the ladder the output is **unparseable**: the lens has no entry and the round is incomplete
+unless it is re-dispatched with reason `unusable-output`. Tolerance stops there on purpose.
+Reconstructing a report by hand from prose makes the harvester the reviewer, and nothing
+downstream can tell the difference.
 
 ## A mechanical finding with no evidence
 

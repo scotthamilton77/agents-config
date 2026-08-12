@@ -30,7 +30,7 @@ Each panel mixes model tiers — hard-reasoning lenses on frontier models, mecha
 mid-tier — and spans two vendors, because blind spots correlate inside a vendor. A lens's declared
 `tier` sets round 1; a declared `re_review_tier` sets every round after. Its declared `transport`
 carries the vendor-diversity claim, not the tier, so a reduced tier still spans both vendors — when
-it is down the lens fails over to the other transport, and the verdict records what ran it
+it is down the lens recovers onto another route, and the verdict records what ran it
 (`harvest.md`).
 
 Most lenses re-read the whole artifact every round. A lens marked `diff` reviews only the change
@@ -113,12 +113,13 @@ and model that *actually* produced the report, never the route `contracts.json` 
 Terminal-clean means a complete round that came out `clean`, with zero mechanical findings across
 every lens; a halted round is neither.
 
-A dispatch that returns no report is two different problems. A dead route — provider, auth, credit,
-connection — fails the lens over to the transport it was not declared on, and its single entry
-carries the substitution with that route's verbatim error; a failover that dies too halts the run,
-abandoning every remaining dispatch for a `halted` verdict naming the routes that ran out and
-everything they cost the round. A live route returning unusable output may instead be re-dispatched, and
-without a report the lens has no entry and the round is incomplete — fail closed. Every failover is
-reported to the operator, not merely recorded in the verdict. `harvest.md` holds the rest: how to
-tell those two failures apart, how tolerantly to read a report, what to do with a mechanical
-finding carrying no evidence, and the vendor-collapse count to make before the verdict is written.
+Every dispatch is authorized first by `dispatch_gate.py claim`, which records the attempt with the
+route that will run it, assigns the output path it writes to, and refuses the ones past the round's
+bounds — the bounds are that script's, not this prose's. Its refusal for a lens that ran out of
+routes carries halt guidance: the round is over, and the `halted` verdict names the routes that
+died and every dispatch abandoned behind them. `dispatch_gate.py ingest` reads what comes back
+through the tolerance ladder; without a report the lens has no entry and the round is incomplete —
+fail closed. Every failover is reported to the operator, not merely recorded in the verdict.
+`harvest.md` holds the rest: how to tell a dead route from a failed reviewer, what each refusal
+obliges, what to do with a mechanical finding carrying no evidence, and the vendor-collapse count
+to make before the verdict is written.
