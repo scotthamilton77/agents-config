@@ -14,6 +14,7 @@
         "mandate": "Judge whether this change can be made to act against the interests of the system that runs it, and say how an attacker gets there.",
         "acs_hint": "criteria describing trust boundaries, inputs, and permissions",
         "tier": "frontier",
+        "re_review_tier": "mid",
         "rescope": "full",
         "transport": "openrouter"
       },
@@ -58,6 +59,7 @@
         "mandate": "Judge whether each acceptance criterion can be converted into one or more tests that fail before the work and pass after it. Name the failing test that is impossible to write.",
         "acs_hint": "the criteria themselves, judged as testable claims",
         "tier": "frontier",
+        "re_review_tier": "mid",
         "rescope": "full",
         "transport": "openrouter"
       },
@@ -74,6 +76,7 @@
         "mandate": "Judge whether the proposed design holds together on its own terms and sits coherently in the architecture of the project and module around it. Read the surrounding structure, not only the document.",
         "acs_hint": "criteria describing the design's obligations to the surrounding system",
         "tier": "frontier",
+        "re_review_tier": "mid",
         "rescope": "full",
         "transport": "openrouter"
       },
@@ -102,6 +105,7 @@
         "mandate": "Judge whether the document fits the bigger picture: read the surrounding project material and report where the text contradicts, duplicates, or silently diverges from it.",
         "acs_hint": "criteria describing the document's obligations to its surroundings",
         "tier": "frontier",
+        "re_review_tier": "mid",
         "rescope": "full",
         "transport": "openrouter"
       },
