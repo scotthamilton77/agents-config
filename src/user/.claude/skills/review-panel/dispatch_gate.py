@@ -122,12 +122,15 @@ def read_ledger(path: Path) -> list[dict]:
 
 
 def append_record(path: Path, record: dict[str, Any]) -> None:
-    """Append one record. The ledger is only ever opened for append, so no
-    invocation can rewrite what an earlier one wrote."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, sort_keys=True) + "\n")
+    """Append one record.
 
+    The ledger is opened in binary append mode and written as a single byte string so concurrent
+    processes don't risk interleaving partial JSON fragments.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
+    with path.open("ab", buffering=0) as handle:
+        handle.write(line)
 
 def claims_for(records: list[dict], lens: str) -> list[dict]:
     return [r for r in records if r.get("kind") == "claim" and r.get("lens") == lens]
