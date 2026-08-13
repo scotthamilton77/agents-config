@@ -13,7 +13,12 @@ export const meta = {
 }
 
 // Workflow args arrive as a JSON string in some harness paths — parse defensively.
-const IN = typeof args === 'string' ? JSON.parse(args) : args
+let IN
+try {
+  IN = typeof args === 'string' ? JSON.parse(args) : args
+} catch (e) {
+  throw new Error(`bake-off: args arrived as a string but is not valid JSON: ${e.message}`)
+}
 
 const DIR = IN.dir
 const BASE = IN.base
@@ -35,6 +40,25 @@ const RECONCILE = IN.reconcile !== undefined ? IN.reconcile : IN.divergence
 // Optional split-panel escalation: {model, effort} spawns a claude-kind adjudicator
 // over the disputed points when seat preferences are not unanimous.
 const ESCALATION = IN.escalation || null
+
+// Prompts embed these values inside Bash commands without shell quoting; restrict
+// them to shell-inert characters and fail fast, rather than quoting throughout the
+// prose. gateCmd is exempt on purpose — it IS a shell command.
+const SHELL_INERT = /^[A-Za-z0-9._/-]+$/
+const embedded = [['dir', DIR], ['base', BASE], ['contextCheckout', IN.contextCheckout]]
+if (TRAP_LEDGER) embedded.push(['trapLedgerPath', TRAP_LEDGER])
+for (const a of IN.arms || []) {
+  embedded.push([`arm ${a.label} label`, a.label], [`arm ${a.label} worktree`, a.worktree])
+  if (a.runTag) embedded.push([`arm ${a.label} runTag`, a.runTag])
+  if (a.reportPath) embedded.push([`arm ${a.label} reportPath`, a.reportPath])
+}
+for (const s of JUDGES) {
+  embedded.push([`judge ${s.id} id`, s.id])
+  if (s.codexModel) embedded.push([`judge ${s.id} codexModel`, s.codexModel])
+}
+for (const [name, value] of embedded) {
+  if (!SHELL_INERT.test(String(value))) throw new Error(`bake-off: ${name} contains shell-active characters or spaces: ${JSON.stringify(value)}`)
+}
 
 const tag = arm => arm.runTag || '1'
 const judgedPath = arm => `${DIR}/judged/report-${arm.label}.md`
@@ -118,7 +142,7 @@ The rubric (read it and follow it exactly):
 ${IN.rubricText}
 
 Harness rules that apply regardless of the rubric text:
-- An arm whose diff is EMPTY is no-contest: give it 0 on every axis and name it in disqualified.
+- An arm whose diff is EMPTY is no-contest: do not score it — omit it from scores entirely — and name it in disqualified.
 - An arm whose gate exited non-zero is disqualified: name it in disqualified instead of scoring it.
 - Redaction markers like "[environment detail removed for blind judging]" are the harness's blinding edits, not the arm's writing — draw no inference against an arm from their presence, placement, or any apparent incoherence they introduce.
 
