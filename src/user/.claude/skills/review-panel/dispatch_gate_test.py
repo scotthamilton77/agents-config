@@ -104,6 +104,41 @@ def transport_recovery(round_dir: Path, capsys, error: str, **overrides: Any) ->
     )
 
 
+def write_round_meta(round_dir: Path, lenses: list[dict]) -> None:
+    (round_dir / "round.json").write_text(json.dumps({"lenses": lenses}), encoding="utf-8")
+
+
+def preflight_argv(round_dir: Path) -> list[str]:
+    return ["preflight", "--out-dir", str(round_dir)]
+
+
+def make_fetch(
+    key_body: dict | None = None,
+    key_status: int = 200,
+    key_raises: Exception | None = None,
+    credits_body: dict | None = None,
+    credits_status: int = 200,
+    credits_raises: Exception | None = None,
+):
+    """A stub for ``dispatch_gate.urllib_fetch`` that answers only the two probe URLs."""
+
+    def fetch(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        assert headers["Authorization"].startswith("Bearer ")
+        if url == gate.KEY_URL:
+            if key_raises is not None:
+                raise key_raises
+            return key_status, json.dumps(key_body if key_body is not None else {}).encode()
+        if url == gate.CREDITS_URL:
+            if credits_raises is not None:
+                raise credits_raises
+            return credits_status, json.dumps(
+                credits_body if credits_body is not None else {}
+            ).encode()
+        raise AssertionError(f"unexpected probe url {url}")
+
+    return fetch
+
+
 class TestFirstClaim:
     """AC1: the first dispatch is authorized, recorded in full, and never rewritten."""
 
@@ -163,6 +198,161 @@ class TestFirstClaim:
         refuse(claim_argv(round_dir, **{"--reason": "wishful"}), capsys)
         assert (round_dir / "attempts.jsonl").read_bytes().startswith(after_first)
         assert len(kinds(round_dir, "claim")) == 1
+
+
+class TestPreflight:
+    """The round-start credit check: refuses loudly before a lens dies mid-round."""
+
+    def test_zero_openrouter_lenses_passes_without_a_key_or_a_probe(
+        self, round_dir, capsys, monkeypatch
+    ):
+        write_round_meta(round_dir, [{"lens": "correctness", "transport": "codex"}])
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+        def explode(url, headers):
+            raise AssertionError("a round with no openrouter lens must not probe")
+
+        monkeypatch.setattr(gate, "urllib_fetch", explode)
+        code, answer = run(preflight_argv(round_dir), capsys)
+        assert code == gate.EXIT_OK
+        assert answer["preflight"] is True
+        assert answer["outcome"] == "pass"
+        assert answer["openrouter_lenses"] == 0
+        assert answer["demand_usd"] == 0.0
+        assert kinds(round_dir, "preflight")[0]["outcome"] == "pass"
+
+    def test_missing_key_with_openrouter_lenses_planned_is_refused(
+        self, round_dir, capsys, monkeypatch
+    ):
+        write_round_meta(round_dir, [{"lens": "security", "transport": "openrouter"}])
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        answer = refuse(preflight_argv(round_dir), capsys)
+        assert codes(answer) == ["no-openrouter-key"]
+        assert gate.KEY_MANAGEMENT_URL in answer["errors"][0]["message"]
+        assert kinds(round_dir, "preflight")[0]["outcome"] == "refusal"
+
+    def test_a_definitive_shortfall_refuses_naming_remaining_demanded_and_the_url(
+        self, round_dir, capsys, monkeypatch
+    ):
+        write_round_meta(round_dir, [
+            {"lens": "security", "transport": "openrouter"},
+            {"lens": "ac-testability", "transport": "openrouter"},
+        ])
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+        monkeypatch.setattr(
+            gate, "urllib_fetch",
+            make_fetch(
+                key_body={"data": {"limit_remaining": 0.75}},
+                credits_status=403, credits_body={"error": "management key required"},
+            ),
+        )
+        answer = refuse(preflight_argv(round_dir), capsys)
+        assert codes(answer) == ["insufficient-openrouter-credit"]
+        message = answer["errors"][0]["message"]
+        assert "0.75" in message
+        assert "1.00" in message
+        assert gate.KEY_MANAGEMENT_URL in message
+        record = kinds(round_dir, "preflight")[0]
+        assert (record["outcome"], record["remaining_usd"], record["demand_usd"]) == (
+            "refusal", 0.75, 1.0
+        )
+
+    def test_sufficient_credit_passes_and_records_the_bound_it_checked(
+        self, round_dir, capsys, monkeypatch
+    ):
+        write_round_meta(round_dir, [{"lens": "security", "transport": "openrouter"}])
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+        monkeypatch.setattr(
+            gate, "urllib_fetch",
+            make_fetch(
+                key_body={"data": {"limit_remaining": 5.0}},
+                credits_status=403, credits_body={"error": "management key required"},
+            ),
+        )
+        code, answer = run(preflight_argv(round_dir), capsys)
+        assert code == gate.EXIT_OK
+        assert answer["preflight"] is True
+        assert answer["outcome"] == "pass"
+        assert answer["remaining_usd"] == 5.0
+        assert answer["demand_usd"] == 0.5
+
+    def test_remaining_exactly_equal_to_demand_passes(self, round_dir, capsys, monkeypatch):
+        write_round_meta(round_dir, [{"lens": "security", "transport": "openrouter"}])
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+        monkeypatch.setattr(
+            gate, "urllib_fetch",
+            make_fetch(
+                key_body={"data": {"limit_remaining": gate.RESERVATION_USD}},
+                credits_status=403, credits_body={"error": "management key required"},
+            ),
+        )
+        code, answer = run(preflight_argv(round_dir), capsys)
+        assert code == gate.EXIT_OK
+        assert answer["outcome"] == "pass"
+
+    def test_the_tightest_of_two_answered_bounds_governs(self, round_dir, capsys, monkeypatch):
+        write_round_meta(round_dir, [{"lens": "security", "transport": "openrouter"}])
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+        monkeypatch.setattr(
+            gate, "urllib_fetch",
+            make_fetch(
+                key_body={"data": {"limit_remaining": 5.0}},
+                credits_body={"data": {"total_credits": 10.0, "total_usage": 8.7}},
+            ),
+        )
+        code, answer = run(preflight_argv(round_dir), capsys)
+        assert code == gate.EXIT_OK
+        assert answer["remaining_usd"] == pytest.approx(1.3)
+
+    def test_an_unanswerable_probe_fails_open_with_a_warning(
+        self, round_dir, capsys, monkeypatch
+    ):
+        write_round_meta(round_dir, [{"lens": "security", "transport": "openrouter"}])
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+        monkeypatch.setattr(
+            gate, "urllib_fetch",
+            make_fetch(
+                key_raises=OSError("name resolution failed"),
+                credits_raises=OSError("name resolution failed"),
+            ),
+        )
+        code, answer = run(preflight_argv(round_dir), capsys)
+        assert code == gate.EXIT_OK
+        assert answer["preflight"] is True
+        assert answer["outcome"] == "warn"
+        assert answer["warning"]
+        assert kinds(round_dir, "preflight")[0]["outcome"] == "warn"
+
+    def test_an_uncapped_key_with_no_management_credentials_fails_open(
+        self, round_dir, capsys, monkeypatch
+    ):
+        """Neither endpoint answers a definitive bound: an uncapped key reports
+        ``limit_remaining: null`` and credits needs a management key this one
+        is not, so there is nothing to refuse against."""
+        write_round_meta(round_dir, [{"lens": "security", "transport": "openrouter"}])
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+        monkeypatch.setattr(
+            gate, "urllib_fetch",
+            make_fetch(
+                key_body={"data": {"limit_remaining": None}},
+                credits_status=403, credits_body={"error": "management key required"},
+            ),
+        )
+        code, answer = run(preflight_argv(round_dir), capsys)
+        assert code == gate.EXIT_OK
+        assert answer["outcome"] == "warn"
+
+    def test_a_missing_round_meta_is_refused(self, round_dir, capsys):
+        answer = refuse(preflight_argv(round_dir), capsys)
+        assert codes(answer) == ["no-round-meta"]
+
+    def test_every_preflight_outcome_lands_in_the_ledger_ahead_of_the_first_claim(
+        self, round_dir, capsys
+    ):
+        write_round_meta(round_dir, [{"lens": "correctness", "transport": "codex"}])
+        run(preflight_argv(round_dir), capsys)
+        authorize(round_dir, capsys)
+        assert [record["kind"] for record in ledger(round_dir)] == ["preflight", "claim"]
 
 
 class TestRecoveryReason:

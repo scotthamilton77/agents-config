@@ -5,22 +5,30 @@
 # ///
 """Authorize every lens dispatch of a round, and parse what comes back.
 
-Usage: uv run dispatch_gate.py claim --lens <name> --transport <name> --model <name>
+Usage: uv run dispatch_gate.py preflight --out-dir <dir>
+       uv run dispatch_gate.py claim --lens <name> --transport <name> --model <name>
            --reason initial|transport-error|unusable-output [--evidence <verbatim>]
            [--out-dir <dir>]
        uv run dispatch_gate.py ingest --output <path> [--out-dir <dir>]
 
-Stdout is JSON. Exit 0 on authorization or ingestion, 2 on refusal. Every
-authorized attempt is appended to the round's ledger before it runs, so a lens
-that has spent its dispatches cannot spend another by asking again.
+Stdout is JSON. Exit 0 on authorization, ingestion, or an affordable or
+unanswerable preflight; 2 on refusal. Every authorized attempt is appended to
+the round's ledger before it runs, so a lens that has spent its dispatches
+cannot spend another by asking again. Run preflight once, before the round's
+first claim: it checks whether the openrouter dispatches round.json plans can
+be afforded, and refuses loudly on a shortfall instead of a lens dying
+mid-round.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -149,6 +157,176 @@ def output_path_for(out_dir: str, lens: str, attempt: int) -> Path:
 
 def backoff_for(attempt: int) -> int:
     return BACKOFF_SECONDS[min(attempt - 2, len(BACKOFF_SECONDS) - 1)]
+
+
+ROUND_META_NAME = "round.json"
+OPENROUTER_TRANSPORT = "openrouter"
+
+# The floor for one openrouter dispatch: a frontier model reserves its full
+# max_tokens against the key's balance up front, whatever it actually returns.
+# 32,768 max_tokens at ~$15 per million output tokens (frontier-tier pricing)
+# prices that reservation at ~$0.49; rounded up to the cent to keep the floor
+# conservative. Flat across lenses and models on purpose — this gate carries no
+# per-model pricing table and does not judge which model a lens deserves.
+RESERVATION_USD = 0.50
+
+KEY_URL = "https://openrouter.ai/api/v1/key"
+CREDITS_URL = "https://openrouter.ai/api/v1/credits"
+KEY_MANAGEMENT_URL = "https://openrouter.ai/settings/keys"
+
+
+def round_meta_path(out_dir: str) -> Path:
+    return Path(out_dir) / ROUND_META_NAME
+
+
+def read_round_meta(out_dir: str) -> dict[str, Any]:
+    """This round's plan, as emit_prompts.py wrote it: which lenses, on which transports.
+
+    Preflight runs after the round is planned and before its first dispatch, so
+    round.json already exists; one missing or unparseable means the round was
+    never emitted and there is nothing to check the budget of.
+    """
+    path = round_meta_path(out_dir)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise Refusal("no-round-meta", f"cannot read round metadata {path}: {exc}") from exc
+    try:
+        document = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise Refusal("no-round-meta", f"round metadata {path} is not valid JSON: {exc}") from exc
+    if not isinstance(document, dict) or not isinstance(document.get("lenses"), list):
+        raise Refusal("no-round-meta", f"round metadata {path} carries no lens list")
+    return document
+
+
+def count_openrouter_lenses(round_meta: dict[str, Any]) -> int:
+    return sum(
+        1
+        for lens in round_meta["lenses"]
+        if isinstance(lens, dict) and lens.get("transport") == OPENROUTER_TRANSPORT
+    )
+
+
+def urllib_fetch(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+    """One live HTTP GET, returning its status and raw body.
+
+    An HTTPError still carries a status and a body — OpenRouter's 402/403
+    replies are JSON — so it is read rather than raised; only a request that
+    never reached a server (DNS, connection, timeout) surfaces as an OSError.
+    """
+    request = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
+            return response.status, response.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read()
+
+
+def _probe_endpoint(url: str, api_key: str) -> tuple[dict[str, Any] | None, str | None]:
+    """This endpoint's ``data`` object, or the reason it could not be read."""
+    try:
+        status, body = urllib_fetch(url, {"Authorization": f"Bearer {api_key}"})
+    except OSError as exc:
+        return None, str(exc)
+    if not 200 <= status < 300:
+        return None, f"HTTP {status}"
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None, "response body is not JSON"
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, dict):
+        return None, "response carries no data object"
+    return data, None
+
+
+def probe_remaining_credit(api_key: str) -> tuple[float | None, list[str]]:
+    """The tightest of every credit bound the key answers, or none if neither did.
+
+    ``/key`` bounds what this specific key may still spend (null when the key
+    is uncapped); ``/credits`` bounds the account's whole balance but requires
+    a management key, so a regular key sees it answer 403 — that is one
+    endpoint failing to answer, not a shortfall. Either bound can be the
+    binding one, so the effective remaining credit is the smaller of whichever
+    endpoint actually answers.
+    """
+    bounds: list[float] = []
+    warnings: list[str] = []
+
+    key_data, key_error = _probe_endpoint(KEY_URL, api_key)
+    if key_error is not None:
+        warnings.append(f"{KEY_URL}: {key_error}")
+    else:
+        limit_remaining = key_data.get("limit_remaining")
+        if isinstance(limit_remaining, (int, float)):
+            bounds.append(float(limit_remaining))
+
+    credits_data, credits_error = _probe_endpoint(CREDITS_URL, api_key)
+    if credits_error is not None:
+        warnings.append(f"{CREDITS_URL}: {credits_error}")
+    else:
+        total, used = credits_data.get("total_credits"), credits_data.get("total_usage")
+        if isinstance(total, (int, float)) and isinstance(used, (int, float)):
+            bounds.append(float(total) - float(used))
+
+    if not bounds:
+        return None, warnings
+    return min(bounds), warnings
+
+
+def _preflight_record(outcome: str, count: int, demand: float, **extra: Any) -> dict[str, Any]:
+    return {
+        "kind": "preflight", "outcome": outcome, "openrouter_lenses": count,
+        "demand_usd": demand, "timestamp": now(), **extra,
+    }
+
+
+def preflight(args: argparse.Namespace) -> dict[str, Any]:
+    """Verify the round's planned openrouter dispatches can be afforded before the first claim."""
+    path = ledger_path(args.out_dir)
+    count = count_openrouter_lenses(read_round_meta(args.out_dir))
+    demand = round(count * RESERVATION_USD, 2)
+
+    if count == 0:
+        record = _preflight_record("pass", 0, 0.0)
+        append_record(path, record)
+        return {"preflight": True, **{k: v for k, v in record.items() if k != "kind"}}
+
+    api_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+    if not api_key:
+        refusal = Refusal(
+            "no-openrouter-key",
+            f"round.json plans {count} openrouter lens dispatch(es), demanding ${demand:.2f} in "
+            "reservation, but OPENROUTER_API_KEY is not set — those dispatches could not run "
+            f"without a key. Manage keys at {KEY_MANAGEMENT_URL}",
+        )
+        append_record(path, _preflight_record("refusal", count, demand, code=refusal.code))
+        raise refusal
+
+    remaining, warnings = probe_remaining_credit(api_key)
+    if remaining is None:
+        warning = "; ".join(warnings) if warnings else "the credit probe could not be answered"
+        record = _preflight_record("warn", count, demand, warning=warning)
+        append_record(path, record)
+        return {"preflight": True, **{k: v for k, v in record.items() if k != "kind"}}
+
+    if remaining < demand:
+        refusal = Refusal(
+            "insufficient-openrouter-credit",
+            f"round.json plans {count} openrouter lens dispatch(es), demanding ${demand:.2f} in "
+            f"reservation, but only ${remaining:.2f} remains on OPENROUTER_API_KEY — a lens would "
+            f"die mid-round. Manage keys at {KEY_MANAGEMENT_URL}",
+        )
+        append_record(
+            path,
+            _preflight_record("refusal", count, demand, remaining_usd=remaining, code=refusal.code),
+        )
+        raise refusal
+
+    record = _preflight_record("pass", count, demand, remaining_usd=remaining)
+    append_record(path, record)
+    return {"preflight": True, **{k: v for k, v in record.items() if k != "kind"}}
 
 
 def check_lens(raw: str | None) -> str:
@@ -453,6 +631,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=True)
     verbs = parser.add_subparsers(dest="verb", required=True)
 
+    preflight_parser = verbs.add_parser(
+        "preflight", help="verify the round's planned openrouter dispatches can be afforded"
+    )
+    preflight_parser.add_argument("--out-dir", default=".")
+    preflight_parser.set_defaults(run=preflight)
+
     claim_parser = verbs.add_parser("claim", help="authorize one dispatch of one lens")
     claim_parser.add_argument("--out-dir", default=".")
     claim_parser.add_argument("--lens")
@@ -469,9 +653,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+VERB_KEYS = {"claim": "authorized", "ingest": "ingested", "preflight": "preflight"}
+
+
 def main(argv: list[str]) -> int:
     args = build_parser().parse_args(argv)
-    verb = "authorized" if args.verb == "claim" else "ingested"
+    verb = VERB_KEYS[args.verb]
     try:
         result = args.run(args)
     except Refusal as exc:
