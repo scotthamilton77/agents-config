@@ -111,8 +111,8 @@ Terminal-clean means a complete round that came out `clean`, with zero mechanica
 every lens; a halted round is neither.
 
 Before the round's first claim, run `dispatch_gate.py preflight` once: it refuses loudly when the
-openrouter dispatches `round.json` plans would exceed the key's remaining credit, rather than a
-lens dying mid-round. Every dispatch is then authorized by `dispatch_gate.py claim`, which records
+openrouter dispatches planned in `round.json` would exceed the key's remaining credit, rather
+than a lens dying mid-round. Every dispatch is then authorized by `dispatch_gate.py claim`, which records
 the attempt with the route running it, assigns its output path, and refuses the ones past the
 round's bounds — those bounds are the script's, not this prose's. A refusal for a lens out of routes carries halt
 guidance: the round is over, and the `halted` verdict names the dead routes and the dispatches
