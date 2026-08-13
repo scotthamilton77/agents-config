@@ -85,7 +85,7 @@ The emitter refuses rather than producing a prompt it knows is unsound. Refusals
 | `bad-prior-verdict` | An earlier verdict is unreadable, fails the verdict schema, or is for another claim, class, or a non-earlier round. |
 | `ledger-gap` | An earlier mechanical finding has no disposition, or a disposition is outside the closed set. |
 | `unsupported-rebuttal` | A finding is marked rebutted with no evidence. A rebuttal without evidence is a disagreement. |
-| `emitter-failure` | Any other fault while emitting — an unreadable contracts file, a missing field, an unwritable output directory. Alone among these can strike mid-write, leaving some `<lens>.md` files but no `round.json`. Clear the directory before retrying — a partial round reads as a smaller panel. |
+| `emitter-failure` | Any other fault while emitting — an unreadable contracts file, a missing field, an unwritable output directory. Alone among these it can strike mid-write, leaving some `<lens>.md` files but no `round.json`. Clear the directory before retrying — a partial round reads as a smaller panel. |
 
 ## What a prompt contains
 
