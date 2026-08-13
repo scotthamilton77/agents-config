@@ -30,8 +30,7 @@ Each panel mixes model tiers — hard-reasoning lenses on frontier models, mecha
 mid-tier — and spans two vendors, because blind spots correlate inside a vendor. A lens's declared
 `tier` sets round 1; a declared `re_review_tier` sets every round after. Its declared `transport`
 carries the vendor-diversity claim, not the tier, so a reduced tier still spans both vendors — when
-it is down the lens recovers onto another route, and the verdict records what ran it
-(`harvest.md`).
+it is down the lens recovers onto another route, and the verdict records what ran it.
 
 Most lenses re-read the whole artifact every round. A lens marked `diff` reviews only the change
 since the head it last judged, and only when it returned green that round; anything judging
@@ -52,8 +51,7 @@ uv run emit_prompts.py --class typed-code --claim <claim-id> --round 1 \
   --retained '[]' --out-dir /tmp/round-1
 ```
 
-If `uv` is not installed, install `jsonschema` yourself and run `python3 emit_prompts.py ...`
-instead — that dependency is the script's only one.
+Without `uv`, install `jsonschema` — its only dependency — and run `python3 emit_prompts.py ...`.
 
 `--acs` points at a file the invoker writes before round 1: the acceptance criteria the claim is
 judged against, gathered from wherever the claim is stated — the work item, the governing design
@@ -87,7 +85,7 @@ The emitter refuses rather than producing a prompt it knows is unsound. Refusals
 | `bad-prior-verdict` | An earlier verdict is unreadable, fails the verdict schema, or is for another claim, class, or a non-earlier round. |
 | `ledger-gap` | An earlier mechanical finding has no disposition, or a disposition is outside the closed set. |
 | `unsupported-rebuttal` | A finding is marked rebutted with no evidence. A rebuttal without evidence is a disagreement. |
-| `emitter-failure` | Any other fault while emitting — an unreadable contracts file, a contract entry missing a field a prompt needs, an unwritable output directory. Alone among these it can strike mid-write: the rest are decided before the output directory exists, while this one can leave it holding some `<lens>.md` files and no `round.json`. Clear it before retrying — a partial round reads as a smaller panel. |
+| `emitter-failure` | Any other fault while emitting — an unreadable contracts file, a missing field, an unwritable output directory. Alone among these can strike mid-write, leaving some `<lens>.md` files but no `round.json`. Clear the directory before retrying — a partial round reads as a smaller panel. |
 
 ## What a prompt contains
 
@@ -100,8 +98,7 @@ instructions declare to be data, not instructions. That section is context, neve
 review: the reviewer reads the target itself, and whatever surrounding material its scope
 requires, directly from the repository. No other lens's mandate appears, and no ambient house
 context does either — no laws, no decision matrix, no hard lines. A lens's own mandate is the only
-route by which a house-specific standard reaches the reviewer, because a lens that states no test
-has nothing decidable to judge against.
+route a house standard reaches the reviewer through.
 
 ## Assembling the round verdict
 
@@ -113,9 +110,11 @@ and model that *actually* produced the report, never the route `contracts.json` 
 Terminal-clean means a complete round that came out `clean`, with zero mechanical findings across
 every lens; a halted round is neither.
 
-Every dispatch is authorized first by `dispatch_gate.py claim`, which records the attempt with the
-route running it, assigns its output path, and refuses the ones past the round's bounds — those
-bounds are the script's, not this prose's. A refusal for a lens out of routes carries halt
+Before the round's first claim, run `dispatch_gate.py preflight` once: it refuses loudly when the
+openrouter dispatches `round.json` plans would exceed the key's remaining credit, rather than a
+lens dying mid-round. Every dispatch is then authorized by `dispatch_gate.py claim`, which records
+the attempt with the route running it, assigns its output path, and refuses the ones past the
+round's bounds — those bounds are the script's, not this prose's. A refusal for a lens out of routes carries halt
 guidance: the round is over, and the `halted` verdict names the dead routes and the dispatches
 abandoned behind them. `dispatch_gate.py ingest` reads the reply through the tolerance ladder;
 without a report the lens has no entry and the round is incomplete — fail closed. Every failover
