@@ -106,6 +106,11 @@ Step 1 — run the runner as ONE FOREGROUND Bash call with timeout 600000 (do NO
 
 date +%s > ${DIR}/${arm.label}.start; codex exec -C ${arm.worktree} -m ${arm.codexModel} -c model_reasoning_effort=${arm.effort} -s workspace-write --add-dir ${DIR}/reports -o ${DIR}/reports/arm-${arm.label}.last.md - < ${DIR}/dispatch-${arm.label}.md > ${DIR}/${arm.label}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/${arm.label}.exec.log; date +%s > ${DIR}/${arm.label}.end
 
+Step 1b — completion ladder (a high-effort runner can outlast one call):
+(a) If the harness reports the Step 1 command was moved to the background on timeout, WAIT for its completion notification — never start another codex process while one may still be running for this arm.
+(b) Only after the command has fully ended, check the tail of ${DIR}/${arm.label}.exec.log. If NO CODEX_EXIT line was recorded, the runner was killed mid-flight: extract its session id with grep -m1 -oE 'session id: [0-9a-f-]+' ${DIR}/${arm.label}.exec.log, then run as ONE FOREGROUND Bash call with timeout 600000: codex exec resume <that-uuid> -o ${DIR}/reports/arm-${arm.label}.last.md - <<< "Continue where you left off and finish the original dispatch; your working root, report path, and constraints are unchanged." >> ${DIR}/${arm.label}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/${arm.label}.exec.log; date +%s > ${DIR}/${arm.label}.end
+Apply rules (a) and (b) to each resume call too, resuming the SAME session id, at most 3 resumes total. If no session id is found in the log, record what happened for log_tail and continue.
+
 Step 2 — retry rule, applied at most once: if the recorded CODEX_EXIT is non-zero AND \`git -C ${arm.worktree} status --porcelain\` is empty AND \`git -C ${arm.worktree} log --oneline ${BASE}..HEAD\` is empty (a transport-class failure that produced no work — e.g. an HTTP 5xx in the log), run the Step 1 command once more. If the worktree has changes or commits, never re-run — capture what is there.
 
 Step 3 — capture with plain foreground reads:
