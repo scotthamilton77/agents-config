@@ -375,7 +375,13 @@ const armResults = await pipeline(
   (prev, arm) => agent(auditPrompt(arm), { label: `audit:${arm.label}`, phase: 'Audit', model: 'haiku', effort: 'low', schema: AUDIT_SCHEMA })
     .then(audit => ({ ...prev, audit })),
   (prev, arm) => agent(sanitizePrompt(arm), { label: `sanitize:${arm.label}`, phase: 'Sanitize', model: 'sonnet', effort: 'low', schema: SANITIZE_SCHEMA })
-    .then(sanitize => ({ arm: arm.label, kind: arm.kind, ...prev, sanitize })),
+    .then(sanitize => {
+      // Surface a no-deliverable arm the moment the sanitizer detects it, not
+      // when a judge scores its justification criteria zero an hour later.
+      const report_missing = !sanitize || !sanitize.existed
+      if (report_missing) log(`ARM ${arm.label}: no report delivered — it will be judged on its diff alone, and justification-class criteria will fail`)
+      return { arm: arm.label, kind: arm.kind, report_missing, ...prev, sanitize }
+    }),
 )
 
 arms = armResults.filter(Boolean)
