@@ -1,7 +1,7 @@
 export const meta = {
   name: 'bake-off',
   description: 'Parameterized model×effort bake-off: reset worktrees, run contestant arms, audit+gate, sanitize, blind-judge, synthesize',
-  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefText, rubricText, arms[], judges[], divergence?, reset?}.',
+  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefText, rubricText, arms[], judges[], reconcile?, reset?}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary, rubricText, judges[], cachedSeats?, cachedChecker?}.',
   phases: [
     { title: 'Reset', detail: 'archive then reset each arm worktree to the pinned base' },
     { title: 'Arms', detail: 'contestants implement the pinned brief in isolated worktrees' },
@@ -40,6 +40,20 @@ const RECONCILE = IN.reconcile !== undefined ? IN.reconcile : IN.divergence
 // Optional split-panel escalation: {model, effort} spawns a claude-kind adjudicator
 // over the disputed points when seat preferences are not unanimous.
 const ESCALATION = IN.escalation || null
+// Judge-only mode: judge a completed run's retained artifacts (brief.md, diffs/,
+// judged/ under dir) without touching arms — the recovery path when a seat dies
+// mid-verdict (resume caching is positional-prefix, so a resumed pipeline re-runs
+// contestants instead of just the judge phase), and the cheap path for panel
+// iteration over unchanged arm outputs. The caller supplies what the arms phase
+// would have produced — labels, the mechanical gateSummary text, a runTags string —
+// plus any surviving seat verdicts ({seat, kind, verdict}) and checker findings,
+// which join the panel unchanged.
+const JUDGE_ONLY = !!IN.judgeOnly
+const CACHED_SEATS = IN.cachedSeats || []
+const CACHED_CHECKER = IN.cachedChecker || null
+if (JUDGE_ONLY && !(IN.labels && IN.labels.length && IN.gateSummary)) {
+  throw new Error('bake-off: judgeOnly requires labels[] and gateSummary describing the retained arms')
+}
 
 // Prompts embed these values inside Bash commands without shell quoting; restrict
 // them to shell-inert characters and fail fast, rather than quoting throughout the
@@ -52,6 +66,7 @@ for (const a of IN.arms || []) {
   if (a.runTag) embedded.push([`arm ${a.label} runTag`, a.runTag])
   if (a.reportPath) embedded.push([`arm ${a.label} reportPath`, a.reportPath])
 }
+for (const l of (JUDGE_ONLY ? IN.labels : [])) embedded.push([`label ${l}`, l])
 for (const s of JUDGES) {
   embedded.push([`judge ${s.id} id`, s.id])
   if (s.codexModel) embedded.push([`judge ${s.id} codexModel`, s.codexModel])
@@ -332,6 +347,8 @@ const ESCALATION_SCHEMA_BASE = labels => ({
 // ---------- pipeline ----------
 
 // Per arm: (reset →) contestant → audit → sanitize, no cross-arm barrier until judging.
+let arms = []
+if (!JUDGE_ONLY) {
 phase('Arms')
 log(`Dispatching ${IN.arms.length} arm(s); reset=${RESET}`)
 const armResults = await pipeline(
@@ -356,14 +373,17 @@ const armResults = await pipeline(
     .then(sanitize => ({ arm: arm.label, kind: arm.kind, ...prev, sanitize })),
 )
 
-const arms = armResults.filter(Boolean)
+arms = armResults.filter(Boolean)
 log(`Arms complete: ${arms.length}/${IN.arms.length}. Gates: ${arms.map(a => `${a.arm}=${a.audit ? a.audit.gate_exit : '?'}`).join(', ')}`)
+} else {
+  log(`Judge-only: judging retained artifacts in ${DIR} — ${IN.labels.length} arm(s), ${CACHED_SEATS.length} cached seat(s)${CACHED_CHECKER ? ', cached checker' : ''}`)
+}
 
 // Barrier: every judge seat needs all arms.
 phase('Judge')
-const labels = arms.map(a => a.arm)
-const runTags = IN.arms.map(a => `${a.label}${tag(a)}`).join('/')
-const gateSummary = arms.map(a =>
+const labels = JUDGE_ONLY ? IN.labels : arms.map(a => a.arm)
+const runTags = JUDGE_ONLY ? (IN.runTags || 'judge-only') : IN.arms.map(a => `${a.label}${tag(a)}`).join('/')
+const gateSummary = JUDGE_ONLY ? IN.gateSummary : arms.map(a =>
   `Arm ${a.arm}: gate exit ${a.audit ? a.audit.gate_exit : 'unknown'}, ${a.audit ? a.audit.files_changed : '?'} files changed (+${a.audit ? a.audit.loc_added : '?'}/-${a.audit ? a.audit.loc_removed : '?'} LOC), complexity: ${a.audit ? a.audit.complexity_summary : 'unknown'}, committed by ${a.audit && a.audit.committed_by_audit ? 'the audit (arm left work uncommitted)' : 'the arm itself'}${a.kind === 'reference' ? ' [commit pre-existed this run; "committed by the arm" reflects the audit finding a clean tree, not authorship during this dispatch]' : ''}`
 ).join('\n')
 const judgeText = judgeHarnessPrompt(gateSummary, labels, runTags)
@@ -380,8 +400,8 @@ const seatThunks = JUDGES.map(seat => () =>
         .then(v => ({ seat: seat.id, kind: seat.kind, verdict: v }))
 )
 // The checker seat is quarantined: it alone reads the trap ledger, and its output
-// never enters a main judge's context.
-if (TRAP_LEDGER) seatThunks.push(() =>
+// never enters a main judge's context. A cached checker result suppresses a re-run.
+if (TRAP_LEDGER && !CACHED_CHECKER) seatThunks.push(() =>
   agent(`You are the trap-ledger checker (run tag ${runTags}) for a blind ${labels.length}-arm comparison. Facts only — never score quality, never state a preference, never infer who produced any arm.
 
 Read ${TRAP_LEDGER}, then for each arm label (${labels.join(', ')}): ${DIR}/judged/report-<label>.md and ${DIR}/diffs/<label>.diff. Read nothing else under ${DIR}. You may consult the repository checkout at ${IN.contextCheckout} read-only to confirm a ledger fact; change nothing.
@@ -392,10 +412,11 @@ For each ledger probe crossed with each arm: quote the exact report sentence(s) 
 const seatResults = (await parallel(seatThunks)).filter(Boolean)
 // A seat whose agent died terminally resolves with verdict: null — drop it from the
 // panel and report it, rather than letting a null verdict poison later stages.
-const judges = seatResults.filter(r => !r.checkerResult && r.verdict)
+// Cached seat verdicts join the panel unchanged and count in every later stage.
+const judges = [...seatResults.filter(r => !r.checkerResult && r.verdict), ...CACHED_SEATS]
 const judges_failed = seatResults.filter(r => !r.checkerResult && !r.verdict).map(r => r.seat)
 if (judges_failed.length) log(`Seat(s) returned no verdict (agent died): ${judges_failed.join(', ')} — panel proceeds with ${judges.length} seat(s)`)
-const checker = (seatResults.find(r => r.checkerResult) || {}).checkerResult || null
+const checker = (seatResults.find(r => r.checkerResult) || {}).checkerResult || CACHED_CHECKER
 
 // Aggregate in plain code: per-axis means and preference tally across seats.
 const totals = {}
