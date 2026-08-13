@@ -54,6 +54,17 @@ const CACHED_CHECKER = IN.cachedChecker || null
 if (JUDGE_ONLY && !(IN.labels && IN.labels.length && IN.gateSummary)) {
   throw new Error('bake-off: judgeOnly requires labels[] and gateSummary describing the retained arms')
 }
+// Cached panel inputs only make sense over unchanged artifacts: on a full run the
+// arms are fresh, so a carried-over verdict or checker finding describes bytes that
+// no longer exist — refuse rather than silently double-count or go stale.
+if (!JUDGE_ONLY && (CACHED_SEATS.length || CACHED_CHECKER)) {
+  throw new Error('bake-off: cachedSeats/cachedChecker are judge-only inputs — a full run re-judges everything')
+}
+// Prompts interpolate these unconditionally; absent, judges would read "undefined".
+if (!IN.rubricText) throw new Error('bake-off: rubricText is required — judge prompts interpolate it')
+if (!JUDGE_ONLY && (IN.arms || []).some(a => a.kind !== 'reference') && !IN.briefText) {
+  throw new Error('bake-off: briefText is required when contestant arms run')
+}
 
 // Prompts embed these values inside Bash commands without shell quoting; restrict
 // them to shell-inert characters and fail fast, rather than quoting throughout the
@@ -108,7 +119,7 @@ date +%s > ${DIR}/${arm.label}.start; codex exec -C ${arm.worktree} -m ${arm.cod
 
 Step 1b — completion ladder (a high-effort runner can outlast one call):
 (a) If the harness reports the Step 1 command was moved to the background on timeout, WAIT for its completion notification — never start another codex process while one may still be running for this arm.
-(b) Only after the command has fully ended, check the tail of ${DIR}/${arm.label}.exec.log. If NO CODEX_EXIT line was recorded, the runner was killed mid-flight: extract its session id with grep -m1 -oE 'session id: [0-9a-f-]+' ${DIR}/${arm.label}.exec.log, then run as ONE FOREGROUND Bash call with timeout 600000: codex exec resume <that-uuid> -o ${DIR}/reports/arm-${arm.label}.last.md - <<< "Continue where you left off and finish the original dispatch; your working root, report path, and constraints are unchanged." >> ${DIR}/${arm.label}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/${arm.label}.exec.log; date +%s > ${DIR}/${arm.label}.end
+(b) Only after the command has fully ended, check the tail of ${DIR}/${arm.label}.exec.log. If NO CODEX_EXIT line was recorded, the runner was killed mid-flight: extract the bare session UUID with: grep -m1 -oE 'session id: [0-9a-f-]+' ${DIR}/${arm.label}.exec.log | cut -d' ' -f3 — then run as ONE FOREGROUND Bash call with timeout 600000: codex exec resume <that-uuid> -o ${DIR}/reports/arm-${arm.label}.last.md - <<< "Continue where you left off and finish the original dispatch; your working root, report path, and constraints are unchanged." >> ${DIR}/${arm.label}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/${arm.label}.exec.log; date +%s > ${DIR}/${arm.label}.end
 Apply rules (a) and (b) to each resume call too, resuming the SAME session id, at most 3 resumes total. If no session id is found in the log, record what happened for log_tail and continue.
 
 Step 2 — retry rule, applied at most once: if the recorded CODEX_EXIT is non-zero AND \`git -C ${arm.worktree} status --porcelain\` is empty AND \`git -C ${arm.worktree} log --oneline ${BASE}..HEAD\` is empty (a transport-class failure that produced no work — e.g. an HTTP 5xx in the log), run the Step 1 command once more. If the worktree has changes or commits, never re-run — capture what is there.
@@ -190,7 +201,7 @@ codex exec -C ${IN.contextCheckout} -m ${seat.codexModel} -c model_reasoning_eff
 
 Step 2b — completion ladder (a large comparison can outlast one call):
 (a) If the harness reports the Step 2 command was moved to the background on timeout, WAIT for its completion notification — never start another codex process while one may still be running for this seat.
-(b) Only after the command has fully ended, check whether ${DIR}/judge-${seat.id}.out.md exists. If it does NOT, the runner was killed mid-flight: extract its session id with grep -m1 -oE 'session id: [0-9a-f-]+' ${DIR}/judge-${seat.id}.exec.log, then run as ONE FOREGROUND Bash call with timeout 600000: codex exec resume <that-uuid> -o ${DIR}/judge-${seat.id}.out.md - <<< "Continue where you left off and finish the judging task; your final message must be ONLY the JSON object exactly as specified." >> ${DIR}/judge-${seat.id}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/judge-${seat.id}.exec.log
+(b) Only after the command has fully ended, check whether ${DIR}/judge-${seat.id}.out.md exists. If it does NOT, the runner was killed mid-flight: extract the bare session UUID with: grep -m1 -oE 'session id: [0-9a-f-]+' ${DIR}/judge-${seat.id}.exec.log | cut -d' ' -f3 — then run as ONE FOREGROUND Bash call with timeout 600000: codex exec resume <that-uuid> -o ${DIR}/judge-${seat.id}.out.md - <<< "Continue where you left off and finish the judging task; your final message must be ONLY the JSON object exactly as specified." >> ${DIR}/judge-${seat.id}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/judge-${seat.id}.exec.log
 Apply rules (a) and (b) to each resume call too, resuming the SAME session id, at most 3 resumes total. If no session id is found in the log, note it and go to Step 3.
 
 Step 3 — read ${DIR}/judge-${seat.id}.out.md, extract the JSON object, and return it as the structured result with seat_exit set to the recorded CODEX_EXIT. If an axis key in the judge's JSON differs only in wording from the pinned keys, rename it to the pinned key and record the rename in notes — never alter a score. If the output is missing or not parseable JSON, return seat_exit -1, empty scores, preference "tie", and put the raw tail in notes. Report only observed values.
@@ -424,7 +435,7 @@ const seatResults = (await parallel(seatThunks)).filter(Boolean)
 // A seat whose agent died terminally resolves with verdict: null — drop it from the
 // panel and report it, rather than letting a null verdict poison later stages.
 // Cached seat verdicts join the panel unchanged and count in every later stage.
-const judges = [...seatResults.filter(r => !r.checkerResult && r.verdict), ...CACHED_SEATS]
+const judges = [...seatResults.filter(r => !r.checkerResult && r.verdict), ...CACHED_SEATS.filter(s => s && s.verdict)]
 const judges_failed = seatResults.filter(r => !r.checkerResult && !r.verdict).map(r => r.seat)
 if (judges_failed.length) log(`Seat(s) returned no verdict (agent died): ${judges_failed.join(', ')} — panel proceeds with ${judges.length} seat(s)`)
 const checker = (seatResults.find(r => r.checkerResult) || {}).checkerResult || CACHED_CHECKER
