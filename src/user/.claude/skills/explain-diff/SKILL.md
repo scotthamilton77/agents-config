@@ -2,7 +2,6 @@
 name: explain-diff
 description: Produces one self-contained HTML explainer for a code change — a PR, diff, branch or commit range — narrated in a resolved persona voice, with background, intuition, a code walkthrough and a comprehension quiz. Use when the user types /explain-diff. Not for line-by-line code review.
 argument-hint: "[target] [--persona=NAME]"
-disable-model-invocation: true
 model: sonnet
 effort: medium
 admission:

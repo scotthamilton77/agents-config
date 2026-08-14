@@ -2,7 +2,6 @@
 name: handoff
 description: Compact the current conversation into a handoff document so a fresh agent can resume the work in a new session. Use when ending a session or when the user types /handoff [focus].
 argument-hint: [focus of next session]
-disable-model-invocation: true
 allowed-tools: Write Bash(git status *) Bash(git log *) Bash(date *) Bash(pwd)
 admission:
   provides: Mechanism to capture the current conversation and working-tree snapshot into a handoff document for a fresh agent to resume work in a new session.
