@@ -1,7 +1,7 @@
 export const meta = {
   name: 'bake-off',
   description: 'Parameterized model×effort bake-off: reset worktrees, run contestant arms, audit+gate, sanitize, blind-judge, synthesize',
-  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefText, rubricText, arms[], judges[], divergence?, reset?}.',
+  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefText, rubricText, arms[], judges[], reconcile?, reset?}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary, rubricText, judges[], cachedSeats?, cachedChecker?}.',
   phases: [
     { title: 'Reset', detail: 'archive then reset each arm worktree to the pinned base' },
     { title: 'Arms', detail: 'contestants implement the pinned brief in isolated worktrees' },
@@ -40,6 +40,31 @@ const RECONCILE = IN.reconcile !== undefined ? IN.reconcile : IN.divergence
 // Optional split-panel escalation: {model, effort} spawns a claude-kind adjudicator
 // over the disputed points when seat preferences are not unanimous.
 const ESCALATION = IN.escalation || null
+// Judge-only mode: judge a completed run's retained artifacts (brief.md, diffs/,
+// judged/ under dir) without touching arms — the recovery path when a seat dies
+// mid-verdict (resume caching is positional-prefix, so a resumed pipeline re-runs
+// contestants instead of just the judge phase), and the cheap path for panel
+// iteration over unchanged arm outputs. The caller supplies what the arms phase
+// would have produced — labels, the mechanical gateSummary text, a runTags string —
+// plus any surviving seat verdicts ({seat, kind, verdict}) and checker findings,
+// which join the panel unchanged.
+const JUDGE_ONLY = !!IN.judgeOnly
+const CACHED_SEATS = IN.cachedSeats || []
+const CACHED_CHECKER = IN.cachedChecker || null
+if (JUDGE_ONLY && !(IN.labels && IN.labels.length && IN.gateSummary)) {
+  throw new Error('bake-off: judgeOnly requires labels[] and gateSummary describing the retained arms')
+}
+// Cached panel inputs only make sense over unchanged artifacts: on a full run the
+// arms are fresh, so a carried-over verdict or checker finding describes bytes that
+// no longer exist — refuse rather than silently double-count or go stale.
+if (!JUDGE_ONLY && (CACHED_SEATS.length || CACHED_CHECKER)) {
+  throw new Error('bake-off: cachedSeats/cachedChecker are judge-only inputs — a full run re-judges everything')
+}
+// Prompts interpolate these unconditionally; absent, judges would read "undefined".
+if (!IN.rubricText) throw new Error('bake-off: rubricText is required — judge prompts interpolate it')
+if (!JUDGE_ONLY && (IN.arms || []).some(a => a.kind !== 'reference') && !IN.briefText) {
+  throw new Error('bake-off: briefText is required when contestant arms run')
+}
 
 // Prompts embed these values inside Bash commands without shell quoting; restrict
 // them to shell-inert characters and fail fast, rather than quoting throughout the
@@ -52,6 +77,7 @@ for (const a of IN.arms || []) {
   if (a.runTag) embedded.push([`arm ${a.label} runTag`, a.runTag])
   if (a.reportPath) embedded.push([`arm ${a.label} reportPath`, a.reportPath])
 }
+for (const l of (JUDGE_ONLY ? IN.labels : [])) embedded.push([`label ${l}`, l])
 for (const s of JUDGES) {
   embedded.push([`judge ${s.id} id`, s.id])
   if (s.codexModel) embedded.push([`judge ${s.id} codexModel`, s.codexModel])
@@ -90,6 +116,11 @@ Step 0 — write the dispatch file: mkdir -p ${DIR}/reports && printf '%s\\n\\n'
 Step 1 — run the runner as ONE FOREGROUND Bash call with timeout 600000 (do NOT use run_in_background — the runner must finish inside this one call):
 
 date +%s > ${DIR}/${arm.label}.start; codex exec -C ${arm.worktree} -m ${arm.codexModel} -c model_reasoning_effort=${arm.effort} -s workspace-write --add-dir ${DIR}/reports -o ${DIR}/reports/arm-${arm.label}.last.md - < ${DIR}/dispatch-${arm.label}.md > ${DIR}/${arm.label}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/${arm.label}.exec.log; date +%s > ${DIR}/${arm.label}.end
+
+Step 1b — completion ladder (a high-effort runner can outlast one call):
+(a) If the harness reports the Step 1 command was moved to the background on timeout, WAIT for its completion notification — never start another codex process while one may still be running for this arm.
+(b) Only after the command has fully ended, check the tail of ${DIR}/${arm.label}.exec.log. If NO CODEX_EXIT line was recorded, the runner was killed mid-flight: extract the bare session UUID with: grep -m1 -oE 'session id: [0-9a-f-]+' ${DIR}/${arm.label}.exec.log | cut -d' ' -f3 — then run as ONE FOREGROUND Bash call with timeout 600000: codex exec resume <that-uuid> -o ${DIR}/reports/arm-${arm.label}.last.md - <<< "Continue where you left off and finish the original dispatch; your working root, report path, and constraints are unchanged." >> ${DIR}/${arm.label}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/${arm.label}.exec.log; date +%s > ${DIR}/${arm.label}.end
+Apply rules (a) and (b) to each resume call too, resuming the SAME session id, at most 3 resumes total. If no session id is found in the log, record what happened for log_tail and continue.
 
 Step 2 — retry rule, applied at most once: if the recorded CODEX_EXIT is non-zero AND \`git -C ${arm.worktree} status --porcelain\` is empty AND \`git -C ${arm.worktree} log --oneline ${BASE}..HEAD\` is empty (a transport-class failure that produced no work — e.g. an HTTP 5xx in the log), run the Step 1 command once more. If the worktree has changes or commits, never re-run — capture what is there.
 
@@ -170,7 +201,7 @@ codex exec -C ${IN.contextCheckout} -m ${seat.codexModel} -c model_reasoning_eff
 
 Step 2b — completion ladder (a large comparison can outlast one call):
 (a) If the harness reports the Step 2 command was moved to the background on timeout, WAIT for its completion notification — never start another codex process while one may still be running for this seat.
-(b) Only after the command has fully ended, check whether ${DIR}/judge-${seat.id}.out.md exists. If it does NOT, the runner was killed mid-flight: extract its session id with grep -m1 -oE 'session id: [0-9a-f-]+' ${DIR}/judge-${seat.id}.exec.log, then run as ONE FOREGROUND Bash call with timeout 600000: codex exec resume <that-uuid> -o ${DIR}/judge-${seat.id}.out.md - <<< "Continue where you left off and finish the judging task; your final message must be ONLY the JSON object exactly as specified." >> ${DIR}/judge-${seat.id}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/judge-${seat.id}.exec.log
+(b) Only after the command has fully ended, check whether ${DIR}/judge-${seat.id}.out.md exists. If it does NOT, the runner was killed mid-flight: extract the bare session UUID with: grep -m1 -oE 'session id: [0-9a-f-]+' ${DIR}/judge-${seat.id}.exec.log | cut -d' ' -f3 — then run as ONE FOREGROUND Bash call with timeout 600000: codex exec resume <that-uuid> -o ${DIR}/judge-${seat.id}.out.md - <<< "Continue where you left off and finish the judging task; your final message must be ONLY the JSON object exactly as specified." >> ${DIR}/judge-${seat.id}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/judge-${seat.id}.exec.log
 Apply rules (a) and (b) to each resume call too, resuming the SAME session id, at most 3 resumes total. If no session id is found in the log, note it and go to Step 3.
 
 Step 3 — read ${DIR}/judge-${seat.id}.out.md, extract the JSON object, and return it as the structured result with seat_exit set to the recorded CODEX_EXIT. If an axis key in the judge's JSON differs only in wording from the pinned keys, rename it to the pinned key and record the rename in notes — never alter a score. If the output is missing or not parseable JSON, return seat_exit -1, empty scores, preference "tie", and put the raw tail in notes. Report only observed values.
@@ -332,6 +363,8 @@ const ESCALATION_SCHEMA_BASE = labels => ({
 // ---------- pipeline ----------
 
 // Per arm: (reset →) contestant → audit → sanitize, no cross-arm barrier until judging.
+let arms = []
+if (!JUDGE_ONLY) {
 phase('Arms')
 log(`Dispatching ${IN.arms.length} arm(s); reset=${RESET}`)
 const armResults = await pipeline(
@@ -353,17 +386,26 @@ const armResults = await pipeline(
   (prev, arm) => agent(auditPrompt(arm), { label: `audit:${arm.label}`, phase: 'Audit', model: 'haiku', effort: 'low', schema: AUDIT_SCHEMA })
     .then(audit => ({ ...prev, audit })),
   (prev, arm) => agent(sanitizePrompt(arm), { label: `sanitize:${arm.label}`, phase: 'Sanitize', model: 'sonnet', effort: 'low', schema: SANITIZE_SCHEMA })
-    .then(sanitize => ({ arm: arm.label, kind: arm.kind, ...prev, sanitize })),
+    .then(sanitize => {
+      // Surface a no-deliverable arm the moment the sanitizer detects it, not
+      // when a judge scores its justification criteria zero an hour later.
+      const report_missing = !sanitize || !sanitize.existed
+      if (report_missing) log(`ARM ${arm.label}: no report delivered — it will be judged on its diff alone, and justification-class criteria will fail`)
+      return { arm: arm.label, kind: arm.kind, report_missing, ...prev, sanitize }
+    }),
 )
 
-const arms = armResults.filter(Boolean)
+arms = armResults.filter(Boolean)
 log(`Arms complete: ${arms.length}/${IN.arms.length}. Gates: ${arms.map(a => `${a.arm}=${a.audit ? a.audit.gate_exit : '?'}`).join(', ')}`)
+} else {
+  log(`Judge-only: judging retained artifacts in ${DIR} — ${IN.labels.length} arm(s), ${CACHED_SEATS.length} cached seat(s)${CACHED_CHECKER ? ', cached checker' : ''}`)
+}
 
 // Barrier: every judge seat needs all arms.
 phase('Judge')
-const labels = arms.map(a => a.arm)
-const runTags = IN.arms.map(a => `${a.label}${tag(a)}`).join('/')
-const gateSummary = arms.map(a =>
+const labels = JUDGE_ONLY ? IN.labels : arms.map(a => a.arm)
+const runTags = JUDGE_ONLY ? (IN.runTags || 'judge-only') : IN.arms.map(a => `${a.label}${tag(a)}`).join('/')
+const gateSummary = JUDGE_ONLY ? IN.gateSummary : arms.map(a =>
   `Arm ${a.arm}: gate exit ${a.audit ? a.audit.gate_exit : 'unknown'}, ${a.audit ? a.audit.files_changed : '?'} files changed (+${a.audit ? a.audit.loc_added : '?'}/-${a.audit ? a.audit.loc_removed : '?'} LOC), complexity: ${a.audit ? a.audit.complexity_summary : 'unknown'}, committed by ${a.audit && a.audit.committed_by_audit ? 'the audit (arm left work uncommitted)' : 'the arm itself'}${a.kind === 'reference' ? ' [commit pre-existed this run; "committed by the arm" reflects the audit finding a clean tree, not authorship during this dispatch]' : ''}`
 ).join('\n')
 const judgeText = judgeHarnessPrompt(gateSummary, labels, runTags)
@@ -380,8 +422,8 @@ const seatThunks = JUDGES.map(seat => () =>
         .then(v => ({ seat: seat.id, kind: seat.kind, verdict: v }))
 )
 // The checker seat is quarantined: it alone reads the trap ledger, and its output
-// never enters a main judge's context.
-if (TRAP_LEDGER) seatThunks.push(() =>
+// never enters a main judge's context. A cached checker result suppresses a re-run.
+if (TRAP_LEDGER && !CACHED_CHECKER) seatThunks.push(() =>
   agent(`You are the trap-ledger checker (run tag ${runTags}) for a blind ${labels.length}-arm comparison. Facts only — never score quality, never state a preference, never infer who produced any arm.
 
 Read ${TRAP_LEDGER}, then for each arm label (${labels.join(', ')}): ${DIR}/judged/report-<label>.md and ${DIR}/diffs/<label>.diff. Read nothing else under ${DIR}. You may consult the repository checkout at ${IN.contextCheckout} read-only to confirm a ledger fact; change nothing.
@@ -392,10 +434,11 @@ For each ledger probe crossed with each arm: quote the exact report sentence(s) 
 const seatResults = (await parallel(seatThunks)).filter(Boolean)
 // A seat whose agent died terminally resolves with verdict: null — drop it from the
 // panel and report it, rather than letting a null verdict poison later stages.
-const judges = seatResults.filter(r => !r.checkerResult && r.verdict)
+// Cached seat verdicts join the panel unchanged and count in every later stage.
+const judges = [...seatResults.filter(r => !r.checkerResult && r.verdict), ...CACHED_SEATS.filter(s => s && s.verdict)]
 const judges_failed = seatResults.filter(r => !r.checkerResult && !r.verdict).map(r => r.seat)
 if (judges_failed.length) log(`Seat(s) returned no verdict (agent died): ${judges_failed.join(', ')} — panel proceeds with ${judges.length} seat(s)`)
-const checker = (seatResults.find(r => r.checkerResult) || {}).checkerResult || null
+const checker = (seatResults.find(r => r.checkerResult) || {}).checkerResult || CACHED_CHECKER
 
 // Aggregate in plain code: per-axis means and preference tally across seats.
 const totals = {}
