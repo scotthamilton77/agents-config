@@ -598,12 +598,16 @@ class TestIngest:
         assert "transport-error" in refused["errors"][0]["message"]
         assert kinds(round_dir, "outcome")[0]["outcome"] == "no-output"
 
-    def test_a_claimed_path_holding_an_empty_file_is_a_transport_failure(self, round_dir, capsys):
+    @pytest.mark.parametrize("body", ["", " \n\t\n"])
+    def test_a_claimed_path_holding_an_empty_file_is_a_transport_failure(
+        self, round_dir, capsys, body
+    ):
         """A route that dies mid-turn exits 0 having opened its file and written
-        nothing into it. Nothing came over the transport, so this is the route's
+        nothing into it — sometimes literally nothing, sometimes a stray newline.
+        Nothing came over the transport either way, so this is the route's
         failure and not the reviewer's, however clean the exit status looked."""
         answer = authorize(round_dir, capsys)
-        write_output(answer, "")
+        write_output(answer, body)
         refused = refuse(
             ["ingest", "--out-dir", str(round_dir), "--output", answer["output_path"]], capsys
         )
