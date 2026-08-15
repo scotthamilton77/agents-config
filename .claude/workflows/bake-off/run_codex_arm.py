@@ -63,6 +63,27 @@ def emit(state: dict, code: int = 0) -> int:
     return code
 
 
+def emit_guard(state: dict, message: str, code: int) -> int:
+    """Guard/launch failures still emit the full rung-state shape: the caller's
+    schema requires those fields, and a short JSON would push the ladder into
+    probe/retry instead of the deliberate stop that guard_exit signals."""
+    state.update(
+        codex_exit=-1,
+        watchdog_fired=False,
+        session_id="",
+        report_exists=False,
+        report_copied=False,
+        worktree_touched=False,
+        tokens_used=0,
+        wall_seconds=0,
+        total_wall_seconds=-1,
+        log_tail="",
+        rung_error=message,
+        guard_exit=code,
+    )
+    return emit(state, code)
+
+
 def tail(path: Path, lines: int = LOG_TAIL_LINES) -> str:
     if not path.exists():
         return ""
@@ -119,16 +140,14 @@ def main(argv: list[str]) -> int:
         except (ValueError, ProcessLookupError, PermissionError):
             pidfile.unlink(missing_ok=True)
         else:
-            state["error"] = f"pidfile guard: codex pid {pid} for arm {label} is still alive"
-            return emit(state, 13)
+            return emit_guard(state, f"pidfile guard: codex pid {pid} for arm {label} is still alive", 13)
 
     # First attempt owns the dispatch file and truncates the log; later
     # attempts reuse both so the session's full history stays in one place.
     (d / "reports").mkdir(parents=True, exist_ok=True)
     if a.attempt == 1 or not dispatch.exists():
         if not a.brief:
-            state["error"] = "dispatch guard: --brief is required to write the dispatch file"
-            return emit(state, 12)
+            return emit_guard(state, "dispatch guard: --brief is required to write the dispatch file", 12)
         preamble = (
             f"Dispatch preamble (run tag {a.run_tag}): your working root is "
             f"{a.worktree}. Your report path is {report}. The brief follows."
@@ -143,11 +162,12 @@ def main(argv: list[str]) -> int:
     # instead of silently running another arm's task.
     text = dispatch.read_text(errors="replace")
     if a.worktree not in text or str(report) not in text:
-        state["error"] = (
+        return emit_guard(
+            state,
             f"dispatch guard: {dispatch} does not name worktree {a.worktree} "
-            f"and report path {report}"
+            f"and report path {report}",
+            12,
         )
-        return emit(state, 12)
 
     if a.resume_session:
         cmd = [a.codex_bin, "exec", "resume", a.resume_session, "-o", str(last_msg), "-"]
@@ -182,8 +202,7 @@ def main(argv: list[str]) -> int:
                 rc = 137
     except FileNotFoundError:
         pidfile.unlink(missing_ok=True)
-        state["error"] = f"codex binary not found: {a.codex_bin}"
-        return emit(state, 14)
+        return emit_guard(state, f"codex binary not found: {a.codex_bin}", 14)
     finally:
         pidfile.unlink(missing_ok=True)
 

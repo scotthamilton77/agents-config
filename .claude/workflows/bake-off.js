@@ -74,8 +74,20 @@ if (!IN.rubricText) throw new Error('bake-off: rubricText is required — judge 
 if (!JUDGE_ONLY && (IN.arms || []).some(a => a.kind !== 'reference') && !IN.briefText) {
   throw new Error('bake-off: briefText is required when contestant arms run')
 }
-if (!JUDGE_ONLY && (IN.arms || []).some(a => a.kind !== 'reference' && a.kind !== 'claude') && !RUNNER) {
+const codexArms = JUDGE_ONLY ? [] : (IN.arms || []).filter(a => a.kind !== 'reference' && a.kind !== 'claude')
+if (codexArms.length && !RUNNER) {
   throw new Error('bake-off: runnerPath (absolute path to run_codex_arm.py) is required when codex arms run')
+}
+if (RUNNER && !RUNNER.startsWith('/')) {
+  throw new Error('bake-off: runnerPath must be absolute — rung agents start in the session root, not this checkout')
+}
+// The ladder's no-backgrounding guarantee IS this inequality: the runner's
+// watchdog must expire with margin inside the rung's Bash-call timeout.
+if (codexArms.length && WATCHDOG_S * 1000 > RUNG_TIMEOUT_MS - 60000) {
+  throw new Error(`bake-off: watchdogSeconds (${WATCHDOG_S}s) must sit at least 60s inside rungTimeoutMs (${RUNG_TIMEOUT_MS}ms)`)
+}
+for (const a of codexArms) {
+  if (!a.codexModel || !a.effort) throw new Error(`bake-off: codex arm ${a.label} needs codexModel and effort`)
 }
 
 // Prompts embed these values inside Bash commands without shell quoting; restrict
@@ -87,6 +99,7 @@ if (TRAP_LEDGER) embedded.push(['trapLedgerPath', TRAP_LEDGER])
 if (RUNNER) embedded.push(['runnerPath', RUNNER])
 for (const a of IN.arms || []) {
   embedded.push([`arm ${a.label} label`, a.label], [`arm ${a.label} worktree`, a.worktree])
+  if (a.codexModel) embedded.push([`arm ${a.label} codexModel`, a.codexModel], [`arm ${a.label} effort`, a.effort])
   if (a.runTag) embedded.push([`arm ${a.label} runTag`, a.runTag])
   if (a.reportPath) embedded.push([`arm ${a.label} reportPath`, a.reportPath])
 }
@@ -262,6 +275,7 @@ const RUNG_SCHEMA = {
     probe: { type: 'boolean' },
     pid_alive: { type: 'boolean' },
     rung_error: { type: 'string' },
+    guard_exit: { type: 'integer' },
   },
   required: ['codex_exit', 'session_id', 'report_exists', 'worktree_touched', 'log_tail'],
 }
@@ -407,11 +421,19 @@ async function runCodexLadder(arm) {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const kind = sessionId ? 'resume' : (attempt === 1 ? 'initial' : 'retry')
     let state = await agent(rungPrompt(arm, attempt, sessionId), { label: `arm:${arm.label}:a${attempt}`, phase: 'Arms', model: 'haiku', effort: 'low', schema: RUNG_SCHEMA })
-    if (!state || state.rung_error) {
+    // A guard exit is a deliberate stop the script already explained — probe
+    // only when the transport itself failed to deliver a rung state.
+    if (!state || (state.rung_error && state.guard_exit == null)) {
       log(`ARM ${arm.label}: attempt ${attempt} transport ${state ? `error (${state.rung_error})` : 'lost'} — probing disk state`)
       state = await agent(probePrompt(arm), { label: `probe:${arm.label}:a${attempt}`, phase: 'Arms', model: 'haiku', effort: 'low', schema: RUNG_SCHEMA })
     }
     if (!state) { outcome = 'state_unrecoverable'; history.push({ attempt, kind, outcome }); break }
+    if (state.guard_exit != null) {
+      log(`ARM ${arm.label}: runner guard stop (exit ${state.guard_exit}): ${state.rung_error}`)
+      outcome = `guard_stop_${state.guard_exit}`
+      history.push({ attempt, kind, guard_exit: state.guard_exit, outcome })
+      break
+    }
     history.push({ attempt, kind, codex_exit: state.codex_exit, watchdog_fired: !!state.watchdog_fired, wall_seconds: state.wall_seconds, report_exists: !!state.report_exists, probed: !!state.probe })
     sessionId = state.session_id || sessionId
     if (state.pid_alive) {

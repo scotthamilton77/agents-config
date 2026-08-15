@@ -129,11 +129,16 @@ def test_resume_after_watchdog(env):
     assert "--- attempt 1 (initial) ---" in log and "--- attempt 2 (resume) ---" in log
 
 
+REQUIRED_RUNG_FIELDS = {"codex_exit", "session_id", "report_exists", "worktree_touched", "log_tail"}
+
+
 def test_dispatch_guard_trips_on_mispaired_dispatch(env):
     (env["dir"] / "dispatch-X.md").write_text("some other arm's dispatch\n")
     code, s = run(env, "--attempt", "2")
     assert code == 12
-    assert "dispatch guard" in s["error"]
+    assert s["guard_exit"] == 12 and "dispatch guard" in s["rung_error"]
+    assert REQUIRED_RUNG_FIELDS <= s.keys()  # guard JSON still satisfies the rung schema
+    assert s["codex_exit"] == -1 and s["session_id"] == ""
 
 
 def test_pidfile_guard_refuses_live_process(env):
@@ -142,7 +147,8 @@ def test_pidfile_guard_refuses_live_process(env):
     try:
         code, s = run(env)
         assert code == 13
-        assert "pidfile guard" in s["error"]
+        assert s["guard_exit"] == 13 and "pidfile guard" in s["rung_error"]
+        assert REQUIRED_RUNG_FIELDS <= s.keys()
     finally:
         p.kill()
         p.wait()
