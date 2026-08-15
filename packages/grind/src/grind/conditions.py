@@ -34,8 +34,9 @@ _TERMINAL_ITEM_STATUSES = {"merged", "done"}
 _CHAIN_BLOCKING_STATUSES = {"blocked", "waiting-human"}
 
 # Statuses with a live PR/review cycle -- the only place a review stalemate
-# can exist. round_history is fold history and survives the cycle, so
-# `review_stalemate_risk` must not read it once the item moves on.
+# can exist. Only the two closure paths clear round_history; every other way
+# out of a review leaves it standing, so `review_stalemate_risk` must not read
+# it once the item moves on.
 _ACTIVE_REVIEW_STATUSES = {"pr-open", "in-review", "waiting-human", "blocked"}
 
 _DURATION_RE = re.compile(r"^(\d+)([smhd])$")
@@ -230,10 +231,10 @@ def _review_stalemate_risk(state: State) -> list[Condition]:
     n = _int_threshold(state.config.get("stalemate_risk_round"), 3, minimum=1)
     out: list[Condition] = []
     for item in state.items.values():
-        # round_history survives the review cycle (it is fold history, never
-        # cleared), so gate on a live review state: a done/merged item, one
-        # whose PR closed and re-queued, or a parked item (parking preserves
-        # status), is not a stalemate however it got there
+        # A closure clears round_history, but a merge, a park and a second PR
+        # opened over a live one do not, so gate on a live review state: a
+        # done/merged item, one whose PR closed and re-queued, or a parked item
+        # (parking preserves status), is not a stalemate however it got there
         if item.status not in _ACTIVE_REVIEW_STATUSES or item.parked is not None:
             continue
         history = item.round_history
