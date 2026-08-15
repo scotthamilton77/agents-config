@@ -1,8 +1,9 @@
 # Bake-off result: `agents-config-9k9.75`, GPT-5.6 matrix (runs m2 + m2b)
 
-Arms and first judging ran 2026-08-14 (run m2); three arms were re-run and the full
-cohort re-judged 2026-08-15 (run m2b, workflow `wf_00955d27-8e3`) after m2's high-effort
-arms turned out to be harness casualties, not model results — see Scoring below. Raw
+Arms and first judging ran 2026-08-14 (run m2); three arms were re-run 2026-08-15
+(run m2b, workflow `wf_00955d27-8e3`) and the full cohort then re-judged fresh
+(workflow `wf_fe703d90-a79`) after m2's high-effort arms turned out to be harness
+casualties, not model results — see Scoring below. Raw
 evidence for both runs, including every diff, sanitized report, seat verdict, checker
 and reconciliation output, and the blind label key, is retained in the experiment
 scratch tree (git-ignored) under the run slugs agents-config-9k9.75/m2 and .../m2b.
