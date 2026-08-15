@@ -59,4 +59,7 @@ it warrants no reply — do not explain the notification or restate the report.
 <instructions-to-subagents>
 A subagent inherits none of your intent, and a vague dispatch returns noise you have to
 redo yourself. Read the `instructing-subagents` skill before you dispatch.
+A named teammate delivers only through an explicit SendMessage call — its plain final
+message reaches no one. Read the `orchestrating-teammates` skill when running named
+teammates and when one goes idle without a FINAL REPORT message.
 </instructions-to-subagents>

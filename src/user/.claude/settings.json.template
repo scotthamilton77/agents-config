@@ -41,6 +41,16 @@
             "timeout": 15
           }
         ]
+      },
+      {
+        "matcher": "SendMessage",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/teammate-report-gate.py",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -60,6 +70,39 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/codex-broker-reaper.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/teammate-report-gate.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "TeammateIdle": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/teammate-report-gate.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/teammate-report-gate.py",
             "timeout": 10
           }
         ]
