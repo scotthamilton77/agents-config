@@ -48,10 +48,14 @@ verifies them.
 **5. Reporting contract.** Say what the report must contain — evidence per criterion,
 what was changed or produced, conclusions reached and how they were verified, anything
 left undone or uncertain. Then command delivery twice: name a file
-path the agent *writes* the report to, and separately instruct — *send this report as
-your final message; do not end your turn without it.* A "report back with…" list
-describes an artifact and commands no action; agents finish, go idle, and deliver
-nothing while holding a good report. Code survives that; judgement does not.
+path the agent *writes* the report to, and separately command the send as an explicit
+act — where the harness has an agent-messaging tool, *deliver the report by calling
+it; text composed as a plain final message may never be transmitted.* Prefix progress
+messages `UPDATE <n>:` and the deliverable `FINAL REPORT:` — the markers make
+delivery mechanically checkable, and delivery gates key on them where they run. A
+"report back with…" list describes an artifact and commands no action; agents finish,
+go idle, and deliver nothing while holding a good report. Code survives that;
+judgement does not.
 
 **Fail-fast cases.** Beyond the report on completion, name the task-specific conditions
 under which the agent must stop *mid-execution* and come back for clarification or help —
@@ -103,8 +107,9 @@ Acceptance criteria:
 - <condition>
 
 Report: write your report to <absolute path>, covering <contents: evidence per
-criterion, what changed or was produced, anything left undone>. Then send the full
-report as your final message — do not end your turn without it.
+criterion, what changed or was produced, anything left undone>. Then deliver it by
+calling the agent-messaging tool, message beginning "FINAL REPORT:" — a plain
+final message is not delivery. Do not end your turn before the send succeeds.
 
 Stop mid-task and come back for guidance — partial report, same path — if:
 - <task-specific fail-fast case, e.g. the cause traces outside your boundary>
