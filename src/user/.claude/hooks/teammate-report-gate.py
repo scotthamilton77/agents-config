@@ -43,7 +43,10 @@ IDLE_BLOCK_LIMIT = 3
 
 NAME_RE = re.compile(r"[^A-Za-z0-9._-]")
 SLUG_RE = re.compile(r"[^A-Za-z0-9]")
-UPDATE_RE = re.compile(r"^\s*UPDATE", re.IGNORECASE)
+UPDATE_RE = re.compile(r"^\s*UPDATE\b", re.IGNORECASE)
+# Anchored, but tolerant of leading markdown decoration ("**FINAL REPORT:**",
+# "# FINAL REPORT") — a mid-sentence mention must not count as delivery.
+FINAL_RE = re.compile(r"^[\s*_#>~`-]*FINAL REPORT\b", re.IGNORECASE)
 
 
 def now() -> str:
@@ -104,7 +107,7 @@ def is_update(text: str) -> bool:
 
 
 def is_final_report(text: str) -> bool:
-    return "final report" in (text or "")[:200].lower()
+    return bool(FINAL_RE.match(text or ""))
 
 
 def read_stash(directory: Path, name: str) -> dict | None:

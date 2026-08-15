@@ -197,6 +197,23 @@ class TestObservers:
                    monkeypatch) == 0
         assert run(teammate_idle("a"), monkeypatch) == 2
 
+    def test_updated_prefix_is_not_an_update(self, monkeypatch):
+        assert run(send_message_event("UPDATED the files as asked", sender="b"),
+                   monkeypatch) == 0
+        assert run(task_completed("b"), monkeypatch) == 2
+
+    def test_a_mid_sentence_final_report_mention_does_not_disarm_the_idle_gate(
+        self, monkeypatch,
+    ):
+        assert run(send_message_event("Should the final report include the appendix?",
+                                      sender="c"), monkeypatch) == 0
+        assert run(teammate_idle("c"), monkeypatch) == 2
+
+    def test_a_decorated_final_report_marker_still_counts(self, monkeypatch):
+        assert run(send_message_event("**FINAL REPORT:** all tasks done", sender="d"),
+                   monkeypatch) == 0
+        assert run(teammate_idle("d"), monkeypatch) == 0
+
     def test_posttooluse_falls_back_to_agent_type_when_no_routing_sender(self, monkeypatch):
         payload = send_message_event("FINAL REPORT: shipped it", agent_type="xi")
         assert run(payload, monkeypatch) == 0
