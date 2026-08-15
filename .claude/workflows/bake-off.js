@@ -1,7 +1,7 @@
 export const meta = {
   name: 'bake-off',
   description: 'Parameterized model×effort bake-off: reset worktrees, run contestant arms, audit+gate, sanitize, blind-judge, synthesize',
-  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefText, rubricText, arms[], judges[], reconcile?, reset?}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary, rubricText, judges[], cachedSeats?, cachedChecker?}.',
+  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefText, rubricText, arms[], judges[], runnerPath (required for codex arms), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary, rubricText, judges[], cachedSeats?, cachedChecker?}.',
   phases: [
     { title: 'Reset', detail: 'archive then reset each arm worktree to the pinned base' },
     { title: 'Arms', detail: 'contestants implement the pinned brief in isolated worktrees' },
@@ -25,6 +25,15 @@ const BASE = IN.base
 const RESET = IN.reset !== false
 const JUDGES = IN.judges && IN.judges.length ? IN.judges : [{ id: 'J1', kind: 'claude', model: 'sonnet', effort: 'high' }]
 const GATE_CMD = IN.gateCmd || 'make ci'
+// Codex arms run through the versioned single-attempt runner script; every
+// recovery decision (resume / fresh retry / stop) is made here in plain JS from
+// the rung's state JSON — the wrapper agent is transport only. The runner's
+// in-code watchdog stays strictly below the rung's Bash-call timeout, so the
+// harness's background-on-timeout branch is unreachable inside a rung.
+const RUNNER = IN.runnerPath || null
+const MAX_ATTEMPTS = IN.maxAttempts || 4
+const WATCHDOG_S = IN.watchdogSeconds || 1200
+const RUNG_TIMEOUT_MS = IN.rungTimeoutMs || 1740000
 // Exact JSON keys for the rubric's quality axes. When set, judge prompts name them
 // and the judge schema pins them — without this, seats derive keys from the rubric's
 // prose axis titles and drift (fit_and_scope vs fit_scope), splitting the axis means.
@@ -65,6 +74,9 @@ if (!IN.rubricText) throw new Error('bake-off: rubricText is required — judge 
 if (!JUDGE_ONLY && (IN.arms || []).some(a => a.kind !== 'reference') && !IN.briefText) {
   throw new Error('bake-off: briefText is required when contestant arms run')
 }
+if (!JUDGE_ONLY && (IN.arms || []).some(a => a.kind !== 'reference' && a.kind !== 'claude') && !RUNNER) {
+  throw new Error('bake-off: runnerPath (absolute path to run_codex_arm.py) is required when codex arms run')
+}
 
 // Prompts embed these values inside Bash commands without shell quoting; restrict
 // them to shell-inert characters and fail fast, rather than quoting throughout the
@@ -72,6 +84,7 @@ if (!JUDGE_ONLY && (IN.arms || []).some(a => a.kind !== 'reference') && !IN.brie
 const SHELL_INERT = /^[A-Za-z0-9._/-]+$/
 const embedded = [['dir', DIR], ['base', BASE], ['contextCheckout', IN.contextCheckout]]
 if (TRAP_LEDGER) embedded.push(['trapLedgerPath', TRAP_LEDGER])
+if (RUNNER) embedded.push(['runnerPath', RUNNER])
 for (const a of IN.arms || []) {
   embedded.push([`arm ${a.label} label`, a.label], [`arm ${a.label} worktree`, a.worktree])
   if (a.runTag) embedded.push([`arm ${a.label} runTag`, a.runTag])
@@ -108,30 +121,34 @@ function claudeArmPrompt(arm) {
   return `Dispatch preamble (run tag ${tag(arm)}): your working root is ${arm.worktree}. Your report path is ${reportPath(arm)}. The brief follows.\n\n${IN.briefText}`
 }
 
-function codexArmPrompt(arm) {
-  return `You are a mechanical harness runner (run tag ${tag(arm)}). Execute exactly the steps below with the Bash tool. Do not improvise, do not edit any file, do not interpret the task the runner executes — your job is transport and capture only.
+// One rung = one runner-script invocation = one codex attempt. The script owns
+// the mechanics (dispatch write + self-check guard, pidfile guard, in-code
+// watchdog, state capture); the transport agent owns nothing but the call.
+function rungCmd(arm, attempt, sessionId) {
+  return `python3 ${RUNNER} --dir ${DIR} --worktree ${arm.worktree} --label ${arm.label} --model ${arm.codexModel} --effort ${arm.effort} --base ${BASE} --brief ${DIR}/brief.md --report-path ${reportPath(arm)} --run-tag ${tag(arm)} --attempt ${attempt} --watchdog-seconds ${WATCHDOG_S}${sessionId ? ` --resume-session ${sessionId}` : ''}`
+}
 
-Step 0 — write the dispatch file: mkdir -p ${DIR}/reports && printf '%s\\n\\n' "Dispatch preamble (run tag ${tag(arm)}): your working root is ${arm.worktree}. Your report path is ${reportPath(arm)}. The brief follows." > ${DIR}/dispatch-${arm.label}.md — then append the brief, which is already on disk at ${DIR}/brief.md: cat ${DIR}/brief.md >> ${DIR}/dispatch-${arm.label}.md
+function rungPrompt(arm, attempt, sessionId) {
+  return `You are a mechanical transport runner (run tag ${tag(arm)}) for one attempt of bake-off arm ${arm.label}. Execute exactly ONE foreground Bash call, with timeout ${RUNG_TIMEOUT_MS}, running exactly this command and nothing else:
 
-Step 1 — run the runner as ONE FOREGROUND Bash call with timeout 600000 (do NOT use run_in_background — the runner must finish inside this one call):
+${rungCmd(arm, attempt, sessionId)}
 
-date +%s > ${DIR}/${arm.label}.start; codex exec -C ${arm.worktree} -m ${arm.codexModel} -c model_reasoning_effort=${arm.effort} -s workspace-write --add-dir ${DIR}/reports -o ${DIR}/reports/arm-${arm.label}.last.md - < ${DIR}/dispatch-${arm.label}.md > ${DIR}/${arm.label}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/${arm.label}.exec.log; date +%s > ${DIR}/${arm.label}.end
+The command supervises its own subprocess under an internal watchdog shorter than your timeout, so it always exits on its own — never use run_in_background, never re-run it, and never run any other codex command. Its final stdout line is a single JSON object: return that object as your structured result, every field copied verbatim. If the call printed no JSON line, return the required fields as codex_exit -1, session_id "", report_exists false, worktree_touched false, log_tail = the last lines you saw, and set rung_error to the exit code and what happened. Report only observed values; never invent one.`
+}
 
-Step 1b — completion ladder (a high-effort runner can outlast one call):
-(a) If the harness reports the Step 1 command was moved to the background on timeout, WAIT for its completion notification — never start another codex process while one may still be running for this arm.
-(b) Only after the command has fully ended, check the tail of ${DIR}/${arm.label}.exec.log. If NO CODEX_EXIT line was recorded, the runner was killed mid-flight: extract the bare session UUID with: grep -m1 -oE 'session id: [0-9a-f-]+' ${DIR}/${arm.label}.exec.log | cut -d' ' -f3 — then run as ONE FOREGROUND Bash call with timeout 600000: codex exec resume <that-uuid> -o ${DIR}/reports/arm-${arm.label}.last.md - <<< "Continue where you left off and finish the original dispatch; your working root, report path, and constraints are unchanged." >> ${DIR}/${arm.label}.exec.log 2>&1; echo "CODEX_EXIT=$?" >> ${DIR}/${arm.label}.exec.log; date +%s > ${DIR}/${arm.label}.end
-Apply rules (a) and (b) to each resume call too, resuming the SAME session id, at most 3 resumes total. If no session id is found in the log, record what happened for log_tail and continue.
+// When a transport agent dies or returns garbage, the rung's true state is
+// still on disk — a probe reconstructs it and the ladder continues.
+function probePrompt(arm) {
+  return `You are a mechanical state prober (run tag ${tag(arm)}) for bake-off arm ${arm.label}. A transport agent failed to deliver this arm's attempt state; the state lives on disk. Execute with Bash, changing nothing:
 
-Step 2 — retry rule, applied at most once: if the recorded CODEX_EXIT is non-zero AND \`git -C ${arm.worktree} status --porcelain\` is empty AND \`git -C ${arm.worktree} log --oneline ${BASE}..HEAD\` is empty (a transport-class failure that produced no work — e.g. an HTTP 5xx in the log), run the Step 1 command once more. If the worktree has changes or commits, never re-run — capture what is there.
+1. tail -c 2000 ${DIR}/${arm.label}.exec.log
+2. the LAST CODEX_EXIT= value in that log (grep -oE 'CODEX_EXIT=-?[0-9]+' ${DIR}/${arm.label}.exec.log | tail -1)
+3. grep -m1 -oE 'session id: [0-9a-f-]+' ${DIR}/${arm.label}.exec.log | cut -d' ' -f3
+4. test -s ${reportPath(arm)} && echo REPORT_EXISTS || echo NO_REPORT
+5. git -C ${arm.worktree} status --porcelain — and: git -C ${arm.worktree} log --oneline ${BASE}..HEAD
+6. P=$(cat ${DIR}/${arm.label}.pid 2>/dev/null); [ -n "$P" ] && kill -0 $P 2>/dev/null && echo PID_ALIVE || echo NO_LIVE_PID
 
-Step 3 — capture with plain foreground reads:
-- CODEX_EXIT from the last lines of ${DIR}/${arm.label}.exec.log
-- the "tokens used" figure printed near the end of that log (0 if absent)
-- wall seconds = the number in ${DIR}/${arm.label}.end minus the number in ${DIR}/${arm.label}.start
-- whether ${reportPath(arm)} exists; if it does NOT exist but ${DIR}/reports/arm-${arm.label}.last.md does, copy the .last.md file to ${reportPath(arm)} (the runner's final message is its report)
-- the last 25 lines of ${DIR}/${arm.label}.exec.log
-
-Then return the structured result. Report ONLY observed values — if a value was never observed (timeout, launch failure), use -1 for it and say exactly what happened in log_tail. Never invent a number.`
+Return the structured result: codex_exit = the last CODEX_EXIT value, or -1 if none; watchdog_fired false; session_id = the bare uuid or ""; report_exists per step 4; worktree_touched = true if step 5 printed anything at all; tokens_used 0; wall_seconds -1; total_wall_seconds -1; log_tail = the step-1 tail; probe true; pid_alive per step 6. Report only observed values; never guess.`
 }
 
 function auditPrompt(arm) {
@@ -224,16 +241,29 @@ const RESET_SCHEMA = {
   required: ['was_dirty', 'archived', 'head_ok', 'notes'],
 }
 
-const WRAPPER_SCHEMA = {
+// State of one codex attempt, as the runner script prints it (a probe returns
+// the same shape reconstructed from disk). rung_error marks transport failure.
+const RUNG_SCHEMA = {
   type: 'object',
   properties: {
+    label: { type: 'string' },
+    attempt: { type: 'integer' },
+    kind: { type: 'string' },
     codex_exit: { type: 'integer' },
+    watchdog_fired: { type: 'boolean' },
+    session_id: { type: 'string' },
+    report_exists: { type: 'boolean' },
+    report_copied: { type: 'boolean' },
+    worktree_touched: { type: 'boolean' },
     tokens_used: { type: 'integer' },
     wall_seconds: { type: 'integer' },
-    report_exists: { type: 'boolean' },
+    total_wall_seconds: { type: 'integer' },
     log_tail: { type: 'string' },
+    probe: { type: 'boolean' },
+    pid_alive: { type: 'boolean' },
+    rung_error: { type: 'string' },
   },
-  required: ['codex_exit', 'tokens_used', 'wall_seconds', 'report_exists', 'log_tail'],
+  required: ['codex_exit', 'session_id', 'report_exists', 'worktree_touched', 'log_tail'],
 }
 
 const AUDIT_SCHEMA = {
@@ -360,6 +390,54 @@ const ESCALATION_SCHEMA_BASE = labels => ({
   required: ['ruling', 'own_arm_preference', 'notes'],
 })
 
+// ---------- codex-arm ladder ----------
+
+// The recovery ladder, in deterministic JS. Each iteration spawns one rung
+// (one runner-script attempt); the decisions — done, resume, one fresh retry
+// on a launch-level failure with a provably untouched worktree, or stop —
+// happen here from the rung's state JSON. A dead transport agent costs a disk
+// probe, not the arm. The full history is returned for observability and is
+// deliberately kept out of gateSummary and every judge prompt: a retry count
+// is both a bias vector and an unblinding hint.
+async function runCodexLadder(arm) {
+  const history = []
+  let sessionId = ''
+  let freshRetryUsed = false
+  let outcome = 'attempts_exhausted'
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const kind = sessionId ? 'resume' : (attempt === 1 ? 'initial' : 'retry')
+    let state = await agent(rungPrompt(arm, attempt, sessionId), { label: `arm:${arm.label}:a${attempt}`, phase: 'Arms', model: 'haiku', effort: 'low', schema: RUNG_SCHEMA })
+    if (!state || state.rung_error) {
+      log(`ARM ${arm.label}: attempt ${attempt} transport ${state ? `error (${state.rung_error})` : 'lost'} — probing disk state`)
+      state = await agent(probePrompt(arm), { label: `probe:${arm.label}:a${attempt}`, phase: 'Arms', model: 'haiku', effort: 'low', schema: RUNG_SCHEMA })
+    }
+    if (!state) { outcome = 'state_unrecoverable'; history.push({ attempt, kind, outcome }); break }
+    history.push({ attempt, kind, codex_exit: state.codex_exit, watchdog_fired: !!state.watchdog_fired, wall_seconds: state.wall_seconds, report_exists: !!state.report_exists, probed: !!state.probe })
+    sessionId = state.session_id || sessionId
+    if (state.pid_alive) {
+      log(`ARM ${arm.label}: a codex process for this arm is still alive after transport loss — stopping rather than racing it`)
+      outcome = 'live_process_orphaned'
+      break
+    }
+    if (state.codex_exit === 0 && state.report_exists) { outcome = 'completed'; break }
+    if (sessionId) {
+      log(`ARM ${arm.label}: attempt ${attempt} incomplete (exit ${state.codex_exit}${state.watchdog_fired ? ', watchdog' : ''}) — resuming session`)
+      continue
+    }
+    if (!state.worktree_touched && !freshRetryUsed) {
+      freshRetryUsed = true
+      log(`ARM ${arm.label}: launch-level failure with untouched worktree — one fresh retry`)
+      continue
+    }
+    log(`ARM ${arm.label}: attempt ${attempt} failed with no session to resume and ${state.worktree_touched ? 'a touched worktree' : 'the retry spent'} — stopping`)
+    outcome = 'unrecoverable_failure'
+    break
+  }
+  const resumed = history.filter(h => h.kind === 'resume').length
+  if (outcome !== 'completed' || history.length > 1) log(`ARM ${arm.label}: ladder ${outcome} after ${history.length} attempt(s), ${resumed} resume(s)`)
+  return { ladder: { outcome, attempts: history.length, resumed, history } }
+}
+
 // ---------- pipeline ----------
 
 // Per arm: (reset →) contestant → audit → sanitize, no cross-arm barrier until judging.
@@ -381,8 +459,7 @@ const armResults = await pipeline(
     : arm.kind === 'claude'
       ? agent(claudeArmPrompt(arm), { label: `arm:${arm.label}`, phase: 'Arms', model: arm.model, effort: arm.effort })
           .then(r => ({ resetResult, contestant: r }))
-      : agent(codexArmPrompt(arm), { label: `arm:${arm.label}`, phase: 'Arms', model: 'haiku', effort: 'low', schema: WRAPPER_SCHEMA })
-          .then(r => ({ resetResult, contestant: r })),
+      : runCodexLadder(arm).then(r => ({ resetResult, contestant: r })),
   (prev, arm) => agent(auditPrompt(arm), { label: `audit:${arm.label}`, phase: 'Audit', model: 'haiku', effort: 'low', schema: AUDIT_SCHEMA })
     .then(audit => ({ ...prev, audit })),
   (prev, arm) => agent(sanitizePrompt(arm), { label: `sanitize:${arm.label}`, phase: 'Sanitize', model: 'sonnet', effort: 'low', schema: SANITIZE_SCHEMA })
@@ -397,6 +474,9 @@ const armResults = await pipeline(
 
 arms = armResults.filter(Boolean)
 log(`Arms complete: ${arms.length}/${IN.arms.length}. Gates: ${arms.map(a => `${a.arm}=${a.audit ? a.audit.gate_exit : '?'}`).join(', ')}`)
+const ladderSummary = arms.filter(a => a.contestant && a.contestant.ladder)
+  .map(a => `${a.arm}=${a.contestant.ladder.outcome}:${a.contestant.ladder.attempts}att/${a.contestant.ladder.resumed}res`)
+if (ladderSummary.length) log(`Codex ladders (outcome:attempts/resumes): ${ladderSummary.join(', ')}`)
 } else {
   log(`Judge-only: judging retained artifacts in ${DIR} — ${IN.labels.length} arm(s), ${CACHED_SEATS.length} cached seat(s)${CACHED_CHECKER ? ', cached checker' : ''}`)
 }
