@@ -11,9 +11,13 @@ no idle timeout, so it holds itself and its child until the machine restarts.
 
 A broker is only terminated here when both proofs hold:
 
-  1. No `broker.json` under any state root names its pid. `broker.json` is the
-     sole route to a broker — nothing sets the endpoint environment variable —
-     so a pid absent from every record is unreachable by construction.
+  1. No `broker.json` under any state root names both its pid and its own
+     endpoint socket. `broker.json` is the sole route to a broker — nothing
+     sets the endpoint environment variable — so a record naming neither is
+     unreachable by construction. Pid alone is not enough: pids recycle, and a
+     record long dead can still name the pid a live, unrelated broker now
+     holds. The endpoint is the part that can't coincide by accident, so a
+     record only protects the broker whose live socket it actually names.
   2. Nothing is connected to its socket. A listening socket with no peer shows
      one holder; each connected client adds one. This matters because a broker
      that lost the race is still handed back to the caller that spawned it, in
@@ -140,13 +144,19 @@ def state_roots() -> list[Path]:
     return unique
 
 
-def referenced_pids(roots: list[Path]) -> set[int]:
-    """Every broker pid named by a session record. These are reachable."""
-    pids = set()
+def referenced_sockets(roots: list[Path]) -> dict[int, set[str | None]]:
+    """Every (pid, endpoint socket) pair named by a session record.
+
+    Keyed by pid rather than a flat pair set so a lookup by a live broker's
+    pid is O(1) instead of a scan. A bare pid is not proof of reachability —
+    pids recycle — so callers must also check the live broker's own socket
+    against this pid's recorded set before trusting the record.
+    """
+    by_pid: dict[int, set[str | None]] = {}
     for root in roots:
         for record in root.glob("*/broker.json"):
             try:
-                pid = json.loads(record.read_text(encoding="utf8")).get("pid")
+                data = json.loads(record.read_text(encoding="utf8"))
             except (OSError, ValueError):
                 # A record that will not parse confers no reachability. The
                 # plugin loads these the same way and treats a parse failure as
@@ -159,9 +169,16 @@ def referenced_pids(roots: list[Path]) -> set[int]:
                 # written within milliseconds of a spawn, and nothing rewrites
                 # one later, so the minimum-age gate already covers that window.
                 continue
-            if isinstance(pid, int):
-                pids.add(pid)
-    return pids
+            pid = data.get("pid")
+            if not isinstance(pid, int):
+                continue
+            endpoint = data.get("endpoint")
+            # Same unix-prefix transform as endpoint_socket() applies to a live
+            # process's cmdline, so a record's value compares equal to what a
+            # live broker's own socket resolves to.
+            socket_path = endpoint[len("unix:") :] if isinstance(endpoint, str) and endpoint.startswith("unix:") else None
+            by_pid.setdefault(pid, set()).add(socket_path)
+    return by_pid
 
 
 def socket_holders(socket_path: str) -> int | None:
@@ -181,8 +198,8 @@ def is_group_leader(pid: int) -> bool:
         return False
 
 
-def should_reap(broker: dict, referenced: set[int]) -> tuple[bool, str]:
-    if broker["pid"] in referenced:
+def should_reap(broker: dict, referenced: dict[int, set[str | None]]) -> tuple[bool, str]:
+    if broker["socket"] in referenced.get(broker["pid"], ()):
         return False, "named by a session record"
     if broker["age"] < min_age_seconds():
         return False, "too young to judge"
@@ -240,7 +257,7 @@ def main(argv: list[str] | None = None) -> int:
             pass
 
     brokers = live_brokers()
-    referenced = referenced_pids(state_roots())
+    referenced = referenced_sockets(state_roots())
 
     reaped = []
     for broker in brokers:

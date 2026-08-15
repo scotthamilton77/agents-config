@@ -147,6 +147,21 @@ assert_contains "and says why"                             "named by a session r
 assert_missing  "recorded broker is never reaped"          "REAP $KEPT_PID" "$OUT"
 assert_alive    "recorded broker survives"                 "$KEPT_PID"
 
+# --- a pid-only match from a stale record is not protection ------------------
+# macOS pids wrap at ~99,999. A record whose process died long ago can still
+# name the pid a live, unrelated broker now holds by coincidence. Simulated
+# here without waiting on the OS to actually recycle anything: a record naming
+# this broker's pid but a DIFFERENT (nonexistent) endpoint stands in for "a
+# dead process's record, which pointed at its own now-gone socket" — the pid
+# collides, nothing else does. Bare pid matching would spare this broker
+# forever; corroborating against the endpoint must not.
+start_stub recycled RECYCLED_PID RECYCLED_SOCK
+record_broker recycled-workspace "$RECYCLED_PID" "$WORK/stale-dead-brokers-own.sock"
+run_hook --verbose
+assert_contains "pid-recycled orphan is reaped despite the stale record" \
+  "REAP $RECYCLED_PID" "$OUT"
+assert_dead     "and is gone"                              "$RECYCLED_PID"
+
 # --- the other two state roots confer the same protection --------------------
 # Redirecting HOME and TMPDIR into this run costs the coverage those two roots
 # would otherwise get from the machine's own records, and a root the hook skips
