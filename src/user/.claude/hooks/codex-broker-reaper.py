@@ -13,8 +13,8 @@ A broker is only terminated here when both proofs hold:
 
   1. No `broker.json` under any state root names both its pid and its own
      endpoint socket. `broker.json` is the sole route to a broker — nothing
-     sets the endpoint environment variable — so a record naming neither is
-     unreachable by construction. Pid alone is not enough: pids recycle, and a
+     sets the endpoint environment variable — so a broker no record names
+     this way is unreachable by construction. Pid alone is not enough: pids recycle, and a
      record long dead can still name the pid a live, unrelated broker now
      holds. The endpoint is the part that can't coincide by accident, so a
      record only protects the broker whose live socket it actually names.
