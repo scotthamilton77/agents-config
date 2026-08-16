@@ -59,7 +59,7 @@ def _reviewed_pr() -> list[dict[str, Any]]:
             kind="codex",
             round=3,
             head_sha="old-head",
-            detail="two threads open on the closed PR",
+            detail="one thread deferred and one wont-fix on the closed PR",
         ),
         event(
             "review_verdict",
