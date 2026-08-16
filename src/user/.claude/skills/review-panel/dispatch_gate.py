@@ -597,21 +597,23 @@ def ingest(args: argparse.Namespace) -> dict[str, Any]:
             f"no claim in this round assigned the output path {output}; a dispatch made without "
             "one leaves a hole in the ledger, and an unbounded lens is what the hole hides",
         )
-    if not output.is_file():
+    body = ""
+    if output.is_file():
+        try:
+            body = output.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            append_record(path, outcome_record(claimed, "unparseable", output))
+            raise Refusal(
+                "unparseable-output", f"cannot read the claimed output {output} as text: {exc}"
+            ) from exc
+    if not body.strip():
         append_record(path, outcome_record(claimed, "no-output", output))
         raise Refusal(
             "no-output",
-            f"the claimed output path {output} holds no file. Each attempt writes its own path, "
+            f"the claimed output path {output} holds nothing. Each attempt writes its own path, "
             "so nothing there means the route wrote nothing and the reviewer never ran: claim "
             f"again with reason {TRANSPORT_ERROR!r}, carrying the route's error as the evidence",
         )
-    try:
-        body = output.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        append_record(path, outcome_record(claimed, "unparseable", output))
-        raise Refusal(
-            "unparseable-output", f"cannot read the claimed output {output} as text: {exc}"
-        ) from exc
     try:
         report, recovery = parse_report(body)
     except Refusal:

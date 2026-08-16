@@ -553,7 +553,6 @@ class TestIngest:
         "body",
         [
             "The change looks fine to me, no findings.",
-            "",
             '["correctness", "clean"]',
             "```\nnot json at all\n```",
         ],
@@ -592,6 +591,23 @@ class TestIngest:
         fails, and the attempt's own path is empty rather than holding a stale
         report from the attempt before it."""
         answer = authorize(round_dir, capsys)
+        refused = refuse(
+            ["ingest", "--out-dir", str(round_dir), "--output", answer["output_path"]], capsys
+        )
+        assert codes(refused) == ["no-output"]
+        assert "transport-error" in refused["errors"][0]["message"]
+        assert kinds(round_dir, "outcome")[0]["outcome"] == "no-output"
+
+    @pytest.mark.parametrize("body", ["", " \n\t\n"])
+    def test_a_claimed_path_holding_an_empty_file_is_a_transport_failure(
+        self, round_dir, capsys, body
+    ):
+        """A route that dies mid-turn exits 0 having opened its file and written
+        nothing into it — sometimes literally nothing, sometimes a stray newline.
+        Nothing came over the transport either way, so this is the route's
+        failure and not the reviewer's, however clean the exit status looked."""
+        answer = authorize(round_dir, capsys)
+        write_output(answer, body)
         refused = refuse(
             ["ingest", "--out-dir", str(round_dir), "--output", answer["output_path"]], capsys
         )
