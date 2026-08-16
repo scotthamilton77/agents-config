@@ -121,7 +121,16 @@ class PrRef:
 
 @dataclass
 class ItemReview:
-    """Typed review state -- the renderer must label/tooltip/iconify without parsing prose."""
+    """Typed review state for the current PR cycle -- the renderer must
+    label/tooltip/iconify without parsing prose.
+
+    Its subject is one pull request, so both closure paths clear it along with
+    the round history supporting it, and no projection attributes a closed
+    PR's result to what the item does next. Leaving it for the next cycle to
+    overwrite would not do: `review_round` writes only the first four fields,
+    so a retained verdict, its thread counts and its stalemate flag ride into
+    the new cycle's first round instead of being replaced by it.
+    """
 
     round: int | None = None
     kind: str | None = None  # codex | copilot | ralf | human
@@ -197,8 +206,10 @@ class Item:
     # round values ... all carry the SAME head_sha"), with each round's
     # authoritative event ts so the fired condition can report the window's
     # start (`since`). Recorded by the fold (facts copied from events), never
-    # itself a computed condition; cleared by `pr_closed` -- the history
-    # belongs to one PR cycle, a new PR must not inherit an old stalemate.
+    # itself a computed condition; cleared by both closure paths, `pr_closed`
+    # and `item_enqueued`'s closure -- the history belongs to one PR cycle, as
+    # does the review snapshot above, and a new PR must not inherit an old
+    # stalemate.
     round_history: tuple[tuple[int, str | None, str | None], ...] = ()
 
 

@@ -387,6 +387,18 @@ def _record_round(item: Item, round_: int | None, head_sha: str | None, ts: str 
     item.round_history = (*item.round_history, (round_, head_sha, ts))
 
 
+def _clear_review_cycle(item: Item) -> None:
+    """Drop the review facts whose subject was the PR this closure just ended.
+
+    The snapshot and the round history supporting it share one lifetime, so
+    they end together: a projection that kept either would report a dead PR's
+    result against whatever the item does next. Called only once a closure has
+    passed its validity guards -- a refused closure ends no cycle.
+    """
+    item.review = ItemReview()
+    item.round_history = ()
+
+
 @_handler("review_round")
 def _h_review_round(state: State, evt: RawEvent) -> None:
     item = _active_item(state, evt)
@@ -475,10 +487,13 @@ def _h_pr_closed(state: State, evt: RawEvent) -> None:
     state.closed_ledger.append(
         ClosedEntry(item=item.id, pr=_int(evt, "pr"), reason=reason, ts=_str(evt, "ts"))
     )
-    # the review cycle ends with its PR: a later pr_opened starts a fresh
-    # cycle that must not inherit the closed PR's stalemate history, nor the
-    # fix budget spent on it -- the attempt ledger's lifetime is one PR cycle
-    item.round_history = ()
+    # The review cycle ends with its PR, on every `next` route including
+    # `parked`: the item must not carry the closed PR's verdict, thread counts
+    # or stalemate history into what it does next, nor the fix budget spent on
+    # it -- the attempt ledger's lifetime is one PR cycle too. What explains a
+    # park is the typed reason and the closure row below, not a dead PR's
+    # review result.
+    _clear_review_cycle(item)
     item.attempts = new_attempt_ledger()
     # The ref stays for the failure-axis park rule; marking it closed is what
     # keeps "has a PR ref" from being read as "has an open PR".
@@ -683,8 +698,9 @@ def _record_closure(state: State, item: Item, evt: RawEvent) -> None:
     The parking lot keeps its single exit: an abandoned item re-enters play
     exactly as any other does, and the closure only adds what abandonment
     means on top of that -- the ledger entry recording which PR closed and why,
-    and dropping the PR ref (with the review history belonging to it) so the
-    next cycle starts clean. `pr_closed` gains no new source state from this.
+    and dropping the PR ref (with the review snapshot and history belonging to
+    it) so the next cycle starts clean. `pr_closed` gains no new source state
+    from this.
 
     The PR named must be the one the item actually holds. The boundary can
     only check that `--pr` is an integer, so a mistyped number arrives
@@ -707,7 +723,7 @@ def _record_closure(state: State, item: Item, evt: RawEvent) -> None:
         ClosedEntry(item=item.id, pr=pr, reason=_str(closure, "reason"), ts=_str(evt, "ts"))
     )
     item.pr = None
-    item.round_history = ()
+    _clear_review_cycle(item)
 
 
 @_handler("item_enqueued")
