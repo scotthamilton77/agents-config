@@ -1,0 +1,654 @@
+{
+  "handoff_version": 1,
+  "session": {
+    "id": "spike5-overnight",
+    "title": "Overnight build pipeline",
+    "created": "2026-08-18T00:00:00Z",
+    "author": "main agent (Claude Code session) \u2014 canned from the round-4 prototype board"
+  },
+  "impetus": "We keep hand-holding the nightly build. The shape of an autonomous overnight pipeline is roughly agreed but nobody has stress-tested the seams: what it may pick up, what counts as proof it finished, and when it is allowed to wake a human. Sixteen decisions are on the table and none of them are settled. Grill them before anyone writes code.",
+  "context": "The human runs a small agent-driven repo and is the only reviewer. Merge authority is currently explicit-human-instruction only. Mechanical gates exist and are trusted; LLM judgement is not trusted as proof. The pipeline runs on one machine, overnight, unattended, roughly six hours. Cost matters but is not the binding constraint \u2014 human interventions per merged PR is.",
+  "constraints": [
+    "Do not propose anything that needs a second human in the loop.",
+    "Do not propose hosted CI as the answer to a gate question; the gate runs locally.",
+    "Waking the human is the expensive event. Any option that makes wakes routine is wrong by construction.",
+    "The pipeline may not weaken an existing merge rule to make its own life easier."
+  ],
+  "grilling_brief": {
+    "posture": "Push hard on the two decisions with the most downstream reach (what justifies a wake, and what counts as proof of completion). Be concise: one sharp question beats three soft ones. Attack the recommendation, not the human.",
+    "stop_when": "Every decision is either settled or explicitly parked with a named blocker, and no open question remains that would change an already-settled answer."
+  },
+  "plan": {
+    "statement": "Design a nightly autonomous overnight-build pipeline: which tracked work items it may pick up, how it proves completion, and when it must wake the human.",
+    "decisions": [
+      {
+        "id": "D1",
+        "short": "Work-item source",
+        "title": "Where the night's candidate work comes from",
+        "prereqs": [],
+        "body": "The run needs a candidate list before it can do anything else. Is that list a snapshot taken at launch, or re-derived as the night goes on?",
+        "options": [
+          {
+            "id": "a",
+            "text": "A snapshot query against the tracker taken at launch, frozen for the night.",
+            "pcr": [
+              "One stable list; the night's plan is knowable in advance.",
+              "Work filed at 2am waits until tomorrow night.",
+              "Makes the morning report a closed set."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "A live query re-run before every item, so work filed at 2am is picked up.",
+            "pcr": [
+              "Nothing filed overnight is missed.",
+              "The plan can change under a claim already taken.",
+              "Forces a decision about what a re-query costs."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "A hand-curated queue the human fills before going to bed.",
+            "pcr": [
+              "You control exactly what runs.",
+              "The pipeline only works on nights you prepared for.",
+              "Moves human time back upstream \u2014 the point, or the failure."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "D2",
+        "short": "Why wake at all",
+        "title": "The class of thing that justifies waking the human",
+        "prereqs": [],
+        "body": "Waking is the expensive event \u2014 the pipeline exists to avoid it. Name what justifies one before deciding how one happens.",
+        "options": [
+          {
+            "id": "a",
+            "text": "Only decisions the pipeline is not authorised to make. Never for progress, never for a single failure.",
+            "pcr": [
+              "Wakes are rare and always actionable.",
+              "A stalled night looks like a good one until morning.",
+              "Every failure path now needs a park."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "Any blocked item, so the night never idles.",
+            "pcr": [
+              "Nothing sits idle for hours.",
+              "Four wakes a night is a plausible outcome.",
+              "Forces a precise definition of blocked."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "Nothing at all \u2014 everything waits until morning.",
+            "pcr": [
+              "You always sleep.",
+              "A decision needed at 1am is found at 8am.",
+              "The pipeline can never exceed its standing authority."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "D3",
+        "short": "Eligibility filter",
+        "title": "Which items a fully autonomous run may pick up",
+        "prereqs": [
+          "D1"
+        ],
+        "body": "Of everything in that source, what qualifies as safe to work unattended?",
+        "options": [
+          {
+            "id": "a",
+            "text": "Items whose acceptance criteria are already enumerated and that carry a track.",
+            "pcr": [
+              "The agent has a contract to finish against.",
+              "Excludes most of a real backlog.",
+              "Pushes criteria-writing upstream into human time."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "Anything not blocked and not assigned to a human.",
+            "pcr": [
+              "Large candidate pool, no preparation.",
+              "Underspecified items burn the night going sideways.",
+              "Leaves the proof rule with nothing to check against."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "An explicit overnight label \u2014 opt-in, per item.",
+            "pcr": [
+              "Opt-in is unambiguous and auditable.",
+              "Somebody has to remember to label.",
+              "Makes eligibility a human ritual, not a property."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "D4",
+        "short": "Claim mechanism",
+        "title": "How an item is claimed so two runs cannot collide",
+        "prereqs": [
+          "D1"
+        ],
+        "body": "Two runs \u2014 or a human awake at 1am \u2014 must not work the same item. What makes a claim visible?",
+        "options": [
+          {
+            "id": "a",
+            "text": "A claim record on the tracker item carrying the run id and a timestamp, checked before work starts.",
+            "pcr": [
+              "Visible to anything that reads the tracker.",
+              "Needs a release path for when a run dies.",
+              "Introduces the stale-claim question."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "A lock file committed to the repository.",
+            "pcr": [
+              "Lives with the code, no tracker dependency.",
+              "A commit is a poor lock and conflicts on its own.",
+              "Every claim becomes a repository write."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "No claim; the scheduler guarantees one run at a time.",
+            "pcr": [
+              "Nothing to build.",
+              "One overlapping run corrupts both.",
+              "Bets the whole design on the scheduler."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "D5",
+        "short": "Proof of completion",
+        "title": "What counts as proof an item is actually done",
+        "prereqs": [
+          "D3"
+        ],
+        "body": "The pipeline may only mark an item complete on evidence. Evidence of what, exactly?",
+        "options": [
+          {
+            "id": "a",
+            "text": "A green whole-repo gate on the item's branch, plus every acceptance criterion mapped to a named passing test.",
+            "pcr": [
+              "Every criterion has a named witness.",
+              "Slow, and only ever as good as the tests.",
+              "Six decisions downstream read this as their premise."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "A green whole-repo gate. Nothing further.",
+            "pcr": [
+              "Cheap and unambiguous.",
+              "A suite that asserts nothing still passes.",
+              "Shifts all real verification onto review."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "A green gate plus the implementing agent's own written completion verdict.",
+            "pcr": [
+              "Captures reasoning a test cannot.",
+              "The author grading its own work.",
+              "Invites a fresh-context reviewer instead."
+            ]
+          }
+        ],
+        "talk": {
+          "why": "Because every other decision on this board resolves to it. The eligibility filter decides what may be started; this decides what may be called finished \u2014 and an autonomous night is exactly the situation where nobody is standing behind the claim.",
+          "zoom": "One level up, the pipeline is a machine for converting your sleep into merged work. That trade only pays if the completion claim is worth more than the review time it saves. Everything about the gate's membership, its runtime budget and what lands is downstream of the standard you set here."
+        }
+      },
+      {
+        "id": "D6",
+        "short": "Wake channel",
+        "title": "How the human is physically woken",
+        "prereqs": [
+          "D2"
+        ],
+        "body": "Given a wake is justified, what happens at 3am?",
+        "options": [
+          {
+            "id": "a",
+            "text": "A push notification carrying the item and the question in the body.",
+            "pcr": [
+              "Fast, and carries the question itself.",
+              "A silenced phone swallows it.",
+              "The wake is only as good as the phone's settings."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "A queued message read at breakfast \u2014 no interrupt, ever.",
+            "pcr": [
+              "Sleep is never interrupted.",
+              "A 1am decision waits seven hours.",
+              "Makes the wake threshold nearly moot."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "Escalating: notification first, phone call after fifteen minutes.",
+            "pcr": [
+              "Reaches you when it truly matters.",
+              "A false positive at 3am is expensive.",
+              "Answers the accumulation question on its own."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "D7",
+        "short": "Gate membership",
+        "title": "Which checks constitute the gate overnight",
+        "prereqs": [
+          "D5"
+        ],
+        "body": "'Green gate' names a set of checks. Is that set the same one a human runs by hand?",
+        "options": [
+          {
+            "id": "a",
+            "text": "Identical to the gate humans run. No overnight-only subset, no overnight-only additions.",
+            "pcr": [
+              "Night output is the same artifact class as day output.",
+              "You pay the full runtime on every item.",
+              "Forces a per-item runtime budget."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "A fast subset overnight, the full gate replayed in the morning.",
+            "pcr": [
+              "More items per night.",
+              "Morning replay can red something reported green.",
+              "Creates a second-class result needing re-proof."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "The full gate plus a mutation-testing pass, since nobody is watching.",
+            "pcr": [
+              "Catches assertion-free tests directly.",
+              "A mutation run can dwarf the night.",
+              "May spend the entire budget on one item."
+            ]
+          }
+        ],
+        "talk": {
+          "why": "Because a gate that differs overnight makes every overnight result unreproducible by hand in the morning \u2014 you would be debugging the gate, not the work.",
+          "zoom": "The membership question only looks local. It is really asking whether the night's output is the same artifact class as the day's, or a second-class one that needs re-proving before anyone trusts it."
+        }
+      },
+      {
+        "id": "D8",
+        "short": "Failed proof",
+        "title": "What happens to an item whose proof fails",
+        "prereqs": [
+          "D5"
+        ],
+        "body": "The gate goes red at 2am. Decide the fate of that item, and of the rest of the night.",
+        "options": [
+          {
+            "id": "a",
+            "text": "Park the item with the failing output attached, move to the next eligible item, do not wake.",
+            "pcr": [
+              "The night continues and the evidence is kept.",
+              "Failures accumulate silently.",
+              "Makes the wake threshold the real control."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "Retry the item once from scratch, then park it.",
+            "pcr": [
+              "Absorbs transient failures cheaply.",
+              "Hides the flakiness you would want filed.",
+              "Overlaps with the flaky-check decision."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "Stop the night entirely and wake the human.",
+            "pcr": [
+              "Nothing compounds on a broken base.",
+              "One bad item costs the whole night.",
+              "Contradicts a narrow wake policy."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "D9",
+        "short": "Stale claims",
+        "title": "How a claim held by a crashed run is released",
+        "prereqs": [
+          "D4"
+        ],
+        "body": "A run dies holding claims. Nothing releases them. What breaks the deadlock without stealing live work?",
+        "options": [
+          {
+            "id": "a",
+            "text": "Claims carry a TTL and are reclaimable once the owning run's process is provably gone.",
+            "pcr": [
+              "Never steals live work.",
+              "Needs a liveness check you can trust.",
+              "Claims must carry real evidence, not just a pid."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "Claims expire on a fixed four-hour timer regardless of the owner.",
+            "pcr": [
+              "Trivial to implement.",
+              "A slow item loses its claim mid-flight.",
+              "Long items become impossible."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "A human clears them in the morning.",
+            "pcr": [
+              "No mechanism to get wrong.",
+              "The deadlock survives until morning.",
+              "Adds a manual step to every crash."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "D10",
+        "short": "Wake threshold",
+        "title": "When accumulated failure justifies a wake",
+        "prereqs": [
+          "D6",
+          "D8"
+        ],
+        "body": "Failures are parked rather than escalated. Is there a count at which the accumulation itself is the decision the pipeline cannot make?",
+        "options": [
+          {
+            "id": "a",
+            "text": "Never on failure count. Wake only when zero eligible items remain and hours of night are left.",
+            "pcr": [
+              "Failure counts never wake you.",
+              "A night that parks everything still runs on.",
+              "Turns wake into an idle-capacity signal."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "After three consecutive parked items.",
+            "pcr": [
+              "Catches a systemic break early.",
+              "Three unrelated failures are not a pattern.",
+              "Requires classifying failures."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "The first time an item parks.",
+            "pcr": [
+              "You always know immediately.",
+              "Nearly guarantees a wake every night.",
+              "Collapses into a stop-and-wake policy."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "D11",
+        "short": "What lands",
+        "title": "What the pipeline does with proven work",
+        "prereqs": [
+          "D7"
+        ],
+        "body": "The gate is green and each criterion maps to a passing test. Where does the branch go?",
+        "options": [
+          {
+            "id": "a",
+            "text": "Push the branch and open a pull request. The branch is the artifact; the merge is a separate decision.",
+            "pcr": [
+              "Reviewable, and the merge stays a decision.",
+              "Pull requests pile up for the morning.",
+              "Makes merge authority its own question."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "Merge to the default branch directly.",
+            "pcr": [
+              "Work is live at breakfast.",
+              "Unreviewed change on the trunk.",
+              "Demands a rollback path."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "Leave the branch local and name it in the morning report.",
+            "pcr": [
+              "Nothing leaves the machine.",
+              "Invisible to everyone else, lost with the box.",
+              "The morning report becomes the only index."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "D12",
+        "short": "Merge authority",
+        "title": "Whether the pipeline may merge unattended",
+        "prereqs": [
+          "D11"
+        ],
+        "body": "May it merge its own pull request while the human sleeps?",
+        "options": [
+          {
+            "id": "a",
+            "text": "No. Opening a pull request is not authorisation to merge; the merge waits for an explicit human instruction.",
+            "pcr": [
+              "Authority stays where a human owns it.",
+              "Nothing lands while you sleep.",
+              "Morning starts with a merge queue."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "Yes, when the gate is green and a reviewer has approved.",
+            "pcr": [
+              "Mirrors the daytime rule exactly.",
+              "An agent's approval is not a human's.",
+              "Makes reviewer identity load-bearing."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "Yes, but only on one named low-risk track.",
+            "pcr": [
+              "Bounded blast radius, real throughput.",
+              "Track boundaries drift over time.",
+              "Someone must police what enters that track."
+            ]
+          }
+        ],
+        "mandate": {
+          "threadId": "T-auth",
+          "scope": "any",
+          "title": "Where does merge authority actually come from?",
+          "notice": "ANY answer here opens a side thread, and concluding that thread is the only way to settle this decision. Authority is the one thing the agent will not let you assert in one click. You choose first, then the thread opens on what you chose."
+        },
+        "talk": {
+          "why": "Because this is the only decision on the board that grants the pipeline power over the trunk. Every other wrong answer costs a night; this one costs the repository.",
+          "zoom": "Zooming out: merge authority is not a pipeline setting, it is a policy that has to exist in writing somewhere a human owns. The question is which written thing the pipeline is allowed to read as permission."
+        }
+      },
+      {
+        "id": "D13",
+        "short": "Flaky checks",
+        "title": "How a nondeterministic gate failure is handled",
+        "prereqs": [
+          "D7",
+          "D8"
+        ],
+        "body": "A check fails in a way that passes on re-run. Retrying hides real bugs; refusing to retry parks good work.",
+        "options": [
+          {
+            "id": "a",
+            "text": "Re-run the failing check exactly once. A pass on retry still parks the item, and files the flake.",
+            "pcr": [
+              "Separates flaky from broken without trusting either.",
+              "Good work still parks.",
+              "Builds a flake record over time."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "Retry up to three times and proceed on any pass.",
+            "pcr": [
+              "Highest throughput.",
+              "Hides a real intermittent bug as noise.",
+              "Quietly undermines the proof rule."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "No retries. A red check is red.",
+            "pcr": [
+              "A red check means exactly one thing.",
+              "Flakes cost whole items.",
+              "Pressure moves onto fixing flakes, eventually."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "D14",
+        "short": "Budget exhaustion",
+        "title": "What happens when the night's budget runs out mid-item",
+        "prereqs": [
+          "D10"
+        ],
+        "body": "Token and wall-clock budget are finite. The budget expires halfway through an item.",
+        "options": [
+          {
+            "id": "a",
+            "text": "Finish the current item's gate run, then stop cleanly and release claims. Never start an item you cannot finish.",
+            "pcr": [
+              "No half-landed work; claims released cleanly.",
+              "Needs a per-item cost estimate to schedule.",
+              "Ties directly to the gate runtime budget."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "Hard stop immediately; claims expire by TTL.",
+            "pcr": [
+              "The budget is respected exactly.",
+              "Leaves an item mid-flight holding a claim.",
+              "Puts all recovery on the TTL."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "No budget \u2014 run until morning.",
+            "pcr": [
+              "Nothing is ever cut short.",
+              "A runaway item eats the night and the tokens.",
+              "Removes the only cost control."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "D15",
+        "short": "Blast radius",
+        "title": "The recovery path when a night's work turns out wrong",
+        "prereqs": [
+          "D12"
+        ],
+        "fogUntil": "D12",
+        "fogTitle": "something about what happens after the work lands",
+        "body": "The landing rule is now fixed, so the question of undoing a landing is finally askable. What is the recovery path?",
+        "options": [
+          {
+            "id": "a",
+            "text": "One pull request per item, so a revert is per-item and needs no coordination.",
+            "pcr": [
+              "Revert is per-item and needs no coordination.",
+              "More pull requests to shepherd.",
+              "Keeps the blast radius one item wide."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "A nightly tag to roll the whole night back to.",
+            "pcr": [
+              "One handle rolls back everything.",
+              "Undoes the good work with the bad.",
+              "Encourages all-or-nothing nights."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "Nothing \u2014 review catches it before anything is merged.",
+            "pcr": [
+              "No machinery at all.",
+              "Assumes review never misses.",
+              "Recovery becomes an unplanned emergency."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "D16",
+        "short": "Gate runtime budget",
+        "title": "How much of the night one item's proof may consume",
+        "prereqs": [
+          "D7"
+        ],
+        "fogUntil": "D7",
+        "fogTitle": "something about how long the proof takes",
+        "body": "The gate is now a known set of checks with a known runtime, so its cost per item is finally a decidable question.",
+        "options": [
+          {
+            "id": "a",
+            "text": "A twenty-minute per-item gate budget; exceeding it parks the item as unprovable rather than unproven.",
+            "pcr": [
+              "One item can never eat the night.",
+              "Slow but legitimate proofs get parked.",
+              "Distinguishes unprovable from unproven."
+            ]
+          },
+          {
+            "id": "b",
+            "text": "No limit. Correctness beats throughput and the night is long.",
+            "pcr": [
+              "Correctness is never traded away.",
+              "One pathological item ends the night.",
+              "Throughput becomes unpredictable."
+            ]
+          },
+          {
+            "id": "c",
+            "text": "Kill at ten minutes and retry once in a quieter slot.",
+            "pcr": [
+              "Cheap first attempt, second chance later.",
+              "Two partial runs can cost more than one full one.",
+              "Needs a notion of a quieter slot."
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
