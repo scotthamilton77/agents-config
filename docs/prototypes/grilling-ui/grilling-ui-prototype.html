@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE — Interactive grilling session</title>
+<!--
+  THROWAWAY PROTOTYPE. One file, no build, no network. Open by double-click.
+
+  The pure state module below is fenced by two marker comments and carries an
+  assert-based self-check that runs when it is executed outside a browser.
+  BUILD-REPORT.md holds the exact extract-and-run command; the markers are
+  deliberately not repeated here, because an extractor that splits on them
+  would otherwise slice this comment instead of the module.
+-->
+<style>
+  :root {
+    --accent: #4f46e5;
+    --accent-soft: #eef2ff;
+    --ink: #1e293b;
+    --ink-dim: #64748b;
+    --ink-faint: #94a3b8;
+    --line: #e2e8f0;
+    --paper: #ffffff;
+    --page: #f8fafc;
+    --settled-bg: #f0fdf4; --settled-line: #86efac; --settled-ink: #15803d;
+    --stale-bg: #fffbeb;   --stale-line: #fcd34d;  --stale-ink: #b45309;
+    --blocked-bg: #f8fafc; --blocked-line: #e2e8f0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    padding-bottom: 96px;
+  }
+  h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+  button { font: inherit; cursor: pointer; }
+  button:disabled { cursor: default; opacity: .4; }
+  code { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background: #f1f5f9; padding: 1px 5px; border-radius: 4px; }
+
+  /* ---------- shell ---------- */
+  .shell { max-width: 1400px; margin: 0 auto; padding: 28px 28px 0; }
+  .marker {
+    display: inline-block; font: 600 11px/1 ui-monospace, Menlo, monospace;
+    letter-spacing: .12em; text-transform: uppercase;
+    color: #b45309; background: #fef3c7; border: 1px solid #fcd34d;
+    padding: 6px 10px; border-radius: 999px; margin-bottom: 14px;
+  }
+  .intro { max-width: 74ch; }
+  .intro h1 { font-size: 24px; margin-bottom: 8px; }
+  .intro p { color: var(--ink-dim); margin: 0; }
+
+  .scenarios { margin: 24px 0 20px; border: 1px solid var(--line); background: var(--paper); border-radius: 12px; }
+  .tabs { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .tabs button {
+    border: 0; background: transparent; color: var(--ink-dim);
+    padding: 7px 13px; border-radius: 7px; font-size: 13px; font-weight: 500;
+  }
+  .tabs button:hover { background: var(--page); }
+  .tabs button.on { background: var(--accent); color: #fff; }
+  .tabs .spacer { flex: 1; }
+  .scen-body { padding: 14px 16px 16px; }
+  .scen-body p { margin: 0 0 12px; color: var(--ink-dim); font-size: 13.5px; max-width: 80ch; }
+  .steps { display: flex; flex-direction: column; gap: 6px; }
+  .step {
+    display: flex; align-items: center; gap: 10px; text-align: left;
+    border: 1px solid var(--line); background: var(--paper); color: var(--ink);
+    border-radius: 8px; padding: 8px 12px; font-size: 13.5px;
+  }
+  .step .n { font: 600 11px ui-monospace, Menlo, monospace; color: var(--ink-faint); min-width: 16px; }
+  .step.now { border-color: var(--accent); background: var(--accent-soft); font-weight: 500; }
+  .step.done { color: var(--ink-faint); background: var(--page); }
+  .step.done .n::after { content: " ✓"; color: var(--settled-ink); }
+
+  /* ---------- switcher ---------- */
+  .switcher {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 4px; z-index: 900;
+    background: #0f172a; color: #fff; border-radius: 999px;
+    padding: 5px 6px; box-shadow: 0 8px 28px rgba(15,23,42,.35);
+  }
+  .switcher button {
+    border: 0; background: transparent; color: #fff; font-size: 16px;
+    width: 30px; height: 30px; border-radius: 999px; line-height: 1;
+  }
+  .switcher button:hover { background: rgba(255,255,255,.16); }
+  .switcher .label { font-size: 12.5px; font-weight: 500; padding: 0 12px; white-space: nowrap; }
+  .switcher .hint { font-size: 11px; opacity: .5; padding-right: 8px; }
+
+  /* ---------- status vocabulary (shared across variants) ---------- */
+  .pill { display: inline-block; font: 600 10px/1 ui-monospace, Menlo, monospace;
+          letter-spacing: .08em; text-transform: uppercase; padding: 4px 7px; border-radius: 5px; }
+  .pill.settled { background: var(--settled-bg); color: var(--settled-ink); border: 1px solid var(--settled-line); }
+  .pill.open    { background: var(--accent-soft); color: var(--accent); border: 1px solid #c7d2fe; }
+  .pill.stale   { background: var(--stale-bg); color: var(--stale-ink); border: 1px solid var(--stale-line); }
+  .pill.blocked { background: var(--blocked-bg); color: var(--ink-faint); border: 1px solid var(--line); }
+  .pill.fogged  { background: #f1f5f9; color: var(--ink-faint); border: 1px dashed var(--ink-faint); }
+  .pill.new     { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
+
+  @keyframes surface { from { box-shadow: 0 0 0 4px rgba(79,70,229,.22); } to { box-shadow: 0 0 0 4px rgba(79,70,229,0); } }
+  .fresh { animation: surface 1.6s ease-out 1; }
+
+  .btn {
+    border: 1px solid var(--line); background: var(--paper); color: var(--ink);
+    border-radius: 8px; padding: 7px 12px; font-size: 13px;
+  }
+  .btn:hover { border-color: var(--ink-faint); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
+  .btn.primary:hover { background: #4338ca; }
+  .btn.wide { width: 100%; text-align: left; }
+  .btn.sm { padding: 5px 9px; font-size: 12px; }
+
+  .q-body { color: var(--ink-dim); font-size: 13.5px; margin: 8px 0 12px; }
+  .rec-line { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 6px; }
+  .alts { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
+  .free { display: flex; gap: 6px; margin-top: 8px; }
+  .free textarea {
+    flex: 1; font: inherit; font-size: 13px; padding: 7px 9px; resize: vertical;
+    border: 1px solid var(--line); border-radius: 8px; min-height: 38px;
+  }
+  .prior { font-size: 12.5px; color: var(--ink-dim); border-left: 3px solid var(--line); padding-left: 10px; margin: 6px 0; }
+
+  /* ---------- variant A: map ---------- */
+  .mapwrap { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .maprow { display: flex; align-items: stretch; }
+  .maparea { position: relative; flex: 1; min-width: 0; height: 540px; overflow-x: auto; overflow-y: hidden; }
+  .mapcanvas { position: relative; height: 540px; }
+  .mapcanvas svg { position: absolute; left: 0; top: 0; }
+  .mnode {
+    position: absolute; width: 104px; padding: 8px 8px; border-radius: 9px; font-size: 11.5px;
+    line-height: 1.35; border: 1px solid var(--line); background: var(--paper); text-align: left;
+    transition: left .35s ease, top .35s ease;
+  }
+  .mnode .mid { font: 600 9.5px ui-monospace, Menlo, monospace; color: var(--ink-faint); letter-spacing: .05em; }
+  .mnode.settled { background: var(--settled-bg); border-color: var(--settled-line); }
+  .mnode.open    { background: var(--accent-soft); border-color: var(--accent); box-shadow: 0 1px 0 var(--accent); font-weight: 600; }
+  .mnode.stale   { background: var(--stale-bg); border-color: var(--stale-line); }
+  .mnode.blocked { background: var(--blocked-bg); border-style: dashed; color: var(--ink-faint); }
+  .mnode.fogged  { background: #f1f5f9; border-style: dashed; border-color: #cbd5e1; color: #b6c2d1; font-style: italic; }
+  .mnode.sel { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .fogbank {
+    position: absolute; top: 0; bottom: 0; pointer-events: none;
+    background: linear-gradient(to right, rgba(248,250,252,0) 0%, rgba(226,232,240,.8) 45%, rgba(203,213,225,.95) 100%);
+  }
+  .foglabel { position: absolute; top: 12px; font: 600 10px ui-monospace, Menlo, monospace;
+              letter-spacing: .14em; text-transform: uppercase; color: #94a3b8; }
+  .dock {
+    width: 350px; flex: none; height: 540px; background: var(--paper);
+    border-left: 1px solid var(--line); padding: 18px; overflow-y: auto;
+  }
+  .maplegend { display: flex; gap: 14px; flex-wrap: wrap; padding: 10px 16px; border-top: 1px solid var(--line);
+               font-size: 11.5px; color: var(--ink-dim); }
+  .maplegend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; vertical-align: 0; }
+  .lg-settled::before { background: #86efac; } .lg-open::before { background: var(--accent); }
+  .lg-blocked::before { background: #e2e8f0; } .lg-stale::before { background: #fcd34d; }
+  .lg-fogged::before { background: #cbd5e1; }
+
+  /* ---------- variant B: queue ---------- */
+  .strip { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 16px; }
+  .strip-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; font-size: 13px; color: var(--ink-dim); }
+  .strip-body { display: flex; gap: 18px; padding: 0 14px 14px; overflow-x: auto; }
+  .strip-col { display: flex; flex-direction: column; gap: 5px; min-width: 92px; }
+  .strip-col .d { font: 600 9.5px ui-monospace, Menlo, monospace; color: var(--ink-faint); letter-spacing: .1em; }
+  .chip { font: 600 10px ui-monospace, Menlo, monospace; padding: 4px 6px; border-radius: 5px; border: 1px solid var(--line); }
+  .cols { display: grid; grid-template-columns: 1.05fr 1fr; gap: 16px; align-items: start; }
+  .panel { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; }
+  .panel > h3 { padding: 13px 16px; border-bottom: 1px solid var(--line); font-size: 13px;
+                text-transform: uppercase; letter-spacing: .07em; color: var(--ink-dim); }
+  .qcard { border-bottom: 1px solid var(--line); padding: 16px; }
+  .qcard:last-child { border-bottom: 0; }
+  .qcard.head { background: var(--accent-soft); }
+  .qcard h4 { font-size: 15px; }
+  .ledger-row { border-bottom: 1px solid var(--line); padding: 12px 16px; font-size: 13.5px; }
+  .ledger-row:last-child { border-bottom: 0; }
+  .ledger-row .top { display: flex; align-items: baseline; gap: 8px; }
+  .ledger-row .seq { font: 600 10px ui-monospace, Menlo, monospace; color: var(--ink-faint); }
+  .drawer {
+    position: fixed; right: 0; top: 0; bottom: 0; width: 460px; background: var(--paper); z-index: 800;
+    border-left: 1px solid var(--line); box-shadow: -14px 0 40px rgba(15,23,42,.13); overflow-y: auto; padding: 22px;
+  }
+
+  /* ---------- variant C: document ---------- */
+  .doc { display: grid; grid-template-columns: minmax(0,1fr) 290px; gap: 26px; align-items: start; }
+  .paper {
+    background: var(--paper); border: 1px solid var(--line); border-radius: 12px;
+    padding: 40px 46px; font-size: 15px; line-height: 1.68;
+  }
+  .paper h2 { font-size: 20px; margin-bottom: 4px; }
+  .paper .sub { color: var(--ink-faint); font-size: 13px; margin-bottom: 24px; }
+  .sec { margin: 0 0 4px; }
+  .sec .lead { font-weight: 600; }
+  .sec.settled-line { border-left: 2px solid var(--settled-line); padding-left: 12px; margin-bottom: 10px; }
+  .sec.stale-line { border-left: 2px solid var(--stale-line); padding-left: 12px; margin-bottom: 10px; background: var(--stale-bg); }
+  .stub { color: var(--ink-faint); font-size: 13.5px; padding-left: 12px; border-left: 2px dashed var(--line); margin-bottom: 8px; }
+  .stub.fog { font-style: italic; color: #b6c2d1; }
+  .inlineq {
+    border: 1px solid var(--accent); background: var(--accent-soft);
+    border-radius: 10px; padding: 14px 16px; margin: 12px 0 14px;
+  }
+  .margin { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 20px; }
+  .mcomment { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 13px 14px; font-size: 13px; }
+  .mcomment .who { font-weight: 600; font-size: 12px; }
+  .turn { margin-bottom: 10px; }
+  .turn .who { font: 600 11px ui-monospace, Menlo, monospace; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); }
+  .turn.agent .who { color: var(--accent); }
+  .turn p { margin: 2px 0 0; font-size: 13px; color: var(--ink); }
+  .thread-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .muted { color: var(--ink-dim); font-size: 12.5px; }
+  .parked-note { background: var(--page); border: 1px dashed var(--line); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: var(--ink-dim); }
+</style>
+</head>
+<body>
+
+<script>
+//---GRILL-MODULE-START---
+/* =====================================================================
+   Grilling session — pure state module.
+   No DOM, no globals beyond the exported object. Liftable whole.
+   A decision tree; a question is answerable only once every prerequisite
+   is settled. Answering an already-settled node is a reopen: if the answer
+   changed, every decision downstream of it goes stale.
+   ===================================================================== */
+
+var PLAN = "Design a nightly autonomous overnight-build pipeline: which tracked work items it may pick up, how it proves completion, and when it must wake the human.";
+
+// options[0] is always the recommended answer.
+var NODES = [
+  { id: "D1", short: "Work-item source", title: "Where the night's candidate work comes from",
+    prereqs: [],
+    body: "The run needs a candidate list before it can do anything else. Is that list a snapshot taken at launch, or re-derived as the night goes on?",
+    options: [
+      { id: "a", text: "A snapshot query against the tracker taken at launch, frozen for the night." },
+      { id: "b", text: "A live query re-run before every item, so work filed at 2am is picked up." },
+      { id: "c", text: "A hand-curated queue the human fills before going to bed." } ] },
+
+  { id: "D2", short: "Why wake at all", title: "The class of thing that justifies waking the human",
+    prereqs: [],
+    body: "Waking is the expensive event — the pipeline exists to avoid it. Name what justifies one before deciding how one happens.",
+    options: [
+      { id: "a", text: "Only decisions the pipeline is not authorised to make. Never for progress, never for a single failure." },
+      { id: "b", text: "Any blocked item, so the night never idles." },
+      { id: "c", text: "Nothing at all — everything waits until morning." } ] },
+
+  { id: "D3", short: "Eligibility filter", title: "Which items a fully autonomous run may pick up",
+    prereqs: ["D1"],
+    body: "Of everything in that source, what qualifies as safe to work unattended?",
+    options: [
+      { id: "a", text: "Items whose acceptance criteria are already enumerated and that carry a track." },
+      { id: "b", text: "Anything not blocked and not assigned to a human." },
+      { id: "c", text: "An explicit overnight label — opt-in, per item." } ] },
+
+  { id: "D4", short: "Claim mechanism", title: "How an item is claimed so two runs cannot collide",
+    prereqs: ["D1"],
+    body: "Two runs — or a human awake at 1am — must not work the same item. What makes a claim visible?",
+    options: [
+      { id: "a", text: "A claim record on the tracker item carrying the run id and a timestamp, checked before work starts." },
+      { id: "b", text: "A lock file committed to the repository." },
+      { id: "c", text: "No claim; the scheduler guarantees one run at a time." } ] },
+
+  { id: "D5", short: "Proof of completion", title: "What counts as proof an item is actually done",
+    prereqs: ["D3"],
+    body: "The pipeline may only mark an item complete on evidence. Evidence of what, exactly?",
+    options: [
+      { id: "a", text: "A green whole-repo gate on the item's branch, plus every acceptance criterion mapped to a named passing test." },
+      { id: "b", text: "A green whole-repo gate. Nothing further." },
+      { id: "c", text: "A green gate plus the implementing agent's own written completion verdict." } ] },
+
+  { id: "D6", short: "Wake channel", title: "How the human is physically woken",
+    prereqs: ["D2"],
+    body: "Given a wake is justified, what happens at 3am?",
+    options: [
+      { id: "a", text: "A push notification carrying the item and the question in the body." },
+      { id: "b", text: "A queued message read at breakfast — no interrupt, ever." },
+      { id: "c", text: "Escalating: notification first, phone call after fifteen minutes." } ] },
+
+  { id: "D7", short: "Gate membership", title: "Which checks constitute the gate overnight",
+    prereqs: ["D5"],
+    body: "'Green gate' names a set of checks. Is that set the same one a human runs by hand?",
+    options: [
+      { id: "a", text: "Identical to the gate humans run. No overnight-only subset, no overnight-only additions." },
+      { id: "b", text: "A fast subset overnight, the full gate replayed in the morning." },
+      { id: "c", text: "The full gate plus a mutation-testing pass, since nobody is watching." } ] },
+
+  { id: "D8", short: "Failed proof", title: "What happens to an item whose proof fails",
+    prereqs: ["D5"],
+    body: "The gate goes red at 2am. Decide the fate of that item, and of the rest of the night.",
+    options: [
+      { id: "a", text: "Park the item with the failing output attached, move to the next eligible item, do not wake." },
+      { id: "b", text: "Retry the item once from scratch, then park it." },
+      { id: "c", text: "Stop the night entirely and wake the human." } ] },
+
+  { id: "D9", short: "Stale claims", title: "How a claim held by a crashed run is released",
+    prereqs: ["D4"],
+    body: "A run dies holding claims. Nothing releases them. What breaks the deadlock without stealing live work?",
+    options: [
+      { id: "a", text: "Claims carry a TTL and are reclaimable once the owning run's process is provably gone." },
+      { id: "b", text: "Claims expire on a fixed four-hour timer regardless of the owner." },
+      { id: "c", text: "A human clears them in the morning." } ] },
+
+  { id: "D10", short: "Wake threshold", title: "When accumulated failure justifies a wake",
+    prereqs: ["D6", "D8"],
+    body: "Failures are parked rather than escalated. Is there a count at which the accumulation itself is the decision the pipeline cannot make?",
+    options: [
+      { id: "a", text: "Never on failure count. Wake only when zero eligible items remain and hours of night are left." },
+      { id: "b", text: "After three consecutive parked items." },
+      { id: "c", text: "The first time an item parks." } ] },
+
+  { id: "D11", short: "What lands", title: "What the pipeline does with proven work",
+    prereqs: ["D7"],
+    body: "The gate is green and each criterion maps to a passing test. Where does the branch go?",
+    options: [
+      { id: "a", text: "Push the branch and open a pull request. The branch is the artifact; the merge is a separate decision." },
+      { id: "b", text: "Merge to the default branch directly." },
+      { id: "c", text: "Leave the branch local and name it in the morning report." } ] },
+
+  { id: "D12", short: "Merge authority", title: "Whether the pipeline may merge unattended",
+    prereqs: ["D11"],
+    body: "May it merge its own pull request while the human sleeps?",
+    options: [
+      { id: "a", text: "No. Opening a pull request is not authorisation to merge; the merge waits for an explicit human instruction." },
+      { id: "b", text: "Yes, when the gate is green and a reviewer has approved." },
+      { id: "c", text: "Yes, but only on one named low-risk track." } ] },
+
+  { id: "D13", short: "Flaky checks", title: "How a nondeterministic gate failure is handled",
+    prereqs: ["D7", "D8"],
+    body: "A check fails in a way that passes on re-run. Retrying hides real bugs; refusing to retry parks good work.",
+    options: [
+      { id: "a", text: "Re-run the failing check exactly once. A pass on retry still parks the item, and files the flake." },
+      { id: "b", text: "Retry up to three times and proceed on any pass." },
+      { id: "c", text: "No retries. A red check is red." } ] },
+
+  { id: "D14", short: "Budget exhaustion", title: "What happens when the night's budget runs out mid-item",
+    prereqs: ["D10"],
+    body: "Token and wall-clock budget are finite. The budget expires halfway through an item.",
+    options: [
+      { id: "a", text: "Finish the current item's gate run, then stop cleanly and release claims. Never start an item you cannot finish." },
+      { id: "b", text: "Hard stop immediately; claims expire by TTL." },
+      { id: "c", text: "No budget — run until morning." } ] },
+
+  { id: "D15", short: "Blast radius", title: "The recovery path when a night's work turns out wrong",
+    prereqs: ["D12"], fogUntil: "D12",
+    fogTitle: "something about what happens after the work lands",
+    body: "The landing rule is now fixed, so the question of undoing a landing is finally askable. What is the recovery path?",
+    options: [
+      { id: "a", text: "One pull request per item, so a revert is per-item and needs no coordination." },
+      { id: "b", text: "A nightly tag to roll the whole night back to." },
+      { id: "c", text: "Nothing — review catches it before anything is merged." } ] },
+
+  { id: "D16", short: "Gate runtime budget", title: "How much of the night one item's proof may consume",
+    prereqs: ["D7"], fogUntil: "D7",
+    fogTitle: "something about how long the proof takes",
+    body: "The gate is now a known set of checks with a known runtime, so its cost per item is finally a decidable question.",
+    options: [
+      { id: "a", text: "A twenty-minute per-item gate budget; exceeding it parks the item as unprovable rather than unproven." },
+      { id: "b", text: "No limit. Correctness beats throughput and the night is long." },
+      { id: "c", text: "Kill at ten minutes and retry once in a quieter slot." } ] }
+];
+
+var THREADS = [
+  { id: "T1", anchor: "D7", title: "Does the proof rule notice a test that asserts nothing?",
+    turns: [
+      { who: "agent", text: "Before we lock the gate's membership I want to test the layer above it. Your proof rule is a green gate plus every criterion mapped to a named passing test. Does anything in that rule notice a test that passes because it asserts nothing?" },
+      { who: "human", text: "No. The gate runs the suite; it does not judge the suite." },
+      { who: "agent", text: "Then it is a proof about the suite, not about the work. An agent that writes both the code and its tests overnight satisfies it exactly while shipping nothing. The cheapest repair is a reader that never saw the plan: a fresh-context reviewer over the diff and the criteria." },
+      { who: "human", text: "So the thing that is wrong is the proof rule, not the gate's membership." } ],
+    conclusion: {
+      target: "D5",
+      text: "A green whole-repo gate, every acceptance criterion mapped to a named passing test, and a fresh-context reviewer verdict from an agent that never saw the plan.",
+      note: "Folding this back rewrites the proof rule, which every gate and landing decision hangs off." } }
+];
+
+function clone(x) { return JSON.parse(JSON.stringify(x)); }
+
+function initial() {
+  var nodes = {}, order = [];
+  NODES.forEach(function (n) { nodes[n.id] = clone(n); nodes[n.id].answer = null; nodes[n.id].stale = false; order.push(n.id); });
+  var threads = {};
+  THREADS.forEach(function (t) { threads[t.id] = clone(t); threads[t.id].status = "unopened"; threads[t.id].shown = 0; });
+  return { nodes: nodes, order: order, threads: threads, active: null, log: [], seq: 0, fresh: [], plan: PLAN };
+}
+
+function isFogged(s, id) {
+  var n = s.nodes[id];
+  return !!(n.fogUntil && !isSettled(s, n.fogUntil));
+}
+function isSettled(s, id) {
+  var n = s.nodes[id];
+  return !!n.answer && !n.stale;
+}
+function statusOf(s, id) {
+  var n = s.nodes[id];
+  if (isFogged(s, id)) return "fogged";
+  if (n.answer && !n.stale) return "settled";
+  var ready = n.prereqs.every(function (p) { return isSettled(s, p); });
+  if (n.stale) return ready ? "stale" : "stale-blocked";
+  return ready ? "open" : "blocked";
+}
+function frontier(s) {
+  return s.order.filter(function (id) {
+    var st = statusOf(s, id);
+    return st === "open" || st === "stale";
+  });
+}
+// Node with everything the page needs to draw it, fog resolved.
+function nodeView(s, id) {
+  var n = s.nodes[id], fog = isFogged(s, id), st = statusOf(s, id);
+  return {
+    id: id, status: st, fogged: fog, depth: depthOf(s, id), prereqs: n.prereqs,
+    short: fog ? "?" : n.short,
+    title: fog ? n.fogTitle : n.title,
+    body: fog ? "" : n.body,
+    options: fog ? [] : n.options,
+    recommended: fog ? null : n.options[0],
+    answer: n.answer, stale: n.stale, fogUntil: n.fogUntil,
+    fresh: s.fresh.indexOf(id) >= 0,
+    threads: Object.keys(s.threads).filter(function (t) { return s.threads[t].anchor === id; })
+  };
+}
+function depthOf(s, id) {
+  var n = s.nodes[id];
+  if (!n.prereqs.length) return 0;
+  return 1 + Math.max.apply(null, n.prereqs.map(function (p) { return depthOf(s, p); }));
+}
+// Nodes grouped by prerequisite depth — drives the map columns and the outline order.
+function layers(s) {
+  var out = [];
+  s.order.forEach(function (id) {
+    var d = depthOf(s, id);
+    (out[d] = out[d] || []).push(id);
+  });
+  return out;
+}
+function answerText(s, id) {
+  var a = s.nodes[id].answer;
+  if (!a) return null;
+  if (a.free) return a.text;
+  var o = s.nodes[id].options.filter(function (x) { return x.id === a.optionId; })[0];
+  return o ? o.text : a.text;
+}
+function counts(s) {
+  var c = { settled: 0, open: 0, blocked: 0, stale: 0, fogged: 0 };
+  s.order.forEach(function (id) {
+    var st = statusOf(s, id);
+    if (st === "stale-blocked") st = "stale";
+    c[st]++;
+  });
+  return c;
+}
+function dependentsOf(s, id) {
+  return s.order.filter(function (o) { return s.nodes[o].prereqs.indexOf(id) >= 0; });
+}
+function markDownstreamStale(s, id) {
+  dependentsOf(s, id).forEach(function (d) {
+    if (s.nodes[d].answer && !s.nodes[d].stale) {
+      s.nodes[d].stale = true;
+      s.log.push({ seq: ++s.seq, kind: "stale", nodeId: d, text: "invalidated by the change to " + id });
+    }
+    markDownstreamStale(s, d);
+  });
+}
+function applyAnswer(s, id, payload, kind) {
+  var n = s.nodes[id];
+  var before = answerText(s, id);
+  var next = payload.free
+    ? { free: true, text: payload.text }
+    : { free: false, optionId: payload.optionId };
+  var wasSettled = !!n.answer;
+  n.answer = next;
+  n.stale = false;
+  var after = answerText(s, id);
+  s.log.push({
+    seq: ++s.seq, kind: kind || (wasSettled ? "reopen" : "answer"),
+    nodeId: id, text: after
+  });
+  if (wasSettled && before !== after) markDownstreamStale(s, id);
+}
+
+function reduce(state, action) {
+  var s = clone(state);
+  var before = frontier(state);
+  switch (action.type) {
+    case "reset":
+      return initial();
+    case "answer":
+      if (isFogged(s, action.id)) return state;
+      applyAnswer(s, action.id, action.payload, action.kind);
+      break;
+    case "openThread": {
+      var t = s.threads[action.id];
+      if (!t || t.status === "folded") return state;
+      t.status = "open";
+      if (!t.shown) t.shown = 1;
+      s.active = t.id;
+      break;
+    }
+    case "threadNext": {
+      var t2 = s.threads[action.id];
+      if (!t2 || t2.status !== "open") return state;
+      t2.shown = Math.min(t2.shown + 1, t2.turns.length);
+      break;
+    }
+    case "parkThread": {
+      var t3 = s.threads[action.id];
+      if (!t3 || t3.status !== "open") return state;
+      t3.status = "parked";
+      s.active = null;
+      s.log.push({ seq: ++s.seq, kind: "park", nodeId: t3.anchor, text: "side thread parked — map unchanged" });
+      break;
+    }
+    case "foldThread": {
+      var t4 = s.threads[action.id];
+      if (!t4 || t4.status === "folded") return state;
+      t4.status = "folded";
+      s.active = null;
+      s.log.push({ seq: ++s.seq, kind: "fold", nodeId: t4.anchor, text: "side thread folded back into " + t4.conclusion.target });
+      applyAnswer(s, t4.conclusion.target, { free: true, text: t4.conclusion.text }, "fold");
+      break;
+    }
+    default:
+      return state;
+  }
+  var after = frontier(s);
+  s.fresh = after.filter(function (id) { return before.indexOf(id) < 0; });
+  return s;
+}
+
+var Grill = {
+  initial: initial, reduce: reduce, statusOf: statusOf, frontier: frontier,
+  nodeView: nodeView, layers: layers, answerText: answerText, counts: counts,
+  depthOf: depthOf, isSettled: isSettled, isFogged: isFogged, plan: PLAN
+};
+
+if (typeof window !== "undefined") {
+  window.Grill = Grill;
+} else {
+  // ---- self-check: node grilling-module.js ----
+  var assert = require("assert");
+  var pick = function (s, id, opt) { return reduce(s, { type: "answer", id: id, payload: { optionId: opt } }); };
+
+  // 1. answering a question unblocks its dependents
+  var s1 = initial();
+  assert.deepStrictEqual(frontier(s1), ["D1", "D2"], "initial frontier is the two roots");
+  assert.strictEqual(statusOf(s1, "D3"), "blocked");
+  s1 = pick(s1, "D1", "a");
+  assert.strictEqual(statusOf(s1, "D3"), "open", "D3 unblocks once D1 settles");
+  assert.strictEqual(statusOf(s1, "D4"), "open", "D4 unblocks too");
+  assert.ok(s1.fresh.indexOf("D3") >= 0, "D3 is reported as newly on the frontier");
+
+  // fog graduates only when its gating decision settles
+  var s2 = pick(pick(pick(s1, "D3", "a"), "D5", "a"), "D7", "a");
+  assert.strictEqual(statusOf(s1, "D16"), "fogged", "D16 is fog before D7 settles");
+  assert.strictEqual(statusOf(s2, "D16"), "open", "D16 graduates once D7 settles");
+
+  // 2. reopening with a changed answer cascades staleness downstream
+  var s3 = pick(s2, "D3", "c");
+  assert.strictEqual(statusOf(s3, "D3"), "settled", "the reopened node is settled on its new answer");
+  assert.strictEqual(statusOf(s3, "D5"), "stale", "its direct dependent goes stale and is answerable again");
+  assert.strictEqual(statusOf(s3, "D7"), "stale-blocked", "a deeper dependent is stale and waiting");
+  assert.strictEqual(statusOf(s3, "D16"), "fogged", "and its fogged child sinks back into fog");
+  assert.ok(frontier(s3).indexOf("D5") >= 0, "the stale node is back on the frontier");
+  // re-answering with the same option does not re-cascade
+  var s3b = pick(s2, "D3", "a");
+  assert.strictEqual(statusOf(s3b, "D5"), "settled", "an unchanged reopen leaves the tree alone");
+
+  // 3. parking a side thread changes nothing on the map
+  var beforePark = JSON.stringify(s2.nodes);
+  var p = reduce(s2, { type: "openThread", id: "T1" });
+  p = reduce(p, { type: "threadNext", id: "T1" });
+  p = reduce(p, { type: "parkThread", id: "T1" });
+  assert.strictEqual(p.threads.T1.status, "parked");
+  assert.strictEqual(JSON.stringify(p.nodes), beforePark, "a parked thread leaves every decision untouched");
+  assert.strictEqual(statusOf(p, "D5"), "settled");
+
+  // 4. folding a side thread applies its conclusion and cascades
+  var f = reduce(p, { type: "openThread", id: "T1" });       // parked threads reopen
+  assert.strictEqual(f.threads.T1.status, "open", "a parked thread can be picked back up");
+  f = reduce(f, { type: "foldThread", id: "T1" });
+  assert.strictEqual(f.threads.T1.status, "folded");
+  assert.ok(/fresh-context reviewer/.test(answerText(f, "D5")), "D5 now carries the thread's conclusion");
+  assert.strictEqual(statusOf(f, "D5"), "settled");
+  assert.strictEqual(statusOf(f, "D7"), "stale", "the gate decision downstream of it went stale");
+  assert.strictEqual(statusOf(f, "D16"), "fogged", "and the fog it had graduated closed back over it");
+
+  console.log("grilling state module self-check: OK (" + NODES.length + " decisions, " + THREADS.length + " side thread)");
+}
+//---GRILL-MODULE-END---
+</script>
+
+<script>
+/* =====================================================================
+   Page shell. Throwaway. Three variants over the one module above.
+   ===================================================================== */
+
+var VARIANTS = [
+  { key: "A", name: "Map", render: renderMap },
+  { key: "B", name: "Queue", render: renderQueue },
+  { key: "C", name: "Document", render: renderDoc }
+];
+
+var S = Grill.initial();
+var UI = { sel: null, expanded: {}, stripOpen: true, scenario: null, step: 0 };
+
+function variantKey() {
+  var m = /variant=([ABC])/.exec(location.hash || "");
+  return m ? m[1] : "A";
+}
+function variantIndex() {
+  var k = variantKey();
+  for (var i = 0; i < VARIANTS.length; i++) if (VARIANTS[i].key === k) return i;
+  return 0;
+}
+// file:// has a null origin, so history.replaceState throws. The hash survives reload.
+function setVariant(i) {
+  var n = (i + VARIANTS.length) % VARIANTS.length;
+  location.hash = "variant=" + VARIANTS[n].key;
+}
+
+function dispatch(action) { S = Grill.reduce(S, action); render(); }
+
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
+function nv(id) { return Grill.nodeView(S, id); }
+function activeThread() { return S.active ? S.threads[S.active] : null; }
+
+/* ---------------- scenarios ---------------- */
+function seed(pairs) { pairs.forEach(function (p) { dispatch({ type: "answer", id: p[0], payload: { optionId: p[1] } }); }); }
+var ACCEPT = function (id) { return { label: "Accept the recommendation on " + id + " — " + S.nodes[id].short, run: function () { dispatch({ type: "answer", id: id, payload: { optionId: "a" } }); } }; };
+
+var SCENARIOS = [
+  { name: "1 · Two rounds of answers",
+    blurb: "Take the recommended answer on the whole frontier, twice over. Watch the frontier push outward as each decision settles, and watch a fogged item at the edge of the map graduate into a real question the moment the decision it was waiting on lands.",
+    steps: [
+      { label: "Accept the recommendation on D1 — work-item source", run: function () { dispatch({ type: "answer", id: "D1", payload: { optionId: "a" } }); } },
+      { label: "Accept the recommendation on D2 — why wake at all", run: function () { dispatch({ type: "answer", id: "D2", payload: { optionId: "a" } }); } },
+      { label: "Round 2 · accept D3 — eligibility filter (unblocks the proof rule)", run: function () { dispatch({ type: "answer", id: "D3", payload: { optionId: "a" } }); } },
+      { label: "Round 2 · accept D4 — claim mechanism", run: function () { dispatch({ type: "answer", id: "D4", payload: { optionId: "a" } }); } },
+      { label: "Round 2 · accept D6 — wake channel", run: function () { dispatch({ type: "answer", id: "D6", payload: { optionId: "a" } }); } },
+      { label: "Round 3 · accept D5 — proof of completion", run: function () { dispatch({ type: "answer", id: "D5", payload: { optionId: "a" } }); } },
+      { label: "Round 3 · accept D7 — gate membership · WATCH THE FOG", run: function () { dispatch({ type: "answer", id: "D7", payload: { optionId: "a" } }); } }
+    ] },
+
+  { name: "2 · Reopen and cascade",
+    blurb: "Settle seven decisions, then go back to an early one — the eligibility filter — and change your mind. Everything downstream of it stops being settled and comes back to you, deepest items waiting behind nearer ones. Then re-confirm the proof rule and watch the tree recover one layer at a time.",
+    steps: [
+      { label: "Settle the first three rounds (D1, D2, D3, D4, D5, D6, D7)", run: function () { seed([["D1", "a"], ["D2", "a"], ["D3", "a"], ["D4", "a"], ["D5", "a"], ["D6", "a"], ["D7", "a"]]); } },
+      { label: "Settle D8 and D11 so there is something deep to invalidate", run: function () { seed([["D8", "a"], ["D11", "a"]]); } },
+      { label: "REOPEN D3 — switch to the opt-in overnight label", run: function () { dispatch({ type: "answer", id: "D3", payload: { optionId: "c" } }); } },
+      { label: "Re-confirm D5 — proof of completion (recovers one layer)", run: function () { dispatch({ type: "answer", id: "D5", payload: { optionId: "a" } }); } },
+      { label: "Re-confirm D7 — gate membership (fog reopens too)", run: function () { dispatch({ type: "answer", id: "D7", payload: { optionId: "a" } }); } }
+    ] },
+
+  { name: "3 · Side thread: park, then fold",
+    blurb: "A question about the gate turns into an argument about the proof rule above it. Explore it off to the side, park it (the map is untouched), pick it back up, then fold its conclusion back in — which rewrites a decision you had already settled and invalidates everything hanging off it.",
+    steps: [
+      { label: "Settle D1, D2, D3, D5, D7 to reach the gate question", run: function () { seed([["D1", "a"], ["D2", "a"], ["D3", "a"], ["D5", "a"], ["D7", "a"]]); } },
+      { label: "Branch a side thread off D7 — gate membership", run: function () { dispatch({ type: "openThread", id: "T1" }); } },
+      { label: "Read on (turn 2)", run: function () { dispatch({ type: "threadNext", id: "T1" }); } },
+      { label: "Read on (turn 3)", run: function () { dispatch({ type: "threadNext", id: "T1" }); } },
+      { label: "Read on (turn 4 — the conclusion)", run: function () { dispatch({ type: "threadNext", id: "T1" }); } },
+      { label: "PARK it — abandon the detour, map unchanged", run: function () { dispatch({ type: "parkThread", id: "T1" }); } },
+      { label: "Pick the parked thread back up", run: function () { dispatch({ type: "openThread", id: "T1" }); } },
+      { label: "FOLD it back — rewrites D5 and cascades", run: function () { dispatch({ type: "foldThread", id: "T1" }); } }
+    ] }
+];
+
+function startScenario(i) {
+  dispatch({ type: "reset" });
+  UI.sel = null; UI.expanded = {};
+  UI.scenario = i; UI.step = 0;
+  render();
+}
+
+/* ---------------- shared fragments ---------------- */
+function statusPill(v) {
+  var label = { settled: "settled", open: "on the frontier", blocked: "waiting", stale: "needs re-confirming", "stale-blocked": "stale · waiting", fogged: "fog" }[v.status];
+  var cls = v.status === "stale-blocked" ? "stale" : v.status;
+  return '<span class="pill ' + cls + '">' + label + "</span>" +
+    (v.fresh ? ' <span class="pill new">just unblocked</span>' : "");
+}
+
+// The one-click accept is always the first and largest control.
+function questionControls(v) {
+  var h = "";
+  if (v.answer) h += '<div class="prior"><strong>Currently:</strong> ' + esc(Grill.answerText(S, v.id)) + "</div>";
+  h += '<div class="rec-line">Recommended answer</div>';
+  h += '<button class="btn primary wide" data-act="accept" data-id="' + v.id + '">➡️ ' + esc(v.recommended.text) + "</button>";
+  h += '<div class="alts">';
+  v.options.slice(1).forEach(function (o) {
+    h += '<button class="btn wide sm" data-act="pick" data-id="' + v.id + '" data-opt="' + o.id + '">' + esc(o.text) + "</button>";
+  });
+  h += "</div>";
+  h += '<div class="free"><textarea id="ft-' + v.id + '" placeholder="…or answer in your own words"></textarea>' +
+       '<button class="btn sm" data-act="free" data-id="' + v.id + '">Use this</button></div>';
+  return h;
+}
+
+// A side thread hangs off a node whatever that node's status is, so this is
+// deliberately separate from the answer controls.
+function threadLinks(v) {
+  var h = "";
+  v.threads.forEach(function (tid) {
+    var t = S.threads[tid];
+    if (t.status === "folded") {
+      h += '<div class="muted" style="margin-top:10px">⑂ Side thread folded back into ' + t.conclusion.target + ".</div>";
+      return;
+    }
+    h += '<div style="margin-top:10px"><button class="btn sm" data-act="thread-open" data-id="' + tid + '">' +
+         (t.status === "parked" ? "↩ Pick the parked side thread back up" : "⑂ Branch a side thread — " + esc(t.title)) + "</button></div>";
+  });
+  return h;
+}
+
+function threadPanel(t, style) {
+  var h = '<div class="' + style + '">';
+  h += '<span class="pill open">side thread</span>';
+  h += '<h3 style="margin:10px 0 4px;font-size:16px">' + esc(t.title) + "</h3>";
+  h += '<div class="muted" style="margin-bottom:14px">Branched off ' + t.anchor + " · " + esc(S.nodes[t.anchor].short) +
+       ". The main map is untouched while this is open.</div>";
+  t.turns.slice(0, t.shown).forEach(function (turn) {
+    h += '<div class="turn ' + turn.who + '"><div class="who">' + (turn.who === "agent" ? "Agent" : "You") + "</div><p>" + esc(turn.text) + "</p></div>";
+  });
+  if (t.shown < t.turns.length) {
+    h += '<button class="btn sm" data-act="thread-next" data-id="' + t.id + '">Read on →</button>';
+  } else {
+    h += '<div class="parked-note" style="margin-top:12px"><strong>If folded back:</strong> ' + esc(t.conclusion.note) + "</div>";
+  }
+  h += '<div class="thread-actions">' +
+       '<button class="btn sm" data-act="thread-park" data-id="' + t.id + '">Park it — change nothing</button>' +
+       '<button class="btn primary sm" data-act="thread-fold" data-id="' + t.id + '">Fold it back into ' + t.conclusion.target + "</button></div>";
+  h += "</div>";
+  return h;
+}
+
+function parkedNotes() {
+  var out = "";
+  Object.keys(S.threads).forEach(function (tid) {
+    var t = S.threads[tid];
+    if (t.status !== "parked") return;
+    out += '<div class="parked-note">⑂ Parked side thread off ' + t.anchor + ": " + esc(t.title) +
+      ' <button class="btn sm" data-act="thread-open" data-id="' + tid + '">Pick it up</button></div>';
+  });
+  return out;
+}
+
+/* ---------------- VARIANT A — map ---------------- */
+function renderMap() {
+  var ls = Grill.layers(S);
+  var maxDepth = ls.length - 1;
+  var COL = 118, X0 = 26, H = 540, NW = 104;
+  var fogCol = maxDepth + 1;
+  var pos = {};
+  // fogged nodes sit out at the map's edge until they graduate
+  var slots = [];
+  S.order.forEach(function (id) {
+    var v = nv(id);
+    var col = v.fogged ? fogCol : v.depth;
+    slots[col] = slots[col] || [];
+    slots[col].push(id);
+  });
+  slots.forEach(function (ids, col) {
+    ids.forEach(function (id, i) {
+      pos[id] = { x: X0 + col * COL, y: (H / (ids.length + 1)) * (i + 1) - 27 };
+    });
+  });
+
+  var edges = "";
+  S.order.forEach(function (id) {
+    nv(id).prereqs.forEach(function (p) {
+      var a = pos[p], b = pos[id];
+      if (!a || !b) return;
+      var settled = Grill.isSettled(S, p);
+      edges += '<path d="M' + (a.x + NW) + "," + (a.y + 27) + " C" + (a.x + NW + 34) + "," + (a.y + 27) +
+        " " + (b.x - 34) + "," + (b.y + 27) + " " + b.x + "," + (b.y + 27) +
+        '" fill="none" stroke="' + (settled ? "#94a3b8" : "#e2e8f0") + '" stroke-width="' + (settled ? 1.4 : 1) + '"' +
+        (settled ? "" : ' stroke-dasharray="3 3"') + "/>";
+    });
+  });
+
+  var nodes = "";
+  S.order.forEach(function (id) {
+    var v = nv(id), p = pos[id];
+    nodes += '<button class="mnode ' + (v.status === "stale-blocked" ? "stale" : v.status) + (UI.sel === id ? " sel" : "") + (v.fresh ? " fresh" : "") +
+      '" style="left:' + p.x + "px;top:" + p.y + 'px" data-act="select" data-id="' + id + '">' +
+      '<span class="mid">' + (v.fogged ? "· · ·" : id) + "</span><br>" + esc(v.short) +
+      (v.status === "open" ? " ❓" : "") + (v.status === "settled" ? " ✓" : "") + (v.status.indexOf("stale") === 0 ? " ⚠" : "") +
+      "</button>";
+  });
+
+  var sel = UI.sel ? nv(UI.sel) : null;
+  var t = activeThread();
+  var dock = "";
+  if (t) {
+    dock = threadPanel(t, "dock");
+  } else if (sel && (sel.status === "open" || sel.status === "stale")) {
+    dock = '<div class="dock"><span class="pill ' + (sel.status === "stale" ? "stale" : "open") + '">' +
+      (sel.status === "stale" ? "needs re-confirming" : "on the frontier") + "</span>" +
+      '<h3 style="margin:10px 0 0;font-size:17px">❓ ' + sel.id + " · " + esc(sel.title) + "</h3>" +
+      '<div class="q-body">' + esc(sel.body) + "</div>" + questionControls(sel) + threadLinks(sel) + "</div>";
+  } else if (sel) {
+    dock = '<div class="dock">' + statusPill(sel) + '<h3 style="margin:10px 0 0;font-size:17px">' + esc(sel.title) + "</h3>" +
+      (sel.answer ? '<div class="prior">' + esc(Grill.answerText(S, sel.id)) + "</div>" : "") +
+      (sel.status === "blocked" || sel.status === "stale-blocked"
+        ? '<div class="q-body">Waiting on ' + sel.prereqs.join(", ") + ". Nothing to answer here until those settle.</div>"
+        : "") +
+      (sel.fogged ? '<div class="q-body">Not a real question yet. It sharpens into one once ' + sel.fogUntil + " settles.</div>" : "") +
+      (sel.status === "settled" ? '<button class="btn sm" data-act="select-reopen" data-id="' + sel.id + '">Reopen this decision</button>' : "") +
+      threadLinks(sel) + "</div>";
+  } else {
+    dock = '<div class="dock"><div class="muted">Click any node. Blue nodes are answerable now; the recommended answer is one click away in this panel.</div></div>';
+  }
+
+  var c = Grill.counts(S);
+  var W = X0 + fogCol * COL + NW + 30;
+  var fogX = X0 + fogCol * COL - 46;
+  return '<div class="mapwrap"><div class="maprow"><div class="maparea"><div class="mapcanvas" style="width:' + W + 'px">' +
+    '<svg width="' + W + '" height="' + H + '">' + edges + "</svg>" +
+    nodes +
+    '<div class="fogbank" style="left:' + fogX + "px;width:" + (W - fogX) + 'px"></div>' +
+    '<div class="foglabel" style="left:' + (fogX + 24) + 'px">fog</div>' +
+    "</div></div>" + dock + "</div>" +
+    '<div class="maplegend"><span class="lg-settled">settled · ' + c.settled + "</span>" +
+    '<span class="lg-open">frontier · ' + c.open + "</span>" +
+    '<span class="lg-stale">stale · ' + c.stale + "</span>" +
+    '<span class="lg-blocked">waiting · ' + c.blocked + "</span>" +
+    '<span class="lg-fogged">fog · ' + c.fogged + "</span></div></div>" +
+    (parkedNotes() ? '<div style="margin-top:14px">' + parkedNotes() + "</div>" : "");
+}
+
+/* ---------------- VARIANT B — queue ---------------- */
+function renderQueue() {
+  var f = Grill.frontier(S);
+  var strip = '<div class="strip"><div class="strip-head">' +
+    '<button class="btn sm" data-act="strip">' + (UI.stripOpen ? "▾" : "▸") + " tree</button>" +
+    "<span>" + Grill.counts(S).settled + " settled · " + f.length + " answerable · " + Grill.counts(S).blocked + " waiting · " + Grill.counts(S).fogged + " in fog</span></div>";
+  if (UI.stripOpen) {
+    strip += '<div class="strip-body">';
+    Grill.layers(S).forEach(function (ids, d) {
+      strip += '<div class="strip-col"><div class="d">L' + d + "</div>";
+      ids.forEach(function (id) {
+        var v = nv(id), cls = v.status === "stale-blocked" ? "stale" : v.status;
+        strip += '<span class="chip pill ' + cls + '">' + (v.fogged ? "···" : id) + "</span>";
+      });
+      strip += "</div>";
+    });
+    strip += "</div>";
+  }
+  strip += "</div>";
+
+  var queue = '<div class="panel"><h3>Answerable now — ' + f.length + " in the queue</h3>";
+  if (!f.length) queue += '<div class="qcard"><div class="muted">Nothing answerable. Either the frontier is empty or everything is waiting on something.</div></div>';
+  f.forEach(function (id, i) {
+    var v = nv(id);
+    queue += '<div class="qcard' + (i === 0 ? " head" : "") + (v.fresh ? " fresh" : "") + '">' + statusPill(v) +
+      "<h4 style='margin:8px 0 0'>❓ " + v.id + " · " + esc(v.title) + "</h4>";
+    if (i === 0) {
+      queue += '<div class="q-body">' + esc(v.body) + "</div>" + questionControls(v) + threadLinks(v);
+    } else {
+      queue += '<div class="q-body">' + esc(v.body.slice(0, 96)) + "…</div>" +
+        '<button class="btn primary sm" data-act="accept" data-id="' + v.id + '">➡️ Accept recommendation</button> ' +
+        '<button class="btn sm" data-act="expand" data-id="' + v.id + '">' + (UI.expanded[v.id] ? "Hide options" : "Other answers") + "</button>";
+      if (UI.expanded[v.id]) queue += '<div style="margin-top:10px">' + questionControls(v) + "</div>";
+      queue += threadLinks(v);
+    }
+    queue += "</div>";
+  });
+  queue += "</div>";
+
+  var settledIds = S.order.filter(function (id) { return S.nodes[id].answer; });
+  settledIds.sort(function (a, b) { return lastSeq(a) - lastSeq(b); });
+  var ledger = '<div class="panel"><h3>Decision ledger — in the order you decided</h3>';
+  if (!settledIds.length) ledger += '<div class="ledger-row"><span class="muted">Nothing decided yet.</span></div>';
+  settledIds.forEach(function (id) {
+    var v = nv(id);
+    ledger += '<div class="ledger-row"><div class="top"><span class="seq">#' + lastSeq(id) + "</span>" +
+      "<strong>" + v.id + " · " + esc(v.title) + "</strong>" + statusPill(v) + "</div>" +
+      '<div class="prior">' + esc(Grill.answerText(S, id)) + "</div>" +
+      '<button class="btn sm" data-act="expand" data-id="' + id + '">' + (UI.expanded[id] ? "Close" : "Reopen in place") + "</button>";
+    if (UI.expanded[id]) ledger += '<div style="margin-top:10px">' + questionControls(v) + "</div>";
+    ledger += threadLinks(v);
+    ledger += "</div>";
+  });
+  ledger += "</div>";
+
+  var t = activeThread();
+  return strip + '<div class="cols">' + queue + '<div>' + ledger +
+    (parkedNotes() ? '<div style="margin-top:14px">' + parkedNotes() + "</div>" : "") + "</div></div>" +
+    (t ? threadPanel(t, "drawer") : "");
+}
+function lastSeq(id) {
+  var s = 0;
+  S.log.forEach(function (e) { if (e.nodeId === id && e.kind !== "stale") s = e.seq; });
+  return s;
+}
+
+/* ---------------- VARIANT C — document ---------------- */
+function renderDoc() {
+  var childrenOf = {};
+  var roots = [];
+  S.order.forEach(function (id) {
+    var p = S.nodes[id].prereqs[0];
+    if (!p) roots.push(id); else (childrenOf[p] = childrenOf[p] || []).push(id);
+  });
+
+  var body = "";
+  var margins = [];
+  function walk(id, depth) {
+    var v = nv(id);
+    var pad = "margin-left:" + depth * 20 + "px";
+    var extra = v.prereqs.length > 1 ? ' <span class="muted">(also depends on ' + v.prereqs.slice(1).join(", ") + ")</span>" : "";
+    if (v.fogged) {
+      body += '<div class="stub fog" style="' + pad + '">§ ' + esc(v.title) + " — not yet a question; sharpens once " + v.fogUntil + " is written.</div>";
+    } else if (v.status === "settled") {
+      body += '<div class="sec settled-line" style="' + pad + '"><span class="lead">' + esc(v.title) + ".</span> " +
+        esc(Grill.answerText(S, id)) + extra +
+        ' <button class="btn sm" data-act="expand" data-id="' + id + '">' + (UI.expanded[id] ? "close" : "reopen") + "</button>";
+      if (UI.expanded[id]) body += '<div style="margin-top:10px">' + questionControls(v) + "</div>";
+      body += "</div>";
+    } else if (v.status === "open" || v.status === "stale") {
+      body += '<div class="inlineq' + (v.fresh ? " fresh" : "") + '" style="' + pad + '">' + statusPill(v) +
+        "<h4 style='margin:8px 0 0'>❓ " + esc(v.title) + "</h4>" +
+        '<div class="q-body">' + esc(v.body) + "</div>" + questionControls(v) + "</div>";
+    } else {
+      body += '<div class="stub" style="' + pad + '">§ ' + esc(v.title) + " — waiting on " + v.prereqs.join(", ") +
+        (v.answer ? " · previously: " + esc(Grill.answerText(S, id)) : "") + "</div>";
+    }
+    v.threads.forEach(function (tid) { margins.push({ tid: tid, anchor: id }); });
+    (childrenOf[id] || []).forEach(function (c) { walk(c, depth + 1); });
+  }
+  roots.forEach(function (r) { walk(r, 0); });
+
+  var margin = '<div class="margin">';
+  var t = activeThread();
+  if (t) {
+    margin += threadPanel(t, "mcomment");
+  } else {
+    margins.forEach(function (m) {
+      var th = S.threads[m.tid];
+      margin += '<div class="mcomment"><div class="who">' + (th.status === "parked" ? "Parked thread" : th.status === "folded" ? "Folded thread" : "Suggested thread") + " · " + m.anchor + "</div>" +
+        "<p style='margin:4px 0 8px;font-size:12.5px'>" + esc(th.title) + "</p>" +
+        (th.status === "folded"
+          ? '<div class="muted">Folded back into ' + th.conclusion.target + ".</div>"
+          : '<button class="btn sm" data-act="thread-open" data-id="' + m.tid + '">' + (th.status === "parked" ? "Pick it back up" : "Open thread") + "</button>") +
+        "</div>";
+    });
+    if (!margins.length) margin += '<div class="mcomment muted">No margin threads on this document yet.</div>';
+  }
+  margin += "</div>";
+
+  return '<div class="doc"><div class="paper"><h2>Overnight build pipeline — design</h2>' +
+    '<div class="sub">Written as you answer. Settled decisions read as the spec; open questions sit inline where they belong.</div>' +
+    body + "</div>" + margin + "</div>" +
+    (parkedNotes() ? '<div style="margin-top:14px">' + parkedNotes() + "</div>" : "");
+}
+
+/* ---------------- render + events ---------------- */
+function renderShell() {
+  var v = VARIANTS[variantIndex()];
+  var tabs = '<div class="tabs">';
+  SCENARIOS.forEach(function (s, i) {
+    tabs += '<button class="' + (UI.scenario === i ? "on" : "") + '" data-act="scenario" data-i="' + i + '">' + esc(s.name) + "</button>";
+  });
+  tabs += '<span class="spacer"></span><button class="' + (UI.scenario === null ? "on" : "") + '" data-act="freeplay">Free play</button>' +
+    '<button data-act="reset">Reset</button></div>';
+
+  var bodyH = '<div class="scen-body">';
+  if (UI.scenario === null) {
+    bodyH += "<p>Free play. Answer anything on the frontier, in any order, reopen anything already settled, and open the side thread whenever you like. Pick a walkthrough above to be led through a specific moment.</p>";
+  } else {
+    var sc = SCENARIOS[UI.scenario];
+    bodyH += "<p>" + esc(sc.blurb) + "</p><div class='steps'>";
+    sc.steps.forEach(function (st, i) {
+      var cls = i < UI.step ? "done" : i === UI.step ? "now" : "";
+      bodyH += '<button class="step ' + cls + '" data-act="step" data-i="' + i + '" ' + (i === UI.step ? "" : "disabled") + '>' +
+        '<span class="n">' + (i + 1) + "</span>" + esc(st.label) + "</button>";
+    });
+    bodyH += "</div>";
+    if (UI.step >= sc.steps.length) bodyH += "<p style='margin-top:12px'><strong>Walkthrough complete.</strong> Keep clicking around — free play is always live.</p>";
+  }
+  bodyH += "</div>";
+
+  document.getElementById("shell").innerHTML =
+    '<span class="marker">Prototype — throwaway</span>' +
+    '<div class="intro"><h1>What should an interactive grilling session look like?</h1>' +
+    "<p>Grilling sessions run today as numbered question rounds in a linear chat transcript, so revisiting an earlier decision means scrolling and re-litigating, side investigations either derail the thread or get dropped, and the design tree exists only in prose recaps. This prototype drives one fake but fully stateful session — a nightly autonomous build pipeline — through three structurally different surfaces, to answer two things: which interaction model should replace linear-transcript rounds, <em>map-first, queue-first or document-first</em>, and whether the underlying frontier / reopen / side-thread model itself feels right.</p></div>" +
+    '<div class="scenarios">' + tabs + bodyH + "</div>" +
+    '<div id="variant"></div>';
+
+  document.getElementById("variant").innerHTML = v.render();
+
+  document.getElementById("switcher").innerHTML =
+    '<button data-act="prev">‹</button><span class="label">' + v.key + " — " + v.name +
+    '</span><button data-act="next">›</button><span class="hint">← →</span>';
+}
+function render() { renderShell(); }
+
+document.addEventListener("click", function (e) {
+  var el = e.target.closest("[data-act]");
+  if (!el) return;
+  var a = el.dataset.act, id = el.dataset.id;
+  switch (a) {
+    case "prev": setVariant(variantIndex() - 1); break;
+    case "next": setVariant(variantIndex() + 1); break;
+    case "accept": dispatch({ type: "answer", id: id, payload: { optionId: S.nodes[id].options[0].id } }); UI.expanded[id] = false; break;
+    case "pick": dispatch({ type: "answer", id: id, payload: { optionId: el.dataset.opt } }); UI.expanded[id] = false; break;
+    case "free": {
+      var ta = document.getElementById("ft-" + id);
+      if (!ta || !ta.value.trim()) return;
+      dispatch({ type: "answer", id: id, payload: { free: true, text: ta.value.trim() } });
+      UI.expanded[id] = false;
+      break;
+    }
+    case "select": UI.sel = id; render(); break;
+    case "select-reopen": UI.sel = id; UI.expanded[id] = true; render(); break;
+    case "expand": UI.expanded[id] = !UI.expanded[id]; render(); break;
+    case "strip": UI.stripOpen = !UI.stripOpen; render(); break;
+    case "thread-open": dispatch({ type: "openThread", id: id }); break;
+    case "thread-next": dispatch({ type: "threadNext", id: id }); break;
+    case "thread-park": dispatch({ type: "parkThread", id: id }); break;
+    case "thread-fold": dispatch({ type: "foldThread", id: id }); break;
+    case "scenario": startScenario(+el.dataset.i); break;
+    case "freeplay": UI.scenario = null; UI.step = 0; render(); break;
+    case "reset": dispatch({ type: "reset" }); UI.sel = null; UI.expanded = {}; UI.scenario = null; UI.step = 0; render(); break;
+    case "step": {
+      var sc = SCENARIOS[UI.scenario];
+      if (+el.dataset.i !== UI.step) return;
+      sc.steps[UI.step].run();
+      UI.step++;
+      render();
+      break;
+    }
+  }
+});
+
+document.addEventListener("keydown", function (e) {
+  var t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if (e.key === "ArrowLeft") setVariant(variantIndex() - 1);
+  if (e.key === "ArrowRight") setVariant(variantIndex() + 1);
+});
+
+window.addEventListener("hashchange", render);
+</script>
+
+<div class="shell" id="shell"></div>
+<div class="switcher" id="switcher"></div>
+
+<script>
+  if (!/variant=[ABC]/.test(location.hash || "")) location.hash = "variant=A";
+  render();
+</script>
+</body>
+</html>

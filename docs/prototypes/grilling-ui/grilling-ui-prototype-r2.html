@@ -1,0 +1,1891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE R2 — Asynchronous grilling session</title>
+<!--
+  THROWAWAY PROTOTYPE, round 2. One file, no build, no network. Open by double-click.
+
+  Round 1 settled the layout (map beside one blended column). This round asks
+  about the conversation model: a fake agent that answers late, in structured
+  updates that queue in a mailbox instead of applying themselves.
+
+  The pure state module below is fenced by two marker comments and carries an
+  assert-based self-check that runs when it is executed outside a browser.
+  BUILD-REPORT-R2.md holds the exact extract-and-run command; the markers are
+  deliberately not repeated in this comment, because an extractor that splits
+  on them would otherwise slice this comment instead of the module.
+-->
+<style>
+  :root {
+    --accent: #4f46e5;
+    --accent-soft: #eef2ff;
+    --ink: #1e293b;
+    --ink-dim: #64748b;
+    --ink-faint: #94a3b8;
+    --line: #e2e8f0;
+    --paper: #ffffff;
+    --page: #f8fafc;
+    --settled-bg: #f0fdf4; --settled-line: #86efac; --settled-ink: #15803d;
+    --stale-bg: #fffbeb;   --stale-line: #fcd34d;  --stale-ink: #b45309;
+    --conflict-bg: #fef2f2; --conflict-line: #fca5a5; --conflict-ink: #b91c1c;
+    --blocked-bg: #f8fafc; --blocked-line: #e2e8f0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+  h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+  button { font: inherit; cursor: pointer; }
+  button:disabled { cursor: default; opacity: .4; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  .shell { max-width: 1560px; margin: 0 auto; padding: 24px 24px 40px; }
+  .marker {
+    display: inline-block; font: 600 11px/1 ui-monospace, Menlo, monospace;
+    letter-spacing: .12em; text-transform: uppercase;
+    color: #b45309; background: #fef3c7; border: 1px solid #fcd34d;
+    padding: 6px 10px; border-radius: 999px; margin-bottom: 14px;
+  }
+  .intro { max-width: 88ch; }
+  .intro h1 { font-size: 23px; margin-bottom: 8px; }
+  .intro p { color: var(--ink-dim); margin: 0 0 8px; font-size: 14px; }
+
+  details.note { margin-top: 12px; border: 1px solid var(--line); background: var(--paper); border-radius: 10px; padding: 10px 14px; }
+  details.note summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--accent); }
+  details.note table { border-collapse: collapse; margin-top: 10px; font-size: 12.5px; width: 100%; }
+  details.note td, details.note th { border-bottom: 1px solid var(--line); padding: 5px 8px; text-align: left; vertical-align: top; }
+  details.note th { color: var(--ink-faint); font-weight: 600; text-transform: uppercase; font-size: 10.5px; letter-spacing: .07em; }
+  details.note .k { white-space: nowrap; font: 600 11.5px ui-monospace, Menlo, monospace; color: var(--accent); }
+
+  /* ---------- scenario bar ---------- */
+  .scenarios { margin: 18px 0 16px; border: 1px solid var(--line); background: var(--paper); border-radius: 12px; }
+  .tabs { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--line); flex-wrap: wrap; align-items: center; }
+  .tabs button {
+    border: 0; background: transparent; color: var(--ink-dim);
+    padding: 7px 13px; border-radius: 7px; font-size: 13px; font-weight: 500;
+  }
+  .tabs button:hover { background: var(--page); }
+  .tabs button.on { background: var(--accent); color: #fff; }
+  .tabs .spacer { flex: 1; }
+  .scen-body { padding: 13px 16px 15px; }
+  .scen-body p { margin: 0 0 11px; color: var(--ink-dim); font-size: 13.5px; max-width: 92ch; }
+  .steps { display: flex; flex-direction: column; gap: 5px; }
+  .step {
+    display: flex; align-items: center; gap: 10px; text-align: left;
+    border: 1px solid var(--line); background: var(--paper); color: var(--ink);
+    border-radius: 8px; padding: 8px 12px; font-size: 13.5px;
+  }
+  .step .n { font: 600 11px ui-monospace, Menlo, monospace; color: var(--ink-faint); min-width: 16px; }
+  .step.now { border-color: var(--accent); background: var(--accent-soft); font-weight: 500; }
+  .step.done { color: var(--ink-faint); background: var(--page); }
+  .step.done .n::after { content: " ✓"; color: var(--settled-ink); }
+  .step .wait { margin-left: auto; font-size: 11.5px; color: var(--stale-ink); font-style: italic; }
+
+  /* ---------- status vocabulary ---------- */
+  .pill { display: inline-block; font: 600 10px/1 ui-monospace, Menlo, monospace;
+          letter-spacing: .07em; text-transform: uppercase; padding: 4px 7px; border-radius: 5px; }
+  .pill.settled { background: var(--settled-bg); color: var(--settled-ink); border: 1px solid var(--settled-line); }
+  .pill.open    { background: var(--accent-soft); color: var(--accent); border: 1px solid #c7d2fe; }
+  .pill.stale   { background: var(--stale-bg); color: var(--stale-ink); border: 1px solid var(--stale-line); }
+  .pill.blocked { background: var(--blocked-bg); color: var(--ink-faint); border: 1px solid var(--line); }
+  .pill.fogged  { background: #f1f5f9; color: var(--ink-faint); border: 1px dashed var(--ink-faint); }
+  .pill.conflicted, .pill.conflict-blocked { background: var(--conflict-bg); color: var(--conflict-ink); border: 1px solid var(--conflict-line); }
+  .pill.reassessing { background: #f5f3ff; color: #6d28d9; border: 1px dashed #c4b5fd; }
+  .pill.awaiting-thread { background: #ecfeff; color: #0e7490; border: 1px solid #a5f3fc; }
+  .pill.invalidated { background: #f8fafc; color: var(--ink-faint); border: 1px dashed var(--ink-faint); text-decoration: line-through; }
+  .pill.new { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
+
+  @keyframes surface { from { box-shadow: 0 0 0 5px rgba(79,70,229,.25); } to { box-shadow: 0 0 0 5px rgba(79,70,229,0); } }
+  .fresh { animation: surface 1.8s ease-out 1; }
+  @keyframes touched { 0% { background: #fff7ed; } 100% { background: transparent; } }
+  .touched { animation: touched 2.2s ease-out 1; }
+  @keyframes mailpulse { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
+  .mail { animation: mailpulse 1.4s ease-in-out infinite; }
+  @keyframes alertflash { 0%,100% { box-shadow: 0 0 0 0 rgba(185,28,28,0); } 50% { box-shadow: 0 0 0 4px rgba(185,28,28,.28); } }
+  .alerting { animation: alertflash 1.5s ease-in-out infinite; }
+
+  .btn {
+    border: 1px solid var(--line); background: var(--paper); color: var(--ink);
+    border-radius: 8px; padding: 7px 12px; font-size: 13px;
+  }
+  .btn:hover { border-color: var(--ink-faint); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
+  .btn.primary:hover { background: #4338ca; }
+  .btn.warn { background: var(--conflict-ink); border-color: var(--conflict-ink); color: #fff; font-weight: 500; }
+  .btn.wide { width: 100%; text-align: left; }
+  .btn.sm { padding: 5px 9px; font-size: 12px; }
+
+  .q-body { color: var(--ink-dim); font-size: 13.5px; margin: 8px 0 12px; }
+  .rec-line { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 6px; }
+  .alts { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
+  .free { display: flex; gap: 6px; margin-top: 8px; }
+  .free textarea {
+    flex: 1; font: inherit; font-size: 13px; padding: 7px 9px; resize: vertical;
+    border: 1px solid var(--line); border-radius: 8px; min-height: 38px;
+  }
+  .free textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+  .prior { font-size: 12.5px; color: var(--ink-dim); border-left: 3px solid var(--line); padding-left: 10px; margin: 6px 0; }
+  .muted { color: var(--ink-dim); font-size: 12.5px; }
+  .did { font: 600 10px ui-monospace, Menlo, monospace; color: var(--ink-faint); letter-spacing: .08em; }
+
+  /* ---------- top bar: agent status + pending + inbox ---------- */
+  .topbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .agentchip {
+    display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-dim);
+    background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 999px; background: #cbd5e1; }
+  .dot.busy { background: var(--accent); animation: mailpulse 1s ease-in-out infinite; }
+  .pendbtn { border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent);
+             border-radius: 999px; padding: 6px 14px; font-size: 12.5px; font-weight: 600; }
+  .pendbtn.none { border-color: var(--line); background: var(--paper); color: var(--ink-faint); font-weight: 400; }
+  .inboxbtn { border: 1px solid var(--line); background: var(--paper); color: var(--ink);
+              border-radius: 999px; padding: 6px 14px; font-size: 12.5px; }
+  .inboxbtn .count { font-weight: 600; color: var(--accent); }
+
+  /* ---------- main surface ---------- */
+  .surface { display: grid; grid-template-columns: minmax(0, 1fr) 470px; gap: 16px; align-items: start; }
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; }
+  .card > h3 { padding: 11px 15px; border-bottom: 1px solid var(--line); font-size: 12px;
+               text-transform: uppercase; letter-spacing: .07em; color: var(--ink-faint); display: flex; gap: 10px; align-items: center; }
+  .card > h3 .spacer { flex: 1; }
+
+  .mapscroll { position: relative; height: 620px; overflow: auto; cursor: grab; }
+  .mapscroll.grabbing { cursor: grabbing; }
+  .mapcanvas { position: relative; }
+  .mapcanvas svg { position: absolute; left: 0; top: 0; }
+  .mnode {
+    position: absolute; width: 116px; padding: 8px; border-radius: 9px; font-size: 11.5px;
+    line-height: 1.35; border: 1px solid var(--line); background: var(--paper); text-align: left;
+  }
+  .mnode .mid { font: 600 9.5px ui-monospace, Menlo, monospace; color: var(--ink-faint); letter-spacing: .05em; }
+  .mnode .badges { position: absolute; top: -8px; right: -6px; font-size: 11px; display: flex; gap: 2px; }
+  .mnode.settled { background: var(--settled-bg); border-color: var(--settled-line); }
+  .mnode.open    { background: var(--accent-soft); border-color: var(--accent); font-weight: 600; }
+  .mnode.stale, .mnode.stale-blocked { background: var(--stale-bg); border-color: var(--stale-line); }
+  .mnode.blocked { background: var(--blocked-bg); border-style: dashed; color: var(--ink-faint); }
+  .mnode.fogged  { background: #f1f5f9; border-style: dashed; border-color: #cbd5e1; color: #b6c2d1; font-style: italic; }
+  .mnode.conflicted { background: var(--conflict-bg); border-color: var(--conflict-ink); font-weight: 600; }
+  .mnode.conflict-blocked { background: var(--conflict-bg); border-style: dashed; border-color: var(--conflict-line); color: #9f1239; }
+  .mnode.reassessing { background: #f5f3ff; border-color: #c4b5fd; border-style: dashed; }
+  .mnode.awaiting-thread { background: #ecfeff; border-color: #67e8f9; }
+  .mnode.invalidated { background: #f8fafc; border-style: dotted; color: var(--ink-faint); opacity: .72; }
+  .mnode.focused { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .fogbank { position: absolute; top: 0; bottom: 0; pointer-events: none;
+    background: linear-gradient(to right, rgba(248,250,252,0) 0%, rgba(226,232,240,.75) 45%, rgba(203,213,225,.92) 100%); }
+  .foglabel { position: absolute; top: 10px; font: 600 10px ui-monospace, Menlo, monospace;
+              letter-spacing: .14em; text-transform: uppercase; color: #94a3b8; }
+  .hovercard {
+    position: fixed; z-index: 950; max-width: 300px; pointer-events: none;
+    background: #0f172a; color: #fff; border-radius: 9px; padding: 9px 12px; font-size: 12px; line-height: 1.5;
+    box-shadow: 0 10px 30px rgba(15,23,42,.3);
+  }
+  .hovercard .hid { font: 600 10px ui-monospace, Menlo, monospace; opacity: .6; letter-spacing: .08em; }
+  .maplegend { display: flex; gap: 13px; flex-wrap: wrap; padding: 9px 15px; border-top: 1px solid var(--line);
+               font-size: 11.5px; color: var(--ink-dim); }
+  .maplegend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; }
+  .lg-settled::before { background: #86efac; } .lg-open::before { background: var(--accent); }
+  .lg-blocked::before { background: #e2e8f0; } .lg-stale::before { background: #fcd34d; }
+  .lg-fogged::before { background: #cbd5e1; } .lg-conflict::before { background: #fca5a5; }
+  .lg-reassess::before { background: #c4b5fd; }
+
+  /* ---------- the one blended column ---------- */
+  .column { position: relative; height: 620px; overflow-y: auto; }
+  .item { border-bottom: 1px solid var(--line); padding: 12px 15px; }
+  .item:last-child { border-bottom: 0; }
+  .item.focused { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+  .item.collapsed { padding: 9px 15px; }
+  .item .head { display: flex; align-items: baseline; gap: 8px; }
+  .item .head .t { font-weight: 600; font-size: 13.5px; }
+  .item.collapsed .oneline { font-size: 12.5px; color: var(--ink-dim); margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .icons { margin-left: auto; display: flex; gap: 5px; align-items: center; }
+  .icons button { border: 0; background: transparent; padding: 2px 4px; font-size: 13px; border-radius: 5px; }
+  .icons button:hover { background: var(--page); }
+  .mandate-notice { background: #ecfeff; border: 1px solid #a5f3fc; border-radius: 8px; padding: 9px 11px;
+                    font-size: 12.5px; color: #0e7490; margin: 8px 0; }
+  .conflict-notice { background: var(--conflict-bg); border: 1px solid var(--conflict-line); border-radius: 8px;
+                     padding: 9px 11px; font-size: 12.5px; color: var(--conflict-ink); margin: 8px 0; }
+  .hist { background: var(--page); border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px; margin-top: 9px; }
+  .hist div { font-size: 12px; color: var(--ink-dim); padding: 2px 0; }
+  .hist .s { font: 600 10px ui-monospace, Menlo, monospace; color: var(--ink-faint); margin-right: 6px; }
+
+  /* ---------- slide-outs ---------- */
+  .slide {
+    position: fixed; right: 0; top: 0; bottom: 0; width: 500px; background: var(--paper); z-index: 800;
+    border-left: 1px solid var(--line); box-shadow: -14px 0 44px rgba(15,23,42,.15); overflow-y: auto; padding: 20px 22px 40px;
+  }
+  .slide .close { position: absolute; right: 14px; top: 14px; border: 0; background: transparent; font-size: 18px; color: var(--ink-faint); }
+  .turn { margin-bottom: 12px; }
+  .turn .who { font: 600 10.5px ui-monospace, Menlo, monospace; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint); }
+  .turn.agent .who { color: var(--accent); }
+  .turn p { margin: 3px 0 0; font-size: 13.2px; color: var(--ink); }
+  .turn .foldmeta { margin-top: 6px; font-size: 11.5px; color: var(--ink-dim);
+    border-left: 2px solid var(--accent); padding-left: 9px; }
+  .turn .foldmeta.no { border-left-color: var(--line); color: var(--ink-faint); }
+  .seeds { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0; }
+  .thread-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .parked-note { background: var(--page); border: 1px dashed var(--line); border-radius: 8px; padding: 9px 12px; font-size: 12.5px; color: var(--ink-dim); margin-top: 10px; }
+  .disruptive { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; border-radius: 8px; padding: 9px 12px; font-size: 12.5px; margin-top: 10px; }
+
+  .inbox-item { border-bottom: 1px solid var(--line); padding: 11px 4px; display: flex; gap: 10px; align-items: flex-start; }
+  .inbox-item:last-child { border-bottom: 0; }
+  .inbox-item .txt { flex: 1; font-size: 13px; }
+  .inbox-item .type { font: 600 9.5px ui-monospace, Menlo, monospace; letter-spacing: .08em; text-transform: uppercase; }
+  .t-pending-update { color: var(--accent); } .t-informational { color: var(--settled-ink); }
+  .t-elicitative { color: var(--conflict-ink); } .t-suggested-thread { color: var(--stale-ink); }
+
+  .banner { border-radius: 10px; padding: 10px 14px; font-size: 13px; margin-bottom: 12px;
+            background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; }
+  .pending-list { padding: 4px 0; }
+  .pending-row { border-bottom: 1px solid var(--line); padding: 9px 4px; font-size: 13px; }
+  .pending-row:last-child { border-bottom: 0; }
+  .pending-row .c { color: var(--conflict-ink); font-weight: 600; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<script>
+//---GRILL-MODULE-START---
+/* =====================================================================
+   Grilling session, round 2 — pure state module.
+   No DOM, no globals beyond the exported object.
+
+   The event log is the state. Every action turns into events; the whole
+   state is folded from the log, so per-node history and the raw session
+   log are the same data read two ways.
+
+   The agent is asynchronous: its structured updates arrive into a mailbox
+   and change nothing until they are applied. An update that lands on a
+   decision the user changed after the update was generated is a conflict,
+   and a conflict blocks everything downstream of it, answered or not.
+   ===================================================================== */
+
+var PLAN = "Design a nightly autonomous overnight-build pipeline: which tracked work items it may pick up, how it proves completion, and when it must wake the human.";
+
+// options[0] is always the agent's recommended answer.
+var NODES = [
+  { id: "D1", short: "Work-item source", title: "Where the night's candidate work comes from",
+    prereqs: [],
+    body: "The run needs a candidate list before it can do anything else. Is that list a snapshot taken at launch, or re-derived as the night goes on?",
+    options: [
+      { id: "a", text: "A snapshot query against the tracker taken at launch, frozen for the night." },
+      { id: "b", text: "A live query re-run before every item, so work filed at 2am is picked up." },
+      { id: "c", text: "A hand-curated queue the human fills before going to bed." } ] },
+
+  { id: "D2", short: "Why wake at all", title: "The class of thing that justifies waking the human",
+    prereqs: [],
+    body: "Waking is the expensive event — the pipeline exists to avoid it. Name what justifies one before deciding how one happens.",
+    options: [
+      { id: "a", text: "Only decisions the pipeline is not authorised to make. Never for progress, never for a single failure." },
+      { id: "b", text: "Any blocked item, so the night never idles." },
+      { id: "c", text: "Nothing at all — everything waits until morning." } ] },
+
+  { id: "D3", short: "Eligibility filter", title: "Which items a fully autonomous run may pick up",
+    prereqs: ["D1"],
+    body: "Of everything in that source, what qualifies as safe to work unattended?",
+    options: [
+      { id: "a", text: "Items whose acceptance criteria are already enumerated and that carry a track." },
+      { id: "b", text: "Anything not blocked and not assigned to a human." },
+      { id: "c", text: "An explicit overnight label — opt-in, per item." } ] },
+
+  { id: "D4", short: "Claim mechanism", title: "How an item is claimed so two runs cannot collide",
+    prereqs: ["D1"],
+    body: "Two runs — or a human awake at 1am — must not work the same item. What makes a claim visible?",
+    options: [
+      { id: "a", text: "A claim record on the tracker item carrying the run id and a timestamp, checked before work starts." },
+      { id: "b", text: "A lock file committed to the repository." },
+      { id: "c", text: "No claim; the scheduler guarantees one run at a time." } ] },
+
+  { id: "D5", short: "Proof of completion", title: "What counts as proof an item is actually done",
+    prereqs: ["D3"],
+    body: "The pipeline may only mark an item complete on evidence. Evidence of what, exactly?",
+    options: [
+      { id: "a", text: "A green whole-repo gate on the item's branch, plus every acceptance criterion mapped to a named passing test." },
+      { id: "b", text: "A green whole-repo gate. Nothing further." },
+      { id: "c", text: "A green gate plus the implementing agent's own written completion verdict." } ],
+    talk: {
+      why: "Because every other decision on this board resolves to it. The eligibility filter decides what may be started; this decides what may be called finished — and an autonomous night is exactly the situation where nobody is standing behind the claim.",
+      zoom: "One level up, the pipeline is a machine for converting your sleep into merged work. That trade only pays if the completion claim is worth more than the review time it saves. Everything about the gate's membership, its runtime budget and what lands is downstream of the standard you set here." } },
+
+  { id: "D6", short: "Wake channel", title: "How the human is physically woken",
+    prereqs: ["D2"],
+    body: "Given a wake is justified, what happens at 3am?",
+    options: [
+      { id: "a", text: "A push notification carrying the item and the question in the body." },
+      { id: "b", text: "A queued message read at breakfast — no interrupt, ever." },
+      { id: "c", text: "Escalating: notification first, phone call after fifteen minutes." } ] },
+
+  { id: "D7", short: "Gate membership", title: "Which checks constitute the gate overnight",
+    prereqs: ["D5"],
+    body: "'Green gate' names a set of checks. Is that set the same one a human runs by hand?",
+    options: [
+      { id: "a", text: "Identical to the gate humans run. No overnight-only subset, no overnight-only additions." },
+      { id: "b", text: "A fast subset overnight, the full gate replayed in the morning." },
+      { id: "c", text: "The full gate plus a mutation-testing pass, since nobody is watching." } ],
+    talk: {
+      why: "Because a gate that differs overnight makes every overnight result unreproducible by hand in the morning — you would be debugging the gate, not the work.",
+      zoom: "The membership question only looks local. It is really asking whether the night's output is the same artifact class as the day's, or a second-class one that needs re-proving before anyone trusts it." } },
+
+  { id: "D8", short: "Failed proof", title: "What happens to an item whose proof fails",
+    prereqs: ["D5"],
+    body: "The gate goes red at 2am. Decide the fate of that item, and of the rest of the night.",
+    options: [
+      { id: "a", text: "Park the item with the failing output attached, move to the next eligible item, do not wake." },
+      { id: "b", text: "Retry the item once from scratch, then park it." },
+      { id: "c", text: "Stop the night entirely and wake the human." } ] },
+
+  { id: "D9", short: "Stale claims", title: "How a claim held by a crashed run is released",
+    prereqs: ["D4"],
+    body: "A run dies holding claims. Nothing releases them. What breaks the deadlock without stealing live work?",
+    options: [
+      { id: "a", text: "Claims carry a TTL and are reclaimable once the owning run's process is provably gone." },
+      { id: "b", text: "Claims expire on a fixed four-hour timer regardless of the owner." },
+      { id: "c", text: "A human clears them in the morning." } ] },
+
+  { id: "D10", short: "Wake threshold", title: "When accumulated failure justifies a wake",
+    prereqs: ["D6", "D8"],
+    body: "Failures are parked rather than escalated. Is there a count at which the accumulation itself is the decision the pipeline cannot make?",
+    options: [
+      { id: "a", text: "Never on failure count. Wake only when zero eligible items remain and hours of night are left." },
+      { id: "b", text: "After three consecutive parked items." },
+      { id: "c", text: "The first time an item parks." } ] },
+
+  { id: "D11", short: "What lands", title: "What the pipeline does with proven work",
+    prereqs: ["D7"],
+    body: "The gate is green and each criterion maps to a passing test. Where does the branch go?",
+    options: [
+      { id: "a", text: "Push the branch and open a pull request. The branch is the artifact; the merge is a separate decision." },
+      { id: "b", text: "Merge to the default branch directly." },
+      { id: "c", text: "Leave the branch local and name it in the morning report." } ] },
+
+  { id: "D12", short: "Merge authority", title: "Whether the pipeline may merge unattended",
+    prereqs: ["D11"],
+    body: "May it merge its own pull request while the human sleeps?",
+    options: [
+      { id: "a", text: "No. Opening a pull request is not authorisation to merge; the merge waits for an explicit human instruction." },
+      { id: "b", text: "Yes, when the gate is green and a reviewer has approved." },
+      { id: "c", text: "Yes, but only on one named low-risk track." } ],
+    mandate: {
+      threadId: "T-auth", scope: "any",
+      title: "Where does merge authority actually come from?",
+      notice: "The agent has pre-declared that ANY answer here opens a side thread, and that concluding that thread is the only way to settle this decision. Authority is the one thing it will not let you assert in one click." },
+    talk: {
+      why: "Because this is the only decision on the board that grants the pipeline power over the trunk. Every other wrong answer costs a night; this one costs the repository.",
+      zoom: "Zooming out: merge authority is not a pipeline setting, it is a policy that has to exist in writing somewhere a human owns. The question is which written thing the pipeline is allowed to read as permission." } },
+
+  { id: "D13", short: "Flaky checks", title: "How a nondeterministic gate failure is handled",
+    prereqs: ["D7", "D8"],
+    body: "A check fails in a way that passes on re-run. Retrying hides real bugs; refusing to retry parks good work.",
+    options: [
+      { id: "a", text: "Re-run the failing check exactly once. A pass on retry still parks the item, and files the flake." },
+      { id: "b", text: "Retry up to three times and proceed on any pass." },
+      { id: "c", text: "No retries. A red check is red." } ] },
+
+  { id: "D14", short: "Budget exhaustion", title: "What happens when the night's budget runs out mid-item",
+    prereqs: ["D10"],
+    body: "Token and wall-clock budget are finite. The budget expires halfway through an item.",
+    options: [
+      { id: "a", text: "Finish the current item's gate run, then stop cleanly and release claims. Never start an item you cannot finish." },
+      { id: "b", text: "Hard stop immediately; claims expire by TTL." },
+      { id: "c", text: "No budget — run until morning." } ] },
+
+  { id: "D15", short: "Blast radius", title: "The recovery path when a night's work turns out wrong",
+    prereqs: ["D12"], fogUntil: "D12",
+    fogTitle: "something about what happens after the work lands",
+    body: "The landing rule is now fixed, so the question of undoing a landing is finally askable. What is the recovery path?",
+    options: [
+      { id: "a", text: "One pull request per item, so a revert is per-item and needs no coordination." },
+      { id: "b", text: "A nightly tag to roll the whole night back to." },
+      { id: "c", text: "Nothing — review catches it before anything is merged." } ] },
+
+  { id: "D16", short: "Gate runtime budget", title: "How much of the night one item's proof may consume",
+    prereqs: ["D7"], fogUntil: "D7",
+    fogTitle: "something about how long the proof takes",
+    body: "The gate is now a known set of checks with a known runtime, so its cost per item is finally a decidable question.",
+    options: [
+      { id: "a", text: "A twenty-minute per-item gate budget; exceeding it parks the item as unprovable rather than unproven." },
+      { id: "b", text: "No limit. Correctness beats throughput and the night is long." },
+      { id: "c", text: "Kill at ten minutes and retry once in a quieter slot." } ] }
+];
+
+// Decisions the agent can materialise mid-session (elicitative responses).
+var LATER = {
+  D17: { id: "D17", short: "Re-query cost", title: "What a mid-run re-query costs, and when it runs",
+    prereqs: ["D1"],
+    body: "You chose a live query. Re-deriving the candidate list before every item is not free, and it can change the night's plan underneath a claim already taken.",
+    options: [
+      { id: "a", text: "Re-query only between items, never mid-item, and cap it at one query per item." },
+      { id: "b", text: "Re-query on a five-minute timer regardless of item boundaries." },
+      { id: "c", text: "Re-query only when the current item finishes early." } ] },
+  D18: { id: "D18", short: "What 'blocked' means", title: "What counts as blocked, given a blocked item wakes you",
+    prereqs: ["D2"],
+    body: "You said any blocked item justifies a wake. The tracker's notion of blocked and yours are not obviously the same thing, and the difference is the difference between one wake a week and four a night.",
+    options: [
+      { id: "a", text: "Only an explicit blocked-by edge to an unfinished item counts. A failing gate is not blocked." },
+      { id: "b", text: "Anything the run could not finish for any reason." },
+      { id: "c", text: "Blocked is whatever the tracker's own status field says." } ] }
+};
+
+function clone(x) { return JSON.parse(JSON.stringify(x)); }
+function baseNode(id) { return NODES.filter(function (n) { return n.id === id; })[0] || LATER[id]; }
+
+/* ---------------- projection: state is a fold of the log ---------------- */
+
+function project(events) {
+  var s = {
+    events: events, nodes: {}, order: [], threads: {}, threadOrder: [],
+    mailbox: [], conflicts: {}, seen: {}, recommendNext: null,
+    banner: null, touched: [], fresh: [], seq: events.length, plan: PLAN
+  };
+  NODES.forEach(function (n) {
+    s.nodes[n.id] = clone(n);
+    s.nodes[n.id].answer = null; s.nodes[n.id].stale = false;
+    s.nodes[n.id].provisional = null; s.nodes[n.id].invalidated = false;
+    s.nodes[n.id].pendingAnswer = null; s.nodes[n.id].info = null;
+    s.order.push(n.id);
+  });
+  events.forEach(function (e) { applyEvent(s, e); });
+  return s;
+}
+
+function addNode(s, id) {
+  if (s.nodes[id]) return;
+  var n = clone(baseNode(id));
+  n.answer = null; n.stale = false; n.provisional = null; n.invalidated = false;
+  n.pendingAnswer = null; n.info = null;
+  s.nodes[id] = n; s.order.push(id);
+}
+
+function newThread(s, t) {
+  s.threads[t.id] = t;
+  if (s.threadOrder.indexOf(t.id) < 0) s.threadOrder.push(t.id);
+}
+
+function applyEvent(s, e) {
+  var n = e.nodeId ? s.nodes[e.nodeId] : null;
+  switch (e.kind) {
+    case "answer":
+      if (!n) break;
+      n.answer = e.answer; n.stale = false; n.provisional = null; n.pendingAnswer = null;
+      s.touched = [e.nodeId];
+      break;
+    case "answer-held":
+      if (n) n.pendingAnswer = e.answer;
+      break;
+    case "provisional":
+      e.nodeIds.forEach(function (id) { if (s.nodes[id]) s.nodes[id].provisional = e.because; });
+      s.touched = e.nodeIds.slice();
+      break;
+    case "queued":
+      s.mailbox.push({ u: e.update, status: "queued", at: e.seq });
+      break;
+    case "applied": {
+      var m = mailboxEntry(s, e.updateId);
+      if (m) m.status = "applied";
+      applyUpdate(s, e.update);
+      break;
+    }
+    case "conflict-raised": {
+      var mc = mailboxEntry(s, e.updateId);
+      if (mc) mc.status = "conflict";
+      s.conflicts[e.nodeId] = { updateId: e.updateId, threadId: e.threadId };
+      newThread(s, {
+        id: e.threadId, anchor: e.nodeId, kind: "conflict", status: "open",
+        title: "Conflict on " + e.nodeId + " — your answer and the agent's update disagree",
+        turns: e.turns, updateId: e.updateId
+      });
+      s.touched = [e.nodeId];
+      break;
+    }
+    case "conflict-resolved":
+      delete s.conflicts[e.nodeId];
+      if (e.applyUpdate) applyUpdate(s, e.update);
+      s.touched = [e.nodeId];
+      break;
+    case "thread-created":
+      newThread(s, { id: e.threadId, anchor: e.nodeId, kind: e.tkind, status: e.status || "open",
+        title: e.title, turns: e.turns || [], seededFrom: e.seededFrom || null });
+      break;
+    case "thread-open":
+      if (s.threads[e.threadId]) s.threads[e.threadId].status = "open";
+      break;
+    case "thread-turn":
+      if (s.threads[e.threadId]) s.threads[e.threadId].turns = s.threads[e.threadId].turns.concat(e.turns);
+      break;
+    case "thread-park":
+      if (s.threads[e.threadId]) s.threads[e.threadId].status = "parked";
+      break;
+    case "thread-fold":
+      if (s.threads[e.threadId]) s.threads[e.threadId].status = "folded";
+      break;
+    case "answer-release":
+      if (n) { n.answer = e.answer; n.stale = false; n.provisional = null; n.pendingAnswer = null; s.touched = [e.nodeId]; }
+      break;
+    case "seen":
+      s.seen[e.nodeId] = true;
+      break;
+    case "banner":
+      s.banner = e.text;
+      break;
+    default:
+      break;
+  }
+  if (e.fresh) s.fresh = e.fresh.slice();
+}
+
+function mailboxEntry(s, id) {
+  return s.mailbox.filter(function (m) { return m.u.id === id; })[0];
+}
+
+// One place applies an update's effect, whether it arrived via the mailbox
+// or via a synchronous disruptive fold.
+function applyUpdate(s, u) {
+  var n = u.nodeId ? s.nodes[u.nodeId] : null;
+  switch (u.kind) {
+    case "add-node":
+    case "elicit-node":
+      addNode(s, u.nodeId);
+      s.fresh = [u.nodeId]; s.touched = [u.nodeId];
+      break;
+    case "settle":
+      if (n) { n.answer = { free: true, text: u.text, by: "agent" }; n.stale = false; n.provisional = null; s.touched = [u.nodeId]; }
+      break;
+    case "unsettle":
+      if (n && n.answer) { n.stale = true; n.provisional = null; s.touched = [u.nodeId]; }
+      break;
+    case "invalidate":
+      if (n) { n.invalidated = true; s.touched = [u.nodeId]; }
+      break;
+    case "revise":
+      if (n) { n.options = u.options; s.touched = [u.nodeId]; }
+      break;
+    case "resolve-stale":
+      u.resolutions.forEach(function (r) {
+        var t = s.nodes[r.nodeId];
+        if (!t) return;
+        t.provisional = null;
+        if (r.verdict === "confirmed") t.stale = true;
+      });
+      s.touched = u.resolutions.map(function (r) { return r.nodeId; });
+      break;
+    case "informational":
+      if (n) { n.info = { text: u.text, id: u.id }; delete s.seen[u.nodeId]; }
+      break;
+    case "elicit-alert":
+      newThread(s, { id: u.threadId, anchor: u.nodeId, kind: "elicit", status: "suggested",
+        title: u.title, turns: u.turns });
+      s.touched = [u.nodeId];
+      break;
+    default:
+      break;
+  }
+  if (u.recommendNext) s.recommendNext = u.recommendNext;
+}
+
+/* ---------------- selectors ---------------- */
+
+function isFogged(s, id) {
+  var n = s.nodes[id];
+  return !!(n.fogUntil && !isSettled(s, n.fogUntil));
+}
+function isSettled(s, id) {
+  var n = s.nodes[id];
+  return !!n.answer && !n.stale && !n.provisional;
+}
+// An invalidated decision has left the flow, so it no longer holds anything up.
+function prereqDone(s, id) {
+  var n = s.nodes[id];
+  if (!n) return false;
+  return n.invalidated || isSettled(s, id);
+}
+function blockedByConflict(s, id) {
+  var seen = {}, stack = (s.nodes[id].prereqs || []).slice();
+  while (stack.length) {
+    var p = stack.pop();
+    if (seen[p] || !s.nodes[p]) continue;
+    seen[p] = true;
+    if (s.conflicts[p]) return true;
+    stack = stack.concat(s.nodes[p].prereqs || []);
+  }
+  return false;
+}
+function statusOf(s, id) {
+  var n = s.nodes[id];
+  if (n.invalidated) return "invalidated";
+  if (s.conflicts[id]) return "conflicted";
+  // fog masks everything below it: a decision that is not yet a question
+  // cannot be blocked by a conflict, because there is nothing to block.
+  if (isFogged(s, id)) return "fogged";
+  if (blockedByConflict(s, id)) return "conflict-blocked";
+  if (n.pendingAnswer) return "awaiting-thread";
+  if (n.provisional) return "reassessing";
+  if (n.answer && !n.stale) return "settled";
+  var ready = n.prereqs.every(function (p) { return prereqDone(s, p); });
+  if (n.stale) return ready ? "stale" : "stale-blocked";
+  return ready ? "open" : "blocked";
+}
+function frontier(s) {
+  return s.order.filter(function (id) {
+    var st = statusOf(s, id);
+    return st === "open" || st === "stale";
+  });
+}
+function depthOf(s, id) {
+  var n = s.nodes[id];
+  if (!n.prereqs.length) return 0;
+  return 1 + Math.max.apply(null, n.prereqs.map(function (p) { return s.nodes[p] ? depthOf(s, p) : 0; }));
+}
+function layers(s) {
+  var out = [];
+  s.order.forEach(function (id) {
+    var d = depthOf(s, id);
+    (out[d] = out[d] || []).push(id);
+  });
+  return out;
+}
+// Column order: tree structure, depth first, declaration order within a depth.
+// Never reordered by answering, reopening or folding.
+function columnOrder(s) {
+  var out = [];
+  layers(s).forEach(function (ids) { if (ids) out = out.concat(ids); });
+  return out;
+}
+function answerText(s, id) {
+  var n = s.nodes[id], a = n.answer;
+  if (!a) return null;
+  return renderAnswer(n, a);
+}
+function renderAnswer(n, a) {
+  if (a.free) return a.text;
+  var o = n.options.filter(function (x) { return x.id === a.optionId; })[0];
+  return o ? o.text : a.text;
+}
+function nodeView(s, id) {
+  var n = s.nodes[id], fog = isFogged(s, id), st = statusOf(s, id);
+  return {
+    id: id, status: st, fogged: fog, depth: depthOf(s, id), prereqs: n.prereqs,
+    short: fog ? "?" : n.short,
+    title: fog ? n.fogTitle : n.title,
+    body: fog ? "" : n.body,
+    options: fog ? [] : n.options,
+    recommended: fog ? null : n.options[0],
+    answer: n.answer, answerText: answerText(s, id), pendingAnswer: n.pendingAnswer,
+    stale: n.stale, provisional: n.provisional, invalidated: n.invalidated,
+    fogUntil: n.fogUntil, mandate: n.mandate || null,
+    info: n.info, infoUnread: !!(n.info && !s.seen[id]),
+    conflict: s.conflicts[id] || null,
+    fresh: s.fresh.indexOf(id) >= 0, touched: s.touched.indexOf(id) >= 0,
+    threads: threadsOf(s, id)
+  };
+}
+function threadsOf(s, id) {
+  return s.threadOrder.filter(function (t) { return s.threads[t].anchor === id; });
+}
+function counts(s) {
+  var c = { settled: 0, open: 0, blocked: 0, stale: 0, fogged: 0, conflict: 0, reassessing: 0, invalidated: 0 };
+  s.order.forEach(function (id) {
+    var st = statusOf(s, id);
+    if (st === "stale-blocked") st = "stale";
+    if (st === "conflicted" || st === "conflict-blocked") st = "conflict";
+    if (st === "awaiting-thread") st = "open";
+    c[st]++;
+  });
+  return c;
+}
+function pending(s) {
+  return s.mailbox.filter(function (m) { return m.status === "queued"; }).map(function (m) {
+    return { id: m.u.id, nodeId: m.u.nodeId, summary: m.u.summary, kind: m.u.kind, conflicts: conflictsWith(s, m.u) };
+  });
+}
+// The conflict rule: a queued update lands on a decision the user changed
+// after that update was generated.
+function conflictsWith(s, u) {
+  if (!u.nodeId) return false;
+  return s.events.some(function (e) {
+    return (e.kind === "answer" || e.kind === "answer-release") && e.source === "user" &&
+      e.nodeId === u.nodeId && e.seq > u.basedOnSeq;
+  });
+}
+// Per-node change history — readable without reopening the decision.
+function historyOf(s, id) {
+  return s.events.filter(function (e) {
+    if (e.nodeId === id) return true;
+    if (e.nodeIds && e.nodeIds.indexOf(id) >= 0) return true;
+    if (e.update && e.update.nodeId === id) return true;
+    if (e.update && e.update.resolutions) return e.update.resolutions.some(function (r) { return r.nodeId === id; });
+    return false;
+  }).map(function (e) { return { seq: e.seq, label: e.label || e.kind }; });
+}
+// One inbox, typed entries, each deep-linking to its node.
+function notifications(s) {
+  var out = [];
+  pending(s).forEach(function (p) {
+    out.push({ type: "pending-update", nodeId: p.nodeId, text: p.summary + (p.conflicts ? " — will conflict with your change" : ""), action: "pending" });
+  });
+  s.order.forEach(function (id) {
+    var n = s.nodes[id];
+    if (n.info && !s.seen[id]) out.push({ type: "informational", nodeId: id, text: n.info.text, action: "focus" });
+    if (s.conflicts[id]) out.push({ type: "elicitative", nodeId: id, text: "Conflict on " + id + " — open the thread to judge it.", action: "conflict" });
+    if (n.pendingAnswer) out.push({ type: "elicitative", nodeId: id, text: id + " cannot settle until its mandated thread concludes.", action: "focus" });
+  });
+  s.threadOrder.forEach(function (tid) {
+    var t = s.threads[tid];
+    if (t.status !== "suggested") return;
+    var st = statusOf(s, t.anchor);
+    // suppressed while the anchor is blocked
+    if (st === "blocked" || st === "stale-blocked" || st === "fogged" || st === "conflict-blocked") return;
+    out.push({ type: "suggested-thread", nodeId: t.anchor, text: t.title, action: "thread", threadId: tid });
+  });
+  return out;
+}
+// R4: the agent's recommendation wins; else a child just unblocked by the
+// decision just settled; else the oldest thing on the frontier.
+function nextFocus(s, justSettled) {
+  var f = frontier(s);
+  if (!f.length) return null;
+  if (s.recommendNext && f.indexOf(s.recommendNext) >= 0) return s.recommendNext;
+  if (justSettled) {
+    var child = f.filter(function (id) { return s.nodes[id].prereqs.indexOf(justSettled) >= 0; })[0];
+    if (child) return child;
+  }
+  return f[0];
+}
+
+/* ---------------- thread material ---------------- */
+
+var SEEDS = [
+  { key: "zoom", label: "Zoom Out" }, { key: "why", label: "Why?" },
+  { key: "tradeoffs", label: "Trade-offs" }, { key: "ramifications", label: "Ramifications" }
+];
+
+function seedTurn(s, id, key) {
+  var n = s.nodes[id], talk = n.talk || {};
+  var alt = n.options[1] ? n.options[1].text : "the alternative";
+  if (key === "zoom") {
+    return { who: "agent", seed: "zoom", foldable: false,
+      text: talk.zoom || ("Stepping back: " + n.title.toLowerCase() + " is one of " + n.prereqs.length +
+        " decisions hanging off what you have already settled. Nothing here is load-bearing on its own — it matters because the next layer reads it as fixed.") };
+  }
+  if (key === "why") {
+    return { who: "agent", seed: "why", foldable: false,
+      text: talk.why || ("It is on the board because the pipeline cannot proceed past it without guessing. " + n.body) };
+  }
+  if (key === "tradeoffs") {
+    return { who: "agent", seed: "tradeoffs", foldable: true,
+      text: "The recommendation buys predictability and costs flexibility: " + n.options[0].text +
+        " The honest alternative is " + alt.toLowerCase() +
+        " I can fold a middle option into this decision — the recommendation, bounded by an explicit escape hatch you own.",
+      impact: { summary: "Revises " + id + "'s options: adds a bounded middle option and makes it the recommendation.",
+        updates: [{ kind: "revise", nodeId: id, summary: "Options on " + id + " revised by a thread conclusion.",
+          options: [{ id: "d", text: n.options[0].text.replace(/\.$/, "") + " — with a named escape hatch you own, reviewed monthly." }].concat(n.options) }] } };
+  }
+  if (key === "ramifications") {
+    var kids = s.order.filter(function (o) { return s.nodes[o].prereqs.indexOf(id) >= 0 && s.nodes[o].answer; });
+    return { who: "agent", seed: "ramifications", foldable: kids.length > 0,
+      text: kids.length
+        ? "Downstream, " + kids.join(" and ") + " read this decision as fixed. If we change it here, those stop being settled and come back to you — that is the whole cost of this thread concluding."
+        : "Nothing downstream of this is settled yet, so a conclusion here costs nothing but the time. There is no impact I could fold.",
+      impact: kids.length ? { summary: "Unsettles " + kids.join(", ") + " — they were answered on the old premise.",
+        updates: kids.map(function (k) { return { kind: "unsettle", nodeId: k, summary: k + " unsettled by a thread conclusion on " + id + "." }; }) } : null };
+  }
+  return null;
+}
+function freeTurn(s, id, text) {
+  return { who: "agent", seed: "free", foldable: false,
+    text: "Taking that at face value: it does not change what " + id + " has to decide, but it does narrow the room. " +
+      "I have it in the thread; say the word and I will look for something in it worth folding back." };
+}
+
+/* ---------------- the fake agent's choreography ---------------- */
+
+function mk(u) { return u; }
+function delayFor(id) {
+  var h = 0;
+  for (var i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 997;
+  return 1100 + (h % 2900);
+}
+function descendantsOf(s, id) {
+  var out = [], stack = [id], seen = {};
+  while (stack.length) {
+    var cur = stack.pop();
+    s.order.forEach(function (o) {
+      if (s.nodes[o].prereqs.indexOf(cur) >= 0 && !seen[o]) { seen[o] = true; out.push(o); stack.push(o); }
+    });
+  }
+  return out;
+}
+
+// Given the events just appended, what does the agent send back, and when?
+function agentPlan(s, evs) {
+  var ups = [], delay = 1600, uid = "U" + s.seq;
+  evs.forEach(function (e) {
+    if (e.kind === "answer" && e.source === "user") {
+      var id = e.nodeId, opt = e.answer.optionId;
+      delay = delayFor(id + (opt || "f"));
+      if (id === "D1" && opt === "a") ups.push(mk({ kind: "informational", nodeId: "D1", id: uid + "-i",
+        summary: "Informational: a consequence of freezing the queue.", recommendNext: "D3",
+        text: "Recorded: with the list frozen at launch, anything filed after the run starts waits for tomorrow night. That is a throughput cost, not a correctness one — I am not asking you to change it, only noting it so it is not a surprise in the morning." }));
+      if (id === "D1" && opt === "b") ups.push(mk({ kind: "elicit-node", nodeId: "D17", id: uid + "-n",
+        summary: "New decision D17 — a live query needs a cost and a boundary." }));
+      if (id === "D2" && opt === "b") ups.push(mk({ kind: "elicit-node", nodeId: "D18", id: uid + "-n",
+        summary: "New decision D18 — 'blocked' has to mean something specific now." }));
+      if (id === "D2" && opt === "a") ups.push(mk({ kind: "informational", nodeId: "D2", id: uid + "-i",
+        summary: "Informational: what this rules out.",
+        text: "Then a night that finishes nothing is not, by itself, a reason to wake you. I will hold you to that when the failure decisions come around." }));
+      if (id === "D3") ups.push(mk({ kind: "revise", nodeId: "D5", id: uid + "-r",
+        summary: "Revises D5's options — the eligibility filter changes what proof has to cover.",
+        options: [{ id: "d", text: "A green whole-repo gate, every acceptance criterion mapped to a named passing test, and the eligibility record that let the item in kept with the evidence." }].concat(baseNode("D5").options) }));
+      if (id === "D5") ups.push(mk({ kind: "informational", nodeId: "D5", id: uid + "-i",
+        summary: "Informational: the proof rule is now the busiest node on the board.", recommendNext: "D7",
+        text: "Noted. Six decisions downstream read this as their premise, so it is the most expensive thing on the board to change later. Worth being sure now rather than at 2am." }));
+      if (id === "D6" && opt === "c") ups.push(mk({ kind: "invalidate", nodeId: "D10", id: uid + "-x",
+        summary: "Invalidates D10 — an escalating channel already answers the threshold question." }));
+      if (id === "D7" && opt === "a") ups.push(mk({ kind: "elicit-alert", nodeId: "D7", id: uid + "-e",
+        threadId: "T-proof", summary: "The agent needs something judged before the gate is locked.",
+        title: "Does the proof rule notice a test that asserts nothing?",
+        turns: [{ who: "agent", foldable: false,
+          text: "Before we lock the gate's membership I want to test the layer above it. Your proof rule is a green gate plus every criterion mapped to a named passing test. Does anything in that rule notice a test that passes because it asserts nothing?" },
+        { who: "agent", foldable: true,
+          text: "If nothing does, it is a proof about the suite, not about the work. An agent that writes both the code and its tests overnight satisfies it exactly while shipping nothing. The cheapest repair is a reader that never saw the plan: a fresh-context reviewer over the diff and the criteria. Folding that in rewrites the proof rule itself, so I will apply it immediately rather than queue it — everything hanging off D5 moves at the same moment.",
+          disruptive: true,
+          impact: { summary: "Rewrites D5, the proof rule — and unsettles everything answered on the old one.",
+            updates: [{ kind: "settle", nodeId: "D5", summary: "D5 rewritten by the proof-rule thread.",
+              text: "A green whole-repo gate, every acceptance criterion mapped to a named passing test, and a fresh-context reviewer verdict from an agent that never saw the plan." },
+            { kind: "unsettle", nodeId: "D7", summary: "D7 unsettled — it was answered against the old proof rule." }] } }] }));
+      if (id === "D8" && opt === "a") ups.push(mk({ kind: "elicit-alert", nodeId: "D13", id: uid + "-s",
+        threadId: "T-flake", summary: "Suggested thread on D13 — parking and flakes interact.",
+        title: "Parking on first red makes flakes expensive — worth a look before you decide D13",
+        turns: [{ who: "agent", foldable: false,
+          text: "You park on the first red without retrying. That is clean, but it means a single flaky check costs you the whole item for the night. D13 is where that gets priced, and the two decisions are really one." }] }));
+      if (id === "D11") ups.push(mk({ kind: "settle", nodeId: "D14", id: uid + "-p",
+        summary: "Settles D14 ahead of you — it follows from the landing rule.",
+        text: "Finish the current item's gate run, then stop cleanly and release claims — a half-landed branch is worse than an unstarted one." }));
+    }
+    if (e.kind === "provisional") {
+      // R3: the agent resolves each provisionally-affected decision.
+      delay = 2400;
+      var near = e.nodeIds.filter(function (id) { return s.nodes[id].prereqs.indexOf(e.because) >= 0; });
+      ups.push(mk({ kind: "resolve-stale", nodeId: e.because, id: uid + "-c",
+        summary: "Reassessment of " + e.nodeIds.length + " decisions affected by the change to " + e.because + ".",
+        resolutions: e.nodeIds.map(function (id) {
+          return { nodeId: id, verdict: near.indexOf(id) >= 0 ? "confirmed" : "cleared" };
+        }) }));
+    }
+  });
+  if (!ups.length) return null;
+  ups.forEach(function (u, i) { u.id = u.id || uid + "-" + i; u.basedOnSeq = s.seq; });
+  return { delay: delay, updates: ups };
+}
+
+/* ---------------- actions ---------------- */
+
+function conflictSeedTurns(s, u) {
+  var id = u.nodeId;
+  return [{ who: "human", auto: true, foldable: false,
+    text: "I answered " + id + ": “" + (answerText(s, id) || "") + "”. Your update — " + u.summary +
+      " — was generated before that. I need to know whether this is a clarification I can absorb, or a re-decision: does your update still stand against what I just said, and if it does, what exactly changes?" },
+  { who: "agent", foldable: true,
+    text: "It stands, but narrowly. My update was aimed at the same gap you closed, from a different side — mine keeps the record that let the item in, yours does not. Fold this and I apply my version on top of yours; park it and yours stands and I drop mine.",
+    impact: { summary: "Applies the queued update on top of your answer.", updates: [] } }];
+}
+
+function eventsFor(s, a) {
+  switch (a.type) {
+    case "answer": {
+      var n = s.nodes[a.id];
+      if (!n || n.invalidated || isFogged(s, a.id)) return [];
+      if (statusOf(s, a.id) === "conflict-blocked" || statusOf(s, a.id) === "conflicted") return [];
+      var ans = a.payload.free ? { free: true, text: a.payload.text } : { free: false, optionId: a.payload.optionId };
+      var after = renderAnswer(n, ans), before = answerText(s, a.id);
+      var src = a.source || "user";
+      // M5: a mandated thread gates settling.
+      if (n.mandate && !(s.threads[n.mandate.threadId] && s.threads[n.mandate.threadId].status === "folded") && src === "user") {
+        var out = [{ kind: "answer-held", nodeId: a.id, answer: ans,
+          label: "answer held — " + n.mandate.threadId + " must conclude before " + a.id + " can settle" }];
+        if (!s.threads[n.mandate.threadId]) {
+          out.push({ kind: "thread-created", threadId: n.mandate.threadId, nodeId: a.id, tkind: "mandate",
+            title: n.mandate.title, label: "mandated thread opened on " + a.id,
+            turns: [{ who: "agent", foldable: false,
+              text: "You picked: “" + after + "”. I am not settling this one on a click. Merge authority is the only decision here that hands the pipeline power over the trunk, so I want the reasoning on the record before it becomes a rule." },
+            { who: "agent", foldable: true,
+              text: "Say where the authority comes from and I will conclude this. The defensible version is that authority lives in a written policy a human owns, and the pipeline may read that policy — never infer permission from a green gate, an approving review or a branch protection rule. Concluding this thread is what settles the decision.",
+              impact: { summary: "Concludes the mandate and settles " + a.id + " on your held answer.", updates: [] } }] });
+        } else {
+          out.push({ kind: "thread-open", threadId: n.mandate.threadId, nodeId: a.id, label: "mandated thread reopened" });
+        }
+        return out;
+      }
+      var evs = [{ kind: "answer", nodeId: a.id, answer: ans, source: src,
+        label: (before ? "changed" : "answered") + " — " + after }];
+      if (before && before !== after) {
+        // R3: staleness is provisional until the agent resolves it.
+        var desc = descendantsOf(s, a.id).filter(function (id) { return s.nodes[id].answer && !s.nodes[id].invalidated; });
+        if (desc.length) evs.push({ kind: "provisional", nodeIds: desc, because: a.id, nodeId: a.id,
+          label: desc.length + " downstream decisions marked possibly affected — reassessment pending" });
+      }
+      return evs;
+    }
+    case "applyPending": {
+      var out2 = [];
+      s.mailbox.filter(function (m) { return m.status === "queued"; }).forEach(function (m) {
+        if (conflictsWith(s, m.u)) {
+          out2.push({ kind: "conflict-raised", updateId: m.u.id, nodeId: m.u.nodeId, threadId: "C-" + m.u.id,
+            turns: conflictSeedTurns(s, m.u), update: m.u,
+            label: "conflict raised on " + m.u.nodeId + " — the update predates your change" });
+        } else {
+          out2.push({ kind: "applied", updateId: m.u.id, update: m.u, nodeId: m.u.nodeId, label: m.u.summary });
+        }
+      });
+      return out2;
+    }
+    case "agentResponse":
+      return a.updates.map(function (u) {
+        return { kind: "queued", update: u, nodeId: u.nodeId, label: "agent update queued — " + u.summary };
+      });
+    case "seen":
+      return [{ kind: "seen", nodeId: a.id, label: "informational response read" }];
+    case "openThread":
+      return [{ kind: "thread-open", threadId: a.id, nodeId: s.threads[a.id] ? s.threads[a.id].anchor : null,
+        label: "thread opened" }];
+    case "threadSeed": {
+      var t = s.threads[a.id];
+      if (!t) return [];
+      var human = { who: "human", foldable: false, text: SEEDS.filter(function (x) { return x.key === a.seed; })[0].label + "?" };
+      return [{ kind: "thread-turn", threadId: a.id, nodeId: t.anchor, turns: [human, seedTurn(s, t.anchor, a.seed)],
+        label: "thread turn — " + a.seed }];
+    }
+    case "threadSay": {
+      var t2 = s.threads[a.id];
+      if (!t2 || !a.text) return [];
+      return [{ kind: "thread-turn", threadId: a.id, nodeId: t2.anchor,
+        turns: [{ who: "human", foldable: false, text: a.text }, freeTurn(s, t2.anchor, a.text)],
+        label: "thread turn — free text" }];
+    }
+    case "parkThread": {
+      var t3 = s.threads[a.id];
+      if (!t3) return [];
+      var evs3 = [{ kind: "thread-park", threadId: a.id, nodeId: t3.anchor,
+        label: "thread parked — nothing folded, thread retained" }];
+      if (t3.kind === "conflict") {
+        evs3.push({ kind: "conflict-resolved", nodeId: t3.anchor, applyUpdate: false,
+          label: "conflict resolved — your answer stands, the agent's update dropped" });
+      }
+      return evs3;
+    }
+    case "foldThread": {
+      var t4 = s.threads[a.id];
+      if (!t4) return [];
+      var foldable = t4.turns.filter(function (x) { return x.foldable; });
+      var last = foldable[foldable.length - 1];
+      var evs4 = [{ kind: "thread-fold", threadId: a.id, nodeId: t4.anchor,
+        label: "thread folded — " + (last && last.impact ? last.impact.summary : "no declared impact") }];
+      if (t4.kind === "conflict") {
+        var mm = mailboxEntry(s, t4.updateId);
+        evs4.push({ kind: "conflict-resolved", nodeId: t4.anchor, applyUpdate: true, update: mm ? mm.u : null,
+          label: "conflict resolved — the agent's update applied on top of your answer" });
+        return evs4;
+      }
+      if (t4.kind === "mandate") {
+        var held = s.nodes[t4.anchor].pendingAnswer;
+        if (held) evs4.push({ kind: "answer-release", nodeId: t4.anchor, answer: held, source: "mandate",
+          label: "mandated thread concluded — " + t4.anchor + " settles on the held answer" });
+        return evs4;
+      }
+      if (last && last.impact) {
+        var ups = last.impact.updates || [];
+        if (last.disruptive) {
+          // M4: a disruptive conclusion applies synchronously, not through the mailbox.
+          ups.forEach(function (u, i) {
+            u.id = u.id || "F" + s.seq + "-" + i;
+            evs4.push({ kind: "applied", updateId: u.id, update: u, nodeId: u.nodeId, label: "applied immediately — " + u.summary });
+          });
+          evs4.push({ kind: "banner", text: "Disruptive fold applied immediately: " + last.impact.summary, label: "synchronous fold" });
+        } else {
+          ups.forEach(function (u, i) {
+            u.id = u.id || "F" + s.seq + "-" + i;
+            u.basedOnSeq = s.seq;
+            evs4.push({ kind: "queued", update: u, nodeId: u.nodeId, label: "fold impact queued — " + u.summary });
+          });
+        }
+      }
+      return evs4;
+    }
+    case "relitigate": {
+      var t5 = s.threads[a.id];
+      if (!t5) return [];
+      var nid = a.id + "-r" + s.seq;
+      return [{ kind: "thread-created", threadId: nid, nodeId: t5.anchor, tkind: "user", seededFrom: a.id,
+        title: "Relitigating: " + t5.title, label: "new thread opened, seeded from " + a.id,
+        turns: [{ who: "human", auto: true, foldable: false,
+          text: "Reopening this. The earlier thread concluded “" + t5.title + "”, and " + t5.anchor +
+            " currently reads: “" + (answerText(s, t5.anchor) || "unanswered") + "”. I want to go at it again with what we know now." },
+        { who: "agent", foldable: false,
+          text: "Fair. I have the old thread and the current state of the board in front of me. Ask me anything — the seed buttons are still live, and nothing here touches the decision until you conclude it." }] }];
+    }
+    case "newThread": {
+      var nid2 = "T-" + a.id + "-" + s.seq;
+      return [{ kind: "thread-created", threadId: nid2, nodeId: a.id, tkind: "user",
+        title: "Thread on " + a.id + " — " + s.nodes[a.id].short, label: "thread opened on " + a.id,
+        turns: [{ who: "agent", foldable: false,
+          text: "Open thread on " + a.id + ". Nothing said here touches the decision until you conclude it — park it and it stays on the record with no effect, fold it and I will tell you exactly what changes first." }] }];
+    }
+    default:
+      return [];
+  }
+}
+
+function reduce(state, action) {
+  if (action.type === "reset") return initial();
+  var evs = eventsFor(state, action);
+  if (!evs.length) return state;
+  var base = state.events.length;
+  evs.forEach(function (e, i) { e.seq = base + i + 1; });
+  return project(state.events.concat(evs));
+}
+
+function initial() { return project([]); }
+
+var Grill = {
+  initial: initial, reduce: reduce, agentPlan: agentPlan,
+  statusOf: statusOf, frontier: frontier, nodeView: nodeView, columnOrder: columnOrder,
+  layers: layers, answerText: answerText, counts: counts, pending: pending,
+  notifications: notifications, historyOf: historyOf, nextFocus: nextFocus,
+  depthOf: depthOf, isSettled: isSettled, isFogged: isFogged, threadsOf: threadsOf,
+  SEEDS: SEEDS, plan: PLAN
+};
+
+if (typeof window !== "undefined") {
+  window.Grill = Grill;
+} else {
+  // ---- self-check: node grill-module.js ----
+  var assert = require("assert");
+  var pick = function (s, id, opt, src) { return reduce(s, { type: "answer", id: id, payload: { optionId: opt }, source: src }); };
+  var run = function (s, evs) {  // deliver the agent's response for the events just added
+    var plan = agentPlan(s, evs);
+    return plan ? reduce(s, { type: "agentResponse", updates: plan.updates }) : s;
+  };
+  var tail = function (s, prev) { return s.events.slice(prev.events.length); };
+  var answerAndHear = function (s, id, opt) {
+    var s2 = pick(s, id, opt);
+    return run(s2, tail(s2, s));
+  };
+
+  // 0. the tree still behaves like a tree
+  var s0 = initial();
+  assert.deepStrictEqual(frontier(s0), ["D1", "D2"], "initial frontier is the two roots");
+  assert.strictEqual(statusOf(s0, "D3"), "blocked");
+  assert.strictEqual(statusOf(s0, "D16"), "fogged");
+  var s1 = pick(s0, "D1", "a");
+  assert.strictEqual(statusOf(s1, "D3"), "open", "D3 unblocks once D1 settles");
+
+  // 1. queued updates do not mutate anything until they are applied
+  var q = answerAndHear(s0, "D1", "a");
+  assert.strictEqual(pending(q).length, 1, "the agent's response is sitting in the mailbox");
+  assert.strictEqual(q.nodes.D1.info, null, "the informational response has not landed yet");
+  var beforeApply = JSON.stringify(q.nodes);
+  var q2 = reduce(q, { type: "applyPending" });
+  assert.notStrictEqual(JSON.stringify(q2.nodes), beforeApply, "applying it does change the board");
+  assert.ok(q2.nodes.D1.info, "the informational response is on D1 once applied");
+  assert.strictEqual(pending(q2).length, 0, "the mailbox is empty afterwards");
+  assert.ok(notifications(q2).some(function (n) { return n.type === "informational"; }), "and it is in the inbox unread");
+  assert.strictEqual(notifications(reduce(q2, { type: "seen", id: "D1" })).length, 0, "reading it clears the inbox");
+
+  // 2. conflict: an update lands on a node the user changed after it was generated
+  var c = pick(pick(q2, "D2", "a"), "D3", "a");           // D3 => agent revises D5
+  var cPlan = agentPlan(c, tail(c, q2));
+  c = reduce(c, { type: "agentResponse", updates: cPlan.updates });
+  c = pick(c, "D5", "a");                                  // user answers D5 first
+  c = pick(c, "D7", "a");                                  // and D7, downstream of it
+  assert.strictEqual(statusOf(c, "D7"), "settled");
+  assert.ok(pending(c).some(function (p) { return p.nodeId === "D5" && p.conflicts; }), "the queued D5 update is flagged as conflicting");
+  var cc = reduce(c, { type: "applyPending" });
+  assert.strictEqual(statusOf(cc, "D5"), "conflicted", "D5 is conflicted, not silently overwritten");
+  assert.strictEqual(statusOf(cc, "D7"), "conflict-blocked", "an ALREADY-ANSWERED downstream decision is blocked by the conflict");
+  assert.ok(cc.threads["C-" + cc.conflicts.D5.updateId], "the conflict opened its own thread");
+  assert.strictEqual(cc.threads["C-" + cc.conflicts.D5.updateId].turns[0].who, "human", "seeded with an auto-generated first user message");
+  assert.deepStrictEqual(reduce(cc, { type: "answer", id: "D7", payload: { optionId: "b" } }), cc, "a conflict-blocked node cannot be answered");
+  // parking the conflict thread keeps the user's answer and drops the update
+  var cPark = reduce(cc, { type: "parkThread", id: "C-" + cc.conflicts.D5.updateId });
+  assert.strictEqual(statusOf(cPark, "D5"), "settled", "parking resolves the conflict in the user's favour");
+  assert.strictEqual(statusOf(cPark, "D7"), "settled", "and downstream unblocks");
+  // folding it applies the agent's update on top
+  var cFold = reduce(cc, { type: "foldThread", id: "C-" + cc.conflicts.D5.updateId });
+  assert.strictEqual(statusOf(cFold, "D5"), "settled", "folding also resolves it");
+  assert.strictEqual(cFold.nodes.D5.options[0].id, "d", "and the agent's revision is applied");
+
+  // 3. provisional staleness is resolved by the agent, not by the UI
+  var r = cPark;
+  var rBefore = r;
+  r = pick(r, "D3", "c");                                   // reopen with a changed answer
+  assert.strictEqual(statusOf(r, "D5"), "reassessing", "descendants are provisional, not stale");
+  assert.ok(frontier(r).indexOf("D5") < 0, "a provisional node is not back on the frontier yet");
+  var rPlan = agentPlan(r, tail(r, rBefore));
+  r = reduce(r, { type: "agentResponse", updates: rPlan.updates });
+  assert.strictEqual(statusOf(r, "D5"), "reassessing", "still provisional while the response sits in the mailbox");
+  r = reduce(r, { type: "applyPending" });
+  assert.strictEqual(statusOf(r, "D5"), "stale", "the agent confirmed the direct dependent");
+  assert.strictEqual(statusOf(r, "D7"), "settled", "and cleared the deeper one");
+  assert.ok(frontier(r).indexOf("D5") >= 0, "the confirmed one is back on the frontier");
+
+  // 4. fog: it lifts when its gating decision settles, and closes again
+  var g = answerAndHear(pick(pick(initial(), "D1", "a"), "D3", "a"), "D5", "a");
+  g = reduce(g, { type: "applyPending" });
+  assert.strictEqual(statusOf(g, "D16"), "fogged", "D16 is fog before D7 settles");
+  g = pick(g, "D7", "a");
+  assert.strictEqual(statusOf(g, "D16"), "open", "D16 defogs once D7 settles");
+
+  // 5. park, reopen and fold the same thread — and fold impacts route through the mailbox
+  var t = reduce(g, { type: "newThread", id: "D5" });
+  var tid = t.threadOrder[t.threadOrder.length - 1];
+  t = reduce(t, { type: "threadSeed", id: tid, seed: "tradeoffs" });
+  var nodesBeforePark = JSON.stringify(t.nodes);
+  t = reduce(t, { type: "parkThread", id: tid });
+  assert.strictEqual(t.threads[tid].status, "parked");
+  assert.strictEqual(JSON.stringify(t.nodes), nodesBeforePark, "a parked thread changes no decision");
+  t = reduce(t, { type: "openThread", id: tid });
+  assert.strictEqual(t.threads[tid].status, "open", "a parked thread can be picked back up");
+  t = reduce(t, { type: "threadSeed", id: tid, seed: "why" });
+  var beforeFold = JSON.stringify(t.nodes);
+  t = reduce(t, { type: "foldThread", id: tid });
+  assert.strictEqual(t.threads[tid].status, "folded");
+  assert.strictEqual(JSON.stringify(t.nodes), beforeFold, "folding changed nothing yet — the impact is in the mailbox");
+  assert.strictEqual(pending(t).length, 1, "the fold's declared impact is queued like any agent update");
+  t = reduce(t, { type: "applyPending" });
+  assert.strictEqual(t.nodes.D5.options[0].id, "d", "and lands only when applied");
+  // relitigation opens a second thread on the same node, seeded from the first
+  var rel = reduce(t, { type: "relitigate", id: tid });
+  assert.strictEqual(threadsOf(rel, "D5").length, 2, "a node carries multiple threads");
+
+  // 6. the disruptive fold is synchronous — it does not wait in the mailbox
+  var d = answerAndHear(g, "D7", "a");
+  d = reduce(d, { type: "applyPending" });
+  assert.ok(d.threads["T-proof"], "the agent raised an elicitative alert with its own thread");
+  assert.strictEqual(d.threads["T-proof"].status, "suggested");
+  d = reduce(d, { type: "openThread", id: "T-proof" });
+  var pendBefore = pending(d).length;
+  d = reduce(d, { type: "foldThread", id: "T-proof" });
+  assert.strictEqual(pending(d).length, pendBefore, "nothing was queued");
+  assert.ok(/fresh-context reviewer/.test(answerText(d, "D5")), "the disruptive fold rewrote D5 immediately");
+  assert.ok(d.banner, "and said so");
+
+  // 7. a mandated thread gates settling
+  var m = d;
+  ["D8", "D11"].forEach(function (id) { m = pick(m, id, "a"); });
+  assert.strictEqual(statusOf(m, "D12"), "open");
+  m = pick(m, "D12", "a");
+  assert.strictEqual(statusOf(m, "D12"), "awaiting-thread", "the answer is held, not settled");
+  assert.strictEqual(answerText(m, "D12"), null, "nothing settled on the click");
+  assert.ok(m.threads["T-auth"], "the mandated thread opened itself");
+  m = reduce(m, { type: "parkThread", id: "T-auth" });
+  assert.strictEqual(statusOf(m, "D12"), "awaiting-thread", "parking the mandated thread does NOT settle it");
+  m = reduce(m, { type: "openThread", id: "T-auth" });
+  m = reduce(m, { type: "foldThread", id: "T-auth" });
+  assert.strictEqual(statusOf(m, "D12"), "settled", "concluding it is what settles the decision");
+  assert.ok(/not authorisation to merge/.test(answerText(m, "D12")), "on the answer that was held");
+
+  // 8. invalidate: leaves the flow, stays on the board, stops blocking
+  var v = answerAndHear(pick(initial(), "D2", "a"), "D6", "c");
+  v = reduce(v, { type: "applyPending" });
+  assert.strictEqual(statusOf(v, "D10"), "invalidated", "D10 left the flow");
+  assert.ok(v.order.indexOf("D10") >= 0, "but is still on the board for relitigation");
+  assert.strictEqual(statusOf(v, "D14"), "open", "and no longer blocks what hung off it");
+
+  // 9. elicitative new node
+  var e2 = answerAndHear(initial(), "D2", "b");
+  e2 = reduce(e2, { type: "applyPending" });
+  assert.ok(e2.nodes.D18, "the agent materialised a new decision");
+  assert.strictEqual(statusOf(e2, "D18"), "open");
+
+  // 10. per-node history reads without reopening anything, and the log is one list
+  assert.ok(historyOf(m, "D5").length >= 3, "D5 carries its own change history");
+  assert.ok(m.events.length > historyOf(m, "D5").length, "history is a view of the one session log");
+
+  console.log("grilling r2 state module self-check: OK (" + NODES.length + " base decisions, " +
+    Object.keys(LATER).length + " agent-addable, " + m.events.length + " events in the last session)");
+}
+//---GRILL-MODULE-END---
+</script>
+
+<script>
+/* =====================================================================
+   Page shell. Throwaway. One hybrid surface over the module above:
+   a map canvas beside one blended column, plus a slide-out for threads,
+   the mailbox and the notifications inbox.
+   ===================================================================== */
+
+var S = Grill.initial();
+var UI = {
+  focus: "D1", open: {}, drafts: {}, panel: null, scenario: null, step: 0,
+  lastFocus: null, centerNext: true
+};
+
+/* ---------- the fake agent's clock ---------- */
+var AGENT = { jobs: [], seq: 0 };
+function schedule(plan) {
+  AGENT.jobs.push({ id: ++AGENT.seq, due: Date.now() + plan.delay, updates: plan.updates });
+}
+function agentBusy() { return AGENT.jobs.length > 0; }
+function pump() {
+  var now = Date.now();
+  var ready = AGENT.jobs.filter(function (j) { return j.due <= now; });
+  if (!ready.length) return;
+  AGENT.jobs = AGENT.jobs.filter(function (j) { return j.due > now; });
+  ready.forEach(function (j) { S = Grill.reduce(S, { type: "agentResponse", updates: j.updates }); });
+  render();
+}
+function flushAgent() {
+  AGENT.jobs.forEach(function (j) { j.due = 0; });
+  pump();
+}
+setInterval(pump, 200);
+// Browsers throttle timers in a background tab, so the agent appears to stall
+// while you are elsewhere. Deliver whatever came due the moment you are back.
+document.addEventListener("visibilitychange", function () { if (!document.hidden) pump(); });
+
+function dispatch(a) {
+  var prev = S;
+  S = Grill.reduce(S, a);
+  if (S !== prev) {
+    var evs = S.events.slice(prev.events.length);
+    var plan = Grill.agentPlan(S, evs);
+    if (plan) schedule(plan);
+    if (a.type === "answer" || a.type === "foldThread" || a.type === "applyPending") {
+      var settled = evs.filter(function (e) { return e.kind === "answer" || e.kind === "answer-release"; })[0];
+      if (settled && Grill.statusOf(S, settled.nodeId) === "settled") {
+        var nxt = Grill.nextFocus(S, settled.nodeId);
+        if (nxt) focusOn(nxt);
+      }
+    }
+  }
+  render();
+}
+function focusOn(id) { UI.focus = id; UI.centerNext = true; }
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+    return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c];
+  });
+}
+function nv(id) { return Grill.nodeView(S, id); }
+var LABELS = {
+  settled: "settled", open: "on the frontier", blocked: "waiting", stale: "needs re-confirming",
+  "stale-blocked": "stale · waiting", fogged: "fog", conflicted: "conflict — needs judging",
+  "conflict-blocked": "blocked by a conflict upstream", reassessing: "possibly affected · reassessment pending",
+  "awaiting-thread": "answer held · thread must conclude", invalidated: "left the flow"
+};
+
+/* ---------- scenarios ---------- */
+function seed(pairs) {
+  pairs.forEach(function (p) {
+    var before = S.events.length;
+    S = Grill.reduce(S, { type: "answer", id: p[0], payload: { optionId: p[1] } });
+    var plan = Grill.agentPlan(S, S.events.slice(before));
+    if (plan) S = Grill.reduce(S, { type: "agentResponse", updates: plan.updates });
+    S = Grill.reduce(S, { type: "applyPending" });
+  });
+  render();
+}
+function answer(id, opt) { dispatch({ type: "answer", id: id, payload: { optionId: opt } }); focusOn(id); }
+var somePending = function () { return Grill.pending(S).length > 0; };
+
+var SCENARIOS = [
+  { name: "1 · Flow — the agent runs behind you",
+    blurb: "Answer decisions faster than the agent can respond, watch its replies pile up in the mailbox without touching the board, then apply them in one click and see what changed. Ends on the fog lifting off a decision that was not a real question until now.",
+    steps: [
+      { label: "Answer D1 — work-item source (the agent starts thinking)", run: function () { answer("D1", "a"); } },
+      { label: "Do not wait: answer D2 — why wake at all", run: function () { answer("D2", "a"); } },
+      { label: "Keep going: answer D4 — claim mechanism", run: function () { answer("D4", "a"); } },
+      { label: "Apply the queued agent updates", wait: somePending, run: function () { dispatch({ type: "applyPending" }); } },
+      { label: "Answer D3 — eligibility filter", run: function () { answer("D3", "a"); } },
+      { label: "Apply again — the agent has revised D5's options", wait: somePending, run: function () { dispatch({ type: "applyPending" }); } },
+      { label: "Answer D5 taking the agent's new option", run: function () { answer("D5", "d"); } },
+      { label: "Answer D7 — gate membership · WATCH THE FOG at the right edge", run: function () { answer("D7", "a"); } },
+      { label: "Apply the agent's last word", wait: somePending, run: function () { dispatch({ type: "applyPending" }); } }
+    ] },
+
+  { name: "2 · Conflict",
+    blurb: "The agent generates an update about the proof rule, and you change the proof rule before it lands. Applying the queue does not overwrite you and does not silently drop the update: the decision goes into conflict, everything downstream of it blocks — including decisions you had already answered — and clicking it opens a thread seeded with the question that has to be judged.",
+    steps: [
+      { label: "Settle D1, D2, D4 quietly", run: function () { seed([["D1", "a"], ["D2", "a"], ["D4", "a"]]); } },
+      { label: "Answer D3 — the agent starts an update to D5", run: function () { answer("D3", "a"); } },
+      { label: "Answer D5 yourself before it lands", run: function () { answer("D5", "b"); } },
+      { label: "And answer D7, downstream of it", run: function () { answer("D7", "a"); } },
+      { label: "Apply the queue — the update conflicts", wait: somePending, run: function () { dispatch({ type: "applyPending" }); } },
+      { label: "Click D5 — a conflicted node opens its thread directly", run: function () { openConflict("D5"); } },
+      { label: "Fold it — take the agent's version on top of yours", run: function () { foldFocusThread(); } }
+    ] },
+
+  { name: "3 · Threads — park, fold, and one fold that will not wait",
+    blurb: "Threads are inconsequential until you conclude them, and concluding is explicit. Park one and the board is untouched; fold one and its declared impact goes through the same mailbox as any agent update — except when the agent declares the impact disruptive, in which case it applies immediately and says so.",
+    steps: [
+      { label: "Settle D1, D2, D3, D5, D7", run: function () { seed([["D1", "a"], ["D2", "a"], ["D3", "a"], ["D5", "a"], ["D7", "a"]]); } },
+      { label: "Open a thread on D5 — proof of completion", run: function () { dispatch({ type: "newThread", id: "D5" }); openLatestThread(); } },
+      { label: "Seed it: “Why?”  (the agent marks this turn unfoldable)", run: function () { seedThread("why"); } },
+      { label: "Seed it: “Trade-offs”  (this one declares an impact)", run: function () { seedThread("tradeoffs"); } },
+      { label: "PARK it — nothing on the board moves", run: function () { parkPanelThread(); } },
+      { label: "Answer D8 while the thread sits parked", run: function () { answer("D8", "a"); } },
+      { label: "Pick the parked thread back up", run: function () { openThreadOn("D5"); } },
+      { label: "FOLD it — the impact is queued, not applied", run: function () { foldFocusThread(); } },
+      { label: "Apply the fold's impact from the mailbox", wait: somePending, run: function () { dispatch({ type: "applyPending" }); } },
+      { label: "Now open the agent's OWN thread on D7 (⚠ alert)", wait: function () { return !!S.threads["T-proof"]; }, run: function () { openThread("T-proof"); } },
+      { label: "FOLD the agent's thread — declared disruptive, so it applies at once", run: function () { foldFocusThread(); } }
+    ] },
+
+  { name: "4 · Attention — the inbox as the only place to look",
+    blurb: "Four kinds of agent attention in one list: a queued update, an informational reply you have not read, an elicitative alert that wants a thread, and a suggested thread that stays out of the inbox while its decision is still blocked. Ends on the one decision the agent refuses to let you settle with a click.",
+    steps: [
+      { label: "Answer D1 — work-item source", run: function () { answer("D1", "a"); } },
+      { label: "Apply the update — a mail icon starts pulsing on D1", wait: somePending, run: function () { dispatch({ type: "applyPending" }); } },
+      { label: "Open the notifications inbox and read the informational reply (the pulse stops)", run: function () { inboxGo("informational"); } },
+      { label: "Settle D2, D3, D5, then answer D8 — the agent suggests a thread on D13", run: function () { seed([["D2", "a"], ["D3", "a"], ["D5", "a"]]); answer("D8", "a"); } },
+      { label: "Apply it, then look: D13's suggested thread is NOT in the inbox (D13 is blocked)", wait: somePending, run: function () { dispatch({ type: "applyPending" }); UI.panel = { kind: "inbox" }; render(); } },
+      { label: "Answer D7 — unblocking D13 and drawing an alert on D7", run: function () { answer("D7", "a"); } },
+      { label: "Apply — now the inbox carries both the alert and the suggestion", wait: somePending, run: function () { dispatch({ type: "applyPending" }); UI.panel = { kind: "inbox" }; render(); } },
+      { label: "Answer D11 — the agent decides a FUTURE node for you", run: function () { answer("D11", "a"); } },
+      { label: "Apply it — D14 is settled by the agent, not by you", wait: somePending, run: function () { dispatch({ type: "applyPending" }); } },
+      { label: "Answer D12 — read the notice first: this one mandates a thread", run: function () { answer("D12", "a"); } },
+      { label: "Conclude the mandated thread — the only way D12 settles", run: function () { openThread("T-auth"); foldFocusThread(); } }
+    ] }
+];
+
+function startScenario(i) {
+  S = Grill.initial(); AGENT.jobs = [];
+  UI.open = {}; UI.drafts = {}; UI.panel = null; UI.scenario = i; UI.step = 0;
+  focusOn("D1"); render();
+}
+function resetAll() {
+  S = Grill.initial(); AGENT.jobs = [];
+  UI.open = {}; UI.drafts = {}; UI.panel = null; UI.scenario = null; UI.step = 0;
+  focusOn("D1"); render();
+}
+
+/* ---------- scenario helpers that drive real controls ---------- */
+function openLatestThread() { UI.panel = { kind: "thread", id: S.threadOrder[S.threadOrder.length - 1] }; render(); }
+function openThread(tid) { dispatch({ type: "openThread", id: tid }); UI.panel = { kind: "thread", id: tid }; render(); }
+function openThreadOn(nodeId) {
+  var t = Grill.threadsOf(S, nodeId);
+  openThread(t[t.length - 1]);
+}
+function inboxGo(type) {
+  UI.panel = { kind: "inbox" }; render();
+  var ns = Grill.notifications(S), i = -1;
+  ns.forEach(function (n, k) { if (i < 0 && n.type === type) i = k; });
+  var b = i >= 0 && document.querySelector('[data-act="notify"][data-i="' + i + '"]');
+  if (b) b.click();
+}
+function openConflict(nodeId) {
+  var c = S.conflicts[nodeId];
+  if (c) { focusOn(nodeId); openThread(c.threadId); }
+}
+function seedThread(key) { if (UI.panel && UI.panel.kind === "thread") dispatch({ type: "threadSeed", id: UI.panel.id, seed: key }); }
+function parkPanelThread() {
+  if (!UI.panel || UI.panel.kind !== "thread") return;
+  dispatch({ type: "parkThread", id: UI.panel.id }); UI.panel = null; render();
+}
+function foldFocusThread() {
+  if (!UI.panel || UI.panel.kind !== "thread") return;
+  dispatch({ type: "foldThread", id: UI.panel.id }); UI.panel = null; render();
+}
+
+/* ---------- fragments ---------- */
+function pill(status, extra) {
+  return '<span class="pill ' + status + '">' + LABELS[status] + "</span>" + (extra || "");
+}
+function answerControls(v) {
+  var h = "";
+  if (v.answerText) h += '<div class="prior"><strong>Currently:</strong> ' + esc(v.answerText) + "</div>";
+  if (v.pendingAnswer) h += '<div class="prior"><strong>Held:</strong> ' + esc(v.pendingAnswer.free ? v.pendingAnswer.text : (v.options.filter(function (o) { return o.id === v.pendingAnswer.optionId; })[0] || {}).text) + "</div>";
+  h += '<div class="rec-line">Recommended answer</div>';
+  h += '<button class="btn primary wide" data-act="pick" data-id="' + v.id + '" data-opt="' + v.recommended.id + '">➡️ ' + esc(v.recommended.text) + "</button>";
+  h += '<div class="alts">';
+  v.options.slice(1).forEach(function (o) {
+    h += '<button class="btn wide sm" data-act="pick" data-id="' + v.id + '" data-opt="' + o.id + '">' + esc(o.text) + "</button>";
+  });
+  h += "</div>";
+  h += '<div class="free"><textarea id="ft-' + v.id + '" data-draft="' + v.id + '" placeholder="…or answer in your own words"></textarea>' +
+       '<button class="btn sm" data-act="free" data-id="' + v.id + '">Use this</button></div>';
+  return h;
+}
+function itemIcons(v) {
+  var h = '<span class="icons">';
+  if (v.infoUnread) h += '<button class="mail" data-act="readinfo" data-id="' + v.id + '" title="Unread reply from the agent">✉</button>';
+  var alert = v.threads.filter(function (t) { return S.threads[t].status === "suggested"; })[0];
+  if (alert) h += '<button class="alerting" data-act="openthread" data-tid="' + alert + '" title="The agent wants something judged">⚠</button>';
+  h += '<button data-act="history" data-id="' + v.id + '" title="Change history">🕘</button>';
+  h += '<button data-act="threads" data-id="' + v.id + '" title="Threads on this decision">⑂' +
+    (v.threads.length ? '<span class="did"> ' + v.threads.length + "</span>" : "") + "</button>";
+  h += "</span>";
+  return h;
+}
+
+/* ---------- the map ---------- */
+var POS = {};
+function renderMap() {
+  var ls = Grill.layers(S), maxDepth = ls.length - 1;
+  var COL = 152, ROW = 82, X0 = 24, Y0 = 22, NW = 116, NH = 52;
+  var fogCol = maxDepth + 1, slots = [];
+  POS = {};
+  S.order.forEach(function (id) {
+    var v = nv(id), col = v.fogged ? fogCol : v.depth;
+    slots[col] = slots[col] || [];
+    slots[col].push(id);
+  });
+  var rows = 1;
+  slots.forEach(function (ids, col) {
+    if (!ids) return;
+    rows = Math.max(rows, ids.length);
+    ids.forEach(function (id, i) { POS[id] = { x: X0 + col * COL, y: Y0 + i * ROW }; });
+  });
+  var W = X0 + (fogCol + 1) * COL, H = Math.max(600, Y0 + rows * ROW + 20);
+
+  var edges = "";
+  S.order.forEach(function (id) {
+    S.nodes[id].prereqs.forEach(function (p) {
+      var a = POS[p], b = POS[id];
+      if (!a || !b) return;
+      var done = Grill.isSettled(S, p);
+      edges += '<path d="M' + (a.x + NW) + "," + (a.y + NH / 2) + " C" + (a.x + NW + 40) + "," + (a.y + NH / 2) +
+        " " + (b.x - 40) + "," + (b.y + NH / 2) + " " + b.x + "," + (b.y + NH / 2) +
+        '" fill="none" stroke="' + (done ? "#94a3b8" : "#e2e8f0") + '" stroke-width="' + (done ? 1.4 : 1) + '"' +
+        (done ? "" : ' stroke-dasharray="3 3"') + "/>";
+    });
+  });
+
+  var nodes = "";
+  S.order.forEach(function (id) {
+    var v = nv(id), p = POS[id];
+    var badges = "";
+    if (v.infoUnread) badges += '<span class="mail">✉</span>';
+    if (v.threads.some(function (t) { return S.threads[t].status === "suggested"; })) badges += '<span class="alerting">⚠</span>';
+    if (v.conflict) badges += "<span>⚡</span>";
+    if (v.threads.some(function (t) { return S.threads[t].status === "parked"; })) badges += "<span>⑂</span>";
+    nodes += '<button class="mnode ' + v.status + (UI.focus === id ? " focused" : "") + (v.fresh ? " fresh" : "") + (v.touched ? " touched" : "") +
+      '" style="left:' + p.x + "px;top:" + p.y + 'px" data-act="mapnode" data-id="' + id + '">' +
+      '<span class="mid">' + (v.fogged ? "· · ·" : id) + "</span><br>" + esc(v.short) +
+      (v.status === "open" ? " ❓" : v.status === "settled" ? " ✓" : v.status.indexOf("stale") === 0 ? " ⚠" : "") +
+      '<span class="badges">' + badges + "</span></button>";
+  });
+
+  var c = Grill.counts(S), fogX = X0 + fogCol * COL - 50;
+  return '<div class="card"><h3>The board <span class="spacer"></span>' +
+    '<span class="muted">drag to pan · click a node to focus it in the column</span></h3>' +
+    '<div class="mapscroll" id="mapscroll"><div class="mapcanvas" style="width:' + W + "px;height:" + H + 'px">' +
+    '<svg width="' + W + '" height="' + H + '">' + edges + "</svg>" + nodes +
+    '<div class="fogbank" style="left:' + fogX + "px;width:" + (W - fogX) + 'px"></div>' +
+    '<div class="foglabel" style="left:' + (fogX + 26) + 'px">fog</div></div></div>' +
+    '<div class="maplegend"><span class="lg-settled">settled · ' + c.settled + "</span>" +
+    '<span class="lg-open">frontier · ' + c.open + "</span>" +
+    '<span class="lg-stale">stale · ' + c.stale + "</span>" +
+    '<span class="lg-reassess">reassessing · ' + c.reassessing + "</span>" +
+    '<span class="lg-conflict">conflict · ' + c.conflict + "</span>" +
+    '<span class="lg-blocked">waiting · ' + c.blocked + "</span>" +
+    '<span class="lg-fogged">fog · ' + c.fogged + "</span></div></div>";
+}
+
+/* ---------- the one blended column ---------- */
+function renderColumn() {
+  var h = '<div class="card"><h3>Decisions <span class="spacer"></span><span class="muted">tree order · never re-sorts</span></h3><div class="column" id="column">';
+  Grill.columnOrder(S).forEach(function (id) {
+    var v = nv(id);
+    var answerable = v.status === "open" || v.status === "stale";
+    var expanded = answerable || v.status === "awaiting-thread" || v.status === "conflicted" || !!UI.open[id];
+    h += '<div class="item ' + (expanded ? "" : "collapsed ") + (UI.focus === id ? "focused " : "") +
+      (v.touched ? "touched " : "") + (v.fresh ? "fresh" : "") + '" id="col-' + id + '" data-act="focus" data-id="' + id + '">';
+    h += '<div class="head"><span class="did">' + id + "</span>" +
+      '<span class="t">' + esc(v.title) + "</span>" + itemIcons(v) + "</div>";
+    h += '<div style="margin-top:5px">' + pill(v.status) +
+      (v.fresh ? ' <span class="pill new">new</span>' : "") + "</div>";
+
+    if (!expanded) {
+      h += '<div class="oneline">' + (v.answerText ? esc(v.answerText)
+        : v.fogged ? "not a real question yet — sharpens once " + v.fogUntil + " settles"
+        : v.status === "invalidated" ? "left the flow; still here to relitigate"
+        : "waiting on " + v.prereqs.join(", ")) + "</div>";
+      if (v.status === "settled") h += '<button class="btn sm" data-act="expand" data-id="' + id + '" style="margin-top:6px">Expand to change it</button>';
+      if (v.status === "conflicted") h += '<div class="conflict-notice">The agent\'s update disagrees with your answer. <button class="btn sm warn" data-act="openthread" data-tid="' + v.conflict.threadId + '">Open the conflict thread</button></div>';
+      if (v.status === "reassessing") h += '<div class="muted" style="margin-top:5px">Possibly affected by your change to ' + v.provisional + ". The agent is reassessing it.</div>";
+      if (v.status === "invalidated" || v.status === "blocked" || v.status === "stale-blocked" || v.status === "fogged" || v.status === "conflict-blocked")
+        h += '<button class="btn sm" data-act="expand" data-id="' + id + '" style="margin-top:6px">Details</button>';
+    } else {
+      if (v.status === "conflicted") {
+        h += '<div class="conflict-notice">Blocked pending your judgement — everything downstream of ' + id +
+          ' is blocked too. <button class="btn sm warn" data-act="openthread" data-tid="' + v.conflict.threadId + '">Open the conflict thread</button></div>';
+      }
+      if (v.mandate && !(S.threads[v.mandate.threadId] && S.threads[v.mandate.threadId].status === "folded")) {
+        h += '<div class="mandate-notice"><strong>This decision requires a thread.</strong> ' + esc(v.mandate.notice) + "</div>";
+      }
+      if (v.status === "awaiting-thread") {
+        h += '<div class="mandate-notice">Your answer is held. <button class="btn sm" data-act="openthread" data-tid="' + v.mandate.threadId + '">Open the mandated thread</button> — concluding it is what settles this.</div>';
+      }
+      h += '<div class="q-body">' + esc(v.body) + "</div>";
+      if (v.status === "fogged" || v.status === "invalidated" || v.status === "conflict-blocked" || v.status === "blocked" || v.status === "stale-blocked") {
+        h += '<div class="muted">' + (v.fogged ? "Not a real question yet. It sharpens once " + v.fogUntil + " settles."
+          : v.status === "invalidated" ? "The agent took this out of the flow. It stays on the board — relitigate it by opening a thread."
+          : v.status === "conflict-blocked" ? "An upstream conflict has to be judged before this can move."
+          : "Waiting on " + v.prereqs.join(", ") + ".") + "</div>";
+      } else {
+        h += answerControls(v);
+      }
+      if (v.info) h += '<div class="parked-note"><strong>Agent, informational:</strong> ' + esc(v.info.text) + "</div>";
+      v.threads.forEach(function (tid) {
+        var t = S.threads[tid];
+        h += '<div class="parked-note">⑂ ' + esc(t.title) + " — <em>" + t.status + "</em> " +
+          '<button class="btn sm" data-act="openthread" data-tid="' + tid + '">' +
+          (t.status === "folded" ? "View" : t.status === "parked" ? "Pick it back up" : "Open") + "</button>" +
+          (t.status === "folded" ? ' <button class="btn sm" data-act="relitigate" data-tid="' + tid + '">Relitigate</button>' : "") + "</div>";
+      });
+      if (!v.threads.length) h += '<div style="margin-top:9px"><button class="btn sm" data-act="newthread" data-id="' + id + '">⑂ Start a thread on ' + id + "</button></div>";
+      if (v.status === "settled") h += '<button class="btn sm" data-act="collapse" data-id="' + id + '" style="margin-top:8px">Leave it as it is</button>';
+      if (!answerable && v.status !== "settled") h += '<button class="btn sm" data-act="collapse" data-id="' + id + '" style="margin-top:8px">Close</button>';
+    }
+    if (UI.open["hist-" + id]) {
+      h += '<div class="hist"><strong style="font-size:12px">Change history — ' + id + "</strong>";
+      var hist = Grill.historyOf(S, id);
+      if (!hist.length) h += '<div class="muted">Nothing has happened to this decision yet.</div>';
+      hist.forEach(function (e) { h += '<div><span class="s">#' + e.seq + "</span>" + esc(e.label) + "</div>"; });
+      h += "</div>";
+    }
+    h += "</div>";
+  });
+  h += "</div></div>";
+  return h;
+}
+
+/* ---------- slide-outs ---------- */
+function renderThread(tid) {
+  var t = S.threads[tid];
+  if (!t) return "";
+  var v = nv(t.anchor);
+  var foldable = t.turns.filter(function (x) { return x.foldable; });
+  var last = foldable[foldable.length - 1];
+  var h = '<div class="slide"><button class="close" data-act="closepanel">✕</button>';
+  h += '<span class="pill open">' + t.kind + " thread</span>";
+  h += '<h3 style="margin:10px 0 4px;font-size:16px">' + esc(t.title) + "</h3>";
+  h += '<div class="muted" style="margin-bottom:14px">On ' + t.anchor + " · " + esc(v.short) +
+    (t.seededFrom ? " · seeded from " + t.seededFrom : "") +
+    ". Nothing here touches the decision until you conclude it.</div>";
+  t.turns.forEach(function (turn) {
+    h += '<div class="turn ' + turn.who + '"><div class="who">' + (turn.who === "agent" ? "Agent" : turn.auto ? "You (auto-drafted)" : "You") + "</div>" +
+      "<p>" + esc(turn.text) + "</p>";
+    if (turn.who === "agent") {
+      h += turn.foldable
+        ? '<div class="foldmeta"><strong>foldable</strong> — ' + esc(turn.impact ? turn.impact.summary : "impact declared") +
+          (turn.disruptive ? " <em>· declared disruptive: applies immediately, not through the mailbox.</em>" : " · routes through the mailbox like any agent update.") + "</div>"
+        : '<div class="foldmeta no">not foldable — nothing on the board would change</div>';
+    }
+    h += "</div>";
+  });
+  if (t.status === "folded") {
+    h += '<div class="parked-note">This thread is concluded and folded. It stays readable. ' +
+      '<button class="btn sm" data-act="relitigate" data-tid="' + tid + '">Relitigate it</button></div></div>';
+    return h;
+  }
+  h += '<div class="seeds">';
+  Grill.SEEDS.forEach(function (s) {
+    h += '<button class="btn sm" data-act="seed" data-tid="' + tid + '" data-seed="' + s.key + '">' + s.label + "</button>";
+  });
+  h += "</div>";
+  h += '<div class="free"><textarea id="ft-say" data-draft="__say" placeholder="…or say something of your own"></textarea>' +
+    '<button class="btn sm" data-act="say" data-tid="' + tid + '">Send</button></div>';
+  if (last && last.disruptive) h += '<div class="disruptive"><strong>Concluding this is disruptive.</strong> ' + esc(last.impact.summary) + " It will apply the moment you fold, without waiting in the mailbox.</div>";
+  else if (last) h += '<div class="parked-note"><strong>If folded:</strong> ' + esc(last.impact.summary) + " Queued to the mailbox like any agent update.</div>";
+  else h += '<div class="parked-note">Nothing in this thread is foldable yet. Park it and it costs nothing.</div>';
+  h += '<div class="thread-actions">' +
+    '<button class="btn sm" data-act="park" data-tid="' + tid + '">Park it — no effect, kept on the record</button>' +
+    '<button class="btn primary sm" data-act="fold" data-tid="' + tid + '"' + (last ? "" : " disabled") + '>Fold it — conclude and apply</button></div>';
+  h += "</div>";
+  return h;
+}
+function renderInbox() {
+  var ns = Grill.notifications(S);
+  var h = '<div class="slide"><button class="close" data-act="closepanel">✕</button>' +
+    '<h3 style="font-size:16px">Notifications</h3>' +
+    '<div class="muted" style="margin-bottom:12px">Everything the agent wants your attention on, in one list. A suggested thread stays out of this list while its decision is blocked.</div>';
+  if (!ns.length) h += '<div class="muted">Nothing waiting.</div>';
+  ns.forEach(function (n, i) {
+    h += '<div class="inbox-item"><span class="type t-' + n.type + '">' + n.type.replace("-", " ") + "</span>" +
+      '<div class="txt"><strong>' + (n.nodeId || "—") + "</strong> · " + esc(n.text) +
+      '<div style="margin-top:6px"><button class="btn sm" data-act="notify" data-i="' + i + '">Go to it</button></div></div></div>';
+  });
+  h += "</div>";
+  return h;
+}
+function renderPending() {
+  var ps = Grill.pending(S);
+  var h = '<div class="slide"><button class="close" data-act="closepanel">✕</button>' +
+    '<h3 style="font-size:16px">Pending agent updates</h3>' +
+    '<div class="muted" style="margin-bottom:12px">Structured updates the agent has sent back. None of them has touched the board. Applying is one click, all at once.</div><div class="pending-list">';
+  if (!ps.length) h += '<div class="muted">The mailbox is empty.</div>';
+  ps.forEach(function (p) {
+    h += '<div class="pending-row"><strong>' + (p.nodeId || "—") + "</strong> · <span class=\"did\">" + p.kind + "</span><br>" + esc(p.summary) +
+      (p.conflicts ? '<div class="c">⚡ conflicts with your later change to ' + p.nodeId + " — applying will raise it for judgement</div>" : "") + "</div>";
+  });
+  h += "</div>";
+  if (ps.length) h += '<div class="thread-actions"><button class="btn primary sm" data-act="apply">Apply all ' + ps.length + "</button></div>";
+  h += "</div>";
+  return h;
+}
+
+/* ---------- shell ---------- */
+var CHOREO_ROWS = [
+  ["D1 = recommended", "informational reply on D1 (pulsing ✉ until read) and a “recommended next” of D3"],
+  ["D1 = live query (option b)", "elicitative: materialises a NEW decision D17 about re-query cost"],
+  ["D2 = any blocked item (option b)", "elicitative: materialises a NEW decision D18 defining “blocked”"],
+  ["D2 = recommended", "informational reply on D2"],
+  ["D3 = anything", "revises D5's options — this is the update that conflicts if you answer D5 before applying it"],
+  ["D5 = anything", "informational reply on D5, recommends D7 next"],
+  ["D6 = escalating call (option c)", "invalidates D10 — it leaves the flow, stays on the board for relitigation"],
+  ["D7 = recommended", "elicitative ALERT on D7 (flashing ⚠) opening a thread whose fold is DISRUPTIVE and applies synchronously"],
+  ["D8 = recommended", "suggested thread on D13 — suppressed from the inbox until D13 stops being blocked"],
+  ["D11 = anything", "settles a FUTURE node: D14 is decided by the agent, not by you"],
+  ["D12 = anything", "mandated thread T-auth opens immediately; the decision cannot settle until it concludes"],
+  ["Reopen any settled decision", "descendants go “possibly affected”; the agent later confirms the direct ones and clears the deeper ones"],
+  ["Settle D7 / settle D12", "the fog lifts off D16 / D15 — they become real questions"]
+];
+
+function renderShell() {
+  var tabs = '<div class="tabs">';
+  SCENARIOS.forEach(function (s, i) {
+    tabs += '<button class="' + (UI.scenario === i ? "on" : "") + '" data-act="scenario" data-i="' + i + '">' + esc(s.name) + "</button>";
+  });
+  tabs += '<span class="spacer"></span><button class="' + (UI.scenario === null ? "on" : "") + '" data-act="freeplay">Free play</button>' +
+    '<button data-act="reset">Reset</button></div>';
+
+  var body = '<div class="scen-body">';
+  if (UI.scenario === null) {
+    body += "<p>Free play. Answer anything on the frontier, reopen anything settled by expanding it, start a thread on any decision, and let the agent fall behind. The choreography note above says which click produces which agent behaviour.</p>";
+  } else {
+    var sc = SCENARIOS[UI.scenario];
+    body += "<p>" + esc(sc.blurb) + "</p><div class='steps'>";
+    sc.steps.forEach(function (st, i) {
+      var cls = i < UI.step ? "done" : i === UI.step ? "now" : "";
+      var waiting = i === UI.step && st.wait && !st.wait(S);
+      body += '<button class="step ' + cls + '" data-act="step" data-i="' + i + '"' + (i === UI.step && !waiting ? "" : " disabled") + ">" +
+        '<span class="n">' + (i + 1) + "</span>" + esc(st.label) +
+        (waiting ? '<span class="wait">waiting for the agent…</span>' : "") + "</button>";
+    });
+    body += "</div>";
+    if (UI.step >= sc.steps.length) body += "<p style='margin-top:12px'><strong>Walkthrough complete.</strong> Free play is always live.</p>";
+  }
+  body += "</div>";
+
+  var choreo = '<details class="note"><summary>Choreography — which click makes the fake agent do what</summary>' +
+    '<p class="muted" style="margin:8px 0 0">The agent is canned but deterministic. Every behaviour below is reachable in free play by the trigger on the left; latency varies between about one and four seconds.</p>' +
+    "<table><tr><th>Trigger</th><th>What the agent sends back</th></tr>";
+  CHOREO_ROWS.forEach(function (r) { choreo += '<tr><td class="k">' + esc(r[0]) + "</td><td>" + esc(r[1]) + "</td></tr>"; });
+  choreo += "</table></details>";
+
+  var ps = Grill.pending(S), ns = Grill.notifications(S);
+  var top = '<div class="topbar">' +
+    '<span class="agentchip"><span class="dot' + (agentBusy() ? " busy" : "") + '"></span>' +
+    (agentBusy() ? "agent is thinking about " + AGENT.jobs.length + " thing" + (AGENT.jobs.length > 1 ? "s" : "") : "agent is idle") + "</span>" +
+    '<button class="pendbtn' + (ps.length ? "" : " none") + '" data-act="pendingpanel">✉ ' +
+    (ps.length ? ps.length + " update" + (ps.length > 1 ? "s" : "") + " waiting — apply" : "mailbox empty") + "</button>" +
+    (ps.length ? '<button class="btn sm primary" data-act="apply">Apply all</button>' : "") +
+    '<button class="inboxbtn" data-act="inbox">🔔 Notifications <span class="count">' + ns.length + "</span></button>" +
+    (agentBusy() ? '<button class="btn sm" data-act="flush">Impatient? deliver now</button>' : "") +
+    "</div>";
+
+  document.getElementById("shell").innerHTML =
+    '<span class="marker">Prototype — throwaway · round 2</span>' +
+    '<div class="intro"><h1>Does the asynchronous interaction model feel right?</h1>' +
+    "<p>Round 1 settled the surface: a map canvas beside one blended column of answerable and settled decisions. This round is about the conversation. The agent here is fake but genuinely asynchronous — your answers apply instantly and locally, its replies come back seconds later as structured updates that sit in a mailbox and change nothing until you apply them. Where it disagrees with something you changed in the meantime, that is a conflict, and it blocks everything downstream until you judge it.</p>" +
+    "<p>The question to hold while clicking: <strong>does this pending-mailbox / conflict / thread / notifications model feel right to work inside</strong> — or does the lag, the queue, or the blocking cost more than it buys?</p></div>" +
+    choreo +
+    '<div class="scenarios">' + tabs + body + "</div>" +
+    (S.banner ? '<div class="banner">' + esc(S.banner) + "</div>" : "") +
+    top +
+    '<div class="surface">' + renderMap() + renderColumn() + "</div>";
+
+  document.getElementById("overlay").innerHTML =
+    !UI.panel ? "" :
+    UI.panel.kind === "thread" ? renderThread(UI.panel.id) :
+    UI.panel.kind === "inbox" ? renderInbox() : renderPending();
+}
+
+/* ---------- render, preserving what the user is doing ---------- */
+function render() {
+  var map = document.getElementById("mapscroll"), col = document.getElementById("column");
+  var keep = { mx: map ? map.scrollLeft : 0, my: map ? map.scrollTop : 0, cy: col ? col.scrollTop : 0 };
+  var act = document.activeElement;
+  var focusId = act && act.tagName === "TEXTAREA" ? act.id : null;
+  var caret = focusId ? act.selectionStart : 0;
+
+  renderShell();
+
+  document.querySelectorAll("textarea[data-draft]").forEach(function (ta) {
+    var d = UI.drafts[ta.dataset.draft];
+    if (d) ta.value = d;
+  });
+  var map2 = document.getElementById("mapscroll"), col2 = document.getElementById("column");
+  if (map2) { map2.scrollLeft = keep.mx; map2.scrollTop = keep.my; }
+  if (col2) col2.scrollTop = keep.cy;
+
+  if (UI.centerNext && UI.focus) { centerOn(UI.focus); UI.centerNext = false; }
+
+  if (focusId) {
+    var again = document.getElementById(focusId);
+    if (again) { again.focus(); try { again.setSelectionRange(caret, caret); } catch (e) {} }
+  } else if (UI.focus !== UI.lastFocus || document.activeElement === document.body) {
+    // A3: the focused decision's free-text box holds focus by default. Only
+    // ever taken when nothing else holds it, so typing is never interrupted.
+    var box = document.getElementById("ft-" + UI.focus);
+    if (box && !UI.panel) box.focus();
+  }
+  UI.lastFocus = UI.focus;
+}
+// S2: the map auto-centres on whatever the column is focused on, and vice versa.
+function centerOn(id) {
+  var map = document.getElementById("mapscroll"), p = POS[id];
+  if (map && p) {
+    map.scrollLeft = Math.max(0, p.x - map.clientWidth / 2 + 58);
+    map.scrollTop = Math.max(0, p.y - map.clientHeight / 2 + 26);
+  }
+  var col = document.getElementById("column"), item = document.getElementById("col-" + id);
+  if (col && item) col.scrollTop = Math.max(0, item.offsetTop - 14);
+}
+
+/* ---------- events ---------- */
+document.addEventListener("input", function (e) {
+  if (e.target.dataset && e.target.dataset.draft) UI.drafts[e.target.dataset.draft] = e.target.value;
+});
+
+document.addEventListener("click", function (e) {
+  var el = e.target.closest("[data-act]");
+  if (!el) return;
+  var a = el.dataset.act, id = el.dataset.id, tid = el.dataset.tid;
+  switch (a) {
+    case "mapnode": {
+      var v = nv(id);
+      focusOn(id);
+      if (v.conflict) { openThread(v.conflict.threadId); return; }
+      if (v.status === "settled") UI.open[id] = true;
+      render();
+      break;
+    }
+    case "focus":
+      if (e.target.tagName === "TEXTAREA" || e.target.closest("button")) return;
+      focusOn(id); render();
+      break;
+    case "expand": focusOn(id); UI.open[id] = true; render(); break;
+    case "collapse": UI.open[id] = false; render(); break;
+    case "pick":
+      dispatch({ type: "answer", id: id, payload: { optionId: el.dataset.opt } });
+      UI.open[id] = false; render();                    // B1: settle and collapse in one motion
+      break;
+    case "free": {
+      var ta = document.getElementById("ft-" + id);
+      if (!ta || !ta.value.trim()) return;
+      dispatch({ type: "answer", id: id, payload: { free: true, text: ta.value.trim() } });
+      UI.drafts[id] = ""; UI.open[id] = false; render();
+      break;
+    }
+    case "history": UI.open["hist-" + id] = !UI.open["hist-" + id]; render(); break;
+    case "threads": {
+      var ts = Grill.threadsOf(S, id);
+      if (ts.length) openThread(ts[ts.length - 1]);
+      else { dispatch({ type: "newThread", id: id }); openLatestThread(); }
+      break;
+    }
+    case "newthread": dispatch({ type: "newThread", id: id }); openLatestThread(); break;
+    case "openthread": openThread(tid); break;
+    case "relitigate": dispatch({ type: "relitigate", id: tid }); openLatestThread(); break;
+    case "seed": dispatch({ type: "threadSeed", id: tid, seed: el.dataset.seed }); break;
+    case "say": {
+      var sa = document.getElementById("ft-say");
+      if (!sa || !sa.value.trim()) return;
+      dispatch({ type: "threadSay", id: tid, text: sa.value.trim() });
+      UI.drafts.__say = ""; render();
+      break;
+    }
+    case "park": dispatch({ type: "parkThread", id: tid }); UI.panel = null; render(); break;
+    case "fold": dispatch({ type: "foldThread", id: tid }); UI.panel = null; render(); break;
+    case "readinfo": dispatch({ type: "seen", id: id }); break;
+    case "apply": dispatch({ type: "applyPending" }); if (UI.panel && UI.panel.kind === "pending") UI.panel = null; render(); break;
+    case "pendingpanel": UI.panel = { kind: "pending" }; render(); break;
+    case "inbox": UI.panel = { kind: "inbox" }; render(); break;
+    case "closepanel": UI.panel = null; render(); break;
+    case "flush": flushAgent(); break;
+    case "notify": {
+      var n = Grill.notifications(S)[+el.dataset.i];
+      if (!n) return;
+      if (n.nodeId) focusOn(n.nodeId);
+      if (n.action === "thread") openThread(n.threadId);
+      else if (n.action === "conflict") openThread(S.conflicts[n.nodeId].threadId);
+      else if (n.action === "pending") { UI.panel = { kind: "pending" }; render(); }
+      else { UI.panel = null; if (n.type === "informational") dispatch({ type: "seen", id: n.nodeId }); else render(); }
+      break;
+    }
+    case "scenario": startScenario(+el.dataset.i); break;
+    case "freeplay": UI.scenario = null; UI.step = 0; render(); break;
+    case "reset": resetAll(); break;
+    case "step": {
+      var sc = SCENARIOS[UI.scenario];
+      if (+el.dataset.i !== UI.step) return;
+      sc.steps[UI.step].run();
+      UI.step++;
+      render();
+      break;
+    }
+  }
+});
+
+/* hover overlay on map nodes — A4 */
+var HOVER = null;
+document.addEventListener("mouseover", function (e) {
+  var n = e.target.closest(".mnode");
+  if (!n) return;
+  var v = nv(n.dataset.id);
+  if (!HOVER) { HOVER = document.createElement("div"); HOVER.className = "hovercard"; document.body.appendChild(HOVER); }
+  HOVER.innerHTML = '<div class="hid">' + (v.fogged ? "fogged" : v.id) + " · " + LABELS[v.status] + "</div>" +
+    "<div><strong>" + esc(v.title) + "</strong></div>" +
+    (v.body ? "<div>" + esc(v.body.slice(0, 150)) + (v.body.length > 150 ? "…" : "") + "</div>" : "") +
+    (v.answerText ? '<div style="opacity:.75;margin-top:4px">→ ' + esc(v.answerText.slice(0, 110)) + "</div>" : "");
+  var r = n.getBoundingClientRect();
+  HOVER.style.left = Math.min(window.innerWidth - 320, r.left) + "px";
+  HOVER.style.top = (r.bottom + 8) + "px";
+  HOVER.style.display = "block";
+});
+document.addEventListener("mouseout", function (e) {
+  if (e.target.closest(".mnode") && HOVER) HOVER.style.display = "none";
+});
+
+/* drag to pan the map */
+var DRAG = null;
+document.addEventListener("mousedown", function (e) {
+  var m = e.target.closest("#mapscroll");
+  if (!m || e.target.closest(".mnode")) return;
+  DRAG = { el: m, x: e.clientX, y: e.clientY, sl: m.scrollLeft, st: m.scrollTop };
+  m.classList.add("grabbing");
+  e.preventDefault();
+});
+document.addEventListener("mousemove", function (e) {
+  if (!DRAG) return;
+  DRAG.el.scrollLeft = DRAG.sl - (e.clientX - DRAG.x);
+  DRAG.el.scrollTop = DRAG.st - (e.clientY - DRAG.y);
+});
+document.addEventListener("mouseup", function () {
+  if (DRAG) DRAG.el.classList.remove("grabbing");
+  DRAG = null;
+});
+
+/* the only global key handler: Escape closes a slide-out, and never while typing */
+document.addEventListener("keydown", function (e) {
+  var t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if (e.key === "Escape") { UI.panel = null; render(); }
+});
+
+document.addEventListener("DOMContentLoaded", render);
+</script>
+
+<div class="shell" id="shell"></div>
+<div id="overlay"></div>
+
+</body>
+</html>
