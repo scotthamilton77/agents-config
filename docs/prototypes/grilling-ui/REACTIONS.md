@@ -124,3 +124,37 @@ Usability:
 ## Round-1 verdict (owner, after all three passes)
 
 Winner is a hybrid, not any variant: A's map canvas (scrollable, drag-pannable, auto-centering on focus) beside ONE blended column of answerable + settled decisions (B5), bidirectional focus sync (S2), threads as per-decision slide-outs (M1), and C3's notifications list as the attention surface. C loses as an interaction surface (C1/C2); its margin-thread idea is superseded by the slide-out + notifications combination.
+
+## Round 4 — live-agent session, owner reactions
+
+Session: r4 page over the bridge, driven by a real harness subagent (opus) speaking BRIDGE.md.
+
+- L1. PRIORITY: when the user sends anything the agent must answer (thread turn, answer awaiting reaction), the UI needs (a) an acknowledgment that the message reached the agent, (b) a thinking/working animation, (c) an incrementing timer showing how long the user has been waiting.
+- L2. Every message (thread turns, notifications) carries a date/timestamp rendered in the OS time zone.
+- L3. Responder latency is partly model choice: spawn task-appropriate model/effort agents for quick reactions, with an explicit "escalate to a higher agent" option for hard questions. (This session's live agent was opus; delay was poll interval + full-reasoning turns per event.)
+- L4. Agent responses default to concise; verbosity only when the user asks for more detail.
+- L5. Thread panel: title + close/pop-out must be a floating header, and the prompt textbox + action buttons a floating footer, so neither scrolls out of view in long threads.
+- L6. Decision options: 2–3 BEST options (three is not a target), labeled a/b/c so free-text and threads can reference them; add an affordance to select a pre-canned option AND attach a note. Free-text box remains.
+- L7. Hover overlays must always hide on click; they return only on a fresh mouse-enter of an overlay-possessing zone.
+- L8. One main window per grilling session, enforced by the backend — a second main window connecting to the same bridge must be refused (pop-out windows are the sanctioned exception). Concurrent DIFFERENT grilling sessions must work: one backend process per session, or a multi-tenant backend; decide at spec time.
+- L9. Connection indicator splits into: bridge reachable; agent attached/expecting-response ("response pending" is the priority signal); outbox depth (events queued that the agent has not consumed).
+- L10. Optional metadata: options that will predictably put downstream nodes into question carry that in the map data, so the UI can mark those nodes pending-agent-update immediately on selection. Secondary to L9's pending indicator.
+- L11. Informational messages: as concise as possible, with a "Discuss" button that starts a thread seeded from the message.
+- L12. Notifications window gets a "mark all read" button.
+- L13. Spec-phase discussion item: production architecture that minimizes waits — likely multiple subagents with separate contexts (e.g. per side thread), fast-path responders, and session lifecycle management. Owner wants this designed, not improvised.
+
+## Round 4 — wire findings (transport spike data, from the live run)
+
+- W1. WORST TRAP: the page re-emits ui-hello mid-session (connection flap) carrying the board's INITIAL definition — byte-indistinguishable from a genuine reset; the agent discarded correct state. Hello must carry CURRENT board state plus a session identity, and the doc must say when hellos occur.
+- W2. Envelope seq and event-body seq diverge (page reload resets body seq; envelope seq is bridge-global). Which one basedOnSeq references is ambiguous in BRIDGE.md; the live agent chose body seq. The real protocol needs one authoritative sequence.
+- W3. An agent reconnecting with cursor 0 re-processes the backlog and double-posts; update ids are unique but nothing dedupes. Needs idempotency keys honored by the page, or a resume cursor the agent can recover.
+- W4. Bridge-reachable and agent-present are indistinguishable to the UI; a healthy bridge with no agent waits forever with no signal (pairs with L1/L9).
+- W5. After hello the agent sees only deltas and must reconstruct board state itself; a real protocol needs a current-state snapshot (endpoint or richer hello) — accepting that the bridge stops being a pure mail slot.
+- W6. Bridge acceptance says nothing about page honoring: an add-node with an unrecognized id is a silent no-op that still returns ok/accepted. Receipts must be uniform and page-authored, and the agent needs a way to query current state (no GET state exists).
+- W7. Events are re-published identically with no dedupe anywhere (thread-created arrived twice, same body) — distinct from W3's reconnect case; dedupe belongs in the protocol, not agent heuristics.
+- W8. The page silently rewrote an agent update's basedOnSeq (3 → 5) at fold time — undocumented mutation of agent-authored data; receipts must state what was applied, as sent or as amended.
+- W9. add-node materializes a node whose question/options the agent never learns back, and only pre-baked ids are accepted (prototype artifact) — the real protocol needs open node minting and payload echo.
+- W10. invalidate carries no body text, forcing the reasoning to ship as a separate note on a different node — blocking updates must carry their own rationale.
+- W11. KEEP (what worked): the fold mechanism — one human gesture atomically applying revise + add-node + informational with receipts; elicit-alert with requiresAction:false as non-blocking "this matters"; the ask field for posing a decision the board has no node for.
+- W12. Agent-side latency anatomy (measured live: 20–90s per reaction): ~80% is composing the structured update itself — real judgment written as JSON — not transport; next is tool round-trip overhead (a reaction is minimum three round-trips: detect, read, post); poll detection was ≤3s via a shell status-poll loop. Consequences: BRIDGE.md's "poll every few hundred ms" is unusable for an agent paying a round-trip per poll (status-poll in shell is the pattern to document), and its "answer at human latency, a second or three" advice is backwards — a real agent is slow and silent, not too fast.
+- W13. Missing update kinds, agent's priority order: (1) a zero-content thinking/typing indicator firable in one cheap round-trip the moment a thread turn is picked up — the agent's #1 ask, and the exact counterpart of L1; (2) a real add-node taking question/options/prereqs (W9); (3) text on invalidate (W10); (4) a state read to confirm what landed (W6); (5) a rejection receipt instead of the silent-no-op ok (W6).
