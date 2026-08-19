@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-18
 **Status:** Implementation spec for `agents-config-9k9.221`. Supersedes the prototype
-transport (`BRIDGE.md`, rounds 1–4) wherever the two disagree.
+transport (`BRIDGE.md`, on branch `prototype/grilling-ui` with the rest of the prototype
+record) wherever the two disagree.
 
 **Provenance.** Every requirement here was ratified by the owner across five prototype
 rounds. The reaction ledger, the wire findings and the measured spike evidence live in
@@ -13,7 +14,21 @@ committed on branch `prototype/grilling-ui` — rounds 1–3 at `04a88809`, roun
 as evolved by rounds 4 and 5** (`grilling-ui-prototype-r3.html` at `04a88809`,
 `-r4.html` at `c8146beb`, `-r5.html` at `661fc5f0`). This spec states the contract; those
 reports hold the evidence, and `spike5/backend.py` at `661fc5f0` is prior art for the
-protocol semantics — reference implementation, not a design to copy verbatim.
+protocol semantics — reference implementation, not a design to copy verbatim. None of
+those paths exist on the default branch; they resolve only at the named commits.
+
+**Vocabulary.** A *grilling* is an interactive design interrogation: an agent
+adversarially questions a human's design until its acceptance criteria are settled. The
+*rounds* are the five prototype iterations that ratified this contract, and *the spike*
+is round 5 — the transport prototype whose measurements this spec carries as design
+inputs. On the board: a decision is *settled* once answered; the *frontier* is the set
+of decisions answerable now; *fog* masks decisions whose prerequisites are unmet; a
+*thread* is a side conversation anchored to a decision, *parked* when set aside without
+effect, and *folded* when its conclusion is applied to the board — *fold-readiness* is
+the agent declaring that a thread has reached an applicable conclusion. In the handoff
+file, *impetus* is why the grilling was requested, *posture* is how adversarially to
+grill, and *stop_when* is the condition under which the agent should treat the grilling
+as complete.
 
 ---
 
@@ -21,14 +36,16 @@ protocol semantics — reference implementation, not a design to copy verbatim.
 
 **GUI-D1 — The session is server-authoritative; the page is a renderer.** One backend
 process owns one grilling session. It holds an append-only on-disk event log which is the
-single source of truth, mints a session epoch at process start, and assigns the single
+single source of truth, mints an epoch at process start, and assigns the single
 authoritative sequence number on every entry. Nothing else — not the page, not an agent —
 may assert state. Agents read projections and receive receipts; the page reads
 projections and receives receipts. A client that believes something the log does not say
 is wrong by construction, which is what kills the round-4 trap where a page reconnect
 republished a pristine board indistinguishable from a genuine reset.
 
-**GUI-D2 — Epoch identifies the process, sequence identifies the position.** A restart
+**GUI-D2 — The session directory is the session's identity; epoch identifies one
+process's tenure over it; sequence identifies the position.** A session is its directory
+— log, images, handoff, terminal result — and outlives any process serving it. A restart
 mints a new epoch on a continuing sequence. Every message in either direction carries the
 epoch. A client presenting a stale epoch is told so — refused on write with an
 `epoch mismatch` receipt naming both epochs, and refused on read with HTTP 409 — and
@@ -42,7 +59,8 @@ the settled set and the thread bodies. Image 2 is image 1 plus per-decision evol
 history — the ordered record of what happened to each decision and why. Projection is a
 pure fold over the log with no clock, no randomness and no I/O, so the same log always
 yields byte-identical images and an image rebuilt from disk alone matches one held in
-memory. **Reverse handoff is image 2.** Agents are given image 2 and never given deltas
+memory. Writing the images to disk is a separate persistence step downstream of the
+fold; only that step performs I/O. **Reverse handoff is image 2.** Agents are given image 2 and never given deltas
 to reconstruct state from.
 
 **GUI-D4 — Image 2 carries a completeness contract, not just a size budget.** The spike's
@@ -136,7 +154,8 @@ backend never answers itself. Answerability is separate from acceptance.
 architectural input.** One process per session is what keeps the resumed-turn discount
 (a 10× cost drop and a 2.7× speedup); a session held open across a long human silence pays
 the cold-start tax again when the cache lapses. Implementations may not spread a session's
-heavy turns across processes.
+heavy turns across concurrent processes; a restart under GUI-D9 hands the whole session to
+a successor process and pays the cold-start tax once, which is expected and allowed.
 
 ## 4. Protocol
 
@@ -153,17 +172,22 @@ thread event carrying no turn.
 naming the reason and stating plainly that the message was not recorded and no agent will
 answer it, with a dismiss control. A counter is not a surface.
 
-**GUI-D18 — The endpoint set.** A state read returning epoch, current sequence and image 1;
-an update read taking a cursor and refusing a stale epoch with 409; reads for image 1 and
-image 2; and one write endpoint taking a batch of events under an epoch and returning one
-receipt per event. The state read is what a page or an agent uses to recover after any
-doubt, which is why a reconnect asserts nothing.
+**GUI-D18 — The endpoint set.** A cheap status check returning epoch and current sequence
+alone — the poll target GUI-D22 mandates, touching neither log nor images; a state read
+returning epoch, current sequence and image 1; an update read taking a cursor and refusing
+a stale epoch with 409; reads for image 1 and image 2; and one write endpoint taking a
+batch of events under an epoch and returning one receipt per event. Beside the board
+endpoints sits a session-control surface for the main-window token — claim, reload
+retention and take-over — which is connection control, not board events, and writes
+nothing into the board record. The state read is what a page or an agent uses to recover
+after any doubt, which is why a reconnect asserts nothing.
 
 **GUI-D19 — The update kinds v1 must carry**, in the priority the live agent gave them:
 
-- A zero-content thinking indicator the backend fires the moment a turn is picked up —
-  the mechanical counterpart of the page's waiting indicator, and the highest-value
-  addition the live session identified.
+- The thinking indicator — the highest-value addition the live session identified. In
+  this architecture it is not a kind an agent sends: the status lane of GUI-D13 fires it
+  mechanically the moment a turn is picked up, and it is named here so no implementer
+  reintroduces it as an agent-authored update.
 - A real add-node taking a question, options and prereqs, minting an open node id rather
   than accepting only pre-baked ones, and echoing the materialised node back so the
   agent can later revise other decisions against it.
@@ -173,8 +197,10 @@ doubt, which is why a reconnect asserts nothing.
   unrelated items.
 - Revise, informational, elicit-alert (with a flag for whether it blocks), settle,
   unsettle and resolve-stale, plus the thread kinds below.
-- The state read of GUI-D18, so an agent can confirm what landed instead of inferring it
-  from receipts that may not arrive.
+
+The live agent's priority list also asked for a way to confirm what landed rather than
+inferring it from receipts; that is the state read of GUI-D18 — an endpoint, not an
+update kind.
 
 **GUI-D20 — Thread events speak the page's shape.** `thread-created` and `thread-turn`
 both carry their content in a `turns[]` array of who/text pairs; `thread-created`
@@ -220,16 +246,23 @@ changes it as follows, and changes nothing else:
   zone that owns one.
 - **One main window per session, enforced by the backend.** The backend mints a session
   token; the first main window claims it and a second main window connecting to the same
-  session is refused with a visible explanation. Pop-out windows are the sanctioned
-  exception and ride the parent's token. Concurrent *different* sessions run as separate
-  backend processes.
+  session is refused with a visible explanation. The claim survives a reload of the
+  claiming window — the token lives in the page's origin storage scoped to the session —
+  so reloading is never a lockout. A genuinely lost claim is recovered by an explicit
+  take-over action on the refusing window: taking over invalidates the previous claim,
+  and a superseded window that reconnects degrades to a visible you-have-been-superseded
+  notice rather than a working board. Pop-out windows are the sanctioned exception and
+  ride the parent's token. Concurrent *different* sessions run as separate backend
+  processes.
 - **The connection indicator splits into three signals**: whether the backend is
   reachable, whether an agent is attached and currently owes a response (the priority
   signal), and the outbox depth of events not yet consumed. A healthy backend with no
   agent must never look identical to a healthy backend with a working one.
 - **Informational messages are as concise as possible and carry a Discuss button** that
   opens a thread seeded from the message.
-- **The notifications window has a mark-all-read control.**
+- **The notifications window has a mark-all-read control.** Notification read-state is
+  presentation state: the page owns it and persists it locally. It is not board state,
+  it does not cross the wire, and the server-authority rule of GUI-D1 does not reach it.
 
 Everything else the round-3 page does — the map beside a single blended column of
 answerable and settled decisions, bidirectional focus sync, the auto-apply taxonomy drawn
@@ -272,7 +305,7 @@ Each item below is deferred, not rejected, with the observation that would pull 
 
 ## 7. Placement
 
-**Proposed, for the implementing work to confirm.** The backend, the projector, the tier
+**Decided.** The backend, the projector, the tier
 drivers and the CLI land as a new uv package under `packages/`, carrying the standard
 per-package quality gates and going on PATH through the installer's CLI package list. The
 UI surface ships inside that package and is served by the backend — it is not a deployed
@@ -340,8 +373,11 @@ Each is mechanically checkable and convertible to a red test.
   all three or none, with a receipt per update stating what was applied and whether it was
   amended.
 - **GUI-A19** A second main window claiming an already-claimed session token is refused
-  with a rendered explanation; a pop-out presenting the parent token is admitted; two
-  backends on different session directories run concurrently without interference.
+  with a rendered explanation; a reload of the claiming window retains the claim; an
+  explicit take-over from a second window succeeds and a reconnecting superseded window
+  renders the superseded notice, not a working board; a pop-out presenting the parent
+  token is admitted; two backends on different session directories run concurrently
+  without interference.
 - **GUI-A20** A page whose epoch is stale recovers current state through the state read
   without human intervention and without asserting any board content of its own, verified
   by reloading the page mid-session in a browser.
@@ -352,9 +388,9 @@ Each is mechanically checkable and convertible to a red test.
   time zone, verified in a browser under a non-UTC `TZ`.
 - **GUI-A23** The connection indicator distinguishes backend-unreachable,
   agent-owes-a-response and outbox-depth as three separate signals, each exercised.
-- **GUI-A24** Killing the projector's output path (an unwritable image file) leaves the log
-  intact and complete, surfaces the failure on the status lane, and does not refuse the
-  next event.
+- **GUI-A24** Killing the image-persistence step's output path (an unwritable image file)
+  leaves the log intact and complete, surfaces the failure on the status lane, and does
+  not refuse the next event; the fold itself performs no I/O to fail on.
 - **GUI-A25** The deployed skills carry a complete admission record and the UI-behaviour
   reference material; the package's own gate and the repository gate both pass on the
   branch that ships them.
@@ -365,12 +401,16 @@ Each is mechanically checkable and convertible to a red test.
   spike measured Sonnet deliberately to keep the bill honest, and every cost figure above
   is at Sonnet weight. V1 makes the model configuration with a Claude default, and the
   first real session should settle which default is right on cost-per-useful-turn.
-- **How `grill-with-ui` hands the backend's address to the human's browser** — the spike
-  used a fixed port on loopback. Port selection, collision behaviour with a second
-  concurrent session, and how the URL reaches the human are unsettled mechanism.
-- **Whether the capture step runs as a heavy-tier turn or as a separate agent.** The
-  terminal result is the main agent's whole return value, and its quality bar is different
-  from a grilling turn's.
+- **How `grill-with-ui` hands the backend's address to the human's browser.** The v1
+  floor is decided and implementable as-is: loopback only, a default port with a
+  per-session override, a backend that takes the next free port when the default is
+  occupied, and `grill-with-ui` printing the resulting URL for the human to open. The
+  open question is only whether something better replaces that floor, not whether v1 has
+  a launch path.
+- **How the capture step is executed** — as a heavy-tier turn or as a separate agent. Its
+  invocation point and its output are decided (GUI-D10); only the executor's shape is
+  open. The terminal result is the main agent's whole return value, and its quality bar
+  is different from a grilling turn's.
 
 ## Continuations
 
@@ -381,12 +421,13 @@ Each is mechanically checkable and convertible to a red test.
   isolation — GUI-D3, GUI-D4, GUI-D5, GUI-A2, GUI-A3, GUI-A4, GUI-A24.
 - Status lane and answerability, including the agent-authored-thread case — GUI-D13,
   GUI-D14, GUI-A10, GUI-A11.
-- Two-tier agent drive with criterion-based `upgrade_me` — GUI-D11, GUI-D12, GUI-D15,
-  GUI-A12.
+- Two-tier agent drive with criterion-based `upgrade_me`, and the agent-facing
+  status-polling pattern — GUI-D11, GUI-D12, GUI-D15, GUI-D22, GUI-A12.
 - Update kinds: add-node with echo, invalidate with rationale, thinking indicator, thread
   shapes and the atomic fold — GUI-D19, GUI-D20, GUI-D21, GUI-A16, GUI-A17, GUI-A18.
-- Page repoint onto the v1 protocol, with the page-derived kind check and the stand-in
-  rule — GUI-A13, GUI-A14, GUI-A15, GUI-A20.
+- Page repoint onto the v1 protocol, with visible rejection surfacing, the page-derived
+  kind check and the stand-in rule — GUI-D17, GUI-A9, GUI-A13, GUI-A14, GUI-A15,
+  GUI-A20.
 - UI mandates: waiting indicator, timestamps, floating thread chrome, labelled options
   with notes, hover-hide-on-click, connection indicator, concise informationals with
   Discuss, mark-all-read — GUI-A21, GUI-A22, GUI-A23.
