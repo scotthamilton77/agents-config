@@ -413,6 +413,8 @@ class AddNodePayload(Payload):
     title: str = Field(min_length=1)
     options: list[OptionPayload] = Field(min_length=2, max_length=3)
     prereqs: list[str] = Field(default_factory=list)
+    target: str | None = Field(default=None, min_length=1)
+    id: str | None = Field(default=None, min_length=1)
 
 
 class TargetedPayload(Payload):
@@ -592,7 +594,9 @@ def mint_targets(payload: Mapping[str, Any], kind: str, seq: int) -> dict[str, A
     """
     minted = dict(payload)
     if kind == "add-node":
-        minted.setdefault("target", minted.get("id") or minted_id(seq))
+        # An explicit null is a request to mint, same as absence -- setdefault
+        # would keep the null and the node would silently never materialise.
+        minted["target"] = minted.get("target") or minted.get("id") or minted_id(seq)
     elif kind == FOLD_KIND:
         minted["updates"] = [
             (

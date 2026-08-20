@@ -781,3 +781,39 @@ def test_a_thread_created_and_a_bare_text_reply_are_both_accepted_and_projected(
         "it is bounded",
     ]
     assert [turn["who"] for turn in thread["turns"]] == ["human", "backend"]
+
+
+def test_an_explicit_null_id_on_add_node_still_mints_a_node(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given an add-node whose target is an explicit null
+    When it is accepted
+    Then a node is minted anyway -- null asks the backend to mint, and the
+    alternative is an accepted receipt materialising nothing, the silent no-op
+    the receipt vocabulary exists to forbid.
+    """
+    receipt = post(client, log.epoch, add_node("null-id", target=None))[0]
+
+    assert receipt["status"] == "accepted"
+    minted = receipt["applied"]["target"]
+    assert minted == "n-1"
+    assert receipt["node"]["id"] == minted
+    assert image1(client)["frontier"] == [minted]
+
+
+def test_a_non_string_add_node_id_is_refused_at_the_envelope(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given an add-node whose target is an integer
+    When it is submitted
+    Then the batch is refused with 422 before anything is appended.
+    """
+    response = client.post(
+        "/events",
+        json={"epoch": log.epoch, "events": [add_node("int-id", target=5)]},
+    )
+
+    assert response.status_code == 422
+    assert log.entries() == []
