@@ -576,6 +576,27 @@ class TestIngest:
         assert code == gate.EXIT_OK
         assert ingested["report"] == REPORT
 
+    def test_a_report_printed_across_lines_beats_the_objects_nested_in_it(
+        self, round_dir, capsys
+    ):
+        """A report shares its opening line with a preamble and is printed indented.
+
+        Every object nested in it opens a line of its own and decodes on its own,
+        so the whole document has to win over the objects inside it.
+        """
+        nested = {"lens": "correctness", "verdict": "clean",
+                  "findings": [{"id": "F1", "severity": "major"}]}
+        answer = authorize(round_dir, capsys)
+        output = write_output(
+            answer,
+            f"[codex] out: {json.dumps(nested, indent=2)}\n[exited with code 0]\n",
+        )
+        code, ingested = run(["ingest", "--out-dir", str(round_dir), "--output", str(output)],
+                             capsys)
+        assert code == gate.EXIT_OK
+        assert ingested["report"] == nested
+        assert ingested["recovery"] == "first-object"
+
     def test_a_parsed_report_records_its_outcome_on_the_claimed_attempt(self, round_dir, capsys):
         answer = authorize(round_dir, capsys)
         output = write_output(answer, json.dumps(REPORT))

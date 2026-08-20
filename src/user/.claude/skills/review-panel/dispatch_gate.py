@@ -76,6 +76,13 @@ FENCED_RE = re.compile(
 # log.
 LINE_OBJECT_RE = re.compile(r"^[ \t]*\{", re.MULTILINE)
 
+# What follows an object that was only ever part of a larger JSON value: the comma
+# before its sibling, or the bracket closing what held it. A pretty-printed report
+# opens a line at every nested object, so this is what tells the report itself from
+# the objects inside it.
+ENCLOSED_NEXT = frozenset(",]}")
+NEXT_NON_SPACE_RE = re.compile(r"\S")
+
 HALT_GUIDANCE = (
     "Every route this lens ran on died in transport. The round is over: abandon every dispatch "
     "not yet made, write the verdict halted with these routes and their errors verbatim in the "
@@ -514,15 +521,25 @@ def _as_object(text: str) -> dict | None:
 
 
 def _first_object_from(body: str, offsets: list[int]) -> dict | None:
-    """The first of these offsets that begins a decodable object, trailing text ignored."""
+    """The first of these offsets that begins a decodable object, trailing text ignored.
+
+    An object followed by a token that continues or closes an enclosing value was
+    never the whole document: it is one of the objects inside it. A report printed
+    across several lines opens a line at every nested object, so without that test
+    a preference for line-opening braces hands back an inner object as the report.
+    """
     decoder = json.JSONDecoder()
     for offset in offsets:
         try:
-            decoded, _ = decoder.raw_decode(body[offset:])
+            decoded, end = decoder.raw_decode(body[offset:])
         except (json.JSONDecodeError, ValueError):
             continue
-        if isinstance(decoded, dict):
-            return decoded
+        if not isinstance(decoded, dict):
+            continue
+        following = NEXT_NON_SPACE_RE.search(body, offset + end)
+        if following is not None and following.group() in ENCLOSED_NEXT:
+            continue
+        return decoded
     return None
 
 
@@ -551,7 +568,7 @@ def parse_report(body: str) -> tuple[dict, str]:
             return document, "fenced-block"
     line_opened = [match.end() - 1 for match in LINE_OBJECT_RE.finditer(body)]
     anywhere = [offset for offset, char in enumerate(body) if char == "{"]
-    decoded = _first_object_from(body, line_opened + anywhere)
+    decoded = _first_object_from(body, list(dict.fromkeys(line_opened + anywhere)))
     if decoded is not None:
         return decoded, "first-object"
     raise Refusal(
