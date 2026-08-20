@@ -108,11 +108,17 @@ uv run dispatch_gate.py ingest --out-dir /tmp/round-1 \
   --output /tmp/round-1/correctness.attempt-1.out
 ```
 
-It walks the tolerance ladder — the whole body as JSON, then a single fenced block, then the first
-object in the body with any trailing text ignored — and prints the report it recovered. Output
+It walks the tolerance ladder — the whole body as JSON, then a single fenced block, then an object
+found in the body with the surrounding text ignored — and prints the report it recovered. Output
 from a dispatch it never authorized is refused rather than read, so a dispatch that went around
 the gate shows up as a hole in the ledger instead of as a lens entry. A claimed path holding no
 file at all is refused as a transport failure, not a reviewer one: the route wrote nothing.
+
+Some transports wrap the reviewer's output in their own harness log lines — a banner before it, an
+exit line after it, and command echoes that may themselves contain braces. **Ingest the claimed
+path exactly as the transport wrote it.** The ladder reads past that wrapper, so hand-stripping it
+first buys nothing and edits the evidence: a body trimmed by hand is no longer what the route
+returned, and the ledger records the trimmed version as the reviewer's.
 
 Past the ladder the output is **unparseable**: the lens has no entry and the round is incomplete
 unless it is re-dispatched with reason `unusable-output`. Tolerance stops there on purpose.

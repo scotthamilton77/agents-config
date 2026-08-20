@@ -70,6 +70,19 @@ FENCED_RE = re.compile(
     r"\A\s*```[A-Za-z0-9_+-]*[ \t]*\r?\n(?P<body>.*?)\r?\n?```\s*\Z", re.DOTALL
 )
 
+# An object opening its own line. A transport that wraps the reviewer's output in
+# harness log lines prints those lines around a document that still starts a line,
+# so a line-opening brace is the likelier report and a mid-line one the likelier
+# log.
+LINE_OBJECT_RE = re.compile(r"^[ \t]*\{", re.MULTILINE)
+
+# What follows an object that was only ever part of a larger JSON value: the comma
+# before its sibling, or the bracket closing what held it. A pretty-printed report
+# opens a line at every nested object, so this is what tells the report itself from
+# the objects inside it.
+ENCLOSED_NEXT = frozenset(",]}")
+NEXT_NON_SPACE_RE = re.compile(r"\S")
+
 HALT_GUIDANCE = (
     "Every route this lens ran on died in transport. The round is over: abandon every dispatch "
     "not yet made, write the verdict halted with these routes and their errors verbatim in the "
@@ -507,14 +520,43 @@ def _as_object(text: str) -> dict | None:
     return value if isinstance(value, dict) else None
 
 
+def _first_object_from(body: str, offsets: list[int]) -> dict | None:
+    """The first of these offsets that begins a decodable object, trailing text ignored.
+
+    An object followed by a token that continues or closes an enclosing value was
+    never the whole document: it is one of the objects inside it. A report printed
+    across several lines opens a line at every nested object, so without that test
+    a preference for line-opening braces hands back an inner object as the report.
+    """
+    decoder = json.JSONDecoder()
+    for offset in offsets:
+        try:
+            decoded, end = decoder.raw_decode(body[offset:])
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(decoded, dict):
+            continue
+        following = NEXT_NON_SPACE_RE.search(body, offset + end)
+        if following is not None and following.group() in ENCLOSED_NEXT:
+            continue
+        return decoded
+    return None
+
+
 def parse_report(body: str) -> tuple[dict, str]:
     """The tolerance ladder, in order; the first step that yields an object wins.
 
     Models violate an exact-output contract in predictable, harmless ways: a
-    fence around the object, a sentence of preamble in front of it. Tolerance
-    stops at the end of this ladder on purpose — reconstructing a report from
-    prose makes the harvester the reviewer, and nothing downstream can tell the
-    difference.
+    fence around the object, a sentence of preamble in front of it. A transport
+    can violate it too, wrapping the reviewer's output in its own harness log
+    lines — so the last rung considers every brace in the body, not just the
+    first one, which a log line mentioning a brace would otherwise own. Objects
+    opening a line are tried before objects inside one, because that is the shape
+    of an emitted document rather than of a logged command.
+
+    Tolerance stops at the end of this ladder on purpose — reconstructing a
+    report from prose makes the harvester the reviewer, and nothing downstream
+    can tell the difference.
     """
     document = _as_object(body)
     if document is not None:
@@ -524,18 +566,15 @@ def parse_report(body: str) -> tuple[dict, str]:
         document = _as_object(fenced.group("body"))
         if document is not None:
             return document, "fenced-block"
-    start = body.find("{")
-    if start != -1:
-        try:
-            decoded, _ = json.JSONDecoder().raw_decode(body[start:])
-        except (json.JSONDecodeError, ValueError):
-            decoded = None
-        if isinstance(decoded, dict):
-            return decoded, "first-object"
+    line_opened = [match.end() - 1 for match in LINE_OBJECT_RE.finditer(body)]
+    anywhere = [offset for offset, char in enumerate(body) if char == "{"]
+    decoded = _first_object_from(body, list(dict.fromkeys(line_opened + anywhere)))
+    if decoded is not None:
+        return decoded, "first-object"
     raise Refusal(
         "unparseable-output",
         "the body is not a lens report: it is not JSON, not a single fenced object, and holds no "
-        "object to decode from its first brace. The lens has no entry and the round is incomplete "
+        "decodable object at any brace in it. The lens has no entry and the round is incomplete "
         "unless it is re-dispatched; a report assembled from the prose by hand is not a review",
     )
 
