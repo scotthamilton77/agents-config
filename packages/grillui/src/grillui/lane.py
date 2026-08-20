@@ -124,25 +124,29 @@ class Lane:
         request path does.
         """
         driver = self.driver
+        receipts: list[Receipt] = []
+        turns: list[EventSubmission] = []
         with self.log.appending():
-            receipts = self.log.submit(batch, epoch)
             if driver is None:
-                return receipts, []
-            turns = [
-                event
-                for event, receipt in zip(batch, receipts, strict=True)
-                if receipt.status == "accepted" and is_answerable(event)
-            ]
-            for turn in turns:
+                return self.log.submit(batch, epoch), []
+            # One event at a time under the one lock, so each turn's lane
+            # entries land adjacent to the turn they report -- a second turn in
+            # the same batch never wedges between a turn and its `accepted`.
+            for event in batch:
+                receipt = self.log.submit([event], epoch)[0]
+                receipts.append(receipt)
+                if receipt.status != "accepted" or not is_answerable(event):
+                    continue
+                turns.append(event)
                 self.log.emit_status(
                     STATUS_PHASE_ACCEPTED,
-                    f"{turn.kind} from the human accepted on channel {turn.channel!r}",
-                    turn.channel,
+                    f"{event.kind} from the human accepted on channel {event.channel!r}",
+                    event.channel,
                 )
                 self.log.emit_status(
                     STATUS_PHASE_COMPOSING,
                     f"the {driver.tier!r} tier is composing a reply",
-                    turn.channel,
+                    event.channel,
                     tier=driver.tier,
                 )
         return receipts, [self._schedule(driver, turn.channel) for turn in turns]

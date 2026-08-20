@@ -349,3 +349,51 @@ def _post_answer(client: TestClient, epoch: str, node: str) -> list[dict[str, An
     assert response.status_code == 200
     receipts: list[dict[str, Any]] = response.json()
     return receipts
+
+
+def test_each_turns_lane_entries_land_adjacent_to_the_turn_they_report(
+    log: SessionLog, driver: SpyDriver
+) -> None:
+    """
+    Given one batch carrying two human turns on two channels
+    When the lane accepts it
+    Then each turn is immediately followed by its own accepted and composing,
+    rather than the second turn wedging between the first and its lane entries.
+    """
+    client = driven(log, driver)
+    client.post(
+        "/events",
+        json={
+            "epoch": log.epoch,
+            "events": [
+                event(
+                    "thread-created",
+                    actor="human",
+                    channel="t1",
+                    key="adj-1",
+                    kind="side",
+                    title="one",
+                    turns=[{"who": "human", "text": "one"}],
+                ),
+                event(
+                    "thread-created",
+                    actor="human",
+                    channel="t2",
+                    key="adj-2",
+                    kind="side",
+                    title="two",
+                    turns=[{"who": "human", "text": "two"}],
+                ),
+            ],
+        },
+    )
+
+    shape = [(entry.kind, entry.channel) for entry in log.entries()]
+    assert shape == [
+        ("thread-created", "t1"),
+        (STATUS_KIND, "t1"),
+        (STATUS_KIND, "t1"),
+        ("thread-created", "t2"),
+        (STATUS_KIND, "t2"),
+        (STATUS_KIND, "t2"),
+    ]
