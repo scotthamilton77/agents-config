@@ -800,36 +800,36 @@ Each criterion is mechanically checkable and convertible to a red test.
 ## Continuations
 
 - feat: Backend core: event log, epoch and sequence assignment, uniform receipts, idempotency,
-  and the state, update and status endpoints — GUI-D1, GUI-D2, GUI-D16, GUI-D18, GUI-A6,
+  and the state, update and status endpoints — AC: GUI-D1, GUI-D2, GUI-D16, GUI-D18, GUI-A6,
   GUI-A7, GUI-A8, GUI-A30.
 - feat: Projector and context images, with the completeness contract and the append/project
-  isolation — GUI-D3, GUI-D4, GUI-D5, GUI-A1, GUI-A2, GUI-A3, GUI-A24.
-- feat: Status lane and answerability, including the agent-authored-thread case — GUI-D13,
+  isolation — AC: GUI-D3, GUI-D4, GUI-D5, GUI-A1, GUI-A2, GUI-A3, GUI-A24.
+- feat: Status lane and answerability, including the agent-authored-thread case — AC: GUI-D13,
   GUI-D14, GUI-A10, GUI-A11.
 - feat: Two-tier agent drive: the fast tier's facilitation mandate, criterion-based escalation,
-  the grill-master's single-process resume chain, and orchestrator-scheduled turns —
+  the grill-master's single-process resume chain, and orchestrator-scheduled turns — AC:
   GUI-D11, GUI-D12, GUI-D15, GUI-D22, GUI-A12, GUI-A42, GUI-A43, GUI-A53, GUI-A54.
 - feat: Update kinds: add-node with echo, invalidate with rationale, the thinking indicator,
-  settle/unsettle/resolve-stale/elicit-alert, thread shapes and the atomic fold — GUI-D19,
+  settle/unsettle/resolve-stale/elicit-alert, thread shapes and the atomic fold — AC: GUI-D19,
   GUI-D20, GUI-D21, GUI-A16, GUI-A17, GUI-A18, GUI-A31.
 - feat: Page repoint onto the v1 protocol, with visible rejection surfacing, the page-derived
-  kind check, the stand-in rule and the carried-forward reference contract — GUI-D17,
+  kind check, the stand-in rule and the carried-forward reference contract — AC: GUI-D17,
   GUI-U14, GUI-A9, GUI-A13, GUI-A14, GUI-A20, GUI-A49.
 - feat: UI mandates: waiting indicator, timestamps, concise responses, floating thread chrome,
   labelled options with notes, hover-hide-on-click, connection indicator, concise
-  informationals with Discuss, mark-all-read, light theme — GUI-U1, GUI-U2, GUI-U3,
+  informationals with Discuss, mark-all-read, light theme — AC: GUI-U1, GUI-U2, GUI-U3,
   GUI-U4, GUI-U5, GUI-U6, GUI-U8, GUI-U9, GUI-U10, GUI-U13, GUI-A21, GUI-A22, GUI-A23,
   GUI-A44, GUI-A45, GUI-A46, GUI-A47, GUI-A48, GUI-A50.
-- feat: Single-main-window enforcement and concurrent sessions — GUI-U7, GUI-A19.
-- feat: Handoff assembly against its schema, session lifecycle and restart-resume — GUI-D6,
+- feat: Single-main-window enforcement and concurrent sessions — AC: GUI-U7, GUI-A19.
+- feat: Handoff assembly against its schema, session lifecycle and restart-resume — AC: GUI-D6,
   GUI-D7, GUI-D9, GUI-D10, GUI-A5, GUI-A26, GUI-A27, GUI-A28, GUI-A52.
 - feat: The capture skill, `grill-with-ui`, the launch path, and the terminal result through the
-  admission gate — GUI-D8, GUI-D23, GUI-D28, GUI-A25, GUI-A29, GUI-A32, GUI-A51.
-- feat: Thread agents with their own contexts and the sole-author rule for map mutations —
+  admission gate — AC: GUI-D8, GUI-D23, GUI-D28, GUI-A25, GUI-A29, GUI-A32, GUI-A51.
+- feat: Thread agents with their own contexts and the sole-author rule for map mutations — AC:
   GUI-D24, GUI-D25, GUI-A36, GUI-A37.
-- feat: Pending-queue consistency, supersede handling and the map doctor — GUI-D26, GUI-U12,
+- feat: Pending-queue consistency, supersede handling and the map doctor — AC: GUI-D26, GUI-U12,
   GUI-A38, GUI-A39, GUI-A40.
-- feat: The channel state model and its diagnostic surface — GUI-D27, GUI-A41.
-- feat: The transfer-to-expert control across the map and thread channels — GUI-U11, GUI-A33,
+- feat: The channel state model and its diagnostic surface — AC: GUI-D27, GUI-A41.
+- feat: The transfer-to-expert control across the map and thread channels — AC: GUI-U11, GUI-A33,
   GUI-A34, GUI-A35.
-- chore: Packaging: the uv package, its gates, and the CLI on PATH — GUI-P1.
+- chore: Packaging: the uv package, its gates, and the CLI on PATH — AC: GUI-P1.
