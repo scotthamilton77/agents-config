@@ -30,7 +30,15 @@ def _answered_board(client: TestClient, epoch: str) -> None:
     post(
         client,
         epoch,
-        event("add-node", key="k-n2", target="n2", short="Format", prereqs=[SEED_NODE]),
+        event(
+            "add-node",
+            key="k-n2",
+            target="n2",
+            short="Format",
+            title="Which wire format?",
+            prereqs=[SEED_NODE],
+            options=[{"id": "a", "text": "JSON lines"}, {"id": "b", "text": "Protobuf"}],
+        ),
         event(
             "answer",
             actor="human",

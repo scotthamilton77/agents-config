@@ -9,16 +9,41 @@ never a recovery source.
 The fold tolerates any entry the appender accepted. An entry whose payload it
 cannot read contributes what it can and no more, because a projector that raises
 on an accepted entry takes the session down with it.
+
+**What each update kind does to a decision.**
+
+| kind            | effect                                                        |
+|-----------------|---------------------------------------------------------------|
+| `add-node`      | the node enters the board `open`                               |
+| `revise`        | supplied fields replace; omitted ones and the status stand     |
+| `invalidate`    | status `invalidated`, carrying the rationale it arrived with   |
+| `answer`/`settle` | the answer is recorded and the status is `settled`           |
+| `unsettle`      | back to `open`, its answer dropped, its dependents `stale`     |
+| `resolve-stale` | out of `stale`: `settled` if an answer survived, else `open`   |
+| `elicit-alert`  | the target's lock becomes this alert's blocking flag           |
+| `informational` | nothing on the board; the human is told                        |
+| `fold`          | its sub-updates, in order, all of them                         |
+
+Two of those rules are this projector's to state rather than the protocol's.
+*Dependent staleness*: unsettling a decision makes every settled decision that
+reaches it through `prereqs` stale, transitively, because an answer resting on a
+withdrawn answer is exactly as unsupported at one remove as at none. *Fog*: an
+open decision whose `fogUntil` is unsettled reads as `fogged`, so the status is
+derived from the board rather than asserted by anyone.
+
+`informational` and `elicit-alert` are the queue of what the human has not dealt
+with yet, which is the `pending` array. Nothing here takes an item off that
+queue, because nothing yet applies or supersedes one: a queue that emptied
+itself on a rule nobody wrote would lose notices the human never saw.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import cast
+from dataclasses import dataclass, field
 
 from grillui.schemas import (
-    ACTORS,
-    Actor,
+    FOLD_KIND,
     Answer,
     Decision,
     HistoryEntry,
@@ -26,55 +51,109 @@ from grillui.schemas import (
     Image2,
     LogEntry,
     Option,
+    PendingUpdate,
     SettledEntry,
     Thread,
-    ThreadTurn,
+    read_turns,
 )
+
+_NOTICE_KINDS = frozenset({"informational", "elicit-alert"})
+_REVISABLE_TEXT = ("short", "title", "body")
+
+
+@dataclass
+class _Board:
+    """The fold's running state, keyed the way the images are read."""
+
+    decisions: dict[str, Decision] = field(default_factory=dict)
+    threads: dict[str, Thread] = field(default_factory=dict)
+    history: dict[str, list[HistoryEntry]] = field(default_factory=dict)
+    pending: list[PendingUpdate] = field(default_factory=list)
+
+    def node(self, payload: Mapping[str, object]) -> Decision | None:
+        target = payload.get("target")
+        return self.decisions.get(target) if isinstance(target, str) else None
 
 
 def fold(epoch: str, entries: Sequence[LogEntry]) -> Image2:
     """Fold the log into image 2. Image 1 is this, minus history."""
-    decisions: dict[str, Decision] = {}
-    threads: dict[str, Thread] = {}
-    history: dict[str, list[HistoryEntry]] = {}
+    board = _Board()
     seq = 0
 
     for entry in entries:
         seq = entry.seq
-        if entry.kind == "add-node":
-            _add_node(decisions, entry)
-        elif entry.kind == "thread-created":
-            _create_thread(threads, entry)
-        elif entry.kind == "thread-turn":
-            _append_turns(threads, entry)
-        elif entry.kind in {"answer", "settle"}:
-            _settle(decisions, entry)
-        _record_history(history, decisions, entry)
+        if entry.kind == FOLD_KIND:
+            # The gesture is one entry, so there is no state in which half of it
+            # landed: either the log has it and every sub-update applies, or it
+            # does not and none of them does.
+            for index, update in enumerate(_updates(entry)):
+                key = f"{entry.idempotency_key}#{index}"
+                _apply(board, entry, str(update.get("kind")), update, key)
+        else:
+            _apply(board, entry, entry.kind, entry.payload, entry.idempotency_key)
 
     settled = [
         SettledEntry(id=node.id, answer=_answer_text(node))
-        for node in decisions.values()
+        for node in board.decisions.values()
         if node.status == "settled"
     ]
     settled_ids = {item.id for item in settled}
+    for node in board.decisions.values():
+        if node.status == "open" and node.fog_until and node.fog_until not in settled_ids:
+            node.status = "fogged"
     frontier = [
         node.id
-        for node in decisions.values()
-        if node.status == "open" and all(p in settled_ids for p in node.prereqs)
+        for node in board.decisions.values()
+        if node.status == "open" and not node.locked and all(p in settled_ids for p in node.prereqs)
     ]
 
     return Image2(
         epoch=epoch,
         seq=seq,
-        decisions=list(decisions.values()),
+        decisions=list(board.decisions.values()),
         frontier=frontier,
         settled=settled,
-        threads=list(threads.values()),
-        # ponytail: the pending queue is empty until the update-kinds work lands
-        # the accept/apply path that fills it.
-        pending=[],
-        history=history,
+        threads=list(board.threads.values()),
+        pending=board.pending,
+        history=board.history,
     )
+
+
+def _apply(
+    board: _Board, entry: LogEntry, kind: str, payload: Mapping[str, object], key: str
+) -> None:
+    """One update against the board, whether it arrived alone or inside a fold.
+
+    A fold's sub-updates share their gesture's sequence, timestamp and actor,
+    because that is the truth of them: they landed together, in one entry, on
+    one human gesture.
+    """
+    if kind == "add-node":
+        _add_node(board, payload)
+    elif kind == "revise":
+        _revise(board, payload)
+    elif kind == "invalidate":
+        _invalidate(board, payload)
+    elif kind in {"answer", "settle"}:
+        _settle(board, payload)
+    elif kind == "unsettle":
+        _unsettle(board, payload)
+    elif kind == "resolve-stale":
+        _resolve_stale(board, payload)
+    elif kind in _NOTICE_KINDS:
+        _notice(board, entry, kind, payload, key)
+    elif kind == "thread-created":
+        _create_thread(board, entry)
+    elif kind == "thread-turn":
+        _append_turns(board, entry)
+    _record_history(board, entry, kind, payload)
+
+
+def _updates(entry: LogEntry) -> list[Mapping[str, object]]:
+    raw = entry.payload.get("updates")
+    if not isinstance(raw, list):
+        return []
+    return [update for update in raw if isinstance(update, Mapping)]
 
 
 def to_image1(image: Image2) -> Image1:
@@ -82,101 +161,160 @@ def to_image1(image: Image2) -> Image1:
     return Image1(**image.model_dump(exclude={"history"}))
 
 
-def _add_node(decisions: dict[str, Decision], entry: LogEntry) -> None:
-    node_id = entry.payload.get("target") or entry.payload.get("id")
-    if not isinstance(node_id, str):
-        return
-    decisions[node_id] = Decision(
+def node_from_payload(payload: Mapping[str, object], node_id: str) -> Decision:
+    """The node an add-node payload materialises into.
+
+    Public because the receipt echoes exactly this node back to the agent that
+    asked for it, and a second reader would be a second answer to what the
+    board now holds.
+    """
+    return Decision(
         id=node_id,
-        short=_text(entry.payload, "short"),
-        title=_text(entry.payload, "title"),
-        body=_text(entry.payload, "body"),
-        prereqs=_strings(entry.payload.get("prereqs")),
-        options=_options(entry.payload.get("options")),
+        short=_text(payload, "short"),
+        title=_text(payload, "title"),
+        body=_text(payload, "body"),
+        prereqs=_strings(payload.get("prereqs")),
+        options=_options(payload.get("options")),
+        fogUntil=_or_none(payload.get("fogUntil")),
+        fogTitle=_or_none(payload.get("fogTitle")),
     )
 
 
-def _settle(decisions: dict[str, Decision], entry: LogEntry) -> None:
-    node_id = entry.payload.get("target")
-    node = decisions.get(node_id) if isinstance(node_id, str) else None
+def _add_node(board: _Board, payload: Mapping[str, object]) -> None:
+    node_id = payload.get("target") or payload.get("id")
+    if not isinstance(node_id, str):
+        return
+    board.decisions[node_id] = node_from_payload(payload, node_id)
+
+
+def _revise(board: _Board, payload: Mapping[str, object]) -> None:
+    """Supplied fields replace; omitted ones stand. A revise says what changed,
+    so reading an absent field as an empty one would erase the question."""
+    node = board.node(payload)
     if node is None:
         return
-    raw = entry.payload.get("answer")
+    for name in _REVISABLE_TEXT:
+        value = payload.get(name)
+        if isinstance(value, str):
+            setattr(node, name, value)
+    if isinstance(payload.get("prereqs"), list):
+        node.prereqs = _strings(payload.get("prereqs"))
+    if isinstance(payload.get("options"), list):
+        node.options = _options(payload.get("options"))
+
+
+def _invalidate(board: _Board, payload: Mapping[str, object]) -> None:
+    node = board.node(payload)
+    if node is None:
+        return
+    node.status = "invalidated"
+    node.rationale = _text(payload, "why")
+
+
+def _settle(board: _Board, payload: Mapping[str, object]) -> None:
+    node = board.node(payload)
+    if node is None:
+        return
+    raw = payload.get("answer")
     if not isinstance(raw, Mapping):
         return
     node.answer = Answer(option=_or_none(raw.get("option")), text=_or_none(raw.get("text")))
     node.status = "settled"
+    node.rationale = _text(payload, "why") or None
 
 
-def _create_thread(threads: dict[str, Thread], entry: LogEntry) -> None:
+def _unsettle(board: _Board, payload: Mapping[str, object]) -> None:
+    """A settled decision returns to the frontier, and everything settled on top
+    of it goes stale -- transitively, because an answer resting on a withdrawn
+    answer is exactly as unsupported at one remove as at none."""
+    node = board.node(payload)
+    if node is None or node.status != "settled":
+        return
+    node.status = "open"
+    node.answer = None
+    node.rationale = _text(payload, "why") or None
+    unsupported = [node.id]
+    while unsupported:
+        withdrawn = unsupported.pop()
+        for dependent in board.decisions.values():
+            if withdrawn in dependent.prereqs and dependent.status == "settled":
+                dependent.status = "stale"
+                unsupported.append(dependent.id)
+
+
+def _resolve_stale(board: _Board, payload: Mapping[str, object]) -> None:
+    """Out of stale and back to what the decision actually is: still answered if
+    its answer survived the round trip, open if it did not."""
+    node = board.node(payload)
+    if node is None or node.status != "stale":
+        return
+    node.status = "settled" if node.answer is not None else "open"
+    node.rationale = _text(payload, "why") or None
+
+
+def _notice(
+    board: _Board, entry: LogEntry, kind: str, payload: Mapping[str, object], key: str
+) -> None:
+    """A notice addressed to the human joins the pending queue; an alert that
+    declares itself blocking also locks the decision it is about, so nobody
+    answers a question the agent has just said is in question."""
+    if kind == "elicit-alert":
+        node = board.node(payload)
+        if node is not None:
+            node.locked = payload.get("blocking") is True
+    board.pending.append(
+        PendingUpdate(
+            id=key,
+            target=_or_none(payload.get("target")),
+            kind=kind,
+            superseded=False,
+            authored_at=entry.seq,
+        )
+    )
+
+
+def _create_thread(board: _Board, entry: LogEntry) -> None:
     thread_id = _thread_id(entry)
-    threads[thread_id] = Thread(
+    board.threads[thread_id] = Thread(
         id=thread_id,
         decision=_or_none(entry.payload.get("decision")),
         kind=_text(entry.payload, "kind"),
         title=_text(entry.payload, "title"),
         requires_action=entry.payload.get("requires_action") is True,
-        turns=_turns(entry),
+        turns=read_turns(entry.payload, entry.actor, entry.timestamp),
     )
 
 
-def _append_turns(threads: dict[str, Thread], entry: LogEntry) -> None:
+def _append_turns(board: _Board, entry: LogEntry) -> None:
     thread_id = _thread_id(entry)
-    thread = threads.get(thread_id)
+    thread = board.threads.get(thread_id)
     if thread is None:
         thread = Thread(id=thread_id)
-        threads[thread_id] = thread
-    thread.turns = [*thread.turns, *_turns(entry)]
-
-
-def _turns(entry: LogEntry) -> list[ThreadTurn]:
-    """One reader for both shapes the protocol carries: the page's `turns[]`
-    array of who/text pairs, and a backend-authored bare-text reply."""
-    raw = entry.payload.get("turns")
-    if isinstance(raw, list):
-        return [
-            ThreadTurn(
-                who=_who(turn.get("who"), entry.actor),
-                text=str(turn.get("text", "")),
-                timestamp=str(turn.get("timestamp", entry.timestamp)),
-            )
-            for turn in raw
-            if isinstance(turn, Mapping) and turn.get("text")
-        ]
-    text = entry.payload.get("text")
-    if isinstance(text, str) and text:
-        return [ThreadTurn(who=entry.actor, text=text, timestamp=entry.timestamp)]
-    return []
+        board.threads[thread_id] = thread
+    thread.turns = [*thread.turns, *read_turns(entry.payload, entry.actor, entry.timestamp)]
 
 
 def _record_history(
-    history: dict[str, list[HistoryEntry]],
-    decisions: Mapping[str, Decision],
-    entry: LogEntry,
+    board: _Board, entry: LogEntry, kind: str, payload: Mapping[str, object]
 ) -> None:
     """History is keyed by decision id, so an entry naming a node the board
     does not hold contributes none: image 2 crosses whole, and a phantom key
-    is an invitation to reason about a decision nobody can answer."""
-    node_id = entry.payload.get("target")
-    if not isinstance(node_id, str) or node_id not in decisions:
+    is an invitation to reason about a decision nobody can answer.
+
+    `why` is the rationale the causing event carried, which is what makes the
+    record readable as a reason rather than as a diff."""
+    node_id = payload.get("target")
+    if not isinstance(node_id, str) or node_id not in board.decisions:
         return
-    history.setdefault(node_id, []).append(
+    board.history.setdefault(node_id, []).append(
         HistoryEntry(
             seq=entry.seq,
             timestamp=entry.timestamp,
-            kind=entry.kind,
+            kind=kind,
             actor=entry.actor,
-            why=_text(entry.payload, "why"),
+            why=_text(payload, "why"),
         )
     )
-
-
-def _who(raw: object, fallback: Actor) -> Actor:
-    """The appender judges a thread event on whether it says anything, never on
-    who it claims said it, so an unknown attribution is already durable by the
-    time the fold sees it. It falls back to the entry's own actor rather than
-    raising over something that already has a receipt."""
-    return cast("Actor", raw) if isinstance(raw, str) and raw in ACTORS else fallback
 
 
 def _thread_id(entry: LogEntry) -> str:

@@ -21,8 +21,13 @@ grillui serve ./sessions/my-session --port 8765
 
 Seven modules, and the separation between them is load-bearing:
 
-- `schemas.py` — the wire, log and image shapes, plus the closed vocabulary of
-  the seven reasons a write can be refused for.
+- `schemas.py` — the wire, log and image shapes, the per-kind payload shapes,
+  and the closed vocabulary of the seven reasons a write can be refused for.
+  That vocabulary is what decides where a malformed payload lands: a fault one
+  of the seven names comes back as a typed receipt, and a fault none of them
+  names — an add-node with one option, an invalidate with no rationale — is
+  refused at the envelope with a 422, for the batch whole and before anything is
+  appended.
 - `log.py` — the appender. It assigns the sequence, writes durably before
   anything else can observe the entry, and answers every write with a typed
   receipt: `accepted` with the sequence assigned, `duplicate` naming where the
@@ -31,7 +36,9 @@ Seven modules, and the separation between them is load-bearing:
 - `projector.py` — a pure fold over the log into the two context images: no
   clock, no randomness, no I/O. The same log therefore always yields
   byte-identical images, and an image rebuilt from disk matches one held in
-  memory.
+  memory. It is also where each update kind's meaning lives — what a revise, an
+  invalidate, an unsettle or a blocking alert does to a decision's status — and
+  the module docstring is the table.
 - `persistence.py` — the only image I/O there is, downstream of the fold: it
   refreshes both image files after an accepted batch. The files are derived
   caches, never a recovery source, so a failure here surfaces as an error on
@@ -55,10 +62,21 @@ Seven modules, and the separation between them is load-bearing:
   takes a batch under one epoch and returns one receipt per event in
   submission order, and returns them without waiting on the turn it scheduled.
 
+The update kinds are complete. An add-node mints its node id from the sequence
+it lands at — deterministic, because the receipt echoes the node the fold will
+later materialise, and two readers of one node is how a receipt and a board come
+to disagree. An invalidate carries its own rationale onto the decision it
+blocks. A `fold` is one gesture carrying an ordered set of sub-updates, applied
+all of them or none: the whole gesture is a single log entry, so there is no
+state in which half of it landed, and its receipt says what became of each
+sub-update — applied, refused with its own reason, or vetoed by a refused
+sibling.
+
 Not built yet: the fast and heavy tier drivers behind the `TurnDriver` seam
 (`create_app` takes one and has none by default, so no reply is promised until a
 tier is configured), escalation, thread projections, handoff parsing, session
-control, per-kind payload semantics, and the UI itself.
+control, superseding or clearing anything from the pending queue, and the UI
+itself.
 
 ## Development
 
