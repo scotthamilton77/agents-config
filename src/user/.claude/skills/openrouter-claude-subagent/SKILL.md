@@ -112,8 +112,8 @@ Use the user's level if they named one. `max` only on an explicit request —
 it is the most expensive tier.
 
 Not every model accepts every level. `references/model-routing.md` lists the
-levels each one takes — pick from that list, since three of the listed models
-accept no level at all, two of those cannot be capped even in principle, and
+levels each one takes — pick from that list, since two of the listed models
+accept no level at all, one of those cannot be capped even in principle, and
 others are missing the middle of the range. Trust the recorded value rather
 than re-verifying at dispatch.
 
@@ -122,7 +122,7 @@ than re-verifying at dispatch.
 ```bash
 # Read-only research on a cheap model — read-only tier, no confirmation needed
 node "${CLAUDE_SKILL_DIR}/scripts/run.js" \
-  --model "google/gemini-3.1-flash-lite" \
+  --model "google/gemini-3.5-flash-lite" \
   --effort low \
   --permission-mode dontAsk \
   --allowedTools "Read" "Grep" "Glob" \
