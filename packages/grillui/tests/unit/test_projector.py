@@ -175,6 +175,87 @@ def test_image_one_is_image_two_without_its_history() -> None:
     assert image2.history["n1"][0].kind == "add-node"
 
 
+def test_image_two_carries_per_decision_history_and_image_one_does_not() -> None:
+    """
+    Given a log in which one decision is added, revised and then answered
+    When both images are folded from it
+    Then image 2 carries that decision's ordered history with the rationale
+         each event gave, image 1 carries no history at all, and each image
+         validates against its own schema.
+
+    The history is what makes image 2 the reverse handoff: an agent
+    reconstituted from it can see why the board reached its current shape, not
+    only what shape that is. Folding it from the log is the whole claim --
+    history asserted anywhere else would be a second source of truth.
+    """
+    entries = [
+        NODE,
+        entry(2, "revise", target="n1", why="the option set was too narrow"),
+        entry(
+            3,
+            "answer",
+            actor="human",
+            target="n1",
+            answer={"option": "a", "text": "log it"},
+            why="the audit trail is the point",
+        ),
+    ]
+
+    image2 = fold(EPOCH, entries)
+    image1 = to_image1(image2)
+
+    Image2.model_validate(image2.model_dump())
+    Image1.model_validate(image1.model_dump())
+    assert "history" not in image1.model_dump()
+    assert [(item.seq, item.kind, item.actor) for item in image2.history["n1"]] == [
+        (1, "add-node", "grill-master"),
+        (2, "revise", "grill-master"),
+        (3, "answer", "human"),
+    ]
+    assert [item.why for item in image2.history["n1"]][1:] == [
+        "the option set was too narrow",
+        "the audit trail is the point",
+    ]
+
+
+def test_a_turn_naming_an_actor_the_protocol_has_no_name_for_is_attributed_to_the_entry() -> None:
+    """
+    Given a thread turn whose `who` is not one of the protocol's actors
+    When the log is folded
+    Then the turn survives, attributed to the entry's own actor.
+
+    The appender judges a thread event on whether it says anything, not on who
+    it claims said it, so this entry is accepted and durable. A fold that
+    raised on it would take the session down over an entry that already has a
+    receipt -- the projector must tolerate any log the appender accepted.
+    """
+    entries = [
+        entry(
+            1, "thread-turn", actor="human", channel="t1", turns=[{"who": "martian", "text": "?"}]
+        )
+    ]
+
+    thread = fold(EPOCH, entries).threads[0]
+
+    assert [turn.who for turn in thread.turns] == ["human"]
+    assert [turn.text for turn in thread.turns] == ["?"]
+
+
+def test_history_is_keyed_only_by_decisions_the_board_actually_has() -> None:
+    """
+    Given an entry targeting a node id no add-node ever minted
+    When the log is folded
+    Then history carries the real decision and no key for the phantom one.
+
+    History is keyed by decision id, and image 2 crosses to the grill-master
+    whole. A key naming a decision the board does not contain is an invitation
+    to reason about a node nobody can answer.
+    """
+    entries = [NODE, entry(2, "answer", actor="human", target="ghost", answer={"text": "x"})]
+
+    assert set(fold(EPOCH, entries).history) == {"n1"}
+
+
 def test_requires_action_is_true_only_for_a_real_boolean() -> None:
     """
     Given a thread-created payload carrying the string "false"

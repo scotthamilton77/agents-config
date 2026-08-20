@@ -14,8 +14,11 @@ on an accepted entry takes the session down with it.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import cast
 
 from grillui.schemas import (
+    ACTORS,
+    Actor,
     Answer,
     Decision,
     HistoryEntry,
@@ -46,7 +49,7 @@ def fold(epoch: str, entries: Sequence[LogEntry]) -> Image2:
             _append_turns(threads, entry)
         elif entry.kind in {"answer", "settle"}:
             _settle(decisions, entry)
-        _record_history(history, entry)
+        _record_history(history, decisions, entry)
 
     settled = [
         SettledEntry(id=node.id, answer=_answer_text(node))
@@ -133,7 +136,7 @@ def _turns(entry: LogEntry) -> list[ThreadTurn]:
     if isinstance(raw, list):
         return [
             ThreadTurn(
-                who=turn.get("who", entry.actor),
+                who=_who(turn.get("who"), entry.actor),
                 text=str(turn.get("text", "")),
                 timestamp=str(turn.get("timestamp", entry.timestamp)),
             )
@@ -146,9 +149,16 @@ def _turns(entry: LogEntry) -> list[ThreadTurn]:
     return []
 
 
-def _record_history(history: dict[str, list[HistoryEntry]], entry: LogEntry) -> None:
+def _record_history(
+    history: dict[str, list[HistoryEntry]],
+    decisions: Mapping[str, Decision],
+    entry: LogEntry,
+) -> None:
+    """History is keyed by decision id, so an entry naming a node the board
+    does not hold contributes none: image 2 crosses whole, and a phantom key
+    is an invitation to reason about a decision nobody can answer."""
     node_id = entry.payload.get("target")
-    if not isinstance(node_id, str):
+    if not isinstance(node_id, str) or node_id not in decisions:
         return
     history.setdefault(node_id, []).append(
         HistoryEntry(
@@ -159,6 +169,14 @@ def _record_history(history: dict[str, list[HistoryEntry]], entry: LogEntry) -> 
             why=_text(entry.payload, "why"),
         )
     )
+
+
+def _who(raw: object, fallback: Actor) -> Actor:
+    """The appender judges a thread event on whether it says anything, never on
+    who it claims said it, so an unknown attribution is already durable by the
+    time the fold sees it. It falls back to the entry's own actor rather than
+    raising over something that already has a receipt."""
+    return cast("Actor", raw) if raw in ACTORS else fallback
 
 
 def _thread_id(entry: LogEntry) -> str:
