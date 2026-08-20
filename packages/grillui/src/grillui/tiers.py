@@ -55,6 +55,13 @@ DEFAULT_API_BASE = "https://openrouter.ai/api/v1"
 CLAUDE_CLI = "claude"
 
 
+class UnknownTierError(ValueError):
+    """A tier name outside the two this configuration defines."""
+
+    def __init__(self, tier: str) -> None:
+        super().__init__(f"unknown tier: {tier!r}")
+
+
 @dataclass(frozen=True)
 class TierConfig:
     """Which model each tier is.
@@ -81,7 +88,13 @@ class TierConfig:
         )
 
     def model_for(self, tier: str) -> str:
-        return self.fast_model if tier == FAST_TIER else self.heavy_model
+        if tier == FAST_TIER:
+            return self.fast_model
+        if tier == HEAVY_TIER:
+            return self.heavy_model
+        # A tier this configuration has never heard of must not be silently
+        # billed to -- and attributed as -- the heavy model.
+        raise UnknownTierError(tier)
 
 
 NO_MANUFACTURE_RULE = (

@@ -200,8 +200,13 @@ def read_cli_reply(printed: str) -> tuple[str, str | None]:
         text = document["result"]
     except (ValueError, KeyError, TypeError) as error:
         raise AgentUnreachableError(HEAVY_TIER) from error
+    if not isinstance(text, str):
+        # The same contract as the fast tier's non-text completion: a result
+        # that is not text is a malformed transport reply, never something to
+        # stringify into the log as if the model said it.
+        raise AgentUnreachableError(HEAVY_TIER)
     session_id = document.get("session_id")
-    return str(text), session_id if isinstance(session_id, str) else None
+    return text, session_id if isinstance(session_id, str) else None
 
 
 @dataclass
@@ -315,7 +320,11 @@ def write_resume(directory: Path, channel: str, session_id: str) -> None:
             loaded = None
         chains = loaded if isinstance(loaded, dict) else {}
     chains[channel] = session_id
-    path.write_text(json.dumps(chains), encoding="utf-8")
+    # Written whole and renamed into place: a crash mid-write must cost the
+    # documented cold start, never leave half a file racing the reader.
+    scratch = path.with_suffix(".tmp")
+    scratch.write_text(json.dumps(chains), encoding="utf-8")
+    scratch.replace(path)
 
 
 def record_reply(

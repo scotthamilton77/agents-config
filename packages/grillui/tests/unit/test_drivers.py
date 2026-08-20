@@ -651,6 +651,10 @@ def test_a_cli_that_fails_or_prints_nonsense_reads_as_unreachable() -> None:
         read_cli_reply("not json")
     with pytest.raises(AgentUnreachableError):
         read_cli_reply(json.dumps({"session_id": "c"}))
+    # A non-text result is the heavy tier's malformed completion: refused, never
+    # stringified into the log as if the model said it.
+    with pytest.raises(AgentUnreachableError):
+        read_cli_reply(json.dumps({"result": {"content": "boxed"}, "session_id": "c"}))
 
 
 def test_a_turn_that_reports_no_chain_identity_is_still_a_turn(session_dir: Path) -> None:

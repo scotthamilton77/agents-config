@@ -70,6 +70,19 @@ def test_both_model_ids_come_from_the_environment_when_it_states_them() -> None:
     assert config.model_for(HEAVY_TIER) == "claude-x"
 
 
+def test_an_unknown_tier_name_is_refused_rather_than_billed_as_heavy() -> None:
+    """
+    Given a tier name outside the two this configuration defines
+    When a model id is asked for it
+    Then the answer is a refusal naming the tier, not the heavy model.
+
+    A silent fallback would let a caller typo attribute -- and bill -- a turn to
+    the heavy model.
+    """
+    with pytest.raises(ValueError, match="mystery"):
+        TierConfig().model_for("mystery")
+
+
 def test_an_empty_setting_is_not_a_model_id() -> None:
     """
     Given an environment exporting the variables empty
