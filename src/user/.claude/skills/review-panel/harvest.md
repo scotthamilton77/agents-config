@@ -1,8 +1,33 @@
 # Harvesting a round
 
-What to do between dispatching the lenses and writing the verdict. Every rule here exists because
+What to do around dispatching the lenses and writing the verdict. Every rule here exists because
 a round hit the case and the invoker had to improvise; an improvised rule is one nobody can audit
 afterwards.
+
+## The records a round runs on
+
+Three records exist before prompts are emitted, written by the invoker and retained afterwards as
+campaign records beside the verdicts — the trend analyst reads across them.
+
+**Gate evidence** — one execution record per profile precondition: gate name, exit status, the
+head SHA it ran at. Produce it by running the profile's gates and recording what actually
+happened; the emitter refuses assertion-shaped evidence and stale heads.
+
+**The staffing record** — the staffed subset, a rationale per excluded roster lens, the
+recommending model, and the decision. Get the recommendation from a foreign mid-tier model — the
+routing table's mid tier, outside the reviewing session's own vendor family. Interactively,
+present it to the user and record their edit as the decision; non-interactively, record the
+recommendation and proceed. A sweep round's staffing is contract-fixed: exactly the class's
+frontier seats, decision `sweep-contract`, the mid seats excluded with that rationale.
+
+**The checkpoint record** — due after every second consecutive non-clean round; the emitter
+refuses the next round without it. Dispatch a Fable-high trend analysis over the retained records
+— per-lens finding trends, fix history, severity direction. The review-panel iteration-strategy
+design record (2026-08-20), adopted by the owner, is the standing authorization this dispatch
+cites; if that authorization is ever withdrawn, the checkpoint resolves as escalate-to-human.
+Record the returned verdict with the evidence it cites; record a dispatch failure as origin
+`dispatch-failure` carrying the escalation verdict — the machine fails toward the human, never
+toward silent continuation.
 
 ## Transport is symmetric
 
@@ -125,23 +150,27 @@ unless it is re-dispatched with reason `unusable-output`. Tolerance stops there 
 Reconstructing a report by hand from prose makes the harvester the reviewer, and nothing
 downstream can tell the difference.
 
-## A mechanical finding with no evidence
+## Assembling the round
 
-A lens sometimes marks a finding `mechanical` and supplies no evidence. The verdict schema rejects
-that finding, so the harvester must resolve it rather than pass it through.
+Assembly is `assemble_verdict.py`, never hand-written JSON: it reads `round.json`, the gate's
+attempts ledger, one ingested report per staffed lens, and a routes file naming the vendor,
+transport, and model that actually produced each report, substitutions included. Coverage fails
+closed — a missing report, a report for an unstaffed lens, and output from a dispatch the gate
+never authorized all refuse rather than assemble.
 
-**Downgrade it to `advisory` and set `downgraded_from: "mechanical"`.** Do not drop it, and do not
-discard the whole lens report over it — the claim may still be worth reading, and the other
-findings in that report are unaffected.
+It resolves the two judgment-shaped cases mechanically. A finding marked `mechanical` with no
+evidence is downgraded to `advisory` with `downgraded_from` set — never dropped, never left
+mechanical: an unevidenced mechanical cannot be acted on anyway, and the marker keeps the
+demotion countable, so a lens producing them repeatedly is visible as unreliable. A finding
+exactly re-citing a settled ledger item is suppressed, each match recorded in `suppressions.json`
+beside the verdict, so the filter is auditable rather than silent.
 
-This is deliberately the permissive branch, and it is worth knowing why: an unevidenced mechanical
-finding cannot be acted on anyway, since there is nothing to reproduce. The marker keeps the
-demotion countable, so a lens that produces them repeatedly is visible as unreliable rather than
-quietly generating backlog.
+Its summary prints the distinct-vendor count. One means the panel collapsed onto a single vendor,
+and blind spots correlate inside a vendor — say so wherever the verdict is reported, the clean
+round especially; it does not make the round incomplete, only weaker in a way the next reader
+deserves to know without asking. `--indict <finding-id>=<artifact-path>` assembles the
+upstream-defect halt when a finding indicts the criteria themselves.
 
-## Before writing the verdict
-
-Count the distinct `vendor` values across the lens entries. One means the panel collapsed onto a
-single vendor, and blind spots correlate inside a vendor — say so wherever the verdict is
-reported. It does not make the round incomplete; it makes the round weaker in a way the next
-reader deserves to know without asking anyone.
+A findings round then emits its fix dispatch — `emit_fix_dispatch.py --verdict <path> --out
+<path>` — every mechanical finding referenced in full plus the four fix clauses; hand it to the
+fixer whole. A clean round emits none.
