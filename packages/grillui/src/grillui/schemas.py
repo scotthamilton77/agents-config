@@ -61,12 +61,23 @@ LIFECYCLE_KINDS = frozenset({"session-start", "session-end"})
 KNOWN_KINDS = MAP_MUTATION_KINDS | THREAD_KINDS | NOTICE_KINDS | GESTURE_KINDS | LIFECYCLE_KINDS
 
 # The status lane. A status entry is backend-authored and carries a `phase` and
-# a human-readable `detail`; `error` is the phase a projection or persistence
-# failure surfaces as. The kind is deliberately absent from the submission
-# registry above: no status entry is ever produced by a model, so a client
-# offering one is refused as an unknown kind rather than believed.
+# a human-readable `detail`; the `composing` phase additionally names the tier
+# that is composing, and `error` is the phase a projection, persistence or
+# agent-transport failure surfaces as. The kind is deliberately absent from the
+# submission registry above: no status entry is ever produced by a model, so a
+# client offering one is refused as an unknown kind rather than believed.
 STATUS_KIND = "status"
+STATUS_PHASE_ACCEPTED = "accepted"
+STATUS_PHASE_COMPOSING = "composing"
 STATUS_PHASE_ERROR = "error"
+
+# The kinds that constitute a conversational turn: a human answering a decision,
+# a human opening a thread, a human speaking in one. Only a turn from the
+# `human` actor is owed a reply -- the page also opens agent-authored threads,
+# and those are recorded and left alone so the backend never answers itself.
+# Answerability is separate from acceptance: every kind here is accepted from
+# either actor, and only the human's is answered.
+ANSWERABLE_KINDS = frozenset({"answer", "thread-created", "thread-turn"})
 
 # Kinds whose payload must carry a usable answer. `answer` is the human's
 # gesture; `settle` is the agent asserting one.

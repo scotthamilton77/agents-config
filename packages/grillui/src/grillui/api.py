@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException
 
+from grillui.lane import Lane
 from grillui.persistence import project_and_persist
 from grillui.projector import fold, to_image1
 from grillui.schemas import (
@@ -31,14 +32,21 @@ from grillui.schemas import (
 )
 
 if TYPE_CHECKING:
+    from grillui.lane import TurnDriver
     from grillui.log import SessionLog
 
 STALE_EPOCH_STATUS = 409
 
 
-def create_app(log: SessionLog) -> FastAPI:
-    """Bind the board endpoints to one session log."""
+def create_app(log: SessionLog, driver: TurnDriver | None = None) -> FastAPI:
+    """Bind the board endpoints to one session log, and the lane to one tier.
+
+    The driver is optional because a backend with no tier configured is a real
+    state, not a broken one: the board still accepts everything it would
+    otherwise, and nothing pretends a reply is coming.
+    """
     app = FastAPI(title="grillui session backend")
+    lane = Lane(log, driver)
 
     def require_epoch(presented: str) -> None:
         if presented != log.epoch:
@@ -75,8 +83,11 @@ def create_app(log: SessionLog) -> FastAPI:
     def write_events(batch: BatchWrite) -> list[Receipt]:
         """The receipts are settled before anything is projected: the entries
         they name are durable, so persisting the images is downstream work that
-        a caller is never made to wait on the success of."""
-        receipts = log.submit(batch.events, batch.epoch)
+        a caller is never made to wait on the success of. Nor is the caller made
+        to wait on an agent -- the lane writes its entries under the same lock as
+        the append and schedules the turn elsewhere, so the human's write returns
+        at the speed of the disk rather than the speed of a model."""
+        receipts, _turns = lane.accept(batch.events, batch.epoch)
         if any(receipt.status == "accepted" for receipt in receipts):
             project_and_persist(log)
         return receipts

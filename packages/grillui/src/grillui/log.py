@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import os
 import threading
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -114,6 +115,19 @@ class SessionLog:
         with self._lock:
             return [entry for entry in self._entries if entry.seq > cursor]
 
+    @contextmanager
+    def appending(self) -> Iterator[None]:
+        """Hold the append lock across more than one append.
+
+        The status lane rides the append it reports on: emitting the lane's
+        entries under the lock that appended the human turn is what makes it
+        impossible for anything else to land between the turn and the word
+        about it. Re-entrancy is what allows it -- `submit` and `emit_status`
+        take the same lock from inside this block.
+        """
+        with self._lock:
+            yield
+
     def submit(self, batch: Sequence[EventSubmission], epoch: str) -> list[Receipt]:
         """Judge and append a batch under one epoch, one receipt per event in
         submission order. The lock spans the batch so the sequence a receipt
@@ -121,14 +135,23 @@ class SessionLog:
         with self._lock:
             return [self._submit_one(event, epoch) for event in batch]
 
-    def emit_status(self, phase: str, detail: str, channel: str = MAP_CHANNEL) -> LogEntry:
+    def emit_status(
+        self, phase: str, detail: str, channel: str = MAP_CHANNEL, *, tier: str | None = None
+    ) -> LogEntry:
         """Append one backend-authored status entry, judged by nothing.
 
         The lane is mechanical: it carries no client key, presents no epoch and
         never waits on a model, so it cannot be refused and cannot be slow. It
         is safe to call while already holding the lock -- which is where a
         status reporting on its own append is emitted from.
+
+        `tier` names who is taking the turn and is absent from a phase that has
+        no tier to name; a page reading the lane learns which tier it is waiting
+        on from the entry itself rather than from a lookup it could get wrong.
         """
+        payload = {"phase": phase, "detail": detail}
+        if tier is not None:
+            payload["tier"] = tier
         with self._lock:
             entry = LogEntry(
                 seq=self._index.last_seq + 1,
@@ -138,7 +161,7 @@ class SessionLog:
                 timestamp=_now(),
                 actor="backend",
                 channel=channel,
-                payload={"phase": phase, "detail": detail},
+                payload=payload,
             )
             self._append(entry)
             return entry
