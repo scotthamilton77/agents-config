@@ -22,6 +22,7 @@ from grillui.schemas import (
     SESSION_END_KIND,
     STATUS_KIND,
     STATUS_PHASE_ERROR,
+    THREAD_FOLD_KIND,
     TerminalResult,
 )
 from grillui.session import end_session, open_session
@@ -296,6 +297,58 @@ def test_capture_over_a_log_with_no_terminal_entry_says_so(session_dir: Path) ->
     assert result.stop_reason == NOT_FORMALLY_ENDED
     assert result.session.ended == log.entries()[-1].timestamp
     assert [item.id for item in result.decisions] == ["d1", "d2"]
+
+
+def test_a_folded_threads_conclusion_reaches_the_result_and_an_open_ones_does_not(
+    session_dir: Path,
+) -> None:
+    """
+    Given one thread the human folded and one still open, each with turns
+    When capture runs over the session directory
+    Then the folded thread's conclusion is the turn its fold applied, and the
+         open thread's is null.
+
+    Both halves are needed. A conclusion the result never carries loses what the
+    thread was for; a conclusion on a thread that reached none reports a
+    decision the session never made.
+    """
+    log = started(session_dir)
+    client = driven(log, SpyDriver())
+    for thread, kind, said in (
+        ("t-folded", "thread-created", "how long is a session kept?"),
+        ("t-folded", "thread-turn", "thirty days, then archive."),
+        ("t-open", "thread-created", "and when is it compacted?"),
+    ):
+        client.post(
+            "/events",
+            json={
+                "epoch": log.epoch,
+                "events": [
+                    event(
+                        kind,
+                        actor="human" if kind == "thread-created" else "thread-agent",
+                        channel=thread,
+                        key=f"{kind}-{thread}-{said[:8]}",
+                        title="Retention",
+                        turns=[{"text": said}],
+                    )
+                ],
+            },
+        )
+    client.post(
+        "/events",
+        json={
+            "epoch": log.epoch,
+            "events": [event(THREAD_FOLD_KIND, actor="human", channel="t-folded", key="fold-it")],
+        },
+    )
+
+    result = capture(session_dir)
+
+    assert [(one.id, one.state, one.conclusion) for one in result.threads] == [
+        ("t-folded", "folded", "thirty days, then archive."),
+        ("t-open", "open", None),
+    ]
 
 
 def test_every_unsettled_decision_carries_the_blocker_that_has_to_move_first(

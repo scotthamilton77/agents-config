@@ -7,8 +7,8 @@ and drives the grilling tiers. The design it is being built to is
 
 ## What exists
 
-The session core, the projection, the lifecycle that brackets them, and the two
-tiers that take the turns. One
+The session core, the projection, the lifecycle that brackets them, the two
+tiers that take the turns, and the side threads that run beside the map. One
 process owns one session directory, whose fixed file names are `log.jsonl`,
 `image1.json`, `image2.json`, `handoff.json` and `result.json`, alongside a
 `dispatches/` directory holding one file per recorded agent dispatch; the
@@ -34,7 +34,27 @@ Both tiers take turns. The fast tier is a non-Claude model over OpenRouter and
 the heavy tier is a Claude model driven as `claude -p --resume` turns; which
 model each is comes from `GRILLUI_FAST_MODEL` and `GRILLUI_HEAVY_MODEL`, and the
 fast tier reads its key from `OPENROUTER_API_KEY`. A turn is one invocation that
-exits — nothing polls, and no agent process stays resident between turns.
+exits — nothing polls, and no agent process stays resident between turns. Which
+tier takes a turn is a property of the channel: the map and each thread are on
+the tier the human last put them on, read back off their own turns, so
+escalating one thread moves nothing else.
+
+Every side thread is its own channel with its own agent context. A thread agent
+is handed the whole board and its own thread's turns, with every other live
+thread reduced to a stub — anchor decision, title, state, and the conclusion if
+it reached one — and parked threads left out; it reads another thread's body
+through the read surface when a stub turns out to matter. Threads take their
+turns concurrently, with each other and with the map, while the grill-master's
+heavy turns stay on one process at a time.
+
+The grill-master is the sole agent author of map mutations. A map update
+arriving on a thread channel is refused with a typed receipt and appended
+nowhere, whether it came over the wire or out of a driver's own reply. When the
+human folds a thread, the backend dispatches the grill-master with that thread's
+conclusion; it answers in prose, or in an object carrying prose and the updates
+to apply, and those land as one atomic gesture attributed to the grill-master on
+the map channel. A conclusion it takes as context only produces no map mutation
+and a reply that says so.
 
 Twelve modules, and the separation between them is load-bearing:
 
@@ -55,21 +75,28 @@ Twelve modules, and the separation between them is load-bearing:
   byte-identical images, and an image rebuilt from disk matches one held in
   memory. It is also where each update kind's meaning lives — what a revise, an
   invalidate, an unsettle or a blocking alert does to a decision's status — and
-  the module docstring is the table.
+  the module docstring is the table. The thread projection is folded here too,
+  by the same rules: pure, reproducible, and reducing nothing but the bodies of
+  threads the dispatched agent is not having.
 - `persistence.py` — the only image I/O there is, downstream of the fold: it
   refreshes both image files after an accepted batch. The files are derived
   caches, never a recovery source, so a failure here surfaces as an error on
   the status lane and blocks neither the log nor the next event.
 - `dispatch.py` — assembles an agent's dispatch context, records it under
-  `dispatches/`, and refuses one that does not carry image 2 byte for byte.
+  `dispatches/`, and refuses one that does not carry the whole of what it owes.
   There is no elision path: a dispatch that omits part of its owed projection
-  is data corruption, not a saving.
+  is data corruption, not a saving. Which agent a context is for is decided
+  here from the channel rather than passed in, because a caller free to name
+  the agent is a caller free to name the wrong one.
 - `lane.py` — the status lane, the answerability decision, and the seam a tier
   plugs into. A human turn's `accepted` and `composing` entries are appended
   inside the same lock as the turn itself, before any driver is reached, so the
   page learns a message landed in under a millisecond rather than when a model
   gets around to it. Only a human turn is answered: an agent-authored thread is
-  recorded and left alone, so the backend never answers itself. The driver runs
+  recorded and left alone, so the backend never answers itself. Every turn is
+  answered on the channel it was spoken on but one: folding a thread is
+  answered by the grill-master on the map, because it is the only agent that
+  may act on a conclusion. The driver runs
   off the lock and off the request path — one invocation per turn, no polling —
   and a tier that cannot be reached surfaces as an `error` phase in
   milliseconds instead of an unbounded silence.
@@ -120,12 +147,13 @@ state in which half of it landed, and its receipt says what became of each
 sub-update — applied, refused with its own reason, or vetoed by a refused
 sibling.
 
-Not built yet: the transfer-to-expert flow that acts on a recommendation (the
-metadata and the attribution vocabulary exist; nothing moves a channel to the
-heavy tier yet, and `create_app` takes one driver for the whole session rather
-than one per channel), thread projections, session control, the single agent
-pass behind capture's summarizer seam, superseding or clearing anything from the
-pending queue, port fallback and browser handoff, and the UI itself.
+Not built yet: the transfer-to-expert control itself (a channel's tier is
+already per-channel state, set by the transfer flag on the human's own turn and
+carried into the dispatch, but no page surface raises the recommendation or
+activates the transfer, and nothing yet flips the control's label back), session
+control, the single agent pass behind capture's summarizer seam, superseding or
+clearing anything from the pending queue, port fallback and browser handoff, and
+the UI itself.
 
 ## Development
 

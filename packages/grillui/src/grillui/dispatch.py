@@ -6,6 +6,15 @@ one: a projector that trimmed settled decisions out of a dispatch would lose
 human decisions silently, and nothing downstream could tell -- the agent would
 simply proceed without a decision the human made minutes earlier.
 
+A thread agent is handed the same board and its own thread's turns, with every
+other live thread reduced to a stub. That is not elision: no decision, no
+answer and no history is dropped, and what a thread agent is not given is the
+running conversation of a thread it is not having. Which agent a dispatch is
+for is decided here, from the channel, rather than passed in -- a caller free
+to name the agent is a caller free to name the wrong one, and a thread
+dispatch labelled `grill-master` is a map mutation waiting to be authored by
+the wrong context.
+
 That guarantee is worth nothing unasserted, so it is checked on the way out and
 the check is what the completeness test reads: every context is recorded under
 the session directory's `dispatches/`, one file per dispatch, and a context
@@ -21,17 +30,27 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-from grillui.projector import fold
-from grillui.schemas import MAP_CHANNEL, DispatchContext
+from grillui.projector import conclusion_of, fold, project_thread, whole_board
+from grillui.schemas import MAP_CHANNEL, DispatchContext, ThreadConclusion
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from grillui.log import SessionLog
-    from grillui.schemas import Image2
+    from grillui.schemas import Image2, ThreadProjection
 
 DISPATCH_DIR = "dispatches"
 GRILL_MASTER = "grill-master"
+THREAD_AGENT = "thread-agent"
+
+
+def agent_for(channel: str) -> str:
+    """Whose context a channel's turns belong to.
+
+    The map is the grill-master's and every thread is its own agent's, which is
+    the whole of the rule: a channel is a context, and the two never merge.
+    """
+    return GRILL_MASTER if channel == MAP_CHANNEL else THREAD_AGENT
 
 
 class DispatchIncompleteError(RuntimeError):
@@ -46,17 +65,42 @@ class DispatchIncompleteError(RuntimeError):
         super().__init__("dispatch context omits part of image 2; the projection crosses whole")
 
 
-def assemble(image: Image2, *, agent: str = GRILL_MASTER, channel: str = MAP_CHANNEL) -> str:
-    """One dispatch context, serialised, carrying image 2 whole."""
+def assemble(image: Image2, *, channel: str = MAP_CHANNEL, concluding: str | None = None) -> str:
+    """One dispatch context, serialised, carrying the whole of what it owes.
+
+    `concluding` names a thread whose conclusion this dispatch is being sent to
+    route. Its text is read out of the same image the context carries, so what
+    the grill-master is told the thread concluded and what the board says it
+    concluded are one fact folded once.
+    """
+    board = whole_board(image) if channel == MAP_CHANNEL else project_thread(image, channel)
     context = DispatchContext(
-        agent=agent, channel=channel, epoch=image.epoch, seq=image.seq, image2=image
+        agent=agent_for(channel),
+        channel=channel,
+        epoch=image.epoch,
+        seq=image.seq,
+        image2=board,
+        conclusion=_conclusion(image, concluding),
     )
     recorded = context.model_dump_json()
-    verify_complete(recorded, image)
+    # The map dispatch is checked against the source image, not the projection
+    # it was assembled through: a projection that dropped a field on the way in
+    # would vouch for its own output. A thread dispatch reduces by design, so
+    # its own projection is the only whole it owes.
+    verify_complete(recorded, image if channel == MAP_CHANNEL else board)
     return recorded
 
 
-def verify_complete(recorded: str, image: Image2) -> None:
+def _conclusion(image: Image2, concluding: str | None) -> ThreadConclusion | None:
+    if concluding is None:
+        return None
+    thread = next((one for one in image.threads if one.id == concluding), None)
+    return ThreadConclusion(
+        thread=concluding, text="" if thread is None else conclusion_of(thread) or ""
+    )
+
+
+def verify_complete(recorded: str, image: Image2 | ThreadProjection) -> None:
     """Refuse a context that does not carry image 2 byte for byte.
 
     Comparing against the image the context was assembled from is what makes
@@ -69,7 +113,7 @@ def verify_complete(recorded: str, image: Image2) -> None:
 
 
 def record_dispatch(
-    log: SessionLog, *, agent: str = GRILL_MASTER, channel: str = MAP_CHANNEL
+    log: SessionLog, *, channel: str = MAP_CHANNEL, concluding: str | None = None
 ) -> Path:
     """Fold at dispatch time, assemble, and record what the agent was given.
 
@@ -77,7 +121,7 @@ def record_dispatch(
     agent got, not a reconstruction of what it should have got.
     """
     image = fold(log.epoch, log.entries())
-    recorded = assemble(image, agent=agent, channel=channel)
+    recorded = assemble(image, channel=channel, concluding=concluding)
     directory = log.directory / DISPATCH_DIR
     directory.mkdir(parents=True, exist_ok=True)
     return _claim_and_write(directory, recorded)

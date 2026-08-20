@@ -1,6 +1,6 @@
 """The status lane, the answerability decision, and the seam a tier plugs into.
 
-Two rules meet here.
+Four rules meet here.
 
 **The lane is mechanical.** The instant a human turn is accepted, and inside the
 same lock that appended it, the backend emits `accepted` and then `composing`
@@ -18,6 +18,18 @@ and left alone: no lane entry and no dispatch, so the backend never answers
 itself. Answerability is decided here and acceptance is decided by the appender;
 an agent-authored thread is fully accepted and simply not answered.
 
+**A gesture is answered by whoever may act on it.** Every turn is answered on
+the channel it was spoken on, with one exception: folding a thread is answered
+by the grill-master on the map, because the grill-master is the only agent that
+authors map mutations and a conclusion nobody hands it changes nothing.
+
+**The tier is a property of the channel, not of the session.** Each turn's
+driver is chosen for the channel it is about to run on, so escalating one thread
+leaves every other thread and the map where the human left them. Threads take
+their turns concurrently with each other and with the map; only the heavy tier's
+own single-flight rule serialises anything, and it serialises the resume chain
+rather than the session.
+
 The driver seam is the whole of what a tier has to implement. A turn is one
 invocation: the driver runs, says what it has to say into the log, and returns.
 There is no polling loop and no resident agent process, because the orchestrator
@@ -30,14 +42,17 @@ a receipt by the time the driver starts.
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, NamedTuple, Protocol
 
 from grillui.dispatch import record_dispatch
+from grillui.escalation import in_expert_mode
 from grillui.schemas import (
     ANSWERABLE_KINDS,
+    MAP_CHANNEL,
     STATUS_PHASE_ACCEPTED,
     STATUS_PHASE_COMPOSING,
     STATUS_PHASE_ERROR,
+    THREAD_FOLD_KIND,
 )
 
 if TYPE_CHECKING:
@@ -89,6 +104,27 @@ class UnreachableDriver:
         raise AgentUnreachableError(self.tier)
 
 
+class Turn(NamedTuple):
+    """One turn to be taken: whose channel it is, and what it is about.
+
+    The channel is the dispatch's, which is not always the channel the gesture
+    arrived on. Folding a thread is a gesture the human makes in the thread and
+    the grill-master answers on the map, because the grill-master is the only
+    agent that authors map mutations -- and it cannot author one it was never
+    told about.
+    """
+
+    channel: str
+    concluding: str | None = None
+
+
+def turn_of(event: EventSubmission) -> Turn:
+    """Which agent owes this gesture a turn."""
+    if event.kind == THREAD_FOLD_KIND:
+        return Turn(MAP_CHANNEL, concluding=event.channel)
+    return Turn(event.channel)
+
+
 def is_answerable(event: EventSubmission) -> bool:
     """Whether this event is a turn the backend owes a reply to.
 
@@ -106,11 +142,31 @@ class Lane:
     emits nothing and dispatches nothing. That is the state the backend is in
     until a tier is configured, and it is deliberately not disguised as a
     working one.
+
+    `expert` is the tier a channel the human has escalated takes its turns on,
+    and the choice is made per channel: escalating one thread must leave every
+    other where it was, so the tier cannot be a property of the session or of
+    the driver. A lane with no expert tier configured never escalates anything.
     """
 
-    def __init__(self, log: SessionLog, driver: TurnDriver | None = None) -> None:
+    def __init__(
+        self, log: SessionLog, driver: TurnDriver | None = None, expert: TurnDriver | None = None
+    ) -> None:
         self.log = log
         self.driver = driver
+        self.expert = expert
+
+    def tier_for(self, channel: str, driver: TurnDriver) -> TurnDriver:
+        """The tier this channel's next turn goes to: the expert one when the
+        human has escalated this channel, and the session's own otherwise.
+
+        Named before the `composing` entry is written rather than after, so the
+        tier the human is told they are waiting on is the tier that takes the
+        turn.
+        """
+        if self.expert is None:
+            return driver
+        return self.expert if in_expert_mode(self.log.entries(), channel) else driver
 
     def accept(
         self, batch: Sequence[EventSubmission], epoch: str
@@ -123,11 +179,11 @@ class Lane:
         needs to know when a turn finished can wait for it -- nothing in the
         request path does.
         """
-        driver = self.driver
+        base = self.driver
         receipts: list[Receipt] = []
-        turns: list[EventSubmission] = []
+        turns: list[tuple[TurnDriver, Turn]] = []
         with self.log.appending():
-            if driver is None:
+            if base is None:
                 return self.log.submit(batch, epoch), []
             # One event at a time under the one lock, so each turn's lane
             # entries land adjacent to the turn they report -- a second turn in
@@ -137,7 +193,13 @@ class Lane:
                 receipts.append(receipt)
                 if receipt.status != "accepted" or not is_answerable(event):
                     continue
-                turns.append(event)
+                turn = turn_of(event)
+                # The tier is the dispatched channel's, and it is read after the
+                # gesture landed: a turn carrying the human's transfer is itself
+                # the escalation, and must not be composed by the tier they just
+                # moved off.
+                driver = self.tier_for(turn.channel, base)
+                turns.append((driver, turn))
                 self.log.emit_status(
                     STATUS_PHASE_ACCEPTED,
                     f"{event.kind} from the human accepted on channel {event.channel!r}",
@@ -149,16 +211,19 @@ class Lane:
                     event.channel,
                     tier=driver.tier,
                 )
-        return receipts, [self._schedule(driver, turn.channel) for turn in turns]
+        return receipts, [self._schedule(driver, turn) for driver, turn in turns]
 
-    def _schedule(self, driver: TurnDriver, channel: str) -> threading.Thread:
+    def _schedule(self, driver: TurnDriver, turn: Turn) -> threading.Thread:
         thread = threading.Thread(
-            target=self._take_turn, args=(driver, channel), daemon=True, name=f"turn-{channel}"
+            target=self._take_turn,
+            args=(driver, turn),
+            daemon=True,
+            name=f"turn-{turn.channel}",
         )
         thread.start()
         return thread
 
-    def _take_turn(self, driver: TurnDriver, channel: str) -> None:
+    def _take_turn(self, driver: TurnDriver, turn: Turn) -> None:
         """One turn, off the lock and off the request path.
 
         Every failure is caught, whatever it is: the human's write is already
@@ -167,8 +232,9 @@ class Lane:
         and the lane's error phase is what they get instead.
         """
         try:
-            driver.run(self.log, record_dispatch(self.log, channel=channel))
+            dispatch = record_dispatch(self.log, channel=turn.channel, concluding=turn.concluding)
+            driver.run(self.log, dispatch)
         except Exception as error:
             self.log.emit_status(
-                STATUS_PHASE_ERROR, f"the {driver.tier!r} tier failed: {error!r}", channel
+                STATUS_PHASE_ERROR, f"the {driver.tier!r} tier failed: {error!r}", turn.channel
             )

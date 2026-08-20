@@ -89,6 +89,15 @@ MAP_MUTATION_KINDS = frozenset(
     }
 )
 THREAD_KINDS = frozenset({"thread-created", "thread-turn"})
+
+# What the human does *to* a thread rather than in it. Neither carries a turn,
+# so neither is judged by the reader that asks whether a thread event said
+# anything, and neither is a map mutation: folding a thread's conclusion into
+# the board is the grill-master's to author, on its own channel, after the
+# backend hands it the conclusion.
+THREAD_FOLD_KIND = "thread-fold"
+THREAD_PARK_KIND = "thread-park"
+THREAD_GESTURE_KINDS = frozenset({THREAD_FOLD_KIND, THREAD_PARK_KIND})
 NOTICE_KINDS = frozenset({"informational", "elicit-alert"})
 GESTURE_KINDS = frozenset({"answer"})
 
@@ -100,7 +109,14 @@ GESTURE_KINDS = frozenset({"answer"})
 SESSION_START_KIND = "session-start"
 SESSION_END_KIND = "session-end"
 LIFECYCLE_KINDS = frozenset({SESSION_START_KIND, SESSION_END_KIND})
-KNOWN_KINDS = MAP_MUTATION_KINDS | THREAD_KINDS | NOTICE_KINDS | GESTURE_KINDS | LIFECYCLE_KINDS
+KNOWN_KINDS = (
+    MAP_MUTATION_KINDS
+    | THREAD_KINDS
+    | THREAD_GESTURE_KINDS
+    | NOTICE_KINDS
+    | GESTURE_KINDS
+    | LIFECYCLE_KINDS
+)
 
 # One human gesture applying a conversational turn's declared impact -- a
 # revise, an add-node and an informational together -- all of it or none of it.
@@ -151,13 +167,15 @@ RECOMMENDATION_KEY = "recommendation"
 FOLLOWED_TRANSFER_KEY = "followed_transfer"
 TRANSFER_FLAG = "transfer"
 
-# The kinds that constitute a conversational turn: a human answering a decision,
-# a human opening a thread, a human speaking in one. Only a turn from the
-# `human` actor is owed a reply -- the page also opens agent-authored threads,
-# and those are recorded and left alone so the backend never answers itself.
-# Answerability is separate from acceptance: every kind here is accepted from
-# either actor, and only the human's is answered.
-ANSWERABLE_KINDS = frozenset({"answer", "thread-created", "thread-turn"})
+# The kinds that are owed a reply: a human answering a decision, a human opening
+# a thread, a human speaking in one, and a human folding one -- the fold is owed
+# the grill-master's routing answer, which is a reply on the map channel rather
+# than in the thread. Only a turn from the `human` actor is owed anything -- the
+# page also opens agent-authored threads, and those are recorded and left alone
+# so the backend never answers itself. Answerability is separate from
+# acceptance: every kind here is accepted from either actor, and only the
+# human's is answered.
+ANSWERABLE_KINDS = frozenset({"answer", "thread-created", "thread-turn", THREAD_FOLD_KIND})
 
 # Kinds whose payload must carry a usable answer. `answer` is the human's
 # gesture; `settle` is the agent asserting one.
@@ -455,6 +473,73 @@ class Image2(Image1):
     history: dict[str, list[HistoryEntry]] = Field(default_factory=dict)
 
 
+class ThreadStub(Strict):
+    """Another thread, as the thread being dispatched is allowed to see it.
+
+    Enough to know the thread exists, what it is about and whether it is over --
+    and nothing of what was said in it. An agent that finds a stub relevant to
+    its own work reads that thread's full body through the backend's read
+    surface; handing every thread's turns to every thread agent is the same
+    context bloat in every context at once.
+    """
+
+    id: str
+    decision: str | None = None
+    title: str = ""
+    state: ThreadState = "open"
+
+
+class FoldedThreadStub(ThreadStub):
+    """A concluded thread's stub, which carries the conclusion that was applied.
+
+    Its own class rather than an optional field, because the conclusion is
+    required exactly when the thread is folded: a folded stub without one is a
+    thread that changed the board and will not say how.
+    """
+
+    state: Literal["folded"] = "folded"
+    conclusion: str
+
+
+class ThreadProjection(Strict):
+    """Image 2 transformed for one thread's agent.
+
+    Everything but the thread list is image 2's, unchanged: the same decisions,
+    history, frontier, settled set and pending queue, because a thread agent
+    reasons about the same board the grill-master does. The dispatched thread
+    appears in full; every other live thread is a stub; a parked thread is
+    absent entirely, since resuming one is a gesture nobody has made.
+
+    Its own shape rather than a subclass of image 2, because it is not one: a
+    reader promised image 2 and handed this would find thread bodies missing.
+    The fields it shares are declared in image 2's order, so a projection whose
+    threads are all full bodies serialises byte for byte as image 2 does -- and
+    that is what lets one dispatch context describe the grill-master's board and
+    a thread agent's.
+    """
+
+    epoch: str
+    seq: int
+    decisions: list[Decision] = Field(default_factory=list)
+    frontier: list[str] = Field(default_factory=list)
+    settled: list[SettledEntry] = Field(default_factory=list)
+    threads: list[FoldedThreadStub | ThreadStub | Thread] = Field(default_factory=list)
+    pending: list[PendingUpdate] = Field(default_factory=list)
+    history: dict[str, list[HistoryEntry]] = Field(default_factory=dict)
+
+
+class ThreadConclusion(Strict):
+    """The thread conclusion a grill-master dispatch is being asked to route.
+
+    Thread agents recommend and never author map updates, so a conclusion
+    reaches the board only by being handed to the grill-master -- which is also
+    what keeps the grill-master's own context aware of how the board is moving.
+    """
+
+    thread: str
+    text: str
+
+
 class TerminalSession(Strict):
     id: str
     title: str
@@ -516,17 +601,23 @@ class TerminalResult(Strict):
 class DispatchContext(Strict):
     """What one agent dispatch is given, and the shape recorded on disk for it.
 
-    Image 2 is carried as the whole model rather than as anything derived from
-    it. There is no elision path and no budget that can create one: a context
-    that trimmed settled decisions would lose human decisions silently, and
-    nothing downstream could detect the loss.
+    The board is carried as the whole model rather than as anything derived
+    from it. There is no elision path and no budget that can create one: a
+    context that trimmed settled decisions would lose human decisions silently,
+    and nothing downstream could detect the loss. The thread projection is the
+    one transformation there is, and it drops no decision -- only the bodies of
+    threads this agent is not having.
+
+    `conclusion` rides a grill-master dispatch that exists to route a thread's
+    conclusion onto the board, and is absent from every other.
     """
 
     agent: str
     channel: str = MAP_CHANNEL
     epoch: str
     seq: int
-    image2: Image2
+    image2: ThreadProjection
+    conclusion: ThreadConclusion | None = None
 
 
 class SessionStatus(Strict):

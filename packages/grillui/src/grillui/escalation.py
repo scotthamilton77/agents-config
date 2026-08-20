@@ -19,7 +19,10 @@ Asking a sharpening question back is the ordinary move and is not one of them, s
 a transcript satisfying none of the three yields no recommendation at all.
 
 Recommending is the whole of what happens here. The human decides whether to
-take it: nothing in this module moves a turn to another tier.
+take it: nothing in this module moves a turn to another tier. What their
+decision looks like afterwards is the other question this module answers -- a
+channel is in expert mode because the human put it there, read back off their
+own turns, one channel at a time.
 """
 
 from __future__ import annotations
@@ -27,7 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from grillui.schemas import MAP_CHANNEL, THREAD_KINDS, read_turns
+from grillui.schemas import MAP_CHANNEL, THREAD_KINDS, TRANSFER_FLAG, read_turns
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -129,6 +132,24 @@ def turns_of(entries: Sequence[LogEntry], channel: str = MAP_CHANNEL) -> list[Tu
             if isinstance(text, str) and text:
                 turns.append(Turn(who=entry.actor, text=text))
     return turns
+
+
+def in_expert_mode(entries: Sequence[LogEntry], channel: str) -> bool:
+    """Whether the human has put this one channel on the heavy tier.
+
+    Per channel, and read from the log rather than held in memory: escalating
+    one thread says nothing about any other, and a successor process must find
+    the map still in expert mode if that is where the human left it.
+
+    The mode is the human's own last gesture on that channel and stands until
+    they make the opposite one -- a channel that fell back to the fast tier
+    because the human said nothing this turn would quietly undo the transfer
+    they paid for.
+    """
+    for entry in reversed(entries):
+        if entry.channel == channel and entry.actor == "human" and TRANSFER_FLAG in entry.payload:
+            return entry.payload[TRANSFER_FLAG] is True
+    return False
 
 
 def recommend(
