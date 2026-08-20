@@ -7,18 +7,19 @@ and drives the grilling tiers. The design it is being built to is
 
 ## What exists
 
-The session core. One process owns one session directory, whose fixed file
-names are `log.jsonl`, `image1.json`, `image2.json`, `handoff.json` and
-`result.json`; the append-only log is the single source of truth, and the
-process mints an epoch over it at startup and assigns every sequence number.
-Restarting against the same directory mints a new epoch and continues the
-sequence it had reached.
+The session core and the projection. One process owns one session directory,
+whose fixed file names are `log.jsonl`, `image1.json`, `image2.json`,
+`handoff.json` and `result.json`, alongside a `dispatches/` directory holding
+one file per recorded agent dispatch; the append-only log is the single source
+of truth, and the process mints an epoch over it at startup and assigns every
+sequence number. Restarting against the same directory mints a new epoch and
+continues the sequence it had reached.
 
 ```bash
 grillui serve ./sessions/my-session --port 8765
 ```
 
-Four modules, and the separation between them is load-bearing:
+Six modules, and the separation between them is load-bearing:
 
 - `schemas.py` — the wire, log and image shapes, plus the closed vocabulary of
   the seven reasons a write can be refused for.
@@ -28,16 +29,26 @@ Four modules, and the separation between them is load-bearing:
   key already landed, or `rejected` naming the reason. It never folds a
   projection.
 - `projector.py` — a pure fold over the log into the two context images: no
-  clock, no randomness, no I/O. Persisting an image is a separate step
-  downstream, and the image files are derived caches, never a recovery source.
+  clock, no randomness, no I/O. The same log therefore always yields
+  byte-identical images, and an image rebuilt from disk matches one held in
+  memory.
+- `persistence.py` — the only image I/O there is, downstream of the fold: it
+  refreshes both image files after an accepted batch. The files are derived
+  caches, never a recovery source, so a failure here surfaces as an error on
+  the status lane and blocks neither the log nor the next event.
+- `dispatch.py` — assembles an agent's dispatch context, records it under
+  `dispatches/`, and refuses one that does not carry image 2 byte for byte.
+  There is no elision path: a dispatch that omits part of its owed projection
+  is data corruption, not a saving.
 - `api.py` — the board endpoints. `/status` is answered from memory and opens
   no file, so it stays cheap whatever the log has grown to; `/state`, `/image1`
   and `/image2` fold; `/updates` refuses a stale epoch with 409; `/events`
   takes a batch under one epoch and returns one receipt per event in
   submission order.
 
-Not built yet: the status lane, the agent drive, handoff parsing, session
-control, per-kind payload semantics, and the UI itself.
+Not built yet: the status lane's accepted and composing phases (the error phase
+exists), the agent drive, thread projections, handoff parsing, session control,
+per-kind payload semantics, and the UI itself.
 
 ## Development
 

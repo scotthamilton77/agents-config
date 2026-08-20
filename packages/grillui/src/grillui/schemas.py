@@ -13,13 +13,14 @@ seven reasons named below, and a caller may switch on that string.
 from __future__ import annotations
 
 from collections.abc import Mapping, Set
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field
 
 MAP_CHANNEL = "map"
 
 Actor = Literal["human", "grill-master", "thread-agent", "backend"]
+ACTORS: frozenset[str] = frozenset(get_args(Actor))
 DecisionStatus = Literal["open", "settled", "invalidated", "stale", "fogged"]
 ThreadState = Literal["open", "parked", "folded"]
 
@@ -58,6 +59,14 @@ NOTICE_KINDS = frozenset({"informational", "elicit-alert", "thinking"})
 GESTURE_KINDS = frozenset({"answer"})
 LIFECYCLE_KINDS = frozenset({"session-start", "session-end"})
 KNOWN_KINDS = MAP_MUTATION_KINDS | THREAD_KINDS | NOTICE_KINDS | GESTURE_KINDS | LIFECYCLE_KINDS
+
+# The status lane. A status entry is backend-authored and carries a `phase` and
+# a human-readable `detail`; `error` is the phase a projection or persistence
+# failure surfaces as. The kind is deliberately absent from the submission
+# registry above: no status entry is ever produced by a model, so a client
+# offering one is refused as an unknown kind rather than believed.
+STATUS_KIND = "status"
+STATUS_PHASE_ERROR = "error"
 
 # Kinds whose payload must carry a usable answer. `answer` is the human's
 # gesture; `settle` is the agent asserting one.
@@ -231,6 +240,22 @@ class Image2(Image1):
     and it crosses to the grill-master whole."""
 
     history: dict[str, list[HistoryEntry]] = Field(default_factory=dict)
+
+
+class DispatchContext(Strict):
+    """What one agent dispatch is given, and the shape recorded on disk for it.
+
+    Image 2 is carried as the whole model rather than as anything derived from
+    it. There is no elision path and no budget that can create one: a context
+    that trimmed settled decisions would lose human decisions silently, and
+    nothing downstream could detect the loss.
+    """
+
+    agent: str
+    channel: str = MAP_CHANNEL
+    epoch: str
+    seq: int
+    image2: Image2
 
 
 class SessionStatus(Strict):

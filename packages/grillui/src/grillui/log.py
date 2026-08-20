@@ -27,8 +27,10 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from grillui.schemas import (
+    MAP_CHANNEL,
     REASON_EPOCH_MISMATCH,
     REASON_MISSING_KEY,
+    STATUS_KIND,
     AcceptedReceipt,
     Applied,
     DuplicateReceipt,
@@ -89,7 +91,10 @@ class SessionLog:
         self.directory = directory
         self.path = directory / LOG_FILE
         self.epoch = uuid4().hex
-        self._lock = threading.Lock()
+        # Re-entrant: the status lane reports on the append it rides alongside,
+        # and is emitted from inside that same lock. A plain lock would deadlock
+        # the session on exactly the path whose job is to keep it alive.
+        self._lock = threading.RLock()
         self._entries: list[LogEntry] = []
         self._index = LogIndex()
         self._load()
@@ -100,10 +105,14 @@ class SessionLog:
         return self._index.last_seq
 
     def entries(self) -> list[LogEntry]:
-        return list(self._entries)
+        """A stable snapshot: taken under the append lock, so a reader folding
+        it never sees a batch half-landed."""
+        with self._lock:
+            return list(self._entries)
 
     def entries_after(self, cursor: int) -> list[LogEntry]:
-        return [entry for entry in self._entries if entry.seq > cursor]
+        with self._lock:
+            return [entry for entry in self._entries if entry.seq > cursor]
 
     def submit(self, batch: Sequence[EventSubmission], epoch: str) -> list[Receipt]:
         """Judge and append a batch under one epoch, one receipt per event in
@@ -111,6 +120,28 @@ class SessionLog:
         names is the sequence the entry actually landed at."""
         with self._lock:
             return [self._submit_one(event, epoch) for event in batch]
+
+    def emit_status(self, phase: str, detail: str, channel: str = MAP_CHANNEL) -> LogEntry:
+        """Append one backend-authored status entry, judged by nothing.
+
+        The lane is mechanical: it carries no client key, presents no epoch and
+        never waits on a model, so it cannot be refused and cannot be slow. It
+        is safe to call while already holding the lock -- which is where a
+        status reporting on its own append is emitted from.
+        """
+        with self._lock:
+            entry = LogEntry(
+                seq=self._index.last_seq + 1,
+                epoch=self.epoch,
+                kind=STATUS_KIND,
+                idempotency_key=f"{STATUS_KIND}-{uuid4().hex}",
+                timestamp=_now(),
+                actor="backend",
+                channel=channel,
+                payload={"phase": phase, "detail": detail},
+            )
+            self._append(entry)
+            return entry
 
     def _submit_one(self, event: EventSubmission, epoch: str) -> Receipt:
         if epoch != self.epoch:
