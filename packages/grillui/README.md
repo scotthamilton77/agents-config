@@ -19,7 +19,7 @@ continues the sequence it had reached.
 grillui serve ./sessions/my-session --port 8765
 ```
 
-Six modules, and the separation between them is load-bearing:
+Seven modules, and the separation between them is load-bearing:
 
 - `schemas.py` — the wire, log and image shapes, plus the closed vocabulary of
   the seven reasons a write can be refused for.
@@ -40,15 +40,25 @@ Six modules, and the separation between them is load-bearing:
   `dispatches/`, and refuses one that does not carry image 2 byte for byte.
   There is no elision path: a dispatch that omits part of its owed projection
   is data corruption, not a saving.
+- `lane.py` — the status lane, the answerability decision, and the seam a tier
+  plugs into. A human turn's `accepted` and `composing` entries are appended
+  inside the same lock as the turn itself, before any driver is reached, so the
+  page learns a message landed in under a millisecond rather than when a model
+  gets around to it. Only a human turn is answered: an agent-authored thread is
+  recorded and left alone, so the backend never answers itself. The driver runs
+  off the lock and off the request path — one invocation per turn, no polling —
+  and a tier that cannot be reached surfaces as an `error` phase in
+  milliseconds instead of an unbounded silence.
 - `api.py` — the board endpoints. `/status` is answered from memory and opens
   no file, so it stays cheap whatever the log has grown to; `/state`, `/image1`
   and `/image2` fold; `/updates` refuses a stale epoch with 409; `/events`
   takes a batch under one epoch and returns one receipt per event in
-  submission order.
+  submission order, and returns them without waiting on the turn it scheduled.
 
-Not built yet: the status lane's accepted and composing phases (the error phase
-exists), the agent drive, thread projections, handoff parsing, session control,
-per-kind payload semantics, and the UI itself.
+Not built yet: the fast and heavy tier drivers behind the `TurnDriver` seam
+(`create_app` takes one and has none by default, so no reply is promised until a
+tier is configured), escalation, thread projections, handoff parsing, session
+control, per-kind payload semantics, and the UI itself.
 
 ## Development
 
