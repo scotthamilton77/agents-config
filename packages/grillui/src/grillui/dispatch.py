@@ -18,6 +18,7 @@ when one happens.
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 from grillui.projector import fold
@@ -79,20 +80,26 @@ def record_dispatch(
     recorded = assemble(image, agent=agent, channel=channel)
     directory = log.directory / DISPATCH_DIR
     directory.mkdir(parents=True, exist_ok=True)
-    path = _free_path(directory)
-    path.write_text(recorded, encoding="utf-8")
-    return path
+    return _claim_and_write(directory, recorded)
 
 
-def _free_path(directory: Path) -> Path:
+def _claim_and_write(directory: Path, recorded: str) -> Path:
     """Dispatches are numbered in the order they were recorded, so the audit
     surface reads in dispatch order. The channel lives inside the file rather
     than in its name, since a thread id is the page's string and not
-    necessarily a filename."""
-    # ponytail: counts files to find the next number. Thread dispatches run
-    # concurrently by design, so if two ever race here this wants the mint
-    # moved under the log's lock.
+    necessarily a filename.
+
+    The number is claimed with O_EXCL, so two dispatches racing — thread
+    dispatches run concurrently by design — each land on their own file rather
+    than one silently overwriting the other's audit record."""
     index = len(list(directory.glob("*.json"))) + 1
-    while (path := directory / f"{index:04d}.json").exists():
-        index += 1
-    return path
+    while True:
+        path = directory / f"{index:04d}.json"
+        try:
+            handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+        except FileExistsError:
+            index += 1
+            continue
+        with os.fdopen(handle, "w", encoding="utf-8") as file:
+            file.write(recorded)
+        return path

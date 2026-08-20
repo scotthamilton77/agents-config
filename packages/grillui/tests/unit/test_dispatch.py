@@ -126,3 +126,23 @@ def test_each_dispatch_is_recorded_as_its_own_file_in_dispatch_order(
     contexts = [DispatchContext.model_validate_json(text) for text in _recorded(session_dir)]
     assert [context.seq for context in contexts] == [1, 2]
     assert [context.channel for context in contexts] == ["map", "map"]
+
+
+def test_concurrent_dispatches_never_overwrite_each_other(session_dir: Path) -> None:
+    """
+    Given many dispatches recorded from concurrent threads
+    When they race for the next file number
+    Then every dispatch lands on its own file — the O_EXCL claim makes the
+    slow loser move on rather than silently replacing the winner's record.
+    """
+    import threading
+
+    log = SessionLog(session_dir)
+    workers = [threading.Thread(target=record_dispatch, args=(log,)) for _ in range(8)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+
+    recorded = list((session_dir / "dispatches").glob("*.json"))
+    assert len(recorded) == 8

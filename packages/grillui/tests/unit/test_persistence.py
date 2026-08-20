@@ -16,6 +16,7 @@ from conftest import SEED_NODE, event, post, seed_node
 from fastapi.testclient import TestClient
 
 from grillui.log import IMAGE1_FILE, IMAGE2_FILE, LOG_FILE, SessionLog
+from grillui.persistence import project_and_persist
 from grillui.projector import fold, to_image1
 from grillui.schemas import STATUS_KIND, STATUS_PHASE_ERROR, Image1, Image2
 
@@ -214,3 +215,22 @@ def test_a_status_emitted_while_the_append_lock_is_held_does_not_deadlock(
     assert landed.wait(DEADLOCK_TIMEOUT), "emitting a status under the append lock deadlocked"
     assert log.entries()[-1].kind == STATUS_KIND
     assert log.seq == 1
+
+
+def test_a_dead_status_lane_does_not_turn_acceptance_into_an_error(
+    session_dir: Path,
+) -> None:
+    """
+    Given a projection failure whose status report itself fails
+    When project_and_persist runs
+    Then nothing escapes — the batch was already accepted, and the last
+    surface left is the process log, not a 500.
+    """
+    from unittest.mock import patch
+
+    log = SessionLog(session_dir)
+    with (
+        patch("grillui.persistence.write_images", side_effect=OSError("disk full")),
+        patch.object(log, "emit_status", side_effect=OSError("log unwritable")),
+    ):
+        project_and_persist(log)

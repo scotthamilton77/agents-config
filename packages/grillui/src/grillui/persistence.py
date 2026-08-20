@@ -12,11 +12,14 @@ decision.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from grillui.log import IMAGE1_FILE, IMAGE2_FILE
 from grillui.projector import fold, to_image1
 from grillui.schemas import STATUS_PHASE_ERROR
+
+_LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -43,4 +46,15 @@ def project_and_persist(log: SessionLog) -> None:
     try:
         write_images(log.directory, fold(log.epoch, log.entries()))
     except Exception as error:
-        log.emit_status(STATUS_PHASE_ERROR, f"projection failed: {error!r}")
+        try:
+            log.emit_status(STATUS_PHASE_ERROR, f"projection failed: {error!r}")
+        except Exception:
+            # The lane itself can be down (disk full takes the log with it).
+            # The batch is already accepted and its receipts already computed,
+            # so nothing may escape here and turn acceptance into a 500 --
+            # stderr is the last surface left.
+            _LOGGER.error(
+                "status lane unavailable while reporting projection failure %r",
+                error,
+                exc_info=True,
+            )

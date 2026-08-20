@@ -270,3 +270,22 @@ def test_requires_action_is_true_only_for_a_real_boolean() -> None:
     ]
 
     assert fold(EPOCH, entries).threads[0].requires_action is False
+
+
+def test_an_unhashable_who_falls_back_to_the_entrys_actor() -> None:
+    """
+    Given an accepted thread turn whose who is a dict rather than a string
+    When the fold reads it
+    Then the turn is attributed to the entry's actor instead of crashing.
+    """
+    entries = [
+        entry(
+            1,
+            "thread-created",
+            actor="human",
+            channel="t1",
+            turns=[{"who": {"name": "mallory"}, "text": "hi"}],
+        ),
+    ]
+
+    assert fold(EPOCH, entries).threads[0].turns[0].who == "human"

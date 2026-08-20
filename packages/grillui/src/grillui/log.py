@@ -105,10 +105,14 @@ class SessionLog:
         return self._index.last_seq
 
     def entries(self) -> list[LogEntry]:
-        return list(self._entries)
+        """A stable snapshot: taken under the append lock, so a reader folding
+        it never sees a batch half-landed."""
+        with self._lock:
+            return list(self._entries)
 
     def entries_after(self, cursor: int) -> list[LogEntry]:
-        return [entry for entry in self._entries if entry.seq > cursor]
+        with self._lock:
+            return [entry for entry in self._entries if entry.seq > cursor]
 
     def submit(self, batch: Sequence[EventSubmission], epoch: str) -> list[Receipt]:
         """Judge and append a batch under one epoch, one receipt per event in

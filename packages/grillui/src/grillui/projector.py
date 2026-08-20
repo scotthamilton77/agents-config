@@ -176,7 +176,7 @@ def _who(raw: object, fallback: Actor) -> Actor:
     who it claims said it, so an unknown attribution is already durable by the
     time the fold sees it. It falls back to the entry's own actor rather than
     raising over something that already has a receipt."""
-    return cast("Actor", raw) if raw in ACTORS else fallback
+    return cast("Actor", raw) if isinstance(raw, str) and raw in ACTORS else fallback
 
 
 def _thread_id(entry: LogEntry) -> str:
