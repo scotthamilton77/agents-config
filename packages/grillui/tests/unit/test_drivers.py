@@ -31,6 +31,7 @@ from conftest import (
     event,
     handoff_doc,
     post,
+    replies,
     write_handoff,
 )
 
@@ -106,17 +107,6 @@ def human_turn(log: SessionLog, text: str, channel: str = "map", **extra: Any) -
         log.epoch,
     )[0]
     assert receipt.status == "accepted"
-
-
-def replies(log: SessionLog) -> list[dict[str, Any]]:
-    """Every agent reply, read back out of the log file on disk."""
-    lines = (log.directory / LOG_FILE).read_text(encoding="utf-8").splitlines()
-    entries = [json.loads(line) for line in lines if line.strip()]
-    return [
-        entry["payload"]
-        for entry in entries
-        if entry["actor"] in {"grill-master", "thread-agent"} and TIER_KEY in entry["payload"]
-    ]
 
 
 def take_fast_turn(log: SessionLog, transport: ScriptedFast, **config: str) -> None:

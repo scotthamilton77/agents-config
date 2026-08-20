@@ -21,8 +21,10 @@ from fastapi.testclient import TestClient
 
 from grillui.api import create_app
 from grillui.dispatch import agent_for
-from grillui.log import HANDOFF_FILE, SessionLog
+from grillui.lane import Lane
+from grillui.log import HANDOFF_FILE, LOG_FILE, SessionLog
 from grillui.schemas import (
+    TIER_KEY,
     DispatchContext,
     EventSubmission,
     LogEntry,
@@ -183,6 +185,26 @@ class ScriptedFast:
 def driven(log: SessionLog, driver: Any, expert: Any = None) -> TestClient:
     """A client over one log with a tier attached, and optionally an expert one."""
     return TestClient(create_app(log, driver, expert=expert))
+
+
+def run_turns(lane: Lane, *events: EventSubmission) -> list[dict[str, Any]]:
+    """Accept a batch and wait out every turn it scheduled."""
+    receipts, turns = lane.accept(list(events), lane.log.epoch)
+    for turn in turns:
+        turn.join(TIMEOUT)
+    assert all(receipt.status == "accepted" for receipt in receipts)
+    return [receipt.model_dump() for receipt in receipts]
+
+
+def replies(log: SessionLog) -> list[dict[str, Any]]:
+    """Every agent reply, read back out of the log file on disk."""
+    lines = (log.directory / LOG_FILE).read_text(encoding="utf-8").splitlines()
+    entries = [json.loads(line) for line in lines if line.strip()]
+    return [
+        entry["payload"]
+        for entry in entries
+        if entry["actor"] in {"grill-master", "thread-agent"} and TIER_KEY in entry["payload"]
+    ]
 
 
 def dispatch_context(

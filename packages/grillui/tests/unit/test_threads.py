@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import TIMEOUT, ScriptedCli, ScriptedFast, event, post, seed_node
+from conftest import TIMEOUT, ScriptedCli, ScriptedFast, event, post, run_turns, seed_node
 from fastapi.testclient import TestClient
 
 from grillui.dispatch import GRILL_MASTER, THREAD_AGENT, record_dispatch
@@ -139,15 +139,6 @@ def human_answer(key: str, **payload: Any) -> EventSubmission:
     return turn_event(
         "answer", MAP_CHANNEL, key, target=NODE, answer={"text": "an append-only log"}, **payload
     )
-
-
-def run_turns(lane: Lane, *events: EventSubmission) -> list[dict[str, Any]]:
-    """Accept a batch and wait out every turn it scheduled."""
-    receipts, turns = lane.accept(list(events), lane.log.epoch)
-    for turn in turns:
-        turn.join(TIMEOUT)
-    assert all(receipt.status == "accepted" for receipt in receipts)
-    return [receipt.model_dump() for receipt in receipts]
 
 
 def raw(log: SessionLog) -> str:
