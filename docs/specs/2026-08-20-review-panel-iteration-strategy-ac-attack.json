@@ -1,0 +1,1203 @@
+{
+  "schema_version": "1",
+  "spec_path": "2026-08-20-review-panel-iteration-strategy.md",
+  "spec_revision": "sha256:5477150e258d4d3ca355c76bc6b22fdb83b48c364404f09330129e5b4d97c935",
+  "lenses": [
+    {
+      "lens": "criteria-holes",
+      "report": "proposals"
+    },
+    {
+      "lens": "edge-cases",
+      "report": "proposals"
+    },
+    {
+      "lens": "absent-requirements",
+      "report": "proposals"
+    }
+  ],
+  "proposals": [
+    {
+      "id": "ch-1",
+      "lens": "criteria-holes",
+      "target_ac": "B1",
+      "hole": "The precondition gate accepts unverified claims of green gate execution as evidence.",
+      "proposed_ac": "Emission proceeds only when each recorded gate result is independently verifiable against the reviewed head SHA, such as by an execution record or reproducible check.",
+      "red_test_sketch": {
+        "given": "A target has evidence stating that its required gate passed at the current SHA, but no execution record, log, or reproducible result exists.",
+        "when": "The panel attempts emission.",
+        "expect": "Emission refuses the target and names the gate as unverifiable."
+      }
+    },
+    {
+      "id": "ch-2",
+      "lens": "criteria-holes",
+      "target_ac": "B1",
+      "hole": "A profile can declare zero preconditions for an artifact that requires mechanical verification, allowing the panel to review around missing upstream tests.",
+      "proposed_ac": "Profiles for typed code and documentation artifacts must include their mandated mechanical gates; a zero-precondition profile is valid only for artifact types explicitly classified as requiring no gates.",
+      "red_test_sketch": {
+        "given": "A typed-code profile declares an empty precondition set.",
+        "when": "The profile is selected for a typed-code target.",
+        "expect": "Profile validation rejects the typed-code profile and emission cannot proceed under it."
+      }
+    },
+    {
+      "id": "ch-3",
+      "lens": "criteria-holes",
+      "target_ac": "B2",
+      "hole": "Staffing can silently exclude a lens that is materially applicable because the recommendation rationale is unconstrained.",
+      "proposed_ac": "Every excluded class-roster lens must have a recorded, checkable rationale showing why its mandate cannot find an in-scope defect in the target.",
+      "red_test_sketch": {
+        "given": "A target contains authentication logic, but the staffing record excludes the security lens with the rationale 'not needed'.",
+        "when": "The staffing record is validated.",
+        "expect": "Staffing validation rejects the recommendation."
+      }
+    },
+    {
+      "id": "ch-4",
+      "lens": "criteria-holes",
+      "target_ac": "B3",
+      "hole": "Delta scoping can omit unchanged dependencies or surrounding context whose behavior is affected by the changed text.",
+      "proposed_ac": "A delta-scoped lens must read every unchanged dependency and contract context whose behavior or interpretation can be affected by the delta, and the scope record must identify that closure.",
+      "red_test_sketch": {
+        "given": "The delta changes a caller's permission argument while the authorization helper and its contract remain unchanged.",
+        "when": "Round-two delta scope is assembled.",
+        "expect": "The lens scope includes the unchanged authorization helper and its contract."
+      }
+    },
+    {
+      "id": "ch-5",
+      "lens": "criteria-holes",
+      "target_ac": "B4",
+      "hole": "The terminal sweep can be vacuous when frontier staffing drops to zero, while still being recorded as the required whole-artifact pass.",
+      "proposed_ac": "A campaign may declare terminal-clean only after at least one frontier-tier seat has completed and attested to a whole-artifact blocking-only sweep; zero available seats require human escalation.",
+      "red_test_sketch": {
+        "given": "A delta round reaches zero blocking findings, but staffing assigns no frontier-tier seats to the terminal sweep.",
+        "when": "The campaign attempts terminal closure.",
+        "expect": "The campaign does not declare terminal-clean and instead escalates."
+      }
+    },
+    {
+      "id": "ch-6",
+      "lens": "criteria-holes",
+      "target_ac": "B5",
+      "hole": "A fix dispatch can be emitted with incomplete or non-actionable instructions while satisfying the four stated fix clauses.",
+      "proposed_ac": "Every blocking finding in a verdict must map to exactly one actionable fix or disposition in the fix dispatch, and the next review round must verify that mapping.",
+      "red_test_sketch": {
+        "given": "The verdict contains two blocking findings, but the dispatch says only 'clean up the affected section' without identifying either finding or a verification action.",
+        "when": "The fix dispatch is emitted.",
+        "expect": "Dispatch validation rejects the dispatch as incomplete."
+      }
+    },
+    {
+      "id": "ch-7",
+      "lens": "criteria-holes",
+      "target_ac": "B6",
+      "hole": "Blame attribution can transfer an actually campaign-introduced defect because the recorded attribution, rather than provenance evidence, is what is audited.",
+      "proposed_ac": "A transferred disposition is valid only when repository history demonstrates that the defect predates the campaign scope and the cited work item records ownership of that pre-existing defect.",
+      "red_test_sketch": {
+        "given": "The changed lines introducing a blocking defect were committed after the campaign began, but the assembler records the finding as pre-existing with a work-item id.",
+        "when": "Disposition validation runs.",
+        "expect": "The finding remains in the campaign and cannot receive a transferred disposition."
+      }
+    },
+    {
+      "id": "ch-8",
+      "lens": "criteria-holes",
+      "target_ac": "B7",
+      "hole": "The trend analyst may choose any termination outcome without demonstrating that its conclusion follows from the campaign evidence.",
+      "proposed_ac": "A trend-analyst verdict must cite the retained per-round findings, severity direction, fix history, and lens staffing changes that support its selected outcome; an unsupported outcome is invalid.",
+      "red_test_sketch": {
+        "given": "Finding count and severity are both rising, but the analyst returns 'continue two more rounds' with no evidence references or rationale.",
+        "when": "The trend-analyst dispatch is validated.",
+        "expect": "The analyst verdict is rejected as unsupported."
+      }
+    },
+    {
+      "id": "ch-9",
+      "lens": "criteria-holes",
+      "target_ac": "B8",
+      "hole": "An unlisted artifact type can be assigned any vaguely 'nearest' profile because the document defines no selection rule.",
+      "proposed_ac": "Selection of a profile for an unlisted artifact type must use a deterministic matching rule over declared artifact properties and record the matched properties and runner-up profiles.",
+      "red_test_sketch": {
+        "given": "A generated migration guide is assigned the general-docs profile even though its executable examples match the typed-code profile, and no matching rationale is recorded.",
+        "when": "Staffing validates the profile choice.",
+        "expect": "Profile selection fails validation instead of accepting the arbitrary choice."
+      }
+    },
+    {
+      "id": "ch-10",
+      "lens": "criteria-holes",
+      "target_ac": "B9",
+      "hole": "A misleading or stale comment that causes no demonstrated reader misinterpretation is excluded even when it contradicts the current decision.",
+      "proposed_ac": "The embedded-prose mandate reports comments or docstrings that contradict the current behavior or decision, whether or not a concrete reader misreading has been observed; the finding must identify the contradiction.",
+      "red_test_sketch": {
+        "given": "A docstring says a function never retries, while the current implementation retries, but no test or user has yet demonstrated a misreading.",
+        "when": "The typed-code documentation-quality lens reviews the artifact.",
+        "expect": "The stale comment is reported as a blocking or applicable documentation finding."
+      }
+    },
+    {
+      "id": "ar-1",
+      "lens": "absent-requirements",
+      "target_ac": "none",
+      "hole": "Mixed targets could be reviewed as one undifferentiated round or have findings and verdicts cross class boundaries.",
+      "proposed_ac": "For a target containing multiple artifact classes, the campaign partitions the target by class and runs exactly one independently staffed round and verdict per class.",
+      "red_test_sketch": {
+        "given": "A target containing typed code, prose, and a specification.",
+        "when": "The review campaign is assembled.",
+        "expect": "Each class has its own round, staffing record, findings, and verdict, with no finding attributed across class boundaries."
+      }
+    },
+    {
+      "id": "ar-2",
+      "lens": "absent-requirements",
+      "target_ac": "B1",
+      "hole": "A profile with no declared preconditions could still be rejected for empty evidence, or evidence for the wrong profile could be accepted.",
+      "proposed_ac": "The gate evaluates only the selected profile's declared preconditions: a profile with zero preconditions passes with empty evidence, while evidence for another profile does not satisfy the selected profile.",
+      "red_test_sketch": {
+        "given": "Two profiles, one with no preconditions and one requiring a named gate.",
+        "when": "Each target is emitted with empty or mismatched evidence.",
+        "expect": "The zero-precondition target emits successfully with empty evidence, and the mismatched-evidence target is bounced naming the missing selected-profile gate."
+      }
+    },
+    {
+      "id": "ar-3",
+      "lens": "absent-requirements",
+      "target_ac": "B1",
+      "hole": "Stale gate evidence could be accepted after the reviewed head changes.",
+      "proposed_ac": "Evidence recorded for any SHA other than the reviewed head SHA causes emission to bounce upstream as stale.",
+      "red_test_sketch": {
+        "given": "A target whose gate evidence references an older SHA.",
+        "when": "Emission is attempted at a newer head SHA.",
+        "expect": "No review is emitted and the refusal identifies stale evidence and the reviewed head SHA."
+      }
+    },
+    {
+      "id": "ar-4",
+      "lens": "absent-requirements",
+      "target_ac": "B1",
+      "hole": "The panel could review around a missing mechanical gate or judge whether upstream selected the right gates.",
+      "proposed_ac": "When a declared mechanical gate is missing, the panel stops before staffing or review and reports only the missing gate; it does not review the target or assess gate suitability.",
+      "red_test_sketch": {
+        "given": "A profile declaring a gate with no corresponding green evidence.",
+        "when": "The precondition check runs.",
+        "expect": "The result is an upstream bounce naming the missing gate, with no panel findings or gate-appropriateness judgment."
+      }
+    },
+    {
+      "id": "ar-5",
+      "lens": "absent-requirements",
+      "target_ac": "B2",
+      "hole": "The zero-force path could silently omit the required recorded justification.",
+      "proposed_ac": "Every zero-force terminal decision records a non-blank justification that states why the residual review surface is empty.",
+      "red_test_sketch": {
+        "given": "A profile whose default staffing force is zero and an empty residual surface.",
+        "when": "A zero-force verdict is validated.",
+        "expect": "A zero-force verdict without justification is rejected; one with justification is accepted."
+      }
+    },
+    {
+      "id": "ar-6",
+      "lens": "absent-requirements",
+      "target_ac": "B2",
+      "hole": "Staffing could omit rationale, bypass the required recommender, or behave differently between interactive and non-interactive runs.",
+      "proposed_ac": "Each non-empty staffing record contains a foreign mid-tier model recommendation and rationale; interactive runs present that recommendation to the user, while non-interactive runs record it and proceed without interaction.",
+      "red_test_sketch": {
+        "given": "A target requiring staffing in interactive and non-interactive execution modes.",
+        "when": "Staffing is performed.",
+        "expect": "The record identifies the recommender and rationale, and the two execution modes follow their specified interaction behavior."
+      }
+    },
+    {
+      "id": "ar-7",
+      "lens": "absent-requirements",
+      "target_ac": "B2",
+      "hole": "A subtract-only staffing decision could add a lens outside the class roster.",
+      "proposed_ac": "Staffing may remove roster lenses but cannot add any lens absent from the class roster.",
+      "red_test_sketch": {
+        "given": "A class roster containing lenses A and B and a staffing recommendation containing A and C.",
+        "when": "The staffing artifact is validated.",
+        "expect": "A recommendation naming an out-of-roster lens is rejected and no review seat is created for it."
+      }
+    },
+    {
+      "id": "ar-8",
+      "lens": "absent-requirements",
+      "target_ac": "B2",
+      "hole": "A zero-lens staffing decision could incorrectly produce an ordinary verdict or no terminal record.",
+      "proposed_ac": "A zero-lens staffing decision creates a terminal record with a non-blank justification and creates no verdict.",
+      "red_test_sketch": {
+        "given": "A target for which staffing selects zero lenses.",
+        "when": "The staffing result is finalized.",
+        "expect": "Validation accepts the terminal zero-lens record only with justification and rejects any associated verdict."
+      }
+    },
+    {
+      "id": "ar-9",
+      "lens": "absent-requirements",
+      "target_ac": "B3",
+      "hole": "A clean lens could be retained in later rounds, or a newly staffed lens could incorrectly receive only a delta.",
+      "proposed_ac": "After each round, lenses that went clean are removed from subsequent staffing, and any newly staffed lens with no previously judged head receives a full-artifact read.",
+      "red_test_sketch": {
+        "given": "A round whose lens A is clean and whose next staffing adds lens B.",
+        "when": "The next round is assembled.",
+        "expect": "The clean lens is absent from the next staffing record, while the new lens receives a full-read scope."
+      }
+    },
+    {
+      "id": "ar-10",
+      "lens": "absent-requirements",
+      "target_ac": "B3",
+      "hole": "Delta scoping could omit the disposition ledger or include unrelated unchanged artifact content.",
+      "proposed_ac": "Every surviving lens in a post-round-one delta round reads exactly the changes since its last judged head plus the disposition ledger, and no unrelated unchanged content.",
+      "red_test_sketch": {
+        "given": "An artifact with unchanged content outside a known fix delta and a populated disposition ledger.",
+        "when": "The next delta round is assembled.",
+        "expect": "The recorded read scope contains the delta and ledger only."
+      }
+    },
+    {
+      "id": "ar-11",
+      "lens": "absent-requirements",
+      "target_ac": "B3",
+      "hole": "The accretion trigger could fail to force a full rescope when fixes materially grow the artifact or invalidate an original assumption.",
+      "proposed_ac": "If fixes since the last full read exceed trivial growth or a finding shows an original assumption was wrong, the next round is full-scoped; otherwise it remains delta-scoped.",
+      "red_test_sketch": {
+        "given": "Campaigns exhibiting each of the two trigger conditions and a control campaign without either.",
+        "when": "The next round is assembled.",
+        "expect": "Each trigger causes a full rescope, while a trivial fix without an invalidated assumption does not."
+      }
+    },
+    {
+      "id": "ar-12",
+      "lens": "absent-requirements",
+      "target_ac": "B4",
+      "hole": "A round-one clean result could be subjected to an unnecessary terminal sweep, or a delta-clean campaign could terminate without one.",
+      "proposed_ac": "A clean complete full round one terminates directly, while any campaign reaching zero blocking findings through delta rounds performs exactly one terminal sweep before declaring terminal-clean.",
+      "red_test_sketch": {
+        "given": "One campaign clean in round one and another clean after delta rounds.",
+        "when": "Termination is evaluated.",
+        "expect": "The round-one clean campaign has no sweep, and the delta-clean campaign has one sweep before termination."
+      }
+    },
+    {
+      "id": "ar-13",
+      "lens": "absent-requirements",
+      "target_ac": "B4",
+      "hole": "The terminal sweep could be staffed with non-frontier lenses, perform a findings hunt, or trigger repeatedly without accretion.",
+      "proposed_ac": "The terminal sweep uses only frontier-tier seats, is framed as blocking-only confirmation, and a second sweep is prohibited unless the accretion trigger re-arms it.",
+      "red_test_sketch": {
+        "given": "A delta-clean campaign with frontier and non-frontier class seats and no accretion.",
+        "when": "The terminal sweep is assembled and completed.",
+        "expect": "Non-frontier seats and non-blocking hunt output are rejected, and no second sweep occurs without a re-armed trigger."
+      }
+    },
+    {
+      "id": "ar-14",
+      "lens": "absent-requirements",
+      "target_ac": "B4",
+      "hole": "Findings from the terminal sweep could bypass the ordinary fix and verification loop.",
+      "proposed_ac": "Any blocking finding produced by the terminal sweep enters the normal fix-dispatch and delta-verification loop, and terminal-clean is withheld until that loop is clean.",
+      "red_test_sketch": {
+        "given": "A campaign whose terminal sweep reports one blocking defect.",
+        "when": "The sweep verdict is processed.",
+        "expect": "A sweep finding creates a subsequent fix dispatch and verification round rather than immediate termination."
+      }
+    },
+    {
+      "id": "ar-15",
+      "lens": "absent-requirements",
+      "target_ac": "B5",
+      "hole": "A findings round could emit a verdict without the corresponding fix dispatch.",
+      "proposed_ac": "Every findings round emits a fix dispatch alongside its verdict, and the dispatch references the findings it must address.",
+      "red_test_sketch": {
+        "given": "A round containing one finding.",
+        "when": "The round output is validated.",
+        "expect": "A verdict without a paired dispatch is invalid."
+      }
+    },
+    {
+      "id": "ar-16",
+      "lens": "absent-requirements",
+      "target_ac": "B5",
+      "hole": "A typed-code mechanical finding could be marked fixed without proof that the fix is causally necessary.",
+      "proposed_ac": "A typed-code mechanical finding may be marked fixed only when its ledger entry contains non-blank mutation evidence showing the test fails without the fix.",
+      "red_test_sketch": {
+        "given": "A typed-code mechanical finding and candidate fixed ledger entries.",
+        "when": "The disposition is validated.",
+        "expect": "A fixed entry lacking mutation evidence, or with evidence showing the test still passes without the fix, is rejected."
+      }
+    },
+    {
+      "id": "ar-17",
+      "lens": "absent-requirements",
+      "target_ac": "B5",
+      "hole": "Prose fixes could add qualifying text without recording why replacement was impossible, or trigger no consistency review after material growth.",
+      "proposed_ac": "A prose fix that materially grows the artifact records why replacement could not achieve the fix and causes the consistency lens to be re-staffed for the new text in the next round.",
+      "red_test_sketch": {
+        "given": "A prose finding fixed by adding non-trivial text.",
+        "when": "The fix dispatch and next staffing decision are validated.",
+        "expect": "The growing fix is rejected without a replacement exception, and accepted growth produces consistency-lens staffing and a new-text delta scope."
+      }
+    },
+    {
+      "id": "ar-18",
+      "lens": "absent-requirements",
+      "target_ac": "B5",
+      "hole": "Fixes could introduce transition or historical narration instead of stating the current decision.",
+      "proposed_ac": "A fix round rejects newly introduced transition commentary or fix-history narration and accepts only prose that states the current decision or required explanation.",
+      "red_test_sketch": {
+        "given": "A prose fix containing transition commentary.",
+        "when": "The fix dispatch is reviewed.",
+        "expect": "A fix adding phrases such as historical transition narration fails the narration sweep."
+      }
+    },
+    {
+      "id": "ar-19",
+      "lens": "absent-requirements",
+      "target_ac": "B6",
+      "hole": "A pre-existing non-blocking finding could remain in the campaign, or a blocking one could be transferred out.",
+      "proposed_ac": "At round assembly, PR-induced and missed-in-scope findings remain in the campaign; only pre-existing non-blocking findings with blame attribution and a filed work-item ID may be transferred, while pre-existing blocking findings remain in the campaign.",
+      "red_test_sketch": {
+        "given": "Findings covering all four combinations of pre-existing/PR-induced and blocking/non-blocking, with and without work-item evidence.",
+        "when": "The assembler assigns dispositions.",
+        "expect": "The disposition matches each finding's blame and severity, and invalid transfers are rejected."
+      }
+    },
+    {
+      "id": "ar-20",
+      "lens": "absent-requirements",
+      "target_ac": "B6",
+      "hole": "A finding that identifies defective acceptance criteria could cause another review round instead of halting the campaign.",
+      "proposed_ac": "A finding indicting acceptance criteria or requirements produces an immediate halted verdict with an upstream-defect halt reason and no subsequent review round.",
+      "red_test_sketch": {
+        "given": "A round containing a finding that the acceptance criteria are defective.",
+        "when": "The round verdict is assembled.",
+        "expect": "The campaign halts immediately and does not dispatch another lens round."
+      }
+    },
+    {
+      "id": "ar-21",
+      "lens": "absent-requirements",
+      "target_ac": "B6",
+      "hole": "The campaign could resume after an upstream-defect halt before the upstream artifact is fixed.",
+      "proposed_ac": "A halted campaign resumes review only after the referenced upstream artifact is changed and its resulting state is available for review.",
+      "red_test_sketch": {
+        "given": "A campaign halted for an upstream defect.",
+        "when": "Resume is requested before and after the upstream artifact changes.",
+        "expect": "A resume attempt without an upstream fix is rejected; a resume after the fix is permitted."
+      }
+    },
+    {
+      "id": "ar-22",
+      "lens": "absent-requirements",
+      "target_ac": "B7",
+      "hole": "The trend analyst could run at the wrong cadence, use the wrong model tier, or return an unrecognized decision.",
+      "proposed_ac": "After round two and after every two further non-clean rounds, exactly one Fable-high trend-analysis dispatch runs and its verdict is one of continue two rounds, bounce upstream, or escalate to the human.",
+      "red_test_sketch": {
+        "given": "A campaign with successive non-clean rounds through each cadence boundary.",
+        "when": "Round termination is evaluated.",
+        "expect": "The dispatch occurs at each required boundary with the required model tier, and invalid or missing verdict choices fail validation."
+      }
+    },
+    {
+      "id": "ar-23",
+      "lens": "absent-requirements",
+      "target_ac": "B7",
+      "hole": "A continue verdict could fail to influence staffing, or a bikeshedding lens could remain staffed.",
+      "proposed_ac": "A trend analyst's continue verdict supplies staffing advice consumed by the next staffing decision, including removal of any lens identified as bikeshedding.",
+      "red_test_sketch": {
+        "given": "A trend verdict recommending continuation and de-staffing lens A.",
+        "when": "The next round is staffed.",
+        "expect": "The next staffing record reflects the advice and excludes a lens marked bikeshedding."
+      }
+    },
+    {
+      "id": "ar-24",
+      "lens": "absent-requirements",
+      "target_ac": "B7",
+      "hole": "Analyst dispatch failure could silently continue the campaign.",
+      "proposed_ac": "Any trend-analysis dispatch failure terminates the campaign with escalation to the human rather than continuation or silent omission.",
+      "red_test_sketch": {
+        "given": "A campaign at a required analyst boundary where dispatch fails.",
+        "when": "Termination is evaluated.",
+        "expect": "The terminal result is human escalation with a recorded analyst-failure reason."
+      }
+    },
+    {
+      "id": "ar-25",
+      "lens": "absent-requirements",
+      "target_ac": "B8",
+      "hole": "A selected artifact type could receive an improvised lens set when its profile is absent.",
+      "proposed_ac": "An unlisted artifact type is assigned the nearest explicitly recorded profile before staffing, and no improvised lens set may be used.",
+      "red_test_sketch": {
+        "given": "A target whose artifact type has no exact profile-table row.",
+        "when": "Staffing begins.",
+        "expect": "The profile choice is recorded and review proceeds from that profile; an unrecorded or improvised choice is rejected."
+      }
+    },
+    {
+      "id": "ar-26",
+      "lens": "absent-requirements",
+      "target_ac": "none",
+      "hole": "Settled items and rebutted design-decision attacks could be re-litigated in later rounds.",
+      "proposed_ac": "Every later lens read receives the settled-items ledger, and findings matching settled or rebutted design-decision items are not re-emitted.",
+      "red_test_sketch": {
+        "given": "A disposition ledger containing a settled rebuttal and a later round with the same issue unchanged.",
+        "when": "The later lens reads the target.",
+        "expect": "A lens attempting to re-file a settled item produces no new finding."
+      }
+    },
+    {
+      "id": "ec-1",
+      "lens": "edge-cases",
+      "target_ac": "B1",
+      "hole": "A recorded gate result that exists but is failed, malformed, or not green may be treated as sufficient evidence.",
+      "proposed_ac": "Emission refuses when any declared mechanical gate is recorded as failed, malformed, or non-green, naming that gate.",
+      "red_test_sketch": {
+        "given": "A target whose profile declares a gate with recorded evidence at the current head SHA, but the evidence is failed or malformed.",
+        "when": "Emission is attempted.",
+        "expect": "Emission is refused and identifies the failed or invalid gate."
+      }
+    },
+    {
+      "id": "ec-2",
+      "lens": "edge-cases",
+      "target_ac": "B1",
+      "hole": "Evidence can become stale between validation and emission.",
+      "proposed_ac": "Emission validates the head SHA atomically with acceptance of the target and refuses if the target changes before emission completes.",
+      "red_test_sketch": {
+        "given": "Valid green evidence for head SHA H and a target whose head changes to H2 during emission.",
+        "when": "Emission is attempted.",
+        "expect": "The target is refused as stale and no campaign is emitted."
+      }
+    },
+    {
+      "id": "ec-3",
+      "lens": "edge-cases",
+      "target_ac": "B1",
+      "hole": "An empty precondition set may be confused with missing profile data.",
+      "proposed_ac": "A declared profile with zero preconditions passes with empty evidence, while a missing or invalid profile is refused as a profile-resolution error.",
+      "red_test_sketch": {
+        "given": "Two otherwise identical targets, one with a valid zero-precondition profile and one with no resolvable profile.",
+        "when": "Emission is attempted for each.",
+        "expect": "The zero-precondition profile proceeds; the missing-profile target is refused."
+      }
+    },
+    {
+      "id": "ec-4",
+      "lens": "edge-cases",
+      "target_ac": "B2",
+      "hole": "A staffing recommendation can name lenses outside the class roster or silently omit required record fields.",
+      "proposed_ac": "Staffing rejects recommendations containing non-roster lenses or missing rationale, round, class, or target identity, and records no usable staffing artifact.",
+      "red_test_sketch": {
+        "given": "A recommendation containing an unknown lens or a blank required field.",
+        "when": "The staffing artifact is assembled.",
+        "expect": "The invalid recommendation is rejected and cannot authorize a verdict."
+      }
+    },
+    {
+      "id": "ec-5",
+      "lens": "edge-cases",
+      "target_ac": "B2",
+      "hole": "Interactive staffing changes are not defined when the user rejects or edits the recommendation.",
+      "proposed_ac": "In interactive mode, a user rejection or edit produces a recorded subtract-only staffing decision, and the resulting verdict is validated against that final decision.",
+      "red_test_sketch": {
+        "given": "A recommendation for lenses A and B and a user choice retaining only A.",
+        "when": "The staffing session is completed.",
+        "expect": "Only the user-confirmed roster subset is staffed and the verdict must cover exactly that subset."
+      }
+    },
+    {
+      "id": "ec-6",
+      "lens": "edge-cases",
+      "target_ac": "B2",
+      "hole": "Repeated staffing for the same round can create duplicate or conflicting artifacts.",
+      "proposed_ac": "Repeated staffing with the same target, class, round, head, and recommendation is idempotent and yields one canonical staffing record.",
+      "red_test_sketch": {
+        "given": "A target with a completed staffing record.",
+        "when": "The same staffing operation is invoked twice.",
+        "expect": "Exactly one staffing record is referenced by the verdict and no duplicate seat is created."
+      }
+    },
+    {
+      "id": "ec-7",
+      "lens": "edge-cases",
+      "target_ac": "B3",
+      "hole": "An empty delta has no explicit behavior.",
+      "proposed_ac": "For a later round with no artifact changes since a lens's last judged head, the lens reads the disposition ledger and reports no new finding unless ledger state itself requires disposition.",
+      "red_test_sketch": {
+        "given": "A clean lens and an unchanged artifact at the same head.",
+        "when": "A later delta-scoped round runs.",
+        "expect": "The lens receives an empty artifact delta plus the ledger and produces no duplicate finding."
+      }
+    },
+    {
+      "id": "ec-8",
+      "lens": "edge-cases",
+      "target_ac": "B3",
+      "hole": "The boundary between trivial and non-trivial fix growth is unspecified.",
+      "proposed_ac": "The implementation defines and tests whether zero, negative, and boundary-sized net growth is trivial; only growth classified as non-trivial re-staffs consistency and scopes it over the new text.",
+      "red_test_sketch": {
+        "given": "Fixes with zero net growth, net shrinkage, and growth exactly at the configured triviality boundary.",
+        "when": "The next round's staffing is computed.",
+        "expect": "Each boundary input produces the documented rescoping decision consistently."
+      }
+    },
+    {
+      "id": "ec-9",
+      "lens": "edge-cases",
+      "target_ac": "B3",
+      "hole": "A newly staffed lens can be incorrectly delta-scoped despite having no prior judged head.",
+      "proposed_ac": "A lens newly added in any later round reads the full artifact, even when other lenses read deltas.",
+      "red_test_sketch": {
+        "given": "A later round that adds lens B, with B having no prior judged head.",
+        "when": "The round is assembled.",
+        "expect": "The new lens's input contains the whole artifact rather than only the latest diff."
+      }
+    },
+    {
+      "id": "ec-10",
+      "lens": "edge-cases",
+      "target_ac": "B3",
+      "hole": "Duplicate concurrent round assembly can advance the campaign twice over the same state.",
+      "proposed_ac": "Concurrent invocations for the same campaign head and round produce one round record, one verdict, and one disposition update.",
+      "red_test_sketch": {
+        "given": "A campaign ready to assemble round 2.",
+        "when": "Two round-assembly operations run concurrently.",
+        "expect": "One canonical round exists and duplicate work does not duplicate findings or ledger entries."
+      }
+    },
+    {
+      "id": "ec-11",
+      "lens": "edge-cases",
+      "target_ac": "B4",
+      "hole": "The exactly-one terminal sweep boundary is vulnerable to duplicate execution.",
+      "proposed_ac": "A campaign entering terminal sweep runs exactly one whole-artifact sweep, even when sweep scheduling is retried or invoked concurrently.",
+      "red_test_sketch": {
+        "given": "A campaign that reached zero blocking findings through delta rounds.",
+        "when": "Terminal-sweep scheduling is invoked twice concurrently.",
+        "expect": "One sweep record exists and no second sweep is created without a newly re-armed accretion trigger."
+      }
+    },
+    {
+      "id": "ec-12",
+      "lens": "edge-cases",
+      "target_ac": "B4",
+      "hole": "A clean round 1 may incorrectly trigger a terminal sweep.",
+      "proposed_ac": "A clean, complete whole-artifact round 1 terminates directly without creating a terminal-sweep record.",
+      "red_test_sketch": {
+        "given": "A round-1 verdict with complete staffing and zero blocking findings.",
+        "when": "Termination is evaluated.",
+        "expect": "The campaign is terminal-clean with no sweep dispatch."
+      }
+    },
+    {
+      "id": "ec-13",
+      "lens": "edge-cases",
+      "target_ac": "B4",
+      "hole": "A sweep finding can cause an accidental second unconditional sweep.",
+      "proposed_ac": "A finding from the terminal sweep re-enters fix and delta verification, and no second whole-artifact sweep occurs unless the accretion trigger is explicitly re-armed.",
+      "red_test_sketch": {
+        "given": "A terminal sweep that finds and then resolves one blocking defect.",
+        "when": "The post-fix review runs.",
+        "expect": "After fixing a sweep finding without re-arming accretion, only delta verification runs."
+      }
+    },
+    {
+      "id": "ec-14",
+      "lens": "edge-cases",
+      "target_ac": "B5",
+      "hole": "A findings round with no findings has unspecified fix-dispatch behavior.",
+      "proposed_ac": "A round with no findings emits no fix dispatch, while any round with at least one finding emits exactly one dispatch linked to its verdict.",
+      "red_test_sketch": {
+        "given": "Two rounds, one clean and one containing a finding.",
+        "when": "Both verdicts are finalized.",
+        "expect": "The clean round has no dispatch; the findings round has one linked dispatch."
+      }
+    },
+    {
+      "id": "ec-15",
+      "lens": "edge-cases",
+      "target_ac": "B5",
+      "hole": "Blank or unverifiable mutation evidence may satisfy the code-fix requirement.",
+      "proposed_ac": "A typed-code mechanical finding cannot be marked fixed unless mutation evidence is non-blank, identifies the relevant test, and verifies that the test fails on the pre-fix state and passes on the fixed state.",
+      "red_test_sketch": {
+        "given": "A typed-code mechanical finding marked fixed with one of those evidence forms.",
+        "when": "The disposition is validated.",
+        "expect": "Blank, whitespace-only, nonexistent-test, or failing verification evidence leaves the finding unresolved."
+      }
+    },
+    {
+      "id": "ec-16",
+      "lens": "edge-cases",
+      "target_ac": "B5",
+      "hole": "The replacement-first exception can accept growth without a concrete explanation.",
+      "proposed_ac": "A prose fix with non-trivial net growth is rejected unless its record names why replacement could not achieve the fix.",
+      "red_test_sketch": {
+        "given": "A prose finding fixed by adding text with non-trivial net growth.",
+        "when": "The fix dispatch is validated.",
+        "expect": "The fix is rejected for a blank, vague, or missing replacement exception."
+      }
+    },
+    {
+      "id": "ec-17",
+      "lens": "edge-cases",
+      "target_ac": "B5",
+      "hole": "Fix dispatch can be applied twice and accrete duplicate text.",
+      "proposed_ac": "Applying the same fix dispatch to the same artifact state twice is idempotent and does not duplicate prose or code changes.",
+      "red_test_sketch": {
+        "given": "An artifact after a successfully applied fix dispatch.",
+        "when": "The identical dispatch is applied again.",
+        "expect": "The second application makes no additional change and produces no duplicate ledger event."
+      }
+    },
+    {
+      "id": "ec-18",
+      "lens": "edge-cases",
+      "target_ac": "B6",
+      "hole": "Transfer validation does not define missing or invalid blame evidence.",
+      "proposed_ac": "A transferred disposition is rejected unless the finding is proven pre-existing, non-blocking, and linked to a valid filed work-item identifier.",
+      "red_test_sketch": {
+        "given": "A transfer request with missing, invalid, or contradictory blame or work-item evidence.",
+        "when": "The disposition is assembled.",
+        "expect": "The finding remains in-campaign and cannot be marked transferred."
+      }
+    },
+    {
+      "id": "ec-19",
+      "lens": "edge-cases",
+      "target_ac": "B6",
+      "hole": "A pre-existing blocking finding may be incorrectly transferred.",
+      "proposed_ac": "A pre-existing blocking finding remains in the campaign and cannot receive the transferred disposition.",
+      "red_test_sketch": {
+        "given": "A blocking finding attributed to pre-existing content with a filed work item.",
+        "when": "Blame split is performed.",
+        "expect": "The disposition is rejected as transferred and the campaign retains the blocking finding."
+      }
+    },
+    {
+      "id": "ec-20",
+      "lens": "edge-cases",
+      "target_ac": "B6",
+      "hole": "A halted campaign may continue when the same round contains an upstream-defect finding.",
+      "proposed_ac": "Any finding that indicts acceptance criteria or requirements produces a halted verdict and prevents further review rounds until upstream remediation is recorded.",
+      "red_test_sketch": {
+        "given": "A round containing an acceptance-criteria or requirements defect.",
+        "when": "The verdict is finalized.",
+        "expect": "No next round is scheduled and the verdict contains the upstream-defect halt reason."
+      }
+    },
+    {
+      "id": "ec-21",
+      "lens": "edge-cases",
+      "target_ac": "B6",
+      "hole": "A failed upstream remediation can incorrectly resume a halted campaign.",
+      "proposed_ac": "A halted campaign resumes only after the referenced upstream artifact is changed and its remediation is recorded; an unchanged or failed remediation leaves it halted.",
+      "red_test_sketch": {
+        "given": "A halted campaign and an absent, unchanged, or failed upstream remediation.",
+        "when": "Resume is requested.",
+        "expect": "Resume is refused until the upstream fix is present and accepted."
+      }
+    },
+    {
+      "id": "ec-22",
+      "lens": "edge-cases",
+      "target_ac": "B7",
+      "hole": "Analyst scheduling boundaries are underspecified at rounds 2, 4, and after clean rounds.",
+      "proposed_ac": "Trend analysis runs after round 2 and after every two subsequent non-clean rounds, but never after a terminal-clean round.",
+      "red_test_sketch": {
+        "given": "Campaign sequences ending non-clean at rounds 2, 3, 4, 5, and clean at round 3.",
+        "when": "Termination scheduling is evaluated after each round.",
+        "expect": "Analyst dispatches occur exactly at the specified boundaries and not at intervening or clean termination points."
+      }
+    },
+    {
+      "id": "ec-23",
+      "lens": "edge-cases",
+      "target_ac": "B7",
+      "hole": "A continue verdict can fail to provide consumable staffing advice or can continue a de-staffed lens.",
+      "proposed_ac": "A continue-two-rounds analyst verdict records staffing advice, and the next staffing decision consumes it, including removing a lens identified as bikeshedding.",
+      "red_test_sketch": {
+        "given": "An analyst verdict to continue that identifies lens B as bikeshedding.",
+        "when": "The next round is staffed.",
+        "expect": "The next staffing record reflects the advice and excludes the de-staffed lens."
+      }
+    },
+    {
+      "id": "ec-24",
+      "lens": "edge-cases",
+      "target_ac": "B7",
+      "hole": "Concurrent or repeated analyst dispatch can produce conflicting terminal decisions.",
+      "proposed_ac": "Only one trend-analysis verdict may be committed for a campaign checkpoint; retries return the committed verdict without scheduling another continuation or terminal action.",
+      "red_test_sketch": {
+        "given": "A campaign at an analyst checkpoint.",
+        "when": "Two analyst dispatches run concurrently.",
+        "expect": "One analyst verdict and one resulting campaign transition exist."
+      }
+    },
+    {
+      "id": "ec-25",
+      "lens": "edge-cases",
+      "target_ac": "B7",
+      "hole": "A missing trend-analysis dependency is not the only dispatch failure that can be tested.",
+      "proposed_ac": "If trend data, retained verdicts, or the analyst model is unavailable or malformed, the campaign terminates and escalates to the human rather than continuing.",
+      "red_test_sketch": {
+        "given": "An analyst checkpoint whose required input or analyst response is unavailable or invalid.",
+        "when": "Trend analysis is dispatched.",
+        "expect": "The campaign receives terminal human escalation with the dispatch-failure reason."
+      }
+    },
+    {
+      "id": "ec-26",
+      "lens": "edge-cases",
+      "target_ac": "B8",
+      "hole": "An unlisted artifact type with two equally near profiles can receive an improvised selection.",
+      "proposed_ac": "Profile resolution refuses an unlisted type when no unique nearest profile exists and records the ambiguity instead of selecting an improvised lens set.",
+      "red_test_sketch": {
+        "given": "An artifact type equally close to two profiles.",
+        "when": "Staffing resolves the profile.",
+        "expect": "No campaign is emitted and the ambiguity is reported."
+      }
+    },
+    {
+      "id": "ec-27",
+      "lens": "edge-cases",
+      "target_ac": "B8",
+      "hole": "Malformed, duplicate, or missing profile rows can silently alter staffing and force.",
+      "proposed_ac": "The profile table is rejected when a required minimum row is missing, a type has duplicate rows, or a row lacks staffing, force ceiling, or precondition data.",
+      "red_test_sketch": {
+        "given": "A profile table with each listed defect.",
+        "when": "The table is loaded.",
+        "expect": "Profile resolution fails before staffing or emission."
+      }
+    },
+    {
+      "id": "ec-28",
+      "lens": "edge-cases",
+      "target_ac": "B9",
+      "hole": "A misleading embedded comment that is brief may evade the prose duty.",
+      "proposed_ac": "A brief embedded comment is reported when it causes a specific incorrect interpretation, while a merely concise but accurate comment is not reported.",
+      "red_test_sketch": {
+        "given": "Two comments, one brief and misleading and one brief and accurate.",
+        "when": "The embedded-prose mandate reviews them.",
+        "expect": "The misleading comment yields a finding naming the misreading; the concise accurate comment yields none."
+      }
+    },
+    {
+      "id": "ec-29",
+      "lens": "edge-cases",
+      "target_ac": "none",
+      "hole": "Mixed targets can lose findings or records at the class partition boundary.",
+      "proposed_ac": "A target containing typed code, specification, and prose artifacts is partitioned into exactly one campaign round per present class, with each finding assigned to the correct class and no cross-class omission.",
+      "red_test_sketch": {
+        "given": "A mixed target containing all three classes.",
+        "when": "The campaign is assembled.",
+        "expect": "Three class campaigns are emitted, each with its own staffing and verdict, and no artifact portion is reviewed twice or omitted."
+      }
+    },
+    {
+      "id": "ec-30",
+      "lens": "edge-cases",
+      "target_ac": "B2",
+      "hole": "A class with no applicable lenses is not explicitly distinguished from a staffing failure.",
+      "proposed_ac": "When staffing validly selects zero lenses, the system records a justified terminal zero-lens decision and emits no verdict; when zero lenses result from an invalid or failed recommendation, emission fails instead.",
+      "red_test_sketch": {
+        "given": "One target with a justified zero-lens recommendation and one with a missing or failed staffing recommendation.",
+        "when": "Staffing is finalized.",
+        "expect": "Valid zero-lens staffing produces only the terminal record; invalid zero-lens staffing is rejected."
+      }
+    },
+    {
+      "id": "ec-31",
+      "lens": "edge-cases",
+      "target_ac": "B2",
+      "hole": "Verdict completeness can be checked against the class roster instead of the actual staffing record.",
+      "proposed_ac": "A verdict is invalid when it omits any staffed lens, even if that lens is absent from the class roster's current recommendation or was later removed from the profile table.",
+      "red_test_sketch": {
+        "given": "A staffing record containing lenses A and B and a verdict containing only A.",
+        "when": "Verdict completeness is validated.",
+        "expect": "Validation fails and identifies the staffed-but-unreported lens."
+      }
+    },
+    {
+      "id": "ec-32",
+      "lens": "edge-cases",
+      "target_ac": "none",
+      "hole": "Dependency failures other than the analyst can cause silent continuation or partial records.",
+      "proposed_ac": "If profile loading, ledger loading, head resolution, blame attribution, or verdict persistence fails, the operation produces an explicit failed or human-escalated outcome and does not emit a partial campaign state.",
+      "red_test_sketch": {
+        "given": "Each dependency made unavailable during campaign assembly or finalization.",
+        "when": "The affected operation runs.",
+        "expect": "No incomplete round or verdict is committed, and the failure is observable to the caller."
+      }
+    }
+  ],
+  "dispositions": [
+    {
+      "id": "ar-1",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B10"
+    },
+    {
+      "id": "ar-11",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B3"
+    },
+    {
+      "id": "ar-17",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B5"
+    },
+    {
+      "id": "ar-21",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B6"
+    },
+    {
+      "id": "ar-26",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B11"
+    },
+    {
+      "id": "ar-6",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B2"
+    },
+    {
+      "id": "ch-1",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B1"
+    },
+    {
+      "id": "ch-10",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B9"
+    },
+    {
+      "id": "ch-2",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B8"
+    },
+    {
+      "id": "ch-3",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B2"
+    },
+    {
+      "id": "ch-5",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B4"
+    },
+    {
+      "id": "ch-6",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B5"
+    },
+    {
+      "id": "ch-7",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B6"
+    },
+    {
+      "id": "ch-8",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B7"
+    },
+    {
+      "id": "ec-1",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B1"
+    },
+    {
+      "id": "ec-14",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B5"
+    },
+    {
+      "id": "ec-15",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B5"
+    },
+    {
+      "id": "ec-25",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B7"
+    },
+    {
+      "id": "ec-27",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B8"
+    },
+    {
+      "id": "ec-3",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B8"
+    },
+    {
+      "id": "ec-30",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B2"
+    },
+    {
+      "id": "ec-5",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B2"
+    },
+    {
+      "id": "ec-7",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B3"
+    },
+    {
+      "id": "ec-8",
+      "disposition": "accepted",
+      "revision": "sha256:199e3a3e1d5f5d39fbf2c947473142327414c6af31dd609cf7ebda323494eb99",
+      "covering_ac": "PANEL-B5"
+    },
+    {
+      "id": "ar-10",
+      "disposition": "rejected",
+      "rationale": "Rejected: the declared scope is the delta plus ledger (PANEL-B3), but prohibiting all unchanged context over-constrains prompt assembly and worsens the late-find risk the terminal sweep exists to absorb."
+    },
+    {
+      "id": "ar-12",
+      "disposition": "rejected",
+      "rationale": "Covered verbatim by PANEL-B4."
+    },
+    {
+      "id": "ar-13",
+      "disposition": "rejected",
+      "rationale": "Covered verbatim by PANEL-B4."
+    },
+    {
+      "id": "ar-14",
+      "disposition": "rejected",
+      "rationale": "Covered verbatim by PANEL-B4."
+    },
+    {
+      "id": "ar-15",
+      "disposition": "rejected",
+      "rationale": "Duplicate of ch-6, whose accepted per-finding dispatch mapping covers the linkage this proposes."
+    },
+    {
+      "id": "ar-16",
+      "disposition": "rejected",
+      "rationale": "Covered by PANEL-B5's mutation-evidence clause as strengthened by the accepted ec-15."
+    },
+    {
+      "id": "ar-18",
+      "disposition": "rejected",
+      "rationale": "Covered by PANEL-B5's narration-sweep clause."
+    },
+    {
+      "id": "ar-19",
+      "disposition": "rejected",
+      "rationale": "A test enumeration of PANEL-B6's stated rules, not a new criterion: every quadrant it names is already decided by B6's transfer-validity and non-transferability conditions."
+    },
+    {
+      "id": "ar-2",
+      "disposition": "rejected",
+      "rationale": "Covered: PANEL-B1 keys evidence to the selected profile's declared gates, so evidence naming another profile's gates satisfies nothing, and the zero-precondition pass is stated."
+    },
+    {
+      "id": "ar-20",
+      "disposition": "rejected",
+      "rationale": "Covered verbatim by PANEL-B6's halt rule."
+    },
+    {
+      "id": "ar-22",
+      "disposition": "rejected",
+      "rationale": "Covered verbatim by PANEL-B7's cadence, tier, and closed verdict set."
+    },
+    {
+      "id": "ar-23",
+      "disposition": "rejected",
+      "rationale": "Covered by PANEL-B7: the continue verdict's staffing advice is consumed by the next staffing decision, de-staffing included."
+    },
+    {
+      "id": "ar-24",
+      "disposition": "rejected",
+      "rationale": "Covered verbatim by PANEL-B7's escalate-on-failure rule."
+    },
+    {
+      "id": "ar-25",
+      "disposition": "rejected",
+      "rationale": "Covered verbatim by PANEL-B8's nearest-profile rule."
+    },
+    {
+      "id": "ar-3",
+      "disposition": "rejected",
+      "rationale": "Covered verbatim by PANEL-B1's stale-evidence refusal."
+    },
+    {
+      "id": "ar-4",
+      "disposition": "rejected",
+      "rationale": "Covered: PANEL-B1 refuses before any staffing or review, and the design states the panel never judges gate suitability."
+    },
+    {
+      "id": "ar-5",
+      "disposition": "rejected",
+      "rationale": "Covered by PANEL-B2's non-blank justification on the zero-force terminal record."
+    },
+    {
+      "id": "ar-7",
+      "disposition": "rejected",
+      "rationale": "Covered verbatim by PANEL-B2's subtract-only rule."
+    },
+    {
+      "id": "ar-8",
+      "disposition": "rejected",
+      "rationale": "Covered by PANEL-B2: the justified zero-lens decision is a terminal record with no verdict; the failed-staffing distinction is accepted via ec-30."
+    },
+    {
+      "id": "ar-9",
+      "disposition": "rejected",
+      "rationale": "Covered by PANEL-B3: clean lenses drop from staffing and newly staffed lenses read full."
+    },
+    {
+      "id": "ch-4",
+      "disposition": "rejected",
+      "rationale": "Delta scoping deliberately trades context closure for round economy; the unconditional terminal sweep (PANEL-B4) is the compensating whole-artifact read. A computed affected-closure requirement re-imports the per-round whole-artifact cost the evidence indicts."
+    },
+    {
+      "id": "ch-9",
+      "disposition": "rejected",
+      "rationale": "PANEL-B8 already requires the nearest-profile choice to be explicit and recorded. A deterministic property-matching rule with runner-up records is machinery with no observed failure \u2014 the same admission logic that defers the size gate."
+    },
+    {
+      "id": "ec-10",
+      "disposition": "rejected",
+      "rationale": "The campaign flow is single-writer by construction; concurrent round assembly is not a mode the contract admits, and inventing locking for it is machinery without an observed failure."
+    },
+    {
+      "id": "ec-11",
+      "disposition": "rejected",
+      "rationale": "Covered by PANEL-B4's exactly-one sweep under the same single-writer flow."
+    },
+    {
+      "id": "ec-12",
+      "disposition": "rejected",
+      "rationale": "Covered verbatim by PANEL-B4's clean-round-1-terminates-directly rule."
+    },
+    {
+      "id": "ec-13",
+      "disposition": "rejected",
+      "rationale": "Covered verbatim by PANEL-B4's no-second-sweep rule."
+    },
+    {
+      "id": "ec-16",
+      "disposition": "rejected",
+      "rationale": "Covered: PANEL-B5 requires the replacement-impossibility statement; judging its adequacy is precisely what the triggered diff-scoped consistency re-read is for."
+    },
+    {
+      "id": "ec-17",
+      "disposition": "rejected",
+      "rationale": "A fix dispatch is judgment work applied by an agent, not a mechanical patch; the loop's control for a misapplied or reapplied fix is the delta re-review, not dispatch idempotency."
+    },
+    {
+      "id": "ec-18",
+      "disposition": "rejected",
+      "rationale": "Covered by PANEL-B6's validity conditions as strengthened by the accepted ch-7 provenance evidence."
+    },
+    {
+      "id": "ec-19",
+      "disposition": "rejected",
+      "rationale": "Covered verbatim by PANEL-B6's non-transferability of pre-existing blocking findings."
+    },
+    {
+      "id": "ec-2",
+      "disposition": "rejected",
+      "rationale": "Emission is a single-writer step whose evidence and verdict both bind the head SHA; a head moved mid-flight surfaces as a base-sync mismatch at validation. Atomicity machinery addresses a concurrency mode the flow does not have."
+    },
+    {
+      "id": "ec-20",
+      "disposition": "rejected",
+      "rationale": "Covered verbatim by PANEL-B6's halt rule."
+    },
+    {
+      "id": "ec-21",
+      "disposition": "rejected",
+      "rationale": "Duplicate of ar-21, whose accepted resume condition covers it."
+    },
+    {
+      "id": "ec-22",
+      "disposition": "rejected",
+      "rationale": "Covered: PANEL-B7 states the cadence, and terminal-clean ends the campaign, leaving no round for an analyst to follow."
+    },
+    {
+      "id": "ec-23",
+      "disposition": "rejected",
+      "rationale": "Covered by PANEL-B7: advice consumed by the next staffing decision, de-staffing included."
+    },
+    {
+      "id": "ec-24",
+      "disposition": "rejected",
+      "rationale": "Single-writer flow: one analyst checkpoint yields one committed verdict by construction; retry semantics address a concurrency mode the contract does not admit."
+    },
+    {
+      "id": "ec-26",
+      "disposition": "rejected",
+      "rationale": "PANEL-B8 resolves a tie the same way as any unlisted type \u2014 an explicit recorded pick; refusing on ambiguity would block review on a taxonomy quibble."
+    },
+    {
+      "id": "ec-28",
+      "disposition": "rejected",
+      "rationale": "Covered by PANEL-B9 as revised via the accepted ch-10: a brief comment that causes a misreading is reportable, and brevity alone is not a finding."
+    },
+    {
+      "id": "ec-29",
+      "disposition": "rejected",
+      "rationale": "Duplicate of ar-1, whose accepted PANEL-B10 partition criterion covers it."
+    },
+    {
+      "id": "ec-31",
+      "disposition": "rejected",
+      "rationale": "Covered: PANEL-B2 validates verdict coverage against the per-round staffing record, which is immutable for that round regardless of later roster or profile edits."
+    },
+    {
+      "id": "ec-32",
+      "disposition": "rejected",
+      "rationale": "Covered by the existing refusal and completeness machinery: emission-side dependency failures refuse with named codes, a round missing a lens report is incomplete under the verdict contract, and PANEL-B7 covers the analyst case. Partial state is already invalid rather than committable."
+    },
+    {
+      "id": "ec-4",
+      "disposition": "rejected",
+      "rationale": "Covered: PANEL-B2 defines the record's required fields and validates the verdict against the record; a record missing them is not a recorded staffing decision."
+    },
+    {
+      "id": "ec-6",
+      "disposition": "rejected",
+      "rationale": "Covered: PANEL-B2 admits exactly one staffing record per round, referenced by the verdict; duplicate-record semantics address a concurrency mode the single-writer flow does not have."
+    },
+    {
+      "id": "ec-9",
+      "disposition": "rejected",
+      "rationale": "Covered verbatim by PANEL-B3's newly-staffed-lens full read."
+    }
+  ]
+}
