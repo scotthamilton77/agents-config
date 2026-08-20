@@ -124,10 +124,12 @@ def create_app(
     def call_doctor() -> DoctorState:
         """Send the grill-master over the whole board and the pending queue.
 
-        `outstanding` is the answer to what the page does next, and it is false
-        when nothing was dispatched -- a session with no tier attached, or one
-        already reassessing. The board is the page's to hold immutable while it
-        is true: refusing a write here would need a rejection reason, and that
+        `outstanding` is the answer to what the page does next, not whether this
+        call dispatched: a call landing while a reassessment is already in
+        flight dispatches nothing and still answers true, because the board is
+        still frozen. False means nothing is composing at all -- a session with
+        no tier attached. The board is the page's to hold immutable while it is
+        true: refusing a write here would need a rejection reason, and that
         vocabulary is closed.
         """
         lane.call_doctor()

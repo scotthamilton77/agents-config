@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -660,4 +661,10 @@ def test_the_doctor_route_reports_whether_the_board_is_frozen(log: SessionLog, m
     response = getattr(client, method)("/doctor")
 
     assert response.json() == {"outstanding": True}
+
     driver.release.set()
+    assert driver.finished.wait(TIMEOUT)
+    deadline = time.monotonic() + TIMEOUT
+    while client.get("/doctor").json()["outstanding"] and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert client.get("/doctor").json() == {"outstanding": False}
