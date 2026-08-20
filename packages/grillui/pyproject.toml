@@ -5,6 +5,7 @@ description = "grillui — the grilling-session backend: serves the session UI, 
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.141.1",
+    "httpx>=0.28.1",
     "pydantic>=2.13.4",
     "uvicorn>=0.52.4",
 ]
@@ -27,7 +28,6 @@ dev = [
   "ruff",
   "mypy",
   "pip-audit",
-  "httpx>=0.28.1",
 ]
 
 [tool.ruff]

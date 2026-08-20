@@ -134,6 +134,23 @@ STATUS_PHASE_ACCEPTED = "accepted"
 STATUS_PHASE_COMPOSING = "composing"
 STATUS_PHASE_ERROR = "error"
 
+# How an agent's reply says who composed it. These are payload keys rather than
+# envelope fields: the envelope is this protocol's own closed vocabulary, and
+# which model answered is content the log carries for whoever reads it back --
+# the human wondering what a reply cost, and the record of what was spent.
+#
+# `TIER_KEY` and `MODEL_KEY` ride every agent reply. `RECOMMENDATION_KEY` rides a
+# fast reply that met one of the escalation conditions, naming the condition and
+# its evidence; it is a recommendation and nothing more, because moving a channel
+# to another tier is the human's gesture. `FOLLOWED_TRANSFER_KEY` records that a
+# heavy turn was taken because the human made that gesture, and `TRANSFER_FLAG`
+# is the key on their own turn that says so.
+TIER_KEY = "tier"
+MODEL_KEY = "model"
+RECOMMENDATION_KEY = "recommendation"
+FOLLOWED_TRANSFER_KEY = "followed_transfer"
+TRANSFER_FLAG = "transfer"
+
 # The kinds that constitute a conversational turn: a human answering a decision,
 # a human opening a thread, a human speaking in one. Only a turn from the
 # `human` actor is owed a reply -- the page also opens agent-authored threads,
