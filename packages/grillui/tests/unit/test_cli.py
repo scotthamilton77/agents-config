@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from grillui import __version__, cli
-from grillui.cli import DEFAULT_PORT, build_parser, entry
+from grillui.cli import DEFAULT_PORT, REFUSED_STATUS, build_parser, entry
 
 
 def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
@@ -73,7 +73,8 @@ def test_serve_takes_a_session_directory_and_an_optional_port(tmp_path: Path) ->
     """
     Given the serve subcommand
     When it is parsed with only a session directory
-    Then the directory arrives as a path and the port falls back to the default.
+    Then the directory arrives as a path, the port falls back to the default,
+    and the handoff falls back to the one inside the directory.
 
     Pins the launch surface: the session directory is the session's identity,
     so it is the one argument serving cannot default.
@@ -83,23 +84,44 @@ def test_serve_takes_a_session_directory_and_an_optional_port(tmp_path: Path) ->
     assert args.command == "serve"
     assert args.session_dir == tmp_path
     assert args.port == DEFAULT_PORT
+    assert args.handoff is None
 
 
 def test_serve_dispatches_to_the_server_with_the_parsed_arguments(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """
-    Given a serve invocation naming a port
+    Given a serve invocation naming a port and a handoff
     When entry runs
-    Then it hands that directory and port to the server and returns its status.
+    Then it hands that directory, port and handoff to the server and returns its
+    status.
 
     Pins the wiring rather than the server: standing a real socket up here
     would test uvicorn, not this package.
     """
-    called: list[tuple[Path, int]] = []
+    called: list[tuple[Path, int, Path | None]] = []
     monkeypatch.setattr(
-        cli, "serve", lambda directory, port: (called.append((directory, port)), 0)[1]
+        cli,
+        "serve",
+        lambda directory, port, handoff: (called.append((directory, port, handoff)), 0)[1],
     )
+    briefing = tmp_path / "briefing.json"
 
-    assert entry(["serve", str(tmp_path), "--port", "9001"]) == 0
-    assert called == [(tmp_path, 9001)]
+    assert entry(["serve", str(tmp_path), "--port", "9001", "--handoff", str(briefing)]) == 0
+    assert called == [(tmp_path, 9001, briefing)]
+
+
+def test_a_refused_handoff_exits_non_zero_naming_the_field(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    Given a serve invocation against a directory with no handoff
+    When entry runs
+    Then it exits non-zero having named what it looked for on stderr.
+
+    A refusal is the one failure the caller can act on, so it is reported rather
+    than raised as a traceback: nothing was initialised, and fixing the file and
+    re-running is the whole recovery.
+    """
+    assert entry(["serve", str(tmp_path / "session")]) == REFUSED_STATUS
+    assert "handoff.json" in capsys.readouterr().err

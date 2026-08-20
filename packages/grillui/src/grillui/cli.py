@@ -1,23 +1,31 @@
 """Argument parsing for the grillui console script.
 
-`serve` runs one backend process over one session directory. Loopback is the
-only interface it binds; port fallback and handing the URL to a browser arrive
-with the launch path.
+`serve` runs one backend process over one session directory. A new directory is
+started from a handoff -- named with `--handoff`, or `handoff.json` inside the
+directory itself -- and a directory whose log already holds entries is resumed
+from that log, whatever the handoff file now says. Refusing a handoff exits
+non-zero naming the field, and leaves nothing behind.
+
+Loopback is the only interface it binds; port fallback and handing the URL to a
+browser arrive with the launch path.
 """
 
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import uvicorn
 
 from grillui import __version__
 from grillui.api import create_app
-from grillui.log import SessionLog
+from grillui.log import HANDOFF_FILE
+from grillui.session import HandoffRefusedError, open_session
 
 DEFAULT_PORT = 8765
 LOOPBACK = "127.0.0.1"
+REFUSED_STATUS = 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,6 +43,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="the session directory; created if absent, resumed if it holds a log",
     )
     serve_command.add_argument(
+        "--handoff",
+        type=Path,
+        default=None,
+        help=(
+            f"the handoff file a new session is briefed from "
+            f"(default: {HANDOFF_FILE} in the session directory); "
+            f"ignored when the directory's log already holds entries"
+        ),
+    )
+    serve_command.add_argument(
         "--port",
         type=int,
         default=DEFAULT_PORT,
@@ -49,13 +67,20 @@ def entry(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command == "serve":
-        return serve(args.session_dir, args.port)
+        try:
+            return serve(args.session_dir, args.port, args.handoff)
+        except HandoffRefusedError as refusal:
+            # The one failure a caller can act on: the message names the field.
+            # Nothing was initialised, so fixing the file and re-running is the
+            # whole recovery.
+            print(refusal, file=sys.stderr)
+            return REFUSED_STATUS
     parser.print_help()
     return 0
 
 
-def serve(session_dir: Path, port: int) -> int:  # pragma: no cover
-    """Mint an epoch over the session directory and serve its board until the
-    process is stopped."""
-    uvicorn.run(create_app(SessionLog(session_dir)), host=LOOPBACK, port=port)
+def serve(session_dir: Path, port: int, handoff: Path | None = None) -> int:  # pragma: no cover
+    """Open the session -- seeding a new one from its handoff, resuming an
+    existing one from its log -- and serve its board until the process stops."""
+    uvicorn.run(create_app(open_session(session_dir, handoff)), host=LOOPBACK, port=port)
     return 0

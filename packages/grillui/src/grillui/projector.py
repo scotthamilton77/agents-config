@@ -14,6 +14,7 @@ on an accepted entry takes the session down with it.
 
 | kind            | effect                                                        |
 |-----------------|---------------------------------------------------------------|
+| `session-start` | the briefing's plan seeds the board, decision by decision      |
 | `add-node`      | the node enters the board `open`                               |
 | `revise`        | supplied fields replace; omitted ones and the status stand     |
 | `invalidate`    | status `invalidated`, carrying the rationale it arrived with   |
@@ -31,6 +32,12 @@ withdrawn answer is exactly as unsupported at one remove as at none. *Fog*: an
 open decision whose `fogUntil` is unsettled reads as `fogged`, so the status is
 derived from the board rather than asserted by anyone.
 
+The board is seeded through the log and never by re-reading the handoff file.
+`session-start` carries the validated briefing, so a fresh process folding
+`log.jsonl` alone reproduces the seeded board -- which is what makes the log the
+only recovery source and leaves the handoff file with no authority the moment
+that entry lands.
+
 `informational` and `elicit-alert` are the queue of what the human has not dealt
 with yet, which is the `pending` array. Nothing here takes an item off that
 queue, because nothing yet applies or supersedes one: a queue that emptied
@@ -44,6 +51,7 @@ from dataclasses import dataclass, field
 
 from grillui.schemas import (
     FOLD_KIND,
+    SESSION_START_KIND,
     Answer,
     Decision,
     HistoryEntry,
@@ -128,7 +136,9 @@ def _apply(
     because that is the truth of them: they landed together, in one entry, on
     one human gesture.
     """
-    if kind == "add-node":
+    if kind == SESSION_START_KIND:
+        _seed(board, payload)
+    elif kind == "add-node":
         _add_node(board, payload)
     elif kind == "revise":
         _revise(board, payload)
@@ -175,9 +185,30 @@ def node_from_payload(payload: Mapping[str, object], node_id: str) -> Decision:
         body=_text(payload, "body"),
         prereqs=_strings(payload.get("prereqs")),
         options=_options(payload.get("options")),
+        mandate=_string_map(payload.get("mandate")),
+        talk=_string_map(payload.get("talk")),
         fogUntil=_or_none(payload.get("fogUntil")),
         fogTitle=_or_none(payload.get("fogTitle")),
     )
+
+
+def _seed(board: _Board, payload: Mapping[str, object]) -> None:
+    """The briefing's plan, laid onto an empty board.
+
+    Read through the same node reader an add-node uses, so a decision the
+    handoff named and one an agent mints later are the same shape on the board;
+    a second reader here is how the two come to differ in what a node carries.
+    """
+    plan = payload.get("plan")
+    if not isinstance(plan, Mapping):
+        return
+    raw = plan.get("decisions")
+    if not isinstance(raw, list):
+        return
+    for decision in raw:
+        node_id = decision.get("id") if isinstance(decision, Mapping) else None
+        if isinstance(node_id, str):
+            board.decisions[node_id] = node_from_payload(decision, node_id)
 
 
 def _add_node(board: _Board, payload: Mapping[str, object]) -> None:
@@ -344,6 +375,12 @@ def _options(raw: object) -> list[Option]:
 def _pcr(raw: object) -> list[str] | None:
     values = _strings(raw)
     return values if len(values) == 3 else None
+
+
+def _string_map(raw: object) -> dict[str, str] | None:
+    if not isinstance(raw, Mapping):
+        return None
+    return {str(key): str(value) for key, value in raw.items()} or None
 
 
 def _strings(raw: object) -> list[str]:

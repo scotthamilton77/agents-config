@@ -157,6 +157,31 @@ def test_a_torn_final_line_is_dropped_and_the_session_resumes(session_dir: Path)
     assert len(second.entries()) == 2
 
 
+def test_appending_after_a_torn_line_does_not_corrupt_the_log(session_dir: Path) -> None:
+    """
+    Given a log whose final line was torn by a crash
+    When the next tenure loads it and appends a new entry
+    Then a third load reads every intact entry, because the torn bytes were
+    removed from disk when the tenure was claimed.
+
+    Appends are append-mode writes: torn bytes left in place would sit in front
+    of the next entry, either fusing with it into one unreadable line or
+    becoming interior corruption a later load refuses.
+    """
+    session_dir.mkdir(parents=True)
+    first = SessionLog(session_dir)
+    _submit(first, "k1", text="one")
+    path = session_dir / LOG_FILE
+    path.write_text(path.read_text(encoding="utf-8") + '{"seq": 2, "epo', encoding="utf-8")
+
+    second = SessionLog(session_dir)
+    _submit(second, "k2", text="two")
+    third = SessionLog(session_dir)
+
+    assert third.seq == 2
+    assert [entry.seq for entry in third.entries()] == [1, 2]
+
+
 def test_a_malformed_interior_line_refuses_to_load(session_dir: Path) -> None:
     """
     Given a log corrupted before its end

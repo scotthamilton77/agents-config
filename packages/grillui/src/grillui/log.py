@@ -38,6 +38,7 @@ from grillui.schemas import (
     MAP_CHANNEL,
     REASON_EPOCH_MISMATCH,
     REASON_MISSING_KEY,
+    SESSION_START_KIND,
     STATUS_KIND,
     AcceptedReceipt,
     Applied,
@@ -61,6 +62,8 @@ if TYPE_CHECKING:
 LOG_FILE = "log.jsonl"
 IMAGE1_FILE = "image1.json"
 IMAGE2_FILE = "image2.json"
+HANDOFF_FILE = "handoff.json"
+RESULT_FILE = "result.json"
 
 
 class CorruptLogError(RuntimeError):
@@ -90,6 +93,16 @@ class LogIndex:
         self.keys[entry.idempotency_key] = entry.seq
         if entry.kind == "add-node":
             self._mint(entry.payload)
+        elif entry.kind == SESSION_START_KIND:
+            # A decision the briefing seeded is a decision on the board, so an
+            # answer naming it is judged against the same node set as one
+            # naming a node an agent minted later. Missing them here would
+            # refuse the human's first answer of the session as an unknown node.
+            plan = entry.payload.get("plan")
+            decisions = plan.get("decisions", []) if isinstance(plan, dict) else []
+            for decision in decisions:
+                if isinstance(decision, dict):
+                    self._mint(decision)
         elif entry.kind == FOLD_KIND:
             # A node minted inside a fold is a node the board has, so an update
             # after the gesture may name it. Missing it here would refuse the
@@ -159,15 +172,37 @@ class SessionLog:
         with self._lock:
             return [self._submit_one(event, epoch) for event in batch]
 
+    def record(self, kind: str, payload: dict[str, Any], channel: str = MAP_CHANNEL) -> LogEntry:
+        """Append one backend-authored entry, judged by nothing.
+
+        The backend is the authority, so its own entries present no epoch and
+        carry no client key -- they cannot be refused, and there is nobody to
+        return a receipt to. Every backend-authored kind lands here: the status
+        lane, and the lifecycle pair that brackets the session.
+
+        Safe to call while already holding the append lock, which is where a
+        status reporting on its own append is emitted from.
+        """
+        with self._lock:
+            entry = LogEntry(
+                seq=self._index.last_seq + 1,
+                epoch=self.epoch,
+                kind=kind,
+                idempotency_key=f"{kind}-{uuid4().hex}",
+                timestamp=_now(),
+                actor="backend",
+                channel=channel,
+                payload=payload,
+            )
+            self._append(entry)
+            return entry
+
     def emit_status(
         self, phase: str, detail: str, channel: str = MAP_CHANNEL, *, tier: str | None = None
     ) -> LogEntry:
-        """Append one backend-authored status entry, judged by nothing.
+        """Append one status entry.
 
-        The lane is mechanical: it carries no client key, presents no epoch and
-        never waits on a model, so it cannot be refused and cannot be slow. It
-        is safe to call while already holding the lock -- which is where a
-        status reporting on its own append is emitted from.
+        The lane is mechanical: it never waits on a model, so it cannot be slow.
 
         `tier` names who is taking the turn and is absent from a phase that has
         no tier to name; a page reading the lane learns which tier it is waiting
@@ -176,19 +211,7 @@ class SessionLog:
         payload = {"phase": phase, "detail": detail}
         if tier is not None:
             payload["tier"] = tier
-        with self._lock:
-            entry = LogEntry(
-                seq=self._index.last_seq + 1,
-                epoch=self.epoch,
-                kind=STATUS_KIND,
-                idempotency_key=f"{STATUS_KIND}-{uuid4().hex}",
-                timestamp=_now(),
-                actor="backend",
-                channel=channel,
-                payload=payload,
-            )
-            self._append(entry)
-            return entry
+        return self.record(STATUS_KIND, payload, channel)
 
     def _submit_one(self, event: EventSubmission, epoch: str) -> Receipt:
         if epoch != self.epoch:
@@ -273,26 +296,63 @@ class SessionLog:
 
     def _load(self) -> None:
         self.directory.mkdir(parents=True, exist_ok=True)
-        if not self.path.exists():
-            return
-        # ponytail: one linear read at startup; a session log is human-paced and
-        # bounded by one grilling, so nothing here needs an on-disk index.
-        lines = [
-            line for line in self.path.read_text(encoding="utf-8").splitlines() if line.strip()
-        ]
-        for position, line in enumerate(lines):
-            try:
-                entry = LogEntry.model_validate_json(line)
-            except ValueError as error:
-                if position == len(lines) - 1:
-                    # A torn final line is what a crash between write and fsync
-                    # leaves behind. The event it held has no receipt anywhere,
-                    # so dropping it loses nothing a client will not retry
-                    # under its own idempotency key.
-                    break
-                raise CorruptLogError(self.path, position + 1) from error
+        entries = read_entries(self.path)
+        for entry in entries:
             self._entries.append(entry)
             self._index.absorb(entry)
+        self._discard_torn_tail(len(entries))
+
+    def _discard_torn_tail(self, kept: int) -> None:
+        """Remove a forgiven torn line from disk, not just from memory.
+
+        Appends open the file in append mode, so bytes left after the last
+        intact entry would sit in front of the next entry written — turning the
+        forgivable torn *final* line into interior corruption a later load
+        refuses, or fusing with the next entry into one unreadable line. Only
+        the process holding the tenure may do this; the shared reader stays
+        read-only.
+        """
+        if not self.path.exists():
+            return
+        raw = self.path.read_bytes()
+        offset = 0
+        seen = 0
+        for line in raw.splitlines(keepends=True):
+            if seen == kept:
+                break
+            offset += len(line)
+            if line.strip():
+                seen += 1
+        if offset < len(raw):
+            with self.path.open("rb+") as handle:
+                handle.truncate(offset)
+
+
+def read_entries(path: Path) -> list[LogEntry]:
+    """The log as it is on disk, without claiming a tenure over it.
+
+    The recovery source, so this is the one reader: a resuming process and a
+    capture run pointed at a finished session read the same bytes by the same
+    rules, including which torn line is forgivable.
+    """
+    if not path.exists():
+        return []
+    # ponytail: one linear read; a session log is human-paced and bounded by one
+    # grilling, so nothing here needs an on-disk index.
+    lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    entries: list[LogEntry] = []
+    for position, line in enumerate(lines):
+        try:
+            entries.append(LogEntry.model_validate_json(line))
+        except ValueError as error:
+            if position == len(lines) - 1:
+                # A torn final line is what a crash between write and fsync
+                # leaves behind. The event it held has no receipt anywhere, so
+                # dropping it loses nothing a client will not retry under its
+                # own idempotency key.
+                break
+            raise CorruptLogError(path, position + 1) from error
+    return entries
 
 
 def _target_of(entry: LogEntry) -> str | None:

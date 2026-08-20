@@ -18,10 +18,12 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException
 
+from grillui.capture import default_summary
 from grillui.lane import Lane
 from grillui.persistence import project_and_persist
 from grillui.projector import fold, to_image1
 from grillui.schemas import (
+    SESSION_END_KIND,
     BatchWrite,
     Image1,
     Image2,
@@ -31,21 +33,35 @@ from grillui.schemas import (
     UpdateRead,
     batch_payload_problem,
 )
+from grillui.session import end_session
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from grillui.capture import Summarizer
     from grillui.lane import TurnDriver
     from grillui.log import SessionLog
+    from grillui.schemas import EventSubmission
 
 STALE_EPOCH_STATUS = 409
 MALFORMED_PAYLOAD_STATUS = 422
 
 
-def create_app(log: SessionLog, driver: TurnDriver | None = None) -> FastAPI:
+def create_app(
+    log: SessionLog,
+    driver: TurnDriver | None = None,
+    *,
+    summarize: Summarizer = default_summary,
+) -> FastAPI:
     """Bind the board endpoints to one session log, and the lane to one tier.
 
     The driver is optional because a backend with no tier configured is a real
     state, not a broken one: the board still accepts everything it would
     otherwise, and nothing pretends a reply is coming.
+
+    `summarize` is the seam capture writes the terminal result's prose through.
+    Its default builds the briefing from the structured parts, so ending a
+    session never waits on a model being reachable.
     """
     app = FastAPI(title="grillui session backend")
     lane = Lane(log, driver)
@@ -101,9 +117,27 @@ def create_app(log: SessionLog, driver: TurnDriver | None = None) -> FastAPI:
         receipts, _turns = lane.accept(batch.events, batch.epoch)
         if any(receipt.status == "accepted" for receipt in receipts):
             project_and_persist(log)
+        if _ended(batch.events, receipts):
+            # Downstream of the append, like the images: the terminal entry is
+            # already durable, so a capture that fails costs the result file
+            # and leaves the record of the ending intact.
+            end_session(log, summarize=summarize)
         return receipts
 
     return app
+
+
+def _ended(events: Sequence[EventSubmission], receipts: Sequence[Receipt]) -> bool:
+    """Whether this batch is the one that ended the session.
+
+    Judged on the receipts rather than on the submissions: a `session-end` an
+    agent sent is refused, and capturing on it would write a terminal result for
+    a session the human has not finished.
+    """
+    return any(
+        event.kind == SESSION_END_KIND and receipt.status == "accepted"
+        for event, receipt in zip(events, receipts, strict=True)
+    )
 
 
 def _image(log: SessionLog) -> Image2:
