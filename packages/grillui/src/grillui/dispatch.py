@@ -83,7 +83,11 @@ def assemble(image: Image2, *, channel: str = MAP_CHANNEL, concluding: str | Non
         conclusion=_conclusion(image, concluding),
     )
     recorded = context.model_dump_json()
-    verify_complete(recorded, board)
+    # The map dispatch is checked against the source image, not the projection
+    # it was assembled through: a projection that dropped a field on the way in
+    # would vouch for its own output. A thread dispatch reduces by design, so
+    # its own projection is the only whole it owes.
+    verify_complete(recorded, image if channel == MAP_CHANNEL else board)
     return recorded
 
 

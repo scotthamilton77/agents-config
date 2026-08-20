@@ -16,8 +16,8 @@ from fastapi.testclient import TestClient
 
 from grillui.dispatch import DISPATCH_DIR, DispatchIncompleteError, record_dispatch, verify_complete
 from grillui.log import SessionLog
-from grillui.projector import fold
-from grillui.schemas import DispatchContext
+from grillui.projector import fold, whole_board
+from grillui.schemas import DispatchContext, Image2, ThreadProjection
 
 ANSWERS = {
     "n1": "an append-only log, because the audit trail is the point",
@@ -104,6 +104,29 @@ def test_a_context_missing_any_part_of_image_two_is_refused_rather_than_truncate
 
     with pytest.raises(DispatchIncompleteError):
         verify_complete(complete.replace(ANSWERS["n2"], "…"), image)
+
+
+def test_a_projection_that_loses_a_field_cannot_vouch_for_its_own_output(
+    client: TestClient, log: SessionLog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a whole-board projection that silently drops part of the image
+    When a map dispatch is assembled through it
+    Then assembly refuses, because the map context is checked against the
+    source image rather than the projection's own output.
+
+    Checked against its own output, a lossy projection passes: the recorded
+    bytes match the already-truncated board exactly.
+    """
+    _settled_board(client, log.epoch)
+
+    def lossy(image: Image2) -> ThreadProjection:
+        return whole_board(image.model_copy(update={"settled": []}))
+
+    monkeypatch.setattr("grillui.dispatch.whole_board", lossy)
+
+    with pytest.raises(DispatchIncompleteError):
+        record_dispatch(log)
 
 
 def test_each_dispatch_is_recorded_as_its_own_file_in_dispatch_order(
