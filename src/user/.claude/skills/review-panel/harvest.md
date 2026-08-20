@@ -14,9 +14,26 @@ exceptional one, and neither transport is the more reliable one — both have be
 other worked.
 
 What you may not do is run the lens and say nothing. Whenever a lens runs on something other than
-its declared entry, its verdict entry carries `substitution` with the declared transport or model,
-the reason, and — when the swap was forced rather than chosen — the dead route's error verbatim in
-`transport_error`. A round that lost diversity silently is indistinguishable from one that kept it.
+its declared entry, its verdict entry carries `substitution` naming what it moved off — the
+declared transport, or the model the displaced attempt ran on — plus the reason, and, when the swap
+was forced rather than chosen, the dead route's error verbatim in `transport_error`. A round that
+lost diversity silently is indistinguishable from one that kept it.
+
+## Choosing the model
+
+No lens declares a model. `contracts.json` carries the lens, its mandate, its tier and its
+transport — the model is the dispatcher's to pick, every time.
+
+Pick it by the lens's tier from the routing table the `openrouter-claude-subagent` skill carries,
+not from memory. That table is the source of truth for price, context window and which reasoning
+efforts a model accepts, and all three move underneath a remembered pick: OpenRouter reprices and
+retires models without notice. Two failures follow from picking free-hand, and the second is the
+expensive one — a model whose reasoning cannot be capped will strand a whole-artifact lens inside
+a thinking block and return no report at all, burning a full lens latency before the failover
+starts. The table marks which models those are; a whole-artifact lens must not be routed to one.
+
+The gate does not enforce any of this: it accepts and records an unlisted model on purpose, so
+that a deliberate choice is possible and is visible afterwards. The discipline is yours.
 
 ## Every dispatch is claimed first
 

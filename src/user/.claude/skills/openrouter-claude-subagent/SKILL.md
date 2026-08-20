@@ -112,9 +112,10 @@ Use the user's level if they named one. `max` only on an explicit request —
 it is the most expensive tier.
 
 Not every model accepts every level. `references/model-routing.md` lists the
-levels each one takes — pick from that list, since two of the listed models
-accept no level at all and others are missing the middle of the range. Trust
-the recorded value rather than re-verifying at dispatch.
+levels each one takes — pick from that list, since three of the listed models
+accept no level at all, two of those cannot be capped even in principle, and
+others are missing the middle of the range. Trust the recorded value rather
+than re-verifying at dispatch.
 
 ## Example
 

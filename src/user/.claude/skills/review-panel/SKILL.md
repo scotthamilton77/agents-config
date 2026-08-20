@@ -30,7 +30,8 @@ Each panel mixes model tiers — hard-reasoning lenses on frontier models, mecha
 mid-tier — and spans two vendors, because blind spots correlate inside a vendor. A lens's declared
 `tier` sets round 1; a declared `re_review_tier` sets every round after. Its declared `transport`
 carries the vendor-diversity claim, not the tier, so a reduced tier still spans both vendors — when
-it is down the lens recovers onto another route, and the verdict records what ran it.
+it is down the lens recovers onto another route, and the verdict records what ran it. No lens
+declares a model; `harvest.md` says where each dispatch picks one.
 
 Most lenses re-read the whole artifact every round. A lens marked `diff` reviews only the change
 since the head it last judged, and only when it returned green that round; anything judging
@@ -105,7 +106,7 @@ route a house standard reaches the reviewer through.
 Collect one report per lens, then build the envelope the review-verdict skill defines: `lenses`
 gets one entry per lens the class declares, green ones included, so coverage is read off the
 artifact and never inferred from an empty findings list. Each entry records the vendor, transport
-and model that *actually* produced the report, never the route `contracts.json` declared for it.
+and model that *actually* produced the report, never the route the dispatch set out to use.
 `findings` is the union across lenses; `prior_dispositions` is the ledger from `round.json`.
 Terminal-clean means a complete round that came out `clean`, with zero mechanical findings across
 every lens; a halted round is neither.
