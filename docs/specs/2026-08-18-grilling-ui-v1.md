@@ -74,14 +74,17 @@ the same log always yields byte-identical images and an image rebuilt from disk 
 matches one held in memory. Writing the images to disk is a separate persistence step
 downstream of the fold; only that step performs I/O. **The image files are derived caches,
 never a recovery source** — every rebuild re-folds the log. **Reverse handoff is image 2.**
-Agents are given image 2 and never given deltas to reconstruct state from.
+Agents are never given deltas to reconstruct state from: the grill-master is given image 2,
+and a thread agent its projection of it (§8.8).
 
-**GUI-D4 — Image 2 crosses to an agent whole.** Every agent dispatch carries the whole of
-image 2, byte-complete. There is no elision path in v1 and no budget that can create one:
-a projector that trims settled decisions out of a dispatch silently loses human decisions,
-and nothing downstream can detect the loss — the agent simply proceeds without a decision
-the human made minutes earlier. A dispatch that omits any part of image 2 must never
-happen, and is treated as data corruption.
+**GUI-D4 — Dispatch context crosses whole.** Every grill-master dispatch carries the whole
+of image 2, byte-complete; every thread-agent dispatch carries the whole of its thread
+projection (GUI-D24, §8.8). There is no elision path in v1 and no budget that can create
+one: a projector that trims settled decisions out of a dispatch silently loses human
+decisions, and nothing downstream can detect the loss — the agent simply proceeds without
+a decision the human made minutes earlier. Every dispatch of either kind contains every
+settled decision's id and answer text; a dispatch that omits any part of its owed
+projection must never happen, and is treated as data corruption.
 
 **GUI-D5 — Append and project must not fail together.** The appender writes the log entry
 durably before any projection runs, and the projector must tolerate any log the appender
@@ -133,6 +136,10 @@ returns, or by a fresh agent session pointed at a session directory whose log is
 terminal-ready ("we grilled this last week, go capture it"). It reads the session directory
 and nothing else, and it never needs the process that ran the session.
 
+**GUI-D28 — The launch path.** The backend serves loopback only, on a default port with a
+per-session override, taking the next free port when the default is occupied.
+`grill-with-ui` opens the resulting URL in the human's browser and also prints it.
+
 ## 3. Agent drive
 
 **GUI-D11 — The fast tier facilitates discussion; it never manufactures information.** The
@@ -144,17 +151,17 @@ not a ceiling. The fast tier's mandate is quick discussion: answer from the cont
 given, fast, and never assert anything that context does not support. The moment a question
 crosses into reasoning, decisioning or implied design, it stops short of deciding and
 recommends a handoff to the heavy tier as metadata on its reply — **and the human decides
-whether to take it** (GUI-U11). The fast tier additionally holds `upgrade_me`, which hands
-the current turn to the heavy tier carrying the accumulated thread rather than only the
-last message, for the agent-initiated case. Both tiers' model ids are configuration; the
+whether to take it** (GUI-U11). Escalation is human-gated in v1: no agent escalates a turn
+on its own, and the transfer that activation triggers hands the heavy tier the channel's
+accumulated thread rather than only the last message. Both tiers' model ids are configuration; the
 escalation target is a Claude model and Fable is excluded from v1.
 
-**GUI-D12 — Escalation is a criterion evaluated against the transcript, never a
-self-assessment of competence.** A fast model asked to judge whether a question exceeds its
+**GUI-D12 — The escalation recommendation is a criterion evaluated against the transcript,
+never a self-assessment of competence.** A fast model asked to judge whether a question exceeds its
 own ability judges generously and answers anyway — including on a question the human has
-explicitly said they cannot resolve. Checkable conditions are what make escalation fire
-correctly, and they are equally the basis of the recommendation metadata GUI-D11 mandates
-and of an `upgrade_me` call. V1 conditions, all transcript-evaluable: the human asked for a
+explicitly said they cannot resolve. Checkable conditions are what make the recommendation
+fire correctly, and they are the sole basis of the metadata GUI-D11 mandates.
+V1 conditions, all transcript-evaluable: the human asked for a
 commitment rather than another question, on a decision with two or more dependents; the
 human has rejected a reframing of the question, or says the trade-off itself is what they
 cannot resolve; three or more decisions must be weighed at once. Asking a sharpening
@@ -183,10 +190,13 @@ and pays the cold-start tax once, which is expected and allowed. Thread agents a
 this rule: they run in separate contexts, concurrently, by design (GUI-D24).
 
 **GUI-D24 — Every side thread is its own channel with its own agent context.** A thread
-agent is given image 2 plus its own thread's turns, and nothing of any other thread.
-Threads default to the fast tier and escalate per-thread by the same mechanism as the map
-channel (GUI-D11, GUI-U11). Thread agents may run concurrently with each other and with a
-grill-master turn.
+agent is given the thread projection (§8.8): image 2 with its own thread's turns in full
+and every other non-parked thread reduced to a stub — anchor decision id, title, status,
+and the applied conclusion when folded; parked threads are absent. Its instructions direct
+it to consult the stubs and read another thread's full body through the backend's read
+surface only when a stub is relevant to its work. Threads default to the fast tier and
+escalate per-thread by the same mechanism as the map channel (GUI-D11, GUI-U11). Thread
+agents may run concurrently with each other and with a grill-master turn.
 
 **GUI-D25 — The grill-master is the sole agent author of map mutations.** Thread agents
 recommend; they never emit map updates, and a map update arriving on a thread channel is
@@ -336,6 +346,10 @@ follows, and changes nothing else.
   the page is in immutable mode behind a modal telling the human to wait; the board is
   writable again when the response lands.
 
+- **GUI-U13 — Light theme only.** The page ships a single light palette; no dark-theme
+  styles ship in v1.
+
+**GUI-U14 — The carried-forward reference contract.**
 Everything else the reference page does — the map beside a single blended column of
 answerable and settled decisions, bidirectional focus sync, the auto-apply taxonomy drawn
 at "does this overwrite a human decision", the inbox/notification split, pending-update
@@ -357,6 +371,9 @@ Each item below is deferred, not rejected, with the observation that would pull 
 - **Elision machinery.** Image 2 crosses whole (GUI-D4); there is no path that drops
   content from a dispatch and no marker vocabulary for one. Trigger: a real session whose
   image 2 approaches the context limit of a tier in use.
+- **Autonomous escalation.** V1 escalation is human-gated (GUI-D11); no agent escalates a
+  turn on its own. Trigger: real sessions where the human accepts essentially every
+  recommendation, making the confirmation gesture pure overhead.
 - **Parked-thread drift mitigation.** A reopened parked thread's agent is stale relative
   to the evolved map. Trigger: a session where a resumed parked thread asserts something
   the board contradicts.
@@ -379,8 +396,10 @@ instead of guessing.
 ## 8. Normative schemas
 
 Every schema below is a contract on the bytes, not a suggestion. A field is **required**
-unless marked optional; an unknown field is a rejection, not a courtesy. Acceptance
-criteria bind to these definitions.
+unless marked optional; an unknown envelope field is a rejection, not a courtesy. These
+schemas are normative for envelopes, images and projections; a payload's per-kind field
+schema is the implementing slice's to state, under the protocol decisions above as its
+contract. Acceptance criteria bind to these definitions.
 
 ### 8.1 The handoff file
 
@@ -417,7 +436,7 @@ only in the images.
 - `prereqs` — array of decision ids; may be empty. Every id must resolve to another node in
   the same plan, and the graph must be acyclic.
 - `body` — string. The question as the human will read it.
-- `options` — array of 1–3 option objects. `options[0]` is the recommendation.
+- `options` — array of 2–3 option objects (GUI-U5). `options[0]` is the recommendation.
   - `id` — string, the render label: `a`, `b`, `c` in order.
   - `text` — string. The answer, in the human's voice.
   - `pcr` — optional array of exactly three strings: what the option buys, what it costs,
@@ -438,8 +457,11 @@ One JSON object per line, appended durably and never rewritten.
 - `seq` — integer, assigned by the backend, strictly increasing by one from the session's
   first entry, never reset and never client-supplied (GUI-D2).
 - `epoch` — string. The tenure under which the entry was appended.
-- `kind` — string, from the closed v1 kind set (GUI-D19), plus the status-lane kinds
-  (GUI-D13) and the lifecycle kinds `session-start` and `session-end`.
+- `kind` — string. The closed v1 set is the union of the update kinds GUI-D19 mandates,
+  the thread kinds of GUI-D20, the page-emitted gesture kinds (derived from the page
+  source, GUI-A13), the status-lane kinds of GUI-D13, and the lifecycle kinds
+  `session-start` and `session-end`; the implementing slice states the concrete list and
+  each kind's payload schema.
 - `idempotency_key` — string, required on every client-originated entry, unique within the
   session. Backend-authored entries (status lane, lifecycle) carry a backend-minted key.
 - `timestamp` — string, ISO-8601 with millisecond precision, from the backend clock at
@@ -453,16 +475,20 @@ One JSON object per line, appended durably and never rewritten.
 One receipt per submitted event, returned in submission order.
 
 - `status` — string: `accepted`, `duplicate` or `rejected`.
-- `idempotency_key` — string, echoed from the submission.
+- `idempotency_key` — string, echoed from the submission; null when the rejection reason
+  is a missing idempotency key.
 - `epoch` — string, the backend's current epoch.
 
 Per variant:
 
-- `accepted` — `seq` (integer, the assigned sequence) and `applied` (object: what was
-  applied, and whether it was applied as sent or as amended, per GUI-D21).
+- `accepted` — `seq` (integer, the assigned sequence) and `applied`: an object stating
+  `kind` (the update kind applied), `target` (the node or thread id it landed on), `as`
+  (`sent` or `amended`), and — required when `as` is `amended` — `amendments`, naming what
+  was rewritten field by field (GUI-D21).
 - `duplicate` — `seq` (integer, the sequence the key already landed at). Nothing is
   appended.
-- `rejected` — `reason` (string, one of the GUI-D16 reasons) and optional `detail`; an
+- `rejected` — `reason` (string, one of the GUI-D16 reasons) and optional `detail`
+  (string); an
   `epoch mismatch` rejection carries both the server epoch and the presented one. Nothing
   is appended.
 
@@ -477,7 +503,7 @@ The current map snapshot: a pure fold, byte-identical for a given log.
 - `settled` — array of objects: `id` (string) and `answer` (string, the answer text).
 - `threads` — array of objects: `id`, `decision` (decision id or null), `kind`, `title`,
   `requires_action` (boolean), `state` (`open`, `parked` or `folded`), and `turns` — array
-  of `who`/`text`/`timestamp` objects.
+  of objects: `who` (the §8.3 actor enum), `text` (string), `timestamp` (string).
 - `pending` — array of objects: `id`, `target` (decision id), `kind`, `superseded`
   (boolean), and `authored_at` (sequence integer). This is the queue GUI-D26 dispatches.
 
@@ -489,7 +515,7 @@ Image 1 in full, plus one field:
   `seq` (integer), `timestamp` (string), `kind` (string), `actor` (string), `why` (string,
   the rationale carried by the event that caused the change).
 
-Image 2 is the reverse handoff and crosses to an agent whole (GUI-D4).
+Image 2 is the reverse handoff and crosses to the grill-master whole (GUI-D4).
 
 ### 8.7 The terminal result
 
@@ -499,14 +525,30 @@ receives beside file references (GUI-D8).
 - `session` — object: `id`, `title`, `created`, `ended`, all strings.
 - `references` — object: `log`, `image1`, `image2`, all paths relative to the session
   directory.
-- `decisions` — array of objects: `id`, `title`, `answer` (string or null), `status`, and
-  `rationale` (string, drawn from the log). Pure code produces this array (GUI-D23).
+- `decisions` — array of objects: `id`, `title`, `answer` (string or null), `status` (the
+  §8.2 status enum), and `rationale` (string, drawn from the log). Pure code produces this
+  array (GUI-D23).
 - `open_items` — array of objects: `id` and `blocker` (string) for every decision unsettled
   at end.
-- `threads` — array of objects: `id`, `title`, `state`, and `conclusion` (string or null).
+- `threads` — array of objects: `id`, `title`, `state` (the §8.5 state enum), and
+  `conclusion` (string or null).
 - `summary` — string. The single agent pass's prose, bounded to a briefing and never a
   transcript.
 - `stop_reason` — string: how the session ended.
+
+### 8.8 The thread projection
+
+Image 2, transformed for one thread's agent (GUI-D24):
+
+- The dispatched thread appears in full, exactly as in image 2.
+- Every other thread whose `state` is not `parked` is replaced by a stub: `id`, `decision`
+  (anchor decision id or null), `title`, `state`, and `conclusion` — the applied conclusion
+  text, required when `state` is `folded` and absent otherwise.
+- Parked threads are omitted entirely.
+- Everything else — decisions, history, frontier, settled, pending — is image 2's,
+  unchanged.
+
+The projection is a pure fold with the same determinism guarantee as the images (GUI-D3).
 
 ## 9. Acceptance criteria
 
@@ -519,28 +561,29 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D3 | GUI-A1, GUI-A2, GUI-A5 |
 | GUI-D4 | GUI-A3 |
 | GUI-D5 | GUI-A24 |
-| GUI-D6 | GUI-A27, GUI-A42 |
+| GUI-D6 | GUI-A27, GUI-A42, GUI-A52 |
 | GUI-D7 | GUI-A26, GUI-A27 |
 | GUI-D8 | GUI-A25, GUI-A29 |
 | GUI-D9 | GUI-A5 |
 | GUI-D10 | GUI-A28 |
-| GUI-D11 | GUI-A12, GUI-A33, GUI-A34 |
+| GUI-D11 | GUI-A12, GUI-A33, GUI-A34, GUI-A53, GUI-A54 |
 | GUI-D12 | GUI-A12, GUI-A33 |
 | GUI-D13 | GUI-A10 |
 | GUI-D14 | GUI-A11 |
 | GUI-D15 | GUI-A5, GUI-A36 |
 | GUI-D16 | GUI-A7, GUI-A8 |
 | GUI-D17 | GUI-A9 |
-| GUI-D18 | GUI-A6, GUI-A20, GUI-A30 |
+| GUI-D18 | GUI-A6, GUI-A19, GUI-A20, GUI-A30 |
 | GUI-D19 | GUI-A13, GUI-A16, GUI-A17, GUI-A31 |
 | GUI-D20 | GUI-A13, GUI-A14 |
 | GUI-D21 | GUI-A18 |
 | GUI-D22 | GUI-A42 |
 | GUI-D23 | GUI-A28, GUI-A32 |
-| GUI-D24 | GUI-A36 |
+| GUI-D24 | GUI-A3, GUI-A36 |
 | GUI-D25 | GUI-A37 |
 | GUI-D26 | GUI-A38, GUI-A39 |
 | GUI-D27 | GUI-A41 |
+| GUI-D28 | GUI-A51 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -553,6 +596,8 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U10 | GUI-A48 |
 | GUI-U11 | GUI-A33, GUI-A34, GUI-A35 |
 | GUI-U12 | GUI-A40 |
+| GUI-U13 | GUI-A50 |
+| GUI-U14 | GUI-A49 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -575,22 +620,24 @@ Each criterion is mechanically checkable and convertible to a red test.
   naming the server and sent epochs; an update read with a stale epoch returns HTTP 409.
 - **GUI-A7** Re-posting an event with an already-seen idempotency key returns a
   `duplicate` receipt naming the original sequence and appends nothing, even when the body
-  differs.
+  differs. An ordinary first-time write returns `accepted` carrying the assigned sequence
+  and its `applied` object.
 - **GUI-A8** Each rejection reason in GUI-D16 has a test producing exactly that typed
   receipt, and no rejected event appears in the log.
 - **GUI-A9** A rejected human action renders a page-level banner naming the reason and
   stating the message was not recorded, verified in a browser rather than by inspecting
   the code that constructs it.
 - **GUI-A10** Human turn accepted to status entry appended is under 10 ms measured from
-  the log's own timestamps, with no model call on the path; a run configured with an
+  the log's own timestamps, with no model call on the path, and the entries appear as
+  accepted then composing naming the dispatching tier; a run configured with an
   unreachable agent still produces the accepted and error status entries in that window.
 - **GUI-A11** An agent-authored thread with no human turn produces no status lane entry
   and no dispatch, while a human turn in the same thread produces both.
-- **GUI-A12** With the criteria of GUI-D12 in force, a scripted transcript satisfying one
-  condition produces an `upgrade_me` call whose stated reason names that condition, and the
-  heavy dispatch that follows contains the accumulated thread; a transcript satisfying none
-  produces an ordinary reply. Both tiers' attributions — tier, model, and that the heavy
-  turn was upgraded from the fast one — are in the log.
+- **GUI-A12** For each of the three GUI-D12 conditions, a scripted transcript satisfying it
+  produces a reply whose recommendation metadata names that condition; a transcript
+  satisfying none produces a reply carrying no recommendation. No transcript escalates a
+  turn without a human activation, and both tiers' attributions — tier, model, and that a
+  heavy turn followed a transfer — are in the log.
 - **GUI-A13** Every event kind the page emits is known to the backend. The check derives
   the kind set by reading the page's own emission sites out of the shipped page source,
   not from a list the test author wrote, and it is mutation-checked: removing one kind from
@@ -598,7 +645,9 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A14** Every scripted stand-in used to verify the page contract derives its message
   shapes from the page's own emissions. A `thread-created` and a `thread-turn` posted in
   the page's `turns[]` form are both accepted and both project into the thread's turn list;
-  a stand-in that posts a shape the page never emits fails the check.
+  a stand-in that posts a shape the page never emits fails the check. A `thread-created`'s
+  kind, title and requires-action metadata all project, and a backend-authored bare-text
+  reply projects into the same turn list.
 - **GUI-A16** Add-node mints a node from a question, options and prereqs supplied by the
   agent, echoes the materialised node back in its receipt, and the new node is answerable
   and revisable in the same session.
@@ -612,7 +661,7 @@ Each criterion is mechanically checkable and convertible to a red test.
   explicit take-over from a second window succeeds and a reconnecting superseded window
   renders the superseded notice, not a working board; a pop-out presenting the parent
   token is admitted; two backends on different session directories run concurrently
-  without interference.
+  without interference. No session-control action appends a board event.
 - **GUI-A20** A page whose epoch is stale recovers current state through the state read
   without human intervention and without asserting any board content of its own, verified
   by reloading the page mid-session in a browser.
@@ -622,13 +671,19 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A22** Every message and notification renders a timestamp in the operating system's
   time zone, verified in a browser under a non-UTC `TZ`.
 - **GUI-A23** The connection indicator distinguishes backend-unreachable,
-  agent-owes-a-response and outbox-depth as three separate signals, each exercised.
+  agent-owes-a-response and outbox-depth as three separate signals, each exercised; a
+  healthy backend with no attached agent renders distinctly from one whose agent is
+  attached and idle.
 - **GUI-A24** Killing the image-persistence step's output path (an unwritable image file)
   leaves the log intact and complete, surfaces the failure on the status lane, and does
-  not refuse the next event; the fold itself performs no I/O to fail on.
+  not refuse the next event; the fold itself performs no I/O to fail on. An accepted entry
+  the projector cannot fold surfaces the same way: status-lane error, log intact, next
+  event still accepted.
 - **GUI-A25** The deployed skills carry a complete admission record and the UI-behaviour
   reference material; the package's own gate and the repository gate both pass on the
-  branch that ships them.
+  branch that ships them. The package lives under `packages/` with its CLI registered in
+  the installer's CLI package list, and the UI is served by the backend process rather
+  than deployed as a skill asset.
 - **GUI-A26** A handoff conforming to the handoff schema seeds the board with every
   decision, prereq and option it names; a handoff missing any required field, carrying an
   unknown field, or naming a prereq that resolves to no node is refused with a message
@@ -638,14 +693,18 @@ Each criterion is mechanically checkable and convertible to a red test.
   content, and the edited text appears nowhere in any dispatch.
 - **GUI-A28** The end-session action appends a terminal entry to the log, invokes the
   capture step, and leaves a terminal result in the session directory validating against
-  its schema; a session whose capture step fails still has its terminal log entry.
+  its schema; a session whose capture step fails still has its terminal log entry. A
+  `session-end` submitted by an agent is rejected and appends nothing.
 - **GUI-A29** What `grill-with-ui` returns is the terminal result plus file references and
   nothing else — the check fails if any thread turn or dispatch prompt text appears in the
   returned value.
 - **GUI-A30** The status endpoint returns epoch and current sequence, opens neither the log
   file nor an image file (verified by instrumenting file access during the call), and its
-  response is stable under a session with a large log.
-- **GUI-A31** Settle, unsettle, resolve-stale and elicit-alert are each accepted, projected
+  response is stable under a session with a large log. The image 1 and image 2 endpoints
+  return schema-valid images, and a batch of N events returns N receipts in submission
+  order.
+- **GUI-A31** Revise, informational, settle, unsettle, resolve-stale and elicit-alert are
+  each accepted, projected
   into image 1, and rendered; elicit-alert's blocking flag is honoured, with the blocking
   variant locking its decision and the non-blocking variant not.
 - **GUI-A32** The capture step's decision-log projection is pure code over the log:
@@ -661,7 +720,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   only the last message; the log attributes the turn to the heavy tier.
 - **GUI-A35** While a channel is in expert mode the control's label reads *fast agent
   mode*, and activating it returns the next turn on that channel to the fast tier — both
-  verified in a browser.
+  verified in a browser. The control is present and active on the map channel and every
+  open thread channel, idle ones included.
 - **GUI-A36** Two thread channels take turns concurrently while the map channel is also in
   flight; each thread agent's dispatch contains its own thread's turns and no other
   thread's; escalating one thread leaves the others on the fast tier; and the grill-master's
@@ -696,7 +756,7 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A44** A thread panel scrolled to the bottom of a long thread still shows its title
   with close and pop-out controls and its prompt box with action buttons, verified in a
   browser.
-- **GUI-A45** A decision renders at most three options labelled `a`, `b`, `c` in order, and
+- **GUI-A45** A decision renders two or three options labelled `a`, `b`, `c` in order, and
   submitting an option together with a note records both on the answer.
 - **GUI-A46** A visible hover overlay disappears on click and does not return until a fresh
   mouse-enter of a zone that owns one, verified in a browser.
@@ -704,17 +764,35 @@ Each criterion is mechanically checkable and convertible to a red test.
   opens a thread whose first turn is seeded from that message.
 - **GUI-A48** Mark-all-read clears every unread marker, survives a page reload, and emits
   no write to the backend — verified by asserting no event was appended.
+- **GUI-A49** Every behaviour GUI-U14 lists is present in the reimplemented page and
+  conforms to the reference page's demonstrated behaviour, verified in a browser against
+  the reference.
+- **GUI-A50** The shipped page contains no dark-theme styles and renders the single light
+  palette, verified by inspection of the shipped stylesheet and in a browser.
+- **GUI-A51** The backend refuses non-loopback connections, takes the next free port when
+  the default is occupied, and reports the resulting URL; `grill-with-ui` opens that URL
+  and prints it.
+- **GUI-A52** A backend launched against a handoff with no page attached starts the
+  session and folds its images; a page arriving late renders the full board from the state
+  read; a page that leaves while an agent turn is in flight stops nothing — the reply
+  lands in the log and a returning page renders it.
+- **GUI-A53** Both tiers' model ids come from configuration: changing the fast-tier id
+  changes the model the log attributes the next fast turn to, the default configuration
+  names a non-Claude fast tier and a Claude heavy tier, and no configuration this work
+  ships names a Fable model.
+- **GUI-A54** A fast-tier turn asked for a fact its dispatch context does not contain
+  replies without asserting one — it says what it lacks or recommends escalation —
+  verified by a scripted turn whose context omits the fact and an assertion check on the
+  reply.
 
 ## 10. Open questions for the implementing work
 
 - **The heavy tier's default model.** V1 makes the model configuration with a Claude
   default; the cost figures in GUI-D11 are a floor for a heavier one. The first real session
   should settle which default is right on cost-per-useful-turn.
-- **How `grill-with-ui` hands the backend's address to the human's browser.** The v1 floor
-  is decided and implementable as-is: loopback only, a default port with a per-session
-  override, a backend that takes the next free port when the default is occupied, and
-  `grill-with-ui` opening the resulting URL automatically and also printing it for the
-  human. The open question is only whether something better replaces that floor.
+- **Whether something better replaces the launch floor.** The v1 launch path is decided
+  (GUI-D28); the open question is only whether a better hand-off to the browser replaces
+  it.
 - **The weight of capture's single agent pass.** The capture step's shape is decided
   (GUI-D23) and its structured output is pure code; what remains open is which tier writes
   the prose summary, whose quality bar differs from a grilling turn's.
@@ -730,22 +808,23 @@ Each criterion is mechanically checkable and convertible to a red test.
   GUI-D14, GUI-A10, GUI-A11.
 - Two-tier agent drive: the fast tier's facilitation mandate, criterion-based escalation,
   the grill-master's single-process resume chain, and orchestrator-scheduled turns —
-  GUI-D11, GUI-D12, GUI-D15, GUI-D22, GUI-A12, GUI-A42, GUI-A43.
+  GUI-D11, GUI-D12, GUI-D15, GUI-D22, GUI-A12, GUI-A42, GUI-A43, GUI-A53, GUI-A54.
 - Update kinds: add-node with echo, invalidate with rationale, the thinking indicator,
   settle/unsettle/resolve-stale/elicit-alert, thread shapes and the atomic fold — GUI-D19,
   GUI-D20, GUI-D21, GUI-A16, GUI-A17, GUI-A18, GUI-A31.
 - Page repoint onto the v1 protocol, with visible rejection surfacing, the page-derived
-  kind check and the stand-in rule — GUI-D17, GUI-A9, GUI-A13, GUI-A14, GUI-A20.
+  kind check, the stand-in rule and the carried-forward reference contract — GUI-D17,
+  GUI-U14, GUI-A9, GUI-A13, GUI-A14, GUI-A20, GUI-A49.
 - UI mandates: waiting indicator, timestamps, concise responses, floating thread chrome,
   labelled options with notes, hover-hide-on-click, connection indicator, concise
-  informationals with Discuss, mark-all-read — GUI-U1, GUI-U2, GUI-U3, GUI-U4, GUI-U5,
-  GUI-U6, GUI-U8, GUI-U9, GUI-U10, GUI-A21, GUI-A22, GUI-A23, GUI-A44, GUI-A45, GUI-A46,
-  GUI-A47, GUI-A48.
+  informationals with Discuss, mark-all-read, light theme — GUI-U1, GUI-U2, GUI-U3,
+  GUI-U4, GUI-U5, GUI-U6, GUI-U8, GUI-U9, GUI-U10, GUI-U13, GUI-A21, GUI-A22, GUI-A23,
+  GUI-A44, GUI-A45, GUI-A46, GUI-A47, GUI-A48, GUI-A50.
 - Single-main-window enforcement and concurrent sessions — GUI-U7, GUI-A19.
 - Handoff assembly against its schema, session lifecycle and restart-resume — GUI-D6,
-  GUI-D7, GUI-D9, GUI-D10, GUI-A5, GUI-A26, GUI-A27, GUI-A28.
-- The capture skill, `grill-with-ui`, and the terminal result through the admission gate —
-  GUI-D8, GUI-D23, GUI-A25, GUI-A29, GUI-A32.
+  GUI-D7, GUI-D9, GUI-D10, GUI-A5, GUI-A26, GUI-A27, GUI-A28, GUI-A52.
+- The capture skill, `grill-with-ui`, the launch path, and the terminal result through the
+  admission gate — GUI-D8, GUI-D23, GUI-D28, GUI-A25, GUI-A29, GUI-A32, GUI-A51.
 - Thread agents with their own contexts and the sole-author rule for map mutations —
   GUI-D24, GUI-D25, GUI-A36, GUI-A37.
 - Pending-queue consistency, supersede handling and the map doctor — GUI-D26, GUI-U12,

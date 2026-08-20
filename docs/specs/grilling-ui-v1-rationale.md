@@ -59,7 +59,7 @@ wherever the two disagree. `BRIDGE.md`'s poll-every-few-hundred-milliseconds adv
 
 ## Measurement circumstances
 
-- **Every cost and latency figure in the spec was measured at Sonnet weight**, deliberately,
+- **Every heavy-tier cost and latency figure in the spec was measured at Sonnet weight**, deliberately,
   to keep the bill honest during the spike. They are a floor for a heavier default, which is
   why the spec's open question about the heavy tier's default model exists at all.
 - The heavy-tier figures — $0.576 cold, $0.054 resumed, 6.5 s standalone, 12–34 s under load
@@ -85,6 +85,16 @@ superseded one from the prototype record.
 - **Image 2's token budget was dropped entirely.** The first draft carried a budget with an
   elision-marker escape; v1 carries a completeness contract with no elision path, and the
   machinery is deferred behind a real session hitting a context limit.
+- **Autonomous escalation left v1 entirely.** The restructure briefly kept an
+  agent-initiated upgrade path beside the human-gated control; the same criteria drove
+  both with no discriminator, and the owner resolved it human-gated only, with autonomous
+  escalation deferred behind sessions where the human accepts essentially every
+  recommendation.
+- **The thread-agent context became a named projection.** Image-2-whole for every dispatch
+  contradicted thread isolation; the owner resolved it as a per-thread projection — own
+  thread in full, other non-parked threads as stubs carrying decision id, title, status
+  and the folded conclusion, parked threads absent — with the completeness contract
+  binding settled decisions in every dispatch of any kind.
 
 ## Retired identifiers
 
