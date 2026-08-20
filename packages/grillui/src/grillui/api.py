@@ -29,6 +29,7 @@ from grillui.schemas import (
     SessionStatus,
     StateRead,
     UpdateRead,
+    batch_payload_problem,
 )
 
 if TYPE_CHECKING:
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
     from grillui.log import SessionLog
 
 STALE_EPOCH_STATUS = 409
+MALFORMED_PAYLOAD_STATUS = 422
 
 
 def create_app(log: SessionLog, driver: TurnDriver | None = None) -> FastAPI:
@@ -86,7 +88,16 @@ def create_app(log: SessionLog, driver: TurnDriver | None = None) -> FastAPI:
         a caller is never made to wait on the success of. Nor is the caller made
         to wait on an agent -- the lane writes its entries under the same lock as
         the append and schedules the turn elsewhere, so the human's write returns
-        at the speed of the disk rather than the speed of a model."""
+        at the speed of the disk rather than the speed of a model.
+
+        A payload the closed rejection vocabulary has no word for is refused
+        here, before anything is appended and for the batch whole -- the same
+        answer an unknown envelope field gets. Refusing part-way through would
+        leave entries in the log that no caller ever got a receipt for, which is
+        the one failure this protocol is built to make impossible."""
+        malformed = batch_payload_problem(batch.events)
+        if malformed is not None:
+            raise HTTPException(status_code=MALFORMED_PAYLOAD_STATUS, detail=malformed)
         receipts, _turns = lane.accept(batch.events, batch.epoch)
         if any(receipt.status == "accepted" for receipt in receipts):
             project_and_persist(log)

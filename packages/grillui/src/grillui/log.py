@@ -13,6 +13,11 @@ Nothing here folds a projection. The appender's own indexes -- the idempotency
 key index and the set of node ids that exist -- are the two questions a write
 has to be judged against, and they are maintained entry by entry so that judging
 a write never reads a file.
+
+One thing here does reach for the projector: an add-node's receipt echoes the
+node it minted, built by the same reader the fold will use on the same durable
+payload. Two readers for one node is how a receipt and a board come to disagree
+about what an agent just wrote.
 """
 
 from __future__ import annotations
@@ -27,21 +32,30 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from grillui.projector import node_from_payload
 from grillui.schemas import (
+    FOLD_KIND,
     MAP_CHANNEL,
     REASON_EPOCH_MISMATCH,
     REASON_MISSING_KEY,
     STATUS_KIND,
     AcceptedReceipt,
     Applied,
+    Decision,
     DuplicateReceipt,
     EventSubmission,
+    FoldOutcome,
     LogEntry,
     RejectedReceipt,
+    fold_outcomes,
+    mint_targets,
     rejection_reason,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from typing import Any, Literal
+
     from grillui.schemas import Receipt
 
 LOG_FILE = "log.jsonl"
@@ -75,9 +89,19 @@ class LogIndex:
         self.last_seq = entry.seq
         self.keys[entry.idempotency_key] = entry.seq
         if entry.kind == "add-node":
-            minted = entry.payload.get("target") or entry.payload.get("id")
-            if isinstance(minted, str):
-                self.nodes.add(minted)
+            self._mint(entry.payload)
+        elif entry.kind == FOLD_KIND:
+            # A node minted inside a fold is a node the board has, so an update
+            # after the gesture may name it. Missing it here would refuse the
+            # agent's next turn against a decision the human can already see.
+            for update in entry.payload.get("updates", []):
+                if isinstance(update, dict) and update.get("kind") == "add-node":
+                    self._mint(update)
+
+    def _mint(self, payload: Mapping[str, Any]) -> None:
+        minted = payload.get("target") or payload.get("id")
+        if isinstance(minted, str):
+            self.nodes.add(minted)
 
 
 class SessionLog:
@@ -194,25 +218,47 @@ class SessionLog:
         if problem is not None:
             reason, detail = problem
             return RejectedReceipt(
-                idempotency_key=key, epoch=self.epoch, reason=reason, detail=detail
+                idempotency_key=key,
+                epoch=self.epoch,
+                reason=reason,
+                detail=detail,
+                # A refused fold still says what became of each sub-update: the
+                # refused one names its reason, and the rest name the veto.
+                updates=(
+                    fold_outcomes(event, self._index.nodes) if event.kind == FOLD_KIND else None
+                ),
             )
 
+        previous = self._index.last_seq
         entry = LogEntry(
-            seq=self._index.last_seq + 1,
+            seq=previous + 1,
             epoch=self.epoch,
             kind=event.kind,
             idempotency_key=key,
             timestamp=_now(),
             actor=event.actor,
             channel=event.channel,
-            payload=event.payload,
+            # Minted before the append, so the id the receipt echoes and the id
+            # the projector materialises are the same durable bytes.
+            payload=mint_targets(event.payload, event.kind, previous + 1),
         )
         self._append(entry)
+        applied = _applied_updates(entry, previous)
+        as_, amendments = _amendment(entry.payload, previous, applied)
         return AcceptedReceipt(
             idempotency_key=key,
             epoch=self.epoch,
             seq=entry.seq,
-            applied=Applied(kind=entry.kind, target=_target_of(entry)),
+            applied=Applied.model_validate(
+                {
+                    "kind": entry.kind,
+                    "target": _target_of(entry),
+                    "as": as_,
+                    "amendments": amendments,
+                }
+            ),
+            node=_echoed_node(entry.kind, entry.payload),
+            updates=applied,
         )
 
     def _append(self, entry: LogEntry) -> None:
@@ -255,3 +301,62 @@ def _target_of(entry: LogEntry) -> str | None:
     if isinstance(target, str):
         return target
     return None if entry.channel == "map" else entry.channel
+
+
+def _echoed_node(kind: str, payload: Mapping[str, Any]) -> Decision | None:
+    """The materialised node an add-node's receipt echoes back.
+
+    The agent chose the question and the options but not the id, so without the
+    echo it has no way to revise other decisions against the node it just asked
+    for -- it would have to read the whole board back to find out what its own
+    write became.
+    """
+    target = payload.get("target")
+    if kind != "add-node" or not isinstance(target, str):
+        return None
+    return node_from_payload(payload, target)
+
+
+def _amendment(
+    payload: Mapping[str, Any], previous_seq: int, updates: list[FoldOutcome] | None = None
+) -> tuple[Literal["sent", "amended"], dict[str, str] | None]:
+    """Whether the board had moved under an update between authoring and apply.
+
+    An agent authors against the board it was dispatched with and says so in
+    `basis`; by the time a human folds the turn, the board may have advanced.
+    The update still applies -- to the board as it now is -- and the receipt
+    says so, because an undocumented rewrite makes the agent's next turn reason
+    from a board it did not author.
+    """
+    amendments: dict[str, str] = {}
+    basis = payload.get("basis")
+    if isinstance(basis, int) and not isinstance(basis, bool) and basis != previous_seq:
+        amendments["basis"] = f"authored against seq {basis}, applied against seq {previous_seq}"
+    for index, one in enumerate(updates or []):
+        for name, rewrite in (one.amendments or {}).items():
+            amendments[f"updates.{index}.{name}"] = rewrite
+    return ("amended", amendments) if amendments else ("sent", None)
+
+
+def _applied_updates(entry: LogEntry, previous_seq: int) -> list[FoldOutcome] | None:
+    """A fold's sub-updates as they landed. Reached only once the gesture is
+    accepted whole, so every outcome here is an applied one."""
+    if entry.kind != FOLD_KIND:
+        return None
+    outcomes = []
+    for update in entry.payload.get("updates", []):
+        kind = str(update.get("kind"))
+        as_, amendments = _amendment(update, previous_seq)
+        outcomes.append(
+            FoldOutcome.model_validate(
+                {
+                    "kind": kind,
+                    "target": update.get("target"),
+                    "status": "applied",
+                    "as": as_,
+                    "amendments": amendments,
+                    "node": _echoed_node(kind, update),
+                }
+            )
+        )
+    return outcomes
