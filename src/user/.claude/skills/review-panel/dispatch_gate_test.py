@@ -540,6 +540,42 @@ class TestIngest:
         assert ingested["report"] == REPORT
         assert ingested["recovery"] == "first-object"
 
+    @pytest.mark.parametrize(
+        "preamble",
+        [
+            "[codex] Running command: bash -lc 'cd ${DIR} && jq -r .lens'",
+            "[codex] Running command: cp report.{json,bak} /tmp",
+            "[codex] Running command: jq '{lens, findings}'",
+        ],
+    )
+    def test_a_report_survives_a_harness_wrapper_that_logs_a_brace(
+        self, round_dir, capsys, preamble
+    ):
+        """A log line mentioning a brace does not get to be the object the ladder finds."""
+        answer = authorize(round_dir, capsys)
+        output = write_output(
+            answer,
+            f"[codex] Starting Codex task thread.\n{preamble}\n"
+            f"{json.dumps(REPORT)}\n[exited with code 0]\n",
+        )
+        code, ingested = run(["ingest", "--out-dir", str(round_dir), "--output", str(output)],
+                             capsys)
+        assert code == gate.EXIT_OK
+        assert ingested["report"] == REPORT
+        assert ingested["recovery"] == "first-object"
+
+    def test_a_fenced_report_survives_a_harness_wrapper_too(self, round_dir, capsys):
+        answer = authorize(round_dir, capsys)
+        output = write_output(
+            answer,
+            f"[codex] Running command: jq '{{lens}}'\n```json\n{json.dumps(REPORT)}\n```\n"
+            "[exited with code 0]\n",
+        )
+        code, ingested = run(["ingest", "--out-dir", str(round_dir), "--output", str(output)],
+                             capsys)
+        assert code == gate.EXIT_OK
+        assert ingested["report"] == REPORT
+
     def test_a_parsed_report_records_its_outcome_on_the_claimed_attempt(self, round_dir, capsys):
         answer = authorize(round_dir, capsys)
         output = write_output(answer, json.dumps(REPORT))
@@ -555,6 +591,8 @@ class TestIngest:
             "The change looks fine to me, no findings.",
             '["correctness", "clean"]',
             "```\nnot json at all\n```",
+            "[codex] Running command: cp report.{json,bak} /tmp\n"
+            "I ran out of context before I could review this.\n[exited with code 0]\n",
         ],
     )
     def test_anything_past_the_ladder_is_unparseable(self, round_dir, capsys, body):
