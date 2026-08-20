@@ -1,23 +1,144 @@
 """Shared fixtures and builders for the backend-core suite.
 
 The builders default to the boring case so a test states only the fact it is
-about: `event()` produces a well-formed submission, and each test overrides the
-one field its claim turns on.
+about: `event()` produces a well-formed submission, `handoff_doc()` a conforming
+briefing, and each test overrides the one field its claim turns on.
 """
 
 from __future__ import annotations
 
+import copy
 import json
+import threading
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
 from grillui.api import create_app
-from grillui.log import SessionLog
+from grillui.log import HANDOFF_FILE, SessionLog
+from grillui.schemas import EventSubmission, LogEntry
 
 SEED_NODE = "n1"
+TIMEOUT = 5.0
+
+# One conforming handoff, with every optional part of the node shape present on
+# some node: a mandate, talk seeds, a fog rule, an option trio. A builder that
+# only ever produced the minimum would let the seeding drop everything optional
+# and still pass.
+HANDOFF: dict[str, Any] = {
+    "handoff_version": 1,
+    "session": {
+        "id": "grill-1",
+        "title": "Session store design",
+        "created": "2026-08-18T09:00:00+00:00",
+        "author": "main agent",
+    },
+    "impetus": "The store shape is about to be built and nobody has argued against it.",
+    "context": "The log is append-only and the page is a renderer.",
+    "constraints": ["no new services"],
+    "grilling_brief": {
+        "posture": "hard on cost and on recovery",
+        "stop_when": "every decision is settled or parked with a named blocker",
+    },
+    "plan": {
+        "statement": "Design the session store.",
+        "decisions": [
+            {
+                "id": "d1",
+                "short": "Store",
+                "title": "Which storage?",
+                "prereqs": [],
+                "body": "Pick the storage layer.",
+                "options": [
+                    {"id": "a", "text": "Append-only log", "pcr": ["audit", "size", "compaction"]},
+                    {"id": "b", "text": "Mutable table"},
+                ],
+                "talk": {"why": "Recovery rests on it.", "zoom": "Consider a crash mid-write."},
+            },
+            {
+                "id": "d2",
+                "short": "Compaction",
+                "title": "When is the log compacted?",
+                "prereqs": ["d1"],
+                "body": "Say when, or say never.",
+                "options": [
+                    {"id": "a", "text": "Never"},
+                    {"id": "b", "text": "On restart"},
+                ],
+                "mandate": {
+                    "threadId": "t-compaction",
+                    "scope": "retention",
+                    "title": "Compaction policy",
+                    "notice": "Any answer opens this thread.",
+                },
+                "fogUntil": "d1",
+                "fogTitle": "Settle the store first",
+            },
+        ],
+    },
+}
+
+
+def handoff_doc(**overrides: Any) -> dict[str, Any]:
+    """A conforming handoff, deep-copied so a test may edit it freely."""
+    return {**copy.deepcopy(HANDOFF), **overrides}
+
+
+def write_handoff(directory: Path, document: dict[str, Any], name: str = HANDOFF_FILE) -> Path:
+    """Put a handoff where a backend would find it."""
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / name
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return path
+
+
+@dataclass
+class SpyDriver:
+    """A tier that records what the log already said when it was handed a turn.
+
+    `hold` keeps the turn in flight until the test releases it, which is how a
+    slow model is stood in for without one. `reply` is what the turn says into
+    the log before it finishes, for the cases about where a reply lands rather
+    than about when it starts.
+    """
+
+    tier: str = "fast"
+    hold: bool = False
+    reply: str | None = None
+    seen: list[LogEntry] = field(default_factory=list)
+    dispatches: list[Path] = field(default_factory=list)
+    started: threading.Event = field(default_factory=threading.Event)
+    release: threading.Event = field(default_factory=threading.Event)
+    finished: threading.Event = field(default_factory=threading.Event)
+
+    def run(self, log: SessionLog, dispatch: Path, /) -> None:
+        self.seen = log.entries()
+        self.dispatches.append(dispatch)
+        self.started.set()
+        if self.hold:
+            self.release.wait(TIMEOUT)
+        if self.reply is not None:
+            log.submit(
+                [
+                    EventSubmission(
+                        kind="informational",
+                        actor="grill-master",
+                        idempotency_key=f"reply-{uuid4().hex}",
+                        payload={"text": self.reply},
+                    )
+                ],
+                log.epoch,
+            )
+        self.finished.set()
+
+
+def driven(log: SessionLog, driver: Any) -> TestClient:
+    """A client over one log with a tier attached."""
+    return TestClient(create_app(log, driver))
 
 
 @pytest.fixture

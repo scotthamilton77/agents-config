@@ -14,18 +14,15 @@ two cases worth standing up.
 
 from __future__ import annotations
 
-import threading
 import time
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import event, seed_node
+from conftest import TIMEOUT, SpyDriver, driven, event, seed_node
 from fastapi.testclient import TestClient
 
-from grillui.api import create_app
 from grillui.dispatch import DISPATCH_DIR
 from grillui.lane import UnreachableDriver
 from grillui.log import SessionLog
@@ -38,37 +35,7 @@ from grillui.schemas import (
 )
 
 BUDGET_MS = 10.0
-TIMEOUT = 5.0
 THREAD = "t1"
-
-
-@dataclass
-class SpyDriver:
-    """A tier that records what the log already said when it was handed a turn.
-
-    `hold` keeps the turn in flight until the test releases it, which is how a
-    slow model is stood in for without one.
-    """
-
-    tier: str = "fast"
-    hold: bool = False
-    seen: list[LogEntry] = field(default_factory=list)
-    dispatches: list[Path] = field(default_factory=list)
-    started: threading.Event = field(default_factory=threading.Event)
-    release: threading.Event = field(default_factory=threading.Event)
-    finished: threading.Event = field(default_factory=threading.Event)
-
-    def run(self, log: SessionLog, dispatch: Path, /) -> None:
-        self.seen = log.entries()
-        self.dispatches.append(dispatch)
-        self.started.set()
-        if self.hold:
-            self.release.wait(TIMEOUT)
-        self.finished.set()
-
-
-def driven(log: SessionLog, driver: Any) -> TestClient:
-    return TestClient(create_app(log, driver))
 
 
 def statuses(log: SessionLog, phase: str | None = None) -> list[LogEntry]:

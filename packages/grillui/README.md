@@ -7,19 +7,29 @@ and drives the grilling tiers. The design it is being built to is
 
 ## What exists
 
-The session core and the projection. One process owns one session directory,
-whose fixed file names are `log.jsonl`, `image1.json`, `image2.json`,
-`handoff.json` and `result.json`, alongside a `dispatches/` directory holding
-one file per recorded agent dispatch; the append-only log is the single source
-of truth, and the process mints an epoch over it at startup and assigns every
-sequence number. Restarting against the same directory mints a new epoch and
-continues the sequence it had reached.
+The session core, the projection, and the lifecycle that brackets them. One
+process owns one session directory, whose fixed file names are `log.jsonl`,
+`image1.json`, `image2.json`, `handoff.json` and `result.json`, alongside a
+`dispatches/` directory holding one file per recorded agent dispatch; the
+append-only log is the single source of truth, and the process mints an epoch
+over it at startup and assigns every sequence number. Restarting against the
+same directory mints a new epoch and continues the sequence it had reached.
 
 ```bash
-grillui serve ./sessions/my-session --port 8765
+grillui serve ./sessions/my-session --handoff ./briefing.json --port 8765
+grillui serve ./sessions/my-session          # resumes; handoff.json is not read
 ```
 
-Seven modules, and the separation between them is load-bearing:
+A new session is briefed from a handoff file — named with `--handoff`, or
+`handoff.json` inside the session directory. A directory whose log already holds
+entries is resumed from that log and the handoff is not opened at all: the
+briefing was seeded **through** the log at `session-start`, so editing the file
+mid-session changes nothing and no recovery path consults it. A refused handoff
+names the field that is wrong and initialises nothing, because a directory
+holding an empty log would read as a session and the next start would accept the
+briefing this one refused.
+
+Nine modules, and the separation between them is load-bearing:
 
 - `schemas.py` — the wire, log and image shapes, the per-kind payload shapes,
   and the closed vocabulary of the seven reasons a write can be refused for.
@@ -56,6 +66,18 @@ Seven modules, and the separation between them is load-bearing:
   off the lock and off the request path — one invocation per turn, no polling —
   and a tier that cannot be reached surfaces as an `error` phase in
   milliseconds instead of an unbounded silence.
+- `session.py` — starting, resuming and ending one session. It validates the
+  handoff against its schema before the directory exists, appends the validated
+  briefing as `session-start`, and rebuilds the images on every open so any
+  image file left by a previous tenure is discarded rather than trusted. Ending
+  is a human gesture: an agent's `session-end` is refused with a typed receipt
+  and appends nothing.
+- `capture.py` — the terminal result, folded from a session directory and
+  nothing else, so the same operation serves the backend at end-session and a
+  fresh reader pointed at last week's grilling. Everything structural is pure
+  code over the log; the prose summary goes through a summarizer seam whose v1
+  default counts the structured parts rather than composing them, so ending a
+  session never waits on a model.
 - `api.py` — the board endpoints. `/status` is answered from memory and opens
   no file, so it stays cheap whatever the log has grown to; `/state`, `/image1`
   and `/image2` fold; `/updates` refuses a stale epoch with 409; `/events`
@@ -74,9 +96,9 @@ sibling.
 
 Not built yet: the fast and heavy tier drivers behind the `TurnDriver` seam
 (`create_app` takes one and has none by default, so no reply is promised until a
-tier is configured), escalation, thread projections, handoff parsing, session
-control, superseding or clearing anything from the pending queue, and the UI
-itself.
+tier is configured), escalation, thread projections, session control, the single
+agent pass behind capture's summarizer seam, superseding or clearing anything
+from the pending queue, port fallback and browser handoff, and the UI itself.
 
 ## Development
 

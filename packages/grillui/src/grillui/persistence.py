@@ -46,15 +46,18 @@ def project_and_persist(log: SessionLog) -> None:
     try:
         write_images(log.directory, fold(log.epoch, log.entries()))
     except Exception as error:
-        try:
-            log.emit_status(STATUS_PHASE_ERROR, f"projection failed: {error!r}")
-        except Exception:
-            # The lane itself can be down (disk full takes the log with it).
-            # The batch is already accepted and its receipts already computed,
-            # so nothing may escape here and turn acceptance into a 500 --
-            # stderr is the last surface left.
-            _LOGGER.error(
-                "status lane unavailable while reporting projection failure %r",
-                error,
-                exc_info=True,
-            )
+        report_failure(log, "projection failed", error)
+
+
+def report_failure(log: SessionLog, what: str, error: Exception) -> None:
+    """Surface a downstream failure on the status lane without raising.
+
+    Every failure downstream of an accepted append routes through here: the
+    entry is already durable and its receipt already computed, so nothing may
+    escape and turn acceptance into a 500. The lane itself can be down -- a full
+    disk takes the log with it -- and stderr is the last surface left.
+    """
+    try:
+        log.emit_status(STATUS_PHASE_ERROR, f"{what}: {error!r}")
+    except Exception:
+        _LOGGER.error("status lane unavailable while reporting %s %r", what, error, exc_info=True)

@@ -21,6 +21,12 @@ The envelope is closed and the payload is not: an unrecognised field on a
 submission is a refusal, while an unrecognised field *inside* a payload is
 carried through untouched, so a page or an agent may ship a field a later
 version reads without this one refusing it.
+
+The handoff and the terminal result bracket the session and are closed at every
+level, payloads included. Neither is a running conversation between two ends
+that may extend ahead of each other: the handoff is written once and read once,
+and a field the backend does not understand there is a briefing the human
+believes was delivered and was not.
 """
 
 from __future__ import annotations
@@ -85,7 +91,15 @@ MAP_MUTATION_KINDS = frozenset(
 THREAD_KINDS = frozenset({"thread-created", "thread-turn"})
 NOTICE_KINDS = frozenset({"informational", "elicit-alert"})
 GESTURE_KINDS = frozenset({"answer"})
-LIFECYCLE_KINDS = frozenset({"session-start", "session-end"})
+
+# The lifecycle pair. `session-start` is the backend's alone: it is the entry
+# that strips the handoff file of its authority, so a client that could send one
+# could reseed a board mid-session. `session-end` is a human gesture; an agent
+# that judges `stop_when` satisfied says so to the human and does not end the
+# grilling itself.
+SESSION_START_KIND = "session-start"
+SESSION_END_KIND = "session-end"
+LIFECYCLE_KINDS = frozenset({SESSION_START_KIND, SESSION_END_KIND})
 KNOWN_KINDS = MAP_MUTATION_KINDS | THREAD_KINDS | NOTICE_KINDS | GESTURE_KINDS | LIFECYCLE_KINDS
 
 # One human gesture applying a conversational turn's declared impact -- a
@@ -207,6 +221,87 @@ class Decision(Strict):
     answer: Answer | None = None
     rationale: str | None = None
     locked: bool = False
+
+
+class Mandate(Strict):
+    """Any answer to this decision opens a side thread, and that thread's
+    conclusion is the only way to settle it."""
+
+    thread_id: str = Field(alias="threadId")
+    scope: str
+    title: str
+    notice: str
+
+
+class Talk(Strict):
+    """Seed text the page offers when the human wants the question opened up."""
+
+    why: str
+    zoom: str
+
+
+class HandoffDecision(Strict):
+    """A decision node as the handoff states it.
+
+    The same shape as a board node minus the fields the board owns: status,
+    answer, rationale and the alert lock exist only in the images, so a handoff
+    that carried one would be asserting board state nothing has decided yet.
+    """
+
+    id: str = Field(min_length=1)
+    short: str
+    title: str
+    # Present and possibly empty, rather than optional: a leaf decision says so
+    # by naming no prereqs, and a handoff that simply left the field out would
+    # be indistinguishable from one whose author forgot the dependency.
+    prereqs: list[str]
+    body: str
+    options: list[Option] = Field(min_length=2, max_length=3)
+    mandate: Mandate | None = None
+    talk: Talk | None = None
+    fog_until: str | None = Field(default=None, alias="fogUntil")
+    fog_title: str | None = Field(default=None, alias="fogTitle")
+
+
+class HandoffSession(Strict):
+    id: str = Field(min_length=1)
+    title: str
+    created: str
+    author: str
+
+
+class GrillingBrief(Strict):
+    """How hard to push, and when to stop.
+
+    `stop_when` is what keeps a session finite: an agent asked to find weaknesses
+    finds them indefinitely, so the termination condition is briefed rather than
+    discovered.
+    """
+
+    posture: str
+    stop_when: str
+
+
+class Plan(Strict):
+    statement: str
+    decisions: list[HandoffDecision] = Field(min_length=1)
+
+
+class Handoff(Strict):
+    """The whole of what crosses the gap from the main agent to the backend.
+
+    Read once. After the backend appends `session-start` the file has no further
+    authority: editing it mid-session changes nothing, and a backend whose log is
+    non-empty never opens it.
+    """
+
+    handoff_version: Literal[1]
+    session: HandoffSession
+    impetus: str
+    context: str
+    constraints: list[str]
+    grilling_brief: GrillingBrief
+    plan: Plan
 
 
 class Applied(Strict):
@@ -343,6 +438,64 @@ class Image2(Image1):
     history: dict[str, list[HistoryEntry]] = Field(default_factory=dict)
 
 
+class TerminalSession(Strict):
+    id: str
+    title: str
+    created: str
+    ended: str
+
+
+class References(Strict):
+    """Where the durable record is, relative to the session directory. The
+    result is what the main agent receives beside these paths -- never a
+    transcript dump, which is why the transcript is referenced and not carried.
+    """
+
+    log: str
+    image1: str
+    image2: str
+
+
+class CapturedDecision(Strict):
+    id: str
+    title: str
+    answer: str | None
+    status: DecisionStatus
+    rationale: str
+
+
+class OpenItem(Strict):
+    """One decision unsettled when the session ended, and what stopped it."""
+
+    id: str
+    blocker: str
+
+
+class CapturedThread(Strict):
+    id: str
+    title: str
+    state: ThreadState
+    conclusion: str | None
+
+
+class TerminalResult(Strict):
+    """What a captured session leaves behind, written beside the log.
+
+    Everything but `summary` is pure code over the log, which is what lets a
+    fresh process pointed at a session directory alone produce the same bytes
+    twice. `summary` is the one prose field, and it is a briefing rather than a
+    transcript.
+    """
+
+    session: TerminalSession
+    references: References
+    decisions: list[CapturedDecision]
+    open_items: list[OpenItem]
+    threads: list[CapturedThread]
+    summary: str
+    stop_reason: str
+
+
 class DispatchContext(Strict):
     """What one agent dispatch is given, and the shape recorded on disk for it.
 
@@ -474,6 +627,20 @@ PAYLOAD_SHAPES: dict[str, type[Payload]] = {
 }
 
 
+def fault_summary(error: ValidationError, whole: str) -> str:
+    """Every fault a validation found, each naming the field it is about.
+
+    The field path is the whole of what makes a refusal actionable: "refused" on
+    its own sends the author back to diff their file against a schema, while
+    `plan.decisions.2.body: Field required` is a one-line fix. `whole` is what a
+    fault against the document itself is called, since such a fault has no path.
+    """
+    return "; ".join(
+        f"{'.'.join(str(part) for part in fault['loc']) or whole}: {fault['msg']}"
+        for fault in error.errors()
+    )
+
+
 def payload_problem(kind: str, payload: Mapping[str, Any]) -> str | None:
     """Judge a payload against its kind's shape, returning a message or None.
 
@@ -487,11 +654,7 @@ def payload_problem(kind: str, payload: Mapping[str, Any]) -> str | None:
     try:
         shape.model_validate(payload)
     except ValidationError as error:
-        faults = "; ".join(
-            f"{'.'.join(str(part) for part in fault['loc']) or 'payload'}: {fault['msg']}"
-            for fault in error.errors()
-        )
-        return f"{kind!r} payload: {faults}"
+        return f"{kind!r} payload: {fault_summary(error, 'payload')}"
     if kind != FOLD_KIND:
         return None
     return _fold_payload_problem(payload)
@@ -619,6 +782,9 @@ def rejection_reason(submission: EventSubmission, known_nodes: Set[str]) -> tupl
     if submission.kind not in KNOWN_KINDS:
         return (REASON_UNKNOWN_KIND, f"{submission.kind!r} is not an event kind of this protocol")
 
+    if submission.kind in LIFECYCLE_KINDS:
+        return _lifecycle_problem(submission)
+
     if submission.kind in MAP_MUTATION_KINDS and (
         submission.actor == "thread-agent" or submission.channel != MAP_CHANNEL
     ):
@@ -686,6 +852,30 @@ def read_turns(payload: Mapping[str, Any], actor: Actor, timestamp: str) -> list
 
 def _who(raw: object, fallback: Actor) -> Actor:
     return cast("Actor", raw) if isinstance(raw, str) and raw in ACTORS else fallback
+
+
+def _lifecycle_problem(submission: EventSubmission) -> tuple[str, str] | None:
+    """Who may bracket a session.
+
+    Only the human may end one, and nobody but the backend may start one. Both
+    refusals are named `unknown event kind` rather than a reason of their own:
+    the rejection vocabulary is closed and a caller switches on it, and an
+    eighth reason minted for this would break every one of them. The wording is
+    exact anyway -- a lifecycle kind is not part of the vocabulary the refused
+    sender has.
+    """
+    if submission.kind == SESSION_END_KIND and submission.actor == "human":
+        return None
+    rule = (
+        "ending a grilling is a human gesture; an agent that judges `stop_when` "
+        "satisfied says so to the human and does not end the session itself"
+        if submission.kind == SESSION_END_KIND
+        else "the backend appends it once, when it reads the handoff"
+    )
+    return (
+        REASON_UNKNOWN_KIND,
+        f"{submission.kind!r} is not a kind {submission.actor!r} may send: {rule}",
+    )
 
 
 def _thread_turn_problem(submission: EventSubmission) -> tuple[str, str] | None:
