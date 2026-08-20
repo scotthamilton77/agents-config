@@ -7,8 +7,9 @@ admission:
   remove_when: The merge-eligibility evaluator enforces this contract mechanically end to end, including the cross-artifact checks a person performs by hand today.
 ---
 
-A review verdict is the machine-readable result of one code-review round, keyed to the git head
-commit it reviewed: what was looked at, through which lenses, and what is still outstanding.
+A review verdict is the machine-readable result of one code-review round. It is keyed to the git
+head commit it reviewed, so it says exactly what was looked at, through which lenses, and what is
+still outstanding.
 
 ## Envelope
 
@@ -16,141 +17,145 @@ All fields are required except `halt`.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `schema_version` | `"3"` | Version of this contract. |
-| `artifact_class` | string | What was reviewed; selects the roster staffing draws from. |
-| `round` | integer ≥ 1 | Which round this is for the claim. |
-| `base_sha` | 40-hex | Commit the diff was taken against. |
-| `head_sha` | 40-hex | Reviewed head. The verdict is valid only for this commit. |
+| `schema_version` | `"2"` | Version of this contract. |
+| `artifact_class` | string | What kind of change was reviewed; selects the lens set the round must cover. |
+| `round` | integer ≥ 1 | Which review round this is for the claim. |
+| `base_sha` | 40-hex | Commit the reviewed diff was taken against. |
+| `head_sha` | 40-hex | Reviewed head commit. The verdict is valid only for this commit. |
 | `claim_id` | non-blank string | The completion claim this round adjudicates. |
-| `retained_categories` | array of strings | Carried forward from earlier rounds; empty asserts "nothing retained". |
-| `staffing_record` | object | The staffing decision the round was dispatched from. |
-| `lenses` | array | One entry per staffed lens, green ones included. At least one unless the round halted. |
-| `prior_dispositions` | array | What happened to each earlier mechanical finding. Empty on round 1. |
-| `verdict` | `"clean"`, `"findings"`, `"halted"` | Round-level result. |
-| `findings` | array | Empty when `clean`, non-empty when `findings`, unconstrained on a halt. |
+| `retained_categories` | array of strings | Categories carried forward from earlier rounds. Always present; an empty array asserts "nothing retained". |
+| `lenses` | array | One entry per lens the artifact class declares, green ones included, each recording what actually ran it. At least one, unless the round halted first. |
+| `prior_dispositions` | array | What happened to each earlier mechanical finding. May be empty on round 1. |
+| `verdict` | `"clean"`, `"findings"`, or `"halted"` | Round-level result. |
+| `findings` | array | Findings raised this round. Must be empty when `verdict` is `"clean"` and non-empty when it is `"findings"`. Unconstrained on a halted round. |
 | `halt` | object | Present exactly when `verdict` is `"halted"`. |
-
-Digests are `sha256:` plus 64 lowercase hex characters.
-
-### Staffing record
-
-`staffing_record` carries `digest`, the digest of the staffing record's raw bytes, plus an optional
-non-blank `path` hint. The digest identifies the record this round is answerable to; one edited
-afterwards no longer matches. Checking that record against the class roster is the panel's job, not
-this envelope's.
 
 ### Lens entry
 
-Each entry carries `lens`, its own `verdict` of `clean` or `findings` — only the round halts, never
-a single lens — and `vendor`, `transport` and `model`, recording what **actually** produced the
-report, never what the lens registry declared. A lens reports exactly once; a second entry for it is
-rejected (`duplicate-lens`), because two attempts reported as two lenses inflate coverage.
+```json
+{"lens": "correctness", "verdict": "findings", "vendor": "openai",
+ "transport": "openrouter", "model": "openai/gpt-5.6-sol",
+ "substitution": {"declared_transport": "codex", "declared_model": "gpt-5.6-terra",
+                  "reason": "codex credential expired, lens failed over to openrouter",
+                  "transport_error": "401 Missing bearer authentication"}}
+```
 
-An optional `substitution` appears only when a lens ran on something other than its declared entry,
-holding `declared_transport`, `declared_model`, a mandatory non-blank `reason`, and
-`transport_error` — verbatim what the declared route returned, since only that string identifies
-the provider error a stop policy matches on.
+A lens's own `verdict` is `clean` or `findings` — only the round halts, never a single lens.
+`vendor`, `transport` and `model` record what **actually** produced the report, never what the
+lens registry declared for it. A lens reports exactly once: a lens re-dispatched after a failure
+carries one entry describing the attempt that produced the report it holds, and a second entry for
+the same lens is rejected (`duplicate-lens`) because two attempts reported as two lenses inflate
+coverage.
 
-**Vendor diversity is derived, never stored.** One distinct `vendor` across `lenses` means the panel
-collapsed — a reader's observation, not a validation error.
+`substitution` appears only when the lens ran on something other than its declared entry, and its
+`reason` is mandatory and non-blank. Recording it is the round's own job: nothing downstream can
+reconstruct a swap the round did not write down.
+
+`transport_error` carries what the declared route returned when the swap was forced rather than
+chosen — verbatim, because a policy that stops a run on one particular provider error has only this
+string to recognise it by.
+
+**Vendor diversity is derived, never stored.** Count the distinct `vendor` values across `lenses`;
+one means the panel collapsed onto a single vendor and its blind spots now correlate. That is an
+observation a reader makes from the artifact, not a validation error — a collapsed round is a
+real round, and stalling it would trade a weaker review for no review.
 
 ### Finding
 
-A finding carries an `id` unique within the artifact, its `lens`, a `type` of `mechanical` (blocks)
-or `advisory` (never blocks; routes to the backlog), the `ac` it judges against, a `claim`, and
-`evidence` such as `tests/test_parser.py::test_trailing fails at this head`. `evidence` is mandatory
-and non-blank for `mechanical` — omitted, empty and whitespace-only all fail — and optional for
-`advisory`.
+```json
+{"id": "f1", "lens": "correctness", "type": "mechanical", "ac": "A3",
+ "claim": "the parser drops the trailing record",
+ "evidence": "tests/test_parser.py::test_trailing fails at this head"}
+```
+
+`id` is unique within the artifact. `type` is `mechanical` (blocks) or `advisory` (never blocks;
+routes to the backlog). `evidence` is mandatory and non-blank for `mechanical` findings —
+omitted, empty, and whitespace-only all fail validation. It is optional for `advisory`.
 
 `downgraded_from: "mechanical"` marks an advisory the harvester demoted because the lens called it
-mechanical with no evidence. Only an advisory may carry it; it keeps the demotion countable.
+mechanical and supplied no evidence. Only an advisory may carry it. The marker exists so the
+demotion stays countable: a lens producing many of them is unreliable, and that is invisible if
+the demotion is silent.
 
 ### Prior disposition
 
-An entry carries `round`, the finding `id`, a `disposition`, and where required `evidence` and
-`work_item`. `disposition` is `fixed`, `rebutted`, `advisory-deferred`, or `transferred`.
+```json
+{"round": 1, "id": "f1", "disposition": "rebutted",
+ "evidence": "the guard runs before the branch; see src/reader.py:41"}
+```
 
-`evidence` is required and non-blank for `rebutted`, and for `fixed` when `artifact_class` is
-`typed-code`, where it names the test and the fails-without/passes-with observation. Classes with
-no test gate leave it optional on `fixed`.
-
-`transferred` moves a pre-existing, non-blocking defect out of the campaign, and requires both
-`evidence` carrying the provenance basis — a base-side reference showing the defect predates the
-change — and `work_item`, the id it was filed as. Either half alone lets a live defect leave
-unowned. `work_item` is optional on the other dispositions.
+`disposition` is `fixed`, `rebutted`, or `advisory-deferred`. `evidence` is required and non-blank
+for `rebutted` — a rebuttal without evidence is just a disagreement.
 
 ### Halt
 
-`reason` selects the shape. A transport failure:
-
 ```json
-{"reason": "transport-failure",
- "failures": [{"lens": "security", "transport": "openrouter", "error": "402 Insufficient credits"},
+{"failures": [{"lens": "security", "transport": "openrouter", "error": "402 Insufficient credits"},
               {"lens": "security", "transport": "codex", "error": "401 Missing bearer auth"}],
- "abandoned_lenses": ["test-adequacy"]}
+ "abandoned_lenses": ["test-adequacy", "documentation-quality"]}
 ```
 
-`failures` carries at least two entries — a dispatch died on its route and the failover died too —
-each naming its `lens`, `transport` and the verbatim `error`. A failure a successful failover
-recovered from belongs on that lens's `substitution` instead.
+Both keys are required. `failures` carries at least two entries — a dispatch died on its route and
+the failover to the other route died too — each naming its `lens`, `transport` and the verbatim
+`error`; a failure a successful failover recovered from belongs on that lens's `substitution`
+instead. `abandoned_lenses` names the declared lenses the round never dispatched, and is present
+even when empty.
 
-An upstream defect, where a finding indicts the criteria the round measures against:
-
-```json
-{"reason": "upstream-defect", "indicted_finding": "f3",
- "indicted_artifact": "docs/specs/parser-rewrite.md",
- "artifact_digest": "sha256:7e2b…", "abandoned_lenses": []}
-```
-
-No further round is run: each would measure against a ruler known to be bent. `artifact_digest` is
-the indicted artifact's content at the halt, and a resume recomputes it — unchanged means the ruler
-is still bent and the request is refused. It carries no `failures`; nothing failed in transport.
-
-`abandoned_lenses` is required on both shapes, naming the staffed lenses the round never dispatched;
-present even when empty.
-
-A halted round is never clean and never complete, and `verdict` says so outright rather than leaving
-it inferred from a missing lens entry. Its findings are real and still not a verdict on the change.
+A halted round is never clean and never complete, and `verdict` says so outright rather than
+leaving it inferred from a missing lens entry — a silent check guarding the merge gate is one
+nobody notices passing. Its findings are real and still not a verdict on the change: most of it was
+never opened.
 
 ## Where a verdict is posted
 
-Outside the reviewed branch, never as a file in the diff: preferably a check run named
-`review-verdict` carrying the JSON, or degraded, the JSON as the body of the reviewing App's
-approving review. Both are App-posted and keyed to a SHA, so a payload posted by any other identity
-is not a verdict, and one whose `head_sha` is not the current head is stale and treated as absent.
+Outside the reviewed branch, never as a file in the diff:
+
+- Preferred: a check run named `review-verdict` carrying the JSON.
+- Degraded: the JSON as the body of the reviewing App's approving review.
+
+Both media are posted by the App and keyed to a SHA. Two rules follow:
+
+- **Provenance.** A verdict-shaped payload posted by any other identity is not a verdict. Check who
+  posted it before reading it.
+- **Staleness.** A verdict whose `head_sha` is not the current head of the pull request is stale and
+  treated as absent. Every push invalidates every prior verdict.
 
 ## When a round is complete
 
 A `halted` verdict is incomplete by construction. For every other verdict, hand-verify all five
 against the pull request:
 
-1. **Base sync** — `base_sha` equals the merge base of the branch and its target; a mismatch means
-   the reviewer read an unsynced checkout.
-2. **Retention declared** — `retained_categories` is explicitly present, empty or not.
-3. **Live and authentic** — schema-valid, App-posted, `head_sha` equal to the current head.
-4. **Lens coverage** — `lenses` covers exactly the staffed set in the referenced staffing record.
-   Silence never counts as a clean lens; a lens that died and was never re-dispatched leaves the
-   round incomplete.
+1. **Base sync** — the declared `base_sha` equals the diff's actual base (the merge base of the
+   branch and its target). A mismatch means the reviewer looked at an unsynced checkout, and the
+   round reads incomplete.
+2. **Retention declared** — `retained_categories` is explicitly present: a non-empty list, or an
+   empty one meaning nothing was retained.
+3. **Live and authentic** — the verdict is schema-valid, App-posted, and its `head_sha` equals the
+   current head.
+4. **Lens coverage** — `lenses` covers the full set the artifact class declares. Coverage is read
+   off the artifact; silence never counts as a clean lens, and a lens that died and was never
+   re-dispatched leaves the round incomplete.
 5. **Ledger coverage** — `prior_dispositions` accounts for every `mechanical` finding from every
    prior round's posted verdict.
 
 **Terminal-clean** = a complete round whose `verdict` is `clean`, carrying zero `mechanical`
-findings. A halted round is never terminal-clean, however few findings it holds. The schema checks
-one artifact's shape; these five compare it against the world, so a person checks them by hand.
+findings. A halted round is never terminal-clean, however few findings it holds.
+
+The schema checks the shape of a single artifact; the five conditions above compare it against the
+pull request and against earlier verdicts, so a person checks them by hand today.
 
 ## Validating
 
-From this directory (without `uv`: `pip install jsonschema`, then run it under `python3`):
+From this directory:
 
 ```bash
-uv run validate_verdict.py path/to/verdict.json [--staffing path/to/staffing.json]
+uv run validate_verdict.py path/to/verdict.json
 ```
 
-The staffing record is a second positional or the value of `--staffing`. Given one, the validator
-also checks that its bytes hash to the digest the verdict names, and that the reported lenses are
-exactly the set it staffs; given none, it checks the envelope alone.
+No `uv`? `python3 -m pip install jsonschema`, then `python3 validate_verdict.py path/to/verdict.json`.
 
 Stdout is JSON: `{"valid": true}` or `{"valid": false, "errors": [{"code", "path", "message"}, …]}`.
-Error codes are `unreadable`, `invalid-json`, `schema`, `duplicate-finding-id`, `duplicate-lens`,
-`staffing-digest-mismatch`, `lens-not-staffed`, and `staffing-coverage-gap`. Exit 0 valid,
-1 invalid, 2 unreadable or unparseable. Output is deterministic.
+Error codes are `unreadable`, `invalid-json`, `schema`, `duplicate-finding-id`, and
+`duplicate-lens`. Exit status is
+0 when valid, 1 when invalid, 2 when the file cannot be read or parsed. Output is deterministic:
+the same input always produces byte-identical output.
