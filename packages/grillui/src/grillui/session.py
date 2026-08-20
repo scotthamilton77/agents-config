@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING
 from pydantic import ValidationError
 
 from grillui.capture import capture, default_summary, write_result
-from grillui.log import HANDOFF_FILE, LOG_FILE, SessionLog
+from grillui.log import HANDOFF_FILE, LOG_FILE, SessionLog, read_entries
 from grillui.persistence import project_and_persist, report_failure
 from grillui.schemas import SESSION_START_KIND, Handoff, HandoffDecision, fault_summary
 
@@ -124,11 +124,12 @@ def end_session(log: SessionLog, *, summarize: Summarizer = default_summary) -> 
 def _resumable(directory: Path) -> bool:
     """Whether this directory is a session already under way.
 
-    A log file with nothing in it is not: an interrupted start leaves one behind
-    and there is no board in it to resume.
+    A log file with no readable entry in it is not: an interrupted start leaves
+    behind an empty file, or one torn line the log reader forgives and drops,
+    and neither holds a board to resume. Judged by parsing, not by size — a
+    non-empty file of nothing but a torn line must take the seeding path.
     """
-    path = directory / LOG_FILE
-    return path.is_file() and path.stat().st_size > 0
+    return bool(read_entries(directory / LOG_FILE))
 
 
 def _graph_problem(decisions: Sequence[HandoffDecision]) -> str | None:

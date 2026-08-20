@@ -296,9 +296,36 @@ class SessionLog:
 
     def _load(self) -> None:
         self.directory.mkdir(parents=True, exist_ok=True)
-        for entry in read_entries(self.path):
+        entries = read_entries(self.path)
+        for entry in entries:
             self._entries.append(entry)
             self._index.absorb(entry)
+        self._discard_torn_tail(len(entries))
+
+    def _discard_torn_tail(self, kept: int) -> None:
+        """Remove a forgiven torn line from disk, not just from memory.
+
+        Appends open the file in append mode, so bytes left after the last
+        intact entry would sit in front of the next entry written — turning the
+        forgivable torn *final* line into interior corruption a later load
+        refuses, or fusing with the next entry into one unreadable line. Only
+        the process holding the tenure may do this; the shared reader stays
+        read-only.
+        """
+        if not self.path.exists():
+            return
+        raw = self.path.read_bytes()
+        offset = 0
+        seen = 0
+        for line in raw.splitlines(keepends=True):
+            if seen == kept:
+                break
+            offset += len(line)
+            if line.strip():
+                seen += 1
+        if offset < len(raw):
+            with self.path.open("rb+") as handle:
+                handle.truncate(offset)
 
 
 def read_entries(path: Path) -> list[LogEntry]:

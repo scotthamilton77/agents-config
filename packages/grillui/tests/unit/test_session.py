@@ -370,6 +370,28 @@ def test_a_handoff_that_is_not_text_at_all_is_refused(session_dir: Path, tmp_pat
     assert untouched(session_dir)
 
 
+def test_a_log_of_nothing_but_a_torn_line_seeds_from_the_handoff(session_dir: Path) -> None:
+    """
+    Given a log file holding only half a JSON line — a crash during the very
+    first append
+    When the backend is started against it with a valid handoff
+    Then it seeds from the handoff rather than resuming an empty board.
+
+    Resumability is judged by parsing, not by file size: the log reader forgives
+    and drops a torn final line, so a file of nothing else holds no entry and no
+    board — treating it as resumable would silently skip the briefing.
+    """
+    handoff_path = write_handoff(session_dir, handoff_doc())
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / LOG_FILE).write_text('{"seq": 1, "epo', encoding="utf-8")
+
+    log = open_session(session_dir, handoff_path)
+
+    entries = read_entries(session_dir / LOG_FILE)
+    assert [entry.kind for entry in entries] == [SESSION_START_KIND]
+    assert image1(log).decisions
+
+
 # ── GUI-D7 / GUI-A27: after session-start the handoff has no authority ──
 
 
