@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agents.local/schemas/review-verdict/2",
+  "$id": "https://agents.local/schemas/review-verdict/3",
   "title": "Review verdict",
   "description": "Typed result of one code-review round, keyed to the git head SHA it reviewed.",
   "type": "object",
@@ -13,6 +13,7 @@
     "head_sha",
     "claim_id",
     "retained_categories",
+    "staffing_record",
     "lenses",
     "prior_dispositions",
     "verdict",
@@ -20,12 +21,12 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "2"
+      "const": "3"
     },
     "artifact_class": {
       "type": "string",
       "pattern": "\\S",
-      "description": "What kind of change was reviewed; selects the lens set the round must cover."
+      "description": "What kind of change was reviewed; selects the lens roster the round's staffing decision draws from."
     },
     "round": {
       "type": "integer",
@@ -50,6 +51,24 @@
       "type": "array",
       "items": {"type": "string", "pattern": "\\S"},
       "description": "Categories carried forward from earlier rounds; an empty array means nothing retained."
+    },
+    "staffing_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest"],
+      "properties": {
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "Digest of the staffing record's raw bytes. The lens set this round had to cover is that record's, so the verdict names which bytes it is answerable to; a record edited after the round no longer matches."
+        },
+        "path": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "Where the staffing record was read from. A locating hint only — the digest, not this string, is what identifies the record."
+        }
+      },
+      "description": "Reference to the staffing decision this round was dispatched from. The record itself lives beside the verdict, not inside it."
     },
     "lenses": {
       "type": "array",
@@ -94,7 +113,7 @@
           }
         }
       },
-      "description": "Every lens the artifact class declares, reported individually, green ones included, each recording what actually ran it."
+      "description": "Every lens the round's staffing decision staffed, reported individually, green ones included, each recording what actually ran it."
     },
     "prior_dispositions": {
       "type": "array",
@@ -105,8 +124,13 @@
         "properties": {
           "round": {"type": "integer", "minimum": 1},
           "id": {"type": "string", "pattern": "\\S"},
-          "disposition": {"enum": ["fixed", "rebutted", "advisory-deferred"]},
-          "evidence": {"type": "string"}
+          "disposition": {"enum": ["fixed", "rebutted", "advisory-deferred", "transferred"]},
+          "evidence": {"type": "string"},
+          "work_item": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Identifier of the work item a transferred finding was filed as. A defect ruled out of scope stays accounted for only if something outside this campaign now carries it."
+          }
         },
         "allOf": [
           {
@@ -115,6 +139,14 @@
               "required": ["evidence"],
               "properties": {"evidence": {"type": "string", "pattern": "\\S"}}
             }
+          },
+          {
+            "if": {"properties": {"disposition": {"const": "transferred"}}, "required": ["disposition"]},
+            "then": {
+              "required": ["evidence", "work_item"],
+              "properties": {"evidence": {"type": "string", "pattern": "\\S"}}
+            },
+            "description": "A transfer moves a finding out of the campaign, so it carries both halves of the claim it rests on: evidence holding the provenance basis that the defect predates the change, and the work item now accountable for it. Either half alone lets a live defect leave the campaign unowned."
           }
         ]
       },
@@ -123,31 +155,71 @@
     "verdict": {"enum": ["clean", "findings", "halted"]},
     "halt": {
       "type": "object",
-      "additionalProperties": false,
-      "required": ["failures", "abandoned_lenses"],
-      "properties": {
-        "failures": {
-          "type": "array",
-          "minItems": 2,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["lens", "transport", "error"],
-            "properties": {
-              "lens": {"type": "string", "pattern": "\\S"},
-              "transport": {"type": "string", "pattern": "\\S"},
-              "error": {"type": "string", "pattern": "\\S"}
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "required": ["reason", "failures", "abandoned_lenses"],
+          "properties": {
+            "reason": {"const": "transport-failure"},
+            "failures": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["lens", "transport", "error"],
+                "properties": {
+                  "lens": {"type": "string", "pattern": "\\S"},
+                  "transport": {"type": "string", "pattern": "\\S"},
+                  "error": {"type": "string", "pattern": "\\S"}
+                }
+              },
+              "description": "Every transport failure the round hit and did not recover from, in order, each with the verbatim error it returned. At least two, because the halting condition is a lens whose declared route died and whose failover died as well; more when parallel dispatches exhausted their routes together. A failure a successful failover recovered from belongs on that lens's substitution, not here. A policy that halts on a particular provider error reads this."
+            },
+            "abandoned_lenses": {
+              "type": "array",
+              "items": {"type": "string", "pattern": "\\S"},
+              "description": "Staffed lenses that were never dispatched because the round stopped. Empty only when the round stopped on its last lens."
             }
           },
-          "description": "Every transport failure the round hit and did not recover from, in order, each with the verbatim error it returned. At least two, because the halting condition is a lens whose declared route died and whose failover died as well; more when parallel dispatches exhausted their routes together. A failure a successful failover recovered from belongs on that lens's substitution, not here. A policy that halts on a particular provider error reads this."
+          "description": "The round lost a lens's declared route and its failover with it, so it stopped rather than reporting the gap as coverage."
         },
-        "abandoned_lenses": {
-          "type": "array",
-          "items": {"type": "string", "pattern": "\\S"},
-          "description": "Lenses the class declares that were never dispatched because the round stopped. Empty only when the round stopped on its last lens."
+        {
+          "additionalProperties": false,
+          "required": [
+            "reason",
+            "indicted_finding",
+            "indicted_artifact",
+            "artifact_digest",
+            "abandoned_lenses"
+          ],
+          "properties": {
+            "reason": {"const": "upstream-defect"},
+            "indicted_finding": {
+              "type": "string",
+              "pattern": "\\S",
+              "description": "Id of the finding that indicts the acceptance criteria or requirements themselves, rather than the artifact measured against them."
+            },
+            "indicted_artifact": {
+              "type": "string",
+              "pattern": "\\S",
+              "description": "Path of the upstream artifact the finding indicts — the ruler, not the work."
+            },
+            "artifact_digest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "description": "Digest of the indicted artifact's content at the moment of the halt. A resume recomputes it: an unchanged digest means the ruler is still bent and the request is refused."
+            },
+            "abandoned_lenses": {
+              "type": "array",
+              "items": {"type": "string", "pattern": "\\S"},
+              "description": "Staffed lenses that were never dispatched because the round stopped. Empty only when the round stopped on its last lens."
+            }
+          },
+          "description": "A finding indicted the criteria the round measures against. No further round is run: every one of them would measure against a ruler known to be bent, so there is no transport to fail over to and no failure list to carry."
         }
-      },
-      "description": "Present exactly when the verdict is halted: why the round stopped and what it never looked at."
+      ],
+      "description": "Present exactly when the verdict is halted: why the round stopped and what it never looked at. The reason selects the shape — the two halts carry different evidence because they are stopped by different things."
     },
     "findings": {
       "type": "array",
@@ -200,6 +272,27 @@
     {
       "if": {"properties": {"verdict": {"enum": ["clean", "findings"]}}, "required": ["verdict"]},
       "then": {"properties": {"lenses": {"minItems": 1}}}
+    },
+    {
+      "if": {"properties": {"artifact_class": {"const": "typed-code"}}, "required": ["artifact_class"]},
+      "then": {
+        "properties": {
+          "prior_dispositions": {
+            "items": {
+              "allOf": [
+                {
+                  "if": {"properties": {"disposition": {"const": "fixed"}}, "required": ["disposition"]},
+                  "then": {
+                    "required": ["evidence"],
+                    "properties": {"evidence": {"type": "string", "pattern": "\\S"}}
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "description": "On typed code a fix is checkable, so a fixed finding names the test and the fails-without/passes-with observation that shows it. Classes with no test gate keep evidence optional on fixed, where the same demand would only buy prose."
     }
   ]
 }
