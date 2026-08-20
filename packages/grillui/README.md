@@ -7,7 +7,8 @@ and drives the grilling tiers. The design it is being built to is
 
 ## What exists
 
-The session core, the projection, and the lifecycle that brackets them. One
+The session core, the projection, the lifecycle that brackets them, and the two
+tiers that take the turns. One
 process owns one session directory, whose fixed file names are `log.jsonl`,
 `image1.json`, `image2.json`, `handoff.json` and `result.json`, alongside a
 `dispatches/` directory holding one file per recorded agent dispatch; the
@@ -29,7 +30,13 @@ names the field that is wrong and initialises nothing, because a directory
 holding an empty log would read as a session and the next start would accept the
 briefing this one refused.
 
-Nine modules, and the separation between them is load-bearing:
+Both tiers take turns. The fast tier is a non-Claude model over OpenRouter and
+the heavy tier is a Claude model driven as `claude -p --resume` turns; which
+model each is comes from `GRILLUI_FAST_MODEL` and `GRILLUI_HEAVY_MODEL`, and the
+fast tier reads its key from `OPENROUTER_API_KEY`. A turn is one invocation that
+exits — nothing polls, and no agent process stays resident between turns.
+
+Twelve modules, and the separation between them is load-bearing:
 
 - `schemas.py` — the wire, log and image shapes, the per-kind payload shapes,
   and the closed vocabulary of the seven reasons a write can be refused for.
@@ -66,6 +73,25 @@ Nine modules, and the separation between them is load-bearing:
   off the lock and off the request path — one invocation per turn, no polling —
   and a tier that cannot be reached surfaces as an `error` phase in
   milliseconds instead of an unbounded silence.
+- `tiers.py` — what each tier is configured as and what it is told: the model
+  ids, the shipped system prompts, and the assembly of one turn's prompt out of
+  the briefing, the recorded board bytes and the channel's own conversation. The
+  briefing is read from the session's opening log entry rather than the handoff
+  file, so a process that never saw that file briefs its agents identically.
+- `escalation.py` — the three conditions a fast reply's handoff recommendation
+  is decided by, evaluated in code against the transcript and the board. It is
+  never the model's assessment of its own competence: a fast model asked whether
+  a question is beyond it judges generously and answers anyway. Recommending is
+  all that happens here — moving a channel to the heavy tier is the human's
+  gesture.
+- `drivers.py` — the two tiers behind the `TurnDriver` seam, and their
+  transports. Every reply carries its tier and model id into the log, a fast
+  reply carries any recommendation, and a heavy reply records whether it
+  followed a transfer. The heavy tier's chain identity is written into the
+  session directory, so a restarted backend resumes the same conversation and
+  pays the cold start once; one heavy turn runs at a time, because the discount
+  lives in a cache one process holds. A turn that produces nothing usable
+  raises, and the lane turns that into an error phase in milliseconds.
 - `session.py` — starting, resuming and ending one session. It validates the
   handoff against its schema before the directory exists, appends the validated
   briefing as `session-start`, and rebuilds the images on every open so any
@@ -94,11 +120,12 @@ state in which half of it landed, and its receipt says what became of each
 sub-update — applied, refused with its own reason, or vetoed by a refused
 sibling.
 
-Not built yet: the fast and heavy tier drivers behind the `TurnDriver` seam
-(`create_app` takes one and has none by default, so no reply is promised until a
-tier is configured), escalation, thread projections, session control, the single
-agent pass behind capture's summarizer seam, superseding or clearing anything
-from the pending queue, port fallback and browser handoff, and the UI itself.
+Not built yet: the transfer-to-expert flow that acts on a recommendation (the
+metadata and the attribution vocabulary exist; nothing moves a channel to the
+heavy tier yet, and `create_app` takes one driver for the whole session rather
+than one per channel), thread projections, session control, the single agent
+pass behind capture's summarizer seam, superseding or clearing anything from the
+pending queue, port fallback and browser handoff, and the UI itself.
 
 ## Development
 

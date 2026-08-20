@@ -20,8 +20,10 @@ import uvicorn
 
 from grillui import __version__
 from grillui.api import create_app
+from grillui.drivers import FastDriver
 from grillui.log import HANDOFF_FILE
 from grillui.session import HandoffRefusedError, open_session
+from grillui.tiers import TierConfig
 
 DEFAULT_PORT = 8765
 LOOPBACK = "127.0.0.1"
@@ -81,6 +83,13 @@ def entry(argv: list[str] | None = None) -> int:
 
 def serve(session_dir: Path, port: int, handoff: Path | None = None) -> int:  # pragma: no cover
     """Open the session -- seeding a new one from its handoff, resuming an
-    existing one from its log -- and serve its board until the process stops."""
-    uvicorn.run(create_app(open_session(session_dir, handoff)), host=LOOPBACK, port=port)
+    existing one from its log -- and serve its board until the process stops.
+
+    The fast tier takes the turns: it is what a channel starts on, and moving one
+    to the heavy tier is the human's gesture rather than a launch setting. Which
+    models both tiers are comes from the environment.
+    """
+    log = open_session(session_dir, handoff)
+    app = create_app(log, FastDriver(TierConfig.from_env()))
+    uvicorn.run(app, host=LOOPBACK, port=port)
     return 0
