@@ -56,6 +56,26 @@ to apply, and those land as one atomic gesture attributed to the grill-master on
 the map channel. A conclusion it takes as context only produces no map mutation
 and a reply that says so.
 
+Every grill-master dispatch carries the pending queue — the notices the human
+has not dealt with yet, each with its id, its target and its kind — as it stood
+when the dispatch was folded. Answering a decision is dealing with the notices
+standing on it, and they leave the queue. A response may withdraw notices it
+authored itself by naming their ids in `supersedes`: those stay in the queue
+marked superseded, for the page to drop. When the human answered first, the
+withdrawal and the board disagree, and that goes back to the grill-master as a
+dispatch of its own — neither the page nor the backend rewrites the board,
+because only the authoring agent knows what the rewrite was for. Each conflict
+is handed back once.
+
+The map doctor is the escape hatch when that self-healing is not enough. `POST
+/doctor` sends the grill-master over the whole board and the queue with an
+instruction to reassess everything; `GET /doctor` reports whether that dispatch
+is still outstanding, which is what the page holds the board immutable against.
+The backend reports that state and does not enforce it — refusing a write would
+need a rejection reason, and that vocabulary is closed. A doctor turn that fails
+releases the board anyway, and a second call while one is outstanding dispatches
+nothing.
+
 Twelve modules, and the separation between them is load-bearing:
 
 - `schemas.py` — the wire, log and image shapes, the per-kind payload shapes,
@@ -136,6 +156,9 @@ Twelve modules, and the separation between them is load-bearing:
   and `/image2` fold; `/updates` refuses a stale epoch with 409; `/events`
   takes a batch under one epoch and returns one receipt per event in
   submission order, and returns them without waiting on the turn it scheduled.
+  `/doctor` sits beside the board routes as a control rather than a board event:
+  it writes nothing into the record, and the state it reports belongs to this
+  process rather than to the log.
 
 The update kinds are complete. An add-node mints its node id from the sequence
 it lands at — deterministic, because the receipt echoes the node the fold will
@@ -151,9 +174,10 @@ Not built yet: the transfer-to-expert control itself (a channel's tier is
 already per-channel state, set by the transfer flag on the human's own turn and
 carried into the dispatch, but no page surface raises the recommendation or
 activates the transfer, and nothing yet flips the control's label back), session
-control, the single agent pass behind capture's summarizer seam, superseding or
-clearing anything from the pending queue, port fallback and browser handoff, and
-the UI itself.
+control, the single agent pass behind capture's summarizer seam, the page half
+of the pending surface and of the map doctor — dropping a superseded notice, and
+the modal that refuses board mutations while a reassessment is outstanding — port
+fallback and browser handoff, and the UI itself.
 
 ## Development
 

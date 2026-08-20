@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from grillui.log import SessionLog
-    from grillui.schemas import Image2, ThreadProjection
+    from grillui.schemas import Image2, SupersedeConflict, ThreadProjection
 
 DISPATCH_DIR = "dispatches"
 GRILL_MASTER = "grill-master"
@@ -65,13 +65,28 @@ class DispatchIncompleteError(RuntimeError):
         super().__init__("dispatch context omits part of image 2; the projection crosses whole")
 
 
-def assemble(image: Image2, *, channel: str = MAP_CHANNEL, concluding: str | None = None) -> str:
+def assemble(
+    image: Image2,
+    *,
+    channel: str = MAP_CHANNEL,
+    concluding: str | None = None,
+    conflict: SupersedeConflict | None = None,
+    reassess: bool = False,
+) -> str:
     """One dispatch context, serialised, carrying the whole of what it owes.
 
     `concluding` names a thread whose conclusion this dispatch is being sent to
     route. Its text is read out of the same image the context carries, so what
     the grill-master is told the thread concluded and what the board says it
     concluded are one fact folded once.
+
+    `conflict` and `reassess` are the two turns nobody spoke to start: a
+    withdrawal the human got in front of, and the map doctor. Each says so in
+    the context, because the board alone does not -- a turn left to infer why it
+    was called would be inferring it from a board that looks unchanged.
+
+    The pending queue rides inside the image either way, which is what makes
+    every one of these dispatches carry the queue as of the moment it was folded.
     """
     board = whole_board(image) if channel == MAP_CHANNEL else project_thread(image, channel)
     context = DispatchContext(
@@ -81,6 +96,8 @@ def assemble(image: Image2, *, channel: str = MAP_CHANNEL, concluding: str | Non
         seq=image.seq,
         image2=board,
         conclusion=_conclusion(image, concluding),
+        conflict=conflict,
+        reassess=reassess,
     )
     recorded = context.model_dump_json()
     # The map dispatch is checked against the source image, not the projection
@@ -113,15 +130,23 @@ def verify_complete(recorded: str, image: Image2 | ThreadProjection) -> None:
 
 
 def record_dispatch(
-    log: SessionLog, *, channel: str = MAP_CHANNEL, concluding: str | None = None
+    log: SessionLog,
+    *,
+    channel: str = MAP_CHANNEL,
+    concluding: str | None = None,
+    conflict: SupersedeConflict | None = None,
+    reassess: bool = False,
 ) -> Path:
     """Fold at dispatch time, assemble, and record what the agent was given.
 
     The recorded file is the completeness check's evidence: it is what the
-    agent got, not a reconstruction of what it should have got.
+    agent got, not a reconstruction of what it should have got -- including the
+    pending queue, which is folded here and not read from anything cached.
     """
     image = fold(log.epoch, log.entries())
-    recorded = assemble(image, channel=channel, concluding=concluding)
+    recorded = assemble(
+        image, channel=channel, concluding=concluding, conflict=conflict, reassess=reassess
+    )
     directory = log.directory / DISPATCH_DIR
     directory.mkdir(parents=True, exist_ok=True)
     return _claim_and_write(directory, recorded)

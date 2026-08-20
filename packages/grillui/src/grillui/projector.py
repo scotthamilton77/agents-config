@@ -45,9 +45,25 @@ holding: what a thread concluded reaches the board only through the grill-master
 being dispatched with it.
 
 `informational` and `elicit-alert` are the queue of what the human has not dealt
-with yet, which is the `pending` array. Nothing here takes an item off that
-queue, because nothing yet applies or supersedes one: a queue that emptied
-itself on a rule nobody wrote would lose notices the human never saw.
+with yet, which is the `pending` array. Two things take an item off it or mark
+it, and both are gestures somebody made.
+
+*The human answering a decision* is the human dealing with every notice standing
+against it: they were told, and then they decided. That is the only signal of it
+there is -- merely reading a notice is presentation state the page owns and never
+sends -- so a notice anchored to no decision stays queued for the session, which
+is the honest reading of a queue nobody has acted on rather than a rule that
+empties it.
+
+*The author withdrawing its own notice* marks it superseded, in place. Which
+notices an author may withdraw is its own: a response naming somebody else's
+pending update is ignored, because superseding is an author revising itself.
+When the human already answered the decision that notice was about, the
+withdrawal and the board disagree, and that is a `SupersedeConflict` -- read out
+of the log by `supersede_conflicts` and handed back to the authoring agent as a
+dispatch. Nothing here resolves one: only the author knows what the rewrite was
+for, and a projector that dropped the human's answer to make the withdrawal fit
+would be rewriting a decision the human made.
 """
 
 from __future__ import annotations
@@ -58,6 +74,7 @@ from dataclasses import dataclass, field
 from grillui.schemas import (
     FOLD_KIND,
     SESSION_START_KIND,
+    SUPERSEDES_KEY,
     THREAD_FOLD_KIND,
     THREAD_PARK_KIND,
     Answer,
@@ -70,6 +87,7 @@ from grillui.schemas import (
     Option,
     PendingUpdate,
     SettledEntry,
+    SupersedeConflict,
     Thread,
     ThreadProjection,
     ThreadStub,
@@ -82,25 +100,43 @@ _REVISABLE_TEXT = ("short", "title", "body")
 
 @dataclass
 class _Board:
-    """The fold's running state, keyed the way the images are read."""
+    """The fold's running state, keyed the way the images are read.
+
+    The last three fields are the fold's own bookkeeping and reach no image:
+    who authored each pending notice, which notices the human has since dealt
+    with and when, and the withdrawals that arrived too late. Keeping them here
+    rather than in image 1 is what lets the queue answer "whose was this?" and
+    "was this already acted on?" without either image growing a field the
+    protocol never declared.
+    """
 
     decisions: dict[str, Decision] = field(default_factory=dict)
     threads: dict[str, Thread] = field(default_factory=dict)
     history: dict[str, list[HistoryEntry]] = field(default_factory=dict)
     pending: list[PendingUpdate] = field(default_factory=list)
+    seq: int = 0
+    author_of: dict[str, str] = field(default_factory=dict)
+    dealt: dict[str, tuple[PendingUpdate, int]] = field(default_factory=dict)
+    conflicts: list[SupersedeConflict] = field(default_factory=list)
 
     def node(self, payload: Mapping[str, object]) -> Decision | None:
         target = payload.get("target")
         return self.decisions.get(target) if isinstance(target, str) else None
 
+    def queued(self, pending_id: str) -> PendingUpdate | None:
+        return next((one for one in self.pending if one.id == pending_id), None)
 
-def fold(epoch: str, entries: Sequence[LogEntry]) -> Image2:
-    """Fold the log into image 2. Image 1 is this, minus history."""
+
+def _run(entries: Sequence[LogEntry]) -> _Board:
+    """The walk both readers of the log share.
+
+    One walk, because the queue's state and the conflicts it produced are the
+    same fold seen twice: a second walk written to answer only the conflict
+    question is a second answer to when a notice was dealt with.
+    """
     board = _Board()
-    seq = 0
-
     for entry in entries:
-        seq = entry.seq
+        board.seq = entry.seq
         if entry.kind == FOLD_KIND:
             # The gesture is one entry, so there is no state in which half of it
             # landed: either the log has it and every sub-update applies, or it
@@ -110,6 +146,23 @@ def fold(epoch: str, entries: Sequence[LogEntry]) -> Image2:
                 _apply(board, entry, str(update.get("kind")), update, key)
         else:
             _apply(board, entry, entry.kind, entry.payload, entry.idempotency_key)
+    return board
+
+
+def supersede_conflicts(entries: Sequence[LogEntry]) -> list[SupersedeConflict]:
+    """Every withdrawal that landed after the human had already acted.
+
+    A pure read of the log, in the order the withdrawals arrived, so the same
+    log always names the same conflicts -- which is what lets a caller tell a
+    conflict it has already handed back from one that has just appeared.
+    """
+    return _run(entries).conflicts
+
+
+def fold(epoch: str, entries: Sequence[LogEntry]) -> Image2:
+    """Fold the log into image 2. Image 1 is this, minus history."""
+    board = _run(entries)
+    seq = board.seq
 
     settled = [
         SettledEntry(id=node.id, answer=_answer_text(node))
@@ -147,6 +200,7 @@ def _apply(
     because that is the truth of them: they landed together, in one entry, on
     one human gesture.
     """
+    _supersede(board, entry, payload)
     if kind == SESSION_START_KIND:
         _seed(board, payload)
     elif kind == "add-node":
@@ -157,6 +211,8 @@ def _apply(
         _invalidate(board, payload)
     elif kind in {"answer", "settle"}:
         _settle(board, payload)
+        if kind == "answer" and entry.actor == "human":
+            _dealt_with(board, entry, payload)
     elif kind == "unsettle":
         _unsettle(board, payload)
     elif kind == "resolve-stale":
@@ -389,6 +445,50 @@ def _notice(
             authored_at=entry.seq,
         )
     )
+    board.author_of[key] = entry.actor
+
+
+def _dealt_with(board: _Board, entry: LogEntry, payload: Mapping[str, object]) -> None:
+    """The human answered a decision, which deals with every notice standing
+    against it: they were told, and then they decided.
+
+    The notices leave the queue and are remembered here, so a withdrawal that
+    arrives afterwards can tell "the human already acted on this" from "no such
+    notice was ever sent" -- and only the first of those is a conflict.
+    """
+    target = payload.get("target")
+    if not isinstance(target, str):
+        return
+    for item in [one for one in board.pending if one.target == target]:
+        board.pending.remove(item)
+        board.dealt[item.id] = (item, entry.seq)
+
+
+def _supersede(board: _Board, entry: LogEntry, payload: Mapping[str, object]) -> None:
+    """An author withdrawing notices it sent earlier.
+
+    Only its own: a response naming a pending update somebody else authored is
+    ignored, because superseding is an author revising itself rather than a way
+    to reach into another's queue. A withdrawal of something still queued marks
+    it and leaves it in place; one the human has already acted on is a conflict
+    and changes nothing on the board.
+    """
+    raw = payload.get(SUPERSEDES_KEY)
+    if not isinstance(raw, list):
+        return
+    for pending_id in raw:
+        if not isinstance(pending_id, str) or board.author_of.get(pending_id) != entry.actor:
+            continue
+        queued = board.queued(pending_id)
+        if queued is not None:
+            queued.superseded = True
+        elif pending_id in board.dealt:
+            item, applied_at = board.dealt[pending_id]
+            board.conflicts.append(
+                SupersedeConflict(
+                    update=item.model_copy(update={"superseded": True}), applied_at=applied_at
+                )
+            )
 
 
 def _create_thread(board: _Board, entry: LogEntry) -> None:

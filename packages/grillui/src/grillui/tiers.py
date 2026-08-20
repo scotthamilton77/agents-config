@@ -143,6 +143,25 @@ MUTATION_FORMAT_RULE = (
     "changes. Both are one turn: the prose and the updates land together or not at all."
 )
 
+SUPERSEDE_RULE = (
+    "The board carries the queue of notices the human has not dealt with yet, each with its "
+    "id. To withdraw ones you sent earlier, add `supersedes` -- a list of those ids -- beside "
+    "`text`. Withdraw rather than repeat yourself: the human is looking at that queue."
+)
+
+SUPERSEDE_CONFLICT_RULE = (
+    "You withdrew something the human had already acted on, so your rewrite and their answer "
+    "disagree. Only you can reconcile that -- nothing has been changed on the board and "
+    "nothing will be until you say so. Say what still stands, and send the updates that make "
+    "it true."
+)
+
+REASSESS_RULE = (
+    "The human called for a full reassessment: go over every decision and every pending "
+    "notice above, say what no longer holds, and send the updates that fix it. Their board is "
+    "frozen until you answer, so do it in this turn."
+)
+
 CONCLUSION_ROUTING_RULE = (
     "A thread conclusion reaches you because you are the only agent that may act on it. "
     "Decide what it costs the board: fold it in as updates, or take it as context and say "
@@ -188,7 +207,7 @@ def system_prompt(tier: str, agent: str) -> str:
     """
     if agent == THREAD_AGENT:
         return "\n\n".join([THREAD_AGENT_MANDATE, SYSTEM_PROMPTS[tier]])
-    return "\n\n".join([SYSTEM_PROMPTS[tier], MUTATION_FORMAT_RULE])
+    return "\n\n".join([SYSTEM_PROMPTS[tier], MUTATION_FORMAT_RULE, SUPERSEDE_RULE])
 
 
 NO_BRIEFING = "No briefing was recorded for this session."
@@ -234,12 +253,16 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
     human nor the audit record would show which ones went missing.
 
     A dispatch sent to route a thread's conclusion says so in a section of its
-    own. The conclusion is inside those bytes either way, and a turn asked to
-    find it there is a turn that may not.
+    own, and so do the two the backend raises rather than the human: a
+    withdrawal they got in front of, and the map doctor. Each of the three is
+    inside those bytes either way, and a turn asked to find it there is a turn
+    that may not -- the doctor's board in particular looks exactly like any
+    other, and a turn left to infer that it was called would not.
     """
     channel = context.channel
     conversation = "\n".join(f"{turn.who}: {turn.text}" for turn in turns_of(entries, channel))
     concluded = context.conclusion
+    conflict = context.conflict
     return "\n\n".join(
         [
             "## Briefing",
@@ -257,6 +280,18 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
                     CONCLUSION_ROUTING_RULE,
                 ]
             ),
+            *(
+                []
+                if conflict is None
+                else [
+                    "## A withdrawal the human got in front of",
+                    f"You withdrew your {conflict.update.kind!r} notice "
+                    f"{conflict.update.id!r} on decision {conflict.update.target!r}; the human "
+                    f"had already answered it, at sequence {conflict.applied_at}.",
+                    SUPERSEDE_CONFLICT_RULE,
+                ]
+            ),
+            *(["## The map doctor", REASSESS_RULE] if context.reassess else []),
             "## Your turn",
             "Answer the last thing the human said, under the rules you were given.",
         ]
