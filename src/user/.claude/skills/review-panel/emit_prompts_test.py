@@ -52,6 +52,9 @@ SPEC_LENSES = [lens["lens"] for lens in CLASSES["spec"]["lenses"]]
 TYPED_CODE_FRONTIER = [
     lens["lens"] for lens in CLASSES["typed-code"]["lenses"] if lens["tier"] == "frontier"
 ]
+PROSE_FRONTIER = [
+    lens["lens"] for lens in CLASSES["prose"]["lenses"] if lens["tier"] == "frontier"
+]
 DIGEST = "sha256:" + "a" * 64
 CONTINUE = "continue-2-with-staffing-advice"
 ESCALATE = "terminate-escalate-human"
@@ -1135,8 +1138,9 @@ class TestSweep:
     def test_b4_the_sweep_staffs_the_frontier_seats_and_frames_blocking_only(
         self, repo, acs_file, tmp_path, capsys
     ):
-        """The exit door has one whole-artifact re-read built into it, flown by the class's
-        hard-reasoning seats and asked for a verdict rather than a findings hunt."""
+        """The exit door has one whole-artifact re-read built into it. The full frontier set is
+        the default the sweep decision starts from, and it is asked for a verdict rather than a
+        findings hunt."""
         flat, out_dir = self._clean_campaign(tmp_path, repo, acs_file)
         code, _ = run(flat, capsys)
         assert code == 0
@@ -1150,20 +1154,102 @@ class TestSweep:
         assert meta["sweep"] is True
         assert [entry["lens"] for entry in meta["lenses"]] == TYPED_CODE_FRONTIER
 
-    def test_b4_a_sweep_staffed_off_contract_is_refused(self, repo, acs_file, tmp_path, capsys):
-        """Whatever earlier staffing subtracted, the sweep flies the frontier seats — and says
-        so with the sweep decision, so the record cannot be mistaken for a normal round."""
-        wrong = write_json(tmp_path / "wrong.json", staffing_record(
+    def test_b4_a_subtracted_frontier_seat_flies_with_its_rationale(self, repo, acs_file,
+                                                                    tmp_path, capsys):
+        """The sweep decision is subtract-only, not fixed: a seat may be dropped, and the
+        record's rationale for dropping it is what makes the subtraction auditable."""
+        subtracted = write_json(tmp_path / "subtracted.json", staffing_record(
             ["correctness"], decision="sweep-contract"))
-        flat, _ = self._clean_campaign(tmp_path, repo, acs_file, **{"--staffing": str(wrong)})
+        flat, out_dir = self._clean_campaign(tmp_path, repo, acs_file,
+                                             **{"--staffing": str(subtracted)})
+        code, result = run(flat, capsys)
+        assert code == 0 and result["emitted"] is True
+        assert sorted(prompts(out_dir)) == ["correctness"]
+        meta = meta_of(out_dir)
+        assert meta["sweep"] is True
+        assert [entry["lens"] for entry in meta["lenses"]] == ["correctness"]
+
+    def test_b4_a_mid_seat_cannot_fly_the_sweep(self, repo, acs_file, tmp_path, capsys):
+        """Subtract-only from the frontier seats: the sweep decision may drop one, never add a
+        mechanical-walk seat to the pass the campaign is about to terminate on."""
+        mid = write_json(tmp_path / "mid.json", staffing_record(
+            [*TYPED_CODE_FRONTIER, "test-adequacy"], decision="sweep-contract"))
+        flat, _ = self._clean_campaign(tmp_path, repo, acs_file, **{"--staffing": str(mid)})
         code, result = run(flat, capsys)
         assert code == 2 and result["errors"][0]["code"] == "sweep-staffing-mismatch"
+        assert "test-adequacy" in result["errors"][0]["message"]
+
+    def test_b4_a_sweep_must_declare_itself_a_sweep(self, repo, acs_file, tmp_path, capsys):
+        """The decision value is what stops a sweep record being read as a normal round's."""
         undeclared = write_json(tmp_path / "undeclared.json",
                                 staffing_record(TYPED_CODE_FRONTIER))
         flat, _ = self._clean_campaign(tmp_path, repo, acs_file,
                                        **{"--staffing": str(undeclared)})
         code, result = run(flat, capsys)
         assert code == 2 and result["errors"][0]["code"] == "sweep-staffing-mismatch"
+
+    def test_b4_a_seat_outside_the_roster_still_fails_at_the_roster_layer(self, repo, acs_file,
+                                                                         tmp_path, capsys):
+        """Sweep or not, staffing subtracts from the class roster and never adds to it."""
+        stray = write_json(tmp_path / "stray.json", staffing_record(
+            [*TYPED_CODE_FRONTIER, "vibes"], decision="sweep-contract"))
+        flat, _ = self._clean_campaign(tmp_path, repo, acs_file, **{"--staffing": str(stray)})
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "bad-staffing-record"
+
+    def test_b4_the_force_ceiling_does_not_bound_the_sweep(self, repo, acs_file, tmp_path,
+                                                           capsys):
+        """The sweep is its own recorded force decision, so a mechanical-only profile can exist
+        without being condemned to frontier spend on every round — and can still fly its
+        class's frontier seats at the exit door."""
+        assert PROFILES["changelog"]["force_ceiling"] == ["standalone-read"]
+        head = repo.write_lines(4, "fix.txt")
+        prior = write_json(tmp_path / "verdict-1.json", verdict_doc(
+            repo, 1, repo.head, ["standalone-read"], [], artifact_class="prose"))
+        staffing = write_json(tmp_path / "sweep-staffing.json", staffing_record(
+            PROSE_FRONTIER, PROSE_LENSES, decision="sweep-contract"))
+        out_dir = tmp_path / "sweep"
+        flat = argv(repo, acs_file, out_dir, **{
+            "--class": "prose", "--artifact-type": "changelog", "--round": "2",
+            "--head-sha": head, "--staffing": str(staffing)})
+        flat += ["--prior-verdict", str(prior), "--sweep"]
+        code, result = run(flat, capsys)
+        assert code == 0 and result["emitted"] is True
+        assert sorted(prompts(out_dir)) == sorted(PROSE_FRONTIER)
+
+    def test_b4_a_zero_seat_sweep_with_justification_is_the_terminal_record(
+        self, repo, acs_file, tmp_path, capsys
+    ):
+        """A judged zero at the exit door is itself the terminal record — recorded, never
+        silent — and it is distinguishable from a round's zero-force decision."""
+        staffing = write_json(tmp_path / "zero-sweep.json", staffing_record(
+            [], TYPED_CODE_LENSES, decision="sweep-contract",
+            justification="every change this campaign made was to generated fixtures"))
+        flat, out_dir = self._clean_campaign(tmp_path, repo, acs_file,
+                                             **{"--staffing": str(staffing)})
+        code, result = run(flat, capsys)
+        assert code == 0
+        assert result["emitted"] is False and result["terminal"] == "zero-sweep"
+        assert "generated fixtures" in result["justification"]
+        assert result["staffing_record"]["path"] == str(staffing)
+        assert not out_dir.exists()
+
+    @pytest.mark.parametrize("overrides", [
+        {"justification": "   "},
+        {},
+        {"justification": "nobody was available", "recommending_model": ""},
+    ])
+    def test_b4_a_zero_seat_sweep_without_a_justified_decision_is_refused(
+        self, repo, acs_file, tmp_path, capsys, overrides
+    ):
+        """A sweep nobody staffed and nobody argued for is a staffing failure, exactly as it is
+        in a round; only the justified zero terminates a campaign."""
+        staffing = write_json(tmp_path / "zero-sweep.json", staffing_record(
+            [], TYPED_CODE_LENSES, decision="sweep-contract", **overrides))
+        flat, _ = self._clean_campaign(tmp_path, repo, acs_file,
+                                       **{"--staffing": str(staffing)})
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "staffing-failure"
 
     def test_b4_a_sweep_needs_a_zero_blocking_round_behind_it(self, repo, acs_file, tmp_path,
                                                               capsys):

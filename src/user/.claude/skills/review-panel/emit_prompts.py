@@ -729,6 +729,9 @@ def validate_staffing(
             + f", which class {profile['class']!r} does not declare",
         )
     if not sweep:
+        # The sweep is its own recorded force decision, so no profile ceiling bounds it —
+        # which is what lets a mechanical-only profile exist without being condemned to
+        # frontier spend on every round it does run.
         above = sorted(set(staffed) - set(profile["force_ceiling"]))
         if above:
             raise Refusal(
@@ -749,8 +752,8 @@ def validate_staffing(
     if not staffed and not str(record.get("justification") or "").strip():
         raise Refusal(
             "staffing-failure",
-            "the staffing record staffs no lens and justifies none of it; a zero-force round is "
-            "a decision that has to be argued for, and an unargued one is a staffing failure",
+            "the staffing record staffs no lens and justifies none of it; staffing nothing is a "
+            "decision that has to be argued for, and an unargued one is a staffing failure",
         )
     return [name for name in names if name in set(staffed)]
 
@@ -760,6 +763,7 @@ def frontier_seats(roster: list[dict]) -> list[str]:
 
 
 def check_sweep_due(round_no: int, verdicts: list[dict], roster: list[dict]) -> list[str]:
+    """Check the campaign is at its exit door, and return the seats the sweep subtracts from."""
     if round_no < 2 or not verdicts:
         raise Refusal(
             "sweep-not-due",
@@ -776,9 +780,9 @@ def check_sweep_due(round_no: int, verdicts: list[dict], roster: list[dict]) -> 
     if not seats:
         raise Refusal(
             "no-frontier-seat",
-            "this class declares no hard-reasoning seat to fly the whole-artifact sweep, and a "
-            "sweep nobody flew is not a sweep. Escalate to the human: terminal-clean cannot be "
-            "declared here",
+            "this class's roster declares no hard-reasoning seat at all, so there is nothing for "
+            "a sweep decision to subtract from — a structural absence, not a judged zero. "
+            "Escalate to the human: terminal-clean cannot be declared here",
         )
     return seats
 
@@ -1091,21 +1095,23 @@ def emit(args: argparse.Namespace) -> dict[str, Any]:
     staffed = validate_staffing(staffing, roster, profile, args.sweep, due)
     staffing_ref = {"path": args.staffing, "digest": staffing_digest}
     if args.sweep and (
-        set(staffed) != set(seats) or staffing.get("decision") != SWEEP_DECISION
+        not set(staffed) <= set(seats) or staffing.get("decision") != SWEEP_DECISION
     ):
         raise Refusal(
             "sweep-staffing-mismatch",
-            "the sweep is flown by this class's hard-reasoning seats — "
+            "the sweep subtracts from this class's hard-reasoning seats — "
             + ", ".join(seats)
-            + f" — under the {SWEEP_DECISION!r} decision, whatever earlier rounds subtracted; "
-            "this record staffs " + (", ".join(staffed) or "nothing")
-            + f" under {staffing.get('decision')!r}",
+            + f" — under the {SWEEP_DECISION!r} decision; this record staffs "
+            + (", ".join(staffed) or "nothing")
+            + f" under {staffing.get('decision')!r}. A seat outside that roster cannot fly a "
+            "whole-artifact pass the campaign is about to terminate on",
         )
     if not staffed:
         return {
-            "emitted": False, "terminal": "zero-force", "artifact_class": args.artifact_class,
-            "claim_id": args.claim, "round": args.round, "profile": profile_block,
-            "justification": staffing["justification"], "staffing_record": staffing_ref,
+            "emitted": False, "terminal": "zero-sweep" if args.sweep else "zero-force",
+            "artifact_class": args.artifact_class, "claim_id": args.claim, "round": args.round,
+            "profile": profile_block, "justification": staffing["justification"],
+            "staffing_record": staffing_ref,
         }
 
     prior_findings = prior_findings_of(verdicts)
