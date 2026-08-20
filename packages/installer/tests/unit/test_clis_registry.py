@@ -20,12 +20,13 @@ def _package(tmp_path: Path) -> Path:
     return pkg
 
 
-def test_registry_is_exactly_prgroom_grind_executor_and_gitclean() -> None:
+def test_registry_is_exactly_prgroom_grind_executor_gitclean_and_grillui() -> None:
     """
     Given the shipped registry
     When CLI_PACKAGES is consulted
     Then it contains exactly prgroom->prgroom, grind->grind,
-    executor->executor and gitclean->gitclean, and RETIRED_CLIS is empty.
+    executor->executor, gitclean->gitclean and grillui->grillui, and
+    RETIRED_CLIS is empty.
 
     Pins the closed registry; pdlc/holding-place/vizsuite must NOT
     auto-deploy. Being gated by `make ci` is not what earns a place here —
@@ -35,19 +36,24 @@ def test_registry_is_exactly_prgroom_grind_executor_and_gitclean() -> None:
     own is not this installer's to claim. gitclean earns its place by
     concluding one thing — whether a merge is proven — and reporting
     everything else with the measurement that stopped it. A caller who names a
-    target authorizes that deletion outright.
+    target authorizes that deletion outright. grillui earns its place because
+    the grilling UI's backend is a program the user runs, not instructions an
+    agent reads, so it reaches them through PATH rather than through a
+    deployed skill.
     """
     assert [s.name for s in CLI_PACKAGES] == [
         "prgroom",
         "grind",
         "executor",
         "gitclean",
+        "grillui",
     ]
     by_name = {s.name: s for s in CLI_PACKAGES}
     assert by_name["prgroom"] == CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",))
     assert by_name["grind"] == CliSpec("grind", "packages/grind", "grind", ("--help",))
     assert by_name["executor"] == CliSpec("executor", "packages/executor", "executor", ("--help",))
     assert by_name["gitclean"] == CliSpec("gitclean", "packages/gitclean", "gitclean", ("--help",))
+    assert by_name["grillui"] == CliSpec("grillui", "packages/grillui", "grillui", ("--help",))
     assert RETIRED_CLIS == ()
 
 

@@ -9,6 +9,8 @@
         typecheck-gitclean cov-gitclean audit-gitclean verify-entry-gitclean \
         ci-executor test-executor lint-executor format-check-executor \
         typecheck-executor cov-executor audit-executor verify-entry-executor \
+        ci-grillui test-grillui lint-grillui format-check-grillui \
+        typecheck-grillui cov-grillui audit-grillui verify-entry-grillui \
         spec-lint content-lint content-tests doc-lint
 
 INSTALLER := packages/installer
@@ -16,13 +18,14 @@ PRGROOM := packages/prgroom
 GRIND := packages/grind
 GITCLEAN := packages/gitclean
 EXECUTOR := packages/executor
+GRILLUI := packages/grillui
 
 # `doc-lint` gates here because the tree is clean. It reports live staleness in
 # prose nobody is editing, so a finding can turn an unrelated build red — and the
 # remedy for that is to correct the prose, never to exempt the file. An exemption
 # silences the one class of drift that has no reviewer, which is the whole reason
 # the check exists.
-ci: ci-installer ci-prgroom ci-grind ci-gitclean ci-executor \
+ci: ci-installer ci-prgroom ci-grind ci-gitclean ci-executor ci-grillui \
     lint-actions spec-lint content-lint content-tests doc-lint
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
@@ -191,3 +194,26 @@ audit-executor:
 # the executor venv where the entry point is installed is selected.
 verify-entry-executor:
 	uv --project $(EXECUTOR) run executor --help > /dev/null
+
+# ── grillui (mirrors the ci-grind block one-for-one; enforced via the
+# top-level `ci:` aggregate). ──
+ci-grillui: lint-grillui format-check-grillui typecheck-grillui \
+            cov-grillui audit-grillui verify-entry-grillui
+
+test-grillui:
+	cd $(GRILLUI) && uv run pytest -q
+lint-grillui:
+	cd $(GRILLUI) && uv run ruff check
+format-check-grillui:
+	cd $(GRILLUI) && uv run ruff format --check
+typecheck-grillui:
+	cd $(GRILLUI) && uv run mypy --strict src
+cov-grillui:
+	cd $(GRILLUI) && uv run pytest --cov --cov-report=term-missing
+audit-grillui:
+	cd $(GRILLUI) && uv sync --frozen && uv run pip-audit
+# verify-entry-grillui asserts the console-script entry point resolves and the
+# CLI root parses (`grillui --help` exits 0). Run via `uv --project` so the
+# grillui venv where the entry point is installed is selected.
+verify-entry-grillui:
+	uv --project $(GRILLUI) run grillui --help > /dev/null
