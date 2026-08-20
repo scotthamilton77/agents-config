@@ -21,8 +21,8 @@ force ceiling staffing may subtract below but never exceed, a precondition set, 
 marker — the only route to an empty precondition set. Minimum rows: prototype (the no-gate row,
 zero-force default), changelog (mechanical-only), agent-instruction-prose (mandates derived from
 the writing-skills discipline), spec, general-docs, typed-code. The emitter validates the table
-before use. An unlisted type names a listed profile explicitly with a reason, both recorded; a
-target no profile resolves is refused — never improvise a lens set.
+before use. An unlisted type names a listed profile with a reason, both recorded; an
+unresolvable target is refused — never improvise a lens set.
 
 A mixed target partitions by class — one staffed round and one verdict per class present, each
 finding attributed to exactly one partition; a justified zero-lens partition contributes its
@@ -37,16 +37,15 @@ ran.
 
 Emission refuses a target lacking recorded evidence that its profile's gates ran green at the
 reviewed head: one execution record per gate — name, exit status, head SHA — never a bare
-assertion. A failed, malformed, or missing record refuses naming the gate; evidence bound to
-another head refuses as stale. The verb is bounce upstream: the panel neither reviews around the
+assertion. Failed, malformed, or missing records refuse naming the gate; another head's
+evidence refuses as stale. The verb is bounce upstream: the panel neither reviews around the
 gap nor re-derives mechanical verification. A no-gate profile passes on empty evidence.
 
 ## Staffing
 
-Every round's emission consumes a per-round staffing record: the staffed subset (subtract-only
-from the roster), the recommending model (foreign, mid-tier — it recommends which lenses
-apply), a rationale per excluded roster lens, and, interactively, the user's final edit as the
-recorded decision. The emitter checks the record against the roster and the force ceiling;
+Every round's emission consumes a staffing record: the staffed subset (subtract-only from the
+roster), the recommending model (foreign, mid-tier — it recommends which lenses apply), a
+rationale per excluded roster lens, and, interactively, the user's edit as the decision. The emitter checks the record against the roster and the force ceiling;
 the verdict validator checks lens coverage against the record. A zero-lens decision with a
 justification is itself the terminal record, and no verdict exists; a zero-lens outcome from a
 missing or failed recommendation is refused instead.
@@ -54,16 +53,18 @@ missing or failed recommendation is refused instead.
 ## Rounds and scope
 
 Round 1 reads the whole artifact. Rounds ≥2 are delta-scoped: each surviving lens reads the change
-since the head it last judged, plus the settled ledger; a newly staffed lens reads full; a lens
-whose delta is empty is not staffed that round. Accretion forces a full rescope: net growth since
-the last full read beyond the emitter's edge-tested triviality boundary, or the staffing record's
-own full-rescope override when a finding broke an original assumption.
+since the head it last judged, plus the settled ledger; a newly staffed lens reads full; an
+empty-delta lens is not staffed that round. Accretion — net growth since the last full read
+beyond the emitter's edge-tested triviality boundary, or the staffing record's full-rescope
+override when a finding broke an assumption — forces a full rescope.
 
 Terminal-clean through deltas requires exactly one whole-artifact sweep after a zero-blocking
-round: `--sweep` staffs the class's frontier-tier seats regardless of earlier subtraction, framed
-blocking-only ("confirm no blocking defect exists" — a verdict, not a findings hunt), ledger
-loaded. A class with no frontier seat escalates to the human. A clean, complete full round
-1 whose staffing retained every frontier seat is terminal directly.
+round. `--sweep` flies under its own staffing decision — subtract-only from the class's
+frontier-tier seats, unbounded by the profile ceiling, a target-shaped rationale per subtraction
+(merely looking clean justifies nothing); a justified zero-seat decision is the terminal
+record. Framed blocking-only ("confirm no blocking defect exists" — a verdict, not a
+findings hunt), ledger loaded. A class whose roster has no frontier seat escalates to the human.
+A clean, complete full round 1 whose staffing retained every frontier seat is terminal directly.
 
 ## Emitting the prompts
 
@@ -79,17 +80,15 @@ uv run emit_prompts.py --class typed-code --artifact-type typed-code --claim <id
   --target-branch main --retained '[]' --out-dir /tmp/round-1
 ```
 
-One `<lens>.md` prompt lands per staffed lens, plus `round.json`: the profile resolution, the
-staffing reference by digest, per-lens scope with delta bases, the ledger, and the consumed
-checkpoints. Re-review adds `--round <n>`, every earlier `--prior-verdict`, `--disposition`, and
+One `<lens>.md` prompt lands per staffed lens, plus `round.json`: profile resolution, staffing
+digest, per-lens scope and delta bases, ledger, consumed checkpoints. Re-review adds `--round <n>`, every earlier `--prior-verdict`, `--disposition`, and
 each due `--checkpoint`. Prompts put fixed instructions first, fence every interpolated datum as
 declared data, and carry no other lens's mandate and no ambient house context — a lens's own
 mandate is the only route a house standard reaches the reviewer.
 
-The emitter refuses a round it knows is unsound — `{"emitted": false, "errors": [{code,
-message}]}`, exit 2 — naming the unsynced base, missing gate or checkpoint, broken staffing or
-profile table, ledger gap, unsupported rebuttal, fix, or transfer, terminated campaign, or a
-resume over an unchanged ruler.
+The emitter refuses a round it knows is unsound with machine-readable errors (exit 2): an
+unsynced base, a missing gate or checkpoint, broken staffing or profile table, a ledger gap, an
+unsupported rebuttal, fix, or transfer, a terminated campaign, a resume over an unchanged ruler.
 
 ## Dispositions and termination
 
@@ -102,18 +101,18 @@ assembles the round `halted` with the upstream-defect reason; emission refuses t
 the indicted artifact changes.
 
 A trend checkpoint is due after every second consecutive non-clean round, the first after round 2,
-never after a clean round. It is a Fable-high trend-analysis dispatch over the campaign's retained
-records; the review-panel iteration-strategy design record (2026-08-20), adopted by the owner, is
-the standing authorization that dispatch cites. Its verdict — continue two rounds with staffing
+never after a clean round. A Fable-high trend-analysis dispatch reads the campaign's retained records;
+the review-panel iteration-strategy design record (2026-08-20), adopted by the owner, is the
+standing authorization that dispatch cites. Its verdict — continue two rounds with staffing
 advice, terminate-bounce-upstream, or terminate-escalate-human — must cite the campaign
 evidence; an uncited verdict or failed dispatch resolves as escalation, severity rising
-while count falls forbids continuation, and the next staffing record cites the checkpoint. No
-numeric round cap exists.
+while count falls forbids continuation, and the next staffing record cites it. No numeric round
+cap exists.
 
 ## Fix dispatch, harvest, and assembly
 
-A findings round emits its dispatch via `emit_fix_dispatch.py --verdict <path> --out <path>`:
-every mechanical finding referenced in full, advisories listed as non-blocking, and the four
+A findings round emits its dispatch (`emit_fix_dispatch.py --verdict --out`): every
+mechanical finding referenced in full, advisories listed as non-blocking, and the four
 clauses — smallest net change; mutation evidence for code fixes; replacement-first for prose,
 growth beyond the shared triviality boundary justified and paid for with a diff-scoped
 consistency read next round; the narration sweep. A clean round emits none.
@@ -122,9 +121,8 @@ Run `dispatch_gate.py preflight` once, then `claim` before every dispatch and `i
 reply. `assemble_verdict.py` builds the schema-v3 envelope from `round.json`, the gate's attempts
 ledger, one ingested report per staffed lens, and the routes that actually ran them: coverage
 fails closed, an unauthorized dispatch is refused, an unevidenced mechanical finding is downgraded
-to advisory with the demotion marked, and a finding exactly re-citing a settled ledger item is
-suppressed with the match recorded beside the verdict — auditable, never silent. It prints the
+to advisory with the demotion marked, a settled-item re-citation is suppressed with the match
+recorded beside the verdict — auditable, never silent. It prints the
 distinct-vendor count (one means the panel collapsed) and `--indict` turns a criteria-indicting
-finding into the upstream-defect halt. `harvest.md` holds the operating
-doctrine: the round's records, transports and failover, telling a dead route from a failed
-reviewer, and what each refusal obliges.
+finding into the upstream-defect halt. `harvest.md` holds the operating doctrine — the round's
+records, transports and failover, a dead route vs a failed reviewer, what each refusal obliges.

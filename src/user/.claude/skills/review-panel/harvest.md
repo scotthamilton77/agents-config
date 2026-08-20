@@ -17,8 +17,12 @@ happened; the emitter refuses assertion-shaped evidence and stale heads.
 recommending model, and the decision. Get the recommendation from a foreign mid-tier model — the
 routing table's mid tier, outside the reviewing session's own vendor family. Interactively,
 present it to the user and record their edit as the decision; non-interactively, record the
-recommendation and proceed. A sweep round's staffing is contract-fixed: exactly the class's
-frontier seats, decision `sweep-contract`, the mid seats excluded with that rationale.
+recommendation and proceed. A sweep round's staffing decision subtracts only from the
+class's frontier seats, decision `sweep-contract`, unbounded by the profile's force ceiling, mid
+seats excluded with that standing rationale. A subtracted frontier seat's rationale must be
+target-shaped — name what in the campaign's changes gives the seat nothing to judge; that the
+campaign looks clean justifies nothing, since clean-looking delta rounds are the blindness the
+sweep exists to compensate. A zero-seat decision with justification is the terminal record.
 
 **The checkpoint record** — due after every second consecutive non-clean round; the emitter
 refuses the next round without it. Dispatch a Fable-high trend analysis over the retained records
