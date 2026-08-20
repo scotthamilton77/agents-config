@@ -3,7 +3,11 @@ name = "grillui"
 version = "0.1.0"
 description = "grillui — the grilling-session backend: serves the session UI, folds the decision log, and drives the grilling tiers."
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "fastapi>=0.141.1",
+    "pydantic>=2.13.4",
+    "uvicorn>=0.52.4",
+]
 
 [project.scripts]
 grillui = "grillui.cli:entry"
@@ -23,6 +27,7 @@ dev = [
   "ruff",
   "mypy",
   "pip-audit",
+  "httpx>=0.28.1",
 ]
 
 [tool.ruff]

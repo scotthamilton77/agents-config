@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from grillui import __version__
-from grillui.cli import entry
+from grillui import __version__, cli
+from grillui.cli import DEFAULT_PORT, build_parser, entry
 
 
 def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
@@ -65,3 +67,39 @@ def test_unknown_argument_exits_nonzero() -> None:
     with pytest.raises(SystemExit) as exc:
         entry(["--not-a-flag"])
     assert exc.value.code != 0
+
+
+def test_serve_takes_a_session_directory_and_an_optional_port(tmp_path: Path) -> None:
+    """
+    Given the serve subcommand
+    When it is parsed with only a session directory
+    Then the directory arrives as a path and the port falls back to the default.
+
+    Pins the launch surface: the session directory is the session's identity,
+    so it is the one argument serving cannot default.
+    """
+    args = build_parser().parse_args(["serve", str(tmp_path)])
+
+    assert args.command == "serve"
+    assert args.session_dir == tmp_path
+    assert args.port == DEFAULT_PORT
+
+
+def test_serve_dispatches_to_the_server_with_the_parsed_arguments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a serve invocation naming a port
+    When entry runs
+    Then it hands that directory and port to the server and returns its status.
+
+    Pins the wiring rather than the server: standing a real socket up here
+    would test uvicorn, not this package.
+    """
+    called: list[tuple[Path, int]] = []
+    monkeypatch.setattr(
+        cli, "serve", lambda directory, port: (called.append((directory, port)), 0)[1]
+    )
+
+    assert entry(["serve", str(tmp_path), "--port", "9001"]) == 0
+    assert called == [(tmp_path, 9001)]
