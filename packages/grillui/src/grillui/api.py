@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException
 
+from grillui.persistence import project_and_persist
 from grillui.projector import fold, to_image1
 from grillui.schemas import (
     BatchWrite,
@@ -72,7 +73,13 @@ def create_app(log: SessionLog) -> FastAPI:
 
     @app.post("/events")
     def write_events(batch: BatchWrite) -> list[Receipt]:
-        return log.submit(batch.events, batch.epoch)
+        """The receipts are settled before anything is projected: the entries
+        they name are durable, so persisting the images is downstream work that
+        a caller is never made to wait on the success of."""
+        receipts = log.submit(batch.events, batch.epoch)
+        if any(receipt.status == "accepted" for receipt in receipts):
+            project_and_persist(log)
+        return receipts
 
     return app
 
