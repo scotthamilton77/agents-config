@@ -1,6 +1,6 @@
 """The board endpoints.
 
-Six routes, one authority. The status check is answered from memory and opens no
+One authority, however many routes reach it. The status check is answered from memory and opens no
 file, so a page may ask it as often as it likes whatever the log has grown to;
 every other read folds the log the process already holds. The single write route
 takes a batch under one epoch and answers with one typed receipt per event, in
@@ -10,6 +10,12 @@ happened.
 A client presenting a stale epoch is told so rather than served: refused on write
 with an `epoch mismatch` receipt naming both epochs, and refused on read with a
 409, so it re-reads state instead of guessing.
+
+Beside the board routes sits the map doctor, which is a control rather than a
+board event: it writes nothing into the record and its state is a property of
+this process, not of the log. It is not a kind on the write route because that
+vocabulary is closed and a control that reassesses everything is not something
+an agent says.
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ from grillui.projector import fold, to_image1
 from grillui.schemas import (
     SESSION_END_KIND,
     BatchWrite,
+    DoctorState,
     Image1,
     Image2,
     Receipt,
@@ -102,6 +109,29 @@ def create_app(
     @app.get("/image2")
     def read_image2() -> Image2:
         return _image(log)
+
+    @app.get("/doctor")
+    def read_doctor() -> DoctorState:
+        """Whether the board is frozen against a reassessment in flight.
+
+        Answered from memory like the status check, because the page asks it to
+        decide whether to render its modal rather than to learn anything about
+        the board.
+        """
+        return DoctorState(outstanding=lane.doctor_outstanding)
+
+    @app.post("/doctor")
+    def call_doctor() -> DoctorState:
+        """Send the grill-master over the whole board and the pending queue.
+
+        `outstanding` is the answer to what the page does next, and it is false
+        when nothing was dispatched -- a session with no tier attached, or one
+        already reassessing. The board is the page's to hold immutable while it
+        is true: refusing a write here would need a rejection reason, and that
+        vocabulary is closed.
+        """
+        lane.call_doctor()
+        return DoctorState(outstanding=lane.doctor_outstanding)
 
     @app.post("/events")
     def write_events(batch: BatchWrite) -> list[Receipt]:

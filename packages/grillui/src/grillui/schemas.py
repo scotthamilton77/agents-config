@@ -167,6 +167,13 @@ RECOMMENDATION_KEY = "recommendation"
 FOLLOWED_TRANSFER_KEY = "followed_transfer"
 TRANSFER_FLAG = "transfer"
 
+# How a response withdraws notices it sent earlier: a list of pending ids the
+# response replaces. A payload key rather than a kind of its own, because
+# superseding is something a turn does while it says its piece -- an agent that
+# had to spend a separate event on it would be telling the human two things
+# where it meant one, and the kind vocabulary is closed.
+SUPERSEDES_KEY = "supersedes"
+
 # The kinds that are owed a reply: a human answering a decision, a human opening
 # a thread, a human speaking in one, and a human folding one -- the fold is owed
 # the grill-master's routing answer, which is a reply on the map channel rather
@@ -437,13 +444,32 @@ class SettledEntry(Strict):
 
 class PendingUpdate(Strict):
     """One notice the human has not yet dealt with. `target` is null for a
-    notice anchored to no decision, the way a thread's `decision` is."""
+    notice anchored to no decision, the way a thread's `decision` is.
+
+    `superseded` is the author having withdrawn it while it was still queued:
+    the item stays in the queue and says so, rather than vanishing, because the
+    queue is what the next dispatch tells the agent the human is looking at.
+    """
 
     id: str
     target: str | None = None
     kind: str
     superseded: bool
     authored_at: int
+
+
+class SupersedeConflict(Strict):
+    """A supersede the human got in front of.
+
+    The author withdrew a pending update that the human had already acted on,
+    so the withdrawal and the board disagree about a decision. Neither the page
+    nor the backend resolves it: only the authoring agent knows what the rewrite
+    was for, and a backend guessing at it would rewrite a human's answer on a
+    rule nobody wrote. It goes back to that agent as a dispatch of its own.
+    """
+
+    update: PendingUpdate
+    applied_at: int
 
 
 class HistoryEntry(Strict):
@@ -609,7 +635,11 @@ class DispatchContext(Strict):
     threads this agent is not having.
 
     `conclusion` rides a grill-master dispatch that exists to route a thread's
-    conclusion onto the board, and is absent from every other.
+    conclusion onto the board, and is absent from every other. `conflict` and
+    `reassess` ride the two other dispatches the backend raises on its own --
+    a supersede the human got in front of, and the map doctor -- and each says
+    why the turn is happening. A turn that had to infer that from the board
+    would be inferring it from a board that looks exactly as it did before.
     """
 
     agent: str
@@ -618,6 +648,20 @@ class DispatchContext(Strict):
     seq: int
     image2: ThreadProjection
     conclusion: ThreadConclusion | None = None
+    conflict: SupersedeConflict | None = None
+    reassess: bool = False
+
+
+class DoctorState(Strict):
+    """Whether a map-doctor dispatch is outstanding.
+
+    The page holds the board immutable while it is, and writes again when it is
+    not. The backend reports the state and does not enforce it: refusing a write
+    would need a rejection reason, and that vocabulary is closed -- which is
+    exactly why the refusal is the page's, behind its modal.
+    """
+
+    outstanding: bool
 
 
 class SessionStatus(Strict):

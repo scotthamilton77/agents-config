@@ -55,6 +55,7 @@ from grillui.schemas import (
     MAP_CHANNEL,
     MODEL_KEY,
     RECOMMENDATION_KEY,
+    SUPERSEDES_KEY,
     TIER_KEY,
     DispatchContext,
     EventSubmission,
@@ -330,25 +331,36 @@ def write_resume(directory: Path, channel: str, session_id: str) -> None:
     scratch.replace(path)
 
 
-def declared_updates(reply: str) -> tuple[str, list[dict[str, Any]]]:
-    """What the turn said, and the map updates it declared.
+def declared_updates(reply: str) -> tuple[str, list[dict[str, Any]], list[str]]:
+    """What the turn said, the map updates it declared, and what it withdrew.
 
-    A reply is prose unless it is an object carrying both -- anything else,
-    including JSON that is not this shape, is what the agent said and is
-    recorded as such. Guessing at a half-shaped object would author board
-    changes out of a reply that never asked for any.
+    A reply is prose unless it is an object carrying `text` and at least one of
+    the two -- anything else, including JSON that is not this shape, is what the
+    agent said and is recorded as such. Guessing at a half-shaped object would
+    author board changes out of a reply that never asked for any.
+
+    Withdrawing is separate from updating because the common case carries no
+    board change at all: a turn that supersedes what it said last time and
+    nothing else is a turn whose whole effect is on the queue.
     """
     try:
         document = json.loads(reply)
     except ValueError:
-        return reply, []
+        return reply, [], []
     if not isinstance(document, dict):
-        return reply, []
+        return reply, [], []
     prose = document.get("text")
     updates = document.get("updates")
-    if not isinstance(prose, str) or not isinstance(updates, list):
-        return reply, []
-    return prose, [update for update in updates if isinstance(update, dict)]
+    superseded = document.get(SUPERSEDES_KEY)
+    declared = updates if isinstance(updates, list) else None
+    withdrew = superseded if isinstance(superseded, list) else None
+    if not isinstance(prose, str) or (declared is None and withdrew is None):
+        return reply, [], []
+    return (
+        prose,
+        [one for one in declared or [] if isinstance(one, dict)],
+        [one for one in withdrew or [] if isinstance(one, str)],
+    )
 
 
 def record_reply(
@@ -366,18 +378,26 @@ def record_reply(
     advisory. A thread agent that declared updates has them refused by the same
     appender that refuses them over the wire, and the lane says so; there is no
     second path to the board for a driver to take.
+
+    What the reply withdrew rides on the turn's own spoken entry, because that
+    is what it is: this turn replacing what a previous one told the human, in
+    the same breath as it says the new thing.
     """
-    prose, updates = declared_updates(text)
+    prose, updates, superseded = declared_updates(text)
     if not prose.strip():
         raise ReplyRefusedError(tier, "the completion was empty")
-    spoken = {
+    spoken: dict[str, Any] = {
         "kind": "informational" if channel == MAP_CHANNEL else "thread-turn",
         "text": prose,
     }
+    if superseded:
+        spoken[SUPERSEDES_KEY] = superseded
+    # The kind is the envelope's when the turn stands alone and the sub-update's
+    # when it rides inside a gesture, so it is stripped from the one and kept on
+    # the other -- everything else the turn said travels either way.
+    solo = {key: value for key, value in spoken.items() if key != "kind"}
     payload: dict[str, Any] = (
-        {"text": prose, **attribution}
-        if not updates
-        else {"updates": [spoken, *updates], **attribution}
+        {**solo, **attribution} if not updates else {"updates": [spoken, *updates], **attribution}
     )
     receipt = log.submit(
         [

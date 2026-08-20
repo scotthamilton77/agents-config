@@ -46,6 +46,7 @@ from typing import TYPE_CHECKING, NamedTuple, Protocol
 
 from grillui.dispatch import record_dispatch
 from grillui.escalation import in_expert_mode
+from grillui.projector import supersede_conflicts
 from grillui.schemas import (
     ANSWERABLE_KINDS,
     MAP_CHANNEL,
@@ -60,7 +61,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from grillui.log import SessionLog
-    from grillui.schemas import EventSubmission, Receipt
+    from grillui.schemas import EventSubmission, Receipt, SupersedeConflict
 
 
 class AgentUnreachableError(RuntimeError):
@@ -112,10 +113,16 @@ class Turn(NamedTuple):
     the grill-master answers on the map, because the grill-master is the only
     agent that authors map mutations -- and it cannot author one it was never
     told about.
+
+    `conflict` and `reassess` are the two turns no gesture on a channel asked
+    for. A conflict turn is also where the recursion stops: it does not look for
+    conflicts of its own, so handing one back can never chain into a second.
     """
 
     channel: str
     concluding: str | None = None
+    conflict: SupersedeConflict | None = None
+    reassess: bool = False
 
 
 def turn_of(event: EventSubmission) -> Turn:
@@ -155,6 +162,7 @@ class Lane:
         self.log = log
         self.driver = driver
         self.expert = expert
+        self._doctor = False
 
     def tier_for(self, channel: str, driver: TurnDriver) -> TurnDriver:
         """The tier this channel's next turn goes to: the expert one when the
@@ -213,6 +221,35 @@ class Lane:
                 )
         return receipts, [self._schedule(driver, turn) for driver, turn in turns]
 
+    @property
+    def doctor_outstanding(self) -> bool:
+        """Whether a map-doctor turn is in flight.
+
+        What the page holds the board immutable against. It is memory rather
+        than log state on purpose: a backend that died mid-doctor took the
+        dispatch with it, and a board that stayed frozen across that restart
+        would be frozen waiting for an answer nobody is composing.
+        """
+        return self._doctor
+
+    def call_doctor(self) -> threading.Thread | None:
+        """Send the grill-master over the whole board and the pending queue.
+
+        The escape hatch when superseding has not been enough: one turn, told to
+        reassess everything, with the board held immutable by the page until it
+        answers. A second call while one is outstanding is not a second turn --
+        the human clicking twice must not put two reassessments on one chain.
+
+        With no tier attached there is nothing to dispatch, and saying so by
+        returning nothing is what keeps the page from freezing the board against
+        an answer that is never coming.
+        """
+        if self.driver is None or self._doctor:
+            return None
+        self._doctor = True
+        driver = self.tier_for(MAP_CHANNEL, self.driver)
+        return self._schedule(driver, Turn(MAP_CHANNEL, reassess=True))
+
     def _schedule(self, driver: TurnDriver, turn: Turn) -> threading.Thread:
         thread = threading.Thread(
             target=self._take_turn,
@@ -229,12 +266,55 @@ class Lane:
         Every failure is caught, whatever it is: the human's write is already
         durable and already answered, so nothing here may escape and turn a
         landed turn into a crashed one. What the human must not get is silence,
-        and the lane's error phase is what they get instead.
+        and the lane's error phase is what they get instead. A doctor turn
+        releases the board on the way out whichever way it went, since a board
+        frozen against a turn that failed is frozen for good.
         """
         try:
-            dispatch = record_dispatch(self.log, channel=turn.channel, concluding=turn.concluding)
+            standing = self._conflicts() if self._watching(turn) else []
+            dispatch = record_dispatch(
+                self.log,
+                channel=turn.channel,
+                concluding=turn.concluding,
+                conflict=turn.conflict,
+                reassess=turn.reassess,
+            )
             driver.run(self.log, dispatch)
+            if self._watching(turn):
+                self._hand_back(driver, standing)
         except Exception as error:
             self.log.emit_status(
                 STATUS_PHASE_ERROR, f"the {driver.tier!r} tier failed: {error!r}", turn.channel
             )
+        finally:
+            if turn.reassess:
+                self._doctor = False
+
+    @staticmethod
+    def _watching(turn: Turn) -> bool:
+        """Whether this turn's reply could raise a conflict to hand back.
+
+        Only a map turn can: a pending notice is the grill-master's, and an
+        author may only supersede its own. A conflict turn is excluded because
+        it is the hand-back -- one that looked again would find the conflict it
+        was sent about still in the log and send itself forever.
+        """
+        return turn.channel == MAP_CHANNEL and turn.conflict is None
+
+    def _conflicts(self) -> list[SupersedeConflict]:
+        return supersede_conflicts(self.log.entries())
+
+    def _hand_back(self, driver: TurnDriver, standing: Sequence[SupersedeConflict]) -> None:
+        """Give the grill-master back a withdrawal the human got in front of.
+
+        Only what this turn raised: the conflicts standing before it were
+        already handed back when they appeared, and a caller that re-sent them
+        would be asking the grill-master to reconcile the same disagreement
+        once per turn for the rest of the session. Nothing on the board moves
+        here -- the reconciliation is the agent's next reply, authored the way
+        every other map mutation is.
+        """
+        known = {one.update.id for one in standing}
+        for conflict in self._conflicts():
+            if conflict.update.id not in known:
+                self._take_turn(driver, Turn(MAP_CHANNEL, conflict=conflict))
