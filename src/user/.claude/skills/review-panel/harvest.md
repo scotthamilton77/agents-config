@@ -15,9 +15,9 @@ other worked.
 
 What you may not do is run the lens and say nothing. Whenever a lens runs on something other than
 its declared entry, its verdict entry carries `substitution` naming what it moved off — the
-declared transport, or the model the displaced attempt ran on — plus the reason, and, when the swap
-was forced rather than chosen, the dead route's error verbatim in `transport_error`. A round that
-lost diversity silently is indistinguishable from one that kept it.
+declared transport, the model the displaced attempt ran on, or both when both changed — plus the
+reason, and, when the swap was forced rather than chosen, the dead route's error verbatim in
+`transport_error`. A round that lost diversity silently is indistinguishable from one that kept it.
 
 ## Choosing the model
 
