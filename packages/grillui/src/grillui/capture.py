@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from grillui.log import IMAGE1_FILE, IMAGE2_FILE, LOG_FILE, RESULT_FILE, read_entries
-from grillui.projector import fold
+from grillui.projector import conclusion_of, fold
 from grillui.schemas import (
     SESSION_END_KIND,
     SESSION_START_KIND,
@@ -35,7 +35,6 @@ from grillui.schemas import (
     References,
     TerminalResult,
     TerminalSession,
-    Thread,
 )
 
 if TYPE_CHECKING:
@@ -91,7 +90,7 @@ def capture(directory: Path, *, summarize: Summarizer = default_summary) -> Term
                 id=thread.id,
                 title=thread.title,
                 state=thread.state,
-                conclusion=_conclusion(thread),
+                conclusion=conclusion_of(thread),
             )
             for thread in image.threads
         ],
@@ -163,14 +162,6 @@ def _blocker(node: Decision, settled: set[str]) -> str:
     if unmet:
         return "waits on " + ", ".join(repr(prereq) for prereq in unmet)
     return "answerable and unanswered"
-
-
-def _conclusion(thread: Thread) -> str | None:
-    """A folded thread's conclusion is its last turn: the turn whose content was
-    applied to the board. An open or parked thread has reached none."""
-    if thread.state != "folded" or not thread.turns:
-        return None
-    return thread.turns[-1].text
 
 
 def _stop_reason(end: LogEntry | None) -> str:

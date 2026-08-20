@@ -51,20 +51,26 @@ def create_app(
     log: SessionLog,
     driver: TurnDriver | None = None,
     *,
+    expert: TurnDriver | None = None,
     summarize: Summarizer = default_summary,
 ) -> FastAPI:
-    """Bind the board endpoints to one session log, and the lane to one tier.
+    """Bind the board endpoints to one session log, and the lane to its tiers.
 
     The driver is optional because a backend with no tier configured is a real
     state, not a broken one: the board still accepts everything it would
     otherwise, and nothing pretends a reply is coming.
+
+    `expert` is where a channel the human has escalated takes its turns. It is
+    the session's tier rather than a channel's: which channels are on it is read
+    off the human's own gestures, one channel at a time, so one escalation never
+    moves another channel.
 
     `summarize` is the seam capture writes the terminal result's prose through.
     Its default builds the briefing from the structured parts, so ending a
     session never waits on a model being reachable.
     """
     app = FastAPI(title="grillui session backend")
-    lane = Lane(log, driver)
+    lane = Lane(log, driver, expert)
 
     def require_epoch(presented: str) -> None:
         if presented != log.epoch:

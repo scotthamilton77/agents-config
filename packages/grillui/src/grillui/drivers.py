@@ -19,6 +19,14 @@ what makes that file worth writing. One turn at a time, always: the discount
 lives in a cache one process holds, and two processes talking over each other on
 the same chain forfeit it.
 
+**A reply may declare map updates, and only the grill-master's will land.** A
+turn answers in prose, or in an object carrying prose and the updates it wants
+applied; the second lands as one atomic gesture, so what the human is told and
+what the board does arrive together or not at all. The gesture is submitted on
+the channel the turn ran on, through the same appender the page writes through,
+which is what makes the sole-author rule structural: a thread agent's updates
+are refused there, and no driver holds a second way to the board.
+
 **A reply that says nothing is a failure, not a turn.** Whatever the cause --
 transport, an empty completion, an appender that refused the reply -- it raises,
 and the lane surfaces it as an error in milliseconds rather than as silence the
@@ -38,16 +46,16 @@ from uuid import uuid4
 
 import httpx
 
-from grillui.escalation import recommend, turns_of
+from grillui.escalation import in_expert_mode, recommend, turns_of
 from grillui.lane import AgentUnreachableError
 from grillui.projector import fold
 from grillui.schemas import (
+    FOLD_KIND,
     FOLLOWED_TRANSFER_KEY,
     MAP_CHANNEL,
     MODEL_KEY,
     RECOMMENDATION_KEY,
     TIER_KEY,
-    TRANSFER_FLAG,
     DispatchContext,
     EventSubmission,
     RejectedReceipt,
@@ -58,16 +66,16 @@ from grillui.tiers import (
     DEFAULT_API_BASE,
     FAST_TIER,
     HEAVY_TIER,
-    SYSTEM_PROMPTS,
     TierConfig,
     compose,
+    system_prompt,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from grillui.log import SessionLog
-    from grillui.schemas import LogEntry, Receipt
+    from grillui.schemas import Receipt
 
 RESUME_FILE = "heavy-resume.json"
 REQUEST_TIMEOUT = 60.0
@@ -219,13 +227,14 @@ class FastDriver:
 
     def run(self, log: SessionLog, dispatch: Path, /) -> None:
         recorded = dispatch.read_text(encoding="utf-8")
-        channel = DispatchContext.model_validate_json(recorded).channel
+        context = DispatchContext.model_validate_json(recorded)
+        channel = context.channel
         entries = log.entries()
         model = self.config.fast_model
         reply = self.transport(
             model=model,
-            system=SYSTEM_PROMPTS[FAST_TIER],
-            prompt=compose(recorded, channel, entries),
+            system=system_prompt(FAST_TIER, context.agent),
+            prompt=compose(recorded, context, entries),
         )
         attribution: dict[str, Any] = {TIER_KEY: self.tier, MODEL_KEY: model}
         advice = recommend(fold(log.epoch, entries), turns_of(entries, channel), channel)
@@ -250,15 +259,16 @@ class HeavyDriver:
 
     def run(self, log: SessionLog, dispatch: Path, /) -> None:
         recorded = dispatch.read_text(encoding="utf-8")
-        channel = DispatchContext.model_validate_json(recorded).channel
+        context = DispatchContext.model_validate_json(recorded)
+        channel = context.channel
         entries = log.entries()
         model = self.config.heavy_model
         with self._turn:
             printed = self.cli(
                 claude_argv(
                     model,
-                    SYSTEM_PROMPTS[HEAVY_TIER],
-                    compose(recorded, channel, entries),
+                    system_prompt(HEAVY_TIER, context.agent),
+                    compose(recorded, context, entries),
                     read_resume(log.directory, channel),
                 )
             )
@@ -273,20 +283,13 @@ class HeavyDriver:
             {
                 TIER_KEY: self.tier,
                 MODEL_KEY: model,
-                FOLLOWED_TRANSFER_KEY: followed_transfer(entries, channel),
+                # Whether this heavy turn is one the human asked for, read off
+                # the same channel mode the lane routed it by: no agent
+                # escalates itself, and a heavy turn nobody asked for must not
+                # be able to claim it was requested.
+                FOLLOWED_TRANSFER_KEY: in_expert_mode(entries, channel),
             },
         )
-
-
-def followed_transfer(entries: Sequence[LogEntry], channel: str) -> bool:
-    """Whether this heavy turn is one the human asked for.
-
-    Read off their own turn, because the gesture is theirs: no agent escalates
-    itself, and a heavy turn nobody asked for should not be able to claim it was
-    requested.
-    """
-    spoken = [entry for entry in entries if entry.channel == channel and entry.actor == "human"]
-    return bool(spoken) and spoken[-1].payload.get(TRANSFER_FLAG) is True
 
 
 def read_resume(directory: Path, channel: str) -> str | None:
@@ -327,6 +330,27 @@ def write_resume(directory: Path, channel: str, session_id: str) -> None:
     scratch.replace(path)
 
 
+def declared_updates(reply: str) -> tuple[str, list[dict[str, Any]]]:
+    """What the turn said, and the map updates it declared.
+
+    A reply is prose unless it is an object carrying both -- anything else,
+    including JSON that is not this shape, is what the agent said and is
+    recorded as such. Guessing at a half-shaped object would author board
+    changes out of a reply that never asked for any.
+    """
+    try:
+        document = json.loads(reply)
+    except ValueError:
+        return reply, []
+    if not isinstance(document, dict):
+        return reply, []
+    prose = document.get("text")
+    updates = document.get("updates")
+    if not isinstance(prose, str) or not isinstance(updates, list):
+        return reply, []
+    return prose, [update for update in updates if isinstance(update, dict)]
+
+
 def record_reply(
     log: SessionLog, tier: str, channel: str, text: str, attribution: dict[str, Any]
 ) -> None:
@@ -335,17 +359,34 @@ def record_reply(
     An agent is a client of the same appender the page writes through, so a
     reply is judged like any other write and a refusal is not swallowed: the
     human asked something, and a reply nobody can read is not an answer.
+
+    A reply declaring map updates is submitted as one atomic gesture carrying
+    them and the prose together, and it is submitted on the channel the turn
+    ran on -- which is what makes the sole-author rule structural rather than
+    advisory. A thread agent that declared updates has them refused by the same
+    appender that refuses them over the wire, and the lane says so; there is no
+    second path to the board for a driver to take.
     """
-    if not text.strip():
+    prose, updates = declared_updates(text)
+    if not prose.strip():
         raise ReplyRefusedError(tier, "the completion was empty")
+    spoken = {
+        "kind": "informational" if channel == MAP_CHANNEL else "thread-turn",
+        "text": prose,
+    }
+    payload: dict[str, Any] = (
+        {"text": prose, **attribution}
+        if not updates
+        else {"updates": [spoken, *updates], **attribution}
+    )
     receipt = log.submit(
         [
             EventSubmission(
-                kind="informational" if channel == MAP_CHANNEL else "thread-turn",
+                kind=FOLD_KIND if updates else str(spoken["kind"]),
                 actor="grill-master" if channel == MAP_CHANNEL else "thread-agent",
                 channel=channel,
                 idempotency_key=f"{tier}-{uuid4().hex}",
-                payload={"text": text, **attribution},
+                payload=payload,
             )
         ],
         log.epoch,

@@ -28,13 +28,14 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from grillui.dispatch import THREAD_AGENT
 from grillui.escalation import turns_of
 from grillui.schemas import SESSION_START_KIND
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from grillui.schemas import LogEntry
+    from grillui.schemas import DispatchContext, LogEntry
 
 FAST_TIER = "fast"
 HEAVY_TIER = "heavy"
@@ -132,6 +133,38 @@ GRILL_MASTER_MANDATE = (
     "to do, not yours."
 )
 
+# The reply contract, and the whole of how a map mutation comes to exist. It is
+# stated to the grill-master alone: a thread agent that emitted one would have it
+# refused by the appender, and telling it the shape would be inviting the refusal.
+MUTATION_FORMAT_RULE = (
+    "To change the board, reply with a JSON object carrying `text` -- what you are "
+    'saying to the human -- and `updates`, a list of map updates such as {"kind": '
+    '"revise", "target": "d1", ...}. Reply with plain prose when nothing on the board '
+    "changes. Both are one turn: the prose and the updates land together or not at all."
+)
+
+CONCLUSION_ROUTING_RULE = (
+    "A thread conclusion reaches you because you are the only agent that may act on it. "
+    "Decide what it costs the board: fold it in as updates, or take it as context and say "
+    "in your reply that nothing on the board changes and why. Both are answers; silence "
+    "is not."
+)
+
+# What a thread agent is told about the threads it is not having. The stubs are
+# there to be consulted rather than reasoned around, and the read surface is what
+# turns a relevant stub into the body it stands for -- without which the agent
+# either invents the other thread's content or ignores it.
+THREAD_AGENT_MANDATE = (
+    "You are a side-thread agent, working one thread of a grilling. The board crosses to "
+    "you whole, and so does your own thread; every other live thread appears only as a "
+    "stub naming its anchor decision, its title, its state and its conclusion if it "
+    "reached one. Consult the stubs. When one is relevant to your thread, read that "
+    "thread's full body through the backend's read surface rather than guessing at it. "
+    "You recommend and never author changes to the map: a conclusion you reach goes to "
+    "the grill-master when the human folds this thread, and a map update from you is "
+    "refused."
+)
+
 FAST_SYSTEM_PROMPT = "\n\n".join(
     [FACILITATION_MANDATE, NO_MANUFACTURE_RULE, CONCISION_RULE, ONE_TURN_RULE]
 )
@@ -144,6 +177,19 @@ SYSTEM_PROMPTS: dict[str, str] = {
     FAST_TIER: FAST_SYSTEM_PROMPT,
     HEAVY_TIER: HEAVY_SYSTEM_PROMPT,
 }
+
+
+def system_prompt(tier: str, agent: str) -> str:
+    """The standing brief for one turn: the tier's, plus whose turn it is.
+
+    A tier is how a turn is taken and an agent is what it may do, and the two
+    vary independently -- either tier may drive the map or a thread, so the
+    sole-author rule cannot ride on the tier's prompt alone.
+    """
+    if agent == THREAD_AGENT:
+        return "\n\n".join([THREAD_AGENT_MANDATE, SYSTEM_PROMPTS[tier]])
+    return "\n\n".join([SYSTEM_PROMPTS[tier], MUTATION_FORMAT_RULE])
+
 
 NO_BRIEFING = "No briefing was recorded for this session."
 
@@ -179,15 +225,21 @@ def briefing(entries: Sequence[LogEntry]) -> str:
     )
 
 
-def compose(recorded: str, channel: str, entries: Sequence[LogEntry]) -> str:
+def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]) -> str:
     """One turn's prompt: the briefing, the board, and this channel's turns.
 
     The board crosses as the recorded dispatch bytes rather than as anything
     rebuilt from them. There is no elision path: a prompt that trimmed settled
     decisions would lose decisions the human made minutes ago, and neither the
     human nor the audit record would show which ones went missing.
+
+    A dispatch sent to route a thread's conclusion says so in a section of its
+    own. The conclusion is inside those bytes either way, and a turn asked to
+    find it there is a turn that may not.
     """
+    channel = context.channel
     conversation = "\n".join(f"{turn.who}: {turn.text}" for turn in turns_of(entries, channel))
+    concluded = context.conclusion
     return "\n\n".join(
         [
             "## Briefing",
@@ -196,6 +248,15 @@ def compose(recorded: str, channel: str, entries: Sequence[LogEntry]) -> str:
             recorded,
             f"## This channel ({channel}), in order",
             conversation or "Nothing has been said on this channel yet.",
+            *(
+                []
+                if concluded is None
+                else [
+                    f"## The conclusion of thread {concluded.thread!r}, to route",
+                    concluded.text or "The thread reached no conclusion.",
+                    CONCLUSION_ROUTING_RULE,
+                ]
+            ),
             "## Your turn",
             "Answer the last thing the human said, under the rules you were given.",
         ]

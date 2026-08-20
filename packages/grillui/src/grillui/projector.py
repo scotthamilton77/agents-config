@@ -24,6 +24,8 @@ on an accepted entry takes the session down with it.
 | `elicit-alert`  | the target's lock becomes this alert's blocking flag           |
 | `informational` | nothing on the board; the human is told                        |
 | `fold`          | its sub-updates, in order, all of them                         |
+| `thread-fold`   | its channel's thread is `folded`; no decision moves            |
+| `thread-park`   | its channel's thread is `parked`; no decision moves            |
 
 Two of those rules are this projector's to state rather than the protocol's.
 *Dependent staleness*: unsettling a decision makes every settled decision that
@@ -37,6 +39,10 @@ The board is seeded through the log and never by re-reading the handoff file.
 `log.jsonl` alone reproduces the seeded board -- which is what makes the log the
 only recovery source and leaves the handoff file with no authority the moment
 that entry lands.
+
+Neither thread gesture touches a decision, and that is the sole-author rule
+holding: what a thread concluded reaches the board only through the grill-master
+being dispatched with it.
 
 `informational` and `elicit-alert` are the queue of what the human has not dealt
 with yet, which is the `pending` array. Nothing here takes an item off that
@@ -52,8 +58,11 @@ from dataclasses import dataclass, field
 from grillui.schemas import (
     FOLD_KIND,
     SESSION_START_KIND,
+    THREAD_FOLD_KIND,
+    THREAD_PARK_KIND,
     Answer,
     Decision,
+    FoldedThreadStub,
     HistoryEntry,
     Image1,
     Image2,
@@ -62,6 +71,8 @@ from grillui.schemas import (
     PendingUpdate,
     SettledEntry,
     Thread,
+    ThreadProjection,
+    ThreadStub,
     read_turns,
 )
 
@@ -156,6 +167,8 @@ def _apply(
         _create_thread(board, entry)
     elif kind == "thread-turn":
         _append_turns(board, entry)
+    elif kind in {THREAD_FOLD_KIND, THREAD_PARK_KIND}:
+        _set_thread_state(board, entry, kind)
     _record_history(board, entry, kind, payload)
 
 
@@ -169,6 +182,80 @@ def _updates(entry: LogEntry) -> list[Mapping[str, object]]:
 def to_image1(image: Image2) -> Image1:
     """Image 2 without its history, which is the only field that separates them."""
     return Image1(**image.model_dump(exclude={"history"}))
+
+
+def conclusion_of(thread: Thread) -> str | None:
+    """A folded thread's conclusion: the turn whose content was applied to the
+    board. An open or parked thread has reached none.
+
+    One reader, because the conclusion is quoted in three places -- the stub a
+    sibling thread's agent sees, the dispatch that hands it to the grill-master,
+    and the terminal result -- and three readers is how they come to disagree
+    about what a thread concluded.
+    """
+    if thread.state != "folded" or not thread.turns:
+        return None
+    return thread.turns[-1].text
+
+
+def project_thread(image: Image2, channel: str) -> ThreadProjection:
+    """Image 2 as one thread's agent is given it.
+
+    A pure fold over an image that was itself a pure fold, so a dispatch is
+    reproducible from the log alone. The board crosses unchanged: only the
+    bodies of other threads are reduced, and only to what it takes to know a
+    thread exists and whether to go and read it.
+    """
+    threads: list[FoldedThreadStub | ThreadStub | Thread] = []
+    for thread in image.threads:
+        if thread.id == channel:
+            threads.append(thread)
+        elif thread.state == "folded":
+            threads.append(
+                FoldedThreadStub(
+                    id=thread.id,
+                    decision=thread.decision,
+                    title=thread.title,
+                    conclusion=conclusion_of(thread) or "",
+                )
+            )
+        elif thread.state != "parked":
+            threads.append(
+                ThreadStub(
+                    id=thread.id,
+                    decision=thread.decision,
+                    title=thread.title,
+                    state=thread.state,
+                )
+            )
+    return _projection(image, threads)
+
+
+def _projection(
+    image: Image2, threads: list[FoldedThreadStub | ThreadStub | Thread]
+) -> ThreadProjection:
+    """The image's own sections, carried across by reference rather than
+    rebuilt: a second construction of a decision is a second chance to differ
+    from the image the completeness check compares against."""
+    return ThreadProjection(
+        epoch=image.epoch,
+        seq=image.seq,
+        decisions=image.decisions,
+        frontier=image.frontier,
+        settled=image.settled,
+        threads=threads,
+        pending=image.pending,
+        history=image.history,
+    )
+
+
+def whole_board(image: Image2) -> ThreadProjection:
+    """Image 2 with every thread's body intact: what the grill-master is given.
+
+    The same shape a thread projection has, so one dispatch context describes
+    both, and byte-identical to image 2 because nothing was reduced.
+    """
+    return _projection(image, list(image.threads))
 
 
 def node_from_payload(payload: Mapping[str, object], node_id: str) -> Decision:
@@ -323,6 +410,18 @@ def _append_turns(board: _Board, entry: LogEntry) -> None:
         thread = Thread(id=thread_id)
         board.threads[thread_id] = thread
     thread.turns = [*thread.turns, *read_turns(entry.payload, entry.actor, entry.timestamp)]
+
+
+def _set_thread_state(board: _Board, entry: LogEntry, kind: str) -> None:
+    """The human's gesture on a thread, which is the only thing that ends one.
+
+    A thread nobody opened is nothing to fold or park -- the gesture names its
+    thread by the channel it arrived on, and a channel holding no thread is an
+    entry the fold contributes nothing from rather than one it raises over.
+    """
+    thread = board.threads.get(_thread_id(entry))
+    if thread is not None:
+        thread.state = "folded" if kind == THREAD_FOLD_KIND else "parked"
 
 
 def _record_history(

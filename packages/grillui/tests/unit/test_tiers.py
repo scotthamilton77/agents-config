@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from conftest import handoff_doc, write_handoff
+from conftest import dispatch_context, handoff_doc, write_handoff
 
 from grillui.schemas import LogEntry
 from grillui.session import open_session
@@ -216,7 +216,7 @@ def test_the_assembled_prompt_carries_the_stop_condition(entries: list[LogEntry]
     Then the stop condition is in the prompt bytes -- the agent lost the
          handoff's authority, not its termination condition.
     """
-    prompt = compose('{"image2": "recorded"}', "map", entries)
+    prompt = compose('{"image2": "recorded"}', dispatch_context(), entries)
 
     assert STOP_WHEN in prompt
 
@@ -230,7 +230,7 @@ def test_the_assembled_prompt_carries_the_recorded_board_verbatim(entries: list[
     """
     recorded = '{"agent":"grill-master","image2":{"decisions":[{"id":"d1"}]}}'
 
-    assert recorded in compose(recorded, "map", entries)
+    assert recorded in compose(recorded, dispatch_context(), entries)
 
 
 def test_a_log_with_no_opening_entry_briefs_nothing_rather_than_inventing_one() -> None:
@@ -251,7 +251,7 @@ def test_the_prompt_says_which_channel_it_is_and_that_nothing_has_been_said(
     Then it names the channel and says the conversation is empty, rather than
          leaving a blank section that reads as a lost transcript.
     """
-    prompt = compose("{}", "t-compaction", entries)
+    prompt = compose("{}", dispatch_context("t-compaction"), entries)
 
     assert "t-compaction" in prompt
     assert "Nothing has been said on this channel yet." in prompt

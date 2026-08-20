@@ -18,13 +18,21 @@ import json
 import sys
 import threading
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
-from conftest import TIMEOUT, driven, event, handoff_doc, post, write_handoff
+from conftest import (
+    TIMEOUT,
+    ScriptedCli,
+    ScriptedFast,
+    driven,
+    event,
+    handoff_doc,
+    post,
+    write_handoff,
+)
 
 from grillui.dispatch import record_dispatch
 from grillui.drivers import (
@@ -57,42 +65,6 @@ from grillui.tiers import API_KEY_ENV, FAST_TIER, HEAVY_TIER, TierConfig
 SOURCE = Path(__file__).resolve().parents[2] / "src" / "grillui"
 TARGET = "d1"
 REPLY = "The log is the recovery source. Compaction is the next question."
-
-
-@dataclass
-class ScriptedFast:
-    """A fast model that answers to order and remembers what it was asked."""
-
-    reply: str = REPLY
-    calls: list[dict[str, str]] = field(default_factory=list)
-
-    def __call__(self, *, model: str, system: str, prompt: str) -> str:
-        self.calls.append({"model": model, "system": system, "prompt": prompt})
-        return self.reply
-
-
-@dataclass
-class ScriptedCli:
-    """A `claude` CLI that answers to order and remembers its argv.
-
-    `overlapping` is what the single-process rule is proved against: it records
-    whether a second turn was ever inside this call while a first still was.
-    """
-
-    reply: str = REPLY
-    session_id: str = "chain-1"
-    calls: list[list[str]] = field(default_factory=list)
-    hold: float = 0.0
-    overlapping: bool = False
-    _inside: int = 0
-
-    def __call__(self, argv: list[str], /) -> str:
-        self.calls.append(list(argv))
-        self._inside += 1
-        self.overlapping = self.overlapping or self._inside > 1
-        time.sleep(self.hold)
-        self._inside -= 1
-        return json.dumps({"session_id": self.session_id, "result": self.reply})
 
 
 # A third decision, so the board has two decisions depending on `d1` and three
