@@ -46,6 +46,15 @@ IMAGE1_FILE = "image1.json"
 IMAGE2_FILE = "image2.json"
 
 
+class CorruptLogError(RuntimeError):
+    """A malformed line before the log's end. Unlike a torn final line, this is
+    not a crash artifact the appender could have produced, so resuming over it
+    would silently drop accepted entries."""
+
+    def __init__(self, path: Path, line_number: int) -> None:
+        super().__init__(f"{path} line {line_number} is not a valid log entry")
+
+
 def _now() -> str:
     """Backend clock at append time, to millisecond precision."""
     return datetime.now(UTC).isoformat(timespec="milliseconds")
@@ -168,13 +177,22 @@ class SessionLog:
             return
         # ponytail: one linear read at startup; a session log is human-paced and
         # bounded by one grilling, so nothing here needs an on-disk index.
-        with self.path.open(encoding="utf-8") as handle:
-            for line in handle:
-                if not line.strip():
-                    continue
+        lines = [
+            line for line in self.path.read_text(encoding="utf-8").splitlines() if line.strip()
+        ]
+        for position, line in enumerate(lines):
+            try:
                 entry = LogEntry.model_validate_json(line)
-                self._entries.append(entry)
-                self._index.absorb(entry)
+            except ValueError as error:
+                if position == len(lines) - 1:
+                    # A torn final line is what a crash between write and fsync
+                    # leaves behind. The event it held has no receipt anywhere,
+                    # so dropping it loses nothing a client will not retry
+                    # under its own idempotency key.
+                    break
+                raise CorruptLogError(self.path, position + 1) from error
+            self._entries.append(entry)
+            self._index.absorb(entry)
 
 
 def _target_of(entry: LogEntry) -> str | None:

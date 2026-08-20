@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from grillui.log import LOG_FILE, SessionLog
+import pytest
+
+from grillui.log import LOG_FILE, CorruptLogError, SessionLog
 from grillui.schemas import EventSubmission
 
 
@@ -130,3 +132,44 @@ def test_blank_lines_in_the_log_are_skipped_on_load(session_dir: Path) -> None:
 
     assert second.seq == 1
     assert len(second.entries()) == 1
+
+
+def test_a_torn_final_line_is_dropped_and_the_session_resumes(session_dir: Path) -> None:
+    """
+    Given a log whose final line is half a JSON object — a crash between
+    write and fsync
+    When a process loads it
+    Then the intact entries load and the torn line contributes nothing.
+
+    The event the torn line held has no receipt anywhere, so dropping it loses
+    nothing a client will not retry under its own idempotency key.
+    """
+    session_dir.mkdir(parents=True)
+    first = SessionLog(session_dir)
+    _submit(first, "k1", text="one")
+    _submit(first, "k2", text="two")
+    path = session_dir / LOG_FILE
+    path.write_text(path.read_text(encoding="utf-8") + '{"seq": 3, "epo', encoding="utf-8")
+
+    second = SessionLog(session_dir)
+
+    assert second.seq == 2
+    assert len(second.entries()) == 2
+
+
+def test_a_malformed_interior_line_refuses_to_load(session_dir: Path) -> None:
+    """
+    Given a log corrupted before its end
+    When a process loads it
+    Then loading fails naming the line, rather than silently dropping an
+    entry a client holds a receipt for.
+    """
+    session_dir.mkdir(parents=True)
+    first = SessionLog(session_dir)
+    _submit(first, "k1", text="one")
+    path = session_dir / LOG_FILE
+    intact = path.read_text(encoding="utf-8")
+    path.write_text("not json\n" + intact, encoding="utf-8")
+
+    with pytest.raises(CorruptLogError, match="line 1"):
+        SessionLog(session_dir)

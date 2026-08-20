@@ -173,3 +173,19 @@ def test_image_one_is_image_two_without_its_history() -> None:
     assert "history" not in image1.model_dump()
     assert image1.model_dump() == image2.model_dump(exclude={"history"})
     assert image2.history["n1"][0].kind == "add-node"
+
+
+def test_requires_action_is_true_only_for_a_real_boolean() -> None:
+    """
+    Given a thread-created payload carrying the string "false"
+    When the fold reads requires_action
+    Then the thread does not require action.
+
+    The appender does not validate payload interiors, so a truthy non-boolean
+    must not be read as consent.
+    """
+    entries = [
+        entry(1, "thread-created", channel="t1", requires_action="false", turns=[]),
+    ]
+
+    assert fold(EPOCH, entries).threads[0].requires_action is False

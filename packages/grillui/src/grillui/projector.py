@@ -112,7 +112,7 @@ def _create_thread(threads: dict[str, Thread], entry: LogEntry) -> None:
         decision=_or_none(entry.payload.get("decision")),
         kind=_text(entry.payload, "kind"),
         title=_text(entry.payload, "title"),
-        requires_action=bool(entry.payload.get("requires_action")),
+        requires_action=entry.payload.get("requires_action") is True,
         turns=_turns(entry),
     )
 

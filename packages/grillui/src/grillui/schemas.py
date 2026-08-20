@@ -131,7 +131,9 @@ class DuplicateReceipt(Strict):
 
 
 class RejectedReceipt(Strict):
-    """`idempotency_key` is null exactly when the reason is a missing one."""
+    """`idempotency_key` echoes the submission's key, so it is null whenever
+    the submission carried none — always for the missing-key reason, and also
+    for a keyless write refused earlier, e.g. on epoch mismatch."""
 
     status: Literal["rejected"] = "rejected"
     idempotency_key: str | None
