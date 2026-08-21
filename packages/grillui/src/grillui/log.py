@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import os
 import threading
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Sequence, Set
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -32,12 +32,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from grillui.projector import node_from_payload
+from grillui.projector import Proposed, node_from_payload, queue
 from grillui.schemas import (
-    FOLD_KIND,
+    APPLY_KIND,
+    FOLD_SHAPED,
     MAP_CHANNEL,
+    PENDING_KEY,
+    PROPOSABLE_KINDS,
+    QUEUE_GESTURE_KINDS,
     REASON_EPOCH_MISMATCH,
     REASON_MISSING_KEY,
+    REASON_PENDING_CONFLICT,
+    REASON_UNKNOWN_PENDING,
     SESSION_START_KIND,
     STATUS_KIND,
     AcceptedReceipt,
@@ -103,7 +109,7 @@ class LogIndex:
             for decision in decisions:
                 if isinstance(decision, dict):
                     self._mint(decision)
-        elif entry.kind == FOLD_KIND:
+        elif entry.kind in FOLD_SHAPED:
             # A node minted inside a fold is a node the board has, so an update
             # after the gesture may name it. Missing it here would refuse the
             # agent's next turn against a decision the human can already see.
@@ -238,6 +244,9 @@ class SessionLog:
             return DuplicateReceipt(idempotency_key=key, epoch=self.epoch, seq=landed)
 
         problem = rejection_reason(event, self._index.nodes)
+        queued = self._queue() if event.kind in QUEUE_GESTURE_KINDS else {}
+        if problem is None and event.kind in QUEUE_GESTURE_KINDS:
+            problem = _queue_gesture_problem(event, queued)
         if problem is not None:
             reason, detail = problem
             return RejectedReceipt(
@@ -248,7 +257,7 @@ class SessionLog:
                 # A refused fold still says what became of each sub-update: the
                 # refused one names its reason, and the rest name the veto.
                 updates=(
-                    fold_outcomes(event, self._index.nodes) if event.kind == FOLD_KIND else None
+                    fold_outcomes(event, self._index.nodes) if event.kind in FOLD_SHAPED else None
                 ),
             )
 
@@ -263,10 +272,10 @@ class SessionLog:
             channel=event.channel,
             # Minted before the append, so the id the receipt echoes and the id
             # the projector materialises are the same durable bytes.
-            payload=mint_targets(event.payload, event.kind, previous + 1),
+            payload=_resolve(mint_targets(event.payload, event.kind, previous + 1), event, queued),
         )
         self._append(entry)
-        applied = _applied_updates(entry, previous)
+        applied = _applied_updates(entry, previous, self._queued_ids(entry))
         as_, amendments = _amendment(entry.payload, previous, applied)
         return AcceptedReceipt(
             idempotency_key=key,
@@ -283,6 +292,32 @@ class SessionLog:
             node=_echoed_node(entry.kind, entry.payload),
             updates=applied,
         )
+
+    def _queue(self) -> dict[str, Proposed]:
+        """The proposals waiting for the human, as of right now.
+
+        Folded rather than indexed, because whether an update waits is a
+        property of the board at the moment it arrived and this appender holds
+        no board. One reader for the question means the queue a receipt is
+        judged against and the queue the page is shown are the same answer.
+
+        ponytail: one fold per queue gesture and per gesture that could produce
+        one, which is a human-paced act over a log bounded by one grilling.
+        """
+        return queue(self._entries)
+
+    def _queued_ids(self, entry: LogEntry) -> set[str]:
+        """Which of this entry's updates went to the queue instead of the board.
+
+        Read after the append, from the fold that now includes the entry, so the
+        receipt cannot disagree with the board about what an agent's turn did --
+        it is the same answer, read once.
+        """
+        if entry.actor == "human" or not (
+            entry.kind in FOLD_SHAPED or entry.kind in PROPOSABLE_KINDS
+        ):
+            return set()
+        return {one for one in self._queue() if one.startswith(entry.idempotency_key)}
 
     def _append(self, entry: LogEntry) -> None:
         """Durable first, in-memory second: an entry a caller has a receipt for
@@ -398,13 +433,84 @@ def _amendment(
     return ("amended", amendments) if amendments else ("sent", None)
 
 
-def _applied_updates(entry: LogEntry, previous_seq: int) -> list[FoldOutcome] | None:
-    """A fold's sub-updates as they landed. Reached only once the gesture is
-    accepted whole, so every outcome here is an applied one."""
-    if entry.kind != FOLD_KIND:
+def _pending_ids(payload: Mapping[str, Any]) -> list[str]:
+    """The queue entries a gesture names, in the order it named them."""
+    raw = payload.get(PENDING_KEY)
+    return [one for one in raw if isinstance(one, str)] if isinstance(raw, list) else []
+
+
+def _queue_gesture_problem(
+    event: EventSubmission, queued: Mapping[str, Proposed]
+) -> tuple[str, str] | None:
+    """Judge an apply or a dismiss against the queue it is acting on.
+
+    An id the queue does not hold is refused rather than skipped: a human told
+    their apply landed when the proposal had already been applied, dismissed or
+    never sent is exactly the acknowledgement over a silent no-op this protocol
+    exists to make impossible.
+
+    A proposal whose target the human changed while it waited is refused too,
+    and only on an apply -- dismissing one changes nothing, so there is nothing
+    to disagree with. Nothing here resolves the disagreement: the proposal stays
+    queued, and what to do about it is a conversation between the human and the
+    agent that wrote it.
+    """
+    for pending_id in _pending_ids(event.payload):
+        found = queued.get(pending_id)
+        if found is None:
+            return (
+                REASON_UNKNOWN_PENDING,
+                f"no proposal {pending_id!r} is waiting in this session's queue; it was "
+                f"already applied or dismissed, or it was never sent",
+            )
+        if found.conflicted and event.kind == APPLY_KIND:
+            return (
+                REASON_PENDING_CONFLICT,
+                f"proposal {pending_id!r} was authored at sequence {found.pending.authored_at} "
+                f"against decision {found.pending.target!r}, which the human has changed "
+                f"since; it stays queued rather than overwriting that change",
+            )
+    return None
+
+
+def _resolve(
+    payload: dict[str, Any], event: EventSubmission, queued: Mapping[str, Proposed]
+) -> dict[str, Any]:
+    """An apply, with the proposals it named resolved into the updates it carries.
+
+    Materialised before the append for the same reason a minted node id is: the
+    receipt, the fold and the durable entry then read one set of bytes. Those
+    bytes are the authoring agent's own, taken out of the queue rather than off
+    the wire, so applying is the human choosing *that* an update lands and never
+    choosing what it says.
+    """
+    if event.kind != APPLY_KIND:
+        return payload
+    return {**payload, "updates": [queued[one].update for one in _pending_ids(payload)]}
+
+
+def _applied_updates(
+    entry: LogEntry, previous_seq: int, queued: Set[str]
+) -> list[FoldOutcome] | None:
+    """What became of each update this entry carried.
+
+    A refusal cannot reach here -- the gesture is accepted whole or not at all --
+    so every outcome is `applied` or `queued`, and which it is comes from the
+    fold that has already absorbed the entry rather than from a second judgment
+    made here. A lone update that went to the queue gets an outcome too: without
+    one its receipt would say a decision moved when none did.
+    """
+    if entry.kind in FOLD_SHAPED:
+        updates = [
+            (f"{entry.idempotency_key}#{index}", update)
+            for index, update in enumerate(entry.payload.get("updates", []))
+        ]
+    elif queued:
+        updates = [(entry.idempotency_key, {**entry.payload, "kind": entry.kind})]
+    else:
         return None
     outcomes = []
-    for update in entry.payload.get("updates", []):
+    for pending_id, update in updates:
         kind = str(update.get("kind"))
         as_, amendments = _amendment(update, previous_seq)
         outcomes.append(
@@ -412,7 +518,7 @@ def _applied_updates(entry: LogEntry, previous_seq: int) -> list[FoldOutcome] | 
                 {
                     "kind": kind,
                     "target": update.get("target"),
-                    "status": "applied",
+                    "status": "queued" if pending_id in queued else "applied",
                     "as": as_,
                     "amendments": amendments,
                     "node": _echoed_node(kind, update),

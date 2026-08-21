@@ -25,11 +25,13 @@ from typing import TYPE_CHECKING
 from grillui.log import IMAGE1_FILE, IMAGE2_FILE, LOG_FILE, RESULT_FILE, read_entries
 from grillui.projector import conclusion_of, fold
 from grillui.schemas import (
+    PROPOSABLE_KINDS,
     SESSION_END_KIND,
     SESSION_START_KIND,
     CapturedDecision,
     CapturedThread,
     Decision,
+    Image2,
     LogEntry,
     OpenItem,
     References,
@@ -81,7 +83,7 @@ def capture(directory: Path, *, summarize: Summarizer = default_summary) -> Term
         references=References(log=LOG_FILE, image1=IMAGE1_FILE, image2=IMAGE2_FILE),
         decisions=[_captured(node) for node in image.decisions],
         open_items=[
-            OpenItem(id=node.id, blocker=_blocker(node, settled))
+            OpenItem(id=node.id, blocker=_blocker(node, settled, _waiting_on(image)))
             for node in image.decisions
             if node.status != "settled"
         ],
@@ -143,7 +145,22 @@ def _answer(node: Decision) -> str | None:
     return node.answer.text or node.answer.option
 
 
-def _blocker(node: Decision, settled: set[str]) -> str:
+def _waiting_on(image: Image2) -> set[str]:
+    """Decisions with a change queued against them when the session ended.
+
+    A lock has two sources and they say different things to whoever reads the
+    result: an alert is the agent flagging a question, and a queued proposal is
+    a change the human never got to. Reporting both as an alert would send them
+    looking for a warning nobody sent.
+    """
+    return {
+        item.target
+        for item in image.pending
+        if item.target and not item.superseded and item.kind in PROPOSABLE_KINDS
+    }
+
+
+def _blocker(node: Decision, settled: set[str], waiting: set[str]) -> str:
     """What stopped this decision, in the order that decides which one to say.
 
     A decision can be blocked several ways at once -- fogged behind an
@@ -154,6 +171,8 @@ def _blocker(node: Decision, settled: set[str]) -> str:
         return node.rationale or "invalidated"
     if node.status == "stale":
         return "rests on an answer that was withdrawn"
+    if node.id in waiting:
+        return "a proposed change is waiting on it"
     if node.locked:
         return "locked by a blocking alert"
     if node.status == "fogged":

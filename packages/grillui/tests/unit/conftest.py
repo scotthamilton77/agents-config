@@ -24,6 +24,8 @@ from grillui.dispatch import agent_for
 from grillui.lane import Lane
 from grillui.log import HANDOFF_FILE, LOG_FILE, SessionLog
 from grillui.schemas import (
+    APPLY_KIND,
+    PROPOSABLE_KINDS,
     TIER_KEY,
     DispatchContext,
     EventSubmission,
@@ -267,6 +269,61 @@ def post(client: TestClient, epoch: str, *events: dict[str, Any]) -> list[dict[s
     assert response.status_code == 200
     receipts: list[dict[str, Any]] = response.json()
     return receipts
+
+
+def pending_queue(client: TestClient) -> list[dict[str, Any]]:
+    """The queue as the page reads it, off the state read rather than a fold of
+    the test's own -- what the human is looking at is what the server says."""
+    response = client.get("/state")
+    assert response.status_code == 200
+    queue: list[dict[str, Any]] = response.json()["image1"]["pending"]
+    return queue
+
+
+def proposed(client: TestClient, target: str | None = None) -> list[str]:
+    """The ids of the map mutations waiting on the human, newest last.
+
+    A notice is not one of them, so the filter is on the kind rather than on
+    membership of the queue: both live there and only one is applicable.
+    """
+    return [
+        item["id"]
+        for item in pending_queue(client)
+        if item["kind"] in PROPOSABLE_KINDS and (target is None or item["target"] == target)
+    ]
+
+
+def queue_gesture(
+    client: TestClient,
+    epoch: str,
+    kind: str,
+    *pending: str,
+    key: str | None = None,
+    actor: str = "human",
+    channel: str = "map",
+) -> dict[str, Any]:
+    """The human acting on the queue: apply what the agent proposed, or end it."""
+    return post(
+        client,
+        epoch,
+        event(
+            kind,
+            actor=actor,
+            channel=channel,
+            key=key or f"{kind}-{uuid4().hex}",
+            pending=list(pending),
+        ),
+    )[0]
+
+
+def apply_all(client: TestClient, epoch: str, target: str | None = None) -> dict[str, Any]:
+    """Apply every proposal waiting, or every one against a given decision.
+
+    The gesture a test makes when its subject is what the board does afterwards
+    rather than the applying itself: without it, a test that used to write the
+    board directly as an agent would be pinning a divergence instead of a fix.
+    """
+    return queue_gesture(client, epoch, APPLY_KIND, *proposed(client, target))
 
 
 def seed_node(client: TestClient, epoch: str, node_id: str = SEED_NODE) -> str:

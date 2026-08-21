@@ -41,6 +41,7 @@ from grillui.schemas import (
     MAP_CHANNEL,
     MAP_MUTATION_KINDS,
     REASON_THREAD_MAP_MUTATION,
+    REASON_UNKNOWN_KIND,
     STATUS_KIND,
     STATUS_PHASE_COMPOSING,
     STATUS_PHASE_ERROR,
@@ -335,6 +336,52 @@ def test_a_thread_gesture_sets_that_threads_state_and_moves_no_decision(
         DONE: "folded",
     }
     assert image.decisions == before
+
+
+@pytest.mark.parametrize("kind", [THREAD_FOLD_KIND, THREAD_PARK_KIND])
+def test_a_thread_gesture_sent_on_the_map_channel_is_refused(
+    kind: str, client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given the map channel, which is not a thread
+    When a thread gesture arrives on it
+    Then it is refused and appended nowhere.
+
+    A thread gesture names its thread by the channel it arrived on, so one
+    addressed to the map names none. Accepting it is worse than a no-op: the
+    board does not move, but folding is a gesture the grill-master owes an
+    answer to, so it would spend a whole turn routing a conclusion that does
+    not exist.
+    """
+    seed_node(client, log.epoch, NODE)
+    before = log.entries()
+
+    receipt = post(client, log.epoch, event(kind, actor="human", key="k1"))[0]
+
+    assert receipt["status"] == "rejected"
+    assert receipt["reason"] == REASON_UNKNOWN_KIND
+    assert log.entries() == before
+
+
+def test_a_thread_fold_on_the_map_channel_dispatches_nothing(
+    session_dir: Path, log: SessionLog
+) -> None:
+    """
+    Given a lane with a tier attached
+    When a thread fold arrives on the map channel
+    Then no dispatch is recorded and no turn is scheduled.
+
+    The refusal is what stops the burn, and the evidence is the absence of a
+    dispatch file: a grill-master handed an empty conclusion and told to act on
+    it costs a heavy turn and answers a question nobody asked.
+    """
+    lane = Lane(log, RecordingDriver())
+
+    receipts, turns = lane.accept([turn_event(THREAD_FOLD_KIND, MAP_CHANNEL, "k1")], log.epoch)
+
+    assert [receipt.status for receipt in receipts] == ["rejected"]
+    assert turns == []
+    assert not (session_dir / "dispatches").exists()
 
 
 # ── GUI-D24 / GUI-A36: dispatch identity and what a thread agent is handed ──

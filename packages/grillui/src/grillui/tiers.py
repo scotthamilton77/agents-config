@@ -136,17 +136,34 @@ GRILL_MASTER_MANDATE = (
 # The reply contract, and the whole of how a map mutation comes to exist. It is
 # stated to the grill-master alone: a thread agent that emitted one would have it
 # refused by the appender, and telling it the shape would be inviting the refusal.
+#
+# What it must not say is that sending an update changes the board. Some land and
+# some wait for the human, the split is drawn by the backend against the board at
+# the moment the reply arrives, and a turn that believed its updates had landed
+# would tell the human a decision was settled that is sitting in their queue.
 MUTATION_FORMAT_RULE = (
-    "To change the board, reply with a JSON object carrying `text` -- what you are "
-    'saying to the human -- and `updates`, a list of map updates such as {"kind": '
-    '"revise", "target": "d1", ...}. Reply with plain prose when nothing on the board '
-    "changes. Both are one turn: the prose and the updates land together or not at all."
+    "To propose a change to the board, reply with a JSON object carrying `text` -- what you "
+    'are saying to the human -- and `updates`, a list of map updates such as {"kind": '
+    '"revise", "target": "d1", ...}. Reply with plain prose when you are proposing nothing. '
+    "Sending an update is not making the change. An update that cannot overwrite anything "
+    "the human decided lands when it arrives; one that can -- and every `unsettle` and "
+    "`invalidate`, always -- waits in their queue until they apply it, and a decision with "
+    "something waiting on it cannot be answered until they do. Your receipt says which of "
+    "yours did which, so say what you are proposing and why rather than announcing that the "
+    "board has changed."
+)
+
+BASIS_RULE = (
+    "Carry `basis`, the board's `seq` as you were given it, on each update. A proposal can "
+    "wait while the human moves, and the basis is what lets the backend tell them your change "
+    "was written against an older board rather than applying it over their work in silence."
 )
 
 SUPERSEDE_RULE = (
-    "The board carries the queue of notices the human has not dealt with yet, each with its "
-    "id. To withdraw ones you sent earlier, add `supersedes` -- a list of those ids -- beside "
-    "`text`. Withdraw rather than repeat yourself: the human is looking at that queue."
+    "The board carries the queue of what the human has not dealt with yet -- your notices and "
+    "the changes of yours still waiting -- each with its id. To withdraw ones you sent "
+    "earlier, add `supersedes` -- a list of those ids -- beside `text`. Withdraw rather than "
+    "repeat yourself: the human is looking at that queue."
 )
 
 SUPERSEDE_CONFLICT_RULE = (
@@ -157,8 +174,8 @@ SUPERSEDE_CONFLICT_RULE = (
 )
 
 REASSESS_RULE = (
-    "The human called for a full reassessment: go over every decision and every pending "
-    "notice above, say what no longer holds, and send the updates that fix it. Their board is "
+    "The human called for a full reassessment: go over every decision and everything in the "
+    "queue above, say what no longer holds, and send the updates that fix it. Their board is "
     "frozen until you answer, so do it in this turn."
 )
 
@@ -207,7 +224,7 @@ def system_prompt(tier: str, agent: str) -> str:
     """
     if agent == THREAD_AGENT:
         return "\n\n".join([THREAD_AGENT_MANDATE, SYSTEM_PROMPTS[tier]])
-    return "\n\n".join([SYSTEM_PROMPTS[tier], MUTATION_FORMAT_RULE, SUPERSEDE_RULE])
+    return "\n\n".join([SYSTEM_PROMPTS[tier], MUTATION_FORMAT_RULE, BASIS_RULE, SUPERSEDE_RULE])
 
 
 NO_BRIEFING = "No briefing was recorded for this session."
