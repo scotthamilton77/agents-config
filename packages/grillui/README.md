@@ -8,7 +8,8 @@ and drives the grilling tiers. The design it is being built to is
 ## What exists
 
 The session core, the projection, the lifecycle that brackets them, the two
-tiers that take the turns, and the side threads that run beside the map. One
+tiers that take the turns, the side threads that run beside the map, and the
+page the backend serves. One
 process owns one session directory, whose fixed file names are `log.jsonl`,
 `image1.json`, `image2.json`, `handoff.json` and `result.json`, alongside a
 `dispatches/` directory holding one file per recorded agent dispatch; the
@@ -79,9 +80,9 @@ nothing.
 Twelve modules, and the separation between them is load-bearing:
 
 - `schemas.py` — the wire, log and image shapes, the per-kind payload shapes,
-  and the closed vocabulary of the seven reasons a write can be refused for.
+  and the closed vocabulary of the nine reasons a write can be refused for.
   That vocabulary is what decides where a malformed payload lands: a fault one
-  of the seven names comes back as a typed receipt, and a fault none of them
+  of the nine names comes back as a typed receipt, and a fault none of them
   names — an add-node with one option, an invalidate with no rationale — is
   refused at the envelope with a 422, for the batch whole and before anything is
   appended.
@@ -158,7 +159,17 @@ Twelve modules, and the separation between them is load-bearing:
   submission order, and returns them without waiting on the turn it scheduled.
   `/doctor` sits beside the board routes as a control rather than a board event:
   it writes nothing into the record, and the state it reports belongs to this
-  process rather than to the log.
+  process rather than to the log. `/` serves the page out of this package's own
+  bytes, so a page and the protocol it speaks are always one build.
+- `page/index.html` — the surface. One file, no build and no dependencies,
+  which is what the reference prototype was and what a page served off disk can
+  afford. Its board is the state read and nothing else: it never folds the log
+  into decisions, statuses or a queue, and it never re-derives which of an
+  agent's changes waited — that is the backend's answer, made when the change
+  arrived, and the page renders the queue it is handed. It emits eight kinds
+  through one checked constructor against a table it ships, so what it can say
+  is readable out of its own source and is checked against the backend's
+  accepted set by the suite.
 
 The update kinds are complete. An add-node mints its node id from the sequence
 it lands at — deterministic, because the receipt echoes the node the fold will
@@ -170,14 +181,26 @@ state in which half of it landed, and its receipt says what became of each
 sub-update — applied, refused with its own reason, or vetoed by a refused
 sibling.
 
-Not built yet: the transfer-to-expert control itself (a channel's tier is
-already per-channel state, set by the transfer flag on the human's own turn and
-carried into the dispatch, but no page surface raises the recommendation or
-activates the transfer, and nothing yet flips the control's label back), session
-control, the single agent pass behind capture's summarizer seam, the page half
-of the pending surface and of the map doctor — dropping a superseded notice, and
-the modal that refuses board mutations while a reassessment is outstanding — port
-fallback and browser handoff, and the UI itself.
+The page carries the reference surface forward onto this protocol: the map
+beside one blended column with focus sync both ways, the inbox of changes that
+have not landed against a notification list of what has, target locks on a
+decision something is waiting on, conflict paint that is loud only on the
+decision in dispute, mandated threads that conclude or are abandoned but never
+parked, fold-readiness declared by the agent with its impact behind a control,
+bubble overlays, and one scroll intent per human action. A refused write raises
+a banner naming the typed reason and saying plainly that the message was not
+recorded and no agent will answer it.
+
+Not built yet: the transfer-to-expert control (a channel's tier is already
+per-channel state, set by the transfer flag on the human's own turn and carried
+into the dispatch, but no page surface raises the recommendation or activates
+the transfer, and nothing yet flips the control's label back), session control
+and single-main-window enforcement, the channel-state model and its diagnostic
+surface, the single agent pass behind capture's summarizer seam, port fallback
+and browser handoff, and the page's own polish mandates — the waiting indicator
+and its timer, message timestamps everywhere, floating thread chrome,
+hover-hide-on-click across every overlay, the three-way connection indicator,
+and notification read-state with mark-all-read.
 
 ## Development
 
