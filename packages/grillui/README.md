@@ -91,9 +91,9 @@ session back to whoever is still asking rather than locking anyone out.
 The modules, and the separation between them is load-bearing:
 
 - `schemas.py` — the wire, log and image shapes, the per-kind payload shapes,
-  and the closed vocabulary of the nine reasons a write can be refused for.
+  and the closed vocabulary of the ten reasons a write can be refused for.
   That vocabulary is what decides where a malformed payload lands: a fault one
-  of the nine names comes back as a typed receipt, and a fault none of them
+  of the ten names comes back as a typed receipt, and a fault none of them
   names — an add-node with one option, an invalidate with no rationale — is
   refused at the envelope with a 422, for the batch whole and before anything is
   appended.

@@ -27,6 +27,7 @@ from grillui.schemas import (
     REASON_UNKNOWN_KIND,
     REASON_UNKNOWN_NODE,
     REASON_UNKNOWN_PENDING,
+    REASON_UNKNOWN_THREAD,
     REJECTION_REASONS,
 )
 
@@ -160,6 +161,14 @@ def _refuse_thread_map_mutation(client: TestClient, log: SessionLog) -> dict[str
     )[0]
 
 
+def _refuse_unknown_thread(client: TestClient, log: SessionLog) -> dict[str, Any]:
+    return post(
+        client,
+        log.epoch,
+        event("thread-fold", actor="human", channel="no-such-thread", key="k1", impact=[]),
+    )[0]
+
+
 def _refuse_unknown_pending(client: TestClient, log: SessionLog) -> dict[str, Any]:
     return queue_gesture(client, log.epoch, APPLY_KIND, "no-such-proposal#0", key="k1")
 
@@ -202,6 +211,7 @@ REFUSALS: dict[str, Callable[[TestClient, SessionLog], dict[str, Any]]] = {
     REASON_THREAD_WITHOUT_TURN: _refuse_thread_without_turn,
     REASON_THREAD_MAP_MUTATION: _refuse_thread_map_mutation,
     REASON_UNKNOWN_PENDING: _refuse_unknown_pending,
+    REASON_UNKNOWN_THREAD: _refuse_unknown_thread,
     REASON_PENDING_CONFLICT: _refuse_pending_conflict,
 }
 

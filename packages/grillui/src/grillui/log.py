@@ -93,11 +93,14 @@ class LogIndex:
     last_seq: int = 0
     keys: dict[str, int] = field(default_factory=dict)
     nodes: set[str] = field(default_factory=set)
+    threads: set[str] = field(default_factory=set)
 
     def absorb(self, entry: LogEntry) -> None:
         self.last_seq = entry.seq
         self.keys[entry.idempotency_key] = entry.seq
-        if entry.kind == "add-node":
+        if entry.kind == "thread-created":
+            self.threads.add(entry.channel)
+        elif entry.kind == "add-node":
             self._mint(entry.payload)
         elif entry.kind == SESSION_START_KIND:
             # A decision the briefing seeded is a decision on the board, so an
@@ -243,7 +246,7 @@ class SessionLog:
         if landed is not None:
             return DuplicateReceipt(idempotency_key=key, epoch=self.epoch, seq=landed)
 
-        problem = rejection_reason(event, self._index.nodes)
+        problem = rejection_reason(event, self._index.nodes, self._index.threads)
         queued = self._queue() if event.kind in QUEUE_GESTURE_KINDS else {}
         if problem is None and event.kind in QUEUE_GESTURE_KINDS:
             problem = _queue_gesture_problem(event, queued)

@@ -65,6 +65,12 @@ REASON_THREAD_MAP_MUTATION = "map mutation from thread agent"
 REASON_UNKNOWN_PENDING = "unknown pending update"
 REASON_PENDING_CONFLICT = "pending update conflicts with the board"
 
+# A thread gesture names its thread by the channel it arrives on, so one
+# naming a channel no thread-created ever opened names nothing: accepting it
+# writes an ending for a conversation that never happened, and the gesture
+# vanishes without the sender learning the id was wrong.
+REASON_UNKNOWN_THREAD = "unknown thread id"
+
 REJECTION_REASONS = frozenset(
     {
         REASON_MISSING_KEY,
@@ -76,6 +82,7 @@ REJECTION_REASONS = frozenset(
         REASON_THREAD_MAP_MUTATION,
         REASON_UNKNOWN_PENDING,
         REASON_PENDING_CONFLICT,
+        REASON_UNKNOWN_THREAD,
     }
 )
 
@@ -1008,6 +1015,8 @@ def _sub_update_problem(
             payload={key: value for key, value in update.items() if key != "kind"},
         ),
         nodes,
+        # A fold carries no thread event, so no thread id is ever judged here.
+        frozenset(),
     )
 
 
@@ -1035,7 +1044,9 @@ def mint_targets(payload: Mapping[str, Any], kind: str, seq: int) -> dict[str, A
     return minted
 
 
-def rejection_reason(submission: EventSubmission, known_nodes: Set[str]) -> tuple[str, str] | None:
+def rejection_reason(
+    submission: EventSubmission, known_nodes: Set[str], known_threads: Set[str]
+) -> tuple[str, str] | None:
     """Judge one submission's content, returning `(reason, detail)` or None.
 
     The missing-key and epoch-mismatch reasons are decided by the appender,
@@ -1053,6 +1064,13 @@ def rejection_reason(submission: EventSubmission, known_nodes: Set[str]) -> tupl
 
     if submission.kind in THREAD_GESTURE_KINDS and submission.channel == MAP_CHANNEL:
         return _map_channel_thread_gesture(submission)
+
+    if submission.kind in THREAD_GESTURE_KINDS and submission.channel not in known_threads:
+        return (
+            REASON_UNKNOWN_THREAD,
+            f"{submission.kind!r} names its thread by its channel, and no thread has been "
+            f"created on channel {submission.channel!r}",
+        )
 
     if submission.kind in MAP_MUTATION_KINDS and (
         submission.actor == "thread-agent" or submission.channel != MAP_CHANNEL
