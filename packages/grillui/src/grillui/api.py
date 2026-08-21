@@ -16,13 +16,21 @@ board event: it writes nothing into the record and its state is a property of
 this process, not of the log. It is not a kind on the write route because that
 vocabulary is closed and a control that reassesses everything is not something
 an agent says.
+
+The surface itself is served from here too, off the package's own bytes. It is
+a program this process hands out rather than an asset anything installs, so a
+page and the backend it talks to are always the same build -- and the page is
+reached on the same origin as the routes it reads, which is what lets it name
+them by path alone.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 
 from grillui.capture import default_summary
 from grillui.lane import Lane
@@ -52,6 +60,8 @@ if TYPE_CHECKING:
 
 STALE_EPOCH_STATUS = 409
 MALFORMED_PAYLOAD_STATUS = 422
+
+PAGE = Path(__file__).parent / "page" / "index.html"
 
 
 def create_app(
@@ -85,6 +95,16 @@ def create_app(
                 status_code=STALE_EPOCH_STATUS,
                 detail=f"server epoch is {log.epoch!r}, presented epoch was {presented!r}",
             )
+
+    @app.get("/", include_in_schema=False)
+    def read_page() -> FileResponse:
+        """The surface, from this package's own bytes.
+
+        Serving it here rather than shipping it as an installed asset is what
+        keeps a page and the protocol it speaks one version: there is no copy
+        on disk that a backend restart can leave behind.
+        """
+        return FileResponse(PAGE, media_type="text/html")
 
     @app.get("/status")
     def read_status() -> SessionStatus:
