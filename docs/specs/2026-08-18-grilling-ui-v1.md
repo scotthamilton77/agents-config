@@ -35,7 +35,7 @@ agent that authors changes to it. A *thread agent* serves one side thread. The *
 decision is *settled* once answered; the *frontier* is the set of decisions answerable now;
 *fog* masks decisions whose prerequisites are unmet; a *thread* is a side conversation
 anchored to a decision or to the session itself, *parked* when set aside as a loose end
-the human may return to, *closed* when the human is done with it, and *folded* when its
+that the human may return to, *closed* when the human is done with it, and *folded* when its
 conclusion is applied to the board — *fold-readiness* is the agent declaring that a thread
 has reached an applicable conclusion. A *channel* is one conversational lane between the
 page and an agent: one for the map, one per thread. In the handoff file, *impetus* is why
@@ -139,7 +139,8 @@ gesture removes anything — the log is append-only, and both cross as page-emit
 kinds in the closed set of §8.3. The terminal result distinguishes the two (§8.7), on a
 live end-session and a capture run alike, because a thread the human finished with and a
 thread they meant to return to are different facts about the session. Both act on the
-thread itself and are distinct from dismissing its panel.
+thread itself; the panel's close control (GUI-U4) merely dismisses the view and is
+neither gesture.
 
 **GUI-D23 — Capture is a code-heavy skill operating on a session directory.** Its core is
 the clean decision-log projection: pure code folding the log into the structured part of
