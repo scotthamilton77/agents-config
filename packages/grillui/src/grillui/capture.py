@@ -55,13 +55,22 @@ def default_summary(result: TerminalResult) -> str:
     Deterministic on purpose: the v1 default has to hold the seam open without
     making the result depend on a model being reachable, so what it says is
     counted rather than composed.
+
+    A parked thread is named here and a closed one is not, which is the whole
+    difference between the two gestures at the end of a session: parking says
+    the human may come back to it, so it is raised as unfinished business, and
+    closing says they are done, so nothing raises it. Any summarizer plugged
+    into this seam holds to the same rule -- a closed thread stays a line item
+    in `threads` and is never woven into what is still open.
     """
     settled = [decision for decision in result.decisions if decision.status == "settled"]
+    parked = [thread.title or thread.id for thread in result.threads if thread.state == "parked"]
+    loose = f" Still open to come back to: {', '.join(parked)}." if parked else ""
     return (
         f"{result.session.title or result.session.id}: "
         f"{len(settled)} of {len(result.decisions)} decisions settled, "
         f"{len(result.open_items)} left open, "
-        f"{len(result.threads)} side threads. {result.stop_reason}."
+        f"{len(result.threads)} side threads. {result.stop_reason}.{loose}"
     )
 
 

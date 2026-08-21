@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from conftest import SpyDriver, apply_all, driven, event, handoff_doc, write_handoff
 
 from grillui.api import create_app
@@ -608,3 +609,91 @@ def test_a_thread_anchored_to_no_decision_reaches_the_result_like_any_other(
         (one.id, one.title, one.state, one.conclusion) for one in result.threads
     ]
     assert [one.id for one in result.open_items] == ["d1", "d2"]
+
+
+# ── GUI-D29 / GUI-A55: what the end of a session makes of each gesture ──
+
+PARKED_THREAD = "t-backups"
+CLOSED_THREAD = "t-naming"
+PARKED_TITLE = "What backs the directory up"
+CLOSED_TITLE = "What the files are called"
+
+
+def lifecycle_session(session_dir: Path) -> None:
+    """One session carrying one parked thread and one closed one, ended by the
+    human -- so the live result and a capture run are reading one log."""
+    log = started(session_dir)
+    client = driven(log, SpyDriver())
+    for channel, title, gesture in (
+        (PARKED_THREAD, PARKED_TITLE, "thread-park"),
+        (CLOSED_THREAD, CLOSED_TITLE, "thread-close"),
+    ):
+        client.post(
+            "/events",
+            json={
+                "epoch": log.epoch,
+                "events": [
+                    event(
+                        "thread-created",
+                        actor="human",
+                        channel=channel,
+                        key=f"opened-{channel}",
+                        decision="d1",
+                        kind="user",
+                        title=title,
+                        turns=[{"text": f"About {title.lower()}?"}],
+                    )
+                ],
+            },
+        )
+        client.post(
+            "/events",
+            json={
+                "epoch": log.epoch,
+                "events": [
+                    event(gesture, actor="human", channel=channel, key=f"{gesture}-{channel}")
+                ],
+            },
+        )
+    assert end(client, log.epoch)["status"] == "accepted"
+
+
+def read_live(session_dir: Path) -> TerminalResult:
+    """What the backend wrote when the human ended the session."""
+    return _result(session_dir)
+
+
+def read_captured(session_dir: Path) -> TerminalResult:
+    """The same directory, folded again by a run nothing is serving."""
+    return capture(session_dir)
+
+
+@pytest.mark.parametrize("read", [read_live, read_captured], ids=["live", "capture"])
+def test_a_parked_thread_is_a_loose_end_and_a_closed_one_is_a_line_item(
+    read: Any, session_dir: Path
+) -> None:
+    """
+    Given one session in which the human parked one thread and closed another
+    When the terminal result is read -- from the live end-session write, and
+         from a capture run over the same directory
+    Then both threads are line items carrying the state their gesture set, the
+         parked one is raised as still open, and nothing raises the closed one.
+
+    Asserted the same way through both readers because it is one claim: the
+    result an agent is handed as the session ends and the result a capture
+    produces next week have to say the same thing about what the human
+    finished with. A closed thread that came back as unfinished business would
+    hand them the work they had just declared done.
+    """
+    lifecycle_session(session_dir)
+
+    result = read(session_dir)
+
+    states = {one.id: one.state for one in result.threads}
+    assert states == {PARKED_THREAD: "parked", CLOSED_THREAD: "closed"}, states
+    # The closed thread is on the record and nowhere else: not among the open
+    # items, and not in the prose that says what is still unfinished.
+    named_open = {one.id for one in result.open_items} | {one.blocker for one in result.open_items}
+    assert CLOSED_THREAD not in named_open and CLOSED_TITLE not in named_open
+    assert CLOSED_TITLE not in result.summary and CLOSED_THREAD not in result.summary
+    assert PARKED_TITLE in result.summary, "the parked thread was not raised as a loose end"

@@ -37,6 +37,10 @@ open item is waiting on, and what the threads concluded.
 Bound it to a briefing. It is never a transcript, never a decision-by-decision walk, and
 never longer than the structured result it summarises.
 
+Each thread carries the state the human left it in. A parked one is a loose end they may
+come back to, so raise it as unfinished; a closed one is a line item they are done with,
+so nothing in the summary raises it. A folded one is a line item carrying its conclusion.
+
 ## 3. Hand it over
 
 Report the summary and the open items, and give the paths the result references for

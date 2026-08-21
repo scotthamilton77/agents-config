@@ -77,7 +77,9 @@ Answer questions about it without reading any file:
 - A **map** of the plan's decisions, each opening into its question with the labelled
   options and a free-text note; answering one settles it and opens whatever waited on it.
 - **Threads** beside the map for side discussions, each with its own agent. A thread is
-  folded back into the map when it concludes, or parked.
+  folded back into the map when it concludes, parked as a loose end the human may come
+  back to, or closed because they are done with it. Nothing is taken away by any of the
+  three, and a closed thread opens again if the human says something in it.
 - A **transfer-to-expert** control per channel, moving that conversation from the fast
   agent to the heavy one; it highlights when the agent recommends escalating.
 - A **pending queue** of changes the agents propose to the map: the human applies or
@@ -93,6 +95,10 @@ Answer questions about it without reading any file:
 Stdout is the terminal result: the session's identity, `references` to the files it left
 behind, every decision with its answer and status, the open items each with the blocker
 that has to move first, the threads with their conclusions, and a summary.
+
+Each thread carries the state the human left it in. A parked one is still open to them, so
+report it with what is unfinished; a closed one is a line item and never anything they
+still owe. Do not hand back work they declared done.
 
 Report the summary, what was settled, and what is still open with why. Point at the
 session directory for the rest, and leave it there — the log and the recorded dispatches

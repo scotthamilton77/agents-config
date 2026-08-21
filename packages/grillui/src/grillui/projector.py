@@ -28,6 +28,15 @@ on an accepted entry takes the session down with it.
 | `dismiss`       | the proposals it names leave the queue, having changed nothing |
 | `thread-fold`   | its channel's thread is `folded`; no decision moves            |
 | `thread-park`   | its channel's thread is `parked`; no decision moves            |
+| `thread-close`  | its channel's thread is `closed`; no decision moves            |
+
+A human turn on a closed thread opens it again. Re-opening rides the turn path
+rather than a gesture of its own because saying something in a thread the human
+had finished with *is* picking it back up: a separate gesture would be a second
+way to say the same thing, and a closed thread that took a turn and stayed
+closed would drop that turn out of the end-of-session reckoning. An agent's
+turn does not re-open one -- what the human is done with is not the agent's to
+re-open.
 
 Two of those rules are this projector's to state rather than the protocol's.
 *Dependent staleness*: unsettling a decision makes every settled decision that
@@ -104,7 +113,9 @@ from grillui.schemas import (
     PROPOSABLE_KINDS,
     SESSION_START_KIND,
     SUPERSEDES_KEY,
+    THREAD_CLOSE_KIND,
     THREAD_FOLD_KIND,
+    THREAD_GESTURE_KINDS,
     THREAD_PARK_KIND,
     Answer,
     Decision,
@@ -119,6 +130,7 @@ from grillui.schemas import (
     SupersedeConflict,
     Thread,
     ThreadProjection,
+    ThreadState,
     ThreadStub,
     read_turns,
 )
@@ -311,7 +323,7 @@ def _apply(
         _create_thread(board, entry)
     elif kind == "thread-turn":
         _append_turns(board, entry)
-    elif kind in {THREAD_FOLD_KIND, THREAD_PARK_KIND}:
+    elif kind in THREAD_GESTURE_KINDS:
         _set_thread_state(board, entry, kind)
     _record_history(board, entry, kind, payload)
 
@@ -330,7 +342,7 @@ def to_image1(image: Image2) -> Image1:
 
 def conclusion_of(thread: Thread) -> str | None:
     """A folded thread's conclusion: the turn whose content was applied to the
-    board. An open or parked thread has reached none.
+    board. A thread that is open, parked or closed has reached none.
 
     One reader, because the conclusion is quoted in three places -- the stub a
     sibling thread's agent sees, the dispatch that hands it to the grill-master,
@@ -682,18 +694,28 @@ def _append_turns(board: _Board, entry: LogEntry) -> None:
         thread = Thread(id=thread_id)
         board.threads[thread_id] = thread
     thread.turns = [*thread.turns, *read_turns(entry.payload, entry.actor, entry.timestamp)]
+    if thread.state == "closed" and entry.actor == "human":
+        thread.state = "open"
+
+
+_GESTURE_STATE: dict[str, ThreadState] = {
+    THREAD_FOLD_KIND: "folded",
+    THREAD_PARK_KIND: "parked",
+    THREAD_CLOSE_KIND: "closed",
+}
 
 
 def _set_thread_state(board: _Board, entry: LogEntry, kind: str) -> None:
     """The human's gesture on a thread, which is the only thing that ends one.
 
-    A thread nobody opened is nothing to fold or park -- the gesture names its
-    thread by the channel it arrived on, and a channel holding no thread is an
-    entry the fold contributes nothing from rather than one it raises over.
+    A thread nobody opened is nothing to fold, park or close -- the gesture
+    names its thread by the channel it arrived on, and a channel holding no
+    thread is an entry the fold contributes nothing from rather than one it
+    raises over.
     """
     thread = board.threads.get(_thread_id(entry))
     if thread is not None:
-        thread.state = "folded" if kind == THREAD_FOLD_KIND else "parked"
+        thread.state = _GESTURE_STATE[kind]
 
 
 def _record_history(

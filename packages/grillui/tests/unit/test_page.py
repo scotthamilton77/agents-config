@@ -232,6 +232,7 @@ SHAPES: dict[str, tuple[str, dict[str, Any]]] = {
     "thread-turn": (THREAD, {"turns": turns("Say more.")}),
     "thread-fold": (THREAD, {}),
     "thread-park": (THREAD, {}),
+    "thread-close": (THREAD, {}),
     "apply": (MAP_CHANNEL, {"pending": ["nothing-waiting"]}),
     "dismiss": (MAP_CHANNEL, {"pending": ["nothing-waiting"]}),
     "session-end": (MAP_CHANNEL, {}),
@@ -974,6 +975,63 @@ def test_the_popped_window_offers_the_same_seeds_as_the_pane() -> None:
     bridge = page_source().split("window.popAct = function", 1)[1].split("\n};", 1)[0]
     assert 'act === "seed"' in bridge
     assert "(thread(tid) || {}).decision" in bridge, "the decision comes from the popped button"
+
+
+# ---------------------------------------------------------------- the two thread gestures
+
+
+def test_closing_a_thread_is_offered_beside_parking_it_wherever_parking_is() -> None:
+    """The two are one choice -- come back to this, or be done with it -- and a
+    choice with one option on screen is not one.
+
+    Counted against the branches of the pane's foot rather than against a
+    number written here: a foot that grew a third branch offering park alone
+    would leave the human able to set a thread aside and unable to finish with
+    it, in exactly the state the terminal result then reports as unfinished.
+    """
+    foot = balanced_body("threadBody")
+    assert foot.count('data-act="park"') == foot.count("closeControl(tid)"), (
+        "a branch offers park without close"
+    )
+    assert foot.count('data-act="park"') == 2, "the foot's park branches were not read"
+    control = function_body("closeControl")
+    assert 'data-act="closethread"' in control
+    assert "esc(tid)" in control, "the control names its thread unescaped"
+    # The panel's own ✕ dismisses the view and is neither gesture, so the two
+    # are spelled differently on purpose.
+    assert 'data-act="close"' not in page_source(), "the gesture and the panel dismiss collide"
+
+
+def test_the_popped_window_can_close_the_thread_it_is_showing() -> None:
+    """The popped pane renders the same foot, so its close has to reach the same
+    handler or it is a button that does nothing in that window."""
+    bridge = page_source().split("window.popAct = function", 1)[1].split("\n};", 1)[0]
+    assert 'act === "closethread"' in bridge
+    assert "closeThread(tid)" in bridge
+
+
+def test_a_closed_thread_keeps_the_box_that_opens_it_again() -> None:
+    """Re-opening rides the turn, so the box is the whole affordance.
+
+    A parked or folded thread keeps no box: neither re-opens, and a box whose
+    turn changed nothing would be the page offering a way back the fold does
+    not have. Both boxes are built by one reader, since an open thread and a
+    closed one take the same turn on the same channel.
+    """
+    pane = balanced_body("threadBody")
+    assert 'var closed = t.state === "closed";' in pane
+    assert 'closed ? sayBox(sayId, tid) : ""' in pane, "a closed thread has no way back"
+    assert pane.count("sayBox(sayId, tid)") == 2, "the two boxes are not one reader"
+    box = function_body("sayBox")
+    assert 'data-act="say"' in box and 'data-send="say"' in box
+    assert "say" in write_acts(), "a closed session still offers to re-open a thread"
+
+
+def test_closing_a_thread_is_a_write_the_ended_surface_takes_away() -> None:
+    """The gesture writes to the log, so an ended board must stop offering it --
+    the same rule park is held to."""
+    assert "closethread" in write_acts()
+    assert "closeThread(tid)" in click_cases()["closethread"]
 
 
 # ---------------------------------------------------------------- GUI-A45

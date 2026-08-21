@@ -47,7 +47,7 @@ ACTORS: frozenset[str] = frozenset(get_args(Actor))
 # the record talking about itself rather than an agent talking on a channel.
 AGENT_ACTORS: frozenset[str] = frozenset({"grill-master", "thread-agent"})
 DecisionStatus = Literal["open", "settled", "invalidated", "stale", "fogged"]
-ThreadState = Literal["open", "parked", "folded"]
+ThreadState = Literal["open", "parked", "closed", "folded"]
 
 # The closed rejection vocabulary. `epoch mismatch` is named verbatim by the
 # protocol; the rest are this package's wording for the same closed set.
@@ -121,14 +121,22 @@ PROPOSABLE_KINDS = frozenset(
     {"add-node", "revise", "invalidate", "settle", "unsettle", "resolve-stale"}
 )
 
-# What the human does *to* a thread rather than in it. Neither carries a turn,
-# so neither is judged by the reader that asks whether a thread event said
-# anything, and neither is a map mutation: folding a thread's conclusion into
+# What the human does *to* a thread rather than in it. None of them carries a
+# turn, so none is judged by the reader that asks whether a thread event said
+# anything, and none is a map mutation: folding a thread's conclusion into
 # the board is the grill-master's to author, on its own channel, after the
 # backend hands it the conclusion.
+#
+# Parking and closing are the two lifecycle gestures, and they say different
+# things about the same thread. Parking sets it aside as a loose end the human
+# may come back to; closing declares them done with it, so it is never carried
+# to the end of the session as unfinished and no agent raises it again. Neither
+# removes anything: the turns stay readable, and a human turn on a closed
+# thread opens it again, which is why closing needs no undo gesture of its own.
 THREAD_FOLD_KIND = "thread-fold"
 THREAD_PARK_KIND = "thread-park"
-THREAD_GESTURE_KINDS = frozenset({THREAD_FOLD_KIND, THREAD_PARK_KIND})
+THREAD_CLOSE_KIND = "thread-close"
+THREAD_GESTURE_KINDS = frozenset({THREAD_FOLD_KIND, THREAD_PARK_KIND, THREAD_CLOSE_KIND})
 NOTICE_KINDS = frozenset({"informational", "elicit-alert"})
 GESTURE_KINDS = frozenset({"answer"})
 

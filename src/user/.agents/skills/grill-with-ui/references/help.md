@@ -39,14 +39,21 @@ the held answer; *Abandon the answer* drops it and the decision returns to open.
 closing an empty pane creates nothing. Each thread has its own agent and its own memory;
 what is said in one is not in another.
 
-- **Park** — set it aside, no effect on the board, kept on the record.
+- **Park** — set it aside as something you may come back to. No effect on the board, kept
+  on the record.
+- **Close** — you are done with it. No effect on the board, kept on the record, and
+  saying something in it later opens it again.
 - **Fold** — conclude it and hand the conclusion to the agent that owns the map. It is
   offered once the agent has declared something foldable, and the pane previews what
   folding would do.
 - **Pop out** — the same pane in its own window.
 
-A parked thread is one of the session's open loose ends when the session ends; a folded
-one is a line item.
+None of these takes anything away: whatever was said in a thread stays readable on the
+board.
+
+When the session ends, a parked thread is one of its open loose ends and the agents may
+raise it again. A closed one is a line item and nothing raises it. A folded one is a line
+item carrying what it concluded.
 
 The help thread is a thread like any of these, except that it hangs off no decision.
 
