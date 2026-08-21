@@ -15,6 +15,11 @@ to name the agent is a caller free to name the wrong one, and a thread
 dispatch labelled `grill-master` is a map mutation waiting to be authored by
 the wrong context.
 
+One thread is not about the plan at all: the one anchored to no decision, where
+the human asks how the board itself works. Its dispatch carries the reference
+material the orchestrator shipped, and no other dispatch does -- an agent
+grilling a design has no use for it and would only be paying for it.
+
 That guarantee is worth nothing unasserted, so it is checked on the way out and
 the check is what the completeness test reads: every context is recorded under
 the session directory's `dispatches/`, one file per dispatch, and a context
@@ -31,13 +36,19 @@ import os
 from typing import TYPE_CHECKING
 
 from grillui.projector import conclusion_of, fold, project_thread, whole_board
-from grillui.schemas import MAP_CHANNEL, DispatchContext, ThreadConclusion
+from grillui.schemas import (
+    MAP_CHANNEL,
+    SESSION_START_KIND,
+    DispatchContext,
+    ThreadConclusion,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from grillui.log import SessionLog
-    from grillui.schemas import Image2, SupersedeConflict, ThreadProjection
+    from grillui.schemas import Image2, LogEntry, SupersedeConflict, ThreadProjection
 
 DISPATCH_DIR = "dispatches"
 GRILL_MASTER = "grill-master"
@@ -72,6 +83,7 @@ def assemble(
     concluding: str | None = None,
     conflict: SupersedeConflict | None = None,
     reassess: bool = False,
+    help_reference: str | None = None,
 ) -> str:
     """One dispatch context, serialised, carrying the whole of what it owes.
 
@@ -84,6 +96,12 @@ def assemble(
     withdrawal the human got in front of, and the map doctor. Each says so in
     the context, because the board alone does not -- a turn left to infer why it
     was called would be inferring it from a board that looks unchanged.
+
+    `help_reference` is the material the orchestrator shipped about driving the
+    board. It is the caller's to hand in rather than this module's to look up,
+    for the same reason the agent is not: a context is assembled from what it
+    was given, and reaching back into the log for one field would give this
+    function a second source of truth to disagree with.
 
     The pending queue rides inside the image either way, which is what makes
     every one of these dispatches carry the queue as of the moment it was folded.
@@ -98,6 +116,7 @@ def assemble(
         conclusion=_conclusion(image, concluding),
         conflict=conflict,
         reassess=reassess,
+        help_reference=help_reference,
     )
     recorded = context.model_dump_json()
     # The map dispatch is checked against the source image, not the projection
@@ -143,13 +162,40 @@ def record_dispatch(
     agent got, not a reconstruction of what it should have got -- including the
     pending queue, which is folded here and not read from anything cached.
     """
-    image = fold(log.epoch, log.entries())
+    entries = log.entries()
+    image = fold(log.epoch, entries)
     recorded = assemble(
-        image, channel=channel, concluding=concluding, conflict=conflict, reassess=reassess
+        image,
+        channel=channel,
+        concluding=concluding,
+        conflict=conflict,
+        reassess=reassess,
+        help_reference=help_reference(entries, image, channel),
     )
     directory = log.directory / DISPATCH_DIR
     directory.mkdir(parents=True, exist_ok=True)
     return _claim_and_write(directory, recorded)
+
+
+def help_reference(entries: Sequence[LogEntry], image: Image2, channel: str) -> str | None:
+    """The board's own reference material, for the one channel that is about it.
+
+    A thread anchored to no decision is the human asking about the tool rather
+    than about the plan, and it is the only channel this material is handed to:
+    on a decision's thread or on the map it would be context spent on a
+    question nobody is asking. The material comes out of the log's opening
+    entry, like every other thing the briefing said -- the handoff file has no
+    authority once the session is under way, so a resumed session and a fresh
+    one prime that thread identically.
+    """
+    if channel == MAP_CHANNEL:
+        return None
+    thread = next((one for one in image.threads if one.id == channel), None)
+    if thread is None or thread.decision is not None:
+        return None
+    opening = next((entry for entry in entries if entry.kind == SESSION_START_KIND), None)
+    reference = None if opening is None else opening.payload.get("help_reference")
+    return reference if isinstance(reference, str) and reference else None
 
 
 def _claim_and_write(directory: Path, recorded: str) -> Path:

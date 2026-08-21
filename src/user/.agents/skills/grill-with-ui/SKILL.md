@@ -37,9 +37,16 @@ fill it in.
        "options": [{"id": "a", "text": "your recommendation"},
                    {"id": "b", "text": "the alternative worth arguing"}]}
     ]
-  }
+  },
+  "help_reference": "<the whole text of references/help.md>"
 }
 ```
+
+`session.title` is what the board's header says, so name the session the way the human
+would. `help_reference` is the contents of `references/help.md`, copied in whole: it is
+what backs the board's Help control, and the human's side thread there is answered by an
+agent primed with it. Ship it every time — without it the control is not offered at all,
+and the human has nobody to ask how the board works.
 
 Two to three options per decision, labelled `a`, `b`, `c` in order, the first one your
 recommendation. Every id in `prereqs` names another decision in the same plan, and the
@@ -75,6 +82,9 @@ Answer questions about it without reading any file:
   agent to the heavy one; it highlights when the agent recommends escalating.
 - A **pending queue** of changes the agents propose to the map: the human applies or
   dismisses each. Nothing an agent says rewrites the board on its own.
+- **Help**, upper right — a side thread on the session rather than on any decision,
+  answered by an agent holding the reference material you shipped. That is where "why is
+  this blocking me" goes, so you do not have to answer it from here.
 - **End session** — the only way the session ends. It writes the terminal result, stops
   the backend, and returns you your command.
 

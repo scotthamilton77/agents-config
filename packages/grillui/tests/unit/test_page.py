@@ -37,7 +37,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from conftest import event, post, seed_node
+from conftest import event, handoff_doc, post, seed_node
 from fastapi.testclient import TestClient
 
 import grillui
@@ -65,10 +65,12 @@ from grillui.schemas import (
     RECOMMENDATION_KEY,
     REJECTION_REASONS,
     SESSION_END_KIND,
+    SESSION_START_KIND,
     STATUS_PHASES,
     THREAD_GESTURE_KINDS,
     TIER_KEY,
     TRANSFER_FLAG,
+    Handoff,
 )
 
 PAGE_PATH = Path(grillui.__file__).parent / "page" / "index.html"
@@ -2005,3 +2007,242 @@ def test_the_decision_column_names_itself_and_says_nothing_further() -> None:
     column = function_body("renderColumn")
     assert "tree order" not in column and "re-sorts" not in column
     assert '<div class="card"><h3>Decisions</h3>' in column
+
+
+# ----------------------------------------------------------------- GUI-A57
+# The header, and the thread that is about the board rather than about the plan.
+
+
+MARKUP_TITLE = "Store <img src=x onerror=\"document.title='markup ran'\"> design"
+REFERENCE = "Answering a decision opens whatever waited on it. Park a thread to set it aside."
+HELP_THREAD = "t-help"
+
+
+def _opened(log: Any, **overrides: Any) -> dict[str, Any]:
+    """A session's opening entry, as the backend appends it from a briefing.
+
+    Appended by the backend rather than posted: starting a session is not a
+    kind any client may send, so a briefing that arrived over the wire would
+    never reach the log at all.
+    """
+    document: dict[str, Any] = handoff_doc(**overrides)
+    log.record(SESSION_START_KIND, document)
+    return document
+
+
+def _opening(client: TestClient, epoch: str) -> dict[str, Any]:
+    """The briefing as the page reads it: off the update read, from the start."""
+    read = client.get("/updates", params={"epoch": epoch, "cursor": 0}).json()
+    found = [one for one in read["entries"] if one["kind"] == SESSION_START_KIND]
+    assert found, "the opening entry is not in what the page reads"
+    payload: dict[str, Any] = found[0]["payload"]
+    return payload
+
+
+def _intro() -> str:
+    """The header block the shell writes, out of the page's own source."""
+    body = function_body("renderShell")
+    assert '<div class="intro">' in body, "the shell writes no header"
+    return body.split('<div class="intro">', 1)[1].split("banners", 1)[0]
+
+
+def test_the_header_is_the_sessions_own_name_and_nothing_else() -> None:
+    """
+    Given the shell's header block
+    When it is read out of the page's source
+    Then it renders the session's title, escaped, and no prose beside it.
+
+    The paragraph that used to sit here explained who owns the log and how to
+    drive the board -- an explanation every human reads past on the way to the
+    first decision, in the one place they look to learn what this session is.
+    What it said is the help thread's to say, when asked.
+    """
+    intro = _intro()
+    assert "esc(sessionTitle())" in intro, "the header does not name the session"
+    assert "<p>" not in intro, "the header still carries a paragraph"
+    assert "holds the log, assigns every sequence" not in page_source()
+    assert "The backend owns this session" not in page_source()
+
+
+def test_the_title_comes_from_the_briefing_the_backend_recorded() -> None:
+    """
+    Given the page's title reader
+    When its source is read
+    Then it takes the title off the log's opening entry, under the backend's
+    own name for that entry, and falls back to a generic header without one.
+
+    The title is not on image 1 and is not board state: it was said once, at
+    the start, and the log is where the page already holds what was said. A
+    board seeded straight into the log, or briefed with an empty title, opens
+    under the generic header rather than under a blank one.
+    """
+    assert f'var SESSION_START_KIND = "{SESSION_START_KIND}";' in page_source()
+    assert "SESSION_START_KIND" in function_body("briefing")
+    named = function_body("sessionTitle")
+    assert "briefing().session" in named
+    assert '"Grilling session"' in named, "a briefing with no title leaves no header"
+
+
+def test_a_title_the_briefing_wrote_reaches_the_page_unaltered(
+    client: TestClient, log: Any
+) -> None:
+    """
+    Given a briefing whose title carries markup
+    When the page reads the log from the start
+    Then the title arrives byte for byte, and the page's one sink for it
+         escapes.
+
+    The title is authored content: the backend records what it was given and
+    does not sanitise it, so every guarantee about it reaching the human as
+    words rather than as markup is the page's, at the sink. That the sink holds
+    is measured in a browser.
+    """
+    _opened(log, session={**handoff_doc()["session"], "title": MARKUP_TITLE})
+
+    carried = _opening(client, log.epoch)["session"]["title"]
+
+    assert carried == MARKUP_TITLE
+    assert "esc(sessionTitle())" in _intro()
+
+
+def test_an_empty_title_leaves_the_generic_header(client: TestClient, log: Any) -> None:
+    """
+    Given a briefing carrying an empty title
+    When the page reads it
+    Then there is nothing to name the session with, and the page's fallback is
+         what decides.
+
+    A briefing written by hand is a whole briefing. The backend does not invent
+    a title on the author's behalf, so an empty one reaches the page as empty
+    and the header stays generic rather than blank.
+    """
+    _opened(log, session={**handoff_doc()["session"], "title": ""})
+
+    assert _opening(client, log.epoch)["session"]["title"] == ""
+    assert "named ? String(named)" in function_body("sessionTitle")
+
+
+def test_the_help_control_is_offered_only_when_the_briefing_shipped_the_material(
+    client: TestClient, log: Any
+) -> None:
+    """
+    Given a briefing that ships reference material about the board, and one
+    that does not
+    When each is recorded
+    Then the material rides in the opening entry under the field the page
+         gates the control on, and is absent from the briefing that shipped
+         none.
+
+    The control promises an agent that knows this board. With nothing behind it
+    the human would get the guesswork available anywhere else, dressed up as
+    the one place that knows.
+    """
+    assert "help_reference" in Handoff.model_fields
+    assert "briefing().help_reference" in function_body("helpOffered")
+    assert "helpOffered()" in function_body("renderShell")
+
+    _opened(log, help_reference=REFERENCE)
+
+    assert _opening(client, log.epoch)["help_reference"] == REFERENCE
+    assert "help_reference" not in handoff_doc(), "the plain briefing already ships material"
+
+
+def test_the_help_control_opens_the_one_session_thread_and_creates_nothing() -> None:
+    """
+    Given the help control's handler
+    When its source is read
+    Then it opens a thread panel under the session's one name for that thread,
+         and sends nothing.
+
+    A control that opened the thread would spend an agent's turn on a click,
+    and one that minted a fresh name each time would leave the human a new
+    conversation every visit rather than the one they were already having.
+    """
+    body = function_body("openHelp")
+    assert "HELP_THREAD" in body
+    assert "send(" not in body, "opening help says something into the log"
+    assert f'var HELP_THREAD = "{HELP_THREAD}";' in page_source()
+    assert 'case "help": openHelp();' in page_source()
+
+
+def test_a_thread_with_no_decision_anchor_is_an_ordinary_thread(
+    client: TestClient, log: Any
+) -> None:
+    """
+    Given the page's own thread-created shape carrying a null decision
+    When it is posted and the board is read back
+    Then the thread is on the board, anchored to nothing, and takes turns like
+         any other.
+
+    A null anchor is the whole of the extension the thread model needs for a
+    session-scoped thread. Nothing else about a thread changes, which is why
+    the help thread is an ordinary thread rather than a surface of its own.
+    """
+    assert 'title: help ? "How this board works"' in function_body("startThread")
+    assert "decision: help ? null : id" in function_body("startThread")
+
+    post(
+        client,
+        log.epoch,
+        page_message(
+            "thread-created",
+            HELP_THREAD,
+            turns=turns("How do I park a thread?"),
+            decision=None,
+            kind="help",
+            title="How this board works",
+            requires_action=False,
+        ),
+    )
+    post(client, log.epoch, page_message("thread-turn", HELP_THREAD, turns=turns("And fold it?")))
+
+    found = thread_of(client, HELP_THREAD)
+    assert found["decision"] is None
+    assert [one["text"] for one in found["turns"]] == ["How do I park a thread?", "And fold it?"]
+    assert found["state"] == "open"
+
+
+def test_the_session_thread_hangs_off_no_decision_on_the_board(
+    client: TestClient, log: Any
+) -> None:
+    """
+    Given a session-scoped thread and a decision's own thread
+    When the page asks which threads sit on that decision
+    Then only the anchored one does.
+
+    The session thread is reachable from the header and from nowhere else. One
+    that turned up on a decision's thread list would be the board offering a
+    conversation about the tool as though it were about that question.
+    """
+    seed_node(client, log.epoch, "n1")
+    post(
+        client,
+        log.epoch,
+        page_message(
+            "thread-created",
+            HELP_THREAD,
+            turns=turns("How do I park a thread?"),
+            decision=None,
+            kind="help",
+            title="How this board works",
+            requires_action=False,
+        ),
+    )
+    post(
+        client,
+        log.epoch,
+        page_message(
+            "thread-created",
+            THREAD,
+            turns=turns("Why this one?"),
+            decision="n1",
+            kind="user",
+            title="T",
+            requires_action=False,
+        ),
+    )
+
+    board = client.get("/state").json()["image1"]
+
+    assert [one["id"] for one in board["threads"] if one["decision"] == "n1"] == [THREAD]
+    assert "t.decision === id" in function_body("threadsOf")

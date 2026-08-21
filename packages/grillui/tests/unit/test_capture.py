@@ -557,3 +557,54 @@ def _result(session_dir: Path) -> TerminalResult:
     return TerminalResult.model_validate_json(
         (session_dir / RESULT_FILE).read_text(encoding="utf-8")
     )
+
+
+def test_a_thread_anchored_to_no_decision_reaches_the_result_like_any_other(
+    session_dir: Path,
+) -> None:
+    """
+    Given a session-scoped thread — one whose anchor decision is null — that
+    the human parked
+    When capture runs over the session directory
+    Then it is a line item in the result beside the threads that sit on
+         decisions, and the decisions are untouched by it.
+
+    A thread with no anchor is where the human asked how the board works. The
+    result reports what the session's threads were, so it reports this one too;
+    what it must not do is treat an unanchored thread as an unanswered
+    question, or drop it because there is no decision to hang it under.
+    """
+    log = started(session_dir)
+    client = driven(log, SpyDriver())
+    client.post(
+        "/events",
+        json={
+            "epoch": log.epoch,
+            "events": [
+                event(
+                    "thread-created",
+                    actor="human",
+                    channel="t-help",
+                    key="opened-help",
+                    decision=None,
+                    kind="help",
+                    title="How this board works",
+                    turns=[{"text": "How do I park a thread?"}],
+                )
+            ],
+        },
+    )
+    client.post(
+        "/events",
+        json={
+            "epoch": log.epoch,
+            "events": [event("thread-park", actor="human", channel="t-help", key="park-help")],
+        },
+    )
+
+    result = capture(session_dir)
+
+    assert ("t-help", "How this board works", "parked", None) in [
+        (one.id, one.title, one.state, one.conclusion) for one in result.threads
+    ]
+    assert [one.id for one in result.open_items] == ["d1", "d2"]
