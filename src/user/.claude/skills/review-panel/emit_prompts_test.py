@@ -557,6 +557,19 @@ class TestRoundsAndLedger:
         assert code == 2 and result["errors"][0]["code"] == "ledger-gap"
         assert "f1" in result["errors"][0]["message"]
 
+    def test_b9_non_string_evidence_is_refused(self, repo, acs_file, tmp_path, capsys):
+        """Evidence is prose; an object where prose belongs is a typed refusal naming the
+        finding, never a generic emitter failure."""
+        flat, _ = round2(tmp_path, repo, acs_file, [
+            {"round": 1, "id": "f1", "disposition": "fixed",
+             "evidence": {"test": "regression test added"}},
+            {"round": 1, "id": "f2", "disposition": "advisory-deferred"},
+        ])
+        code, result = run(flat, capsys)
+        assert code == 2 and result["errors"][0]["code"] == "ledger-gap"
+        assert "f1" in result["errors"][0]["message"]
+        assert "dict" in result["errors"][0]["message"]
+
     def test_b9_an_unreadable_disposition_file_is_a_ledger_gap(self, repo, acs_file, tmp_path,
                                                                capsys):
         """The ledger is what stops a settled item being re-raised; an unreadable one leaves
@@ -753,6 +766,10 @@ class TestProfileTable:
          lambda doc: doc["profiles"][1].update(force_ceiling=["standalone-read", "correctness"])),
         ("non-boolean-marker",
          lambda doc: doc["profiles"][1].update(no_gate="false")),
+        ("non-string-type",
+         lambda doc: doc["profiles"][1].update(type=["spec"])),
+        ("blank-type",
+         lambda doc: doc["profiles"][1].update(type="  ")),
         ("no-classes", lambda doc: doc.pop("classes")),
         ("no-table", lambda doc: doc.pop("profiles")),
     ])

@@ -152,6 +152,12 @@ def validate_contracts(document: Any) -> None:
                 + ", ".join(missing),
             )
         artifact_type = row["type"]
+        if not isinstance(artifact_type, str) or not artifact_type.strip():
+            raise Refusal(
+                "bad-profile-table",
+                f"profile row {artifact_type!r} declares no usable type; a type is a "
+                "non-blank string",
+            )
         if artifact_type in seen:
             raise Refusal(
                 "bad-profile-table",
@@ -815,7 +821,14 @@ def build_ledger(
     ledger = []
     for entry in dispositions:
         key = (entry.get("round"), entry.get("id"))
-        evidence = entry.get("evidence") or ""
+        raw_evidence = entry.get("evidence")
+        if raw_evidence is not None and not isinstance(raw_evidence, str):
+            raise Refusal(
+                "ledger-gap",
+                f"finding {key[1]} from round {key[0]} carries "
+                f"{type(raw_evidence).__name__}-typed evidence; evidence is prose or absent",
+            )
+        evidence = raw_evidence or ""
         work_item = str(entry.get("work_item") or "")
         disposition = entry.get("disposition")
         mechanical = type_of.get(key) == "mechanical"

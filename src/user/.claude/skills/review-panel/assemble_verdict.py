@@ -415,8 +415,10 @@ def staffing_check(envelope: dict[str, Any], directory: Path) -> tuple[list[str]
             "the round names no staffing record path, so the record cannot be re-read; the "
             "verdict is checked against the schema only, and the digest it carries governs"
         ]
+    # A relative path resolves against the round directory, never the invoking working
+    # directory — a check that depends on where assembly ran is not deterministic.
     path = Path(stated)
-    if not path.is_file() and not path.is_absolute():
+    if not path.is_absolute():
         path = directory / stated
     try:
         payload = path.read_bytes()

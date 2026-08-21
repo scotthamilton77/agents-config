@@ -668,6 +668,26 @@ class TestEnvelopeValidation:
         assert any("not readable" in warning for warning in answer["warnings"])
         assert out.is_file()
 
+    def test_a_relative_staffing_path_resolves_against_the_round_dir(
+        self, round1, dest, tmp_path, monkeypatch
+    ):
+        """A same-named file in the invoking working directory must not shadow the round's
+        own record — validation cannot depend on where assembly ran."""
+        directory = round1.clone(tmp_path / "relative-staffing")
+        shutil.copy(round1.staffing, directory / "staffing.json")
+        meta = json.loads((directory / "round.json").read_text(encoding="utf-8"))
+        meta["staffing_record"]["path"] = "staffing.json"
+        (directory / "round.json").write_text(json.dumps(meta), encoding="utf-8")
+        decoy_cwd = tmp_path / "decoy-cwd"
+        decoy_cwd.mkdir()
+        (decoy_cwd / "staffing.json").write_text(
+            round1.staffing.read_text(encoding="utf-8") + " ", encoding="utf-8")
+        monkeypatch.chdir(decoy_cwd)
+        code, answer, out = assemble(round1, dest, round_dir=directory)
+        assert code == 0, answer
+        assert "warnings" not in answer
+        assert out.is_file()
+
     def test_a_readable_staffing_record_reports_no_warning(self, round1, dest):
         """The acceptance twin: nothing is warned about when the record is where it says."""
         code, answer, _ = assemble(round1, dest)
