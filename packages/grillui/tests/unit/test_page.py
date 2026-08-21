@@ -37,10 +37,11 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from conftest import event, handoff_doc, post, seed_node
+from conftest import apply_all, event, handoff_doc, post, seed_node
 from fastapi.testclient import TestClient
 
 import grillui
+from grillui.capture import capture
 from grillui.channels import (
     PROTOCOL_SEVERITY,
     PROTOCOL_STATES,
@@ -2246,3 +2247,107 @@ def test_the_session_thread_hangs_off_no_decision_on_the_board(
 
     assert [one["id"] for one in board["threads"] if one["decision"] == "n1"] == [THREAD]
     assert "t.decision === id" in function_body("threadsOf")
+
+
+# ---------------------------------------------------------------- GUI-A58
+
+
+def test_a_finished_board_is_one_the_terminal_result_would_leave_nothing_open_on(
+    client: TestClient, log: Any, session_dir: Path
+) -> None:
+    """
+    Given a board carrying one settled decision and one invalidated one
+    When the session is captured
+    Then the invalidated decision is one of the result's open items.
+
+    The page announces completion off its own reading of the board, and the one
+    reading it is allowed is the one the write-up takes: settled, and nothing
+    else. A page that counted an invalidated or a stale decision as finished
+    would congratulate the human on a board whose own result lists work left to
+    do -- so the page's test is pinned to the string, and the string's meaning
+    is pinned to the backend here.
+    """
+    body = function_body("allSettled")
+    assert 'd.status === "settled"' in body
+    assert "BOARD.decisions.length > 0" in body, "an empty board would read as finished"
+
+    seed_node(client, log.epoch, "n1")
+    seed_node(client, log.epoch, "n2")
+    post(
+        client,
+        log.epoch,
+        page_message("answer", MAP_CHANNEL, target="n1", answer={"option": "a", "text": None}),
+    )
+    post(client, log.epoch, event("invalidate", key="kill", target="n2", why="the premise moved"))
+    assert apply_all(client, log.epoch, "n2")["status"] == "accepted"
+    post(client, log.epoch, page_message(SESSION_END_KIND, MAP_CHANNEL))
+
+    board = client.get("/state").json()["image1"]["decisions"]
+    assert sorted(one["status"] for one in board) == ["invalidated", "settled"]
+
+    result = capture(session_dir)
+    assert [one.id for one in result.open_items] == ["n2"]
+
+
+def test_the_completion_overlay_announces_arriving_at_that_state_rather_than_sitting_in_it() -> (
+    None
+):
+    """The re-fire rule, read off the page's own transition.
+
+    An agent may put an open node on the board at any moment, and a board that
+    leaves the finished state has nothing to announce. Arming on the crossing is
+    what makes the overlay an announcement: it comes down when the board moves
+    on, and it comes back only when the board arrives again -- rather than
+    lingering over a question that has just been reopened, or re-firing on every
+    poll tick that finds the same finished board.
+    """
+    body = function_body("noteCompletion")
+    assert "var done = !sessionOver() && allSettled();" in body
+    assert "if (done && !UI.wasDone) { UI.done = true; UI.pulse = false; }" in body
+    assert "if (!done) { UI.done = false; UI.pulse = false; }" in body
+    assert "UI.wasDone = done;" in body
+    assert "noteCompletion();" in function_body("render")
+    # Presentation, and page-local: nothing writes it anywhere a reload reads.
+    assert "done: false, pulse: false, wasDone: false" in page_source()
+    for name in ("UI.done", "UI.pulse", "UI.wasDone"):
+        assert f'saveWindow("{name}' not in page_source()
+
+
+def test_the_overlay_ends_the_session_through_the_control_it_is_offering() -> None:
+    """One gesture into ending, reachable from two places.
+
+    A second wire path would be a second set of semantics to keep in step -- and
+    the one thing the page must never get wrong is ending a session twice, or
+    ending one on terms the top row's control does not use. So the overlay's
+    action is that control's own act, and the page has exactly one site that
+    builds the ending event.
+    """
+    source = page_source()
+    offer = function_body("completionOffer")
+    assert 'data-act="endsession"' in offer, "the overlay does not offer the ending act"
+    assert 'data-act="dismiss-completion"' in offer, "the overlay offers no way back"
+    assert source.count(f'ev("{SESSION_END_KIND}"') == 1, "a second path builds the ending"
+    assert 'case "endsession": endSession(); break;' in source
+    # Dismissing writes nothing, so it is not one of the acts an ended board
+    # seals -- and it leaves the offer on the control the human was pointed at.
+    assert 'case "dismiss-completion": UI.done = false; UI.pulse = true; render();' in source
+    assert '"dismiss-completion"' not in function_body("sealSurface")
+    assert '(UI.pulse ? " pulsing" : "")' in function_body("renderShell")
+
+
+def test_the_ending_tries_the_tab_and_says_so_when_the_tab_stays() -> None:
+    """The fallback is the path most humans take.
+
+    A browser refuses to close a tab the page did not open, and refuses it
+    silently -- so the ended surface is not an edge case, it is the normal
+    outcome, and it has to say the thing the human is now waiting to be told.
+    The attempt hangs off the accepted receipt rather than off the click,
+    because a tab closed before the POST left would end nothing at all.
+    """
+    sender = function_body("send")
+    assert "ENDED = true;" in sender
+    close = sender.split("ENDED = true;", 1)[1]
+    assert "window.close();" in close, "the ending never tries the tab"
+    assert page_source().count("window.close()") == 1, "a second path closes the tab"
+    ended = page_source().split('banners += \'<div class="banner">🏁', 1)[1].split("}", 1)[0]
+    assert "close this tab" in ended
