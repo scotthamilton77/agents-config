@@ -49,6 +49,7 @@ from grillui.channels import (
     TRANSPORT_STATES,
     TRANSPORT_TABLE,
 )
+from grillui.claim import CLAIM_STATES
 from grillui.log import LOG_FILE
 from grillui.schemas import (
     AGENT_ACTORS,
@@ -64,13 +65,13 @@ from grillui.schemas import (
 PAGE_PATH = Path(grillui.__file__).parent / "page" / "index.html"
 
 # The routes the page is allowed to touch, and what each one is for. The board
-# is the first two; the third is how anything reaches the log; the fourth is a
-# control -- whether a reassessment is in flight -- which is a property of the
-# process and never of the board. A fifth entry here would be a second answer
-# to what the board says.
+# is the first two; the third is how anything reaches the log; the last two are
+# controls -- whether a reassessment is in flight, and which window this session
+# belongs to -- and both are properties of the process rather than of the board.
+# A further board read here would be a second answer to what the board says.
 BOARD_READS = {"/state", "/updates"}
 CONTROL_PATHS = {"/doctor"}
-WRITE_PATHS = {"/events", "/doctor"}
+WRITE_PATHS = {"/events", "/doctor", "/claim"}
 
 # A thread channel: anything that is not the map. The page mints these itself,
 # since a channel is a name rather than a claim.
@@ -239,13 +240,20 @@ def test_every_event_the_page_sends_is_built_by_the_checked_constructor() -> Non
     and a read is not a mint. Counting mentions would make those reads look like
     second constructors while leaving a real second constructor that spelled its
     field differently entirely invisible.
+
+    The page-instance id has one other reader, and only one: the window claim
+    seeds this window's name from it the first time it presents one. That is the
+    same fact the key uses it for -- this page instance, distinct from any other
+    -- so it is reused rather than minted again, and the count here is what stops
+    a third reader appearing unannounced.
     """
     source = page_source()
     assert source.count("idempotency_key:") == 1, "a second place builds an event's key"
-    assert source.count("PAGE_ID") == 2, "the page-instance prefix is used outside the constructor"
+    assert source.count("PAGE_ID") == 3, "the page-instance prefix is used outside the constructor"
     builder = source.split("function ev(", 1)[1].split("\nfunction ", 1)[0]
     assert "idempotency_key:" in builder
     assert "PAGE_ID" in builder
+    assert "PAGE_ID" in function_body("claimHolder")
 
 
 @pytest.mark.parametrize("kind", sorted(emitted_kinds()))
@@ -527,7 +535,8 @@ def test_the_page_learns_the_board_from_nowhere_but_the_state_and_update_reads()
     assert paths("Get") == BOARD_READS | CONTROL_PATHS
 
 
-def test_the_page_writes_only_through_the_event_route_and_the_doctor_control() -> None:
+def test_the_page_writes_only_through_the_event_route_and_the_two_controls() -> None:
+    """The log has one door, and the controls beside it write nothing to it."""
     assert paths("Post") == WRITE_PATHS
 
 
@@ -1132,13 +1141,23 @@ def test_read_state_survives_a_reload_and_the_notification_list_deliberately_doe
     the queue in image 1, which comes back on every reload. Without persistence,
     marking everything read and reloading would restore every marker the human
     had just dealt with.
+
+    Scoped to the session token rather than to the epoch, and that is the second
+    decision here. The ids in this set name log entries, and the log outlives any
+    one process: an epoch-scoped set is discarded by a restart that invalidated
+    none of them, and every marker the human already dealt with lights up again.
+    The token is the session's own identity, which is exactly the scope those ids
+    are valid in -- and it also keeps two sessions that reuse a loopback port out
+    of each other's read-state, which the epoch did only by accident.
     """
     source = page_source()
     assert "window.localStorage" in function_body("saveRead")
     assert "window.localStorage" in function_body("loadRead")
-    assert '"grillui:read:" + WIRE.epoch' in function_body("readKey")
-    # Loaded once the epoch is known, which is the state read -- the same place
-    # a reload learns which session it is coming back to.
+    assert '"grillui:read:" + CLAIM.token' in function_body("readKey")
+    assert "WIRE.epoch" not in function_body("readKey"), "read-state is scoped to the tenure again"
+    # Loaded once the token is known, which the claim answers with before the
+    # board is read at all -- and this is the one moment a reload has to look
+    # like the session the human left rather than a new one.
     assert "loadRead();" in function_body("hydrate")
     # The list is still built only from what arrives after this page did: the
     # reload path reads the whole log as a lookup table and touches the
@@ -1163,6 +1182,139 @@ def test_every_unread_marker_is_asked_of_the_one_read_set() -> None:
     # And the marker surfaces read the unread set rather than the queue whole.
     assert "unreadNotices(id).length" in function_body("itemIcons")
     assert "unreadNotices(id).length" in function_body("renderMap")
+
+
+# ---------------------------------------------------------------- GUI-A19
+
+
+def test_the_pages_claim_states_are_the_backends_own_and_are_named_by_position() -> None:
+    """The page holds no word for a claim state the backend cannot answer with.
+
+    Named by position rather than restated, so the two lists cannot drift into
+    the shape where the page recognises `granted` and the backend has renamed it
+    -- which reads as a permanent refusal on a session nobody else has.
+    """
+    assert page_vocabulary()["CLAIM_STATES"] == list(CLAIM_STATES)
+    source = page_source()
+    for index, name in enumerate(("CLAIM_GRANTED", "CLAIM_REFUSED", "CLAIM_SUPERSEDED")):
+        assert f"{name} = CLAIM_STATES[{index}]" in source, f"{name} restates the backend's word"
+
+
+def test_the_claim_is_a_name_this_window_keeps_where_a_second_window_cannot_find_it() -> None:
+    """Session storage, and the choice is the whole feature.
+
+    Session storage is the one origin store scoped to a single window: it
+    survives this window's reload -- so a reload is never a lockout -- and it is
+    not there for a second window to read and present as its own. Local storage
+    would hand the claiming window's name straight to the next window opened on
+    the same origin, and every second window would be granted the session it is
+    supposed to be refused.
+    """
+    holder = function_body("claimHolder")
+    assert "window.sessionStorage" in holder
+    assert "window.localStorage" not in holder, "a second window would find this name"
+    assert "window.sessionStorage" in function_body("claim")
+    # Read-state is the opposite case and stays in local storage: it is the
+    # human's, not the window's, and it has to outlive the window that set it.
+    assert "window.localStorage" in function_body("saveRead")
+
+
+def test_one_call_is_the_claim_the_reload_the_reconnect_and_the_take_over() -> None:
+    """Four situations, one request, so there is one answer to keep true.
+
+    They are the same question -- is this the name that holds the session -- and
+    splitting them into separate routes would mean four places where a window
+    could be told it holds a session it does not.
+    """
+    body = function_body("claim")
+    assert 'srvPost("/claim"' in body
+    assert "holder: claimHolder()" in body
+    assert "takeover: !!takeover" in body
+    assert page_source().count('srvPost("/claim"') == 1, "a second route presents a claim"
+    # The boot claim, the periodic re-presentation, and the human's gesture.
+    assert "claim(false).then(poll)" in page_source()
+    assert "setInterval(function () { claim(false); }" in page_source()
+    assert 'case "takeover": claim(true);' in page_source()
+
+
+def test_only_an_answer_moves_the_claim_and_a_failed_request_never_does() -> None:
+    """A dropped packet is not a supersede.
+
+    A page that read a failed request as a lost claim would hide a working board
+    the moment the wire blinked -- and it would do it on the one path that has no
+    way of knowing anything at all.
+    """
+    body = function_body("claim")
+    assert "CLAIM.state = c.state;" in body
+    # The rejection handler is the wire's own reporter and nothing else: it takes
+    # the error whole, so there is no branch in which a failure writes a state.
+    assert "}, wireFailed);" in body, "the failure path is not the bare wire reporter"
+    assert body.count("CLAIM.state =") == 1, "a second path writes the claim state"
+
+
+def test_a_window_that_is_not_the_sessions_never_draws_a_board() -> None:
+    """ "Not a working board" is enforced at the one place that draws one.
+
+    A banner over the board is not this: the decisions are still there and the
+    human still answers them. So the gate is on the render itself, and the board
+    poll is gated too -- a window that will not draw what it reads has no reason
+    to be reading it.
+    """
+    assert "if (!boardShown()) { renderNotice(); return; }" in function_body("render")
+    gate = function_body("boardShown")
+    assert "CLAIM_REFUSED" in gate and "CLAIM_SUPERSEDED" in gate
+    assert "if (CLAIM.state !== CLAIM_GRANTED) return;" in function_body("poll")
+
+
+def test_the_refused_and_superseded_windows_each_say_what_happened_to_them() -> None:
+    """Two situations, two sentences, and a way back from both.
+
+    Told apart because the human's next move differs: one window is looking at a
+    session somebody else opened, the other held it and was taken over and has a
+    board on screen it must stop trusting. Both offer the take-over, because a
+    superseded window is a refused window that used to hold it.
+    """
+    notice = function_body("renderNotice")
+    assert "CLAIM.state === CLAIM_SUPERSEDED" in notice
+    assert "took this session over" in notice
+    assert "already has this session" in notice
+    assert 'data-act="takeover"' in notice
+    assert 'id="claimnotice"' in notice and 'data-claim="' in notice
+    # Nothing of the board survives on screen beside it.
+    assert 'getElementById("overlay").innerHTML = ""' in notice
+    assert 'getElementById("bubbles").innerHTML = ""' in notice
+
+
+def test_the_claim_is_kept_out_of_the_connection_indicator() -> None:
+    """A refused claim says nothing about the wire, and the wire says nothing
+    about the claim.
+
+    The backend answered a refusal immediately and clearly, which is a healthy
+    transport by every measure the indicator has; folding the refusal in would
+    put "nothing is listening" beside a reply that just arrived. The two layers
+    the indicator does carry are the transport's and each channel's, and a window
+    holding no session has no channels to report on at all -- which is why the
+    notice replaces the indicator rather than colouring it.
+    """
+    for surface in ("renderIndicator", "renderDiagnostic", "worstChannel", "severityOf"):
+        body = function_body(surface)
+        assert "CLAIM" not in body, f"{surface} reads the claim"
+    assert "renderIndicator" not in function_body("renderNotice")
+    # And the claim's own call reports the wire, because it is a real request
+    # over the same transport every other one uses.
+    assert 'wire("reached")' in function_body("claim")
+
+
+def test_the_claim_control_appends_nothing_and_builds_no_event() -> None:
+    """Session control is not board history, measured on the page's side too.
+
+    The backend's half is measured at the wire; this is the half that says no
+    code path on the page could ask it to be otherwise.
+    """
+    for control in ("claim", "claimHolder", "boardShown", "renderNotice"):
+        body = function_body(control)
+        assert "ev(" not in body, f"{control} builds an event"
+        assert "send(" not in body, f"{control} reaches the write route"
 
 
 # ---------------------------------------------------------------- GUI-A50

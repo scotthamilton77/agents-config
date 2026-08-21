@@ -395,7 +395,11 @@ var NOTICE_KINDS = ["informational", "elicit-alert"];
 var MAP_MUTATION_KINDS = ["add-node", "invalidate", "revise", "settle", "unsettle", "resolve-stale", "elicit-alert", "fold"];
 var STATUS_PHASES = ["accepted", "composing", "replied", "error"];
 var AGENT_ACTORS = ["grill-master", "thread-agent"];
+var CLAIM_STATES = ["granted", "refused", "superseded"];
 //---BACKEND-VOCABULARY-END---
+// Named by position rather than restated, so this page cannot hold a claim
+// state the backend has no word for.
+var CLAIM_GRANTED = CLAIM_STATES[0], CLAIM_REFUSED = CLAIM_STATES[1], CLAIM_SUPERSEDED = CLAIM_STATES[2];
 
 /* ---------------- channel state, in the two layers it has ----------------
    The connection lifecycle is the transport's: one origin, one process, one
@@ -472,6 +476,52 @@ var CHANNELS = { transport: TRANSPORT_STATES[0], protocol: { map: PROTOCOL_STATE
 // deliberately empty on a reload: a page arriving mid-session must not announce
 // a morning's worth of history as news.
 var NOTES = [];
+// This window's standing with the backend: which session it is talking to, and
+// whether this is the window that session answers. One main window per session,
+// because two windows over one board both answer decisions on it and the human
+// ends up reading one while the agent replies to the other.
+//
+// `holder` is this window's own name, and it is the whole of the claim: the same
+// name presented again is the same window, which is what makes a reload free and
+// what a pop-out rides. It lives in SESSION storage rather than local storage on
+// purpose — session storage is the one origin store scoped to a single window,
+// so it survives this window's reload and is not there for a second window to
+// find and present as its own.
+var CLAIM = { token: "", state: "", holder: "" };
+var CLAIM_KEY = "grillui:claim";
+function claimHolder() {
+  if (CLAIM.holder) return CLAIM.holder;
+  var stored = null;
+  try { stored = window.sessionStorage.getItem(CLAIM_KEY); } catch (e) {}
+  CLAIM.holder = stored || PAGE_ID;
+  return CLAIM.holder;
+}
+// Whether the board may be drawn at all. A refused or superseded window shows
+// the reason and nothing else: a board with a warning over it is still a board,
+// and the human would answer decisions on it.
+function boardShown() { return CLAIM.state !== CLAIM_REFUSED && CLAIM.state !== CLAIM_SUPERSEDED; }
+// Present this window's name and take what the backend says. The same call is
+// the first claim, the reload, the reconnect and — with the flag — the human's
+// explicit take-over, so there is one path to keep true rather than four.
+//
+// A failed request changes nothing here. Only an answer moves the claim: a page
+// that read a network blink as a supersede would hide a working board over a
+// dropped packet.
+function claim(takeover) {
+  return srvPost("/claim", { holder: claimHolder(), takeover: !!takeover }).then(function (c) {
+    var was = CLAIM.state;
+    CLAIM.token = c.token;
+    CLAIM.state = c.state;
+    wire("reached");
+    if (c.state === CLAIM_GRANTED) {
+      try { window.sessionStorage.setItem(CLAIM_KEY, CLAIM.holder); } catch (e) {}
+      // Coming into the session — first claim, take-over, or a restarted
+      // backend handing it back — the board is re-read rather than assumed.
+      if (was !== CLAIM_GRANTED) WIRE.hydrated = false;
+    }
+    if (c.state !== was) render();
+  }, wireFailed);
+}
 // Which of the things the agent has said the human has already read. Read-state
 // is presentation state — the page owns it, it never crosses the wire, and the
 // server-authority rule does not reach it — but it is not session-local, because
@@ -480,12 +530,14 @@ var NOTES = [];
 // reloading would restore every marker the human just dealt with.
 //
 // Keyed by the update's own id, which is the backend's derivation and stable for
-// the life of the log. Scoped to the epoch, so it does not outlive the process
-// whose queue it was measured against — a restart re-mints the epoch and the
-// markers come back, which is the honest answer when the read-state and the
-// board it referred to were last agreed on by a process that is gone.
+// the life of the log. Scoped to the session token rather than to the epoch,
+// because these ids name log entries and the log outlives any one process: an
+// epoch-scoped set is thrown away by a restart that invalidated nothing, and
+// every marker the human already dealt with lights up again. The token is also
+// what keeps two sessions that reuse a loopback port out of each other's
+// read-state, which the epoch did by accident and this does on purpose.
 var READ = {};
-function readKey() { return "grillui:read:" + WIRE.epoch; }
+function readKey() { return "grillui:read:" + CLAIM.token; }
 function loadRead() {
   try { READ = JSON.parse(window.localStorage.getItem(readKey()) || "{}") || {}; }
   catch (e) { READ = {}; }
@@ -717,9 +769,9 @@ function hydrate() {
   return srvGet("/state").then(function (st) {
     WIRE.epoch = st.epoch;
     BOARD = st.image1;
-    // Read-state is keyed by epoch, so it can only be loaded once the epoch is
-    // known — which is here, and is also the one moment a reload has to look
-    // like the session the human left rather than a new one.
+    // The one moment a reload has to look like the session the human left
+    // rather than a new one — so the read-state comes back here, keyed by the
+    // token the claim answered with before any of this was read.
     loadRead();
     noteThreads();
     // The log up to here is read as a lookup table, not as news: a page
@@ -750,6 +802,10 @@ function noteThreads() {
 }
 
 function poll() {
+  // The board is read by the window that holds the session and by no other. A
+  // refused or superseded window has nothing to poll for: it is not going to
+  // draw what it reads.
+  if (CLAIM.state !== CLAIM_GRANTED) return;
   if (WIRE.inflight) return;
   WIRE.inflight = true;
   // Released when the whole cycle is over, never partway: a second poll that
@@ -1861,6 +1917,36 @@ function renderDiagnostic() {
     (WIRE.rejected ? " · " + WIRE.rejected + " refused" : "") + "</div></div>";
 }
 
+/* ---------- the window that is not this session's ----------
+   All this window gets. Not a banner over the board: a board with a warning on
+   it is still a board, and the human answers decisions on it.
+
+   The connection indicator is not here either, and that is the decision rather
+   than an omission. A refused claim is a session-control state and says nothing
+   about the wire — the backend answered, immediately and clearly, which is a
+   healthy transport by every measure the indicator has. Reporting it there would
+   put "nothing is listening" next to a reply that just arrived; and there are no
+   channels to report on, because this window holds no session to have channels
+   in. So the two never meet: the indicator keeps describing the wire, and this
+   describes who the session belongs to. */
+function renderNotice() {
+  var superseded = CLAIM.state === CLAIM_SUPERSEDED;
+  document.getElementById("shell").innerHTML =
+    '<div class="intro"><h1>Grilling session</h1></div>' +
+    '<div class="banner refusal" id="claimnotice" data-claim="' + esc(CLAIM.state) + '">' +
+    (superseded
+      ? "<strong>Another window took this session over.</strong> This is no longer the window the backend " +
+        "answers, so the board is not shown here. Nothing you did is lost — every answer already accepted is " +
+        "in the session log, and the window that took over is reading the same board."
+      : "<strong>Another window already has this session.</strong> The backend serves one main window per " +
+        "session, so two windows can never disagree about what you answered. The board is not shown here. " +
+        "If that other window is gone, take the session over — it will stop working if it is not.") +
+    ' <button class="btn sm" data-act="takeover">' +
+    (superseded ? "Take it back" : "Take this session over") + "</button></div>";
+  document.getElementById("overlay").innerHTML = "";
+  document.getElementById("bubbles").innerHTML = "";
+}
+
 /* ---------- shell ---------- */
 function renderShell() {
   var ps = proposals(), unread = unreadCount();
@@ -1911,6 +1997,9 @@ function renderShell() {
 /* ---------- render, preserving what the human is doing ---------- */
 function render() {
   if (!document.getElementById("shell")) return;
+  // The one gate on drawing the board, so there is no second path that can draw
+  // it for a window the backend is not answering.
+  if (!boardShown()) { renderNotice(); return; }
   var map = document.getElementById("mapscroll"), col = document.getElementById("column");
   var keep = { mx: map ? map.scrollLeft : 0, my: map ? map.scrollTop : 0, cy: col ? col.scrollTop : 0 };
   var act = document.activeElement;
@@ -2068,6 +2157,10 @@ document.addEventListener("click", function (e) {
   if (!el) return;
   var a = el.dataset.act, id = el.dataset.id, tid = el.dataset.tid, uid = el.dataset.uid;
   switch (a) {
+    // The human's explicit gesture, and the only thing that displaces a live
+    // claim. Never inferred from silence: a window that is merely slow is
+    // indistinguishable from one that is gone, and only the human can tell.
+    case "takeover": claim(true); break;
     case "mapnode": focusOn(id); render(); break;
     case "focusnode": focusOn(id); UI.panel = null; render(); break;
     // "Show me" is a navigation intent — it lands the decision open so there is
@@ -2257,8 +2350,18 @@ document.addEventListener("mouseup", function () {
   DRAG = null;
 });
 
+// The claim comes first and the board second: this window learns which session
+// it is talking to, and whether the session answers it, before it reads a thing.
+// A refused window therefore never holds a board at all — it has never been sent
+// one.
+claim(false).then(poll);
 setInterval(poll, 700);
-poll();
+// Re-presented on its own slower cadence, because a claim changes at most a
+// couple of times in a session and this is only how a window finds out it was
+// taken over. Separate from the board poll rather than folded into it: the board
+// must not stop being read because a control call is slow, and the control must
+// keep being asked by a window that has stopped reading the board.
+setInterval(function () { claim(false); }, 1500);
 // The lane's timer ticks without a full render, so a running clock never steals
 // focus from the textbox that is meant to always hold it.
 setInterval(function () {
