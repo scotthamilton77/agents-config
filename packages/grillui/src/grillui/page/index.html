@@ -322,8 +322,6 @@
   .inbox-item .txt { flex: 1; font-size: 13px; }
   .inbox-item .type { font: 600 9.5px ui-monospace, Menlo, monospace; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
   .t-informational { color: var(--settled-ink); }
-  .t-elicitative { color: var(--conflict-ink); }
-  .t-applied-change { color: var(--accent); }
   .unreadmark { color: var(--accent); font-weight: 700; }
 
   .banner { border-radius: 10px; padding: 10px 14px; font-size: 13px; margin-bottom: 12px;
@@ -1093,12 +1091,39 @@ function proposals() {
 function notices() {
   return BOARD.pending.filter(function (p) { return live(p) && NOTICE_KINDS.indexOf(p.kind) >= 0; });
 }
+// Which decisions a message from the agent is read on: the one it names, and
+// when it names none, the ones its own entry changed in the same breath. A
+// reply that speaks and changes the board arrives as one entry, and the prose
+// half of it is framing for the other half — so it belongs on what it framed
+// rather than in a lane of its own.
+//
+// Derived from the log rather than remembered from the arrival, because the
+// board has to read the same after a reload as before one: the queue survives a
+// reload and anything this page noticed at arrival does not.
+//
+// A home is a decision the board is carrying now, which is what makes "the
+// board already shows this" measured rather than assumed: a message about
+// something the board has no block for has nowhere to be read, and goes to the
+// lane.
+function noticeHomes(item) {
+  var out = [];
+  var add = function (id) { if (id && node(id) && out.indexOf(id) < 0) out.push(id); };
+  if (item.target) { add(item.target); return out; }
+  var e = entryAt(item.authored_at);
+  (e ? updatesIn(e) : []).forEach(function (u) {
+    if (MAP_MUTATION_KINDS.indexOf(u.kind) >= 0) add(u.target);
+  });
+  return out;
+}
+function noticesOn(id) {
+  return notices().filter(function (n) { return noticeHomes(n).indexOf(id) >= 0; });
+}
 // A notice the human has not read yet. The message itself stays on the board
 // once read — it is board content and this page does not delete board content —
 // but the marker that says look at this comes off, which is the whole of what
 // being read means here.
 function unreadNotices(id) {
-  return notices().filter(function (n) { return !isRead(n.id) && (id === undefined || n.target === id); });
+  return (id === undefined ? notices() : noticesOn(id)).filter(function (n) { return !isRead(n.id); });
 }
 function proposalsOn(id) {
   return proposals().filter(function (p) { return p.target === id; });
@@ -1259,20 +1284,11 @@ function nextFocus(justSettled) {
 function noteFor(id, kind, target, text, type, at) {
   return { id: id, kind: kind, type: type, target: target || null, text: text, at: at };
 }
-// One arriving entry, read for what it means to the human. The board it changed
-// has already been re-read; nothing here decides anything about the board.
-//
-// A notification exists only for a change that has LANDED. What tells a landed
-// change from a waiting one is the queue: an update the queue still holds is
-// the inbox's, not news. That question is asked of the queue rather than
-// answered here, because a second answer to it is a page telling the human
-// something the log denies.
 // Whether a human queue gesture arrived after this entry in the same batch.
 // The queue is read once per batch, so an agent's change that a later gesture
 // in that batch resolved would be measured against a board already past it --
-// and a dismissed change would be announced as one that landed. Judgement is
-// withheld rather than guessed: a notification the human never earned is worse
-// than one they never got.
+// and a change the human dismissed would be marked as one that arrived.
+// Judgement is withheld rather than guessed.
 function resolvedLater(batch, index) {
   for (var i = index + 1; i < batch.length; i++) {
     var later = batch[i];
@@ -1280,6 +1296,13 @@ function resolvedLater(batch, index) {
   }
   return false;
 }
+// One arriving entry, read for what it means to the human. The board it changed
+// has already been re-read; nothing here decides anything about the board.
+//
+// The board is the primary display of state, and the notification lane carries
+// only what the board does not. So one message reaches the lane — the agent
+// speaking to the human with nothing on the board to attach it to — and
+// everything else raises marks on the board and no notification at all.
 function observe(entry, batch, index) {
   // The lane is read for channel state, which happens before this and on the
   // reload path too. It is never news: nobody wants a notification saying an
@@ -1291,18 +1314,26 @@ function observe(entry, batch, index) {
   if (entry.actor === "human" && entry.kind !== APPLY_KIND) return;
   updatesIn(entry).forEach(function (u) {
     if (NOTICE_KINDS.indexOf(u.kind) >= 0) {
-      NOTES.push(noteFor(u.uid, u.kind, u.target, u.text || "",
-        u.kind === "elicit-alert" ? "elicitative" : "informational", entry.timestamp));
-      if (u.target) UI.touched.push(u.target);
+      // A message the board has somewhere to put is read there. Announcing it
+      // as well is the lane echoing the board, and a lane that echoes the board
+      // is one the human learns to stop opening.
+      var homes = noticeHomes({ target: u.target || null, authored_at: entry.seq });
+      homes.forEach(function (id) { UI.touched.push(id); });
+      if (!homes.length) {
+        NOTES.push(noteFor(u.uid, u.kind, u.target, u.text || "", "informational", entry.timestamp));
+      }
       return;
     }
     if (MAP_MUTATION_KINDS.indexOf(u.kind) < 0) return;
     var waiting = BOARD.pending.some(function (p) {
       return p.authored_at === entry.seq && p.kind === u.kind && (p.target || null) === (u.target || null);
     });
+    // A change that landed is on the board, in the decision's own block and in
+    // its history. A receipt restating it is the board said twice, so what an
+    // arriving change raises is the mark on the decision it moved and nothing
+    // in the lane.
     if (u.target) UI.touched.push(u.target);
     if (waiting || (entry.actor !== "human" && resolvedLater(batch, index))) return;
-    NOTES.push(noteFor(u.uid, u.kind, u.target, summariseUpdate(u), "applied-change", entry.timestamp));
     if (u.kind === "add-node" && u.target) UI.fresh.push(u.target);
   });
 }
@@ -1773,7 +1804,7 @@ function renderColumn() {
       if (blockingThreads(id).length) h += '<div class="blocking"><span class="tag">blocking</span>' +
         esc(thread(blockingThreads(id)[0]).title) + ' <button class="btn sm warn" data-act="openthread" data-tid="' +
         esc(blockingThreads(id)[0]) + '">Open it</button></div>';
-      notices().filter(function (n) { return n.target === id; }).forEach(function (n) { h += infoNote(n); });
+      noticesOn(id).forEach(function (n) { h += infoNote(n); });
     } else {
       // A blocking thread goes at the TOP of the block, clearly marked.
       blockingThreads(id).forEach(function (tid) {
@@ -1814,7 +1845,7 @@ function renderColumn() {
         h += answerControls(d, !answerable(id) || !!lock);
       }
       if (d.rationale) h += '<div class="rationale"><strong>Why:</strong> ' + esc(d.rationale) + "</div>";
-      notices().filter(function (n) { return n.target === id; }).forEach(function (n) { h += infoNote(n); });
+      noticesOn(id).forEach(function (n) { h += infoNote(n); });
       threadsOf(id).forEach(function (tid) {
         if (blockingThreads(id).indexOf(tid) >= 0) return;
         var t = thread(tid);
@@ -1951,8 +1982,9 @@ function renderNotifications() {
   var unread = unreadCount();
   var h = '<div class="slide"><button class="close" data-act="closepanel">✕</button>' +
     '<h3 style="font-size:16px">Notifications</h3>' +
-    '<div class="muted" style="margin-bottom:10px">What the agent has actually done. Changes that have <em>not</em> landed are not in here — they are in the inbox. ' +
-    "This list starts empty on a reload: a session you come back to should not announce the morning's work as news. What you have read is remembered.</div>" +
+    '<div class="muted" style="margin-bottom:10px">What the agent said that the board has nowhere to show. Changes are not in here: the ones that landed are on the board, ' +
+    "and the ones waiting on you are in the inbox. This list starts empty on a reload: a session you come back to should not announce the morning's work as news. " +
+    "What you have read is remembered.</div>" +
     '<div style="margin-bottom:12px"><button class="btn sm" data-act="markall"' + (unread ? "" : " disabled") +
     ">✓ Mark all read" + (unread ? " (" + unread + ")" : "") + "</button></div>";
   if (!NOTES.length) h += '<div class="muted">Nothing here.</div>';
@@ -1967,8 +1999,7 @@ function renderNotifications() {
       // A message from the agent is discussable wherever it is met. Reading it
       // in the notification list rather than on its decision is not a reason to
       // have to go and find it again to answer it.
-      (n.type === "applied-change" ? "" :
-        ' <button class="btn sm" data-act="discussnotice" data-uid="' + esc(n.id) + '">Discuss</button>') +
+      ' <button class="btn sm" data-act="discussnotice" data-uid="' + esc(n.id) + '">Discuss</button>' +
       (read ? "" : ' <button class="btn sm" data-act="marknote" data-nid="' + esc(n.id) + '">Mark as read</button>') +
       "</div></div></div>";
   });
@@ -1998,10 +2029,11 @@ function renderInbox() {
 }
 
 /* ---------- bubbles ---------- */
-var BUBBLE_TYPES = ["informational", "applied-change"];
+// Every notification bubbles, because the lane only carries what the board has
+// nowhere to render — there is no second class of note here to hold back.
 function harvestBubbles() {
   NOTES.forEach(function (n) {
-    if (BUBBLE_TYPES.indexOf(n.type) < 0 || isRead(n.id) || UI.bubbleSeen[n.id]) return;
+    if (isRead(n.id) || UI.bubbleSeen[n.id]) return;
     UI.bubbleSeen[n.id] = true;
     UI.bubbles.push({ id: n.id, target: n.target, text: n.text, type: n.type, at: n.at, left: 3000 });
   });
