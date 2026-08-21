@@ -15,6 +15,7 @@ two cases worth standing up.
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -79,8 +80,20 @@ def driver() -> SpyDriver:
     return SpyDriver()
 
 
+@pytest.fixture
+def held() -> Iterator[SpyDriver]:
+    """A turn held in flight for the whole test.
+
+    Releasing in teardown rather than in the test body means an assertion
+    failing mid-test does not leave the turn thread waiting out TIMEOUT.
+    """
+    driver = SpyDriver(hold=True)
+    yield driver
+    driver.release.set()
+
+
 def test_the_lane_reads_accepted_then_composing_naming_the_dispatching_tier(
-    log: SessionLog,
+    log: SessionLog, held: SpyDriver
 ) -> None:
     """
     Given a session whose tier is a driver whose turn is still in flight
@@ -98,7 +111,7 @@ def test_the_lane_reads_accepted_then_composing_naming_the_dispatching_tier(
     would be reading the closing phase as well, and racing the driver's thread
     for which of the two the assertion met.
     """
-    driver = SpyDriver(hold=True)
+    driver = held
     client = driven(log, driver)
     node = seed_node(client, log.epoch)
 
@@ -110,10 +123,11 @@ def test_the_lane_reads_accepted_then_composing_naming_the_dispatching_tier(
     assert "tier" not in lane[0].payload
     assert [entry.actor for entry in lane] == ["backend", "backend"]
     assert [entry.channel for entry in lane] == ["map", "map"]
-    driver.release.set()
 
 
-def test_the_lane_lands_inside_ten_milliseconds_of_the_human_turn(log: SessionLog) -> None:
+def test_the_lane_lands_inside_ten_milliseconds_of_the_human_turn(
+    log: SessionLog, held: SpyDriver
+) -> None:
     """
     Given a tier whose turn never finishes
     When a human answers a decision
@@ -124,7 +138,7 @@ def test_the_lane_lands_inside_ten_milliseconds_of_the_human_turn(log: SessionLo
     a model would still be composing. That is the claim: the lane's cost is an
     append, not a turn, and no code path here can be made to wait on one.
     """
-    driver = SpyDriver(hold=True)
+    driver = held
     client = driven(log, driver)
     node = seed_node(client, log.epoch)
 
@@ -135,7 +149,6 @@ def test_the_lane_lands_inside_ten_milliseconds_of_the_human_turn(log: SessionLo
     assert elapsed_ms(turn, accepted) < BUDGET_MS
     assert elapsed_ms(turn, composing) < BUDGET_MS
     assert not driver.finished.is_set()
-    driver.release.set()
 
 
 def test_the_lane_entries_land_before_the_driver_is_invoked(
@@ -228,7 +241,7 @@ def test_an_agent_authored_thread_produces_no_status_entry_and_no_dispatch(
 
 
 def test_a_human_turn_in_that_same_thread_produces_a_status_entry_and_a_dispatch(
-    log: SessionLog, session_dir: Path
+    log: SessionLog, session_dir: Path, held: SpyDriver
 ) -> None:
     """
     Given the same agent-authored thread, which drew no reply
@@ -241,7 +254,7 @@ def test_a_human_turn_in_that_same_thread_produces_a_status_entry_and_a_dispatch
     Held for the same reason as the first lane check: the claim is about what
     fires when the turn starts, not about what the lane looks like once it ended.
     """
-    driver = SpyDriver(hold=True)
+    driver = held
     client = driven(log, driver)
     client.post(
         "/events",
@@ -280,11 +293,10 @@ def test_a_human_turn_in_that_same_thread_produces_a_status_entry_and_a_dispatch
     assert phases(statuses(log)) == [STATUS_PHASE_ACCEPTED, STATUS_PHASE_COMPOSING]
     assert [entry.channel for entry in statuses(log)] == [THREAD, THREAD]
     assert len(list((session_dir / DISPATCH_DIR).glob("*.json"))) == 1
-    driver.release.set()
 
 
 def test_events_returns_its_receipts_without_waiting_for_the_driver_to_finish(
-    log: SessionLog,
+    log: SessionLog, held: SpyDriver
 ) -> None:
     """
     Given a tier whose turn is still in flight
@@ -295,7 +307,7 @@ def test_events_returns_its_receipts_without_waiting_for_the_driver_to_finish(
     when the turn did would put a 34-second heavy turn in front of every gesture
     the human makes, which is the failure the whole lane exists to prevent.
     """
-    driver = SpyDriver(hold=True)
+    driver = held
     client = driven(log, driver)
     node = seed_node(client, log.epoch)
 
@@ -332,7 +344,7 @@ def _post_answer(client: TestClient, epoch: str, node: str) -> list[dict[str, An
 
 
 def test_each_turns_lane_entries_land_adjacent_to_the_turn_they_report(
-    log: SessionLog,
+    log: SessionLog, held: SpyDriver
 ) -> None:
     """
     Given one batch carrying two human turns on two channels
@@ -343,7 +355,7 @@ def test_each_turns_lane_entries_land_adjacent_to_the_turn_they_report(
     Both turns are held in flight, so the shape read here is the one the append
     lock produced rather than one either turn's closing phase has landed in.
     """
-    driver = SpyDriver(hold=True)
+    driver = held
     client = driven(log, driver)
     client.post(
         "/events",
@@ -381,7 +393,6 @@ def test_each_turns_lane_entries_land_adjacent_to_the_turn_they_report(
         (STATUS_KIND, "t2"),
         (STATUS_KIND, "t2"),
     ]
-    driver.release.set()
 
 
 def _lane(log: SessionLog) -> list[tuple[Any, str]]:
