@@ -947,11 +947,23 @@ def test_a_dismissed_hover_overlay_returns_only_on_a_fresh_entry_of_its_zone() -
     card the human had just dismissed came straight back under their cursor
     without them ever leaving the thing they dismissed it on. The zone is held
     until the pointer has left it.
+
+    Held as what the zone is, not as which element it currently is: almost every
+    click re-renders, so an element held across one is detached by the time the
+    pointer moves, matches nothing, and hands the overlay back on the first
+    twitch -- the exact failure this is here to stop, reintroduced by the fix
+    for it.
     """
     source = page_source()
     assert "hideHover(zoneOf(e.target))" in source, "a click does not mute the zone it hit"
-    assert "if (MUTED && zoneOf(e.target) === MUTED) return;" in source
-    assert "if (MUTED && !MUTED.contains(e.relatedTarget)) MUTED = null;" in source
+    assert "MUTED = zoneKey(zone)" in source, "the mute is held as an element"
+    assert "if (MUTED && zoneKey(zoneOf(e.target)) === MUTED) return;" in source
+    assert "if (zoneKey(into) !== MUTED) MUTED = null;" in source
+    # The key survives a re-render because it names the board, and it carries the
+    # owning node because two badges may wear the same words on two decisions.
+    key = function_body("zoneKey")
+    assert 'el.closest(".mnode")' in key
+    assert "el.dataset.why || el.dataset.otext || el.dataset.id" in key
     # One reader of what owns an overlay, so what a click mutes and what a hover
     # checks are the same zone rather than two selectors that mostly agree.
     zone = function_body("zoneOf")

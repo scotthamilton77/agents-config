@@ -2170,9 +2170,21 @@ var MUTED = null;
 function zoneOf(target) {
   return target.closest("[data-why]") || target.closest("[data-p]") || target.closest(".mnode");
 }
+// What a zone is, rather than which element it currently is. Almost every click
+// re-renders, which replaces the element under a cursor that has not moved —
+// so an element held across that click is a detached node, matches nothing, and
+// hands the overlay back on the first twitch. The identity has to be the thing
+// on the board, and the owning node is in it because two badges may carry the
+// same words on different decisions.
+function zoneKey(el) {
+  if (!el) return null;
+  var owner = el.closest(".mnode");
+  return (owner ? owner.dataset.id : "") + "|" +
+    (el.dataset.why || el.dataset.otext || el.dataset.id || "");
+}
 function hideHover(zone) {
   if (HOVER) HOVER.style.display = "none";
-  MUTED = zone || null;
+  MUTED = zoneKey(zone);
 }
 function showHover(html, rect) {
   if (!HOVER) { HOVER = document.createElement("div"); HOVER.className = "hovercard"; document.body.appendChild(HOVER); }
@@ -2183,7 +2195,7 @@ function showHover(html, rect) {
 }
 document.addEventListener("mouseover", function (e) {
   // Still inside the zone whose overlay was clicked away: say nothing.
-  if (MUTED && zoneOf(e.target) === MUTED) return;
+  if (MUTED && zoneKey(zoneOf(e.target)) === MUTED) return;
   var b = e.target.closest("[data-why]");
   if (b) { showHover('<div class="hid">what this icon means</div><div>' + esc(b.dataset.why) + "</div>", b.getBoundingClientRect()); return; }
   var o = e.target.closest("[data-p]");
@@ -2213,11 +2225,15 @@ document.addEventListener("mouseover", function (e) {
     n.getBoundingClientRect());
 });
 document.addEventListener("mouseout", function (e) {
-  // Leaving the muted zone for good is what re-arms it. `relatedTarget` is where
-  // the pointer went, so moving between a node and its own badge is not a leave
-  // — and treating it as one would hand the overlay straight back.
-  if (MUTED && !MUTED.contains(e.relatedTarget)) MUTED = null;
-  if (HOVER && zoneOf(e.target)) HOVER.style.display = "none";
+  // Leaving the muted zone for something that is not it is what re-arms it.
+  // `relatedTarget` is where the pointer went, so drifting within one zone is
+  // not a leave — and treating it as one would hand the overlay straight back.
+  var left = zoneOf(e.target);
+  if (MUTED && left && zoneKey(left) === MUTED) {
+    var into = e.relatedTarget ? zoneOf(e.relatedTarget) : null;
+    if (zoneKey(into) !== MUTED) MUTED = null;
+  }
+  if (HOVER && left) HOVER.style.display = "none";
 });
 
 /* drag to pan the map */
