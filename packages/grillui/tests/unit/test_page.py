@@ -1820,3 +1820,59 @@ def test_a_discussion_thread_holds_the_change_it_was_opened_to_judge() -> None:
     popped = page_source().split("window.popAct = function (tid, act, text)", 1)[1]
     popped = popped.split("\n};", 1)[0]
     assert popped.count("UI.discussing[tid]") == 4, "the pop-out asks about its own thread"
+
+
+# ---------------------------------------------------------------- the human's place
+
+
+def test_taking_the_caret_never_moves_the_page() -> None:
+    """One defect, three symptoms, and one place it is answered.
+
+    A bare `focus()` reveals its element by scrolling every scrollable ancestor
+    and then the document. The page takes the caret on every re-render, and a
+    re-render is a poll tick, an arriving message, or a click on anything -- so
+    the same call was, in turn: the outbox chip scrolling its own drop-down off
+    the top of the window; a notification throwing away the place the human had
+    scrolled the decision log to; and a decision taller than the log landing
+    with its first option at the top and its title above the edge, because the
+    box the caret goes to is at the bottom of the block.
+
+    Measured as the absence of a bare call rather than the presence of a good
+    one: a fourth site added later is the same defect back, and only the absence
+    catches that. Where the board follows the human stays `centerOn`'s decision,
+    made in one place.
+    """
+    source = page_source()
+    assert ".focus()" not in source, "a caret is taken somewhere without preventScroll"
+    assert source.count("preventScroll") == 2, "a focus site does not hold the page still"
+    assert "el.focus({ preventScroll: true });" in function_body("takeCaret")
+    # Every caret the board takes goes through the one helper, and the caret
+    # position rides with it -- restoring the selection is what made one of the
+    # sites a second call rather than a call to the same helper.
+    assert function_body("render").count("takeCaret(") == 4
+    assert "el.setSelectionRange(caret, caret)" in function_body("takeCaret")
+
+
+def test_a_re_render_puts_the_decision_log_back_where_the_human_had_it() -> None:
+    """Read before the shell is replaced, written after, unconditionally.
+
+    The fresh element starts at zero, so a restore that only ran sometimes is a
+    log that jumps sometimes -- which is how this was reported: intermittently,
+    with no pattern the human could name.
+    """
+    body = function_body("render")
+    assert "cy: col ? col.scrollTop : 0" in body
+    assert "if (col2) col2.scrollTop = keep.cy;" in body
+    # And the map with it, so panning survives the same re-render.
+    assert "map2.scrollLeft = keep.mx; map2.scrollTop = keep.my;" in body
+
+
+def test_the_decision_column_names_itself_and_says_nothing_further() -> None:
+    """The ordering caption is gone.
+
+    It described an implementation property nobody reading the board can act
+    on, sitting next to the one word that says what the panel is.
+    """
+    column = function_body("renderColumn")
+    assert "tree order" not in column and "re-sorts" not in column
+    assert '<div class="card"><h3>Decisions</h3>' in column

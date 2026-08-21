@@ -1734,8 +1734,7 @@ function renderMap() {
 
 /* ---------- the one blended column ---------- */
 function renderColumn() {
-  var h = '<div class="card"><h3>Decisions <span class="spacer"></span>' +
-    '<span class="muted">tree order · never re-sorts</span></h3><div class="column" id="column">';
+  var h = '<div class="card"><h3>Decisions</h3><div class="column" id="column">';
   columnOrder().forEach(function (id) {
     var d = node(id), st = statusOf(id), expanded = isExpanded(id);
     var lock = holdOn(id), waiting = proposalsOn(id), wait = waitingOn(id);
@@ -2200,6 +2199,18 @@ function renderShell() {
 }
 
 /* ---------- render, preserving what the human is doing ---------- */
+// Every caret this page takes goes through here, and none of them may move the
+// page. A bare focus() reveals its element by scrolling each scrollable
+// ancestor and then the document, and the caret is taken on every re-render —
+// so a poll tick, an arriving message and a click on a control at the top of
+// the page each drag the decision log to whatever box the caret lands in, and
+// the window with it. Where the board follows the human is centerOn's decision,
+// made in one place.
+function takeCaret(el, caret) {
+  if (!el) return;
+  el.focus({ preventScroll: true });
+  if (caret !== undefined) { try { el.setSelectionRange(caret, caret); } catch (e) {} }
+}
 function render() {
   if (!document.getElementById("shell")) return;
   // The one gate on drawing the board, so there is no second path that can draw
@@ -2236,18 +2247,16 @@ function render() {
   // A thread claims the caret the moment it opens — but only then, so a later
   // re-render never yanks it out of whatever is being typed.
   if (panelJustOpened && document.getElementById("ft-say")) {
-    document.getElementById("ft-say").focus();
+    takeCaret(document.getElementById("ft-say"));
   } else if (focusId) {
-    var again = document.getElementById(focusId);
-    if (again) { again.focus(); try { again.setSelectionRange(caret, caret); } catch (e) {} }
+    takeCaret(document.getElementById(focusId), caret);
   } else if (UI.panel && UI.panel.kind === "thread") {
-    var say = document.getElementById("ft-say");
-    if (say) say.focus();
+    takeCaret(document.getElementById("ft-say"));
   } else if (UI.focus !== UI.lastFocus || document.activeElement === document.body) {
     // The focused decision's free-text box holds focus by default. Only ever
     // taken when nothing else holds it, so typing is never interrupted.
     var box = document.getElementById("ft-" + UI.focus);
-    if (box && !UI.panel && !box.disabled) box.focus();
+    if (box && !UI.panel && !box.disabled) takeCaret(box);
   }
   UI.lastFocus = UI.focus;
 }
@@ -2305,7 +2314,7 @@ function popOut(tid) {
     "if(html===last)return;last=html;" +
     "var ta=document.getElementById('pop-say');var v=ta?ta.value:'';var had=ta&&document.activeElement===ta;" +
     "document.getElementById('t').innerHTML=html;" +
-    "var t2=document.getElementById('pop-say');if(t2){t2.value=v;if(had)t2.focus();}}" +
+    "var t2=document.getElementById('pop-say');if(t2){t2.value=v;if(had)t2.focus({preventScroll:true});}}" +
     "document.addEventListener('click',function(e){var el=e.target.closest('[data-act]');if(!el)return;" +
     "var ta=document.getElementById('pop-say');" +
     "try{window.opener.popAct(tid,el.dataset.act,ta?ta.value:'');}catch(x){}" +
