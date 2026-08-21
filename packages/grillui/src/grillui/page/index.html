@@ -131,6 +131,19 @@
   .inboxbtn { border: 1px solid var(--line); background: var(--paper); color: var(--ink);
               border-radius: 999px; padding: 6px 14px; font-size: 12.5px; }
   .inboxbtn .count { font-weight: 600; color: var(--accent); }
+  /* The amalgamated indicator, and the diagnostic behind it. */
+  .diagbtn { cursor: pointer; }
+  .diagbtn.loud { border-color: var(--pend-line); background: var(--pend-bg); color: var(--pend-ink); }
+  .diag { background: var(--paper); border: 1px solid var(--line); border-radius: 10px;
+          padding: 10px 14px; margin-bottom: 12px; }
+  .diag .diaghead { font-size: 12px; color: var(--ink-dim); margin-bottom: 8px; max-width: 88ch; }
+  .diagrow { display: flex; gap: 16px; align-items: baseline; padding: 5px 0;
+             border-top: 1px solid var(--line); font-size: 12.5px; }
+  .diagrow .chan { min-width: 190px; font-weight: 600; font-size: 12px; }
+  .diagrow .lyr { color: var(--ink-dim); font-size: 11.5px; }
+  .diagrow .lyr b { color: var(--ink); font-size: 12px; margin-left: 5px; }
+  .diag .diagfoot { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--line);
+                    font-size: 11px; color: var(--ink-faint); }
 
   /* ---------- main surface ---------- */
   .surface { display: grid; grid-template-columns: minmax(0, 1fr) 470px; gap: 16px; align-items: start; }
@@ -347,12 +360,49 @@ var EMISSIONS = {
 var PROPOSABLE_KINDS = ["add-node", "revise", "invalidate", "settle", "unsettle", "resolve-stale"];
 var NOTICE_KINDS = ["informational", "elicit-alert"];
 var MAP_MUTATION_KINDS = ["add-node", "invalidate", "revise", "settle", "unsettle", "resolve-stale", "elicit-alert", "fold"];
+var STATUS_PHASES = ["accepted", "composing", "replied", "error"];
+var AGENT_ACTORS = ["grill-master", "thread-agent"];
 //---BACKEND-VOCABULARY-END---
+
+/* ---------------- channel state, in the two layers it has ----------------
+   The connection lifecycle is the transport's: one origin, one process, one
+   answer, so every channel reports the same one. The protocol state is each
+   channel's own and is moved only by that channel's traffic — which is the
+   point, because one thread stalling says nothing about the map or about any
+   other thread.
+
+   Both tables are the backend's copy of the same contract, and a pair neither
+   names is refused rather than guessed: a channel quietly staying where it was
+   renders as a working indicator for a state this model does not have. Written
+   as JSON for the same reason the emissions table is. */
+//---CHANNEL-STATE-START---
+var TRANSPORT_STATES = ["disconnected", "connecting", "connected", "error"];
+var PROTOCOL_STATES = ["idle", "sending", "awaiting-ack", "agent-owes", "receiving"];
+var TRANSPORT_SEVERITY = ["connected", "connecting", "disconnected", "error"];
+var PROTOCOL_SEVERITY = ["idle", "sending", "receiving", "agent-owes", "awaiting-ack"];
+var TRANSPORT_TABLE = {
+  "disconnected": { "open": "connecting", "reached": "connected", "unreachable": "disconnected", "refused": "error" },
+  "connecting":   { "open": "connecting", "reached": "connected", "unreachable": "disconnected", "refused": "error" },
+  "connected":    { "open": "connected",  "reached": "connected", "unreachable": "disconnected", "refused": "error" },
+  "error":        { "open": "connecting", "reached": "connected", "unreachable": "disconnected", "refused": "error" }
+};
+var PROTOCOL_TABLE = {
+  "idle":         { "submit": "sending", "settled": "idle", "owed": "agent-owes", "arriving": "receiving", "closed": "idle" },
+  "sending":      { "dispatched": "awaiting-ack" },
+  "awaiting-ack": { "submit": "sending", "settled": "idle", "owed": "agent-owes", "arriving": "receiving", "closed": "idle" },
+  "agent-owes":   { "submit": "sending", "settled": "agent-owes", "owed": "agent-owes", "arriving": "receiving", "closed": "idle" },
+  "receiving":    { "submit": "sending", "settled": "receiving", "owed": "agent-owes", "arriving": "receiving", "closed": "idle" }
+};
+//---CHANNEL-STATE-END---
 
 var MAP = "map";
 var APPLY_KIND = "apply";
 var DISMISS_KIND = "dismiss";
 var STATUS_KIND = "status";
+var PHASE_COMPOSING = "composing";
+var PHASE_REPLIED = "replied";
+var PHASE_ERROR = "error";
+var PHASE_ACCEPTED = "accepted";
 
 /* ---------------- the board, and what has happened ---------------- */
 
@@ -367,10 +417,15 @@ var LOG = [];
 // notification the human is shown twice.
 var SEEN = {};
 var WIRE = {
-  base: "", epoch: null, cursor: 0, up: null, hydrated: false, inflight: false,
+  base: "", epoch: null, cursor: 0, hydrated: false, inflight: false,
   sent: 0, got: 0, rejected: 0, lastRejection: null,
   status: null, statusSince: 0, doctor: false, doctorKnown: false
 };
+// One transport, however many channels ride it, and one protocol state per
+// channel. The map channel exists from the start because the board is always a
+// conversation someone could be having; a thread's channel is noted the moment
+// the board mentions the thread or this page sends on it.
+var CHANNELS = { transport: TRANSPORT_STATES[0], protocol: { map: PROTOCOL_STATES[0] } };
 // Notifications are the record of what has LANDED, observed as it lands. A
 // change still waiting is not in here — it is in the inbox alone.
 var NOTES = [];
@@ -379,7 +434,7 @@ var UI = {
   lastFocus: null, lastPanelKey: null, centerNext: true, justSettled: null,
   fresh: [], touched: [], autoshut: {}, advanceFrom: null,
   bubbles: [], bubbleSeen: {}, bubbleSig: null, bubbleTick: 0, ptr: null,
-  popped: {}, draftBase: {}, popFail: false
+  popped: {}, draftBase: {}, popFail: false, diag: false
 };
 // One page instance: an idempotency key is stable for a retry and distinct
 // across reloads, because a reload's events are genuinely new and a resend is
@@ -387,24 +442,108 @@ var UI = {
 var PAGE_ID = "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 var KEYS = 0;
 
+// A failure that was answered and a failure that was not are different states,
+// because they are different problems: something is listening and broken,
+// against nothing is listening at all. The flag rides the error so the caller
+// can say which without asking the wire a second time.
+function answered(r) {
+  var e = new Error("server returned " + r.status);
+  e.answered = true;
+  return e;
+}
+function unanswered(e) { e.answered = false; throw e; }
+
 function srvGet(path, query) {
   var q = query ? "?" + query : "";
   return fetch(WIRE.base + path + q).then(function (r) {
     if (r.status === 409) { var e = new Error("epoch"); e.stale = true; throw e; }
-    if (!r.ok) throw new Error("server returned " + r.status);
+    if (!r.ok) throw answered(r);
     return r.json();
-  });
+  }, unanswered);
 }
 function srvPost(path, body) {
   return fetch(WIRE.base + path, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: body === undefined ? "" : JSON.stringify(body)
   }).then(function (r) {
-    if (!r.ok) throw new Error("server returned " + r.status);
+    if (!r.ok) throw answered(r);
     return r.json();
+  }, unanswered);
+}
+
+/* ---------------- the two layers, stepped ----------------
+   Every move goes through one step, so a state either end of this page reaches
+   is one the table named. A move the table does not have raises here rather
+   than being absorbed, which is the difference between a bug that surfaces
+   where it happened and an indicator that is quietly wrong. */
+function step(layer, table, state, event) {
+  var moves = table[state] || {};
+  if (!(event in moves)) {
+    throw new Error("the " + layer + " layer has no move from " + state + " on " + event);
+  }
+  return moves[event];
+}
+// The wire moved. No channel's protocol state moves with it: the turns an agent
+// owed before a drop are still owed after it, and clearing them would tell the
+// human their message had been dealt with because their network blinked.
+function wire(event) {
+  var next = step("transport", TRANSPORT_TABLE, CHANNELS.transport, event);
+  if (next === CHANNELS.transport) return;
+  CHANNELS.transport = next;
+  render();
+}
+function wireFailed(e) { wire(e && e.answered ? "refused" : "unreachable"); }
+// Noting a channel is not a reset: the board is re-read every poll, so every
+// open thread is offered again each time, and a reset would return a channel
+// waiting on an agent to idle roughly once a second.
+function openChannel(name) {
+  if (!(name in CHANNELS.protocol)) CHANNELS.protocol[name] = PROTOCOL_STATES[0];
+}
+function onChannel(name, event) {
+  openChannel(name);
+  CHANNELS.protocol[name] = step("protocol", PROTOCOL_TABLE, CHANNELS.protocol[name], event);
+}
+// The channels one batch touches, each once: a batch carrying two events for
+// one channel is still one write on it.
+function batchChannels(events) {
+  var seen = {}, out = [];
+  events.forEach(function (e) {
+    if (!seen[e.channel]) { seen[e.channel] = true; out.push(e.channel); }
+  });
+  return out;
+}
+function channelViews() {
+  return Object.keys(CHANNELS.protocol).map(function (name) {
+    return { channel: name, connection: CHANNELS.transport, protocol: CHANNELS.protocol[name] };
   });
 }
-function up(ok) { if (WIRE.up !== ok) { WIRE.up = ok; render(); } }
+function severityOf(view) {
+  return [TRANSPORT_SEVERITY.indexOf(view.connection), PROTOCOL_SEVERITY.indexOf(view.protocol)];
+}
+// One light over however many channels shows the worst of them, the wire ranked
+// before the conversation. A light showing an idle map while a thread's write is
+// unacknowledged reads as everything being fine.
+function worstChannel() {
+  return channelViews().reduce(function (worst, view) {
+    if (!worst) return view;
+    var a = severityOf(worst), b = severityOf(view);
+    return b[0] > a[0] || (b[0] === a[0] && b[1] > a[1]) ? view : worst;
+  }, null);
+}
+function connected() { return CHANNELS.transport === "connected"; }
+// What one arriving entry says about the channel it is on. The lane's own
+// entries are the whole of who-owes-whom: this page does not decide which agent
+// answers a gesture, so it does not decide which channel is waiting either --
+// it reads the channel the backend addressed the announcement to.
+function track(entry) {
+  if (entry.kind === STATUS_KIND) {
+    var phase = entry.payload.phase;
+    if (phase === PHASE_COMPOSING) onChannel(entry.channel, "owed");
+    else if (phase === PHASE_REPLIED || phase === PHASE_ERROR) onChannel(entry.channel, "closed");
+    return;
+  }
+  if (AGENT_ACTORS.indexOf(entry.actor) >= 0) onChannel(entry.channel, "arriving");
+}
 
 /* One event, built and checked against the table above rather than trusted
    against it: a kind, a channel class or a payload key the table does not name
@@ -432,8 +571,16 @@ function send() {
   var out = Array.prototype.slice.call(arguments);
   if (!out.length || !WIRE.epoch || WIRE.doctor) return;
   WIRE.sent += out.length;
-  srvPost("/events", { epoch: WIRE.epoch, events: out }).then(function (receipts) {
-    up(true);
+  var touched = batchChannels(out);
+  // Every channel in the batch is sending, then away, then answered. Who owes a
+  // turn afterwards is not decided here: the lane says so, on the channel the
+  // turn runs on, and for a fold that is not the channel the human clicked in.
+  touched.forEach(function (name) { onChannel(name, "submit"); });
+  var posted = srvPost("/events", { epoch: WIRE.epoch, events: out });
+  touched.forEach(function (name) { onChannel(name, "dispatched"); });
+  posted.then(function (receipts) {
+    touched.forEach(function (name) { onChannel(name, "settled"); });
+    wire("reached");
     receipts.forEach(function (r) {
       if (r.status !== "rejected") return;
       WIRE.rejected += 1;
@@ -446,16 +593,21 @@ function send() {
     // the human would be looking at a message they think they sent.
     render();
     poll();
-  }, function () { up(false); });
+  }, function (e) {
+    touched.forEach(function (name) { onChannel(name, "settled"); });
+    wireFailed(e);
+  });
 }
 
 /* The board, asked for rather than asserted. This is what a reload gets, what
    a page arriving late gets, and what a page whose epoch went stale gets —
    one answer, so reconnecting can never look like a reset. */
 function hydrate() {
+  wire("open");
   return srvGet("/state").then(function (st) {
     WIRE.epoch = st.epoch;
     BOARD = st.image1;
+    noteThreads();
     // The log up to here is read as a lookup table, not as news: a page
     // arriving mid-session must not announce a morning's worth of changes as
     // if they had just happened.
@@ -463,13 +615,24 @@ function hydrate() {
       LOG = u.entries;
       SEEN = {};
       u.entries.forEach(function (e) { SEEN[e.seq] = true; });
+      // Read for channel state as well as as a lookup table, and it has to be:
+      // a reload while an agent is composing must come back still waiting on
+      // it. Every finished turn's own closing entry is in here too, so replaying
+      // the record lands each channel exactly where the record left it.
+      u.entries.forEach(track);
       WIRE.cursor = u.seq;
       WIRE.hydrated = true;
       if (!UI.focus) UI.focus = (BOARD.frontier[0] || (BOARD.decisions[0] || {}).id || null);
-      up(true);
+      wire("reached");
       render();
     });
   });
+}
+// Every thread on the board is a channel, whether or not this page has spoken
+// on it, so the diagnostic lists them all rather than only the ones it happens
+// to have sent something to.
+function noteThreads() {
+  BOARD.threads.forEach(function (t) { openChannel(t.id); });
 }
 
 function poll() {
@@ -481,12 +644,12 @@ function poll() {
   // moved past them.
   var done = function () { WIRE.inflight = false; };
   if (!WIRE.hydrated) {
-    hydrate().then(done, function () { done(); up(false); });
+    hydrate().then(done, function (e) { done(); wireFailed(e); });
     return;
   }
   srvGet("/updates", "epoch=" + encodeURIComponent(WIRE.epoch) + "&cursor=" + WIRE.cursor)
     .then(function (u) {
-      up(true);
+      wire("reached");
       if (!u.entries.length) { done(); return refreshDoctor(); }
       WIRE.cursor = u.seq;
       WIRE.got += u.entries.length;
@@ -497,21 +660,23 @@ function poll() {
       // state read is the only thing that decides what the board says.
       return srvGet("/state").then(function (st) {
         BOARD = st.image1;
+        noteThreads();
         advance();
         UI.fresh = [];
         UI.touched = [];
+        arrived.forEach(track);
         arrived.forEach(function (e, i) { observe(e, arrived, i); });
         WIRE.doctorKnown = false;
         done();
         return refreshDoctor();
-      }, function () { done(); up(false); });
+      }, function (e) { done(); wireFailed(e); });
     }, function (e) {
       done();
       // The backend is telling us it is not the process we started with.
       // Re-read state rather than carry a stale board forward, and assert
       // nothing on the way.
       if (e && e.stale) { WIRE.hydrated = false; poll(); return; }
-      up(false);
+      wireFailed(e);
     });
 }
 // The doctor check is a control, not board content: it says whether the board
@@ -782,8 +947,10 @@ function observe(entry, batch, index) {
 }
 function applyStatus(entry) {
   var phase = entry.payload.phase;
-  if (phase === "accepted") { WIRE.statusSince = Date.now(); WIRE.status = entry.payload; return; }
-  if (phase === "error") { WIRE.status = null; return; }
+  if (phase === PHASE_ACCEPTED) { WIRE.statusSince = Date.now(); WIRE.status = entry.payload; return; }
+  // A turn that ended stops the clock, whichever way it ended. Without the
+  // closing phase this chip counted up from a reply that landed minutes ago.
+  if (phase === PHASE_ERROR || phase === PHASE_REPLIED) { WIRE.status = null; return; }
   WIRE.status = entry.payload;
 }
 function laneText() {
@@ -929,7 +1096,7 @@ function endSession() {
   render();
 }
 function callDoctor() {
-  srvPost("/doctor").then(function (d) { WIRE.doctor = d.outstanding; render(); }, function () { up(false); });
+  srvPost("/doctor").then(function (d) { WIRE.doctor = d.outstanding; render(); }, wireFailed);
 }
 function titleFrom(text, anchor) {
   var w = String(text).replace(/\s+/g, " ").trim().split(" ").slice(0, 8).join(" ");
@@ -1365,19 +1532,56 @@ setInterval(function () {
   if (UI.bubbles[0].left <= 0) { UI.bubbles.shift(); renderBubbles(); }
 }, 150);
 
+/* ---------- the connection indicator, and what is behind it ---------- */
+// One line per state, in the human's words rather than the protocol's. The
+// protocol name rides along beside it, because the name is what the diagnostic,
+// the log and anyone reading this file all use.
+var CONNECTION_WORDS = {
+  disconnected: "no backend", connecting: "connecting", connected: "backend up", error: "backend erroring"
+};
+var PROTOCOL_WORDS = {
+  idle: "nothing outstanding", sending: "sending", "awaiting-ack": "unacknowledged",
+  "agent-owes": "waiting on the agent", receiving: "a reply is arriving"
+};
+// The worst channel, and nothing else. What splits this into the three separate
+// signals — reachable, owed, outbox depth — is the next thing to be built on top
+// of it; this is one light and the expansion behind it.
+function renderIndicator() {
+  var shown = worstChannel();
+  var quiet = connected() && shown.protocol === "idle";
+  return '<button class="agentchip diagbtn' + (quiet ? "" : " loud") + '" data-act="diag" id="indicator"' +
+    ' data-connection="' + esc(shown.connection) + '" data-protocol="' + esc(shown.protocol) + '"' +
+    ' data-worst="' + esc(shown.channel) + '" title="Every channel, and what each one is doing">' +
+    '<span class="dot' + (quiet ? "" : " busy") + '"></span>' +
+    esc(CONNECTION_WORDS[shown.connection]) +
+    (quiet ? "" : " · " + esc(PROTOCOL_WORDS[shown.protocol]) + " on " + esc(shown.channel)) +
+    ' <span class="did">' + (UI.diag ? "▴" : "▾") + "</span></button>";
+}
+// The expansion: every channel with both of its layers, named as the protocol
+// names them. The amalgamated light says something is happening; this says on
+// which channel and in which of the two layers.
+function renderDiagnostic() {
+  if (!UI.diag) return "";
+  var rows = channelViews().map(function (view) {
+    return '<div class="diagrow" data-channel="' + esc(view.channel) + '">' +
+      '<span class="mono chan">' + esc(view.channel === MAP ? "map" : view.channel) + "</span>" +
+      '<span class="lyr">connection <b class="mono">' + esc(view.connection) + "</b></span>" +
+      '<span class="lyr">protocol <b class="mono">' + esc(view.protocol) + "</b></span></div>";
+  }).join("");
+  return '<div class="diag" id="diagnostic"><div class="diaghead">Channels — one for the map, one per thread. ' +
+    "The connection is the transport's and is the same for all of them; the protocol state is each channel's own.</div>" +
+    rows + '<div class="diagfoot mono">epoch ' + esc(String(WIRE.epoch).slice(0, 10)) +
+    " · seq " + WIRE.cursor + " · " + WIRE.sent + " sent, " + WIRE.got + " received" +
+    (WIRE.rejected ? " · " + WIRE.rejected + " refused" : "") + "</div></div>";
+}
+
 /* ---------- shell ---------- */
 function renderShell() {
   var ps = proposals(), unread = unreadCount();
   var lane = WIRE.status
     ? '<span class="agentchip"><span class="dot busy"></span>agent: <span id="lanetimer">' + esc(laneText()) + "</span></span>"
     : '<span class="agentchip"><span class="dot"></span>agent: idle</span>';
-  var top = '<div class="topbar">' +
-    '<span class="agentchip"><span class="dot' + (WIRE.up ? " busy" : "") + '"></span>' +
-    (WIRE.up === false ? "backend unreachable"
-      : WIRE.up === null ? "connecting to the backend…"
-      : "epoch " + esc(String(WIRE.epoch).slice(0, 10)) + " · seq " + WIRE.cursor +
-        " · " + WIRE.sent + " sent, " + WIRE.got + " received" +
-        (WIRE.rejected ? " · " + WIRE.rejected + " refused" : "")) + "</span>" + lane +
+  var top = '<div class="topbar">' + renderIndicator() + lane +
     '<button class="pendbtn' + (ps.length ? "" : " none") + '" data-act="inbox">📥 ' +
     (ps.length ? ps.length + " change" + (ps.length > 1 ? "s" : "") + " waiting on you" : "inbox empty") + "</button>" +
     '<button class="inboxbtn" data-act="notifications">🔔 Notifications <span class="count">' + unread + "</span> unread</button>" +
@@ -1385,7 +1589,7 @@ function renderShell() {
     '<button class="btn sm" data-act="endsession">End the session</button></div>';
 
   var banners = "";
-  if (WIRE.up === false) {
+  if (CHANNELS.transport === "disconnected" || CHANNELS.transport === "error") {
     banners += '<div class="banner">⚠ <strong>No backend.</strong> Nothing is answering — the session log and every answer already accepted are safe on disk, ' +
       "but nothing you do now is recorded and no reply will arrive. Restart it and this page will re-read the board by itself.</div>";
   }
@@ -1404,7 +1608,7 @@ function renderShell() {
     "<p>The backend owns this session: it holds the log, assigns every sequence and mints the agents. " +
     "This page renders the board it is given — answer anything on the frontier, open a thread on any decision, " +
     "and deal with anything waiting in the inbox. Reload at any point and the board comes back from the server.</p></div>" +
-    banners + top +
+    banners + top + renderDiagnostic() +
     '<div class="surface">' + renderMap() + renderColumn() + "</div>";
 
   document.getElementById("overlay").innerHTML =
@@ -1612,6 +1816,7 @@ document.addEventListener("click", function (e) {
     case "dismissone": dismissPending([uid]); break;
     case "discuss": discussPending(uid); break;
     case "discussnotice": discussNotice(uid); break;
+    case "diag": UI.diag = !UI.diag; render(); break;
     case "inbox": UI.panel = { kind: "inbox" }; render(); break;
     case "notifications": UI.panel = { kind: "notifications" }; render(); break;
     case "doctor": callDoctor(); break;
