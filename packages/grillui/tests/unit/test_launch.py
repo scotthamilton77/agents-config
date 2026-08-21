@@ -366,3 +366,97 @@ def test_the_result_is_written_beside_the_log_as_well_as_printed(session_dir: Pa
     written = (session_dir / RESULT_FILE).read_text(encoding="utf-8")
     assert '"references"' in written
     assert "grill-1" in stream.getvalue()
+
+
+def test_a_port_past_the_top_of_the_range_is_an_honest_refusal() -> None:
+    """
+    Given the highest port there is, already occupied
+    When a launch prefers it
+    Then the answer is the no-free-port refusal, not a crash past 65535.
+
+    The probe stops at the top of the port range instead of walking off it,
+    and a preference outside the range is refused by name.
+    """
+    with socket.socket() as taken:
+        try:
+            taken.bind((LOOPBACK, 65535))
+            taken.listen()
+        except OSError:
+            pass  # someone else holds it, which occupies it just as well
+        with pytest.raises(OSError, match="no free port"):
+            free_port(65535)
+    for outside in (0, -1, 65536):
+        with pytest.raises(ValueError, match="outside"):
+            free_port(outside)
+
+
+def test_stdout_and_the_result_file_are_the_same_bytes(session_dir: Path) -> None:
+    """
+    Given a session whose log is terminal-ready
+    When the result is reported
+    Then stdout is byte-identical to the result file, plus print's newline.
+
+    One artifact in two places: a caller piping stdout somewhere and a caller
+    reading the file must not be able to disagree.
+    """
+    apps: list[ASGIApp] = []
+    launch(
+        session_dir,
+        handoff=started(session_dir),
+        run=lambda app, _port: apps.append(app),
+        open_url=lambda _url: True,
+        stop=lambda: None,
+        out=io.StringIO(),
+    )
+    client = TestClient(apps[0], client=(LOOPBACK, 51000))
+    client.post(
+        "/events",
+        json={
+            "epoch": client.get("/status").json()["epoch"],
+            "events": [event(SESSION_END_KIND, actor="human", key="end")],
+        },
+    )
+    out = io.StringIO()
+    assert report(session_dir, out=out) == 0
+    assert out.getvalue() == (session_dir / RESULT_FILE).read_text(encoding="utf-8") + "\n"
+
+
+def test_a_failing_stop_hook_does_not_poison_the_end_receipt(
+    session_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    Given a launched session whose stop hook raises
+    When the human's end-session gesture is accepted
+    Then the receipt is still an acceptance, the ending is still durable,
+         and the failure is said aloud rather than swallowed.
+
+    The ending is the human's and is already written; a hook the launcher
+    supplied cannot turn it into a transport failure after the fact.
+    """
+    apps: list[ASGIApp] = []
+
+    def failing_stop() -> None:
+        death = "the process refused to die"
+        raise RuntimeError(death)
+
+    launch(
+        session_dir,
+        handoff=started(session_dir),
+        run=lambda app, _port: apps.append(app),
+        open_url=lambda _url: True,
+        stop=failing_stop,
+        out=io.StringIO(),
+    )
+    client = TestClient(apps[0], client=(LOOPBACK, 51000))
+    ended = client.post(
+        "/events",
+        json={
+            "epoch": client.get("/status").json()["epoch"],
+            "events": [event(SESSION_END_KIND, actor="human", key="end")],
+        },
+    )
+
+    assert ended.status_code == 200
+    assert ended.json()[0]["status"] == "accepted"
+    assert (session_dir / RESULT_FILE).exists()
+    assert "stop hook failed" in capsys.readouterr().err

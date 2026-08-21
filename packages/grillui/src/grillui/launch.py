@@ -53,6 +53,8 @@ if TYPE_CHECKING:
 DEFAULT_PORT = 8765
 LOOPBACK = "127.0.0.1"
 PORT_SEARCH_SPAN = 64
+
+LAST_PORT = 65535
 NON_LOOPBACK_STATUS = 403
 NON_LOOPBACK_DETAIL = "this session is served to loopback clients only"
 
@@ -98,14 +100,18 @@ def free_port(preferred: int, *, host: str = LOOPBACK) -> int:
     could win -- a launch that lost that race fails loudly at startup, which is
     the same thing a caller would have seen from a port they named themselves.
     """
-    for port in range(preferred, preferred + PORT_SEARCH_SPAN):
+    if not 0 < preferred <= LAST_PORT:
+        outside = f"port {preferred} is outside 1-{LAST_PORT}"
+        raise ValueError(outside)
+    span_end = min(preferred + PORT_SEARCH_SPAN, LAST_PORT + 1)
+    for port in range(preferred, span_end):
         with socket.socket() as probe:
             try:
                 probe.bind((host, port))
             except OSError:
                 continue
             return port
-    exhausted = f"no free port between {preferred} and {preferred + PORT_SEARCH_SPAN - 1}"
+    exhausted = f"no free port between {preferred} and {span_end - 1}"
     raise OSError(exhausted)
 
 
@@ -122,8 +128,10 @@ def report(directory: Path, *, out: TextIO) -> int:
     is a briefing over a grilling and not the grilling itself.
     """
     result = capture(directory)
-    write_result(directory, result)
-    print(result.model_dump_json(indent=2), file=out)
+    path = write_result(directory, result)
+    # Stdout is the same bytes as the result file: one artifact, two places,
+    # so piping stdout somewhere and reading the file cannot disagree.
+    print(path.read_text(encoding="utf-8"), file=out)
     return 0
 
 

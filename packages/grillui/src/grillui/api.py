@@ -29,6 +29,7 @@ them by path alone.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -217,8 +218,14 @@ def create_app(
             if on_end is not None:
                 # Last, and after the receipts are settled: stopping the process
                 # is the answer to the human's gesture, not a step the gesture
-                # waits on.
-                on_end()
+                # waits on. A hook that fails cannot take the receipts with it
+                # -- the ending is already durable -- but it must not fail
+                # silently either, because a backend whose stop hook died is a
+                # backend that will not exit.
+                try:
+                    on_end()
+                except Exception as error:
+                    print(f"session ended but the stop hook failed: {error!r}", file=sys.stderr)
         return receipts
 
     return app
