@@ -11,26 +11,41 @@ A client presenting a stale epoch is told so rather than served: refused on writ
 with an `epoch mismatch` receipt naming both epochs, and refused on read with a
 409, so it re-reads state instead of guessing.
 
-Beside the board routes sits the map doctor, which is a control rather than a
-board event: it writes nothing into the record and its state is a property of
-this process, not of the log. It is not a kind on the write route because that
-vocabulary is closed and a control that reassesses everything is not something
-an agent says.
+Beside the board routes sit two controls, and what makes them controls is the
+same thing in both cases: they write nothing into the record, and their state is
+a property of this process rather than of the log. The map doctor is not a kind
+on the write route because that vocabulary is closed and a control that
+reassesses everything is not something an agent says. The window claim is not
+one either, and for a stronger reason -- which window is driving a session is not
+part of the session, and a log that carried it would say something about the
+browser in a record that is otherwise only about the grilling.
+
+The surface itself is served from here too, off the package's own bytes. It is
+a program this process hands out rather than an asset anything installs, so a
+page and the backend it talks to are always the same build -- and the page is
+reached on the same origin as the routes it reads, which is what lets it name
+them by path alone.
 """
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 
 from grillui.capture import default_summary
+from grillui.claim import Claim
 from grillui.lane import Lane
 from grillui.persistence import project_and_persist
 from grillui.projector import fold, to_image1
 from grillui.schemas import (
     SESSION_END_KIND,
     BatchWrite,
+    ClaimRequest,
+    ClaimState,
     DoctorState,
     Image1,
     Image2,
@@ -43,7 +58,7 @@ from grillui.schemas import (
 from grillui.session import end_session
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from grillui.capture import Summarizer
     from grillui.lane import TurnDriver
@@ -53,6 +68,8 @@ if TYPE_CHECKING:
 STALE_EPOCH_STATUS = 409
 MALFORMED_PAYLOAD_STATUS = 422
 
+PAGE = Path(__file__).parent / "page" / "index.html"
+
 
 def create_app(
     log: SessionLog,
@@ -60,6 +77,7 @@ def create_app(
     *,
     expert: TurnDriver | None = None,
     summarize: Summarizer = default_summary,
+    on_end: Callable[[], None] | None = None,
 ) -> FastAPI:
     """Bind the board endpoints to one session log, and the lane to its tiers.
 
@@ -75,9 +93,16 @@ def create_app(
     `summarize` is the seam capture writes the terminal result's prose through.
     Its default builds the briefing from the structured parts, so ending a
     session never waits on a model being reachable.
+
+    `on_end` is what a launched backend hands in to be stopped by: a session
+    that has ended has nothing further to serve, and the agent that launched it
+    is waiting on this process to exit. It defaults to doing nothing, because a
+    backend nobody launched -- one under test, or one embedded -- has no process
+    of its own to end.
     """
     app = FastAPI(title="grillui session backend")
     lane = Lane(log, driver, expert)
+    claim = Claim(log.directory)
 
     def require_epoch(presented: str) -> None:
         if presented != log.epoch:
@@ -85,6 +110,16 @@ def create_app(
                 status_code=STALE_EPOCH_STATUS,
                 detail=f"server epoch is {log.epoch!r}, presented epoch was {presented!r}",
             )
+
+    @app.get("/", include_in_schema=False)
+    def read_page() -> FileResponse:
+        """The surface, from this package's own bytes.
+
+        Serving it here rather than shipping it as an installed asset is what
+        keeps a page and the protocol it speaks one version: there is no copy
+        on disk that a backend restart can leave behind.
+        """
+        return FileResponse(PAGE, media_type="text/html")
 
     @app.get("/status")
     def read_status() -> SessionStatus:
@@ -135,6 +170,26 @@ def create_app(
         lane.call_doctor()
         return DoctorState(outstanding=lane.doctor_outstanding)
 
+    @app.post("/claim")
+    def present_claim(request: ClaimRequest) -> ClaimState:
+        """Which window this session belongs to.
+
+        A control, not a board event: it appends nothing, it is in no image, and
+        a session's record reads the same whoever was driving it. It is a POST
+        rather than a read because presenting a name is what acquires the claim
+        -- the same call is the first claim, the reload, the reconnect and the
+        take-over, so there is one answer to keep true rather than four.
+
+        Nothing here refuses a write. A window that has been superseded stops
+        writing because it is told to and shows the human why; the log does not
+        police who wrote to it, and making it do so would put session control
+        inside the record it is deliberately outside of.
+        """
+        return ClaimState(
+            token=claim.token,
+            state=claim.present(request.holder, takeover=request.takeover),
+        )
+
     @app.post("/events")
     def write_events(batch: BatchWrite) -> list[Receipt]:
         """The receipts are settled before anything is projected: the entries
@@ -160,6 +215,17 @@ def create_app(
             # already durable, so a capture that fails costs the result file
             # and leaves the record of the ending intact.
             end_session(log, summarize=summarize)
+            if on_end is not None:
+                # Last, and after the receipts are settled: stopping the process
+                # is the answer to the human's gesture, not a step the gesture
+                # waits on. A hook that fails cannot take the receipts with it
+                # -- the ending is already durable -- but it must not fail
+                # silently either, because a backend whose stop hook died is a
+                # backend that will not exit.
+                try:
+                    on_end()
+                except Exception as error:
+                    print(f"session ended but the stop hook failed: {error!r}", file=sys.stderr)
         return receipts
 
     return app

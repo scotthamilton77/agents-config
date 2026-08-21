@@ -1,6 +1,6 @@
 ---
 name: grilling
-description: Grill the user relentlessly about a plan, decision, or idea. Use when the user says "grill me", "grill this", "stress-test this", "poke holes in it", or otherwise wants their thinking challenged before anything gets built. Stress-testing a plan against the project's own glossary and recorded decisions is `grill-with-docs` instead.
+description: Grill the user relentlessly about a plan, decision, or idea, as an interview in this conversation. Use when the user says "grill me", "grill this", "stress-test this", "poke holes in it", or otherwise wants their thinking challenged before anything gets built. Stress-testing a plan against the project's own glossary and recorded decisions is `grill-with-docs` instead; running the session on a board in the browser is `grill-with-ui` instead.
 admission:
   prevents: Implementation starting from a goals-only idea whose decisions and edge cases were never resolved, forcing rework and human babysitting downstream.
   cost: Front-loads a multi-round interview — one user round-trip per frontier, plus subagent fact-finding — and a terminal acceptance-criteria enumeration, before any building begins.

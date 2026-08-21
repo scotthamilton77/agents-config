@@ -15,6 +15,7 @@ two cases worth standing up.
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ from grillui.schemas import (
     STATUS_PHASE_ACCEPTED,
     STATUS_PHASE_COMPOSING,
     STATUS_PHASE_ERROR,
+    STATUS_PHASE_REPLIED,
     LogEntry,
 )
 
@@ -78,11 +80,23 @@ def driver() -> SpyDriver:
     return SpyDriver()
 
 
+@pytest.fixture
+def held() -> Iterator[SpyDriver]:
+    """A turn held in flight for the whole test.
+
+    Releasing in teardown rather than in the test body means an assertion
+    failing mid-test does not leave the turn thread waiting out TIMEOUT.
+    """
+    driver = SpyDriver(hold=True)
+    yield driver
+    driver.release.set()
+
+
 def test_the_lane_reads_accepted_then_composing_naming_the_dispatching_tier(
-    log: SessionLog, driver: SpyDriver
+    log: SessionLog, held: SpyDriver
 ) -> None:
     """
-    Given a session whose tier is a driver that answers
+    Given a session whose tier is a driver whose turn is still in flight
     When a human answers a decision
     Then the lane carries exactly `accepted` then `composing`, the composing
          entry names the tier taking the turn, and both are backend-authored on
@@ -91,7 +105,13 @@ def test_the_lane_reads_accepted_then_composing_naming_the_dispatching_tier(
     The tier travels in the entry rather than being looked up by whoever renders
     it: a page that had to infer which tier it was waiting on would infer it from
     configuration the turn may not have used.
+
+    The turn is held for the duration, because what is claimed here is what the
+    lane says while a reply is still coming. Reading it after the turn ended
+    would be reading the closing phase as well, and racing the driver's thread
+    for which of the two the assertion met.
     """
+    driver = held
     client = driven(log, driver)
     node = seed_node(client, log.epoch)
 
@@ -105,7 +125,9 @@ def test_the_lane_reads_accepted_then_composing_naming_the_dispatching_tier(
     assert [entry.channel for entry in lane] == ["map", "map"]
 
 
-def test_the_lane_lands_inside_ten_milliseconds_of_the_human_turn(log: SessionLog) -> None:
+def test_the_lane_lands_inside_ten_milliseconds_of_the_human_turn(
+    log: SessionLog, held: SpyDriver
+) -> None:
     """
     Given a tier whose turn never finishes
     When a human answers a decision
@@ -116,7 +138,7 @@ def test_the_lane_lands_inside_ten_milliseconds_of_the_human_turn(log: SessionLo
     a model would still be composing. That is the claim: the lane's cost is an
     append, not a turn, and no code path here can be made to wait on one.
     """
-    driver = SpyDriver(hold=True)
+    driver = held
     client = driven(log, driver)
     node = seed_node(client, log.epoch)
 
@@ -127,7 +149,6 @@ def test_the_lane_lands_inside_ten_milliseconds_of_the_human_turn(log: SessionLo
     assert elapsed_ms(turn, accepted) < BUDGET_MS
     assert elapsed_ms(turn, composing) < BUDGET_MS
     assert not driver.finished.is_set()
-    driver.release.set()
 
 
 def test_the_lane_entries_land_before_the_driver_is_invoked(
@@ -220,7 +241,7 @@ def test_an_agent_authored_thread_produces_no_status_entry_and_no_dispatch(
 
 
 def test_a_human_turn_in_that_same_thread_produces_a_status_entry_and_a_dispatch(
-    log: SessionLog, driver: SpyDriver, session_dir: Path
+    log: SessionLog, session_dir: Path, held: SpyDriver
 ) -> None:
     """
     Given the same agent-authored thread, which drew no reply
@@ -229,7 +250,11 @@ def test_a_human_turn_in_that_same_thread_produces_a_status_entry_and_a_dispatch
 
     The pair with the test above is the whole of the answerability rule: the
     thread is not what decides, the actor is.
+
+    Held for the same reason as the first lane check: the claim is about what
+    fires when the turn starts, not about what the lane looks like once it ended.
     """
+    driver = held
     client = driven(log, driver)
     client.post(
         "/events",
@@ -271,7 +296,7 @@ def test_a_human_turn_in_that_same_thread_produces_a_status_entry_and_a_dispatch
 
 
 def test_events_returns_its_receipts_without_waiting_for_the_driver_to_finish(
-    log: SessionLog,
+    log: SessionLog, held: SpyDriver
 ) -> None:
     """
     Given a tier whose turn is still in flight
@@ -282,7 +307,7 @@ def test_events_returns_its_receipts_without_waiting_for_the_driver_to_finish(
     when the turn did would put a 34-second heavy turn in front of every gesture
     the human makes, which is the failure the whole lane exists to prevent.
     """
-    driver = SpyDriver(hold=True)
+    driver = held
     client = driven(log, driver)
     node = seed_node(client, log.epoch)
 
@@ -319,14 +344,18 @@ def _post_answer(client: TestClient, epoch: str, node: str) -> list[dict[str, An
 
 
 def test_each_turns_lane_entries_land_adjacent_to_the_turn_they_report(
-    log: SessionLog, driver: SpyDriver
+    log: SessionLog, held: SpyDriver
 ) -> None:
     """
     Given one batch carrying two human turns on two channels
     When the lane accepts it
     Then each turn is immediately followed by its own accepted and composing,
     rather than the second turn wedging between the first and its lane entries.
+
+    Both turns are held in flight, so the shape read here is the one the append
+    lock produced rather than one either turn's closing phase has landed in.
     """
+    driver = held
     client = driven(log, driver)
     client.post(
         "/events",
@@ -363,4 +392,133 @@ def test_each_turns_lane_entries_land_adjacent_to_the_turn_they_report(
         ("thread-created", "t2"),
         (STATUS_KIND, "t2"),
         (STATUS_KIND, "t2"),
+    ]
+
+
+def _lane(log: SessionLog) -> list[tuple[Any, str]]:
+    """The lane as a reader watching one channel at a time sees it."""
+    return [(entry.payload.get("phase"), entry.channel) for entry in statuses(log)]
+
+
+def test_a_turn_that_ends_closes_the_lane_on_the_channel_it_ran_on(
+    log: SessionLog, driver: SpyDriver
+) -> None:
+    """
+    Given a tier whose turn finishes
+    When a human answers a decision
+    Then the lane reads accepted, composing and then a closing phase, all on the
+         channel the turn ran on.
+
+    The closing phase is what makes the lane readable as state rather than as a
+    feed. Without it there is no entry that ever says a turn ended, so a reader
+    tracking what each channel is waiting on has every channel a turn has ever
+    run on waiting for the rest of the session -- and the human is shown a
+    permanent "composing" for a reply that arrived minutes ago.
+    """
+    client = driven(log, driver)
+    node = seed_node(client, log.epoch)
+
+    _post_answer(client, log.epoch, node)
+
+    await_phase(log, STATUS_PHASE_REPLIED)
+    assert _lane(log) == [
+        (STATUS_PHASE_ACCEPTED, "map"),
+        (STATUS_PHASE_COMPOSING, "map"),
+        (STATUS_PHASE_REPLIED, "map"),
+    ]
+
+
+def test_a_fold_is_acknowledged_in_the_thread_and_composed_and_closed_on_the_map(
+    log: SessionLog, driver: SpyDriver
+) -> None:
+    """
+    Given an agent-authored thread, which drew no reply of its own
+    When the human folds it
+    Then `accepted` lands in the thread and `composing` and its closing phase
+         both land on the map, which is where the turn runs.
+
+    The two entries answer different questions and belong in different places.
+    `accepted` answers the human: the gesture you just made landed, here where
+    you made it. `composing` says who owes a turn -- and for a fold that is the
+    grill-master on the map, because the grill-master is the only agent that
+    authors map mutations. Announced in the thread instead it would promise a
+    reply on a channel no agent was dispatched to, name the thread's tier for a
+    turn the map's tier is taking, and leave the map -- where the mutation
+    actually lands -- with nothing to say it was coming.
+    """
+    client = driven(log, driver)
+    client.post(
+        "/events",
+        json={
+            "epoch": log.epoch,
+            "events": [
+                event(
+                    "thread-created",
+                    actor="grill-master",
+                    channel=THREAD,
+                    key="agent-thread",
+                    kind="mandate",
+                    title="Storage durability",
+                    requires_action=True,
+                    turns=[{"who": "grill-master", "text": "This one needs a thread."}],
+                )
+            ],
+        },
+    )
+    assert statuses(log) == [], "an agent-authored thread is owed no reply"
+
+    folded = client.post(
+        "/events",
+        json={
+            "epoch": log.epoch,
+            "events": [event("thread-fold", actor="human", channel=THREAD, key="fold-1")],
+        },
+    ).json()
+
+    assert folded[0]["status"] == "accepted"
+    await_phase(log, STATUS_PHASE_REPLIED)
+    assert _lane(log) == [
+        (STATUS_PHASE_ACCEPTED, THREAD),
+        (STATUS_PHASE_COMPOSING, "map"),
+        (STATUS_PHASE_REPLIED, "map"),
+    ]
+
+
+def test_a_turn_that_could_not_be_taken_closes_the_lane_where_it_opened(log: SessionLog) -> None:
+    """The failing turn closes where the working one does.
+
+    A pair that opened on one channel and closed on another would leave the
+    first waiting forever and the second reporting the end of something it was
+    never told had started.
+    """
+    client = driven(log, UnreachableDriver())
+    client.post(
+        "/events",
+        json={
+            "epoch": log.epoch,
+            "events": [
+                event(
+                    "thread-created",
+                    actor="grill-master",
+                    channel=THREAD,
+                    key="agent-thread",
+                    turns=[{"who": "grill-master", "text": "This one needs a thread."}],
+                )
+            ],
+        },
+    )
+
+    client.post(
+        "/events",
+        json={
+            "epoch": log.epoch,
+            "events": [event("thread-fold", actor="human", channel=THREAD, key="fold-1")],
+        },
+    )
+
+    await_phase(log, STATUS_PHASE_ERROR)
+    assert _lane(log) == [
+        (STATUS_PHASE_ACCEPTED, THREAD),
+        (STATUS_PHASE_COMPOSING, "map"),
+        (STATUS_PHASE_ERROR, "map"),
     ]

@@ -21,7 +21,10 @@ an agent-authored thread is fully accepted and simply not answered.
 **A gesture is answered by whoever may act on it.** Every turn is answered on
 the channel it was spoken on, with one exception: folding a thread is answered
 by the grill-master on the map, because the grill-master is the only agent that
-authors map mutations and a conclusion nobody hands it changes nothing.
+authors map mutations and a conclusion nobody hands it changes nothing. The lane
+follows that routing rather than the click: the human's gesture is acknowledged
+where they made it, and the turn it schedules is announced, tiered and closed on
+the channel that turn actually runs on.
 
 **The tier is a property of the channel, not of the session.** Each turn's
 driver is chosen for the channel it is about to run on, so escalating one thread
@@ -53,6 +56,7 @@ from grillui.schemas import (
     STATUS_PHASE_ACCEPTED,
     STATUS_PHASE_COMPOSING,
     STATUS_PHASE_ERROR,
+    STATUS_PHASE_REPLIED,
     THREAD_FOLD_KIND,
 )
 
@@ -208,6 +212,13 @@ class Lane:
                 # moved off.
                 driver = self.tier_for(turn.channel, base)
                 turns.append((driver, turn))
+                # The two entries are addressed to two different channels, and
+                # for every gesture but a fold they are the same one. `accepted`
+                # answers the human's gesture, so it belongs where they made it.
+                # `composing` says who owes a turn and names the tier taking it,
+                # so it belongs on the channel that turn runs on -- the same
+                # channel its `replied` or `error` will close, and the same one
+                # whose expert mode chose the tier being named.
                 self.log.emit_status(
                     STATUS_PHASE_ACCEPTED,
                     f"{event.kind} from the human accepted on channel {event.channel!r}",
@@ -216,7 +227,7 @@ class Lane:
                 self.log.emit_status(
                     STATUS_PHASE_COMPOSING,
                     f"the {driver.tier!r} tier is composing a reply",
-                    event.channel,
+                    turn.channel,
                     tier=driver.tier,
                 )
         return receipts, [self._schedule(driver, turn) for driver, turn in turns]
@@ -282,6 +293,9 @@ class Lane:
             driver.run(self.log, dispatch)
             if self._watching(turn):
                 self._hand_back(driver, standing)
+            self.log.emit_status(
+                STATUS_PHASE_REPLIED, f"the {driver.tier!r} tier's turn is over", turn.channel
+            )
         except Exception as error:
             self.log.emit_status(
                 STATUS_PHASE_ERROR, f"the {driver.tier!r} tier failed: {error!r}", turn.channel

@@ -8,16 +8,16 @@ typed rejection rather than as a transport-level error, which is the whole point
 of a uniform receipt.
 
 The rejection vocabulary is closed. A write is refused for exactly one of the
-nine reasons named below, and a caller may switch on that string. That closure
-is what decides where a malformed payload lands: a payload fault one of the
-nine names is a typed receipt (an answer carrying neither option nor text, a
-thread event carrying no turn), and a payload fault none of them names -- an
-add-node with one option, an invalidate with no rationale -- is refused at the
-envelope, whole batch, the same way an unknown envelope field is. Minting a
-tenth reason to make one of those a receipt would break every caller switching
-on the vocabulary; the two the queue gestures added are there because a human
-told their apply landed when the proposal was gone, or was in conflict, has been
-told the named anti-pattern.
+reasons named below, and a caller may switch on that string. That closure is
+what decides where a malformed payload lands: a payload fault the vocabulary
+names is a typed receipt (an answer carrying neither option nor text, a thread
+event carrying no turn), and a payload fault it does not name -- an add-node
+with one option, an invalidate with no rationale -- is refused at the envelope,
+whole batch, the same way an unknown envelope field is. Reclassifying one of
+those envelope faults as a new receipt reason would break every caller
+switching on the vocabulary; the reasons the queue gestures added are there
+because a human told their apply landed when the proposal was gone, or was in
+conflict, has been told the named anti-pattern.
 
 The envelope is closed and the payload is not: an unrecognised field on a
 submission is a refusal, while an unrecognised field *inside* a payload is
@@ -42,11 +42,15 @@ MAP_CHANNEL = "map"
 
 Actor = Literal["human", "grill-master", "thread-agent", "backend"]
 ACTORS: frozenset[str] = frozenset(get_args(Actor))
+# The actors whose entries are a reply arriving on a channel. The other two are
+# not: the human's own entries are what a reply answers, and the backend's are
+# the record talking about itself rather than an agent talking on a channel.
+AGENT_ACTORS: frozenset[str] = frozenset({"grill-master", "thread-agent"})
 DecisionStatus = Literal["open", "settled", "invalidated", "stale", "fogged"]
 ThreadState = Literal["open", "parked", "folded"]
 
 # The closed rejection vocabulary. `epoch mismatch` is named verbatim by the
-# protocol; the other six are this package's wording for the same closed set.
+# protocol; the rest are this package's wording for the same closed set.
 REASON_MISSING_KEY = "missing idempotency key"
 REASON_EPOCH_MISMATCH = "epoch mismatch"
 REASON_UNKNOWN_KIND = "unknown event kind"
@@ -61,6 +65,12 @@ REASON_THREAD_MAP_MUTATION = "map mutation from thread agent"
 REASON_UNKNOWN_PENDING = "unknown pending update"
 REASON_PENDING_CONFLICT = "pending update conflicts with the board"
 
+# A thread gesture names its thread by the channel it arrives on, so one
+# naming a channel no thread-created ever opened names nothing: accepting it
+# writes an ending for a conversation that never happened, and the gesture
+# vanishes without the sender learning the id was wrong.
+REASON_UNKNOWN_THREAD = "unknown thread id"
+
 REJECTION_REASONS = frozenset(
     {
         REASON_MISSING_KEY,
@@ -72,6 +82,7 @@ REJECTION_REASONS = frozenset(
         REASON_THREAD_MAP_MUTATION,
         REASON_UNKNOWN_PENDING,
         REASON_PENDING_CONFLICT,
+        REASON_UNKNOWN_THREAD,
     }
 )
 
@@ -186,10 +197,20 @@ def minted_id(seq: int, index: int | None = None) -> str:
 # agent-transport failure surfaces as. The kind is deliberately absent from the
 # submission registry above: no status entry is ever produced by a model, so a
 # client offering one is refused as an unknown kind rather than believed.
+#
+# `composing` and `replied` are a pair, on one channel: a turn that opened the
+# lane closes it whichever way it went, `replied` when it said its piece and
+# `error` when it could not. Without the closing phase a reader watching the lane
+# has no way to learn that a turn ended, and every channel a turn ever ran on
+# reads as still waiting for the rest of the session.
 STATUS_KIND = "status"
 STATUS_PHASE_ACCEPTED = "accepted"
 STATUS_PHASE_COMPOSING = "composing"
+STATUS_PHASE_REPLIED = "replied"
 STATUS_PHASE_ERROR = "error"
+STATUS_PHASES = frozenset(
+    {STATUS_PHASE_ACCEPTED, STATUS_PHASE_COMPOSING, STATUS_PHASE_REPLIED, STATUS_PHASE_ERROR}
+)
 
 # How an agent's reply says who composed it. These are payload keys rather than
 # envelope fields: the envelope is this protocol's own closed vocabulary, and
@@ -722,6 +743,31 @@ class DoctorState(Strict):
     outstanding: bool
 
 
+class ClaimRequest(Strict):
+    """One window presenting itself as this session's main window.
+
+    `holder` is the window's own name and must be one: an empty name would match
+    the next empty name, and every window presenting nothing would be granted
+    the same claim -- which is the one outcome this control exists to prevent.
+    """
+
+    holder: str = Field(min_length=1)
+    takeover: bool = False
+
+
+class ClaimState(Strict):
+    """What a presented claim is answered with.
+
+    The token rides every answer because the page needs it before it reads
+    anything, and this is the first thing the page asks: it scopes the page's own
+    local storage to this session rather than to whichever loopback port the
+    session happened to get.
+    """
+
+    token: str
+    state: str
+
+
 class SessionStatus(Strict):
     """The cheap check: epoch and position, answered from memory."""
 
@@ -969,6 +1015,8 @@ def _sub_update_problem(
             payload={key: value for key, value in update.items() if key != "kind"},
         ),
         nodes,
+        # A fold carries no thread event, so no thread id is ever judged here.
+        frozenset(),
     )
 
 
@@ -996,7 +1044,9 @@ def mint_targets(payload: Mapping[str, Any], kind: str, seq: int) -> dict[str, A
     return minted
 
 
-def rejection_reason(submission: EventSubmission, known_nodes: Set[str]) -> tuple[str, str] | None:
+def rejection_reason(
+    submission: EventSubmission, known_nodes: Set[str], known_threads: Set[str]
+) -> tuple[str, str] | None:
     """Judge one submission's content, returning `(reason, detail)` or None.
 
     The missing-key and epoch-mismatch reasons are decided by the appender,
@@ -1014,6 +1064,13 @@ def rejection_reason(submission: EventSubmission, known_nodes: Set[str]) -> tupl
 
     if submission.kind in THREAD_GESTURE_KINDS and submission.channel == MAP_CHANNEL:
         return _map_channel_thread_gesture(submission)
+
+    if submission.kind in THREAD_GESTURE_KINDS and submission.channel not in known_threads:
+        return (
+            REASON_UNKNOWN_THREAD,
+            f"{submission.kind!r} names its thread by its channel, and no thread has been "
+            f"created on channel {submission.channel!r}",
+        )
 
     if submission.kind in MAP_MUTATION_KINDS and (
         submission.actor == "thread-agent" or submission.channel != MAP_CHANNEL
