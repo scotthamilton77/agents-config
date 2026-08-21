@@ -166,7 +166,9 @@ def conversation(prompt: str) -> str:
     accumulated conversation that the board could satisfy on its own would pass
     against a composer that sent only the last message.
     """
-    return prompt.split("## This channel", 1)[1].split("\n## ", 1)[0]
+    marker = "## This channel"
+    assert marker in prompt, "the composer's prompt lost its conversation section"
+    return prompt.partition(marker)[2].partition("\n## ")[0]
 
 
 # ── GUI-A33: the recommendation metadata's path to the page ──

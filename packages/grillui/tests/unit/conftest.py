@@ -192,6 +192,9 @@ def run_turns(lane: Lane, *events: EventSubmission) -> list[dict[str, Any]]:
     receipts, turns = lane.accept(list(events), lane.log.epoch)
     for turn in turns:
         turn.join(TIMEOUT)
+        # A join that timed out returns normally; a hung turn must fail here,
+        # not leak into later tests as a background thread over shared state.
+        assert not turn.is_alive(), "a scheduled turn outlived its timeout"
     assert all(receipt.status == "accepted" for receipt in receipts)
     return [receipt.model_dump() for receipt in receipts]
 
