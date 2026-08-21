@@ -916,7 +916,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   GUI-A34, GUI-A35.
 - feat: Thread lifecycle: the park and close gestures, their board behaviour, and the
   terminal result's loose-end distinction — AC: GUI-D29, GUI-A55.
-- feat: Board-first notification policy, the session header with its help thread, the
-  completion overlay, and the decision seed-prompt controls — AC: GUI-U15, GUI-U16,
-  GUI-U17, GUI-U18, GUI-A56, GUI-A57, GUI-A58, GUI-A59.
+- feat: Board-first notification policy — AC: GUI-U15, GUI-A56.
+- feat: The session header and its help thread — AC: GUI-U16, GUI-A57.
+- feat: The completion overlay and end-session emphasis — AC: GUI-U17, GUI-A58.
+- bugfix: The decision seed-prompt controls — AC: GUI-U18, GUI-A59.
 - chore: Packaging: the uv package, its gates, and the CLI on PATH — AC: GUI-P1.
