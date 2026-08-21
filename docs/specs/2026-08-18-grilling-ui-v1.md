@@ -456,6 +456,9 @@ One JSON file, written once by the main agent, read once by the backend.
 - `impetus` — string, one paragraph: why this plan is being grilled now.
 - `context` — string: what the grill-master cannot infer from the tree.
 - `constraints` — array of strings; may be empty. What the grill-master must not propose.
+- `help_reference` — optional string. Reference material about driving the board itself,
+  handed to the session-scoped help thread's agent (GUI-U16) and to no other dispatch;
+  absent, the page offers no Help control.
 - `grilling_brief` — object:
   - `posture` — string. How hard to push, and on what axis.
   - `stop_when` — string. The session's termination condition.

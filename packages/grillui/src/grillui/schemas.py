@@ -413,6 +413,11 @@ class Handoff(Strict):
     constraints: list[str]
     grilling_brief: GrillingBrief
     plan: Plan
+    # What the orchestrator ships so the session-scoped help thread's agent can
+    # say how the board works instead of guessing at it. Optional, because the
+    # briefing is about the plan and this is about the tool: a handoff written
+    # by hand carries no reference material and is a whole briefing anyway.
+    help_reference: str | None = None
 
 
 class Applied(Strict):
@@ -726,6 +731,12 @@ class DispatchContext(Strict):
     a supersede the human got in front of, and the map doctor -- and each says
     why the turn is happening. A turn that had to infer that from the board
     would be inferring it from a board that looks exactly as it did before.
+
+    `help_reference` rides the session-scoped thread's dispatch and no other.
+    That thread is the human asking how to drive the board, which is a question
+    about the tool rather than about the plan -- and it is the one dispatch for
+    which the answer is worth its bytes, since every other agent here is
+    grilling a design and would only be carrying it.
     """
 
     agent: str
@@ -736,6 +747,7 @@ class DispatchContext(Strict):
     conclusion: ThreadConclusion | None = None
     conflict: SupersedeConflict | None = None
     reassess: bool = False
+    help_reference: str | None = None
 
 
 class DoctorState(Strict):

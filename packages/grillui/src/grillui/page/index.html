@@ -133,6 +133,7 @@
 
   /* ---------- top bar ---------- */
   .topbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .topbar .helpbtn { margin-left: auto; }
   .agentchip {
     display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-dim);
     background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px;
@@ -450,6 +451,7 @@ var PROTOCOL_TABLE = {
 var MAP = "map";
 var APPLY_KIND = "apply";
 var SESSION_END_KIND = "session-end";
+var SESSION_START_KIND = "session-start";
 var DISMISS_KIND = "dismiss";
 var STATUS_KIND = "status";
 var PHASE_COMPOSING = "composing";
@@ -495,6 +497,29 @@ var ENDED = false;
 function sessionOver() {
   return ENDED || LOG.some(function (e) { return e.kind === SESSION_END_KIND; });
 }
+// The thread that is about the board rather than about the plan: one per
+// session, anchored to no decision, and named the same by every window so a
+// reload and a pop-out find the one that already exists rather than opening a
+// second.
+var HELP_THREAD = "t-help";
+// What the session was opened with, read off the log's own opening entry. Two
+// things here are not on image 1 and are not board state: what this session is
+// called, and whether anything was shipped that could answer a question about
+// the board. Both were said once, at the start, and the log is where the page
+// already holds what was said.
+function briefing() {
+  var opening = LOG.filter(function (e) { return e.kind === SESSION_START_KIND; })[0];
+  return (opening && opening.payload) || {};
+}
+function sessionTitle() {
+  var named = (briefing().session || {}).title;
+  return named ? String(named) : "Grilling session";
+}
+// No reference material, no help control. The control promises an agent that
+// knows this board; without the material behind it the human would get the
+// same guesswork they could have had by asking anywhere else, dressed up as
+// the one place that knows.
+function helpOffered() { return !!briefing().help_reference; }
 // A refusal of this page's own: a gesture it will not put on the wire, said
 // where a backend's refusal is said. Held apart from `WIRE.lastRejection`,
 // which is the backend's answer -- attributing a refusal to the backend for
@@ -1535,12 +1560,27 @@ function discussPending(id) {
 }
 function startThread(id, text) {
   if (!text || !text.trim()) return;
-  var tid = "t-" + id + "-" + KEYS + "-" + Math.random().toString(36).slice(2, 6);
+  // No decision anchor is the session-scoped thread: the human is asking about
+  // the board, not about a question on it. It gets the one name a session has
+  // for it, so a second visit finds the first conversation rather than opening
+  // a second one beside it.
+  var help = !id;
+  var tid = help ? HELP_THREAD : "t-" + id + "-" + KEYS + "-" + Math.random().toString(36).slice(2, 6);
   send(ev("thread-created", tid, {
     turns: [{ who: "human", text: text.trim() }],
-    decision: id, kind: "user", title: titleFrom(text, id), requires_action: false
+    decision: help ? null : id,
+    kind: help ? "help" : "user",
+    title: help ? "How this board works" : titleFrom(text, id),
+    requires_action: false
   }));
   UI.panel = { kind: "thread", id: tid };
+  render();
+}
+// Open the session thread if it exists, and otherwise stand a draft of it up.
+// Opening one says nothing: nothing is created until the human types.
+function openHelp() {
+  if (!thread(HELP_THREAD)) UI.draftFor = { thread: HELP_THREAD, decision: null };
+  UI.panel = { kind: "thread", id: HELP_THREAD };
   render();
 }
 function sayInThread(tid, text) {
@@ -1915,12 +1955,18 @@ function threadBody(tid, forPop, chrome) {
     // Nothing exists until something is said in it. Closing this creates nothing.
     var anchor = UI.draftFor && UI.draftFor.thread === tid ? UI.draftFor.decision : null;
     var d = anchor ? node(anchor) : null;
+    var help = tid === HELP_THREAD;
     return threadPane(
       chrome + '<span class="pill new">new thread</span>' +
-        '<h3 style="margin:10px 0 4px;font-size:16px">Thread on ' + esc(anchor || "the board") +
-        (d ? " — " + esc(d.short) : "") + "</h3>",
-      '<div class="muted">Nothing exists yet. Close this and no thread is created — ' +
-        "the first thing you say is what opens it. It titles itself from what you say.</div>",
+        '<h3 style="margin:10px 0 4px;font-size:16px">' +
+        (help ? "How this board works" : "Thread on " + esc(anchor || "the board") + (d ? " — " + esc(d.short) : "")) +
+        "</h3>",
+      '<div class="muted">' + (help
+        ? "Ask anything about driving this board — what a control does, why something is blocked, " +
+          "what happens when you answer. The agent here has the board's own reference material and " +
+          "is not grilling your plan. Nothing you say here touches a decision."
+        : "Nothing exists yet. Close this and no thread is created — " +
+          "the first thing you say is what opens it. It titles itself from what you say.") + "</div>",
       '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="draftsay" data-id="' + esc(anchor || "") +
         '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
         '<button class="btn sm" data-act="draftsay" data-id="' + esc(anchor || "") + '">Send</button></div>' +
@@ -2209,7 +2255,12 @@ function renderShell() {
     (unread ? '<button class="btn sm" data-act="markall" title="Clear every unread marker. Nothing is sent.">✓ Mark all read</button>' : "") +
     transferControl(MAP) +
     '<button class="btn sm" data-act="doctor" title="Send the agent over the whole board and the queue">🩺 Map doctor</button>' +
-    '<button class="btn sm" data-act="endsession">End the session</button></div>';
+    '<button class="btn sm" data-act="endsession">End the session</button>' +
+    // Pushed to the right edge of the row rather than sitting at the end of the
+    // run of controls: help is not one more thing to do with the board, and a
+    // human looking for it looks at the corner.
+    (helpOffered() ? '<button class="btn sm helpbtn" data-act="help" title="Ask how this board works">? Help</button>' : "") +
+    "</div>";
 
   var banners = "";
   if (sessionOver()) {
@@ -2238,11 +2289,11 @@ function renderShell() {
       ' <button class="btn sm" data-act="dismiss-rejection">Dismiss</button></div>';
   }
 
+  // The header names the session and nothing else. What the backend owns and
+  // how the board is driven are the help thread's to answer when asked, not a
+  // paragraph every human reads past on their way to the first decision.
   document.getElementById("shell").innerHTML =
-    '<div class="intro"><h1>Grilling session</h1>' +
-    "<p>The backend owns this session: it holds the log, assigns every sequence and mints the agents. " +
-    "This page renders the board it is given — answer anything on the frontier, open a thread on any decision, " +
-    "and deal with anything waiting in the inbox. Reload at any point and the board comes back from the server.</p></div>" +
+    '<div class="intro"><h1>' + esc(sessionTitle()) + "</h1></div>" +
     banners + top + renderDiagnostic() +
     '<div class="surface">' + renderMap() + renderColumn() + "</div>";
 
@@ -2500,6 +2551,7 @@ document.addEventListener("click", function (e) {
       UI.panel = { kind: "thread", id: "draft:" + id };
       render();
       break;
+    case "help": openHelp(); break;
     case "draftsay": sendFrom(document.getElementById("ft-say")); break;
     case "openthread": UI.panel = { kind: "thread", id: tid }; render(); break;
     case "say": sendFrom(document.getElementById("ft-say")); break;

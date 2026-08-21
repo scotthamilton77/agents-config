@@ -9,15 +9,16 @@ disk.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
-from conftest import event, post, seed_node
+from conftest import event, handoff_doc, post, seed_node
 from fastapi.testclient import TestClient
 
 from grillui.dispatch import DISPATCH_DIR, DispatchIncompleteError, record_dispatch, verify_complete
 from grillui.log import SessionLog
 from grillui.projector import fold, whole_board
-from grillui.schemas import DispatchContext, Image2, ThreadProjection
+from grillui.schemas import SESSION_START_KIND, DispatchContext, Image2, ThreadProjection
 
 ANSWERS = {
     "n1": "an append-only log, because the audit trail is the point",
@@ -149,6 +150,107 @@ def test_each_dispatch_is_recorded_as_its_own_file_in_dispatch_order(
     contexts = [DispatchContext.model_validate_json(text) for text in _recorded(session_dir)]
     assert [context.seq for context in contexts] == [1, 2]
     assert [context.channel for context in contexts] == ["map", "map"]
+
+
+REFERENCE = "The map is the plan. Answering a decision opens whatever waited on it."
+
+
+def _session_thread(client: TestClient, epoch: str, channel: str, decision: str | None) -> None:
+    """One thread, opened the way the page opens one."""
+    post(
+        client,
+        epoch,
+        event(
+            "thread-created",
+            actor="human",
+            channel=channel,
+            key=f"opened-{channel}",
+            turns=[{"who": "human", "text": "How do I park this?"}],
+            decision=decision,
+            kind="help" if decision is None else "user",
+            title="How this board works",
+            requires_action=False,
+        ),
+    )
+
+
+def _brief(log: SessionLog, **overrides: Any) -> None:
+    """The opening entry, as the backend appends it when it reads a handoff."""
+    log.record(SESSION_START_KIND, {**handoff_doc(), **overrides})
+
+
+def test_the_session_scoped_threads_dispatch_carries_the_shipped_reference_material(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a briefing that shipped reference material about the board
+    When the backend records a dispatch for the thread anchored to no decision
+    Then the recorded context carries that material.
+
+    Asserted against the file the backend wrote rather than against anything
+    the page shows: what the agent was handed is what was recorded, and a page
+    that displayed the right thing over a context that never carried it would
+    leave the agent guessing at the one question it exists to answer.
+    """
+    _brief(log, help_reference=REFERENCE)
+    _session_thread(client, log.epoch, "t-help", None)
+
+    recorded = record_dispatch(log, channel="t-help").read_text(encoding="utf-8")
+
+    context = DispatchContext.model_validate_json(recorded)
+    assert context.help_reference == REFERENCE
+    assert context.agent == "thread-agent"
+
+
+def test_no_other_dispatch_carries_the_reference_material(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given the same briefing
+    When the map's dispatch and a decision's thread dispatch are recorded
+    Then neither carries the material.
+
+    Every other agent here is grilling a design. Material about driving the
+    board is bytes they pay for and never use, and the map's context is the one
+    that already crosses whole.
+    """
+    _brief(log, help_reference=REFERENCE)
+    _session_thread(client, log.epoch, "t-on-d1", "d1")
+
+    on_map = record_dispatch(log).read_text(encoding="utf-8")
+    on_decision = record_dispatch(log, channel="t-on-d1").read_text(encoding="utf-8")
+
+    # The thread has to be on the board for its dispatch to mean anything: a
+    # channel naming no thread is refused the material for the wrong reason.
+    anchored = DispatchContext.model_validate_json(on_decision).image2.threads[0]
+    assert anchored.id == "t-on-d1"
+    assert anchored.decision == "d1"
+    assert DispatchContext.model_validate_json(on_map).help_reference is None
+    assert DispatchContext.model_validate_json(on_decision).help_reference is None
+    assert REFERENCE not in on_map
+    assert REFERENCE not in on_decision
+
+
+def test_a_briefing_that_shipped_nothing_dispatches_the_session_thread_unprimed(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a briefing carrying no reference material
+    When the session-scoped thread's dispatch is recorded
+    Then it carries none, and the dispatch is otherwise whole.
+
+    A briefing written by hand is a whole briefing. The material is about the
+    tool rather than about the plan, so its absence is a session with no help
+    to offer rather than a session that cannot run.
+    """
+    _brief(log)
+    _session_thread(client, log.epoch, "t-help", None)
+
+    recorded = record_dispatch(log, channel="t-help").read_text(encoding="utf-8")
+
+    context = DispatchContext.model_validate_json(recorded)
+    assert context.help_reference is None
+    assert context.image2.threads[0].decision is None
 
 
 def test_concurrent_dispatches_never_overwrite_each_other(session_dir: Path) -> None:
