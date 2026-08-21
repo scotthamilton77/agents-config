@@ -77,7 +77,18 @@ need a rejection reason, and that vocabulary is closed. A doctor turn that fails
 releases the board anyway, and a second call while one is outstanding dispatches
 nothing.
 
-Twelve modules, and the separation between them is load-bearing:
+One main window drives a session, and the backend is what decides which. A
+window presents a name it keeps in its own session storage; `POST /claim` grants
+it, refuses it because another window holds the session, or tells it that it was
+superseded. The same call is the first claim, the reload, the reconnect and —
+with `takeover` set — the human's explicit recovery of a window that is gone, so
+a reload is never a lockout and a pop-out carrying its parent's name is admitted
+by the ordinary rule. A refused or superseded window renders the reason and no
+board at all. None of it reaches the log: which window is driving is not part of
+the grilling, and the claim is not written down either, so a restart hands the
+session back to whoever is still asking rather than locking anyone out.
+
+The modules, and the separation between them is load-bearing:
 
 - `schemas.py` — the wire, log and image shapes, the per-kind payload shapes,
   and the closed vocabulary of the nine reasons a write can be refused for.
@@ -157,10 +168,18 @@ Twelve modules, and the separation between them is load-bearing:
   and `/image2` fold; `/updates` refuses a stale epoch with 409; `/events`
   takes a batch under one epoch and returns one receipt per event in
   submission order, and returns them without waiting on the turn it scheduled.
-  `/doctor` sits beside the board routes as a control rather than a board event:
-  it writes nothing into the record, and the state it reports belongs to this
-  process rather than to the log. `/` serves the page out of this package's own
-  bytes, so a page and the protocol it speaks are always one build.
+  `/doctor` and `/claim` sit beside the board routes as controls rather than
+  board events: neither writes anything into the record, and the state each
+  reports belongs to this process rather than to the log. `/` serves the page out
+  of this package's own bytes, so a page and the protocol it speaks are always
+  one build.
+- `claim.py` — which window this session belongs to. A name presented rather
+  than a capability handed out, held by at most one window at a time, and
+  displaced only by the human's explicit take-over: an expiry on silence would
+  evict a window that was merely slow, which is indistinguishable from one that
+  is gone. The session token it answers with is derived from the session
+  directory, so it outlives a restart the way the log entries the page scopes to
+  it do.
 - `page/index.html` — the surface. One file, no build and no dependencies,
   which is what the reference prototype was and what a page served off disk can
   afford. Its board is the state read and nothing else: it never folds the log
