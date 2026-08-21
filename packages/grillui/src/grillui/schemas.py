@@ -338,10 +338,17 @@ class Mandate(Strict):
 
 
 class Talk(Strict):
-    """Seed text the page offers when the human wants the question opened up."""
+    """Seed text the page offers when the human wants the question opened up.
 
-    why: str
-    zoom: str
+    Each seed is its own control on the thread pane, so either alone is a usable
+    briefing and requiring both would refuse a handoff over a seed its author
+    had nothing to say in. A talk carrying neither is no talk: it dumps to an
+    empty object, which the node reader collapses away rather than putting an
+    empty seed set on the board.
+    """
+
+    why: str | None = None
+    zoom: str | None = None
 
 
 class HandoffDecision(Strict):
