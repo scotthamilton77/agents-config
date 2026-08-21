@@ -8,16 +8,16 @@ typed rejection rather than as a transport-level error, which is the whole point
 of a uniform receipt.
 
 The rejection vocabulary is closed. A write is refused for exactly one of the
-nine reasons named below, and a caller may switch on that string. That closure
-is what decides where a malformed payload lands: a payload fault one of the
-nine names is a typed receipt (an answer carrying neither option nor text, a
-thread event carrying no turn), and a payload fault none of them names -- an
-add-node with one option, an invalidate with no rationale -- is refused at the
-envelope, whole batch, the same way an unknown envelope field is. Minting a
-tenth reason to make one of those a receipt would break every caller switching
-on the vocabulary; the two the queue gestures added are there because a human
-told their apply landed when the proposal was gone, or was in conflict, has been
-told the named anti-pattern.
+reasons named below, and a caller may switch on that string. That closure is
+what decides where a malformed payload lands: a payload fault the vocabulary
+names is a typed receipt (an answer carrying neither option nor text, a thread
+event carrying no turn), and a payload fault it does not name -- an add-node
+with one option, an invalidate with no rationale -- is refused at the envelope,
+whole batch, the same way an unknown envelope field is. Reclassifying one of
+those envelope faults as a new receipt reason would break every caller
+switching on the vocabulary; the reasons the queue gestures added are there
+because a human told their apply landed when the proposal was gone, or was in
+conflict, has been told the named anti-pattern.
 
 The envelope is closed and the payload is not: an unrecognised field on a
 submission is a refusal, while an unrecognised field *inside* a payload is
@@ -50,7 +50,7 @@ DecisionStatus = Literal["open", "settled", "invalidated", "stale", "fogged"]
 ThreadState = Literal["open", "parked", "folded"]
 
 # The closed rejection vocabulary. `epoch mismatch` is named verbatim by the
-# protocol; the other six are this package's wording for the same closed set.
+# protocol; the rest are this package's wording for the same closed set.
 REASON_MISSING_KEY = "missing idempotency key"
 REASON_EPOCH_MISMATCH = "epoch mismatch"
 REASON_UNKNOWN_KIND = "unknown event kind"
