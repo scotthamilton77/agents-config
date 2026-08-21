@@ -24,6 +24,8 @@ on an accepted entry takes the session down with it.
 | `elicit-alert`  | the target's lock becomes this alert's blocking flag           |
 | `informational` | nothing on the board; the human is told                        |
 | `fold`          | its sub-updates, in order, all of them                         |
+| `apply`         | the proposals it names, in order, and they leave the queue     |
+| `dismiss`       | the proposals it names leave the queue, having changed nothing |
 | `thread-fold`   | its channel's thread is `folded`; no decision moves            |
 | `thread-park`   | its channel's thread is `parked`; no decision moves            |
 
@@ -44,9 +46,31 @@ Neither thread gesture touches a decision, and that is the sole-author rule
 holding: what a thread concluded reaches the board only through the grill-master
 being dispatched with it.
 
-`informational` and `elicit-alert` are the queue of what the human has not dealt
-with yet, which is the `pending` array. Two things take an item off it or mark
-it, and both are gestures somebody made.
+**A map mutation an agent authors is a proposal, not a change.** One human
+gesture is what puts a conversational turn's declared impact on the board, so an
+agent's update lands by itself only where landing cannot overwrite what the
+human decided. That test is drawn against the board *at arrival* rather than
+when the update was written, because the board may have moved under it while it
+was in flight -- and this fold, walking the log in order, is the only place
+where "at arrival" is a fact rather than a guess.
+
+| an agent's update    | on arrival                                       |
+|----------------------|--------------------------------------------------|
+| `add-node`           | lands: a new question overwrites nothing         |
+| `resolve-stale`      | lands: it is the agent adjudicating a change the human already made |
+| `revise`, `settle`   | lands only while the decision carries no answer  |
+| `unsettle`, `invalidate` | always queued: undermining a decision is the human's call |
+| `informational`, `elicit-alert` | land, and queue as the notices they are |
+
+A queued proposal locks the decision it targets out of the frontier, so nobody
+answers a question that has a change waiting on it, and it holds its update's
+bytes until the human applies them -- `apply` puts them on the board as one
+gesture the human authored, `dismiss` ends them having changed nothing. Both
+name queue entries by id, so what lands is what the agent wrote.
+
+Notices and proposals share the `pending` array, which is the queue of what the
+human has not dealt with yet. Four things take an item off it or mark it, and
+every one of them is a gesture somebody made.
 
 *The human answering a decision* is the human dealing with every notice standing
 against it: they were told, and then they decided. That is the only signal of it
@@ -70,9 +94,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from grillui.schemas import (
-    FOLD_KIND,
+    APPLY_KIND,
+    DISMISS_KIND,
+    FOLD_SHAPED,
+    PENDING_KEY,
+    PROPOSABLE_KINDS,
     SESSION_START_KIND,
     SUPERSEDES_KEY,
     THREAD_FOLD_KIND,
@@ -102,12 +131,13 @@ _REVISABLE_TEXT = ("short", "title", "body")
 class _Board:
     """The fold's running state, keyed the way the images are read.
 
-    The last three fields are the fold's own bookkeeping and reach no image:
-    who authored each pending notice, which notices the human has since dealt
-    with and when, and the withdrawals that arrived too late. Keeping them here
-    rather than in image 1 is what lets the queue answer "whose was this?" and
-    "was this already acted on?" without either image growing a field the
-    protocol never declared.
+    The last five fields are the fold's own bookkeeping and reach no image: who
+    authored each queue entry, the update bytes a queued proposal is holding,
+    which entries the human has since dealt with and when, when the human last
+    changed each decision, and the withdrawals that arrived too late. Keeping
+    them here rather than in image 1 is what lets the queue answer "whose was
+    this?", "what would it do?" and "was this already acted on?" without either
+    image growing a field the protocol never declared.
     """
 
     decisions: dict[str, Decision] = field(default_factory=dict)
@@ -116,7 +146,9 @@ class _Board:
     pending: list[PendingUpdate] = field(default_factory=list)
     seq: int = 0
     author_of: dict[str, str] = field(default_factory=dict)
+    proposals: dict[str, dict[str, Any]] = field(default_factory=dict)
     dealt: dict[str, tuple[PendingUpdate, int]] = field(default_factory=dict)
+    touched: dict[str, int] = field(default_factory=dict)
     conflicts: list[SupersedeConflict] = field(default_factory=list)
 
     def node(self, payload: Mapping[str, object]) -> Decision | None:
@@ -137,7 +169,7 @@ def _run(entries: Sequence[LogEntry]) -> _Board:
     board = _Board()
     for entry in entries:
         board.seq = entry.seq
-        if entry.kind == FOLD_KIND:
+        if entry.kind in FOLD_SHAPED:
             # The gesture is one entry, so there is no state in which half of it
             # landed: either the log has it and every sub-update applies, or it
             # does not and none of them does.
@@ -146,6 +178,8 @@ def _run(entries: Sequence[LogEntry]) -> _Board:
                 _apply(board, entry, str(update.get("kind")), update, key)
         else:
             _apply(board, entry, entry.kind, entry.payload, entry.idempotency_key)
+        if entry.kind in {APPLY_KIND, DISMISS_KIND}:
+            _clear(board, entry)
     return board
 
 
@@ -157,6 +191,43 @@ def supersede_conflicts(entries: Sequence[LogEntry]) -> list[SupersedeConflict]:
     conflict it has already handed back from one that has just appeared.
     """
     return _run(entries).conflicts
+
+
+@dataclass(frozen=True)
+class Proposed:
+    """One queued map mutation, as the appender has to see it.
+
+    `update` is the sub-update the agent authored, verbatim, so applying it puts
+    the author's own bytes on the board rather than whatever the applying client
+    sent. `conflicted` is the board having moved under it: the human changed its
+    target after it was authored, so applying it now would overwrite the change
+    they made while it waited. That is refused rather than resolved -- the
+    proposal stays queued, and what to do about it is a conversation.
+    """
+
+    pending: PendingUpdate
+    update: dict[str, Any]
+    conflicted: bool
+
+
+def queue(entries: Sequence[LogEntry]) -> dict[str, Proposed]:
+    """The proposals waiting for the human, by id.
+
+    A pure read of the log, like the conflict reader beside it, and the whole of
+    what a caller needs to judge a gesture on the queue: whether the id names
+    something still waiting, what it would do, and whether the board moved under
+    it. Notices are not here -- a notice is not something to apply.
+    """
+    board = _run(entries)
+    return {
+        item.id: Proposed(
+            pending=item,
+            update=board.proposals[item.id],
+            conflicted=board.touched.get(item.target or "", 0) > item.authored_at,
+        )
+        for item in board.pending
+        if item.id in board.proposals
+    }
 
 
 def fold(epoch: str, entries: Sequence[LogEntry]) -> Image2:
@@ -173,6 +244,14 @@ def fold(epoch: str, entries: Sequence[LogEntry]) -> Image2:
     for node in board.decisions.values():
         if node.status == "open" and node.fog_until and node.fog_until not in settled_ids:
             node.status = "fogged"
+    # A decision with a change waiting on it is not a decision anyone should be
+    # answering: the frontier already skips a locked node, so the queue's hold
+    # on it is the same lock a blocking alert takes. A withdrawn proposal is not
+    # one -- the author took it back, and the page has dropped it.
+    for item in board.pending:
+        blocked = board.decisions.get(item.target or "")
+        if blocked is not None and item.id in board.proposals and not item.superseded:
+            blocked.locked = True
     frontier = [
         node.id
         for node in board.decisions.values()
@@ -199,8 +278,17 @@ def _apply(
     A fold's sub-updates share their gesture's sequence, timestamp and actor,
     because that is the truth of them: they landed together, in one entry, on
     one human gesture.
+
+    An agent's update that would overwrite a decision the human made goes to
+    the queue instead of the board, and contributes no history: history is what
+    happened to a decision, and a proposal has not happened to one yet.
     """
     _supersede(board, entry, payload)
+    if _proposes(board, entry.actor, kind, payload):
+        _queue(board, entry, kind, payload, key)
+        return
+    if entry.actor == "human":
+        _touch(board, entry, payload)
     if kind == SESSION_START_KIND:
         _seed(board, payload)
     elif kind == "add-node":
@@ -448,6 +536,83 @@ def _notice(
     board.author_of[key] = entry.actor
 
 
+def _proposes(board: _Board, actor: str, kind: str, payload: Mapping[str, object]) -> bool:
+    """Whether this update waits for the human instead of landing now.
+
+    Read against the board as it stands at this point in the walk, which is what
+    makes the answer a property of the update's arrival rather than of its
+    authoring: the same update queues or lands depending on what the human did
+    while it was being written.
+
+    The human's own gesture always lands -- that is what a gesture is -- so the
+    actor test is the whole of the rule about who may change the board. What is
+    left is one question asked of the update: would applying it overwrite an
+    answer the board already carries? Undermining a decision is never asked, it
+    is always the human's, because the point of an unsettle is that the answer
+    it withdraws is one somebody committed to.
+    """
+    if actor == "human" or kind not in PROPOSABLE_KINDS:
+        return False
+    if kind in {"unsettle", "invalidate"}:
+        return True
+    if kind not in {"revise", "settle"}:
+        return False
+    node = board.node(payload)
+    return node is not None and node.answer is not None
+
+
+def _queue(
+    board: _Board, entry: LogEntry, kind: str, payload: Mapping[str, object], key: str
+) -> None:
+    """Hold a proposed update, and its bytes, until the human says.
+
+    The bytes are kept off the image because the queue the protocol declares
+    says what is waiting rather than what it would do -- and because the human
+    applies by naming the id, so nothing but this fold ever has to hold them.
+    """
+    board.pending.append(
+        PendingUpdate(
+            id=key,
+            target=_or_none(payload.get("target")),
+            kind=kind,
+            superseded=False,
+            authored_at=entry.seq,
+        )
+    )
+    board.author_of[key] = entry.actor
+    board.proposals[key] = {**payload, "kind": kind}
+
+
+def _clear(board: _Board, entry: LogEntry) -> None:
+    """The human's gesture on the queue: the named entries leave it.
+
+    An applied proposal is remembered as dealt with, so an author withdrawing
+    it afterwards learns that the human got there first rather than that no
+    such proposal was ever sent -- only the first of those is a disagreement
+    anyone has to reconcile. A dismissed one is not: the human said no and the
+    author changed its mind, which is two ways of saying the same thing.
+    """
+    raw = entry.payload.get(PENDING_KEY)
+    named = {one for one in raw if isinstance(one, str)} if isinstance(raw, list) else set()
+    for item in [one for one in board.pending if one.id in named]:
+        board.pending.remove(item)
+        board.proposals.pop(item.id, None)
+        if entry.kind == APPLY_KIND:
+            board.dealt[item.id] = (item, entry.seq)
+
+
+def _touch(board: _Board, entry: LogEntry, payload: Mapping[str, object]) -> None:
+    """When the human last moved a decision.
+
+    What a queued proposal is measured against: one authored before this and
+    still waiting is a proposal whose board moved under it, and applying it
+    would quietly overwrite the change the human made in between.
+    """
+    target = payload.get("target")
+    if isinstance(target, str):
+        board.touched[target] = entry.seq
+
+
 def _dealt_with(board: _Board, entry: LogEntry, payload: Mapping[str, object]) -> None:
     """The human answered a decision, which deals with every notice standing
     against it: they were told, and then they decided.
@@ -455,11 +620,18 @@ def _dealt_with(board: _Board, entry: LogEntry, payload: Mapping[str, object]) -
     The notices leave the queue and are remembered here, so a withdrawal that
     arrives afterwards can tell "the human already acted on this" from "no such
     notice was ever sent" -- and only the first of those is a conflict.
+
+    A proposal is not a notice and is not dealt with here. Answering a decision
+    is not accepting a change to it, so a proposal the human answered around is
+    still waiting -- and now waiting against a decision that moved under it,
+    which is a disagreement to surface rather than an item to quietly drop.
     """
     target = payload.get("target")
     if not isinstance(target, str):
         return
-    for item in [one for one in board.pending if one.target == target]:
+    for item in [
+        one for one in board.pending if one.target == target and one.id not in board.proposals
+    ]:
         board.pending.remove(item)
         board.dealt[item.id] = (item, entry.seq)
 

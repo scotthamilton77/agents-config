@@ -8,14 +8,16 @@ typed rejection rather than as a transport-level error, which is the whole point
 of a uniform receipt.
 
 The rejection vocabulary is closed. A write is refused for exactly one of the
-seven reasons named below, and a caller may switch on that string. That closure
+nine reasons named below, and a caller may switch on that string. That closure
 is what decides where a malformed payload lands: a payload fault one of the
-seven names is a typed receipt (an answer carrying neither option nor text, a
+nine names is a typed receipt (an answer carrying neither option nor text, a
 thread event carrying no turn), and a payload fault none of them names -- an
 add-node with one option, an invalidate with no rationale -- is refused at the
-envelope, whole batch, the same way an unknown envelope field is. Inventing an
-eighth reason to make it a receipt would break every caller switching on the
-vocabulary.
+envelope, whole batch, the same way an unknown envelope field is. Minting a
+tenth reason to make one of those a receipt would break every caller switching
+on the vocabulary; the two the queue gestures added are there because a human
+told their apply landed when the proposal was gone, or was in conflict, has been
+told the named anti-pattern.
 
 The envelope is closed and the payload is not: an unrecognised field on a
 submission is a refusal, while an unrecognised field *inside* a payload is
@@ -52,6 +54,12 @@ REASON_UNKNOWN_NODE = "unknown node id"
 REASON_EMPTY_ANSWER = "answer without option or text"
 REASON_THREAD_WITHOUT_TURN = "thread event without turn"
 REASON_THREAD_MAP_MUTATION = "map mutation from thread agent"
+# The two the queue gestures need. Neither is expressible as one of the seven:
+# a proposal that has already been applied or dismissed is not an unknown node
+# -- its target exists and is on the board -- and a proposal whose target the
+# human changed while it waited is well-formed and refused anyway.
+REASON_UNKNOWN_PENDING = "unknown pending update"
+REASON_PENDING_CONFLICT = "pending update conflicts with the board"
 
 REJECTION_REASONS = frozenset(
     {
@@ -62,6 +70,8 @@ REJECTION_REASONS = frozenset(
         REASON_EMPTY_ANSWER,
         REASON_THREAD_WITHOUT_TURN,
         REASON_THREAD_MAP_MUTATION,
+        REASON_UNKNOWN_PENDING,
+        REASON_PENDING_CONFLICT,
     }
 )
 
@@ -90,6 +100,16 @@ MAP_MUTATION_KINDS = frozenset(
 )
 THREAD_KINDS = frozenset({"thread-created", "thread-turn"})
 
+# The map mutations that may wait for the human instead of landing when they
+# arrive. Which of them actually waits is decided against the board at arrival
+# and is the projector's rule to state, not this registry's; what is fixed here
+# is that these six are the kinds a proposal can be made of. `elicit-alert` is
+# absent because raising an alert as early as possible is the point of one, and
+# `fold` because a fold is the gesture rather than an update inside it.
+PROPOSABLE_KINDS = frozenset(
+    {"add-node", "revise", "invalidate", "settle", "unsettle", "resolve-stale"}
+)
+
 # What the human does *to* a thread rather than in it. Neither carries a turn,
 # so neither is judged by the reader that asks whether a thread event said
 # anything, and neither is a map mutation: folding a thread's conclusion into
@@ -100,6 +120,19 @@ THREAD_PARK_KIND = "thread-park"
 THREAD_GESTURE_KINDS = frozenset({THREAD_FOLD_KIND, THREAD_PARK_KIND})
 NOTICE_KINDS = frozenset({"informational", "elicit-alert"})
 GESTURE_KINDS = frozenset({"answer"})
+
+# What the human does to the queue. `apply` is the gesture that puts a turn's
+# declared impact on the board and `dismiss` is the one that ends it having
+# changed nothing; both name queue entries by id and neither carries update
+# content, so what lands is what the authoring agent wrote rather than what the
+# page sent back. Both are the human's alone: an agent applying its own
+# proposals is the agent's gesture again, which is the thing the queue exists to
+# stop, and an agent that has changed its mind supersedes instead.
+APPLY_KIND = "apply"
+DISMISS_KIND = "dismiss"
+QUEUE_GESTURE_KINDS = frozenset({APPLY_KIND, DISMISS_KIND})
+# Which pending ids a queue gesture is about.
+PENDING_KEY = "pending"
 
 # The lifecycle pair. `session-start` is the backend's alone: it is the entry
 # that strips the handoff file of its authority, so a client that could send one
@@ -115,6 +148,7 @@ KNOWN_KINDS = (
     | THREAD_GESTURE_KINDS
     | NOTICE_KINDS
     | GESTURE_KINDS
+    | QUEUE_GESTURE_KINDS
     | LIFECYCLE_KINDS
 )
 
@@ -126,6 +160,13 @@ KNOWN_KINDS = (
 # thread turn is a conversation, not an impact on the board.
 FOLD_KIND = "fold"
 FOLDABLE_KINDS = (MAP_MUTATION_KINDS | NOTICE_KINDS) - {FOLD_KIND}
+
+# The two entry kinds that carry their sub-updates in an `updates` list, and are
+# read as one gesture wherever that matters: the appender's node index, the
+# fold, and the per-sub-update receipt. An `apply` reaches the log carrying the
+# proposals it named, resolved out of the queue at append time, so from there on
+# it is exactly what it is: a fold the human authored.
+FOLD_SHAPED = frozenset({FOLD_KIND, APPLY_KIND})
 
 # What an add-node's minted node id looks like. Ids are minted from the
 # sequence the entry lands at -- and from its position within a fold -- because
@@ -365,13 +406,18 @@ class FoldOutcome(Strict):
     a fold is one event with one key at one position. `vetoed` is the outcome of
     a sub-update that was well-formed and did not apply anyway, because a
     sibling was refused and the gesture is all-or-none; its `detail` names the
-    sibling. It carries no `reason`: a veto is not one of the seven, and the
+    sibling. It carries no `reason`: a veto is not one of the nine, and the
     vocabulary a caller switches on stays closed.
+
+    `queued` is the other outcome that is not a refusal: the update is durable
+    and well-formed and is waiting for the human, because applying it would
+    overwrite a decision they made. Telling an agent `applied` for one of those
+    is how it comes to reason from a board the human never accepted.
     """
 
     kind: str
     target: str | None = None
-    status: Literal["applied", "rejected", "vetoed"]
+    status: Literal["applied", "queued", "rejected", "vetoed"]
     as_: Literal["sent", "amended"] = Field(default="sent", alias="as")
     amendments: dict[str, str] | None = None
     reason: str | None = None
@@ -382,7 +428,10 @@ class FoldOutcome(Strict):
 class AcceptedReceipt(Strict):
     """`node` is the add-node echo: the node as the fold will materialise it,
     so the agent can revise other decisions against an id it never chose.
-    `updates` is a fold's per-sub-update outcomes, absent on every other kind."""
+    `updates` is the per-update outcomes of a write that has any: a fold's
+    sub-updates, or the single outcome of a lone update that went to the queue
+    rather than to the board -- the one case where a write is durable and
+    accepted and no decision moved."""
 
     status: Literal["accepted"] = "accepted"
     idempotency_key: str
@@ -443,8 +492,17 @@ class SettledEntry(Strict):
 
 
 class PendingUpdate(Strict):
-    """One notice the human has not yet dealt with. `target` is null for a
-    notice anchored to no decision, the way a thread's `decision` is.
+    """One thing the human has not yet dealt with: a notice they were told, or
+    a map mutation an agent proposed and the board has not taken.
+
+    The two share a queue because they are the same question to the human --
+    here is something waiting on you -- and the same question to the agent,
+    which is dispatched this array as the board the human is actually looking
+    at. `kind` is what tells them apart: a notice kind was addressed to the
+    human, and a proposable kind is a change waiting for their gesture.
+
+    `target` is null for a notice anchored to no decision, the way a thread's
+    `decision` is; a proposal always names one.
 
     `superseded` is the author having withdrawn it while it was still queued:
     the item stays in the queue and says so, rather than vanishing, because the
@@ -765,6 +823,18 @@ class FoldPayload(Payload):
     updates: list[dict[str, Any]] = Field(min_length=1)
 
 
+class QueueGesturePayload(Payload):
+    """Which queue entries the human is acting on, by id and nothing else.
+
+    No update content travels here. The proposal's own bytes are already in the
+    log, authored by the agent that wrote them, and the appender resolves them
+    out of the queue -- so a page cannot apply something that was never
+    proposed, and the sole-author rule survives the human's gesture.
+    """
+
+    pending: list[str] = Field(min_length=1)
+
+
 PAYLOAD_SHAPES: dict[str, type[Payload]] = {
     "add-node": AddNodePayload,
     "revise": RevisePayload,
@@ -776,6 +846,8 @@ PAYLOAD_SHAPES: dict[str, type[Payload]] = {
     "resolve-stale": TargetedPayload,
     "answer": TargetedPayload,
     FOLD_KIND: FoldPayload,
+    APPLY_KIND: QueueGesturePayload,
+    DISMISS_KIND: QueueGesturePayload,
 }
 
 
@@ -937,6 +1009,12 @@ def rejection_reason(submission: EventSubmission, known_nodes: Set[str]) -> tupl
     if submission.kind in LIFECYCLE_KINDS:
         return _lifecycle_problem(submission)
 
+    if submission.kind in QUEUE_GESTURE_KINDS:
+        return _queue_gesture_problem(submission)
+
+    if submission.kind in THREAD_GESTURE_KINDS and submission.channel == MAP_CHANNEL:
+        return _map_channel_thread_gesture(submission)
+
     if submission.kind in MAP_MUTATION_KINDS and (
         submission.actor == "thread-agent" or submission.channel != MAP_CHANNEL
     ):
@@ -1027,6 +1105,48 @@ def _lifecycle_problem(submission: EventSubmission) -> tuple[str, str] | None:
     return (
         REASON_UNKNOWN_KIND,
         f"{submission.kind!r} is not a kind {submission.actor!r} may send: {rule}",
+    )
+
+
+def _queue_gesture_problem(submission: EventSubmission) -> tuple[str, str] | None:
+    """Who may act on the queue, and where.
+
+    Applying and dismissing are the human's, on the map, and an agent offering
+    either is refused the way an agent offering `session-end` is: named
+    `unknown event kind`, because the vocabulary a caller switches on is closed
+    and these are not kinds that sender has. An agent applying its own
+    proposals would be the agent's gesture on the board again, which is the one
+    thing the queue exists to prevent -- an agent that has changed its mind
+    supersedes instead.
+
+    Whether the named ids are in the queue at all is the appender's to decide:
+    it is the only thing holding the session's state.
+    """
+    if submission.actor == "human" and submission.channel == MAP_CHANNEL:
+        return None
+    return (
+        REASON_UNKNOWN_KIND,
+        f"{submission.kind!r} is not a kind {submission.actor!r} may send on channel "
+        f"{submission.channel!r}: acting on the queue is the human's gesture on the "
+        f"{MAP_CHANNEL!r} channel, and an agent withdraws its own proposals with "
+        f"{SUPERSEDES_KEY!r} instead",
+    )
+
+
+def _map_channel_thread_gesture(submission: EventSubmission) -> tuple[str, str] | None:
+    """Folding or parking a thread, sent on the channel that is not a thread.
+
+    Refused rather than ignored. The gesture names its thread by the channel it
+    arrived on, so one addressed to the map names no thread at all: the board
+    does not move, and folding is answerable, so accepting it spends a whole
+    grill-master turn on a conclusion that does not exist. Named `unknown event
+    kind` for the same reason the lifecycle refusals are -- the vocabulary is
+    closed, and a thread gesture is not part of the map channel's.
+    """
+    return (
+        REASON_UNKNOWN_KIND,
+        f"{submission.kind!r} is not a kind the {MAP_CHANNEL!r} channel carries: it names "
+        f"its thread by the channel it arrives on, and the map is not a thread",
     )
 
 

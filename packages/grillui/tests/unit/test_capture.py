@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from conftest import SpyDriver, driven, event, handoff_doc, write_handoff
+from conftest import SpyDriver, apply_all, driven, event, handoff_doc, write_handoff
 
 from grillui.api import create_app
 from grillui.capture import ENDED_BY_HUMAN, NOT_FORMALLY_ENDED, capture, default_summary
@@ -385,6 +385,10 @@ def test_a_blocked_decision_names_the_block_rather_than_its_prerequisites(
     A locked decision is fogged as well here, and what the human needs is the
     lock: the fog lifts on its own when the prerequisite settles, and the lock
     does not.
+
+    The invalidation reaches the board the only way an agent's does -- proposed,
+    then applied by the human -- because a capture run over a board an agent
+    wrote by itself would be reporting a session nobody had.
     """
     log = started(session_dir)
     client = driven(log, SpyDriver())
@@ -404,11 +408,41 @@ def test_a_blocked_decision_names_the_block_rather_than_its_prerequisites(
             ],
         },
     )
+    apply_all(client, log.epoch)
     end(client, log.epoch)
 
     blockers = {item.id: item.blocker for item in capture(session_dir).open_items}
     assert blockers["d1"] == "the premise moved"
     assert blockers["d2"] == "locked by a blocking alert"
+
+
+def test_a_decision_the_human_never_got_to_says_a_change_is_waiting_on_it(
+    session_dir: Path,
+) -> None:
+    """
+    Given a session ended with a proposed change still in the queue
+    When capture runs
+    Then that decision's blocker says a change is waiting, not that an alert
+         locked it.
+
+    A lock has two sources and they send the reader different places: an alert
+    is a warning somebody wrote, and a queued change is a gesture nobody made.
+    Reporting the second as the first sends them looking for a warning that was
+    never sent.
+    """
+    log = started(session_dir)
+    client = driven(log, SpyDriver())
+    client.post(
+        "/events",
+        json={
+            "epoch": log.epoch,
+            "events": [event("invalidate", key="inv", target="d1", why="the premise moved")],
+        },
+    )
+    end(client, log.epoch)
+
+    blockers = {item.id: item.blocker for item in capture(session_dir).open_items}
+    assert blockers["d1"] == "a proposed change is waiting on it"
 
 
 def test_a_decision_left_resting_on_a_withdrawn_answer_says_so(session_dir: Path) -> None:
@@ -419,6 +453,10 @@ def test_a_decision_left_resting_on_a_withdrawn_answer_says_so(session_dir: Path
 
     Stale is not the same as unanswered: the answer is still there, and what is
     missing is the ground it stood on.
+
+    Withdrawing an answer is never the agent's to do on its own, so the
+    unsettle reaches the board through the human's apply -- which is also the
+    only way this session's staleness could ever have happened.
     """
     log = started(session_dir)
     client = driven(log, SpyDriver())
@@ -431,6 +469,7 @@ def test_a_decision_left_resting_on_a_withdrawn_answer_says_so(session_dir: Path
             "events": [event("unsettle", key="uns", target="d1", why="the cost changed")],
         },
     )
+    apply_all(client, log.epoch)
     end(client, log.epoch)
 
     blockers = {item.id: item.blocker for item in capture(session_dir).open_items}

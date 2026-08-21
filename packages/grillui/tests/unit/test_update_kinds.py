@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from conftest import SEED_NODE, event, post, seed_node
+from conftest import SEED_NODE, apply_all, event, post, seed_node
 from fastapi.testclient import TestClient
 
 from grillui.log import SessionLog
@@ -109,7 +109,9 @@ def test_a_minted_node_is_answerable_and_revisable_in_the_same_session(
     Then both land on the same decision.
 
     The full loop is the claim: an id that could be minted but not used again
-    would be an echo of a node nobody can reach.
+    would be an echo of a node nobody can reach. The revise takes the long way
+    round -- it names a decision the human has already answered, so it waits in
+    the queue for their gesture, and the minted id has to survive that too.
     """
     minted = post(client, log.epoch, add_node("mint-1"))[0]["node"]["id"]
 
@@ -138,6 +140,19 @@ def test_a_minted_node_is_answerable_and_revisable_in_the_same_session(
     )[0]
 
     assert [answered["status"], revised["status"]] == ["accepted", "accepted"]
+    assert revised["updates"] == [
+        {
+            "kind": "revise",
+            "target": minted,
+            "status": "queued",
+            "as": "sent",
+            "amendments": None,
+            "reason": None,
+            "detail": None,
+            "node": None,
+        }
+    ]
+    assert apply_all(client, log.epoch, minted)["status"] == "accepted"
     node = decisions(client)[minted]
     assert node["title"] == "Which cache, now that the budget is fixed?"
     assert node["status"] == "settled"
@@ -170,12 +185,16 @@ def test_invalidate_carries_its_rationale_onto_the_decision_it_blocks(
 ) -> None:
     """
     Given a decision and a neighbouring one
-    When the agent invalidates the first with rationale text
+    When the agent invalidates the first with rationale text and the human
+         applies it
     Then the rationale is on the invalidated decision itself, in its status
          record and in its history, and the neighbour carries nothing.
 
     Shipping the reasoning as a note on a neighbouring node makes the human
-    read the block and its justification as two unrelated items.
+    read the block and its justification as two unrelated items. The rationale
+    has to survive the queue to reach the board at all, and the history entry
+    is attributed to the gesture that caused the change -- the human's apply --
+    while the reasoning it carries stays the agent's.
     """
     seed_node(client, log.epoch)
     neighbour = post(client, log.epoch, add_node("mint-1"))[0]["node"]["id"]
@@ -184,16 +203,18 @@ def test_invalidate_carries_its_rationale_onto_the_decision_it_blocks(
     receipt = post(
         client, log.epoch, event("invalidate", key="kill-1", target=SEED_NODE, why=rationale)
     )[0]
+    applied = apply_all(client, log.epoch, SEED_NODE)
 
     assert receipt["status"] == "accepted"
+    assert applied["status"] == "accepted"
     board = decisions(client)
     assert board[SEED_NODE]["status"] == "invalidated"
     assert board[SEED_NODE]["rationale"] == rationale
     assert history(client, SEED_NODE)[-1] == {
-        "seq": receipt["seq"],
+        "seq": applied["seq"],
         "timestamp": history(client, SEED_NODE)[-1]["timestamp"],
         "kind": "invalidate",
-        "actor": "grill-master",
+        "actor": "human",
         "why": rationale,
     }
     assert board[neighbour]["rationale"] is None
@@ -331,7 +352,9 @@ def test_unsettle_reopens_a_decision_and_makes_everything_resting_on_it_stale(
     Then it is open again and both decisions downstream of it are stale.
 
     Staleness is transitive because an answer resting on a withdrawn answer is
-    exactly as unsupported at one remove as at none.
+    exactly as unsupported at one remove as at none. Withdrawing the answer is
+    the human's, so the unsettle waits for their gesture before any of it
+    happens.
     """
     seed_node(client, log.epoch)
     post(client, log.epoch, add_node("mint-2", target="n2", prereqs=[SEED_NODE]))
@@ -344,9 +367,11 @@ def test_unsettle_reopens_a_decision_and_makes_everything_resting_on_it_stale(
         log.epoch,
         event("unsettle", key="unsettle-1", target=SEED_NODE, why="the vendor changed the terms"),
     )[0]
+    assert decisions(client)[SEED_NODE]["status"] == "settled"
+    applied = apply_all(client, log.epoch, SEED_NODE)
 
     board = decisions(client)
-    assert receipt["status"] == "accepted"
+    assert [receipt["status"], applied["status"]] == ["accepted", "accepted"]
     assert board[SEED_NODE]["status"] == "open"
     assert board[SEED_NODE]["answer"] is None
     assert board[SEED_NODE]["rationale"] == "the vendor changed the terms"
@@ -505,8 +530,10 @@ def test_a_decision_reads_as_fogged_until_the_decision_it_waits_on_settles(
 # ── the atomic fold ──
 
 
-def fold_gesture(key: str, *updates: dict[str, Any]) -> dict[str, Any]:
-    return event("fold", key=key, updates=list(updates))
+def fold_gesture(key: str, *updates: dict[str, Any], actor: str = "human") -> dict[str, Any]:
+    """A fold as the human makes it: their gesture is what puts a turn's
+    declared impact on the board."""
+    return event("fold", actor=actor, key=key, updates=list(updates))
 
 
 def test_one_fold_gesture_applies_a_revise_an_add_node_and_an_informational(
@@ -514,12 +541,14 @@ def test_one_fold_gesture_applies_a_revise_an_add_node_and_an_informational(
 ) -> None:
     """
     Given one fold gesture carrying a revise, an add-node and an informational
-    When it is submitted
+    When the human submits it
     Then all three land, on one sequence, with a receipt per sub-update saying
          what was applied and whether it was amended.
 
     This is a conversational turn's declared impact applied as one gesture: the
-    human accepted the turn, not three unrelated writes.
+    human accepted the turn, not three unrelated writes. The actor is what makes
+    that true rather than merely said -- an agent submitting the same three
+    would be applying its own turn, which is the thing the queue exists to stop.
     """
     seed_node(client, log.epoch)
 

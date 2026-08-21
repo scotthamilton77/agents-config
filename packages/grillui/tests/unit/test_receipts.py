@@ -12,18 +12,21 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from conftest import SEED_NODE, event, post, seed_node
+from conftest import SEED_NODE, event, post, proposed, queue_gesture, seed_node
 from fastapi.testclient import TestClient
 
 from grillui.log import SessionLog
 from grillui.schemas import (
+    APPLY_KIND,
     REASON_EMPTY_ANSWER,
     REASON_EPOCH_MISMATCH,
     REASON_MISSING_KEY,
+    REASON_PENDING_CONFLICT,
     REASON_THREAD_MAP_MUTATION,
     REASON_THREAD_WITHOUT_TURN,
     REASON_UNKNOWN_KIND,
     REASON_UNKNOWN_NODE,
+    REASON_UNKNOWN_PENDING,
     REJECTION_REASONS,
 )
 
@@ -157,6 +160,39 @@ def _refuse_thread_map_mutation(client: TestClient, log: SessionLog) -> dict[str
     )[0]
 
 
+def _refuse_unknown_pending(client: TestClient, log: SessionLog) -> dict[str, Any]:
+    return queue_gesture(client, log.epoch, APPLY_KIND, "no-such-proposal#0", key="k1")
+
+
+def _leave_a_conflicted_proposal(client: TestClient, log: SessionLog) -> None:
+    """Put the board where a proposal and the human disagree: the agent proposes
+    an invalidation, and the human answers that decision while it waits."""
+    post(client, log.epoch, event("invalidate", key="proposal", target=SEED_NODE, why="moot"))
+    post(
+        client,
+        log.epoch,
+        event(
+            "answer",
+            actor="human",
+            key="answered-around-it",
+            target=SEED_NODE,
+            answer={"text": "an append-only log"},
+        ),
+    )
+
+
+def _refuse_pending_conflict(client: TestClient, log: SessionLog) -> dict[str, Any]:
+    return queue_gesture(client, log.epoch, APPLY_KIND, *proposed(client, SEED_NODE), key="k1")
+
+
+# What a refusal needs on the board before it can be provoked, kept out of the
+# refusal itself so the "nothing was appended" claim stays exact: setup lands
+# before the log is snapshotted, and the refused write is the only thing after.
+SETUPS: dict[str, Callable[[TestClient, SessionLog], None]] = {
+    REASON_PENDING_CONFLICT: _leave_a_conflicted_proposal,
+}
+
+
 REFUSALS: dict[str, Callable[[TestClient, SessionLog], dict[str, Any]]] = {
     REASON_MISSING_KEY: _refuse_missing_key,
     REASON_EPOCH_MISMATCH: _refuse_stale_epoch,
@@ -165,6 +201,8 @@ REFUSALS: dict[str, Callable[[TestClient, SessionLog], dict[str, Any]]] = {
     REASON_EMPTY_ANSWER: _refuse_empty_answer,
     REASON_THREAD_WITHOUT_TURN: _refuse_thread_without_turn,
     REASON_THREAD_MAP_MUTATION: _refuse_thread_map_mutation,
+    REASON_UNKNOWN_PENDING: _refuse_unknown_pending,
+    REASON_PENDING_CONFLICT: _refuse_pending_conflict,
 }
 
 
@@ -183,6 +221,8 @@ def test_each_rejection_reason_produces_exactly_that_typed_receipt(
     untested.
     """
     seed_node(client, log.epoch)
+    if reason in SETUPS:
+        SETUPS[reason](client, log)
     accepted_so_far = [entry.kind for entry in log.entries()]
 
     receipt = REFUSALS[reason](client, log)

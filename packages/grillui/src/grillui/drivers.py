@@ -19,13 +19,20 @@ what makes that file worth writing. One turn at a time, always: the discount
 lives in a cache one process holds, and two processes talking over each other on
 the same chain forfeit it.
 
-**A reply may declare map updates, and only the grill-master's will land.** A
-turn answers in prose, or in an object carrying prose and the updates it wants
-applied; the second lands as one atomic gesture, so what the human is told and
-what the board does arrive together or not at all. The gesture is submitted on
-the channel the turn ran on, through the same appender the page writes through,
-which is what makes the sole-author rule structural: a thread agent's updates
-are refused there, and no driver holds a second way to the board.
+**A reply may declare map updates, and only the grill-master's are heard at
+all.** A turn answers in prose, or in an object carrying prose and the updates
+it wants made; the second is submitted as one gesture, so what the human is
+told and what the turn declared arrive together or not at all. The gesture is
+submitted on the channel the turn ran on, through the same appender the page
+writes through, which is what makes the sole-author rule structural: a thread
+agent's updates are refused there, and no driver holds a second way to the
+board.
+
+Declaring is not applying. What an agent's update does on arrival -- land, or
+wait in the human's queue for their gesture -- is decided against the board by
+the fold, not here. No driver may pre-empt that: one that decided for itself
+which of its updates were safe would be the agent applying its own turn again,
+by a longer route.
 
 **A reply that says nothing is a failure, not a turn.** Whatever the cause --
 transport, an empty completion, an appender that refused the reply -- it raises,
@@ -372,12 +379,16 @@ def record_reply(
     reply is judged like any other write and a refusal is not swallowed: the
     human asked something, and a reply nobody can read is not an answer.
 
-    A reply declaring map updates is submitted as one atomic gesture carrying
-    them and the prose together, and it is submitted on the channel the turn
-    ran on -- which is what makes the sole-author rule structural rather than
-    advisory. A thread agent that declared updates has them refused by the same
-    appender that refuses them over the wire, and the lane says so; there is no
-    second path to the board for a driver to take.
+    A reply declaring map updates is submitted as one gesture carrying them and
+    the prose together, and it is submitted on the channel the turn ran on --
+    which is what makes the sole-author rule structural rather than advisory. A
+    thread agent that declared updates has them refused by the same appender
+    that refuses them over the wire, and the lane says so; there is no second
+    path to the board for a driver to take.
+
+    Which of the declared updates land and which wait for the human is not this
+    function's question and must not become one: it is a property of the board
+    at the moment the gesture arrives, answered once by the fold.
 
     What the reply withdrew rides on the turn's own spoken entry, because that
     is what it is: this turn replacing what a previous one told the human, in
