@@ -97,6 +97,15 @@ Reloading is safe and asserts nothing: the board comes back from the backend.
 
 ## Ending
 
+Once every decision on the board is settled, the board says so: an overlay stating that
+every question has been answered, offering to end the session or to go back. It is an
+announcement, not a deadline — going back leaves everything writable, and the
+end-session control at the top starts pulsing so the offer is still there when they want
+it. An agent adding a new question takes the announcement away; it comes back when that
+one is settled too. Ending tries to close the tab, and most browsers refuse to close a
+tab they did not open — the board then says the session has ended and that the tab can
+be closed.
+
 **End the session** is the only way a session ends. No agent ends one; an agent that
 thinks the stopping condition is met says so. Ending writes the result beside the session
 log, stops the backend, and hands the summary back to the agent that launched the board.

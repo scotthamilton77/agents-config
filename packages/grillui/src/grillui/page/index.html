@@ -86,6 +86,11 @@
   .mail { animation: mailpulse 1.4s ease-in-out infinite; }
   @keyframes alertflash { 0%,100% { box-shadow: 0 0 0 0 rgba(185,28,28,0); } 50% { box-shadow: 0 0 0 4px rgba(185,28,28,.26); } }
   .alerting { animation: alertflash 1.5s ease-in-out infinite; }
+  /* A dismissed completion offer has to stay findable without a second overlay,
+     so the control it was offering keeps a moving border until it is used. */
+  @keyframes endpulse { 0%,100% { border-color: var(--line); box-shadow: 0 0 0 0 rgba(79,70,229,0); }
+                        50% { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,.22); } }
+  .btn.pulsing { animation: endpulse 1.6s ease-in-out infinite; }
   /* The settled block reads as compacting — with no layout effect. An animated
      max-height was still resizing while the auto-advance scroll measured where
      to go, which landed the next decision above the panel's top edge. */
@@ -341,6 +346,7 @@
                 box-shadow: 0 20px 60px rgba(15,23,42,.35); }
   .scrim .box h3 { font-size: 17px; margin-bottom: 8px; }
   .scrim .box p { color: var(--ink-dim); font-size: 13.5px; margin: 0; }
+  .scrim .box .acts { display: flex; gap: 8px; margin-top: 15px; }
 
   /* ---------- informational bubbles, upper right ---------- */
   .bubbles { position: fixed; top: 16px; right: 16px; z-index: 990; display: flex; flex-direction: column; gap: 8px; width: 330px; }
@@ -640,7 +646,12 @@ var UI = {
   lastFocus: null, lastPanelKey: null, centerNext: true, justSettled: null,
   fresh: [], touched: [], autoshut: {}, advanceFrom: null,
   bubbles: [], bubbleSeen: {}, bubbleSig: null, bubbleTick: 0, ptr: null,
-  popped: {}, draftBase: {}, popFail: false, diag: false, discussing: {}
+  popped: {}, draftBase: {}, popFail: false, diag: false, discussing: {},
+  // The completion offer, which is presentation and lives nowhere else: whether
+  // the overlay is up, whether it was dismissed onto the pulsing control, and
+  // what the board's finished-ness last read as. A reload starts all three back
+  // here, which is right -- a board that is not finished has nothing to carry.
+  done: false, pulse: false, wasDone: false
 };
 // One page instance: an idempotency key is stable for a retry and distinct
 // across reloads, because a reload's events are genuinely new and a resend is
@@ -836,6 +847,12 @@ function send() {
       if (ending && r.idempotency_key === ending.idempotency_key && r.status === "accepted") {
         ENDED = true;
         delete OUTBOX[r.idempotency_key];
+        // The session is over, so the tab it ran in has nothing left to do. A
+        // browser refuses to close a tab this page did not open -- which is
+        // every tab a human opened themselves -- and refuses it silently, with
+        // nothing thrown to catch. So the ended surface is what most humans are
+        // actually left looking at, and it tells them the tab is theirs to close.
+        window.close();
       }
       if (r.status !== "rejected") return;
       WIRE.rejected += 1;
@@ -1599,6 +1616,41 @@ function saySeed(tid, id, field) {
   if (tid && thread(tid)) sayInThread(tid, text);
   else if (id) startThread(id, text);
 }
+// Finished means every decision the board is actually carrying is settled, and
+// settled is the only status that counts. That is the same reading the terminal
+// result takes -- anything not settled is one of its open items -- so a board
+// this page calls finished is a board that would be written up with nothing
+// left open. Invalidated and stale are decisions somebody still has to move,
+// and fog lifts on its own once what it waits for is answered. An empty board
+// is not a finished one; it is a board nothing has been put on yet.
+function allSettled() {
+  return BOARD.decisions.length > 0 && BOARD.decisions.every(function (d) {
+    return d.status === "settled";
+  });
+}
+// The overlay announces the board *arriving* at that state rather than sitting
+// in it, so it is armed on the crossing and disarmed by leaving. An agent
+// adding an open node takes the board back out, which drops the overlay and the
+// pulse together; settling that node announces the arrival again. Nothing here
+// is remembered anywhere but this page, so a reload into an unfinished board
+// carries neither.
+function noteCompletion() {
+  var done = !sessionOver() && allSettled();
+  if (done && !UI.wasDone) { UI.done = true; UI.pulse = false; }
+  if (!done) { UI.done = false; UI.pulse = false; }
+  UI.wasDone = done;
+}
+// The offer, worded as an offer: the human is told what is true and asked what
+// they want, and neither answer is the one this page prefers. The end action is
+// the top row's own control by act, so there is one gesture into ending a
+// session and this is a second place to reach it rather than a second way.
+function completionOffer() {
+  return '<div class="scrim" id="completion"><div class="box"><h3>🏁 Every question is answered</h3>' +
+    "<p>Every decision on this board is settled. Ending the session writes the result beside the log and " +
+    "hands it back. Nothing forces that now — the board is yours to go back over.</p>" +
+    '<div class="acts"><button class="btn primary" data-act="endsession">End the session</button>' +
+    '<button class="btn" data-act="dismiss-completion">Back to the board</button></div></div></div>';
+}
 function endSession() {
   send(ev("session-end", MAP, {}));
   render();
@@ -2255,7 +2307,7 @@ function renderShell() {
     (unread ? '<button class="btn sm" data-act="markall" title="Clear every unread marker. Nothing is sent.">✓ Mark all read</button>' : "") +
     transferControl(MAP) +
     '<button class="btn sm" data-act="doctor" title="Send the agent over the whole board and the queue">🩺 Map doctor</button>' +
-    '<button class="btn sm" data-act="endsession">End the session</button>' +
+    '<button class="btn sm' + (UI.pulse ? " pulsing" : "") + '" data-act="endsession">End the session</button>' +
     // Pushed to the right edge of the row rather than sitting at the end of the
     // run of controls: help is not one more thing to do with the board, and a
     // human looking for it looks at the corner.
@@ -2268,7 +2320,8 @@ function renderShell() {
     // to stop by the ending itself, so telling the human to restart it would be
     // an invitation to reopen something they finished.
     banners += '<div class="banner">🏁 <strong>This session has ended.</strong> The terminal entry is in the log and ' +
-      "the result was written beside it. What is below is the board as it stands, to read — nothing further is recorded here.</div>";
+      "the result was written beside it. What is below is the board as it stands, to read — nothing further is recorded here. " +
+      "<strong>You can close this tab.</strong></div>";
   } else if (CHANNELS.transport === "disconnected" || CHANNELS.transport === "error") {
     banners += '<div class="banner">⚠ <strong>No backend.</strong> Nothing is answering — the session log and every answer already accepted are safe on disk, ' +
       "but nothing you do now is recorded and no reply will arrive. Restart it and this page will re-read the board by itself.</div>";
@@ -2298,10 +2351,13 @@ function renderShell() {
     '<div class="surface">' + renderMap() + renderColumn() + "</div>";
 
   document.getElementById("overlay").innerHTML =
+    // One scrim at a time: the doctor's holds the board read-only, and an offer
+    // to finish stacked on top of it would be offering a gesture the page is
+    // refusing anyway.
     (WIRE.doctor
       ? '<div class="scrim"><div class="box"><h3>🩺 The map doctor is working</h3>' +
         "<p>The agent is going over the whole board and everything in the queue. The board is read-only until it answers.</p></div></div>"
-      : "") +
+      : UI.done ? completionOffer() : "") +
     (!UI.panel ? "" :
       UI.panel.kind === "thread" ? renderThread(UI.panel.id) :
       UI.panel.kind === "notifications" ? renderNotifications() : renderInbox());
@@ -2331,6 +2387,7 @@ function render() {
   var focusId = act && act.tagName === "TEXTAREA" ? act.id : null;
   var caret = focusId ? act.selectionStart : 0;
 
+  noteCompletion();
   harvestBubbles();
   renderShell();
   renderBubbles();
@@ -2589,6 +2646,10 @@ document.addEventListener("click", function (e) {
       break;
     }
     case "dismiss-rejection": WIRE.lastRejection = null; HELDBACK = null; render(); break;
+    // Nothing is sent and nothing is decided: the offer comes down and the top
+    // row's control carries it from here. Not in the write acts for that reason
+    // -- an ended board never shows this overlay to dismiss.
+    case "dismiss-completion": UI.done = false; UI.pulse = true; render(); break;
   }
 });
 // An agent's message is discussed as an ordinary thread, seeded from it —
