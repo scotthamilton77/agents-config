@@ -913,6 +913,66 @@ def test_a_thread_panel_pins_its_title_and_its_prompt_box() -> None:
     assert "#t{height:100%}" in function_body("popOut")
 
 
+# ---------------------------------------------------------------- GUI-A59
+
+
+def test_a_decisions_seed_prompts_are_controls_on_its_thread_pane() -> None:
+    """One control per seed field the decision declared, and none where it
+    declared none.
+
+    Seed text with no control on the surface is data nothing consumes: the node
+    shape has carried it from the first handoff, and without a button the only
+    way to say one is to retype it. Which fields there are is read off the
+    decision rather than listed in the page, so a seed the page does not know
+    the name of is still a seed someone wrote.
+    """
+    controls = function_body("seedControls")
+    assert 'if (!d || !d.talk) return "";' in controls, "a decision without seeds still renders one"
+    assert "Object.keys(d.talk)" in controls, "the fields are a list the page keeps"
+    assert 'data-act="seed"' in controls
+    # Both panes, because both are thread panes: the one for a discussion under
+    # way and the one for a decision nobody has said anything on yet, which is
+    # the state most seeds are written for.
+    pane = function_body("threadBody")
+    assert "seedControls(anchor, null)" in pane, "a thread not yet opened offers no seed"
+    assert "seedControls(t.decision, tid)" in pane, "an open thread offers no seed"
+
+
+def test_pressing_a_seed_says_it_as_the_humans_own_turn() -> None:
+    """The seed rides the path a typed turn rides -- same event, same channel,
+    same outbox -- so it is a shortcut for the human's hands rather than a
+    second way into the log. On a decision nothing has been said on yet, saying
+    a seed is what opens the thread.
+
+    The text comes off the board, never off the button: the pane is redrawn from
+    the board on every tick, and a control that carried its own copy would send
+    the seed as it read when the button was drawn.
+    """
+    assert "saySeed(tid, id, el.dataset.field)" in click_cases()["seed"]
+    said = function_body("saySeed")
+    assert "d.talk[field]" in said, "the seed's words come from somewhere other than the board"
+    assert "sayInThread(tid, text)" in said
+    assert "startThread(id, text)" in said
+    assert "seed" in write_acts(), "a closed session still offers to say a seed"
+
+
+def test_a_seeds_words_reach_the_pane_as_words_rather_than_as_markup() -> None:
+    """The seed is authored by whatever assembled the handoff, and it is the
+    label on its own control. A tag inside it would be a tag on the page the
+    human is answering decisions on."""
+    assert "esc(d.talk[f])" in function_body("seedControls")
+
+
+def test_the_popped_window_offers_the_same_seeds_as_the_pane() -> None:
+    """The popped window is the same pane, so it renders the same controls --
+    and the bridge back has to carry which seed was pressed, which is the one
+    thing the copy can say that the main window cannot work out for itself."""
+    assert "el.dataset.field" in function_body("popOut"), "the popped window drops the field"
+    bridge = page_source().split("window.popAct = function", 1)[1].split("\n};", 1)[0]
+    assert 'act === "seed"' in bridge
+    assert "(thread(tid) || {}).decision" in bridge, "the decision comes from the popped button"
+
+
 # ---------------------------------------------------------------- GUI-A45
 
 
@@ -1817,7 +1877,7 @@ def test_a_discussion_thread_holds_the_change_it_was_opened_to_judge() -> None:
     assert "UI.discussing[tid] = id;" in opened and "saveDiscussing();" in opened
     assert 'UI.discussing = loadWindow("discussing", {})' in function_body("hydrate")
     assert "UI.discussing[tid] || null" in function_body("threadBody")
-    popped = page_source().split("window.popAct = function (tid, act, text)", 1)[1]
+    popped = page_source().split("window.popAct = function", 1)[1]
     popped = popped.split("\n};", 1)[0]
     assert popped.count("UI.discussing[tid]") == 4, "the pop-out asks about its own thread"
 

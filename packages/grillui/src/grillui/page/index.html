@@ -1517,6 +1517,17 @@ function sayInThread(tid, text) {
   send(ev("thread-turn", tid, { turns: [{ who: "human", text: text.trim() }] }));
   render();
 }
+// A seed prompt is the human's own turn, said for them. It goes out on the
+// thread's channel like anything they typed — same event, same key, same
+// outbox — so a seed is a shortcut for the human's hands and not a second way
+// into the log. On a decision whose discussion has not started, saying one is
+// what opens the thread, which is the state most seeds are written for.
+function saySeed(tid, id, field) {
+  var d = node(id), text = d && d.talk ? d.talk[field] : "";
+  if (!text) return;
+  if (tid && thread(tid)) sayInThread(tid, text);
+  else if (id) startThread(id, text);
+}
 function endSession() {
   send(ev("session-end", MAP, {}));
   render();
@@ -1848,6 +1859,19 @@ function threadPane(head, body, foot) {
     '<div class="tbody">' + body + "</div>" +
     (foot ? '<div class="tfoot">' + foot + "</div>" : "") + "</div>";
 }
+// The seed prompts a decision carries, one control each, in the foot beside the
+// box they stand in for. A decision that carries none renders none: the row is
+// what the decision declared and nothing the page invents. The full text is the
+// label, because what a control sends is the only thing worth knowing about it.
+function seedControls(id, tid) {
+  var d = id ? node(id) : null;
+  if (!d || !d.talk) return "";
+  var seeds = Object.keys(d.talk).filter(function (f) { return d.talk[f]; }).map(function (f) {
+    return '<button class="btn sm" data-act="seed" data-field="' + esc(f) + '" data-id="' + esc(id) + '"' +
+      (tid ? ' data-tid="' + esc(tid) + '"' : "") + ">💬 " + esc(d.talk[f]) + "</button>";
+  });
+  return seeds.length ? '<div class="thread-actions">' + seeds.join("") + "</div>" : "";
+}
 // `chrome` is what the surrounding window pins beside the title — the slide-out
 // has a close and a pop-out, the popped window has neither. It rides in the head
 // rather than outside the pane so that it is pinned by the same rule as the
@@ -1868,7 +1892,8 @@ function threadBody(tid, forPop, chrome) {
         "the first thing you say is what opens it. It titles itself from what you say.</div>",
       '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="draftsay" data-id="' + esc(anchor || "") +
         '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
-        '<button class="btn sm" data-act="draftsay" data-id="' + esc(anchor || "") + '">Send</button></div>'
+        '<button class="btn sm" data-act="draftsay" data-id="' + esc(anchor || "") + '">Send</button></div>' +
+        seedControls(anchor, null)
     );
   }
   var ready = foldReady(tid);
@@ -1888,6 +1913,7 @@ function threadBody(tid, forPop, chrome) {
   var h = '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="say" data-tid="' + esc(tid) +
     '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
     '<button class="btn sm" data-act="say" data-tid="' + esc(tid) + '">Send</button></div>';
+  h += seedControls(t.decision, tid);
 
   h += '<div class="thread-actions">' + transferControl(tid);
   if (t.kind === "mandate") {
@@ -2285,9 +2311,13 @@ function centerOn(id) {
 
 /* ---------- the pop-out window ---------- */
 window.threadHTML = function (tid) { return threadBody(tid, true); };
-window.popAct = function (tid, act, text) {
+window.popAct = function (tid, act, text, field) {
   if (act === "transfer") toggleTransfer(tid);
   else if (act === "say") sayInThread(tid, text);
+  // The seed's decision is read from the thread this window is showing, not
+  // from the button: the popped document is a copy of the pane, and the only
+  // thing it can be trusted to name is which seed was pressed.
+  else if (act === "seed") saySeed(tid, (thread(tid) || {}).decision, field);
   else if (act === "fold") foldThread(tid);
   else if (act === "park") parkThread(tid);
   else if (act === "abandon") abandonAnswer((thread(tid) || {}).decision);
@@ -2317,7 +2347,7 @@ function popOut(tid) {
     "var t2=document.getElementById('pop-say');if(t2){t2.value=v;if(had)t2.focus({preventScroll:true});}}" +
     "document.addEventListener('click',function(e){var el=e.target.closest('[data-act]');if(!el)return;" +
     "var ta=document.getElementById('pop-say');" +
-    "try{window.opener.popAct(tid,el.dataset.act,ta?ta.value:'');}catch(x){}" +
+    "try{window.opener.popAct(tid,el.dataset.act,ta?ta.value:'',el.dataset.field);}catch(x){}" +
     "if(ta&&el.dataset.act==='say')ta.value='';setTimeout(draw,40);});" +
     "document.addEventListener('keydown',function(e){if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){var b=document.querySelector('[data-act=\"say\"]');if(b)b.click();}});" +
     "setInterval(draw,600);draw();})();";
@@ -2337,7 +2367,7 @@ function popOut(tid) {
 // Every act that writes to the session. All of this page's writes funnel through
 // `send`, which refuses once the session is over; this is the surface saying the
 // same thing, so an ended board offers no control whose click would be swallowed.
-var WRITE_ACTS = ["pick", "free", "say", "draftsay", "newthread", "discuss", "discussnotice",
+var WRITE_ACTS = ["pick", "free", "say", "seed", "draftsay", "newthread", "discuss", "discussnotice",
   "fold", "park", "abandon", "applyone", "applyall", "dismissone", "transfer", "doctor", "endsession"];
 // Reading stays: the board, the map, the history, the inbox, the notifications
 // and the read markers are all this window's own and go nowhere. What goes is
@@ -2441,6 +2471,7 @@ document.addEventListener("click", function (e) {
     case "draftsay": sendFrom(document.getElementById("ft-say")); break;
     case "openthread": UI.panel = { kind: "thread", id: tid }; render(); break;
     case "say": sendFrom(document.getElementById("ft-say")); break;
+    case "seed": saySeed(tid, id, el.dataset.field); break;
     case "park": parkThread(tid); break;
     case "fold": foldThread(tid); break;
     case "abandon": abandonAnswer(id); break;
