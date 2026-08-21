@@ -486,7 +486,9 @@ only in the images.
 - `mandate` — optional object declaring that any answer opens a side thread whose
   conclusion is the only way to settle the decision: `threadId`, `scope`, `title`, `notice`,
   all strings.
-- `talk` — optional object of seed text: `why` and `zoom`, both strings.
+- `talk` — optional object of seed text: `why` and `zoom`, each an optional string, since
+  each is its own control and either alone is a usable seed. An object carrying neither is
+  no talk at all.
 - `fogUntil` — optional decision id; `fogTitle` — optional string shown while fogged.
 - In the images only: `status` — one of `open`, `settled`, `invalidated`, `stale`, `fogged`;
   `answer` — object or null, carrying `option` (option id or null) and `text` (string or

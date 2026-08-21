@@ -91,6 +91,47 @@ def test_a_conforming_handoff_seeds_every_decision_prereq_and_option_it_names(
     assert second.fog_title == "Settle the store first"
 
 
+@pytest.mark.parametrize(
+    ("declared", "seeded"),
+    [
+        ({"why": "Recovery rests on it."}, {"why": "Recovery rests on it."}),
+        ({"zoom": "Consider a crash mid-write."}, {"zoom": "Consider a crash mid-write."}),
+        (
+            {"why": "Recovery rests on it.", "zoom": "Consider a crash mid-write."},
+            {"why": "Recovery rests on it.", "zoom": "Consider a crash mid-write."},
+        ),
+        (None, None),
+        ({}, None),
+    ],
+    ids=["why-alone", "zoom-alone", "both", "none-declared", "empty-object"],
+)
+def test_each_talk_seed_a_handoff_declares_reaches_the_board_on_its_own(
+    session_dir: Path, declared: dict[str, str] | None, seeded: dict[str, str] | None
+) -> None:
+    """
+    Given a handoff whose decision declares one seed, both, neither, or an empty
+         talk object
+    When the backend starts a session on it
+    Then it is accepted, and the board carries exactly the seeds declared.
+
+    The two seeds are separate controls on the thread pane, so an author with a
+    `why` and no `zoom` has written a complete briefing; refusing it would be
+    the backend insisting on prompt text nobody needed. The empty object is the
+    other end of the same rule: a talk with no seed in it is no talk, and it
+    reaches the board as nothing rather than as a seed set with no seeds.
+    """
+    document = handoff_doc()
+    decision = document["plan"]["decisions"][0]
+    if declared is None:
+        del decision["talk"]
+    else:
+        decision["talk"] = declared
+
+    log = open_session(session_dir, write_handoff(session_dir, document))
+
+    assert image1(log).decisions[0].talk == seeded
+
+
 def test_the_seeded_board_is_reproduced_by_re_folding_the_log_alone(session_dir: Path) -> None:
     """
     Given a session seeded from a handoff
