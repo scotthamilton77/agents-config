@@ -506,6 +506,15 @@ The current map snapshot: a pure fold, byte-identical for a given log.
   of objects: `who` (the §8.3 actor enum), `text` (string), `timestamp` (string).
 - `pending` — array of objects: `id`, `target` (decision id), `kind`, `superseded`
   (boolean), and `authored_at` (sequence integer). This is the queue GUI-D26 dispatches.
+  `id` is derived from the authoring entry rather than minted beside it: for an entry
+  carrying a single update it is that entry's idempotency key, and for a fold-shaped entry
+  — a `fold` or an `apply` — it is `<idempotency key>#<index>`, where the index is the
+  sub-update's position in the entry's `updates` array counted before any filtering. The
+  derivation is normative because the id is the only stable name a queue entry has, and
+  two readers need it: a page persisting presentation state against a queue entry across
+  a reload, and anything telling an applied update from a dismissed one in the log. A
+  minted id would be stable within one fold and mean nothing to a second reader of the
+  same log.
 
 ### 8.6 Image 2
 

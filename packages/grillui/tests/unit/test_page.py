@@ -231,11 +231,21 @@ def test_every_event_the_page_sends_is_built_by_the_checked_constructor() -> Non
     The idempotency key is what makes a submission a submission, so exactly one
     place in the page may mint one. A second would be an emission the table
     never saw.
+
+    Minting is measured as the assignment and as the page-instance prefix that
+    goes into it, not as every mention of the word: the page reads keys off
+    events it has already built -- to tell an event still in flight from one the
+    log has taken, and to name a queued update the way the backend names it --
+    and a read is not a mint. Counting mentions would make those reads look like
+    second constructors while leaving a real second constructor that spelled its
+    field differently entirely invisible.
     """
     source = page_source()
-    assert source.count("idempotency_key") == 1
+    assert source.count("idempotency_key:") == 1, "a second place builds an event's key"
+    assert source.count("PAGE_ID") == 2, "the page-instance prefix is used outside the constructor"
     builder = source.split("function ev(", 1)[1].split("\nfunction ", 1)[0]
-    assert "idempotency_key" in builder
+    assert "idempotency_key:" in builder
+    assert "PAGE_ID" in builder
 
 
 @pytest.mark.parametrize("kind", sorted(emitted_kinds()))
@@ -679,6 +689,496 @@ def test_the_page_reads_which_channel_is_owed_a_turn_off_the_lanes_own_entries()
     assert "PHASE_COMPOSING" in reader
     sender = function_body("send")
     assert "owed" not in sender, "the page decided for itself who owes a turn"
+
+
+# ---------------------------------------------------------------- GUI-A21
+
+
+def test_the_waiting_clock_starts_when_a_tier_takes_the_turn_and_not_when_the_gesture_lands() -> (
+    None
+):
+    """`accepted` is not the start of a wait, and treating it as one leaks.
+
+    The lane addresses `accepted` to the channel the human spoke on and
+    `composing` to the channel the turn runs on, and for a fold those are two
+    different channels. A clock started on `accepted` therefore starts on a
+    thread that owes nothing, and nothing ever closes it -- the thread's
+    `replied` never comes, because the reply is the map's. The channel sits
+    there counting up against a turn it is not taking.
+    """
+    reader = function_body("track")
+    assert "PHASE_COMPOSING" in reader
+    assert "WIRE.status[entry.channel] = {" in reader
+    assert "delete WIRE.status[entry.channel]" in reader
+    # The one place a wait is started, so there is no second one to start it on
+    # the acknowledgement.
+    assert page_source().count("WIRE.status[entry.channel] = {") == 1
+
+
+def test_a_wait_is_timed_from_the_lane_entry_rather_than_from_when_the_page_read_it() -> None:
+    """A reload mid-turn comes back with the clock the human had.
+
+    Timing from the read instant would restart every wait at zero on reload,
+    which is the moment the elapsed time matters most: a human who has been
+    waiting four minutes and reloads is told the agent has just started.
+    """
+    reader = function_body("track")
+    assert "Date.parse(entry.timestamp)" in reader
+    assert "Date.now()" not in reader, "the wait is timed from this page's clock"
+    # Replayed on the reload path too, or the clock exists only for a page that
+    # happened to be open when the turn began.
+    assert "u.entries.forEach(track)" in function_body("hydrate")
+
+
+def test_the_waiting_indicator_names_every_channel_an_agent_owes_a_turn_on() -> None:
+    """One waiting channel is not the whole answer.
+
+    Two threads and the map take turns concurrently by design. An indicator
+    showing the last turn announced hides the others, and the one the human is
+    actually waiting on is as likely as not among the hidden ones.
+    """
+    reader = function_body("owed")
+    assert "Object.keys(WIRE.status)" in reader
+    assert "sort" in reader, "the longest wait is not shown first"
+    lane = function_body("laneText")
+    assert "delivered" in lane, "the indicator does not say the message got there"
+    assert 's"' in lane or "s'" in lane, "the indicator carries no elapsed count"
+    assert "more" in lane, "a second waiting channel is not surfaced"
+
+
+# ---------------------------------------------------------------- GUI-A23
+
+
+def test_the_indicator_carries_three_signals_each_derived_from_its_own_source() -> None:
+    """Reachable, agent, outbox -- three, and separately derived.
+
+    Each fails on its own and each means something different to the human in
+    front of it. Deriving one from another is how a backend that is up with
+    nothing attached ends up rendering as a backend that is up and working: the
+    only difference between them is the signal that was folded away.
+    """
+    indicator = function_body("renderIndicator")
+    for signal in ("reachable", "agent", "outbox"):
+        assert f'data-signal="{signal}"' in indicator, f"no {signal} signal on the indicator"
+    assert "connected()" in indicator, "the reachable signal is not the transport's own answer"
+    assert "agentSignal()" in indicator
+    assert "outboxDepth()" in indicator
+
+
+def test_a_backend_with_no_agent_attached_reads_differently_from_one_whose_agent_is_idle() -> None:
+    """The two states this indicator exists to separate.
+
+    Nobody is coming, against someone is on their way. A human told the wrong
+    one either waits for a reply that no configured tier will ever produce, or
+    abandons a session that was working.
+    """
+    reader = function_body("agentSignal")
+    assert "agentSeen()" in reader
+    states = set(re.findall(r'state: "([a-z]+)"', reader))
+    assert states == {"owes", "absent", "idle"}, f"the agent signal has states {states}"
+    # Attachment is read off the record rather than off a flag the page sets:
+    # the lane's own entries and the actors who authored replies.
+    seen = function_body("agentSeen")
+    assert "STATUS_KIND" in seen
+    assert "AGENT_ACTORS" in seen
+
+
+def test_the_outbox_counts_what_the_page_sent_and_the_log_has_not_returned() -> None:
+    """Depth, measured on both ends of an event's life.
+
+    An outbox that only ever filled would climb forever and mean nothing; one
+    emptied on the receipt would read as consumed while the board still did not
+    show it. It fills where events go out and empties where the log brings them
+    back, and a refusal -- an event that will never appear in the log -- leaves
+    it too, or the depth counts work nothing is ever going to do.
+    """
+    assert "OUTBOX[e.idempotency_key] = true" in function_body("send")
+    assert "delete OUTBOX[entry.idempotency_key]" in function_body("track")
+    assert 'r.status !== "accepted"' in function_body("send")
+    assert "Object.keys(OUTBOX).length" in function_body("outboxDepth")
+
+
+def test_the_diagnostic_expansion_carries_each_channels_own_wait() -> None:
+    """The amalgamated light shows the longest wait; the human is often asking
+    about a different channel, and the expansion is where that is answered."""
+    diagnostic = function_body("renderDiagnostic")
+    assert "WIRE.status[view.channel]" in diagnostic
+    assert "data-waited=" in diagnostic
+    assert "outboxDepth()" in diagnostic
+
+
+# ---------------------------------------------------------------- GUI-A22
+
+
+def test_a_notification_is_stamped_with_the_clock_of_the_entry_it_reports() -> None:
+    """When the agent did it, not when this page got round to reading it.
+
+    A page arriving late reads a morning's log in one pass. Stamping those
+    notifications with the read instant would date the whole session to the
+    moment the browser opened, which is the one timestamp that is certainly
+    wrong for every one of them.
+    """
+    assert "at: at" in function_body("noteFor")
+    observer = function_body("observe")
+    assert observer.count("entry.timestamp") == 2, "an observed update is stamped from elsewhere"
+    assert "new Date()" not in page_source(), "something is stamped from this page's clock"
+
+
+@pytest.mark.parametrize(
+    ("surface", "expression"),
+    [
+        pytest.param("renderTurns", "stamp(turn.timestamp)", id="a-thread-turn"),
+        pytest.param("renderNotifications", "stamp(n.at)", id="a-notification"),
+        pytest.param("infoNote", "stampOf(n)", id="an-agent-message-on-its-decision"),
+        pytest.param("renderBubbles", "stamp(b.at)", id="a-notification-bubble"),
+    ],
+)
+def test_every_message_surface_renders_a_timestamp(surface: str, expression: str) -> None:
+    """Thread turns and notifications alike, wherever they are met.
+
+    `stamp` is `toLocaleString`, which is the operating system's zone by
+    definition -- the browser's own, never a zone this page picked. That it
+    renders as the OS zone is a browser's answer and is measured there; what is
+    measured here is that each surface asks for one at all.
+    """
+    assert expression in function_body(surface)
+    assert "toLocaleString()" in function_body("stamp")
+
+
+def test_a_queue_entrys_clock_comes_from_the_log_rather_than_from_the_queue() -> None:
+    """The queue carries the sequence a notice was authored at and no clock, so
+    the two are read together. A page inventing one would be stamping a message
+    with the time it noticed it."""
+    reader = function_body("stampOf")
+    assert "entryAt(item.authored_at)" in reader
+    assert "stamp(e.timestamp)" in reader
+
+
+# ---------------------------------------------------------------- GUI-A44
+
+
+def test_a_thread_panel_pins_its_title_and_its_prompt_box() -> None:
+    """Three parts, and only the middle one scrolls.
+
+    The title with its controls and the prompt box with its actions are the two
+    things a human needs at every point in a thread, and they are exactly the
+    two that a single scrolling column takes away first -- at the length where a
+    thread is hardest to follow and the reply hardest to compose.
+    """
+    pane = function_body("threadPane")
+    for part in ("thead", "tbody", "tfoot"):
+        assert f'class="{part}"' in pane, f"the pane has no {part}"
+    source = page_source()
+    assert ".threadpane .tbody { flex: 1 1 auto; min-height: 0; overflow-y: auto;" in source
+    for pinned in (".thead", ".tfoot"):
+        assert f".threadpane {pinned} {{ flex: none;" in source, f"{pinned} is not pinned"
+    # The close and the pop-out ride in the head rather than on the slide, or
+    # they scroll away with the first screen of turns.
+    assert "threadBody(tid, false, chrome)" in function_body("renderThread")
+    assert 'data-act="closepanel"' in function_body("renderThread")
+    assert 'data-act="popout"' in function_body("renderThread")
+    # The popped window is the same pane at the window's own height.
+    assert "#t{height:100%}" in function_body("popOut")
+
+
+# ---------------------------------------------------------------- GUI-A45
+
+
+def test_a_decisions_options_are_labelled_by_position() -> None:
+    """a, b, c -- the handle the free text and the threads refer to an option by.
+
+    Position rather than the option's own id, because the id is the authoring
+    agent's string and nothing makes it a letter. A label that was sometimes an
+    id would be a label the human could not reliably say out loud.
+    """
+    assert '"abc".charAt(i)' in function_body("labelAt")
+    button = function_body("optionButton")
+    assert "labelAt(index)" in button
+    controls = function_body("answerControls")
+    assert controls.count("optionButton(") == 2, "the recommended option is labelled differently"
+    assert "optionButton(d, d.options[0], 0," in controls
+    assert "optionButton(d, o, i + 1," in controls
+
+
+def test_an_option_and_a_note_are_one_answer_carrying_both(client: TestClient, log: Any) -> None:
+    """Picking b and saying why is one gesture, and both halves survive.
+
+    Before this the two were exclusive: the human picked an option and had
+    nowhere to put the reason, so the reason went into a thread the answer does
+    not carry, or nowhere. The board is what is measured -- an answer that
+    carried both on the wire and folded to one of them would fail here.
+    """
+    node = seed_node(client, log.epoch)
+    receipt = post(
+        client,
+        log.epoch,
+        page_message(
+            "answer", MAP_CHANNEL, target=node, answer={"option": "b", "text": "latency wins"}
+        ),
+    )[0]
+    assert receipt["status"] == "accepted", receipt
+
+    board = client.get("/state").json()["image1"]
+    answered = next(one for one in board["decisions"] if one["id"] == node)
+    assert answered["answer"] == {"option": "b", "text": "latency wins"}
+
+
+def test_the_note_on_an_option_is_whatever_is_in_the_decisions_own_box() -> None:
+    """One box, two jobs: a free-text answer on its own, the note on an option
+    once one is picked. A second textarea would be an empty field on every
+    decision that the human has to be told the purpose of."""
+    source = page_source()
+    assert 'note: (UI.drafts[id] || "").trim()' in source
+    answer = function_body("answerOf")
+    assert "text: payload.note || null" in answer
+    assert "option: payload.option" in answer
+    # Both are shown back, in that order: only the note would hide which option
+    # was taken, only the option would drop the reason for taking it.
+    assert 'chosen + " — " + d.answer.text' in function_body("answerTextOf")
+
+
+# ---------------------------------------------------------------- GUI-A46
+
+
+def test_a_dismissed_hover_overlay_returns_only_on_a_fresh_entry_of_its_zone() -> None:
+    """Hiding on click was not enough on its own.
+
+    `mouseover` fires again on the next movement inside the same element, so the
+    card the human had just dismissed came straight back under their cursor
+    without them ever leaving the thing they dismissed it on. The zone is held
+    until the pointer has left it.
+
+    Held as what the zone is, not as which element it currently is: almost every
+    click re-renders, so an element held across one is detached by the time the
+    pointer moves, matches nothing, and hands the overlay back on the first
+    twitch -- the exact failure this is here to stop, reintroduced by the fix
+    for it.
+    """
+    source = page_source()
+    assert "hideHover(zoneOf(e.target))" in source, "a click does not mute the zone it hit"
+    assert "MUTED = zoneKey(zone)" in source, "the mute is held as an element"
+    assert "if (MUTED && zoneKey(zoneOf(e.target)) === MUTED) return;" in source
+    assert "if (zoneKey(into) !== MUTED) MUTED = null;" in source
+    # The key survives a re-render because it names the board, and it carries the
+    # owning node because two badges may wear the same words on two decisions.
+    key = function_body("zoneKey")
+    assert 'el.closest(".mnode")' in key
+    assert "el.dataset.why || el.dataset.otext || el.dataset.id" in key
+    # One reader of what owns an overlay, so what a click mutes and what a hover
+    # checks are the same zone rather than two selectors that mostly agree.
+    zone = function_body("zoneOf")
+    for owner in ("[data-why]", "[data-p]", ".mnode"):
+        assert owner in zone
+    # A click is the only thing that mutes. Leaving a zone hides its card too,
+    # and must not mute on the way out -- an overlay muted by the pointer
+    # drifting off it would never come back at all.
+    assert source.count("hideHover(") == 2, "something other than a click mutes a zone"
+
+
+# ---------------------------------------------------------------- GUI-A47
+
+
+def test_an_informational_carries_a_discuss_control_wherever_it_is_read() -> None:
+    """On its decision and in the notification list alike.
+
+    An agent message read in the notification list is the same message; having
+    to go and find it on its decision to answer it is the friction that makes a
+    Discuss control on one surface and not the other read as a bug.
+    """
+    assert 'data-act="discussnotice"' in function_body("infoNote")
+    assert 'data-act="discussnotice"' in function_body("renderNotifications")
+    # An applied change is not a message to reply to -- it is a thing that
+    # happened -- so it carries no Discuss and the inbox is where it is argued
+    # with, before it lands.
+    assert 'n.type === "applied-change" ? "" :' in function_body("renderNotifications")
+
+
+def test_discussing_an_informational_opens_a_thread_seeded_from_it(
+    client: TestClient, log: Any
+) -> None:
+    """The seed is the message, and the thread anchors where the message did.
+
+    A thread seeded from anything else -- a generic opener, the decision's own
+    body -- puts the agent in front of a question the human did not ask, and the
+    reply answers something nobody raised.
+    """
+    node = seed_node(client, log.epoch)
+    said = "The store choice quietly fixes the compaction one."
+    post(client, log.epoch, event("informational", key="note-1", target=node, text=said))
+
+    seeded = f"About what you said: “{said}”"
+    receipt = post(
+        client,
+        log.epoch,
+        page_message(
+            "thread-created",
+            "t-notice-1",
+            turns=[{"who": "human", "text": seeded}],
+            decision=node,
+            kind="notice",
+            title="a title",
+            requires_action=False,
+        ),
+    )[0]
+    assert receipt["status"] == "accepted", receipt
+
+    opened = thread_of(client, "t-notice-1")
+    assert opened["decision"] == node
+    assert opened["turns"][0]["text"] == seeded
+
+    # And the page builds exactly that: the message's own words, on the
+    # message's own decision.
+    builder = function_body("discussNotice")
+    assert 'ev("thread-created"' in builder
+    assert 'text: "About what you said: “" + said + "”"' in builder
+    assert "decision: target" in builder
+
+
+def test_a_message_is_found_by_the_same_id_in_the_queue_and_in_the_notifications() -> None:
+    """One lookup over both, because they are one message.
+
+    The queue holds it while the board still carries it and the notification
+    list holds it once the board has moved on. Two lookups would make Discuss
+    work on one surface and silently do nothing on the other.
+    """
+    builder = function_body("discussNotice")
+    assert "BOARD.pending.filter" in builder
+    assert "NOTES.filter" in builder
+
+
+# ---------------------------------------------------------------- GUI-A48
+
+
+def test_a_queue_entrys_id_is_the_authoring_entrys_key(client: TestClient, log: Any) -> None:
+    """The derivation §8.5 states, measured on the wire.
+
+    This is the only stable name a queue entry has, and read-state is persisted
+    against it. A minted id would be stable inside one fold and mean nothing to
+    a second reader of the same log -- including the same page after a reload.
+    """
+    node = seed_node(client, log.epoch)
+    # The queue holds what would overwrite something the human decided, so the
+    # human decides first. An agent change on an unanswered node lands as it
+    # arrives and never becomes a queue entry to name.
+    post(
+        client,
+        log.epoch,
+        page_message("answer", MAP_CHANNEL, target=node, answer={"option": "a", "text": None}),
+    )
+    post(
+        client,
+        log.epoch,
+        event("revise", key="single-1", target=node, title="A revision", why="because"),
+    )
+    post(
+        client,
+        log.epoch,
+        event(
+            "fold",
+            key="fold-1",
+            updates=[
+                {"kind": "revise", "target": node, "title": "First", "why": "one"},
+                {"kind": "revise", "target": node, "title": "Second", "why": "two"},
+            ],
+        ),
+    )
+    ids = {one["id"] for one in client.get("/state").json()["image1"]["pending"]}
+    # A single update wears the entry's key; a fold's sub-updates wear key#index,
+    # indexed by position in `updates`.
+    assert "single-1" in ids, ids
+    assert "fold-1#0" in ids, ids
+    assert "fold-1#1" in ids, ids
+
+
+def test_the_page_derives_a_queue_id_the_way_the_backend_does() -> None:
+    """Restated in the page, and it has to be: the page cannot ask.
+
+    The index counts every object in `updates`, including one the page then
+    drops for naming no kind. An index taken after the filter names a different
+    update than the queue does, and the two disagree exactly on the malformed
+    fold nobody is looking at.
+    """
+    reader = function_body("updatesIn")
+    assert 'one.uid = key + "#" + i;' in reader
+    assert "one.uid = key;" in reader
+    assert 'typeof u !== "object"' in reader, "the index is taken after the kind filter"
+    # And it is what a queue entry's own text is found by, rather than a
+    # kind-and-target match: a fold carrying two revises of one decision has two
+    # entries the queue tells apart and that match cannot.
+    assert "u.uid === item.id" in function_body("sourceOf")
+
+
+def test_mark_all_read_writes_nothing_to_the_backend() -> None:
+    """Read-state is presentation state and does not cross the wire.
+
+    It is not board state, no agent is dispatched the fact that a human looked
+    at something, and the server-authority rule does not reach it. That it
+    appends no event is asserted in a browser; that no code path could is
+    asserted here.
+    """
+    for reader in ("markAllRead", "markRead", "saveRead", "loadRead"):
+        body = function_body(reader)
+        assert "send(" not in body, f"{reader} reaches the wire"
+        assert "ev(" not in body, f"{reader} builds an event"
+        assert "srvPost" not in body and "srvGet" not in body, f"{reader} touches the backend"
+
+
+def test_read_state_survives_a_reload_and_the_notification_list_deliberately_does_not() -> None:
+    """Two different things, and separating them is the whole design.
+
+    The list starts empty on purpose: a page arriving mid-session must not
+    announce a morning's work as news. Read-state cannot start empty, because
+    the markers it clears are not the list's -- the ✉ on a decision comes off
+    the queue in image 1, which comes back on every reload. Without persistence,
+    marking everything read and reloading would restore every marker the human
+    had just dealt with.
+    """
+    source = page_source()
+    assert "window.localStorage" in function_body("saveRead")
+    assert "window.localStorage" in function_body("loadRead")
+    assert '"grillui:read:" + WIRE.epoch' in function_body("readKey")
+    # Loaded once the epoch is known, which is the state read -- the same place
+    # a reload learns which session it is coming back to.
+    assert "loadRead();" in function_body("hydrate")
+    # The list is still built only from what arrives after this page did: the
+    # reload path reads the whole log as a lookup table and touches the
+    # notifications not at all.
+    assert "NOTES" not in function_body("hydrate"), "a reload rebuilds the list from the log"
+    assert source.count("NOTES.push") == 2, "notifications are written outside the observer"
+
+
+def test_every_unread_marker_is_asked_of_the_one_read_set() -> None:
+    """One set over both surfaces, because they are one question.
+
+    A count over the notification list alone would clear on a reload while the
+    ✉ markers the queue carries stayed lit, and the human would be told there
+    was nothing to read while looking at something to read.
+    """
+    ids = function_body("unreadIds")
+    assert "unreadNotes()" in ids
+    assert "unreadNotices()" in ids
+    assert "isRead(n.id)" in function_body("unreadNotes")
+    assert "isRead(n.id)" in function_body("unreadNotices")
+    assert "unreadIds().length" in function_body("unreadCount")
+    # And the marker surfaces read the unread set rather than the queue whole.
+    assert "unreadNotices(id).length" in function_body("itemIcons")
+    assert "unreadNotices(id).length" in function_body("renderMap")
+
+
+# ---------------------------------------------------------------- GUI-A50
+
+
+def test_the_shipped_page_has_no_dark_theme_styles() -> None:
+    """One palette, and no second one hiding behind a media query.
+
+    A dark variant nobody asked for is a second set of colours to keep true --
+    and it appears only on the machines whose operating system is set that way,
+    which is the set of machines the person shipping it is least likely to be
+    on.
+    """
+    source = page_source().lower()
+    for absent in ("prefers-color-scheme", "color-scheme", "@media (prefers", "dark"):
+        assert absent not in source, f"the shipped page carries {absent!r}"
 
 
 # ---------------------------------------------------------------- serving
