@@ -45,6 +45,7 @@ from grillui.schemas import (
     STATUS_KIND,
     STATUS_PHASE_COMPOSING,
     STATUS_PHASE_ERROR,
+    THREAD_CLOSE_KIND,
     THREAD_FOLD_KIND,
     THREAD_PARK_KIND,
     TRANSFER_FLAG,
@@ -338,7 +339,74 @@ def test_a_thread_gesture_sets_that_threads_state_and_moves_no_decision(
     assert image.decisions == before
 
 
-@pytest.mark.parametrize("kind", [THREAD_FOLD_KIND, THREAD_PARK_KIND])
+def test_parking_and_closing_both_leave_the_turns_readable_and_take_nothing_away(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given one thread the human parks and one the human closes
+    When the board is folded
+    Then each carries the state its gesture set, both keep every turn they took,
+         and the log has grown rather than lost an entry.
+
+    The two gestures differ in what the end of the session makes of them, never
+    in what they take away: a human who closed a thread to tidy the board and
+    found its turns gone would have destroyed the record by tidying it.
+    """
+    seed_node(client, log.epoch, NODE)
+    open_thread(client, log.epoch, MINE, "Retention", MINE_SAID)
+    open_thread(client, log.epoch, PARKED, "Backups", PARKED_SAID)
+    before = len(log.entries())
+
+    assert gesture(client, log.epoch, THREAD_PARK_KIND, PARKED)["status"] == "accepted"
+    assert gesture(client, log.epoch, THREAD_CLOSE_KIND, MINE)["status"] == "accepted"
+
+    image = fold(log.epoch, log.entries())
+    threads = {thread.id: thread for thread in image.threads}
+    assert {tid: one.state for tid, one in threads.items()} == {
+        PARKED: "parked",
+        MINE: "closed",
+    }
+    assert [turn.text for turn in threads[MINE].turns] == [MINE_SAID]
+    assert [turn.text for turn in threads[PARKED].turns] == [PARKED_SAID]
+    assert len(log.entries()) == before + 2
+
+
+def test_a_human_turn_opens_a_closed_thread_and_it_takes_the_turn(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a thread the human closed
+    When the human says something in it
+    Then it is open again and carries that turn, and an agent's turn on a closed
+         thread leaves it closed.
+
+    Re-opening rides the turn path rather than a gesture of its own: saying
+    something in a thread you had finished with is picking it back up. The
+    actor is what separates the two -- what the human is done with is not the
+    agent's to re-open, or an agent could put a finished thread back among the
+    session's unfinished business by talking into it.
+    """
+    seed_node(client, log.epoch, NODE)
+    open_thread(client, log.epoch, MINE, "Retention", MINE_SAID)
+    open_thread(client, log.epoch, OTHER, "Compaction", OTHER_SAID)
+    assert gesture(client, log.epoch, THREAD_CLOSE_KIND, MINE)["status"] == "accepted"
+    assert gesture(client, log.epoch, THREAD_CLOSE_KIND, OTHER)["status"] == "accepted"
+    states = {one.id: one.state for one in fold(log.epoch, log.entries()).threads}
+    assert states == {MINE: "closed", OTHER: "closed"}, states
+
+    say(client, log.epoch, MINE, "and what about the archive?", actor="human")
+    say(client, log.epoch, OTHER, "the agent is still thinking about it", actor="thread-agent")
+
+    threads = {one.id: one for one in fold(log.epoch, log.entries()).threads}
+    assert threads[MINE].state == "open"
+    assert [turn.text for turn in threads[MINE].turns] == [
+        MINE_SAID,
+        "and what about the archive?",
+    ]
+    assert threads[OTHER].state == "closed", "an agent re-opened what the human had finished"
+
+
+@pytest.mark.parametrize("kind", [THREAD_FOLD_KIND, THREAD_PARK_KIND, THREAD_CLOSE_KIND])
 def test_a_thread_gesture_sent_on_the_map_channel_is_refused(
     kind: str, client: TestClient, log: SessionLog
 ) -> None:

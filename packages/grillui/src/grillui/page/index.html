@@ -389,6 +389,7 @@ var EMISSIONS = {
   "thread-turn":    { "channel": "thread", "payload": ["turns", "transfer"] },
   "thread-fold":    { "channel": "thread", "payload": [] },
   "thread-park":    { "channel": "thread", "payload": [] },
+  "thread-close":   { "channel": "thread", "payload": [] },
   "apply":          { "channel": "map",    "payload": ["pending"] },
   "dismiss":        { "channel": "map",    "payload": ["pending"] },
   "session-end":    { "channel": "map",    "payload": [] }
@@ -1525,6 +1526,16 @@ function parkThread(tid) {
   UI.panel = null;
   render();
 }
+// Closing is the human saying they are done with the thread, and parking is
+// the human saying they may come back to it. Only the second is carried to the
+// end of the session as a loose end. Neither takes anything away: a closed
+// thread stays readable, and saying something in one opens it again, which is
+// why there is no re-open gesture to send.
+function closeThread(tid) {
+  send(ev("thread-close", tid, {}));
+  UI.panel = null;
+  render();
+}
 // Abandoning a mandated answer reverts the selection; the decision returns to
 // the frontier having never carried an answer.
 //
@@ -1943,7 +1954,7 @@ function renderColumn() {
         var t = thread(tid);
         h += '<div class="parked-note">⑂ ' + esc(t.title || tid) + " — <em>" + t.state + "</em> " +
           '<button class="btn sm" data-act="openthread" data-tid="' + esc(tid) + '">' +
-          (t.state === "open" ? "Open" : t.state === "parked" ? "Pick it back up" : "View") + "</button></div>";
+          (t.state === "open" ? "Open" : t.state === "folded" ? "View" : "Pick it back up") + "</button></div>";
       });
       h += '<div style="margin-top:9px"><button class="btn sm" data-act="newthread" data-id="' + esc(id) + '">⑂ Start a thread on ' + esc(id) + "</button></div>";
     }
@@ -1995,6 +2006,21 @@ function seedControls(id, tid) {
   });
   return seeds.length ? '<div class="thread-actions">' + seeds.join("") + "</div>" : "";
 }
+// Close sits beside park everywhere park is offered, because the two are the
+// choice the human is making: come back to this, or be done with it. Only park
+// is carried to the end of the session as a loose end.
+function closeControl(tid) {
+  return '<button class="btn sm" data-act="closethread" data-tid="' + esc(tid) +
+    '">Close it — done with it, nothing left open</button>';
+}
+// The box a turn is typed into, and the one control that sends it. One reader,
+// because an open thread and a closed one the human is picking back up take the
+// same turn on the same channel — two copies is how they come to differ.
+function sayBox(sayId, tid) {
+  return '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="say" data-tid="' + esc(tid) +
+    '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
+    '<button class="btn sm" data-act="say" data-tid="' + esc(tid) + '">Send</button></div>';
+}
 // `chrome` is what the surrounding window pins beside the title — the slide-out
 // has a close and a pop-out, the popped window has neither. It rides in the head
 // rather than outside the pane so that it is pinned by the same rule as the
@@ -2036,12 +2062,15 @@ function threadBody(tid, forPop, chrome) {
     ". Nothing here touches the decision until you conclude it.</div>";
   var body = renderTurns(t);
   if (t.state !== "open") {
+    // A closed thread keeps its box: saying something in one is how the human
+    // picks it back up, and the turn itself is what opens it again.
+    var closed = t.state === "closed";
     return threadPane(head,
-      body + '<div class="parked-note">This thread is ' + esc(t.state) + ". It stays readable.</div>", "");
+      body + '<div class="parked-note">This thread is ' + esc(t.state) + ". It stays readable." +
+        (closed ? " Say something here and it opens again." : "") + "</div>",
+      closed ? sayBox(sayId, tid) : "");
   }
-  var h = '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="say" data-tid="' + esc(tid) +
-    '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
-    '<button class="btn sm" data-act="say" data-tid="' + esc(tid) + '">Send</button></div>';
+  var h = sayBox(sayId, tid);
   h += seedControls(t.decision, tid);
 
   h += '<div class="thread-actions">' + transferControl(tid);
@@ -2054,9 +2083,11 @@ function threadBody(tid, forPop, chrome) {
       '<button class="btn sm warn" data-act="dismissone" data-uid="' + esc(pendingId) + '">Dismiss it — the change is dropped</button>';
   } else if (t.requires_action) {
     h += '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '"' + (ready ? "" : " disabled") + ">Conclude it</button>" +
-      '<button class="btn sm" data-act="park" data-tid="' + esc(tid) + '">No action needed — set it aside</button>';
+      '<button class="btn sm" data-act="park" data-tid="' + esc(tid) + '">No action needed — set it aside</button>' +
+      closeControl(tid);
   } else {
     h += '<button class="btn sm" data-act="park" data-tid="' + esc(tid) + '">Park it — no effect, kept on the record</button>' +
+      closeControl(tid) +
       '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '"' + (ready ? "" : " disabled") + ">Fold it — conclude and hand it to the agent</button>";
   }
   if (ready) {
@@ -2460,6 +2491,7 @@ window.popAct = function (tid, act, text, field) {
   else if (act === "seed") saySeed(tid, (thread(tid) || {}).decision, field);
   else if (act === "fold") foldThread(tid);
   else if (act === "park") parkThread(tid);
+  else if (act === "closethread") closeThread(tid);
   else if (act === "abandon") abandonAnswer((thread(tid) || {}).decision);
   // Asked of the thread this window is showing rather than of the last
   // discussion the main window opened: two discussions are two threads, and a
@@ -2508,7 +2540,8 @@ function popOut(tid) {
 // `send`, which refuses once the session is over; this is the surface saying the
 // same thing, so an ended board offers no control whose click would be swallowed.
 var WRITE_ACTS = ["pick", "free", "say", "seed", "draftsay", "newthread", "discuss", "discussnotice",
-  "fold", "park", "abandon", "applyone", "applyall", "dismissone", "transfer", "doctor", "endsession"];
+  "fold", "park", "closethread", "abandon", "applyone", "applyall", "dismissone", "transfer",
+  "doctor", "endsession"];
 // Reading stays: the board, the map, the history, the inbox, the notifications
 // and the read markers are all this window's own and go nowhere. What goes is
 // the ability to say anything more into a log that has been closed.
@@ -2614,6 +2647,7 @@ document.addEventListener("click", function (e) {
     case "say": sendFrom(document.getElementById("ft-say")); break;
     case "seed": saySeed(tid, id, el.dataset.field); break;
     case "park": parkThread(tid); break;
+    case "closethread": closeThread(tid); break;
     case "fold": foldThread(tid); break;
     case "abandon": abandonAnswer(id); break;
     case "popout": popOut(tid); break;
