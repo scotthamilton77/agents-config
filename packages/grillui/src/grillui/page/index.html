@@ -103,6 +103,12 @@
   .btn.wide { width: 100%; text-align: left; }
   .btn.sm { padding: 5px 9px; font-size: 12px; }
 
+  /* The option's label is the handle the human, the free text and the threads
+     all refer to it by, so it is on the button rather than in a tooltip. */
+  .olab { display: inline-block; min-width: 15px; font: 700 11px ui-monospace, Menlo, monospace;
+          letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); margin-right: 7px; }
+  .btn.primary .olab { color: rgba(255, 255, 255, .78); }
+
   .q-body { color: var(--ink-dim); font-size: 13.5px; margin: 8px 0 12px; }
   .rec-line { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 6px; }
   .alts { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
@@ -125,6 +131,16 @@
   }
   .dot { width: 8px; height: 8px; border-radius: 999px; background: #cbd5e1; }
   .dot.busy { background: var(--accent); animation: mailpulse 1s ease-in-out infinite; }
+  .dot.bad { background: var(--conflict-ink); }
+  .dot.up { background: var(--settled-line); }
+  /* Three signals, one chip. Each is its own cell so that none of them can be
+     read off another: a backend that is up with nothing attached to it and a
+     backend that is up with an agent thinking are two different sentences. */
+  .agentchip .sig { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .agentchip .sig + .sig { border-left: 1px solid var(--line); padding-left: 11px; }
+  .agentchip .sig.loud { color: var(--accent); font-weight: 600; }
+  .agentchip .sig.bad { color: var(--conflict-ink); font-weight: 600; }
+  .diagrow .lyr b.owes { color: var(--accent); }
   .pendbtn { border: 1px solid var(--pend-line); background: var(--pend-bg); color: var(--pend-ink);
              border-radius: 999px; padding: 6px 14px; font-size: 12.5px; font-weight: 600; }
   .pendbtn.none { border-color: var(--line); background: var(--paper); color: var(--ink-faint); font-weight: 400; }
@@ -263,6 +279,21 @@
   .slide .close { position: absolute; right: 14px; top: 14px; border: 0; background: transparent; font-size: 18px; color: var(--ink-faint); }
   .slide .popout { position: absolute; right: 44px; top: 15px; border: 1px solid var(--line); background: var(--paper);
                    border-radius: 7px; font-size: 12px; padding: 3px 8px; color: var(--ink-dim); }
+  /* A thread is a pane rather than one long scroll. The title with its close
+     and pop-out, and the prompt box with its actions, are the two things the
+     human needs at every point in a thread — and they are exactly the two a
+     single scrolling column takes away first, at the length where a thread is
+     hardest to follow. Only the turns between them move. */
+  .slide.pane { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .threadpane { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .threadpane .thead { flex: none; position: relative; padding: 17px 22px 13px;
+                       border-bottom: 1px solid var(--line); background: var(--paper); }
+  .threadpane .tbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 14px 22px; }
+  .threadpane .tfoot { flex: none; padding: 12px 22px 16px; border-top: 1px solid var(--line);
+                       background: var(--paper); }
+  .threadpane .tfoot .thread-actions { margin-top: 11px; padding-top: 11px; }
+  .threadpane .thead .close { right: 16px; top: 15px; }
+  .threadpane .thead .popout { right: 46px; top: 17px; }
   .turn { margin-bottom: 12px; }
   .turn .who { font: 600 10.5px ui-monospace, Menlo, monospace; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint); }
   .turn.grill-master .who, .turn.thread-agent .who { color: var(--accent); }
@@ -402,7 +433,6 @@ var STATUS_KIND = "status";
 var PHASE_COMPOSING = "composing";
 var PHASE_REPLIED = "replied";
 var PHASE_ERROR = "error";
-var PHASE_ACCEPTED = "accepted";
 
 /* ---------------- the board, and what has happened ---------------- */
 
@@ -419,16 +449,57 @@ var SEEN = {};
 var WIRE = {
   base: "", epoch: null, cursor: 0, hydrated: false, inflight: false,
   sent: 0, got: 0, rejected: 0, lastRejection: null,
-  status: null, statusSince: 0, doctor: false, doctorKnown: false
+  // What the lane says each channel is waiting on, by channel. Per channel
+  // rather than one slot, because two threads and the map take turns at the
+  // same time: a single slot shows the last turn announced and hides the rest,
+  // and the one the human is waiting on is as likely as not the hidden one.
+  status: {}, doctor: false, doctorKnown: false
 };
+// Events this page has put on the wire that have not come back down the update
+// read. Depth, not a list of grievances: an event is out of here the moment the
+// log carries it or a receipt refuses it, so what is left is the work the page
+// asked for and cannot yet see the effect of.
+var OUTBOX = {};
 // One transport, however many channels ride it, and one protocol state per
 // channel. The map channel exists from the start because the board is always a
 // conversation someone could be having; a thread's channel is noted the moment
 // the board mentions the thread or this page sends on it.
 var CHANNELS = { transport: TRANSPORT_STATES[0], protocol: { map: PROTOCOL_STATES[0] } };
 // Notifications are the record of what has LANDED, observed as it lands. A
-// change still waiting is not in here — it is in the inbox alone.
+// change still waiting is not in here — it is in the inbox alone. The list is
+// deliberately empty on a reload: a page arriving mid-session must not announce
+// a morning's worth of history as news.
 var NOTES = [];
+// Which of the things the agent has said the human has already read. Read-state
+// is presentation state — the page owns it, it never crosses the wire, and the
+// server-authority rule does not reach it — but it is not session-local, because
+// the surfaces it clears are not: the ✉ markers come off the queue in image 1,
+// which comes back on every reload. Without this, marking everything read and
+// reloading would restore every marker the human just dealt with.
+//
+// Keyed by the update's own id, which is the backend's derivation and stable for
+// the life of the log. Scoped to the epoch, so it does not outlive the process
+// whose queue it was measured against — a restart re-mints the epoch and the
+// markers come back, which is the honest answer when the read-state and the
+// board it referred to were last agreed on by a process that is gone.
+var READ = {};
+function readKey() { return "grillui:read:" + WIRE.epoch; }
+function loadRead() {
+  try { READ = JSON.parse(window.localStorage.getItem(readKey()) || "{}") || {}; }
+  catch (e) { READ = {}; }
+}
+function saveRead() {
+  // Storage can be full, or disabled outright. Losing read-state is a worse
+  // notification experience and nothing more, so it is never allowed to take
+  // the board down with it.
+  try { window.localStorage.setItem(readKey(), JSON.stringify(READ)); } catch (e) {}
+}
+function isRead(id) { return !!READ[id]; }
+function markRead(id) {
+  if (!id) return;
+  READ[id] = true;
+  saveRead();
+}
 var UI = {
   focus: null, open: {}, drafts: {}, panel: null, held: {},
   lastFocus: null, lastPanelKey: null, centerNext: true, justSettled: null,
@@ -536,14 +607,42 @@ function connected() { return CHANNELS.transport === "connected"; }
 // answers a gesture, so it does not decide which channel is waiting either --
 // it reads the channel the backend addressed the announcement to.
 function track(entry) {
+  // An event of this page's own, seen in the log, is an event no longer in
+  // flight. Cleared here rather than on the receipt, because a receipt says the
+  // backend took it and this says the board can be read for what it did.
+  delete OUTBOX[entry.idempotency_key];
   if (entry.kind === STATUS_KIND) {
     var phase = entry.payload.phase;
-    if (phase === PHASE_COMPOSING) onChannel(entry.channel, "owed");
-    else if (phase === PHASE_REPLIED || phase === PHASE_ERROR) onChannel(entry.channel, "closed");
+    if (phase === PHASE_COMPOSING) {
+      onChannel(entry.channel, "owed");
+      // The wait is timed from the entry itself, not from when this page read
+      // it, so a reload mid-turn comes back with the clock the human had rather
+      // than one restarted at zero.
+      WIRE.status[entry.channel] = { tier: entry.payload.tier || "", since: Date.parse(entry.timestamp) };
+    } else if (phase === PHASE_REPLIED || phase === PHASE_ERROR) {
+      onChannel(entry.channel, "closed");
+      delete WIRE.status[entry.channel];
+    }
+    // `accepted` is the gesture being acknowledged where the human made it, and
+    // for a fold that is not the channel the turn runs on. Starting a clock
+    // there would leave a thread counting up forever against a turn the map
+    // owes and the thread does not.
     return;
   }
   if (AGENT_ACTORS.indexOf(entry.actor) >= 0) onChannel(entry.channel, "arriving");
 }
+// The channels an agent owes a turn on, oldest wait first — the whole of what
+// the waiting indicator has to say and the order it has to say it in.
+function owed() {
+  return Object.keys(WIRE.status).map(function (name) {
+    return { channel: name, tier: WIRE.status[name].tier, waited: elapsed(WIRE.status[name].since) };
+  }).sort(function (a, b) { return b.waited - a.waited; });
+}
+// Clamped, because the timestamp is the backend's clock and the now is this
+// browser's. A wait that reads as negative is a page saying the reply arrived
+// before it was asked for.
+function elapsed(since) { return Math.max(0, Math.round((Date.now() - since) / 1000)); }
+function outboxDepth() { return Object.keys(OUTBOX).length; }
 
 /* One event, built and checked against the table above rather than trusted
    against it: a kind, a channel class or a payload key the table does not name
@@ -571,6 +670,7 @@ function send() {
   var out = Array.prototype.slice.call(arguments);
   if (!out.length || !WIRE.epoch || WIRE.doctor) return;
   WIRE.sent += out.length;
+  out.forEach(function (e) { OUTBOX[e.idempotency_key] = true; });
   var touched = batchChannels(out);
   // Every channel in the batch is sending, then away, then answered. Who owes a
   // turn afterwards is not decided here: the lane says so, on the channel the
@@ -582,6 +682,10 @@ function send() {
     touched.forEach(function (name) { onChannel(name, "settled"); });
     wire("reached");
     receipts.forEach(function (r) {
+      // A refusal is an event that will never appear in the log, so it leaves
+      // the outbox here — otherwise the depth counts messages nothing is ever
+      // going to consume and reads as a backlog that does not exist.
+      if (r.status !== "accepted") delete OUTBOX[r.idempotency_key];
       if (r.status !== "rejected") return;
       WIRE.rejected += 1;
       // A refusal the human cannot see is a message they believe they sent.
@@ -595,6 +699,10 @@ function send() {
     poll();
   }, function (e) {
     touched.forEach(function (name) { onChannel(name, "settled"); });
+    // A refused POST wrote nothing; an unreachable one may have. The first
+    // leaves the outbox, the second stays in it until the log settles the
+    // question, because a page that cleared it would be claiming to know.
+    if (e && e.answered) out.forEach(function (o) { delete OUTBOX[o.idempotency_key]; });
     wireFailed(e);
   });
 }
@@ -607,6 +715,10 @@ function hydrate() {
   return srvGet("/state").then(function (st) {
     WIRE.epoch = st.epoch;
     BOARD = st.image1;
+    // Read-state is keyed by epoch, so it can only be loaded once the epoch is
+    // known — which is here, and is also the one moment a reload has to look
+    // like the session the human left rather than a new one.
+    loadRead();
     noteThreads();
     // The log up to here is read as a lookup table, not as news: a page
     // arriving mid-session must not announce a morning's worth of changes as
@@ -702,14 +814,32 @@ function refreshDoctor() {
 
 /* ---------------- reading the log for what image 1 does not carry ---------------- */
 
-// The sub-updates an entry carries. A fold and an apply hold theirs in a list;
-// everything else is one update wearing the entry's own kind.
+// The sub-updates an entry carries, each wearing the id the backend gives it. A
+// fold and an apply hold theirs in a list; everything else is one update wearing
+// the entry's own kind.
+//
+// `uid` is the backend's own derivation, restated here rather than invented: the
+// entry's idempotency key for a single update, and key#index for a sub-update of
+// a fold-shaped entry. The index counts every object in `updates`, including one
+// this page then drops for naming no kind — an index taken after the filter would
+// name a different update than the queue does, and the two only disagree on the
+// malformed entry nobody is looking at.
 function updatesIn(entry) {
+  var key = entry.idempotency_key;
   if (entry.kind === "fold" || entry.kind === APPLY_KIND) {
-    return (entry.payload.updates || []).filter(function (u) { return u && u.kind; });
+    var out = [];
+    (entry.payload.updates || []).forEach(function (u, i) {
+      if (!u || typeof u !== "object" || !u.kind) return;
+      var one = {};
+      Object.keys(u).forEach(function (k) { one[k] = u[k]; });
+      one.uid = key + "#" + i;
+      out.push(one);
+    });
+    return out;
   }
   var one = { kind: entry.kind };
   Object.keys(entry.payload).forEach(function (k) { one[k] = entry.payload[k]; });
+  one.uid = key;
   return [one];
 }
 function entryAt(seq) {
@@ -717,12 +847,20 @@ function entryAt(seq) {
 }
 // The bytes behind a queue entry: the update its author actually wrote. Image 1
 // says what is waiting, not what it would do, so the text comes from the log.
+// Matched on the id, which is the one thing that names exactly one update — a
+// fold carrying two revises of the same decision has two entries the queue can
+// tell apart and a kind-and-target match cannot.
 function sourceOf(item) {
   var e = entryAt(item.authored_at);
   if (!e) return null;
-  return updatesIn(e).filter(function (u) {
-    return u.kind === item.kind && (u.target || null) === (item.target || null);
-  })[0] || null;
+  return updatesIn(e).filter(function (u) { return u.uid === item.id; })[0] || null;
+}
+// When a queue entry was written, in the operating system's time zone. The queue
+// carries the sequence it was authored at and no clock; the log carries the
+// clock, so the two are read together.
+function stampOf(item) {
+  var e = entryAt(item.authored_at);
+  return e ? stamp(e.timestamp) : "";
 }
 // How one update reads to the human, whichever end it is met from -- a queue
 // entry the inbox is showing, or an entry the log just delivered. One reader,
@@ -771,6 +909,13 @@ function proposals() {
 }
 function notices() {
   return BOARD.pending.filter(function (p) { return live(p) && NOTICE_KINDS.indexOf(p.kind) >= 0; });
+}
+// A notice the human has not read yet. The message itself stays on the board
+// once read — it is board content and this page does not delete board content —
+// but the marker that says look at this comes off, which is the whole of what
+// being read means here.
+function unreadNotices(id) {
+  return notices().filter(function (n) { return !isRead(n.id) && (id === undefined || n.target === id); });
 }
 function proposalsOn(id) {
   return proposals().filter(function (p) { return p.target === id; });
@@ -844,12 +989,17 @@ function waitingOn(id) {
   var stuck = open.filter(function (p) { return conflictOn(p); })[0];
   return { list: open, conflict: stuck || null };
 }
+// The answer as one line. An option answered with a note is both, in that order:
+// showing only the note would hide which option was taken, and showing only the
+// option would drop the reason the human wrote down for taking it.
 function answerTextOf(id) {
   var d = node(id);
   if (!d || !d.answer) return null;
-  if (d.answer.text) return d.answer.text;
+  if (!d.answer.option) return d.answer.text;
   var o = d.options.filter(function (x) { return x.id === d.answer.option; })[0];
-  return o ? o.text : d.answer.option;
+  var lab = labelOf(d, d.answer.option);
+  var chosen = (lab ? lab + ") " : "") + (o ? o.text : d.answer.option);
+  return d.answer.text ? chosen + " — " + d.answer.text : chosen;
 }
 function depthOf(id, seen) {
   var d = node(id);
@@ -898,9 +1048,17 @@ function nextFocus(justSettled) {
 
 /* ---------------- what landed, observed as it lands ---------------- */
 
-function noteFor(kind, target, text, type) {
-  return { id: "n" + NOTES.length + "-" + kind + "-" + (target || ""), type: type,
-           target: target || null, text: text, read: false, at: new Date() };
+// One notification, named by the update it reports rather than by its position
+// in this list. The id is the update's own, so the same thing seen twice — as a
+// queue entry the board still carries and as the notification announcing it —
+// is one thing to mark read, and marking it read outlives the reload that
+// empties this list and leaves the queue standing.
+//
+// `at` is the log entry's clock, not this page's: a notification says when the
+// agent did the thing, and a page arriving late must not restamp a morning's
+// work with the moment it happened to read it.
+function noteFor(id, kind, target, text, type, at) {
+  return { id: id, kind: kind, type: type, target: target || null, text: text, at: at };
 }
 // One arriving entry, read for what it means to the human. The board it changed
 // has already been re-read; nothing here decides anything about the board.
@@ -924,14 +1082,18 @@ function resolvedLater(batch, index) {
   return false;
 }
 function observe(entry, batch, index) {
-  if (entry.kind === STATUS_KIND) { applyStatus(entry); return; }
+  // The lane is read for channel state, which happens before this and on the
+  // reload path too. It is never news: nobody wants a notification saying an
+  // agent started typing.
+  if (entry.kind === STATUS_KIND) return;
   // The apply gesture is the human's, and it is what lands the changes they
   // were looking at — so its updates are news, and the proposals it resolved
   // were deliberately not.
   if (entry.actor === "human" && entry.kind !== APPLY_KIND) return;
   updatesIn(entry).forEach(function (u) {
     if (NOTICE_KINDS.indexOf(u.kind) >= 0) {
-      NOTES.push(noteFor(u.kind, u.target, u.text || "", u.kind === "elicit-alert" ? "elicitative" : "informational"));
+      NOTES.push(noteFor(u.uid, u.kind, u.target, u.text || "",
+        u.kind === "elicit-alert" ? "elicitative" : "informational", entry.timestamp));
       if (u.target) UI.touched.push(u.target);
       return;
     }
@@ -941,32 +1103,52 @@ function observe(entry, batch, index) {
     });
     if (u.target) UI.touched.push(u.target);
     if (waiting || (entry.actor !== "human" && resolvedLater(batch, index))) return;
-    NOTES.push(noteFor(u.kind, u.target, summariseUpdate(u), "applied-change"));
+    NOTES.push(noteFor(u.uid, u.kind, u.target, summariseUpdate(u), "applied-change", entry.timestamp));
     if (u.kind === "add-node" && u.target) UI.fresh.push(u.target);
   });
 }
-function applyStatus(entry) {
-  var phase = entry.payload.phase;
-  if (phase === PHASE_ACCEPTED) { WIRE.statusSince = Date.now(); WIRE.status = entry.payload; return; }
-  // A turn that ended stops the clock, whichever way it ended. Without the
-  // closing phase this chip counted up from a reply that landed minutes ago.
-  if (phase === PHASE_ERROR || phase === PHASE_REPLIED) { WIRE.status = null; return; }
-  WIRE.status = entry.payload;
-}
+// What the human is waiting for, in one line: that the message got there, that a
+// tier has it, and how long it has been. The clock is the lane's own, so it
+// starts the moment the backend said a tier picked the turn up rather than when
+// a model gets around to answering.
 function laneText() {
-  if (!WIRE.status) return "";
-  var p = WIRE.status.phase;
-  return (p === "composing" ? "composing" + (WIRE.status.tier ? " · " + WIRE.status.tier + " tier" : "") : p) +
-    "… " + Math.round((Date.now() - WIRE.statusSince) / 1000) + "s";
+  var turns = owed();
+  if (!turns.length) return "";
+  var first = turns[0];
+  return "delivered · " + (first.tier ? first.tier + " tier " : "") + "composing on " +
+    (first.channel === MAP ? "the map" : first.channel) + "… " + first.waited + "s" +
+    (turns.length > 1 ? " (+" + (turns.length - 1) + " more)" : "");
 }
-function unreadCount() {
-  return NOTES.filter(function (n) { return !n.read; }).length;
+// Everything the agent has said that the human has not read: what has landed and
+// is in the notification list, and what is on the board as a queued notice. The
+// two are one count because they are one question — is there anything I have not
+// looked at — and two counts would disagree on the reload that empties one.
+function unreadNotes() {
+  return NOTES.filter(function (n) { return !isRead(n.id); });
+}
+function unreadIds() {
+  var ids = unreadNotes().map(function (n) { return n.id; });
+  unreadNotices().forEach(function (n) { if (ids.indexOf(n.id) < 0) ids.push(n.id); });
+  return ids;
+}
+function unreadCount() { return unreadIds().length; }
+// No event, no epoch, no wire. Read-state is the page's, and this is the whole
+// of what the control does.
+function markAllRead() {
+  unreadIds().forEach(function (id) { READ[id] = true; });
+  saveRead();
+  render();
 }
 
 /* ---------------- gestures ---------------- */
 
+// An answer is an option, free text, or an option with a note on it. The third
+// is the common one and used to be unsendable: the human picked b and then had
+// nowhere to say why, so the reason went into a thread the answer does not carry
+// or nowhere at all. Both fields ride, and the backend takes either or both.
 function answerOf(payload) {
-  return payload.free ? { option: null, text: payload.text } : { option: payload.option, text: null };
+  if (payload.free) return { option: null, text: payload.text };
+  return { option: payload.option, text: payload.note || null };
 }
 function answerDecision(id, payload) {
   var d = node(id);
@@ -991,12 +1173,23 @@ function answerDecision(id, payload) {
     return;
   }
   send(ev("answer", MAP, { target: id, answer: answerOf(payload) }));
+  UI.drafts[id] = "";
   settledFocus(id);
+}
+// The label an option answers to. Position, not the option's own id: a/b/c is
+// what the free text and the threads refer to it by, and it has to mean the same
+// thing on the button, in the seed and in whatever the human types.
+function labelAt(i) { return "abc".charAt(i) || String(i + 1); }
+function labelOf(d, optionId) {
+  var i = d.options.map(function (o) { return o.id; }).indexOf(optionId);
+  return i < 0 ? "" : labelAt(i);
 }
 function seedForMandate(d, payload) {
   var chosen = payload.free ? payload.text
-    : (d.options.filter(function (o) { return o.id === payload.option; })[0] || {}).text;
-  return "I am leaning towards: “" + chosen + "”. " + d.mandate.notice +
+    : labelOf(d, payload.option) + ") " +
+      (d.options.filter(function (o) { return o.id === payload.option; })[0] || {}).text;
+  return "I am leaning towards: “" + chosen + "”. " +
+    (payload.note ? "My note on it: “" + payload.note + "” " : "") + d.mandate.notice +
     " Concluding this thread is what settles " + d.id + ".";
 }
 function settledFocus(id) {
@@ -1136,24 +1329,36 @@ function answerControls(d, locked) {
   var held = UI.held[d.id];
   if (held) {
     var heldText = held.free ? held.text
-      : (d.options.filter(function (o) { return o.id === held.option; })[0] || {}).text;
-    h += '<div class="prior"><strong>Held, not applied:</strong> ' + esc(heldText) + "</div>";
+      : labelOf(d, held.option) + ") " +
+        (d.options.filter(function (o) { return o.id === held.option; })[0] || {}).text;
+    h += '<div class="prior"><strong>Held, not applied:</strong> ' + esc(heldText) +
+      (held.note ? " — " + esc(held.note) : "") + "</div>";
   }
   if (!d.options.length) return h + '<div class="muted">This decision offers no options yet.</div>';
   h += '<div class="rec-line">Recommended answer' + (locked ? " · locked" : "") + "</div>";
-  h += '<button class="btn primary wide" data-act="pick" data-id="' + d.id + '" data-opt="' + d.options[0].id + '"' +
-    pcrAttrs(d.options[0]) + dis + ">➡️ " + esc(d.options[0].text) + "</button>";
+  // Every option wears its label, the recommended one included, because the
+  // label is what the human writes down and says in a thread — and a
+  // recommendation that had no label would be the one option nobody could name.
+  h += optionButton(d, d.options[0], 0, "btn primary wide", "➡️ ", dis);
   h += '<div class="alts">';
-  d.options.slice(1).forEach(function (o) {
-    h += '<button class="btn wide sm" data-act="pick" data-id="' + d.id + '" data-opt="' + o.id + '"' +
-      pcrAttrs(o) + dis + ">" + esc(o.text) + "</button>";
+  d.options.slice(1).forEach(function (o, i) {
+    h += optionButton(d, o, i + 1, "btn wide sm", "", dis);
   });
   h += "</div>";
+  // One box, two jobs: what you type is a free-text answer if you send it on its
+  // own, and the note on an option if you then pick one. A second textarea for
+  // the note would be a second empty box on every decision, and the human would
+  // still have to work out which one they were in.
   h += '<div class="free"><textarea id="ft-' + d.id + '" data-draft="' + d.id + '" data-send="free" data-id="' + d.id +
-    '" placeholder="…or answer in your own words"' + dis + "></textarea>" +
+    '" placeholder="…answer in your own words — or write a note, then pick an option to record both"' + dis + "></textarea>" +
     '<span class="hint">⌘↵</span>' +
     '<button class="btn sm" data-act="free" data-id="' + d.id + '"' + dis + ">Use this</button></div>";
   return h;
+}
+function optionButton(d, o, index, cls, lead, dis) {
+  return '<button class="' + cls + '" data-act="pick" data-id="' + d.id + '" data-opt="' + esc(o.id) +
+    '" data-label="' + labelAt(index) + '"' + pcrAttrs(o) + dis + ">" + lead +
+    '<span class="olab">' + labelAt(index) + "</span>" + esc(o.text) + "</button>";
 }
 function isExpanded(id) {
   var st = statusOf(id);
@@ -1165,11 +1370,22 @@ function isExpanded(id) {
   if (UI.open[id] === false) return !!UI.autoshut[id] && open;
   return open;
 }
+// One agent message, wherever it is met on the column: the mark that says it is
+// unread, when it was said, and the two things to do with it. One reader,
+// because the same message written twice reads as two.
+function infoNote(n) {
+  var unread = !isRead(n.id);
+  return '<div class="infonote">' + (unread ? '<span class="unreadmark">●</span> ' : "") +
+    "✉ <strong>Agent, " + esc(n.kind === "elicit-alert" ? "alert" : "informational") +
+    ":</strong> " + esc(summarise(n)) + ' <span class="did">' + esc(stampOf(n)) + "</span>" +
+    '<div style="margin-top:6px"><button class="btn sm" data-act="discussnotice" data-uid="' + esc(n.id) + '">Discuss</button>' +
+    (unread ? ' <button class="btn sm" data-act="marknote" data-nid="' + esc(n.id) + '">Mark as read</button>' : "") +
+    "</div></div>";
+}
 function itemIcons(d, expanded) {
   var id = d.id;
   var h = '<span class="icons">';
-  var unread = notices().filter(function (n) { return n.target === id; });
-  if (unread.length) h += '<button class="mail" data-act="focusnode" data-id="' + id + '" title="A message from the agent">✉</button>';
+  if (unreadNotices(id).length) h += '<button class="mail" data-act="focusnode" data-id="' + id + '" title="A message from the agent">✉</button>';
   var alert = blockingThreads(id)[0];
   if (alert) h += '<button class="alerting" data-act="openthread" data-tid="' + alert + '" title="The agent wants something judged">⚠</button>';
   if (proposalsOn(id).length) h += '<button data-act="inbox" title="A change is waiting on this decision">📥</button>';
@@ -1227,7 +1443,7 @@ function renderMap() {
     if (key in counts) counts[key] += 1;
     var shown = wait.conflict && (st === "blocked" || st === "stale-blocked") ? "conflict-blocked" : st;
     var badges = "";
-    if (notices().filter(function (n) { return n.target === id; }).length) {
+    if (unreadNotices(id).length) {
       badges += badge("b-mail mail", "✉", "A message from the agent about this decision — readable on the block, no need to reopen it.", "focusnode", ' data-id="' + id + '"');
     }
     var alert = blockingThreads(id)[0];
@@ -1297,11 +1513,7 @@ function renderColumn() {
       if (blockingThreads(id).length) h += '<div class="blocking"><span class="tag">blocking</span>' +
         esc(thread(blockingThreads(id)[0]).title) + ' <button class="btn sm warn" data-act="openthread" data-tid="' +
         blockingThreads(id)[0] + '">Open it</button></div>';
-      notices().filter(function (n) { return n.target === id; }).forEach(function (n) {
-        h += '<div class="infonote">✉ <strong>Agent, ' + esc(n.kind === "elicit-alert" ? "alert" : "informational") +
-          ':</strong> ' + esc(summarise(n)) +
-          ' <button class="btn sm" data-act="discussnotice" data-uid="' + esc(n.id) + '" style="margin-top:6px">Discuss</button></div>';
-      });
+      notices().filter(function (n) { return n.target === id; }).forEach(function (n) { h += infoNote(n); });
     } else {
       // A blocking thread goes at the TOP of the block, clearly marked.
       blockingThreads(id).forEach(function (tid) {
@@ -1342,11 +1554,7 @@ function renderColumn() {
         h += answerControls(d, !answerable(id) || !!lock);
       }
       if (d.rationale) h += '<div class="rationale"><strong>Why:</strong> ' + esc(d.rationale) + "</div>";
-      notices().filter(function (n) { return n.target === id; }).forEach(function (n) {
-        h += '<div class="infonote">✉ <strong>Agent, ' + esc(n.kind === "elicit-alert" ? "alert" : "informational") +
-          ':</strong> ' + esc(summarise(n)) +
-          ' <button class="btn sm" data-act="discussnotice" data-uid="' + esc(n.id) + '" style="margin-top:6px">Discuss</button></div>';
-      });
+      notices().filter(function (n) { return n.target === id; }).forEach(function (n) { h += infoNote(n); });
       threadsOf(id).forEach(function (tid) {
         if (blockingThreads(id).indexOf(tid) >= 0) return;
         var t = thread(tid);
@@ -1381,37 +1589,54 @@ function renderTurns(t) {
   });
   return h;
 }
-function threadBody(tid, forPop) {
+// A thread in three parts, and they are three parts rather than one column
+// because two of them are pinned. The head is what the thread is and how to
+// leave it; the body is the only thing that scrolls; the foot is how to answer.
+// Everything below returns the three, and one wrapper decides where they sit —
+// the pop-out window and the slide-out get the same pane.
+function threadPane(head, body, foot) {
+  return '<div class="threadpane"><div class="thead">' + head + "</div>" +
+    '<div class="tbody">' + body + "</div>" +
+    (foot ? '<div class="tfoot">' + foot + "</div>" : "") + "</div>";
+}
+// `chrome` is what the surrounding window pins beside the title — the slide-out
+// has a close and a pop-out, the popped window has neither. It rides in the head
+// rather than outside the pane so that it is pinned by the same rule as the
+// title it sits on.
+function threadBody(tid, forPop, chrome) {
   var t = thread(tid);
   var sayId = forPop ? "pop-say" : "ft-say";
+  chrome = chrome || "";
   if (!t) {
     // Nothing exists until something is said in it. Closing this creates nothing.
     var anchor = UI.draftFor && UI.draftFor.thread === tid ? UI.draftFor.decision : null;
     var d = anchor ? node(anchor) : null;
-    return '<span class="pill new">new thread</span>' +
-      '<h3 style="margin:10px 0 4px;font-size:16px">Thread on ' + esc(anchor || "the board") +
-      (d ? " — " + esc(d.short) : "") + "</h3>" +
-      '<div class="muted" style="margin-bottom:14px">Nothing exists yet. Close this and no thread is created — ' +
-      "the first thing you say is what opens it. It titles itself from what you say.</div>" +
+    return threadPane(
+      chrome + '<span class="pill new">new thread</span>' +
+        '<h3 style="margin:10px 0 4px;font-size:16px">Thread on ' + esc(anchor || "the board") +
+        (d ? " — " + esc(d.short) : "") + "</h3>",
+      '<div class="muted">Nothing exists yet. Close this and no thread is created — ' +
+        "the first thing you say is what opens it. It titles itself from what you say.</div>",
       '<div class="free"><textarea id="' + sayId + '" data-draft="__say" data-send="draftsay" data-id="' + esc(anchor || "") +
-      '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
-      '<button class="btn sm" data-act="draftsay" data-id="' + esc(anchor || "") + '">Send</button></div>';
+        '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
+        '<button class="btn sm" data-act="draftsay" data-id="' + esc(anchor || "") + '">Send</button></div>'
+    );
   }
   var ready = foldReady(tid);
   var pendingId = UI.pendingThread && UI.pendingThread.thread === tid ? UI.pendingThread.pending : null;
   var stillWaiting = pendingId && BOARD.pending.some(function (p) { return p.id === pendingId; });
-  var h = '<span class="pill open">' + esc(t.kind || "thread") + " thread</span>";
-  h += '<h3 style="margin:10px 0 4px;font-size:16px">' + esc(t.title || tid) + "</h3>";
-  h += '<div class="muted" style="margin-bottom:14px">' +
+  var head = chrome + '<span class="pill open">' + esc(t.kind || "thread") + " thread</span>" +
+    '<h3 style="margin:10px 0 4px;font-size:16px">' + esc(t.title || tid) + "</h3>" +
+    '<div class="muted">' +
     (t.decision ? "On " + esc(t.decision) + " · " + esc((node(t.decision) || {}).short || "") : "On the board") +
     (t.requires_action ? " · <strong>this thread is holding " + esc(t.decision) + "</strong>" : "") +
     ". Nothing here touches the decision until you conclude it.</div>";
-  h += renderTurns(t);
+  var body = renderTurns(t);
   if (t.state !== "open") {
-    h += '<div class="parked-note">This thread is ' + esc(t.state) + ". It stays readable.</div>";
-    return h;
+    return threadPane(head,
+      body + '<div class="parked-note">This thread is ' + esc(t.state) + ". It stays readable.</div>", "");
   }
-  h += '<div class="free"><textarea id="' + sayId + '" data-draft="__say" data-send="say" data-tid="' + esc(tid) +
+  var h = '<div class="free"><textarea id="' + sayId + '" data-draft="__say" data-send="say" data-tid="' + esc(tid) +
     '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
     '<button class="btn sm" data-act="say" data-tid="' + esc(tid) + '">Send</button></div>';
 
@@ -1436,28 +1661,40 @@ function threadBody(tid, forPop) {
   } else if (t.kind !== "mandate" && !stillWaiting) {
     h += '<span class="muted">The agent has not declared anything foldable yet.</span>';
   }
-  return h + "</div>";
+  return threadPane(head, body, h + "</div>");
 }
 function renderThread(tid) {
-  // Threads open on the LEFT so they never cover the decision they discuss.
-  return '<div class="slide left"><button class="close" data-act="closepanel">✕</button>' +
+  // Threads open on the LEFT so they never cover the decision they discuss. The
+  // close and the pop-out go into the pane's own head, so they are pinned with
+  // it rather than scrolling away with the first screen of turns.
+  var chrome = '<button class="close" data-act="closepanel">✕</button>' +
     '<button class="popout" data-act="popout" data-tid="' + esc(tid) + '" title="Open this thread in its own window">⧉ pop out</button>' +
-    (UI.popFail ? '<div class="parked-note">The browser refused a new window — the thread is still here.</div>' : "") +
-    threadBody(tid, false) + "</div>";
+    (UI.popFail ? '<div class="parked-note">The browser refused a new window — the thread is still here.</div>' : "");
+  return '<div class="slide left pane">' + threadBody(tid, false, chrome) + "</div>";
 }
 function renderNotifications() {
+  var unread = unreadCount();
   var h = '<div class="slide"><button class="close" data-act="closepanel">✕</button>' +
     '<h3 style="font-size:16px">Notifications</h3>' +
-    '<div class="muted" style="margin-bottom:10px">What the agent has actually done. Changes that have <em>not</em> landed are not in here — they are in the inbox.</div>';
+    '<div class="muted" style="margin-bottom:10px">What the agent has actually done. Changes that have <em>not</em> landed are not in here — they are in the inbox. ' +
+    "This list starts empty on a reload: a session you come back to should not announce the morning's work as news. What you have read is remembered.</div>" +
+    '<div style="margin-bottom:12px"><button class="btn sm" data-act="markall"' + (unread ? "" : " disabled") +
+    ">✓ Mark all read" + (unread ? " (" + unread + ")" : "") + "</button></div>";
   if (!NOTES.length) h += '<div class="muted">Nothing here.</div>';
   NOTES.slice().reverse().forEach(function (n) {
-    h += '<div class="inbox-item' + (n.read ? "" : " unread") + '"><span class="type t-' + n.type + '">' +
+    var read = isRead(n.id);
+    h += '<div class="inbox-item' + (read ? "" : " unread") + '"><span class="type t-' + n.type + '">' +
       n.type.replace(/-/g, " ") + "</span>" +
-      '<div class="txt">' + (n.read ? "" : '<span class="unreadmark">●</span> ') +
+      '<div class="txt">' + (read ? "" : '<span class="unreadmark">●</span> ') +
       "<strong>" + esc(n.target || "—") + "</strong> · " + esc(n.text) +
-      '<div class="did" style="margin-top:3px">' + esc(n.at.toLocaleString()) + "</div>" +
+      '<div class="did" style="margin-top:3px">' + esc(stamp(n.at)) + "</div>" +
       '<div style="margin-top:6px"><button class="btn sm" data-act="notify" data-nid="' + esc(n.id) + '">Go to it</button>' +
-      (n.read ? "" : ' <button class="btn sm" data-act="marknote" data-nid="' + esc(n.id) + '">Mark as read</button>') +
+      // A message from the agent is discussable wherever it is met. Reading it
+      // in the notification list rather than on its decision is not a reason to
+      // have to go and find it again to answer it.
+      (n.type === "applied-change" ? "" :
+        ' <button class="btn sm" data-act="discussnotice" data-uid="' + esc(n.id) + '">Discuss</button>') +
+      (read ? "" : ' <button class="btn sm" data-act="marknote" data-nid="' + esc(n.id) + '">Mark as read</button>') +
       "</div></div></div>";
   });
   return h + "</div>";
@@ -1489,9 +1726,9 @@ function renderInbox() {
 var BUBBLE_TYPES = ["informational", "applied-change"];
 function harvestBubbles() {
   NOTES.forEach(function (n) {
-    if (BUBBLE_TYPES.indexOf(n.type) < 0 || n.read || UI.bubbleSeen[n.id]) return;
+    if (BUBBLE_TYPES.indexOf(n.type) < 0 || isRead(n.id) || UI.bubbleSeen[n.id]) return;
     UI.bubbleSeen[n.id] = true;
-    UI.bubbles.push({ id: n.id, target: n.target, text: n.text, type: n.type, left: 3000 });
+    UI.bubbles.push({ id: n.id, target: n.target, text: n.text, type: n.type, at: n.at, left: 3000 });
   });
 }
 document.addEventListener("pointermove", function (e) { UI.ptr = { x: e.clientX, y: e.clientY }; });
@@ -1512,7 +1749,7 @@ function renderBubbles() {
   el.innerHTML = UI.bubbles.map(function (b, i) {
     return '<div class="bubble ' + (i ? "queued" : "top") + '" data-act="bubble" data-nid="' + esc(b.id) + '">' +
       '<div class="bh"><span>' + esc(b.target || "—") + " · " + esc(b.type.replace(/-/g, " ")) +
-      '</span><span class="spacer"></span>' + (i ? "<span>waiting</span>" : "") + "</div>" +
+      '</span><span class="spacer"></span>' + (i ? "<span>waiting</span>" : "<span>" + esc(stamp(b.at)) + "</span>") + "</div>" +
       esc(b.text.length > 190 ? b.text.slice(0, 190) + "…" : b.text) +
       '<div style="opacity:.6;margin-top:5px;font-size:11px">click to mark read and dismiss</div>' +
       (i ? "" : '<div class="bar"><i></i></div>') + "</div>";
@@ -1543,18 +1780,57 @@ var PROTOCOL_WORDS = {
   idle: "nothing outstanding", sending: "sending", "awaiting-ack": "unacknowledged",
   "agent-owes": "waiting on the agent", receiving: "a reply is arriving"
 };
-// The worst channel, and nothing else. What splits this into the three separate
-// signals — reachable, owed, outbox depth — is the next thing to be built on top
-// of it; this is one light and the expansion behind it.
+// Three signals, and they are three because each one fails on its own and each
+// one means something different to the human standing in front of it.
+//
+//   reachable — is there a backend. Nothing else is worth reading if there is
+//     not, so it is ranked first and it is the transport's own answer.
+//   agent — the priority signal. Whether an agent is attached at all, and
+//     whether one owes a reply right now. A healthy backend with nothing
+//     attached and a healthy backend with an agent thinking are the two states
+//     that must never render alike: the first means nobody is coming, the
+//     second means someone is on their way, and a human told the wrong one
+//     either waits for nothing or gives up on something that was working.
+//   outbox — how much this page has said that it cannot yet see the effect of.
+//     Zero is the normal state; a number that stays up is a page talking into
+//     a log it is not reading back.
+//
+// The amalgamation is still worst-state-wins across every channel — that is what
+// the agent signal reads — and the diagnostic behind it is still per channel.
+function agentSignal() {
+  var turns = owed();
+  if (turns.length) return { state: "owes", loud: "loud", dot: "busy", text: laneText() };
+  // Attached is asked of the record rather than of a flag: a lane entry or a
+  // turn an agent authored is an agent having been there. A session whose tier
+  // is not configured produces neither, and says so rather than showing an idle
+  // chip that a working session is indistinguishable from.
+  if (!agentSeen()) return { state: "absent", loud: "bad", dot: "off", text: "no agent attached" };
+  return { state: "idle", loud: "", dot: "up", text: "agent attached · idle" };
+}
+// Whether any agent has ever taken a turn in this session. Read off the log this
+// page already holds: a status entry is the lane announcing a tier, and an entry
+// an agent authored is one having answered.
+function agentSeen() {
+  return LOG.some(function (e) {
+    return e.kind === STATUS_KIND || AGENT_ACTORS.indexOf(e.actor) >= 0;
+  });
+}
 function renderIndicator() {
   var shown = worstChannel();
-  var quiet = connected() && shown.protocol === "idle";
-  return '<button class="agentchip diagbtn' + (quiet ? "" : " loud") + '" data-act="diag" id="indicator"' +
+  var agent = agentSignal();
+  var depth = outboxDepth();
+  var reachable = connected();
+  return '<button class="agentchip diagbtn' + (reachable && agent.state === "idle" && !depth ? "" : " loud") +
+    '" data-act="diag" id="indicator"' +
     ' data-connection="' + esc(shown.connection) + '" data-protocol="' + esc(shown.protocol) + '"' +
-    ' data-worst="' + esc(shown.channel) + '" title="Every channel, and what each one is doing">' +
-    '<span class="dot' + (quiet ? "" : " busy") + '"></span>' +
-    esc(CONNECTION_WORDS[shown.connection]) +
-    (quiet ? "" : " · " + esc(PROTOCOL_WORDS[shown.protocol]) + " on " + esc(shown.channel)) +
+    ' data-worst="' + esc(shown.channel) + '" data-agent="' + esc(agent.state) + '"' +
+    ' data-outbox="' + depth + '" title="Every channel, and what each one is doing">' +
+    '<span class="sig' + (reachable ? "" : " bad") + '" data-signal="reachable">' +
+    '<span class="dot' + (reachable ? " up" : " bad") + '"></span>' + esc(CONNECTION_WORDS[shown.connection]) + "</span>" +
+    '<span class="sig ' + agent.loud + '" data-signal="agent">' +
+    '<span class="dot ' + agent.dot + '"></span>agent: <span id="lanetimer">' + esc(agent.text) + "</span></span>" +
+    '<span class="sig' + (depth ? " loud" : "") + '" data-signal="outbox">outbox ' +
+    (depth ? depth + " unconsumed" : "clear") + "</span>" +
     ' <span class="did">' + (UI.diag ? "▴" : "▾") + "</span></button>";
 }
 // The expansion: every channel with both of its layers, named as the protocol
@@ -1563,28 +1839,37 @@ function renderIndicator() {
 function renderDiagnostic() {
   if (!UI.diag) return "";
   var rows = channelViews().map(function (view) {
-    return '<div class="diagrow" data-channel="' + esc(view.channel) + '">' +
+    // Each waiting channel carries its own clock, because the amalgamated one
+    // shows the longest wait and the human is often asking about a different
+    // one. The clock is the lane's, not this row's.
+    var waiting = WIRE.status[view.channel];
+    return '<div class="diagrow" data-channel="' + esc(view.channel) + '"' +
+      (waiting ? ' data-waited="' + elapsed(waiting.since) + '"' : "") + ">" +
       '<span class="mono chan">' + esc(view.channel === MAP ? "map" : view.channel) + "</span>" +
       '<span class="lyr">connection <b class="mono">' + esc(view.connection) + "</b></span>" +
-      '<span class="lyr">protocol <b class="mono">' + esc(view.protocol) + "</b></span></div>";
+      '<span class="lyr">protocol <b class="mono' + (waiting ? " owes" : "") + '">' + esc(view.protocol) + "</b></span>" +
+      (waiting ? '<span class="lyr">waiting <b class="mono owes">' + elapsed(waiting.since) + "s" +
+        (waiting.tier ? " · " + esc(waiting.tier) + " tier" : "") + "</b></span>" : "") + "</div>";
   }).join("");
   return '<div class="diag" id="diagnostic"><div class="diaghead">Channels — one for the map, one per thread. ' +
     "The connection is the transport's and is the same for all of them; the protocol state is each channel's own.</div>" +
     rows + '<div class="diagfoot mono">epoch ' + esc(String(WIRE.epoch).slice(0, 10)) +
     " · seq " + WIRE.cursor + " · " + WIRE.sent + " sent, " + WIRE.got + " received" +
+    " · outbox " + outboxDepth() +
     (WIRE.rejected ? " · " + WIRE.rejected + " refused" : "") + "</div></div>";
 }
 
 /* ---------- shell ---------- */
 function renderShell() {
   var ps = proposals(), unread = unreadCount();
-  var lane = WIRE.status
-    ? '<span class="agentchip"><span class="dot busy"></span>agent: <span id="lanetimer">' + esc(laneText()) + "</span></span>"
-    : '<span class="agentchip"><span class="dot"></span>agent: idle</span>';
-  var top = '<div class="topbar">' + renderIndicator() + lane +
+  // The agent's state is inside the indicator rather than beside it: a separate
+  // chip saying `idle` next to a light saying a thread was waiting is two
+  // answers to one question, and the human reads whichever is nearer.
+  var top = '<div class="topbar">' + renderIndicator() +
     '<button class="pendbtn' + (ps.length ? "" : " none") + '" data-act="inbox">📥 ' +
     (ps.length ? ps.length + " change" + (ps.length > 1 ? "s" : "") + " waiting on you" : "inbox empty") + "</button>" +
-    '<button class="inboxbtn" data-act="notifications">🔔 Notifications <span class="count">' + unread + "</span> unread</button>" +
+    '<button class="inboxbtn" data-act="notifications" data-unread="' + unread + '">🔔 Notifications <span class="count">' + unread + "</span> unread</button>" +
+    (unread ? '<button class="btn sm" data-act="markall" title="Clear every unread marker. Nothing is sent.">✓ Mark all read</button>' : "") +
     '<button class="btn sm" data-act="doctor" title="Send the agent over the whole board and the queue">🩺 Map doctor</button>' +
     '<button class="btn sm" data-act="endsession">End the session</button></div>';
 
@@ -1726,7 +2011,10 @@ function popOut(tid) {
     "setInterval(draw,600);draw();})();";
   w.document.open();
   w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Thread — ' + esc(tid) + "</title>" + css +
-    "<style>body{padding:20px;background:#fff}</style></head><body><div id=\"t\"></div><scr" + "ipt>" + boot + "</scr" + "ipt></body></html>");
+    // The popped window is the pane and nothing else, full height, so its
+    // pinned head and foot are pinned to the window rather than to a box that
+    // grows with the thread.
+    "<style>html,body{height:100%;margin:0;background:#fff}#t{height:100%}</style></head><body><div id=\"t\"></div><scr" + "ipt>" + boot + "</scr" + "ipt></body></html>");
   w.document.close();
   UI.popped[tid] = true;
   UI.panel = null;
@@ -1769,8 +2057,12 @@ document.addEventListener("click", function (e) {
       !(el && ["inbox", "notifications", "discuss", "discussnotice", "gotonode"].indexOf(el.dataset.act) >= 0)) {
     UI.panel = null; render();
   }
-  // Hover overlays always hide on click; they return on a fresh mouse-enter.
-  if (HOVER) HOVER.style.display = "none";
+  // Hover overlays always hide on click, and stay hidden for the zone that was
+  // clicked until the pointer has left it and come back. Hiding alone was not
+  // enough: `mouseover` fires again on the next movement inside the same node,
+  // so the card the human just dismissed reappeared under their cursor without
+  // them ever leaving the thing they had dismissed it on.
+  hideHover(zoneOf(e.target));
   if (!el) return;
   var a = el.dataset.act, id = el.dataset.id, tid = el.dataset.tid, uid = el.dataset.uid;
   switch (a) {
@@ -1789,7 +2081,11 @@ document.addEventListener("click", function (e) {
       focusOn(id);
       render();
       break;
-    case "pick": answerDecision(id, { option: el.dataset.opt }); break;
+    // Whatever is in the decision's own box at the moment an option is picked is
+    // the note on that option. It is one box on purpose: the human is already
+    // typing there, and a second one would be an empty field they had to be told
+    // about.
+    case "pick": answerDecision(id, { option: el.dataset.opt, note: (UI.drafts[id] || "").trim() }); break;
     case "free": sendFrom(document.getElementById("ft-" + id)); break;
     case "history": UI.open["hist-" + id] = !UI.open["hist-" + id]; render(); break;
     case "threads": {
@@ -1822,11 +2118,13 @@ document.addEventListener("click", function (e) {
     case "doctor": callDoctor(); break;
     case "endsession": endSession(); break;
     case "closepanel": UI.panel = null; render(); break;
-    case "marknote": markRead(el.dataset.nid); break;
+    case "marknote": markRead(el.dataset.nid); render(); break;
+    case "markall": markAllRead(); break;
     case "bubble":
       UI.bubbles = UI.bubbles.filter(function (b) { return b.id !== el.dataset.nid; });
       UI.bubbleSig = null;
       markRead(el.dataset.nid);
+      render();
       break;
     case "notify": {
       var n = NOTES.filter(function (x) { return x.id === el.dataset.nid; })[0];
@@ -1839,18 +2137,22 @@ document.addEventListener("click", function (e) {
     case "dismiss-rejection": WIRE.lastRejection = null; render(); break;
   }
 });
-function markRead(nid) {
-  NOTES.forEach(function (n) { if (n.id === nid) n.read = true; });
-  render();
-}
-// An agent's message is discussed as an ordinary thread, seeded from it.
+// An agent's message is discussed as an ordinary thread, seeded from it —
+// wherever the human happened to be reading it. The queue and the notification
+// list name the same message by the same id, so one lookup covers both: the
+// queue holds it while it is still on the board, and the notification holds it
+// once the board has moved on.
 function discussNotice(uid) {
   var item = BOARD.pending.filter(function (p) { return p.id === uid; })[0];
-  if (!item) return;
-  var tid = "t-notice-" + KEYS + "-" + (item.target || "board");
+  var said = item ? summarise(item)
+    : (NOTES.filter(function (n) { return n.id === uid; })[0] || {}).text;
+  if (!said) return;
+  var target = item ? item.target
+    : (NOTES.filter(function (n) { return n.id === uid; })[0] || {}).target;
+  var tid = "t-notice-" + KEYS + "-" + (target || "board");
   send(ev("thread-created", tid, {
-    turns: [{ who: "human", text: "About what you said: “" + summarise(item) + "”" }],
-    decision: item.target, kind: "notice", title: titleFrom(summarise(item), item.target || "the board"),
+    turns: [{ who: "human", text: "About what you said: “" + said + "”" }],
+    decision: target, kind: "notice", title: titleFrom(said, target || "the board"),
     requires_action: false
   }));
   UI.panel = { kind: "thread", id: tid };
@@ -1859,6 +2161,19 @@ function discussNotice(uid) {
 
 /* hover overlays: map nodes, their icons, and options */
 var HOVER = null;
+// The zone a click dismissed an overlay on. Held until the pointer leaves it, so
+// that returning the overlay takes a fresh entry rather than the next twitch.
+var MUTED = null;
+// The three kinds of thing that own an overlay, resolved to the one element the
+// overlay belongs to. One reader, so what the click mutes and what the hover
+// checks are the same zone rather than two selectors that agree most of the time.
+function zoneOf(target) {
+  return target.closest("[data-why]") || target.closest("[data-p]") || target.closest(".mnode");
+}
+function hideHover(zone) {
+  if (HOVER) HOVER.style.display = "none";
+  MUTED = zone || null;
+}
 function showHover(html, rect) {
   if (!HOVER) { HOVER = document.createElement("div"); HOVER.className = "hovercard"; document.body.appendChild(HOVER); }
   HOVER.innerHTML = html;
@@ -1867,6 +2182,8 @@ function showHover(html, rect) {
   HOVER.style.display = "block";
 }
 document.addEventListener("mouseover", function (e) {
+  // Still inside the zone whose overlay was clicked away: say nothing.
+  if (MUTED && zoneOf(e.target) === MUTED) return;
   var b = e.target.closest("[data-why]");
   if (b) { showHover('<div class="hid">what this icon means</div><div>' + esc(b.dataset.why) + "</div>", b.getBoundingClientRect()); return; }
   var o = e.target.closest("[data-p]");
@@ -1882,7 +2199,7 @@ document.addEventListener("mouseover", function (e) {
   var d = node(n.dataset.id);
   if (!d) return;
   var st = statusOf(d.id), att = [];
-  if (notices().filter(function (x) { return x.target === d.id; }).length) att.push("✉ a message from the agent");
+  if (unreadNotices(d.id).length) att.push("✉ a message from the agent");
   if (proposalsOn(d.id).length) att.push("📥 a change waiting in the inbox — this decision is locked");
   if (blockingThreads(d.id).length) att.push("⚠ a thread that must conclude before this can change");
   if (conflictOn(d.id)) att.push("⚡ a disagreement between your answer and a waiting change");
@@ -1896,9 +2213,11 @@ document.addEventListener("mouseover", function (e) {
     n.getBoundingClientRect());
 });
 document.addEventListener("mouseout", function (e) {
-  if (HOVER && (e.target.closest(".mnode") || e.target.closest("[data-why]") || e.target.closest("[data-p]"))) {
-    HOVER.style.display = "none";
-  }
+  // Leaving the muted zone for good is what re-arms it. `relatedTarget` is where
+  // the pointer went, so moving between a node and its own badge is not a leave
+  // — and treating it as one would hand the overlay straight back.
+  if (MUTED && !MUTED.contains(e.relatedTarget)) MUTED = null;
+  if (HOVER && zoneOf(e.target)) HOVER.style.display = "none";
 });
 
 /* drag to pan the map */
@@ -1926,7 +2245,7 @@ poll();
 // focus from the textbox that is meant to always hold it.
 setInterval(function () {
   var el = document.getElementById("lanetimer");
-  if (el) el.textContent = laneText();
+  if (el) el.textContent = agentSignal().text;
 }, 1000);
 // Browsers throttle timers in a background tab, so replies pile up while you
 // are elsewhere. Collect them the moment you are back.

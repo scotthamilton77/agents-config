@@ -231,11 +231,21 @@ def test_every_event_the_page_sends_is_built_by_the_checked_constructor() -> Non
     The idempotency key is what makes a submission a submission, so exactly one
     place in the page may mint one. A second would be an emission the table
     never saw.
+
+    Minting is measured as the assignment and as the page-instance prefix that
+    goes into it, not as every mention of the word: the page reads keys off
+    events it has already built -- to tell an event still in flight from one the
+    log has taken, and to name a queued update the way the backend names it --
+    and a read is not a mint. Counting mentions would make those reads look like
+    second constructors while leaving a real second constructor that spelled its
+    field differently entirely invisible.
     """
     source = page_source()
-    assert source.count("idempotency_key") == 1
+    assert source.count("idempotency_key:") == 1, "a second place builds an event's key"
+    assert source.count("PAGE_ID") == 2, "the page-instance prefix is used outside the constructor"
     builder = source.split("function ev(", 1)[1].split("\nfunction ", 1)[0]
-    assert "idempotency_key" in builder
+    assert "idempotency_key:" in builder
+    assert "PAGE_ID" in builder
 
 
 @pytest.mark.parametrize("kind", sorted(emitted_kinds()))
