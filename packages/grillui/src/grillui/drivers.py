@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import threading
 from dataclasses import dataclass, field
@@ -87,6 +88,12 @@ if TYPE_CHECKING:
 
 RESUME_FILE = "heavy-resume.json"
 REQUEST_TIMEOUT = 60.0
+
+# A hosted model asked for an object commonly sends it inside a markdown fence,
+# because that is how it was trained to present JSON to a reader. The fence is
+# presentation, not content: a turn whose updates were dropped over three
+# backticks is a turn the human watched arrive as prose with the board unmoved.
+FENCED = re.compile(r"\A```[^\n]*\n(?P<body>.*?)\n?```\Z", re.DOTALL)
 
 
 class ReplyRefusedError(RuntimeError):
@@ -346,12 +353,19 @@ def declared_updates(reply: str) -> tuple[str, list[dict[str, Any]], list[str]]:
     agent said and is recorded as such. Guessing at a half-shaped object would
     author board changes out of a reply that never asked for any.
 
+    A markdown fence around that object is read through, because what the turn
+    declared is a property of what it said and not of how the model chose to
+    present it. Only the fence comes off: what is inside still has to be the
+    shape, and a fenced reply that is not gets recorded as prose, fence and all,
+    exactly as the model wrote it.
+
     Withdrawing is separate from updating because the common case carries no
     board change at all: a turn that supersedes what it said last time and
     nothing else is a turn whose whole effect is on the queue.
     """
+    fenced = FENCED.match(reply.strip())
     try:
-        document = json.loads(reply)
+        document = json.loads(fenced.group("body") if fenced else reply)
     except ValueError:
         return reply, [], []
     if not isinstance(document, dict):

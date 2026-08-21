@@ -1,0 +1,18 @@
+```json
+{
+  "text": "Decision d1 is settled on option a (the whole spec, four parts). Decision d2 turns on whether an arm's performance should measure research stamina or design judgement; do you point the brief at the sources and let them dig, or explicitly state what the repo has already decided?",
+  "updates": [
+    {
+      "kind": "revise",
+      "target": "d1",
+      "status": "settled",
+      "answer": {
+        "option": "a",
+        "text": null
+      },
+      "basis": 4
+    }
+  ],
+  "basis": 4
+}
+```
