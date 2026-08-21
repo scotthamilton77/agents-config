@@ -451,6 +451,7 @@ var PROTOCOL_TABLE = {
 
 var MAP = "map";
 var APPLY_KIND = "apply";
+var SESSION_END_KIND = "session-end";
 var DISMISS_KIND = "dismiss";
 var STATUS_KIND = "status";
 var PHASE_COMPOSING = "composing";
@@ -483,6 +484,25 @@ var WIRE = {
 // log carries it or a receipt refuses it, so what is left is the work the page
 // asked for and cannot yet see the effect of.
 var OUTBOX = {};
+// A session ends once, on the human's own gesture, and what follows it is a
+// record rather than a conversation: nothing this page says afterwards is
+// recorded, so the surface stops offering to say it.
+//
+// Read off the log this page already holds, and set on the receipt as well. A
+// launched backend stops the moment the terminal entry is durable, so the update
+// read that would carry that entry may never answer -- and a page left waiting
+// for it would render an ended session as a broken backend and invite the human
+// to restart something that finished.
+var ENDED = false;
+function sessionOver() {
+  return ENDED || LOG.some(function (e) { return e.kind === SESSION_END_KIND; });
+}
+// A refusal of this page's own: a gesture it will not put on the wire, said
+// where a backend's refusal is said. Held apart from `WIRE.lastRejection`,
+// which is the backend's answer -- attributing a refusal to the backend for
+// something never sent is this page inventing an answer nobody gave.
+var HELDBACK = null;
+function refuse(text) { HELDBACK = text; render(); }
 // One transport, however many channels ride it, and one protocol state per
 // channel. The map channel exists from the start because the board is always a
 // conversation someone could be having; a thread's channel is noted the moment
@@ -565,6 +585,27 @@ function saveRead() {
   // the board down with it.
   try { window.localStorage.setItem(readKey(), JSON.stringify(READ)); } catch (e) {}
 }
+// What this window has started and has not committed: an answer held against a
+// mandated thread, and which waiting change each discussion thread was opened to
+// judge. Neither crosses the wire and neither is board content -- but both are
+// lost work when a reload drops them, and the loss is silent: the held answer
+// disappears while the thread that was holding it goes on blocking the decision,
+// and a discussion forgets the change it exists to adjudicate while its apply
+// and dismiss controls are still on screen.
+//
+// SESSION storage, for the reason the claim holder is there: it is the one origin
+// store scoped to a single window, so this window's reload finds it and a second
+// window cannot present it as its own. Keyed by the claim token like the read
+// state, so two sessions on one loopback port never read each other's.
+function loadWindow(name, fallback) {
+  try { return JSON.parse(window.sessionStorage.getItem("grillui:" + name + ":" + CLAIM.token) || "") || fallback; }
+  catch (e) { return fallback; }
+}
+function saveWindow(name, value) {
+  try { window.sessionStorage.setItem("grillui:" + name + ":" + CLAIM.token, JSON.stringify(value)); } catch (e) {}
+}
+function saveHeld() { saveWindow("held", UI.held); }
+function saveDiscussing() { saveWindow("discussing", UI.discussing); }
 function isRead(id) { return !!READ[id]; }
 function markRead(id) {
   if (!id) return;
@@ -576,7 +617,7 @@ var UI = {
   lastFocus: null, lastPanelKey: null, centerNext: true, justSettled: null,
   fresh: [], touched: [], autoshut: {}, advanceFrom: null,
   bubbles: [], bubbleSeen: {}, bubbleSig: null, bubbleTick: 0, ptr: null,
-  popped: {}, draftBase: {}, popFail: false, diag: false
+  popped: {}, draftBase: {}, popFail: false, diag: false, discussing: {}
 };
 // One page instance: an idempotency key is stable for a retry and distinct
 // across reloads, because a reload's events are genuinely new and a resend is
@@ -745,7 +786,8 @@ function ev(kind, channel, payload) {
    a state the human ever asked for. */
 function send() {
   var out = Array.prototype.slice.call(arguments);
-  if (!out.length || !WIRE.epoch || WIRE.doctor) return;
+  if (!out.length || !WIRE.epoch || WIRE.doctor || sessionOver()) return;
+  var ending = out.filter(function (e) { return e.kind === SESSION_END_KIND; })[0];
   WIRE.sent += out.length;
   out.forEach(function (e) { OUTBOX[e.idempotency_key] = true; });
   var touched = batchChannels(out);
@@ -763,6 +805,15 @@ function send() {
       // the outbox here — otherwise the depth counts messages nothing is ever
       // going to consume and reads as a backlog that does not exist.
       if (r.status !== "accepted") delete OUTBOX[r.idempotency_key];
+      // The backend took the ending. Noted here rather than waited for on the
+      // update read, which a stopping backend may never answer.
+      // The ending is the one event whose landing this page will never read
+      // back, because reading is what it stops. Left in the outbox it would
+      // stand there as a permanent backlog of one.
+      if (ending && r.idempotency_key === ending.idempotency_key && r.status === "accepted") {
+        ENDED = true;
+        delete OUTBOX[r.idempotency_key];
+      }
       if (r.status !== "rejected") return;
       WIRE.rejected += 1;
       // A refusal the human cannot see is a message they believe they sent.
@@ -796,6 +847,8 @@ function hydrate() {
     // rather than a new one — so the read-state comes back here, keyed by the
     // token the claim answered with before any of this was read.
     loadRead();
+    UI.held = loadWindow("held", {});
+    UI.discussing = loadWindow("discussing", {});
     noteThreads();
     // The log up to here is read as a lookup table, not as news: a page
     // arriving mid-session must not announce a morning's worth of changes as
@@ -829,6 +882,9 @@ function poll() {
   // refused or superseded window has nothing to poll for: it is not going to
   // draw what it reads.
   if (CLAIM.state !== CLAIM_GRANTED) return;
+  // A closed log has nothing further to say, and reading on would leave a
+  // dead-backend indicator flickering over a session that ended on purpose.
+  if (sessionOver()) return;
   if (WIRE.inflight) return;
   WIRE.inflight = true;
   // Released when the whole cycle is over, never partway: a second poll that
@@ -1065,6 +1121,10 @@ function holdOn(id) {
   if (!d) return null;
   var waiting = proposalsOn(id);
   if (waiting.length) return { kind: "pending", items: waiting };
+  // An answer held against a mandated thread is a hold of its own: the pick is
+  // made and only the conclusion applies it, so nothing may be answered around
+  // it in the meantime.
+  if (mandateHolding(id)) return { kind: "elicitation", threads: [d.mandate.threadId] };
   var blocking = blockingThreads(id);
   if (blocking.length) return { kind: "elicitation", threads: blocking };
   if (d.locked) return { kind: "elicitation", threads: [] };
@@ -1092,11 +1152,23 @@ function mandateOpen(d) {
   return !(t && t.state === "folded");
 }
 // A blocking thread: one the agent said requires action and that has not ended.
+// A decision's own mandated thread is never one of them. What that thread holds
+// is the answer, which is already the mandate's hold and is already refused
+// around; counting it here as well would lock the decision out of being picked
+// again after the human abandoned a pick, leaving a thread that must conclude on
+// an answer that can no longer be made.
 function blockingThreads(id) {
+  var d = node(id), mandated = d && d.mandate ? d.mandate.threadId : null;
   return threadsOf(id).filter(function (tid) {
     var t = thread(tid);
-    return t.requires_action && t.state === "open";
+    return tid !== mandated && t.requires_action && t.state === "open";
   });
+}
+// Whether an option is still on the decision. Asked before an answer goes out
+// that was picked some time ago: the options are the agent's to revise.
+function optionOn(id, option) {
+  var d = node(id);
+  return !!d && d.options.some(function (o) { return o.id === option; });
 }
 
 function statusOf(id) {
@@ -1288,13 +1360,18 @@ function answerDecision(id, payload) {
   // then.
   if (mandateOpen(d)) {
     UI.held[id] = payload;
+    saveHeld();
     var t = mandateThread(d);
-    if (!t) {
-      send(ev("thread-created", d.mandate.threadId, {
-        turns: [{ who: "human", text: seedForMandate(d, payload) }],
-        decision: id, kind: "mandate", title: d.mandate.title, requires_action: true
-      }));
-    }
+    var seed = seedForMandate(d, payload);
+    // The thread is told what is being held, whether this is the pick that opens
+    // it or one made after an earlier pick was abandoned. A thread never told
+    // would be concluded by an agent discussing a leaning the human has changed.
+    send(t
+      ? ev("thread-turn", d.mandate.threadId, { turns: [{ who: "human", text: seed }] })
+      : ev("thread-created", d.mandate.threadId, {
+          turns: [{ who: "human", text: seed }],
+          decision: id, kind: "mandate", title: d.mandate.title, requires_action: true
+        }));
     UI.panel = { kind: "thread", id: d.mandate.threadId };
     render();
     return;
@@ -1333,11 +1410,35 @@ function foldThread(tid) {
   var t = thread(tid);
   if (!t) return;
   var held = t.decision && UI.held[t.decision];
+  if (t.kind === "mandate") {
+    // A mandated thread concludes on the answer it is holding, so there is
+    // nothing to conclude until one is picked. Folding it empty would leave the
+    // decision unmandated and settleable by a plain click -- the route to an
+    // answer the mandate exists to close.
+    if (!held) {
+      refuse("Pick an answer first. Concluding this thread is what applies it, so there is nothing to conclude yet.");
+      return;
+    }
+    // The pick was made against the options as they stood, and the agent may
+    // have revised them while the thread ran. An answer records whatever option
+    // id it is sent, so one naming an option the decision no longer has settles
+    // it onto something nobody can read. The pick goes, the words that came with
+    // it are handed back, and the human picks again.
+    if (held.option && !optionOn(t.decision, held.option)) {
+      delete UI.held[t.decision];
+      saveHeld();
+      UI.drafts[t.decision] = held.note || "";
+      refuse("The option you were holding is no longer on " + t.decision +
+        " — it was revised while this thread ran. Nothing was recorded, and your note is back in the box: pick again from the options as they stand.");
+      return;
+    }
+  }
   if (held) {
     // Concluding a mandated thread is what settles the decision, on the answer
     // that was held. One batch, because the two are one gesture.
     send(ev("thread-fold", tid, {}), ev("answer", MAP, { target: t.decision, answer: answerOf(held) }));
     delete UI.held[t.decision];
+    saveHeld();
     UI.panel = null;
     settledFocus(t.decision);
     return;
@@ -1351,13 +1452,17 @@ function parkThread(tid) {
   UI.panel = null;
   render();
 }
-// Abandoning a mandated answer reverts the selection and sets its thread aside;
-// the decision returns to the frontier having never carried an answer.
+// Abandoning a mandated answer reverts the selection; the decision returns to
+// the frontier having never carried an answer.
+//
+// The thread is left where it is rather than parked. It is the mandate's thread
+// and not the answer's -- a mandate names one thread id, nothing creates that id
+// twice, and a parked thread can be neither spoken in nor concluded. Parking it
+// here left the next pick held against a conversation with no way forward and no
+// way back except abandoning that pick too.
 function abandonAnswer(id) {
-  var d = node(id);
   delete UI.held[id];
-  var t = mandateThread(d);
-  if (t && t.state === "open") send(ev("thread-park", t.id, {}));
+  saveHeld();
   UI.panel = null;
   focusOn(id);
   render();
@@ -1392,7 +1497,8 @@ function discussPending(id) {
     decision: item.target, kind: "pending", title: "Should this change land on " + (item.target || "the board") + "?",
     requires_action: false
   }));
-  UI.pendingThread = { thread: tid, pending: id };
+  UI.discussing[tid] = id;
+  saveDiscussing();
   UI.panel = { kind: "thread", id: tid };
   render();
 }
@@ -1416,6 +1522,7 @@ function endSession() {
   render();
 }
 function callDoctor() {
+  if (sessionOver()) return;
   srvPost("/doctor").then(function (d) { WIRE.doctor = d.outstanding; render(); }, wireFailed);
 }
 function titleFrom(text, anchor) {
@@ -1476,15 +1583,15 @@ function answerControls(d, locked) {
   // own, and the note on an option if you then pick one. A second textarea for
   // the note would be a second empty box on every decision, and the human would
   // still have to work out which one they were in.
-  h += '<div class="free"><textarea id="ft-' + d.id + '" data-draft="' + d.id + '" data-send="free" data-id="' + d.id +
+  h += '<div class="free"><textarea id="ft-' + esc(d.id) + '" data-draft="' + esc(d.id) + '" data-send="free" data-id="' + esc(d.id) +
     '" placeholder="…answer in your own words — or write a note, then pick an option to record both"' + dis + "></textarea>" +
     '<span class="hint">⌘↵</span>' +
-    '<button class="btn sm" data-act="free" data-id="' + d.id + '"' + dis + ">Use this</button></div>";
+    '<button class="btn sm" data-act="free" data-id="' + esc(d.id) + '"' + dis + ">Use this</button></div>";
   return h;
 }
 function optionButton(d, o, index, cls, lead, dis) {
-  return '<button class="' + cls + '" data-act="pick" data-id="' + d.id + '" data-opt="' + esc(o.id) +
-    '" data-label="' + labelAt(index) + '"' + pcrAttrs(o) + dis + ">" + lead +
+  return '<button class="' + cls + '" data-act="pick" data-id="' + esc(d.id) + '" data-opt="' + esc(o.id) +
+    '" data-label="' + esc(labelAt(index)) + '"' + pcrAttrs(o) + dis + ">" + lead +
     '<span class="olab">' + labelAt(index) + "</span>" + esc(o.text) + "</button>";
 }
 // One control, on every channel anyone speaks on: the map's and each open
@@ -1499,8 +1606,8 @@ function transferControl(channel) {
     : "Send this channel's next turn to the expert tier, carrying everything said here.";
   return '<button class="btn sm transfer' + (on ? " on" : "") + (rec ? " rec" : "") +
     '" data-act="transfer" data-channel="' + esc(channel) + '"' +
-    ' data-mode="' + (on ? "expert" : "fast") + '"' +
-    ' data-recommended="' + (rec ? "1" : "0") + '" title="' + esc(why) + '">' +
+    ' data-mode="' + esc(on ? "expert" : "fast") + '"' +
+    ' data-recommended="' + esc(rec ? "1" : "0") + '" title="' + esc(why) + '">' +
     (on ? "⚡ Fast agent mode" : "⚡ Transfer to expert") + "</button>";
 }
 function isExpanded(id) {
@@ -1528,15 +1635,15 @@ function infoNote(n) {
 function itemIcons(d, expanded) {
   var id = d.id;
   var h = '<span class="icons">';
-  if (unreadNotices(id).length) h += '<button class="mail" data-act="focusnode" data-id="' + id + '" title="A message from the agent">✉</button>';
+  if (unreadNotices(id).length) h += '<button class="mail" data-act="focusnode" data-id="' + esc(id) + '" title="A message from the agent">✉</button>';
   var alert = blockingThreads(id)[0];
-  if (alert) h += '<button class="alerting" data-act="openthread" data-tid="' + alert + '" title="The agent wants something judged">⚠</button>';
+  if (alert) h += '<button class="alerting" data-act="openthread" data-tid="' + esc(alert) + '" title="The agent wants something judged">⚠</button>';
   if (proposalsOn(id).length) h += '<button data-act="inbox" title="A change is waiting on this decision">📥</button>';
-  h += '<button data-act="history" data-id="' + id + '" title="Change history">🕘</button>';
+  h += '<button data-act="history" data-id="' + esc(id) + '" title="Change history">🕘</button>';
   var ts = threadsOf(id);
-  h += '<button data-act="threads" data-id="' + id + '" title="Threads on this decision">⑂' +
+  h += '<button data-act="threads" data-id="' + esc(id) + '" title="Threads on this decision">⑂' +
     (ts.length ? '<span class="did"> ' + ts.length + "</span>" : "") + "</button>";
-  h += '<button data-act="toggle" data-id="' + id + '" title="' + (expanded ? "Collapse" : "Expand") + '">' +
+  h += '<button data-act="toggle" data-id="' + esc(id) + '" title="' + (expanded ? "Collapse" : "Expand") + '">' +
     (expanded ? "⌃" : "⌄") + "</button></span>";
   return h;
 }
@@ -1545,7 +1652,7 @@ function itemIcons(d, expanded) {
 var POS = {};
 function badge(cls, glyph, why, act, data) {
   return '<span class="badge ' + cls + '" data-why="' + esc(why) + '"' +
-    (act ? ' data-act="' + act + '"' : "") + (data || "") + ">" + glyph + "</span>";
+    (act ? ' data-act="' + esc(act) + '"' : "") + (data || "") + ">" + glyph + "</span>";
 }
 function renderMap() {
   var ls = layers(), maxDepth = ls.length - 1;
@@ -1587,22 +1694,22 @@ function renderMap() {
     var shown = wait.conflict && (st === "blocked" || st === "stale-blocked") ? "conflict-blocked" : st;
     var badges = "";
     if (unreadNotices(id).length) {
-      badges += badge("b-mail mail", "✉", "A message from the agent about this decision — readable on the block, no need to reopen it.", "focusnode", ' data-id="' + id + '"');
+      badges += badge("b-mail mail", "✉", "A message from the agent about this decision — readable on the block, no need to reopen it.", "focusnode", ' data-id="' + esc(id) + '"');
     }
     var alert = blockingThreads(id)[0];
-    if (alert) badges += badge("b-alert alerting", "⚠", "The agent raised a question that must be concluded before this decision can change.", "openthread", ' data-tid="' + alert + '"');
+    if (alert) badges += badge("b-alert alerting", "⚠", "The agent raised a question that must be concluded before this decision can change.", "openthread", ' data-tid="' + esc(alert) + '"');
     if (proposalsOn(id).length) badges += badge("b-pending", "📥", "A change is waiting in the inbox for this decision. It cannot be decided until that is applied or dismissed.", "inbox", "");
     if (conflictOn(id)) badges += badge("b-conflict", "⚡", "Your answer and the agent's change disagree. The backend will refuse the change until one of you gives way.", "inbox", "");
-    if (mandateOpen(d)) badges += badge("b-mandate", "⚖", "This decision cannot be settled by choosing. Its mandated thread has to conclude first.", "focusnode", ' data-id="' + id + '"');
+    if (mandateOpen(d)) badges += badge("b-mandate", "⚖", "This decision cannot be settled by choosing. Its mandated thread has to conclude first.", "focusnode", ' data-id="' + esc(id) + '"');
     if (threadsOf(id).filter(function (t) { return thread(t).state === "parked"; }).length) {
-      badges += badge("b-thread", "⑂", "A parked thread hangs off this decision. Nothing is blocked by it.", "threads", ' data-id="' + id + '"');
+      badges += badge("b-thread", "⑂", "A parked thread hangs off this decision. Nothing is blocked by it.", "threads", ' data-id="' + esc(id) + '"');
     }
     var fogged = st === "fogged";
     nodes += '<button class="mnode ' + shown + (mandateOpen(d) ? " mandated" : "") +
       (proposalsOn(id).length ? " pendlocked" : "") + (UI.focus === id ? " focused" : "") +
       (UI.fresh.indexOf(id) >= 0 ? " fresh" : "") + (UI.touched.indexOf(id) >= 0 ? " touched" : "") +
-      '" style="left:' + p.x + "px;top:" + p.y + 'px" data-act="mapnode" data-id="' + id + '">' +
-      '<span class="mid">' + (fogged ? "· · ·" : id) + "</span><br>" +
+      '" style="left:' + p.x + "px;top:" + p.y + 'px" data-act="mapnode" data-id="' + esc(id) + '">' +
+      '<span class="mid">' + (fogged ? "· · ·" : esc(id)) + "</span><br>" +
       esc(fogged ? "?" : d.short || id) +
       (lock ? " 🔒" : "") +
       (st === "open" ? " ❓" : st === "settled" ? " ✓" : st.indexOf("stale") === 0 ? " ⚠" : "") +
@@ -1636,10 +1743,10 @@ function renderColumn() {
     h += '<div class="item ' + (expanded ? "" : "collapsed ") + (UI.focus === id ? "focused " : "") +
       (mandated ? "mandated " : "") + (UI.justSettled === id ? "justsettled " : "") +
       (UI.touched.indexOf(id) >= 0 ? "touched " : "") + (UI.fresh.indexOf(id) >= 0 ? "fresh" : "") +
-      '" id="col-' + id + '" data-act="focus" data-id="' + id + '">';
+      '" id="col-' + esc(id) + '" data-act="focus" data-id="' + esc(id) + '">';
     h += '<div class="head">' + (mandated ? '<span class="bigmark">⚖</span>' : "") +
       (lock ? '<span class="bigmark">🔒</span>' : "") +
-      '<span class="did">' + id + "</span><span class=\"t\">" + esc(d.title) + "</span>" +
+      '<span class="did">' + esc(id) + "</span><span class=\"t\">" + esc(d.title) + "</span>" +
       itemIcons(d, expanded) + "</div>";
     h += '<div style="margin-top:5px">' + pill(st) +
       (UI.fresh.indexOf(id) >= 0 ? ' <span class="pill new">new</span>' : "") +
@@ -1655,13 +1762,13 @@ function renderColumn() {
         esc(summarise(waiting[0])) + ' <button class="btn sm" data-act="inbox">Open the inbox</button></div>';
       if (blockingThreads(id).length) h += '<div class="blocking"><span class="tag">blocking</span>' +
         esc(thread(blockingThreads(id)[0]).title) + ' <button class="btn sm warn" data-act="openthread" data-tid="' +
-        blockingThreads(id)[0] + '">Open it</button></div>';
+        esc(blockingThreads(id)[0]) + '">Open it</button></div>';
       notices().filter(function (n) { return n.target === id; }).forEach(function (n) { h += infoNote(n); });
     } else {
       // A blocking thread goes at the TOP of the block, clearly marked.
       blockingThreads(id).forEach(function (tid) {
         h += '<div class="blocking"><span class="tag">blocking — this decision cannot change until it concludes</span>' +
-          esc(thread(tid).title) + ' <button class="btn sm warn" data-act="openthread" data-tid="' + tid + '">Open it</button></div>';
+          esc(thread(tid).title) + ' <button class="btn sm warn" data-act="openthread" data-tid="' + esc(tid) + '">Open it</button></div>';
       });
       if (waiting.length) {
         var one = waiting[0];
@@ -1669,13 +1776,13 @@ function renderColumn() {
           esc(summarise(one)) +
           ' It is not applied, and this decision is locked until you let it land or talk the agent out of it.' +
           (conflicted(one) ? '<div class="c" style="margin-top:6px;color:var(--conflict-ink);font-weight:600">' +
-            '⚡ You changed ' + id + " after this was written. Letting it land would overwrite that, so the backend will refuse it — discuss it or dismiss it.</div>" : "") +
+            '⚡ You changed ' + esc(id) + " after this was written. Letting it land would overwrite that, so the backend will refuse it — discuss it or dismiss it.</div>" : "") +
           ' <div style="margin-top:7px"><button class="btn sm primary" data-act="applyone" data-uid="' + esc(one.id) + '">Let it land</button> ' +
           '<button class="btn sm" data-act="discuss" data-uid="' + esc(one.id) + '">Discuss it first</button> ' +
           '<button class="btn sm warn" data-act="dismissone" data-uid="' + esc(one.id) + '">Dismiss it</button></div></div>';
       }
       if (conflict) {
-        h += '<div class="conflict-notice">The agent\'s change disagrees with your answer. Decisions downstream of ' + id +
+        h += '<div class="conflict-notice">The agent\'s change disagrees with your answer. Decisions downstream of ' + esc(id) +
           ' are waiting on it. <button class="btn sm" data-act="discuss" data-uid="' + esc(conflict.id) + '">Talk it through</button></div>';
       }
       if (mandated) {
@@ -1684,8 +1791,8 @@ function renderColumn() {
       }
       if (st === "awaiting-thread") {
         h += '<div class="mandate-notice"><span class="big">⏳</span><div><strong>Your answer is held, not applied.</strong> ' +
-          '<button class="btn sm" data-act="openthread" data-tid="' + d.mandate.threadId + '">Open the mandated thread</button> — concluding it settles this decision. ' +
-          '<button class="btn sm" data-act="abandon" data-id="' + id + '">Abandon the answer</button> puts it back to open.</div></div>';
+          '<button class="btn sm" data-act="openthread" data-tid="' + esc(d.mandate.threadId) + '">Open the mandated thread</button> — concluding it settles this decision. ' +
+          '<button class="btn sm" data-act="abandon" data-id="' + esc(id) + '">Abandon the answer</button> puts it back to open.</div></div>';
       }
       h += '<div class="q-body">' + esc(d.body) + "</div>";
       if (st === "fogged" || st === "invalidated" || st === "blocked" || st === "stale-blocked") {
@@ -1702,13 +1809,13 @@ function renderColumn() {
         if (blockingThreads(id).indexOf(tid) >= 0) return;
         var t = thread(tid);
         h += '<div class="parked-note">⑂ ' + esc(t.title || tid) + " — <em>" + t.state + "</em> " +
-          '<button class="btn sm" data-act="openthread" data-tid="' + tid + '">' +
+          '<button class="btn sm" data-act="openthread" data-tid="' + esc(tid) + '">' +
           (t.state === "open" ? "Open" : t.state === "parked" ? "Pick it back up" : "View") + "</button></div>";
       });
-      h += '<div style="margin-top:9px"><button class="btn sm" data-act="newthread" data-id="' + id + '">⑂ Start a thread on ' + id + "</button></div>";
+      h += '<div style="margin-top:9px"><button class="btn sm" data-act="newthread" data-id="' + esc(id) + '">⑂ Start a thread on ' + esc(id) + "</button></div>";
     }
     if (UI.open["hist-" + id]) {
-      h += '<div class="hist"><strong style="font-size:12px">Change history — ' + id + "</strong>";
+      h += '<div class="hist"><strong style="font-size:12px">Change history — ' + esc(id) + "</strong>";
       var hist = historyOf(id);
       if (!hist.length) h += '<div class="muted">Nothing has happened to this decision yet.</div>';
       hist.forEach(function (e) {
@@ -1760,13 +1867,13 @@ function threadBody(tid, forPop, chrome) {
         (d ? " — " + esc(d.short) : "") + "</h3>",
       '<div class="muted">Nothing exists yet. Close this and no thread is created — ' +
         "the first thing you say is what opens it. It titles itself from what you say.</div>",
-      '<div class="free"><textarea id="' + sayId + '" data-draft="__say" data-send="draftsay" data-id="' + esc(anchor || "") +
+      '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="draftsay" data-id="' + esc(anchor || "") +
         '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
         '<button class="btn sm" data-act="draftsay" data-id="' + esc(anchor || "") + '">Send</button></div>'
     );
   }
   var ready = foldReady(tid);
-  var pendingId = UI.pendingThread && UI.pendingThread.thread === tid ? UI.pendingThread.pending : null;
+  var pendingId = UI.discussing[tid] || null;
   var stillWaiting = pendingId && BOARD.pending.some(function (p) { return p.id === pendingId; });
   var head = chrome + '<span class="pill open">' + esc(t.kind || "thread") + " thread</span>" +
     '<h3 style="margin:10px 0 4px;font-size:16px">' + esc(t.title || tid) + "</h3>" +
@@ -1779,7 +1886,7 @@ function threadBody(tid, forPop, chrome) {
     return threadPane(head,
       body + '<div class="parked-note">This thread is ' + esc(t.state) + ". It stays readable.</div>", "");
   }
-  var h = '<div class="free"><textarea id="' + sayId + '" data-draft="__say" data-send="say" data-tid="' + esc(tid) +
+  var h = '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="say" data-tid="' + esc(tid) +
     '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
     '<button class="btn sm" data-act="say" data-tid="' + esc(tid) + '">Send</button></div>';
 
@@ -1967,7 +2074,7 @@ function renderIndicator() {
     '" data-act="diag" id="indicator"' +
     ' data-connection="' + esc(shown.connection) + '" data-protocol="' + esc(shown.protocol) + '"' +
     ' data-worst="' + esc(shown.channel) + '" data-agent="' + esc(agent.state) + '"' +
-    ' data-outbox="' + depth + '" title="Every channel, and what each one is doing">' +
+    ' data-outbox="' + esc(depth) + '" title="Every channel, and what each one is doing">' +
     '<span class="sig' + (reachable ? "" : " bad") + '" data-signal="reachable">' +
     '<span class="dot' + (reachable ? " up" : " bad") + '"></span>' + esc(CONNECTION_WORDS[shown.connection]) + "</span>" +
     '<span class="sig ' + agent.loud + '" data-signal="agent">' +
@@ -1987,7 +2094,7 @@ function renderDiagnostic() {
     // one. The clock is the lane's, not this row's.
     var waiting = WIRE.status[view.channel];
     return '<div class="diagrow" data-channel="' + esc(view.channel) + '"' +
-      (waiting ? ' data-waited="' + elapsed(waiting.since) + '"' : "") + ">" +
+      (waiting ? ' data-waited="' + esc(elapsed(waiting.since)) + '"' : "") + ">" +
       '<span class="mono chan">' + esc(view.channel === MAP ? "map" : view.channel) + "</span>" +
       '<span class="lyr">connection <b class="mono">' + esc(view.connection) + "</b></span>" +
       '<span class="lyr">protocol <b class="mono' + (waiting ? " owes" : "") + '">' + esc(view.protocol) + "</b></span>" +
@@ -2041,14 +2148,20 @@ function renderShell() {
   var top = '<div class="topbar">' + renderIndicator() +
     '<button class="pendbtn' + (ps.length ? "" : " none") + '" data-act="inbox">📥 ' +
     (ps.length ? ps.length + " change" + (ps.length > 1 ? "s" : "") + " waiting on you" : "inbox empty") + "</button>" +
-    '<button class="inboxbtn" data-act="notifications" data-unread="' + unread + '">🔔 Notifications <span class="count">' + unread + "</span> unread</button>" +
+    '<button class="inboxbtn" data-act="notifications" data-unread="' + esc(unread) + '">🔔 Notifications <span class="count">' + esc(unread) + "</span> unread</button>" +
     (unread ? '<button class="btn sm" data-act="markall" title="Clear every unread marker. Nothing is sent.">✓ Mark all read</button>' : "") +
     transferControl(MAP) +
     '<button class="btn sm" data-act="doctor" title="Send the agent over the whole board and the queue">🩺 Map doctor</button>' +
     '<button class="btn sm" data-act="endsession">End the session</button></div>';
 
   var banners = "";
-  if (CHANNELS.transport === "disconnected" || CHANNELS.transport === "error") {
+  if (sessionOver()) {
+    // Not the no-backend banner: the backend that served this session was asked
+    // to stop by the ending itself, so telling the human to restart it would be
+    // an invitation to reopen something they finished.
+    banners += '<div class="banner">🏁 <strong>This session has ended.</strong> The terminal entry is in the log and ' +
+      "the result was written beside it. What is below is the board as it stands, to read — nothing further is recorded here.</div>";
+  } else if (CHANNELS.transport === "disconnected" || CHANNELS.transport === "error") {
     banners += '<div class="banner">⚠ <strong>No backend.</strong> Nothing is answering — the session log and every answer already accepted are safe on disk, ' +
       "but nothing you do now is recorded and no reply will arrive. Restart it and this page will re-read the board by itself.</div>";
   }
@@ -2060,6 +2173,12 @@ function renderShell() {
       esc(rj.reason) + (rj.detail ? " — " + esc(rj.detail) : "") +
       " Your message was <strong>not recorded</strong>, and <strong>no agent will answer it</strong>. " +
       '<button class="btn sm" data-act="dismiss-rejection">Dismiss</button></div>';
+  }
+  if (HELDBACK) {
+    // This page's own refusal, said as plainly as the backend's and never
+    // attributed to it: nothing was sent, so nothing refused it but this.
+    banners += '<div class="banner refusal">⚠ <strong>Not sent.</strong> ' + esc(HELDBACK) +
+      ' <button class="btn sm" data-act="dismiss-rejection">Dismiss</button></div>';
   }
 
   document.getElementById("shell").innerHTML =
@@ -2095,6 +2214,7 @@ function render() {
   harvestBubbles();
   renderShell();
   renderBubbles();
+  sealSurface();
 
   document.querySelectorAll("textarea[data-draft]").forEach(function (ta) {
     var d = UI.drafts[ta.dataset.draft];
@@ -2162,8 +2282,11 @@ window.popAct = function (tid, act, text) {
   else if (act === "fold") foldThread(tid);
   else if (act === "park") parkThread(tid);
   else if (act === "abandon") abandonAnswer((thread(tid) || {}).decision);
-  else if (act === "applyone" && UI.pendingThread) applyPending([UI.pendingThread.pending]);
-  else if (act === "dismissone" && UI.pendingThread) dismissPending([UI.pendingThread.pending]);
+  // Asked of the thread this window is showing rather than of the last
+  // discussion the main window opened: two discussions are two threads, and a
+  // pop-out acting on whichever was opened last resolves the wrong change.
+  else if (act === "applyone" && UI.discussing[tid]) applyPending([UI.discussing[tid]]);
+  else if (act === "dismissone" && UI.discussing[tid]) dismissPending([UI.discussing[tid]]);
 };
 function popOut(tid) {
   var w = null;
@@ -2174,7 +2297,9 @@ function popOut(tid) {
   // draw() only touches the DOM when the HTML actually changed. Repainting on
   // every tick replaced the button between mousedown and mouseup, so a real
   // click never became a click event.
-  var boot = "(function(){var tid=" + JSON.stringify(tid) + ";var last=null;" +
+  // The id is escaped for the script context it is written into as well: a
+  // closing script tag inside it would end the boot script where it sits.
+  var boot = "(function(){var tid=" + JSON.stringify(tid).replace(/</g, "\\u003c") + ";var last=null;" +
     "function draw(){var html;" +
     "try{html=window.opener.threadHTML(tid);}catch(e){document.getElementById('t').innerHTML='<p>The main window is gone. Close this one.</p>';return;}" +
     "if(html===last)return;last=html;" +
@@ -2197,6 +2322,23 @@ function popOut(tid) {
   UI.popped[tid] = true;
   UI.panel = null;
   render();
+}
+
+/* ---------- the ended surface ---------- */
+// Every act that writes to the session. All of this page's writes funnel through
+// `send`, which refuses once the session is over; this is the surface saying the
+// same thing, so an ended board offers no control whose click would be swallowed.
+var WRITE_ACTS = ["pick", "free", "say", "draftsay", "newthread", "discuss", "discussnotice",
+  "fold", "park", "abandon", "applyone", "applyall", "dismissone", "transfer", "doctor", "endsession"];
+// Reading stays: the board, the map, the history, the inbox, the notifications
+// and the read markers are all this window's own and go nowhere. What goes is
+// the ability to say anything more into a log that has been closed.
+function sealSurface() {
+  if (!sessionOver()) return;
+  document.querySelectorAll("[data-act]").forEach(function (el) {
+    if (WRITE_ACTS.indexOf(el.dataset.act) >= 0) el.disabled = true;
+  });
+  document.querySelectorAll("textarea").forEach(function (ta) { ta.disabled = true; });
 }
 
 /* ---------- events ---------- */
@@ -2243,6 +2385,11 @@ document.addEventListener("click", function (e) {
   hideHover(zoneOf(e.target));
   if (!el) return;
   var a = el.dataset.act, id = el.dataset.id, tid = el.dataset.tid, uid = el.dataset.uid;
+  // A gesture arriving after the ending -- from a keyboard, a pop-out, or a
+  // control drawn before the last render -- is turned away here as well as at
+  // the surface. Acting on it would be the page swallowing something the human
+  // watched themselves do.
+  if (sessionOver() && WRITE_ACTS.indexOf(a) >= 0) return;
   switch (a) {
     // The human's explicit gesture, and the only thing that displaces a live
     // claim. Never inferred from silence: a window that is merely slow is
@@ -2317,7 +2464,7 @@ document.addEventListener("click", function (e) {
       UI.panel = null; render();
       break;
     }
-    case "dismiss-rejection": WIRE.lastRejection = null; render(); break;
+    case "dismiss-rejection": WIRE.lastRejection = null; HELDBACK = null; render(); break;
   }
 });
 // An agent's message is discussed as an ordinary thread, seeded from it —
