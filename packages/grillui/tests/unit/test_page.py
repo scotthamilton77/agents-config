@@ -41,14 +41,24 @@ from conftest import event, post, seed_node
 from fastapi.testclient import TestClient
 
 import grillui
+from grillui.channels import (
+    PROTOCOL_SEVERITY,
+    PROTOCOL_STATES,
+    PROTOCOL_TABLE,
+    TRANSPORT_SEVERITY,
+    TRANSPORT_STATES,
+    TRANSPORT_TABLE,
+)
 from grillui.log import LOG_FILE
 from grillui.schemas import (
+    AGENT_ACTORS,
     KNOWN_KINDS,
     MAP_CHANNEL,
     MAP_MUTATION_KINDS,
     NOTICE_KINDS,
     PROPOSABLE_KINDS,
     REJECTION_REASONS,
+    STATUS_PHASES,
 )
 
 PAGE_PATH = Path(grillui.__file__).parent / "page" / "index.html"
@@ -107,6 +117,28 @@ def page_vocabulary() -> dict[str, list[str]]:
         name: json.loads(value)
         for name, value in re.findall(r"var (\w+) = (\[[^\]]*\]);", _fenced("BACKEND-VOCABULARY"))
     }
+
+
+def page_channel_state() -> dict[str, Any]:
+    """The page's copy of the channel-state model, read from its source.
+
+    Arrays and tables both: the vocabularies, the severity orders and the two
+    transition tables are one contract, and a page holding half of it is a page
+    that steps somewhere the backend's copy does not go.
+    """
+    return {
+        name: json.loads(value)
+        for name, value in re.findall(
+            r"var (\w+) = (\[[^\]]*\]|\{.*?\n\});", _fenced("CHANNEL-STATE"), re.DOTALL
+        )
+    }
+
+
+def function_body(name: str) -> str:
+    """One function out of the page's source, up to the next one."""
+    source = page_source()
+    assert f"function {name}(" in source, f"the page has no {name}"
+    return source.split(f"function {name}(", 1)[1].split("\nfunction ", 1)[0]
 
 
 def paths(verb: str) -> set[str]:
@@ -555,6 +587,98 @@ def test_the_page_reads_the_cursor_the_update_read_hands_back(client: TestClient
     again = client.get("/updates", params={"epoch": log.epoch, "cursor": first["seq"]}).json()
     assert again["entries"] == []
     assert again["seq"] == first["seq"]
+
+
+# ---------------------------------------------------------------- GUI-D27 / GUI-A41
+
+
+def test_the_pages_channel_state_model_is_the_backends_own() -> None:
+    """Both layers, both orders, both tables -- the same contract on both sides.
+
+    The page cannot ask the backend what its own wire is doing, so it steps its
+    own copy. That is exactly why the copy has to be pinned: a page stepping a
+    table the backend no longer has would show a state nothing else in the system
+    has a word for, and it would show it confidently.
+    """
+    page = page_channel_state()
+    assert page["TRANSPORT_STATES"] == list(TRANSPORT_STATES)
+    assert page["PROTOCOL_STATES"] == list(PROTOCOL_STATES)
+    assert page["TRANSPORT_SEVERITY"] == list(TRANSPORT_SEVERITY)
+    assert page["PROTOCOL_SEVERITY"] == list(PROTOCOL_SEVERITY)
+    assert page["TRANSPORT_TABLE"] == TRANSPORT_TABLE
+    assert page["PROTOCOL_TABLE"] == PROTOCOL_TABLE
+
+
+def test_the_pages_status_phases_and_agent_actors_are_the_backends_own() -> None:
+    """What the page reads the lane with.
+
+    Which channel is waiting on an agent is read off the lane's own phases and
+    off who authored an arriving entry. Both are backend vocabularies, and a
+    stale copy of either leaves a channel that is waiting looking idle -- which
+    is the one thing the indicator exists to prevent.
+    """
+    vocabulary = page_vocabulary()
+    assert set(vocabulary["STATUS_PHASES"]) == STATUS_PHASES
+    assert set(vocabulary["AGENT_ACTORS"]) == AGENT_ACTORS
+
+
+def test_every_channel_move_the_page_makes_goes_through_the_one_checked_step() -> None:
+    """One reader of each table, so a pair neither names is refused rather than
+    guessed.
+
+    A second place that indexed a table directly would be a move nothing checked,
+    and it would fail the way an unchecked move always does: by leaving a channel
+    in a state that renders fine and means nothing.
+    """
+    source = page_source()
+    stepper = function_body("step")
+    assert "throw new Error" in stepper
+    for table in ("TRANSPORT_TABLE", "PROTOCOL_TABLE"):
+        # Once in the declaration, once as an argument to the one step.
+        assert source.count(table) == 2, f"{table} is read somewhere other than step()"
+
+
+def test_a_transport_move_touches_no_channels_protocol_state() -> None:
+    """The layer split, enforced where the wire is moved.
+
+    The turns an agent owed before a drop are still owed after it. A transport
+    handler that also cleared the channels would tell the human their message had
+    been dealt with because their network blinked.
+    """
+    assert "CHANNELS.protocol" not in function_body("wire")
+
+
+def test_the_indicator_shows_the_worst_channel_and_expands_into_the_diagnostic() -> None:
+    """One light over every channel, and the expansion behind it.
+
+    The rendering is a browser's answer, not this file's. What is measured here
+    is that the light is derived from the worst channel rather than from any one
+    of them, and that the expansion is derived from all of them -- an indicator
+    reading only the map would show an idle board while a thread's write sat
+    unacknowledged.
+    """
+    assert "worstChannel()" in function_body("renderIndicator")
+    diagnostic = function_body("renderDiagnostic")
+    assert "channelViews()" in diagnostic
+    assert "view.connection" in diagnostic
+    assert "view.protocol" in diagnostic
+    assert 'case "diag": UI.diag = !UI.diag;' in page_source()
+
+
+def test_the_page_reads_which_channel_is_owed_a_turn_off_the_lanes_own_entries() -> None:
+    """The routing rule is asked, never re-derived.
+
+    Which agent answers a gesture is the backend's decision -- a fold is made in
+    a thread and answered by the grill-master on the map -- and the lane says so
+    by addressing its `composing` to the channel the turn runs on. A page that
+    worked it out from the kind it had just sent would be a second classifier,
+    and the two would agree until a fold.
+    """
+    reader = function_body("track")
+    assert 'onChannel(entry.channel, "owed")' in reader
+    assert "PHASE_COMPOSING" in reader
+    sender = function_body("send")
+    assert "owed" not in sender, "the page decided for itself who owes a turn"
 
 
 # ---------------------------------------------------------------- serving

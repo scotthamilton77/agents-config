@@ -42,6 +42,10 @@ MAP_CHANNEL = "map"
 
 Actor = Literal["human", "grill-master", "thread-agent", "backend"]
 ACTORS: frozenset[str] = frozenset(get_args(Actor))
+# The actors whose entries are a reply arriving on a channel. The other two are
+# not: the human's own entries are what a reply answers, and the backend's are
+# the record talking about itself rather than an agent talking on a channel.
+AGENT_ACTORS: frozenset[str] = frozenset({"grill-master", "thread-agent"})
 DecisionStatus = Literal["open", "settled", "invalidated", "stale", "fogged"]
 ThreadState = Literal["open", "parked", "folded"]
 
@@ -186,10 +190,20 @@ def minted_id(seq: int, index: int | None = None) -> str:
 # agent-transport failure surfaces as. The kind is deliberately absent from the
 # submission registry above: no status entry is ever produced by a model, so a
 # client offering one is refused as an unknown kind rather than believed.
+#
+# `composing` and `replied` are a pair, on one channel: a turn that opened the
+# lane closes it whichever way it went, `replied` when it said its piece and
+# `error` when it could not. Without the closing phase a reader watching the lane
+# has no way to learn that a turn ended, and every channel a turn ever ran on
+# reads as still waiting for the rest of the session.
 STATUS_KIND = "status"
 STATUS_PHASE_ACCEPTED = "accepted"
 STATUS_PHASE_COMPOSING = "composing"
+STATUS_PHASE_REPLIED = "replied"
 STATUS_PHASE_ERROR = "error"
+STATUS_PHASES = frozenset(
+    {STATUS_PHASE_ACCEPTED, STATUS_PHASE_COMPOSING, STATUS_PHASE_REPLIED, STATUS_PHASE_ERROR}
+)
 
 # How an agent's reply says who composed it. These are payload keys rather than
 # envelope fields: the envelope is this protocol's own closed vocabulary, and
