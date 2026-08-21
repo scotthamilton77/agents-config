@@ -34,7 +34,8 @@ agent that authors changes to it. A *thread agent* serves one side thread. The *
 (equivalently, the *orchestrator*) is the coded process — never an agent. On the board: a
 decision is *settled* once answered; the *frontier* is the set of decisions answerable now;
 *fog* masks decisions whose prerequisites are unmet; a *thread* is a side conversation
-anchored to a decision, *parked* when set aside without effect, and *folded* when its
+anchored to a decision or to the session itself, *parked* when set aside as a loose end
+that the human may return to, *closed* when the human is done with it, and *folded* when its
 conclusion is applied to the board — *fold-readiness* is the agent declaring that a thread
 has reached an applicable conclusion. A *channel* is one conversational lane between the
 page and an agent: one for the map, one per thread. In the handoff file, *impetus* is why
@@ -127,6 +128,19 @@ The page carries an explicit end-session action. On it the backend appends a ter
 entry, invokes the capture step, and writes the terminal result into the session directory
 alongside the log and the images. An agent that judges `stop_when` satisfied says so to
 the human; it does not end the session itself.
+
+**GUI-D29 — Park and close are the two thread-lifecycle gestures, and both are
+non-destructive.** Parking a thread sets it aside as a loose end: it is carried to the end
+of the session as still open, and the grill-master may raise it again. Closing one declares
+the human done with it: a closed thread is never woven into the terminal result's open
+items, never listed as a loose end and never raised by an agent, while staying readable on
+the board and reopening into an ordinary open thread that takes turns again. Neither
+gesture removes anything — the log is append-only, and both cross as page-emitted gesture
+kinds in the closed set of §8.3. The terminal result distinguishes the two (§8.7), on a
+live end-session and a capture run alike, because a thread the human finished with and a
+thread they meant to return to are different facts about the session. Both act on the
+thread itself; the panel's close control (GUI-U4) merely dismisses the view and is
+neither gesture.
 
 **GUI-D23 — Capture is a code-heavy skill operating on a session directory.** Its core is
 the clean decision-log projection: pure code folding the log into the structured part of
@@ -308,6 +322,10 @@ follows, and changes nothing else.
 - **GUI-U4 — Thread panels have a floating header and footer** — title with close and
   pop-out controls pinned at the top, prompt box and action buttons pinned at the bottom —
   so neither scrolls out of view in a long thread.
+- **GUI-U18 — A decision's seed prompts are controls on its thread pane.** Where a decision
+  carries `talk` (§8.2), its thread pane renders one control per seed field, and activating
+  one sends that seed text as the human's turn on the thread. Seed text with no control on
+  the surface is data nothing consumes.
 - **GUI-U5 — Decisions offer two to three best options, labelled a/b/c** so free text and
   thread turns can reference them by label. Three is a ceiling, not a target. Alongside
   choosing an option and writing free text, the human can select an option *and* attach a
@@ -335,6 +353,14 @@ follows, and changes nothing else.
   read-state is presentation state: the page owns it and persists it locally. It is not
   board state, it does not cross the wire, and the server-authority rule of GUI-D1 does not
   reach it.
+- **GUI-U15 — The board is the primary display of state; the notification lane carries
+  only what the board does not.** A notification is raised only for content authored for
+  the human that is not already rendered as board state. Fold receipts, status-lane
+  mechanics and internal events are hidden outright rather than summarised into a
+  notification — an internal payload on that lane has no reader, and a lane that echoes
+  the board teaches the human to stop looking at it. Agent framing about a particular
+  decision renders on that decision rather than as a notification. The inbox remains the
+  lane for items the human must act on.
 - **GUI-U11 — Transfer to expert is a control on every channel**, the map's and each
   thread's, and it is always active. It is visually highlighted when the agent's reply
   metadata recommends escalation (GUI-D11), and the human decides. Activating it forces the
@@ -345,6 +371,22 @@ follows, and changes nothing else.
   a reassess-everything instruction over the full map and the pending queue. While it runs
   the page is in immutable mode behind a modal telling the human to wait; the board is
   writable again when the response lands.
+
+- **GUI-U16 — The header names the session and offers help.** The page renders the
+  handoff's session title as its header title, and no backend-ownership prose ships in the
+  header. An upper-right Help control opens a side thread anchored to the session rather
+  than to a decision — a thread whose anchor decision id is null (§8.5), which is the whole
+  of the extension the thread model needs for it. The orchestrator primes that thread's
+  agent with the UI-behaviour reference material the skill ships (GUI-P1), so it answers
+  how to drive the board rather than grilling the design.
+- **GUI-U17 — Completion is announced, not assumed.** When every decision is settled the
+  page presents an overlay stating that the human has answered every open question, and
+  offering an end-session action and a dismiss action. Dismissing returns the human to the
+  board and pulses the main end-session control's border, so the offer stays findable
+  without a second overlay. End-session attempts to close the tab; where the browser
+  refuses to close a tab the page did not open, the page falls back to its inert
+  session-over state, carrying a line telling the human the tab can now be closed. Ending
+  the session remains the human's gesture (GUI-D10).
 
 - **GUI-U13 — Light theme only.** The page ships a single light palette; no dark-theme
   styles ship in v1.
@@ -390,8 +432,8 @@ backend — it is not a deployed skill asset, because it is a program the backen
 rather than instructions an agent reads. `grill-with-ui` and the capture skill are deployed
 skills and must clear the `admit-request` gate on their own merits. The skill ships
 reference material about the UI's behaviour and the backend's capabilities, so the
-grill-master can answer "why is the UI blocking me / why can't I do X" directly in chat
-instead of guessing.
+grill-master and the help thread's agent (GUI-U16) can answer "why is the UI blocking me /
+why can't I do X" directly in chat instead of guessing.
 
 ## 8. Normative schemas
 
@@ -502,8 +544,9 @@ The current map snapshot: a pure fold, byte-identical for a given log.
 - `frontier` — array of decision ids answerable now.
 - `settled` — array of objects: `id` (string) and `answer` (string, the answer text).
 - `threads` — array of objects: `id`, `decision` (decision id or null), `kind`, `title`,
-  `requires_action` (boolean), `state` (`open`, `parked` or `folded`), and `turns` — array
-  of objects: `who` (the §8.3 actor enum), `text` (string), `timestamp` (string).
+  `requires_action` (boolean), `state` (`open`, `parked`, `closed` or `folded`), and
+  `turns` — array of objects: `who` (the §8.3 actor enum), `text` (string), `timestamp`
+  (string).
 - `pending` — array of objects: `id`, `target` (decision id), `kind`, `superseded`
   (boolean), and `authored_at` (sequence integer). This is the queue GUI-D26 dispatches.
   `id` is derived from the authoring entry rather than minted beside it: for an entry
@@ -540,9 +583,11 @@ receives beside file references (GUI-D8).
 - `open_items` — array of objects: `id` and `blocker` (string) for every decision unsettled
   at end.
 - `threads` — array of objects: `id`, `title`, `state` (the §8.5 state enum), and
-  `conclusion` (string or null).
+  `conclusion` (string or null). A parked thread is one of the session's open loose ends
+  and a closed thread is a line item only (GUI-D29).
 - `summary` — string. The single agent pass's prose, bounded to a briefing and never a
-  transcript.
+  transcript. It may raise a parked thread as unfinished business; it never raises a closed
+  one.
 - `stop_reason` — string: how the session ended.
 
 ### 8.8 The thread projection
@@ -593,6 +638,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D26 | GUI-A38, GUI-A39 |
 | GUI-D27 | GUI-A41 |
 | GUI-D28 | GUI-A51 |
+| GUI-D29 | GUI-A55 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -607,6 +653,10 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U12 | GUI-A40 |
 | GUI-U13 | GUI-A50 |
 | GUI-U14 | GUI-A49 |
+| GUI-U15 | GUI-A56 |
+| GUI-U16 | GUI-A57 |
+| GUI-U17 | GUI-A58 |
+| GUI-U18 | GUI-A59 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -793,6 +843,30 @@ Each criterion is mechanically checkable and convertible to a red test.
   replies without asserting one — it says what it lacks or recommends escalation —
   verified by a scripted turn whose context omits the fact and an assertion check on the
   reply.
+- **GUI-A55** Parking a thread and closing one both leave its turns readable on the board
+  and append rather than remove, and a closed thread reopens into an open thread that takes
+  a further turn. Over one session carrying one of each, the terminal result names the
+  parked thread as an open loose end and the closed thread as a line item that no open item
+  and no agent-raised item names — asserted identically on the live end-session result and
+  on a capture run over the same session directory.
+- **GUI-A56** A fold receipt, a status-lane entry and an agent's internal event each raise
+  no notification, while an agent message written for the human that the board does not
+  already render raises exactly one; an item requiring the human to act lands in the inbox
+  and not the notification lane, and agent framing about a decision renders on that
+  decision. Verified in a browser.
+- **GUI-A57** The page renders the handoff's session title as its header title and the
+  header carries no backend-ownership prose; the Help control opens a thread whose anchor
+  decision is null, and that thread's recorded dispatch context carries the UI-behaviour
+  reference material. Verified in a browser and against the backend's own recorded
+  dispatch context.
+- **GUI-A58** Settling the last open decision presents the completion overlay carrying an
+  end-session and a dismiss action; dismissing it returns a writable board with the main
+  end-session control's border pulsing; end-session where the browser refuses to close the
+  tab leaves the page in its inert session-over state stating the tab can be closed.
+  Verified in a browser.
+- **GUI-A59** A decision carrying `talk` renders one control per seed field on its thread
+  pane, and activating one posts that seed text as a human turn on that thread; a decision
+  carrying no `talk` renders no such control. Verified in a browser.
 
 ## 10. Open questions for the implementing work
 
@@ -841,4 +915,10 @@ Each criterion is mechanically checkable and convertible to a red test.
 - feat: The channel state model and its diagnostic surface — AC: GUI-D27, GUI-A41.
 - feat: The transfer-to-expert control across the map and thread channels — AC: GUI-U11, GUI-A33,
   GUI-A34, GUI-A35.
+- feat: Thread lifecycle: the park and close gestures, their board behaviour, and the
+  terminal result's loose-end distinction — AC: GUI-D29, GUI-A55.
+- feat: Board-first notification policy — AC: GUI-U15, GUI-A56.
+- feat: The session header and its help thread — AC: GUI-U16, GUI-A57.
+- feat: The completion overlay and end-session emphasis — AC: GUI-U17, GUI-A58.
+- bugfix: The decision seed-prompt controls — AC: GUI-U18, GUI-A59.
 - chore: Packaging: the uv package, its gates, and the CLI on PATH — AC: GUI-P1.
