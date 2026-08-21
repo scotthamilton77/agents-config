@@ -41,6 +41,7 @@ from grillui.lane import Lane, UnreachableDriver
 from grillui.log import SessionLog
 from grillui.projector import fold, supersede_conflicts
 from grillui.schemas import (
+    FOLD_KIND,
     MAP_CHANNEL,
     MAP_MUTATION_KINDS,
     STATUS_KIND,
@@ -58,6 +59,10 @@ OTHER = "d-compaction"
 NOTICE = "notice-store"
 OTHER_NOTICE = "notice-compaction"
 HUMAN_ANSWER = "an append-only log, because the audit trail is the point"
+# One fast-tier reply, copied out of a live session's log byte for byte: the
+# fence a hosted model put around its update object, and the reason a session's
+# whole map went unmoved while the human was told it had been settled.
+LIVE_FENCED_REPLY = (Path(__file__).parent / "fenced-map-reply.txt").read_text(encoding="utf-8")
 
 
 @dataclass
@@ -475,6 +480,59 @@ def test_a_reply_that_is_neither_an_update_nor_a_withdrawal_is_prose() -> None:
     """
     assert declared_updates('{"text": "just prose"}') == ('{"text": "just prose"}', [], [])
     assert declared_updates("plain words") == ("plain words", [], [])
+    half_shaped = '```json\n{"text": "just prose"}\n```'
+    assert declared_updates(half_shaped) == (half_shaped, [], [])
+
+
+def test_a_fenced_object_reply_lands_as_the_updates_it_declared(log: SessionLog) -> None:
+    """
+    Given the reply a hosted model actually sent in a live session -- the update
+         object wrapped in a markdown fence
+    When the driver records it
+    Then the turn lands as a fold carrying the update it declared, and the fence
+         is nowhere in what the human is told.
+
+    A fence is how a model presents JSON to a reader, not something the turn
+    said. Read as prose, every update it declared is discarded without a word:
+    the human gets an answer whose text is raw JSON, the board does not move,
+    and nothing in the log says a change was ever proposed.
+    """
+    seed(log, "d1")
+
+    record_reply(log, "fast", MAP_CHANNEL, LIVE_FENCED_REPLY, {})
+
+    spoken = log.entries()[-1]
+    assert spoken.kind == FOLD_KIND
+    said, declared = spoken.payload["updates"][0], spoken.payload["updates"][1]
+    assert said["kind"] == "informational"
+    assert said["text"].startswith("Decision d1 is settled on option a")
+    assert "```" not in said["text"]
+    assert (declared["kind"], declared["target"]) == ("revise", "d1")
+
+
+def test_a_bare_object_folds_and_prose_is_still_what_the_agent_said(log: SessionLog) -> None:
+    """
+    Given the same reply unfenced, and a reply that is plain prose
+    When the driver records each
+    Then the first folds its update and the second is informational, said
+         verbatim.
+
+    Reading through a fence must cost neither of the two shapes that already
+    worked: the unfenced object is what the format rule asks for, and prose is
+    what a turn proposing nothing is told to send.
+    """
+    seed(log, "d1")
+    bare = LIVE_FENCED_REPLY.strip().removeprefix("```json\n").removesuffix("\n```")
+
+    record_reply(log, "fast", MAP_CHANNEL, bare, {})
+    folded = log.entries()[-1]
+    record_reply(log, "fast", MAP_CHANNEL, "No proposal; what is the retention window?", {})
+    plain = log.entries()[-1]
+
+    assert folded.kind == FOLD_KIND
+    assert [one["kind"] for one in folded.payload["updates"]] == ["informational", "revise"]
+    assert plain.kind == "informational"
+    assert plain.payload["text"] == "No proposal; what is the retention window?"
 
 
 def test_the_conflict_dispatch_tells_the_turn_why_it_was_called(log: SessionLog) -> None:
