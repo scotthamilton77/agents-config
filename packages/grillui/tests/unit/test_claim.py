@@ -16,7 +16,9 @@ browser mechanics are what the page's own checks and the browser run cover.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -333,3 +335,52 @@ def test_every_claim_state_is_reachable_at_the_wire(word: str, tmp_path: Path) -
     reached.add(state(client, SECOND, takeover=True))
     reached.add(state(client, FIRST))
     assert word in reached
+
+
+class InterleavedClaim(Claim):
+    """A Claim whose holder reads park until both windows have read.
+
+    The property stands in for the threadpool's worst schedule: both /claim
+    threads read "no holder" before either writes. A gate that times out is a
+    thread reading alone -- the locked claim, where the second reader is still
+    queued outside -- and it proceeds, so the correct code is green with no
+    interleaving to find.
+    """
+
+    gate: threading.Barrier | None = None
+
+    @property
+    def _holder(self) -> str | None:
+        if self.gate is not None:
+            with contextlib.suppress(threading.BrokenBarrierError):
+                self.gate.wait(0.2)
+        return self.__dict__.get("held")
+
+    @_holder.setter
+    def _holder(self, value: str | None) -> None:
+        self.__dict__["held"] = value
+
+
+def test_two_simultaneous_first_claims_grant_exactly_one(tmp_path: Path) -> None:
+    """Two windows presenting at the same instant get one grant and one refusal.
+
+    The check and the set are one atomic step. /claim runs on the threadpool, so
+    nothing outside the claim itself keeps two first presentations from
+    interleaving -- a browser restoring two tabs at once is exactly this. The
+    interleaved subclass forces the schedule where both threads have checked
+    before either sets; only the claim's own lock keeps the second reader out.
+    """
+    claim = InterleavedClaim(tmp_path / "session")
+    claim.gate = threading.Barrier(2)
+    answers: dict[str, str] = {}
+
+    def present(name: str) -> None:
+        answers[name] = claim.present(name)
+
+    threads = [threading.Thread(target=present, args=(name,)) for name in ("window-a", "window-b")]
+    for one in threads:
+        one.start()
+    for one in threads:
+        one.join(5.0)
+        assert not one.is_alive()
+    assert sorted(answers.values()) == [GRANTED, REFUSED], answers

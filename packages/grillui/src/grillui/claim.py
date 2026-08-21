@@ -29,6 +29,7 @@ which window is driving it is not part of that record.
 
 from __future__ import annotations
 
+import threading
 from hashlib import sha256
 from typing import TYPE_CHECKING
 
@@ -77,6 +78,10 @@ class Claim:
         # the session is told it *lost* it rather than that somebody else has
         # it -- the second reads as a mistake, and the first is what happened.
         self._revoked: set[str] = set()
+        # /claim is a sync route, so the threadpool can run two presentations
+        # at once; without this, two fresh windows can both see no holder and
+        # both be granted.
+        self._lock = threading.Lock()
 
     def present(self, holder: str, *, takeover: bool = False) -> str:
         """One window says who it is; this is what it is told.
@@ -92,10 +97,11 @@ class Claim:
         claim on silence -- is not offered. Silence is what a window that is
         merely slow looks like.
         """
-        if self._holder is None or self._holder == holder or takeover:
-            if self._holder is not None and self._holder != holder:
-                self._revoked.add(self._holder)
-            self._revoked.discard(holder)
-            self._holder = holder
-            return GRANTED
-        return SUPERSEDED if holder in self._revoked else REFUSED
+        with self._lock:
+            if self._holder is None or self._holder == holder or takeover:
+                if self._holder is not None and self._holder != holder:
+                    self._revoked.add(self._holder)
+                self._revoked.discard(holder)
+                self._holder = holder
+                return GRANTED
+            return SUPERSEDED if holder in self._revoked else REFUSED
