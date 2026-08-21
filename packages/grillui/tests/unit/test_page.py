@@ -852,7 +852,7 @@ def test_a_notification_is_stamped_with_the_clock_of_the_entry_it_reports() -> N
     """
     assert "at: at" in function_body("noteFor")
     observer = function_body("observe")
-    assert observer.count("entry.timestamp") == 2, "an observed update is stamped from elsewhere"
+    assert observer.count("entry.timestamp") == 1, "an observed update is stamped from elsewhere"
     assert "new Date()" not in page_source(), "something is stamped from this page's clock"
 
 
@@ -1078,11 +1078,11 @@ def test_an_informational_carries_a_discuss_control_wherever_it_is_read() -> Non
     Discuss control on one surface and not the other read as a bug.
     """
     assert 'data-act="discussnotice"' in function_body("infoNote")
+    # Unconditionally in the list, because the list carries nothing but
+    # messages: a change that happened is on the board and is argued with in the
+    # inbox before it lands, never here.
     assert 'data-act="discussnotice"' in function_body("renderNotifications")
-    # An applied change is not a message to reply to -- it is a thing that
-    # happened -- so it carries no Discuss and the inbox is where it is argued
-    # with, before it lands.
-    assert 'n.type === "applied-change" ? "" :' in function_body("renderNotifications")
+    assert "n.type ===" not in function_body("renderNotifications")
 
 
 def test_discussing_an_informational_opens_a_thread_seeded_from_it(
@@ -1246,7 +1246,7 @@ def test_read_state_survives_a_reload_and_the_notification_list_deliberately_doe
     # reload path reads the whole log as a lookup table and touches the
     # notifications not at all.
     assert "NOTES" not in function_body("hydrate"), "a reload rebuilds the list from the log"
-    assert source.count("NOTES.push") == 2, "notifications are written outside the observer"
+    assert source.count("NOTES.push") == 1, "notifications are written outside the observer"
 
 
 def test_every_unread_marker_is_asked_of_the_one_read_set() -> None:
@@ -1265,6 +1265,75 @@ def test_every_unread_marker_is_asked_of_the_one_read_set() -> None:
     # And the marker surfaces read the unread set rather than the queue whole.
     assert "unreadNotices(id).length" in function_body("itemIcons")
     assert "unreadNotices(id).length" in function_body("renderMap")
+
+
+# ---------------------------------------------------------------- GUI-A56
+
+
+def test_a_change_that_landed_raises_no_notification() -> None:
+    """The board renders it, so the lane does not.
+
+    The observer is the one place a notification is written, and a map mutation
+    leaves it having marked the decision it moved and written nothing. What a
+    receipt would have said is on that decision's block and in its history
+    already, so the lane would be restating the board -- and a lane that
+    restates the board is one the human stops opening, taking the messages that
+    are only in it down with it.
+    """
+    observer = function_body("observe")
+    mutation = observer.split("MAP_MUTATION_KINDS.indexOf(u.kind) < 0", 1)[1]
+    assert "NOTES.push" not in mutation, "a landed change is announced as well as rendered"
+    assert "UI.touched.push(u.target)" in mutation, "nothing marks the decision that moved"
+    # The status lane and the human's own gestures never reach it either, which
+    # is the same rule read on the entry rather than on the update.
+    assert "if (entry.kind === STATUS_KIND) return;" in observer
+    assert 'if (entry.actor === "human" && entry.kind !== APPLY_KIND) return;' in observer
+
+
+def test_a_message_the_board_can_render_is_not_also_announced() -> None:
+    """One message, one surface, and the board gets first refusal.
+
+    A message naming a decision is read on that decision's block. Prose that
+    arrived carrying board changes is framing for those changes and is read on
+    them. Only a message with no decision to land on reaches the lane -- which
+    is what leaves the lane worth opening.
+    """
+    observer = function_body("observe")
+    assert "noticeHomes(" in observer
+    assert "if (!homes.length) {" in observer, "the lane is written without asking the board"
+    homes = function_body("noticeHomes")
+    # Derived from the log, so the reload that empties the lane renders the
+    # message in the same place it was before.
+    assert "entryAt(item.authored_at)" in homes
+    assert "MAP_MUTATION_KINDS.indexOf(u.kind)" in homes
+    # And a home is a decision the board is carrying, so "the board shows this
+    # already" is measured rather than assumed.
+    assert "node(id)" in homes
+
+
+def test_agent_framing_renders_on_the_decision_its_entry_changed() -> None:
+    """Every surface that shows a message asks the same question of it.
+
+    The collapsed block, the expanded block and the ✉ markers alike: a message
+    routed to a decision by one surface and not another is one the human is told
+    about and cannot find.
+    """
+    source = page_source()
+    assert source.count("noticesOn(id).forEach(function (n) { h += infoNote(n); });") == 2
+    assert "noticesOn(id)" in function_body("unreadNotices")
+    assert "noticeHomes(n)" in function_body("noticesOn")
+
+
+def test_a_message_reaches_every_surface_as_words_rather_than_as_markup() -> None:
+    """Wherever the policy routes it. The agent's prose is untrusted input on
+    the board, in the lane and in the bubble stack, and the routing decides
+    which of those it reaches rather than whether it is escaped."""
+    for surface, expression in (
+        ("infoNote", "esc(summarise(n))"),
+        ("renderNotifications", "esc(n.text)"),
+        ("renderBubbles", "esc(b.text"),
+    ):
+        assert expression in function_body(surface), f"{surface} renders prose unescaped"
 
 
 # ---------------------------------------------------------------- GUI-A19
