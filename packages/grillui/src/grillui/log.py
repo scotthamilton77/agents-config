@@ -317,7 +317,10 @@ class SessionLog:
             entry.kind in FOLD_SHAPED or entry.kind in PROPOSABLE_KINDS
         ):
             return set()
-        return {one for one in self._queue() if one.startswith(entry.idempotency_key)}
+        # Exact key or key#N only: keys are client-chosen, so a bare
+        # startswith would claim another entry's "k1a" for this entry's "k1".
+        own = (entry.idempotency_key, f"{entry.idempotency_key}#")
+        return {one for one in self._queue() if one == own[0] or one.startswith(own[1])}
 
     def _append(self, entry: LogEntry) -> None:
         """Durable first, in-memory second: an entry a caller has a receipt for
@@ -434,9 +437,15 @@ def _amendment(
 
 
 def _pending_ids(payload: Mapping[str, Any]) -> list[str]:
-    """The queue entries a gesture names, in the order it named them."""
+    """The queue entries a gesture names, in the order it named them.
+
+    Deduplicated: a repeated id must not materialise the same proposal twice
+    into the gesture's updates and double-apply it on the walk.
+    """
     raw = payload.get(PENDING_KEY)
-    return [one for one in raw if isinstance(one, str)] if isinstance(raw, list) else []
+    if not isinstance(raw, list):
+        return []
+    return list(dict.fromkeys(one for one in raw if isinstance(one, str)))
 
 
 def _queue_gesture_problem(

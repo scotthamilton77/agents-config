@@ -695,3 +695,48 @@ def test_a_thread_agent_is_never_told_the_proposal_contract() -> None:
 
     assert MUTATION_FORMAT_RULE not in brief
     assert BASIS_RULE not in brief
+
+
+def test_a_receipt_claims_only_its_own_queue_entries_when_keys_share_a_prefix(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a queued proposal whose client-chosen key extends another turn's key
+    When the shorter-keyed turn submits an update that lands on arrival
+    Then its receipt says applied, claiming nothing from the other turn's queue.
+
+    Keys are the clients' to choose, so ownership of a queue entry is exact key
+    or key#N -- never a prefix match that would let "k1" answer for "k1a".
+    """
+    settled_node(client, log.epoch)
+    proposal(client, log.epoch, "invalidate", "k1a", target=SEED_NODE, why="moot")
+
+    receipt = proposal(
+        client, log.epoch, "add-node", "k1", title="Which cache?", options=OPTIONS, target="n-new"
+    )
+
+    assert receipt["status"] == "accepted"
+    assert receipt["updates"] is None
+    assert proposed(client) == ["k1a"]
+
+
+def test_an_apply_naming_the_same_proposal_twice_materialises_it_once(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given one queued proposal
+    When the human's apply names its id twice
+    Then the gesture carries the update once and the board moves once.
+
+    A repeated id is a page bug, not a request to apply the change twice --
+    materialising both copies would double the history the agent reasons from.
+    """
+    settled_node(client, log.epoch)
+    proposal(client, log.epoch, "revise", "r1", target=SEED_NODE, title="restated")
+    waiting = proposed(client)
+
+    receipt = queue_gesture(client, log.epoch, APPLY_KIND, waiting[0], waiting[0])
+
+    assert receipt["status"] == "accepted"
+    assert len(log.entries()[-1].payload["updates"]) == 1
+    assert len([one for one in receipt["updates"]]) == 1
