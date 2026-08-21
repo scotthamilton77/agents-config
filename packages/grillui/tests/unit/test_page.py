@@ -50,16 +50,24 @@ from grillui.channels import (
     TRANSPORT_TABLE,
 )
 from grillui.claim import CLAIM_STATES
+from grillui.escalation import in_expert_mode
 from grillui.log import LOG_FILE
 from grillui.schemas import (
     AGENT_ACTORS,
+    ANSWERABLE_KINDS,
     KNOWN_KINDS,
+    LIFECYCLE_KINDS,
     MAP_CHANNEL,
     MAP_MUTATION_KINDS,
     NOTICE_KINDS,
     PROPOSABLE_KINDS,
+    QUEUE_GESTURE_KINDS,
+    RECOMMENDATION_KEY,
     REJECTION_REASONS,
     STATUS_PHASES,
+    THREAD_GESTURE_KINDS,
+    TIER_KEY,
+    TRANSFER_FLAG,
 )
 
 PAGE_PATH = Path(grillui.__file__).parent / "page" / "index.html"
@@ -117,6 +125,20 @@ def page_vocabulary() -> dict[str, list[str]]:
     return {
         name: json.loads(value)
         for name, value in re.findall(r"var (\w+) = (\[[^\]]*\]);", _fenced("BACKEND-VOCABULARY"))
+    }
+
+
+def page_constants() -> dict[str, str]:
+    """The backend's payload keys as the page spells them, from its source.
+
+    A second reader beside `page_vocabulary`, because these are single strings
+    rather than sets: a key the page reads a tier off is one word, and a page
+    holding a stale one fails silently in both directions -- nothing highlights
+    and nothing escalates.
+    """
+    return {
+        name: json.loads(value)
+        for name, value in re.findall(r'var (\w+) = ("[^"]*");', _fenced("BACKEND-VOCABULARY"))
     }
 
 
@@ -1315,6 +1337,141 @@ def test_the_claim_control_appends_nothing_and_builds_no_event() -> None:
         body = function_body(control)
         assert "ev(" not in body, f"{control} builds an event"
         assert "send(" not in body, f"{control} reaches the write route"
+
+
+# ------------------------------------------------- GUI-U11, GUI-A33/A34/A35
+
+
+def test_the_payload_keys_the_page_reads_a_tier_off_are_the_backends_own() -> None:
+    """Three keys, spelled once each, pinned to the backend's own spelling.
+
+    The page reads the tier a channel is waiting on, the escalation advice a
+    reply carries, and writes the flag that moves a channel between tiers. All
+    three are payload content rather than envelope fields, so nothing validates
+    them on the way past: a page holding a stale spelling would show a control
+    that highlights for nothing and sends a transfer the backend never reads.
+    """
+    constants = page_constants()
+    assert constants["TIER_KEY"] == TIER_KEY
+    assert constants["RECOMMENDATION_KEY"] == RECOMMENDATION_KEY
+    assert constants["TRANSFER_FLAG"] == TRANSFER_FLAG
+
+
+def test_only_a_turn_the_human_speaks_declares_the_transfer_flag() -> None:
+    """The flag rides turns, and the table is what says which kinds those are.
+
+    A transfer forces the next *turn* on a channel, so the flag belongs on the
+    kinds that are a turn -- and the backend only owes a reply to those. A fold,
+    a park or a queue verb carrying it would set a channel's mode with no turn
+    behind it to spend the expert on, and on a fold it would set the wrong
+    channel's: the fold's reply comes back on the map, not in the thread.
+    """
+    declaring = {kind for kind, rule in emissions().items() if TRANSFER_FLAG in rule["payload"]}
+    assert declaring, "no kind carries the transfer flag, so the control forces nothing"
+    assert declaring <= ANSWERABLE_KINDS
+    assert not declaring & (THREAD_GESTURE_KINDS | QUEUE_GESTURE_KINDS | LIFECYCLE_KINDS)
+
+
+def test_the_flag_is_stamped_by_the_one_checked_constructor_off_the_declaration() -> None:
+    """One place writes it, and the table decides where it goes.
+
+    A per-site stamp is how a turn ends up leaving without the flag: the human
+    presses the control, the one emission site nobody updated sends a turn that
+    says nothing about the tier, and the mode silently stands still. Driving it
+    off the declaration means adding a kind to the table is the whole change.
+    """
+    # Assignments only: the page reads the same key back to learn a channel's
+    # mode, and a comparison is not a second writer.
+    written = re.findall(r"payload\[TRANSFER_FLAG\] = [^=]", page_source())
+    assert len(written) == 1, "a second place stamps the flag"
+    builder = function_body("ev")
+    assert "rule.payload.indexOf(TRANSFER_FLAG)" in builder
+    assert "payload[TRANSFER_FLAG] = onExpert(channel)" in builder
+
+
+def test_a_page_turn_carrying_the_flag_moves_that_channel_and_only_that_one(
+    client: TestClient, log: Any
+) -> None:
+    """The page's own shape, on the wire, read back by the backend's own reader.
+
+    This is the join the two halves of the feature meet at: the page declares a
+    key on a turn, and the backend decides which tier answers by looking for
+    exactly that key on exactly that channel. Asserted through `page_message`,
+    so a shape the page never emits could not have proved it.
+    """
+    seed_node(client, log.epoch)
+    answer = {"option": "a", "text": None}
+    post(client, log.epoch, page_message("answer", MAP_CHANNEL, target="n1", answer=answer))
+    assert not in_expert_mode(log.entries(), MAP_CHANNEL)
+
+    post(
+        client,
+        log.epoch,
+        page_message("answer", MAP_CHANNEL, target="n1", answer=answer, transfer=True),
+    )
+    assert in_expert_mode(log.entries(), MAP_CHANNEL)
+    # One channel's gesture is that channel's alone, which is what makes the
+    # control per-channel rather than a session-wide switch.
+    assert not in_expert_mode(log.entries(), THREAD)
+
+    post(
+        client,
+        log.epoch,
+        page_message("thread-turn", THREAD, turns=turns("Say more."), transfer=True),
+    )
+    assert in_expert_mode(log.entries(), THREAD)
+    post(
+        client,
+        log.epoch,
+        page_message("thread-turn", THREAD, turns=turns("Back to you."), transfer=False),
+    )
+    assert not in_expert_mode(log.entries(), THREAD)
+    assert in_expert_mode(log.entries(), MAP_CHANNEL)
+
+
+def test_the_control_is_on_every_channel_and_is_never_disabled() -> None:
+    """The map's channel and each open thread's, and active on all of them.
+
+    Always active is the decision rather than an omission: the moment a human
+    most wants an expert is the moment the fast tier is going badly, which is
+    also the moment a control gated on the channel being idle would be greyed
+    out. The label names the switch the press makes, so the channel already on
+    the expert offers the way back.
+    """
+    control = function_body("transferControl")
+    assert "disabled" not in control
+    assert "⚡ Fast agent mode" in control, "the escalated channel does not offer the way back"
+    assert "⚡ Transfer to expert" in control
+    assert 'data-mode="' in control
+    assert "transferControl(MAP)" in function_body("renderShell")
+    assert "transferControl(tid)" in function_body("threadBody")
+    # The popped-out thread is the same pane, so its control has to reach the
+    # same handler rather than being a button that does nothing in that window.
+    assert 'act === "transfer"' in page_source()
+
+
+def test_the_mode_and_the_highlight_are_read_from_the_log_the_page_already_holds() -> None:
+    """Neither is on image 1, and neither is remembered.
+
+    The mode is the human's own last turn carrying the flag -- so a reload, a
+    second window and a restarted backend all agree, because all three read one
+    record. The highlight is the channel's latest agent reply and no earlier
+    one, so a reply that meets no condition is what takes it away; advice about
+    a question two turns ago is not advice about this one.
+
+    The reply filter needs both halves: the lane's own `composing` entry names a
+    tier as well, so a filter on the key alone reads the status lane.
+    """
+    mode = function_body("loggedMode")
+    assert 'e.actor === "human"' in mode, "an agent's own payload could move the channel"
+    assert "TRANSFER_FLAG in e.payload" in mode
+    assert "for (var i = LOG.length - 1; i >= 0; i--)" in mode, "the mode is not the last gesture"
+
+    highlight = function_body("recommended")
+    assert "AGENT_ACTORS.indexOf(e.actor) < 0" in highlight
+    assert "TIER_KEY in e.payload" in highlight
+    assert "e.payload[RECOMMENDATION_KEY] || null" in highlight
+    assert "for (var i = LOG.length - 1; i >= 0; i--)" in highlight
 
 
 # ---------------------------------------------------------------- GUI-A50

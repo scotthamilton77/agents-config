@@ -103,6 +103,14 @@
   .btn.wide { width: 100%; text-align: left; }
   .btn.sm { padding: 5px 9px; font-size: 12px; }
 
+  /* Which tier a channel is on is a standing fact about it, so the control
+     wears it rather than only saying it: the label names the switch, the fill
+     names where the channel is now. The recommendation is a ring instead of a
+     fill, because it is the agent asking and the fill is the human's answer —
+     one has to stay legible while the other is on. */
+  .btn.transfer.on { background: var(--mandate-bg); border-color: var(--mandate-line); color: var(--mandate-ink); font-weight: 500; }
+  .btn.transfer.rec { box-shadow: 0 0 0 2px var(--stale-line); border-color: var(--stale-ink); }
+
   /* The option's label is the handle the human, the free text and the threads
      all refer to it by, so it is on the button rather than in a tooltip. */
   .olab { display: inline-block; min-width: 15px; font: 700 11px ui-monospace, Menlo, monospace;
@@ -371,9 +379,9 @@
    JSON for that reason; keep the prose outside the fence. */
 //---PAGE-EMISSIONS-START---
 var EMISSIONS = {
-  "answer":         { "channel": "map",    "payload": ["target", "answer"] },
+  "answer":         { "channel": "map",    "payload": ["target", "answer", "transfer"] },
   "thread-created": { "channel": "thread", "payload": ["turns", "decision", "kind", "title", "requires_action"] },
-  "thread-turn":    { "channel": "thread", "payload": ["turns"] },
+  "thread-turn":    { "channel": "thread", "payload": ["turns", "transfer"] },
   "thread-fold":    { "channel": "thread", "payload": [] },
   "thread-park":    { "channel": "thread", "payload": [] },
   "apply":          { "channel": "map",    "payload": ["pending"] },
@@ -396,6 +404,15 @@ var MAP_MUTATION_KINDS = ["add-node", "invalidate", "revise", "settle", "unsettl
 var STATUS_PHASES = ["accepted", "composing", "replied", "error"];
 var AGENT_ACTORS = ["grill-master", "thread-agent"];
 var CLAIM_STATES = ["granted", "refused", "superseded"];
+// The three payload keys this page reads a tier off, spelled the backend's way.
+// `TIER_KEY` is how a reply says which tier composed it and how the lane names
+// the tier it is waiting on; `RECOMMENDATION_KEY` is the escalation advice a
+// fast reply carries when it met one of the conditions; `TRANSFER_FLAG` is the
+// key on the human's own turn that puts that channel on the expert tier, and
+// the backend reads the mode back off exactly this key.
+var TIER_KEY = "tier";
+var RECOMMENDATION_KEY = "recommendation";
+var TRANSFER_FLAG = "transfer";
 //---BACKEND-VOCABULARY-END---
 // Named by position rather than restated, so this page cannot hold a claim
 // state the backend has no word for.
@@ -672,7 +689,7 @@ function track(entry) {
       // The wait is timed from the entry itself, not from when this page read
       // it, so a reload mid-turn comes back with the clock the human had rather
       // than one restarted at zero.
-      WIRE.status[entry.channel] = { tier: entry.payload.tier || "", since: Date.parse(entry.timestamp) };
+      WIRE.status[entry.channel] = { tier: entry.payload[TIER_KEY] || "", since: Date.parse(entry.timestamp) };
     } else if (phase === PHASE_REPLIED || phase === PHASE_ERROR) {
       onChannel(entry.channel, "closed");
       delete WIRE.status[entry.channel];
@@ -712,6 +729,12 @@ function ev(kind, channel, payload) {
   Object.keys(payload).forEach(function (k) {
     if (rule.payload.indexOf(k) < 0) throw new Error(kind + " carries no " + k);
   });
+  // A kind that declares the transfer key is a kind the human speaks a turn in,
+  // and every one of those turns says which tier the human has put its channel
+  // on. Stamped here rather than at the emission sites so the declaration is
+  // again what decides: the table says which kinds carry the flag, and no
+  // gesture that is not a turn — a fold, a park, a queue verb — can acquire one.
+  if (rule.payload.indexOf(TRANSFER_FLAG) >= 0) payload[TRANSFER_FLAG] = onExpert(channel);
   KEYS += 1;
   return { kind: kind, actor: "human", channel: channel,
            idempotency_key: PAGE_ID + ":" + KEYS, payload: payload };
@@ -953,6 +976,52 @@ function foldReady(threadId) {
     if (e.payload && e.payload.impact) last = e.payload.impact;
   });
   return last;
+}
+
+/* ---------------- which tier each channel is on ----------------
+   The mode is not on image 1 and is not held anywhere on the backend: it is the
+   human's own last turn on that channel carrying the transfer key, and the
+   backend reads it back the same way at the moment it routes the next turn. So
+   this page reads it from the record too, rather than remembering what it
+   clicked — a reload, a second window and a restarted backend all then agree
+   about which tier a channel is on, because all three are reading one fact.
+
+   `TRANSFER` is the gap between a click and the turn that carries it. Activation
+   forces the *next* turn, so the click alone forces nothing; what it does is
+   decide what the next turn will say, and that intent lives here until a turn
+   goes out with it. It is not cleared afterwards, on purpose: the log then says
+   the same thing, and a click whose turn was refused keeps its intent instead of
+   quietly losing it. */
+var TRANSFER = {};
+function loggedMode(channel) {
+  for (var i = LOG.length - 1; i >= 0; i--) {
+    var e = LOG[i];
+    if (e.channel === channel && e.actor === "human" && e.payload && TRANSFER_FLAG in e.payload) {
+      return e.payload[TRANSFER_FLAG] === true;
+    }
+  }
+  return false;
+}
+function onExpert(channel) {
+  return channel in TRANSFER ? TRANSFER[channel] : loggedMode(channel);
+}
+function toggleTransfer(channel) { TRANSFER[channel] = !onExpert(channel); render(); }
+// The escalation advice on this channel's latest agent reply, or nothing. A
+// property of the last reply rather than of the session, so the next reply that
+// meets no condition is what takes the highlight away — advice about a question
+// two turns ago is not advice about this one.
+//
+// An agent actor and an attributed payload, both: the lane's own `composing`
+// entry names a tier as well, so a filter on either half alone would be reading
+// the status lane instead of a reply.
+function recommended(channel) {
+  for (var i = LOG.length - 1; i >= 0; i--) {
+    var e = LOG[i];
+    if (e.channel !== channel || AGENT_ACTORS.indexOf(e.actor) < 0) continue;
+    if (!e.payload || !(TIER_KEY in e.payload)) continue;
+    return e.payload[RECOMMENDATION_KEY] || null;
+  }
+  return null;
 }
 
 /* ---------------- selectors over the board ---------------- */
@@ -1418,6 +1487,22 @@ function optionButton(d, o, index, cls, lead, dis) {
     '" data-label="' + labelAt(index) + '"' + pcrAttrs(o) + dis + ">" + lead +
     '<span class="olab">' + labelAt(index) + "</span>" + esc(o.text) + "</button>";
 }
+// One control, on every channel anyone speaks on: the map's and each open
+// thread's. Never disabled — the moment the human most wants an expert is the
+// moment the fast tier is going badly, and a control that greys out while a turn
+// is in flight is unavailable exactly then. The label names the switch it makes,
+// which is what the human is choosing; where the channel is now is the fill.
+function transferControl(channel) {
+  var on = onExpert(channel), rec = recommended(channel);
+  var why = rec ? "The agent recommends the expert tier — " + (rec.evidence || rec.condition)
+    : on ? "This channel's next turn goes to the expert tier. Press to hand it back to the fast agent."
+    : "Send this channel's next turn to the expert tier, carrying everything said here.";
+  return '<button class="btn sm transfer' + (on ? " on" : "") + (rec ? " rec" : "") +
+    '" data-act="transfer" data-channel="' + esc(channel) + '"' +
+    ' data-mode="' + (on ? "expert" : "fast") + '"' +
+    ' data-recommended="' + (rec ? "1" : "0") + '" title="' + esc(why) + '">' +
+    (on ? "⚡ Fast agent mode" : "⚡ Transfer to expert") + "</button>";
+}
 function isExpanded(id) {
   var st = statusOf(id);
   var open = st === "open" || st === "stale" || st === "awaiting-thread" || st === "conflicted";
@@ -1698,7 +1783,7 @@ function threadBody(tid, forPop, chrome) {
     '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
     '<button class="btn sm" data-act="say" data-tid="' + esc(tid) + '">Send</button></div>';
 
-  h += '<div class="thread-actions">';
+  h += '<div class="thread-actions">' + transferControl(tid);
   if (t.kind === "mandate") {
     // A mandated thread concludes, or the answer is abandoned. There is no park.
     h += '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '">Conclude — settles ' + esc(t.decision) + "</button>" +
@@ -1958,6 +2043,7 @@ function renderShell() {
     (ps.length ? ps.length + " change" + (ps.length > 1 ? "s" : "") + " waiting on you" : "inbox empty") + "</button>" +
     '<button class="inboxbtn" data-act="notifications" data-unread="' + unread + '">🔔 Notifications <span class="count">' + unread + "</span> unread</button>" +
     (unread ? '<button class="btn sm" data-act="markall" title="Clear every unread marker. Nothing is sent.">✓ Mark all read</button>' : "") +
+    transferControl(MAP) +
     '<button class="btn sm" data-act="doctor" title="Send the agent over the whole board and the queue">🩺 Map doctor</button>' +
     '<button class="btn sm" data-act="endsession">End the session</button></div>';
 
@@ -2071,7 +2157,8 @@ function centerOn(id) {
 /* ---------- the pop-out window ---------- */
 window.threadHTML = function (tid) { return threadBody(tid, true); };
 window.popAct = function (tid, act, text) {
-  if (act === "say") sayInThread(tid, text);
+  if (act === "transfer") toggleTransfer(tid);
+  else if (act === "say") sayInThread(tid, text);
   else if (act === "fold") foldThread(tid);
   else if (act === "park") parkThread(tid);
   else if (act === "abandon") abandonAnswer((thread(tid) || {}).decision);
@@ -2207,6 +2294,7 @@ document.addEventListener("click", function (e) {
     case "dismissone": dismissPending([uid]); break;
     case "discuss": discussPending(uid); break;
     case "discussnotice": discussNotice(uid); break;
+    case "transfer": toggleTransfer(el.dataset.channel); break;
     case "diag": UI.diag = !UI.diag; render(); break;
     case "inbox": UI.panel = { kind: "inbox" }; render(); break;
     case "notifications": UI.panel = { kind: "notifications" }; render(); break;
