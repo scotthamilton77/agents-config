@@ -64,6 +64,7 @@ from grillui.schemas import (
     QUEUE_GESTURE_KINDS,
     RECOMMENDATION_KEY,
     REJECTION_REASONS,
+    SESSION_END_KIND,
     STATUS_PHASES,
     THREAD_GESTURE_KINDS,
     TIER_KEY,
@@ -1500,3 +1501,322 @@ def test_the_backend_serves_the_page_it_ships(client: TestClient) -> None:
     assert served.status_code == 200
     assert served.headers["content-type"].startswith("text/html")
     assert served.text == page_source()
+
+
+# ---------------------------------------------------------------- the page's sinks
+
+# An id on this board is text somebody else wrote: a handoff names its decisions,
+# an agent names the thread its mandate opens, and the backend derives a queue
+# entry's id from an entry an agent authored. All of it reaches this page as
+# board content and all of it is put into markup, so an id carrying a quote or a
+# tag is markup unless the page makes it text first.
+#
+# The escaper is the page's own and is measured at the sinks rather than at the
+# source: a constraint on what an id may contain would have to hold in the log,
+# in the handoff and in every agent, and the one place that can be checked is
+# where the string becomes markup.
+AUTHORED_ID = r"(?:\w+\.)*(?:id|tid|uid|nid|alert|target|threadId)"
+# A line that builds markup: it opens a tag inside a string, or it writes an
+# attribute. Lines that merely compose an id -- a new thread's, a seed sentence's
+# -- are not sinks and are not judged.
+MARKUP_LINE = re.compile(r'"[^"]*<|\S="')
+# An attribute that carries an id, interpolating something that is not the
+# escaper. Fail-closed on purpose: the rule is every one of them, so there is no
+# list of approved exceptions to keep in step with the page.
+ID_ATTRIBUTE = re.compile(r"""(?:data-[a-z-]+|\bid)="[^"<]*' \+ (?!esc\()[^+]+""")
+RAW_AUTHORED = re.compile(r"\+ (" + AUTHORED_ID + r") \+")
+
+
+def markup_lines() -> list[tuple[int, str]]:
+    """Every line of the page that builds markup, with its number."""
+    return [
+        (number, line)
+        for number, line in enumerate(page_source().splitlines(), 1)
+        if MARKUP_LINE.search(line)
+    ]
+
+
+def page_word(name: str) -> str:
+    """One `var NAME = "...";` the page declares."""
+    found = re.search(rf'var {name} = ("[^"]*");', page_source())
+    assert found, f"the page has no {name}"
+    word: str = json.loads(found.group(1))
+    return word
+
+
+def write_acts() -> list[str]:
+    """The page's own list of the acts that write."""
+    found = re.search(r"var WRITE_ACTS = (\[.*?\]);", page_source(), re.DOTALL)
+    assert found, "the page declares no WRITE_ACTS"
+    listed: list[str] = json.loads(found.group(1))
+    return listed
+
+
+def click_cases() -> dict[str, str]:
+    """Each act the click handler routes, and the code it routes it to."""
+    handler = page_source().split('document.addEventListener("click"', 1)[1].split("\n});", 1)[0]
+    cases = {}
+    for chunk in re.split(r'\n\s*case "', handler)[1:]:
+        act, code = chunk.split('"', 1)
+        cases[act] = code
+    assert "pick" in cases, "the click handler was not read"
+    return cases
+
+
+def balanced_body(name: str) -> str:
+    """One function's body, brace-matched.
+
+    Stricter than `function_body`, which reads to the next `function` keyword and
+    so swallows whatever is declared some other way in between. The call graph
+    below is only true if a function's body is its own.
+    """
+    source = page_source()
+    opening = source.index("{", source.index(f"function {name}("))
+    depth = 0
+    for at in range(opening, len(source)):
+        if source[at] == "{":
+            depth += 1
+        elif source[at] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening : at + 1]
+    unclosed = f"{name} is never closed"
+    raise AssertionError(unclosed)
+
+
+def reaches_send(code: str, seen: set[str] | None = None) -> bool:
+    """Whether this code puts an event on the wire, through however many hops.
+
+    The page's writes all funnel through `send`, so reaching it is the whole
+    definition of a write -- and following the call graph rather than listing the
+    handlers is what keeps the answer true when a new one is added.
+    """
+    if "send(" in code:
+        return True
+    seen = set() if seen is None else seen
+    for name in re.findall(r"\b([a-zA-Z_$][\w$]*)\(", code):
+        if name in seen or f"function {name}(" not in page_source():
+            continue
+        seen.add(name)
+        if reaches_send(balanced_body(name), seen):
+            return True
+    return False
+
+
+def acts_that_write() -> set[str]:
+    return {act for act, code in click_cases().items() if reaches_send(code)}
+
+
+def test_every_id_the_page_puts_in_an_attribute_goes_through_the_escaper() -> None:
+    """An id an agent chose, rendered as text rather than as markup.
+
+    An id carrying a double quote closes the attribute it is written into: the
+    click delegation that reads `data-id` off the element loses the rest of the
+    id, and whatever followed the quote is parsed as markup on a page the human
+    is answering decisions on. Every id-bearing attribute is therefore escaped,
+    with no exceptions to keep a list of.
+    """
+    offenders = [
+        (number, match.group(0))
+        for number, line in markup_lines()
+        for match in ID_ATTRIBUTE.finditer(line)
+    ]
+    assert not offenders, f"attributes interpolating something other than esc(): {offenders}"
+
+
+def test_no_authored_id_reaches_the_markup_unescaped() -> None:
+    """The same rule where an id is the words on screen rather than an attribute.
+
+    A node's id under the map node, the label on a decision block, the heading
+    over its history: each is board content and each is a place a tag in an id
+    would be a tag on the page.
+    """
+    offenders = [
+        (number, match.group(1))
+        for number, line in markup_lines()
+        for match in RAW_AUTHORED.finditer(line)
+    ]
+    assert not offenders, f"ids reaching markup unescaped: {offenders}"
+
+
+def test_the_popped_window_is_handed_its_thread_id_as_data() -> None:
+    """The pop-out writes a boot script into another document, and the thread id
+    is in it. A closing script tag inside the id would end that script where it
+    sits, leaving the popped window with a thread it cannot draw and a fragment
+    of the id as markup."""
+    assert r'JSON.stringify(tid).replace(/</g, "\\u003c")' in function_body("popOut")
+
+
+# ---------------------------------------------------------------- the mandate's hold
+
+
+def test_a_mandated_thread_concludes_only_on_an_answer_it_is_holding() -> None:
+    """Concluding is what applies the answer, so an empty conclusion is not one.
+
+    Folding a mandated thread with nothing held used to end it having settled
+    nothing -- and a mandated decision whose thread has ended is answerable by an
+    ordinary click, which is the single route to an answer the mandate exists to
+    close. The gesture is refused at the fold rather than only hidden on the
+    button, because the pop-out window folds through the same call.
+    """
+    body = function_body("foldThread")
+    branch = body.split('if (t.kind === "mandate")', 1)[1].split("\n  if (held)", 1)[0]
+    assert "if (!held)" in branch
+    assert branch.count("refuse(") == 2, "the mandate branch turns two things away"
+    assert "send(" not in branch, "the mandate branch puts nothing on the wire"
+
+
+def test_an_answer_held_through_a_revise_is_not_settled_onto_a_dead_option() -> None:
+    """The options belong to the agent, and a thread takes time.
+
+    An answer records whatever option id it is sent -- there is no reason in the
+    backend's closed vocabulary for refusing one that names an option the
+    decision no longer has, so it would settle onto something nobody can read.
+    The hold goes instead, and the human is told which of the two things
+    happened rather than reading a generic refusal.
+    """
+    body = function_body("foldThread")
+    assert "optionOn(t.decision, held.option)" in body
+    assert "UI.drafts[t.decision] = held.note" in body, "the words that came with the pick are kept"
+    check = function_body("optionOn")
+    assert "d.options.some" in check
+
+
+def test_abandoning_a_held_answer_leaves_the_mandated_thread_where_it_is() -> None:
+    """A mandate names one thread id, and nothing creates that id twice.
+
+    Parking the thread on an abandon left the next pick held against a
+    conversation that could be neither spoken in nor concluded: the decision sat
+    in `awaiting-thread` with no way out but abandoning again. The thread is the
+    mandate's rather than the answer's, so it stays -- and it is not counted as
+    a blocking thread, because the hold it represents is the mandate's own and
+    is already refused around.
+    """
+    abandon = function_body("abandonAnswer")
+    assert "thread-park" not in abandon
+    assert "send(" not in abandon, "abandoning an answer nobody sent writes nothing"
+    blocking = function_body("blockingThreads")
+    assert "d.mandate.threadId" in blocking and "tid !== mandated" in blocking
+    assert "mandateHolding(id)" in function_body("holdOn"), "the hold is a hold of its own"
+
+
+def test_a_pick_made_after_an_abandon_tells_the_thread_what_it_is_holding() -> None:
+    """The thread is what concludes, and it concludes on what it discussed.
+
+    A second pick into a thread that already exists used to say nothing, so the
+    agent went on discussing a leaning the human had changed and the conclusion
+    applied the new one.
+    """
+    body = function_body("answerDecision")
+    assert 'ev("thread-turn", d.mandate.threadId' in body
+    assert 'ev("thread-created", d.mandate.threadId' in body
+    assert "seedForMandate(d, payload)" in body
+
+
+def test_a_held_answer_survives_the_reload_that_leaves_its_thread_standing() -> None:
+    """A reload used to drop the hold while the thread went on blocking.
+
+    The human came back to a decision that was locked by a conversation whose
+    only conclusion applied an answer no longer anywhere -- and nothing on the
+    page said the pick was gone. The hold is written where this window's reload
+    finds it, on every move that touches it.
+    """
+    source = page_source()
+    assert 'UI.held = loadWindow("held", {})' in function_body("hydrate")
+    assert 'saveWindow("held", UI.held)' in function_body("saveHeld")
+    assert "sessionStorage" in function_body("loadWindow")
+    mutations = re.findall(
+        r"(delete UI\.held\[[^\]]+\];|UI\.held\[[^\]]+\] = [^\n]*)\n(\s*\S[^\n]*)", source
+    )
+    assert mutations, "the hold is never written"
+    for wrote, following in mutations:
+        assert "saveHeld();" in following, f"{wrote!r} is not made durable"
+
+
+# ---------------------------------------------------------------- the session's end
+
+
+def test_the_ending_the_page_watches_for_is_the_entry_the_backend_appends(
+    client: TestClient, log: Any
+) -> None:
+    """One word for the ending, at both ends of the wire.
+
+    The page reads its own end off the log it already holds, so the kind it
+    looks for has to be the kind the backend writes. A page holding a stale one
+    would render a finished session as a live board with a sick backend.
+    """
+    receipt = post(client, log.epoch, page_message(SESSION_END_KIND, MAP_CHANNEL))[0]
+    assert receipt["status"] == "accepted"
+    entries = client.get("/updates", params={"epoch": log.epoch, "cursor": 0}).json()["entries"]
+    assert [one for one in entries if one["kind"] == SESSION_END_KIND]
+    assert page_word("SESSION_END_KIND") == SESSION_END_KIND
+    over = function_body("sessionOver")
+    assert "e.kind === SESSION_END_KIND" in over and "ENDED" in over
+
+
+def test_a_session_that_has_ended_is_rendered_as_ended_rather_than_as_a_dead_backend() -> None:
+    """The backend stops because the session ended, not because it broke.
+
+    Left to the transport, the ending reads as `no backend` over a fully live
+    board, under an invitation to restart something the human deliberately
+    finished. The ended notice comes first and the wire's own banner is not
+    shown beside it.
+    """
+    shell = function_body("renderShell")
+    assert "if (sessionOver()) {" in shell
+    assert shell.index("if (sessionOver()) {") < shell.index(
+        'CHANNELS.transport === "disconnected"'
+    )
+    assert "} else if (CHANNELS.transport" in shell, "the two banners are alternatives"
+
+
+def test_nothing_more_is_said_into_a_log_that_has_been_closed() -> None:
+    """Every write refuses, and the surface stops offering to make one.
+
+    The receipt is what settles it as well as the log: a launched backend stops
+    the moment the terminal entry is durable, so the update read that would
+    carry that entry may never answer.
+    """
+    assert "|| sessionOver()) return;" in function_body("send")
+    assert "if (sessionOver()) return;" in function_body("poll")
+    assert "if (sessionOver()) return;" in function_body("callDoctor")
+    assert "ENDED = true;" in function_body("send")
+    seal = function_body("sealSurface")
+    assert "el.disabled = true" in seal and "ta.disabled = true" in seal
+    assert "sealSurface();" in function_body("render")
+
+
+def test_every_act_that_writes_is_one_the_ended_surface_takes_away() -> None:
+    """The list and the call graph, crossed.
+
+    A control left live over a `send` that refuses is a click the page swallows
+    while the human watches themselves make it. Which acts write is followed
+    through the calls rather than restated, so an act added later is measured
+    rather than assumed.
+    """
+    writing = acts_that_write()
+    assert "pick" in writing and "fold" in writing, "the call graph was not followed"
+    still_offered = writing - set(write_acts())
+    assert not still_offered, f"acts that write and are still offered: {still_offered}"
+
+
+# ---------------------------------------------------------------- the discussed change
+
+
+def test_a_discussion_thread_holds_the_change_it_was_opened_to_judge() -> None:
+    """Keyed by its thread, and kept where this window's reload finds it.
+
+    The binding used to be one slot in page memory: a reload emptied it while
+    the popped window still showed the apply and dismiss controls, and clicking
+    them did nothing at all. One slot also meant a second discussion overwrote
+    the first, so a pop-out could resolve a change on a decision it was never
+    about.
+    """
+    assert "UI.pendingThread" not in page_source(), "the single slot is gone"
+    opened = function_body("discussPending")
+    assert "UI.discussing[tid] = id;" in opened and "saveDiscussing();" in opened
+    assert 'UI.discussing = loadWindow("discussing", {})' in function_body("hydrate")
+    assert "UI.discussing[tid] || null" in function_body("threadBody")
+    popped = page_source().split("window.popAct = function (tid, act, text)", 1)[1]
+    popped = popped.split("\n};", 1)[0]
+    assert popped.count("UI.discussing[tid]") == 4, "the pop-out asks about its own thread"
