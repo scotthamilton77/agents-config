@@ -736,6 +736,31 @@ class DoctorState(Strict):
     outstanding: bool
 
 
+class ClaimRequest(Strict):
+    """One window presenting itself as this session's main window.
+
+    `holder` is the window's own name and must be one: an empty name would match
+    the next empty name, and every window presenting nothing would be granted
+    the same claim -- which is the one outcome this control exists to prevent.
+    """
+
+    holder: str = Field(min_length=1)
+    takeover: bool = False
+
+
+class ClaimState(Strict):
+    """What a presented claim is answered with.
+
+    The token rides every answer because the page needs it before it reads
+    anything, and this is the first thing the page asks: it scopes the page's own
+    local storage to this session rather than to whichever loopback port the
+    session happened to get.
+    """
+
+    token: str
+    state: str
+
+
 class SessionStatus(Strict):
     """The cheap check: epoch and position, answered from memory."""
 

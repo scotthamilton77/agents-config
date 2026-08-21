@@ -11,11 +11,14 @@ A client presenting a stale epoch is told so rather than served: refused on writ
 with an `epoch mismatch` receipt naming both epochs, and refused on read with a
 409, so it re-reads state instead of guessing.
 
-Beside the board routes sits the map doctor, which is a control rather than a
-board event: it writes nothing into the record and its state is a property of
-this process, not of the log. It is not a kind on the write route because that
-vocabulary is closed and a control that reassesses everything is not something
-an agent says.
+Beside the board routes sit two controls, and what makes them controls is the
+same thing in both cases: they write nothing into the record, and their state is
+a property of this process rather than of the log. The map doctor is not a kind
+on the write route because that vocabulary is closed and a control that
+reassesses everything is not something an agent says. The window claim is not
+one either, and for a stronger reason -- which window is driving a session is not
+part of the session, and a log that carried it would say something about the
+browser in a record that is otherwise only about the grilling.
 
 The surface itself is served from here too, off the package's own bytes. It is
 a program this process hands out rather than an asset anything installs, so a
@@ -33,12 +36,15 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
 from grillui.capture import default_summary
+from grillui.claim import Claim
 from grillui.lane import Lane
 from grillui.persistence import project_and_persist
 from grillui.projector import fold, to_image1
 from grillui.schemas import (
     SESSION_END_KIND,
     BatchWrite,
+    ClaimRequest,
+    ClaimState,
     DoctorState,
     Image1,
     Image2,
@@ -88,6 +94,7 @@ def create_app(
     """
     app = FastAPI(title="grillui session backend")
     lane = Lane(log, driver, expert)
+    claim = Claim(log.directory)
 
     def require_epoch(presented: str) -> None:
         if presented != log.epoch:
@@ -154,6 +161,26 @@ def create_app(
         """
         lane.call_doctor()
         return DoctorState(outstanding=lane.doctor_outstanding)
+
+    @app.post("/claim")
+    def present_claim(request: ClaimRequest) -> ClaimState:
+        """Which window this session belongs to.
+
+        A control, not a board event: it appends nothing, it is in no image, and
+        a session's record reads the same whoever was driving it. It is a POST
+        rather than a read because presenting a name is what acquires the claim
+        -- the same call is the first claim, the reload, the reconnect and the
+        take-over, so there is one answer to keep true rather than four.
+
+        Nothing here refuses a write. A window that has been superseded stops
+        writing because it is told to and shows the human why; the log does not
+        police who wrote to it, and making it do so would put session control
+        inside the record it is deliberately outside of.
+        """
+        return ClaimState(
+            token=claim.token,
+            state=claim.present(request.holder, takeover=request.takeover),
+        )
 
     @app.post("/events")
     def write_events(batch: BatchWrite) -> list[Receipt]:
