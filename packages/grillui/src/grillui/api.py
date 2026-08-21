@@ -57,7 +57,7 @@ from grillui.schemas import (
 from grillui.session import end_session
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from grillui.capture import Summarizer
     from grillui.lane import TurnDriver
@@ -76,6 +76,7 @@ def create_app(
     *,
     expert: TurnDriver | None = None,
     summarize: Summarizer = default_summary,
+    on_end: Callable[[], None] | None = None,
 ) -> FastAPI:
     """Bind the board endpoints to one session log, and the lane to its tiers.
 
@@ -91,6 +92,12 @@ def create_app(
     `summarize` is the seam capture writes the terminal result's prose through.
     Its default builds the briefing from the structured parts, so ending a
     session never waits on a model being reachable.
+
+    `on_end` is what a launched backend hands in to be stopped by: a session
+    that has ended has nothing further to serve, and the agent that launched it
+    is waiting on this process to exit. It defaults to doing nothing, because a
+    backend nobody launched -- one under test, or one embedded -- has no process
+    of its own to end.
     """
     app = FastAPI(title="grillui session backend")
     lane = Lane(log, driver, expert)
@@ -207,6 +214,11 @@ def create_app(
             # already durable, so a capture that fails costs the result file
             # and leaves the record of the ending intact.
             end_session(log, summarize=summarize)
+            if on_end is not None:
+                # Last, and after the receipts are settled: stopping the process
+                # is the answer to the human's gesture, not a step the gesture
+                # waits on.
+                on_end()
         return receipts
 
     return app

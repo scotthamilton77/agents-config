@@ -1,13 +1,23 @@
-"""Tests for the grillui CLI root."""
+"""Tests for the grillui CLI root.
+
+The capture verb is exercised against a directory nothing is serving, because
+that is the only way it is ever reached from a cold start: someone points it at
+last week's grilling and expects the same result the backend would have
+written.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
+from conftest import SpyDriver, driven, event, handoff_doc, post, write_handoff
 
 from grillui import __version__, cli
 from grillui.cli import DEFAULT_PORT, REFUSED_STATUS, build_parser, entry
+from grillui.log import RESULT_FILE
+from grillui.schemas import SESSION_END_KIND
+from grillui.session import open_session
 
 
 def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
@@ -87,14 +97,14 @@ def test_serve_takes_a_session_directory_and_an_optional_port(tmp_path: Path) ->
     assert args.handoff is None
 
 
-def test_serve_dispatches_to_the_server_with_the_parsed_arguments(
+def test_serve_dispatches_to_the_launch_path_with_the_parsed_arguments(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """
     Given a serve invocation naming a port and a handoff
     When entry runs
-    Then it hands that directory, port and handoff to the server and returns its
-    status.
+    Then it hands that directory, port and handoff to the launch path and
+    returns its status.
 
     Pins the wiring rather than the server: standing a real socket up here
     would test uvicorn, not this package.
@@ -102,7 +112,7 @@ def test_serve_dispatches_to_the_server_with_the_parsed_arguments(
     called: list[tuple[Path, int, Path | None]] = []
     monkeypatch.setattr(
         cli,
-        "serve",
+        "launch",
         lambda directory, port, handoff: (called.append((directory, port, handoff)), 0)[1],
     )
     briefing = tmp_path / "briefing.json"
@@ -125,3 +135,88 @@ def test_a_refused_handoff_exits_non_zero_naming_the_field(
     """
     assert entry(["serve", str(tmp_path / "session")]) == REFUSED_STATUS
     assert "handoff.json" in capsys.readouterr().err
+
+
+# ── GUI-D23 / GUI-A32: capture from the directory alone ──
+
+
+def finished(session_dir: Path) -> Path:
+    """A session that was grilled and ended, with nothing left serving it."""
+    log = open_session(session_dir, write_handoff(session_dir, handoff_doc()))
+    client = driven(log, SpyDriver())
+    post(
+        client,
+        log.epoch,
+        event(
+            "answer",
+            actor="human",
+            key="answer-d1",
+            target="d1",
+            answer={"option": "a", "text": "an append-only log"},
+        ),
+    )
+    post(client, log.epoch, event(SESSION_END_KIND, actor="human", key="end"))
+    (session_dir / RESULT_FILE).unlink()
+    del log, client
+    return session_dir
+
+
+def test_capture_produces_the_whole_result_from_the_directory_alone(
+    session_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    Given a finished session directory and no backend
+    When the capture verb runs against it
+    Then it prints a complete terminal result and leaves one on disk.
+
+    This is the "we grilled this last week, go capture it" path: the result file
+    is deleted first, so nothing here can be answered from what the backend
+    already wrote.
+    """
+    directory = finished(session_dir)
+
+    assert entry(["capture", str(directory)]) == 0
+
+    printed = capsys.readouterr().out
+    for part in ("grill-1", '"decisions"', '"references"', '"summary"', "an append-only log"):
+        assert part in printed
+    assert (directory / RESULT_FILE).is_file()
+
+
+def test_capture_over_a_fixed_directory_prints_the_same_bytes_twice(
+    session_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    Given a session directory whose log does not change
+    When the capture verb runs twice
+    Then both runs print the same bytes.
+
+    The projection is a fold with no clock and no randomness in it, so a second
+    capture is a re-read rather than a new opinion.
+    """
+    directory = finished(session_dir)
+
+    assert entry(["capture", str(directory)]) == 0
+    first = capsys.readouterr().out
+    assert entry(["capture", str(directory)]) == 0
+
+    assert capsys.readouterr().out == first
+
+
+def test_capture_against_a_directory_holding_no_session_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    Given a path with no session log under it
+    When the capture verb runs
+    Then it exits non-zero naming what it looked for, and prints no result.
+
+    A fold over an empty log is a well-formed result saying a session decided
+    nothing; handing that to someone who mistyped a path answers their question
+    falsely.
+    """
+    assert entry(["capture", str(tmp_path / "nowhere")]) == REFUSED_STATUS
+
+    captured = capsys.readouterr()
+    assert "log.jsonl" in captured.err
+    assert captured.out == ""
