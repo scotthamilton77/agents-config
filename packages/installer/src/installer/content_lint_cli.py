@@ -105,9 +105,10 @@ def main(argv: list[str] | None = None) -> int:
         result = lint_content(repo_root, io=io)
     except (OSError, UnicodeDecodeError) as exc:
         # The tree could not be read: an absent or unreadable .installignore,
-        # or an unreadable file under src/. Either way the lint would be
-        # reporting on the wrong fileset, so this is a clean exit 2 naming the
-        # path rather than a falsely clean tree.
+        # an unreadable file under src/, or a root staging must open that is
+        # absent or is not a directory. Either way the lint would be reporting
+        # on the wrong fileset, so this is a clean exit 2 naming the path rather
+        # than a falsely clean tree.
         sys.stderr.write(f"content-lint: {exc}\n")
         return 2
     except (UnknownMergeKeyError, CollisionError) as exc:
