@@ -42,7 +42,6 @@ from grillui.tiers import (
     POLICY_GATED,
     REGISTER_RULE,
     SYSTEM_PROMPTS,
-    THREAD_AGENT,
     TierConfig,
     UnknownTierError,
     UnreadableLimitError,
