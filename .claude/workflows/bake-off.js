@@ -1,7 +1,7 @@
 export const meta = {
   name: 'bake-off',
   description: 'Parameterized model×effort bake-off: reset worktrees, run contestant arms, audit+gate, sanitize, blind-judge, synthesize',
-  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefPath (absolute; copied to <dir>/brief.md, which every arm and seat reads), rubricText, arms[], judges[], runnerPath (required for codex arms), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary, rubricText, judges[], cachedSeats?, cachedChecker?}.',
+  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefPath (absolute; copied to <dir>/brief.md, which every arm and seat reads), rubricText, arms[], judges[], runnerPath (required for codex arms), pricingCheckPath (absolute; required — halts the run on an expired price), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary, rubricText, judges[], cachedSeats?, cachedChecker?}.',
   phases: [
     { title: 'Preflight', detail: 'place the pinned brief where arms and seats read it' },
     { title: 'Reset', detail: 'archive then reset each arm worktree to the pinned base' },
@@ -42,6 +42,11 @@ const RUNNER = IN.runnerPath || null
 // well would give the run two sources of truth for its one pinned input, so it does
 // not: preflight copies this into place and everything downstream reads that copy.
 const BRIEF_PATH = IN.briefPath || null
+// A published price with an end date is not a price after that date, and a cost
+// computed from one is wrong in a way nothing downstream can detect. Preflight runs
+// this check and the run stops on an expired entry, so a human re-verifies the table
+// against the vendor rather than a later reader trusting a number nobody checked.
+const PRICING_CHECK = IN.pricingCheckPath || null
 const MAX_ATTEMPTS = IN.maxAttempts || 4
 const WATCHDOG_S = IN.watchdogSeconds || 1200
 const RUNG_TIMEOUT_MS = IN.rungTimeoutMs || 1740000
@@ -88,6 +93,12 @@ if (!JUDGE_ONLY && (IN.arms || []).some(a => a.kind !== 'reference') && !BRIEF_P
 if (BRIEF_PATH && !BRIEF_PATH.startsWith('/')) {
   throw new Error('bake-off: briefPath must be absolute — the preflight agent starts in the session root, not this checkout')
 }
+if (!PRICING_CHECK) {
+  throw new Error('bake-off: pricingCheckPath is required — every run verifies its pricing table has not expired. Pass the absolute path to check_pricing.py.')
+}
+if (!PRICING_CHECK.startsWith('/')) {
+  throw new Error('bake-off: pricingCheckPath must be absolute — the preflight agent starts in the session root, not this checkout')
+}
 const codexArms = JUDGE_ONLY ? [] : (IN.arms || []).filter(a => a.kind !== 'reference' && a.kind !== 'claude')
 if (codexArms.length && !RUNNER) {
   throw new Error('bake-off: runnerPath (absolute path to run_codex_arm.py) is required when codex arms run')
@@ -112,6 +123,7 @@ const embedded = [['dir', DIR], ['base', BASE], ['contextCheckout', IN.contextCh
 if (TRAP_LEDGER) embedded.push(['trapLedgerPath', TRAP_LEDGER])
 if (RUNNER) embedded.push(['runnerPath', RUNNER])
 if (BRIEF_PATH) embedded.push(['briefPath', BRIEF_PATH])
+embedded.push(['pricingCheckPath', PRICING_CHECK])
 for (const a of IN.arms || []) {
   embedded.push([`arm ${a.label} label`, a.label], [`arm ${a.label} worktree`, a.worktree])
   if (a.codexModel) embedded.push([`arm ${a.label} codexModel`, a.codexModel], [`arm ${a.label} effort`, a.effort])
@@ -140,8 +152,9 @@ function preflightPrompt() {
 ${BRIEF_PATH ? `2. cp ${BRIEF_PATH} ${DIR}/brief.md — if this fails, do not retry and do not write the file by any other means; report the failure in notes.
 ` : '2. No source brief was named: the brief is expected to be in place already. Do not create it.\n'}3. test -s ${DIR}/brief.md && echo BRIEF_PRESENT || echo BRIEF_ABSENT
 4. If present: shasum -a 256 ${DIR}/brief.md | cut -d' ' -f1 — and: wc -l < ${DIR}/brief.md
+5. Check the pricing table has not expired, as one call: python3 ${PRICING_CHECK}; echo "PRICING_EXIT=$?" — read the verdict ONLY from that exit status (0 clean, 3 expired, 2 unusable), never from the JSON body, and copy the JSON's "message" field verbatim if there is one.
 
-Return the structured result: exists per step 3, sha256 = the bare hash or "", lines = the count or 0, notes = anything unexpected. Never write, edit, summarize or reconstruct the brief's contents — copying it is the only way it may arrive. Report only observed values; never invent one.`
+Return the structured result: exists per step 3, sha256 = the bare hash or "", lines = the count or 0, pricing_ok = true only when PRICING_EXIT was exactly 0, pricing_message = the JSON's "message" verbatim or its errors or "" when clean, notes = anything unexpected. Never write, edit, summarize or reconstruct the brief's contents — copying it is the only way it may arrive. Report only observed values; never invent one.`
 }
 
 function resetPrompt(arm) {
@@ -275,9 +288,11 @@ const PREFLIGHT_SCHEMA = {
     exists: { type: 'boolean' },
     sha256: { type: 'string' },
     lines: { type: 'integer' },
+    pricing_ok: { type: 'boolean' },
+    pricing_message: { type: 'string' },
     notes: { type: 'string' },
   },
-  required: ['exists', 'sha256', 'lines', 'notes'],
+  required: ['exists', 'sha256', 'lines', 'pricing_ok', 'pricing_message', 'notes'],
 }
 
 const RESET_SCHEMA = {
@@ -511,6 +526,9 @@ if (!preflight || !preflight.exists) {
   throw new Error(`bake-off: ${DIR}/brief.md is absent or empty — every codex arm reads the brief from that path and every seat reads it for the criteria. ${BRIEF_PATH ? `Copying it from ${BRIEF_PATH} did not produce it: ${preflight ? preflight.notes : 'the preflight agent returned nothing'}` : 'Pass briefPath so the run places it.'}`)
 }
 log(`Brief in place: ${DIR}/brief.md, ${preflight.lines} lines, sha256 ${preflight.sha256}`)
+if (!preflight.pricing_ok) {
+  throw new Error(`bake-off: the pricing table has an expired price and this run will not start. ${preflight.pricing_message || 'The preflight check reported no detail; run check_pricing.py by hand.'} A human must re-verify the affected rates against the vendor and update the table — there is no override.`)
+}
 
 
 // Per arm: (reset →) contestant → audit → sanitize, no cross-arm barrier until judging.
