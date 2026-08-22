@@ -9,15 +9,18 @@ construction, so a restart against an existing directory mints a new epoch and
 continues the sequence that directory already reached. Sequence numbers are
 never reset and never client-supplied.
 
-Nothing here folds a projection. The appender's own indexes -- the idempotency
-key index, and the decisions that exist with the options each of them offers --
-are the questions a write has to be judged against, and they are maintained
-entry by entry so that judging a write never reads a file.
+The appender's own indexes -- the idempotency key index and the set of node ids
+that exist -- are what most of a write is judged against, and they are
+maintained entry by entry so that judging a write never reads a file.
 
-One thing here does reach for the projector: an add-node's receipt echoes the
-node it minted, built by the same reader the fold will use on the same durable
-payload. Two readers for one node is how a receipt and a board come to disagree
-about what an agent just wrote.
+What an index cannot answer is anything that turns on the *board* rather than on
+the log: whether a proposal is still waiting, and which options a decision
+currently offers. Both are read by folding, because an agent's update may be
+sitting in the queue and the bytes in the log are then not what anyone can see.
+One reader for each question means the answer a receipt is judged against and
+the answer the page renders are the same answer -- and that is the same reason
+an add-node's receipt echoes its node through the projector's own reader rather
+than a second one written here.
 """
 
 from __future__ import annotations
@@ -32,8 +35,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from grillui.projector import Proposed, node_from_payload, queue
+from grillui.projector import Proposed, fold, node_from_payload, queue
 from grillui.schemas import (
+    ANSWER_KINDS,
     APPLY_KIND,
     FOLD_SHAPED,
     MAP_CHANNEL,
@@ -56,7 +60,6 @@ from grillui.schemas import (
     RejectedReceipt,
     fold_outcomes,
     mint_targets,
-    option_ids,
     rejection_reason,
 )
 
@@ -87,9 +90,10 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
-# The two kinds that state what a decision is: one mints it, the other replaces
-# what it offers. Both are what the index reads a node's options from.
-NODE_STATING_KINDS = frozenset({"add-node", "revise"})
+def _judged_on_options(event: EventSubmission) -> bool:
+    """Whether judging this submission needs to know what the board offers: an
+    answer, an agent settling one itself, or a fold that may carry either."""
+    return event.kind in ANSWER_KINDS or event.kind in FOLD_SHAPED or "answer" in event.payload
 
 
 @dataclass
@@ -98,11 +102,7 @@ class LogIndex:
 
     last_seq: int = 0
     keys: dict[str, int] = field(default_factory=dict)
-    # Every decision the log has stated, mapped to the option ids it offers.
-    # The options are here rather than only in the fold because an answer's
-    # option is judged at append time: an answer onto an option the decision
-    # never offered settles the board onto a choice nobody can read back.
-    nodes: dict[str, frozenset[str]] = field(default_factory=dict)
+    nodes: set[str] = field(default_factory=set)
     # Thread id to the decision it anchors, or None for a session-scoped one.
     # The anchor is here rather than only in the fold because an answer's
     # provenance is judged at append time: whether the thread this answer was
@@ -116,8 +116,8 @@ class LogIndex:
         if entry.kind == "thread-created":
             anchor = entry.payload.get("decision")
             self.threads[entry.channel] = anchor if isinstance(anchor, str) else None
-        elif entry.kind in NODE_STATING_KINDS:
-            self._state_node(entry.payload)
+        elif entry.kind == "add-node":
+            self._mint(entry.payload)
         elif entry.kind == SESSION_START_KIND:
             # A decision the briefing seeded is a decision on the board, so an
             # answer naming it is judged against the same node set as one
@@ -127,23 +127,19 @@ class LogIndex:
             decisions = plan.get("decisions", []) if isinstance(plan, dict) else []
             for decision in decisions:
                 if isinstance(decision, dict):
-                    self._state_node(decision)
+                    self._mint(decision)
         elif entry.kind in FOLD_SHAPED:
             # A node minted inside a fold is a node the board has, so an update
             # after the gesture may name it. Missing it here would refuse the
             # agent's next turn against a decision the human can already see.
             for update in entry.payload.get("updates", []):
-                if isinstance(update, dict) and update.get("kind") in NODE_STATING_KINDS:
-                    self._state_node(update)
+                if isinstance(update, dict) and update.get("kind") == "add-node":
+                    self._mint(update)
 
-    def _state_node(self, payload: Mapping[str, Any]) -> None:
-        """The node this payload states, with the options it offers. A revise
-        that supplies no options leaves the ones the decision already has."""
+    def _mint(self, payload: Mapping[str, Any]) -> None:
         minted = payload.get("target") or payload.get("id")
-        if isinstance(minted, str) and (
-            minted not in self.nodes or payload.get("options") is not None
-        ):
-            self.nodes[minted] = option_ids(payload)
+        if isinstance(minted, str):
+            self.nodes.add(minted)
 
 
 class SessionLog:
@@ -266,7 +262,8 @@ class SessionLog:
         if landed is not None:
             return DuplicateReceipt(idempotency_key=key, epoch=self.epoch, seq=landed)
 
-        problem = rejection_reason(event, self._index.nodes, self._index.threads)
+        offered = self._offered() if _judged_on_options(event) else {}
+        problem = rejection_reason(event, self._index.nodes, self._index.threads, offered)
         queued = self._queue() if event.kind in QUEUE_GESTURE_KINDS else {}
         if problem is None and event.kind in QUEUE_GESTURE_KINDS:
             problem = _queue_gesture_problem(event, queued)
@@ -280,7 +277,9 @@ class SessionLog:
                 # A refused fold still says what became of each sub-update: the
                 # refused one names its reason, and the rest name the veto.
                 updates=(
-                    fold_outcomes(event, self._index.nodes) if event.kind in FOLD_SHAPED else None
+                    fold_outcomes(event, self._index.nodes, offered)
+                    if event.kind in FOLD_SHAPED
+                    else None
                 ),
             )
 
@@ -328,6 +327,27 @@ class SessionLog:
         one, which is a human-paced act over a log bounded by one grilling.
         """
         return queue(self._entries)
+
+    def _offered(self) -> dict[str, frozenset[str]]:
+        """What each decision offers, as the board has it right now.
+
+        Folded rather than indexed, for the reason the queue beside it is: an
+        agent's revise waits for the human when the decision it rewrites is
+        already answered, so the options in the log are not the options on the
+        board until the human applies them. An appender that indexed the bytes
+        as they arrived would refuse the option the human is looking at and
+        accept one only the agent has seen -- and a proposal the human dismisses
+        would have changed what answers are taken having changed nothing anyone
+        can read. One reader for the question means the options an answer is
+        judged against and the options the page renders are the same answer.
+
+        ponytail: one fold per answer, which is a human-paced act over a log
+        bounded by one grilling.
+        """
+        return {
+            node.id: frozenset(option.id for option in node.options)
+            for node in fold(self.epoch, self._entries).decisions
+        }
 
     def _queued_ids(self, entry: LogEntry) -> set[str]:
         """Which of this entry's updates went to the queue instead of the board.

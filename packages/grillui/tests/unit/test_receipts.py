@@ -396,3 +396,60 @@ def test_an_answer_the_decision_can_carry_is_still_accepted(
 
     assert receipt["status"] == "accepted", receipt
     assert board_decision(client)["status"] == "settled"
+
+
+NEW_OPTIONS = [{"id": "c", "text": "A second log"}, {"id": "d", "text": "No store at all"}]
+
+
+def answer_with(client: TestClient, log: SessionLog, option: str, key: str) -> dict[str, Any]:
+    return post(
+        client,
+        log.epoch,
+        event(
+            "answer",
+            actor="human",
+            key=key,
+            target=SEED_NODE,
+            answer={"option": option, "text": None},
+        ),
+    )[0]
+
+
+def test_a_revise_waiting_on_the_human_does_not_change_which_options_an_answer_may_name(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a settled decision offering `a` and `b`, and an agent's revise
+          offering `c` and `d` that is waiting in the queue
+    When the human answers while it waits, and again after applying it
+    Then the options an answer may name are the ones image 1 shows: `a` and `b`
+         while the proposal waits, `c` and `d` once it lands.
+
+    The option check reads the board, not the log. An appender that took the
+    proposal's bytes as they arrived would refuse the option the human is
+    looking at and accept one only the agent has seen -- and a proposal the
+    human dismisses would change what the board accepts having changed nothing
+    the board shows.
+    """
+    seed_node(client, log.epoch)
+    assert answer_with(client, log, "b", "settling")["status"] == "accepted"
+    post(client, log.epoch, event("revise", key="proposal", target=SEED_NODE, options=NEW_OPTIONS))
+    assert proposed(client, SEED_NODE), "the revise must be waiting, not landed"
+    assert [option["id"] for option in board_decision(client)["options"]] == ["a", "b"]
+
+    assert answer_with(client, log, "a", "while-it-waits")["status"] == "accepted"
+    refused = answer_with(client, log, "c", "not-offered-yet")
+    assert refused["status"] == "rejected"
+    assert refused["reason"] == REASON_UNKNOWN_OPTION
+
+    # Those answers moved the board under the waiting proposal, so it is now in
+    # conflict and the agent sends it again -- the queue's own rule, not this
+    # test working around one.
+    post(client, log.epoch, event("revise", key="again", target=SEED_NODE, options=NEW_OPTIONS))
+    queue_gesture(client, log.epoch, APPLY_KIND, proposed(client, SEED_NODE)[-1], key="applying")
+
+    assert [option["id"] for option in board_decision(client)["options"]] == ["c", "d"]
+    assert answer_with(client, log, "c", "now-offered")["status"] == "accepted"
+    stale = answer_with(client, log, "a", "no-longer-offered")
+    assert stale["status"] == "rejected"
+    assert stale["reason"] == REASON_UNKNOWN_OPTION

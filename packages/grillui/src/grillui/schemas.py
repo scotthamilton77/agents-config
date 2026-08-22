@@ -1090,25 +1090,32 @@ def batch_payload_problem(submissions: Sequence[EventSubmission]) -> str | None:
 
 
 def fold_outcomes(
-    submission: EventSubmission, known_nodes: Mapping[str, Set[str]]
+    submission: EventSubmission, known_nodes: Set[str], offered: Mapping[str, Set[str]]
 ) -> list[FoldOutcome]:
     """Judge every sub-update of a fold together, all-or-none.
 
-    The sub-updates are judged in order against a board that grows as they go,
-    so an add-node earlier in the gesture is a node the ones after it may name,
-    and a revise earlier in it is the option trio the ones after it answer
-    against. One refusal vetoes the gesture: the refused sub-update carries its
-    own reason and every other carries a veto naming it, so a reader of the
-    receipt can tell which sub-update was the problem from the receipt alone.
+    The sub-updates are judged in order against a node set that grows as they
+    go, so an add-node earlier in the gesture is a node the ones after it may
+    name, and the options it offers are options the ones after it may answer
+    with -- an add-node never waits for the human, so a node it states is on the
+    board the moment the gesture lands. A revise grows nothing here: whether it
+    reaches the board or the queue is the fold's to decide, and the options an
+    answer is judged against come from the board either way.
+
+    One refusal vetoes the gesture: the refused sub-update carries its own
+    reason and every other carries a veto naming it, so a reader of the receipt
+    can tell which sub-update was the problem from the receipt alone.
     """
-    nodes = dict(known_nodes)
+    nodes = set(known_nodes)
+    trios = dict(offered)
     outcomes: list[FoldOutcome] = []
     for update in submission.payload.get("updates", []):
         kind = str(update.get("kind"))
         target = update.get("target")
-        problem = _sub_update_problem(submission, kind, update, nodes)
-        if isinstance(target, str) and (kind == "add-node" or update.get("options") is not None):
-            nodes[target] = option_ids(update)
+        problem = _sub_update_problem(submission, kind, update, nodes, trios)
+        if kind == "add-node" and isinstance(target, str):
+            nodes.add(target)
+            trios[target] = option_ids(update)
         outcomes.append(
             FoldOutcome(
                 kind=kind,
@@ -1138,7 +1145,8 @@ def _sub_update_problem(
     submission: EventSubmission,
     kind: str,
     update: Mapping[str, Any],
-    nodes: Mapping[str, Set[str]],
+    nodes: Set[str],
+    offered: Mapping[str, Set[str]],
 ) -> tuple[str, str] | None:
     """A sub-update is judged exactly as the same update would be on its own,
     once it is established that a fold may carry it at all. A fold does not
@@ -1157,6 +1165,7 @@ def _sub_update_problem(
         nodes,
         # A fold carries no thread event, so no thread id is ever judged here.
         {},
+        offered,
     )
 
 
@@ -1202,13 +1211,17 @@ def mint_targets(payload: Mapping[str, Any], kind: str, seq: int) -> dict[str, A
 
 def rejection_reason(
     submission: EventSubmission,
-    known_nodes: Mapping[str, Set[str]],
+    known_nodes: Set[str],
     known_threads: Mapping[str, str | None],
+    offered: Mapping[str, Set[str]],
 ) -> tuple[str, str] | None:
     """Judge one submission's content, returning `(reason, detail)` or None.
 
-    `known_nodes` maps each decision on the board to the option ids it offers,
-    which is what lets an answer be judged against the question it settles.
+    `offered` is the option ids each decision on the board carries, which is
+    what lets an answer be judged against the question it settles. It is the
+    board's own reading rather than the appender's index of the log: an agent's
+    revise may be waiting for the human, and until they apply it the options it
+    offers are not options anyone can answer with.
 
     The missing-key and epoch-mismatch reasons are decided by the appender,
     which is what holds the key index and the epoch; everything else is a
@@ -1251,7 +1264,11 @@ def rejection_reason(
         # the gesture is all-or-none, so one refusal is the gesture's refusal,
         # and it is named from the closed vocabulary like any other.
         refused = next(
-            (one for one in fold_outcomes(submission, known_nodes) if one.status == "rejected"),
+            (
+                one
+                for one in fold_outcomes(submission, known_nodes, offered)
+                if one.status == "rejected"
+            ),
             None,
         )
         return None if refused is None else (str(refused.reason), str(refused.detail))
@@ -1263,7 +1280,7 @@ def rejection_reason(
     if submission.kind in ANSWER_KINDS or "answer" in submission.payload:
         return _answer_problem(
             submission.payload.get("answer"),
-            known_nodes.get(target) if isinstance(target, str) else None,
+            offered.get(target) if isinstance(target, str) else None,
         ) or _from_thread_problem(submission, known_threads)
 
     return None
