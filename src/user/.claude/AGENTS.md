@@ -37,9 +37,17 @@ into `~/.claude/` (Claude is always an active tool; never auto-detected away).
   than counting files. Keep files scoped and single-purpose.
 - `commands/*.md` — one flat file per command; a tool-scoped namespace with no
   shared variant, so Claude is the only tree that carries one.
-- Everything in `commands/`, `skills/` and `rules/` is subject to the admission gate: no
-  `admission:` record in front matter means the installer drops it and prunes
-  any deployed copy. Adding a file here without a record ships nothing.
+- Everything in `commands/`, `skills/`, `rules/` and `workflows/` is subject to
+  the admission gate: no `admission:` record in front matter means the installer
+  drops it and prunes any deployed copy. Adding a file here without a record
+  ships nothing.
+- `workflows/*.js` — gated like the rest, and a `.js` file has no front matter of
+  its own, so the record goes in a leading `---` fence holding nothing but the
+  `admission:` block. The installer strips that block, and the now-empty fence
+  with it, so the deployed file is plain JavaScript; the authored file is not
+  valid JS until then. There is no workflow in the tree today.
+- `hooks/` deploys ungated — a hook is a `.py`/`.sh` executable with nowhere to
+  carry front matter, so the gate cannot read one.
 
 See the root [AGENTS.md](../../../AGENTS.md) for the full install model, file
 format conventions, and repo-wide rules.

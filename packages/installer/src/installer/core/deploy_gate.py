@@ -3,7 +3,7 @@
 One pass over the finalized staging plans, run in ``cli._run`` after the plan
 is assembled and before any write. It:
 
-1. **partitions** every gated artifact (rules/skills/commands/agents) by its
+1. **partitions** every gated artifact (rules/skills/commands/agents/workflows) by its
    admission record — dropping the record-less (the zero-base mechanism),
    collecting the malformed as violations, keeping the complete;
 2. **rewrites** each admitted artifact's front matter — the

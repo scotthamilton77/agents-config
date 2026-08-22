@@ -62,8 +62,8 @@ def _skill_dir_item(tmp_path: Path, skill_md: bytes | None) -> StagedItem:
     )
 
 
-def test_gated_namespaces_are_the_four() -> None:
-    assert sorted(GATED_NAMESPACES) == ["agents", "commands", "rules", "skills"]
+def test_gated_namespaces_are_the_five() -> None:
+    assert sorted(GATED_NAMESPACES) == ["agents", "commands", "rules", "skills", "workflows"]
     assert is_gated(_file_item("rules", _COMPLETE))
     # A root template (no namespace) is never gated.
     assert not is_gated(
