@@ -1257,15 +1257,69 @@ def test_a_channel_that_removes_a_finding_says_so_and_says_how_much(
     assert len(walk.silenced[channel]) == before + 1
 
 
-def test_the_lint_carries_each_channels_count_out_to_its_caller(tmp_path: Path) -> None:
-    """The counts have to survive the walk's own boundary, or the floor exists only
-    where nobody reads it."""
+_EndToEnd = Callable[[Path, pytest.MonkeyPatch], AbstractContextManager[None]]
+
+
+def _already_firing(repo: Path, monkeypatch: pytest.MonkeyPatch):  # noqa: ARG001
+    """The two channels the fixture exercises without being asked to: it holds
+    staging roots, and one of them declares namespaces."""
+    return nullcontext()
+
+
+def _live_ungated(repo: Path, monkeypatch: pytest.MonkeyPatch):  # noqa: ARG001
+    return _exemption({Path("src/newtree"): "a reason the test supplies"})
+
+
+def _live_git(repo: Path, monkeypatch: pytest.MonkeyPatch):  # noqa: ARG001
+    _git_tracked_repo(repo, "newtree/\n")
+    return nullcontext()
+
+
+def _live_build(repo: Path, monkeypatch: pytest.MonkeyPatch):  # noqa: ARG001
+    monkeypatch.setattr("installer.core.content_lint.BUILD_DIRS", frozenset({"newtree"}))
+    return nullcontext()
+
+
+def _live_installignore(repo: Path, monkeypatch: pytest.MonkeyPatch):  # noqa: ARG001
+    (repo / ".installignore").write_text(_INSTALLIGNORE + "newtree/\n", encoding="utf-8")
+    return nullcontext()
+
+
+@pytest.mark.parametrize(
+    ("channel", "arrange"),
+    [
+        (CH_UNGATED, _live_ungated),
+        (CH_GIT, _live_git),
+        (CH_STAGED, _already_firing),
+        (CH_NAMESPACE, _already_firing),
+        (CH_BUILD, _live_build),
+        (CH_INSTALLIGNORE, _live_installignore),
+    ],
+    ids=["ungated", "git", "staged-root", "namespace", "build-dirs", "installignore"],
+)
+def test_every_channels_count_reaches_the_lints_own_report(
+    channel: str, arrange: _EndToEnd, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each channel again, end to end this time. The walk knowing what it took is
+    only half the floor: the count has to survive out to the result a caller reads,
+    or the report exists where nobody looks at it."""
+    repo = _fail_open_repo(tmp_path)
+
+    with arrange(repo, monkeypatch):
+        result = _lint(repo)
+
+    assert result.silenced.get(channel, 0) >= 1
+
+
+def test_a_channel_that_took_nothing_is_absent_from_the_report(tmp_path: Path) -> None:
+    """A channel prints because it did something. A standing row of zeroes is a
+    block a reader learns to skip, which is the failure mode the whole report is
+    meant to avoid."""
     repo = _fail_open_repo(tmp_path)
     result = _lint(repo)
 
-    assert result.silenced[CH_NAMESPACE] > 0
-    assert result.silenced[CH_STAGED] > 0
     assert CH_INSTALLIGNORE not in result.silenced  # nothing in the fixture matches one
+    assert CH_UNGATED not in result.silenced  # the register ships empty
 
 
 @pytest.mark.parametrize("pattern", ["*/", ".*/"])

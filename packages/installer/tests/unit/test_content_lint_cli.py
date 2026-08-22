@@ -296,20 +296,34 @@ def test_module_is_runnable_as_python_dash_m(
     assert exc_info.value.code == 0
 
 
-def test_the_silencing_counts_print_on_a_pass(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "channel",
+    [
+        "UNGATED_ROOTS",
+        "git ignore",
+        "staging root or holder (descended)",
+        "namespace of a staged root",
+        "BUILD_DIRS",
+        ".installignore",
+    ],
+)
+def test_every_silencing_channel_prints_its_own_name_and_count(
+    channel: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A green run has to say how much of the tree it declined to judge. Every
-    channel that answers for a directory is legitimate, so without the counts a run
-    that measures half the tree prints exactly like a run over a tidy one."""
+    """A green run has to say how much of the tree it declined to judge, and which
+    channel declined it. Every channel that answers for a directory is legitimate,
+    so without the counts a run measuring half the tree prints exactly like a run
+    over a tidy one — and a channel missing from the report is the half nobody can
+    see. Asked per channel, because the value of the block is that it is complete.
+    """
     from installer.core.content_lint import ContentLintResult
 
-    result = ContentLintResult(silenced={".installignore": 3, "BUILD_DIRS": 1})
+    result = ContentLintResult(silenced={channel: 7})
     monkeypatch.setattr("installer.content_lint_cli.lint_content", lambda *_a, **_k: result)
 
     assert main([str(tmp_path)]) == 0
 
-    out = capsys.readouterr().out
-    assert ".installignore" in out
-    assert "3" in out
-    assert "BUILD_DIRS" in out
+    assert f"       7  {channel}\n" in capsys.readouterr().out
