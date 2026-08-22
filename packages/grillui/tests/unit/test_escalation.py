@@ -17,10 +17,21 @@ from grillui.escalation import (
     CONDITION_IRREDUCIBLE,
     CONDITION_MULTIPLE,
     Turn,
+    in_expert_mode,
     recommend,
+    transfer_source,
     turns_of,
 )
-from grillui.schemas import Actor, Decision, Image2, LogEntry, Thread
+from grillui.schemas import (
+    MAP_CHANNEL,
+    STATUS_PHASE_TRANSFERRED,
+    TRANSFER_SOURCE_POLICY,
+    Actor,
+    Decision,
+    Image2,
+    LogEntry,
+    Thread,
+)
 
 TARGET = "d1"
 
@@ -198,6 +209,30 @@ def test_the_transcript_is_read_from_the_log_channel_by_channel() -> None:
     ]
     assert turns[0].target == TARGET
     assert [turn.text for turn in turns_of(entries, "t1")] == ["not here"]
+
+
+def test_only_the_backends_own_transfer_entry_moves_a_channel() -> None:
+    """
+    Given a `transferred` status entry authored by an agent rather than by the
+         backend, and the same entry authored by the backend
+    When each channel's mode is read
+    Then the agent's moves nothing and names no source, and the backend's moves
+         the channel and names the policy.
+
+    The appender already refuses a client that offers a `status` kind -- it is
+    outside the submission registry -- so this entry cannot be built through the
+    wire at all, and is constructed here directly. That is the point: the reader
+    is not allowed to rest on the writer's gate. A reader keyed on the phase
+    alone would start honouring agent-authored transfers the moment the registry
+    changed, silently and in the direction that spends money.
+    """
+    claimed = entry("status", "grill-master", MAP_CHANNEL, phase=STATUS_PHASE_TRANSFERRED)
+    authored = entry("status", "backend", MAP_CHANNEL, phase=STATUS_PHASE_TRANSFERRED)
+
+    assert not in_expert_mode([claimed], MAP_CHANNEL)
+    assert transfer_source([claimed], MAP_CHANNEL) is None
+    assert in_expert_mode([authored], MAP_CHANNEL)
+    assert transfer_source([authored], MAP_CHANNEL) == TRANSFER_SOURCE_POLICY
 
 
 def test_an_option_taken_without_a_note_is_still_a_turn() -> None:

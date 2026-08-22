@@ -33,7 +33,7 @@ var EMISSIONS = {
 var PROPOSABLE_KINDS = ["add-node", "revise", "invalidate", "settle", "unsettle", "resolve-stale"];
 var NOTICE_KINDS = ["informational", "elicit-alert"];
 var MAP_MUTATION_KINDS = ["add-node", "invalidate", "revise", "settle", "unsettle", "resolve-stale", "elicit-alert", "fold"];
-var STATUS_PHASES = ["accepted", "composing", "replied", "error"];
+var STATUS_PHASES = ["accepted", "composing", "replied", "error", "transferred"];
 var AGENT_ACTORS = ["grill-master", "thread-agent"];
 var CLAIM_STATES = ["granted", "refused", "superseded"];
 // The three payload keys this page reads a tier off, spelled the backend's way.
@@ -41,7 +41,8 @@ var CLAIM_STATES = ["granted", "refused", "superseded"];
 // the tier it is waiting on; `RECOMMENDATION_KEY` is the escalation advice a
 // fast reply carries when it met one of the conditions; `TRANSFER_FLAG` is the
 // key on the human's own turn that puts that channel on the expert tier, and
-// the backend reads the mode back off exactly this key.
+// the backend reads their half of the mode back off exactly this key. The other
+// half is the lane's `transferred` phase, which both sides read the same way.
 var TIER_KEY = "tier";
 // The two tiers, spelled as the log spells them. The page labels a turn by what
 // it finds under the key, so a stale spelling here is a turn the human is told
@@ -99,6 +100,10 @@ var STATUS_KIND = "status";
 var PHASE_COMPOSING = "composing";
 var PHASE_REPLIED = "replied";
 var PHASE_ERROR = "error";
+// The lane saying the escalation policy moved a channel to the expert tier. The
+// page reads it exactly where it reads the human's own transfer gesture: it is
+// the same fact about the same channel, said by the backend instead.
+var PHASE_TRANSFERRED = "transferred";
 
 /* ---------------- the board, and what has happened ---------------- */
 
@@ -716,30 +721,39 @@ function foldReady(threadId) {
 
 /* ---------------- which tier each channel is on ----------------
    The mode is not on image 1 and is not held anywhere on the backend: it is the
-   human's own last turn on that channel carrying the transfer key, and the
-   backend reads it back the same way at the moment it routes the next turn. So
-   this page reads it from the record too, rather than remembering what it
-   clicked — a reload, a second window and a restarted backend all then agree
-   about which tier a channel is on, because all three are reading one fact.
+   last thing the log said about that channel, and the backend reads it back the
+   same way at the moment it routes the next turn. So this page reads it from the
+   record too, rather than remembering what it clicked — a reload, a second
+   window and a restarted backend all then agree about which tier a channel is
+   on, because all three are reading one fact.
+
+   Two things say it, and the later one wins: the human's own turn carrying the
+   transfer key, and the lane's `transferred` entry, which is the escalation
+   policy moving the channel with nobody pressing anything. An agent's own reply
+   says nothing about it in either direction.
 
    `TRANSFER` is the gap between a click and the turn that carries it. Activation
    forces the *next* turn, so the click alone forces nothing; what it does is
-   decide what the next turn will say, and that intent lives here until a turn
-   goes out with it. It is not cleared afterwards, on purpose: the log then says
-   the same thing, and a click whose turn was refused keeps its intent instead of
-   quietly losing it. */
+   decide what the next turn will say, and that intent lives here until the log
+   speaks after it — which is why the click is stamped with where the log stood
+   when it was made. A click whose turn was refused keeps its intent, because
+   nothing landed after it; a click the policy then overtook loses it, because
+   the control must name where the channel is now and not the tier it has left. */
 var TRANSFER = {};
 function loggedMode(channel) {
   for (var i = LOG.length - 1; i >= 0; i--) {
     var e = LOG[i];
-    if (e.channel === channel && e.actor === "human" && e.payload && TRANSFER_FLAG in e.payload) {
-      return e.payload[TRANSFER_FLAG] === true;
+    if (e.channel !== channel || !e.payload) continue;
+    if (e.actor === "human" && TRANSFER_FLAG in e.payload) {
+      return { on: e.payload[TRANSFER_FLAG] === true, at: i };
     }
+    if (e.kind === STATUS_KIND && e.payload.phase === PHASE_TRANSFERRED) return { on: true, at: i };
   }
-  return false;
+  return { on: false, at: -1 };
 }
 function onExpert(channel) {
-  return channel in TRANSFER ? TRANSFER[channel] : loggedMode(channel);
+  var said = loggedMode(channel), meant = TRANSFER[channel];
+  return meant && meant.since > said.at ? meant.on : said.on;
 }
 // What an agent turn is called, read off that turn's own attribution and never
 // off the channel it sits on. The channel's mode says where the channel is now;
@@ -760,7 +774,7 @@ function tierAt(seq) {
   var e = entryAt(seq);
   return (e && e.payload && e.payload[TIER_KEY]) || null;
 }
-function toggleTransfer(channel) { TRANSFER[channel] = !onExpert(channel); render(); }
+function toggleTransfer(channel) { TRANSFER[channel] = { on: !onExpert(channel), since: LOG.length }; render(); }
 // The escalation advice on this channel's latest agent reply, or nothing. A
 // property of the last reply rather than of the session, so the next reply that
 // meets no condition is what takes the highlight away — advice about a question

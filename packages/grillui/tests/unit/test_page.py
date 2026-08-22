@@ -1852,11 +1852,13 @@ def test_an_unattributed_turn_is_labelled_as_nothing_rather_than_as_a_guess() ->
 def test_the_mode_and_the_highlight_are_read_from_the_log_the_page_already_holds() -> None:
     """Neither is on image 1, and neither is remembered.
 
-    The mode is the human's own last turn carrying the flag -- so a reload, a
-    second window and a restarted backend all agree, because all three read one
-    record. The highlight is the channel's latest agent reply and no earlier
-    one, so a reply that meets no condition is what takes it away; advice about
-    a question two turns ago is not advice about this one.
+    The mode is the last thing the log said about that channel -- the human's own
+    turn carrying the flag, or the lane's `transferred` entry where the policy
+    moved it -- so a reload, a second window and a restarted backend all agree,
+    because all three read one record. The highlight is the channel's latest
+    agent reply and no earlier one, so a reply that meets no condition is what
+    takes it away; advice about a question two turns ago is not advice about this
+    one.
 
     The reply filter needs both halves: the lane's own `composing` entry names a
     tier as well, so a filter on the key alone reads the status lane.
@@ -1864,6 +1866,7 @@ def test_the_mode_and_the_highlight_are_read_from_the_log_the_page_already_holds
     mode = function_body("loggedMode")
     assert 'e.actor === "human"' in mode, "an agent's own payload could move the channel"
     assert "TRANSFER_FLAG in e.payload" in mode
+    assert "e.payload.phase === PHASE_TRANSFERRED" in mode, "a policy transfer moves nothing here"
     assert "for (var i = LOG.length - 1; i >= 0; i--)" in mode, "the mode is not the last gesture"
 
     highlight = function_body("recommended")
@@ -1871,6 +1874,21 @@ def test_the_mode_and_the_highlight_are_read_from_the_log_the_page_already_holds
     assert "TIER_KEY in e.payload" in highlight
     assert "e.payload[RECOMMENDATION_KEY] || null" in highlight
     assert "for (var i = LOG.length - 1; i >= 0; i--)" in highlight
+
+
+def test_the_control_follows_the_log_rather_than_the_click_the_policy_overtook() -> None:
+    """GUI-U24: after a policy transfer the control names the tier the channel
+    is on, and not the one the human's own last click named.
+
+    The click is an intent held until the log speaks after it, which is why it
+    carries where the log stood when it was made. Without that, a human who had
+    just sent a channel back to the fast tier would see *Transfer to expert* on a
+    channel the policy had since escalated -- and their next turn, which stamps
+    the flag off exactly this reading, would silently undo the transfer.
+    """
+    assert "since: LOG.length" in function_body("toggleTransfer"), "the click is not placed"
+    assert "meant.since > said.at" in function_body("onExpert"), "a stale click outranks the log"
+    assert '(on ? "⚡ Return to fast agent"' in function_body("transferControl")
 
 
 # ---------------------------------------------------------------- GUI-A50
