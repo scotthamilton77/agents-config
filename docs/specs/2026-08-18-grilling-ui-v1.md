@@ -152,7 +152,9 @@ and nothing else, and it never needs the process that ran the session.
 
 **GUI-D28 — The launch path.** The backend serves loopback only, on a default port with a
 per-session override, taking the next free port when the default is occupied.
-`grill-with-ui` opens the resulting URL in the human's browser and also prints it.
+The backend prints the resulting URL; `grill-with-ui` hands that URL to the human, and
+nothing opens a browser at it unless the launch was asked to with `--open` — a launch is
+usually driven by an agent on the human's behalf, and a tab nobody asked for is noise.
 
 ## 3. Agent drive
 

@@ -95,6 +95,7 @@ def test_serve_takes_a_session_directory_and_an_optional_port(tmp_path: Path) ->
     assert args.session_dir == tmp_path
     assert args.port == DEFAULT_PORT
     assert args.handoff is None
+    assert args.open is False
 
 
 def test_serve_dispatches_to_the_launch_path_with_the_parsed_arguments(
@@ -109,16 +110,42 @@ def test_serve_dispatches_to_the_launch_path_with_the_parsed_arguments(
     Pins the wiring rather than the server: standing a real socket up here
     would test uvicorn, not this package.
     """
-    called: list[tuple[Path, int, Path | None]] = []
+    called: list[tuple[Path, int, Path | None, bool]] = []
     monkeypatch.setattr(
         cli,
         "launch",
-        lambda directory, port, handoff: (called.append((directory, port, handoff)), 0)[1],
+        lambda directory, port, handoff, *, open_browser: (
+            called.append((directory, port, handoff, open_browser)),
+            0,
+        )[1],
     )
     briefing = tmp_path / "briefing.json"
 
     assert entry(["serve", str(tmp_path), "--port", "9001", "--handoff", str(briefing)]) == 0
-    assert called == [(tmp_path, 9001, briefing)]
+    assert called == [(tmp_path, 9001, briefing, False)]
+
+
+def test_serve_opens_a_browser_only_when_asked_to(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a serve invocation carrying `--open`
+    When entry runs
+    Then the launch path is told to open a browser.
+
+    Serving is usually driven by an agent on the human's behalf, so the flag is
+    how a human says the tab is wanted; without it the printed URL is the whole
+    hand-over.
+    """
+    asked: list[bool] = []
+    monkeypatch.setattr(
+        cli,
+        "launch",
+        lambda _directory, _port, _handoff, *, open_browser: (asked.append(open_browser), 0)[1],
+    )
+
+    assert entry(["serve", str(tmp_path), "--open"]) == 0
+    assert asked == [True]
 
 
 def test_a_refused_handoff_exits_non_zero_naming_the_field(

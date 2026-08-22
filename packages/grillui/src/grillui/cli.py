@@ -1,8 +1,11 @@
 """Argument parsing for the grillui console script.
 
 `serve` runs one backend process over one session directory, and is a session
-end to end: it prints and opens the URL, serves the board on loopback until the
-process exits, and leaves the terminal result on stdout. A new directory is
+end to end: it prints the URL, serves the board on loopback until the process
+exits, and leaves the terminal result on stdout. `--open` additionally opens a
+browser at that URL once the board is answering; without it the printed URL is
+the whole hand-over, since the caller is usually an agent and the desktop is
+somebody else's. A new directory is
 started from a handoff -- named with `--handoff`, or `handoff.json` inside the
 directory itself -- and a directory whose log already holds entries is resumed
 from that log, whatever the handoff file now says. Refusing a handoff exits
@@ -57,6 +60,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_PORT,
         help=f"preferred loopback port (default {DEFAULT_PORT}; the next free one is taken)",
     )
+    serve_command.add_argument(
+        "--open",
+        action="store_true",
+        help="open a browser at the session URL once the board is answering",
+    )
     capture_command = commands.add_parser(
         "capture", help="write and print a finished session's terminal result"
     )
@@ -75,7 +83,7 @@ def entry(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "serve":
         try:
-            return launch(args.session_dir, args.port, args.handoff)
+            return launch(args.session_dir, args.port, args.handoff, open_browser=args.open)
         except HandoffRefusedError as refusal:
             # The one failure a caller can act on: the message names the field.
             # Nothing was initialised, so fixing the file and re-running is the
