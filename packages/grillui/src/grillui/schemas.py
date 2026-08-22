@@ -165,6 +165,14 @@ THREAD_GESTURE_KINDS = frozenset({THREAD_FOLD_KIND, THREAD_PARK_KIND, THREAD_CLO
 # one. A thread picked back up after either has been away while the board moved,
 # and what it is owed on the way back is the interval's catch-up.
 SET_ASIDE_KINDS = frozenset({THREAD_PARK_KIND, THREAD_CLOSE_KIND})
+
+# The session-level thread the human asks for a change to the map in. It anchors
+# no decision, like the thread about the board itself, and the two are told apart
+# by this kind rather than by their anchor: one is primed to say which decisions
+# change and how, and the other carries the board's own reference material.
+# Folding it is what puts its conclusion in front of the grill-master, which is
+# the only agent that may act on it.
+MAP_THREAD_KIND = "map"
 NOTICE_KINDS = frozenset({"informational", "elicit-alert"})
 GESTURE_KINDS = frozenset({"answer"})
 

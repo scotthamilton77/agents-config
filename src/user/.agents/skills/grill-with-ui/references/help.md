@@ -61,6 +61,14 @@ item carrying what it concluded.
 
 The help thread is a thread like any of these, except that it hangs off no decision.
 
+**🗺 Ask for a map change** in the top row opens the other thread that hangs off no
+decision: the one about the map itself. Say what you want changed — decisions that are now
+moot, one that is wrong, one that is missing — and its agent turns that into a statement of
+which decisions change and how. Folding it hands the statement to the agent that owns the
+map, which proposes the changes; they arrive in the inbox waiting on you, like any other.
+It is the route for a change spanning several decisions, which no thread on one of them can
+reach: a thread's agent may recommend a map change and never make one.
+
 ## Changes the agents propose
 
 An agent never rewrites the board on its own. When a change would overwrite or undermine

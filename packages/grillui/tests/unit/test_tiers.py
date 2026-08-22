@@ -16,7 +16,13 @@ import pytest
 from conftest import dispatch_context, handoff_doc, write_handoff
 
 from grillui.dispatch import GRILL_MASTER, THREAD_AGENT
-from grillui.schemas import LogEntry
+from grillui.schemas import (
+    MAP_THREAD_KIND,
+    DispatchContext,
+    LogEntry,
+    Thread,
+    ThreadProjection,
+)
 from grillui.session import open_session
 from grillui.tiers import (
     CONCISION_RULE,
@@ -35,6 +41,7 @@ from grillui.tiers import (
     HEAVY_EFFORT_ENV,
     HEAVY_MODEL_ENV,
     HEAVY_TIER,
+    MAP_THREAD_MANDATE,
     MOOTNESS_RULE,
     NO_BRIEFING,
     NO_MANUFACTURE_RULE,
@@ -520,3 +527,66 @@ def test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_ca
     assert "say plainly that you cannot" in brief
     assert "folding this thread is what puts your conclusion in front of the grill-master" in brief
     assert "Agreeing to do it is a promise nothing keeps" in brief
+
+
+def map_thread_context(kind: str = MAP_THREAD_KIND, channel: str = "t-map") -> DispatchContext:
+    """A thread dispatch whose board carries the thread the turn runs on.
+
+    The kind is a parameter because what these checks are about is the
+    difference between the two threads that anchor nothing: the one about the
+    map and the one about the board.
+    """
+    return DispatchContext(
+        agent=THREAD_AGENT,
+        channel=channel,
+        epoch="e",
+        seq=0,
+        image2=ThreadProjection(
+            epoch="e", seq=0, threads=[Thread(id="t-map", kind=kind, title="Ask for a map change")]
+        ),
+    )
+
+
+def test_a_turn_on_the_map_thread_is_told_to_state_which_decisions_change_and_how(
+    entries: list[LogEntry],
+) -> None:
+    """
+    Given a dispatch for the session-level map thread
+    When the turn's prompt is assembled
+    Then it carries that thread's mandate: name the decisions, say what happens
+         to each, and hand the statement over by folding rather than authoring
+         it -- without which its agent is an ordinary side thread told only that
+         it may not change the map, and the human's request reaches the
+         grill-master as prose nobody can act on.
+    """
+    prompt = compose("{}", map_thread_context(), entries)
+
+    assert MAP_THREAD_MANDATE in prompt
+    assert "which decisions change and how" in prompt
+    assert "folding it is what hands your statement to the grill-master" in prompt
+
+
+def test_the_map_thread_mandate_reaches_no_other_channel(entries: list[LogEntry]) -> None:
+    """
+    Given the help thread, an ordinary side thread and the map channel
+    When each one's prompt is assembled
+    Then none carries the map thread's mandate -- it is a property of the
+         channel the turn runs on, and an agent told to steer the map on a
+         thread the human opened for something else steers it unasked.
+    """
+    assert MAP_THREAD_MANDATE not in compose("{}", map_thread_context(kind="help"), entries)
+    assert MAP_THREAD_MANDATE not in compose("{}", dispatch_context("t-d1"), entries)
+    assert MAP_THREAD_MANDATE not in compose("{}", dispatch_context(), entries)
+
+
+def test_the_map_thread_as_another_threads_stub_mandates_nothing(
+    entries: list[LogEntry],
+) -> None:
+    """
+    Given a dispatch for one thread whose board also carries the map thread
+    When that turn's prompt is assembled
+    Then it carries no map mandate: a kind read off any thread on the board
+         rather than off the channel this turn runs on would put the mandate on
+         every turn taken for the rest of the session.
+    """
+    assert MAP_THREAD_MANDATE not in compose("{}", map_thread_context(channel="t-d1"), entries)
