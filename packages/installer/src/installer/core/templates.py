@@ -1,4 +1,5 @@
-"""DYNAMIC-INCLUDE flattening for instruction templates.
+"""Install-time template resolution: DYNAMIC-INCLUDE flattening for instruction
+templates, and ``{{HOME}}`` substitution for settings templates.
 
 Some tools do not resolve `@`-style includes, so instruction templates carry
 inline markers that are flattened into a single self-contained file at install
@@ -32,6 +33,14 @@ listed** (not lexicographic), each resolved as ``<name>.md`` from the fixed
 skipped; a missing rule warns and is skipped (the separator only advances on a
 successful inline). An empty list passes through as prose.
 
+HOME form::
+
+    "command": "python3 {{HOME}}/.claude/hooks/ruff-postedit.py"
+
+Anywhere inside a staged ``settings.json``, ``{{HOME}}`` resolves to the home the
+run is installing into, so a settings file naming a deployed script points at the
+copy that same run placed.
+
 """
 
 from __future__ import annotations
@@ -45,6 +54,7 @@ from typing import TYPE_CHECKING, assert_never
 from installer.core.model import (
     AllRulesInclude,
     FileInclude,
+    FileKind,
     IncludeDirective,
     NamedRulesInclude,
 )
@@ -58,6 +68,9 @@ if TYPE_CHECKING:
 _FILE_INCLUDE_RE = re.compile(r"^<!-- DYNAMIC-INCLUDE: (.*) -->$")
 _ALL_RULES_RE = re.compile(r"^<!-- DYNAMIC-INCLUDE-ALL-RULES -->$")
 _NAMED_RULES_RE = re.compile(r"^<!-- DYNAMIC-INCLUDE-RULES: (.*) -->$")
+
+# Stands for the install destination home inside a settings template.
+_HOME_PLACEHOLDER = "{{HOME}}"
 
 # Fixed source dir the named-RULES subset resolves from, relative to base_dir.
 # Distinct from ALL-RULES, which reads the staged rules tree.
@@ -141,6 +154,26 @@ def flatten_template(
             case _:  # pragma: no cover - exhaustiveness guard for future variants
                 assert_never(directive)
     return "".join(out)
+
+
+def substitute_home(plan: StagingPlan, *, home: Path) -> None:
+    """Resolve ``{{HOME}}`` in the plan's staged ``settings.json`` items.
+
+    A settings file that names an absolute user-space path — Claude's hook
+    commands, which name scripts under ``.claude/hooks/`` — has to point at the
+    copies the same run deploys, so the template spells that path
+    ``{{HOME}}/...`` and the destination home is substituted here. The user's own
+    home renders as ``~``, the shell's spelling of it; any other home renders
+    absolute, because ``~`` expands against the reading process's environment and
+    would otherwise resolve to a different install's scripts. Mutates ``plan`` in
+    place.
+    """
+    prefix = "~" if home == Path.home() else str(home)
+    for dest, item in list(plan.items.items()):
+        if item.kind is not FileKind.SETTINGS_JSON or item.content is None:
+            continue
+        resolved = item.content.decode("utf-8").replace(_HOME_PLACEHOLDER, prefix)
+        plan.items[dest] = replace(item, content=resolved.encode("utf-8"))
 
 
 def flatten_plan_templates(plan: StagingPlan, *, repo_root: Path, io: IOPort) -> None:
