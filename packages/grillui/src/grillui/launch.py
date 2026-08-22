@@ -153,8 +153,21 @@ class _ReadyServer(uvicorn.Server):
         self._on_ready = on_ready
 
     async def main_loop(self) -> None:
-        asyncio.get_running_loop().run_in_executor(None, self._on_ready)
+        ready = asyncio.get_running_loop().run_in_executor(None, self._on_ready)
+        ready.add_done_callback(_report_ready_failure)
         await super().main_loop()
+
+
+def _report_ready_failure(done: asyncio.Future[None]) -> None:
+    """A failed ready hook is said, not swallowed.
+
+    The hook runs off the loop and nothing awaits it, so without this its
+    exception would vanish; the server keeps serving either way, because a
+    browser that did not open is the human's problem to notice, not a reason
+    to end the session.
+    """
+    if not done.cancelled() and (error := done.exception()) is not None:
+        print(f"grillui: opening the browser failed: {error}", file=sys.stderr, flush=True)
 
 
 def serve_forever(app: ASGIApp, port: int, on_ready: Callable[[], None]) -> None:

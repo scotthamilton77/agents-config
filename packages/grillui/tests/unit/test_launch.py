@@ -570,3 +570,36 @@ def test_a_failing_stop_hook_does_not_poison_the_end_receipt(
     assert ended.json()[0]["status"] == "accepted"
     assert (session_dir / RESULT_FILE).exists()
     assert "stop hook failed" in capsys.readouterr().err
+
+
+def test_a_failing_ready_hook_is_reported_and_does_not_stop_the_server(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Given the ready hook's future failed
+    When its completion is reported
+    Then the failure is printed to stderr and nothing is raised.
+
+    The hook runs off the loop and nothing awaits it; a swallowed failure
+    would leave the human waiting for a tab that was never going to open.
+    """
+    import asyncio
+
+    from grillui.launch import _report_ready_failure
+
+    loop = asyncio.new_event_loop()
+    try:
+        failed: asyncio.Future[None] = loop.create_future()
+        failed.set_exception(OSError("no desktop"))
+        _report_ready_failure(failed)
+        fine: asyncio.Future[None] = loop.create_future()
+        fine.set_result(None)
+        _report_ready_failure(fine)
+        cancelled: asyncio.Future[None] = loop.create_future()
+        cancelled.cancel()
+        _report_ready_failure(cancelled)
+    finally:
+        loop.close()
+    err = capsys.readouterr().err
+    assert "opening the browser failed: no desktop" in err
+    assert err.count("opening the browser failed") == 1
