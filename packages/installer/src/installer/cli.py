@@ -52,6 +52,7 @@ from installer.core.run import (
     record_receipt,
 )
 from installer.core.summary import render_summary
+from installer.core.templates import substitute_home
 from installer.plugins.registry import discover
 from installer.tools.registry import UnknownToolError, get_adapter, known_tools
 
@@ -291,6 +292,15 @@ def _run(
     except (UnknownMergeKeyError, CollisionError) as exc:
         sys.stderr.write(f"installer: {exc}\n")
         return 1
+
+    # Resolve `{{HOME}}` in the staged settings against the home THIS run installs
+    # into, so a settings file that names a deployed script (Claude's hook
+    # commands) points at the copy this run places rather than at whatever `~`
+    # expands to when the tool later reads it. Sits here, above the --dump-stage
+    # and --project forks, so every route that renders a plan renders the same
+    # bytes the install would write. `resolved_home` is the only home in scope.
+    for plan in plans.values():
+        substitute_home(plan, home=resolved_home)
 
     # A `--project` run forks here to the project-scoped tail: it installs kit
     # content (tool-agnostic project refs) under a project-local receipt and

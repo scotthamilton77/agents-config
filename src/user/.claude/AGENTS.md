@@ -14,8 +14,11 @@ into `~/.claude/` (Claude is always an active tool; never auto-detected away).
 - `rules/*.md` — collisions are allowed: files with the same name are
   **appended** (base first, plugins alphabetically) with a `---` separator.
 - `hooks/` — Python scripts referenced by `settings.json.template`'s hook
-  commands (invoked as `python3 ~/.claude/hooks/<script>.py`); each script
-  ships a paired test.
+  commands (invoked as `python3 {{HOME}}/.claude/hooks/<script>.py`); each
+  script ships a paired test. `{{HOME}}` is resolved by the installer to the
+  home that run installs into — `~` for the user's own home, an absolute path
+  for any other — so the command names the copy that run placed. Write a new
+  hook command with the placeholder, never a literal `~`.
 - `settings.json.template` — **union-merged** with any existing
   `~/.claude/settings.json` by the installer's own deep-merge strategy (pure
   Python, no `jq` dependency): dicts recurse, arrays concatenate and dedupe,
