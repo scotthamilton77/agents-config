@@ -292,6 +292,12 @@ def _unread_roots(repo_root: Path, *, plugins_root: Path) -> list[Path]:
     separately because a broken one exists on disk and answers ``exists()`` with
     the state of a target that is not there.
 
+    Every directory on the way down to a root is checked, not only the root
+    itself. A regular file at an intermediate path makes every path beneath it
+    answer ``exists()`` with ``False``, so a leaf-only check reads one clobbered
+    ``src/user`` as four legitimately absent tool trees and passes over the
+    whole deployed surface.
+
     Only the fixed roots are checked. A plugin's own subtrees come from
     discovery, so they exist by construction, and their optional per-tool scopes
     are absent in the normal case.
@@ -301,7 +307,12 @@ def _unread_roots(repo_root: Path, *, plugins_root: Path) -> list[Path]:
         return [src]
     roots = [plugins_root, shared_source_dir(repo_root)]
     roots.extend(get_adapter(tool).source_dir(repo_root) for tool in known_tools())
-    return [root for root in roots if not root.is_dir() and (root.exists() or root.is_symlink())]
+    checked = set(roots) | {
+        parent for root in roots for parent in root.parents if parent.is_relative_to(src)
+    }
+    return sorted(
+        path for path in checked if not path.is_dir() and (path.exists() or path.is_symlink())
+    )
 
 
 def stage_src(repo_root: Path, *, io: IOPort) -> StagedSource:

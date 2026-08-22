@@ -236,6 +236,20 @@ def test_one_staging_root_that_is_not_a_directory_names_that_root(
     assert "always-on surface" not in captured.out
 
 
+def test_a_clobbered_directory_above_the_roots_is_named_too(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A regular file part-way down hides every root beneath it: those paths
+    answer ``exists()`` with ``False``, so checking only the roots reads one
+    broken ``src/user`` as four legitimately absent tool trees."""
+    (tmp_path / ".installignore").write_text("AGENTS.md\n", encoding="utf-8")
+    (tmp_path / "src" / "plugins").mkdir(parents=True)
+    (tmp_path / "src" / "user").write_text("not a tree\n", encoding="utf-8")
+
+    assert main([str(tmp_path)]) == 2
+    assert str(tmp_path / "src" / "user") in capsys.readouterr().err
+
+
 def test_unstageable_src_is_a_named_failure_not_a_traceback(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
