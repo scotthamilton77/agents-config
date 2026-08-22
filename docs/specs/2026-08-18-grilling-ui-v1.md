@@ -501,10 +501,11 @@ follows, and changes nothing else.
   would arm. It appears on the thread's most recent turn only (GUI-D31); an earlier turn's
   retired proposal stays readable as part of what was said and carries no control. The
   control renders on an open thread only: parking or closing the thread (GUI-D29) hides it
-  while the proposal stays live in the log, so reopening shows it again, and a session
-  ended with a proposal nobody took carries it nowhere — the terminal result (§8.7) lists
-  decisions and threads, never offers. Activating it brings the anchor decision into view
-  with its own-words box filled and the named option's control marked (GUI-D33); the human
+  while the proposal stays live in the log — though a closed thread reopens only on a
+  human turn, which retires the offer it follows (GUI-D31), so a fresh one is needed — and
+  a session ended with a proposal nobody took carries it nowhere — the terminal result
+  (§8.7) lists decisions and threads, never offers. Activating it brings the anchor
+  decision into view with its own-words box filled and the named option's control marked (GUI-D33); the human
   presses one of those two existing controls to answer.
   Where that decision is already settled the control says so, because the
   human is about to replace an answer they gave. Where the decision cannot be answered
@@ -1271,4 +1272,4 @@ opens one proves something else.
 - GUI-A67 | probe: packages/grillui/tests/browser/apply_decision_probe.py::main
 - GUI-A68 | test: packages/grillui/tests/unit/test_convergence.py::test_an_answer_carrying_from_thread_settles_and_closes_in_one_entry
 - GUI-A69 | test: packages/grillui/tests/unit/test_convergence.py::test_a_live_proposal_queues_nothing_and_holds_nothing
-- GUI-A70 | test: packages/grillui/tests/unit/test_convergence.py::test_the_thread_agent_prompt_of_both_tiers_states_when_and_how_to_offer
+- GUI-A70 | open
