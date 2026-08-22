@@ -352,6 +352,11 @@ class TestPromptContent:
                                   "duplicated, or silently diverged from.",
             "standalone-read": "A finding names the identifier, reference, or episode the "
                                "deployed reader cannot resolve.",
+            "interface-quality": "a preference among equally sound shapes is not a finding.",
+            "contract-only-boundary": "a stub returning a constant to satisfy a type checker "
+                                      "is not a finding.",
+            "pinning-adequacy": "a test that could be added but pins no enumerated decision "
+                                "is not a finding.",
         }
         for contract in CLASSES.values():
             for lens in contract["lenses"]:

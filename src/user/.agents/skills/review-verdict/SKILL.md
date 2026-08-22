@@ -43,8 +43,8 @@ this envelope's.
 
 Each entry carries `lens`, its own `verdict` of `clean` or `findings` — only the round halts, never
 a single lens — and `vendor`, `transport` and `model`, recording what **actually** produced the
-report, never what the lens registry declared. A lens reports exactly once; a second entry for it is
-rejected (`duplicate-lens`), because two attempts reported as two lenses inflate coverage.
+report, never what the lens registry declared. A lens reports exactly once; a second entry is
+rejected (`duplicate-lens`) — two attempts reported as two lenses inflate coverage.
 
 An optional `substitution` appears only when a lens ran on something other than its declared entry,
 holding `declared_transport`, `declared_model`, a mandatory non-blank `reason`, and
@@ -59,8 +59,7 @@ collapsed — a reader's observation, not a validation error.
 A finding carries an `id` unique within the artifact, its `lens`, a `type` of `mechanical` (blocks)
 or `advisory` (never blocks; routes to the backlog), the `ac` it judges against, a `claim`, and
 `evidence` such as `tests/test_parser.py::test_trailing fails at this head`. `evidence` is mandatory
-and non-blank for `mechanical` — omitted, empty and whitespace-only all fail — and optional for
-`advisory`.
+and non-blank for `mechanical`, and optional for `advisory`.
 
 `downgraded_from: "mechanical"` marks an advisory the harvester demoted because the lens called it
 mechanical with no evidence. Only an advisory may carry it; it keeps the demotion countable.
@@ -109,8 +108,8 @@ is still bent and the request is refused. It carries no `failures`; nothing fail
 `abandoned_lenses` is required on both shapes, naming the staffed lenses the round never dispatched;
 present even when empty.
 
-A halted round is never clean and never complete, and `verdict` says so outright rather than leaving
-it inferred from a missing lens entry. Its findings are real and still not a verdict on the change.
+A halted round is never clean and never complete, and `verdict` says so outright. Its findings are
+real and still not a verdict on the change.
 
 ## Where a verdict is posted
 
@@ -134,8 +133,10 @@ against the pull request:
 5. **Ledger coverage** — `prior_dispositions` accounts for every `mechanical` finding from every
    prior round's posted verdict.
 
-**Terminal-clean** = a complete round whose `verdict` is `clean`, carrying zero `mechanical`
-findings. A halted round is never terminal-clean, however few findings it holds. The schema checks
+**Terminal-clean** = a complete, unhalted round carrying zero `mechanical` findings — `verdict`
+`clean`, or `findings` that are all advisory (a blocking-only sweep returning only advisories
+confirmed no blocking defect; they route to the backlog). A halted round is never terminal-clean,
+however few findings it holds. The schema checks
 one artifact's shape; these five compare it against the world, so a person checks them by hand.
 
 ## Validating
