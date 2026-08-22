@@ -277,13 +277,27 @@
   /* No scroll-behavior here: it would turn every render's scroll-restore into an
      animation that fights the previous one. Intentional scrolls opt in per call. */
   .column { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-  .item { border-bottom: 1px solid var(--line); padding: 12px 15px; transition: padding .2s ease; }
+  /* The opaque background is what a pinned header scrolls over: a transparent
+     block would let the option list read straight through it. */
+  .item { background: var(--paper); border-bottom: 1px solid var(--line); padding: 12px 15px; transition: padding .2s ease; }
   .item:last-child { border-bottom: 0; }
   .item.focused { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
   .item.collapsed { padding: 9px 15px; }
   .item.mandated { background: var(--mandate-bg); box-shadow: inset 5px 0 0 var(--mandate-line); }
   .item.mandated.focused { background: #cffafe; }
-  .item .head { display: flex; align-items: baseline; gap: 8px; }
+  /* A decision taller than the pane keeps its id and title at the pane's top
+     while any part of it is in view. The block's own header is the one that
+     pins — a second floating copy would sit over the first option every time
+     the decision was read from its top. The header's box bounds it, so it
+     releases exactly as the decision leaves; a collapsed block never pins,
+     since a settled decision has nothing under its header to read. The
+     background is stated, not inherited: the touched flash animates the
+     item's own background through transparent, and a header that inherited
+     it would let the body show through for the tail of the flash. */
+  .item .head { display: flex; align-items: baseline; gap: 8px;
+    position: sticky; top: 0; z-index: 2; background: var(--paper); padding: 4px 0 6px; }
+  .item.focused .head { background: var(--accent-soft); }
+  .item.collapsed .head { position: static; }
   .item .head .t { font-weight: 600; font-size: 13.5px; }
   .item .head .bigmark { font-size: 22px; line-height: 1; align-self: center; }
   .item.collapsed .oneline { font-size: 12.5px; color: var(--ink-dim); margin-top: 2px;

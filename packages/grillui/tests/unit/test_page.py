@@ -2604,3 +2604,31 @@ def test_the_board_is_sized_by_the_window_rather_than_by_a_constant() -> None:
     for fixed in (".card > h3 { flex: none;", ".maplegend { flex: none;"):
         assert fixed in source, f"{fixed} does not hold its height"
     assert "640px" not in source, "a fixed pane height is back"
+
+
+def test_a_decision_block_pins_its_own_header_until_the_block_ends() -> None:
+    """The id and title stay in view while any of the decision is.
+
+    An option list runs screens below the question it answers, and a human
+    picking an answer down there has nothing on the page naming what they are
+    answering. What pins is the block's own header rather than a second copy
+    floating over the pane: a copy would cover the first option every time the
+    block was read from its top, and it would need code to work out which
+    decision it belonged to. Sticky needs three things the page has to keep --
+    a scrolling ancestor for the pane, an opaque background under the header,
+    and a header whose own box ends where the block does, which is what makes
+    it release rather than hand over to a rule. A collapsed block opts out: a
+    settled decision has nothing under its header to read.
+
+    Where the pinned header actually lands is the browser probe's answer.
+    """
+    source = page_source()
+    assert ".column { position: relative;" in source, "the pane is not the scrolling ancestor"
+    sticky = source.split(".item .head {", 1)[1].split("}", 1)[0]
+    assert "position: sticky" in sticky, f"the header is not pinned: {sticky!r}"
+    assert "top: 0" in sticky, f"the header pins to nothing: {sticky!r}"
+    assert "background: var(--paper)" in sticky, "the pinned header is see-through"
+    assert ".item.focused .head { background: var(--accent-soft); }" in source, (
+        "a focused block's pinned header shows the wrong colour"
+    )
+    assert ".item.collapsed .head { position: static; }" in source, "a collapsed block still pins"
