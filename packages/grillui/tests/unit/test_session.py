@@ -15,12 +15,22 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import TIMEOUT, SpyDriver, driven, event, handoff_doc, write_handoff
+from conftest import TIMEOUT, SpyDriver, driven, event, handoff_doc, run_turns, write_handoff
 
 from grillui.dispatch import DISPATCH_DIR
+from grillui.lane import Lane
 from grillui.log import IMAGE1_FILE, IMAGE2_FILE, LOG_FILE, SessionLog, read_entries
+from grillui.persistence import project_and_persist
 from grillui.projector import fold, to_image1
-from grillui.schemas import SESSION_START_KIND, Image1
+from grillui.schemas import (
+    MAP_CHANNEL,
+    SESSION_START_KIND,
+    STATUS_KIND,
+    STATUS_PHASE_COMPOSING,
+    STATUS_PHASE_REPLIED,
+    EventSubmission,
+    Image1,
+)
 from grillui.session import HandoffRefusedError, open_session
 
 THREAD = "t1"
@@ -553,6 +563,32 @@ def test_restart_mints_a_new_epoch_on_a_continuing_sequence_with_the_board_intac
     ]
 
 
+def test_the_session_a_restart_resumes_has_no_turn_still_writing_into_it(
+    session_dir: Path,
+) -> None:
+    """
+    Given the busy session the restart cases are measured against
+    When it is handed back
+    Then every turn its lane announced has already closed, and the sequence is
+         the whole of what the directory holds.
+
+    A restart is a directory the previous process has finished with. Every turn
+    writes a `replied` entry of its own, from its own thread, after the batch
+    that scheduled it returned -- so a turn still announced and not yet closed
+    is an entry still to land. Read the sequence with one of those outstanding
+    and the number is a moment, not a position: the next entry arrives two
+    ahead of it rather than one, and the restart takes the blame for a write
+    the previous tenure had not finished making.
+    """
+    log = _busy_session(session_dir)
+
+    entries = log.entries()
+    phases = [entry.payload["phase"] for entry in entries if entry.kind == STATUS_KIND]
+    assert phases.count(STATUS_PHASE_COMPOSING) == 2
+    assert phases.count(STATUS_PHASE_REPLIED) == phases.count(STATUS_PHASE_COMPOSING)
+    assert log.seq == len(entries)
+
+
 def test_the_next_entry_after_a_restart_continues_the_sequence(session_dir: Path) -> None:
     """
     Given a restarted session
@@ -753,38 +789,47 @@ def test_a_page_leaving_while_a_turn_is_in_flight_stops_nothing(session_dir: Pat
 
 
 def _busy_session(session_dir: Path) -> SessionLog:
-    """A session with a settled answer and a thread that has been spoken in.
+    """A session with a settled answer and a thread that has been spoken in,
+    handed back with no turn still writing into it.
 
     The state a restart has to reproduce: one decision the human answered, and
     one conversation with turns in it.
+
+    The turns are waited out rather than left running, which is why this goes
+    through the lane rather than posting and walking away. Each human gesture
+    schedules a turn on a thread of its own, and that thread closes itself with
+    a `replied` entry after the batch that scheduled it has already returned --
+    so a helper that handed back mid-flight would hand back a sequence that
+    moves on its own. A restart measured against it reads a position the
+    directory had not reached, and blames the resume path for the difference.
     """
     log = open_session(session_dir, write_handoff(session_dir, handoff_doc()))
-    client = driven(log, SpyDriver())
-    client.post(
-        "/events",
-        json={
-            "epoch": log.epoch,
-            "events": [
-                event(
-                    "answer",
-                    actor="human",
-                    key="a1",
-                    target="d1",
-                    answer={"option": "a", "text": "an append-only log"},
-                    why="the audit trail is the point",
-                ),
-                event(
-                    "thread-created",
-                    actor="human",
-                    channel=THREAD,
-                    key="t-1",
-                    kind="side",
-                    title="Durability",
-                    turns=[{"who": "human", "text": "durability is the point"}],
-                ),
-            ],
-        },
+    run_turns(
+        Lane(log, SpyDriver()),
+        EventSubmission(
+            kind="answer",
+            actor="human",
+            channel=MAP_CHANNEL,
+            idempotency_key="a1",
+            payload={
+                "target": "d1",
+                "answer": {"option": "a", "text": "an append-only log"},
+                "why": "the audit trail is the point",
+            },
+        ),
+        EventSubmission(
+            kind="thread-created",
+            actor="human",
+            channel=THREAD,
+            idempotency_key="t-1",
+            payload={
+                "kind": "side",
+                "title": "Durability",
+                "turns": [{"who": "human", "text": "durability is the point"}],
+            },
+        ),
     )
+    project_and_persist(log)
     return log
 
 
