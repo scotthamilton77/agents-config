@@ -431,9 +431,9 @@ class SkillBody:
     ``where`` is the source file when the plan records one and the destination
     otherwise. ``tools`` names every tool measured against the same ceiling: a
     shared skill stages into every plan, so ungrouped it reports the same number
-    once per tool. ``cap`` is the ceiling that measured it, and it is a property
-    of the *target* rather than of the source — so one skill can produce two
-    entries, one per group of tools that agree about it.
+    once per tool. ``cap`` is the ceiling that measured it, chosen from the
+    source declaration — so one artifact reports one ceiling, whatever the
+    targets do with its front matter.
     """
 
     where: str
@@ -586,13 +586,12 @@ def _group_skill_bodies(
 
     ``tokens`` is part of the key rather than an attribute of the group because a
     per-tool transform can change one source's deployed weight, and one file
-    reporting two different numbers is precisely the thing worth seeing. So is
-    ``cap``: the ceiling is chosen from the projected front matter, so a skill
-    declaring itself user-invoked is measured against the loose cap on the one
-    tool that honours the declaration and the strict cap everywhere else. Folding
-    those into one group would print whichever ceiling happened to arrive first
-    and hide the tools it does not apply to — the failure this grouping exists
-    to avoid, one column over.
+    reporting two different numbers is precisely the thing worth seeing. ``cap``
+    is in the key for a weaker reason: the ceiling follows the source
+    declaration, so it is constant across the tools that share a ``(where,
+    tokens)`` group and can never split one. Keying on it means the reported
+    ceiling is read off the group's own identity rather than off whichever
+    member the iteration reached first.
     """
     grouped: dict[tuple[str, int, int], list[str]] = {}
     for measure in measures:

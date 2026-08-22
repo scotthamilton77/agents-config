@@ -32,7 +32,8 @@ def _repo(
     payload: dict[str, str] | None = None,
 ) -> Path:
     """A repo root carrying one skill. ``tree`` picks the tool subdirectory, which
-    decides whether a user-invoked declaration survives the projection."""
+    decides which targets the skill stages into and whether a user-invoked
+    declaration survives their projection."""
     (tmp_path / ".installignore").write_text("AGENTS.md\n", encoding="utf-8")
     skill_dir = tmp_path / "src" / "user" / tree / "skills" / name
     skill_dir.mkdir(parents=True)
@@ -72,13 +73,13 @@ def test_a_user_invoked_skill_reports_against_the_raised_ceiling(
     """A body between the two caps deploys, and the trend line says which ceiling
     let it through.
 
-    The Claude-only tree is the fixture because that is where the looser ceiling
-    is earned: the same declaration in the shared tree is stripped for three of
-    four tools, and the body is measured against the strict cap on each of them.
+    The shared tree is the fixture because that is where the declaration is
+    tested hardest: three of the four targets strip the key on projection, and
+    the ceiling has to follow the author's declaration onto them anyway.
     """
     body = "x" * (SKILL_BODY_TOKEN_CAP * 4 + 4)
     flagged = _RECORD.replace("---\n", "---\ndisable-model-invocation: true\n", 1)
-    repo = _repo(tmp_path, skill=flagged + body, tree=".claude")
+    repo = _repo(tmp_path, skill=flagged + body)
 
     assert main([str(repo)]) == 0
     assert f"/ {USER_INVOKED_SKILL_BODY_TOKEN_CAP}" in capsys.readouterr().out

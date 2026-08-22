@@ -186,38 +186,41 @@ write:
 - each **model-invoked** skill body, after front matter: **2k tokens**
 - each **user-invoked** skill body: **5k tokens**
 
-Every one of those is measured per tool, on the bytes that tool deploys. That
-is what makes the invocation mode a property of a deployed copy rather than of
-the source.
+The always-on numbers are measured per tool, on the bytes that tool deploys.
+The body cap is not: it is chosen from the source declaration, so one skill
+carries one ceiling everywhere.
 
-A skill is user-invoked **on a given tool** when the front matter it deploys
-with there carries `disable-model-invocation: true`. Where the key survives,
-that tool publishes no catalog entry for the skill at all: it costs zero
-always-on tokens there, and its body is reached only when the user names it — a
-cost asked for, at a moment chosen for it. Where the key is stripped, the model
-reaches that body on its own judgement, mid-task, against whatever the context
-is already carrying, which is what the tighter number prices.
+A skill is user-invoked when its **source** front matter carries
+`disable-model-invocation: true`, and that declaration alone picks the 5k
+ceiling — on every target, including the ones whose loader cannot read the key.
+The ceiling prices the shape the author committed to: a body reached only when
+the user names it is paid at a moment chosen for it, where a body the model may
+pull in mid-task lands on top of whatever the context is already carrying.
+
+The **catalog** charge is the per-tool half, and it turns on the deployed front
+matter instead. Where the key survives, that tool publishes no catalog entry at
+all and the skill costs zero always-on tokens there. Where it is stripped, the
+description is published and charged, because a description in the model's
+catalog is loaded whatever the author declared.
 
 **Claude and Codex honour the declaration today.** Claude reads the flag from
 the deployed front matter. Codex's loader does not define the key, so the
 installer strips it there and emits Codex's own declaration instead — a
 generated `agents/openai.yaml` sidecar (`policy.allow_implicit_invocation:
 false`) beside the deployed SKILL.md. OpenCode has no equivalent to translate
-onto, so there the skill is model-invocable whatever its author declared. The
-budget still prices every stripped copy from its deployed front matter, so on
-Codex and OpenCode the copy sits under the strict body cap and its description
-is charged to that tool's catalog — on Codex an over-charge in the safe
-direction, since the sidecar keeps the skill out of implicit invocation. Two
-consequences to hold:
+onto, so there the skill is model-invocable whatever its author declared, and
+its description is charged to OpenCode's catalog. Codex's description is
+charged too, an over-charge in the safe direction, since the sidecar keeps the
+skill out of implicit invocation. Two consequences to hold:
 
-- The 5k number is Claude-shaped, and it is Claude-only. A 4,900-token
-  user-invoked body passes on Claude and **aborts the deploy** on Codex and
-  OpenCode, where the same bytes are weighed against 2k. The looser ceiling is
-  relief on one target, never permission on the rest. Gemini is not a third
-  case: no vendor documentation establishes whether a deployed skill reaches
-  its runtime at all, so this project models its skill loading not at all
-  rather than guessing at it — no catalog charge, no body cap, and no claim
-  here about how it invokes.
+- The 5k number is not permission to leave a body whole. It is relief for one
+  that has already been split down, and it now applies on every target — so a
+  4,900-token user-invoked body deploys everywhere, and the only thing standing
+  between it and a reader is whether the work of moving prose into
+  `references/` was actually done. Gemini is outside both numbers: no vendor
+  documentation establishes whether a deployed skill reaches its runtime at
+  all, so this project models its skill loading not at all rather than guessing
+  — no catalog charge, no body cap, and no claim here about how it invokes.
 - Carrying the flag is not by itself a reason to leave the shared tree, since it
   is projected out cleanly. But dropping a key removes the bytes, not the gap: a
   skill whose worth claim *depends* on never firing unprompted is still
