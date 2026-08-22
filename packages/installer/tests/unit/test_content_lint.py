@@ -8,6 +8,7 @@ artifact as fatal or merely reportable according to which subtree it sits in.
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -15,7 +16,12 @@ from pathlib import Path
 import pytest
 
 from installer.core.capabilities import models_skill_loading
-from installer.core.content_lint import UNGATED_ROOTS, _staged_dirs, _unaccounted_dirs, lint_content
+from installer.core.content_lint import (
+    UNGATED_ROOTS,
+    _staged_dirs,
+    _unaccounted_dirs,
+    lint_content,
+)
 from installer.core.installignore import load_installignore
 from installer.core.io_port import ScriptedIO
 from installer.core.surface_budget import (
@@ -550,7 +556,7 @@ def test_a_plugins_bespoke_routes_are_accounted(tmp_path: Path) -> None:
     staged = _staged_dirs(repo, plugins_root=plugins_root, plugins=[plugin])
     ignore = load_installignore(repo / ".installignore")
 
-    assert _unaccounted_dirs(repo, staged=staged, ignore=ignore) == []
+    assert _unaccounted_dirs(repo, staged=staged, ignore=ignore, git_ignored=frozenset()) == []
 
 
 def test_a_directory_beside_a_route_that_no_route_names_is_a_violation(tmp_path: Path) -> None:
@@ -569,7 +575,7 @@ def test_a_directory_beside_a_route_that_no_route_names_is_a_violation(tmp_path:
     staged = _staged_dirs(repo, plugins_root=plugins_root, plugins=[plugin])
     ignore = load_installignore(repo / ".installignore")
 
-    unaccounted = _unaccounted_dirs(repo, staged=staged, ignore=ignore)
+    unaccounted = _unaccounted_dirs(repo, staged=staged, ignore=ignore, git_ignored=frozenset())
     assert [p for p in unaccounted if p == Path("src/plugins/widget/.widget/notaroute")]
 
 
@@ -986,3 +992,118 @@ def test_one_shared_artifact_reports_its_cost_defect_once(tmp_path: Path) -> Non
     result = _lint(repo)
 
     assert len([v for v in result.violations if "cost mentions tokens" in v]) == 1
+
+
+def _git_tracked_repo(repo: Path, ignore_lines: str) -> Path:
+    """Turn a fixture root into a git repository whose ``.gitignore`` is ``ignore_lines``.
+
+    No commit is needed: the question the lint asks is which *untracked* paths git
+    would refuse, which an empty index answers as well as a full one.
+    """
+    subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)  # noqa: S603, S607
+    (repo / ".gitignore").write_text(ignore_lines, encoding="utf-8")
+    return repo
+
+
+def test_a_git_ignored_file_beside_a_skill_is_not_content(tmp_path: Path) -> None:
+    """The verdict has to be a property of the committed tree. A Finder ``.DS_Store``
+    dropped into a namespace directory reaches no clone and no runner, so holding it
+    to the admission bar makes the gate red on one machine and green on every other —
+    which teaches its readers to stop reading its exit code."""
+    repo = _git_tracked_repo(_repo(tmp_path, skills={"tidy": _RECORD + "body\n"}), ".DS_Store\n")
+    (repo / "src" / "user" / ".agents" / "skills" / ".DS_Store").write_bytes(b"Bud1\x00")
+
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+    assert result.unadmitted == []
+
+
+def test_an_untracked_file_git_keeps_is_still_held_to_the_bar(tmp_path: Path) -> None:
+    """The floor under the skip. Asking git is not a licence to stop looking at
+    uncommitted work: a new artifact is untracked right up to the moment it is
+    staged, and a gate that waited for the commit would pass every artifact on the
+    run that introduces it."""
+    repo = _git_tracked_repo(_repo(tmp_path, skills={"tidy": _RECORD + "body\n"}), ".DS_Store\n")
+    (repo / "src" / "user" / ".agents" / "skills" / "stray.md").write_text("no record\n")
+
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [u for u in result.unadmitted if u.source.name == "stray.md"]
+
+
+def test_a_git_ignored_file_inside_a_skill_is_not_weighed(tmp_path: Path) -> None:
+    """The same file one level deeper is no longer an artifact of its own — it is
+    payload the skill would be charged for, and a number that moves with whoever
+    opened the directory in Finder is a budget nobody can hold."""
+    repo = _git_tracked_repo(
+        _repo(
+            tmp_path,
+            skills={"tidy": _RECORD + "body\n"},
+            shared_skill_files={"tidy": {"references/notes.md": "x" * 400}},
+        ),
+        ".DS_Store\n",
+    )
+    skill = repo / "src" / "user" / ".agents" / "skills" / "tidy"
+    before = [m.other_tokens + m.prose_tokens for m in _lint(repo).payloads]
+    (skill / "references" / ".DS_Store").write_bytes(b"Bud1\x00" * 200)
+
+    result = _lint(repo)
+
+    assert result.ok
+    assert [m.other_tokens + m.prose_tokens for m in result.payloads] == before
+
+
+def test_a_git_ignored_directory_under_src_is_not_unaccounted(tmp_path: Path) -> None:
+    """Staging never reads a directory git refuses either, and the accounting walk
+    must not call that a wiring defect — otherwise a stray local build directory
+    fails the build for its owner alone."""
+    repo = _git_tracked_repo(_repo(tmp_path, skills={"tidy": _RECORD + "body\n"}), "scratch/\n")
+    (repo / "src" / "scratch" / "deep").mkdir(parents=True)
+
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_a_git_ignored_markdown_inside_a_skill_carries_no_verdict(tmp_path: Path) -> None:
+    """The interior scan walks a skill directory from disk rather than from the plan,
+    so a stray markdown file is read wherever it came from. A local note git refuses
+    to track is not an authoring defect in this repository, and failing the build over
+    one puts the verdict back on the working directory."""
+    repo = _git_tracked_repo(
+        _repo(
+            tmp_path,
+            skills={"tidy": _RECORD + "body\n"},
+            shared_skill_files={"tidy": {"references/keep.md": "plain prose\n"}},
+        ),
+        "scratch.md\n",
+    )
+    skill = repo / "src" / "user" / ".agents" / "skills" / "tidy"
+    (skill / "references" / "scratch.md").write_text(_RECORD + "notes\n", encoding="utf-8")
+
+    result = _lint(repo)
+
+    assert result.ok
+    assert result.violations == []
+
+
+def test_a_tracked_markdown_inside_a_skill_is_still_judged(tmp_path: Path) -> None:
+    """The floor under the interior skip: the same file under no ignore rule still
+    reports, so the filter never becomes a way to stop scanning skill interiors."""
+    repo = _git_tracked_repo(
+        _repo(
+            tmp_path,
+            skills={"tidy": _RECORD + "body\n"},
+            shared_skill_files={"tidy": {"references/scratch.md": _RECORD + "notes\n"}},
+        ),
+        "nothing-here\n",
+    )
+
+    result = _lint(repo)
+
+    assert not result.ok
+    assert [v for v in result.violations if "carries deploy-time metadata" in v]
