@@ -133,14 +133,27 @@ def test_eval_corpora_never_deploy_for_any_tool() -> None:
     ignore = load_installignore(_REPO_ROOT / ".installignore")
     carriers = _staged_skills_carrying_evals(ignore)
 
-    assert any(carriers.values()), (
-        "no staged skill carries an evals/ directory — this guard proves nothing"
-    )
     for tool, skills in carriers.items():
+        # Per tool, not once globally: a tool whose plan happens to carry no
+        # eval-bearing skill would otherwise run no assertion at all and report
+        # as covered. One shared skill carries a corpus, so every tool has one.
+        assert skills, f"no staged skill carries an evals/ directory for {tool}"
         for dest, source in skills.items():
             deployed = _deployed_relpaths(source, ignore)
             leaked = sorted(rel for rel in deployed if "evals" in rel.parts)
             assert not leaked, f"{dest}: {leaked} would deploy to {tool}"
+
+    # Base staging is not the whole deployed surface — a plugin skill reaches a
+    # tool through the overlay phase, out of a source tree no plan above names.
+    # The manifest is what prunes a DIR item's interior either way, so every
+    # corpus in the tree is checked against it directly.
+    corpora = sorted(_REPO_ROOT.glob("src/**/skills/*/evals"))
+    assert corpora, "no evals/ directory under src/ — this guard proves nothing"
+    for corpus in corpora:
+        skill = corpus.parent
+        assert not [rel for rel in _deployed_relpaths(skill, ignore) if "evals" in rel.parts], (
+            f"{corpus.relative_to(_REPO_ROOT)} would deploy"
+        )
 
 
 def test_excluding_evals_does_not_take_the_rest_of_the_skill_with_it() -> None:
