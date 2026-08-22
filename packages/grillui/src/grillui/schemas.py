@@ -379,9 +379,20 @@ class LogEntry(Strict):
 
 
 class Option(Strict):
+    """An answer on offer, and what its author expects it to cost downstream.
+
+    `puts_in_question` is display data and nothing else: the page marks those
+    decisions while the human has this option in hand, and what actually moves a
+    decision is still an applied invalidate. Nothing checks the ids against the
+    board, deliberately -- a pre-mark naming no node marks nothing, while a
+    dangling prereq strands a decision the frontier can never reach, so refusing
+    one of these would let a stale hint reject a whole plan.
+    """
+
     id: str
     text: str
     pcr: list[str] | None = Field(default=None, min_length=3, max_length=3)
+    puts_in_question: list[str] | None = None
 
 
 class Answer(Strict):

@@ -287,7 +287,13 @@ var UI = {
   // offered it and which option it built on. It rides the next answer that
   // decision sends and goes with the draft it filled -- nothing about it is on
   // the log until the human presses an answer control.
+  // `overOpt` and `keyedOpt` are the two live ways to have an option in hand --
+  // the pointer on its control and the caret on it. Page-local like the rest of
+  // this object, and unlike `held` they are not written to the window store: an
+  // option a pointer was resting on is not something a reload can still be
+  // holding.
   focus: null, open: {}, drafts: {}, panel: null, held: {}, armed: {},
+  overOpt: null, keyedOpt: null,
   lastFocus: null, lastPanelKey: null, centerNext: true, justSettled: null,
   fresh: [], touched: [], autoshut: {}, advanceFrom: null,
   bubbles: [], bubbleSeen: {}, bubbleSig: null, bubbleTick: 0, ptr: null,
@@ -1143,6 +1149,9 @@ function armAnswer(tid, id) {
   if (!offer || offer.decision !== id || t.state !== "open") return;
   var draft = (UI.drafts[id] || "").trim();
   UI.drafts[id] = draft ? draft + "\n\n" + offer.text : offer.text;
+  // Re-keyed rather than overwritten, so this map reads newest-last: which of
+  // several armed options is the one in hand is a question about recency.
+  delete UI.armed[id];
   UI.armed[id] = { thread: tid, option: offer.option || null };
   // The decision the human is about to answer, in view and open -- a settled one
   // is collapsed, and arming it out of sight would fill a box nobody is looking at.
@@ -1158,12 +1167,19 @@ function answerDecision(id, payload) {
   // hold is what the page will not answer around. Neither is re-derived: a
   // refusal the human never sees is the thing this page exists to avoid.
   if (!d || !takesAnswer(id) || holdOn(id)) return;
+  // The warning was worth something only before the answer. Once one is sent the
+  // board says what the board says, so the live sources let go here rather than
+  // waiting for the pointer to move off a control that is about to be replaced.
+  UI.overOpt = UI.keyedOpt = null;
   // A mandated decision holds the answer instead of sending it: concluding the
   // thread is the only thing that settles it, and nothing is asserted until
   // then.
   if (mandateOpen(d)) {
-    UI.held[id] = payload;
-    saveHeld();
+    // Re-keyed rather than overwritten, so this map reads newest-last: which of
+    // several held answers is the one in hand is a question about recency. Both
+    // halves of the re-key are made durable together, as one write.
+    delete UI.held[id];
+    UI.held[id] = payload; saveHeld();
     var t = mandateThread(d);
     var seed = seedForMandate(d, payload);
     // The thread is told what is being held, whether this is the pick that opens
@@ -1488,6 +1504,68 @@ function optionButton(d, o, index, cls, lead, dis) {
     '" data-opt="' + esc(o.id) + '" data-label="' + esc(labelAt(index)) + '"' + dis + ">" + lead +
     '<span class="olab">' + labelAt(index) + "</span>" + esc(o.text) + "</button>" +
     pcrIcon(o) + "</div>";
+}
+
+/* ---------- what the option in hand would put in question ---------- */
+// A mark that is the page's alone: it crosses no wire, appends nothing, and a
+// reload with nothing in hand comes back to a board without it. What actually
+// moves a decision is still an invalidate the agent wrote and the human applied.
+//
+// One option is in hand at a time, and the sources rank: the pointer on an
+// option's control, else the caret on one, else an armed option, else an answer
+// held behind a mandated thread. So the pointer leaving falls back to whatever
+// still holds, a lower source arriving under a higher one changes nothing, and
+// the marks are that one option's rather than the union of everything in reach.
+function optionOf(target) {
+  var control = target && target.closest ? target.closest('[data-act="pick"]') : null;
+  return control ? { id: control.dataset.id, option: control.dataset.opt } : null;
+}
+// The same naming read the other way: the control an option answers to, on the
+// board as it stands now. Membership rather than a selector, because a decision
+// id is the plan author's string and a selector would be a query built out of it.
+function optionControl(hand) {
+  var all = document.querySelectorAll('[data-act="pick"]');
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].dataset.id === hand.id && all[i].dataset.opt === hand.option) return all[i];
+  }
+  return null;
+}
+// Newest-last, and only an entry that stands on an option: a free-text answer
+// held behind a mandate predicts nothing, because no option authored it.
+function lastOptionIn(map) {
+  var ids = Object.keys(map), i = ids.length;
+  while (i--) {
+    if (map[ids[i]] && map[ids[i]].option) return { id: ids[i], option: map[ids[i]].option };
+  }
+  return null;
+}
+function optionInHand() {
+  return UI.overOpt || UI.keyedOpt || lastOptionIn(UI.armed) || lastOptionIn(UI.held);
+}
+function preMarked() {
+  var hand = optionInHand(), d = hand && node(hand.id);
+  var picked = d && d.options.filter(function (o) { return o.id === hand.option; })[0];
+  return (picked && picked.puts_in_question) || [];
+}
+// Painted onto the rendered board rather than rendered into it. The mark changes
+// on every pass of the pointer, and re-rendering the column under a human
+// reaching for an option would replace the control they were reaching for.
+// Membership rather than a selector, so an id naming no node simply matches
+// nothing and an id carrying selector punctuation is not a query at all.
+function paintPreMarks() {
+  var marked = preMarked(), drawn = document.querySelectorAll(".mnode, .item");
+  for (var i = 0; i < drawn.length; i++) {
+    drawn[i].classList.toggle("premark", marked.indexOf(drawn[i].dataset.id) >= 0);
+  }
+}
+// Repainted only when the option in hand actually changed: the pointer crosses
+// dozens of elements on the way to a control, and every one of them is a
+// mouseover that hands this the same answer.
+function inHand(slot, found) {
+  var was = UI[slot], key = function (o) { return o ? o.id + "|" + o.option : null; };
+  if (key(was) === key(found)) return;
+  UI[slot] = found;
+  paintPreMarks();
 }
 // One control, on every channel anyone speaks on: the map's and each open
 // thread's. Never disabled — the moment the human most wants an expert is the
@@ -2245,6 +2323,13 @@ function render() {
   var act = document.activeElement;
   var focusId = act && act.tagName === "TEXTAREA" ? act.id : null;
   var caret = focusId ? act.selectionStart : 0;
+  // The caret is on a control rather than in a box. The render replaces every
+  // control on the board, so an option the human tabbed to is destroyed under
+  // them and the caret falls to the body -- which the default below reads as
+  // nobody holding anything, and hands to the free-text box of whatever
+  // decision is focused. Held by what names the control rather than by the
+  // element, since the element this finds is not the one that comes back.
+  var focusOpt = focusId ? null : optionOf(act);
 
   noteCompletion();
   harvestBubbles();
@@ -2281,6 +2366,8 @@ function render() {
     takeCaret(document.getElementById("ft-say"));
   } else if (focusId) {
     takeCaret(document.getElementById(focusId), caret);
+  } else if (focusOpt) {
+    takeCaret(optionControl(focusOpt));
   } else if (UI.panel && UI.panel.kind === "thread") {
     takeCaret(document.getElementById("ft-say"));
   } else if (UI.focus !== UI.lastFocus || document.activeElement === document.body) {
@@ -2290,6 +2377,10 @@ function render() {
     if (box && !UI.panel && !box.disabled) takeCaret(box);
   }
   UI.lastFocus = UI.focus;
+  // Last, because a render replaces the elements the mark is painted on -- and
+  // after the caret has been placed, since placing it is one of the things that
+  // decides which option is in hand.
+  paintPreMarks();
 }
 // The map auto-centres on whatever the column is focused on, and vice versa.
 function centerOn(id) {
@@ -2651,13 +2742,18 @@ function pcrCard(o) {
 // Focus raises what hover raises and leaving takes it away -- and leaving never
 // mutes, because a zone muted by the focus moving off it would never come back.
 document.addEventListener("focusin", function (e) {
+  inHand("keyedOpt", optionOf(e.target));
   var o = e.target.closest("[data-p]");
   if (o && o.dataset.p && zoneKey(o) !== MUTED) showHover(pcrCard(o), o.getBoundingClientRect());
 });
 document.addEventListener("focusout", function (e) {
+  // `relatedTarget` is where the caret went, so this is the same reading in both
+  // directions: whatever now holds it is what is in hand, and nothing is.
+  inHand("keyedOpt", optionOf(e.relatedTarget));
   if (e.target.closest("[data-p]") && HOVER) HOVER.style.display = "none";
 });
 document.addEventListener("mouseover", function (e) {
+  inHand("overOpt", optionOf(e.target));
   // Still inside the zone whose overlay was clicked away: say nothing.
   if (MUTED && zoneKey(zoneOf(e.target)) === MUTED) return;
   var b = e.target.closest("[data-why]");
@@ -2683,6 +2779,9 @@ document.addEventListener("mouseover", function (e) {
     n.getBoundingClientRect());
 });
 document.addEventListener("mouseout", function (e) {
+  // The pointer leaving the window raises no `mouseover` anywhere, so the option
+  // it was resting on has to be let go of here.
+  inHand("overOpt", optionOf(e.relatedTarget));
   // Leaving the muted zone for something that is not it is what re-arms it.
   // `relatedTarget` is where the pointer went, so drifting within one zone is
   // not a leave — and treating it as one would hand the overlay straight back.

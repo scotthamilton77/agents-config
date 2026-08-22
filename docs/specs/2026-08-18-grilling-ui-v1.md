@@ -542,7 +542,8 @@ follows, and changes nothing else.
   within armed or held the most recently armed or held wins — the pointer leaving or focus
   moving falls back to the next source that holds, and the marks are that one option's,
   replaced rather than unioned. It clears when the option in hand changes, when none is, and
-  when the answer lands — after an answer the board says what image 1 says and nothing more. It is drawn distinctly from both states it could be read as: a pending
+  when the answer lands — after an answer the board says what image 1 says and nothing more.
+  It is drawn distinctly from both states it could be read as: a pending
   hold (GUI-D26), which is a change the agent authored and the human must apply or dismiss, and
   `stale`, which is a decision already undermined. A decision wearing only the pre-mark is on
   the frontier and answerable as it was, and no notification is raised (GUI-U15). GUI-U19's
@@ -1485,7 +1486,7 @@ opens one proves something else.
 - GUI-A76 | test: packages/grillui/tests/unit/test_catch_up.py::test_a_moved_interval_opens_the_heavy_turn_cold_with_the_thread_in_full
 - GUI-A77 | test: packages/grillui/tests/unit/test_catch_up.py::test_an_unchanged_interval_resumes_the_chain_the_channel_already_held
 - GUI-A78 | test: packages/grillui/tests/unit/test_catch_up.py::test_reopening_a_thread_raises_nothing_to_the_human
-- GUI-A79 | open
-- GUI-A80 | open
-- GUI-A81 | open
-- GUI-A82 | open
+- GUI-A79 | test: packages/grillui/tests/unit/test_update_kinds.py::test_an_options_pre_mark_reaches_both_images_as_authored
+- GUI-A80 | test: packages/grillui/tests/unit/test_session.py::test_two_sessions_driven_alike_log_the_same_entries_with_the_pre_mark_or_without
+- GUI-A81 | probe: packages/grillui/tests/browser/pre_mark_probe.py::main
+- GUI-A82 | probe: packages/grillui/tests/browser/pre_mark_probe.py::main
