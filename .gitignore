@@ -19,6 +19,7 @@
 .superpowers/
 .grind
 .claude-scratch/
+.handoffs
 
 # Local settings
 settings.local.json
