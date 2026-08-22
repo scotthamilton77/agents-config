@@ -2057,6 +2057,37 @@ def test_a_re_render_puts_the_decision_log_back_where_the_human_had_it() -> None
     assert "map2.scrollLeft = keep.mx; map2.scrollTop = keep.my;" in body
 
 
+def test_a_thread_follows_its_newest_turn_unless_the_human_scrolled_up() -> None:
+    """The turns are their own scroller, replaced whole on every re-render.
+
+    Held to the rule a chat log follows, and to both halves of it. A reader at
+    the bottom is following the conversation, so an arriving turn is on screen
+    without a gesture; a reader who has scrolled up is reading what is up there,
+    and an arrival is not a reason to take it away from them. Always scrolling
+    to the bottom satisfies the report that produced this and is the worse bug.
+
+    A panel with no place yet -- one that has just opened, or one showing a
+    different thread from the one measured -- counts as at the bottom, because a
+    thread opens at its newest turn.
+    """
+    assert "el.scrollHeight - el.scrollTop - el.clientHeight <= THREAD_STICK" in function_body(
+        "atThreadBottom"
+    )
+    assert 'document.querySelector("#overlay .tbody")' in function_body("threadScroller")
+    body = function_body("render")
+    assert "ty: tb ? tb.scrollTop : 0, tbottom: atThreadBottom(tb)" in body
+    assert (
+        "tb2.scrollTop = (panelKey === UI.lastPanelKey && !keep.tbottom)"
+        " ? keep.ty : tb2.scrollHeight;" in body
+    )
+    # The popped-out thread is the same pane in another window, redrawn by its
+    # own loop -- so the rule is written into that loop too, or it holds in one
+    # window and not the other.
+    popped = function_body("popOut")
+    assert "var bot=!tb||tb.scrollHeight-tb.scrollTop-tb.clientHeight<=40;" in popped
+    assert "if(tb2)tb2.scrollTop=bot?tb2.scrollHeight:ty;" in popped
+
+
 def test_the_decision_column_names_itself_and_says_nothing_further() -> None:
     """The ordering caption is gone.
 
