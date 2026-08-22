@@ -607,6 +607,13 @@ follows, and changes nothing else.
   heavy tier is driving that channel, activating it sends the next turn on that channel to
   the fast tier instead;
   what the control reads in either position is GUI-U22's.
+  A thread pane carries the control from its first paint, before anything has been said in
+  it and whether or not the thread exists yet — the human decides who they are asking
+  before they ask, and a control that arrives with the first reply arrives one turn after
+  the turn it was wanted for. On a thread nothing has created, the mode is carried onto the
+  thread the first turn opens, whose name the draft never had. Park, close and fold are not
+  offered there: a thread gesture naming no thread is refused, and the pane's own dismissal
+  is what closing a draft means.
 - **GUI-U21 — Every agent turn is labelled by the tier that produced it.** On a thread and
   on the map channel alike, an agent turn renders as *fast agent* or *expert agent*, read
   from the tier attribution that turn itself carries (§8.3, §8.5). The channel's current
@@ -977,7 +984,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U8 | GUI-A23, GUI-A41 |
 | GUI-U9 | GUI-A47 |
 | GUI-U10 | GUI-A48 |
-| GUI-U11 | GUI-A33, GUI-A34, GUI-A35 |
+| GUI-U11 | GUI-A33, GUI-A34, GUI-A35, GUI-A86, GUI-A87 |
 | GUI-U12 | GUI-A40 |
 | GUI-U13 | GUI-A50 |
 | GUI-U14 | GUI-A49 |
@@ -1348,6 +1355,15 @@ Each criterion is mechanically checkable and convertible to a red test.
   it was for and why it was refused, never as the reply's own JSON. On a thread anchoring no
   decision the line is the whole of the turn; on a thread anchored to another decision what
   the agent said stands ahead of it. Neither entry carries the offer.
+- **GUI-A86** A thread pane opened before the human has said anything in it carries the
+  transfer-to-expert control wholly inside the viewport at first paint, on a thread an agent
+  opened and on a draft nothing has created alike, in the slide-out and in a popped-out
+  window. Measured as a bounding box against the window, so a control rendered below the
+  fold of the pane fails the same way one never rendered does. Verified in a browser.
+- **GUI-A87** Transfer activated on a draft is the tier that draft's first turn is taken on:
+  the mode recorded under the draft's channel reaches the thread the turn opens, whose name
+  the draft never had, and the backend reads it back off that thread's channel and off no
+  other.
 
 ## 10. Open questions for the implementing work
 
@@ -1518,3 +1534,5 @@ opens one proves something else.
 - GUI-A83 | test: packages/grillui/tests/unit/test_tiers.py::test_every_brief_a_driver_composes_carries_the_register_rule
 - GUI-A84 | test: packages/grillui/tests/unit/test_drivers.py::test_a_declaring_reply_is_read_through_whatever_fence_it_arrived_in
 - GUI-A85 | test: packages/grillui/tests/unit/test_drivers.py::test_an_offer_on_a_thread_anchoring_nothing_is_a_notice_and_not_raw_bytes
+- GUI-A86 | probe: packages/grillui/tests/browser/thread_controls_probe.py::main
+- GUI-A87 | test: packages/grillui/tests/unit/test_page.py::test_a_transfer_pressed_before_a_thread_exists_is_the_tier_its_first_turn_takes

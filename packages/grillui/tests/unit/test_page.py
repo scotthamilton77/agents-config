@@ -1047,7 +1047,7 @@ def test_the_popped_window_can_open_the_thread_it_is_a_draft_of() -> None:
     """
     bridge = page_source().split("window.popAct = function", 1)[1].split("\n};", 1)[0]
     assert 'act === "draftsay"' in bridge, "a popped draft's Send reaches nothing"
-    assert "startThread(anchor, text)" in bridge
+    assert "startThread(anchor, text, tid)" in bridge
     assert "draftsay" in write_acts(), "the act that opens a thread is not a write"
     assert "draftAnchor(tid)" in balanced_body("threadBody"), "the pane reads its own anchor"
     assert "draftAnchor(tid)" in function_body("popOut"), "the window is handed no anchor"
@@ -1090,9 +1090,8 @@ def test_a_popped_window_follows_the_thread_its_own_first_turn_opened() -> None:
     assert "UI.popFollow" not in page_source(), "the shared follow map is gone"
     assert "threadBody(tid, true)" in page_source(), "the window is not asking for its own thread"
     bridge = page_source().split("window.popAct = function", 1)[1].split("\n};", 1)[0]
-    assert "return thread(tid) ? sayInThread(tid, text) : startThread(anchor, text);" in bridge, (
-        "a Send from a pane drawn before the first turn opens a second thread"
-    )
+    opens = "return thread(tid) ? sayInThread(tid, text) : startThread(anchor, text, tid);"
+    assert opens in bridge, "a Send from a pane drawn before the first turn opens a second thread"
     boot = function_body("popOut")
     assert "made=window.opener.popAct(" in boot and "if(made)tid=made;" in boot
 
@@ -1780,6 +1779,41 @@ def test_the_control_is_on_every_channel_and_is_never_disabled() -> None:
     # The popped-out thread is the same pane, so its control has to reach the
     # same handler rather than being a button that does nothing in that window.
     assert 'act === "transfer"' in page_source()
+
+
+# ------------------------------------------------------ GUI-U11, GUI-A87
+
+
+def test_a_transfer_pressed_before_a_thread_exists_is_the_tier_its_first_turn_takes(
+    client: TestClient, log: Any
+) -> None:
+    """A draft's channel is not the name the thread its first turn opens gets.
+
+    The pane offers the control before the thread exists, because deciding who
+    is being asked is something the human does before asking. That makes the
+    press a promise the page keeps across a rename: the mode is recorded under
+    the draft's own channel and the turn that opens the thread goes out under a
+    minted one. Left uncarried, the control is live, the log is silent, and the
+    first turn -- the one the expert was wanted for -- is taken by the fast tier.
+
+    Both halves are pinned. The page carries the mode onto the minted name, and
+    the kind that opens a thread declares the flag, so the backend's own reader
+    finds it on the channel the thread is actually on.
+    """
+    draft = balanced_body("threadBody").split("if (!t) {", 1)[1].split("\n  var ready", 1)[0]
+    assert "transferControl(tid)" in draft, "a thread nobody has spoken in offers no tier control"
+    assert "TRANSFER[tid] = TRANSFER[from]" in balanced_body("startThread"), (
+        "the draft's mode is dropped at the rename"
+    )
+    assert TRANSFER_FLAG in emissions()["thread-created"]["payload"]
+
+    post(
+        client,
+        log.epoch,
+        page_message("thread-created", "t-new", turns=turns("Who am I asking?"), transfer=True),
+    )
+    assert in_expert_mode(log.entries(), "t-new")
+    assert not in_expert_mode(log.entries(), MAP_CHANNEL)
 
 
 # ------------------------------------------------------ GUI-U22, GUI-A63
