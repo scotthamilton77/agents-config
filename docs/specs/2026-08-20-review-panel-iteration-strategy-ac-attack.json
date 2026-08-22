@@ -592,13 +592,13 @@
   {
    "id": "p19",
    "disposition": "accepted",
-   "revision": "sha256:e6be9f3226fdf5dff48830aa188f0a6a2016280e9f066fe15e242235be2d56c3",
+   "revision": "sha256:77e6e8f525c97b108c9a9be6c05cb26abd88a61093ab812b38ce77d40dc268ce",
    "covering_ac": "PANEL-B12"
   },
   {
    "id": "p20",
    "disposition": "accepted",
-   "revision": "sha256:e6be9f3226fdf5dff48830aa188f0a6a2016280e9f066fe15e242235be2d56c3",
+   "revision": "sha256:77e6e8f525c97b108c9a9be6c05cb26abd88a61093ab812b38ce77d40dc268ce",
    "covering_ac": "PANEL-B12"
   },
   {
@@ -609,19 +609,19 @@
   {
    "id": "p22",
    "disposition": "accepted",
-   "revision": "sha256:e6be9f3226fdf5dff48830aa188f0a6a2016280e9f066fe15e242235be2d56c3",
+   "revision": "sha256:77e6e8f525c97b108c9a9be6c05cb26abd88a61093ab812b38ce77d40dc268ce",
    "covering_ac": "PANEL-B14"
   },
   {
    "id": "p23",
    "disposition": "accepted",
-   "revision": "sha256:e6be9f3226fdf5dff48830aa188f0a6a2016280e9f066fe15e242235be2d56c3",
+   "revision": "sha256:77e6e8f525c97b108c9a9be6c05cb26abd88a61093ab812b38ce77d40dc268ce",
    "covering_ac": "PANEL-B14"
   },
   {
    "id": "p24",
    "disposition": "accepted",
-   "revision": "sha256:e6be9f3226fdf5dff48830aa188f0a6a2016280e9f066fe15e242235be2d56c3",
+   "revision": "sha256:77e6e8f525c97b108c9a9be6c05cb26abd88a61093ab812b38ce77d40dc268ce",
    "covering_ac": "PANEL-B14"
   },
   {
@@ -637,7 +637,7 @@
   {
    "id": "p27",
    "disposition": "accepted",
-   "revision": "sha256:e6be9f3226fdf5dff48830aa188f0a6a2016280e9f066fe15e242235be2d56c3",
+   "revision": "sha256:77e6e8f525c97b108c9a9be6c05cb26abd88a61093ab812b38ce77d40dc268ce",
    "covering_ac": "PANEL-B14"
   },
   {
@@ -648,7 +648,7 @@
   {
    "id": "p29",
    "disposition": "accepted",
-   "revision": "sha256:e6be9f3226fdf5dff48830aa188f0a6a2016280e9f066fe15e242235be2d56c3",
+   "revision": "sha256:77e6e8f525c97b108c9a9be6c05cb26abd88a61093ab812b38ce77d40dc268ce",
    "covering_ac": "PANEL-B4"
   },
   {
@@ -669,7 +669,7 @@
   {
    "id": "p33",
    "disposition": "accepted",
-   "revision": "sha256:e6be9f3226fdf5dff48830aa188f0a6a2016280e9f066fe15e242235be2d56c3",
+   "revision": "sha256:77e6e8f525c97b108c9a9be6c05cb26abd88a61093ab812b38ce77d40dc268ce",
    "covering_ac": "PANEL-B14"
   },
   {
@@ -705,7 +705,7 @@
   {
    "id": "p40",
    "disposition": "accepted",
-   "revision": "sha256:e6be9f3226fdf5dff48830aa188f0a6a2016280e9f066fe15e242235be2d56c3",
+   "revision": "sha256:77e6e8f525c97b108c9a9be6c05cb26abd88a61093ab812b38ce77d40dc268ce",
    "covering_ac": "PANEL-B15"
   }
  ]
