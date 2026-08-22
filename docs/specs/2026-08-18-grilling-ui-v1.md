@@ -538,11 +538,11 @@ follows, and changes nothing else.
   are holding would put this in question*. The mark is presentation state in the sense of
   GUI-U10: it crosses no wire, appends nothing, and a reload with nothing in hand comes back to
   a board without it. One option is in hand at a time, and the sources rank: the pointer on an
-  option's control, else keyboard focus on one, else an armed option, else a held one — the
-  pointer leaving or focus moving falls back to the next source that holds, and the marks are
-  that one option's, replaced rather than unioned. It clears when another option comes into
-  hand, when none is, and when the answer lands — after an answer the board says what image 1
-  says and nothing more. It is drawn distinctly from both states it could be read as: a pending
+  option's control, else keyboard focus on one, else an armed option, else a held one, and
+  within armed or held the most recently armed or held wins — the pointer leaving or focus
+  moving falls back to the next source that holds, and the marks are that one option's,
+  replaced rather than unioned. It clears when the option in hand changes, when none is, and
+  when the answer lands — after an answer the board says what image 1 says and nothing more. It is drawn distinctly from both states it could be read as: a pending
   hold (GUI-D26), which is a change the agent authored and the human must apply or dismiss, and
   `stale`, which is a decision already undermined. A decision wearing only the pre-mark is on
   the frontier and answerable as it was, and no notification is raised (GUI-U15). GUI-U19's
@@ -1315,8 +1315,10 @@ Each criterion is mechanically checkable and convertible to a red test.
   hold and from `stale` on a fixture carrying one of each at once, a decision wearing only
   the pre-mark is still on the frontier and still answers, and no notification appears.
   Verified in a browser.
-- **GUI-A82** The mark follows what is in hand and outlives nothing: bringing a second option
-  into hand replaces the first's marks with its own, leaving nothing in hand clears them, and
+- **GUI-A82** The mark follows what is in hand and outlives nothing: when the option in hand
+  changes by GUI-U25's ranking — a higher source arriving, or the pointer leaving so a lower
+  one holds — the new option's marks replace the old, a lower source arriving beneath a held
+  pointer changes nothing, leaving nothing in hand clears them, and
   pressing the option's control to answer leaves a board whose marks are what image 1 alone
   accounts for — the named decisions are not invalidated, and become so only once the
   grill-master's `invalidate` is applied. A reload taken while an option was in hand comes
