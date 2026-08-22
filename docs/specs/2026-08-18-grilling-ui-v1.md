@@ -537,9 +537,12 @@ follows, and changes nothing else.
   `puts_in_question` (§8.2) names wears a provisional mark, on the map and on its own block,
   reading as *the option you are holding would put this in question*. The mark is
   presentation state in the sense of GUI-U10: it crosses no wire, appends nothing, and a
-  reload with nothing in hand comes back to a board without it. It clears when another
-  option comes into hand, when none is, and when the answer lands — after an answer the
-  board says what image 1 says and nothing more. It is drawn distinctly from both states it
+  reload with nothing in hand comes back to a board without it. One option is in hand at a
+  time, and the sources rank: the pointer on an option's control, else keyboard focus on
+  one, else an armed option, else a held one — the pointer leaving or focus moving falls
+  back to the next source that holds, and the marks are that one option's, replaced rather
+  than unioned. It clears when another option comes into hand, when none is, and when the
+  answer lands — after an answer the board says what image 1 says and nothing more. It is drawn distinctly from both states it
   could be read as: a pending hold (GUI-D26), which is a change the agent authored and the
   human must apply or dismiss, and `stale`, which is a decision already undermined. A
   decision wearing only the pre-mark is on the frontier and answerable as it was, and no
