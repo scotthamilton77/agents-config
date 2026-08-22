@@ -2626,14 +2626,14 @@ def test_the_board_carries_a_control_that_opens_the_one_map_thread() -> None:
     assert "send(" not in function_body("openSessionThread"), "opening it says something"
 
 
-def test_the_map_threads_fold_is_not_held_behind_a_declared_impact() -> None:
+def test_the_map_threads_fold_arms_on_the_same_turn_an_ordinary_ones_does() -> None:
     """
     Given the thread pane's foot
     When the fold control is read for the map thread
-    Then it is offered unconditionally, unlike an ordinary thread's -- the map
-         thread's agent authors nothing, so a control gated on a proposal it
-         may not make would never open and the request would never reach the
-         grill-master.
+    Then it is offered unconditionally, unlike an ordinary thread's -- the
+         request the human wrote is itself the thing to route, so waiting for a
+         reply first would spend a turn before the request could reach the
+         grill-master at all.
     """
     foot = balanced_body("threadBody")
     gated, ungated = (
@@ -2646,9 +2646,28 @@ def test_the_map_threads_fold_is_not_held_behind_a_declared_impact() -> None:
     assert "Hand it to the agent that owns the map" in foot
     # Not impact-gated, but held until the agent has spoken last: the fold hands
     # over the thread's last turn, and the human's request is not a conclusion.
-    assert '(agentSpokeLast(t) ? "" : " disabled")' in foot
-    helper = function_body("agentSpokeLast")
-    assert 'last.who !== "human" && last.who !== "backend"' in helper
+    # One readiness for every fold: the map thread's arms on the same agent turn
+    # an ordinary thread's does, because both hand over the thread's last turn.
+    assert foot.count('(ready ? "" : " disabled")') == 2
+
+
+def test_an_ordinary_threads_fold_arms_on_the_turn_it_would_hand_over() -> None:
+    """
+    Given the page's fold-readiness reader
+    When it is read for what arms an ordinary thread's fold control
+    Then it is the thread's own last turn, armed only where an agent wrote it --
+         the very turn the backend hands the grill-master as the conclusion --
+         and nowhere does the page wait on a declaration riding the turn's
+         payload, which no driver writes and which would hold the control shut
+         for the whole session.
+    """
+    body = balanced_body("foldReady")
+
+    assert "thread(threadId)" in body, "readiness is not read off the thread's own turns"
+    assert "turns[turns.length - 1]" in body, "readiness is not the last turn"
+    assert "AGENT_ACTORS.indexOf(last.who)" in body, "the human's own turn arms the fold"
+    assert "LOG" not in body, "readiness is read off the log rather than the board"
+    assert "payload.impact" not in page_source(), "the page waits on what nothing writes"
 
 
 def test_a_thread_with_no_decision_anchor_is_an_ordinary_thread(

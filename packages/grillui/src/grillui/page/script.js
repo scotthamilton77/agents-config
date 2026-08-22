@@ -732,16 +732,18 @@ function conflicted(item) {
       updatesIn(e).some(function (u) { return u.target === item.target; });
   });
 }
-// What a thread's last agent turn declared folding it would do. It rides as
-// payload on the turn, so it is read from the log rather than from image 1,
-// whose turn shape is who/text/timestamp and nothing else.
+// What folding this thread would hand over: its last turn, when an agent wrote
+// it. That is the same reading the backend makes of a folded thread — the
+// conclusion it dispatches to the grill-master is the last turn's text — so the
+// control is armed exactly when there is a conclusion to hand over, and the
+// preview quotes what will actually cross. A thread whose last turn is the
+// human's has none: folding there would hand the grill-master their own words
+// back, so the next thing the human says disarms it again until the agent
+// answers.
 function foldReady(threadId) {
-  var last = null;
-  LOG.forEach(function (e) {
-    if (e.channel !== threadId || e.actor === "human") return;
-    if (e.payload && e.payload.impact) last = e.payload.impact;
-  });
-  return last;
+  var t = thread(threadId), turns = (t && t.turns) || [];
+  var last = turns[turns.length - 1];
+  return last && AGENT_ACTORS.indexOf(last.who) >= 0 ? last : null;
 }
 
 /* ---------------- which tier each channel is on ----------------
@@ -1855,11 +1857,6 @@ function renderColumn() {
 //
 // The control renders on an open thread only. Parking or closing hides it while
 // the offer stays live in the log, so reopening the thread shows it again.
-// Whether the thread's most recent turn is an agent's: what a fold hands over.
-function agentSpokeLast(t) {
-  var last = t.turns[t.turns.length - 1];
-  return !!last && last.who !== "human" && last.who !== "backend";
-}
 function renderTurns(t) {
   var h = "", last = t.turns.length - 1;
   t.turns.forEach(function (turn, i) {
@@ -2044,21 +2041,19 @@ function threadBody(tid, forPop, chrome) {
   } else {
     h += '<button class="btn sm" data-act="park" data-tid="' + esc(tid) + '">Park it — no effect, kept on the record</button>' +
       closeControl(tid) +
-      // Handing the map thread over is the whole point of it, so its fold is
-      // not held behind a declared impact the way an ordinary thread's is: its
-      // agent proposes nothing, and a control gated on a proposal that agent
-      // may not make would never open. It is held until the agent has spoken
-      // last, because the conclusion handed over is the thread's last turn,
-      // and the human's own request is not the statement the map owner acts on.
+      // The map thread folds on the same readiness as any other: the turn it
+      // hands over is the thread's last, so it arms once the agent has spoken
+      // last, and the human's own request is never what the map owner acts on.
       (t.kind === "map"
-        ? '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '"' + (agentSpokeLast(t) ? "" : " disabled") + ">Hand it to the agent that owns the map</button>"
+        ? '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '"' + (ready ? "" : " disabled") + ">Hand it to the agent that owns the map</button>"
         : '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '"' + (ready ? "" : " disabled") + ">Fold it — conclude and hand it to the agent</button>");
   }
   if (ready) {
-    h += '<details class="foldimpact"><summary>what folding would do</summary><div class="body"><strong>' +
-      esc(ready.summary || "") + "</strong> " + esc(ready.detail || "") + "</div></details>";
+    h += '<details class="foldimpact"><summary>what folding would do</summary><div class="body">' +
+      "Hands this to the agent that owns the map, as what the thread concluded: <strong>" +
+      esc(ready.text || "") + "</strong></div></details>";
   } else if (t.kind !== "mandate" && t.kind !== "map" && !stillWaiting) {
-    h += '<span class="muted">The agent has not declared anything foldable yet.</span>';
+    h += '<span class="muted">The agent has not answered yet — folding now would hand back your own words.</span>';
   }
   return threadPane(head, body, h + "</div>");
 }
