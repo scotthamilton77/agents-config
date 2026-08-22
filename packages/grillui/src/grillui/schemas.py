@@ -900,6 +900,26 @@ class CatchUpEntry(Strict):
     why: str
 
 
+class MootnessObligation(Strict):
+    """The decisions an answer was authored to kill, and the answer that killed
+    them.
+
+    Composed from what the board already carries: the option the human took
+    names them in its `puts_in_question`, so nothing here is inferred from prose
+    and nothing is a model's reading of a rule. It rides its own field rather
+    than being left inside image 2 because a rule an agent has to find in the
+    board is a rule the fast tier does not find -- the evidence is a turn whose
+    answer put eight decisions in question and whose reply was two sentences.
+
+    `ids` is what the board is still offering of that list, so an obligation
+    exists only where there is something outstanding to propose.
+    """
+
+    target: str
+    answer: str
+    ids: list[str] = Field(min_length=1)
+
+
 class DispatchContext(Strict):
     """What one agent dispatch is given, and the shape recorded on disk for it.
 
@@ -922,6 +942,11 @@ class DispatchContext(Strict):
     every dispatch that is not one, including every dispatch on a thread nobody
     set aside.
 
+    `mootness` rides the grill-master's turn on an answer whose option named the
+    decisions it puts in question, and carries the ones still standing. It is a
+    field rather than a paragraph of the board because what the agent owes on
+    that turn is a concrete list, and a list is checkable after the fact.
+
     `help_reference` rides the session-scoped thread's dispatch and no other.
     That thread is the human asking how to drive the board, which is a question
     about the tool rather than about the plan -- and it is the one dispatch for
@@ -939,6 +964,7 @@ class DispatchContext(Strict):
     reassess: bool = False
     catch_up: list[CatchUpEntry] = Field(default_factory=list)
     help_reference: str | None = None
+    mootness: MootnessObligation | None = None
 
 
 class DoctorState(Strict):

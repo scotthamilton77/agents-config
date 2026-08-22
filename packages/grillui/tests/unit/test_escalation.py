@@ -18,6 +18,8 @@ from grillui.escalation import (
     CONDITION_MULTIPLE,
     Turn,
     in_expert_mode,
+    mootness_obligation,
+    outstanding,
     recommend,
     transfer_source,
     turns_of,
@@ -30,6 +32,9 @@ from grillui.schemas import (
     Decision,
     Image2,
     LogEntry,
+    MootnessObligation,
+    Option,
+    PendingUpdate,
     Thread,
 )
 
@@ -244,3 +249,83 @@ def test_an_option_taken_without_a_note_is_still_a_turn() -> None:
     answered = entry("answer", "human", "map", target=TARGET, answer={"option": "b"})
 
     assert turns_of([answered])[0].text == "option b"
+
+
+# ── What an answer's own option obliges the turn answering it ──
+
+KILLING = Option(id="b", text="Close it unactioned", puts_in_question=["d2", "d3", "nowhere"])
+
+
+def killing_board(**status: str) -> Image2:
+    """The same three decisions, the first offering the option that kills."""
+    image = board()
+    image.decisions[0].options = [Option(id="a", text="Build it"), KILLING]
+    for node, state in status.items():
+        next(one for one in image.decisions if one.id == node).status = state  # type: ignore[assignment]
+    return image
+
+
+def answered(option: str = "b") -> list[LogEntry]:
+    return [entry("answer", "human", MAP_CHANNEL, target=TARGET, answer={"option": option})]
+
+
+def test_the_obligation_names_the_listed_decisions_the_board_is_still_offering() -> None:
+    """
+    Given an answer taking an option that names two decisions and one id that
+          names nothing on the board, with one of the two already settled
+    When the obligation is read
+    Then it carries the one still being offered, the decision answered and the
+         option's own text as the rationale to carry.
+
+    An id resolving to no node is dropped rather than carried, per the pre-mark
+    being a hint and not a reference: an invalidate on a decision nobody wrote is
+    an update with no target. A decision already settled is dropped too -- the
+    board has stopped offering it, so the human is not being asked anything.
+    """
+    obliged = mootness_obligation(killing_board(d2="settled"), answered())
+
+    assert obliged is not None
+    assert obliged.ids == ["d3"]
+    assert obliged.target == TARGET
+    assert obliged.answer == KILLING.text
+
+
+def test_an_obligation_ends_with_the_turn_the_answer_bought() -> None:
+    """
+    Given the same answer, and then the agent's own reply to it
+    When the obligation is read again
+    Then there is none.
+
+    The obligation is what one turn owes, not a standing property of the board.
+    One that outlived its turn would re-fire on every later gesture -- a heavy
+    turn and a notice per answer for the rest of the session, over a decision the
+    human may have deliberately left alone.
+    """
+    spoken = entry("informational", "grill-master", MAP_CHANNEL, text="Both are dead.")
+
+    assert mootness_obligation(killing_board(), answered()) is not None
+    assert mootness_obligation(killing_board(), [*answered(), spoken]) is None
+    assert mootness_obligation(killing_board(), answered(option="a")) is None
+
+
+def test_a_decision_with_an_invalidate_already_waiting_is_not_outstanding() -> None:
+    """
+    Given an obligation on two decisions, one of which already has a proposed
+          invalidate in the human's queue
+    When what is still outstanding is read
+    Then only the other one is.
+
+    An agent's invalidate always waits for the human's gesture, so the decision
+    it targets is still open while it waits. A check that read the status alone
+    would press every turn that honoured the obligation, and ask the human to
+    deal with the same withdrawal twice.
+    """
+    image = killing_board()
+    image.pending = [
+        PendingUpdate(id="p1", target="d2", kind="invalidate", superseded=False, authored_at=9),
+        PendingUpdate(id="p2", target="d3", kind="invalidate", superseded=True, authored_at=9),
+    ]
+
+    obligation = MootnessObligation(target=TARGET, answer="x", ids=["d2", "d3"])
+
+    assert outstanding(image, obligation) == ["d3"]

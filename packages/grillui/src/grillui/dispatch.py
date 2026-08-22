@@ -36,6 +36,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
+from grillui.escalation import mootness_obligation
 from grillui.projector import catch_up, conclusion_of, fold, project_thread, whole_board
 from grillui.schemas import (
     MAP_CHANNEL,
@@ -51,7 +52,13 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from grillui.log import SessionLog
-    from grillui.schemas import Image2, LogEntry, SupersedeConflict, ThreadProjection
+    from grillui.schemas import (
+        Image2,
+        LogEntry,
+        MootnessObligation,
+        SupersedeConflict,
+        ThreadProjection,
+    )
 
 DISPATCH_DIR = "dispatches"
 GRILL_MASTER = "grill-master"
@@ -88,6 +95,7 @@ def assemble(
     reassess: bool = False,
     catch_up: Sequence[CatchUpEntry] = (),
     help_reference: str | None = None,
+    mootness: MootnessObligation | None = None,
 ) -> str:
     """One dispatch context, serialised, carrying the whole of what it owes.
 
@@ -113,6 +121,12 @@ def assemble(
     was given, and reaching back into the log for one field would give this
     function a second source of truth to disagree with.
 
+    `mootness` is what the answer this turn is being taken on owes the rest of
+    the board: the decisions the option the human took named, still standing.
+    It rides its own field for the same reason the conclusion does -- it is
+    inside the board's bytes either way, and a turn asked to find it there is a
+    turn that may not.
+
     The pending queue rides inside the image either way, which is what makes
     every one of these dispatches carry the queue as of the moment it was folded.
     """
@@ -128,6 +142,7 @@ def assemble(
         reassess=reassess,
         catch_up=list(catch_up),
         help_reference=help_reference,
+        mootness=mootness,
     )
     recorded = context.model_dump_json()
     # The map dispatch is checked against the source image, not the projection
@@ -166,12 +181,19 @@ def record_dispatch(
     concluding: str | None = None,
     conflict: SupersedeConflict | None = None,
     reassess: bool = False,
+    mootness: MootnessObligation | None = None,
 ) -> Path:
     """Fold at dispatch time, assemble, and record what the agent was given.
 
     The recorded file is the completeness check's evidence: it is what the
     agent got, not a reconstruction of what it should have got -- including the
     pending queue, which is folded here and not read from anything cached.
+
+    `mootness` is derived from the board unless the caller states one. The
+    caller that does is the lane re-dispatching a turn whose reply left the
+    obligation standing: by then an agent has spoken on the channel, so the
+    answer is no longer the last thing said and nothing would derive it -- while
+    the whole point of that dispatch is to carry it.
     """
     entries = log.entries()
     image = fold(log.epoch, entries)
@@ -183,6 +205,7 @@ def record_dispatch(
         reassess=reassess,
         catch_up=catch_up(log.epoch, entries, channel),
         help_reference=help_reference(entries, image, channel),
+        mootness=mootness or mootness_obligation(image, entries, channel),
     )
     directory = log.directory / DISPATCH_DIR
     directory.mkdir(parents=True, exist_ok=True)

@@ -344,6 +344,18 @@ MOOTNESS_RULE = (
     "is left answering the ones your reply already called dead."
 )
 
+# The same obligation as the rule above, on the one turn that owes it, naming
+# the decisions rather than describing the case. The standing rule is a
+# paragraph an agent has to recognise its own turn in; this is a list, and a
+# list is both harder to read past and checkable afterwards -- which is what
+# lets a fast reply that ignored it be handed up rather than believed.
+MOOTNESS_OBLIGATION_RULE = (
+    "Propose an `invalidate` for each decision named above, in this turn, carrying that "
+    "answer as its `why`. The human's own answer is what killed them and the board is still "
+    "offering every one of them: any you leave, they are asked to answer. Saying they are "
+    "dead is not proposing it."
+)
+
 BASIS_RULE = (
     "Carry `basis`, the board's `seq` as you were given it, on each update. A proposal can "
     "wait while the human moves, and the basis is what lets the backend tell them your change "
@@ -552,6 +564,13 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
     a section of its own, for the same reason and one more: the board is a
     snapshot, and a snapshot states what is true and never what changed.
 
+    A dispatch carrying a mootness obligation says which decisions the answer
+    it is replying to put in question, by id, in a section of its own. The
+    standing brief already states the rule; what the fast tier does not do is
+    find the pre-marks inside the board and work out that the rule is about this
+    turn. Naming them is the same fact, stated where the turn cannot read past
+    it.
+
     A turn running on the map thread is told what that thread is for. It rides
     here rather than in the role's standing brief because it is a property of
     the channel and not of the role: the same agent on the same tier is an
@@ -608,6 +627,18 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
                 ]
             ),
             *(["## The map doctor", REASSESS_RULE] if context.reassess else []),
+            *(
+                []
+                if context.mootness is None
+                else [
+                    "## What the answer you are replying to puts in question",
+                    f"The human answered {context.mootness.target} with "
+                    f"{context.mootness.answer!r}. That option names "
+                    f"{', '.join(context.mootness.ids)}, and the board is still offering "
+                    f"{'it' if len(context.mootness.ids) == 1 else 'them'}.",
+                    MOOTNESS_OBLIGATION_RULE,
+                ]
+            ),
             "## Your turn",
             "Answer the last thing the human said, under the rules you were given.",
         ]

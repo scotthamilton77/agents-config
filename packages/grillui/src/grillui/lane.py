@@ -1,6 +1,6 @@
 """The status lane, the answerability decision, and the seam a tier plugs into.
 
-Five rules meet here.
+Six rules meet here.
 
 **The lane is mechanical.** The instant a human turn is accepted, and inside the
 same lock that appended it, the backend emits `accepted` and then `composing`
@@ -40,6 +40,13 @@ their turns concurrently with each other and with the map; only the heavy tier's
 own single-flight rule serialises anything, and it serialises the resume chain
 rather than the session.
 
+**An obligation the board can state is checked, not hoped for.** Where the
+answer a turn is replying to named the decisions it puts in question, the reply
+is measured against that list in code. One that left a decision standing is
+handed up a tier once and asked again; a second refusal is said to the human as
+a notice naming what is still being offered. Nothing here writes to the map: the
+insistence buys another agent turn, and the human is told when it buys nothing.
+
 The driver seam is the whole of what a tier has to implement. A turn is one
 invocation: the driver runs, says what it has to say into the log, and returns.
 There is no polling loop and no resident agent process, because the orchestrator
@@ -55,8 +62,8 @@ import threading
 from typing import TYPE_CHECKING, NamedTuple, Protocol
 
 from grillui.dispatch import record_dispatch
-from grillui.escalation import in_expert_mode
-from grillui.projector import supersede_conflicts
+from grillui.escalation import in_expert_mode, outstanding
+from grillui.projector import fold, supersede_conflicts
 from grillui.schemas import (
     ANSWERABLE_KINDS,
     MAP_CHANNEL,
@@ -67,6 +74,7 @@ from grillui.schemas import (
     STATUS_PHASE_REPLIED,
     THREAD_FOLD_KIND,
     TIER_KEY,
+    DispatchContext,
 )
 
 if TYPE_CHECKING:
@@ -74,7 +82,14 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from grillui.log import SessionLog
-    from grillui.schemas import EventSubmission, LogEntry, Receipt, SupersedeConflict
+    from grillui.schemas import (
+        EventSubmission,
+        Image2,
+        LogEntry,
+        MootnessObligation,
+        Receipt,
+        SupersedeConflict,
+    )
 
 
 class AgentUnreachableError(RuntimeError):
@@ -345,10 +360,11 @@ class Lane:
                 reassess=turn.reassess,
             )
             driver.run(self.log, dispatch)
+            took = self._press_mootness(driver, turn, dispatch)
             if self._watching(turn):
-                self._hand_back(driver, standing)
+                self._hand_back(took, standing)
             self.log.emit_status(
-                STATUS_PHASE_REPLIED, f"the {driver.tier!r} tier's turn is over", turn.channel
+                STATUS_PHASE_REPLIED, f"the {took.tier!r} tier's turn is over", turn.channel
             )
         except Exception as error:
             self.log.emit_status(
@@ -357,6 +373,89 @@ class Lane:
         finally:
             if turn.reassess:
                 self._doctor = False
+
+    def _press_mootness(self, driver: TurnDriver, turn: Turn, dispatch: Path) -> TurnDriver:
+        """Insist on the invalidates a killing answer obliged, and say so when
+        no tier will make them. Returns whichever tier ended up taking the turn.
+
+        The check is code's: the obligation is a list of decision ids, and what
+        the reply did with them is read off the board rather than out of its
+        prose. A turn that left one standing is handed up once -- the fast tier
+        answering a killing answer in two sentences is the failure this exists
+        for, and it is not a failure another fast turn fixes.
+
+        Nothing here authors a map mutation. The expert is asked for the same
+        proposals the fast tier was, and where it declines too the human is told
+        which decisions are still being offered, so the change is theirs to ask
+        for. A backend that minted the invalidates itself would be the sole
+        author rule broken by the code that enforces it.
+        """
+        obligation = DispatchContext.model_validate_json(
+            dispatch.read_text(encoding="utf-8")
+        ).mootness
+        if obligation is None:
+            return driver
+        standing = outstanding(self._board(), obligation)
+        if standing and self.expert is not None and self.expert is not driver:
+            driver = self._insist(self.expert, turn, obligation, standing) or driver
+            standing = outstanding(self._board(), obligation)
+        if standing:
+            self.log.record(
+                "informational",
+                {
+                    "text": f"The answer to {obligation.target} put "
+                    f"{', '.join(standing)} in question and no turn proposed an "
+                    f"invalidate for {'it' if len(standing) == 1 else 'them'}, so the "
+                    f"board is still offering "
+                    f"{'it' if len(standing) == 1 else 'them'}. Ask on the map thread "
+                    f"if that is wrong."
+                },
+            )
+        return driver
+
+    def _insist(
+        self,
+        expert: TurnDriver,
+        turn: Turn,
+        obligation: MootnessObligation,
+        standing: Sequence[str],
+    ) -> TurnDriver | None:
+        """One expert turn on the same gesture, carrying what is still standing.
+
+        The obligation is handed in rather than derived again: by now the first
+        tier has spoken on this channel, so nothing would derive it -- and it is
+        narrowed to what is left, since re-asking for a proposal already in the
+        queue is asking the human to deal with the same withdrawal twice.
+
+        A tier that cannot be reached costs the insistence and nothing else. The
+        human's turn was already answered by the first tier, and turning a
+        reachability failure into the turn's own failure would report an answer
+        they can read as an error.
+        """
+        self.log.emit_status(
+            STATUS_PHASE_COMPOSING,
+            f"the {expert.tier!r} tier is composing a reply",
+            turn.channel,
+            tier=expert.tier,
+        )
+        try:
+            expert.run(
+                self.log,
+                record_dispatch(
+                    self.log,
+                    channel=turn.channel,
+                    concluding=turn.concluding,
+                    conflict=turn.conflict,
+                    reassess=turn.reassess,
+                    mootness=obligation.model_copy(update={"ids": list(standing)}),
+                ),
+            )
+        except Exception:
+            return None
+        return expert
+
+    def _board(self) -> Image2:
+        return fold(self.log.epoch, self.log.entries())
 
     @staticmethod
     def _watching(turn: Turn) -> bool:

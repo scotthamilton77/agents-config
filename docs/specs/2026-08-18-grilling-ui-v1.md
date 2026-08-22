@@ -478,9 +478,11 @@ when no board change was ever proposed.
 **GUI-D37 — An option may name the decisions it would put in question, and that naming is
 display data.** An option in the map data may carry `puts_in_question`, an array of decision
 ids the grill-master expects that option to put in question downstream, authored when it
-adds or revises the node and absent from an option that predicts nothing. The page is its
-only reader: it changes no status, places no hold, enters no projection but the option it
-rides on, and reaches a dispatch as nothing but the bytes of that node. What moves a
+adds or revises the node and absent from an option that predicts nothing. Until the human
+answers with that option, the page is its only reader: it changes no status, places no hold,
+enters no projection but the option it rides on, and reaches a dispatch as nothing but the
+bytes of that node. Taking it is what makes it more than display data, and what that
+obliges is GUI-D42's, not this one's. What moves a
 decision on the board is still `invalidate` carrying its rationale (GUI-D19), queued like
 every other withdrawal and applied by the human (GUI-D26) — the board never shows a decision
 invalidated by a pre-mark. Ids resolving to no node are ignored rather than refused, in a
@@ -540,6 +542,26 @@ one convergence signal it may make (`proposed_answer`, GUI-D31), and a second on
 human gesture on an agent's judgement of when the human is finished. Nothing on the backend
 ever wrote one, so the control it gated stayed shut for whole sessions, which is the shape
 of the failure a declared gate invites: a control nobody can open and no error anywhere.
+
+**GUI-D42 — A killing answer's obligation is carried as ids and checked in code.** When the
+human answers with an option carrying `puts_in_question` (GUI-D37), that turn's grill-master
+dispatch names, in a section of its own, the decisions on that list the board is still
+offering, quotes the answer to carry as their rationale, and states GUI-D38's obligation
+against that list. The reply is then measured against the same list in code: an agent's
+`invalidate` always waits in the queue (GUI-D26), so a decision the turn proposed one for is
+in the queue whether or not the human has applied it, and one the turn only narrated is
+still on the frontier. A reply leaving any of them standing hands the same turn to the
+expert tier once, carrying the list narrowed to what is left; a second reply that proposes
+nothing raises an `informational` notice naming those decisions, which the human acts on
+through the map thread (GUI-D40). The backend authors no map mutation at any point — minting
+the invalidates itself would be the sole-author rule (GUI-D25) broken by the code enforcing
+it. **The prose rule alone is refused as sufficient.** It rode in the fast tier's system
+prompt through a live session whose answer put eight decisions in question, and the reply
+was two sentences and no updates, leaving those decisions on the frontier to be answered.
+The structure is already on the board, so the obligation does not need a model to find it.
+**The obligation ends with the turn the answer bought**, which is the last agent turn on the
+map before it: one that outlived its turn would spend an expert turn and a notice on every
+later gesture, over decisions the human may have deliberately left alone.
 
 ## 5. The UI surface
 
@@ -1052,6 +1074,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D39 | GUI-A89 |
 | GUI-D40 | GUI-A93, GUI-A94, GUI-A95, GUI-A98 |
 | GUI-D41 | GUI-A91, GUI-A99 |
+| GUI-D42 | GUI-A100, GUI-A101, GUI-A102, GUI-A103 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -1406,11 +1429,13 @@ Each criterion is mechanically checkable and convertible to a red test.
   error nor a rejection reason — the same fixture with one id replaced by a name nothing
   answers to loads, is accepted, and projects unchanged — while a dangling `prereqs` id in
   that same fixture is still refused.
-- **GUI-A80** Nothing about a pre-mark reaches the log. The page-derived kind check (GUI-A13)
-  finds no kind for it and no grill-master dispatch context carries it as a pending update;
-  over one fixture session driven identically twice, once with `puts_in_question` on every
-  option and once with it stripped from all of them, the two logs carry the same entries in
-  the same order and the two boards differ in nothing but that field. No decision reaches
+- **GUI-A80** Nothing about a pre-mark reaches the log until the option carrying it is
+  answered. The page-derived kind check (GUI-A13) finds no kind for it and no grill-master
+  dispatch context carries it as a pending update; over one fixture session driven
+  identically twice through an answer on an option that carries none, once with
+  `puts_in_question` on every marked option and once with it stripped from all of them, the
+  two logs carry the same entries in the same order and the two boards differ in nothing but
+  that field. No decision reaches
   `invalidated` or `stale` by way of a pre-mark: the only routes to either remain the applied
   `invalidate` and `unsettle` of GUI-D19.
 - **GUI-A81** Holding an option whose `puts_in_question` names two of the board's decisions
@@ -1496,6 +1521,20 @@ Each criterion is mechanically checkable and convertible to a red test.
   700px-tall window, opening the inbox puts an enabled control that lets all eight land
   wholly inside the viewport before anything is scrolled; the control under the list is
   still there; both name the eight; and pressing the one on screen empties the queue.
+- **GUI-A100** A grill-master dispatch carrying a mootness obligation assembles a prompt that
+  names each decision the answer put in question, quotes that answer, and states the
+  obligation; a dispatch carrying none states nothing about mootness.
+- **GUI-A101** On a board whose answered option names two other decisions, a fast tier that
+  replies in prose is followed by an expert turn on the same gesture whose recorded dispatch
+  names both decisions, the decision answered and the option's own text — and the lane closes
+  naming the tier that ended up taking the turn.
+- **GUI-A102** Where the expert replies in prose too, exactly one backend `informational`
+  notice names both decisions, and no `invalidate` entry exists that no human gesture asked
+  for.
+- **GUI-A103** Neither an obligation already met nor one never created presses anything: a
+  reply proposing an `invalidate` per named id leaves the expert untouched, the human unsaid
+  to, and both proposals in the queue; and an answer on an option carrying no
+  `puts_in_question` produces a dispatch with no obligation, no expert turn and no notice.
 
 ## 10. Open questions for the implementing work
 
@@ -1585,6 +1624,9 @@ Each criterion is mechanically checkable and convertible to a red test.
   ever wrote — AC: GUI-D41, GUI-A91, GUI-A99.
 - bugfix: The inbox's batch control raised into the panel head, where a queue longer than
   the window no longer hides it — AC: GUI-U30, GUI-A105.
+- bugfix: A killing answer's obligation carried to the turn as ids and checked in code, with
+  one hand-up to the expert tier and a notice where neither tier proposes — AC: GUI-D42,
+  GUI-A100, GUI-A101, GUI-A102, GUI-A103.
 
 ## Evidence
 
@@ -1692,3 +1734,7 @@ opens one proves something else.
 - GUI-A91 | test: packages/grillui/tests/unit/test_page.py::test_an_ordinary_threads_fold_arms_on_the_turn_it_would_hand_over
 - GUI-A99 | probe: packages/grillui/tests/browser/side_thread_fold_probe.py::main
 - GUI-A105 | probe: packages/grillui/tests/browser/inbox_batch_probe.py::main
+- GUI-A100 | test: packages/grillui/tests/unit/test_tiers.py::test_a_turn_owed_invalidates_is_given_the_ids_and_the_answer_in_a_section_of_its_own
+- GUI-A101 | test: packages/grillui/tests/unit/test_lane.py::test_a_prose_reply_to_a_killing_answer_is_pressed_on_the_expert_carrying_the_ids
+- GUI-A102 | test: packages/grillui/tests/unit/test_lane.py::test_an_expert_that_proposes_nothing_either_leaves_the_ids_named_to_the_human
+- GUI-A103 | test: packages/grillui/tests/unit/test_lane.py::test_an_obligation_met_or_never_created_presses_nobody
