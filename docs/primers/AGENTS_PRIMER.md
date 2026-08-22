@@ -54,9 +54,10 @@ admission:                     # required for deployment (see below)
 ---
 ```
 
-`agents` is a gated namespace alongside `rules`, `skills` and `commands`: an agent
-definition carrying no `admission:` record is dropped at deploy and any previously
-deployed copy is pruned, and a malformed record aborts the whole deploy. The gate
+`agents` is a gated namespace alongside `rules`, `skills`, `commands` and
+`workflows`: an agent definition carrying no `admission:` record is dropped at
+deploy and any previously deployed copy is pruned, and a malformed record aborts
+the whole deploy. The gate
 strips the record from the bytes that ship. The rules primer's File Format section
 states the mechanism in full; it applies here unchanged.
 

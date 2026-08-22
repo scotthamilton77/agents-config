@@ -1,8 +1,8 @@
 """The admission bar.
 
 Every artifact in a *gated namespace* (``rules``, ``skills``, ``commands``,
-``agents``) must carry a complete ``admission`` record in its front matter to
-be deployed. The record states what the artifact is worth, what it costs, and
+``agents``, ``workflows``) must carry a complete ``admission`` record in its
+front matter to be deployed. The record states what the artifact is worth, what it costs, and
 the observation that would remove it — so nothing enters the always-on /
 on-invoke surface by default or nostalgia.
 
@@ -30,6 +30,16 @@ Classification is three-valued:
 ``agents`` is gated alongside the ``rule/skill/command`` set: an agent is an
 on-invoke capability indistinguishable from a skill for admission purposes, and
 the zero-base hand-deploy emptied ``agents/`` too.
+
+``workflows`` is gated on the same terms — it deploys executable capability
+into the user's home, which is the strongest case for a record, not a weaker
+one. A workflow is a ``.js`` file rather than markdown, so its record travels
+in a leading ``---`` fence carrying nothing but the ``admission`` block; the
+gate strips that block before any byte is written, and a fence left with no
+surviving key goes with it, so the deployed file is plain JavaScript. The
+authored file is therefore not valid JS until the strip — the cost of gating
+the namespace rather than exempting it, paid by whoever adds the next
+workflow.
 """
 
 from __future__ import annotations
@@ -43,7 +53,7 @@ from installer.core.frontmatter import split_frontmatter
 if TYPE_CHECKING:
     from installer.core.model import StagedItem
 
-GATED_NAMESPACES = frozenset({"rules", "skills", "commands", "agents"})
+GATED_NAMESPACES = frozenset({"rules", "skills", "commands", "agents", "workflows"})
 
 _REQUIRED_FIELDS = ("cost", "remove_when")
 
