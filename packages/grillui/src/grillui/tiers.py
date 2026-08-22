@@ -255,6 +255,12 @@ REASSESS_RULE = (
     "frozen until you answer, so do it in this turn."
 )
 
+CATCH_UP_RULE = (
+    "This thread was set aside and has just been picked back up. The board above is current; "
+    "the list is what moved on it while you were away, so read it as the correction to "
+    "whatever you last reasoned from. Answer the human's turn under the board as it now is."
+)
+
 CONCLUSION_ROUTING_RULE = (
     "A thread conclusion reaches you because you are the only agent that may act on it. "
     "Decide what it costs the board: fold it in as updates, or take it as context and say "
@@ -371,6 +377,10 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
     inside those bytes either way, and a turn asked to find it there is a turn
     that may not -- the doctor's board in particular looks exactly like any
     other, and a turn left to infer that it was called would not.
+
+    A dispatch reopening a set-aside thread says what moved while it was away in
+    a section of its own, for the same reason and one more: the board is a
+    snapshot, and a snapshot states what is true and never what changed.
     """
     channel = context.channel
     conversation = "\n".join(f"{turn.who}: {turn.text}" for turn in turns_of(entries, channel))
@@ -402,6 +412,19 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
                     f"{conflict.update.id!r} on decision {conflict.update.target!r}; the human "
                     f"had already answered it, at sequence {conflict.applied_at}.",
                     SUPERSEDE_CONFLICT_RULE,
+                ]
+            ),
+            *(
+                []
+                if not context.catch_up
+                else [
+                    "## What moved while this thread was set aside",
+                    "\n".join(
+                        f"{item.seq}: {item.kind} on {item.target}"
+                        + (f" -- {item.why}" if item.why else "")
+                        for item in context.catch_up
+                    ),
+                    CATCH_UP_RULE,
                 ]
             ),
             *(["## The map doctor", REASSESS_RULE] if context.reassess else []),

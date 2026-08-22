@@ -161,6 +161,10 @@ THREAD_FOLD_KIND = "thread-fold"
 THREAD_PARK_KIND = "thread-park"
 THREAD_CLOSE_KIND = "thread-close"
 THREAD_GESTURE_KINDS = frozenset({THREAD_FOLD_KIND, THREAD_PARK_KIND, THREAD_CLOSE_KIND})
+# The two gestures that set a thread aside, as against the fold that concludes
+# one. A thread picked back up after either has been away while the board moved,
+# and what it is owed on the way back is the interval's catch-up.
+SET_ASIDE_KINDS = frozenset({THREAD_PARK_KIND, THREAD_CLOSE_KIND})
 NOTICE_KINDS = frozenset({"informational", "elicit-alert"})
 GESTURE_KINDS = frozenset({"answer"})
 
@@ -849,6 +853,22 @@ class TerminalResult(Strict):
     stop_reason: str
 
 
+class CatchUpEntry(Strict):
+    """One decision the board moved while a thread was set aside.
+
+    Projected, never composed: an entry is here because folding the log through
+    it changed image 1's decisions, and what it says -- the sequence, the kind
+    and the rationale -- is what the log carries at that point. A catch-up
+    naming an event the log does not carry is the same corruption a short image
+    2 is.
+    """
+
+    seq: int
+    kind: str
+    target: str
+    why: str
+
+
 class DispatchContext(Strict):
     """What one agent dispatch is given, and the shape recorded on disk for it.
 
@@ -866,6 +886,11 @@ class DispatchContext(Strict):
     why the turn is happening. A turn that had to infer that from the board
     would be inferring it from a board that looks exactly as it did before.
 
+    `catch_up` rides the first dispatch after a set-aside thread is reopened,
+    and carries the decisions the board moved while it was away -- empty on
+    every dispatch that is not one, including every dispatch on a thread nobody
+    set aside.
+
     `help_reference` rides the session-scoped thread's dispatch and no other.
     That thread is the human asking how to drive the board, which is a question
     about the tool rather than about the plan -- and it is the one dispatch for
@@ -881,6 +906,7 @@ class DispatchContext(Strict):
     conclusion: ThreadConclusion | None = None
     conflict: SupersedeConflict | None = None
     reassess: bool = False
+    catch_up: list[CatchUpEntry] = Field(default_factory=list)
     help_reference: str | None = None
 
 

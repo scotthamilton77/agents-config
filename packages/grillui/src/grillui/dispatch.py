@@ -35,10 +35,11 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-from grillui.projector import conclusion_of, fold, project_thread, whole_board
+from grillui.projector import catch_up, conclusion_of, fold, project_thread, whole_board
 from grillui.schemas import (
     MAP_CHANNEL,
     SESSION_START_KIND,
+    CatchUpEntry,
     DispatchContext,
     ThreadConclusion,
 )
@@ -83,6 +84,7 @@ def assemble(
     concluding: str | None = None,
     conflict: SupersedeConflict | None = None,
     reassess: bool = False,
+    catch_up: Sequence[CatchUpEntry] = (),
     help_reference: str | None = None,
 ) -> str:
     """One dispatch context, serialised, carrying the whole of what it owes.
@@ -96,6 +98,12 @@ def assemble(
     withdrawal the human got in front of, and the map doctor. Each says so in
     the context, because the board alone does not -- a turn left to infer why it
     was called would be inferring it from a board that looks unchanged.
+
+    `catch_up` is what the board moved while a reopened thread was set aside.
+    It is folded by the caller and handed in for the same reason the board is:
+    a context is assembled from what it was given, and it rides here rather
+    than in the board because a snapshot states what is true and never what
+    changed.
 
     `help_reference` is the material the orchestrator shipped about driving the
     board. It is the caller's to hand in rather than this module's to look up,
@@ -116,6 +124,7 @@ def assemble(
         conclusion=_conclusion(image, concluding),
         conflict=conflict,
         reassess=reassess,
+        catch_up=list(catch_up),
         help_reference=help_reference,
     )
     recorded = context.model_dump_json()
@@ -170,6 +179,7 @@ def record_dispatch(
         concluding=concluding,
         conflict=conflict,
         reassess=reassess,
+        catch_up=catch_up(log.epoch, entries, channel),
         help_reference=help_reference(entries, image, channel),
     )
     directory = log.directory / DISPATCH_DIR
