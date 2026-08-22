@@ -46,8 +46,6 @@ into `~/.claude/` (Claude is always an active tool; never auto-detected away).
   `admission:` block. The installer strips that block, and the now-empty fence
   with it, so the deployed file is plain JavaScript; the authored file is not
   valid JS until then. There is no workflow in the tree today.
-- `hooks/` deploys ungated — a hook is a `.py`/`.sh` executable with nowhere to
-  carry front matter, so the gate cannot read one.
 
 See the root [AGENTS.md](../../../AGENTS.md) for the full install model, file
 format conventions, and repo-wide rules.
