@@ -498,6 +498,23 @@ the warning is worth something only before the answer, and a turn is not that fa
 lands on a board that has already moved, having put an invalidate in the log for an option
 nobody took.
 
+**GUI-D38 — An answer that moots other decisions obliges an `invalidate` for each of
+them.** When the human's answer to one decision makes others moot, the grill-master's turn
+proposes an `invalidate` per mooted decision, carrying that answer as its rationale.
+Narrating them as dead, dropped or no longer applying is not that: their status is
+untouched and the frontier goes on offering them, so the human answers decisions the reply
+itself called dead. The obligation reaches the grill-master on both tiers and no thread
+agent, which authors nothing (GUI-D25). Each `invalidate` still queues for the human like
+every other withdrawal (GUI-D26) — the turn proposes, and the board moves when they apply.
+
+**GUI-D39 — A thread agent asked for a map change says it cannot, and names the route that
+can.** A thread agent authors no map mutation (GUI-D25); what its brief did not say was
+what to do when the human asks it for one. It now says: state plainly that you cannot
+change the map, and that folding this thread is what puts your conclusion in front of the
+grill-master, who acts on it. Agreeing in prose and emitting nothing is the failure this
+closes — the update would be rejected at the appender anyway, so the agreement is a promise
+nothing keeps and the human waits on a change nobody proposed.
+
 ## 5. The UI surface
 
 The binding reference is `docs/prototypes/grilling-ui/grilling-ui-prototype-r5.html`, read
@@ -980,6 +997,8 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D35 | GUI-A71, GUI-A72, GUI-A73, GUI-A74 |
 | GUI-D36 | GUI-A75, GUI-A76, GUI-A77, GUI-A78 |
 | GUI-D37 | GUI-A79, GUI-A80, GUI-A81, GUI-A82 |
+| GUI-D38 | GUI-A88 |
+| GUI-D39 | GUI-A89 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -1376,6 +1395,13 @@ Each criterion is mechanically checkable and convertible to a red test.
   backslash before Enter leaves a newline with the backslash gone, and Cmd/Ctrl+Enter
   posts. An Enter arriving while an IME composition is in progress posts nothing. The hint
   beside the box names Enter and Shift+Enter. Verified in a browser.
+- **GUI-A88** The grill-master's standing brief, on the fast tier and on the heavy one,
+  obliges an `invalidate` per decision the human's answer moots, carrying that answer as its
+  rationale, and refuses narrating them as dead instead. A thread agent's brief carries no
+  such obligation, since an update from it is refused.
+- **GUI-A89** A thread agent's standing brief, on either tier, says that it cannot change
+  the map and that folding the thread is what puts its conclusion in front of the
+  grill-master who acts on it — rather than leaving it to agree to a change it cannot make.
 
 ## 10. Open questions for the implementing work
 
@@ -1455,6 +1481,8 @@ Each criterion is mechanically checkable and convertible to a red test.
 - chore: Packaging: the uv package, its gates, and the CLI on PATH — AC: GUI-P1.
 - chore: The register every agent turn is written in — AC: GUI-U26, GUI-A83.
 - feat: Enter as the send chord in every composer — AC: GUI-U27, GUI-A92.
+- bugfix: A killing answer proposes the invalidates it implies, and a thread agent asked for
+  a map change names the route that can make one — AC: GUI-D38, GUI-D39, GUI-A88, GUI-A89.
 
 ## Evidence
 
@@ -1550,3 +1578,5 @@ opens one proves something else.
 - GUI-A86 | probe: packages/grillui/tests/browser/thread_controls_probe.py::main
 - GUI-A87 | test: packages/grillui/tests/unit/test_page.py::test_a_transfer_pressed_before_a_thread_exists_is_the_tier_its_first_turn_takes
 - GUI-A92 | probe: packages/grillui/tests/browser/chord_probe.py::main
+- GUI-A88 | test: packages/grillui/tests/unit/test_tiers.py::test_the_grill_master_brief_obliges_an_invalidate_for_each_decision_an_answer_moots
+- GUI-A89 | test: packages/grillui/tests/unit/test_tiers.py::test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_can
