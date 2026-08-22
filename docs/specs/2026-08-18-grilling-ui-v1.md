@@ -511,6 +511,12 @@ follows, and changes nothing else.
 - **GUI-U3 — Agent responses are concise by default**, two or three sentences, with
   verbosity only when the human asks for detail. This is a constraint on the grill-master's
   and the thread agents' system prompts as much as on the page.
+- **GUI-U26 — Agent turns are written for a human reading once.** Plain, professional
+  sentences, the answer before the reasoning, and no term the decision does not need — where
+  one is unavoidable it is explained in the same sentence. Like GUI-U3 this is a constraint
+  on the shipped system prompts, and it is stated to every role on both tiers rather than
+  only to the tier that reasons longest: a rule copied per role is a rule that goes missing
+  from the next one.
 - **GUI-U4 — Thread panels have a floating header and footer** — title with close and
   pop-out controls pinned at the top, prompt box and action buttons pinned at the bottom —
   so neither scrolls out of view in a long thread.
@@ -980,6 +986,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U23 | GUI-A67 |
 | GUI-U24 | GUI-A73, GUI-A74 |
 | GUI-U25 | GUI-A81, GUI-A82 |
+| GUI-U26 | GUI-A83 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -1325,6 +1332,9 @@ Each criterion is mechanically checkable and convertible to a red test.
   accounts for — the named decisions are not invalidated, and become so only once the
   grill-master's `invalidate` is applied. A reload taken while an option was in hand comes
   back unmarked. Verified in a browser.
+- **GUI-A83** Every standing brief a driver composes — the grill-master's and a thread
+  agent's, on the fast tier and on the heavy one — carries the register rule: plain
+  sentences, the answer before the reasoning, and no term the decision does not need.
 
 ## 10. Open questions for the implementing work
 
@@ -1402,6 +1412,7 @@ Each criterion is mechanically checkable and convertible to a red test.
   passage through the schemas and the images, and the provisional mark the page raises on the
   option the human has in hand — AC: GUI-D37, GUI-U25, GUI-A79, GUI-A80, GUI-A81, GUI-A82.
 - chore: Packaging: the uv package, its gates, and the CLI on PATH — AC: GUI-P1.
+- chore: The register every agent turn is written in — AC: GUI-U26, GUI-A83.
 
 ## Evidence
 
@@ -1491,3 +1502,4 @@ opens one proves something else.
 - GUI-A80 | test: packages/grillui/tests/unit/test_session.py::test_two_sessions_driven_alike_log_the_same_entries_with_the_pre_mark_or_without
 - GUI-A81 | probe: packages/grillui/tests/browser/pre_mark_probe.py::main
 - GUI-A82 | probe: packages/grillui/tests/browser/pre_mark_probe.py::main
+- GUI-A83 | test: packages/grillui/tests/unit/test_tiers.py::test_every_brief_a_driver_composes_carries_the_register_rule

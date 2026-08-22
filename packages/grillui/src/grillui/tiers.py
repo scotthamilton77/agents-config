@@ -13,9 +13,11 @@ rules -- never assert what the context does not support, keep it short, reply to
 what the human said rather than fishing for what they say next, and say your
 piece in one turn and stop -- and the fast tier additionally carries the
 facilitation mandate: answer from the context you were given, and stop short of
-deciding. Whether a turn should have gone up a tier is not the model's own
-judgment to make and is not asked of it here; that is evaluated against the
-transcript in code.
+deciding. Every turn, whichever tier and whichever role, also carries the
+register rule: plain sentences, the answer first, no term the decision does not
+need. Whether a turn should have gone up a tier is not the model's own judgment
+to make and is not asked of it here; that is evaluated against the transcript in
+code.
 
 **A turn is given the briefing, the board and the channel's conversation.** The
 briefing is read out of the session's own opening log entry rather than the
@@ -255,6 +257,18 @@ CONCISION_RULE = (
     "of what you are about to say."
 )
 
+# What the human pays to read a turn. A model asked to reason hard writes like
+# it is reasoning hard, and the answer arrives buried in a clause of a sentence
+# built for a reader with the whole context loaded. The human driving the board
+# has half a minute and one pass, so the register is stated to every turn rather
+# than left to the tier: it is the heavy tier, thinking longest, that drifts
+# furthest from a sentence read once.
+REGISTER_RULE = (
+    "Write plainly: short, professional sentences a busy human reads once. Put the answer "
+    "first and the reasoning after it. Use no term the decision does not need -- where one "
+    "is unavoidable, say what it means in the same sentence."
+)
+
 ONE_TURN_RULE = (
     "This is one turn. Answer, then stop -- you are invoked again when there is "
     "something new to answer. Do not wait for anything, do not ask to be called back, "
@@ -405,10 +419,18 @@ def system_prompt(tier: str, agent: str) -> str:
     A tier is how a turn is taken and an agent is what it may do, and the two
     vary independently -- either tier may drive the map or a thread, so the
     sole-author rule cannot ride on the tier's prompt alone.
+
+    The register rule is joined here, once, rather than into either role's rules
+    or either tier's prompt: what a turn costs the human to read is a property
+    of every turn, and a rule copied per role is a rule that goes missing from
+    the next one.
     """
-    if agent == THREAD_AGENT:
-        return "\n\n".join([THREAD_AGENT_MANDATE, SYSTEM_PROMPTS[tier], CONVERGENCE_RULE])
-    return "\n\n".join([SYSTEM_PROMPTS[tier], MUTATION_FORMAT_RULE, BASIS_RULE, SUPERSEDE_RULE])
+    role = (
+        [THREAD_AGENT_MANDATE, SYSTEM_PROMPTS[tier], CONVERGENCE_RULE]
+        if agent == THREAD_AGENT
+        else [SYSTEM_PROMPTS[tier], MUTATION_FORMAT_RULE, BASIS_RULE, SUPERSEDE_RULE]
+    )
+    return "\n\n".join([*role, REGISTER_RULE])
 
 
 NO_BRIEFING = "No briefing was recorded for this session."

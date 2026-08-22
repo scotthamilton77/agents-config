@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 from conftest import dispatch_context, handoff_doc, write_handoff
 
+from grillui.dispatch import GRILL_MASTER, THREAD_AGENT
 from grillui.schemas import LogEntry
 from grillui.session import open_session
 from grillui.tiers import (
@@ -39,12 +40,14 @@ from grillui.tiers import (
     ONE_TURN_RULE,
     POLICY_AUTONOMOUS,
     POLICY_GATED,
+    REGISTER_RULE,
     SYSTEM_PROMPTS,
     TierConfig,
     UnknownTierError,
     UnreadableLimitError,
     briefing,
     compose,
+    system_prompt,
 )
 
 SOURCE = Path(__file__).resolve().parents[2] / "src" / "grillui"
@@ -248,6 +251,23 @@ def test_the_fast_prompt_carries_the_facilitation_mandate_and_stops_short_of_dec
     assert FACILITATION_MANDATE in prompt
     assert "stop short of deciding" in prompt
     assert "leave the decision with the human" in prompt
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+@pytest.mark.parametrize("agent", [GRILL_MASTER, THREAD_AGENT])
+def test_every_brief_a_driver_composes_carries_the_register_rule(tier: str, agent: str) -> None:
+    """
+    Given the standing brief a driver composes for each role on each tier
+    When it is read for what register the turn is to be written in
+    Then it mandates plain sentences, the answer before the reasoning, and no
+         term the decision does not need.
+    """
+    brief = system_prompt(tier, agent)
+
+    assert REGISTER_RULE in brief
+    assert "short, professional sentences a busy human reads once" in brief
+    assert "Put the answer first and the reasoning after it" in brief
+    assert "no term the decision does not need" in brief
 
 
 @pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
