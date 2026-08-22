@@ -64,3 +64,46 @@ def test_module_is_runnable_as_python_dash_m(
     with pytest.raises(SystemExit) as exc_info:
         runpy.run_module("installer.spec_lint_cli", run_name="__main__")
     assert exc_info.value.code == 0
+
+
+_OWES_A_LEDGER = """# A spec
+
+## Acceptance criteria
+
+- **AC1** It works.
+
+## Continuations
+
+- feat: Do the thing — AC: AC1.
+"""
+
+
+def test_init_evidence_backfills_a_ledgerless_spec_and_leaves_it_clean(tmp_path: Path) -> None:
+    """The generation path the rule ships with. Without it, turning the rule on
+    means hand-writing a row per criterion across a 62-criterion spec, and the
+    parser that already knows the AC universe can do it."""
+    specs_dir = tmp_path / "docs" / "specs"
+    specs_dir.mkdir(parents=True)
+    spec = specs_dir / "2026-07-25-owes.md"
+    spec.write_text(_OWES_A_LEDGER, encoding="utf-8")
+
+    assert main([str(tmp_path), "--init-evidence"]) == 0
+    assert "- AC1 | open" in spec.read_text(encoding="utf-8")
+    assert main([str(tmp_path)]) == 0
+
+
+def test_init_evidence_leaves_an_existing_ledger_alone(tmp_path: Path) -> None:
+    """Re-running it must not clobber a row an author filled in — the generator
+    is a backfill, not a reset."""
+    specs_dir = tmp_path / "docs" / "specs"
+    specs_dir.mkdir(parents=True)
+    spec = specs_dir / "2026-07-25-owes.md"
+    spec.write_text(_OWES_A_LEDGER, encoding="utf-8")
+    main([str(tmp_path), "--init-evidence"])
+    filled = spec.read_text(encoding="utf-8").replace(
+        "- AC1 | open", "- AC1 | observed: #1 2026-08-22 scotthamilton77"
+    )
+    spec.write_text(filled, encoding="utf-8")
+
+    assert main([str(tmp_path), "--init-evidence"]) == 0
+    assert spec.read_text(encoding="utf-8") == filled

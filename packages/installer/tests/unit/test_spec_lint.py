@@ -17,6 +17,7 @@ from installer.core.spec_lint import (
     Violation,
     discover_spec_files,
     format_violation,
+    init_evidence,
     lint_spec_text,
     lint_specs,
 )
@@ -867,3 +868,216 @@ def test_the_real_charter_passes_the_gate_that_states_it(tmp_path: Path) -> None
     (specs_dir / charter.name).write_bytes(charter.read_bytes())
     violations = lint_specs(specs_dir)
     assert violations == [], [format_violation(v) for v in violations]
+
+
+# --- The AC-evidence ledger -------------------------------------------------
+
+_SPEC_HEAD = """# A spec
+
+## Acceptance criteria
+
+- **AC1** The thing works.
+- **AC2** The other thing works, and the result is verified
+  in a browser rather than by reading the code.
+
+## Continuations
+
+- feat: Do the thing — AC: AC1, AC2.
+"""
+
+
+def _with_ledger(*rows: str) -> str:
+    """``_SPEC_HEAD`` plus an Evidence section carrying ``rows``."""
+    body = "\n".join(f"- {row}" for row in rows)
+    return f"{_SPEC_HEAD}\n## Evidence\n\n{body}\n"
+
+
+def test_an_all_open_ledger_passes() -> None:
+    """`open` is a legal state, so a spec whose work has not started is not
+    red — the ledger is a map of the AC universe, not a completion claim."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert lint_spec_text(path, _with_ledger("AC1 | open", "AC2 | open")) == []
+
+
+def test_an_ac_absent_from_the_ledger_is_refused_by_name() -> None:
+    """The whole point: every stated criterion is accounted for. An AC with no
+    row is a criterion nobody decided anything about, and the finding has to
+    name it or the author cannot act on it."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _with_ledger("AC1 | open"))
+    assert len(violations) == 1
+    assert "AC2" in violations[0].reason
+
+
+def test_a_spec_that_mints_work_and_carries_no_ledger_is_refused_once() -> None:
+    """One finding, not one per criterion: the spec has no ledger at all, which
+    is a single thing to fix, and 62 findings naming every AC buries it."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _SPEC_HEAD)
+    assert len(violations) == 1
+    assert "Evidence" in violations[0].reason
+
+
+def test_a_browser_marked_ac_cannot_be_discharged_by_a_test_row() -> None:
+    """The discriminator the incident turns on. Three named, passing tests
+    cited GUI-A33/A34/A35 and the page control they claimed was absent — the
+    tests pinned the wire protocol. A criterion that says it is verified in a
+    browser is not dischargeable by a test that never opens one."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(
+        path, _with_ledger("AC1 | open", "AC2 | test: tests/test_x.py::test_thing")
+    )
+    assert len(violations) == 1
+    assert "AC2" in violations[0].reason
+    assert "in a browser" in violations[0].reason
+
+
+def test_a_browser_marked_ac_is_dischargeable_by_probe_or_observed() -> None:
+    """The kind rule refuses one state, not the criterion. A committed browser
+    script or a dated, attributed attestation both stand."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert (
+        lint_spec_text(
+            path, _with_ledger("AC1 | open", "AC2 | observed: #614 2026-08-22 scotthamilton77")
+        )
+        == []
+    )
+
+
+def test_a_symbol_row_naming_nothing_in_the_tree_is_refused(tmp_path: Path) -> None:
+    """A `test:` row is a claim that a named test exists. Unchecked, the row is
+    prose — the cheapest way to a green ledger is to cite a test nobody wrote."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(
+        path,
+        _with_ledger("AC1 | test: tests/test_x.py::test_missing", "AC2 | open"),
+        repo_root=tmp_path,
+    )
+    assert len(violations) == 1
+    assert "tests/test_x.py::test_missing" in violations[0].reason
+
+
+def test_a_symbol_row_whose_file_exists_without_the_symbol_is_refused(tmp_path: Path) -> None:
+    """Half a resolution is not one: the file being there says nothing about the
+    test being there, and citing a real file with a made-up function is the same
+    empty claim one directory shallower."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_x.py").write_text("def test_other() -> None: ...\n")
+    violations = lint_spec_text(
+        path,
+        _with_ledger("AC1 | test: tests/test_x.py::test_missing", "AC2 | open"),
+        repo_root=tmp_path,
+    )
+    assert len(violations) == 1
+    assert "test_missing" in violations[0].reason
+
+
+def test_a_symbol_row_that_resolves_passes(tmp_path: Path) -> None:
+    """The green case for `test:` and `probe:` alike — file present, symbol
+    named in it."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_x.py").write_text("def test_thing() -> None: ...\n")
+    (tmp_path / "probe.md").write_text("# probe_ac2: open the board and look\n")
+    assert (
+        lint_spec_text(
+            path,
+            _with_ledger(
+                "AC1 | test: tests/test_x.py::test_thing",
+                "AC2 | probe: probe.md::probe_ac2",
+            ),
+            repo_root=tmp_path,
+        )
+        == []
+    )
+
+
+def test_a_symbol_row_escaping_the_repo_does_not_resolve(tmp_path: Path) -> None:
+    """A row names a path inside this tree. An absolute or parent-relative path
+    resolves against whatever the runner happens to have on disk, which is not
+    evidence about this repository."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(
+        path, _with_ledger("AC1 | test: ../elsewhere.py::test_thing", "AC2 | open"), tmp_path
+    )
+    assert len(violations) == 1
+    assert "../elsewhere.py" in violations[0].reason
+
+
+def test_an_unknown_evidence_state_is_refused_by_name() -> None:
+    """The state set is closed. An open vocabulary is no vocabulary: `done`,
+    `verified`, `n/a` would all pass and none of them names a proof."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _with_ledger("AC1 | done", "AC2 | open"))
+    assert len(violations) == 1
+    assert "done" in violations[0].reason
+    assert "AC1" in violations[0].reason
+
+
+def test_a_malformed_observed_row_is_refused() -> None:
+    """`observed:` is an attestation, and its value is being dated and
+    attributed. A row missing either is an anonymous claim."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _with_ledger("AC1 | observed: #614", "AC2 | open"))
+    assert len(violations) == 1
+    assert "observed: #614" in violations[0].reason
+
+
+def test_a_ledger_row_naming_an_undefined_ac_is_refused_by_name() -> None:
+    """A row for an ID the spec never stated is bookkeeping against nothing —
+    usually a criterion that was renamed or deleted, leaving its row behind."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    violations = lint_spec_text(path, _with_ledger("AC1 | open", "AC2 | open", "AC9 | open"))
+    assert len(violations) == 1
+    assert "AC9" in violations[0].reason
+
+
+def test_a_spec_with_no_continuations_manifest_carries_no_ledger_obligation() -> None:
+    """Scope: the rule fires on specs that mint implementation work. A design
+    note that slices nothing has nothing to discharge and no PR to hold."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    assert lint_spec_text(path, _CLEAN_NO_SLICES) == []
+
+
+def test_a_spec_defining_no_ac_ids_is_untouched_by_the_ledger_rule() -> None:
+    """The existing check-2 finding stands alone. Demanding a ledger from a spec
+    with no criteria to put in it reports the same defect twice."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    text = _HEADING_NO_ENTRIES + "\n## Continuations\n\n- feat: Do the thing — AC: none.\n"
+    violations = lint_spec_text(path, text)
+    assert len(violations) == 1
+    assert "Evidence" not in violations[0].reason
+    assert init_evidence(text) is None
+
+
+def test_a_fenced_ledger_row_is_not_a_row() -> None:
+    """An illustration of the row grammar inside a code fence is documentation,
+    not a discharge — the same gaming case every other check here refuses."""
+    path = Path("docs/specs/2026-07-25-example.md")
+    text = f"{_SPEC_HEAD}\n## Evidence\n\n```\n- AC1 | open\n- AC2 | open\n```\n"
+    violations = lint_spec_text(path, text)
+    assert len(violations) == 1
+    assert "Evidence" in violations[0].reason
+
+
+def test_the_generator_emits_an_all_open_ledger() -> None:
+    """Backfill is mechanical — the AC parser already knows the universe — so it
+    is code, not hand work over 62 criteria."""
+    generated = init_evidence(_SPEC_HEAD)
+    assert generated is not None
+    assert lint_spec_text(Path("docs/specs/2026-07-25-example.md"), generated) == []
+    assert generated.startswith(_SPEC_HEAD)
+
+
+def test_the_generator_is_idempotent() -> None:
+    """Running it over a spec that already has a ledger returns nothing to
+    write, so it cannot clobber rows an author filled in."""
+    generated = init_evidence(_SPEC_HEAD)
+    assert generated is not None
+    assert init_evidence(generated) is None
+
+
+def test_the_generator_declines_a_spec_outside_the_rule() -> None:
+    """No Continuations manifest, no obligation, so nothing to emit."""
+    assert init_evidence(_CLEAN_NO_SLICES) is None

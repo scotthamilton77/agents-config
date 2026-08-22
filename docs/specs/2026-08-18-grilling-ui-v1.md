@@ -1195,3 +1195,74 @@ Each criterion is mechanically checkable and convertible to a red test.
   controls, and the answer that carries its provenance and closes its thread — AC: GUI-D33,
   GUI-U23, GUI-A67, GUI-A68.
 - chore: Packaging: the uv package, its gates, and the CLI on PATH — AC: GUI-P1.
+
+## Evidence
+
+How each criterion above is discharged. States: `open`;
+`test: <file>::<test_fn>`; `probe: <file>::<name>`;
+`observed: #<PR> <YYYY-MM-DD> <name>`. A criterion whose own text says it is
+verified in a browser cannot be discharged by `test:` — a test that never
+opens one proves something else.
+
+- GUI-A1 | open
+- GUI-A2 | open
+- GUI-A3 | open
+- GUI-A5 | open
+- GUI-A6 | open
+- GUI-A7 | open
+- GUI-A8 | open
+- GUI-A9 | open
+- GUI-A10 | open
+- GUI-A11 | open
+- GUI-A12 | open
+- GUI-A13 | open
+- GUI-A14 | open
+- GUI-A16 | open
+- GUI-A17 | open
+- GUI-A18 | open
+- GUI-A19 | open
+- GUI-A20 | open
+- GUI-A21 | open
+- GUI-A22 | open
+- GUI-A23 | open
+- GUI-A24 | open
+- GUI-A25 | open
+- GUI-A26 | open
+- GUI-A27 | open
+- GUI-A28 | open
+- GUI-A29 | open
+- GUI-A30 | open
+- GUI-A31 | open
+- GUI-A32 | open
+- GUI-A33 | open
+- GUI-A34 | open
+- GUI-A35 | open
+- GUI-A36 | open
+- GUI-A37 | open
+- GUI-A38 | open
+- GUI-A39 | open
+- GUI-A40 | open
+- GUI-A41 | open
+- GUI-A42 | open
+- GUI-A43 | open
+- GUI-A44 | open
+- GUI-A45 | open
+- GUI-A46 | open
+- GUI-A47 | open
+- GUI-A48 | open
+- GUI-A49 | open
+- GUI-A50 | open
+- GUI-A51 | open
+- GUI-A52 | open
+- GUI-A53 | open
+- GUI-A54 | open
+- GUI-A55 | open
+- GUI-A56 | open
+- GUI-A57 | open
+- GUI-A58 | open
+- GUI-A59 | open
+- GUI-A60 | open
+- GUI-A61 | open
+- GUI-A62 | open
+- GUI-A63 | open
+- GUI-A64 | open
