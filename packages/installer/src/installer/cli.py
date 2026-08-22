@@ -318,10 +318,20 @@ def _run(
             ignore=ignore,
         )
 
-    if cli_deploy is None:
+    # uv tool deploys resolve their target from the ambient environment (uv's own
+    # tool dir and bin dir), which `home` cannot scope. So a run pointed at any home
+    # other than the real one gets NO live port: both CLI phases are skipped and say
+    # so, rather than mutating system-wide tooling on behalf of a sandboxed caller.
+    # Opting into the real port for such a run is an explicit `cli_deploy=` argument.
+    if cli_deploy is None and resolved_home == Path.home():
         from installer.core.clis import UvCliDeploy
 
         cli_deploy = UvCliDeploy()
+    elif cli_deploy is None:
+        io.warn(
+            f"CLI deploys skipped: this run targets {resolved_home}, but uv tool "
+            "installs are system-wide and cannot be scoped to it"
+        )
 
     if args.dump_stage is not None:
         try:
@@ -459,16 +469,17 @@ def _run(
                             outcomes_by_plugin=plugin_outcomes,
                         ),
                     )
-                    cli_outcome = deploy_clis(
-                        CLI_PACKAGES,
-                        repo_root=resolved_repo_root,
-                        prior=prior,
-                        deploy=cli_deploy,
-                        io=io,
-                        dry_run=args.dry_run,
-                        auto_yes=config.auto_yes,
-                    )
-                    _merge_into(counters, cli_outcome.counters)
+                    if cli_deploy is not None:
+                        cli_outcome = deploy_clis(
+                            CLI_PACKAGES,
+                            repo_root=resolved_repo_root,
+                            prior=prior,
+                            deploy=cli_deploy,
+                            io=io,
+                            dry_run=args.dry_run,
+                            auto_yes=config.auto_yes,
+                        )
+                        _merge_into(counters, cli_outcome.counters)
                 except ConsentRequiredError:
                     # A non-interactive run lacking --yes/--dry-run cannot answer the
                     # per-file overwrite prompt; sync_plan's up-front guard raises
@@ -496,19 +507,20 @@ def _run(
                 pruned_paths = outcome.pruned_paths
                 relinquished_paths = outcome.relinquished_paths
 
-                try:
-                    cli_prune = prune_clis(
-                        prior,
-                        registry_names=frozenset(s.name for s in CLI_PACKAGES),
-                        retired=frozenset(RETIRED_CLIS),
-                        deploy=cli_deploy,
-                        io=io,
-                        dry_run=args.dry_run,
-                        auto_yes=config.auto_yes,
-                    )
-                except ConsentRequiredError:
-                    return 1
-                _merge_into(counters, cli_prune.counters)
+                if cli_deploy is not None:
+                    try:
+                        cli_prune = prune_clis(
+                            prior,
+                            registry_names=frozenset(s.name for s in CLI_PACKAGES),
+                            retired=frozenset(RETIRED_CLIS),
+                            deploy=cli_deploy,
+                            io=io,
+                            dry_run=args.dry_run,
+                            auto_yes=config.auto_yes,
+                        )
+                    except ConsentRequiredError:
+                        return 1
+                    _merge_into(counters, cli_prune.counters)
 
             # Write the receipt on every non-dry-run install (not only --prune):
             # built from the real per-item outcomes so it mirrors disk. Inside the

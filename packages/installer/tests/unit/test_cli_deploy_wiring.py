@@ -375,3 +375,98 @@ def test_no_tty_without_yes_at_cli_consent_exits_1(tmp_path: Path) -> None:
         cli_deploy=deploy,
     )
     assert rc == 1
+
+
+def _uv_recorder(calls: list[list[str]], bin_dir: Path):  # type: ignore[no-untyped-def]
+    """A stand-in for UvCliDeploy's single subprocess choke point that answers
+    every probe the way a healthy uv would, so an unguarded run walks the WHOLE
+    deploy path — version probe, bin-dir resolution, tool list, install — and
+    records each argv instead of spawning it. A stub that failed early would
+    prove only that uv was reached, not that the real bin dir was targeted."""
+
+    def _run(_self: object, cmd: list[str], _timeout: int) -> CommandResult:
+        calls.append(cmd)
+        if cmd[:4] == ["uv", "tool", "dir", "--bin"]:
+            return CommandResult(ok=True, output=f"{bin_dir}\n")
+        if cmd[:2] == ["uv", "--version"]:
+            return CommandResult(ok=True, output="uv 0.10.4\n")
+        if cmd[:3] == ["uv", "tool", "install"]:
+            # A real install drops the console script into the bin dir, which is
+            # what the post-install shim re-read then finds.
+            bin_dir.mkdir(parents=True, exist_ok=True)
+            for spec in CLI_PACKAGES:
+                if cmd[-1].endswith(spec.package_dir):
+                    (bin_dir / spec.binary).write_text("#!/bin/sh\n")
+        return CommandResult(ok=True, output="")
+
+    return _run
+
+
+@pytest.mark.cli_deploy
+def test_sandboxed_home_never_reaches_the_real_uv_port(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a run whose home is a throwaway directory and whose cli_deploy is
+    left defaulted
+    When main(["--tools=claude", "--yes"]) runs
+    Then no uv subprocess is issued at all — no bin-dir resolution, no
+    install — and the transcript says the CLI phases were skipped.
+
+    Pins the sandbox rule: uv resolves its tool dir and bin dir from the
+    ambient environment, which `home` cannot scope, so a home other than the
+    real one gets no live port rather than a system-wide mutation.
+    """
+    from installer.core.clis import UvCliDeploy
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(UvCliDeploy, "_run", _uv_recorder(calls, tmp_path / "bin"))
+    repo = _hermetic_repo(tmp_path)
+    io = ScriptedIO(interactive=False)
+    rc = main(
+        ["--tools=claude", "--yes"],
+        home=tmp_path / "home",
+        io=io,
+        repo_root=repo,
+        cwd=tmp_path,
+    )
+    assert calls == []
+    assert rc == 0
+    assert any(e.channel == "warn" and "CLI deploys skipped" in e.message for e in io.transcript)
+
+
+@pytest.mark.cli_deploy
+def test_default_home_still_gets_the_live_uv_port(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given a run with home omitted entirely — the installer's own invocation
+    Then the run succeeds, and the live uv port is used: the version probe,
+    the real bin-dir resolution, and an install for every registry CLI all
+    fire.
+
+    Pins the other half of the sandbox rule — the guard must not disarm the
+    default path — on the argument-omitted path the installer actually takes.
+    """
+    from installer.core.clis import UvCliDeploy
+
+    calls: list[list[str]] = []
+    bin_dir = tmp_path / "bin"
+    monkeypatch.setattr(UvCliDeploy, "_run", _uv_recorder(calls, bin_dir))
+    # The reachability gate is the one port method backed by the live PATH
+    # rather than by a subprocess; pinning it keeps the run independent of
+    # whatever the developer already has installed.
+    monkeypatch.setattr(UvCliDeploy, "which", lambda _self, binary: bin_dir / binary)
+    repo = _hermetic_repo(tmp_path)
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
+    rc = main(
+        ["--tools=claude", "--yes"],
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+        cwd=tmp_path,
+    )
+    assert rc == 0
+    assert ["uv", "--version"] in calls
+    assert ["uv", "tool", "dir", "--bin"] in calls
+    installed = {c[-1] for c in calls if c[:3] == ["uv", "tool", "install"]}
+    assert installed == {str(repo / spec.package_dir) for spec in CLI_PACKAGES}

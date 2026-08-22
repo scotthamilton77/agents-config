@@ -89,10 +89,14 @@ points, `scripts/install.py` and `python -m installer`. It parses the argument
 table and exits before anything is staged.
 
 To observe install behaviour instead, inject every seam. `main()` takes five —
-`home`, `repo_root`, `io`, `cwd` and `cli_deploy` — and every one silently
-defaults to the real thing: `home` to `Path.home()`, `repo_root` to this
-repository, `cwd` to `Path.cwd()`, `cli_deploy` to the live `uv tool install`
-subprocess port.
+`home`, `repo_root`, `io`, `cwd` and `cli_deploy` — and four of them silently
+default to the real thing: `home` to `Path.home()`, `repo_root` to this
+repository, `cwd` to `Path.cwd()`. `cli_deploy` defaults to the live
+`uv tool install` subprocess port **only when `home` is the real home**; point
+`home` anywhere else and both CLI phases are skipped with a notice, because uv
+resolves its tool dir and bin dir from the ambient environment and `home` cannot
+scope them. Running them against another home is an explicit
+`cli_deploy=UvCliDeploy()`.
 
 A partial injection is the more dangerous mistake, because it looks contained
 and is not. Faking `cli_deploy` alone stops the `uv` mutation and still lets the
