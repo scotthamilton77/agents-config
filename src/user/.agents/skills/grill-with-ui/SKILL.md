@@ -59,12 +59,12 @@ and everything it produces stays there.
 ## 2. Launch it and get out of the way
 
 ```
-grillui serve <session-dir> --handoff <session-dir>/handoff.json
+grillui serve <session-dir> --handoff <session-dir>/handoff.json --open
 ```
 
-It prints the session URL and serves the board on loopback only. That URL is the hand-over:
-put it in your reply, because nothing opens a browser at it. A refused briefing exits
-non-zero naming the field that is wrong: fix that field and re-run.
+It prints the session URL, serves the board on loopback only, and opens a browser at it.
+Put that URL in your reply too — it is the hand-over if the browser did not open. A
+refused briefing exits non-zero naming the field that is wrong: fix that field and re-run.
 
 Then wait. The command returns when the human ends the session, and that is the only thing
 you are waiting for. Do not poll the backend, do not tail the log, do not ask the human
