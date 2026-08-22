@@ -581,9 +581,9 @@ follows, and changes nothing else.
 - **GUI-U29 — A board control opens the map thread.** The top row carries a control that
   opens the session's one map thread (GUI-D40), beside the map doctor, and opening it
   creates nothing: the first thing the human says is what opens the thread. Its fold
-  control is offered without waiting for an agent turn, unlike an ordinary thread's
-  (GUI-D41) — the request the human wrote is itself the thing to route, so waiting for a
-  reply first spends a turn before the request can reach the grill-master at all.
+  arms on the one readiness every thread has (GUI-D41): the agent spoke last, so what
+  crosses is the agent's concrete statement of the change and never the human's own
+  request read back to the grill-master as a conclusion.
 - **GUI-U4 — Thread panels have a floating header and footer** — title with close and
   pop-out controls pinned at the top, prompt box and action buttons pinned at the bottom —
   so neither scrolls out of view in a long thread.
@@ -1478,8 +1478,8 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A98** In a browser, against a running backend: the board's control opens the map
   thread and creates nothing; the first thing said opens one thread anchored to no decision
   and kinded `map`; its agent's reply leaves the board and the queue untouched; the fold
-  control is enabled before its agent has said anything; and folding it produces a
-  grill-master turn
+  control is disabled while the human's turn is the last and enabled once its agent has
+  answered; and folding it produces a grill-master turn
   carrying that thread's conclusion whose `invalidate`s are in the pending queue, with the
   decisions they target not yet invalidated and the board saying two changes wait.
 - **GUI-A99** In a browser, against a running backend: a thread the human opens on a
