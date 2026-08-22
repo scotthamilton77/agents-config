@@ -859,12 +859,40 @@ def test_each_channels_wait_ticks_on_the_beat_the_headers_clock_ticks_on() -> No
     the row is opened to settle.
     """
     beat = page_source().split('getElementById("lanetimer")', 1)[1].split("}, 1000);", 1)[0]
-    assert "tickDiagClocks()" in beat, "the diagnostic's clocks are on no beat at all"
-    ticker = function_body("tickDiagClocks")
+    assert "tickWaitClocks()" in beat, "the diagnostic's clocks are on no beat at all"
+    ticker = function_body("tickWaitClocks")
     assert "WIRE.status[" in ticker, "the row is ticked from something other than the lane"
     assert "data-waited" in ticker
     assert "waitedText(" in ticker
     assert "waitedText(" in function_body("renderDiagnostic")
+
+
+def test_a_thread_owed_a_reply_says_so_under_the_turn_that_opened_the_wait() -> None:
+    """The header's clock is above the board and the human is inside the thread.
+
+    Three things are measured, because the marker fails three ways. It has to be
+    in the thread's own body, under the turns, or it is not where the human is
+    looking. It has to be raised by the channel's protocol state rather than by
+    the lane's clock, so a turn the backend has taken and no tier has picked up
+    yet is still acknowledged -- and the states it counts as owed have to be
+    states the channel model actually has, since a name the model does not carry
+    silently never matches and the marker never appears at all. And its seconds
+    have to come through the one wording the header and the diagnostic use, on
+    the one beat they tick on: a second formatting or a second timer is a thread
+    that disagrees with the header about the same wait.
+    """
+    assert "waitMark(tid)" in function_body("threadBody"), "the thread body raises no marker"
+    mark = function_body("waitMark")
+    assert "owedOn(channel)" in mark, "the marker is raised by something other than the state"
+    assert "WIRE.status[channel]" in mark
+    assert "waitedText(" in mark, "the thread formats the wait its own way"
+    declared = re.search(r"var OWED_PROTOCOL = (\[[^\]]*\]);", page_source())
+    assert declared, "the page does not say which states are owed"
+    owed = json.loads(declared.group(1))
+    assert set(owed) <= set(PROTOCOL_STATES), f"{set(owed) - set(PROTOCOL_STATES)} is no such state"
+    assert "idle" not in owed and "sending" not in owed
+    assert ".waitmark" in function_body("tickWaitClocks"), "the marker's clock is on no beat"
+    assert "prefers-reduced-motion" in page_source(), "the pulse cannot be turned off"
 
 
 # ---------------------------------------------------------------- GUI-A22
@@ -1952,10 +1980,20 @@ def test_the_shipped_page_has_no_dark_theme_styles() -> None:
     and it appears only on the machines whose operating system is set that way,
     which is the set of machines the person shipping it is least likely to be
     on.
+
+    What is banned is the second palette, not every preference the operating
+    system reports. A page may still answer `prefers-reduced-motion`, which
+    changes movement and no colour: there is one set of colours either way, and
+    an accessibility preference is not a theme.
     """
     source = page_source().lower()
-    for absent in ("prefers-color-scheme", "color-scheme", "@media (prefers", "dark"):
+    for absent in ("prefers-color-scheme", "color-scheme", "dark"):
         assert absent not in source, f"the shipped page carries {absent!r}"
+    # Reduced motion is the one preference the page answers; any other
+    # preference query is a second presentation by another name.
+    queries = re.findall(r"@media\s*\(([^)]*)\)", source)
+    features = [q.split(":")[0].strip() for q in queries]
+    assert features and set(features) == {"prefers-reduced-motion"}, features
 
 
 # ---------------------------------------------------------------- serving

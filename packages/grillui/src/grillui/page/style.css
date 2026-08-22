@@ -348,6 +348,23 @@
   .turn .who { font: 600 10.5px ui-monospace, Menlo, monospace; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint); }
   .turn.grill-master .who, .turn.thread-agent .who { color: var(--accent); }
   .turn p { margin: 3px 0 0; font-size: 13.2px; color: var(--ink); }
+  /* The wait, below the turn that opened it. It sits in the accent the rest of
+     the page uses for an agent's own voice, because that is whose turn it is
+     standing in for. The pulse is the mail indicator's — one keyframe for one
+     idea, offset per dot so three of them read as a sequence. */
+  .waitmark { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
+  .waitmark .dots { display: inline-flex; gap: 3px; }
+  .waitmark .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+                      opacity: .55; animation: mailpulse 1.2s ease-in-out infinite; }
+  .waitmark .dots i:nth-child(2) { animation-delay: .2s; }
+  .waitmark .dots i:nth-child(3) { animation-delay: .4s; }
+  .waitmark .mono { font-size: 11.5px; color: var(--accent); }
+  /* A stopped clock is the failure this marker exists to prevent; movement is
+     not. Asked for less motion, it keeps the marker and its counting seconds
+     and drops only the pulse. */
+  @media (prefers-reduced-motion: reduce) {
+    .waitmark .dots i { animation: none; }
+  }
   .seeds { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0; }
   .thread-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); align-items: center; }
   .parked-note { background: var(--page); border: 1px dashed var(--line); border-radius: 8px; padding: 9px 12px; font-size: 12.5px; color: var(--ink-dim); margin-top: 10px; }

@@ -435,6 +435,13 @@ function owed() {
     return { channel: name, tier: WIRE.status[name].tier, waited: elapsed(WIRE.status[name].since) };
   }).sort(function (a, b) { return b.waited - a.waited; });
 }
+// The protocol states in which a channel is owed a turn. `sending` is not one of
+// them: an unacknowledged write is the outbox's business, and a wait announced
+// before the backend has taken the turn is a wait on nothing. Read off the
+// channel model rather than off the lane, because a turn the lane has not yet
+// named a tier for is still a turn the human is waiting on.
+var OWED_PROTOCOL = ["awaiting-ack", "agent-owes", "receiving"];
+function owedOn(channel) { return OWED_PROTOCOL.indexOf(CHANNELS.protocol[channel]) >= 0; }
 // Clamped, because the timestamp is the backend's clock and the now is this
 // browser's. A wait that reads as negative is a page saying the reply arrived
 // before it was asked for.
@@ -1847,6 +1854,25 @@ function renderTurns(t) {
   });
   return h;
 }
+// The wait, said at the foot of the turns. The header's clock is above the
+// board and a human who has just sent a turn is inside the thread reading their
+// own message, so the acknowledgement is put where they are looking. Its seconds
+// are the lane's own -- the same clock the header and the diagnostic read,
+// through the same wording -- because two formattings of one wait drift, and a
+// thread disagreeing with the header is worse than a thread saying nothing.
+//
+// Whether it shows at all is the channel's protocol state and not the clock: a
+// turn the backend has taken and no tier has picked up yet is owed with nothing
+// to count, and says so in the state's own word rather than vanishing.
+function waitMark(channel) {
+  if (!owedOn(channel)) return "";
+  var st = WIRE.status[channel];
+  return '<div class="waitmark" data-channel="' + esc(channel) + '"' +
+    (st ? ' data-waited="' + esc(elapsed(st.since)) + '"' : "") +
+    '><span class="dots"><i></i><i></i><i></i></span><span class="mono' +
+    (st ? " wclock" : "") + '">' +
+    esc(st ? waitedText(st) : PROTOCOL_WORDS[CHANNELS.protocol[channel]]) + "</span></div>";
+}
 // What the turn proposed: the option it builds on, the answer in the human's
 // own words, the one line of why -- and, on the live one, the control that arms
 // it. The reason is shown beside the offer and is no part of the answer.
@@ -1966,7 +1992,7 @@ function threadBody(tid, forPop, chrome) {
     (t.decision ? "On " + esc(t.decision) + " · " + esc((node(t.decision) || {}).short || "") : "On the board") +
     (t.requires_action ? " · <strong>this thread is holding " + esc(t.decision) + "</strong>" : "") +
     ". Nothing here touches the decision until you conclude it.</div>";
-  var body = renderTurns(t);
+  var body = renderTurns(t) + waitMark(tid);
   if (t.state !== "open") {
     // A closed thread keeps its box: saying something in one is how the human
     // picks it back up, and the turn itself is what opens it again.
@@ -2201,14 +2227,18 @@ function renderDiagnostic() {
     " · outbox " + outboxDepth() +
     (WIRE.rejected ? " · " + WIRE.rejected + " refused" : "") + "</div></div>";
 }
-// The open diagnostic's clocks, rewritten in place on the lane's beat. The board
-// is only re-rendered when the log moves, and a channel waiting on an agent is
-// by definition a log that is not moving -- so a row drawn once shows the wait
-// it started at for the whole of the wait it exists to time. In place rather
-// than by re-rendering, for the same reason the lane's own clock is: a render
-// once a second destroys whatever control the human is holding.
-function tickDiagClocks() {
-  var rows = document.querySelectorAll("#diagnostic .diagrow");
+// Every per-channel clock on the page, rewritten in place on the lane's beat --
+// the open diagnostic's rows and the thread's own waiting marker. The board is
+// only re-rendered when the log moves, and a channel waiting on an agent is by
+// definition a log that is not moving, so anything drawn once shows the wait it
+// started at for the whole of the wait it exists to time. In place rather than
+// by re-rendering, for the same reason the lane's own clock is: a render once a
+// second destroys whatever control the human is holding.
+//
+// One loop over both, because they carry the same wait about the same channel:
+// a second loop is a second place for the two to come apart.
+function tickWaitClocks() {
+  var rows = document.querySelectorAll("#diagnostic .diagrow, .waitmark");
   for (var i = 0; i < rows.length; i++) {
     var waiting = WIRE.status[rows[i].getAttribute("data-channel")];
     var clock = rows[i].querySelector(".wclock");
@@ -2887,12 +2917,13 @@ setInterval(poll, 700);
 setInterval(function () { claim(false); }, 1500);
 // The lane's timer ticks without a full render, so a running clock never steals
 // focus from the textbox that is meant to always hold it. Every clock on the
-// page moves on this one beat: the diagnostic's per-channel rows are the same
-// wait told per channel, and two beats would let them disagree with the header.
+// page moves on this one beat: the diagnostic's per-channel rows and a thread's
+// waiting marker are the same wait told per channel, and two beats would let
+// them disagree with the header.
 setInterval(function () {
   var el = document.getElementById("lanetimer");
   if (el) el.textContent = agentSignal().text;
-  tickDiagClocks();
+  tickWaitClocks();
 }, 1000);
 // Browsers throttle timers in a background tab, so replies pile up while you
 // are elsewhere. Collect them the moment you are back.

@@ -526,6 +526,15 @@ follows, and changes nothing else.
   reached the backend, that work is in progress, and an incrementing timer of how long the
   human has been waiting. This is fed by the mechanical status lane, so it appears
   immediately rather than when a model gets around to it.
+- **GUI-U28 — A thread owed a reply says so under the turn that opened the wait.** The
+  header's clock is above the board and a human who has just sent a turn is inside the
+  thread reading their own message, so GUI-U1's acknowledgement is said again where they
+  are looking: an animated marker in the thread body, below the last turn, for as long as
+  that thread's channel is owed a turn, carrying the same seconds the header shows for that
+  channel. It is raised by the channel's protocol state rather than by the lane's clock, so
+  a turn the backend has taken and no tier has picked up yet is still acknowledged. The
+  animation is motion and not information: asked for reduced motion the marker stays and
+  only the movement stops.
 - **GUI-U2 — Every message carries a timestamp rendered in the operating system's time
   zone**, thread turns and notifications alike.
 - **GUI-U3 — Agent responses are concise by default**, two or three sentences, with
@@ -1026,6 +1035,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U25 | GUI-A81, GUI-A82 |
 | GUI-U26 | GUI-A83 |
 | GUI-U27 | GUI-A92 |
+| GUI-U28 | GUI-A90 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -1402,6 +1412,10 @@ Each criterion is mechanically checkable and convertible to a red test.
 - **GUI-A89** A thread agent's standing brief, on either tier, says that it cannot change
   the map and that folding the thread is what puts its conclusion in front of the
   grill-master who acts on it — rather than leaving it to agree to a change it cannot make.
+- **GUI-A90** A thread whose channel is owed a turn carries a marker in its body below the
+  last turn, showing the same seconds the header's clock shows for that channel and
+  advancing in step with it. A thread nobody is answering carries none, and the marker is
+  gone once the reply has landed. Verified in a browser.
 
 ## 10. Open questions for the implementing work
 
@@ -1483,6 +1497,7 @@ Each criterion is mechanically checkable and convertible to a red test.
 - feat: Enter as the send chord in every composer — AC: GUI-U27, GUI-A92.
 - bugfix: A killing answer proposes the invalidates it implies, and a thread agent asked for
   a map change names the route that can make one — AC: GUI-D38, GUI-D39, GUI-A88, GUI-A89.
+- feat: The in-thread waiting marker under the human's last turn — AC: GUI-U28, GUI-A90.
 
 ## Evidence
 
@@ -1580,3 +1595,4 @@ opens one proves something else.
 - GUI-A92 | probe: packages/grillui/tests/browser/chord_probe.py::main
 - GUI-A88 | test: packages/grillui/tests/unit/test_tiers.py::test_the_grill_master_brief_obliges_an_invalidate_for_each_decision_an_answer_moots
 - GUI-A89 | test: packages/grillui/tests/unit/test_tiers.py::test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_can
+- GUI-A90 | probe: packages/grillui/tests/browser/thread_wait_probe.py::main
