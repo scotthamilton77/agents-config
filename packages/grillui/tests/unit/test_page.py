@@ -1130,6 +1130,60 @@ def test_a_dismissed_hover_overlay_returns_only_on_a_fresh_entry_of_its_zone() -
     assert source.count("hideHover(") == 2, "something other than a click mutes a zone"
 
 
+# ---------------------------------------------------------------- GUI-A60
+
+
+def test_an_options_tradeoff_rides_on_its_own_icon_and_on_nothing_larger() -> None:
+    """The trio the wire has always carried, read at last -- and read once.
+
+    Where it is read decides how invasive the overlay is. A target the size of
+    the option fires on every pass of the pointer towards that option, so the
+    card lands over the answers exactly as the human reaches for one. The
+    overlay resolves its owner through a single selector, so the whole of the
+    difference between an icon-sized target and a block-sized one is which
+    element the three statements are written onto. Nothing else needs saying
+    here, and nothing else may carry them.
+
+    That an icon is on screen, that only it raises a card, and that the card
+    lands inside the window are a layout engine's answers and are measured in a
+    browser. What is measured here is that the source can only mean one thing.
+    """
+    source = page_source()
+    icon = function_body("pcrIcon")
+    # The option's own trio, read in one place, and no icon promising a reason
+    # that is not there.
+    assert "o.pcr" in icon, "the page never reads the option's trade-off"
+    assert source.count("o.pcr") == 1, "something other than the icon reads the trade-off"
+    assert 'if (!p[0]) return "";' in icon, "an option carrying no trade-off still gets an icon"
+    assert 'class="pcricon"' in icon, "the trade-off hangs off something other than an icon"
+    # A real button, so the trade-off is reachable from a keyboard without a
+    # tabindex of its own, and so focus and hover are the same affordance.
+    assert 'type="button"' in icon, "the icon cannot take focus"
+    # The statements are on the icon, which is what the overlay's one selector
+    # finds -- and the option control carries none of them, so neither it nor
+    # the block around it can ever be the owner that selector resolves to.
+    button = function_body("optionButton")
+    assert "pcrIcon(o)" in button, "the option renders no icon beside it"
+    for attribute in ("data-p=", "data-c=", "data-r=", "data-otext="):
+        assert attribute in icon, f"the icon does not carry {attribute}"
+        assert attribute not in button, f"the option control still carries {attribute}"
+    # One card builder, so what a pointer raises and what a keyboard raises
+    # cannot drift into two overlays saying different things.
+    assert source.count("function pcrCard(") == 1
+    assert source.count("showHover(pcrCard(o), o.getBoundingClientRect())") == 2, (
+        "hover and focus do not raise the same card"
+    )
+    # Focus leaving the icon takes the card away without muting the zone: a zone
+    # muted by focus moving off it would never hand its card back at all.
+    assert 'document.addEventListener("focusout"' in source
+    # Placed against its own measured size. The card is as tall as the words in
+    # it, and the longest trade-off is raised from the bottom edge of the pane
+    # -- where a guessed height puts it off the bottom of the window.
+    place = function_body("showHover")
+    assert "HOVER.offsetHeight" in place, "the card's height is guessed, not measured"
+    assert "window.innerHeight - h - 6" in place, "the card is not held inside the window"
+
+
 # ---------------------------------------------------------------- GUI-A47
 
 

@@ -131,6 +131,23 @@
   .q-body { color: var(--ink-dim); font-size: 13.5px; margin: 8px 0 12px; }
   .rec-line { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 6px; }
   .alts { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
+
+  /* An option and, where it has one, the icon carrying its trade-off. The icon
+     is small and it is the whole of the target: a target the size of the option
+     fires on every pass of the pointer towards the option, so the overlay
+     covers the answers at the moment the human is reaching for one. It is a
+     real button so that the trade-off is reachable from the keyboard without a
+     tabindex, and its cursor says read-me rather than press-me. */
+  .optrow { display: flex; align-items: center; gap: 6px; }
+  .optrow .btn.wide { flex: 1 1 0; width: auto; min-width: 0; }
+  .pcricon {
+    flex: none; width: 22px; height: 22px; padding: 0; line-height: 1;
+    font-size: 12px; cursor: help; color: var(--ink-faint);
+    border: 1px solid var(--line); border-radius: 999px; background: var(--paper);
+  }
+  .pcricon:hover, .pcricon:focus-visible { color: var(--accent); border-color: var(--accent); }
+  .pcricon:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
   .free { display: flex; gap: 6px; margin-top: 8px; }
   .free textarea {
     flex: 1; font: inherit; font-size: 13px; padding: 7px 9px; resize: vertical;
@@ -244,7 +261,10 @@
   .hovercard .att { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.18); }
   .hovercard .att div { opacity: .92; }
   .hovercard .pcr { margin-top: 5px; }
-  .hovercard .pcr b { display: inline-block; min-width: 74px; opacity: .55; font-weight: 600;
+  /* A gutter rather than a width alone: the longest of the three labels is
+     wider than the column, and on a min-width it ran straight into its text. */
+  .hovercard .pcr b { display: inline-block; min-width: 74px; padding-right: 8px;
+                      opacity: .55; font-weight: 600;
                       font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }
   .maplegend { flex: none; display: flex; gap: 13px; flex-wrap: wrap; padding: 9px 15px; border-top: 1px solid var(--line);
                font-size: 11.5px; color: var(--ink-dim); }
@@ -1725,10 +1745,17 @@ var LABELS = {
   "awaiting-thread": "answer held · thread must conclude", invalidated: "left the flow"
 };
 function pill(status) { return '<span class="pill ' + status + '">' + LABELS[status] + "</span>"; }
-function pcrAttrs(o) {
+// The trade-off an option carries, on its own icon beside that option, and
+// nothing where an option carries none -- an icon on an option with nothing
+// behind it is a promise of a reason that never arrives. The three statements
+// ride on the icon, so the icon is what the overlay's one selector finds.
+function pcrIcon(o) {
   var p = o.pcr || [];
-  return ' data-p="' + esc(p[0] || "") + '" data-c="' + esc(p[1] || "") + '" data-r="' + esc(p[2] || "") + '"' +
-    ' data-otext="' + esc(o.text) + '"';
+  if (!p[0]) return "";
+  return '<button type="button" class="pcricon" aria-label="what option ' + esc(o.text) +
+    ' buys, costs and forces later"' +
+    ' data-p="' + esc(p[0]) + '" data-c="' + esc(p[1] || "") + '" data-r="' + esc(p[2] || "") + '"' +
+    ' data-otext="' + esc(o.text) + '">⇄</button>';
 }
 function stamp(iso) {
   if (!iso) return "";
@@ -1771,9 +1798,10 @@ function answerControls(d, locked) {
   return h;
 }
 function optionButton(d, o, index, cls, lead, dis) {
-  return '<button class="' + cls + '" data-act="pick" data-id="' + esc(d.id) + '" data-opt="' + esc(o.id) +
-    '" data-label="' + esc(labelAt(index)) + '"' + pcrAttrs(o) + dis + ">" + lead +
-    '<span class="olab">' + labelAt(index) + "</span>" + esc(o.text) + "</button>";
+  return '<div class="optrow"><button class="' + cls + '" data-act="pick" data-id="' + esc(d.id) +
+    '" data-opt="' + esc(o.id) + '" data-label="' + esc(labelAt(index)) + '"' + dis + ">" + lead +
+    '<span class="olab">' + labelAt(index) + "</span>" + esc(o.text) + "</button>" +
+    pcrIcon(o) + "</div>";
 }
 // One control, on every channel anyone speaks on: the map's and each open
 // thread's. Never disabled — the moment the human most wants an expert is the
@@ -2818,23 +2846,44 @@ function hideHover(zone) {
 function showHover(html, rect) {
   if (!HOVER) { HOVER = document.createElement("div"); HOVER.className = "hovercard"; document.body.appendChild(HOVER); }
   HOVER.innerHTML = html;
-  HOVER.style.left = Math.min(window.innerWidth - 340, Math.max(6, rect.left)) + "px";
-  HOVER.style.top = (rect.bottom + 8 > window.innerHeight - 140 ? rect.top - 130 : rect.bottom + 8) + "px";
   HOVER.style.display = "block";
+  // Measured, not guessed. The card is as tall as the words in it, and the
+  // trade-off of the last option of a long decision is raised from the very
+  // bottom of the pane -- where a guessed height puts the card off the screen
+  // and the reason for the answer is unreadable exactly where it is longest.
+  // The card is fixed to the viewport rather than to the pane, so what has to
+  // be avoided is the window's edges and never the pane's overflow.
+  var h = HOVER.offsetHeight, w = HOVER.offsetWidth;
+  var top = rect.bottom + 8;
+  if (top + h > window.innerHeight - 6) top = rect.top - h - 8;
+  HOVER.style.top = Math.max(6, Math.min(top, window.innerHeight - h - 6)) + "px";
+  HOVER.style.left = Math.max(6, Math.min(rect.left, window.innerWidth - w - 6)) + "px";
 }
+// One builder, so the overlay a pointer raises and the one a keyboard raises
+// are the same overlay rather than two that drift apart.
+function pcrCard(o) {
+  return '<div class="hid">this option</div><div><strong>' + esc(o.dataset.otext) + "</strong></div>" +
+    '<div class="pcr"><b>buys you</b>' + esc(o.dataset.p) + "</div>" +
+    '<div class="pcr"><b>costs you</b>' + esc(o.dataset.c) + "</div>" +
+    '<div class="pcr"><b>forces later</b>' + esc(o.dataset.r) + "</div>";
+}
+// The icon takes focus, so the trade-off is readable without a pointer at all.
+// Focus raises what hover raises and leaving takes it away -- and leaving never
+// mutes, because a zone muted by the focus moving off it would never come back.
+document.addEventListener("focusin", function (e) {
+  var o = e.target.closest("[data-p]");
+  if (o && o.dataset.p && zoneKey(o) !== MUTED) showHover(pcrCard(o), o.getBoundingClientRect());
+});
+document.addEventListener("focusout", function (e) {
+  if (e.target.closest("[data-p]") && HOVER) HOVER.style.display = "none";
+});
 document.addEventListener("mouseover", function (e) {
   // Still inside the zone whose overlay was clicked away: say nothing.
   if (MUTED && zoneKey(zoneOf(e.target)) === MUTED) return;
   var b = e.target.closest("[data-why]");
   if (b) { showHover('<div class="hid">what this icon means</div><div>' + esc(b.dataset.why) + "</div>", b.getBoundingClientRect()); return; }
   var o = e.target.closest("[data-p]");
-  if (o && o.dataset.p) {
-    showHover('<div class="hid">this option</div><div><strong>' + esc(o.dataset.otext) + "</strong></div>" +
-      '<div class="pcr"><b>buys you</b>' + esc(o.dataset.p) + "</div>" +
-      '<div class="pcr"><b>costs you</b>' + esc(o.dataset.c) + "</div>" +
-      '<div class="pcr"><b>forces later</b>' + esc(o.dataset.r) + "</div>", o.getBoundingClientRect());
-    return;
-  }
+  if (o && o.dataset.p) { showHover(pcrCard(o), o.getBoundingClientRect()); return; }
   var n = e.target.closest(".mnode");
   if (!n) return;
   var d = node(n.dataset.id);
