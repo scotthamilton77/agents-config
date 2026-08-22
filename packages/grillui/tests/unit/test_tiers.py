@@ -42,6 +42,7 @@ from grillui.tiers import (
     POLICY_GATED,
     REGISTER_RULE,
     SYSTEM_PROMPTS,
+    THREAD_AGENT,
     TierConfig,
     UnknownTierError,
     UnreadableLimitError,
@@ -458,3 +459,20 @@ def test_a_tier_this_configuration_never_heard_of_has_no_limit_to_give() -> None
     """
     with pytest.raises(UnknownTierError):
         TierConfig().limit_for("medium")
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_the_thread_agent_prompt_bars_an_offer_on_a_thread_anchoring_nothing(tier: str) -> None:
+    """
+    Given the thread-agent system prompt a driver composes for each tier
+    When it is read for which decision an offer may name
+    Then it states that the offer is on this thread's anchor decision and never
+         on another, and that a thread anchored to none takes no offer at all --
+         without which the thread about the board itself is left to pick a
+         decision out of the map and offer an answer nobody can take.
+    """
+    prompt = system_prompt(tier, THREAD_AGENT)
+
+    assert "on this thread's anchor decision and never on any other" in prompt
+    assert "a thread anchored to no decision" in prompt
+    assert "takes no `proposed_answer` at all" in prompt
