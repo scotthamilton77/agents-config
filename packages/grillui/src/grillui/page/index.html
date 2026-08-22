@@ -2798,7 +2798,12 @@ function sealSurface() {
 
 /* ---------- events ---------- */
 document.addEventListener("input", function (e) {
-  if (e.target.dataset && e.target.dataset.draft) UI.drafts[e.target.dataset.draft] = e.target.value;
+  if (!e.target.dataset || !e.target.dataset.draft) return;
+  var id = e.target.dataset.draft;
+  UI.drafts[id] = e.target.value;
+  // Provenance goes with the draft it filled: a box emptied by hand has no
+  // proposal left in it, so the next answer is the human's alone.
+  if (!e.target.value.trim() && UI.armed[id]) { delete UI.armed[id]; render(); }
 });
 function sendFrom(ta) {
   if (!ta || !ta.value.trim()) return;

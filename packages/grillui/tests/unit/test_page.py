@@ -2782,3 +2782,13 @@ def test_a_decision_the_board_will_not_take_an_answer_on_names_what_holds_it() -
     assert 'answerable(id) || !!(UI.armed[id] && d && d.status === "settled")' in balanced_body(
         "takesAnswer"
     )
+
+
+def test_emptying_an_armed_draft_discards_its_provenance() -> None:
+    """GUI-D33: the thread id rides the draft the proposal filled and is
+    discarded with it -- a box the human empties by hand carries no proposal,
+    so the next answer for that decision must not name the thread."""
+    source = page_source()
+    handler = source.split('document.addEventListener("input"', 1)[1].split("});", 1)[0]
+    assert "delete UI.armed[id]" in handler, "an emptied draft keeps its provenance"
+    assert "!e.target.value.trim()" in handler, "provenance is dropped on every keystroke"
