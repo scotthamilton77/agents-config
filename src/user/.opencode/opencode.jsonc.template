@@ -1,11 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "model": "moonshotai/kimi-k2.6",
-  "skills": {
-    "paths": [
-      "~/.config/opencode/skills/"
-    ]
-  },
   "permission": {
     "read": {
       "*": "allow",
