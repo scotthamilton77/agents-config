@@ -25,6 +25,11 @@ const BASE = IN.base
 const RESET = IN.reset !== false
 const JUDGES = IN.judges && IN.judges.length ? IN.judges : [{ id: 'J1', kind: 'claude', model: 'sonnet', effort: 'high' }]
 const GATE_CMD = IN.gateCmd || 'make ci'
+// Size and cyclomatic complexity are evidence for a code deliverable's
+// engineering-quality axis and meaningless for a prose one, where a longer
+// document is not a worse one. Off drops the measurement from the audit, the
+// audit schema, and the gate summary the judges read.
+const MEASURE_CODE = IN.measureCode !== false
 // Codex arms run through the versioned single-attempt runner script; every
 // recovery decision (resume / fresh retry / stop) is made here in plain JS from
 // the rung's state JSON — the wrapper agent is transport only. The runner's
@@ -172,10 +177,10 @@ function auditPrompt(arm) {
 3. Run: git -C ${arm.worktree} log --oneline ${BASE}..HEAD — capture it.
 4. Run: mkdir -p ${DIR}/diffs && git -C ${arm.worktree} diff ${BASE} HEAD > ${DIR}/diffs/${arm.label}.diff
 5. Count changed files: git -C ${arm.worktree} diff --name-only ${BASE} HEAD | wc -l
-5b. Mechanical size and complexity measures:
+${MEASURE_CODE ? `5b. Mechanical size and complexity measures:
    - LOC: git -C ${arm.worktree} diff --numstat ${BASE} HEAD — sum column 1 as loc_added and column 2 as loc_removed across all rows.
    - Complexity: for each changed .py file (from step 5's list), run: uvx radon cc -s -a ${arm.worktree}/<file> — record the average-complexity line and the single highest-ranked block per file into complexity_summary (one line per file, e.g. "fold.py: avg A (3.2), worst C (12) _h_pr_closed"). If radon fails or no .py files changed, set complexity_summary to exactly what you observed (e.g. "radon unavailable: <error>" or "no .py changes").
-6. Gate, exactly this compound command with a 600000ms timeout, run as one Bash call:
+` : ''}6. Gate, exactly this compound command with a 600000ms timeout, run as one Bash call:
    cd ${arm.worktree} && ${GATE_CMD} > ${DIR}/gate-${arm.label}.log 2>&1; echo "GATE_EXIT=$?"
    Read the gate result ONLY from the GATE_EXIT number that command prints — it is the gate's own exit status. Never infer the gate from log contents, and never pipe the gate into another command.
 7. Return the structured result. Put anything unexpected (excluded files, commit failures, timeout) in notes. Report only observed values.`
@@ -207,7 +212,7 @@ Harness rules that apply regardless of the rubric text:
 - An arm whose gate exited non-zero is disqualified: name it in disqualified instead of scoring it.
 - Redaction markers like "[environment detail removed for blind judging]" are the harness's blinding edits, not the arm's writing — draw no inference against an arm from their presence, placement, or any apparent incoherence they introduce.
 
-Gate, size and complexity results, already measured mechanically (gate exits feed the disqualification rules; LOC and complexity are evidence for the engineering-quality axis, never targets; do not re-run anything):
+${MEASURE_CODE ? 'Gate, size and complexity results, already measured mechanically (gate exits feed the disqualification rules; LOC and complexity are evidence for the engineering-quality axis, never targets; do not re-run anything)' : 'Gate results, already measured mechanically (gate exits feed the disqualification rules; do not re-run anything). Size was deliberately not measured for this task class — a longer deliverable is not a worse one, so draw no inference from length'}:
 ${gateSummary}
 
 Read ONLY these files, with the Read tool:
@@ -293,7 +298,9 @@ const AUDIT_SCHEMA = {
     complexity_summary: { type: 'string' },
     notes: { type: 'string' },
   },
-  required: ['uncommitted_found', 'committed_by_audit', 'commits', 'gate_exit', 'files_changed', 'loc_added', 'loc_removed', 'complexity_summary', 'notes'],
+  required: MEASURE_CODE
+    ? ['uncommitted_found', 'committed_by_audit', 'commits', 'gate_exit', 'files_changed', 'loc_added', 'loc_removed', 'complexity_summary', 'notes']
+    : ['uncommitted_found', 'committed_by_audit', 'commits', 'gate_exit', 'files_changed', 'notes'],
 }
 
 const SANITIZE_SCHEMA = {
@@ -508,7 +515,7 @@ phase('Judge')
 const labels = JUDGE_ONLY ? IN.labels : arms.map(a => a.arm)
 const runTags = JUDGE_ONLY ? (IN.runTags || 'judge-only') : IN.arms.map(a => `${a.label}${tag(a)}`).join('/')
 const gateSummary = JUDGE_ONLY ? IN.gateSummary : arms.map(a =>
-  `Arm ${a.arm}: gate exit ${a.audit ? a.audit.gate_exit : 'unknown'}, ${a.audit ? a.audit.files_changed : '?'} files changed (+${a.audit ? a.audit.loc_added : '?'}/-${a.audit ? a.audit.loc_removed : '?'} LOC), complexity: ${a.audit ? a.audit.complexity_summary : 'unknown'}, committed by ${a.audit && a.audit.committed_by_audit ? 'the audit (arm left work uncommitted)' : 'the arm itself'}${a.kind === 'reference' ? ' [commit pre-existed this run; "committed by the arm" reflects the audit finding a clean tree, not authorship during this dispatch]' : ''}`
+  `Arm ${a.arm}: gate exit ${a.audit ? a.audit.gate_exit : 'unknown'}, ${a.audit ? a.audit.files_changed : '?'} files changed${MEASURE_CODE ? ` (+${a.audit ? a.audit.loc_added : '?'}/-${a.audit ? a.audit.loc_removed : '?'} LOC), complexity: ${a.audit ? a.audit.complexity_summary : 'unknown'}` : ''}, committed by ${a.audit && a.audit.committed_by_audit ? 'the audit (arm left work uncommitted)' : 'the arm itself'}${a.kind === 'reference' ? ' [commit pre-existed this run; "committed by the arm" reflects the audit finding a clean tree, not authorship during this dispatch]' : ''}`
 ).join('\n')
 const judgeText = judgeHarnessPrompt(gateSummary, labels, runTags)
 const JUDGE_SCHEMA = judgeSchema(labels)
