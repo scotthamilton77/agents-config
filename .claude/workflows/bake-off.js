@@ -1,8 +1,9 @@
 export const meta = {
   name: 'bake-off',
   description: 'Parameterized model×effort bake-off: reset worktrees, run contestant arms, audit+gate, sanitize, blind-judge, synthesize',
-  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefText, rubricText, arms[], judges[], runnerPath (required for codex arms), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary, rubricText, judges[], cachedSeats?, cachedChecker?}.',
+  whenToUse: 'Run a pinned task across contestant arms (Claude native or codex exec) and judge the outputs blind. Args: {task, base, dir, briefPath (absolute; copied to <dir>/brief.md, which every arm and seat reads), rubricText, arms[], judges[], runnerPath (required for codex arms), reconcile?, reset?, maxAttempts?, watchdogSeconds?, rungTimeoutMs?}. Judge-only re-judging of retained artifacts: {judgeOnly: true, dir, labels[], gateSummary, rubricText, judges[], cachedSeats?, cachedChecker?}.',
   phases: [
+    { title: 'Preflight', detail: 'place the pinned brief where arms and seats read it' },
     { title: 'Reset', detail: 'archive then reset each arm worktree to the pinned base' },
     { title: 'Arms', detail: 'contestants implement the pinned brief in isolated worktrees' },
     { title: 'Audit', detail: 'commit check, diff capture, gate run per arm' },
@@ -36,6 +37,11 @@ const MEASURE_CODE = IN.measureCode !== false
 // in-code watchdog stays strictly below the rung's Bash-call timeout, so the
 // harness's background-on-timeout branch is unreachable inside a rung.
 const RUNNER = IN.runnerPath || null
+// The pinned brief is a file, not a string: codex arms are handed its path on the
+// command line and every seat reads it for the criteria. Passing the text inline as
+// well would give the run two sources of truth for its one pinned input, so it does
+// not: preflight copies this into place and everything downstream reads that copy.
+const BRIEF_PATH = IN.briefPath || null
 const MAX_ATTEMPTS = IN.maxAttempts || 4
 const WATCHDOG_S = IN.watchdogSeconds || 1200
 const RUNG_TIMEOUT_MS = IN.rungTimeoutMs || 1740000
@@ -76,8 +82,11 @@ if (!JUDGE_ONLY && (CACHED_SEATS.length || CACHED_CHECKER)) {
 }
 // Prompts interpolate these unconditionally; absent, judges would read "undefined".
 if (!IN.rubricText) throw new Error('bake-off: rubricText is required — judge prompts interpolate it')
-if (!JUDGE_ONLY && (IN.arms || []).some(a => a.kind !== 'reference') && !IN.briefText) {
-  throw new Error('bake-off: briefText is required when contestant arms run')
+if (!JUDGE_ONLY && (IN.arms || []).some(a => a.kind !== 'reference') && !BRIEF_PATH) {
+  throw new Error('bake-off: briefPath is required when contestant arms run — it is the pinned brief every arm and seat reads')
+}
+if (BRIEF_PATH && !BRIEF_PATH.startsWith('/')) {
+  throw new Error('bake-off: briefPath must be absolute — the preflight agent starts in the session root, not this checkout')
 }
 const codexArms = JUDGE_ONLY ? [] : (IN.arms || []).filter(a => a.kind !== 'reference' && a.kind !== 'claude')
 if (codexArms.length && !RUNNER) {
@@ -102,6 +111,7 @@ const SHELL_INERT = /^[A-Za-z0-9._/-]+$/
 const embedded = [['dir', DIR], ['base', BASE], ['contextCheckout', IN.contextCheckout]]
 if (TRAP_LEDGER) embedded.push(['trapLedgerPath', TRAP_LEDGER])
 if (RUNNER) embedded.push(['runnerPath', RUNNER])
+if (BRIEF_PATH) embedded.push(['briefPath', BRIEF_PATH])
 for (const a of IN.arms || []) {
   embedded.push([`arm ${a.label} label`, a.label], [`arm ${a.label} worktree`, a.worktree])
   if (a.codexModel) embedded.push([`arm ${a.label} codexModel`, a.codexModel], [`arm ${a.label} effort`, a.effort])
@@ -123,6 +133,17 @@ const reportPath = arm => arm.reportPath || `${DIR}/reports/arm-${arm.label}.md`
 
 // ---------- prompts ----------
 
+function preflightPrompt() {
+  return `You are a mechanical preflight checker for a bake-off run. Execute with Bash. Create the run directory and, if a source brief is named below, place the brief; change nothing else anywhere.
+
+1. mkdir -p ${DIR}
+${BRIEF_PATH ? `2. cp ${BRIEF_PATH} ${DIR}/brief.md — if this fails, do not retry and do not write the file by any other means; report the failure in notes.
+` : '2. No source brief was named: the brief is expected to be in place already. Do not create it.\n'}3. test -s ${DIR}/brief.md && echo BRIEF_PRESENT || echo BRIEF_ABSENT
+4. If present: shasum -a 256 ${DIR}/brief.md | cut -d' ' -f1 — and: wc -l < ${DIR}/brief.md
+
+Return the structured result: exists per step 3, sha256 = the bare hash or "", lines = the count or 0, notes = anything unexpected. Never write, edit, summarize or reconstruct the brief's contents — copying it is the only way it may arrive. Report only observed values; never invent one.`
+}
+
 function resetPrompt(arm) {
   return `You are a mechanical worktree resetter (run tag ${tag(arm)}) for the bake-off experiment worktree ${arm.worktree} (pinned base ${BASE}). This worktree and its branch exist only for this experiment; resetting them to base is the authorized design. Never run any of this against any other path. Execute with Bash:
 
@@ -136,7 +157,7 @@ Return the structured result; report only observed values.`
 }
 
 function claudeArmPrompt(arm) {
-  return `Dispatch preamble (run tag ${tag(arm)}): your working root is ${arm.worktree}. Your report path is ${reportPath(arm)}. The brief follows.\n\n${IN.briefText}`
+  return `Dispatch preamble (run tag ${tag(arm)}): your working root is ${arm.worktree}. Your report path is ${reportPath(arm)}. Your brief is the file ${DIR}/brief.md — read it first with the Read tool, in full, and treat it as the whole of your instructions. Read nothing else under ${DIR}.`
 }
 
 // One rung = one runner-script invocation = one codex attempt. The script owns
@@ -247,6 +268,17 @@ END-PROMPT`
 }
 
 // ---------- schemas ----------
+
+const PREFLIGHT_SCHEMA = {
+  type: 'object',
+  properties: {
+    exists: { type: 'boolean' },
+    sha256: { type: 'string' },
+    lines: { type: 'integer' },
+    notes: { type: 'string' },
+  },
+  required: ['exists', 'sha256', 'lines', 'notes'],
+}
 
 const RESET_SCHEMA = {
   type: 'object',
@@ -468,6 +500,18 @@ async function runCodexLadder(arm) {
 }
 
 // ---------- pipeline ----------
+
+// Every codex arm is handed ${DIR}/brief.md on its command line, and every judge,
+// checker and reconciler seat reads it for the criteria. Absent, a codex arm dies
+// before it starts and a seat scores against criteria it never saw — a whole matrix
+// spent on a missing file. This runs first, in judge-only mode too, and halts.
+phase('Preflight')
+const preflight = await agent(preflightPrompt(), { label: 'preflight:brief', phase: 'Preflight', model: 'haiku', effort: 'low', schema: PREFLIGHT_SCHEMA })
+if (!preflight || !preflight.exists) {
+  throw new Error(`bake-off: ${DIR}/brief.md is absent or empty — every codex arm reads the brief from that path and every seat reads it for the criteria. ${BRIEF_PATH ? `Copying it from ${BRIEF_PATH} did not produce it: ${preflight ? preflight.notes : 'the preflight agent returned nothing'}` : 'Pass briefPath so the run places it.'}`)
+}
+log(`Brief in place: ${DIR}/brief.md, ${preflight.lines} lines, sha256 ${preflight.sha256}`)
+
 
 // Per arm: (reset →) contestant → audit → sanitize, no cross-arm barrier until judging.
 let arms = []
