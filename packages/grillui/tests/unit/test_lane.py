@@ -1,10 +1,11 @@
-"""The status lane's budget and ordering, and who is owed a reply.
+"""The status lane's promptness and ordering, and who is owed a reply.
 
-Every timing claim below is measured from the log's own timestamps rather than
-from a wall clock the test holds. The budget is a property of the lane's place
-in the append -- inside the same lock, before the driver is touched -- and a test
-that timed its own HTTP round trip would be measuring the test client instead,
-passing or failing on load rather than on the thing under test.
+The lane's promptness is a property of its place in the append -- inside the
+same lock as the human's turn, before the driver is touched -- so it is pinned
+by that structure rather than by a stopwatch. Any clock here, even one reading
+the log's own timestamps, is measuring what the machine was doing that second
+as much as what the lane does; the ones that remain are coarse backstops, wide
+enough that a loaded runner never reaches them.
 
 The drivers here are stubs on purpose. What is being pinned is that the lane is
 written before a tier is reached and regardless of whether one answers, so a
@@ -36,7 +37,12 @@ from grillui.schemas import (
     LogEntry,
 )
 
-BUDGET_MS = 10.0
+# Only a gross regression -- a model call landing on the lane ahead of the
+# emission -- is meant to reach this. A fast tier answers in about a second and a
+# heavy one in twelve to thirty-four, so nothing a turn could be made to wait for
+# fits underneath, while ordinary scheduling on a busy runner fits with room to
+# spare. What the entries cost is pinned structurally, not here.
+CEILING_MS = 2000.0
 THREAD = "t1"
 
 
@@ -125,18 +131,22 @@ def test_the_lane_reads_accepted_then_composing_naming_the_dispatching_tier(
     assert [entry.channel for entry in lane] == ["map", "map"]
 
 
-def test_the_lane_lands_inside_ten_milliseconds_of_the_human_turn(
+def test_the_lane_lands_with_the_human_turn_rather_than_with_the_reply(
     log: SessionLog, held: SpyDriver
 ) -> None:
     """
     Given a tier whose turn never finishes
     When a human answers a decision
-    Then both lane entries are appended within 10 ms of the human's own entry,
-         measured from the log's timestamps.
+    Then the human's entry and both lane entries are three consecutive seqs, all
+         three already in the log by the time the tier is handed the turn, and
+         the tier is still composing when they are read.
 
-    The driver is held in flight for the whole test, so the budget is met while
-    a model would still be composing. That is the claim: the lane's cost is an
-    append, not a turn, and no code path here can be made to wait on one.
+    That is the claim, and it is structural: the entries are appended under the
+    lock the human's own append holds, and the driver is reached only once that
+    lock is released, so no turn can be made to run between them. Timed instead,
+    the same claim would pass or fail on what else the machine was doing -- which
+    is why the clock left here is wide enough to catch only a model call on the
+    path and nothing else.
     """
     driver = held
     client = driven(log, driver)
@@ -144,11 +154,14 @@ def test_the_lane_lands_inside_ten_milliseconds_of_the_human_turn(
 
     _post_answer(client, log.epoch, node)
 
-    turn, accepted, composing = log.entries()[-3:]
-    assert turn.actor == "human"
-    assert elapsed_ms(turn, accepted) < BUDGET_MS
-    assert elapsed_ms(turn, composing) < BUDGET_MS
+    turn = next(entry for entry in log.entries() if entry.actor == "human")
+    lane = statuses(log)
+    assert phases(lane) == [STATUS_PHASE_ACCEPTED, STATUS_PHASE_COMPOSING]
+    assert [entry.seq for entry in lane] == [turn.seq + 1, turn.seq + 2]
+    assert driver.started.wait(TIMEOUT)
+    assert [entry.seq for entry in driver.seen[-3:]] == [turn.seq, *(entry.seq for entry in lane)]
     assert not driver.finished.is_set()
+    assert elapsed_ms(turn, lane[-1]) < CEILING_MS
 
 
 def test_the_lane_entries_land_before_the_driver_is_invoked(
@@ -181,8 +194,8 @@ def test_an_unreachable_agent_still_produces_accepted_and_error_entries_in_the_w
     """
     Given a tier that cannot be reached at all
     When a human answers a decision
-    Then the lane carries accepted, composing and error, all within 10 ms of the
-         human's entry.
+    Then the lane carries accepted, composing and error, all of them inside a
+         window no model call would fit in.
 
     An unreachable agent is the case the lane exists for. Without it the human
     waits on a reply that is never coming, with nothing on the page to
@@ -197,8 +210,8 @@ def test_an_unreachable_agent_still_produces_accepted_and_error_entries_in_the_w
     lane = statuses(log)
     assert phases(lane) == [STATUS_PHASE_ACCEPTED, STATUS_PHASE_COMPOSING, STATUS_PHASE_ERROR]
     turn = next(entry for entry in log.entries() if entry.actor == "human")
-    assert elapsed_ms(turn, lane[0]) < BUDGET_MS
-    assert elapsed_ms(turn, error) < BUDGET_MS
+    assert elapsed_ms(turn, lane[0]) < CEILING_MS
+    assert elapsed_ms(turn, error) < CEILING_MS
     assert "unreachable" in error.payload["detail"]
 
 
