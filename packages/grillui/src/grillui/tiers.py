@@ -52,6 +52,36 @@ DEFAULT_FAST_MODEL = "google/gemini-3.5-flash-lite"
 DEFAULT_HEAVY_MODEL = "claude-opus-5"
 DEFAULT_HEAVY_EFFORT = "xhigh"
 
+# What each model can hold, in tokens, captured 2026-08-22: the Claude figures
+# from the bundled `claude-api` reference's model table, the Gemini one from
+# Google's published input-token window for that model. A table of numbers
+# somebody else controls goes stale without saying so, which is why it is a
+# floor rather than an authority -- the per-tier overrides below restate a
+# window that has moved without waiting for this line to be edited, and a model
+# that is not in here has no known limit at all rather than a guessed one.
+# Guessing is the failure that matters: an invented ceiling either cries wolf
+# for a whole session or stays silent through the one that actually degrades.
+CONTEXT_LIMITS: dict[str, int] = {
+    "google/gemini-3.5-flash-lite": 1_048_576,
+    "claude-opus-5": 1_000_000,
+    # The CLI's own spelling of the same model at the same window.
+    "claude-opus-5[1m]": 1_000_000,
+}
+
+# How full a tier's window may get before the backend says so. Three quarters,
+# because the warning has to arrive while there is still room to act on it: a
+# threshold at the ceiling is an obituary. A constant rather than configuration,
+# since nothing about a session makes an earlier or later warning the right one
+# -- what varies between sessions is the window, and that is what takes the
+# overrides.
+CONTEXT_WARN_FRACTION = 0.75
+
+# The conversion used when the provider counted nothing for us. Four bytes to
+# the token is the rough ratio for English prose, and it is only ever a
+# sanity check: an estimate is labelled as one wherever it is reported, because
+# a number nobody counted must not be read as one somebody did.
+BYTES_PER_TOKEN = 4
+
 # Who acts on a met escalation condition. Under `gated` the condition highlights
 # the transfer control and nothing moves until the human presses it; under
 # `autonomous` the backend moves that channel itself. Gated is the default
@@ -67,6 +97,8 @@ FAST_MODEL_ENV = "GRILLUI_FAST_MODEL"
 HEAVY_MODEL_ENV = "GRILLUI_HEAVY_MODEL"
 HEAVY_EFFORT_ENV = "GRILLUI_HEAVY_EFFORT"
 ESCALATION_POLICY_ENV = "GRILLUI_ESCALATION_POLICY"
+FAST_CONTEXT_LIMIT_ENV = "GRILLUI_FAST_CONTEXT_LIMIT"
+HEAVY_CONTEXT_LIMIT_ENV = "GRILLUI_HEAVY_CONTEXT_LIMIT"
 API_KEY_ENV = "OPENROUTER_API_KEY"
 
 DEFAULT_API_BASE = "https://openrouter.ai/api/v1"
@@ -94,6 +126,15 @@ class UnknownEffortError(ValueError):
         )
 
 
+class UnreadableLimitError(ValueError):
+    """A context limit the environment stated in something that is not a count."""
+
+    def __init__(self, name: str, raw: str) -> None:
+        super().__init__(
+            f"unreadable context limit: {name}={raw!r} must be a whole number of tokens"
+        )
+
+
 class UnknownPolicyError(ValueError):
     """An escalation policy outside the two this configuration defines."""
 
@@ -104,19 +145,43 @@ class UnknownPolicyError(ValueError):
         )
 
 
+def _limit(source: Mapping[str, str], name: str) -> int | None:
+    """One context-limit override, as the environment states it.
+
+    Unset and empty both mean "no override"; anything else has to be a count.
+    A typo that fell back to the table would put the warning back on the number
+    the operator was overriding precisely because they knew it was wrong.
+    """
+    raw = source.get(name)
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError as error:
+        raise UnreadableLimitError(name, raw) from error
+
+
 @dataclass(frozen=True)
 class TierConfig:
-    """Which model each tier is, and how hard the heavy one thinks.
+    """Which model each tier is, how hard the heavy one thinks, and how much
+    each can be given before the backend starts saying so.
 
     Frozen because a turn must not be able to change the tier it is being
     attributed to halfway through: the id in the log is the id the request was
     made with.
+
+    The two context limits are overrides and default to nothing, which is not
+    the same as a limit of zero: unset means the shipped table answers, and the
+    table answering with nothing means this model's window is unknown and no
+    warning is owed about it.
     """
 
     fast_model: str = DEFAULT_FAST_MODEL
     heavy_model: str = DEFAULT_HEAVY_MODEL
     heavy_effort: str = DEFAULT_HEAVY_EFFORT
     escalation_policy: str = DEFAULT_ESCALATION_POLICY
+    fast_context_limit: int | None = None
+    heavy_context_limit: int | None = None
 
     def __post_init__(self) -> None:
         # Refused here rather than at the first heavy turn: a session that got
@@ -148,6 +213,8 @@ class TierConfig:
             heavy_model=source.get(HEAVY_MODEL_ENV) or DEFAULT_HEAVY_MODEL,
             heavy_effort=source.get(HEAVY_EFFORT_ENV) or DEFAULT_HEAVY_EFFORT,
             escalation_policy=source.get(ESCALATION_POLICY_ENV) or DEFAULT_ESCALATION_POLICY,
+            fast_context_limit=_limit(source, FAST_CONTEXT_LIMIT_ENV),
+            heavy_context_limit=_limit(source, HEAVY_CONTEXT_LIMIT_ENV),
         )
 
     def model_for(self, tier: str) -> str:
@@ -157,6 +224,21 @@ class TierConfig:
             return self.heavy_model
         # A tier this configuration has never heard of must not be silently
         # billed to -- and attributed as -- the heavy model.
+        raise UnknownTierError(tier)
+
+    def limit_for(self, tier: str) -> int | None:
+        """How many tokens this tier's model holds, or nothing if nobody knows.
+
+        The override wins over the table, because the table is a snapshot of
+        numbers this code does not own. Nothing at all is a real answer and the
+        one that must not be rounded up into a number: a session on a model this
+        table has never heard of gets no warning rather than a warning measured
+        against a ceiling somebody made up.
+        """
+        if tier == FAST_TIER:
+            return self.fast_context_limit or CONTEXT_LIMITS.get(self.fast_model)
+        if tier == HEAVY_TIER:
+            return self.heavy_context_limit or CONTEXT_LIMITS.get(self.heavy_model)
         raise UnknownTierError(tier)
 
 
