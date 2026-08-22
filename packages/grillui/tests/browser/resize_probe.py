@@ -91,6 +91,7 @@ def main(source: Path) -> None:
         page.set_viewport_size({"width": WIDTH, "height": TALL})
         page.wait_for_timeout(800)
         tall = page.evaluate(MEASURE)
+        assert tall["column"] and tall["map"], f"the board did not survive the resize: {tall}"
 
         browser.close()
 
