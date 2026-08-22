@@ -77,9 +77,18 @@ PAGE_PARTS = (("/*__STYLE__*/", "style.css"), ("//__SCRIPT__", "script.js"))
 
 def page_html() -> str:
     """The served document: the shell with its stylesheet and its script put back in."""
-    document = (PAGE_DIR / "index.html").read_text(encoding="utf-8")
+    return assemble_page((PAGE_DIR / "index.html").read_text(encoding="utf-8"), PAGE_DIR)
+
+
+def assemble_page(shell: str, parts_dir: Path) -> str:
+    """Put each part back at its token. A shell that lacks a token, or carries it
+    twice, would serve a page missing its style or its script -- refused here."""
+    document = shell
     for token, part in PAGE_PARTS:
-        body = (PAGE_DIR / part).read_text(encoding="utf-8").rstrip("\n")
+        if document.count(token) != 1:
+            problem = f"page shell carries {document.count(token)} of {token!r}, not one"
+            raise ValueError(problem)
+        body = (parts_dir / part).read_text(encoding="utf-8").rstrip("\n")
         document = document.replace(token, body)
     return document
 

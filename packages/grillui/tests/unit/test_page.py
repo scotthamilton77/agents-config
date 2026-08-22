@@ -40,7 +40,7 @@ import pytest
 from conftest import apply_all, event, handoff_doc, post, seed_node
 from fastapi.testclient import TestClient
 
-from grillui.api import page_html
+from grillui.api import PAGE_DIR, assemble_page, page_html
 from grillui.capture import capture
 from grillui.channels import (
     PROTOCOL_SEVERITY,
@@ -2807,3 +2807,14 @@ def test_emptying_an_armed_draft_discards_its_provenance() -> None:
     handler = source.split('document.addEventListener("input"', 1)[1].split("});", 1)[0]
     assert "delete UI.armed[id]" in handler, "an emptied draft keeps its provenance"
     assert "!e.target.value.trim()" in handler, "provenance is dropped on every keystroke"
+
+
+@pytest.mark.parametrize(
+    "shell",
+    ["<style></style><script>//__SCRIPT__</script>", "/*__STYLE__*/ /*__STYLE__*/ //__SCRIPT__"],
+)
+def test_a_shell_without_exactly_one_of_each_token_is_refused(shell: str) -> None:
+    """A token missing or doubled would serve a page without its style or its
+    script and nothing downstream would notice; assembly refuses it by name."""
+    with pytest.raises(ValueError, match="__STYLE__"):
+        assemble_page(shell, PAGE_DIR)
