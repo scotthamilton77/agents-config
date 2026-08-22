@@ -472,6 +472,29 @@ in every grill-master dispatch, so a conversational offer on one thread would re
 channel as an outstanding board change the grill-master could reason about and supersede,
 when no board change was ever proposed.
 
+**GUI-D37 — An option may name the decisions it would put in question, and that naming is
+display data.** An option in the map data may carry `puts_in_question`, an array of decision
+ids the grill-master expects that option to put in question downstream, authored when it
+adds or revises the node and absent from an option that predicts nothing. The page is its
+only reader: it changes no status, places no hold, enters no projection but the option it
+rides on, and reaches a dispatch as nothing but the bytes of that node. What moves a
+decision on the board is still `invalidate` carrying its rationale (GUI-D19), queued like
+every other withdrawal and applied by the human (GUI-D26) — the board never shows a decision
+invalidated by a pre-mark. Ids resolving to no node are ignored rather than refused, in a
+handoff plan and on an agent-authored `add-node` or `revise` alike: a dangling `prereqs` id
+must be refused because it strands a decision the frontier can never reach, while a dangling
+pre-mark marks nothing, and refusing it would let one stale hint reject a whole plan.
+**Writing the pre-mark to the log as a pending invalidate is refused.** A queue entry locks
+its target (GUI-D26), so the human could not answer the very decision they were warned
+about; it travels in every grill-master dispatch as an outstanding change no agent proposed;
+and it needs a dismiss gesture and an undo the moment the human moves to another option. The
+queue carries what an agent decided, and a selection is not a decision. **Dispatching the
+grill-master to pre-invalidate on selection is refused too.** It spends a model turn on a
+gesture the human makes several times per decision, and its answer arrives after theirs —
+the warning is worth something only before the answer, and a turn is not that fast — so it
+lands on a board that has already moved, having put an invalidate in the log for an option
+nobody took.
+
 ## 5. The UI surface
 
 The binding reference is `docs/prototypes/grilling-ui/grilling-ui-prototype-r5.html`, read
@@ -507,6 +530,28 @@ follows, and changes nothing else.
   block-sized target fires on every pass of the pointer towards a control inside it, so the
   overlay covers the options at the moment the human is reaching for one. The overlay obeys
   the hover discipline of GUI-U6.
+- **GUI-U25 — The option in hand marks what it would put in question, and the mark is the
+  page's alone.** While the human has an option in hand — the pointer or the keyboard on that
+  option's own control, an option a taken proposal marked (GUI-D33), or an option standing as a
+  held answer behind a mandated thread — every decision that option's `puts_in_question` (§8.2)
+  names wears a provisional mark, on the map and on its own block, reading as *the option you
+  are holding would put this in question*. The mark is presentation state in the sense of
+  GUI-U10: it crosses no wire, appends nothing, and a reload with nothing in hand comes back to
+  a board without it. One option is in hand at a time, and the sources rank: the pointer on an
+  option's control, else keyboard focus on one, else an armed option, else a held one, and
+  within armed or held the most recently armed or held wins — the pointer leaving or focus
+  moving falls back to the next source that holds, and the marks are that one option's,
+  replaced rather than unioned. It clears when the option in hand changes, when none is, and
+  when the answer lands — after an answer the board says what image 1 says and nothing more. It is drawn distinctly from both states it could be read as: a pending
+  hold (GUI-D26), which is a change the agent authored and the human must apply or dismiss, and
+  `stale`, which is a decision already undermined. A decision wearing only the pre-mark is on
+  the frontier and answerable as it was, and no notification is raised (GUI-U15). GUI-U19's
+  small hover target is a rule about an overlay, which occludes the options it is raised over;
+  this mark is drawn away from the pointer and occludes nothing, so the whole of an option's
+  control is its target. Splitting the answer into a select step and a send step, to give the
+  mark a longer interval to live in, is refused: the option's control *is* the answer control
+  (GUI-U5) and GUI-D33 rests on that, so the split adds a press to every answer on the board to
+  lengthen a warning whose whole value is that it arrives before the first one.
 - **GUI-U20 — A decision taller than its pane keeps its header in view.** While any part of
   a decision is in view in the decisions pane, a floating header carrying that decision's id
   and title stays pinned at the top of the pane; it releases when the decision has scrolled
@@ -629,11 +674,6 @@ redesign.
 
 Each item below is deferred, not rejected, with the observation that would pull it in.
 
-- **Option metadata pre-marking downstream nodes.** Options that predictably put
-  downstream decisions in question could carry that in the map data so the page marks
-  those nodes pending immediately on selection. Trigger: the three-way connection
-  indicator proves insufficient — humans still act on decisions the agent is about to
-  invalidate.
 - **Elision machinery.** Image 2 crosses whole (GUI-D4); there is no path that drops
   content from a dispatch and no marker vocabulary for one. Trigger: a real session whose
   image 2 approaches the context limit of a tier in use.
@@ -704,6 +744,9 @@ only in the images.
   - `text` — string. The answer, in the human's voice.
   - `pcr` — optional array of exactly three strings: what the option buys, what it costs,
     what it forces downstream.
+  - `puts_in_question` — optional array of decision ids the option is expected to put in
+    question downstream; the page's to render (GUI-D37), and an id resolving to no node in
+    the plan is ignored rather than refused.
 - `mandate` — optional object declaring that any answer opens a side thread whose
   conclusion is the only way to settle the decision: `threadId`, `scope`, `title`, `notice`,
   all strings.
@@ -910,6 +953,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D34 | GUI-A69 |
 | GUI-D35 | GUI-A71, GUI-A72, GUI-A73, GUI-A74 |
 | GUI-D36 | GUI-A75, GUI-A76, GUI-A77, GUI-A78 |
+| GUI-D37 | GUI-A79, GUI-A80, GUI-A81, GUI-A82 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -934,6 +978,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U22 | GUI-A63 |
 | GUI-U23 | GUI-A67 |
 | GUI-U24 | GUI-A73, GUI-A74 |
+| GUI-U25 | GUI-A81, GUI-A82 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -1250,6 +1295,34 @@ Each criterion is mechanically checkable and convertible to a red test.
   element it does not project over the same session without the interval, and the log grows by
   the reopening turn, its status entries and the reply alone. The turn's tier label (GUI-U21) is
   the whole of the difference the human can see.
+- **GUI-A79** An option carrying `puts_in_question` survives the whole path: a handoff plan
+  carrying one loads, an agent-authored `add-node` and `revise` carrying one are accepted, and
+  the field projects onto that option in image 1 and image 2, while an option carrying none
+  projects without it. An id naming no decision on the board is neither a plan-validation
+  error nor a rejection reason — the same fixture with one id replaced by a name nothing
+  answers to loads, is accepted, and projects unchanged — while a dangling `prereqs` id in
+  that same fixture is still refused.
+- **GUI-A80** Nothing about a pre-mark reaches the log. The page-derived kind check (GUI-A13)
+  finds no kind for it and no grill-master dispatch context carries it as a pending update;
+  over one fixture session driven identically twice, once with `puts_in_question` on every
+  option and once with it stripped from all of them, the two logs carry the same entries in
+  the same order and the two boards differ in nothing but that field. No decision reaches
+  `invalidated` or `stale` by way of a pre-mark: the only routes to either remain the applied
+  `invalidate` and `unsettle` of GUI-D19.
+- **GUI-A81** Holding an option whose `puts_in_question` names two of the board's decisions
+  marks exactly those two, on the map and on their own blocks, and marks no third; an id
+  naming no node marks nothing and raises no error. The mark is told apart from a pending
+  hold and from `stale` on a fixture carrying one of each at once, a decision wearing only
+  the pre-mark is still on the frontier and still answers, and no notification appears.
+  Verified in a browser.
+- **GUI-A82** The mark follows what is in hand and outlives nothing: when the option in hand
+  changes by GUI-U25's ranking — a higher source arriving, or the pointer leaving so a lower
+  one holds — the new option's marks replace the old, a lower source arriving beneath a held
+  pointer changes nothing, leaving nothing in hand clears them, and
+  pressing the option's control to answer leaves a board whose marks are what image 1 alone
+  accounts for — the named decisions are not invalidated, and become so only once the
+  grill-master's `invalidate` is applied. A reload taken while an option was in hand comes
+  back unmarked. Verified in a browser.
 
 ## 10. Open questions for the implementing work
 
@@ -1323,6 +1396,9 @@ Each criterion is mechanically checkable and convertible to a red test.
 - feat: Catching up a reopened thread: the interval's catch-up in its first dispatch, and the
   heavy-tier chain that is opened cold rather than resumed — AC: GUI-D36, GUI-A75, GUI-A76,
   GUI-A77, GUI-A78.
+- feat: Option-level downstream pre-marking: the option's `puts_in_question` field, its
+  passage through the schemas and the images, and the provisional mark the page raises on the
+  option the human has in hand — AC: GUI-D37, GUI-U25, GUI-A79, GUI-A80, GUI-A81, GUI-A82.
 - chore: Packaging: the uv package, its gates, and the CLI on PATH — AC: GUI-P1.
 
 ## Evidence
@@ -1409,3 +1485,7 @@ opens one proves something else.
 - GUI-A76 | open
 - GUI-A77 | open
 - GUI-A78 | open
+- GUI-A79 | open
+- GUI-A80 | open
+- GUI-A81 | open
+- GUI-A82 | open
