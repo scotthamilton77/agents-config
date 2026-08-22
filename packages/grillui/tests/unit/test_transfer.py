@@ -1,13 +1,11 @@
 """Transfer to expert: who moves a channel between tiers, and what the move costs.
 
-Three claims are pinned here, and all three are about a gesture that is the
-human's alone.
+Five claims are pinned here.
 
 **The recommendation reaches the page as data, not as a decision.** A fast reply
 that met one of the escalation conditions says so in the payload the page reads
-back off the wire; a reply that met none says nothing there. The control the
-human presses is theirs either way, so what is asserted is the metadata's
-arrival, never a tier that moved on its own.
+back off the wire; a reply that met none says nothing there. What is asserted is
+the metadata's arrival, never a tier that moved on its own.
 
 **The move is per channel and works in both directions.** Activating transfer
 takes the next turn on that one channel to the heavy tier and hands it the
@@ -15,9 +13,20 @@ channel's whole accumulated conversation rather than the last message;
 deactivating brings the next turn back to the fast tier. Every other channel
 stays where the human left it through both switches.
 
-**Only a human moves a channel.** The mode is read off the human's own turns, so
-an agent reply carrying the same payload key moves nothing in either direction.
-That is the whole of the human gate, and it is asserted rather than described.
+**Who acts on a met condition is the session's escalation policy.** Under the
+default, the human: the condition is metadata and the channel does not move.
+Under `autonomous` the backend moves that one channel itself, on the lane, and
+the heavy turn that follows says the policy is what moved it. The default's log
+is what it always was -- neither the phase nor the key appears anywhere in it.
+
+**The policy is standing, and the human still governs.** A return to the fast
+tier wins over the transfer that preceded it, and a later reply meeting a
+condition escalates the channel again.
+
+**Only a human or the policy moves a channel.** The mode is read off the human's
+own turns and off the backend's own lane entry, so an agent reply carrying the
+same payload key moves nothing in either direction under either policy. That is
+the whole of the agent gate, and it is asserted rather than described.
 
 Nothing here reaches a network or a model: both tiers run against scripted
 transports, every turn is joined rather than raced, and every attribution claim
@@ -28,12 +37,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import pytest
 from conftest import ScriptedCli, ScriptedFast, replies, run_turns, seed_node
 from fastapi.testclient import TestClient
 
 from grillui.drivers import FastDriver, HeavyDriver
 from grillui.escalation import CONDITION_IRREDUCIBLE
 from grillui.lane import Lane
+from grillui.log import LOG_FILE
 from grillui.schemas import (
     EFFORT_KEY,
     FAST_TIER,
@@ -41,14 +52,24 @@ from grillui.schemas import (
     HEAVY_TIER,
     MAP_CHANNEL,
     MODEL_KEY,
+    NOTICE_KINDS,
     RECOMMENDATION_KEY,
     STATUS_KIND,
     STATUS_PHASE_COMPOSING,
+    STATUS_PHASE_TRANSFERRED,
     TIER_KEY,
     TRANSFER_FLAG,
+    TRANSFER_SOURCE_KEY,
+    TRANSFER_SOURCE_POLICY,
     EventSubmission,
 )
-from grillui.tiers import DEFAULT_HEAVY_EFFORT, TierConfig
+from grillui.tiers import (
+    DEFAULT_HEAVY_EFFORT,
+    ESCALATION_POLICIES,
+    POLICY_AUTONOMOUS,
+    POLICY_GATED,
+    TierConfig,
+)
 
 if TYPE_CHECKING:
     from grillui.log import SessionLog
@@ -69,6 +90,10 @@ FAST_SAID = "It is fsynced before the receipt settles."
 ESCALATED_ASKED = "Then weigh the retention window against the archive cost."
 HEAVY_SAID = "Thirty days, then archive: the cost curve turns there."
 THREAD_OPENED = "How long is a session kept?"
+# Two turns that meet the irreducible condition, said differently, so a test
+# about escalating twice cannot pass on one turn counted twice.
+IRREDUCIBLE_ASKED = "You keep rewording it -- that is not the question."
+IRREDUCIBLE_AGAIN = "The trade-off is what I cannot resolve."
 LATER_ASKED = "And what does that cost to store?"
 
 
@@ -105,20 +130,44 @@ def opened(thread: str, key: str, text: str, **payload: Any) -> EventSubmission:
     )
 
 
-def both_tiers() -> tuple[FastDriver, HeavyDriver, ScriptedCli]:
+def both_tiers(policy: str = POLICY_GATED) -> tuple[FastDriver, HeavyDriver, ScriptedCli]:
     """Both real drivers over scripted transports, plus the CLI to read the
     heavy turns back off.
 
     The shipped drivers rather than stand-ins, so a turn runs the path a session
     runs: the prompt is composed, the reply is read, and the log is written to
     by the code that does it for real.
+
+    The policy is the fast tier's, because it is the fast reply meeting a
+    condition that the policy has an opinion about. It defaults to what an
+    unconfigured session gets, so every check written before the policy existed
+    still states the case it always stated.
     """
     cli = ScriptedCli(reply=HEAVY_SAID)
     return (
-        FastDriver(TierConfig(fast_model=FAST_MODEL), ScriptedFast(reply=FAST_SAID)),
+        FastDriver(
+            TierConfig(fast_model=FAST_MODEL, escalation_policy=policy),
+            ScriptedFast(reply=FAST_SAID),
+        ),
         HeavyDriver(TierConfig(heavy_model=HEAVY_MODEL), cli),
         cli,
     )
+
+
+def transfers(log: SessionLog, channel: str) -> list[str]:
+    """What the lane said each time the policy moved this one channel.
+
+    The detail rather than the count: the human reading the lane is owed the
+    condition that fired, and an entry that only said a transfer happened would
+    tell them their money was spent without saying on what.
+    """
+    return [
+        str(entry.payload.get("detail"))
+        for entry in log.entries()
+        if entry.kind == STATUS_KIND
+        and entry.channel == channel
+        and entry.payload.get("phase") == STATUS_PHASE_TRANSFERRED
+    ]
 
 
 def waited_on(log: SessionLog, channel: str) -> list[str]:
@@ -363,22 +412,27 @@ def test_one_channels_switches_leave_every_other_channel_where_it_was(
 # ── GUI-D11: escalation is the human's gesture and nobody else's ──
 
 
+@pytest.mark.parametrize("policy", ESCALATION_POLICIES)
 def test_an_agent_claiming_a_transfer_moves_no_channel_in_either_direction(
-    client: TestClient, log: SessionLog
+    client: TestClient, log: SessionLog, policy: str
 ) -> None:
     """
     Given an agent reply carrying the transfer key set true on a fast channel,
     and another carrying it set false on a channel the human escalated
     When the next human turn on each channel is scheduled
-    Then the fast channel is still fast and the escalated one is still heavy.
+    Then the fast channel is still fast and the escalated one is still heavy,
+         under either escalation policy.
 
-    Escalation is human-gated: the mode is read off the human's own turns, so a
-    model that learned to emit the key -- by imitation or by instruction -- moves
-    nothing. A payload key is open surface, and an agent that could set this one
-    could spend the human's subscription without being asked.
+    Escalation is never the agent's: the mode is read off the human's own turns
+    and off the backend's own lane entry, so a model that learned to emit the key
+    -- by imitation or by instruction -- moves nothing. A payload key is open
+    surface, and an agent that could set this one could spend the human's
+    subscription without being asked. The autonomous policy widens who may move a
+    channel to the backend and to nobody else, which is why it is run here too:
+    a gate loosened by one caller is a gate loosened for the model as well.
     """
     seed_node(client, log.epoch, NODE)
-    fast, heavy, _cli = both_tiers()
+    fast, heavy, _cli = both_tiers(policy)
     lane = Lane(log, fast, heavy)
     run_turns(lane, opened(MINE, "open-mine", THREAD_OPENED))
     run_turns(lane, said(MINE, "escalate-mine", LATER_ASKED, **{TRANSFER_FLAG: True}))
@@ -407,3 +461,163 @@ def test_an_agent_claiming_a_transfer_moves_no_channel_in_either_direction(
 
     assert waited_on(log, MAP_CHANNEL) == [FAST_TIER]
     assert waited_on(log, MINE) == [FAST_TIER, HEAVY_TIER, HEAVY_TIER]
+
+
+# ── GUI-A71: with no policy configured, a met condition waits for the human ──
+
+
+def test_a_session_with_no_policy_configured_leaves_a_met_condition_to_the_human(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a session configured with no escalation policy
+    When a fast reply meets one of the conditions
+    Then the reply carries its recommendation, the lane records no transfer, the
+         next turn on that channel is taken by the fast tier, and neither the
+         phase nor the source key appears anywhere in the log's bytes.
+
+    The last clause is the whole of the default's promise. A session that never
+    asked for autonomous escalation writes the log it wrote before the policy
+    existed, so a reader -- the human, the capture pass, anything downstream --
+    sees no trace of a feature nobody turned on.
+    """
+    seed_node(client, log.epoch, NODE)
+    fast, heavy, _cli = both_tiers()
+    lane = Lane(log, fast, heavy)
+
+    run_turns(lane, answered("irreducible", IRREDUCIBLE_ASKED))
+    run_turns(lane, answered("after", FIRST_ASKED))
+
+    assert [payload.get(RECOMMENDATION_KEY, {}).get("condition") for payload in replies(log)] == [
+        CONDITION_IRREDUCIBLE,
+        None,
+    ]
+    assert transfers(log, MAP_CHANNEL) == []
+    assert waited_on(log, MAP_CHANNEL) == [FAST_TIER, FAST_TIER]
+    written = (log.directory / LOG_FILE).read_text(encoding="utf-8")
+    assert STATUS_PHASE_TRANSFERRED not in written
+    assert TRANSFER_SOURCE_KEY not in written
+
+
+# ── GUI-A72: under `autonomous`, the met condition moves that one channel ──
+
+
+def test_under_the_autonomous_policy_a_met_condition_takes_that_channel_to_the_expert(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given an autonomous session with a side thread already talking to the fast
+         tier about something that meets no condition
+    When a fast reply on the map meets one
+    Then the next map turn composes on the heavy tier and is handed the map's
+         whole accumulated conversation rather than the last message, while the
+         thread's next turn is still fast.
+
+    Three claims in one session because they are one claim: the policy moves a
+    channel, and a channel is not the session. A transfer that also moved the
+    thread would spend the heavy tier's money on every conversation the human
+    happened to have open.
+    """
+    seed_node(client, log.epoch, NODE)
+    fast, heavy, cli = both_tiers(POLICY_AUTONOMOUS)
+    lane = Lane(log, fast, heavy)
+
+    run_turns(lane, opened(MINE, "open-mine", THREAD_OPENED))
+    run_turns(lane, answered("irreducible", IRREDUCIBLE_ASKED))
+    run_turns(lane, answered("after", ESCALATED_ASKED))
+    run_turns(lane, said(MINE, "mine-after", "Say more."))
+
+    assert waited_on(log, MAP_CHANNEL) == [FAST_TIER, HEAVY_TIER]
+    assert waited_on(log, MINE) == [FAST_TIER, FAST_TIER]
+    assert transfers(log, MINE) == []
+    asked = prompts(cli)
+    assert len(asked) == 1
+    said_to_the_expert = conversation(asked[0])
+    assert IRREDUCIBLE_ASKED in said_to_the_expert
+    assert FAST_SAID in said_to_the_expert
+    assert ESCALATED_ASKED in said_to_the_expert
+
+
+# ── GUI-A73: the escalation is attributed, and the human's is not ──
+
+
+def test_a_policy_escalation_is_named_on_the_lane_and_on_the_turn_it_bought(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given an autonomous session
+    When the policy escalates the map and the human escalates a thread by hand
+    Then the lane carries a backend-authored transfer entry on the map naming the
+         condition, the heavy map turn carries `transfer_source: "policy"` beside
+         a `followed_transfer` flag of the shape it always had, the heavy thread
+         turn the human asked for carries no source at all, and the move appends
+         nothing the human is notified about.
+
+    The two halves are asserted in one session on purpose: the source key is
+    evidence only if its absence means something, and the human's own transfer is
+    what absence has to keep meaning.
+    """
+    seed_node(client, log.epoch, NODE)
+    fast, heavy, _cli = both_tiers(POLICY_AUTONOMOUS)
+    lane = Lane(log, fast, heavy)
+
+    run_turns(lane, answered("irreducible", IRREDUCIBLE_ASKED))
+    run_turns(lane, answered("after", ESCALATED_ASKED))
+    run_turns(lane, opened(MINE, "open-mine", THREAD_OPENED))
+    run_turns(lane, said(MINE, "escalate-mine", LATER_ASKED, **{TRANSFER_FLAG: True}))
+
+    assert transfers(log, MAP_CHANNEL) == [
+        f"the escalation policy moved this channel to the expert tier: {CONDITION_IRREDUCIBLE}"
+    ]
+    heavy_turns = [payload for payload in replies(log) if payload[TIER_KEY] == HEAVY_TIER]
+    assert heavy_turns == [
+        {
+            "text": HEAVY_SAID,
+            TIER_KEY: HEAVY_TIER,
+            MODEL_KEY: HEAVY_MODEL,
+            EFFORT_KEY: DEFAULT_HEAVY_EFFORT,
+            FOLLOWED_TRANSFER_KEY: True,
+            TRANSFER_SOURCE_KEY: TRANSFER_SOURCE_POLICY,
+        },
+        {
+            "text": HEAVY_SAID,
+            TIER_KEY: HEAVY_TIER,
+            MODEL_KEY: HEAVY_MODEL,
+            EFFORT_KEY: DEFAULT_HEAVY_EFFORT,
+            FOLLOWED_TRANSFER_KEY: True,
+        },
+    ]
+    authored = {entry.kind for entry in log.entries() if entry.actor == "backend"}
+    assert authored == {STATUS_KIND}
+    assert not authored & NOTICE_KINDS
+
+
+# ── GUI-A74: the human still governs, and the policy is standing ──
+
+
+def test_the_human_takes_a_policy_transfer_back_and_a_later_condition_escalates_again(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a map channel the policy moved to the heavy tier
+    When the human sends it back to the fast tier, and a later fast reply meets a
+         condition
+    Then their return takes the next turn, the channel escalates a second time,
+         and the lane names both transfers.
+
+    The policy is standing rather than one-shot, and the human's gesture is not
+    overruled by it. Either half failing alone is a session the human cannot
+    steer: one that ignores their way back, or one that escalates once and never
+    again.
+    """
+    seed_node(client, log.epoch, NODE)
+    fast, heavy, _cli = both_tiers(POLICY_AUTONOMOUS)
+    lane = Lane(log, fast, heavy)
+
+    run_turns(lane, answered("irreducible", IRREDUCIBLE_ASKED))
+    run_turns(lane, answered("returned", FIRST_ASKED, **{TRANSFER_FLAG: False}))
+    run_turns(lane, answered("irreducible-again", IRREDUCIBLE_AGAIN))
+    run_turns(lane, answered("after", ESCALATED_ASKED))
+
+    assert waited_on(log, MAP_CHANNEL) == [FAST_TIER, FAST_TIER, FAST_TIER, HEAVY_TIER]
+    assert len(transfers(log, MAP_CHANNEL)) == 2

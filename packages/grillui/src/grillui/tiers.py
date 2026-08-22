@@ -4,7 +4,9 @@
 Nothing here is written into a driver: the fast tier is a non-Claude model
 reached over OpenRouter and the heavy tier is a Claude model driven as CLI
 turns, and what each is comes from configuration so the choice can be re-made on
-cost-per-useful-turn without a code change.
+cost-per-useful-turn without a code change. The escalation policy sits beside
+them: whether a met condition needs the human's gesture is a property of the
+session, not of the code, and it defaults to needing it.
 
 **The prompts are the tiers' whole standing brief.** Both carry the same four
 rules -- never assert what the context does not support, keep it short, reply to
@@ -50,9 +52,21 @@ DEFAULT_FAST_MODEL = "google/gemini-3.5-flash-lite"
 DEFAULT_HEAVY_MODEL = "claude-opus-5"
 DEFAULT_HEAVY_EFFORT = "xhigh"
 
+# Who acts on a met escalation condition. Under `gated` the condition highlights
+# the transfer control and nothing moves until the human presses it; under
+# `autonomous` the backend moves that channel itself. Gated is the default
+# because the other direction spends the owner's subscription on a condition
+# they never watched fire -- and a session where they take every recommendation
+# can turn this on rather than pay a confirmation gesture per turn.
+POLICY_GATED = "gated"
+POLICY_AUTONOMOUS = "autonomous"
+ESCALATION_POLICIES = (POLICY_GATED, POLICY_AUTONOMOUS)
+DEFAULT_ESCALATION_POLICY = POLICY_GATED
+
 FAST_MODEL_ENV = "GRILLUI_FAST_MODEL"
 HEAVY_MODEL_ENV = "GRILLUI_HEAVY_MODEL"
 HEAVY_EFFORT_ENV = "GRILLUI_HEAVY_EFFORT"
+ESCALATION_POLICY_ENV = "GRILLUI_ESCALATION_POLICY"
 API_KEY_ENV = "OPENROUTER_API_KEY"
 
 DEFAULT_API_BASE = "https://openrouter.ai/api/v1"
@@ -80,6 +94,16 @@ class UnknownEffortError(ValueError):
         )
 
 
+class UnknownPolicyError(ValueError):
+    """An escalation policy outside the two this configuration defines."""
+
+    def __init__(self, policy: str) -> None:
+        super().__init__(
+            f"unknown escalation policy: {policy!r}; {ESCALATION_POLICY_ENV} must be one of "
+            f"{', '.join(ESCALATION_POLICIES)}"
+        )
+
+
 @dataclass(frozen=True)
 class TierConfig:
     """Which model each tier is, and how hard the heavy one thinks.
@@ -92,13 +116,24 @@ class TierConfig:
     fast_model: str = DEFAULT_FAST_MODEL
     heavy_model: str = DEFAULT_HEAVY_MODEL
     heavy_effort: str = DEFAULT_HEAVY_EFFORT
+    escalation_policy: str = DEFAULT_ESCALATION_POLICY
 
     def __post_init__(self) -> None:
         # Refused here rather than at the first heavy turn: a session that got
         # its effort wrong should fail while the human is still watching the
-        # launch, not silently run at an effort nobody chose.
+        # launch, not silently run at an effort nobody chose. The policy is
+        # refused the same way and for a sharper reason -- a misspelling that
+        # fell back to a default would decide, silently, who is allowed to spend
+        # the heavy tier's money.
         if self.heavy_effort not in EFFORT_LEVELS:
             raise UnknownEffortError(self.heavy_effort)
+        if self.escalation_policy not in ESCALATION_POLICIES:
+            raise UnknownPolicyError(self.escalation_policy)
+
+    @property
+    def autonomous(self) -> bool:
+        """Whether a met condition moves its channel without the human's gesture."""
+        return self.escalation_policy == POLICY_AUTONOMOUS
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> TierConfig:
@@ -112,6 +147,7 @@ class TierConfig:
             fast_model=source.get(FAST_MODEL_ENV) or DEFAULT_FAST_MODEL,
             heavy_model=source.get(HEAVY_MODEL_ENV) or DEFAULT_HEAVY_MODEL,
             heavy_effort=source.get(HEAVY_EFFORT_ENV) or DEFAULT_HEAVY_EFFORT,
+            escalation_policy=source.get(ESCALATION_POLICY_ENV) or DEFAULT_ESCALATION_POLICY,
         )
 
     def model_for(self, tier: str) -> str:

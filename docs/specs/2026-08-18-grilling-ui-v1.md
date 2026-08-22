@@ -1401,10 +1401,10 @@ opens one proves something else.
 - GUI-A68 | test: packages/grillui/tests/unit/test_convergence.py::test_an_answer_carrying_from_thread_settles_and_closes_in_one_entry
 - GUI-A69 | test: packages/grillui/tests/unit/test_convergence.py::test_a_live_proposal_queues_nothing_and_holds_nothing
 - GUI-A70 | open
-- GUI-A71 | open
-- GUI-A72 | open
-- GUI-A73 | open
-- GUI-A74 | open
+- GUI-A71 | test: packages/grillui/tests/unit/test_transfer.py::test_a_session_with_no_policy_configured_leaves_a_met_condition_to_the_human
+- GUI-A72 | test: packages/grillui/tests/unit/test_transfer.py::test_under_the_autonomous_policy_a_met_condition_takes_that_channel_to_the_expert
+- GUI-A73 | test: packages/grillui/tests/unit/test_transfer.py::test_a_policy_escalation_is_named_on_the_lane_and_on_the_turn_it_bought
+- GUI-A74 | test: packages/grillui/tests/unit/test_transfer.py::test_the_human_takes_a_policy_transfer_back_and_a_later_condition_escalates_again
 - GUI-A75 | open
 - GUI-A76 | open
 - GUI-A77 | open

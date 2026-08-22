@@ -235,13 +235,26 @@ def minted_id(seq: int, index: int | None = None) -> str:
 # `error` when it could not. Without the closing phase a reader watching the lane
 # has no way to learn that a turn ended, and every channel a turn ever ran on
 # reads as still waiting for the rest of the session.
+#
+# `transferred` is the escalation policy moving a channel to the heavy tier
+# without the human's gesture, and its detail names the condition that fired. It
+# is a phase rather than a kind of its own because the kind vocabulary is closed
+# and because the move is exactly what the lane is for: backend-authored, owed to
+# nobody, and the record the channel's mode is read back off afterwards.
 STATUS_KIND = "status"
 STATUS_PHASE_ACCEPTED = "accepted"
 STATUS_PHASE_COMPOSING = "composing"
 STATUS_PHASE_REPLIED = "replied"
 STATUS_PHASE_ERROR = "error"
+STATUS_PHASE_TRANSFERRED = "transferred"
 STATUS_PHASES = frozenset(
-    {STATUS_PHASE_ACCEPTED, STATUS_PHASE_COMPOSING, STATUS_PHASE_REPLIED, STATUS_PHASE_ERROR}
+    {
+        STATUS_PHASE_ACCEPTED,
+        STATUS_PHASE_COMPOSING,
+        STATUS_PHASE_REPLIED,
+        STATUS_PHASE_ERROR,
+        STATUS_PHASE_TRANSFERRED,
+    }
 )
 
 # How an agent's reply says who composed it. These are payload keys rather than
@@ -255,9 +268,13 @@ STATUS_PHASES = frozenset(
 # `RECOMMENDATION_KEY` rides a
 # fast reply that met one of the escalation conditions, naming the condition and
 # its evidence; it is a recommendation and nothing more, because moving a channel
-# to another tier is the human's gesture. `FOLLOWED_TRANSFER_KEY` records that a
-# heavy turn was taken because the human made that gesture, and `TRANSFER_FLAG`
-# is the key on their own turn that says so.
+# to another tier is the human's gesture under the `gated` policy.
+# `FOLLOWED_TRANSFER_KEY` records that a heavy turn was taken because that
+# gesture was made, and `TRANSFER_FLAG` is the key on the human's own turn that
+# says so. `TRANSFER_SOURCE_KEY` rides a heavy turn the escalation policy moved
+# rather than the human: a gesture writes no source at all, so a `gated` session
+# writes the log it always wrote and the key's presence is itself the
+# attribution.
 TIER_KEY = "tier"
 # The two tiers an attribution may name, and the closed set they make. They
 # live beside the key rather than beside the drivers that spend them, because
@@ -272,6 +289,8 @@ EFFORT_KEY = "effort"
 RECOMMENDATION_KEY = "recommendation"
 FOLLOWED_TRANSFER_KEY = "followed_transfer"
 TRANSFER_FLAG = "transfer"
+TRANSFER_SOURCE_KEY = "transfer_source"
+TRANSFER_SOURCE_POLICY = "policy"
 
 # How a response withdraws notices it sent earlier: a list of pending ids the
 # response replaces. A payload key rather than a kind of its own, because

@@ -23,6 +23,8 @@ from grillui.tiers import (
     DEFAULT_HEAVY_EFFORT,
     DEFAULT_HEAVY_MODEL,
     EFFORT_LEVELS,
+    ESCALATION_POLICIES,
+    ESCALATION_POLICY_ENV,
     FACILITATION_MANDATE,
     FAST_MODEL_ENV,
     FAST_TIER,
@@ -32,6 +34,8 @@ from grillui.tiers import (
     NO_BRIEFING,
     NO_MANUFACTURE_RULE,
     ONE_TURN_RULE,
+    POLICY_AUTONOMOUS,
+    POLICY_GATED,
     SYSTEM_PROMPTS,
     TierConfig,
     briefing,
@@ -108,6 +112,39 @@ def test_an_effort_the_cli_does_not_accept_is_refused_at_load() -> None:
         TierConfig.from_env({HEAVY_EFFORT_ENV: "enormous"})
 
     assert all(level in str(raised.value) for level in EFFORT_LEVELS)
+
+
+def test_the_escalation_policy_defaults_to_gated_and_comes_from_the_environment() -> None:
+    """
+    Given no configuration, and then an environment naming the other policy
+    When each is read
+    Then an unconfigured session needs the human's gesture and a configured one
+         escalates itself.
+
+    The default is the load-bearing half. A session whose owner is still learning
+    what the expert tier is worth must not have that money spent on their behalf
+    by a condition they never watched fire.
+    """
+    assert TierConfig().escalation_policy == POLICY_GATED
+    assert not TierConfig().autonomous
+    assert TierConfig.from_env({ESCALATION_POLICY_ENV: POLICY_AUTONOMOUS}).autonomous
+    assert not TierConfig.from_env({ESCALATION_POLICY_ENV: ""}).autonomous
+
+
+def test_an_escalation_policy_outside_the_two_is_refused_at_load() -> None:
+    """
+    Given an environment naming a policy this configuration has never heard of
+    When configuration is read from it
+    Then it raises, naming both policies that do exist.
+
+    Refused rather than defaulted for the same reason the effort is, and one
+    sharper: a misspelling that fell back would silently decide who is allowed to
+    spend the heavy tier's money.
+    """
+    with pytest.raises(ValueError, match="whenever-you-like") as raised:
+        TierConfig.from_env({ESCALATION_POLICY_ENV: "whenever-you-like"})
+
+    assert all(policy in str(raised.value) for policy in ESCALATION_POLICIES)
 
 
 def test_an_unknown_tier_name_is_refused_rather_than_billed_as_heavy() -> None:

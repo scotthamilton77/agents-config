@@ -9,7 +9,10 @@ whether there was anything to do would spend the turn on transport.
 **The fast tier** is one HTTP call to a hosted model, at about a second and a
 fraction of a cent. Whether its reply should have gone up a tier is not asked of
 the model: the conditions are evaluated against the transcript in code, and what
-they produce rides on the reply as metadata for the human, who decides.
+they produce rides on the reply as metadata. Who acts on that metadata is the
+session's escalation policy -- the human, by default, and the backend itself
+under `autonomous`, which puts the channel on the heavy tier through the lane so
+the move is on the record rather than in memory.
 
 **The heavy tier** is one CLI turn against a resumed chain. The chain's identity
 is written into the session directory rather than held in memory, so a backend
@@ -54,7 +57,7 @@ from uuid import uuid4
 
 import httpx
 
-from grillui.escalation import in_expert_mode, recommend, turns_of
+from grillui.escalation import in_expert_mode, recommend, transfer_source, turns_of
 from grillui.lane import AgentUnreachableError
 from grillui.projector import fold
 from grillui.schemas import (
@@ -67,8 +70,10 @@ from grillui.schemas import (
     MODEL_KEY,
     PROPOSED_ANSWER_KEY,
     RECOMMENDATION_KEY,
+    STATUS_PHASE_TRANSFERRED,
     SUPERSEDES_KEY,
     TIER_KEY,
+    TRANSFER_SOURCE_KEY,
     DispatchContext,
     EventSubmission,
     RejectedReceipt,
@@ -259,6 +264,16 @@ class FastDriver:
         if advice is not None:
             attribution[RECOMMENDATION_KEY] = advice.as_payload()
         record_reply(log, self.tier, channel, reply, attribution)
+        # Under the autonomous policy the met condition moves this one channel
+        # itself, and it is attributed on the lane rather than done in silence.
+        # After the reply lands, not before: a turn nobody could record is not a
+        # turn whose recommendation is worth spending the heavy tier on.
+        if advice is not None and self.config.autonomous:
+            log.emit_status(
+                STATUS_PHASE_TRANSFERRED,
+                f"the escalation policy moved this channel to the expert tier: {advice.condition}",
+                channel,
+            )
 
 
 @dataclass
@@ -295,22 +310,22 @@ class HeavyDriver:
             reply, session_id = read_cli_reply(printed)
             if session_id is not None:
                 write_resume(log.directory, channel, session_id)
-        record_reply(
-            log,
-            self.tier,
-            channel,
-            reply,
-            {
-                TIER_KEY: self.tier,
-                MODEL_KEY: model,
-                EFFORT_KEY: effort,
-                # Whether this heavy turn is one the human asked for, read off
-                # the same channel mode the lane routed it by: no agent
-                # escalates itself, and a heavy turn nobody asked for must not
-                # be able to claim it was requested.
-                FOLLOWED_TRANSFER_KEY: in_expert_mode(entries, channel),
-            },
-        )
+        attribution: dict[str, Any] = {
+            TIER_KEY: self.tier,
+            MODEL_KEY: model,
+            EFFORT_KEY: effort,
+            # Whether this heavy turn followed a transfer, read off the same
+            # channel mode the lane routed it by: no agent escalates itself, and
+            # a heavy turn nobody moved the channel for must not be able to
+            # claim it was asked for.
+            FOLLOWED_TRANSFER_KEY: in_expert_mode(entries, channel),
+        }
+        # Only where the policy moved the channel. A human gesture writes no
+        # source, so the log a `gated` session keeps is unchanged.
+        source = transfer_source(entries, channel)
+        if source is not None:
+            attribution[TRANSFER_SOURCE_KEY] = source
+        record_reply(log, self.tier, channel, reply, attribution)
 
 
 def read_resume(directory: Path, channel: str) -> str | None:
