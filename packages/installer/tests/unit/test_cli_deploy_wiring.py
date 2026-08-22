@@ -390,6 +390,13 @@ def _uv_recorder(calls: list[list[str]], bin_dir: Path):  # type: ignore[no-unty
             return CommandResult(ok=True, output=f"{bin_dir}\n")
         if cmd[:2] == ["uv", "--version"]:
             return CommandResult(ok=True, output="uv 0.10.4\n")
+        if cmd[:3] == ["uv", "tool", "install"]:
+            # A real install drops the console script into the bin dir, which is
+            # what the post-install shim re-read then finds.
+            bin_dir.mkdir(parents=True, exist_ok=True)
+            for spec in CLI_PACKAGES:
+                if cmd[-1].endswith(spec.package_dir):
+                    (bin_dir / spec.binary).write_text("#!/bin/sh\n")
         return CommandResult(ok=True, output="")
 
     return _run
@@ -434,8 +441,9 @@ def test_default_home_still_gets_the_live_uv_port(
 ) -> None:
     """
     Given a run with home omitted entirely — the installer's own invocation
-    Then the live uv port is used: the version probe, the real bin-dir
-    resolution, and an install for every registry CLI all fire.
+    Then the run succeeds, and the live uv port is used: the version probe,
+    the real bin-dir resolution, and an install for every registry CLI all
+    fire.
 
     Pins the other half of the sandbox rule — the guard must not disarm the
     default path — on the argument-omitted path the installer actually takes.
@@ -445,14 +453,19 @@ def test_default_home_still_gets_the_live_uv_port(
     calls: list[list[str]] = []
     bin_dir = tmp_path / "bin"
     monkeypatch.setattr(UvCliDeploy, "_run", _uv_recorder(calls, bin_dir))
+    # The reachability gate is the one port method backed by the live PATH
+    # rather than by a subprocess; pinning it keeps the run independent of
+    # whatever the developer already has installed.
+    monkeypatch.setattr(UvCliDeploy, "which", lambda _self, binary: bin_dir / binary)
     repo = _hermetic_repo(tmp_path)
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "home"))
-    main(
+    rc = main(
         ["--tools=claude", "--yes"],
         io=ScriptedIO(interactive=False),
         repo_root=repo,
         cwd=tmp_path,
     )
+    assert rc == 0
     assert ["uv", "--version"] in calls
     assert ["uv", "tool", "dir", "--bin"] in calls
     installed = {c[-1] for c in calls if c[:3] == ["uv", "tool", "install"]}
