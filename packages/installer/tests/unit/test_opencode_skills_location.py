@@ -1,10 +1,10 @@
 """Invariant guard: every statement about where OpenCode skills land agrees
 with where the installer actually stages them.
 
-Three surfaces make this claim independently — the runtime config template,
-and two source-side docs read by contributors — and nothing enforced that a
-change to one would keep the others honest. This test reads all three plus
-the real ``OpenCodeAdapter`` and requires them to agree.
+Two source-side docs make the claim in prose and the runtime config template
+makes it by omission, and nothing else enforced that a change to one would keep
+the others honest. This test reads all three against the real
+``OpenCodeAdapter`` and requires them to agree.
 """
 
 from __future__ import annotations
@@ -23,19 +23,21 @@ def _real_skills_dir() -> Path:
     return OpenCodeAdapter().dest_dir(_FAKE_HOME) / "skills"
 
 
-def test_jsonc_template_skills_paths_matches_real_staging_destination() -> None:
+def test_jsonc_template_registers_no_extra_skill_paths() -> None:
+    """The staging destination is already one of the global roots OpenCode scans
+    by default. ``skills.paths`` only adds roots to those defaults, so an entry
+    naming this one restates a default while reading as the mechanism that makes
+    skills load — and an entry naming anything else points somewhere the
+    installer never populates."""
     template = _REPO_ROOT / "src" / "user" / ".opencode" / "opencode.jsonc.template"
     config = json.loads(template.read_text(encoding="utf-8"))
-    (configured,) = config["skills"]["paths"]
 
-    assert configured.startswith("~/")
-    expanded = _FAKE_HOME / configured.removeprefix("~/")
-    assert expanded == _real_skills_dir()
+    assert "skills" not in config
 
 
 def test_opencode_agents_md_names_the_real_skills_destination() -> None:
     text = (_REPO_ROOT / "src" / "user" / ".opencode" / "AGENTS.md").read_text(encoding="utf-8")
-    assert "~/.config/opencode/skills/" in text
+    assert f"~/{_real_skills_dir().relative_to(_FAKE_HOME).as_posix()}/" in text
     # The two prior wrong answers this doc gave, so a regression to either is caught.
     assert "~/.claude/skills" not in text
     assert "~/.agents/skills" not in text

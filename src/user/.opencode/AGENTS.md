@@ -25,9 +25,10 @@ OpenCode's `AGENTS.md`.
 
 Shared skills stage into `~/.config/opencode/skills/` the same way they stage
 into every other tool's tree (one directory per skill, bare names like
-`review-verdict`). `opencode.jsonc.template`'s `skills.paths` points OpenCode
-at that same directory, so the installed config and the installed content
-agree on where to look.
+`review-verdict`). OpenCode scans that directory by default, so
+`opencode.jsonc.template` carries no `skills` key: `skills.paths` only *adds*
+roots to the defaults, and an entry naming this one would restate a default
+while reading as the mechanism that makes skills load.
 
 ## Agents and commands
 
