@@ -989,3 +989,146 @@ def _at(document: dict[str, Any], path: tuple[Any, ...]) -> Any:
 
 def _remove(document: dict[str, Any], path: tuple[Any, ...]) -> None:
     del _at(document, path[:-1])[path[-1]]
+
+
+# ── GUI-A79 / GUI-A80: a pre-mark loads, and stops at the page ──
+
+PRE_MARK_KEY = "puts_in_question"
+# One id naming another decision in the plan and one naming nothing at all: what
+# the loader does with an id it cannot resolve is the whole question here.
+PRE_MARK = ["d2", "no-such-decision"]
+
+
+def pre_marked_handoff(**overrides: Any) -> dict[str, Any]:
+    """The conforming handoff with a pre-mark on the first option of each
+    decision -- one of them dangling, so a fixture that only ever carried
+    resolvable ids cannot be what makes the load succeed."""
+    document = handoff_doc(**overrides)
+    for decision in document["plan"]["decisions"]:
+        decision["options"][0][PRE_MARK_KEY] = PRE_MARK
+    return document
+
+
+def without_pre_marks(value: Any) -> Any:
+    """The same document with every pre-mark taken out, wherever one sits."""
+    if isinstance(value, dict):
+        return {k: without_pre_marks(v) for k, v in value.items() if k != PRE_MARK_KEY}
+    if isinstance(value, list):
+        return [without_pre_marks(item) for item in value]
+    return value
+
+
+def _drive(session_dir: Path, document: dict[str, Any]) -> SessionLog:
+    """One session opened on a handoff and taken through the same gestures.
+
+    The keys are fixed rather than minted so that two runs of this produce two
+    logs that are comparable entry by entry: what differs between them has to be
+    the handoff and nothing about when they ran.
+    """
+    log = open_session(session_dir, write_handoff(session_dir, document))
+    client = driven(log, SpyDriver())
+    for body in (
+        event("answer", actor="human", key="a1", target="d1", answer={"option": "a"}, why="audit"),
+        event(
+            "add-node",
+            key="add-1",
+            target="d3",
+            short="Cache",
+            title="Which cache?",
+            body="Pick a cache, or none.",
+            prereqs=["d1"],
+            options=[
+                {"id": "a", "text": "Redis", PRE_MARK_KEY: ["d2"]},
+                {"id": "b", "text": "No cache at all"},
+            ],
+        ),
+        event("invalidate", key="inv-1", target="d3", why="the cache question is premature"),
+    ):
+        receipts = client.post("/events", json={"epoch": log.epoch, "events": [body]}).json()
+        assert receipts[0]["status"] == "accepted", receipts
+    return log
+
+
+def _entries(log: SessionLog) -> list[tuple[str, str, str, Any]]:
+    """Every entry as its content, with the tenure and the clock factored out."""
+    return [
+        (entry.kind, entry.actor, entry.channel, without_pre_marks(entry.payload))
+        for entry in read_entries(log.directory / LOG_FILE)
+    ]
+
+
+def test_a_handoff_pre_mark_seeds_onto_the_option_that_declared_it(
+    session_dir: Path,
+) -> None:
+    """
+    Given a handoff whose first option on each decision names the decisions it
+          would put in question, one of those ids naming nothing in the plan
+    When the backend starts a session on it
+    Then the board carries the pair on that option and nothing on the others,
+         and no decision has been moved by being named.
+
+    The ids are carried rather than resolved: the page is the only reader, an id
+    it cannot resolve marks nothing, and a loader that cleaned the list up would
+    be deciding what the human is warned about.
+    """
+    log = open_session(session_dir, write_handoff(session_dir, pre_marked_handoff()))
+
+    board = image1(log)
+    assert [option.puts_in_question for option in board.decisions[0].options] == [PRE_MARK, None]
+    assert [option.puts_in_question for option in board.decisions[1].options] == [PRE_MARK, None]
+    assert [node.status for node in board.decisions] == ["open", "fogged"]
+
+
+def test_a_dangling_pre_mark_loads_where_a_dangling_prereq_is_still_refused(
+    session_dir: Path, tmp_path: Path
+) -> None:
+    """
+    Given one handoff whose pre-marks name nothing in the plan, and the same
+          handoff with a prereq that also names nothing
+    When the backend is started against each
+    Then the first loads and the second is refused naming the prereq.
+
+    The asymmetry is the point. A dangling prereq strands a decision the frontier
+    can never reach, and the human sees a board that never opens up with nothing
+    saying why; a dangling pre-mark marks nothing, and refusing it would let one
+    stale hint reject a whole plan.
+    """
+    document = pre_marked_handoff()
+    for decision in document["plan"]["decisions"]:
+        decision["options"][0][PRE_MARK_KEY] = ["ghost-1", "ghost-2"]
+
+    log = open_session(session_dir, write_handoff(tmp_path / "clean", document))
+    assert image1(log).decisions[0].options[0].puts_in_question == ["ghost-1", "ghost-2"]
+
+    document["plan"]["decisions"][1]["prereqs"] = ["ghost-1"]
+    with pytest.raises(HandoffRefusedError) as refusal:
+        open_session(tmp_path / "second", write_handoff(tmp_path / "dangling", document))
+
+    assert "ghost-1" in str(refusal.value)
+    assert "prereqs" in str(refusal.value)
+
+
+def test_two_sessions_driven_alike_log_the_same_entries_with_the_pre_mark_or_without(
+    tmp_path: Path,
+) -> None:
+    """
+    Given two sessions on the same handoff, one carrying a pre-mark on every
+          first option and one carrying none
+    When both are driven through the same answer, add-node and invalidate
+    Then the two logs carry the same entries in the same order, and the two
+         boards differ in nothing but that field.
+
+    The pre-mark is display data. If it reached anything -- an appended entry, a
+    status, an ordering -- the difference would show up here as two logs that
+    are not the same log.
+    """
+    marked = _drive(tmp_path / "marked", pre_marked_handoff())
+    plain = _drive(tmp_path / "plain", without_pre_marks(pre_marked_handoff()))
+
+    assert _entries(marked) == _entries(plain)
+    boards = [without_pre_marks(json.loads(board_json(one))) for one in (marked, plain)]
+    assert boards[0] == boards[1]
+    # Non-vacuous: the marked board really is carrying the field the comparison
+    # takes back out, so the two sides are not equal by both being empty.
+    assert PRE_MARK_KEY in board_json(marked)
+    assert image1(marked).decisions[0].options[0].puts_in_question == PRE_MARK

@@ -846,3 +846,129 @@ def test_a_non_string_add_node_id_is_refused_at_the_envelope(
 
     assert response.status_code == 422
     assert log.entries() == []
+
+
+# ---- GUI-A79 / GUI-A80: an option's downstream pre-mark, and where it stops ----
+
+# One id naming a decision on the board and one naming nothing at all. The
+# dangling id is in the fixture rather than beside it: what the board does with
+# an id it cannot resolve is the whole question, and a fixture carrying only
+# resolvable ids would pass whichever way that went.
+PRE_MARK = ["n1", "no-such-decision"]
+
+
+def marked(image: dict[str, Any], node_id: str) -> list[Any]:
+    """What each option of one decision says it would put in question."""
+    node_map = {node["id"]: node for node in image["decisions"]}
+    return [option.get("puts_in_question") for option in node_map[node_id]["options"]]
+
+
+def pre_marked(key: str, marks: list[str], **payload: Any) -> dict[str, Any]:
+    """An add-node whose first option names what it would put in question."""
+    return add_node(
+        key,
+        options=[
+            {"id": "a", "text": "Redis", "puts_in_question": marks},
+            {"id": "b", "text": "No cache at all"},
+        ],
+        **payload,
+    )
+
+
+def test_an_options_pre_mark_reaches_both_images_as_authored(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given an add-node whose first option names two decisions it would put in
+          question, one of them resolving to no node on the board
+    When the node is added
+    Then both images carry the pair on that option exactly as authored, and the
+         option that named nothing carries nothing.
+
+    The field is the page's to render and nobody else's, so what is asserted is
+    that it arrives unread and unedited -- the dangling id included. A backend
+    that quietly dropped it would be deciding what the human is warned about.
+    """
+    seed_node(client, log.epoch)
+
+    receipt = post(client, log.epoch, pre_marked("marked", PRE_MARK, target="n2"))[0]
+
+    assert receipt["status"] == "accepted"
+    assert marked(image1(client), "n2") == [PRE_MARK, None]
+    assert marked(client.get("/image2").json(), "n2") == [PRE_MARK, None]
+
+
+def test_a_revise_moves_a_pre_mark_between_options_like_any_other_option_field(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a decision whose first option carries a pre-mark
+    When a revise re-states the options with the mark on the second one instead
+    Then the board carries it on the second option and on neither other.
+
+    An option is revised whole, so the mark travels with the option it was
+    authored on rather than surviving as a property of the decision.
+    """
+    seed_node(client, log.epoch)
+    post(client, log.epoch, pre_marked("marked", PRE_MARK, target="n2"))
+
+    receipt = post(
+        client,
+        log.epoch,
+        event(
+            "revise",
+            key="revise-mark",
+            target="n2",
+            options=[
+                {"id": "a", "text": "Redis"},
+                {"id": "b", "text": "No cache at all", "puts_in_question": ["n1"]},
+            ],
+            why="the cost lands on the other branch",
+        ),
+    )[0]
+
+    assert receipt["status"] == "accepted"
+    assert marked(image1(client), "n2") == [None, ["n1"]]
+
+
+def test_a_pre_mark_naming_no_decision_is_not_a_rejection_reason(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given an add-node every one of whose pre-marked ids resolves to no node
+    When it is submitted
+    Then it is accepted and the ids stand on the board.
+
+    A dangling prereq strands a decision the frontier can never reach and is
+    refused for it; a dangling pre-mark marks nothing, and refusing it would let
+    one stale hint reject a whole plan.
+    """
+    ghosts = ["ghost-1", "ghost-2"]
+
+    receipt = post(client, log.epoch, pre_marked("all-dangling", ghosts, target="n2"))[0]
+
+    assert receipt["status"] == "accepted"
+    assert marked(image1(client), "n2") == [ghosts, None]
+
+
+def test_no_decision_is_moved_by_being_named_in_a_pre_mark(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given a decision pre-marked by an option of another, and that other settled
+    When the board is read back
+    Then the pre-marked decision is neither invalidated nor stale, and the board
+         holds only the statuses the applied updates put on it.
+
+    The only routes to either status are an applied invalidate and an unsettle.
+    A pre-mark is a warning about a choice, and a warning that moved the board
+    would be an invalidation nobody authored.
+    """
+    seed_node(client, log.epoch)
+    post(client, log.epoch, pre_marked("marked", ["n1"], target="n2"))
+
+    settled(client, log.epoch, "n2", "settle-marked")
+
+    node_map = decisions(client)
+    assert node_map["n1"]["status"] == "open"
+    assert node_map["n2"]["status"] == "settled"

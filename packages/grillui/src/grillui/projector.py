@@ -939,6 +939,9 @@ def _options(raw: object) -> list[Option]:
             id=str(item.get("id", "")),
             text=str(item.get("text", "")),
             pcr=_pcr(item.get("pcr")),
+            # An option that predicts nothing carries nothing, so an empty list
+            # and an absent field reach the board as the same option.
+            puts_in_question=_strings(item.get("puts_in_question")) or None,
         )
         for item in raw
         if isinstance(item, Mapping)

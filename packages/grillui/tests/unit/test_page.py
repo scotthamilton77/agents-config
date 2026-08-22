@@ -2911,6 +2911,32 @@ def test_emptying_an_armed_draft_discards_its_provenance() -> None:
     assert "!e.target.value.trim()" in handler, "provenance is dropped on every keystroke"
 
 
+# ---------------------------------------------------------------- GUI-A80
+
+
+def test_the_pre_mark_has_no_kind_and_no_way_out_of_the_page() -> None:
+    """GUI-A80: the mark an option in hand raises appends nothing.
+
+    The page is the field's only reader, so the check runs both ways: it has to
+    be read at all -- a field nothing renders would be a wire contract with no
+    purpose -- and every function that computes or paints the mark has to be
+    incapable of writing. A pre-mark that reached the log would arrive as a
+    pending invalidate, locking the very decision the human was warned about.
+    """
+    source = page_source()
+    assert "puts_in_question" in source, "the page never reads the field it alone renders"
+    for kind, rule in emissions().items():
+        assert "puts_in_question" not in rule["payload"], f"{kind} declares the pre-mark"
+    assert "puts_in_question" not in " ".join(emitted_kinds())
+    for name in ("optionOf", "lastOptionIn", "optionInHand", "preMarked", "paintPreMarks"):
+        body = function_body(name)
+        for writer in ("send(", "ev(", "srvPost(", "saveWindow("):
+            assert writer not in body, f"{name} reaches the wire or the store via {writer}"
+    # The two live sources are page state and never window state, which is what
+    # a reload with nothing in hand comes back to a bare board on.
+    assert not re.search(r"(save|load)Window\([^)]*(overOpt|keyedOpt)", source)
+
+
 @pytest.mark.parametrize(
     "shell",
     ["<style></style><script>//__SCRIPT__</script>", "/*__STYLE__*/ /*__STYLE__*/ //__SCRIPT__"],
