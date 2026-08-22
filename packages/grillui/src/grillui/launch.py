@@ -36,7 +36,7 @@ from fastapi.responses import JSONResponse
 
 from grillui.api import create_app
 from grillui.capture import capture, write_result
-from grillui.drivers import FastDriver
+from grillui.drivers import FastDriver, HeavyDriver
 from grillui.session import open_session
 from grillui.tiers import TierConfig
 
@@ -241,7 +241,11 @@ def launch(
     stream = sys.stdout if out is None else out
     ending = RunStop() if stop is None else stop
     log = open_session(directory, handoff)
-    board = create_app(log, FastDriver(TierConfig.from_env()), on_end=ending)
+    # Both tiers off the one configuration: the expert tier is what the human's
+    # transfer control moves a channel to, and a board launched without one
+    # takes the gesture and runs the turn fast anyway.
+    tiers = TierConfig.from_env()
+    board = create_app(log, FastDriver(tiers), expert=HeavyDriver(tiers), on_end=ending)
     bound = free_port(port)
     url = session_url(bound)
     print(url, file=stream, flush=True)
