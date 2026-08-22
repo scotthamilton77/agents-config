@@ -2644,11 +2644,9 @@ def test_the_map_threads_fold_arms_on_the_same_turn_an_ordinary_ones_does() -> N
     assert gated in foot, "the ordinary fold is no longer gated, so this proves nothing"
     assert ungated in foot
     assert "Hand it to the agent that owns the map" in foot
-    # Not impact-gated, but held until the agent has spoken last: the fold hands
-    # over the thread's last turn, and the human's request is not a conclusion.
     # One readiness for every fold: the map thread's arms on the same agent turn
     # an ordinary thread's does, because both hand over the thread's last turn.
-    assert foot.count('(ready ? "" : " disabled")') == 2
+    assert '(ready ? "" : " disabled") + ">Hand it to the agent that owns the map' in foot
 
 
 def test_an_ordinary_threads_fold_arms_on_the_turn_it_would_hand_over() -> None:
