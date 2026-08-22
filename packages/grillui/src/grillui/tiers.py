@@ -35,7 +35,13 @@ from typing import TYPE_CHECKING
 
 from grillui.dispatch import THREAD_AGENT
 from grillui.escalation import turns_of
-from grillui.schemas import FAST_TIER, HEAVY_TIER, SESSION_START_KIND
+from grillui.schemas import (
+    FAST_TIER,
+    HEAVY_TIER,
+    MAP_THREAD_KIND,
+    SESSION_START_KIND,
+    Thread,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -370,6 +376,22 @@ CATCH_UP_RULE = (
     "whatever you last reasoned from. Answer the human's turn under the board as it now is."
 )
 
+# The one thread whose subject is the map itself. It rides the composed prompt
+# rather than the role's standing brief because it is a property of the channel
+# this turn runs on, and the role is the same one every side thread has: it
+# authors nothing, and what it produces is a statement precise enough for the
+# grill-master to act on. Told to steer without that reminder, the agent agrees
+# to make the change -- which is the failure the thread exists to end.
+MAP_THREAD_MANDATE = (
+    "This thread is where the human asks for a change to the map itself. Your work is to "
+    "turn what they want into a concrete statement of which decisions change and how: name "
+    "each decision by its id, say what happens to it -- invalidated, revised, unsettled, "
+    "added -- and why, and put anything you had to assume to the human rather than deciding "
+    "it yourself. You still author nothing, and this thread anchors no decision: folding it "
+    "is what hands your statement to the grill-master, which proposes the updates. So write "
+    "the conclusion to be acted on by an agent that will not see this conversation."
+)
+
 CONCLUSION_ROUTING_RULE = (
     "A thread conclusion reaches you because you are the only agent that may act on it. "
     "Decide what it costs the board: fold it in as updates, or take it as context and say "
@@ -491,6 +513,26 @@ def briefing(entries: Sequence[LogEntry]) -> str:
     )
 
 
+def thread_kind(context: DispatchContext, channel: str) -> str:
+    """What kind of thread a channel is, as the dispatched board says.
+
+    Read off the context rather than the log because the context is what the
+    agent was given: a turn briefed from one board and told what its channel is
+    from another could be told it is steering the map by a thread the board it
+    was handed does not carry. The map channel is no thread and answers "", and
+    so does a thread that reached this context as a stub: a stub is another
+    thread, and no turn runs on one.
+    """
+    return next(
+        (
+            one.kind
+            for one in context.image2.threads
+            if one.id == channel and isinstance(one, Thread)
+        ),
+        "",
+    )
+
+
 def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]) -> str:
     """One turn's prompt: the briefing, the board, and this channel's turns.
 
@@ -509,6 +551,11 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
     A dispatch reopening a set-aside thread says what moved while it was away in
     a section of its own, for the same reason and one more: the board is a
     snapshot, and a snapshot states what is true and never what changed.
+
+    A turn running on the map thread is told what that thread is for. It rides
+    here rather than in the role's standing brief because it is a property of
+    the channel and not of the role: the same agent on the same tier is an
+    ordinary side thread's the next turn.
     """
     channel = context.channel
     conversation = "\n".join(f"{turn.who}: {turn.text}" for turn in turns_of(entries, channel))
@@ -522,6 +569,11 @@ def compose(recorded: str, context: DispatchContext, entries: Sequence[LogEntry]
             recorded,
             f"## This channel ({channel}), in order",
             conversation or "Nothing has been said on this channel yet.",
+            *(
+                ["## What this thread is for", MAP_THREAD_MANDATE]
+                if thread_kind(context, channel) == MAP_THREAD_KIND
+                else []
+            ),
             *(
                 []
                 if concluded is None

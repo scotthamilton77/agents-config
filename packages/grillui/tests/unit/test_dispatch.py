@@ -18,7 +18,13 @@ from fastapi.testclient import TestClient
 from grillui.dispatch import DISPATCH_DIR, DispatchIncompleteError, record_dispatch, verify_complete
 from grillui.log import SessionLog
 from grillui.projector import fold, whole_board
-from grillui.schemas import SESSION_START_KIND, DispatchContext, Image2, ThreadProjection
+from grillui.schemas import (
+    MAP_THREAD_KIND,
+    SESSION_START_KIND,
+    DispatchContext,
+    Image2,
+    ThreadProjection,
+)
 
 ANSWERS = {
     "n1": "an append-only log, because the audit trail is the point",
@@ -155,7 +161,13 @@ def test_each_dispatch_is_recorded_as_its_own_file_in_dispatch_order(
 REFERENCE = "The map is the plan. Answering a decision opens whatever waited on it."
 
 
-def _session_thread(client: TestClient, epoch: str, channel: str, decision: str | None) -> None:
+def _session_thread(
+    client: TestClient,
+    epoch: str,
+    channel: str,
+    decision: str | None,
+    kind: str | None = None,
+) -> None:
     """One thread, opened the way the page opens one."""
     post(
         client,
@@ -167,7 +179,7 @@ def _session_thread(client: TestClient, epoch: str, channel: str, decision: str 
             key=f"opened-{channel}",
             turns=[{"who": "human", "text": "How do I park this?"}],
             decision=decision,
-            kind="help" if decision is None else "user",
+            kind=kind or ("help" if decision is None else "user"),
             title="How this board works",
             requires_action=False,
         ),
@@ -229,6 +241,31 @@ def test_no_other_dispatch_carries_the_reference_material(
     assert DispatchContext.model_validate_json(on_decision).help_reference is None
     assert REFERENCE not in on_map
     assert REFERENCE not in on_decision
+
+
+def test_the_map_thread_is_not_given_the_boards_reference_material(
+    client: TestClient, log: SessionLog
+) -> None:
+    """
+    Given the same briefing and the session-level map thread
+    When that thread's dispatch is recorded
+    Then it carries no reference material.
+
+    The map thread anchors no decision, like the help thread, and is about the
+    plan like every other thread. Handing it the material on the anchor alone
+    would prime the agent steering the map with a manual for driving the board
+    -- bytes it pays for every turn and never uses.
+    """
+    _brief(log, help_reference=REFERENCE)
+    _session_thread(client, log.epoch, "t-map", None, kind=MAP_THREAD_KIND)
+
+    recorded = record_dispatch(log, channel="t-map").read_text(encoding="utf-8")
+
+    context = DispatchContext.model_validate_json(recorded)
+    assert context.image2.threads[0].id == "t-map"
+    assert context.image2.threads[0].decision is None
+    assert context.help_reference is None
+    assert REFERENCE not in recorded
 
 
 def test_a_briefing_that_shipped_nothing_dispatches_the_session_thread_unprimed(

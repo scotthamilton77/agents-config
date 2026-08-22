@@ -149,6 +149,14 @@ function sessionOver() {
 // reload and a pop-out find the one that already exists rather than opening a
 // second.
 var HELP_THREAD = "t-help";
+// The other session-scoped thread: where the human asks for a change to the map
+// itself — invalidate this run of decisions, revise that one, add the one that
+// is missing. It anchors no decision because the request is rarely about one,
+// and folding it is what puts the request in front of the grill-master, which
+// is the only agent that may propose a map update. One per session, named the
+// same way and for the same reason as the help thread.
+var MAP_THREAD = "t-map";
+var MAP_THREAD_TITLE = "Ask for a map change";
 // What the session was opened with, read off the log's own opening entry. Two
 // things here are not on image 1 and are not board state: what this session is
 // called, and whether anything was shipped that could answer a question about
@@ -1354,12 +1362,17 @@ function discussPending(id) {
 // its name from the one place that mints it.
 function startThread(id, text, from) {
   if (!text || !text.trim()) return null;
-  // No decision anchor is the session-scoped thread: the human is asking about
-  // the board, not about a question on it. It gets the one name a session has
-  // for it, so a second visit finds the first conversation rather than opening
-  // a second one beside it.
-  var help = !id;
-  var tid = help ? HELP_THREAD : "t-" + id + "-" + KEYS + "-" + Math.random().toString(36).slice(2, 6);
+  // No decision anchor is a session-scoped thread: the human is asking about
+  // the board or about the map as a whole, not about a question on it. It gets
+  // the one name a session has for it, so a second visit finds the first
+  // conversation rather than opening a second one beside it. Which of the two
+  // it is comes from the draft's own name rather than from the missing anchor,
+  // which both share, and the kind is what tells the backend which brief the
+  // thread's agent takes.
+  var session = !id;
+  var map = session && from === MAP_THREAD;
+  var tid = !session ? "t-" + id + "-" + KEYS + "-" + Math.random().toString(36).slice(2, 6)
+    : map ? MAP_THREAD : HELP_THREAD;
   // `from` is the draft's own channel, which is not the name the thread gets.
   // The tier the human put the draft on is carried onto the minted name before
   // the turn is built, so a transfer pressed before there was anything to say is
@@ -1367,20 +1380,20 @@ function startThread(id, text, from) {
   if (from && TRANSFER[from]) TRANSFER[tid] = TRANSFER[from];
   send(ev("thread-created", tid, {
     turns: [{ who: "human", text: text.trim() }],
-    decision: help ? null : id,
-    kind: help ? "help" : "user",
-    title: help ? "How this board works" : titleFrom(text, id),
+    decision: session ? null : id,
+    kind: !session ? "user" : map ? "map" : "help",
+    title: !session ? titleFrom(text, id) : map ? MAP_THREAD_TITLE : "How this board works",
     requires_action: false
   }));
   UI.panel = { kind: "thread", id: tid };
   render();
   return tid;
 }
-// Open the session thread if it exists, and otherwise stand a draft of it up.
-// Opening one says nothing: nothing is created until the human types.
-function openHelp() {
-  if (!thread(HELP_THREAD)) UI.draftFor = { thread: HELP_THREAD, decision: null };
-  UI.panel = { kind: "thread", id: HELP_THREAD };
+// Open a session-scoped thread if it exists, and otherwise stand a draft of it
+// up. Opening one says nothing: nothing is created until the human types.
+function openSessionThread(tid) {
+  if (!thread(tid)) UI.draftFor = { thread: tid, decision: null };
+  UI.panel = { kind: "thread", id: tid };
   render();
 }
 function sayInThread(tid, text) {
@@ -1842,6 +1855,11 @@ function renderColumn() {
 //
 // The control renders on an open thread only. Parking or closing hides it while
 // the offer stays live in the log, so reopening the thread shows it again.
+// Whether the thread's most recent turn is an agent's: what a fold hands over.
+function agentSpokeLast(t) {
+  var last = t.turns[t.turns.length - 1];
+  return !!last && last.who !== "human" && last.who !== "backend";
+}
 function renderTurns(t) {
   var h = "", last = t.turns.length - 1;
   t.turns.forEach(function (turn, i) {
@@ -1959,15 +1977,21 @@ function threadBody(tid, forPop, chrome) {
     var anchor = draftAnchor(tid);
     var d = anchor ? node(anchor) : null;
     var help = tid === HELP_THREAD;
+    var mapdraft = tid === MAP_THREAD;
     return threadPane(
       chrome + '<span class="pill new">new thread</span>' +
         '<h3 style="margin:10px 0 4px;font-size:16px">' +
-        (help ? "How this board works" : "Thread on " + esc(anchor || "the board") + (d ? " — " + esc(d.short) : "")) +
+        (help ? "How this board works" : mapdraft ? MAP_THREAD_TITLE
+          : "Thread on " + esc(anchor || "the board") + (d ? " — " + esc(d.short) : "")) +
         "</h3>",
       '<div class="muted">' + (help
         ? "Ask anything about driving this board — what a control does, why something is blocked, " +
           "what happens when you answer. The agent here has the board's own reference material and " +
           "is not grilling your plan. Nothing you say here touches a decision."
+        : mapdraft
+        ? "Say what you want changed about the map itself — decisions that are now moot, one that is " +
+          "wrong, one that is missing. The agent here works it into which decisions change and how; " +
+          "handing that to the agent that owns the map is what puts the changes in your inbox."
         : "Nothing exists yet. Close this and no thread is created — " +
           "the first thing you say is what opens it. It titles itself from what you say.") + "</div>",
       '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="draftsay" data-id="' + esc(anchor || "") +
@@ -2020,12 +2044,20 @@ function threadBody(tid, forPop, chrome) {
   } else {
     h += '<button class="btn sm" data-act="park" data-tid="' + esc(tid) + '">Park it — no effect, kept on the record</button>' +
       closeControl(tid) +
-      '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '"' + (ready ? "" : " disabled") + ">Fold it — conclude and hand it to the agent</button>";
+      // Handing the map thread over is the whole point of it, so its fold is
+      // not held behind a declared impact the way an ordinary thread's is: its
+      // agent proposes nothing, and a control gated on a proposal that agent
+      // may not make would never open. It is held until the agent has spoken
+      // last, because the conclusion handed over is the thread's last turn,
+      // and the human's own request is not the statement the map owner acts on.
+      (t.kind === "map"
+        ? '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '"' + (agentSpokeLast(t) ? "" : " disabled") + ">Hand it to the agent that owns the map</button>"
+        : '<button class="btn primary sm" data-act="fold" data-tid="' + esc(tid) + '"' + (ready ? "" : " disabled") + ">Fold it — conclude and hand it to the agent</button>");
   }
   if (ready) {
     h += '<details class="foldimpact"><summary>what folding would do</summary><div class="body"><strong>' +
       esc(ready.summary || "") + "</strong> " + esc(ready.detail || "") + "</div></details>";
-  } else if (t.kind !== "mandate" && !stillWaiting) {
+  } else if (t.kind !== "mandate" && t.kind !== "map" && !stillWaiting) {
     h += '<span class="muted">The agent has not declared anything foldable yet.</span>';
   }
   return threadPane(head, body, h + "</div>");
@@ -2290,6 +2322,10 @@ function renderShell() {
     '<button class="inboxbtn" data-act="notifications" data-unread="' + esc(unread) + '">🔔 Notifications <span class="count">' + esc(unread) + "</span> unread</button>" +
     (unread ? '<button class="btn sm" data-act="markall" title="Clear every unread marker. Nothing is sent.">✓ Mark all read</button>' : "") +
     transferControl(MAP) +
+    // Beside the doctor because both are the human addressing the map rather
+    // than a decision on it: the doctor asks the agent to go and look, and this
+    // one is where they say what they want changed and why.
+    '<button class="btn sm" data-act="mapthread" title="Ask the agent that owns the map for a change to it">🗺 Ask for a map change</button>' +
     '<button class="btn sm" data-act="doctor" title="Send the agent over the whole board and the queue">🩺 Map doctor</button>' +
     '<button class="btn sm' + (UI.pulse ? " pulsing" : "") + '" data-act="endsession">End the session</button>' +
     // Pushed to the right edge of the row rather than sitting at the end of the
@@ -2711,7 +2747,8 @@ document.addEventListener("click", function (e) {
       UI.panel = { kind: "thread", id: "draft:" + id };
       render();
       break;
-    case "help": openHelp(); break;
+    case "help": openSessionThread(HELP_THREAD); break;
+    case "mapthread": openSessionThread(MAP_THREAD); break;
     case "draftsay": sendFrom(document.getElementById("ft-say")); break;
     case "openthread": UI.panel = { kind: "thread", id: tid }; render(); break;
     case "say": sendFrom(document.getElementById("ft-say")); break;

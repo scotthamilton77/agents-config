@@ -2456,6 +2456,7 @@ def test_the_decision_column_names_itself_and_says_nothing_further() -> None:
 MARKUP_TITLE = "Store <img src=x onerror=\"document.title='markup ran'\"> design"
 REFERENCE = "Answering a decision opens whatever waited on it. Park a thread to set it aside."
 HELP_THREAD = "t-help"
+MAP_THREAD = "t-map"
 
 
 def _opened(log: Any, **overrides: Any) -> dict[str, Any]:
@@ -2598,11 +2599,56 @@ def test_the_help_control_opens_the_one_session_thread_and_creates_nothing() -> 
     and one that minted a fresh name each time would leave the human a new
     conversation every visit rather than the one they were already having.
     """
-    body = function_body("openHelp")
-    assert "HELP_THREAD" in body
+    body = function_body("openSessionThread")
+    assert "UI.draftFor" in body
     assert "send(" not in body, "opening help says something into the log"
     assert f'var HELP_THREAD = "{HELP_THREAD}";' in page_source()
-    assert 'case "help": openHelp();' in page_source()
+    assert 'case "help": openSessionThread(HELP_THREAD);' in page_source()
+
+
+def test_the_board_carries_a_control_that_opens_the_one_map_thread() -> None:
+    """
+    Given the board's own row of controls
+    When it is read for the way the human asks for a change to the map
+    Then a control is there, it opens the session's one map thread and sends
+         nothing, and the thread it opens is anchored to no decision and kinded
+         `map` -- without which the only route to a multi-decision change is a
+         side thread whose agent may not author one.
+    """
+    source = page_source()
+
+    assert f'var MAP_THREAD = "{MAP_THREAD}";' in source
+    assert 'data-act="mapthread"' in balanced_body("renderShell"), "the board offers no control"
+    assert 'case "mapthread": openSessionThread(MAP_THREAD);' in source
+    minting = function_body("startThread")
+    assert "map = session && from === MAP_THREAD" in minting
+    assert 'map ? "map" : "help"' in minting, "the map thread is not kinded apart from help"
+    assert "send(" not in function_body("openSessionThread"), "opening it says something"
+
+
+def test_the_map_threads_fold_is_not_held_behind_a_declared_impact() -> None:
+    """
+    Given the thread pane's foot
+    When the fold control is read for the map thread
+    Then it is offered unconditionally, unlike an ordinary thread's -- the map
+         thread's agent authors nothing, so a control gated on a proposal it
+         may not make would never open and the request would never reach the
+         grill-master.
+    """
+    foot = balanced_body("threadBody")
+    gated, ungated = (
+        'data-act="fold" data-tid="\' + esc(tid) + \'"\' + (ready ? "" : " disabled")',
+        't.kind === "map"',
+    )
+
+    assert gated in foot, "the ordinary fold is no longer gated, so this proves nothing"
+    assert ungated in foot
+    assert "Hand it to the agent that owns the map" in foot
+    # Not impact-gated, but held until the agent has spoken last: the fold hands
+    # over the thread's last turn, and the human's request is not a conclusion.
+    assert '(agentSpokeLast(t) ? "" : " disabled")' in foot
+    helper = function_body("agentSpokeLast")
+    assert 'last.who !== "human" && last.who !== "backend"' in helper
 
 
 def test_a_thread_with_no_decision_anchor_is_an_ordinary_thread(
@@ -2618,8 +2664,8 @@ def test_a_thread_with_no_decision_anchor_is_an_ordinary_thread(
     session-scoped thread. Nothing else about a thread changes, which is why
     the help thread is an ordinary thread rather than a surface of its own.
     """
-    assert 'title: help ? "How this board works"' in function_body("startThread")
-    assert "decision: help ? null : id" in function_body("startThread")
+    assert '"How this board works"' in function_body("startThread")
+    assert "decision: session ? null : id" in function_body("startThread")
 
     post(
         client,

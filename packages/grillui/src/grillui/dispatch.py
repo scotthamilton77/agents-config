@@ -15,10 +15,11 @@ to name the agent is a caller free to name the wrong one, and a thread
 dispatch labelled `grill-master` is a map mutation waiting to be authored by
 the wrong context.
 
-One thread is not about the plan at all: the one anchored to no decision, where
-the human asks how the board itself works. Its dispatch carries the reference
-material the orchestrator shipped, and no other dispatch does -- an agent
-grilling a design has no use for it and would only be paying for it.
+One thread is not about the plan at all: the help thread, where the human asks
+how the board itself works. Its dispatch carries the reference material the
+orchestrator shipped, and no other dispatch does -- an agent grilling a design
+has no use for it and would only be paying for it, and the map thread, which
+anchors no decision either, is about the plan and gets none of it.
 
 That guarantee is worth nothing unasserted, so it is checked on the way out and
 the check is what the completeness test reads: every context is recorded under
@@ -38,6 +39,7 @@ from typing import TYPE_CHECKING
 from grillui.projector import catch_up, conclusion_of, fold, project_thread, whole_board
 from grillui.schemas import (
     MAP_CHANNEL,
+    MAP_THREAD_KIND,
     SESSION_START_KIND,
     CatchUpEntry,
     DispatchContext,
@@ -190,18 +192,19 @@ def record_dispatch(
 def help_reference(entries: Sequence[LogEntry], image: Image2, channel: str) -> str | None:
     """The board's own reference material, for the one channel that is about it.
 
-    A thread anchored to no decision is the human asking about the tool rather
-    than about the plan, and it is the only channel this material is handed to:
-    on a decision's thread or on the map it would be context spent on a
-    question nobody is asking. The material comes out of the log's opening
-    entry, like every other thing the briefing said -- the handoff file has no
-    authority once the session is under way, so a resumed session and a fresh
-    one prime that thread identically.
+    The help thread is the human asking about the tool rather than about the
+    plan, and it is the only channel this material is handed to: on a decision's
+    thread or on the map it would be context spent on a question nobody is
+    asking. Anchoring no decision is not the test -- the map thread anchors none
+    either and is about the plan, so it is told apart by its kind. The material
+    comes out of the log's opening entry, like every other thing the briefing
+    said -- the handoff file has no authority once the session is under way, so
+    a resumed session and a fresh one prime that thread identically.
     """
     if channel == MAP_CHANNEL:
         return None
     thread = next((one for one in image.threads if one.id == channel), None)
-    if thread is None or thread.decision is not None:
+    if thread is None or thread.decision is not None or thread.kind == MAP_THREAD_KIND:
         return None
     opening = next((entry for entry in entries if entry.kind == SESSION_START_KIND), None)
     reference = None if opening is None else opening.payload.get("help_reference")

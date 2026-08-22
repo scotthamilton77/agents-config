@@ -515,6 +515,19 @@ grill-master, who acts on it. Agreeing in prose and emitting nothing is the fail
 closes — the update would be rejected at the appender anyway, so the agreement is a promise
 nothing keeps and the human waits on a change nobody proposed.
 
+**GUI-D40 — The human steers the map through a session-level thread of its own.** A change
+spanning several decisions — invalidate this run of them, revise that one, add the one
+nobody wrote — is about no single decision, so no thread on a decision carries it and no
+thread agent may author it (GUI-D25, GUI-D39). The board offers one session-level thread
+anchored to no decision, kinded `map`, whose agent turns the human's request into a
+statement of which decisions change and how, written to be acted on by an agent that never
+saw the conversation. Folding it is an ordinary fold: the conclusion crosses to the
+grill-master on the map channel, which proposes the updates it obliges, and each waits in
+the human's queue like any other proposal (GUI-D26). Nothing said in the thread moves the
+board. It is told apart from the help thread by its kind and not by its anchor, which
+neither has: the help thread is handed the board's reference material and this one is not,
+because it is about the plan like every other thread.
+
 ## 5. The UI surface
 
 The binding reference is `docs/prototypes/grilling-ui/grilling-ui-prototype-r5.html`, read
@@ -552,6 +565,12 @@ follows, and changes nothing else.
   before Enter puts one in too and is itself eaten, as it is in the terminal the human is
   driving this board beside. Cmd/Ctrl+Enter sends as well. An Enter arriving mid-IME
   composition sends nothing, and the hint beside the box states the chord.
+- **GUI-U29 — A board control opens the map thread.** The top row carries a control that
+  opens the session's one map thread (GUI-D40), beside the map doctor, and opening it
+  creates nothing: the first thing the human says is what opens the thread. Its fold
+  control is offered without waiting for a declared impact, unlike an ordinary thread's —
+  that thread's agent authors nothing to declare, so a fold gated on one would never open
+  and the request would never reach the grill-master.
 - **GUI-U4 — Thread panels have a floating header and footer** — title with close and
   pop-out controls pinned at the top, prompt box and action buttons pinned at the bottom —
   so neither scrolls out of view in a long thread.
@@ -869,7 +888,12 @@ The current map snapshot: a pure fold, byte-identical for a given log.
   labelled by anything but the channel's current mode. A turn may additionally carry
   `proposal` — the converged-answer object of §8.9, present only on a `thread-agent` turn
   on a decision-anchored thread. Every proposal a turn made projects; which one is live is
-  position, not a field (GUI-D31).
+  position, not a field (GUI-D31). `kind` is what opened the thread: `user` on a decision,
+  `mandate` where an agent opened one that holds its decision, `help` for the thread about
+  the board, and `map` for the session-level thread the human asks for a map change in
+  (GUI-D40). The last two both carry a null `decision`, so the kind is the only thing that
+  tells them apart — which is what decides whether a dispatch carries `help_reference` and
+  which mandate its turns are given.
 - `pending` — array of objects: `id`, `target` (decision id), `kind`, `superseded`
   (boolean), and `authored_at` (sequence integer). This is the queue GUI-D26 dispatches.
   `id` is derived from the authoring entry rather than minted beside it: for an entry
@@ -1008,6 +1032,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D37 | GUI-A79, GUI-A80, GUI-A81, GUI-A82 |
 | GUI-D38 | GUI-A88 |
 | GUI-D39 | GUI-A89 |
+| GUI-D40 | GUI-A93, GUI-A94, GUI-A95, GUI-A98 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -1036,6 +1061,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U26 | GUI-A83 |
 | GUI-U27 | GUI-A92 |
 | GUI-U28 | GUI-A90 |
+| GUI-U29 | GUI-A96, GUI-A97, GUI-A98 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -1416,6 +1442,25 @@ Each criterion is mechanically checkable and convertible to a red test.
   last turn, showing the same seconds the header's clock shows for that channel and
   advancing in step with it. A thread nobody is answering carries none, and the marker is
   gone once the reply has landed. Verified in a browser.
+- **GUI-A93** A turn taken on the map thread is given that thread's mandate: name each
+  decision that changes, say what happens to it and why, author nothing, and write the
+  conclusion to be acted on by an agent that will not see the conversation.
+- **GUI-A94** No other channel is given it — not the help thread, not a decision's thread,
+  not the map channel — and a dispatch whose board merely carries the map thread as another
+  thread is not either. The mandate is a property of the channel a turn runs on.
+- **GUI-A95** The map thread's dispatch carries no `help_reference`, though it anchors no
+  decision, and the help thread's still carries it.
+- **GUI-A96** The shipped page carries a board control that opens the session's one map
+  thread, sends nothing when pressed, and mints that thread anchored to no decision and
+  kinded `map` rather than `help`.
+- **GUI-A97** The map thread's fold control is offered unconditionally in the pane's foot,
+  while an ordinary thread's stays gated on a declared impact.
+- **GUI-A98** In a browser, against a running backend: the board's control opens the map
+  thread and creates nothing; the first thing said opens one thread anchored to no decision
+  and kinded `map`; its agent's reply leaves the board and the queue untouched; the fold
+  control is enabled with no declared impact; and folding it produces a grill-master turn
+  carrying that thread's conclusion whose `invalidate`s are in the pending queue, with the
+  decisions they target not yet invalidated and the board saying two changes wait.
 
 ## 10. Open questions for the implementing work
 
@@ -1498,6 +1543,9 @@ Each criterion is mechanically checkable and convertible to a red test.
 - bugfix: A killing answer proposes the invalidates it implies, and a thread agent asked for
   a map change names the route that can make one — AC: GUI-D38, GUI-D39, GUI-A88, GUI-A89.
 - feat: The in-thread waiting marker under the human's last turn — AC: GUI-U28, GUI-A90.
+- feat: The map thread — a session-level thread the human asks for a change to the map in,
+  whose fold is a grill-master turn — AC: GUI-D40, GUI-U29, GUI-A93, GUI-A94, GUI-A95,
+  GUI-A96, GUI-A97, GUI-A98.
 
 ## Evidence
 
@@ -1596,3 +1644,9 @@ opens one proves something else.
 - GUI-A88 | test: packages/grillui/tests/unit/test_tiers.py::test_the_grill_master_brief_obliges_an_invalidate_for_each_decision_an_answer_moots
 - GUI-A89 | test: packages/grillui/tests/unit/test_tiers.py::test_the_thread_agent_brief_refuses_a_map_change_and_names_the_route_that_can
 - GUI-A90 | probe: packages/grillui/tests/browser/thread_wait_probe.py::main
+- GUI-A93 | test: packages/grillui/tests/unit/test_tiers.py::test_a_turn_on_the_map_thread_is_told_to_state_which_decisions_change_and_how
+- GUI-A94 | test: packages/grillui/tests/unit/test_tiers.py::test_the_map_thread_mandate_reaches_no_other_channel
+- GUI-A95 | test: packages/grillui/tests/unit/test_dispatch.py::test_the_map_thread_is_not_given_the_boards_reference_material
+- GUI-A96 | test: packages/grillui/tests/unit/test_page.py::test_the_board_carries_a_control_that_opens_the_one_map_thread
+- GUI-A97 | test: packages/grillui/tests/unit/test_page.py::test_the_map_threads_fold_is_not_held_behind_a_declared_impact
+- GUI-A98 | probe: packages/grillui/tests/browser/map_thread_probe.py::main
