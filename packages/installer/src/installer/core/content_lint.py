@@ -111,6 +111,7 @@ trend rather than as a cliff nobody saw coming.
 from __future__ import annotations
 
 import re
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -217,6 +218,59 @@ class StagedSource:
     plugins: tuple[PluginAdapter, ...]
     plugins_root: Path
     ignore: InstallIgnore
+    git_ignored: frozenset[Path]
+
+
+def _git_ignored(repo_root: Path) -> frozenset[Path]:
+    """Absolute paths under ``src/`` that git is configured to ignore.
+
+    This gate's verdict is a property of the committed tree, not of the machine
+    holding it. A Finder ``.DS_Store``, an editor swap file, anything a
+    contributor's own excludes file covers — each exists locally, reaches no
+    clone and reaches no runner, so it is not content and cannot be held to a
+    standard for content. Git already draws that line, including through the
+    per-user ``core.excludesFile`` no manifest written in this repository could
+    enumerate, so the answer is asked of git rather than matched against a list
+    of names someone anticipated.
+
+    Untracked-and-ignored only: a tracked file is in the repository whatever the
+    ignore rules say about its name. A wholly ignored directory collapses to a
+    single entry, which is why callers ask about a path's ancestors and not only
+    about the path.
+
+    A repository git declines to answer for — an unpacked tarball, a fixture
+    tree — yields the empty set, leaving every path visible. That is the safe
+    direction: the gate then judges content it could have skipped, rather than
+    skipping content it should have judged. The exit status is not read, because
+    that same empty stdout already carries the answer. An absent ``git`` is a
+    different failure and is not caught here — it raises, and the CLI edge turns
+    it into a message and exit 2, which is what a gate that cannot run should do
+    rather than quietly grading a tree it never measured.
+    """
+    proc = subprocess.run(  # noqa: S603  # fixed argv; only the root is caller-supplied
+        [  # noqa: S607
+            "git",
+            "-C",
+            str(repo_root),
+            "ls-files",
+            "-z",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "--directory",
+            "--",
+            "src",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return frozenset(repo_root / entry.rstrip("/") for entry in proc.stdout.split("\0") if entry)
+
+
+def _is_git_ignored(path: Path, ignored: frozenset[Path]) -> bool:
+    """Whether ``path`` is ignored outright or sits under an ignored directory."""
+    return not ignored.isdisjoint((path, *path.parents))
 
 
 def stage_src(repo_root: Path, *, io: IOPort) -> StagedSource:
@@ -243,7 +297,26 @@ def stage_src(repo_root: Path, *, io: IOPort) -> StagedSource:
     plans = stage_and_transform(
         known_tools(), repo_root=repo_root, io=io, ignore=ignore, plugins=plugins
     )
-    return StagedSource(plans=plans, plugins=plugins, plugins_root=plugins_root, ignore=ignore)
+    # Dropped after staging rather than during it, because the pruning belongs to
+    # this gate alone: the installer stages whatever checkout it is pointed at,
+    # and a checkout is not required to be a repository. Everything downstream —
+    # the admission gate, the provenance check, the payload weigh-in — reads these
+    # plans, so one filter here is what keeps the whole verdict on the committed
+    # tree.
+    git_ignored = _git_ignored(repo_root)
+    for plan in plans.values():
+        plan.items = {
+            dest: item
+            for dest, item in plan.items.items()
+            if not _is_git_ignored(item.source_path, git_ignored)
+        }
+    return StagedSource(
+        plans=plans,
+        plugins=plugins,
+        plugins_root=plugins_root,
+        ignore=ignore,
+        git_ignored=git_ignored,
+    )
 
 
 def admitted_asset_names(plans: Mapping[Tool, StagingPlan]) -> dict[str, frozenset[str]]:
@@ -450,7 +523,7 @@ def _group_skill_bodies(
 
 
 def _skill_payloads(
-    plans: Mapping[Tool, StagingPlan], *, ignore: InstallIgnore
+    plans: Mapping[Tool, StagingPlan], *, ignore: InstallIgnore, git_ignored: frozenset[Path]
 ) -> list[SkillPayloadMeasure]:
     """Weigh what each admitted skill deploys beside its entry file.
 
@@ -504,7 +577,9 @@ def _skill_payloads(
         files = {
             rel: path.read_bytes()
             for path, rel in ((path, path.relative_to(root)) for path in sorted(root.rglob("*")))
-            if path.is_file() and not ignore.excludes_path(rel)
+            if path.is_file()
+            and not ignore.excludes_path(rel)
+            and not _is_git_ignored(path, git_ignored)
         }
         files.update({rel: part.content for rel, part in overrides.items()})
         files.pop(Path(DIR_RECORD_FILE), None)
@@ -672,7 +747,11 @@ def _stale_exemptions(repo_root: Path) -> list[str]:
 
 
 def _unaccounted_dirs(
-    repo_root: Path, *, staged: dict[Path, frozenset[str]], ignore: InstallIgnore
+    repo_root: Path,
+    *,
+    staged: dict[Path, frozenset[str]],
+    ignore: InstallIgnore,
+    git_ignored: frozenset[Path],
 ) -> list[Path]:
     """Directories under ``src/`` that nothing accounts for, repo-relative.
 
@@ -683,10 +762,12 @@ def _unaccounted_dirs(
     people to ignore it, so the declared cases are enumerated rather than
     rediscovered:
 
-    1. ``UNGATED_ROOTS`` exempts it. Checked first, so an exemption means the
-       same thing wherever the directory sits — a subtree declared out of scope
-       is out of scope even when a staging root sits inside it. Any later test
-       would make containment silently defeat the register.
+    1. ``UNGATED_ROOTS`` exempts it, or git ignores it. Both are checked first,
+       so each means the same thing wherever the directory sits — a subtree
+       declared out of scope is out of scope even when a staging root sits inside
+       it, and a directory that reaches no clone is not this repository's content
+       wherever it happens to sit. Any later test would make containment silently
+       defeat the register.
     2. it is a root staging reads out of, or holds one — descend, because the
        gap may be deeper. ``src/user`` holds staging roots without being one;
        so does a plugin directory.
@@ -712,10 +793,13 @@ def _unaccounted_dirs(
 
     The cost, stated in the manifest too: a directory pattern silences that name
     wherever this walk looks, not only where staging would have pruned it. That
-    makes ``.installignore`` a silencing channel — one of five, with the staged
-    roots, the namespace names, ``UNGATED_ROOTS`` and ``BUILD_DIRS`` — and the
-    only one editable by someone thinking about deploys rather than about this
-    gate. Nothing here bounds what a pattern may silence.
+    makes ``.installignore`` a silencing channel — one of six, with the staged
+    roots, the namespace names, ``UNGATED_ROOTS``, ``BUILD_DIRS`` and git's own
+    ignore rules — and the only one editable by someone thinking about deploys
+    rather than about this gate. Nothing here bounds what a pattern may silence.
+    Git's rules are the one channel whose scope is bounded from outside: it
+    silences exactly what never reaches a clone, so what it hides is what no
+    other machine could have judged either.
 
     ``BUILD_DIRS`` is read from ``content_tests`` rather than restated. Failing
     the build over a directory the sibling gate refuses to walk would be the two
@@ -742,7 +826,7 @@ def _unaccounted_dirs(
         read_from_here = staged.get(current)
         for child in sorted(p for p in current.iterdir() if p.is_dir() and not p.is_symlink()):
             relative = child.relative_to(repo_root)
-            if relative in UNGATED_ROOTS:
+            if relative in UNGATED_ROOTS or _is_git_ignored(child, git_ignored):
                 continue
             # One test, not two: a root is trivially relative to itself, so this
             # covers "child IS a root staging reads" and "child merely holds one"
@@ -877,6 +961,7 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
                 repo_root, plugins_root=staged.plugins_root, plugins=staged.plugins
             ),
             ignore=staged.ignore,
+            git_ignored=staged.git_ignored,
         )
     )
     violations.extend(_stale_exemptions(repo_root))
@@ -888,5 +973,5 @@ def lint_content(repo_root: Path, *, io: IOPort) -> ContentLintResult:
         skills=_group_skill_bodies(gate.skills, sources=sources),
         # The gate's filtered plans, so a skill the bar dropped is not weighed:
         # a payload that never deploys is not a cost anyone pays.
-        payloads=_skill_payloads(gate.plans, ignore=staged.ignore),
+        payloads=_skill_payloads(gate.plans, ignore=staged.ignore, git_ignored=staged.git_ignored),
     )
