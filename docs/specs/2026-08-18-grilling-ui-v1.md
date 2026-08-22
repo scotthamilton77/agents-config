@@ -169,13 +169,15 @@ bills the owner's subscription, at $0.576 for the cold first turn and $0.054 the
 not a ceiling. The fast tier's mandate is quick discussion: answer from the context it was
 given, fast, and never assert anything that context does not support. The moment a question
 crosses into reasoning, decisioning or implied design, it stops short of deciding and
-recommends a handoff to the heavy tier as metadata on its reply — **and the human decides
-whether to take it** (GUI-U11). Escalation is human-gated in v1: no agent escalates a turn
-on its own, and the transfer that activation triggers hands the heavy tier the channel's
-accumulated thread rather than only the last message. Both tiers' model ids are
-configuration, and so is the effort the heavy tier thinks at; the escalation target is a
-Claude model, configured by default to think hard rather than to answer quickly, and Fable
-is excluded from v1.
+recommends a handoff to the heavy tier as metadata on its reply — **and who acts on that
+recommendation is the session's escalation policy** (GUI-D35). No agent escalates itself
+under either policy: the recommendation is a condition the backend evaluates against the
+transcript (GUI-D12), never the model's opinion of its own reach, and an agent asserting a
+transfer in its own reply moves no channel. Whatever triggers the transfer hands the heavy
+tier the channel's accumulated thread rather than only the last message. Both tiers' model
+ids are configuration, and so is the effort the heavy tier thinks at; the escalation target
+is a Claude model, configured by default to think hard rather than to answer quickly, and
+Fable is excluded from v1.
 
 **GUI-D12 — The escalation recommendation is a criterion evaluated against the transcript,
 never a self-assessment of competence.** A fast model asked to judge whether a question exceeds its
@@ -187,6 +189,30 @@ commitment rather than another question, on a decision with two or more dependen
 human has rejected a reframing of the question, or says the trade-off itself is what they
 cannot resolve; three or more decisions must be weighed at once. Asking a sharpening
 question back is the ordinary move and is not an escalation.
+
+**GUI-D35 — Whether a met condition needs the human's gesture is session configuration, and
+it defaults to needing it.** The escalation policy sits beside the model ids and the heavy
+tier's effort, and takes one of two values. Under `gated`, the default, a met condition
+highlights the transfer control and nothing moves until the human activates it. Under
+`autonomous`, the backend itself puts that channel into expert mode the moment a fast reply
+meets a condition, so the next turn on that channel goes to the heavy tier carrying the
+accumulated thread — the same channel mode and the same transfer the human's activation
+produces, reached without the gesture. The policy is standing rather than one-shot: a
+later reply meeting a condition on a channel the human sent back to the fast tier escalates
+it again. Hard-wiring one behaviour instead is refused in both directions — a session where
+the human takes every recommendation pays a confirmation gesture per turn for nothing, and
+a session where they are still learning what the heavy tier is worth has money spent on
+their behalf by a condition they never saw fire. **The escalation is attributed, not
+silent.** The status lane carries a backend-authored transfer entry on that channel — a
+phase on the lane's own status kind (GUI-D13) — naming the condition and that the policy
+moved it — the phase is `transferred`, and its detail names the condition — and the heavy
+turn that follows carries `transfer_source: "policy"` beside its existing
+`followed_transfer` flag. A human gesture writes no source: the flag alone already names
+the human, so a session under `gated` writes the log it writes today, byte for byte. Both
+are fields on what the log already records rather than a new event kind, because a
+transfer is a property of how a turn came to be taken and the kind vocabulary of §8.3 is
+closed. Per channel, as GUI-D11's transfers already are: an autonomous escalation on one
+thread leaves every other channel where it was.
 
 **GUI-D13 — The status lane is mechanical and structurally cannot wait on a model.** The
 instant a human turn is accepted, and inside the same lock as the append, the backend
@@ -476,7 +502,8 @@ follows, and changes nothing else.
   lane for items the human must act on.
 - **GUI-U11 — Transfer to expert is a control on every channel**, the map's and each
   thread's, and it is always active. It is visually highlighted when the agent's reply
-  metadata recommends escalation (GUI-D11), and the human decides. Activating it forces the
+  metadata recommends escalation (GUI-D11), and under the `gated` policy the human's
+  activation is what moves the channel (GUI-D35). Activating it forces the
   next turn on that channel to the heavy tier, carrying the accumulated thread. While the
   heavy tier is driving that channel, activating it sends the next turn on that channel to
   the fast tier instead;
@@ -495,6 +522,14 @@ follows, and changes nothing else.
   would move to, coloured like a mandate — is refused: a coloured state word on a control
   reads as *where the channel is now*, so the human infers the opposite of what activating
   it does.
+- **GUI-U24 — A channel the policy moved says so where it moved, and nowhere else.** Under
+  `autonomous` (GUI-D35) the transfer appears on that channel's status lane, naming the
+  condition that fired, and the transfer control flips to *Return to fast agent* (GUI-U22)
+  with the human having pressed nothing — the control's position follows the channel's mode
+  as the lane states it, never the human's own last click, which after a policy transfer
+  names the tier the channel has left. No notification is raised: the move is board state
+  and the lane already carries it (GUI-U10, GUI-U15). The control stays active throughout,
+  so returning the channel to the fast tier is the same gesture it always was.
 - **GUI-U23 — A live proposal renders beneath the turn that made it, with one control.**
   The agent's turn is followed by what it proposes — the option it builds on, the answer
   text, and its one-line reason — and an apply-decision control naming the decision it
@@ -558,9 +593,6 @@ Each item below is deferred, not rejected, with the observation that would pull 
 - **Elision machinery.** Image 2 crosses whole (GUI-D4); there is no path that drops
   content from a dispatch and no marker vocabulary for one. Trigger: a real session whose
   image 2 approaches the context limit of a tier in use.
-- **Autonomous escalation.** V1 escalation is human-gated (GUI-D11); no agent escalates a
-  turn on its own. Trigger: real sessions where the human accepts essentially every
-  recommendation, making the confirmation gesture pure overhead.
 - **Parked-thread drift mitigation.** A reopened parked thread's agent is stale relative
   to the evolved map. Trigger: a session where a resumed parked thread asserts something
   the board contradicts.
@@ -829,6 +861,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-D32 | GUI-A70 |
 | GUI-D33 | GUI-A67, GUI-A68 |
 | GUI-D34 | GUI-A69 |
+| GUI-D35 | GUI-A71, GUI-A72, GUI-A73, GUI-A74 |
 | GUI-U1 | GUI-A21 |
 | GUI-U2 | GUI-A22 |
 | GUI-U3 | GUI-A43 |
@@ -852,6 +885,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U21 | GUI-A62 |
 | GUI-U22 | GUI-A63 |
 | GUI-U23 | GUI-A67 |
+| GUI-U24 | GUI-A73, GUI-A74 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -889,9 +923,9 @@ Each criterion is mechanically checkable and convertible to a red test.
   and no dispatch, while a human turn in the same thread produces both.
 - **GUI-A12** For each of the three GUI-D12 conditions, a scripted transcript satisfying it
   produces a reply whose recommendation metadata names that condition; a transcript
-  satisfying none produces a reply carrying no recommendation. No transcript escalates a
-  turn without a human activation, and both tiers' attributions — tier, model, and that a
-  heavy turn followed a transfer — are in the log.
+  satisfying none produces a reply carrying no recommendation. Under the default `gated`
+  policy no transcript escalates a turn without a human activation, and both tiers'
+  attributions — tier, model, and that a heavy turn followed a transfer — are in the log.
 - **GUI-A13** Every event kind the page emits is known to the backend. The check derives
   the kind set by reading the page's own emission sites out of the shipped page source,
   not from a list the test author wrote, and it is mutation-checked: removing one kind from
@@ -1128,6 +1162,22 @@ Each criterion is mechanically checkable and convertible to a red test.
   restatement-only licence and that the offer is never put as a question — asserted against
   the prompt the driver composes rather than a constant read out of the source. Over one
   live session's thread turns, no turn carrying a proposal also asks whether to apply it.
+- **GUI-A71** A session configured with no escalation policy runs `gated`: a fast reply
+  meeting a GUI-D12 condition carries its recommendation, the log records no transfer, and
+  the next turn on that channel is taken by the fast tier.
+- **GUI-A72** Under `autonomous`, a fast reply meeting a condition takes the next turn on
+  that channel to the heavy tier, whose dispatch carries the channel's accumulated thread
+  rather than only the last message, while the next turn on every other channel stays fast;
+  a reply meeting no condition leaves its own channel on the fast tier.
+- **GUI-A73** An autonomous escalation is attributed in the log: a backend-authored status
+  entry on that channel carries the `transferred` phase naming the condition, the heavy turn
+  that follows carries `transfer_source: "policy"` where a human-activated transfer carries
+  no `transfer_source` and its `followed_transfer` flag is unchanged in shape, an agent
+  reply asserting a transfer under either policy moves no channel, and the move appends no
+  notification-bearing entry.
+- **GUI-A74** After an autonomous escalation the human's control still governs: activating
+  it returns the next turn on that channel to the fast tier, and a later reply meeting a
+  condition escalates that channel again.
 
 ## 10. Open questions for the implementing work
 
@@ -1195,6 +1245,9 @@ Each criterion is mechanically checkable and convertible to a red test.
 - feat: Applying a converged answer: the control beneath the turn, the armed answer
   controls, and the answer that carries its provenance and closes its thread — AC: GUI-D33,
   GUI-U23, GUI-A67, GUI-A68.
+- feat: Autonomous escalation as a session policy: the configured default, the backend-driven
+  transfer on a met condition, its attribution, and the control that still returns the
+  channel — AC: GUI-D35, GUI-U24, GUI-A71, GUI-A72, GUI-A73, GUI-A74.
 - chore: Packaging: the uv package, its gates, and the CLI on PATH — AC: GUI-P1.
 
 ## Evidence
@@ -1273,3 +1326,7 @@ opens one proves something else.
 - GUI-A68 | test: packages/grillui/tests/unit/test_convergence.py::test_an_answer_carrying_from_thread_settles_and_closes_in_one_entry
 - GUI-A69 | test: packages/grillui/tests/unit/test_convergence.py::test_a_live_proposal_queues_nothing_and_holds_nothing
 - GUI-A70 | open
+- GUI-A71 | open
+- GUI-A72 | open
+- GUI-A73 | open
+- GUI-A74 | open
