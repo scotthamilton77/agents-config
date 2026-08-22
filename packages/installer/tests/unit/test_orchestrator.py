@@ -1,10 +1,10 @@
 """The transform pass over every active adapter — first call site for
 ToolAdapter.post_staging_transforms.
 
-Pins: Gemini rewrites agent frontmatter; the identity adapters (Claude, Codex)
-return their agent items unchanged through this call site; OpenCode contributes
-no shared agents at all; and each tool is routed through its own adapter in a
-single call.
+Pins: Gemini rewrites agent frontmatter; Claude (an identity transform) and
+Codex (whose transform touches only skill directories) return their agent
+items unchanged through this call site; OpenCode contributes no shared agents
+at all; and each tool is routed through its own adapter in a single call.
 """
 
 from __future__ import annotations

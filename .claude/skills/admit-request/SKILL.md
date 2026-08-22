@@ -152,7 +152,7 @@ consequences.
 |---|---|---|
 | Rule | its whole body — it is always loaded | — |
 | Model-invoked skill | its catalog entry (`name` + `description`) | its body, paid when invoked |
-| User-invoked skill | none, on a tool that honours the flag — it is in no catalog there | its body, paid when the user names it |
+| User-invoked skill | none, where the deployed front matter keeps the flag — it is in no catalog there | its body, paid when the user names it |
 | Agent | none — the catalog charge counts the `skills` namespace alone | its body, paid when dispatched |
 | Command | none — it appears in no catalog | its body, paid when the user types it |
 
@@ -198,11 +198,17 @@ cost asked for, at a moment chosen for it. Where the key is stripped, the model
 reaches that body on its own judgement, mid-task, against whatever the context
 is already carrying, which is what the tighter number prices.
 
-**Only Claude honours the flag today.** The installer strips it for Codex,
-Gemini and OpenCode, which have no equivalent to translate onto — so on Codex
-and OpenCode the skill is model-invocable whatever its author declared, which
-puts that tool's copy under the strict body cap and its description into that
-tool's catalog. Two consequences to hold:
+**Claude and Codex honour the declaration today.** Claude reads the flag from
+the deployed front matter. Codex's loader does not define the key, so the
+installer strips it there and emits Codex's own declaration instead — a
+generated `agents/openai.yaml` sidecar (`policy.allow_implicit_invocation:
+false`) beside the deployed SKILL.md. OpenCode has no equivalent to translate
+onto, so there the skill is model-invocable whatever its author declared. The
+budget still prices every stripped copy from its deployed front matter, so on
+Codex and OpenCode the copy sits under the strict body cap and its description
+is charged to that tool's catalog — on Codex an over-charge in the safe
+direction, since the sidecar keeps the skill out of implicit invocation. Two
+consequences to hold:
 
 - The 5k number is Claude-shaped, and it is Claude-only. A 4,900-token
   user-invoked body passes on Claude and **aborts the deploy** on Codex and
@@ -215,7 +221,7 @@ tool's catalog. Two consequences to hold:
 - Carrying the flag is not by itself a reason to leave the shared tree, since it
   is projected out cleanly. But dropping a key removes the bytes, not the gap: a
   skill whose worth claim *depends* on never firing unprompted is still
-  model-invocable on Codex and OpenCode, and belongs in
+  model-invocable on OpenCode, and belongs in
   `src/user/.claude/` where the claim holds. Check 5 decides this; check 4 only
   tells you which number to measure against.
 

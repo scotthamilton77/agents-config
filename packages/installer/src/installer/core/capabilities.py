@@ -13,16 +13,23 @@ OpenCode, or drop it and lose the capability on the one tool that has it. The
 projection removes the choice — the shared tree carries the key, and each tool
 receives what is correct for it.
 
-**The projection is to drop the key**, for every tool that does not define it.
-Not to translate it: none of Codex, Gemini or OpenCode exposes a per-artifact
-invocation control, a per-artifact tool allowlist, or an argument hint, so
-there is no target to translate onto and inventing one would assert a
-capability that is not there. Not to keep it inert either, on the sanitizer's
-own reasoning — bytes with no runtime purpose downstream load into the reader's
-context for nothing, and a loader that validates its front matter strictly
-would reject the artifact rather than ignore the key. The same conclusion is
-already reached one namespace over, where the Gemini adapter strips Claude-only
-keys from agent front matter.
+**The projection drops the key** for every tool whose loader does not define
+it. For ``disable-model-invocation`` on Codex the drop is half of a
+translation: Codex expresses the same declaration through a sidecar file
+beside the skill's entry file — ``agents/openai.yaml`` carrying
+``policy.allow_implicit_invocation: false`` — which the Codex adapter
+generates at deploy time for every skill carrying the key. The key itself is
+still not a Codex front-matter key, so it still does not ship. Everywhere
+else the drop is the whole projection: Gemini and OpenCode expose no
+per-artifact invocation control, and no tool but Claude defines a
+per-artifact tool allowlist or an argument hint, so there is no target to
+translate onto and inventing one would assert a capability that is not there.
+Keeping a key inert is no better, on the sanitizer's own reasoning — bytes
+with no runtime purpose downstream load into the reader's context for
+nothing, and a loader that validates its front matter strictly would reject
+the artifact rather than ignore the key. The same conclusion is already
+reached one namespace over, where the Gemini adapter strips Claude-only keys
+from agent front matter.
 
 Support is declared per key rather than per tool. A tool acquiring one of these
 capabilities is then a one-name edit, and a key nothing supports is visible as
@@ -34,8 +41,12 @@ it decides which cap measures the artifact's body, and whether the artifact's
 catalog entry is charged to the always-on budget (see ``surface_budget``).
 Reading the source would price a claim the author made instead of a fact about
 the target — a shared skill declaring itself user-invoked is fully
-model-invocable on every tool this projection strips the key for, so its
-description does load and its body arrives on the model's own judgement.
+model-invocable on Gemini and OpenCode, where the projection strips the key
+and nothing replaces it, so there its description does load and its body
+arrives on the model's own judgement. On Codex the generated sidecar does
+keep the skill out of implicit invocation, while the budget still reads the
+projected front matter and prices the copy as model-invocable — an
+over-charge in the safe direction, never an under-charge.
 
 Reading after projection makes one artifact's numbers depend on which tool is
 being staged. That is the intent: the number prices the target, and the targets
@@ -43,14 +54,6 @@ differ. The *verdict* stays uniform, because the repo-side content lint stages
 every known tool unconditionally on every run — so an artifact is judged against
 every target it can reach, and a per-machine deploy can only be looser than the
 gate the repository has already passed.
-
-Codex is where the projected reading and the vendor's mechanism will eventually
-diverge: Codex honours a user-invoked declaration through a generated sidecar
-file beside the skill rather than through ``SKILL.md`` front matter, and this
-installer emits no such sidecar. So today every deployed skill is in Codex's
-catalog, which is exactly what the projected reading reports, because the key
-is stripped for Codex. The change that emits the sidecar is the change that
-must also make this module say so; nothing should be added for it beforehand.
 """
 
 from __future__ import annotations
