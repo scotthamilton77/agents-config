@@ -121,12 +121,15 @@ from grillui.schemas import (
     PROPOSABLE_KINDS,
     PROPOSED_ANSWER_KEY,
     SESSION_START_KIND,
+    SET_ASIDE_KINDS,
     SUPERSEDES_KEY,
     THREAD_CLOSE_KIND,
     THREAD_FOLD_KIND,
     THREAD_GESTURE_KINDS,
+    THREAD_KINDS,
     THREAD_PARK_KIND,
     Answer,
+    CatchUpEntry,
     ConvergedProposal,
     Decision,
     FoldedThreadStub,
@@ -349,6 +352,95 @@ def _updates(entry: LogEntry) -> list[Mapping[str, object]]:
 def to_image1(image: Image2) -> Image1:
     """Image 2 without its history, which is the only field that separates them."""
     return Image1(**image.model_dump(exclude={"history"}))
+
+
+def catch_up(epoch: str, entries: Sequence[LogEntry], channel: str) -> list[CatchUpEntry]:
+    """What the board moved while this thread was set aside, folded out of the log.
+
+    A map event is an entry that moves a decision, and that is the whole of the
+    definition: an entry is one exactly when folding the log through it changes
+    image 1's decisions. So that is what is measured here -- one fold per entry
+    of the interval, each compared against the fold before it -- rather than a
+    list of kinds. A list would be a second definition of what changed the map,
+    and it disagrees with the projector the first time a kind lands one way here
+    and waits the other way there; the human would then be reading a board the
+    catch-up does not describe.
+
+    The one field a decision carries that a move does not touch is its lock,
+    which is the queue's hold rather than anything that happened to the
+    decision: an update waiting on the human is a map event at the `apply` that
+    lands it and never at the entry that queued it.
+
+    An entry that moved several decisions contributes one catch-up entry per
+    decision, and each names the sequence, kind and rationale the log carries
+    at that point. Nothing here is composed.
+
+    ponytail: one fold per interval entry, which is O(interval) folds over a log
+    bounded by one grilling and an interval bounded by two human gestures.
+    """
+    interval = _set_aside_interval(entries, channel)
+    if interval is None:
+        return []
+    start, stop = interval
+    caught: list[CatchUpEntry] = []
+    before = _decision_state(epoch, entries[:start])
+    for index in range(start, stop):
+        after = _decision_state(epoch, entries[: index + 1])
+        entry = entries[index]
+        caught += [
+            CatchUpEntry(seq=entry.seq, target=target, **_moved_by(entry, target))
+            for target, state in after.items()
+            if before.get(target) != state
+        ]
+        before = after
+    return caught
+
+
+def _set_aside_interval(entries: Sequence[LogEntry], channel: str) -> tuple[int, int] | None:
+    """The half-open range of entries between this channel's last set-aside
+    gesture and the turn that reopened it, or nothing where this dispatch is not
+    that reopening.
+
+    The interval is bounded by gestures rather than by wall time, and it is the
+    *first* human turn after the gesture that reopens the thread: a second one
+    is an ordinary turn on a thread nobody set aside any more, and a catch-up
+    riding it would re-tell the thread what it was told last turn.
+    """
+    aside = [
+        index
+        for index, entry in enumerate(entries)
+        if entry.channel == channel and entry.kind in SET_ASIDE_KINDS
+    ]
+    if not aside:
+        return None
+    start = aside[-1] + 1
+    reopening = [
+        index
+        for index, entry in enumerate(entries[start:], start=start)
+        if entry.channel == channel and entry.actor == "human" and entry.kind in THREAD_KINDS
+    ]
+    return (start, reopening[0]) if len(reopening) == 1 else None
+
+
+def _decision_state(epoch: str, entries: Sequence[LogEntry]) -> dict[str, str]:
+    return {
+        node.id: node.model_dump_json(exclude={"locked"}) for node in fold(epoch, entries).decisions
+    }
+
+
+def _moved_by(entry: LogEntry, target: str) -> dict[str, str]:
+    """The kind and rationale the log carries for what moved this decision.
+
+    An entry carrying sub-updates is read through to the one naming this
+    decision, which is what makes an applied proposal say `revise` at the
+    sequence of the apply rather than `apply` at it. A decision moved as a
+    consequence of another -- a node the settling of its prerequisite fogged --
+    is named by the entry itself, since that is all the log says about it.
+    """
+    for update in _updates(entry) or [entry.payload]:
+        if update.get("target") == target:
+            return {"kind": str(update.get("kind", entry.kind)), "why": _text(update, "why")}
+    return {"kind": entry.kind, "why": ""}
 
 
 def conclusion_of(thread: Thread, applied: Mapping[str, str] | None = None) -> str | None:

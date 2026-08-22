@@ -1481,10 +1481,10 @@ opens one proves something else.
 - GUI-A72 | test: packages/grillui/tests/unit/test_transfer.py::test_under_the_autonomous_policy_a_met_condition_takes_that_channel_to_the_expert
 - GUI-A73 | test: packages/grillui/tests/unit/test_transfer.py::test_a_policy_escalation_is_named_on_the_lane_and_on_the_turn_it_bought
 - GUI-A74 | test: packages/grillui/tests/unit/test_transfer.py::test_the_human_takes_a_policy_transfer_back_and_a_later_condition_escalates_again
-- GUI-A75 | open
-- GUI-A76 | open
-- GUI-A77 | open
-- GUI-A78 | open
+- GUI-A75 | test: packages/grillui/tests/unit/test_catch_up.py::test_applying_that_queued_update_inside_the_interval_is_one_entry_at_the_apply
+- GUI-A76 | test: packages/grillui/tests/unit/test_catch_up.py::test_a_moved_interval_opens_the_heavy_turn_cold_with_the_thread_in_full
+- GUI-A77 | test: packages/grillui/tests/unit/test_catch_up.py::test_an_unchanged_interval_resumes_the_chain_the_channel_already_held
+- GUI-A78 | test: packages/grillui/tests/unit/test_catch_up.py::test_reopening_a_thread_raises_nothing_to_the_human
 - GUI-A79 | open
 - GUI-A80 | open
 - GUI-A81 | open

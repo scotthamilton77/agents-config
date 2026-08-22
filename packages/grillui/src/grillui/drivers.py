@@ -20,7 +20,9 @@ restarted over that directory picks the same conversation back up instead of
 starting a cold one; the cold turn costs about ten times a resumed one, which is
 what makes that file worth writing. One turn at a time, always: the discount
 lives in a cache one process holds, and two processes talking over each other on
-the same chain forfeit it.
+the same chain forfeit it. One turn is opened cold on purpose: the one reopening
+a thread whose board moved while it was set aside, whose chain reasoned from a
+board that no longer holds.
 
 **A reply may declare map updates, and only the grill-master's are heard at
 all.** A turn answers in prose, or in an object carrying prose and the updates
@@ -307,14 +309,24 @@ class HeavyDriver:
         entries = log.entries()
         model = self.config.heavy_model
         effort = self.config.heavy_effort
+        # A thread reopened across a board that moved opens a cold chain rather
+        # than resuming one formed against the older board. The catch-up and the
+        # thread's turns both cross in this dispatch, so nothing is lost; what is
+        # dropped is a chain carrying a dozen older snapshots, which has no
+        # reason to read the newest as a correction rather than as more of the
+        # same. The old record is discarded as the turn opens rather than kept
+        # for a null session id to fall back on.
+        cold = bool(context.catch_up)
         with self._turn:
+            if cold:
+                forget_resume(log.directory, channel)
             printed = self.cli(
                 claude_argv(
                     model,
                     effort,
                     system_prompt(HEAVY_TIER, context.agent),
                     compose(recorded, context, entries),
-                    read_resume(log.directory, channel),
+                    None if cold else read_resume(log.directory, channel),
                 )
             )
             reply, session_id = read_cli_reply(printed)
@@ -344,16 +356,7 @@ def read_resume(directory: Path, channel: str) -> str | None:
     Read from the directory on every turn rather than remembered, so the
     successor of a killed process resumes what its predecessor started.
     """
-    path = directory / RESUME_FILE
-    if not path.is_file():
-        return None
-    try:
-        chains = json.loads(path.read_text(encoding="utf-8"))
-    except ValueError:
-        # A torn write costs a cold start and nothing else, which is cheaper
-        # than refusing the turn over a cache file.
-        return None
-    found = chains.get(channel) if isinstance(chains, dict) else None
+    found = _chains(directory / RESUME_FILE).get(channel)
     return found if isinstance(found, str) else None
 
 
@@ -361,14 +364,36 @@ def write_resume(directory: Path, channel: str, session_id: str) -> None:
     """Remember the chain, per channel: the map's and each thread's are separate
     conversations and must not resume into each other."""
     path = directory / RESUME_FILE
-    chains: dict[str, Any] = {}
-    if path.is_file():
-        try:
-            loaded = json.loads(path.read_text(encoding="utf-8"))
-        except ValueError:
-            loaded = None
-        chains = loaded if isinstance(loaded, dict) else {}
-    chains[channel] = session_id
+    _write_chains(path, {**_chains(path), channel: session_id})
+
+
+def forget_resume(directory: Path, channel: str) -> None:
+    """Drop this channel's chain, leaving every other channel's alone.
+
+    What a cold turn does on the way in. Dropping it now rather than letting the
+    turn's own session id overwrite it is the difference that matters when the
+    turn returns none: the channel then holds no chain, instead of falling back
+    to the one the cold turn was opened to get away from.
+    """
+    path = directory / RESUME_FILE
+    chains = _chains(path)
+    if chains.pop(channel, None) is not None:
+        _write_chains(path, chains)
+
+
+def _chains(path: Path) -> dict[str, Any]:
+    """Every channel's chain, or none of them: a torn write costs a cold start
+    and nothing else, which is cheaper than refusing a turn over a cache file."""
+    if not path.is_file():
+        return {}
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _write_chains(path: Path, chains: dict[str, Any]) -> None:
     # Written whole and renamed into place: a crash mid-write must cost the
     # documented cold start, never leave half a file racing the reader.
     scratch = path.with_suffix(".tmp")
