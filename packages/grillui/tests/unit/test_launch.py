@@ -11,11 +11,13 @@ anything watching a clock.
 from __future__ import annotations
 
 import io
+import signal
 import socket
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import httpx
 import pytest
 from conftest import SpyDriver, driven, event, handoff_doc, post, write_handoff
 
@@ -29,6 +31,7 @@ from grillui.launch import (
     launch,
     report,
     session_url,
+    stop_this_process,
 )
 from grillui.log import RESULT_FILE, SessionLog
 from grillui.schemas import SESSION_END_KIND
@@ -37,6 +40,8 @@ from grillui.session import open_session
 from fastapi.testclient import TestClient  # isort: skip
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from starlette.types import ASGIApp
 
 OFF_MACHINE = "10.11.12.13"
@@ -150,15 +155,19 @@ def test_the_preferred_port_is_kept_when_nothing_holds_it() -> None:
 # ── GUI-D28 / GUI-A51: the URL ──
 
 
-def test_the_url_is_printed_and_opened_before_the_session_runs(session_dir: Path) -> None:
+def test_the_url_is_printed_before_the_session_runs_and_no_browser_opens(
+    session_dir: Path,
+) -> None:
     """
-    Given a launch
+    Given a launch that was not asked to open anything
     When it starts serving
-    Then the URL it bound is on stdout and was handed to the browser, both
-         before the server took the process over.
+    Then the URL it bound is on stdout before the server took the process over,
+         and no browser was opened.
 
     The URL is only useful while the session is running, so printing it after
-    the run would be printing it after the human needed it.
+    the run would be printing it after the human needed it. Opening a tab is a
+    separate question, and its answer here is no: the caller is usually an agent
+    working on someone else's behalf, and the desktop is not its to interrupt.
     """
     opened: list[str] = []
     seen: list[str] = []
@@ -167,15 +176,116 @@ def test_the_url_is_printed_and_opened_before_the_session_runs(session_dir: Path
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda _app, _port: seen.append(stream.getvalue()),
+        run=lambda _app, _port, ready: (seen.append(stream.getvalue()), ready())[0],
         open_url=lambda url: bool(opened.append(url)),
         out=stream,
     )
 
     url = stream.getvalue().splitlines()[0]
     assert url.startswith(f"http://{LOOPBACK}:")
-    assert opened == [url]
     assert seen == [f"{url}\n"]
+    assert opened == []
+
+
+def test_the_browser_opens_once_the_board_answers_and_not_before(session_dir: Path) -> None:
+    """
+    Given a launch asked to open a browser
+    When the server reports it is accepting connections
+    Then the browser is opened at that point -- once, after the report and
+         before the run returns.
+
+    A tab opened before the socket exists renders a refused connection, so the
+    open has to wait on the server rather than on the launch having got as far
+    as calling it.
+    """
+    order: list[str] = []
+    stream = io.StringIO()
+
+    def run(_app: ASGIApp, _port: int, ready: Callable[[], None]) -> None:
+        order.append("accepting")
+        ready()
+        order.append("stopped")
+
+    launch(
+        session_dir,
+        handoff=started(session_dir),
+        open_browser=True,
+        run=run,
+        open_url=lambda url: bool(order.append(f"opened {url}")),
+        out=stream,
+    )
+
+    url = stream.getvalue().splitlines()[0]
+    assert order == ["accepting", f"opened {url}", "stopped"]
+
+
+def test_a_server_that_never_starts_opens_nothing(session_dir: Path) -> None:
+    """
+    Given a launch asked to open a browser whose server fails to start
+    When the failure surfaces
+    Then no browser was opened.
+
+    The port probe releases its bind before the server takes it, so a launch can
+    lose that race and fail at startup. A tab pointed at a server that never
+    bound is worse than no tab: it says the session is broken when it never ran.
+    """
+    opened: list[str] = []
+
+    def refuse(_app: ASGIApp, _port: int, _ready: Callable[[], None]) -> None:
+        lost = "address already in use"
+        raise OSError(lost)
+
+    with pytest.raises(OSError, match="address already in use"):
+        launch(
+            session_dir,
+            handoff=started(session_dir),
+            open_browser=True,
+            run=refuse,
+            open_url=lambda url: bool(opened.append(url)),
+            out=io.StringIO(),
+        )
+
+    assert opened == []
+
+
+def test_a_real_server_hands_the_browser_a_url_that_already_answers(session_dir: Path) -> None:
+    """
+    Given a launch asked to open a browser, over the real server
+    When the opener is handed a URL
+    Then a request to that URL is answered at that moment, and the session ends
+         when the run is stopped.
+
+    Every other test here stubs the server, and none of them can see the failure
+    this guards: a browser opened while the socket did not yet exist puts a
+    refused connection on screen. Only a real bind settles the ordering.
+
+    The interrupt that ends the run is disarmed for the duration, because the
+    server re-raises it on the way out and the test runner is the process it
+    would otherwise reach.
+    """
+    answered: list[int] = []
+
+    def open_and_end(url: str) -> bool:
+        answered.append(httpx.get(url, timeout=10).status_code)
+        stop_this_process()
+        return True
+
+    stream = io.StringIO()
+    interrupt = signal.signal(signal.SIGINT, lambda _signal, _frame: None)
+    try:
+        status = launch(
+            session_dir,
+            handoff=started(session_dir),
+            open_browser=True,
+            open_url=open_and_end,
+            out=stream,
+        )
+    finally:
+        signal.signal(signal.SIGINT, interrupt)
+
+    assert status == 0
+    assert answered == [200]
+    assert "summary" in stream.getvalue()
 
 
 def test_the_port_the_server_is_given_is_the_port_in_the_url(session_dir: Path) -> None:
@@ -192,7 +302,7 @@ def test_the_port_the_server_is_given_is_the_port_in_the_url(session_dir: Path) 
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda _app, port: bound.append(port),
+        run=lambda _app, port, _ready: bound.append(port),
         open_url=lambda _url: True,
         out=stream,
     )
@@ -214,7 +324,7 @@ def test_the_board_the_server_is_handed_refuses_non_loopback(session_dir: Path) 
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda app, _port: apps.append(app),
+        run=lambda app, _port, _ready: apps.append(app),
         open_url=lambda _url: True,
         out=io.StringIO(),
     )
@@ -248,7 +358,7 @@ def test_the_launch_returns_on_backend_exit_and_never_on_a_timer(
     stream = io.StringIO()
     during: list[str] = []
 
-    def exit_now(_app: ASGIApp, _port: int) -> None:
+    def exit_now(_app: ASGIApp, _port: int, _ready: Callable[[], None]) -> None:
         during.append(stream.getvalue())
 
     assert launch(session_dir, handoff=started(session_dir), run=exit_now, out=stream) == 0
@@ -272,7 +382,7 @@ def test_the_human_ending_the_session_stops_the_run(session_dir: Path) -> None:
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda app, _port: apps.append(app),
+        run=lambda app, _port, _ready: apps.append(app),
         open_url=lambda _url: True,
         stop=lambda: stopped.append(True),
         out=io.StringIO(),
@@ -336,7 +446,7 @@ def test_what_the_launch_prints_is_the_result_and_never_the_transcript(
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda _app, _port: None,
+        run=lambda _app, _port, _ready: None,
         open_url=lambda _url: True,
         out=stream,
     )
@@ -403,7 +513,7 @@ def test_stdout_and_the_result_file_are_the_same_bytes(session_dir: Path) -> Non
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda app, _port: apps.append(app),
+        run=lambda app, _port, _ready: apps.append(app),
         open_url=lambda _url: True,
         stop=lambda: None,
         out=io.StringIO(),
@@ -442,7 +552,7 @@ def test_a_failing_stop_hook_does_not_poison_the_end_receipt(
     launch(
         session_dir,
         handoff=started(session_dir),
-        run=lambda app, _port: apps.append(app),
+        run=lambda app, _port, _ready: apps.append(app),
         open_url=lambda _url: True,
         stop=failing_stop,
         out=io.StringIO(),
