@@ -40,7 +40,7 @@ import pytest
 from conftest import apply_all, event, handoff_doc, post, seed_node
 from fastapi.testclient import TestClient
 
-import grillui
+from grillui.api import PAGE_DIR, assemble_page, page_html
 from grillui.capture import capture
 from grillui.channels import (
     PROTOCOL_SEVERITY,
@@ -77,8 +77,6 @@ from grillui.schemas import (
     Handoff,
 )
 
-PAGE_PATH = Path(grillui.__file__).parent / "page" / "index.html"
-
 # The routes the page is allowed to touch, and what each one is for. The board
 # is the first two; the third is how anything reaches the log; the last two are
 # controls -- whether a reassessment is in flight, and which window this session
@@ -94,7 +92,13 @@ THREAD = "t-1"
 
 
 def page_source() -> str:
-    return PAGE_PATH.read_text(encoding="utf-8")
+    """The document the backend serves, assembled from the page's three sources.
+
+    Every check here reads this rather than one of the sources: what the browser
+    is handed is what the claims are about, and which file a line was authored in
+    is not something the page's contract has an opinion on.
+    """
+    return page_html()
 
 
 def _fenced(marker: str) -> str:
@@ -1834,6 +1838,17 @@ def test_the_backend_serves_the_page_it_ships(client: TestClient) -> None:
     assert served.text == page_source()
 
 
+def test_the_served_document_is_self_contained() -> None:
+    """Three sources, one document. The split is a source-side convenience, and a
+    page that reached for a file over the network would be a page that can render
+    before its own styles or its own script arrive -- or without them."""
+    document = page_source()
+    assert len(re.findall(r"^<style>$", document, re.MULTILINE)) == 1
+    assert len(re.findall(r"^<script>$", document, re.MULTILINE)) == 1
+    for external in ("<link", "src=", "@import", "url("):
+        assert external not in document, f"the served page fetches {external!r}"
+
+
 # ---------------------------------------------------------------- the page's sinks
 
 # An id on this board is text somebody else wrote: a handoff names its decisions,
@@ -2792,3 +2807,14 @@ def test_emptying_an_armed_draft_discards_its_provenance() -> None:
     handler = source.split('document.addEventListener("input"', 1)[1].split("});", 1)[0]
     assert "delete UI.armed[id]" in handler, "an emptied draft keeps its provenance"
     assert "!e.target.value.trim()" in handler, "provenance is dropped on every keystroke"
+
+
+@pytest.mark.parametrize(
+    "shell",
+    ["<style></style><script>//__SCRIPT__</script>", "/*__STYLE__*/ /*__STYLE__*/ //__SCRIPT__"],
+)
+def test_a_shell_without_exactly_one_of_each_token_is_refused(shell: str) -> None:
+    """A token missing or doubled would serve a page without its style or its
+    script and nothing downstream would notice; assembly refuses it by name."""
+    with pytest.raises(ValueError, match="__STYLE__"):
+        assemble_page(shell, PAGE_DIR)
