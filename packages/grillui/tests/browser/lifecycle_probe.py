@@ -1,12 +1,16 @@
-"""Parking and closing a thread, measured in a browser.
+"""A thread's life in a browser: parked, closed, popped out, and ended.
 
-Three rendered facts live here and nowhere else. Whether the two gestures are
+Five rendered facts live here and nowhere else. Whether the two gestures are
 actually side by side in the pane's foot, so the human is offered the choice
 rather than one half of it; whether a closed thread is still readable and still
-takes a turn that opens it again; and whether an ended session takes both
-controls away. The source can say which branch builds which button -- it cannot
-say that a human saw two of them, that a click on one reached the log, or that
-the turn typed into a closed thread came back as an open one.
+takes a turn that opens it again; whether a thread that does not exist yet can
+be opened from a popped window by typing its first turn there, and whether that
+window then follows the thread it opened; and whether an ended session takes
+every control away in the popped window as well as in the one that opened it.
+The source can say which branch builds which button -- it cannot say that a
+human saw two of them, that a click on one reached the log, that the turn typed
+into a closed thread came back as an open one, or that a second document nobody
+re-rendered went dead when the session did.
 
     uv run --with playwright python tests/browser/lifecycle_probe.py
 
@@ -42,9 +46,13 @@ NEVER_STARTED = "the backend never started"
 PARK = '[data-act="park"]'
 CLOSE = '[data-act="closethread"]'
 END = '[data-act="endsession"]'
+SAY = '[data-act="say"]'
+DRAFTSAY = '[data-act="draftsay"]'
+NEW = '[data-act="newthread"][data-id="d1"]'
 PARKED_ASKED = "What backs the session directory up?"
 CLOSED_ASKED = "What are the log files called?"
 REOPENED = "Actually — are they named for the session id?"
+POPPED_ASKED = "Where does a rotated log go?"
 
 
 def handoff() -> dict[str, Any]:
@@ -217,6 +225,42 @@ def main() -> None:
         popped.click(CLOSE)
         wait_for_state(base, closed, "closed")
 
+        # 4b. A thread that does not exist yet pops out like any other, and the
+        #     first turn typed in that window is the only thing that would ever
+        #     create it. It lands on the decision the draft was standing on, and
+        #     the window follows the thread it opened rather than going on
+        #     showing an empty draft nothing will answer.
+        # Popping out closed the slide-out behind it, so the decisions column is
+        # already the thing on screen.
+        if not page.locator(NEW).count():
+            page.click('[data-act="toggle"][data-id="d1"]')
+            page.wait_for_timeout(300)
+        page.click(NEW)
+        page.wait_for_timeout(400)
+        assert page.locator(f".slide {DRAFTSAY}").count() == 1, "the draft pane offers no Send"
+        standing = set(threads(base))
+        page.click('.slide [data-act="popout"]')
+        page.wait_for_timeout(800)
+        draft = page.context.pages[-1]
+        assert draft not in (page, popped), "the draft did not pop out"
+        assert draft.locator(DRAFTSAY).count() == 1, "the popped draft offers no Send"
+        draft.fill("#pop-say", POPPED_ASKED)
+        draft.click(DRAFTSAY)
+        opened: set[str] = set()
+        for _ in range(50):
+            opened = set(threads(base)) - standing
+            if opened:
+                break
+            draft.wait_for_timeout(200)
+        assert opened, "the popped draft's Send opened no thread"
+        made = opened.pop()
+        assert [one["text"] for one in threads(base)[made]["turns"]] == [POPPED_ASKED]
+        assert threads(base)[made]["decision"] == "d1", threads(base)[made]
+        draft.wait_for_timeout(1500)
+        assert draft.locator(DRAFTSAY).count() == 0, "the popped window still shows the draft"
+        assert POPPED_ASKED in draft.inner_text("body"), "the popped window lost its own turn"
+        assert draft.locator(SAY).count() == 1, "the followed thread takes no turn"
+
         # 5. Park the other one, so the session ends carrying one of each, and
         #    the result says so.
         page.click(f'[data-act="openthread"][data-tid="{parked}"]')
@@ -227,6 +271,9 @@ def main() -> None:
         assert {tid: one["state"] for tid, one in threads(base).items()} == {
             parked: "parked",
             closed: "closed",
+            # The one the popped draft opened, left open on purpose: the ending
+            # below has to find a live say box in that window to take away.
+            made: "open",
         }
 
         # 6. Ending the session takes both gestures away -- neither is a click
@@ -237,6 +284,16 @@ def main() -> None:
         for control in (PARK, CLOSE):
             live = [one for one in page.locator(control).all() if one.is_enabled()]
             assert not live, f"the ended board still offers {control}"
+
+        # 7. And it reaches the popped window, which nothing re-rendered and
+        #    which has its own copy of every control. Its say box was live one
+        #    assertion ago, so this is not vacuous.
+        draft.wait_for_timeout(1500)
+        assert not draft.is_closed(), "the popped window closed -- its ending was never seen"
+        for control in (SAY, PARK, CLOSE):
+            live = [one for one in draft.locator(control).all() if one.is_enabled()]
+            assert not live, f"the popped window still offers {control}"
+        assert draft.locator("#pop-say").is_disabled(), "the popped window still takes a turn"
         assert (scratch / "session" / "result.json").exists(), "no terminal result was written"
         ended = [one for one in log.entries() if one.kind == "session-end"]
         assert len(ended) == 1, f"{len(ended)} session-end entries"

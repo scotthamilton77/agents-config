@@ -1017,6 +1017,44 @@ def test_the_popped_window_can_close_the_thread_it_is_showing() -> None:
     assert "closeThread(tid)" in bridge
 
 
+def test_the_popped_window_can_open_the_thread_it_is_a_draft_of() -> None:
+    """A thread that does not exist yet pops out like any other, and its Send is
+    the only thing that would ever create it.
+
+    Reaching nothing is the worst shape this can take: the human types the first
+    turn, presses Send, and the window neither opens a thread nor says it did
+    not. So the bridge routes that act to the one function that opens a thread,
+    on an anchor worked out in the main window rather than read back off the
+    popped copy -- the same rule the seed's decision is held to, and the same
+    reader the pane drew the box with, since a pane and a bridge naming
+    different decisions would open the thread on the wrong one.
+    """
+    bridge = page_source().split("window.popAct = function", 1)[1].split("\n};", 1)[0]
+    assert 'act === "draftsay"' in bridge, "a popped draft's Send reaches nothing"
+    assert "startThread(draftAnchor(tid), text)" in bridge
+    assert "draftsay" in write_acts(), "the act that opens a thread is not a write"
+    assert "draftAnchor(tid)" in balanced_body("threadBody"), "the pane reads its own anchor"
+    # A seed is the same act with the words already written, and saySeed opens
+    # the thread when there is none -- which on a draft is always.
+    assert "(thread(tid) || {}).decision || draftAnchor(tid)" in bridge
+    assert "el.dataset.act==='draftsay'" in function_body("popOut"), "the box keeps the sent turn"
+
+
+def test_a_popped_draft_follows_the_thread_its_first_turn_opened() -> None:
+    """The window was opened under the draft's name, and that name is not what
+    the thread is called.
+
+    Left alone it goes on showing an empty draft pane beside the thread it just
+    opened, and a second Send opens a second thread -- so the name it asks for
+    is mapped to what the turn made, in the one place that mints thread ids.
+    """
+    assert "return tid;" in function_body("startThread"), "nothing learns the new thread's name"
+    assert "threadBody(UI.popFollow[tid] || tid, true)" in page_source()
+    bridge = page_source().split("window.popAct = function", 1)[1].split("\n};", 1)[0]
+    assert 'if (act === "draftsay") act = "say";' in bridge, "a stale Send opens a second thread"
+    assert "popFollow(tid, startThread(" in bridge
+
+
 def test_a_closed_thread_keeps_the_box_that_opens_it_again() -> None:
     """Re-opening rides the turn, so the box is the whole affordance.
 
@@ -2130,6 +2168,27 @@ def test_nothing_more_is_said_into_a_log_that_has_been_closed() -> None:
     seal = function_body("sealSurface")
     assert "el.disabled = true" in seal and "ta.disabled = true" in seal
     assert "sealSurface();" in function_body("render")
+
+
+def test_a_popped_window_ends_with_the_session_that_opened_it() -> None:
+    """A pop-out is part of this session, so the ending reaches it too.
+
+    It is a second document with its own controls, redrawn on its own clock from
+    the main window's pane, so neither half of the ending arrives on its own.
+    The surface is sealed by the same reader rather than by a copy of the rule
+    living over there, and on the tick rather than inside the redraw -- the
+    redraw does nothing when the pane's html is unchanged, and a session ending
+    changes the log, not necessarily the thread on screen. The bridge refuses
+    every write besides, so a control drawn before the last seal is still a
+    gesture the session turns away rather than one it swallows.
+    """
+    assert "function sealSurface(doc)" in page_source(), "the seal reaches one document only"
+    assert "doc = doc || document;" in function_body("sealSurface")
+    boot = function_body("popOut")
+    assert "window.opener.sealSurface(document)" in boot, "the popped window is never sealed"
+    assert "setInterval(function(){draw();seal();},600)" in boot, "the seal rides the redraw"
+    bridge = page_source().split("window.popAct = function", 1)[1].split("\n};", 1)[0]
+    assert "if (sessionOver() && WRITE_ACTS.indexOf(act) >= 0) return;" in bridge
 
 
 def test_every_act_that_writes_is_one_the_ended_surface_takes_away() -> None:
