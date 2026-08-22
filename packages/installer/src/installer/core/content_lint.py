@@ -273,6 +273,37 @@ def _is_git_ignored(path: Path, ignored: frozenset[Path]) -> bool:
     return not ignored.isdisjoint((path, *path.parents))
 
 
+def _unread_roots(repo_root: Path, *, plugins_root: Path) -> list[Path]:
+    """Directories staging must be able to open, that it cannot.
+
+    Two rules, because the two absences mean different things. ``src/`` itself
+    must be there: it is the tree this gate was asked to judge, and without it
+    every measurement is zero while the budget table still prints four tools —
+    a report over nothing, which reads as evidence rather than as absence. A
+    staging root that is simply missing is a legitimate tree, on the other hand:
+    a repo need carry no plugins, and a tool tree that does not exist stages
+    nothing because there is nothing to stage.
+
+    A root that is *present and not a directory* is the case neither rule covers
+    and the one that actually bites. Staging skips it, the accounting walk
+    filters on ``is_dir()`` and skips it too, and the rest of the tree measures
+    and passes — so one clobbered path or one broken symlink silently drops
+    every artifact beneath it from a green run. A symlink is asked about
+    separately because a broken one exists on disk and answers ``exists()`` with
+    the state of a target that is not there.
+
+    Only the fixed roots are checked. A plugin's own subtrees come from
+    discovery, so they exist by construction, and their optional per-tool scopes
+    are absent in the normal case.
+    """
+    src = repo_root / "src"
+    if not src.is_dir():
+        return [src]
+    roots = [plugins_root, shared_source_dir(repo_root)]
+    roots.extend(get_adapter(tool).source_dir(repo_root) for tool in known_tools())
+    return [root for root in roots if not root.is_dir() and (root.exists() or root.is_symlink())]
+
+
 def stage_src(repo_root: Path, *, io: IOPort) -> StagedSource:
     """Stage ``repo_root``'s ``src/`` for every known tool and every discovered
     plugin, without writing anything.
@@ -284,15 +315,25 @@ def stage_src(repo_root: Path, *, io: IOPort) -> StagedSource:
     ``io`` receives whatever staging itself emits (e.g. a last-wins merge
     warning). Raises whatever ``load_installignore`` and staging raise — an
     absent ``.installignore`` or an irreconcilable collision is a repo defect the
-    caller surfaces, not something to swallow.
+    caller surfaces, not something to swallow. Raises ``NotADirectoryError``
+    before any of that when a root staging must read is not one, so a caller
+    cannot receive plans that are short of a whole subtree and look complete.
     """
-    ignore = load_installignore(repo_root / ".installignore")
     # Stated once. ``_staged_dirs`` takes it as an argument rather than restating
     # it, so the directory this gate discovers plugins from and the directory it
     # considers accounted for cannot drift apart. The env override
     # ``config.resolve_plugins_root`` honours is deliberately not consulted: this
     # gate lints the repo's own tree, not whatever a machine points the installer at.
     plugins_root = repo_root / "src" / "plugins"
+    unread = _unread_roots(repo_root, plugins_root=plugins_root)
+    if unread:
+        raise NotADirectoryError(
+            "staging reads nothing out of "
+            + ", ".join(str(root) for root in unread)
+            + " — every artifact under it is dropped from the plans unmeasured, and a "
+            "gate that measured nothing cannot report a clean tree"
+        )
+    ignore = load_installignore(repo_root / ".installignore")
     plugins = tuple(discover(plugins_root).values())
     plans = stage_and_transform(
         known_tools(), repo_root=repo_root, io=io, ignore=ignore, plugins=plugins

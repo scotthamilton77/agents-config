@@ -194,6 +194,48 @@ def test_missing_installignore_is_a_config_error_not_a_traceback(
     assert ".installignore" in capsys.readouterr().err
 
 
+def test_absent_src_is_a_named_failure_not_a_clean_tree(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No tree to judge is not an empty tree that passed. Staging yields nothing,
+    every measurement is zero, and the budget table would print four tools as
+    evidence of a reading that never happened."""
+    (tmp_path / ".installignore").write_text("AGENTS.md\n", encoding="utf-8")
+
+    assert main([str(tmp_path)]) == 2
+    assert str(tmp_path / "src") in capsys.readouterr().err
+
+
+def test_src_that_is_not_a_directory_is_a_named_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A checkout mid-rename, or a clobbered path: staging reads nothing out of a
+    regular file and says so nowhere."""
+    (tmp_path / ".installignore").write_text("AGENTS.md\n", encoding="utf-8")
+    (tmp_path / "src").write_text("not a tree\n", encoding="utf-8")
+
+    assert main([str(tmp_path)]) == 2
+    assert str(tmp_path / "src") in capsys.readouterr().err
+
+
+def test_one_staging_root_that_is_not_a_directory_names_that_root(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The partial case is the dangerous one: the rest of the tree measures and
+    passes while everything under the broken root vanishes from the plans, so the
+    verdict has to name the root that went unread rather than report a total."""
+    repo = _repo(tmp_path, skill=_RECORD + "short\n")
+    (repo / "src" / "plugins").write_text("not a tree\n", encoding="utf-8")
+
+    assert main([str(repo)]) == 2
+
+    captured = capsys.readouterr()
+    assert str(repo / "src" / "plugins") in captured.err
+    # The measurements must not print: numbers over a tree the gate could not
+    # read are the failure this names, not context for it.
+    assert "always-on surface" not in captured.out
+
+
 def test_unstageable_src_is_a_named_failure_not_a_traceback(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
