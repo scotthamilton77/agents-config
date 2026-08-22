@@ -129,7 +129,9 @@
     border: 1px solid var(--line); border-radius: 8px; min-height: 38px;
   }
   .free textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
-  .free .hint { font-size: 10.5px; color: var(--ink-faint); align-self: flex-end; padding-bottom: 8px; white-space: nowrap; }
+  /* Two short lines rather than one long one: the chord is stated in full and the
+     box it belongs to keeps the width. */
+  .free .hint { font-size: 10.5px; color: var(--ink-faint); align-self: flex-end; padding-bottom: 7px; white-space: nowrap; text-align: right; line-height: 1.4; }
   .prior { font-size: 12.5px; color: var(--ink-dim); border-left: 3px solid var(--line); padding-left: 10px; margin: 6px 0; }
   /* What a turn offered, set apart from what it said: the answer is the
      human's to give, so the offer never reads as part of the prose. */

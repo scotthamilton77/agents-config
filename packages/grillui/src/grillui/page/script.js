@@ -1502,7 +1502,7 @@ function answerControls(d, locked) {
   // still have to work out which one they were in.
   h += '<div class="free"><textarea id="ft-' + esc(d.id) + '" data-draft="' + esc(d.id) + '" data-send="free" data-id="' + esc(d.id) +
     '" placeholder="…answer in your own words — or write a note, then pick an option to record both"' + dis + "></textarea>" +
-    '<span class="hint">⌘↵</span>' +
+    '<span class="hint">↵ send<br>⇧↵ newline</span>' +
     '<button class="btn sm" data-act="free" data-id="' + esc(d.id) + '"' + dis + ">Use this</button></div>";
   return h;
 }
@@ -1910,7 +1910,7 @@ function closeControl(tid) {
 // same turn on the same channel — two copies is how they come to differ.
 function sayBox(sayId, tid) {
   return '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="say" data-tid="' + esc(tid) +
-    '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
+    '" placeholder="…say something"></textarea><span class="hint">↵ send<br>⇧↵ newline</span>' +
     '<button class="btn sm" data-act="say" data-tid="' + esc(tid) + '">Send</button></div>';
 }
 // Which decision a thread that does not exist yet would be about. One reader,
@@ -1945,7 +1945,7 @@ function threadBody(tid, forPop, chrome) {
         : "Nothing exists yet. Close this and no thread is created — " +
           "the first thing you say is what opens it. It titles itself from what you say.") + "</div>",
       '<div class="free"><textarea id="' + esc(sayId) + '" data-draft="__say" data-send="draftsay" data-id="' + esc(anchor || "") +
-        '" placeholder="…say something"></textarea><span class="hint">⌘↵</span>' +
+        '" placeholder="…say something"></textarea><span class="hint">↵ send<br>⇧↵ newline</span>' +
         '<button class="btn sm" data-act="draftsay" data-id="' + esc(anchor || "") + '">Send</button></div>' +
         seedControls(anchor, null) +
         // The tier control belongs to a thread that has not been opened yet as
@@ -2521,7 +2521,11 @@ function popOut(tid) {
     // one hands it back, and from then on this window is on that thread.
     "var made=null;try{made=window.opener.popAct(tid,anchor,el.dataset.act,ta?ta.value:'',el.dataset.field);}catch(x){}if(made)tid=made;" +
     "if(ta&&(el.dataset.act==='say'||el.dataset.act==='draftsay'))ta.value='';setTimeout(draw,40);});" +
-    "document.addEventListener('keydown',function(e){if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){var b=document.querySelector('[data-act=\"say\"],[data-act=\"draftsay\"]');if(b)b.click();}});" +
+    // The chord is the opener's to decide, keystroke by keystroke, so this window
+    // cannot drift onto a chord of its own. Sending is still a press of this
+    // window's own send control, because that is what carries the thread it is on.
+    "document.addEventListener('keydown',function(e){var go=false;try{go=window.opener.chordSend(e);}catch(x){}" +
+    "if(go){var b=document.querySelector('[data-act=\"say\"],[data-act=\"draftsay\"]');if(b)b.click();}});" +
     "setInterval(function(){draw();seal();},600);draw();seal();})();";
   w.document.open();
   w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Thread — ' + esc(tid) + "</title>" + css +
@@ -2582,12 +2586,37 @@ function sendFrom(ta) {
   }
   render();
 }
-// Cmd/Ctrl+Enter sends, in threads and decision free-text alike. Enter is a newline.
+// Enter sends, in threads and decision free-text alike. Shift+Enter is a newline,
+// and so is a backslash typed right before Enter -- the backslash is eaten, the way
+// the terminal beside this board does it. Cmd/Ctrl+Enter still sends. One reader,
+// because the popped window asks this one rather than carrying its own copy: two
+// copies of a chord is how one window comes to answer a key the other does not.
+// Answers true when the key is a send.
+function chordSend(e) {
+  var t = e.target;
+  if (!t || t.tagName !== "TEXTAREA" || !t.dataset.send || e.key !== "Enter") return false;
+  // Enter mid-composition commits the IME's candidate. Sending there would post a
+  // half-typed word and take the box away from someone still spelling it.
+  if (e.isComposing || e.keyCode === 229) return false;
+  if (e.metaKey || e.ctrlKey) { e.preventDefault(); return true; }
+  if (e.shiftKey || e.altKey) return false;
+  var at = t.selectionStart;
+  if (at === t.selectionEnd && at > 0 && t.value.charAt(at - 1) === "\\") {
+    e.preventDefault();
+    t.value = t.value.slice(0, at - 1) + "\n" + t.value.slice(at);
+    t.selectionStart = t.selectionEnd = at;
+    // A value the human did not type still has to reach the draft store, through the
+    // same input the keystrokes go through -- the next render restores the draft, and
+    // an unheard change is a newline the board rubs out from under them.
+    t.dispatchEvent(new Event("input", { bubbles: true }));
+    return false;
+  }
+  e.preventDefault();
+  return true;
+}
 document.addEventListener("keydown", function (e) {
   var t = e.target;
-  if (t && t.tagName === "TEXTAREA" && t.dataset.send && e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-    e.preventDefault(); sendFrom(t); return;
-  }
+  if (chordSend(e)) { sendFrom(t); return; }
   if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
   if (e.key === "Escape") { UI.panel = null; render(); }
 });
