@@ -40,7 +40,10 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from conftest import (
+    AGENT_ACTORS,
+    RACE_WINDOW,
     TIMEOUT,
+    InterleavingLog,
     ScriptedCli,
     ScriptedFast,
     attributions,
@@ -82,23 +85,16 @@ from grillui.tiers import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
     from pathlib import Path
 
-    from grillui.schemas import Receipt
 
 NODE = "n1"
 MINE = "t-retention"
 OTHER = "t-compaction"
-AGENTS = frozenset({"grill-master", "thread-agent"})
+
 
 FAST_MODEL = "vendor/fast-2"
 HEAVY_MODEL = "claude-configured"
-
-# How long a turn racing the transfer is given to land. It only has to reach an
-# append, so this is generous for what it measures -- and it is paid only when
-# the lock does its job and holds the racer off.
-RACE_WINDOW = 0.25
 
 # Every line is unique, so "the whole conversation crossed" and "only the last
 # message crossed" are told apart by looking for the words in the bytes the
@@ -172,30 +168,6 @@ def both_tiers(policy: str = POLICY_GATED) -> tuple[FastDriver, HeavyDriver, Scr
     )
 
 
-class InterleavingLog(SessionLog):
-    """A log that gives one waiting turn its chance the instant a reply lands.
-
-    The hook fires after an agent's own append has returned, which is exactly
-    the moment between the reply and the transfer that follows it. A second
-    thread let in there is the race the append lock has to close: it finds the
-    reply on the record and has to find the transfer too, or it schedules the
-    turn the policy just bought against a channel it still reads as fast.
-
-    One shot, and only for an agent's append: the human's own turn goes through
-    this same door on its way in, and a hook that fired there would be testing
-    the window before the reply rather than the one after it.
-    """
-
-    hook: Callable[[], None] | None = None
-
-    def submit(self, batch: Sequence[EventSubmission], epoch: str) -> list[Receipt]:
-        receipts = super().submit(batch, epoch)
-        if self.hook is not None and any(event.actor in AGENTS for event in batch):
-            armed, self.hook = self.hook, None
-            armed()
-        return receipts
-
-
 def transfers(log: SessionLog, channel: str) -> list[str]:
     """What the lane said each time the policy moved this one channel.
 
@@ -242,7 +214,7 @@ def on_the_wire(client: TestClient, log: SessionLog) -> list[dict[str, Any]]:
     return [
         entry["payload"]
         for entry in entries
-        if entry["actor"] in AGENTS and TIER_KEY in entry["payload"]
+        if entry["actor"] in AGENT_ACTORS and TIER_KEY in entry["payload"]
     ]
 
 

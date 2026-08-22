@@ -13,7 +13,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import pytest
@@ -37,8 +37,19 @@ from grillui.schemas import (
     ThreadProjection,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    from grillui.schemas import Receipt
+
 SEED_NODE = "n1"
 TIMEOUT = 5.0
+AGENT_ACTORS = frozenset({"grill-master", "thread-agent"})
+
+# How long a write racing an agent's reply is given to land. It only has to
+# reach an append, so this is generous for what it measures -- and it is paid
+# only when the lock does its job and holds the racer off.
+RACE_WINDOW = 0.25
 
 # One conforming handoff, with every optional part of the node shape present on
 # some node: a mandate, talk seeds, a fog rule, an option trio. A builder that
@@ -215,6 +226,32 @@ def run_turns(lane: Lane, *events: EventSubmission) -> list[dict[str, Any]]:
         assert not turn.is_alive(), "a scheduled turn outlived its timeout"
     assert all(receipt.status == "accepted" for receipt in receipts)
     return [receipt.model_dump() for receipt in receipts]
+
+
+class InterleavingLog(SessionLog):
+    """A log that lets one waiting writer in the instant an agent's reply lands.
+
+    The hook fires after an agent's own append has returned, which is exactly
+    the moment between the reply and whatever the driver writes next about it --
+    the transfer a policy escalation buys, and the warning a measured turn
+    raises. A second thread let in there is the race the append lock has to
+    close: it finds the reply on the record and has to find the entry that
+    belongs with it too, or the two are filed either side of somebody else's
+    write.
+
+    One shot, and only for an agent's append: the human's own turn goes through
+    this same door on its way in, and a hook that fired there would be testing
+    the window before the reply rather than the one after it.
+    """
+
+    hook: Callable[[], None] | None = None
+
+    def submit(self, batch: Sequence[EventSubmission], epoch: str) -> list[Receipt]:
+        receipts = super().submit(batch, epoch)
+        if self.hook is not None and any(event.actor in AGENT_ACTORS for event in batch):
+            armed, self.hook = self.hook, None
+            armed()
+        return receipts
 
 
 def replies(log: SessionLog) -> list[dict[str, Any]]:

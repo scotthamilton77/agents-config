@@ -426,18 +426,20 @@ class FastDriver:
         advice = recommend(fold(log.epoch, entries), turns_of(entries, channel), channel)
         if advice is not None:
             attribution[RECOMMENDATION_KEY] = advice.as_payload()
-        # The reply and the transfer it triggers land under one hold of the
+        # The reply and everything it produces land under one hold of the
         # append lock -- the same discipline the lane uses to keep a turn and
         # the word about it adjacent. Two separate appends leave a window: a
         # human turn accepted inside it is scheduled against a log where this
         # channel is still fast, so the turn the policy just bought is composed
-        # by the tier it moved off.
+        # by the tier it moved off -- and a warning that measured this reply
+        # would be filed against whatever landed in between.
         #
-        # The transfer is emitted second, and only if the reply landed: a turn
-        # nobody could record is not a turn whose recommendation is worth
-        # spending the heavy tier on. Under the lock that costs nothing --
-        # a refusal raises out of the block before the transfer is written, and
-        # nothing else could have read the log in between.
+        # The transfer it triggers and the warning it measured are emitted
+        # after it, and only if the reply landed: a turn nobody could record is
+        # not a turn whose recommendation is worth spending the heavy tier on,
+        # nor one whose size is worth telling the human about. Under the lock
+        # that costs nothing -- a refusal raises out of the block before either
+        # is written, and nothing else could have read the log in between.
         with log.appending():
             record_reply(log, self.tier, channel, reply, attribution)
             if advice is not None and self.config.autonomous:
@@ -447,10 +449,7 @@ class FastDriver:
                     f"{advice.condition}",
                     channel,
                 )
-        # Outside the lock, because saying it writes to a stream this process
-        # does not own: a stdout nobody is draining would otherwise hold the
-        # append lock and stall every channel in the session.
-        measured.warn(log, model)
+            measured.warn(log, model)
 
 
 @dataclass
@@ -520,8 +519,15 @@ class HeavyDriver:
         source = transfer_source(entries, channel)
         if source is not None:
             attribution[TRANSFER_SOURCE_KEY] = source
-        record_reply(log, self.tier, channel, reply, attribution)
-        measured.warn(log, model)
+        # One hold of the append lock, for the same reason the fast tier takes
+        # one: a warning is about the reply immediately above it, and a turn on
+        # another channel landing between the two would leave the human reading
+        # this measurement against somebody else's turn. The warning is second
+        # and conditional on the reply -- a refusal raises out of the block
+        # before anything is said about a turn that never happened.
+        with log.appending():
+            record_reply(log, self.tier, channel, reply, attribution)
+            measured.warn(log, model)
 
 
 def read_resume(directory: Path, channel: str) -> str | None:

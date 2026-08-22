@@ -24,7 +24,9 @@ from typing import Any
 import httpx
 import pytest
 from conftest import (
+    RACE_WINDOW,
     TIMEOUT,
+    InterleavingLog,
     ScriptedCli,
     ScriptedFast,
     attributions,
@@ -63,9 +65,11 @@ from grillui.schemas import (
     FAST_TIER,
     FOLLOWED_TRANSFER_KEY,
     HEAVY_TIER,
+    MAP_CHANNEL,
     MODEL_KEY,
     PROMPT_TOKENS_KEY,
     RECOMMENDATION_KEY,
+    STATUS_PHASE_ACCEPTED,
     TIER_KEY,
     TRANSFER_FLAG,
     EventSubmission,
@@ -80,6 +84,8 @@ from grillui.tiers import (
     DEFAULT_HEAVY_MODEL,
     FAST_CONTEXT_LIMIT_ENV,
     FAST_MODEL_ENV,
+    HEAVY_CONTEXT_LIMIT_ENV,
+    HEAVY_MODEL_ENV,
     TierConfig,
 )
 
@@ -1037,3 +1043,86 @@ def test_the_shipped_limits_leave_an_ordinary_session_quiet(
         CONTEXT_LIMITS[DEFAULT_FAST_MODEL],
         CONTEXT_LIMITS[DEFAULT_HEAVY_MODEL],
     ]
+
+
+def pressed_driver(tier: str) -> Any:
+    """Either tier, configured so one scripted turn measures at its threshold."""
+    if tier == FAST_TIER:
+        return FastDriver(
+            TierConfig.from_env({FAST_MODEL_ENV: "vendor/unknown", FAST_CONTEXT_LIMIT_ENV: "1000"}),
+            ScriptedFast(prompt_tokens=750),
+        )
+    return HeavyDriver(
+        TierConfig.from_env({HEAVY_MODEL_ENV: "vendor/unknown", HEAVY_CONTEXT_LIMIT_ENV: "1000"}),
+        ScriptedCli(usage={"input_tokens": 750}),
+    )
+
+
+@pytest.mark.parametrize("tier", [FAST_TIER, HEAVY_TIER])
+def test_a_write_racing_the_reply_cannot_wedge_between_it_and_its_warning(
+    session_dir: Path, capsys: pytest.CaptureFixture[str], tier: str
+) -> None:
+    """
+    Given either tier taking a turn that measures over its window
+    When another write arrives in the same instant the reply is appended
+    Then the warning is still the entry directly under the reply it measured.
+
+    The reply and the warning are two appends, and anything landing between them
+    leaves the human reading a measurement filed against somebody else's turn.
+    Holding the append lock across both is what closes that, and this asserts it
+    rather than a lucky ordering: the racing write is let in at the one moment
+    that can go wrong, from a thread of its own so it contends for the lock
+    instead of re-entering it, and has to come out after the warning anyway.
+    """
+    # Seeded through the ordinary path, then reopened as a log that can let a
+    # racer in: the directory is resumable by then, so this reads the same board
+    # from the same bytes.
+    briefed(session_dir)
+    log = InterleavingLog(session_dir)
+    human_turn(log, "The log.")
+    racing: list[threading.Thread] = []
+
+    def interleave() -> None:
+        runner = threading.Thread(
+            target=lambda: log.emit_status(STATUS_PHASE_ACCEPTED, "a racing write", MAP_CHANNEL),
+            name="raced-write",
+        )
+        racing.append(runner)
+        runner.start()
+        # Long enough that a driver holding no lock really would let the write
+        # through, so the unguarded version fails on ordering, not on timing.
+        runner.join(RACE_WINDOW)
+
+    log.hook = interleave
+    pressed_driver(tier).run(log, record_dispatch(log))
+    for thread in racing:
+        thread.join(TIMEOUT)
+        assert not thread.is_alive(), "a raced write outlived its timeout"
+
+    entries = log.entries()
+    spoken = [entry for entry in entries if entry.actor == "grill-master"]
+    warned = [
+        entry for entry in entries if entry.kind == "informational" and entry.actor == "backend"
+    ]
+    assert len(warned) == 1
+    assert warned[0].seq == spoken[-1].seq + 1
+    assert warned[0].payload["text"] in capsys.readouterr().out
+
+
+def test_a_refused_reply_warns_about_nothing(session_dir: Path) -> None:
+    """
+    Given a turn that measures over its window but says nothing the log will take
+    When it is run
+    Then it raises and no warning is appended, because a turn nobody could
+         record is not a turn whose size is worth telling the human about.
+    """
+    log = briefed(session_dir)
+    human_turn(log, "The log.")
+    config = TierConfig.from_env({FAST_MODEL_ENV: "vendor/unknown", FAST_CONTEXT_LIMIT_ENV: "1000"})
+
+    with pytest.raises(ReplyRefusedError):
+        FastDriver(config, ScriptedFast(reply="   ", prompt_tokens=750)).run(
+            log, record_dispatch(log)
+        )
+
+    assert warnings_in(log) == []
