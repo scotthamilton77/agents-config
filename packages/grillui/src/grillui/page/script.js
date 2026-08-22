@@ -2094,11 +2094,22 @@ function renderNotifications() {
   });
   return h + "</div>";
 }
+// The one control that lets the whole queue land, written once. It renders
+// twice — in the panel's head and at the foot of the list — and a count that
+// disagreed between the two copies would be a second answer to how many changes
+// are waiting.
+function applyAllButton(n) {
+  return '<button class="btn primary sm" data-act="applyall">Let all ' + n + " land</button>";
+}
 // The inbox: only what has NOT landed.
 function renderInbox() {
   var ps = proposals();
+  // Eight queued changes push the foot control below the fold, and a human who
+  // never scrolls there applies eight rows by hand. The head copy is the one
+  // that is on screen the moment the panel opens.
+  var batch = ps.length > 1 ? applyAllButton(ps.length) : "";
   var h = '<div class="slide"><button class="close" data-act="closepanel">✕</button>' +
-    '<h3 style="font-size:16px">Inbox — changes waiting on you</h3>' +
+    '<div class="inbox-head"><h3 style="font-size:16px">Inbox — changes waiting on you</h3>' + batch + "</div>" +
     '<div class="muted" style="margin-bottom:12px">The backend queues a change when letting it land would overwrite or undermine something you decided. ' +
     'Each one locks the decision it targets until you let it land or talk the agent out of it.</div><div class="pending-list">';
   if (!ps.length) h += '<div class="muted">Empty. Everything the agent sent landed when it arrived.</div>';
@@ -2113,7 +2124,7 @@ function renderInbox() {
       '<button class="btn sm" data-act="gotonode" data-id="' + esc(p.target) + '">Show me ' + esc(p.target) + "</button></div></div>";
   });
   h += "</div>";
-  if (ps.length > 1) h += '<div class="thread-actions"><button class="btn primary sm" data-act="applyall">Let all ' + ps.length + " land</button></div>";
+  if (batch) h += '<div class="thread-actions">' + batch + "</div>";
   return h + "</div>";
 }
 
