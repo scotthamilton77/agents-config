@@ -384,6 +384,9 @@
   .banner { border-radius: 10px; padding: 10px 14px; font-size: 13px; margin-bottom: 12px;
             background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; }
   .banner.refusal { background: var(--conflict-bg); border-color: var(--conflict-line); color: var(--conflict-ink); }
+  /* The batch control sits beside the heading, left of the panel's close, so a
+     queue longer than one screen is not the only place it can be found. */
+  .inbox-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-right: 60px; }
   .pending-list { padding: 4px 0; }
   .pending-row { border-bottom: 1px solid var(--line); padding: 10px 4px; font-size: 13px; }
   .pending-row:last-child { border-bottom: 0; }

@@ -584,6 +584,10 @@ follows, and changes nothing else.
   arms on the one readiness every thread has (GUI-D41): the agent spoke last, so what
   crosses is the agent's concrete statement of the change and never the human's own
   request read back to the grill-master as a conclusion.
+- **GUI-U30 — The inbox's batch control opens with the inbox.** Where more than one
+  change waits, the control that lets them all land renders beside the inbox's heading
+  as well as under the list, so a queue longer than the window is not the only place it
+  can be found. Both copies carry the same count and are the same gesture.
 - **GUI-U4 — Thread panels have a floating header and footer** — title with close and
   pop-out controls pinned at the top, prompt box and action buttons pinned at the bottom —
   so neither scrolls out of view in a long thread.
@@ -1077,6 +1081,7 @@ Every requirement this spec states is discharged by at least one criterion below
 | GUI-U27 | GUI-A92 |
 | GUI-U28 | GUI-A90 |
 | GUI-U29 | GUI-A96, GUI-A97, GUI-A98 |
+| GUI-U30 | GUI-A105 |
 | GUI-P1 | GUI-A25 |
 
 Each criterion is mechanically checkable and convertible to a red test.
@@ -1487,6 +1492,10 @@ Each criterion is mechanically checkable and convertible to a red test.
   the agent's reply enables it and the preview quotes that reply; and pressing it produces
   a grill-master turn carrying that reply verbatim as the thread's conclusion, whose
   proposal waits in the queue with the thread folded. Verified in a browser.
+- **GUI-A105** In a browser, against a running backend: with eight changes waiting and a
+  700px-tall window, opening the inbox puts an enabled control that lets all eight land
+  wholly inside the viewport before anything is scrolled; the control under the list is
+  still there; both name the eight; and pressing the one on screen empties the queue.
 
 ## 10. Open questions for the implementing work
 
@@ -1574,6 +1583,8 @@ Each criterion is mechanically checkable and convertible to a red test.
   GUI-A96, GUI-A97, GUI-A98.
 - bugfix: Fold-readiness read off a thread's own turns, in place of a declaration nothing
   ever wrote — AC: GUI-D41, GUI-A91, GUI-A99.
+- bugfix: The inbox's batch control raised into the panel head, where a queue longer than
+  the window no longer hides it — AC: GUI-U30, GUI-A105.
 
 ## Evidence
 
@@ -1680,3 +1691,4 @@ opens one proves something else.
 - GUI-A98 | probe: packages/grillui/tests/browser/map_thread_probe.py::main
 - GUI-A91 | test: packages/grillui/tests/unit/test_page.py::test_an_ordinary_threads_fold_arms_on_the_turn_it_would_hand_over
 - GUI-A99 | probe: packages/grillui/tests/browser/side_thread_fold_probe.py::main
+- GUI-A105 | probe: packages/grillui/tests/browser/inbox_batch_probe.py::main

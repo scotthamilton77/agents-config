@@ -3120,6 +3120,29 @@ def test_the_send_chord_has_one_reader_the_popped_window_asks() -> None:
     assert source.count('<span class="hint">↵ send<br>⇧↵ newline</span>') == 3
 
 
+# ---------------------------------------------------------------- GUI-A105
+
+
+def test_the_inbox_offers_the_batch_control_before_the_list_it_applies() -> None:
+    """GUI-U30's source half: the control that lets the whole queue land renders
+    in the panel's head as well as under the list.
+
+    Whether the head copy is on screen when the panel opens is a browser's
+    answer. What is measurable here is that it is rendered before the list at
+    all, that the copy at the foot stayed, and that one function writes the
+    label -- two hand-written copies would let the head claim a count the foot
+    denies.
+    """
+    body = function_body("renderInbox")
+    head, rest = body.split("pending-list", 1)
+    assert "inbox-head" in head, "the panel head carries no batch control"
+    assert "+ batch +" in head, "the head does not render the batch control"
+    assert "if (batch) h +=" in rest, "the control at the foot of the list is gone"
+    source = page_source()
+    assert source.count("Let all ") == 1, "the batch label has more than one reader"
+    assert ".inbox-head {" in source, "the panel head is unstyled, so its control has no place"
+
+
 @pytest.mark.parametrize(
     "shell",
     ["<style></style><script>//__SCRIPT__</script>", "/*__STYLE__*/ /*__STYLE__*/ //__SCRIPT__"],
