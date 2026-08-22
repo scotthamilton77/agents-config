@@ -542,8 +542,8 @@ follows, and changes nothing else.
   one, else an armed option, else a held one — the pointer leaving or focus moving falls
   back to the next source that holds, and the marks are that one option's, replaced rather
   than unioned. It clears when another option comes into hand, when none is, and when the
-  answer lands — after an answer the board says what image 1 says and nothing more. It is drawn distinctly from both states it
-  could be read as: a pending hold (GUI-D26), which is a change the agent authored and the
+  answer lands — after an answer the board says what image 1 says and nothing more. It is
+  drawn distinctly from both states it could be read as: a pending hold (GUI-D26), which is a change the agent authored and the
   human must apply or dismiss, and `stale`, which is a decision already undermined. A
   decision wearing only the pre-mark is on the frontier and answerable as it was, and no
   notification is raised (GUI-U15). GUI-U19's small hover target is a rule about an overlay,
