@@ -10,6 +10,7 @@ Run: uv run validate_verdict_test.py
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import re
@@ -36,6 +37,17 @@ validator = _load_validator()
 
 SHA_A = "a" * 40
 SHA_B = "b" * 40
+DIGEST_A = "sha256:" + "a" * 64
+DIGEST_B = "sha256:" + "b" * 64
+
+BLANKS = ["", "   \t\n"]
+
+
+def write_staffing(tmp_path: Path, lenses: list[str], name: str = "staffing.json") -> tuple[Path, str]:
+    """Write a staffing record and return it with the digest of the bytes on disk."""
+    path = tmp_path / name
+    path.write_text(json.dumps({"lenses": lenses}), encoding="utf-8")
+    return path, "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def lens_entry(name: str = "correctness", **overrides: Any) -> dict[str, Any]:
@@ -52,13 +64,14 @@ def lens_entry(name: str = "correctness", **overrides: Any) -> dict[str, Any]:
 
 def valid_verdict() -> dict[str, Any]:
     return {
-        "schema_version": "2",
+        "schema_version": "3",
         "artifact_class": "python-package",
         "round": 1,
         "base_sha": SHA_A,
         "head_sha": SHA_B,
         "claim_id": "claim-1",
         "retained_categories": [],
+        "staffing_record": {"digest": DIGEST_A},
         "lenses": [lens_entry()],
         "prior_dispositions": [],
         "verdict": "clean",
@@ -94,8 +107,21 @@ def halt_failures() -> list[dict[str, Any]]:
 
 def halt_object(**overrides: Any) -> dict[str, Any]:
     entry = {
+        "reason": "transport-failure",
         "failures": halt_failures(),
         "abandoned_lenses": [],
+    }
+    entry.update(overrides)
+    return entry
+
+
+def upstream_halt(**overrides: Any) -> dict[str, Any]:
+    entry = {
+        "reason": "upstream-defect",
+        "indicted_finding": "f1",
+        "indicted_artifact": "docs/criteria.md",
+        "artifact_digest": DIGEST_B,
+        "abandoned_lenses": ["security"],
     }
     entry.update(overrides)
     return entry
@@ -199,7 +225,7 @@ class TestDispositionsAndCoverage:
         assert is_valid(doc)
 
     def test_fixed_disposition_needs_no_evidence(self):
-        """S6-A1: only rebuttals carry a mandatory evidence field."""
+        """S6-A1: on a class with no test gate, a fix carries no mandatory evidence."""
         doc = valid_verdict()
         doc["prior_dispositions"] = [{"round": 2, "id": "f1", "disposition": "fixed"}]
         assert is_valid(doc)
@@ -475,10 +501,12 @@ class TestValidatorBehaviour:
 class TestWhatActuallyRanTheLens:
     """A lens entry records what ran it, so a later reader is not left with the invoker's memory."""
 
-    def test_version_one_envelope_is_rejected(self):
-        """The lens entry gained required fields, so a v1 verdict is not a v2 verdict."""
+    @pytest.mark.parametrize("version", ["1", "2", "4"])
+    def test_foreign_schema_version_is_rejected(self, version):
+        """Each version closed a shape the one before it left open, so the version string
+        is an exact match and not a floor."""
         doc = valid_verdict()
-        doc["schema_version"] = "1"
+        doc["schema_version"] = version
         assert not is_valid(doc)
 
     @pytest.mark.parametrize("field", ["vendor", "transport", "model"])
@@ -589,6 +617,450 @@ class TestUnevidencedMechanicalDowngrade:
         doc["findings"] = [{"id": "f1", "lens": "correctness", "type": "advisory",
                             "ac": "A1", "claim": "c", "downgraded_from": "advisory"}]
         assert not is_valid(doc)
+
+
+class TestStaffingRecordReference:
+    """PANEL-B2: the verdict names the staffing decision it was dispatched from."""
+
+    def test_staffing_record_is_required(self):
+        """PANEL-B2: a round that names no staffing record cannot be checked for coverage."""
+        doc = valid_verdict()
+        del doc["staffing_record"]
+        assert not is_valid(doc)
+
+    def test_prior_envelope_without_staffing_record_is_rejected(self):
+        """PANEL-B2: the shape that validated before staffing existed no longer does, version
+        string aside — so an old verdict cannot pass by relabelling itself."""
+        doc = valid_verdict()
+        del doc["staffing_record"]
+        doc["schema_version"] = "3"
+        assert not is_valid(doc)
+
+    def test_digest_is_required(self):
+        """PANEL-B2: a reference with no digest identifies nothing."""
+        doc = valid_verdict()
+        doc["staffing_record"] = {}
+        assert not is_valid(doc)
+
+    @pytest.mark.parametrize("digest", [
+        "",
+        "   ",
+        "a" * 64,
+        "sha256:" + "a" * 63,
+        "sha256:" + "a" * 65,
+        "sha256:" + "A" * 64,
+        "sha256:" + "g" * 64,
+        "sha1:" + "a" * 40,
+    ])
+    def test_digest_must_be_a_sha256_hex_string(self, digest):
+        """PANEL-B2: the digest is a full lowercase sha256, prefix included."""
+        doc = valid_verdict()
+        doc["staffing_record"] = {"digest": digest}
+        assert not is_valid(doc)
+
+    def test_path_hint_is_optional_and_validates(self):
+        """PANEL-B2: the path is a locating hint; present or absent, the digest does the work."""
+        doc = valid_verdict()
+        doc["staffing_record"] = {"digest": DIGEST_A, "path": ".review/staffing-1.json"}
+        assert is_valid(doc)
+
+    @pytest.mark.parametrize("blank", BLANKS)
+    def test_blank_path_hint_is_rejected(self, blank):
+        """PANEL-B2: whitespace is not a hint."""
+        doc = valid_verdict()
+        doc["staffing_record"] = {"digest": DIGEST_A, "path": blank}
+        assert not is_valid(doc)
+
+    def test_staffing_record_is_closed_to_unknown_keys(self):
+        """PANEL-B2: the reference carries a digest and a hint, not a copy of the record."""
+        doc = valid_verdict()
+        doc["staffing_record"] = {"digest": DIGEST_A, "lenses": ["correctness"]}
+        assert not is_valid(doc)
+
+
+class TestTransferredDisposition:
+    """PANEL-B6: a pre-existing finding leaves the campaign only with provenance and an owner."""
+
+    def transferred(self, **overrides: Any) -> dict[str, Any]:
+        entry = {
+            "round": 1,
+            "id": "f1",
+            "disposition": "transferred",
+            "evidence": "present at base a1b2c3; predates this change",
+            "work_item": "proj-412",
+        }
+        entry.update(overrides)
+        return entry
+
+    def test_transferred_with_provenance_and_work_item_validates(self):
+        """PANEL-B6: both halves present is the only shape a transfer takes."""
+        doc = valid_verdict()
+        doc["prior_dispositions"] = [self.transferred()]
+        assert is_valid(doc)
+
+    def test_transferred_without_work_item_fails(self):
+        """PANEL-B6: a defect ruled out of scope with nothing filed for it is a dropped defect."""
+        entry = self.transferred()
+        del entry["work_item"]
+        doc = valid_verdict()
+        doc["prior_dispositions"] = [entry]
+        assert not is_valid(doc)
+
+    def test_transferred_without_evidence_fails(self):
+        """PANEL-B6: without the provenance basis the transfer is the assembler's say-so."""
+        entry = self.transferred()
+        del entry["evidence"]
+        doc = valid_verdict()
+        doc["prior_dispositions"] = [entry]
+        assert not is_valid(doc)
+
+    @pytest.mark.parametrize("blank", BLANKS)
+    @pytest.mark.parametrize("field", ["evidence", "work_item"])
+    def test_transferred_blank_half_fails(self, field, blank):
+        """PANEL-B6: the blank-string escape is closed on both halves."""
+        doc = valid_verdict()
+        doc["prior_dispositions"] = [self.transferred(**{field: blank})]
+        assert not is_valid(doc)
+
+    def test_work_item_is_available_to_other_dispositions(self):
+        """PANEL-B6: only transfer requires a work item; recording one elsewhere is legal."""
+        doc = valid_verdict()
+        doc["prior_dispositions"] = [
+            {"round": 1, "id": "f1", "disposition": "advisory-deferred", "work_item": "proj-413"}
+        ]
+        assert is_valid(doc)
+
+    def test_other_dispositions_still_need_no_work_item(self):
+        """PANEL-B6: the requirement did not leak onto the rest of the enum."""
+        doc = valid_verdict()
+        doc["prior_dispositions"] = [{"round": 2, "id": "f1", "disposition": "fixed"}]
+        assert is_valid(doc)
+
+
+class TestTypedCodeFixEvidence:
+    """PANEL-B5: on typed code a claimed fix is checkable, so it is checked."""
+
+    def fixed(self, **overrides: Any) -> dict[str, Any]:
+        entry = {
+            "round": 1,
+            "id": "f1",
+            "disposition": "fixed",
+            "evidence": "test_parser.py::test_trailing fails at base, passes at head",
+        }
+        entry.update(overrides)
+        return entry
+
+    def typed_code(self, dispositions: list[dict[str, Any]]) -> dict[str, Any]:
+        doc = valid_verdict()
+        doc["artifact_class"] = "typed-code"
+        doc["prior_dispositions"] = dispositions
+        return doc
+
+    def test_typed_code_fixed_with_evidence_validates(self):
+        """PANEL-B5: evidence naming the fails-without/passes-with observation validates."""
+        assert is_valid(self.typed_code([self.fixed()]))
+
+    def test_typed_code_fixed_without_evidence_fails(self):
+        """PANEL-B5: on a class with a test gate, "fixed" alone is an unbacked claim."""
+        entry = self.fixed()
+        del entry["evidence"]
+        assert not is_valid(self.typed_code([entry]))
+
+    @pytest.mark.parametrize("blank", BLANKS)
+    def test_typed_code_fixed_with_blank_evidence_fails(self, blank):
+        """PANEL-B5: whitespace does not name a test."""
+        assert not is_valid(self.typed_code([self.fixed(evidence=blank)]))
+
+    def test_other_class_fixed_without_evidence_validates(self):
+        """PANEL-B5: the same entry on a class with no test gate validates — the demand is
+        scoped to where a mutation observation exists to make."""
+        entry = self.fixed()
+        del entry["evidence"]
+        doc = valid_verdict()
+        doc["prior_dispositions"] = [entry]
+        assert doc["artifact_class"] != "typed-code"
+        assert is_valid(doc)
+
+    @pytest.mark.parametrize("disposition", ["advisory-deferred"])
+    def test_typed_code_leaves_other_dispositions_alone(self, disposition):
+        """PANEL-B5: the rule attaches to "fixed", not to every entry on a typed-code round."""
+        doc = self.typed_code([{"round": 1, "id": "f1", "disposition": disposition}])
+        assert is_valid(doc)
+
+    def test_typed_code_rebutted_still_requires_evidence(self):
+        """PANEL-B5: the pre-existing rebuttal requirement is untouched by the new one."""
+        doc = self.typed_code([{"round": 1, "id": "f1", "disposition": "rebutted"}])
+        assert not is_valid(doc)
+
+    def test_typed_code_second_entry_is_checked_too(self):
+        """PANEL-B5: the rule applies per entry, not just to the first one in the array."""
+        bad = self.fixed(id="f2")
+        del bad["evidence"]
+        assert not is_valid(self.typed_code([self.fixed(), bad]))
+
+
+class TestUpstreamDefectHalt:
+    """PANEL-B6: a finding that indicts the ruler stops the campaign instead of re-running it."""
+
+    def upstream_halted(self, **overrides: Any) -> dict[str, Any]:
+        doc = halted_verdict()
+        doc["halt"] = upstream_halt(**overrides)
+        return doc
+
+    def test_upstream_defect_halt_validates(self):
+        assert is_valid(self.upstream_halted())
+
+    def test_transport_failure_halt_validates(self):
+        """PANEL-B6: the transport shape keeps its own required keys alongside the reason."""
+        assert is_valid(halted_verdict())
+
+    def test_halt_without_a_reason_is_invalid(self):
+        """PANEL-B6: the reason selects the shape, so an unlabelled halt matches neither."""
+        doc = halted_verdict()
+        del doc["halt"]["reason"]
+        assert not is_valid(doc)
+
+    @pytest.mark.parametrize("reason", ["", "   ", "transport_failure", "upstream defect", "other"])
+    def test_unknown_halt_reason_is_invalid(self, reason):
+        """PANEL-B6: the reason is a closed pair of values."""
+        doc = halted_verdict()
+        doc["halt"] = halt_object(reason=reason)
+        assert not is_valid(doc)
+
+    def test_upstream_defect_carrying_failures_is_invalid(self):
+        """PANEL-B6: nothing failed in transport — a failure list here would invent a cause."""
+        doc = self.upstream_halted(failures=halt_failures())
+        assert not is_valid(doc)
+
+    def test_transport_failure_carrying_indictment_is_invalid(self):
+        """PANEL-B6: and the indictment fields do not belong on the transport shape either."""
+        doc = halted_verdict()
+        doc["halt"] = halt_object(indicted_finding="f1")
+        assert not is_valid(doc)
+
+    @pytest.mark.parametrize("field", [
+        "indicted_finding", "indicted_artifact", "artifact_digest", "abandoned_lenses",
+    ])
+    def test_upstream_defect_missing_field_is_invalid(self, field):
+        """PANEL-B6: every key of the upstream shape is required."""
+        halt = upstream_halt()
+        del halt[field]
+        doc = halted_verdict()
+        doc["halt"] = halt
+        assert not is_valid(doc)
+
+    @pytest.mark.parametrize("blank", BLANKS)
+    @pytest.mark.parametrize("field", ["indicted_finding", "indicted_artifact"])
+    def test_upstream_defect_blank_field_is_invalid(self, field, blank):
+        """PANEL-B6: naming neither the finding nor the artifact leaves the halt unresumable."""
+        assert not is_valid(self.upstream_halted(**{field: blank}))
+
+    @pytest.mark.parametrize("digest", ["", "   ", "b" * 64, "sha256:" + "b" * 63, "sha256:xyz"])
+    def test_upstream_defect_digest_must_be_sha256(self, digest):
+        """PANEL-B6: the resume check recomputes this digest, so a malformed one blocks resumption
+        rather than being compared loosely."""
+        assert not is_valid(self.upstream_halted(artifact_digest=digest))
+
+    def test_upstream_defect_abandoned_lenses_may_be_empty(self):
+        """PANEL-B6: an indictment raised by the last lens abandons nothing, and says so."""
+        assert is_valid(self.upstream_halted(abandoned_lenses=[]))
+
+    def test_upstream_defect_is_closed_to_unknown_keys(self):
+        assert not is_valid(self.upstream_halted(note="extra"))
+
+    def test_upstream_defect_halt_on_clean_verdict_is_invalid(self):
+        """PANEL-B6: both shapes are confined to a halted verdict."""
+        doc = valid_verdict()
+        doc["halt"] = upstream_halt()
+        assert not is_valid(doc)
+
+    def test_upstream_defect_halt_carries_the_indicting_finding(self):
+        """PANEL-B6: the halt names a finding the round actually reported."""
+        doc = self.upstream_halted(indicted_finding="f1")
+        doc["findings"] = [mechanical_finding()]
+        assert is_valid(doc)
+        assert doc["halt"]["indicted_finding"] == doc["findings"][0]["id"]
+
+
+class TestStaffingCoverage:
+    """PANEL-B2: coverage is checked against the staffing record, never against a class table."""
+
+    def staffed_verdict(self, digest: str, lenses: list[str]) -> dict[str, Any]:
+        doc = valid_verdict()
+        doc["staffing_record"] = {"digest": digest}
+        doc["lenses"] = [lens_entry(name) for name in lenses]
+        return doc
+
+    def run(self, tmp_path, doc, staffing_path):
+        path = tmp_path / "verdict.json"
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        return validator.validate_path(path, staffing_path)
+
+    def test_exact_coverage_validates(self, tmp_path):
+        """PANEL-B2: the reported set equals the staffed set, and the digest is the file's."""
+        staffing, digest = write_staffing(tmp_path, ["correctness", "security"])
+        doc = self.staffed_verdict(digest, ["correctness", "security"])
+        result, code = self.run(tmp_path, doc, staffing)
+        assert result["valid"] is True, result
+        assert code == validator.EXIT_VALID
+
+    def test_digest_mismatch_is_reported(self, tmp_path):
+        """PANEL-B2: a record edited after the round no longer matches the bytes the verdict names."""
+        staffing, _ = write_staffing(tmp_path, ["correctness"])
+        doc = self.staffed_verdict(DIGEST_A, ["correctness"])
+        result, code = self.run(tmp_path, doc, staffing)
+        assert code == validator.EXIT_INVALID
+        assert [err["code"] for err in result["errors"]] == ["staffing-digest-mismatch"]
+
+    def test_lens_not_staffed_is_reported(self, tmp_path):
+        """PANEL-B2: a lens nobody staffed reporting into the round is a coverage claim, not coverage."""
+        staffing, digest = write_staffing(tmp_path, ["correctness"])
+        doc = self.staffed_verdict(digest, ["correctness", "security"])
+        result, code = self.run(tmp_path, doc, staffing)
+        assert code == validator.EXIT_INVALID
+        assert [err["code"] for err in result["errors"]] == ["lens-not-staffed"]
+        assert "security" in result["errors"][0]["message"]
+
+    def test_staffing_coverage_gap_is_reported(self, tmp_path):
+        """PANEL-B2: a staffed lens that never reported leaves the round incomplete."""
+        staffing, digest = write_staffing(tmp_path, ["correctness", "security"])
+        doc = self.staffed_verdict(digest, ["correctness"])
+        result, code = self.run(tmp_path, doc, staffing)
+        assert code == validator.EXIT_INVALID
+        assert [err["code"] for err in result["errors"]] == ["staffing-coverage-gap"]
+        assert "security" in result["errors"][0]["message"]
+
+    def test_both_directions_report_together(self, tmp_path):
+        """PANEL-B2: a swapped lens is both an unstaffed report and a gap, and both are named."""
+        staffing, digest = write_staffing(tmp_path, ["correctness", "security"])
+        doc = self.staffed_verdict(digest, ["correctness", "test-adequacy"])
+        result, code = self.run(tmp_path, doc, staffing)
+        assert code == validator.EXIT_INVALID
+        assert {err["code"] for err in result["errors"]} == {
+            "lens-not-staffed", "staffing-coverage-gap"
+        }
+
+    def test_missing_staffing_file_is_unusable(self, tmp_path):
+        """PANEL-B2: the check cannot run, so the run fails closed rather than skipping it."""
+        doc = self.staffed_verdict(DIGEST_A, ["correctness"])
+        result, code = self.run(tmp_path, doc, tmp_path / "absent.json")
+        assert code == validator.EXIT_UNUSABLE
+        assert [err["code"] for err in result["errors"]] == ["unreadable"]
+
+    def test_unparseable_staffing_file_is_unusable(self, tmp_path):
+        staffing = tmp_path / "staffing.json"
+        staffing.write_text("{not json", encoding="utf-8")
+        doc = self.staffed_verdict(DIGEST_A, ["correctness"])
+        result, code = self.run(tmp_path, doc, staffing)
+        assert code == validator.EXIT_UNUSABLE
+        assert [err["code"] for err in result["errors"]] == ["unreadable"]
+
+    @pytest.mark.parametrize("record", [
+        {}, {"lenses": "correctness"}, {"lenses": [1, 2]}, {"lenses": {"correctness": True}}, [],
+    ])
+    def test_staffing_without_a_lens_list_is_unusable(self, tmp_path, record):
+        """PANEL-B2: a record that cannot answer the coverage question is refused, never read as
+        staffing nothing — which would silently pass a verdict reporting no lenses."""
+        staffing = tmp_path / "staffing.json"
+        staffing.write_text(json.dumps(record), encoding="utf-8")
+        doc = self.staffed_verdict(DIGEST_A, ["correctness"])
+        result, code = self.run(tmp_path, doc, staffing)
+        assert code == validator.EXIT_UNUSABLE
+        assert [err["code"] for err in result["errors"]] == ["unreadable"]
+
+    def test_without_staffing_the_coverage_check_does_not_run(self, tmp_path):
+        """PANEL-B2: the check is opt-in; schema validation alone is unchanged by it."""
+        doc = self.staffed_verdict(DIGEST_A, ["correctness", "security"])
+        result, code = self.run(tmp_path, doc, None)
+        assert result["valid"] is True
+        assert code == validator.EXIT_VALID
+
+    def test_staffing_errors_join_schema_errors(self, tmp_path):
+        """PANEL-B2: a document can be wrong in both ways at once and hears about both."""
+        staffing, digest = write_staffing(tmp_path, ["correctness"])
+        doc = self.staffed_verdict(digest, ["correctness"])
+        doc["head_sha"] = "nope"
+        doc["lenses"].append(lens_entry("security"))
+        result, code = self.run(tmp_path, doc, staffing)
+        assert code == validator.EXIT_INVALID
+        assert {"schema", "lens-not-staffed"} <= {err["code"] for err in result["errors"]}
+
+    def test_result_is_deterministic_with_staffing(self, tmp_path):
+        """PANEL-B2: repeated validation of the same pair is byte-identical."""
+        staffing, digest = write_staffing(tmp_path, ["correctness", "security", "test-adequacy"])
+        doc = self.staffed_verdict(digest, ["docs-quality"])
+        first = json.dumps(self.run(tmp_path, doc, staffing)[0], sort_keys=True)
+        second = json.dumps(self.run(tmp_path, doc, staffing)[0], sort_keys=True)
+        assert first == second
+
+
+class TestStaffingArgumentSpellings:
+    """PANEL-B2: the staffing record is named as a second positional or behind --staffing."""
+
+    def paths(self, tmp_path, lenses, reported, tag="a"):
+        """A matched verdict/staffing pair under its own names, so two pairs coexist."""
+        staffing, digest = write_staffing(tmp_path, lenses, name=f"staffing-{tag}.json")
+        doc = valid_verdict()
+        doc["staffing_record"] = {"digest": digest}
+        doc["lenses"] = [lens_entry(name) for name in reported]
+        verdict = tmp_path / f"verdict-{tag}.json"
+        verdict.write_text(json.dumps(doc), encoding="utf-8")
+        return verdict, staffing
+
+    def test_positional_and_flag_parse_alike(self, tmp_path):
+        verdict, staffing = self.paths(tmp_path, ["correctness"], ["correctness"])
+        assert validator.parse_args([str(verdict), str(staffing)]) == (verdict, staffing)
+        assert validator.parse_args([str(verdict), "--staffing", str(staffing)]) == (
+            verdict, staffing
+        )
+        assert validator.parse_args(["--staffing", str(staffing), str(verdict)]) == (
+            verdict, staffing
+        )
+
+    def test_verdict_alone_parses_with_no_staffing(self, tmp_path):
+        verdict, _ = self.paths(tmp_path, ["correctness"], ["correctness"])
+        assert validator.parse_args([str(verdict)]) == (verdict, None)
+
+    @pytest.mark.parametrize("argv", [
+        [],
+        ["--staffing"],
+        ["a.json", "b.json", "c.json"],
+        ["a.json", "b.json", "--staffing", "c.json"],
+        ["a.json", "--staffing", "b.json", "--staffing", "c.json"],
+    ])
+    def test_unusable_argument_lists_are_refused(self, argv):
+        """A misspelled invocation is a typed refusal, not a silently unchecked run."""
+        with pytest.raises(validator.VerdictError) as caught:
+            validator.parse_args(argv)
+        assert caught.value.code == "unreadable"
+
+    def test_exit_codes_end_to_end_with_staffing(self, tmp_path):
+        """Exit 0 on a covered round, 1 on a gap, 2 on an unreadable record."""
+        covered, staffing = self.paths(tmp_path, ["correctness"], ["correctness"])
+        gapped, gap_staffing = self.paths(
+            tmp_path, ["correctness", "security"], ["correctness"], tag="b"
+        )
+        cases = (
+            ([str(covered), "--staffing", str(staffing)], 0),
+            ([str(gapped), "--staffing", str(gap_staffing)], 1),
+            ([str(covered), "--staffing", str(tmp_path / "absent.json")], 2),
+        )
+        for argv, expected in cases:
+            proc = subprocess.run(
+                [sys.executable, str(VALIDATOR_PATH), *argv],
+                capture_output=True, text=True, check=False,
+            )
+            assert proc.returncode == expected, proc.stderr
+            assert json.loads(proc.stdout)["valid"] is (expected == 0)
+
+    def test_usage_refusal_prints_json_and_exits_unusable(self):
+        """No arguments still produces the parsed contract on stdout."""
+        proc = subprocess.run(
+            [sys.executable, str(VALIDATOR_PATH)],
+            capture_output=True, text=True, check=False,
+        )
+        assert proc.returncode == 2
+        assert json.loads(proc.stdout)["errors"][0]["code"] == "unreadable"
 
 
 if __name__ == "__main__":
