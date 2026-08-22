@@ -88,6 +88,15 @@ test_*.py
 *_test.js
 *_test.sh
 test_*.sh
+# A skill's trigger-eval corpus, at ANY depth, on the same rule as the suites
+# above: a file the repo gate consumes as verification is never a file the
+# installer ships. Keyed on the directory rather than the filename because the
+# corpora are split between trigger-eval.json and evals.json, and a name-keyed
+# entry would catch most of them and leave the rest shipping — a partially
+# enforced rule reads as an enforced one. The role meant here is PRUNING: the
+# walk stops at a namespace and never descends into a skill's interior, so this
+# name sits below the depth content-lint looks and silences nothing there.
+evals/
 *.pyc
 __pycache__/
 .pytest_cache/
